@@ -1,6 +1,7 @@
 import { createSignal, For, Show, onMount } from "solid-js";
 import { store, createTask, toggleNewTaskDialog, loadAgents } from "../store/store";
 import { toBranchName } from "../lib/branch-name";
+import { theme } from "../lib/theme";
 import type { AgentDef } from "../ipc/types";
 
 export function NewTaskDialog() {
@@ -60,7 +61,7 @@ export function NewTaskDialog() {
         display: "flex",
         "align-items": "center",
         "justify-content": "center",
-        background: "rgba(0,0,0,0.6)",
+        background: "rgba(0,0,0,0.5)",
         "z-index": "1000",
       }}
       onClick={(e) => {
@@ -70,32 +71,31 @@ export function NewTaskDialog() {
       <form
         onSubmit={handleSubmit}
         style={{
-          background: "#1e1e2e",
-          border: "1px solid #313244",
+          background: theme.islandBg,
+          border: `1px solid ${theme.islandBorder}`,
           "border-radius": "12px",
           padding: "24px",
-          width: "420px",
+          width: "440px",
           display: "flex",
           "flex-direction": "column",
           gap: "16px",
+          "box-shadow": "0 8px 32px rgba(0,0,0,0.4)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <h2
           style={{
             margin: "0",
-            "font-size": "16px",
-            color: "#cdd6f4",
-            "font-weight": "600",
+            "font-size": "15px",
+            color: theme.fg,
+            "font-weight": "500",
           }}
         >
           New Task
         </h2>
 
         <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
-          <label
-            style={{ "font-size": "12px", color: "#a6adc8" }}
-          >
+          <label style={{ "font-size": "12px", color: theme.fgMuted }}>
             Task name
           </label>
           <input
@@ -105,12 +105,12 @@ export function NewTaskDialog() {
             onInput={(e) => setName(e.currentTarget.value)}
             placeholder="Add user authentication"
             style={{
-              background: "#313244",
-              border: "1px solid #45475a",
+              background: theme.bgInput,
+              border: `1px solid ${theme.border}`,
               "border-radius": "6px",
               padding: "8px 12px",
-              color: "#cdd6f4",
-              "font-size": "14px",
+              color: theme.fg,
+              "font-size": "13px",
               outline: "none",
             }}
           />
@@ -118,17 +118,17 @@ export function NewTaskDialog() {
             <span
               style={{
                 "font-size": "11px",
-                color: "#6c7086",
-                "font-family": "monospace",
+                color: theme.fgSubtle,
+                "font-family": "'JetBrains Mono', monospace",
               }}
             >
-              branch: {branchPreview()}
+              {branchPreview()}
             </span>
           </Show>
         </div>
 
         <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
-          <label style={{ "font-size": "12px", color: "#a6adc8" }}>
+          <label style={{ "font-size": "12px", color: theme.fgMuted }}>
             Agent
           </label>
           <div style={{ display: "flex", gap: "8px" }}>
@@ -142,17 +142,18 @@ export function NewTaskDialog() {
                     padding: "8px",
                     background:
                       selectedAgent()?.id === agent.id
-                        ? "#89b4fa22"
-                        : "#313244",
+                        ? theme.bgSelected
+                        : theme.bgInput,
                     border:
                       selectedAgent()?.id === agent.id
-                        ? "1px solid #89b4fa"
-                        : "1px solid #45475a",
+                        ? `1px solid ${theme.accent}`
+                        : `1px solid ${theme.border}`,
                     "border-radius": "6px",
-                    color: "#cdd6f4",
+                    color: theme.fg,
                     cursor: "pointer",
                     "font-size": "12px",
                     "text-align": "center",
+                    transition: "all 0.15s",
                   }}
                 >
                   {agent.name}
@@ -163,7 +164,7 @@ export function NewTaskDialog() {
         </div>
 
         <Show when={error()}>
-          <span style={{ "font-size": "12px", color: "#f38ba8" }}>
+          <span style={{ "font-size": "12px", color: theme.error }}>
             {error()}
           </span>
         </Show>
@@ -174,10 +175,10 @@ export function NewTaskDialog() {
             onClick={() => toggleNewTaskDialog(false)}
             style={{
               padding: "8px 16px",
-              background: "#313244",
-              border: "1px solid #45475a",
+              background: theme.bgInput,
+              border: `1px solid ${theme.border}`,
               "border-radius": "6px",
-              color: "#a6adc8",
+              color: theme.fgMuted,
               cursor: "pointer",
               "font-size": "13px",
             }}
@@ -189,13 +190,13 @@ export function NewTaskDialog() {
             disabled={loading() || !name().trim()}
             style={{
               padding: "8px 16px",
-              background: "#89b4fa",
+              background: theme.accent,
               border: "none",
               "border-radius": "6px",
-              color: "#1e1e2e",
+              color: theme.accentText,
               cursor: "pointer",
               "font-size": "13px",
-              "font-weight": "600",
+              "font-weight": "500",
               opacity: loading() || !name().trim() ? "0.5" : "1",
             }}
           >

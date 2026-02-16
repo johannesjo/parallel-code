@@ -1,5 +1,6 @@
 import { createSignal, onMount } from "solid-js";
 import { store, setProjectRoot, toggleNewTaskDialog, setActiveTask } from "../store/store";
+import { theme } from "../lib/theme";
 
 const DEFAULT_PROJECT_ROOT = "/home/johannes/www/git-test";
 
@@ -23,8 +24,8 @@ export function Sidebar() {
       style={{
         width: "220px",
         "min-width": "220px",
-        background: "#11111b",
-        "border-right": "1px solid #313244",
+        background: theme.islandBg,
+        "border-right": `1px solid ${theme.border}`,
         display: "flex",
         "flex-direction": "column",
         padding: "12px",
@@ -32,13 +33,13 @@ export function Sidebar() {
         "user-select": "none",
       }}
     >
-      <div style={{ "font-size": "14px", "font-weight": "700", color: "#cdd6f4" }}>
+      <div style={{ "font-size": "14px", "font-weight": "500", color: theme.fg, "letter-spacing": "0.02em" }}>
         AI Mush
       </div>
 
       {/* Project root */}
       <div style={{ display: "flex", "flex-direction": "column", gap: "4px" }}>
-        <label style={{ "font-size": "11px", color: "#6c7086" }}>
+        <label style={{ "font-size": "11px", color: theme.fgMuted }}>
           Project root
         </label>
         <input
@@ -50,13 +51,13 @@ export function Sidebar() {
           }}
           placeholder="/path/to/repo"
           style={{
-            background: "#1e1e2e",
-            border: "1px solid #313244",
-            "border-radius": "4px",
+            background: theme.bgInput,
+            border: `1px solid ${theme.border}`,
+            "border-radius": "6px",
             padding: "6px 8px",
-            color: "#cdd6f4",
-            "font-size": "12px",
-            "font-family": "monospace",
+            color: theme.fg,
+            "font-size": "11px",
+            "font-family": "'JetBrains Mono', monospace",
             outline: "none",
             width: "100%",
           }}
@@ -64,44 +65,46 @@ export function Sidebar() {
         <button
           onClick={handleSetRoot}
           style={{
-            background: "#313244",
-            border: "1px solid #45475a",
-            "border-radius": "4px",
-            padding: "4px 8px",
-            color: "#a6adc8",
+            background: theme.bgInput,
+            border: `1px solid ${theme.border}`,
+            "border-radius": "6px",
+            padding: "5px 8px",
+            color: theme.fgMuted,
             cursor: "pointer",
             "font-size": "11px",
+            transition: "background 0.15s",
           }}
         >
           Set root
         </button>
       </div>
 
-      <div style={{ "border-top": "1px solid #313244", "padding-top": "8px" }}>
-        <span style={{ "font-size": "11px", color: "#6c7086" }}>
-          {store.projectRoot ? `Active: ${store.projectRoot}` : "No project set"}
+      <div style={{ "border-top": `1px solid ${theme.border}`, "padding-top": "8px" }}>
+        <span style={{ "font-size": "11px", color: theme.fgSubtle }}>
+          {store.projectRoot ? store.projectRoot : "No project set"}
         </span>
       </div>
 
       <button
         onClick={() => toggleNewTaskDialog(true)}
         style={{
-          background: "#89b4fa",
+          background: theme.accent,
           border: "none",
           "border-radius": "6px",
           padding: "8px 12px",
-          color: "#1e1e2e",
+          color: theme.accentText,
           cursor: "pointer",
           "font-size": "13px",
-          "font-weight": "600",
+          "font-weight": "500",
+          transition: "background 0.15s",
         }}
       >
         + New Task
       </button>
 
       {/* Task list */}
-      <div style={{ display: "flex", "flex-direction": "column", gap: "4px", flex: "1", overflow: "auto" }}>
-        <span style={{ "font-size": "11px", color: "#6c7086", "margin-bottom": "4px" }}>
+      <div style={{ display: "flex", "flex-direction": "column", gap: "2px", flex: "1", overflow: "auto" }}>
+        <span style={{ "font-size": "11px", color: theme.fgSubtle, "margin-bottom": "4px" }}>
           Tasks ({store.taskOrder.length})
         </span>
         {store.taskOrder.map((taskId) => {
@@ -110,15 +113,16 @@ export function Sidebar() {
           return (
             <div
               style={{
-                padding: "4px 8px",
-                "border-radius": "4px",
-                background: store.activeTaskId === taskId ? "#313244" : "transparent",
-                color: "#cdd6f4",
+                padding: "5px 8px",
+                "border-radius": "6px",
+                background: store.activeTaskId === taskId ? theme.bgSelected : "transparent",
+                color: store.activeTaskId === taskId ? theme.fg : theme.fgMuted,
                 "font-size": "12px",
                 cursor: "pointer",
                 "white-space": "nowrap",
                 overflow: "hidden",
                 "text-overflow": "ellipsis",
+                transition: "background 0.15s",
               }}
               onClick={() => setActiveTask(taskId)}
             >

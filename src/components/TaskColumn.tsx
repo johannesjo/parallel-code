@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js";
 import { store, closeTask, setActiveTask, markAgentExited, addAgentToTask } from "../store/store";
 import { TerminalView } from "./TerminalView";
+import { theme } from "../lib/theme";
 import type { Task } from "../store/types";
 
 interface TaskColumnProps {
@@ -14,12 +15,14 @@ export function TaskColumn(props: TaskColumnProps) {
       style={{
         display: "flex",
         "flex-direction": "column",
-        "flex": "1 1 0",
+        flex: "1 1 0",
         "min-width": "300px",
         height: "100%",
-        "border-right": "1px solid #313244",
-        outline: props.isActive ? "2px solid #89b4fa" : "none",
-        "outline-offset": "-2px",
+        background: theme.bg,
+        margin: "4px 2px",
+        "border-radius": theme.islandRadius,
+        border: `1px solid ${props.isActive ? theme.borderFocus : theme.islandBorder}`,
+        overflow: "hidden",
       }}
       onClick={() => setActiveTask(props.task.id)}
     >
@@ -29,10 +32,10 @@ export function TaskColumn(props: TaskColumnProps) {
           display: "flex",
           "align-items": "center",
           "justify-content": "space-between",
-          padding: "6px 12px",
-          background: "#181825",
-          "border-bottom": "1px solid #313244",
-          "min-height": "36px",
+          padding: "8px 12px",
+          background: theme.islandBg,
+          "border-bottom": `1px solid ${theme.border}`,
+          "min-height": "40px",
           "user-select": "none",
         }}
       >
@@ -40,8 +43,8 @@ export function TaskColumn(props: TaskColumnProps) {
           <span
             style={{
               "font-size": "13px",
-              "font-weight": "600",
-              color: "#cdd6f4",
+              "font-weight": "500",
+              color: theme.fg,
               "white-space": "nowrap",
               overflow: "hidden",
               "text-overflow": "ellipsis",
@@ -52,8 +55,8 @@ export function TaskColumn(props: TaskColumnProps) {
           <span
             style={{
               "font-size": "11px",
-              color: "#6c7086",
-              "font-family": "monospace",
+              color: theme.fgMuted,
+              "font-family": "'JetBrains Mono', monospace",
             }}
           >
             {props.task.branchName}
@@ -67,13 +70,14 @@ export function TaskColumn(props: TaskColumnProps) {
               if (firstAgent) addAgentToTask(props.task.id, firstAgent);
             }}
             style={{
-              background: "none",
-              border: "1px solid #45475a",
-              color: "#a6adc8",
+              background: "transparent",
+              border: `1px solid ${theme.border}`,
+              color: theme.fgMuted,
               cursor: "pointer",
-              "border-radius": "4px",
-              padding: "2px 6px",
+              "border-radius": "6px",
+              padding: "2px 8px",
               "font-size": "12px",
+              transition: "background 0.15s",
             }}
             title="Add agent"
           >
@@ -85,13 +89,14 @@ export function TaskColumn(props: TaskColumnProps) {
               closeTask(props.task.id);
             }}
             style={{
-              background: "none",
-              border: "1px solid #45475a",
-              color: "#a6adc8",
+              background: "transparent",
+              border: `1px solid ${theme.border}`,
+              color: theme.fgMuted,
               cursor: "pointer",
-              "border-radius": "4px",
-              padding: "2px 6px",
+              "border-radius": "6px",
+              padding: "2px 8px",
               "font-size": "12px",
+              transition: "background 0.15s",
             }}
             title="Close task"
           >
@@ -112,7 +117,7 @@ export function TaskColumn(props: TaskColumnProps) {
                     style={{
                       flex: "1",
                       position: "relative",
-                      "border-top": "1px solid #313244",
+                      "border-top": `1px solid ${theme.border}`,
                       overflow: "hidden",
                     }}
                   >
@@ -120,14 +125,15 @@ export function TaskColumn(props: TaskColumnProps) {
                       <div
                         style={{
                           position: "absolute",
-                          top: "4px",
-                          right: "8px",
+                          top: "6px",
+                          right: "10px",
                           "z-index": "10",
                           "font-size": "11px",
-                          color: a().exitCode === 0 ? "#a6e3a1" : "#f38ba8",
-                          background: "#1e1e2ecc",
-                          padding: "2px 8px",
-                          "border-radius": "4px",
+                          color: a().exitCode === 0 ? theme.success : theme.error,
+                          background: `${theme.bgElevated}dd`,
+                          padding: "3px 10px",
+                          "border-radius": "6px",
+                          border: `1px solid ${theme.border}`,
                         }}
                       >
                         exited ({a().exitCode ?? "?"})

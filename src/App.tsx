@@ -3,6 +3,7 @@ import { onMount, onCleanup, Show } from "solid-js";
 import { Sidebar } from "./components/Sidebar";
 import { TilingLayout } from "./components/TilingLayout";
 import { NewTaskDialog } from "./components/NewTaskDialog";
+import { theme } from "./lib/theme";
 import {
   store,
   loadAgents,
@@ -64,10 +65,10 @@ function App() {
         width: "100vw",
         height: "100vh",
         display: "flex",
-        background: "#1e1e2e",
-        color: "#cdd6f4",
+        background: theme.bg,
+        color: theme.fg,
         "font-family":
-          "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          "'JetBrains Sans', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         overflow: "hidden",
       }}
     >
