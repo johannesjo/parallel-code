@@ -3,6 +3,7 @@ mod error;
 mod git;
 mod persistence;
 mod pty;
+mod shell;
 mod state;
 mod tasks;
 
@@ -16,6 +17,11 @@ pub fn run() {
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("ai_mush=info")),
         )
         .init();
+
+    // Eagerly resolve login shell PATH to avoid delay on first agent spawn
+    std::thread::spawn(|| {
+        shell::login_path();
+    });
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

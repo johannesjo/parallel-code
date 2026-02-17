@@ -45,6 +45,11 @@ pub fn spawn_agent(
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
 
+    // Inject login shell PATH so commands resolve in .desktop launches
+    if let Some(path) = crate::shell::login_path() {
+        cmd.env("PATH", path);
+    }
+
     // Clear env vars that prevent nested agent sessions
     cmd.env_remove("CLAUDECODE");
     cmd.env_remove("CLAUDE_CODE_SESSION");
