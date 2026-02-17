@@ -276,29 +276,31 @@ export function TaskPanel(props: TaskPanelProps) {
     return {
       id: "shell-terminals",
       initialSize: 120,
-      minSize: 40,
+      minSize: 0,
       content: () => (
-        <div style={{ height: "100%", display: "flex", overflow: "hidden", background: theme.bgElevated }}>
-          <For each={props.task.shellAgentIds}>
-            {(shellId, i) => (
-              <div
-                style={{
-                  flex: "1",
-                  "border-left": i() > 0 ? `1px solid ${theme.border}` : "none",
-                  overflow: "hidden",
-                }}
-              >
-                <TerminalView
-                  agentId={shellId}
-                  command={getShellCommand()}
-                  args={["-l"]}
-                  cwd={props.task.worktreePath}
-                  onExit={() => {}}
-                />
-              </div>
-            )}
-          </For>
-        </div>
+        <Show when={props.task.shellAgentIds.length > 0}>
+          <div style={{ height: "100%", display: "flex", overflow: "hidden", background: theme.bgElevated }}>
+            <For each={props.task.shellAgentIds}>
+              {(shellId, i) => (
+                <div
+                  style={{
+                    flex: "1",
+                    "border-left": i() > 0 ? `1px solid ${theme.border}` : "none",
+                    overflow: "hidden",
+                  }}
+                >
+                  <TerminalView
+                    agentId={shellId}
+                    command={getShellCommand()}
+                    args={["-l"]}
+                    cwd={props.task.worktreePath}
+                    onExit={() => {}}
+                  />
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
       ),
     };
   }
@@ -321,14 +323,13 @@ export function TaskPanel(props: TaskPanelProps) {
   }
 
   function aiTerminal(): PanelChild {
-    const agent = firstAgent();
     return {
       id: "ai-terminal",
       initialSize: 300,
       minSize: 80,
       content: () => (
         <div style={{ height: "100%", position: "relative", background: theme.bgElevated }}>
-          <Show when={agent}>
+          <Show when={firstAgent()}>
             {(a) => (
               <>
                 <Show when={a().status === "exited"}>
@@ -397,7 +398,7 @@ export function TaskPanel(props: TaskPanelProps) {
             branchInfoBar(),
             notesAndFiles(),
             shellBar(),
-            ...(props.task.shellAgentIds.length > 0 ? [shellTerminals()] : []),
+            shellTerminals(),
             lastPromptBar(),
             aiTerminal(),
             promptInput(),
