@@ -209,6 +209,10 @@ export async function sendPrompt(
   setStore("tasks", taskId, "lastPrompt", text);
 }
 
+export function setLastPrompt(taskId: string, text: string): void {
+  setStore("tasks", taskId, "lastPrompt", text);
+}
+
 export function toggleSidebar(): void {
   setStore("sidebarVisible", !store.sidebarVisible);
 }

@@ -9,6 +9,7 @@ import {
   updateTaskNotes,
   spawnShellForTask,
   closeShell,
+  setLastPrompt,
 } from "../store/store";
 import { ResizablePanel, type PanelChild } from "./ResizablePanel";
 import { EditableText } from "./EditableText";
@@ -344,6 +345,7 @@ export function TaskPanel(props: TaskPanelProps) {
                   args={a().def.args}
                   cwd={props.task.worktreePath}
                   onExit={(code) => markAgentExited(a().id, code)}
+                  onPromptDetected={(text) => setLastPrompt(props.task.id, text)}
                 />
               </>
             )}

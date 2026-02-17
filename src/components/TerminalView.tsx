@@ -14,6 +14,7 @@ interface TerminalViewProps {
   cwd: string;
   env?: Record<string, string>;
   onExit?: (code: number | null) => void;
+  onPromptDetected?: (text: string) => void;
 }
 
 export function TerminalView(props: TerminalViewProps) {
@@ -53,7 +54,27 @@ export function TerminalView(props: TerminalViewProps) {
       }
     };
 
+    let inputBuffer = "";
+
     term.onData((data) => {
+      if (props.onPromptDetected) {
+        for (const ch of data) {
+          if (ch === "\r") {
+            const trimmed = inputBuffer.trim();
+            if (trimmed) props.onPromptDetected!(trimmed);
+            inputBuffer = "";
+          } else if (ch === "\x7f") {
+            inputBuffer = inputBuffer.slice(0, -1);
+          } else if (ch === "\x03" || ch === "\x15") {
+            inputBuffer = "";
+          } else if (ch === "\x1b") {
+            // Skip escape sequences — break out, rest of data may contain seq chars
+            break;
+          } else if (ch >= " ") {
+            inputBuffer += ch;
+          }
+        }
+      }
       invoke("write_to_agent", { agentId: props.agentId, data });
     });
 
