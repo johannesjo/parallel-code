@@ -266,7 +266,16 @@ export function ResizablePanel(props: ResizablePanelProps) {
           const showHandle = () => {
             const idx = i();
             if (idx >= props.children.length - 1) return false;
-            if (child.fixed && props.children[idx + 1]?.fixed) return false;
+
+            const leftFixed = child.fixed;
+            const rightFixed = props.children[idx + 1]?.fixed;
+
+            if (leftFixed && rightFixed) return false;
+
+            // Hide handle if no resizable panel exists on either side
+            if (leftFixed && findResizable(idx, -1) < 0) return false;
+            if (!props.fitContent && rightFixed && findResizable(idx + 1, 1) < 0) return false;
+
             return true;
           };
 
