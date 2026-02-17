@@ -118,6 +118,11 @@ button {
   border-color: #3a3d42 !important;
 }
 
+/* Placeholder text */
+textarea::placeholder {
+  opacity: 0.3;
+}
+
 /* Input focus */
 .input-field:focus {
   border-color: var(--border-focus) !important;

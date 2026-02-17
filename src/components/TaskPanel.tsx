@@ -281,7 +281,7 @@ export function TaskPanel(props: TaskPanelProps) {
   function notesAndFiles(): PanelChild {
     return {
       id: "notes-files",
-      initialSize: 100,
+      initialSize: 150,
       minSize: 60,
       content: () => (
         <ResizablePanel
@@ -478,7 +478,6 @@ export function TaskPanel(props: TaskPanelProps) {
   function aiTerminal(): PanelChild {
     return {
       id: "ai-terminal",
-      initialSize: 300,
       minSize: 80,
       content: () => (
         <ScalablePanel panelId={`${props.task.id}:ai-terminal`}>
@@ -536,7 +535,7 @@ export function TaskPanel(props: TaskPanelProps) {
   function promptInput(): PanelChild {
     return {
       id: "prompt",
-      initialSize: 52,
+      initialSize: 72,
       minSize: 36,
       maxSize: 300,
       content: () => (
