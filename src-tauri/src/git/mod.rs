@@ -69,6 +69,64 @@ pub fn remove_worktree(
     Ok(())
 }
 
+/// Detect the main branch name (main or master).
+fn detect_main_branch(repo_root: &str) -> Result<String, AppError> {
+    // Check if 'main' exists
+    let output = Command::new("git")
+        .args(["rev-parse", "--verify", "main"])
+        .current_dir(repo_root)
+        .output()
+        .map_err(|e| AppError::Git(e.to_string()))?;
+    if output.status.success() {
+        return Ok("main".into());
+    }
+    // Fallback to 'master'
+    let output = Command::new("git")
+        .args(["rev-parse", "--verify", "master"])
+        .current_dir(repo_root)
+        .output()
+        .map_err(|e| AppError::Git(e.to_string()))?;
+    if output.status.success() {
+        return Ok("master".into());
+    }
+    Err(AppError::Git("Could not find main or master branch".into()))
+}
+
+#[tauri::command]
+pub fn merge_task(
+    project_root: String,
+    branch_name: String,
+) -> Result<String, AppError> {
+    let main_branch = detect_main_branch(&project_root)?;
+
+    // Checkout main branch in the repo root
+    let output = Command::new("git")
+        .args(["checkout", &main_branch])
+        .current_dir(&project_root)
+        .output()
+        .map_err(|e| AppError::Git(e.to_string()))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::Git(format!("Failed to checkout {}: {}", main_branch, stderr)));
+    }
+
+    // Merge feature branch
+    let output = Command::new("git")
+        .args(["merge", &branch_name])
+        .current_dir(&project_root)
+        .output()
+        .map_err(|e| AppError::Git(e.to_string()))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::Git(format!("Merge failed: {}", stderr)));
+    }
+
+    // Remove worktree and delete feature branch
+    remove_worktree(&project_root, &branch_name, true)?;
+
+    Ok(main_branch)
+}
+
 #[tauri::command]
 pub fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>, AppError> {
     let mut files: Vec<ChangedFile> = Vec::new();

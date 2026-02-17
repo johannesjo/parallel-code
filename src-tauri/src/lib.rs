@@ -24,6 +24,7 @@ pub fn run() {
             tasks::list_tasks,
             tasks::set_project_root,
             git::get_changed_files,
+            git::merge_task,
             persistence::save_app_state,
             persistence::load_app_state,
         ])

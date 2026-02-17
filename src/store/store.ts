@@ -155,6 +155,54 @@ export async function closeTask(taskId: string): Promise<void> {
   updateWindowTitle(activeTask?.name);
 }
 
+export async function mergeTask(taskId: string): Promise<void> {
+  const task = store.tasks[taskId];
+  if (!task || !store.projectRoot) return;
+
+  const agentIds = [...task.agentIds];
+  const shellAgentIds = [...task.shellAgentIds];
+  const branchName = task.branchName;
+
+  // Kill agents first
+  for (const agentId of agentIds) {
+    await invoke("kill_agent", { agentId }).catch(() => {});
+  }
+  for (const shellId of shellAgentIds) {
+    await invoke("kill_agent", { agentId: shellId }).catch(() => {});
+  }
+
+  // Merge branch into main, remove worktree + branch
+  await invoke<string>("merge_task", {
+    projectRoot: store.projectRoot,
+    branchName,
+  });
+
+  // Remove from UI
+  setStore(
+    produce((s) => {
+      delete s.tasks[taskId];
+      s.taskOrder = s.taskOrder.filter((id) => id !== taskId);
+      if (s.activeTaskId === taskId) {
+        s.activeTaskId = s.taskOrder[0] ?? null;
+        const firstTask = s.activeTaskId ? s.tasks[s.activeTaskId] : null;
+        s.activeAgentId = firstTask?.agentIds[0] ?? null;
+      }
+    })
+  );
+  setStore(
+    produce((s) => {
+      for (const agentId of agentIds) {
+        delete s.agents[agentId];
+      }
+    })
+  );
+
+  // Remove from Rust task state
+  invoke("delete_task", { taskId, branchName, deleteBranch: false }).catch(() => {});
+
+  updateWindowTitle(store.activeTaskId ? store.tasks[store.activeTaskId]?.name : undefined);
+}
+
 export function setActiveTask(taskId: string): void {
   const task = store.tasks[taskId];
   if (!task) return;
@@ -306,6 +354,12 @@ export async function loadState(): Promise<void> {
 
         const agentId = crypto.randomUUID();
         const agentDef = pt.agentDef;
+
+        // Enrich with resume_args from fresh defaults (handles old state files)
+        if (agentDef && !agentDef.resume_args) {
+          const fresh = s.availableAgents.find((a) => a.id === agentDef.id);
+          if (fresh) agentDef.resume_args = fresh.resume_args;
+        }
 
         const shellAgentIds: string[] = [];
         for (let i = 0; i < pt.shellCount; i++) {

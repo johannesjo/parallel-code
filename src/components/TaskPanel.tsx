@@ -3,6 +3,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   store,
   closeTask,
+  mergeTask,
   setActiveTask,
   markAgentExited,
   updateTaskName,
@@ -29,6 +30,9 @@ interface TaskPanelProps {
 
 export function TaskPanel(props: TaskPanelProps) {
   const [showCloseConfirm, setShowCloseConfirm] = createSignal(false);
+  const [showMergeConfirm, setShowMergeConfirm] = createSignal(false);
+  const [mergeError, setMergeError] = createSignal("");
+  const [merging, setMerging] = createSignal(false);
 
   const firstAgent = () => {
     const ids = props.task.agentIds;
@@ -71,6 +75,16 @@ export function TaskPanel(props: TaskPanelProps) {
             />
           </div>
           <div style={{ display: "flex", gap: "4px", "margin-left": "8px", "flex-shrink": "0" }}>
+            <IconButton
+              icon={
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z" />
+                </svg>
+              }
+              onClick={() => setShowMergeConfirm(true)}
+              title="Merge into main"
+              size="sm"
+            />
             <IconButton
               icon={
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -420,6 +434,52 @@ export function TaskPanel(props: TaskPanelProps) {
           closeTask(props.task.id);
         }}
         onCancel={() => setShowCloseConfirm(false)}
+      />
+      <ConfirmDialog
+        open={showMergeConfirm()}
+        title="Merge into Main"
+        message={
+          <div>
+            <p style={{ margin: "0 0 8px" }}>
+              This will merge <strong>{props.task.branchName}</strong> into the main branch. Afterwards:
+            </p>
+            <ul style={{ margin: "0", "padding-left": "20px", display: "flex", "flex-direction": "column", gap: "4px" }}>
+              <li>All changes will be merged into the main branch</li>
+              <li>The worktree at <strong>{props.task.worktreePath}</strong> will be removed</li>
+              <li>The feature branch <strong>{props.task.branchName}</strong> will be deleted</li>
+            </ul>
+            <Show when={mergeError()}>
+              <div style={{
+                "margin-top": "12px",
+                "font-size": "12px",
+                color: theme.error,
+                background: "#f7546414",
+                padding: "8px 12px",
+                "border-radius": "8px",
+                border: "1px solid #f7546433",
+              }}>
+                {mergeError()}
+              </div>
+            </Show>
+          </div>
+        }
+        confirmLabel={merging() ? "Merging..." : "Merge"}
+        onConfirm={async () => {
+          setMergeError("");
+          setMerging(true);
+          try {
+            await mergeTask(props.task.id);
+            setShowMergeConfirm(false);
+          } catch (err) {
+            setMergeError(String(err));
+          } finally {
+            setMerging(false);
+          }
+        }}
+        onCancel={() => {
+          setShowMergeConfirm(false);
+          setMergeError("");
+        }}
       />
     </div>
   );
