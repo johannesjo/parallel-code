@@ -52,6 +52,7 @@ export interface PersistedState {
   sidebarVisible: boolean;
   fontScales?: Record<string, number>;
   panelSizes?: Record<string, number>;
+  globalScale?: number;
 }
 
 export interface AppStore {
@@ -68,5 +69,6 @@ export interface AppStore {
   sidebarVisible: boolean;
   fontScales: Record<string, number>;
   panelSizes: Record<string, number>;
+  globalScale: number;
   taskGitStatus: Record<string, WorktreeStatus>;
 }

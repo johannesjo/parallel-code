@@ -168,6 +168,7 @@ export function Sidebar() {
     sidebarRef.addEventListener("wheel", (e) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
+      e.stopPropagation();
       adjustFontScale("sidebar", e.deltaY < 0 ? 1 : -1);
     }, { passive: false });
   });

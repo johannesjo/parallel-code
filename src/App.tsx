@@ -15,6 +15,9 @@ import {
   navigateAgent,
   moveActiveTask,
   resetFontScale,
+  getGlobalScale,
+  adjustGlobalScale,
+  resetGlobalScale,
   startTaskStatusPolling,
   stopTaskStatusPolling,
 } from "./store/store";
@@ -22,11 +25,19 @@ import { registerShortcut, initShortcuts } from "./lib/shortcuts";
 import { setupAutosave } from "./store/autosave";
 
 function App() {
+  let mainRef!: HTMLElement;
+
   onMount(async () => {
     await loadAgents();
     await loadState();
     setupAutosave();
     startTaskStatusPolling();
+
+    mainRef.addEventListener("wheel", (e) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      adjustGlobalScale(e.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
 
     const cleanupShortcuts = initShortcuts();
 
@@ -41,6 +52,7 @@ function App() {
     registerShortcut({ key: "Escape", handler: () => { if (store.showNewTaskDialog) toggleNewTaskDialog(false); } });
     registerShortcut({ key: "0", ctrl: true, handler: () => {
       resetFontScale(store.activeTaskId ?? "sidebar");
+      resetGlobalScale();
     } });
 
     onCleanup(() => {
@@ -86,9 +98,12 @@ function App() {
       </div>
     )}>
       <main
+        ref={mainRef}
         style={{
-          width: "100vw",
-          height: "100vh",
+          width: `${100 / getGlobalScale()}vw`,
+          height: `${100 / getGlobalScale()}vh`,
+          transform: `scale(${getGlobalScale()})`,
+          "transform-origin": "0 0",
           display: "flex",
           background: theme.bg,
           color: theme.fg,

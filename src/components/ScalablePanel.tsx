@@ -14,6 +14,7 @@ export function ScalablePanel(props: ScalablePanelProps) {
     ref.addEventListener("wheel", (e) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
+      e.stopPropagation();
       adjustFontScale(props.panelId, e.deltaY < 0 ? 1 : -1);
     }, { passive: false });
   });

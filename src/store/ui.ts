@@ -31,6 +31,22 @@ export function resetFontScale(panelId: string): void {
   }
 }
 
+// --- Global Scale ---
+
+export function getGlobalScale(): number {
+  return store.globalScale;
+}
+
+export function adjustGlobalScale(delta: 1 | -1): void {
+  const current = store.globalScale;
+  const next = Math.round(Math.min(MAX_SCALE, Math.max(MIN_SCALE, current + delta * SCALE_STEP)) * 10) / 10;
+  setStore("globalScale", next);
+}
+
+export function resetGlobalScale(): void {
+  setStore("globalScale", 1);
+}
+
 // --- Panel Sizes ---
 
 export function getPanelSize(key: string): number | undefined {

@@ -16,6 +16,7 @@ export async function saveState(): Promise<void> {
     sidebarVisible: store.sidebarVisible,
     fontScales: { ...store.fontScales },
     panelSizes: { ...store.panelSizes },
+    globalScale: store.globalScale,
   };
 
   for (const taskId of store.taskOrder) {
@@ -112,6 +113,7 @@ export async function loadState(): Promise<void> {
       const rawAny = raw as unknown as Record<string, unknown>;
       s.fontScales = isStringNumberRecord(rawAny.fontScales) ? rawAny.fontScales : {};
       s.panelSizes = isStringNumberRecord(rawAny.panelSizes) ? rawAny.panelSizes : {};
+      s.globalScale = typeof rawAny.globalScale === "number" ? rawAny.globalScale : 1;
 
       for (const taskId of raw.taskOrder) {
         const pt = raw.tasks[taskId];

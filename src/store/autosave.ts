@@ -9,6 +9,7 @@ export function setupAutosave(): void {
     void store.taskOrder.length;
     void store.activeTaskId;
     void store.sidebarVisible;
+    void store.globalScale;
     void store.projects.length;
     void store.lastProjectId;
     void store.lastAgentId;
