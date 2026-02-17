@@ -349,7 +349,7 @@ export function TaskPanel(props: TaskPanelProps) {
                 <TerminalView
                   agentId={a().id}
                   command={a().def.command}
-                  args={a().def.args}
+                  args={a().resumed && a().def.resume_args?.length ? a().def.resume_args! : a().def.args}
                   cwd={props.task.worktreePath}
                   onExit={(code) => markAgentExited(a().id, code)}
                   onPromptDetected={(text) => setLastPrompt(props.task.id, text)}
