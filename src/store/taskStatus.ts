@@ -12,18 +12,17 @@ const lastDataAt = new Map<string, number>();
 const [activeAgents, setActiveAgents] = createSignal<Set<string>>(new Set());
 
 // How long after the last data event before transitioning back to idle.
-const INACTIVE_TIMEOUT_MS = 10_000;
-// Delay before confirming an agent is truly working (filters out single
-// bursts like terminal redraws on focus change).
-const ACTIVATION_DELAY_MS = 1_500;
+// AI agents routinely go silent for 10-30s during normal work (thinking,
+// API calls, tool use), so this needs to be long enough to cover those pauses.
+const IDLE_TIMEOUT_MS = 45_000;
 // Throttle reactive updates while already active.
 const THROTTLE_MS = 1_000;
 
-const inactivityTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const activationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function addToActive(agentId: string): void {
   setActiveAgents((s) => {
+    if (s.has(agentId)) return s;
     const next = new Set(s);
     next.add(agentId);
     return next;
@@ -39,16 +38,24 @@ function removeFromActive(agentId: string): void {
   });
 }
 
-function resetInactivityTimer(agentId: string): void {
-  const existing = inactivityTimers.get(agentId);
+function resetIdleTimer(agentId: string): void {
+  const existing = idleTimers.get(agentId);
   if (existing) clearTimeout(existing);
-  inactivityTimers.set(
+  idleTimers.set(
     agentId,
     setTimeout(() => {
       removeFromActive(agentId);
-      inactivityTimers.delete(agentId);
-    }, INACTIVE_TIMEOUT_MS)
+      idleTimers.delete(agentId);
+    }, IDLE_TIMEOUT_MS)
   );
+}
+
+/** Mark an agent as active when it is first spawned.
+ *  Ensures agents start as "busy" before any PTY data arrives. */
+export function markAgentSpawned(agentId: string): void {
+  lastDataAt.set(agentId, Date.now());
+  addToActive(agentId);
+  resetIdleTimer(agentId);
 }
 
 /** Call this from the TerminalView Data handler. */
@@ -57,43 +64,25 @@ export function markAgentActive(agentId: string): void {
   const prev = lastDataAt.get(agentId) ?? 0;
   lastDataAt.set(agentId, now);
 
+  // Already active — just reset the idle timer (throttled).
   if (activeAgents().has(agentId)) {
-    // Already active — just reset the inactivity timer (throttled).
     if (now - prev < THROTTLE_MS) return;
-    resetInactivityTimer(agentId);
+    resetIdleTimer(agentId);
     return;
   }
 
-  // Not yet active — schedule a confirmation check.
-  // If data is still flowing when the timer fires, the agent is truly working.
-  // Single bursts (e.g. terminal redraw on focus) will have stopped by then.
-  if (!activationTimers.has(agentId)) {
-    activationTimers.set(
-      agentId,
-      setTimeout(() => {
-        activationTimers.delete(agentId);
-        const last = lastDataAt.get(agentId) ?? 0;
-        if (Date.now() - last < 1_000) {
-          addToActive(agentId);
-          resetInactivityTimer(agentId);
-        }
-      }, ACTIVATION_DELAY_MS)
-    );
-  }
+  // Not yet active — activate immediately and start idle timer.
+  addToActive(agentId);
+  resetIdleTimer(agentId);
 }
 
 /** Clean up timers when an agent exits. */
 export function clearAgentActivity(agentId: string): void {
   lastDataAt.delete(agentId);
-  const inactivity = inactivityTimers.get(agentId);
-  if (inactivity) {
-    clearTimeout(inactivity);
-    inactivityTimers.delete(agentId);
-  }
-  const activation = activationTimers.get(agentId);
-  if (activation) {
-    clearTimeout(activation);
-    activationTimers.delete(agentId);
+  const timer = idleTimers.get(agentId);
+  if (timer) {
+    clearTimeout(timer);
+    idleTimers.delete(agentId);
   }
   removeFromActive(agentId);
 }
