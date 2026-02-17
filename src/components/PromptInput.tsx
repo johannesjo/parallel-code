@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import { sendPrompt } from "../store/store";
 import { theme } from "../lib/theme";
+import { sf } from "../lib/fontScale";
 
 interface PromptInputProps {
   taskId: string;
@@ -43,7 +44,7 @@ export function PromptInput(props: PromptInputProps) {
           "border-radius": "6px",
           padding: "6px 10px",
           color: theme.fg,
-          "font-size": "12px",
+          "font-size": sf(12),
           "font-family": "'JetBrains Mono', monospace",
           resize: "none",
           outline: "none",

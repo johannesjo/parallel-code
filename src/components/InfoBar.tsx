@@ -1,4 +1,5 @@
 import { theme } from "../lib/theme";
+import { sf } from "../lib/fontScale";
 import type { JSX } from "solid-js";
 
 interface InfoBarProps {
@@ -22,7 +23,7 @@ export function InfoBar(props: InfoBarProps) {
         padding: "0 10px",
         background: theme.bgElevated,
         "font-family": "'JetBrains Mono', monospace",
-        "font-size": "11px",
+        "font-size": sf(11),
         color: theme.fgMuted,
         "white-space": "nowrap",
         overflow: "hidden",

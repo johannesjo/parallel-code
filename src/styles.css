@@ -256,7 +256,7 @@ body.dragging-task * {
 
 /* Editable text */
 .editable-text {
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
   font-weight: 500;
   color: var(--fg);
 }

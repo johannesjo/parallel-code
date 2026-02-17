@@ -1,4 +1,4 @@
-import { Show, For, createSignal } from "solid-js";
+import { Show, For, createSignal, onMount } from "solid-js";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   store,
@@ -15,6 +15,8 @@ import {
   reorderTask,
   dismissPlan,
   executeEditedPlan,
+  getFontScale,
+  adjustFontScale,
 } from "../store/store";
 import { ResizablePanel, type PanelChild } from "./ResizablePanel";
 import { EditableText } from "./EditableText";
@@ -27,6 +29,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { DiffViewerDialog } from "./DiffViewerDialog";
 import { PlanEditorDialog } from "./PlanEditorDialog";
 import { theme } from "../lib/theme";
+import { sf } from "../lib/fontScale";
 import type { Task } from "../store/types";
 import type { ChangedFile } from "../ipc/types";
 
@@ -278,7 +281,7 @@ export function TaskPanel(props: TaskPanelProps) {
                     border: "none",
                     padding: "6px 8px",
                     color: theme.fg,
-                    "font-size": "11px",
+                    "font-size": sf(11),
                     "font-family": "'JetBrains Mono', monospace",
                     resize: "none",
                     outline: "none",
@@ -304,7 +307,7 @@ export function TaskPanel(props: TaskPanelProps) {
                   <div
                     style={{
                       padding: "4px 8px",
-                      "font-size": "10px",
+                      "font-size": sf(10),
                       "font-weight": "600",
                       color: theme.fgMuted,
                       "text-transform": "uppercase",
@@ -363,21 +366,21 @@ export function TaskPanel(props: TaskPanelProps) {
                 cursor: "pointer",
                 "border-radius": "4px",
                 padding: "2px 8px",
-                "font-size": "11px",
+                "font-size": sf(11),
                 "line-height": "1",
                 display: "flex",
                 "align-items": "center",
                 gap: "4px",
               }}
             >
-              <span style={{ "font-family": "monospace", "font-size": "13px" }}>&gt;_</span>
+              <span style={{ "font-family": "monospace", "font-size": sf(13) }}>&gt;_</span>
               <span>Terminal</span>
             </button>
             <For each={props.task.shellAgentIds}>
               {(shellId, i) => (
                 <span
                   style={{
-                    "font-size": "10px",
+                    "font-size": sf(10),
                     color: theme.fgMuted,
                     padding: "2px 4px 2px 8px",
                     "border-radius": "3px",
@@ -430,6 +433,7 @@ export function TaskPanel(props: TaskPanelProps) {
                       args={["-l"]}
                       cwd={props.task.worktreePath}
                       onExit={() => {}}
+                      fontSize={Math.round(13 * getFontScale(props.task.id))}
                     />
                   </div>
                 )}
@@ -467,7 +471,7 @@ export function TaskPanel(props: TaskPanelProps) {
                         top: "8px",
                         right: "12px",
                         "z-index": "10",
-                        "font-size": "11px",
+                        "font-size": sf(11),
                         color: a().exitCode === 0 ? theme.success : theme.error,
                         background: "color-mix(in srgb, var(--island-bg) 80%, transparent)",
                         padding: "4px 12px",
@@ -494,7 +498,7 @@ export function TaskPanel(props: TaskPanelProps) {
                         padding: "6px 12px",
                         "border-radius": "8px",
                         border: `1px solid ${theme.accent}`,
-                        "font-size": "11px",
+                        "font-size": sf(11),
                         color: theme.fg,
                         "white-space": "nowrap",
                       }}
@@ -511,7 +515,7 @@ export function TaskPanel(props: TaskPanelProps) {
                           padding: "3px 10px",
                           "border-radius": "4px",
                           cursor: "pointer",
-                          "font-size": "11px",
+                          "font-size": sf(11),
                           "font-weight": "600",
                           "font-family": "inherit",
                         }}
@@ -546,6 +550,7 @@ export function TaskPanel(props: TaskPanelProps) {
                     onExit={(code) => markAgentExited(a().id, code)}
                     onPromptDetected={(text) => setLastPrompt(props.task.id, text)}
                     planPrompt={a().planPrompt ?? undefined}
+                    fontSize={Math.round(13 * getFontScale(props.task.id))}
                   />
                 </>
               )}
@@ -568,10 +573,21 @@ export function TaskPanel(props: TaskPanelProps) {
     };
   }
 
+  let panelRef!: HTMLDivElement;
+  onMount(() => {
+    panelRef.addEventListener("wheel", (e) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      adjustFontScale(props.task.id, e.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
+  });
+
   return (
     <div
+      ref={panelRef}
       class={`task-column ${props.isActive ? "active" : ""}`}
       style={{
+        "--font-scale": String(getFontScale(props.task.id)),
         display: "flex",
         "flex-direction": "column",
         height: "100%",

@@ -6,14 +6,14 @@ import type { AppStore, Agent, Task, PersistedState, PersistedTask, Project } fr
 
 // --- Plan Watcher ---
 
-export async function startPlanWatcher(taskId: string, worktreePath: string): Promise<void> {
-  await invoke("watch_for_plans", { taskId, watchPath: worktreePath }).catch((e) =>
+export async function startGlobalPlanWatcher(): Promise<void> {
+  await invoke("watch_for_plans").catch((e) =>
     console.warn("Failed to start plan watcher:", e)
   );
 }
 
-export async function stopPlanWatcher(taskId: string): Promise<void> {
-  await invoke("stop_watching_plans", { taskId }).catch(() => {});
+export async function stopGlobalPlanWatcher(): Promise<void> {
+  await invoke("stop_watching_plans").catch(() => {});
 }
 
 export function setPendingPlan(
@@ -25,24 +25,19 @@ export function setPendingPlan(
   setStore("tasks", taskId, "pendingPlan", { filePath, fileName, content });
 }
 
-// Track dismissed plan file paths per task to prevent re-triggering
-const dismissedPlans = new Map<string, Set<string>>();
+// Track dismissed plan file paths to prevent re-triggering
+const dismissedPlanPaths = new Set<string>();
 
 export function dismissPlan(taskId: string): void {
   const plan = store.tasks[taskId]?.pendingPlan;
   if (plan) {
-    if (!dismissedPlans.has(taskId)) dismissedPlans.set(taskId, new Set());
-    dismissedPlans.get(taskId)!.add(plan.filePath);
+    dismissedPlanPaths.add(plan.filePath);
   }
   setStore("tasks", taskId, "pendingPlan", null);
 }
 
-export function isPlanDismissed(taskId: string, filePath: string): boolean {
-  return dismissedPlans.get(taskId)?.has(filePath) ?? false;
-}
-
-export function clearDismissedPlans(taskId: string): void {
-  dismissedPlans.delete(taskId);
+export function isPlanDismissed(filePath: string): boolean {
+  return dismissedPlanPaths.has(filePath);
 }
 
 export async function executeEditedPlan(taskId: string, editedContent: string): Promise<void> {
@@ -56,10 +51,9 @@ export async function executeEditedPlan(taskId: string, editedContent: string): 
   // Snapshot values before async operations
   const agentDef = { ...oldAgent.def };
   const planFilePath = task.pendingPlan?.filePath;
-  const worktreePath = task.worktreePath;
 
-  // Stop watcher before writing to avoid re-trigger
-  await stopPlanWatcher(taskId);
+  // Suppress re-trigger for this file path
+  if (planFilePath) dismissedPlanPaths.add(planFilePath);
 
   // Kill the current agent
   await invoke("kill_agent", { agentId: oldAgentId }).catch(() => {});
@@ -112,8 +106,6 @@ export async function executeEditedPlan(taskId: string, editedContent: string): 
     })
   );
 
-  // Restart watcher for future plan detections
-  startPlanWatcher(taskId, worktreePath);
 }
 
 const [store, setStore] = createStore<AppStore>({
@@ -127,9 +119,30 @@ const [store, setStore] = createStore<AppStore>({
   availableAgents: [],
   showNewTaskDialog: false,
   sidebarVisible: true,
+  fontScales: {},
 });
 
 export { store };
+
+// --- Font Scale ---
+
+const MIN_SCALE = 0.5;
+const MAX_SCALE = 2.0;
+const SCALE_STEP = 0.1;
+
+export function getFontScale(panelId: string): number {
+  return store.fontScales[panelId] ?? 1;
+}
+
+export function adjustFontScale(panelId: string, delta: 1 | -1): void {
+  const current = getFontScale(panelId);
+  const next = Math.round(Math.min(MAX_SCALE, Math.max(MIN_SCALE, current + delta * SCALE_STEP)) * 10) / 10;
+  setStore("fontScales", panelId, next);
+}
+
+export function resetFontScale(panelId: string): void {
+  setStore("fontScales", panelId, 1.0);
+}
 
 // --- Projects ---
 
@@ -232,7 +245,6 @@ export async function createTask(
   );
 
   updateWindowTitle(name);
-  startPlanWatcher(result.id, result.worktree_path);
 }
 
 export async function addAgentToTask(
@@ -277,9 +289,6 @@ export async function closeTask(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
   if (!task) return;
 
-  stopPlanWatcher(taskId);
-  clearDismissedPlans(taskId);
-
   const agentIds = [...task.agentIds];
   const shellAgentIds = [...task.shellAgentIds];
   const branchName = task.branchName;
@@ -289,6 +298,7 @@ export async function closeTask(taskId: string): Promise<void> {
   setStore(
     produce((s) => {
       delete s.tasks[taskId];
+      delete s.fontScales[taskId];
       s.taskOrder = s.taskOrder.filter((id) => id !== taskId);
 
       if (s.activeTaskId === taskId) {
@@ -330,9 +340,6 @@ export async function closeTask(taskId: string): Promise<void> {
 export async function mergeTask(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
   if (!task) return;
-
-  stopPlanWatcher(taskId);
-  clearDismissedPlans(taskId);
 
   const projectRoot = getProjectPath(task.projectId);
   if (!projectRoot) return;
@@ -511,6 +518,7 @@ export async function saveState(): Promise<void> {
     tasks: {},
     activeTaskId: store.activeTaskId,
     sidebarVisible: store.sidebarVisible,
+    fontScales: { ...store.fontScales },
   };
 
   for (const taskId of store.taskOrder) {
@@ -591,6 +599,7 @@ export async function loadState(): Promise<void> {
       s.taskOrder = raw.taskOrder;
       s.activeTaskId = raw.activeTaskId;
       s.sidebarVisible = raw.sidebarVisible;
+      s.fontScales = (raw as unknown as { fontScales?: Record<string, number> }).fontScales ?? {};
 
       for (const taskId of raw.taskOrder) {
         const pt = raw.tasks[taskId];
@@ -645,14 +654,6 @@ export async function loadState(): Promise<void> {
       }
     })
   );
-
-  // Start plan watchers for all restored tasks
-  for (const taskId of store.taskOrder) {
-    const task = store.tasks[taskId];
-    if (task) {
-      startPlanWatcher(taskId, task.worktreePath);
-    }
-  }
 
   // Update window title
   const activeTask = store.activeTaskId ? store.tasks[store.activeTaskId] : null;

@@ -1,6 +1,7 @@
 import { createSignal, createEffect, onCleanup, For, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { theme } from "../lib/theme";
+import { sf } from "../lib/fontScale";
 import type { ChangedFile } from "../ipc/types";
 
 interface ChangedFilesListProps {
@@ -49,7 +50,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
         height: "100%",
         overflow: "hidden",
         "font-family": "'JetBrains Mono', monospace",
-        "font-size": "11px",
+        "font-size": sf(11),
       }}
     >
       <div style={{ flex: "1", overflow: "auto", padding: "4px 0" }}>

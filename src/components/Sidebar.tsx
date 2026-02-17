@@ -8,9 +8,12 @@ import {
   setActiveTask,
   toggleSidebar,
   reorderTask,
+  getFontScale,
+  adjustFontScale,
 } from "../store/store";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { theme } from "../lib/theme";
+import { sf } from "../lib/fontScale";
 
 const DRAG_THRESHOLD = 5;
 
@@ -158,9 +161,20 @@ export function Sidebar() {
     return store.taskOrder.indexOf(taskId);
   }
 
+  let sidebarRef!: HTMLDivElement;
+  onMount(() => {
+    sidebarRef.addEventListener("wheel", (e) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      adjustFontScale("sidebar", e.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
+  });
+
   return (
     <div
+      ref={sidebarRef}
       style={{
+        "--font-scale": String(getFontScale("sidebar")),
         width: "240px",
         "min-width": "240px",
         background: theme.islandBg,
@@ -183,12 +197,12 @@ export function Sidebar() {
             display: "flex",
             "align-items": "center",
             "justify-content": "center",
-            "font-size": "12px",
+            "font-size": sf(12),
             "font-weight": "600",
             color: "#fff",
             "flex-shrink": "0",
           }}>M</div>
-          <span style={{ "font-size": "14px", "font-weight": "600", color: theme.fg }}>
+          <span style={{ "font-size": sf(14), "font-weight": "600", color: theme.fg }}>
             AI Mush
           </span>
         </div>
@@ -203,7 +217,7 @@ export function Sidebar() {
             cursor: "pointer",
             "border-radius": "6px",
             padding: "2px 6px",
-            "font-size": "11px",
+            "font-size": sf(11),
             "line-height": "1",
           }}
         >
@@ -214,7 +228,7 @@ export function Sidebar() {
       {/* Projects section */}
       <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
         <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", padding: "0 2px" }}>
-          <label style={{ "font-size": "11px", color: theme.fgMuted, "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
+          <label style={{ "font-size": sf(11), color: theme.fgMuted, "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
             Projects
           </label>
           <button
@@ -226,7 +240,7 @@ export function Sidebar() {
               border: "none",
               color: theme.fgMuted,
               cursor: "pointer",
-              "font-size": "14px",
+              "font-size": sf(14),
               "line-height": "1",
               padding: "0 2px",
             }}
@@ -245,7 +259,7 @@ export function Sidebar() {
                 padding: "4px 6px",
                 "border-radius": "6px",
                 background: theme.bgInput,
-                "font-size": "11px",
+                "font-size": sf(11),
               }}
             >
               <div style={{
@@ -259,7 +273,7 @@ export function Sidebar() {
                 <div style={{ color: theme.fg, "font-weight": "500", "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis" }}>
                   {project.name}
                 </div>
-                <div style={{ color: theme.fgSubtle, "font-size": "10px", "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis" }}>
+                <div style={{ color: theme.fgSubtle, "font-size": sf(10), "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis" }}>
                   {abbreviatePath(project.path)}
                 </div>
               </div>
@@ -272,7 +286,7 @@ export function Sidebar() {
                   border: "none",
                   color: theme.fgSubtle,
                   cursor: "pointer",
-                  "font-size": "12px",
+                  "font-size": sf(12),
                   "line-height": "1",
                   padding: "0 2px",
                   "flex-shrink": "0",
@@ -285,7 +299,7 @@ export function Sidebar() {
         </For>
 
         <Show when={store.projects.length === 0}>
-          <span style={{ "font-size": "10px", color: theme.fgSubtle, padding: "0 2px" }}>
+          <span style={{ "font-size": sf(10), color: theme.fgSubtle, padding: "0 2px" }}>
             No projects. Click + to add one.
           </span>
         </Show>
@@ -304,7 +318,7 @@ export function Sidebar() {
           padding: "9px 14px",
           color: theme.accentText,
           cursor: "pointer",
-          "font-size": "13px",
+          "font-size": sf(13),
           "font-weight": "500",
         }}
       >
@@ -319,7 +333,7 @@ export function Sidebar() {
             return (
               <Show when={projectTasks().length > 0}>
                 <span style={{
-                  "font-size": "10px",
+                  "font-size": sf(10),
                   color: theme.fgSubtle,
                   "text-transform": "uppercase",
                   "letter-spacing": "0.05em",
@@ -357,7 +371,7 @@ export function Sidebar() {
                             "border-radius": "6px",
                             background: "transparent",
                             color: store.activeTaskId === taskId ? theme.fg : theme.fgMuted,
-                            "font-size": "12px",
+                            "font-size": sf(12),
                             "font-weight": store.activeTaskId === taskId ? "500" : "400",
                             cursor: dragFromIndex() !== null ? "grabbing" : "pointer",
                             "white-space": "nowrap",
@@ -380,7 +394,7 @@ export function Sidebar() {
         {/* Orphaned tasks (no matching project) */}
         <Show when={tasksByProject().orphaned.length > 0}>
           <span style={{
-            "font-size": "10px",
+            "font-size": sf(10),
             color: theme.fgSubtle,
             "text-transform": "uppercase",
             "letter-spacing": "0.05em",
@@ -408,7 +422,7 @@ export function Sidebar() {
                       "border-radius": "6px",
                       background: "transparent",
                       color: store.activeTaskId === taskId ? theme.fg : theme.fgMuted,
-                      "font-size": "12px",
+                      "font-size": sf(12),
                       "font-weight": store.activeTaskId === taskId ? "500" : "400",
                       cursor: dragFromIndex() !== null ? "grabbing" : "pointer",
                       "white-space": "nowrap",

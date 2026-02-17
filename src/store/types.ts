@@ -49,6 +49,7 @@ export interface PersistedState {
   tasks: Record<string, PersistedTask>;
   activeTaskId: string | null;
   sidebarVisible: boolean;
+  fontScales?: Record<string, number>;
 }
 
 export interface AppStore {
@@ -62,4 +63,5 @@ export interface AppStore {
   availableAgents: AgentDef[];
   showNewTaskDialog: boolean;
   sidebarVisible: boolean;
+  fontScales: Record<string, number>;
 }

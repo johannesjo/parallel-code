@@ -24,7 +24,9 @@ export function setupAutosave(): void {
         void t.lastPrompt;
         void t.name;
       }
+      void store.fontScales[id];
     }
+    void store.fontScales["sidebar"];
 
     // Debounce 1s
     clearTimeout(timer);
