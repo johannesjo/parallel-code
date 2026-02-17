@@ -20,8 +20,10 @@ import { PromptInput } from "./PromptInput";
 import { ChangedFilesList } from "./ChangedFilesList";
 import { TerminalView } from "./TerminalView";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { DiffViewerDialog } from "./DiffViewerDialog";
 import { theme } from "../lib/theme";
 import type { Task } from "../store/types";
+import type { ChangedFile } from "../ipc/types";
 
 interface TaskPanelProps {
   task: Task;
@@ -33,6 +35,7 @@ export function TaskPanel(props: TaskPanelProps) {
   const [showMergeConfirm, setShowMergeConfirm] = createSignal(false);
   const [mergeError, setMergeError] = createSignal("");
   const [merging, setMerging] = createSignal(false);
+  const [diffFile, setDiffFile] = createSignal<ChangedFile | null>(null);
 
   const firstAgent = () => {
     const ids = props.task.agentIds;
@@ -77,23 +80,21 @@ export function TaskPanel(props: TaskPanelProps) {
           <div style={{ display: "flex", gap: "4px", "margin-left": "8px", "flex-shrink": "0" }}>
             <IconButton
               icon={
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z" />
                 </svg>
               }
               onClick={() => setShowMergeConfirm(true)}
               title="Merge into main"
-              size="sm"
             />
             <IconButton
               icon={
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
                 </svg>
               }
               onClick={() => setShowCloseConfirm(true)}
               title="Close task"
-              size="sm"
             />
           </div>
         </div>
@@ -191,7 +192,7 @@ export function TaskPanel(props: TaskPanelProps) {
                     Changed Files
                   </div>
                   <div style={{ flex: "1", overflow: "hidden" }}>
-                    <ChangedFilesList worktreePath={props.task.worktreePath} />
+                    <ChangedFilesList worktreePath={props.task.worktreePath} onFileClick={setDiffFile} />
                   </div>
                 </div>
               ),
@@ -472,6 +473,11 @@ export function TaskPanel(props: TaskPanelProps) {
           setShowMergeConfirm(false);
           setMergeError("");
         }}
+      />
+      <DiffViewerDialog
+        file={diffFile()}
+        worktreePath={props.task.worktreePath}
+        onClose={() => setDiffFile(null)}
       />
     </div>
   );
