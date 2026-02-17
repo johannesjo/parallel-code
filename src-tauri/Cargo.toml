@@ -28,4 +28,6 @@ uuid = { version = "1", features = ["v4", "serde"] }
 parking_lot = "0.12"
 thiserror = "2"
 tauri-plugin-dialog = "2.6.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

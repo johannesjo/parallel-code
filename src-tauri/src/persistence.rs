@@ -18,16 +18,41 @@ pub fn save_app_state(app: tauri::AppHandle, json: String) -> Result<(), AppErro
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&path, json)?;
+
+    // Atomic write: write to temp file, then rename (atomic on POSIX)
+    let tmp_path = path.with_extension("json.tmp");
+    fs::write(&tmp_path, &json)?;
+
+    // Keep one backup of the previous state
+    if path.exists() {
+        let backup_path = path.with_extension("json.bak");
+        let _ = fs::rename(&path, &backup_path);
+    }
+
+    fs::rename(&tmp_path, &path)?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn load_app_state(app: tauri::AppHandle) -> Result<Option<String>, AppError> {
     let path = state_file_path(&app)?;
-    if !path.exists() {
-        return Ok(None);
+
+    // Try primary state file first
+    if path.exists() {
+        let content = fs::read_to_string(&path)?;
+        if !content.trim().is_empty() {
+            return Ok(Some(content));
+        }
     }
-    let content = fs::read_to_string(&path)?;
-    Ok(Some(content))
+
+    // Fall back to backup if primary is missing or empty
+    let backup_path = path.with_extension("json.bak");
+    if backup_path.exists() {
+        let content = fs::read_to_string(&backup_path)?;
+        if !content.trim().is_empty() {
+            return Ok(Some(content));
+        }
+    }
+
+    Ok(None)
 }

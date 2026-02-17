@@ -28,6 +28,9 @@ export function setupAutosave(): void {
     for (const key of Object.keys(store.fontScales)) {
       void store.fontScales[key];
     }
+    for (const key of Object.keys(store.panelSizes)) {
+      void store.panelSizes[key];
+    }
 
     // Debounce 1s
     clearTimeout(timer);

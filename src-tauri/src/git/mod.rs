@@ -2,6 +2,7 @@ pub mod types;
 
 use std::path::Path;
 use std::process::Command;
+use tracing::{info, error};
 
 use crate::error::AppError;
 use types::{ChangedFile, WorktreeInfo};
@@ -12,6 +13,7 @@ pub fn create_worktree(
     symlink_dirs: &[String],
 ) -> Result<WorktreeInfo, AppError> {
     let worktree_path = format!("{}/.worktrees/{}", repo_root, branch_name);
+    info!(branch = %branch_name, path = %worktree_path, "Creating worktree");
 
     // Create the branch (ignore error if it already exists)
     let _ = Command::new("git")
@@ -63,22 +65,26 @@ const SYMLINK_CANDIDATES: &[&str] = &[
 
 /// Return names of top-level gitignored directories that are useful to symlink.
 #[tauri::command]
-pub fn get_gitignored_dirs(project_root: String) -> Vec<String> {
-    let root = Path::new(&project_root);
-    SYMLINK_CANDIDATES
-        .iter()
-        .filter(|name| {
-            let path = root.join(name);
-            path.is_dir()
-                && Command::new("git")
-                    .args(["check-ignore", "-q", name])
-                    .current_dir(&project_root)
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false)
-        })
-        .map(|s| s.to_string())
-        .collect()
+pub async fn get_gitignored_dirs(project_root: String) -> Result<Vec<String>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = Path::new(&project_root);
+        Ok(SYMLINK_CANDIDATES
+            .iter()
+            .filter(|name| {
+                let path = root.join(name);
+                path.is_dir()
+                    && Command::new("git")
+                        .args(["check-ignore", "-q", name])
+                        .current_dir(&project_root)
+                        .output()
+                        .map(|o| o.status.success())
+                        .unwrap_or(false)
+            })
+            .map(|s| s.to_string())
+            .collect())
+    })
+    .await
+    .map_err(|e| AppError::Git(e.to_string()))?
 }
 
 pub fn remove_worktree(
@@ -87,6 +93,7 @@ pub fn remove_worktree(
     delete_branch: bool,
 ) -> Result<(), AppError> {
     let worktree_path = format!("{}/.worktrees/{}", repo_root, branch_name);
+    info!(branch = %branch_name, path = %worktree_path, delete_branch, "Removing worktree");
 
     let output = Command::new("git")
         .args(["worktree", "remove", "--force", &worktree_path])
@@ -96,6 +103,7 @@ pub fn remove_worktree(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        error!(branch = %branch_name, stderr = %stderr, "Failed to remove worktree");
         return Err(AppError::Git(format!(
             "Failed to remove worktree: {}",
             stderr
@@ -136,16 +144,25 @@ fn detect_main_branch(repo_root: &str) -> Result<String, AppError> {
 }
 
 #[tauri::command]
-pub fn merge_task(
+pub async fn merge_task(
     project_root: String,
     branch_name: String,
 ) -> Result<String, AppError> {
-    let main_branch = detect_main_branch(&project_root)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        merge_task_sync(&project_root, &branch_name)
+    })
+    .await
+    .map_err(|e| AppError::Git(e.to_string()))?
+}
+
+fn merge_task_sync(project_root: &str, branch_name: &str) -> Result<String, AppError> {
+    info!(branch = %branch_name, root = %project_root, "Merging task branch");
+    let main_branch = detect_main_branch(project_root)?;
 
     // Checkout main branch in the repo root
     let output = Command::new("git")
         .args(["checkout", &main_branch])
-        .current_dir(&project_root)
+        .current_dir(project_root)
         .output()
         .map_err(|e| AppError::Git(e.to_string()))?;
     if !output.status.success() {
@@ -155,8 +172,8 @@ pub fn merge_task(
 
     // Merge feature branch
     let output = Command::new("git")
-        .args(["merge", &branch_name])
-        .current_dir(&project_root)
+        .args(["merge", branch_name])
+        .current_dir(project_root)
         .output()
         .map_err(|e| AppError::Git(e.to_string()))?;
     if !output.status.success() {
@@ -165,20 +182,28 @@ pub fn merge_task(
     }
 
     // Remove worktree and delete feature branch
-    remove_worktree(&project_root, &branch_name, true)?;
+    remove_worktree(project_root, branch_name, true)?;
 
     Ok(main_branch)
 }
 
 #[tauri::command]
-pub fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>, AppError> {
+pub async fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        get_changed_files_sync(&worktree_path)
+    })
+    .await
+    .map_err(|e| AppError::Git(e.to_string()))?
+}
+
+fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppError> {
     let mut files: Vec<ChangedFile> = Vec::new();
-    let main_branch = detect_main_branch(&worktree_path).unwrap_or_else(|_| "HEAD".into());
+    let main_branch = detect_main_branch(worktree_path).unwrap_or_else(|_| "HEAD".into());
 
     // git diff --name-status against main: statuses for all tracked changes (committed + uncommitted)
     let name_status_str = Command::new("git")
         .args(["diff", "--name-status", &main_branch])
-        .current_dir(&worktree_path)
+        .current_dir(worktree_path)
         .output()
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
@@ -198,7 +223,7 @@ pub fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>, AppE
     // git status --porcelain for untracked files only
     let status_str = Command::new("git")
         .args(["status", "--porcelain"])
-        .current_dir(&worktree_path)
+        .current_dir(worktree_path)
         .output()
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
@@ -214,7 +239,7 @@ pub fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>, AppE
     // git diff --numstat against main for line counts
     let diff_str = Command::new("git")
         .args(["diff", "--numstat", &main_branch])
-        .current_dir(&worktree_path)
+        .current_dir(worktree_path)
         .output()
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
@@ -243,12 +268,12 @@ pub fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>, AppE
     for (path, status) in &status_map {
         if !seen.contains(path) {
             // Count lines for untracked/new files not in git diff
-            let added = std::path::Path::new(&worktree_path)
+            let added = std::path::Path::new(worktree_path)
                 .join(path)
                 .metadata()
                 .ok()
                 .filter(|m| m.is_file())
-                .and_then(|_| std::fs::read_to_string(std::path::Path::new(&worktree_path).join(path)).ok())
+                .and_then(|_| std::fs::read_to_string(std::path::Path::new(worktree_path).join(path)).ok())
                 .map(|c| c.lines().count() as u32)
                 .unwrap_or(0);
             files.push(ChangedFile {
@@ -265,13 +290,21 @@ pub fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>, AppE
 }
 
 #[tauri::command]
-pub fn get_file_diff(worktree_path: String, file_path: String) -> Result<String, AppError> {
-    let main_branch = detect_main_branch(&worktree_path).unwrap_or_else(|_| "HEAD".into());
+pub async fn get_file_diff(worktree_path: String, file_path: String) -> Result<String, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        get_file_diff_sync(&worktree_path, &file_path)
+    })
+    .await
+    .map_err(|e| AppError::Git(e.to_string()))?
+}
+
+fn get_file_diff_sync(worktree_path: &str, file_path: &str) -> Result<String, AppError> {
+    let main_branch = detect_main_branch(worktree_path).unwrap_or_else(|_| "HEAD".into());
 
     // Try git diff against main branch
     let output = Command::new("git")
-        .args(["diff", &main_branch, "--", &file_path])
-        .current_dir(&worktree_path)
+        .args(["diff", &main_branch, "--", file_path])
+        .current_dir(worktree_path)
         .output()
         .map_err(|e| AppError::Git(e.to_string()))?;
 
@@ -279,7 +312,7 @@ pub fn get_file_diff(worktree_path: String, file_path: String) -> Result<String,
 
     // If diff is empty, file might be untracked — read it and format as all-additions
     if diff.trim().is_empty() {
-        let full_path = std::path::Path::new(&worktree_path).join(&file_path);
+        let full_path = std::path::Path::new(worktree_path).join(file_path);
         if full_path.exists() {
             let content = std::fs::read_to_string(&full_path)
                 .map_err(|e| AppError::Git(format!("Failed to read file: {}", e)))?;

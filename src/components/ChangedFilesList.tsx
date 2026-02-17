@@ -6,6 +6,7 @@ import type { ChangedFile } from "../ipc/types";
 
 interface ChangedFilesListProps {
   worktreePath: string;
+  isActive?: boolean;
   onFileClick?: (file: ChangedFile) => void;
 }
 
@@ -31,9 +32,10 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     }
   }
 
-  // React to worktree path changes, poll every 2s
+  // Poll every 2s, but only when active (avoids thundering herd with many tasks)
   createEffect(() => {
     const path = props.worktreePath;
+    if (props.isActive === false) return;
     refresh(path);
     const timer = setInterval(() => refresh(path), 2000);
     onCleanup(() => clearInterval(timer));

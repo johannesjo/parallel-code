@@ -26,6 +26,8 @@ export interface Task {
   shellAgentIds: string[];
   notes: string;
   lastPrompt: string;
+  closingStatus?: "closing" | "error";
+  closingError?: string;
 }
 
 export interface PersistedTask {
@@ -48,6 +50,7 @@ export interface PersistedState {
   activeTaskId: string | null;
   sidebarVisible: boolean;
   fontScales?: Record<string, number>;
+  panelSizes?: Record<string, number>;
 }
 
 export interface AppStore {
@@ -62,4 +65,5 @@ export interface AppStore {
   showNewTaskDialog: boolean;
   sidebarVisible: boolean;
   fontScales: Record<string, number>;
+  panelSizes: Record<string, number>;
 }

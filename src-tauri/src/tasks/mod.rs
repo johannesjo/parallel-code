@@ -1,11 +1,11 @@
 pub mod types;
 
+use tracing::{info, error};
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::git;
 use crate::state::AppState;
-use types::{Task, TaskStatus};
 
 #[derive(serde::Serialize)]
 pub struct CreateTaskResult {
@@ -15,26 +15,32 @@ pub struct CreateTaskResult {
 }
 
 #[tauri::command]
-pub fn create_task(
-    state: tauri::State<'_, AppState>,
+pub async fn create_task(
     name: String,
     project_root: String,
     symlink_dirs: Vec<String>,
 ) -> Result<CreateTaskResult, AppError> {
     let branch_name = format!("task/{}", slug(&name));
-    let worktree = git::create_worktree(&project_root, &branch_name, &symlink_dirs)?;
+    info!(name = %name, branch = %branch_name, root = %project_root, "Creating task");
+
+    let bn = branch_name.clone();
+    let pr = project_root.clone();
+
+    let worktree = tauri::async_runtime::spawn_blocking(move || {
+        git::create_worktree(&pr, &bn, &symlink_dirs)
+    })
+    .await
+    .map_err(|e| {
+        error!(branch = %branch_name, err = %e, "Failed to create worktree (join)");
+        AppError::Git(e.to_string())
+    })?
+    .map_err(|e| {
+        error!(branch = %branch_name, err = %e, "Failed to create worktree");
+        e
+    })?;
 
     let id = Uuid::new_v4().to_string();
-    let task = Task {
-        id: id.clone(),
-        name: name.clone(),
-        branch_name: worktree.branch.clone(),
-        worktree_path: worktree.path.clone(),
-        agent_ids: vec![],
-        status: TaskStatus::Active,
-    };
-
-    state.tasks.lock().insert(id.clone(), task);
+    info!(id = %id, branch = %worktree.branch, path = %worktree.path, "Task created");
 
     Ok(CreateTaskResult {
         id,
@@ -44,35 +50,43 @@ pub fn create_task(
 }
 
 #[tauri::command]
-pub fn delete_task(
+pub async fn delete_task(
     state: tauri::State<'_, AppState>,
-    task_id: String,
+    agent_ids: Vec<String>,
     branch_name: String,
     delete_branch: bool,
     project_root: String,
 ) -> Result<(), AppError> {
-    // Kill all agents from Rust state if present
-    let mut tasks = state.tasks.lock();
-    if let Some(task) = tasks.get(&task_id) {
+    info!(branch = %branch_name, agents = ?agent_ids, delete_branch, "Deleting task");
+
+    // Kill all agent PTY sessions
+    {
         let mut sessions = state.sessions.lock();
-        for agent_id in &task.agent_ids {
+        for agent_id in &agent_ids {
             if let Some(session) = sessions.remove(agent_id) {
                 let mut child = session.child.lock();
                 let _ = child.kill();
+                info!(agent_id = %agent_id, "Killed agent session");
             }
         }
     }
-    tasks.remove(&task_id);
-    drop(tasks);
 
-    git::remove_worktree(&project_root, &branch_name, delete_branch)?;
+    let bn = branch_name.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        git::remove_worktree(&project_root, &bn, delete_branch)
+    })
+    .await
+    .map_err(|e| {
+        error!(branch = %branch_name, err = %e, "Failed to remove worktree (join)");
+        AppError::Git(e.to_string())
+    })?
+    .map_err(|e| {
+        error!(branch = %branch_name, err = %e, "Failed to remove worktree");
+        e
+    })?;
 
+    info!(branch = %branch_name, "Task deleted");
     Ok(())
-}
-
-#[tauri::command]
-pub fn list_tasks(state: tauri::State<'_, AppState>) -> Vec<Task> {
-    state.tasks.lock().values().cloned().collect()
 }
 
 fn slug(name: &str) -> String {

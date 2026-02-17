@@ -3,6 +3,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   store,
   closeTask,
+  retryCloseTask,
   mergeTask,
   setActiveTask,
   markAgentExited,
@@ -258,6 +259,7 @@ export function TaskPanel(props: TaskPanelProps) {
       content: () => (
         <ResizablePanel
           direction="horizontal"
+          persistKey={`task:${props.task.id}:notes-split`}
           children={[
             {
               id: "notes",
@@ -317,7 +319,7 @@ export function TaskPanel(props: TaskPanelProps) {
                     Changed Files
                   </div>
                   <div style={{ flex: "1", overflow: "hidden" }}>
-                    <ChangedFilesList worktreePath={props.task.worktreePath} onFileClick={setDiffFile} />
+                    <ChangedFilesList worktreePath={props.task.worktreePath} isActive={props.isActive} onFileClick={setDiffFile} />
                   </div>
                 </div>
                 </ScalablePanel>
@@ -528,11 +530,60 @@ export function TaskPanel(props: TaskPanelProps) {
         "border-radius": "12px",
         border: `1px solid ${props.isActive ? theme.borderFocus : theme.border}`,
         overflow: "hidden",
+        position: "relative",
       }}
       onClick={() => setActiveTask(props.task.id)}
     >
+      <Show when={props.task.closingStatus}>
+        <div style={{
+          position: "absolute",
+          inset: "0",
+          "z-index": "50",
+          background: "rgba(0, 0, 0, 0.6)",
+          display: "flex",
+          "flex-direction": "column",
+          "align-items": "center",
+          "justify-content": "center",
+          gap: "12px",
+          "border-radius": "12px",
+          color: theme.fg,
+        }}>
+          <Show when={props.task.closingStatus === "closing"}>
+            <div style={{ "font-size": "13px", color: theme.fgMuted }}>Closing task...</div>
+          </Show>
+          <Show when={props.task.closingStatus === "error"}>
+            <div style={{ "font-size": "13px", color: theme.error, "font-weight": "600" }}>
+              Close failed
+            </div>
+            <div style={{
+              "font-size": "11px",
+              color: theme.fgMuted,
+              "max-width": "260px",
+              "text-align": "center",
+              "word-break": "break-word",
+            }}>
+              {props.task.closingError}
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); retryCloseTask(props.task.id); }}
+              style={{
+                background: theme.bgElevated,
+                border: `1px solid ${theme.border}`,
+                color: theme.fg,
+                padding: "6px 16px",
+                "border-radius": "6px",
+                cursor: "pointer",
+                "font-size": "12px",
+              }}
+            >
+              Retry
+            </button>
+          </Show>
+        </div>
+      </Show>
         <ResizablePanel
           direction="vertical"
+          persistKey={`task:${props.task.id}`}
           children={[
             titleBar(),
             branchInfoBar(),

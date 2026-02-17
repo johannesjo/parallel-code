@@ -1,4 +1,5 @@
 import { createSignal, createEffect, onMount, onCleanup, untrack, For, type JSX } from "solid-js";
+import { getPanelSize, setPanelSizes } from "../store/store";
 
 export interface PanelChild {
   id: string;
@@ -18,6 +19,8 @@ interface ResizablePanelProps {
   style?: JSX.CSSProperties;
   /** When true, panels keep their initialSizes and the container grows to fit (useful with overflow scroll). */
   fitContent?: boolean;
+  /** When set, panel sizes are persisted to the store under keys `{persistKey}:{childId}`. */
+  persistKey?: string;
 }
 
 export function ResizablePanel(props: ResizablePanelProps) {
@@ -32,9 +35,15 @@ export function ResizablePanel(props: ResizablePanelProps) {
     const children = props.children;
     const handleSpace = Math.max(0, children.length - 1) * 6;
 
-    // fitContent mode: use initialSizes directly, no scaling
+    // fitContent mode: use saved or initialSizes directly, no scaling
     if (props.fitContent) {
-      setSizes(children.map((c) => c.initialSize ?? 200));
+      setSizes(children.map((c) => {
+        if (props.persistKey) {
+          const saved = getPanelSize(`${props.persistKey}:${c.id}`);
+          if (saved !== undefined) return saved;
+        }
+        return c.initialSize ?? 200;
+      }));
       return;
     }
 
@@ -50,9 +59,13 @@ export function ResizablePanel(props: ResizablePanelProps) {
     const resizableCount = children.filter((c) => !c.fixed).length;
     const defaultSize = resizableCount > 0 ? resizableSpace / resizableCount : 0;
 
-    // First pass: assign initialSizes or 0
+    // First pass: assign saved sizes, initialSizes, or 0
     const initial = children.map((c) => {
       if (c.fixed) return c.initialSize ?? 0;
+      if (props.persistKey) {
+        const saved = getPanelSize(`${props.persistKey}:${c.id}`);
+        if (saved !== undefined) return saved;
+      }
       return c.initialSize ?? 0;
     });
     // Compute how much space the resizable initialSizes consume
@@ -60,11 +73,16 @@ export function ResizablePanel(props: ResizablePanelProps) {
       (sum, c, i) => sum + (c.fixed ? 0 : initial[i]),
       0
     );
-    // Distribute remaining space among resizable panels without an initialSize
-    const unsetCount = children.filter((c) => !c.fixed && !c.initialSize).length;
+    // Count panels without a saved or initial size
+    const unsetCount = children.filter((c) => {
+      if (c.fixed) return false;
+      if (props.persistKey && getPanelSize(`${props.persistKey}:${c.id}`) !== undefined) return false;
+      return !c.initialSize;
+    }).length;
+    // Distribute remaining space among resizable panels without a size
     const remaining = resizableSpace - usedByResizable;
     const extraEach = unsetCount > 0 ? remaining / unsetCount : 0;
-    // If all have initialSizes but don't fill, scale them proportionally
+    // If all have sizes but don't fill, scale them proportionally
     const scale = usedByResizable > 0 && unsetCount === 0
       ? resizableSpace / usedByResizable
       : 1;
@@ -72,7 +90,7 @@ export function ResizablePanel(props: ResizablePanelProps) {
     setSizes(
       children.map((c, i) => {
         if (c.fixed) return initial[i];
-        if (!c.initialSize) return extraEach > 0 ? extraEach : defaultSize;
+        if (initial[i] === 0) return extraEach > 0 ? extraEach : defaultSize;
         return initial[i] * scale;
       })
     );
@@ -116,10 +134,10 @@ export function ResizablePanel(props: ResizablePanelProps) {
     onCleanup(() => ro.disconnect());
   });
 
-  // Re-init when children change
+  // Re-init when children change (untrack initSizes to avoid store reads creating dependencies)
   createEffect(() => {
     void props.children.length;
-    initSizes();
+    untrack(() => initSizes());
   });
 
   // Watch requestSize getters and adjust sizes dynamically
@@ -240,6 +258,18 @@ export function ResizablePanel(props: ResizablePanelProps) {
       setDragging(null);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+
+      if (props.persistKey) {
+        const current = sizes();
+        const entries: Record<string, number> = {};
+        for (let i = 0; i < props.children.length; i++) {
+          const child = props.children[i];
+          if (!child.fixed) {
+            entries[`${props.persistKey}:${child.id}`] = current[i];
+          }
+        }
+        setPanelSizes(entries);
+      }
     }
 
     window.addEventListener("mousemove", onMove);

@@ -1,4 +1,4 @@
-import { Show, createMemo } from "solid-js";
+import { Show, createMemo, ErrorBoundary } from "solid-js";
 import { store } from "../store/store";
 import { ResizablePanel, type PanelChild } from "./ResizablePanel";
 import { TaskPanel } from "./TaskPanel";
@@ -16,7 +16,42 @@ export function TilingLayout() {
         if (!task) return <div />;
         return (
           <div data-task-id={taskId} style={{ height: "100%", padding: "6px 3px" }}>
-            <TaskPanel task={task} isActive={store.activeTaskId === taskId} />
+            <ErrorBoundary fallback={(err, reset) => (
+              <div style={{
+                height: "100%",
+                display: "flex",
+                "flex-direction": "column",
+                "align-items": "center",
+                "justify-content": "center",
+                gap: "12px",
+                padding: "24px",
+                background: theme.islandBg,
+                "border-radius": "12px",
+                border: `1px solid ${theme.border}`,
+                color: theme.fgMuted,
+                "font-size": "13px",
+              }}>
+                <div style={{ color: theme.error, "font-weight": "600" }}>Panel crashed</div>
+                <div style={{ "text-align": "center", "word-break": "break-word", "max-width": "300px" }}>
+                  {String(err)}
+                </div>
+                <button
+                  onClick={reset}
+                  style={{
+                    background: theme.bgElevated,
+                    border: `1px solid ${theme.border}`,
+                    color: theme.fg,
+                    padding: "6px 16px",
+                    "border-radius": "6px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}>
+              <TaskPanel task={task} isActive={store.activeTaskId === taskId} />
+            </ErrorBoundary>
           </div>
         );
       },
@@ -108,6 +143,7 @@ export function TilingLayout() {
           direction="horizontal"
           children={panelChildren()}
           fitContent
+          persistKey="tiling"
         />
       </Show>
     </div>

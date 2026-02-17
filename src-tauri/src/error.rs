@@ -11,9 +11,6 @@ pub enum AppError {
     #[error("Agent not found: {0}")]
     AgentNotFound(String),
 
-    #[error("Task not found: {0}")]
-    TaskNotFound(String),
-
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 

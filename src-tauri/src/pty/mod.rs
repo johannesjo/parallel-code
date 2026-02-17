@@ -6,6 +6,7 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 use parking_lot::Mutex;
 use tauri::ipc::Channel;
+use tracing::{info, error};
 
 use crate::error::AppError;
 use crate::state::AppState;
@@ -24,6 +25,7 @@ pub fn spawn_agent(
     rows: u16,
     on_output: Channel<PtyOutput>,
 ) -> Result<(), AppError> {
+    info!(agent_id = %agent_id, task_id = %task_id, command = %command, cwd = %cwd, "Spawning agent");
     let pty_system = native_pty_system();
 
     let pair = pty_system
@@ -162,8 +164,11 @@ pub fn kill_agent(
 ) -> Result<(), AppError> {
     let mut sessions = state.sessions.lock();
     if let Some(session) = sessions.remove(&agent_id) {
+        info!(agent_id = %agent_id, "Killing agent");
         let mut child = session.child.lock();
-        let _ = child.kill();
+        if let Err(e) = child.kill() {
+            error!(agent_id = %agent_id, err = %e, "Failed to kill agent process");
+        }
     }
     Ok(())
 }
