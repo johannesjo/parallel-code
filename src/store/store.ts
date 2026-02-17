@@ -50,6 +50,7 @@ export async function createTask(
     id: agentId,
     taskId: result.id,
     def: agentDef,
+    resumed: false,
     status: "running",
     exitCode: null,
   };
@@ -79,6 +80,7 @@ export async function addAgentToTask(
     id: agentId,
     taskId,
     def: agentDef,
+    resumed: false,
     status: "running",
     exitCode: null,
   };
@@ -328,6 +330,7 @@ export async function loadState(): Promise<void> {
             id: agentId,
             taskId,
             def: agentDef,
+            resumed: true,
             status: "running",
             exitCode: null,
           };

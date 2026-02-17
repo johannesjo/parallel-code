@@ -6,6 +6,7 @@ pub struct AgentDef {
     pub name: String,
     pub command: String,
     pub args: Vec<String>,
+    pub resume_args: Vec<String>,
     pub description: String,
 }
 
@@ -17,6 +18,7 @@ impl AgentDef {
                 name: "Claude Code".into(),
                 command: "claude".into(),
                 args: vec![],
+                resume_args: vec!["--continue".into()],
                 description: "Anthropic's Claude Code CLI agent".into(),
             },
             AgentDef {
@@ -24,6 +26,7 @@ impl AgentDef {
                 name: "Codex CLI".into(),
                 command: "codex".into(),
                 args: vec![],
+                resume_args: vec!["resume".into(), "--last".into()],
                 description: "OpenAI's Codex CLI agent".into(),
             },
             AgentDef {
@@ -31,6 +34,7 @@ impl AgentDef {
                 name: "Gemini CLI".into(),
                 command: "gemini".into(),
                 args: vec![],
+                resume_args: vec!["--resume".into(), "latest".into()],
                 description: "Google's Gemini CLI agent".into(),
             },
         ]

@@ -4,6 +4,7 @@ export interface Agent {
   id: string;
   taskId: string;
   def: AgentDef;
+  resumed: boolean;
   status: "running" | "exited";
   exitCode: number | null;
 }
