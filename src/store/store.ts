@@ -2,7 +2,7 @@ import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { AgentDef, CreateTaskResult } from "../ipc/types";
-import type { AppStore, Agent, Task } from "./types";
+import type { AppStore, Agent, Task, PersistedState, PersistedTask } from "./types";
 
 const [store, setStore] = createStore<AppStore>({
   projectRoot: null,
@@ -240,4 +240,107 @@ export async function closeShell(taskId: string, shellId: string): Promise<void>
       }
     })
   );
+}
+
+export async function saveState(): Promise<void> {
+  const persisted: PersistedState = {
+    projectRoot: store.projectRoot,
+    taskOrder: [...store.taskOrder],
+    tasks: {},
+    activeTaskId: store.activeTaskId,
+    sidebarVisible: store.sidebarVisible,
+  };
+
+  for (const taskId of store.taskOrder) {
+    const task = store.tasks[taskId];
+    if (!task) continue;
+
+    const firstAgent = task.agentIds[0] ? store.agents[task.agentIds[0]] : null;
+
+    persisted.tasks[taskId] = {
+      id: task.id,
+      name: task.name,
+      branchName: task.branchName,
+      worktreePath: task.worktreePath,
+      notes: task.notes,
+      lastPrompt: task.lastPrompt,
+      collapsed: task.collapsed,
+      shellCount: task.shellAgentIds.length,
+      agentDef: firstAgent?.def ?? null,
+    };
+  }
+
+  await invoke("save_app_state", { json: JSON.stringify(persisted) }).catch(
+    (e) => console.warn("Failed to save state:", e)
+  );
+}
+
+export async function loadState(): Promise<void> {
+  const json = await invoke<string | null>("load_app_state").catch(() => null);
+  if (!json) return;
+
+  let persisted: PersistedState;
+  try {
+    persisted = JSON.parse(json);
+  } catch {
+    console.warn("Failed to parse persisted state");
+    return;
+  }
+
+  setStore(
+    produce((s) => {
+      s.taskOrder = persisted.taskOrder;
+      s.activeTaskId = persisted.activeTaskId;
+      s.sidebarVisible = persisted.sidebarVisible;
+
+      for (const taskId of persisted.taskOrder) {
+        const pt: PersistedTask | undefined = persisted.tasks[taskId];
+        if (!pt) continue;
+
+        const agentId = crypto.randomUUID();
+        const agentDef = pt.agentDef;
+
+        const shellAgentIds: string[] = [];
+        for (let i = 0; i < pt.shellCount; i++) {
+          shellAgentIds.push(crypto.randomUUID());
+        }
+
+        const task: Task = {
+          id: pt.id,
+          name: pt.name,
+          branchName: pt.branchName,
+          worktreePath: pt.worktreePath,
+          agentIds: agentDef ? [agentId] : [],
+          shellAgentIds,
+          notes: pt.notes,
+          lastPrompt: pt.lastPrompt,
+          collapsed: pt.collapsed,
+        };
+
+        s.tasks[taskId] = task;
+
+        if (agentDef) {
+          const agent: Agent = {
+            id: agentId,
+            taskId,
+            def: agentDef,
+            status: "running",
+            exitCode: null,
+          };
+          s.agents[agentId] = agent;
+        }
+      }
+
+      // Set activeAgentId from the active task
+      if (s.activeTaskId && s.tasks[s.activeTaskId]) {
+        s.activeAgentId = s.tasks[s.activeTaskId].agentIds[0] ?? null;
+      }
+    })
+  );
+
+  // Update window title
+  const activeTask = store.activeTaskId ? store.tasks[store.activeTaskId] : null;
+  if (activeTask) {
+    getCurrentWindow().setTitle(`AI Mush - ${activeTask.name}`).catch(() => {});
+  }
 }

@@ -1,6 +1,7 @@
 mod agents;
 mod error;
 mod git;
+mod persistence;
 mod pty;
 mod state;
 mod tasks;
@@ -23,6 +24,8 @@ pub fn run() {
             tasks::list_tasks,
             tasks::set_project_root,
             git::get_changed_files,
+            persistence::save_app_state,
+            persistence::load_app_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -8,16 +8,20 @@ import { theme } from "./lib/theme";
 import {
   store,
   loadAgents,
+  loadState,
   toggleNewTaskDialog,
   toggleSidebar,
   navigateTask,
   navigateAgent,
 } from "./store/store";
 import { registerShortcut, initShortcuts } from "./lib/shortcuts";
+import { setupAutosave } from "./store/autosave";
 
 function App() {
   onMount(async () => {
     await loadAgents();
+    await loadState();
+    setupAutosave();
 
     const cleanupShortcuts = initShortcuts();
 

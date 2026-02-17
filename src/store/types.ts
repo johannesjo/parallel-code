@@ -20,6 +20,26 @@ export interface Task {
   collapsed: boolean;
 }
 
+export interface PersistedTask {
+  id: string;
+  name: string;
+  branchName: string;
+  worktreePath: string;
+  notes: string;
+  lastPrompt: string;
+  collapsed: boolean;
+  shellCount: number;
+  agentDef: AgentDef | null;
+}
+
+export interface PersistedState {
+  projectRoot: string | null;
+  taskOrder: string[];
+  tasks: Record<string, PersistedTask>;
+  activeTaskId: string | null;
+  sidebarVisible: boolean;
+}
+
 export interface AppStore {
   projectRoot: string | null;
   taskOrder: string[];
