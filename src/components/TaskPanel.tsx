@@ -46,8 +46,8 @@ export function TaskPanel(props: TaskPanelProps) {
   function titleBar(): PanelChild {
     return {
       id: "title",
-      initialSize: 44,
-      minSize: 44,
+      initialSize: 32,
+      minSize: 32,
       content: () => (
         <div
           class={props.isActive ? "island-header-active" : ""}
@@ -55,7 +55,7 @@ export function TaskPanel(props: TaskPanelProps) {
             display: "flex",
             "align-items": "center",
             "justify-content": "space-between",
-            padding: "0 12px",
+            padding: "0 10px",
             height: "100%",
             background: theme.islandBg,
             "border-bottom": `1px solid ${theme.border}`,
@@ -65,9 +65,6 @@ export function TaskPanel(props: TaskPanelProps) {
         >
           <div
             style={{
-              display: "flex",
-              "flex-direction": "column",
-              gap: "1px",
               overflow: "hidden",
               flex: "1",
               "min-width": "0",
@@ -78,15 +75,6 @@ export function TaskPanel(props: TaskPanelProps) {
               onCommit={(v) => updateTaskName(props.task.id, v)}
               class="editable-text"
             />
-            <span
-              style={{
-                "font-size": "10px",
-                color: theme.fgSubtle,
-                "font-family": "'JetBrains Mono', monospace",
-              }}
-            >
-              {props.task.branchName}
-            </span>
           </div>
           <div style={{ display: "flex", gap: "4px", "margin-left": "8px", "flex-shrink": "0" }}>
             <IconButton
@@ -138,8 +126,8 @@ export function TaskPanel(props: TaskPanelProps) {
   function notesAndFiles(): PanelChild {
     return {
       id: "notes-files",
-      initialSize: 120,
-      minSize: 60,
+      initialSize: 300,
+      minSize: 80,
       content: () => (
         <ResizablePanel
           direction="horizontal"
@@ -173,8 +161,32 @@ export function TaskPanel(props: TaskPanelProps) {
               initialSize: 200,
               minSize: 100,
               content: () => (
-                <div style={{ height: "100%", background: theme.bg }}>
-                  <ChangedFilesList worktreePath={props.task.worktreePath} />
+                <div
+                  style={{
+                    height: "100%",
+                    background: theme.bgElevated,
+                    "border-left": `1px solid ${theme.border}`,
+                    display: "flex",
+                    "flex-direction": "column",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "4px 8px",
+                      "font-size": "10px",
+                      "font-weight": "600",
+                      color: theme.fgMuted,
+                      "text-transform": "uppercase",
+                      "letter-spacing": "0.05em",
+                      "border-bottom": `1px solid ${theme.border}`,
+                      "flex-shrink": "0",
+                    }}
+                  >
+                    Changed Files
+                  </div>
+                  <div style={{ flex: "1", overflow: "hidden" }}>
+                    <ChangedFilesList worktreePath={props.task.worktreePath} />
+                  </div>
                 </div>
               ),
             },
@@ -268,8 +280,8 @@ export function TaskPanel(props: TaskPanelProps) {
   function promptInput(): PanelChild {
     return {
       id: "prompt",
-      initialSize: 60,
-      minSize: 40,
+      initialSize: 68,
+      minSize: 54,
       content: () => (
         <PromptInput taskId={props.task.id} agentId={firstAgentId()} />
       ),

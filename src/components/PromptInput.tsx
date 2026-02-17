@@ -22,6 +22,7 @@ export function PromptInput(props: PromptInputProps) {
   return (
     <div style={{ display: "flex", height: "100%", padding: "4px 6px" }}>
       <textarea
+        rows={3}
         value={text()}
         onInput={(e) => setText(e.currentTarget.value)}
         onKeyDown={(e) => {
@@ -36,7 +37,7 @@ export function PromptInput(props: PromptInputProps) {
           background: theme.bgInput,
           border: `1px solid ${theme.border}`,
           "border-radius": "6px",
-          padding: "8px 10px",
+          padding: "6px 10px",
           color: theme.fg,
           "font-size": "12px",
           "font-family": "'JetBrains Mono', monospace",
