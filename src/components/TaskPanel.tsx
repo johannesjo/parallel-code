@@ -541,8 +541,7 @@ export function TaskPanel(props: TaskPanelProps) {
         height: "100%",
         background: theme.islandBg,
         "border-radius": "12px",
-        border: `1px solid ${theme.border}`,
-        "box-shadow": props.isActive ? "0 0 0 1px rgba(52,116,240,0.45), 0 0 12px rgba(52,116,240,0.15)" : "none",
+        border: `1px solid ${props.isActive ? theme.borderFocus : theme.border}`,
         overflow: "hidden",
         position: "relative",
       }}
