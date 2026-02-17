@@ -1,0 +1,112 @@
+import { Show, type JSX } from "solid-js";
+import { Portal } from "solid-js/web";
+import { theme } from "../lib/theme";
+
+interface ConfirmDialogProps {
+  open: boolean;
+  title: string;
+  message: string | JSX.Element;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+export function ConfirmDialog(props: ConfirmDialogProps) {
+  return (
+    <Portal>
+      <Show when={props.open}>
+        <div
+          class="dialog-overlay"
+          style={{
+            position: "fixed",
+            inset: "0",
+            display: "flex",
+            "align-items": "center",
+            "justify-content": "center",
+            background: "rgba(0,0,0,0.55)",
+            "z-index": "1000",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) props.onCancel();
+          }}
+        >
+          <div
+            style={{
+              background: theme.islandBg,
+              border: `1px solid ${theme.border}`,
+              "border-radius": "14px",
+              padding: "28px",
+              width: "400px",
+              display: "flex",
+              "flex-direction": "column",
+              gap: "16px",
+              "box-shadow":
+                "0 12px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03) inset",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              style={{
+                margin: "0",
+                "font-size": "16px",
+                color: theme.fg,
+                "font-weight": "600",
+              }}
+            >
+              {props.title}
+            </h2>
+
+            <div style={{ "font-size": "13px", color: theme.fgMuted, "line-height": "1.5" }}>
+              {props.message}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                "justify-content": "flex-end",
+                "padding-top": "4px",
+              }}
+            >
+              <button
+                type="button"
+                class="btn-secondary"
+                onClick={() => props.onCancel()}
+                style={{
+                  padding: "9px 18px",
+                  background: theme.bgInput,
+                  border: `1px solid ${theme.border}`,
+                  "border-radius": "8px",
+                  color: theme.fgMuted,
+                  cursor: "pointer",
+                  "font-size": "13px",
+                }}
+              >
+                {props.cancelLabel ?? "Cancel"}
+              </button>
+              <button
+                type="button"
+                class={props.danger ? "btn-danger" : "btn-primary"}
+                onClick={() => props.onConfirm()}
+                style={{
+                  padding: "9px 20px",
+                  background: props.danger ? theme.error : theme.accent,
+                  border: "none",
+                  "border-radius": "8px",
+                  color: "#fff",
+                  cursor: "pointer",
+                  "font-size": "13px",
+                  "font-weight": "500",
+                }}
+              >
+                {props.confirmLabel ?? "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
+    </Portal>
+  );
+}

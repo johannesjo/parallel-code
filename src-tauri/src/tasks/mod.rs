@@ -50,31 +50,29 @@ pub fn create_task(
 pub fn delete_task(
     state: tauri::State<'_, AppState>,
     task_id: String,
+    branch_name: String,
     delete_branch: bool,
 ) -> Result<(), AppError> {
-    let mut tasks = state.tasks.lock();
-    let task = tasks
-        .get(&task_id)
-        .ok_or_else(|| AppError::TaskNotFound(task_id.clone()))?
-        .clone();
-
     let project_root = state.project_root.lock();
     let project_root = project_root
         .as_ref()
         .ok_or_else(|| AppError::Git("No project root set".into()))?;
 
-    // Kill all agents in this task
-    let mut sessions = state.sessions.lock();
-    for agent_id in &task.agent_ids {
-        if let Some(session) = sessions.remove(agent_id) {
-            let mut child = session.child.lock();
-            let _ = child.kill();
+    // Kill all agents from Rust state if present
+    let mut tasks = state.tasks.lock();
+    if let Some(task) = tasks.get(&task_id) {
+        let mut sessions = state.sessions.lock();
+        for agent_id in &task.agent_ids {
+            if let Some(session) = sessions.remove(agent_id) {
+                let mut child = session.child.lock();
+                let _ = child.kill();
+            }
         }
     }
-    drop(sessions);
-
-    git::remove_worktree(project_root, &task.branch_name, delete_branch)?;
     tasks.remove(&task_id);
+    drop(tasks);
+
+    git::remove_worktree(project_root, &branch_name, delete_branch)?;
 
     Ok(())
 }

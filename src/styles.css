@@ -97,6 +97,18 @@ button {
   transform: scale(0.98);
 }
 
+/* Danger button */
+.btn-danger {
+  transition: all 0.15s ease;
+}
+.btn-danger:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 0 16px rgba(247, 84, 100, 0.25);
+}
+.btn-danger:active {
+  transform: scale(0.98);
+}
+
 /* Secondary button */
 .btn-secondary {
   transition: all 0.12s ease;

@@ -1,7 +1,8 @@
+import { type JSX } from "solid-js";
 import { theme } from "../lib/theme";
 
 interface IconButtonProps {
-  icon: string;
+  icon: string | JSX.Element;
   onClick: (e: MouseEvent) => void;
   title?: string;
   size?: "sm" | "md";
@@ -28,6 +29,9 @@ export function IconButton(props: IconButtonProps) {
         "font-size": isSm() ? "11px" : "13px",
         "line-height": "1",
         "flex-shrink": "0",
+        display: "inline-flex",
+        "align-items": "center",
+        "justify-content": "center",
       }}
     >
       {props.icon}

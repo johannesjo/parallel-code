@@ -1,4 +1,4 @@
-import { Show, For } from "solid-js";
+import { Show, For, createSignal } from "solid-js";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   store,
@@ -18,6 +18,7 @@ import { InfoBar } from "./InfoBar";
 import { PromptInput } from "./PromptInput";
 import { ChangedFilesList } from "./ChangedFilesList";
 import { TerminalView } from "./TerminalView";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { theme } from "../lib/theme";
 import type { Task } from "../store/types";
 
@@ -27,6 +28,8 @@ interface TaskPanelProps {
 }
 
 export function TaskPanel(props: TaskPanelProps) {
+  const [showCloseConfirm, setShowCloseConfirm] = createSignal(false);
+
   const firstAgent = () => {
     const ids = props.task.agentIds;
     return ids.length > 0 ? store.agents[ids[0]] : undefined;
@@ -37,8 +40,8 @@ export function TaskPanel(props: TaskPanelProps) {
   function titleBar(): PanelChild {
     return {
       id: "title",
-      initialSize: 32,
-      minSize: 32,
+      initialSize: 50,
+      fixed: true,
       content: () => (
         <div
           class={props.isActive ? "island-header-active" : ""}
@@ -69,8 +72,12 @@ export function TaskPanel(props: TaskPanelProps) {
           </div>
           <div style={{ display: "flex", gap: "4px", "margin-left": "8px", "flex-shrink": "0" }}>
             <IconButton
-              icon="x"
-              onClick={() => closeTask(props.task.id)}
+              icon={
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+                </svg>
+              }
+              onClick={() => setShowCloseConfirm(true)}
               title="Close task"
               size="sm"
             />
@@ -392,6 +399,28 @@ export function TaskPanel(props: TaskPanelProps) {
             promptInput(),
           ]}
         />
+      <ConfirmDialog
+        open={showCloseConfirm()}
+        title="Close Task"
+        message={
+          <div>
+            <p style={{ margin: "0 0 8px" }}>
+              This action cannot be undone. The following will be permanently deleted:
+            </p>
+            <ul style={{ margin: "0", "padding-left": "20px", display: "flex", "flex-direction": "column", gap: "4px" }}>
+              <li>Local feature branch <strong>{props.task.branchName}</strong></li>
+              <li>Worktree at <strong>{props.task.worktreePath}</strong></li>
+            </ul>
+          </div>
+        }
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => {
+          setShowCloseConfirm(false);
+          closeTask(props.task.id);
+        }}
+        onCancel={() => setShowCloseConfirm(false)}
+      />
     </div>
   );
 }

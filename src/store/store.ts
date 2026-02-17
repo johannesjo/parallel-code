@@ -107,30 +107,17 @@ export async function closeTask(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
   if (!task) return;
 
-  // Kill all agents in this task
-  for (const agentId of task.agentIds) {
-    await invoke("kill_agent", { agentId }).catch(() => {});
-  }
+  // Capture what we need before removing from store
+  const agentIds = [...task.agentIds];
+  const shellAgentIds = [...task.shellAgentIds];
+  const branchName = task.branchName;
 
-  // Kill shell PTYs
-  for (const shellId of task.shellAgentIds) {
-    await invoke("kill_agent", { agentId: shellId }).catch(() => {});
-  }
-
-  // Delete worktree
-  await invoke("delete_task", { taskId, deleteBranch: false }).catch(() => {});
-
+  // Remove task from UI immediately (unmounts TaskPanel first)
   setStore(
     produce((s) => {
-      // Remove agents
-      for (const agentId of task.agentIds) {
-        delete s.agents[agentId];
-      }
-      // Remove task
       delete s.tasks[taskId];
       s.taskOrder = s.taskOrder.filter((id) => id !== taskId);
 
-      // Update active
       if (s.activeTaskId === taskId) {
         s.activeTaskId = s.taskOrder[0] ?? null;
         const firstTask = s.activeTaskId ? s.tasks[s.activeTaskId] : null;
@@ -138,6 +125,28 @@ export async function closeTask(taskId: string): Promise<void> {
       }
     })
   );
+
+  // Clean up orphaned agent entries after panel has unmounted
+  setStore(
+    produce((s) => {
+      for (const agentId of agentIds) {
+        delete s.agents[agentId];
+      }
+    })
+  );
+
+  // Clean up backend in the background (kill agents, remove worktree + branch)
+  for (const agentId of agentIds) {
+    invoke("kill_agent", { agentId }).catch(() => {});
+  }
+  for (const shellId of shellAgentIds) {
+    invoke("kill_agent", { agentId: shellId }).catch(() => {});
+  }
+  invoke("delete_task", {
+    taskId,
+    branchName,
+    deleteBranch: true,
+  }).catch(() => {});
 
   // Update window title
   const activeTask = store.activeTaskId ? store.tasks[store.activeTaskId] : null;
