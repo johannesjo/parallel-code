@@ -195,6 +195,7 @@ export function TaskPanel(props: TaskPanelProps) {
       id: "shell-section",
       initialSize: 28,
       minSize: 28,
+      requestSize: () => props.task.shellAgentIds.length > 0 ? 200 : 28,
       content: () => (
         <div style={{ height: "100%", display: "flex", "flex-direction": "column", background: theme.bgElevated }}>
           <div

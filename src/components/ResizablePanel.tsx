@@ -6,6 +6,8 @@ export interface PanelChild {
   fixed?: boolean;
   minSize?: number;
   maxSize?: number;
+  /** Reactive getter — when the returned value changes, the panel resizes to it. */
+  requestSize?: () => number;
   content: () => JSX.Element;
 }
 
@@ -118,6 +120,45 @@ export function ResizablePanel(props: ResizablePanelProps) {
   createEffect(() => {
     void props.children.length;
     initSizes();
+  });
+
+  // Watch requestSize getters and adjust sizes dynamically
+  createEffect(() => {
+    const current = sizes();
+    if (current.length === 0) return;
+
+    const next = [...current];
+    let changed = false;
+
+    for (let i = 0; i < props.children.length; i++) {
+      const child = props.children[i];
+      if (!child.requestSize) continue;
+      const requested = child.requestSize();
+      if (Math.abs(next[i] - requested) < 1) continue;
+
+      const diff = requested - next[i];
+      // Find nearest resizable neighbor to absorb the difference
+      let absorbed = false;
+      for (let j = i + 1; j < props.children.length; j++) {
+        if (!props.children[j].fixed) {
+          next[j] = Math.max(props.children[j].minSize ?? 30, next[j] - diff);
+          absorbed = true;
+          break;
+        }
+      }
+      if (!absorbed) {
+        for (let j = i - 1; j >= 0; j--) {
+          if (!props.children[j].fixed) {
+            next[j] = Math.max(props.children[j].minSize ?? 30, next[j] - diff);
+            break;
+          }
+        }
+      }
+      next[i] = requested;
+      changed = true;
+    }
+
+    if (changed) setSizes(next);
   });
 
   function findResizable(start: number, direction: -1 | 1): number {
