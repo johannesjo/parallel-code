@@ -185,9 +185,8 @@ button {
   opacity: 0.7;
 }
 
-/* Subtle glow on active island header */
+/* Active island header — border accent only */
 .island-header-active {
-  background: linear-gradient(180deg, #1e2030 0%, var(--island-bg) 100%) !important;
   border-bottom-color: #2a2d35 !important;
 }
 
@@ -234,6 +233,16 @@ button {
   background: var(--accent);
   border-radius: 1px;
   margin: 0 2px;
+}
+
+/* Vertical drop indicator for task column reorder */
+.drag-drop-indicator {
+  position: fixed;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  z-index: 1000;
+  pointer-events: none;
 }
 
 /* Global cursor during task drag */

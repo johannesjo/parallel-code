@@ -15,7 +15,7 @@ export function TilingLayout() {
         const task = store.tasks[taskId];
         if (!task) return <div />;
         return (
-          <div style={{ height: "100%", padding: "6px 3px" }}>
+          <div data-task-id={taskId} style={{ height: "100%", padding: "6px 3px" }}>
             <TaskPanel task={task} isActive={store.activeTaskId === taskId} />
           </div>
         );

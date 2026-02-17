@@ -1,4 +1,4 @@
-import { createSignal, onMount, onCleanup, For, Show } from "solid-js";
+import { createSignal, createEffect, onMount, onCleanup, For, Show } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   store,
@@ -36,6 +36,16 @@ export function Sidebar() {
       el.addEventListener("mousedown", handler);
       onCleanup(() => el.removeEventListener("mousedown", handler));
     }
+  });
+
+  // Scroll the active task into view when it changes
+  createEffect(() => {
+    const activeId = store.activeTaskId;
+    if (!activeId || !taskListRef) return;
+    const idx = store.taskOrder.indexOf(activeId);
+    if (idx < 0) return;
+    const el = taskListRef.querySelector<HTMLElement>(`[data-task-index="${idx}"]`);
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   });
 
   async function handleAddProject() {
