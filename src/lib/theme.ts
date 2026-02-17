@@ -1,16 +1,16 @@
-/** IntelliJ IDEA Islands Dark theme colors */
+/** Dark theme colors — black base with layered elevation */
 export const theme = {
-  // Backgrounds
-  bg: "#191a1c",
-  bgElevated: "#2B2D30",
-  bgInput: "#2B2D30",
-  bgHover: "#2e3033",
+  // Backgrounds (3-tier: black → task columns → panels inside)
+  bg: "#000000",
+  bgElevated: "#1a1b1d",
+  bgInput: "#1a1b1d",
+  bgHover: "#252629",
   bgSelected: "#2e436e",
   bgSelectedSubtle: "#2e436e33",
 
   // Borders
-  border: "#26282b",
-  borderSubtle: "#26282b",
+  border: "#222426",
+  borderSubtle: "#1a1b1d",
   borderFocus: "#3474f0",
 
   // Text
@@ -29,14 +29,14 @@ export const theme = {
   error: "#F75464",
   warning: "#F2C55C",
 
-  // Island containers (rounded panels floating on the bg)
-  islandBg: "#1e1f22",
-  islandBorder: "#2B2D30",
+  // Island containers (task columns, sidebar — slightly brighter than black)
+  islandBg: "#111213",
+  islandBorder: "#222426",
   islandRadius: "10px",
 
-  // Terminal ANSI colors (from Islands theme)
+  // Terminal ANSI colors
   terminal: {
-    background: "#191a1c",
+    background: "#1a1b1d",
     foreground: "#BCBEC4",
     cursor: "#BCBEC4",
     selectionBackground: "#2e436e",

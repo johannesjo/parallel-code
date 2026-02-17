@@ -238,7 +238,7 @@ export function TaskPanel(props: TaskPanelProps) {
                   color: theme.fgMuted,
                   padding: "2px 4px 2px 8px",
                   "border-radius": "3px",
-                  background: theme.bg,
+                  background: theme.bgElevated,
                   border: `1px solid ${theme.border}`,
                   display: "inline-flex",
                   "align-items": "center",
@@ -277,7 +277,7 @@ export function TaskPanel(props: TaskPanelProps) {
       initialSize: 120,
       minSize: 40,
       content: () => (
-        <div style={{ height: "100%", display: "flex", overflow: "hidden", background: theme.bg }}>
+        <div style={{ height: "100%", display: "flex", overflow: "hidden", background: theme.bgElevated }}>
           <For each={props.task.shellAgentIds}>
             {(shellId, i) => (
               <div
@@ -326,7 +326,7 @@ export function TaskPanel(props: TaskPanelProps) {
       initialSize: 300,
       minSize: 80,
       content: () => (
-        <div style={{ height: "100%", position: "relative", background: theme.bg }}>
+        <div style={{ height: "100%", position: "relative", background: theme.bgElevated }}>
           <Show when={agent}>
             {(a) => (
               <>
