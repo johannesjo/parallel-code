@@ -124,6 +124,7 @@ export function TaskPanel(props: TaskPanelProps) {
       content: () => (
         <ResizablePanel
           direction="horizontal"
+          class="focusable-panel"
           children={[
             {
               id: "notes",
@@ -189,118 +190,111 @@ export function TaskPanel(props: TaskPanelProps) {
     };
   }
 
-  function shellBar(): PanelChild {
+  function shellSection(): PanelChild {
     return {
-      id: "shell-bar",
+      id: "shell-section",
       initialSize: 28,
-      fixed: true,
+      minSize: 28,
       content: () => (
-        <div
-          style={{
-            height: "28px",
-            display: "flex",
-            "align-items": "center",
-            padding: "0 8px",
-            background: theme.bgElevated,
-            "border-top": `1px solid ${theme.border}`,
-            "border-bottom": `1px solid ${theme.border}`,
-            gap: "4px",
-          }}
-        >
-          <button
-            class="icon-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              spawnShellForTask(props.task.id);
-            }}
-            title="Open terminal"
+        <div style={{ height: "100%", display: "flex", "flex-direction": "column" }}>
+          <div
             style={{
-              background: "transparent",
-              border: `1px solid ${theme.border}`,
-              color: theme.fgMuted,
-              cursor: "pointer",
-              "border-radius": "4px",
-              padding: "2px 8px",
-              "font-size": "11px",
-              "line-height": "1",
+              height: "28px",
+              "min-height": "28px",
               display: "flex",
               "align-items": "center",
+              padding: "0 8px",
+              background: theme.bgElevated,
+              "border-top": `1px solid ${theme.border}`,
+              "border-bottom": `1px solid ${theme.border}`,
               gap: "4px",
             }}
           >
-            <span style={{ "font-family": "monospace", "font-size": "13px" }}>&gt;_</span>
-            <span>Terminal</span>
-          </button>
-          <For each={props.task.shellAgentIds}>
-            {(shellId, i) => (
-              <span
-                style={{
-                  "font-size": "10px",
-                  color: theme.fgMuted,
-                  padding: "2px 4px 2px 8px",
-                  "border-radius": "3px",
-                  background: theme.bgElevated,
-                  border: `1px solid ${theme.border}`,
-                  display: "inline-flex",
-                  "align-items": "center",
-                  gap: "4px",
-                }}
-              >
-                shell {i() + 1}
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeShell(props.task.id, shellId);
-                  }}
-                  style={{
-                    cursor: "pointer",
-                    color: theme.fgSubtle,
-                    "font-size": "10px",
-                    "line-height": "1",
-                    padding: "0 2px",
-                    "border-radius": "2px",
-                  }}
-                  title="Close terminal"
-                >
-                  x
-                </span>
-              </span>
-            )}
-          </For>
-        </div>
-      ),
-    };
-  }
-
-  function shellTerminals(): PanelChild {
-    return {
-      id: "shell-terminals",
-      initialSize: 120,
-      minSize: 0,
-      content: () => (
-        <Show when={props.task.shellAgentIds.length > 0}>
-          <div style={{ height: "100%", display: "flex", overflow: "hidden", background: theme.bgElevated }}>
+            <button
+              class="icon-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                spawnShellForTask(props.task.id);
+              }}
+              title="Open terminal"
+              style={{
+                background: "transparent",
+                border: `1px solid ${theme.border}`,
+                color: theme.fgMuted,
+                cursor: "pointer",
+                "border-radius": "4px",
+                padding: "2px 8px",
+                "font-size": "11px",
+                "line-height": "1",
+                display: "flex",
+                "align-items": "center",
+                gap: "4px",
+              }}
+            >
+              <span style={{ "font-family": "monospace", "font-size": "13px" }}>&gt;_</span>
+              <span>Terminal</span>
+            </button>
             <For each={props.task.shellAgentIds}>
               {(shellId, i) => (
-                <div
+                <span
                   style={{
-                    flex: "1",
-                    "border-left": i() > 0 ? `1px solid ${theme.border}` : "none",
-                    overflow: "hidden",
+                    "font-size": "10px",
+                    color: theme.fgMuted,
+                    padding: "2px 4px 2px 8px",
+                    "border-radius": "3px",
+                    background: theme.bgElevated,
+                    border: `1px solid ${theme.border}`,
+                    display: "inline-flex",
+                    "align-items": "center",
+                    gap: "4px",
                   }}
                 >
-                  <TerminalView
-                    agentId={shellId}
-                    command={getShellCommand()}
-                    args={["-l"]}
-                    cwd={props.task.worktreePath}
-                    onExit={() => {}}
-                  />
-                </div>
+                  shell {i() + 1}
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeShell(props.task.id, shellId);
+                    }}
+                    style={{
+                      cursor: "pointer",
+                      color: theme.fgSubtle,
+                      "font-size": "10px",
+                      "line-height": "1",
+                      padding: "0 2px",
+                      "border-radius": "2px",
+                    }}
+                    title="Close terminal"
+                  >
+                    x
+                  </span>
+                </span>
               )}
             </For>
           </div>
-        </Show>
+          <Show when={props.task.shellAgentIds.length > 0}>
+            <div style={{ flex: "1", display: "flex", overflow: "hidden", background: theme.bgElevated }}>
+              <For each={props.task.shellAgentIds}>
+                {(shellId, i) => (
+                  <div
+                    style={{
+                      flex: "1",
+                      "border-left": i() > 0 ? `1px solid ${theme.border}` : "none",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <TerminalView
+                      agentId={shellId}
+                      command={getShellCommand()}
+                      args={["-l"]}
+                      cwd={props.task.worktreePath}
+                      onExit={() => {}}
+                    />
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
       ),
     };
   }
@@ -328,7 +322,7 @@ export function TaskPanel(props: TaskPanelProps) {
       initialSize: 300,
       minSize: 80,
       content: () => (
-        <div style={{ height: "100%", position: "relative", background: theme.bgElevated }}>
+        <div class="focusable-panel" style={{ height: "100%", position: "relative", background: theme.bgElevated }}>
           <Show when={firstAgent()}>
             {(a) => (
               <>
@@ -379,14 +373,14 @@ export function TaskPanel(props: TaskPanelProps) {
 
   return (
     <div
-      class={`task-column ${props.isActive ? "active" : ""}`}
+      class="task-column"
       style={{
         display: "flex",
         "flex-direction": "column",
         height: "100%",
         background: theme.islandBg,
         "border-radius": "12px",
-        border: `1px solid ${props.isActive ? theme.borderFocus : theme.border}`,
+        border: `1px solid ${theme.border}`,
         overflow: "hidden",
       }}
       onClick={() => setActiveTask(props.task.id)}
@@ -397,8 +391,7 @@ export function TaskPanel(props: TaskPanelProps) {
             titleBar(),
             branchInfoBar(),
             notesAndFiles(),
-            shellBar(),
-            shellTerminals(),
+            shellSection(),
             lastPromptBar(),
             aiTerminal(),
             promptInput(),
