@@ -44,6 +44,7 @@ export async function createTask(
     exitCode: null,
     signal: null,
     lastOutput: [],
+    generation: 0,
   };
 
   setStore(

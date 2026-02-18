@@ -619,18 +619,16 @@ export function TaskPanel(props: TaskPanelProps) {
                     </div>
                   </Show>
                   <Show when={`${a().id}:${a().generation}`} keyed>
-                    {() => (
-                      <TerminalView
-                        agentId={a().id}
-                        command={a().def.command}
-                        args={a().resumed && a().def.resume_args?.length ? a().def.resume_args! : a().def.args}
-                        cwd={props.task.worktreePath}
-                        onExit={(code) => markAgentExited(a().id, code)}
-                        onData={() => handleAgentData(a().id)}
-                        onPromptDetected={(text) => setLastPrompt(props.task.id, text)}
-                        fontSize={Math.round(13 * getFontScale(`${props.task.id}:ai-terminal`))}
-                      />
-                    )}
+                    <TerminalView
+                      agentId={a().id}
+                      command={a().def.command}
+                      args={a().resumed && a().def.resume_args?.length ? a().def.resume_args! : a().def.args}
+                      cwd={props.task.worktreePath}
+                      onExit={(code) => markAgentExited(a().id, code)}
+                      onData={() => handleAgentData(a().id)}
+                      onPromptDetected={(text) => setLastPrompt(props.task.id, text)}
+                      fontSize={Math.round(13 * getFontScale(`${props.task.id}:ai-terminal`))}
+                    />
                   </Show>
                 </>
               )}
