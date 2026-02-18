@@ -75,6 +75,7 @@ export function TaskPanel(props: TaskPanelProps) {
   const [rebaseError, setRebaseError] = createSignal("");
   const [rebaseSuccess, setRebaseSuccess] = createSignal(false);
   const hasConflicts = () => (mergeStatus()?.conflicting_files.length ?? 0) > 0;
+  const hasCommittedChangesToMerge = () => worktreeStatus()?.has_committed_changes ?? false;
   const [showPushConfirm, setShowPushConfirm] = createSignal(false);
   const [pushError, setPushError] = createSignal("");
   const [pushing, setPushing] = createSignal(false);
@@ -909,6 +910,20 @@ export function TaskPanel(props: TaskPanelProps) {
                 Warning: You have uncommitted changes that will NOT be included in this merge.
               </div>
             </Show>
+            <Show when={!worktreeStatus.loading && !hasCommittedChangesToMerge()}>
+              <div style={{
+                "margin-bottom": "12px",
+                "font-size": "12px",
+                color: theme.warning,
+                background: "#f0a03014",
+                padding: "8px 12px",
+                "border-radius": "8px",
+                border: "1px solid #f0a03033",
+                "font-weight": "600",
+              }}>
+                Nothing to merge: this branch has no committed changes compared to main/master.
+              </div>
+            </Show>
             <Show when={mergeStatus.loading}>
               <div style={{
                 "margin-bottom": "12px",
@@ -1084,7 +1099,7 @@ export function TaskPanel(props: TaskPanelProps) {
             </Show>
           </div>
         }
-        confirmDisabled={hasConflicts()}
+        confirmDisabled={hasConflicts() || !hasCommittedChangesToMerge()}
         confirmLabel={merging() ? "Merging..." : squash() ? "Squash Merge" : "Merge"}
         onConfirm={async () => {
           setMergeError("");
