@@ -866,8 +866,6 @@ export function TaskPanel(props: TaskPanelProps) {
 }
 
 function getShellCommand(): string {
-  // Detect user's shell from env or fallback
-  return typeof navigator !== "undefined" && navigator.userAgent.includes("Windows")
-    ? "cmd"
-    : "bash";
+  // Empty string tells the backend to use $SHELL (Unix) or %COMSPEC% (Windows)
+  return "";
 }
