@@ -6,7 +6,7 @@ DEB_DIR="$SCRIPT_DIR/src-tauri/target/release/bundle/deb"
 
 echo "Building release..."
 cd "$SCRIPT_DIR"
-pnpm tauri build
+pnpm tauri build --bundles deb
 
 DEB_FILE=$(find "$DEB_DIR" -name '*.deb' -type f | head -1)
 
