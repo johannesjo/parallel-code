@@ -27,6 +27,7 @@ import {
   spawnShellForTask,
   closeShell,
   clearNotification,
+  setTaskFocusedPanel,
 } from "./store/store";
 import { registerShortcut, initShortcuts } from "./lib/shortcuts";
 import { setupAutosave } from "./store/autosave";
@@ -71,9 +72,26 @@ function App() {
         if (shellId) closeShell(taskId, shellId);
       }
     } });
-    registerShortcut({ key: "W", ctrl: true, shift: true, global: true, handler: () => {
-      const id = store.activeTaskId;
-      if (id) setPendingAction({ type: "close", taskId: id });
+    registerShortcut({ key: "W", ctrl: true, shift: true, global: true, handler: async () => {
+      const taskId = store.activeTaskId;
+      if (!taskId) return;
+      const panel = store.focusedPanel[taskId] ?? "";
+      if (!panel.startsWith("shell:")) return;
+      const idx = parseInt(panel.slice(6), 10);
+      const shellIds = store.tasks[taskId]?.shellAgentIds;
+      if (!shellIds) return;
+      const shellId = shellIds[idx];
+      if (!shellId) return;
+      await closeShell(taskId, shellId);
+      // Focus next shell, or previous, or fall back to shell-toolbar
+      requestAnimationFrame(() => {
+        const remaining = store.tasks[taskId]?.shellAgentIds.length ?? 0;
+        if (remaining === 0) {
+          setTaskFocusedPanel(taskId, "shell-toolbar");
+        } else {
+          setTaskFocusedPanel(taskId, `shell:${Math.min(idx, remaining - 1)}`);
+        }
+      });
     } });
     registerShortcut({ key: "M", ctrl: true, shift: true, global: true, handler: () => {
       const id = store.activeTaskId;
