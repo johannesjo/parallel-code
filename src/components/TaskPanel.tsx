@@ -147,7 +147,8 @@ export function TaskPanel(props: TaskPanelProps) {
   });
 
   function openMergeConfirm() {
-    setCleanupAfterMerge(false);
+    const project = getProject(props.task.projectId);
+    setCleanupAfterMerge(project?.deleteBranchOnClose ?? true);
     setShowMergeConfirm(true);
   }
 
