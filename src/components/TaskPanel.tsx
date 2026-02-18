@@ -1,4 +1,5 @@
 import { Show, For, createSignal, createResource, createEffect } from "solid-js";
+import { createStore } from "solid-js/store";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -61,6 +62,7 @@ export function TaskPanel(props: TaskPanelProps) {
   const [pushError, setPushError] = createSignal("");
   const [pushing, setPushing] = createSignal(false);
   const [diffFile, setDiffFile] = createSignal<ChangedFile | null>(null);
+  const [shellExits, setShellExits] = createStore<Record<string, { exitCode: number | null; signal: string | null }>>({});
   let panelRef!: HTMLDivElement;
   let promptRef: HTMLTextAreaElement | undefined;
 
@@ -472,14 +474,34 @@ export function TaskPanel(props: TaskPanelProps) {
                       flex: "1",
                       "border-left": i() > 0 ? `1px solid ${theme.border}` : "none",
                       overflow: "hidden",
+                      position: "relative",
                     }}
                   >
+                    <Show when={shellExits[shellId]}>
+                      <div
+                        class="exit-badge"
+                        style={{
+                          position: "absolute",
+                          top: "8px",
+                          right: "12px",
+                          "z-index": "10",
+                          "font-size": sf(11),
+                          color: shellExits[shellId]?.exitCode === 0 ? theme.success : theme.error,
+                          background: "color-mix(in srgb, var(--island-bg) 80%, transparent)",
+                          padding: "4px 12px",
+                          "border-radius": "8px",
+                          border: `1px solid ${theme.border}`,
+                        }}
+                      >
+                        Process exited ({shellExits[shellId]?.exitCode ?? "?"})
+                      </div>
+                    </Show>
                     <TerminalView
                       agentId={shellId}
                       command={getShellCommand()}
                       args={["-l"]}
                       cwd={props.task.worktreePath}
-                      onExit={() => {}}
+                      onExit={(info) => setShellExits(shellId, { exitCode: info.exit_code, signal: info.signal })}
                       fontSize={Math.round(13 * getFontScale(`${props.task.id}:shell`))}
                     />
                   </div>
