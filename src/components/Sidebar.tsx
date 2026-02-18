@@ -127,6 +127,26 @@ export function Sidebar() {
     el?.scrollIntoView({ block: "nearest", behavior: "instant" });
   });
 
+  // Scroll the focused task into view when navigating via keyboard
+  createEffect(() => {
+    const focusedId = store.sidebarFocusedTaskId;
+    if (!focusedId || !taskListRef) return;
+    const idx = taskIndexById().get(focusedId);
+    if (idx == null) return;
+    const el = taskListRef.querySelector<HTMLElement>(`[data-task-index="${idx}"]`);
+    el?.scrollIntoView({ block: "nearest", behavior: "instant" });
+  });
+
+  // Scroll the focused project into view when it changes
+  createEffect(() => {
+    const projectId = store.sidebarFocusedProjectId;
+    if (!projectId) return;
+    requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(`[data-project-id="${projectId}"]`);
+      el?.scrollIntoView({ block: "nearest", behavior: "instant" });
+    });
+  });
+
   async function handleAddProject() {
     await pickAndAddProject();
   }
@@ -300,6 +320,7 @@ export function Sidebar() {
             <div
               role="button"
               tabIndex={0}
+              data-project-id={project.id}
               onClick={() => setEditingProject(project)}
               onKeyDown={(e) => { if (e.key === "Enter") setEditingProject(project); }}
               style={{
@@ -311,6 +332,9 @@ export function Sidebar() {
                 background: theme.bgInput,
                 "font-size": sf(11),
                 cursor: "pointer",
+                border: store.sidebarFocused && store.sidebarFocusedProjectId === project.id
+                  ? `1.5px solid var(--border-focus)`
+                  : "1.5px solid transparent",
               }}
             >
               <div style={{
@@ -392,10 +416,17 @@ export function Sidebar() {
           if (!store.sidebarFocused) return;
           if (e.key === "Enter") {
             e.preventDefault();
-            const { activeTaskId } = store;
-            if (activeTaskId) {
+            const focusedProjectId = store.sidebarFocusedProjectId;
+            if (focusedProjectId) {
+              const project = store.projects.find((p) => p.id === focusedProjectId);
+              if (project) setEditingProject(project);
+              return;
+            }
+            const taskId = store.sidebarFocusedTaskId;
+            if (taskId) {
+              setActiveTask(taskId);
               unfocusSidebar();
-              setTaskFocusedPanel(activeTaskId, getTaskFocusedPanel(activeTaskId));
+              setTaskFocusedPanel(taskId, getTaskFocusedPanel(taskId));
             }
           }
         }}
@@ -455,7 +486,7 @@ export function Sidebar() {
                             display: "flex",
                             "align-items": "center",
                             gap: "6px",
-                            border: store.sidebarFocused && store.activeTaskId === taskId
+                            border: store.sidebarFocused && store.sidebarFocusedTaskId === taskId
                               ? `1.5px solid var(--border-focus)`
                               : "1.5px solid transparent",
                           }}

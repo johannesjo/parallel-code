@@ -86,11 +86,19 @@ function scrollTaskIntoView(taskId: string): void {
 
 export function focusSidebar(): void {
   setStore("sidebarFocused", true);
+  setStore("sidebarFocusedTaskId", store.activeTaskId);
+  setStore("sidebarFocusedProjectId", null);
   triggerFocus("sidebar");
 }
 
 export function unfocusSidebar(): void {
   setStore("sidebarFocused", false);
+  setStore("sidebarFocusedProjectId", null);
+  setStore("sidebarFocusedTaskId", null);
+}
+
+export function setSidebarFocusedProjectId(id: string | null): void {
+  setStore("sidebarFocusedProjectId", id);
 }
 
 function focusTaskPanel(taskId: string, panel: string): void {
@@ -104,16 +112,43 @@ function focusTaskPanel(taskId: string, panel: string): void {
 
 export function navigateRow(direction: "up" | "down"): void {
   if (store.sidebarFocused) {
-    // Navigate between tasks in the sidebar
-    const { taskOrder, activeTaskId } = store;
-    if (taskOrder.length === 0) return;
-    const currentIdx = activeTaskId ? taskOrder.indexOf(activeTaskId) : -1;
+    const { taskOrder, projects, sidebarFocusedProjectId, sidebarFocusedTaskId } = store;
+
+    if (sidebarFocusedProjectId !== null) {
+      // Project mode: navigate within projects
+      const projectIdx = projects.findIndex((p) => p.id === sidebarFocusedProjectId);
+      if (direction === "up") {
+        if (projectIdx > 0) {
+          setStore("sidebarFocusedProjectId", projects[projectIdx - 1].id);
+        }
+        // At first project: stay put
+      } else {
+        if (projectIdx < projects.length - 1) {
+          setStore("sidebarFocusedProjectId", projects[projectIdx + 1].id);
+        } else if (taskOrder.length > 0) {
+          // Past last project: enter task mode
+          setStore("sidebarFocusedProjectId", null);
+          setStore("sidebarFocusedTaskId", taskOrder[0]);
+        }
+      }
+      return;
+    }
+
+    // Task mode: navigate within tasks (highlight only, don't activate)
+    if (taskOrder.length === 0 && projects.length === 0) return;
+    const currentIdx = sidebarFocusedTaskId ? taskOrder.indexOf(sidebarFocusedTaskId) : -1;
     if (direction === "up") {
-      const prevIdx = Math.max(0, currentIdx - 1);
-      setActiveTask(taskOrder[prevIdx]);
+      if (currentIdx <= 0 && projects.length > 0) {
+        // At first task (or no task): enter project mode at last project
+        setStore("sidebarFocusedTaskId", null);
+        setStore("sidebarFocusedProjectId", projects[projects.length - 1].id);
+      } else if (currentIdx > 0) {
+        setStore("sidebarFocusedTaskId", taskOrder[currentIdx - 1]);
+      }
     } else {
+      if (taskOrder.length === 0) return;
       const nextIdx = Math.min(taskOrder.length - 1, currentIdx + 1);
-      setActiveTask(taskOrder[nextIdx]);
+      setStore("sidebarFocusedTaskId", taskOrder[nextIdx]);
     }
     return;
   }
@@ -139,9 +174,14 @@ export function navigateColumn(direction: "left" | "right"): void {
 
   // From sidebar
   if (store.sidebarFocused) {
-    if (direction === "right" && taskId) {
-      unfocusSidebar();
-      setTaskFocusedPanel(taskId, getTaskFocusedPanel(taskId));
+    if (direction === "right") {
+      if (store.sidebarFocusedProjectId) return; // project focused, no-op
+      const targetTaskId = store.sidebarFocusedTaskId ?? taskId;
+      if (targetTaskId) {
+        if (targetTaskId !== store.activeTaskId) setActiveTask(targetTaskId);
+        unfocusSidebar();
+        setTaskFocusedPanel(targetTaskId, getTaskFocusedPanel(targetTaskId));
+      }
     }
     return;
   }

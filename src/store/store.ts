@@ -42,6 +42,7 @@ export {
   clearPendingAction,
   toggleHelpDialog,
   sendActivePrompt,
+  setSidebarFocusedProjectId,
 } from "./focus";
 export type { PanelId, PendingAction } from "./types";
 export { saveState, loadState } from "./persistence";

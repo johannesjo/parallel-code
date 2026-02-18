@@ -93,6 +93,8 @@ export interface AppStore {
   taskGitStatus: Record<string, WorktreeStatus>;
   focusedPanel: Record<string, PanelId>;
   sidebarFocused: boolean;
+  sidebarFocusedProjectId: string | null;
+  sidebarFocusedTaskId: string | null;
   showHelpDialog: boolean;
   pendingAction: PendingAction | null;
   notification: string | null;

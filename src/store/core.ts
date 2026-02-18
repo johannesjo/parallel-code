@@ -20,6 +20,8 @@ export const [store, setStore] = createStore<AppStore>({
   taskGitStatus: {},
   focusedPanel: {},
   sidebarFocused: false,
+  sidebarFocusedProjectId: null,
+  sidebarFocusedTaskId: null,
   showHelpDialog: false,
   pendingAction: null,
   notification: null,
