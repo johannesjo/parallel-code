@@ -18,6 +18,7 @@ import {
   getTaskFocusedPanel,
 } from "../store/store";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { IconButton } from "./IconButton";
 import { StatusDot } from "./StatusDot";
 import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
@@ -224,23 +225,15 @@ export function Sidebar() {
             Parallel Code
           </span>
         </div>
-        <button
-          class="icon-btn"
+        <IconButton
+          icon={
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
+            </svg>
+          }
           onClick={() => toggleSidebar()}
           title="Collapse sidebar (Ctrl+B)"
-          style={{
-            background: "transparent",
-            border: `1px solid ${theme.border}`,
-            color: theme.fgMuted,
-            cursor: "pointer",
-            "border-radius": "6px",
-            padding: "2px 6px",
-            "font-size": sf(11),
-            "line-height": "1",
-          }}
-        >
-          &lt;
-        </button>
+        />
       </div>
 
       {/* Projects section */}
@@ -249,22 +242,16 @@ export function Sidebar() {
           <label style={{ "font-size": sf(11), color: theme.fgMuted, "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
             Projects
           </label>
-          <button
-            class="icon-btn"
+          <IconButton
+            icon={
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
+              </svg>
+            }
             onClick={() => handleAddProject()}
             title="Add project"
-            style={{
-              background: "transparent",
-              border: "none",
-              color: theme.fgMuted,
-              cursor: "pointer",
-              "font-size": sf(14),
-              "line-height": "1",
-              padding: "0 2px",
-            }}
-          >
-            +
-          </button>
+            size="sm"
+          />
         </div>
 
         <For each={store.projects}>

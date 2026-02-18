@@ -33,7 +33,7 @@ export function TilingLayout() {
       if (!cached) {
         cached = {
           id: taskId,
-          initialSize: 600,
+          initialSize: 520,
           minSize: 300,
           content: () => {
             const task = store.tasks[taskId];

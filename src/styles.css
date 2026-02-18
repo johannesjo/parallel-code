@@ -14,7 +14,7 @@
   /* Borders */
   --border: #222426;
   --border-subtle: #1a1b1d;
-  --border-focus: #555;
+  --border-focus: #4a90d9;
 
   /* Text */
   --fg: #BCBEC4;
@@ -126,7 +126,7 @@ textarea::placeholder {
 /* Input focus */
 .input-field:focus {
   border-color: var(--border-focus) !important;
-  box-shadow: 0 0 0 2px rgba(85, 85, 85, 0.15);
+  box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.15);
 }
 
 /* Agent selector buttons */
@@ -158,7 +158,7 @@ textarea::placeholder {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  box-shadow: inset 0 0 0 1px #444;
+  border: 1.5px solid var(--border-focus);
   pointer-events: none;
   z-index: 10;
 }

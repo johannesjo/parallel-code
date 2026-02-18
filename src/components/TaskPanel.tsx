@@ -739,7 +739,7 @@ export function TaskPanel(props: TaskPanelProps) {
   function promptInput(): PanelChild {
     return {
       id: "prompt",
-      initialSize: 72,
+      initialSize: 60,
       minSize: 36,
       maxSize: 300,
       content: () => (

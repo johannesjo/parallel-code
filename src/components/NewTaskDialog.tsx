@@ -233,25 +233,28 @@ export function NewTaskDialog() {
               No projects configured. Add one in the sidebar first.
             </div>
           }>
-            <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+            <div style={{ position: "relative", display: "flex", "align-items": "center" }}>
               <Show when={selectedProject()}>
                 <div style={{
+                  position: "absolute",
+                  left: "12px",
                   width: "10px",
                   height: "10px",
                   "border-radius": "50%",
                   background: selectedProject()!.color,
-                  "flex-shrink": "0",
+                  "pointer-events": "none",
+                  "z-index": "1",
                 }} />
               </Show>
               <select
                 value={selectedProjectId() ?? ""}
                 onChange={(e) => setSelectedProjectId(e.currentTarget.value || null)}
                 style={{
-                  flex: "1",
+                  width: "100%",
                   background: theme.bgInput,
                   border: `1px solid ${theme.border}`,
                   "border-radius": "8px",
-                  padding: "10px 14px",
+                  padding: selectedProject() ? "10px 14px 10px 30px" : "10px 14px",
                   color: theme.fg,
                   "font-size": "13px",
                   outline: "none",
