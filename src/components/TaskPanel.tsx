@@ -709,7 +709,7 @@ export function TaskPanel(props: TaskPanelProps) {
   function promptInput(): PanelChild {
     return {
       id: "prompt",
-      initialSize: 72,
+      initialSize: 60,
       minSize: 36,
       maxSize: 300,
       content: () => (
@@ -746,7 +746,7 @@ export function TaskPanel(props: TaskPanelProps) {
       }}
       onClick={() => setActiveTask(props.task.id)}
     >
-      <Show when={props.task.closingStatus}>
+      <Show when={props.task.closingStatus && props.task.closingStatus !== "removing"}>
         <div style={{
           position: "absolute",
           inset: "0",

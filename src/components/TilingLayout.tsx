@@ -34,13 +34,17 @@ export function TilingLayout() {
       if (!cached) {
         cached = {
           id: taskId,
-          initialSize: 600,
+          initialSize: 520,
           minSize: 300,
           content: () => {
             const task = store.tasks[taskId];
             if (!task) return <div />;
             return (
-              <div data-task-id={taskId} style={{ height: "100%", padding: "6px 3px" }}>
+              <div
+                data-task-id={taskId}
+                class={task?.closingStatus === "removing" ? "task-removing" : "task-appearing"}
+                style={{ height: "100%", padding: "6px 3px" }}
+              >
                 <ErrorBoundary fallback={(err, reset) => (
                   <div style={{
                     height: "100%",

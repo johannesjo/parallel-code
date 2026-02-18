@@ -14,7 +14,7 @@
   /* Borders */
   --border: #222426;
   --border-subtle: #1a1b1d;
-  --border-focus: #555;
+  --border-focus: #4a90d9;
 
   /* Text */
   --fg: #BCBEC4;
@@ -126,7 +126,7 @@ textarea::placeholder {
 /* Input focus */
 .input-field:focus {
   border-color: var(--border-focus) !important;
-  box-shadow: 0 0 0 2px rgba(85, 85, 85, 0.15);
+  box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.15);
 }
 
 /* Agent selector buttons */
@@ -139,6 +139,45 @@ textarea::placeholder {
 }
 .agent-btn.selected {
   box-shadow: 0 0 0 1px var(--accent), inset 0 0 12px rgba(85, 85, 85, 0.08);
+}
+
+/* Task appear animation (column content) */
+@keyframes taskAppear {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+.task-appearing {
+  animation: taskAppear 0.3s ease;
+}
+
+/* Task appear animation (sidebar item) */
+@keyframes taskItemAppear {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 40px; }
+}
+.task-item-appearing {
+  animation: taskItemAppear 0.3s ease;
+}
+
+/* Task removal animation (column content) */
+@keyframes taskRemove {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.95); }
+}
+.task-removing {
+  animation: taskRemove 0.3s ease forwards;
+  pointer-events: none;
+}
+
+/* Task removal animation (sidebar item) */
+@keyframes taskItemRemove {
+  from { opacity: 1; max-height: 40px; }
+  to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; margin: 0; }
+}
+.task-item-removing {
+  animation: taskItemRemove 0.3s ease forwards;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 /* Task column */
@@ -158,7 +197,7 @@ textarea::placeholder {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  box-shadow: inset 0 0 0 1px #444;
+  border: 1.5px solid var(--border-focus);
   pointer-events: none;
   z-index: 10;
 }

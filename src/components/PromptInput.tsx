@@ -43,7 +43,7 @@ export function PromptInput(props: PromptInputProps) {
   }
 
   return (
-    <div class="focusable-panel" style={{ display: "flex", height: "100%", padding: "4px 6px" }}>
+    <div class="focusable-panel" style={{ display: "flex", height: "100%", padding: "4px 6px", "border-radius": "12px" }}>
       <div style={{ position: "relative", flex: "1", display: "flex" }}>
         <textarea
           ref={(el) => { textareaRef = el; props.ref?.(el); }}

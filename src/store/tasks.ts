@@ -64,7 +64,7 @@ export async function createTask(
 
 export async function closeTask(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
-  if (!task || task.closingStatus === "closing") return;
+  if (!task || task.closingStatus === "closing" || task.closingStatus === "removing") return;
 
   const agentIds = [...task.agentIds];
   const shellAgentIds = [...task.shellAgentIds];
@@ -108,33 +108,41 @@ export function retryCloseTask(taskId: string): void {
   closeTask(taskId);
 }
 
+const REMOVE_ANIMATION_MS = 300;
+
 function removeTaskFromStore(taskId: string, agentIds: string[]): void {
-  setStore(
-    produce((s) => {
-      delete s.tasks[taskId];
-      const prefix = taskId + ":";
-      for (const key of Object.keys(s.fontScales)) {
-        if (key === taskId || key.startsWith(prefix)) delete s.fontScales[key];
-      }
-      for (const key of Object.keys(s.panelSizes)) {
-        if (key.includes(taskId)) delete s.panelSizes[key];
-      }
-      s.taskOrder = s.taskOrder.filter((id) => id !== taskId);
+  // Phase 1: mark as removing so UI can animate
+  setStore("tasks", taskId, "closingStatus", "removing");
 
-      if (s.activeTaskId === taskId) {
-        s.activeTaskId = s.taskOrder[0] ?? null;
-        const firstTask = s.activeTaskId ? s.tasks[s.activeTaskId] : null;
-        s.activeAgentId = firstTask?.agentIds[0] ?? null;
-      }
+  // Phase 2: actually delete after animation completes
+  setTimeout(() => {
+    setStore(
+      produce((s) => {
+        delete s.tasks[taskId];
+        const prefix = taskId + ":";
+        for (const key of Object.keys(s.fontScales)) {
+          if (key === taskId || key.startsWith(prefix)) delete s.fontScales[key];
+        }
+        for (const key of Object.keys(s.panelSizes)) {
+          if (key.includes(taskId)) delete s.panelSizes[key];
+        }
+        s.taskOrder = s.taskOrder.filter((id) => id !== taskId);
 
-      for (const agentId of agentIds) {
-        delete s.agents[agentId];
-      }
-    })
-  );
+        if (s.activeTaskId === taskId) {
+          s.activeTaskId = s.taskOrder[0] ?? null;
+          const firstTask = s.activeTaskId ? s.tasks[s.activeTaskId] : null;
+          s.activeAgentId = firstTask?.agentIds[0] ?? null;
+        }
 
-  const activeTask = store.activeTaskId ? store.tasks[store.activeTaskId] : null;
-  updateWindowTitle(activeTask?.name);
+        for (const agentId of agentIds) {
+          delete s.agents[agentId];
+        }
+      })
+    );
+
+    const activeTask = store.activeTaskId ? store.tasks[store.activeTaskId] : null;
+    updateWindowTitle(activeTask?.name);
+  }, REMOVE_ANIMATION_MS);
 }
 
 export async function mergeTask(
@@ -142,7 +150,7 @@ export async function mergeTask(
   options?: { squash?: boolean; message?: string }
 ): Promise<void> {
   const task = store.tasks[taskId];
-  if (!task) return;
+  if (!task || task.closingStatus === "removing") return;
 
   const projectRoot = getProjectPath(task.projectId);
   if (!projectRoot) return;

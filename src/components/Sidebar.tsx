@@ -13,11 +13,13 @@ import {
   getTaskDotStatus,
   registerFocusFn,
   unregisterFocusFn,
+  focusSidebar,
   unfocusSidebar,
   setTaskFocusedPanel,
   getTaskFocusedPanel,
 } from "../store/store";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { IconButton } from "./IconButton";
 import { StatusDot } from "./StatusDot";
 import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
@@ -156,6 +158,7 @@ export function Sidebar() {
         }
       } else {
         setActiveTask(taskId);
+        focusSidebar();
       }
     }
 
@@ -221,27 +224,19 @@ export function Sidebar() {
             color: "#fff",
             "flex-shrink": "0",
           }}>M</div>
-          <span style={{ "font-size": sf(14), "font-weight": "600", color: theme.fg }}>
+          <span style={{ "font-size": sf(14), "font-weight": "600", color: theme.fg, "font-family": "'JetBrains Mono', monospace" }}>
             Parallel Code
           </span>
         </div>
-        <button
-          class="icon-btn"
+        <IconButton
+          icon={
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
+            </svg>
+          }
           onClick={() => toggleSidebar()}
           title={`Collapse sidebar (${mod}+B)`}
-          style={{
-            background: "transparent",
-            border: `1px solid ${theme.border}`,
-            color: theme.fgMuted,
-            cursor: "pointer",
-            "border-radius": "6px",
-            padding: "2px 6px",
-            "font-size": sf(11),
-            "line-height": "1",
-          }}
-        >
-          &lt;
-        </button>
+        />
       </div>
 
       {/* Projects section */}
@@ -250,22 +245,16 @@ export function Sidebar() {
           <label style={{ "font-size": sf(11), color: theme.fgMuted, "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
             Projects
           </label>
-          <button
-            class="icon-btn"
+          <IconButton
+            icon={
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
+              </svg>
+            }
             onClick={() => handleAddProject()}
             title="Add project"
-            style={{
-              background: "transparent",
-              border: "none",
-              color: theme.fgMuted,
-              cursor: "pointer",
-              "font-size": sf(14),
-              "line-height": "1",
-              padding: "0 2px",
-            }}
-          >
-            +
-          </button>
+            size="sm"
+          />
         </div>
 
         <For each={store.projects}>
@@ -328,20 +317,28 @@ export function Sidebar() {
 
       {/* New task button */}
       <button
-        class="btn-primary"
+        class="icon-btn"
         onClick={() => toggleNewTaskDialog(true)}
         style={{
-          background: theme.accent,
-          border: "none",
+          background: "transparent",
+          border: `1px solid ${theme.border}`,
           "border-radius": "8px",
-          padding: "9px 14px",
-          color: theme.accentText,
+          padding: "8px 14px",
+          color: theme.fgMuted,
           cursor: "pointer",
-          "font-size": sf(13),
+          "font-size": sf(12),
           "font-weight": "500",
+          display: "flex",
+          "align-items": "center",
+          "justify-content": "center",
+          gap: "6px",
+          width: "100%",
         }}
       >
-        + New Task
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
+        </svg>
+        New Task
       </button>
 
       {/* Tasks grouped by project */}
@@ -350,20 +347,9 @@ export function Sidebar() {
         tabIndex={0}
         onKeyDown={(e) => {
           if (!store.sidebarFocused) return;
-          const { taskOrder, activeTaskId } = store;
-          if (taskOrder.length === 0) return;
-          const currentIdx = activeTaskId ? taskOrder.indexOf(activeTaskId) : -1;
-
-          if (e.key === "ArrowUp" && e.altKey) {
+          if (e.key === "Enter") {
             e.preventDefault();
-            const prevIdx = Math.max(0, currentIdx - 1);
-            setActiveTask(taskOrder[prevIdx]);
-          } else if (e.key === "ArrowDown" && e.altKey) {
-            e.preventDefault();
-            const nextIdx = Math.min(taskOrder.length - 1, currentIdx + 1);
-            setActiveTask(taskOrder[nextIdx]);
-          } else if (e.key === "Enter") {
-            e.preventDefault();
+            const { activeTaskId } = store;
             if (activeTaskId) {
               unfocusSidebar();
               setTaskFocusedPanel(activeTaskId, getTaskFocusedPanel(activeTaskId));
@@ -408,9 +394,9 @@ export function Sidebar() {
                           <div class="drop-indicator" />
                         </Show>
                         <div
-                          class="task-item"
+                          class={`task-item${task()!.closingStatus === "removing" ? " task-item-removing" : " task-item-appearing"}`}
                           data-task-index={idx()}
-                          onClick={() => setActiveTask(taskId)}
+                          onClick={() => { setActiveTask(taskId); focusSidebar(); }}
                           style={{
                             padding: "7px 10px",
                             "border-radius": "6px",
@@ -426,6 +412,9 @@ export function Sidebar() {
                             display: "flex",
                             "align-items": "center",
                             gap: "6px",
+                            border: store.sidebarFocused && store.activeTaskId === taskId
+                              ? `1.5px solid var(--border-focus)`
+                              : "1.5px solid transparent",
                           }}
                         >
                           <StatusDot status={getTaskDotStatus(taskId)} size="sm" />
@@ -463,9 +452,9 @@ export function Sidebar() {
                     <div class="drop-indicator" />
                   </Show>
                   <div
-                    class="task-item"
+                    class={`task-item${task()!.closingStatus === "removing" ? " task-item-removing" : " task-item-appearing"}`}
                     data-task-index={idx()}
-                    onClick={() => setActiveTask(taskId)}
+                    onClick={() => { setActiveTask(taskId); focusSidebar(); }}
                     style={{
                       padding: "7px 10px",
                       "border-radius": "6px",
@@ -481,6 +470,9 @@ export function Sidebar() {
                       display: "flex",
                       "align-items": "center",
                       gap: "6px",
+                      border: store.sidebarFocused && store.activeTaskId === taskId
+                        ? `1.5px solid var(--border-focus)`
+                        : "1.5px solid transparent",
                     }}
                   >
                     <StatusDot status={getTaskDotStatus(taskId)} size="sm" />
@@ -516,7 +508,7 @@ export function Sidebar() {
         </span>
         <span style={{
           "font-size": sf(11),
-          color: theme.fgSubtle,
+          color: theme.fgMuted,
           "line-height": "1.4",
         }}>
           <kbd style={{
@@ -531,7 +523,7 @@ export function Sidebar() {
         </span>
         <span style={{
           "font-size": sf(11),
-          color: theme.fgSubtle,
+          color: theme.fgMuted,
           "line-height": "1.4",
         }}>
           <kbd style={{

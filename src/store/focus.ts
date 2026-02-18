@@ -74,6 +74,14 @@ export function setTaskFocusedPanel(taskId: string, panel: string): void {
   setStore("focusedPanel", taskId, panel);
   setStore("sidebarFocused", false);
   triggerFocus(`${taskId}:${panel}`);
+  scrollTaskIntoView(taskId);
+}
+
+function scrollTaskIntoView(taskId: string): void {
+  requestAnimationFrame(() => {
+    const el = document.querySelector<HTMLElement>(`[data-task-id="${taskId}"]`);
+    el?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  });
 }
 
 export function focusSidebar(): void {
@@ -95,7 +103,20 @@ function focusTaskPanel(taskId: string, panel: string): void {
 }
 
 export function navigateRow(direction: "up" | "down"): void {
-  if (store.sidebarFocused) return;
+  if (store.sidebarFocused) {
+    // Navigate between tasks in the sidebar
+    const { taskOrder, activeTaskId } = store;
+    if (taskOrder.length === 0) return;
+    const currentIdx = activeTaskId ? taskOrder.indexOf(activeTaskId) : -1;
+    if (direction === "up") {
+      const prevIdx = Math.max(0, currentIdx - 1);
+      setActiveTask(taskOrder[prevIdx]);
+    } else {
+      const nextIdx = Math.min(taskOrder.length - 1, currentIdx + 1);
+      setActiveTask(taskOrder[nextIdx]);
+    }
+    return;
+  }
 
   const taskId = store.activeTaskId;
   if (!taskId) return;

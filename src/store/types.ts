@@ -30,7 +30,7 @@ export interface Task {
   notes: string;
   lastPrompt: string;
   initialPrompt?: string;
-  closingStatus?: "closing" | "error";
+  closingStatus?: "closing" | "removing" | "error";
   closingError?: string;
 }
 

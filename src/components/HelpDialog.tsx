@@ -12,21 +12,21 @@ const SECTIONS = [
   {
     title: "Navigation",
     shortcuts: [
-      ["Alt + Up/Down", "Move between panel rows"],
+      ["Alt + Up/Down", "Move between panels or sidebar tasks"],
       ["Alt + Left/Right", "Navigate within row or across tasks"],
       ["Alt + Left (from first task)", "Focus sidebar"],
       ["Alt + Right (from sidebar)", "Focus active task"],
-      ["Enter (in sidebar)", "Activate selected task"],
+      ["Enter (in sidebar)", "Jump to active task panel"],
     ],
   },
   {
     title: "Task Actions",
     shortcuts: [
+      [`${mod} + Enter`, "Send prompt"],
       [`${mod} + W`, "Close active task"],
       [`${mod} + Shift + M`, "Merge active task"],
       [`${mod} + Shift + P`, "Push to remote"],
       [`${mod} + Shift + T`, "New shell terminal"],
-      [`${mod} + Enter`, "Send prompt"],
       [`${mod} + Alt + Left/Right`, "Reorder tasks"],
     ],
   },
@@ -34,6 +34,7 @@ const SECTIONS = [
     title: "App",
     shortcuts: [
       [`${mod} + N`, "New task"],
+      [`${mod} + Shift + A`, "New task"],
       [`${mod} + B`, "Toggle sidebar"],
       [`${mod} + 0`, "Reset zoom"],
       [`${mod} + / or F1`, "Toggle this help"],
