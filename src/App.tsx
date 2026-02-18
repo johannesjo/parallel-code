@@ -83,7 +83,7 @@ function App() {
     registerShortcut({ key: "b", ctrl: true, handler: () => toggleSidebar() });
     registerShortcut({ key: "/", ctrl: true, global: true, handler: () => toggleHelpDialog() });
     registerShortcut({ key: "F1", global: true, handler: () => toggleHelpDialog() });
-    registerShortcut({ key: "Escape", global: true, handler: () => {
+    registerShortcut({ key: "Escape", handler: () => {
       if (store.showHelpDialog) { toggleHelpDialog(false); return; }
       if (store.showNewTaskDialog) { toggleNewTaskDialog(false); return; }
     } });

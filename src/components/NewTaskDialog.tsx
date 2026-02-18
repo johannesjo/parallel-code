@@ -113,6 +113,7 @@ export function NewTaskDialog() {
         "z-index": "1000",
       }}
       onClick={(e) => { if (e.target === e.currentTarget) toggleNewTaskDialog(false); }}
+      onKeyDown={(e) => { if (e.key === "Escape") toggleNewTaskDialog(false); }}
     >
       <form
         onSubmit={handleSubmit}

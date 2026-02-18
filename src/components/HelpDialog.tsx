@@ -54,6 +54,7 @@ export function HelpDialog(props: HelpDialogProps) {
 
   function handleKeyDown(e: KeyboardEvent) {
     if (!dialogRef) return;
+    if (e.key === "Escape") { props.onClose(); return; }
     const step = 40;
     const page = 200;
     if (e.key === "ArrowDown") { e.preventDefault(); dialogRef.scrollTop += step; }
