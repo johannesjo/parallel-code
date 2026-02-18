@@ -1,5 +1,6 @@
 import { produce } from "solid-js/store";
 import { store, setStore } from "./core";
+import { closeTask } from "./tasks";
 import type { Project } from "./types";
 
 const PASTEL_HUES = [0, 30, 60, 120, 180, 210, 260, 300, 330];
@@ -39,4 +40,18 @@ export function removeProject(projectId: string): void {
 
 export function getProjectPath(projectId: string): string | undefined {
   return store.projects.find((p) => p.id === projectId)?.path;
+}
+
+export async function removeProjectWithTasks(projectId: string): Promise<void> {
+  // Collect task IDs belonging to this project BEFORE removing anything
+  const taskIds = store.taskOrder.filter(
+    (tid) => store.tasks[tid]?.projectId === projectId
+  );
+
+  // Close all tasks first (kills agents, removes worktrees/branches)
+  // Must happen before removeProject() since closeTask needs the project path
+  await Promise.all(taskIds.map((tid) => closeTask(tid)));
+
+  // Now remove the project itself
+  removeProject(projectId);
 }
