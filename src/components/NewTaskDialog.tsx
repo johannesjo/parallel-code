@@ -1,4 +1,4 @@
-import { createSignal, createEffect, For, Show, onMount } from "solid-js";
+import { createSignal, createEffect, For, Show, onMount, onCleanup } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { store, createTask, toggleNewTaskDialog, loadAgents, getProjectPath, getProject, getProjectBranchPrefix } from "../store/store";
 import { toBranchName } from "../lib/branch-name";
@@ -29,17 +29,33 @@ export function NewTaskDialog() {
   });
 
   // Fetch gitignored dirs when project changes
-  createEffect(async () => {
+  createEffect(() => {
     const pid = selectedProjectId();
     const path = pid ? getProjectPath(pid) : undefined;
+    let cancelled = false;
+
     if (!path) {
       setIgnoredDirs([]);
       setSelectedDirs(new Set<string>());
       return;
     }
-    const dirs = await invoke<string[]>("get_gitignored_dirs", { projectRoot: path });
-    setIgnoredDirs(dirs);
-    setSelectedDirs(new Set(dirs)); // all checked by default
+
+    void (async () => {
+      try {
+        const dirs = await invoke<string[]>("get_gitignored_dirs", { projectRoot: path });
+        if (cancelled) return;
+        setIgnoredDirs(dirs);
+        setSelectedDirs(new Set(dirs)); // all checked by default
+      } catch {
+        if (cancelled) return;
+        setIgnoredDirs([]);
+        setSelectedDirs(new Set<string>());
+      }
+    })();
+
+    onCleanup(() => {
+      cancelled = true;
+    });
   });
 
   const effectiveName = () => {

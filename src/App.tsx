@@ -48,7 +48,7 @@ const appWindow = getCurrentWindow();
 const MIN_WINDOW_DIMENSION = 100;
 
 function App() {
-  let mainRef!: HTMLElement;
+  let mainRef!: HTMLDivElement;
   const [windowFocused, setWindowFocused] = createSignal(true);
   const [windowMaximized, setWindowMaximized] = createSignal(false);
 

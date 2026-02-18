@@ -76,9 +76,9 @@ export function WindowTitleBar() {
           viewBox="0 0 56 56"
           fill="none"
           stroke="#ffffff"
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          stroke-width="4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
           aria-hidden="true"
         >
           <line x1="10" y1="6" x2="10" y2="50" />
@@ -99,7 +99,7 @@ export function WindowTitleBar() {
           title="Minimize"
         >
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-            <path d="M1 5h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            <path d="M1 5h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
           </svg>
         </button>
         <button
@@ -110,12 +110,12 @@ export function WindowTitleBar() {
         >
           {isMaximized() ? (
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-              <path d="M2 1.5h6v6H2z" stroke="currentColor" strokeWidth="1.1" />
-              <path d="M1 3.5v5h5" stroke="currentColor" strokeWidth="1.1" />
+              <path d="M2 1.5h6v6H2z" stroke="currentColor" stroke-width="1.1" />
+              <path d="M1 3.5v5h5" stroke="currentColor" stroke-width="1.1" />
             </svg>
           ) : (
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-              <rect x="1.5" y="1.5" width="7" height="7" stroke="currentColor" strokeWidth="1.1" />
+              <rect x="1.5" y="1.5" width="7" height="7" stroke="currentColor" stroke-width="1.1" />
             </svg>
           )}
         </button>
@@ -130,7 +130,7 @@ export function WindowTitleBar() {
           title="Close"
         >
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-            <path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            <path d="M2 2l6 6M8 2 2 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
           </svg>
         </button>
       </div>

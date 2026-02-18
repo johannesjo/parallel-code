@@ -14,6 +14,7 @@ use crate::state::AppState;
 use types::{PtyOutput, PtySession};
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // IPC command boundary; arguments map directly from frontend invoke payload.
 pub fn spawn_agent(
     state: tauri::State<'_, AppState>,
     task_id: String,

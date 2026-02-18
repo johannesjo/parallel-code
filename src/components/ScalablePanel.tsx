@@ -1,4 +1,4 @@
-import { onMount } from "solid-js";
+import { onMount, onCleanup } from "solid-js";
 import { getFontScale, adjustFontScale } from "../store/store";
 import type { JSX } from "solid-js";
 
@@ -11,12 +11,17 @@ interface ScalablePanelProps {
 export function ScalablePanel(props: ScalablePanelProps) {
   let ref!: HTMLDivElement;
   onMount(() => {
-    ref.addEventListener("wheel", (e) => {
+    const handleWheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
       e.stopPropagation();
       adjustFontScale(props.panelId, e.deltaY < 0 ? 1 : -1);
-    }, { passive: false });
+    };
+
+    ref.addEventListener("wheel", handleWheel, { passive: false });
+    onCleanup(() => {
+      ref.removeEventListener("wheel", handleWheel);
+    });
   });
 
   return (

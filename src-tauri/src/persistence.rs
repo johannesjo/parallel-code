@@ -11,7 +11,11 @@ fn state_file_path(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
         .map_err(|e| AppError::Git(format!("Failed to resolve app data dir: {}", e)))?;
 
     if cfg!(debug_assertions) {
-        dir.set_file_name(format!("{}-dev", dir.file_name().unwrap().to_string_lossy()));
+        if let Some(name) = dir.file_name() {
+            dir.set_file_name(format!("{}-dev", name.to_string_lossy()));
+        } else {
+            dir.push("dev");
+        }
     }
 
     Ok(dir.join("state.json"))
