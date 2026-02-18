@@ -22,6 +22,7 @@ export const [store, setStore] = createStore<AppStore>({
   sidebarFocused: false,
   showHelpDialog: false,
   pendingAction: null,
+  notification: null,
 });
 
 export function updateWindowTitle(taskName?: string): void {

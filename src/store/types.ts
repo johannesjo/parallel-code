@@ -95,4 +95,5 @@ export interface AppStore {
   sidebarFocused: boolean;
   showHelpDialog: boolean;
   pendingAction: PendingAction | null;
+  notification: string | null;
 }

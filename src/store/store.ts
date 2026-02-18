@@ -64,3 +64,4 @@ export {
   stopTaskStatusPolling,
 } from "./taskStatus";
 export type { TaskDotStatus } from "./taskStatus";
+export { showNotification, clearNotification } from "./notification";
