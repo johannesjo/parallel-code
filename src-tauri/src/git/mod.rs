@@ -305,7 +305,7 @@ fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppEr
         status_map.insert(path, status);
     }
 
-    // git status --porcelain for untracked files only
+    // git status --porcelain: collect all uncommitted paths + untracked files
     let status_str = Command::new("git")
         .args(["status", "--porcelain"])
         .current_dir(worktree_path)
@@ -314,11 +314,14 @@ fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppEr
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default();
 
+    let mut uncommitted_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
     for line in status_str.lines() {
-        if line.starts_with("??") && line.len() >= 3 {
-            let path = line[3..].trim_start().to_string();
-            status_map.entry(path).or_insert_with(|| "?".to_string());
+        if line.len() < 3 { continue; }
+        let path = line[3..].trim_start().to_string();
+        if line.starts_with("??") {
+            status_map.entry(path.clone()).or_insert_with(|| "?".to_string());
         }
+        uncommitted_paths.insert(path);
     }
 
     // git diff --numstat against main for line counts
@@ -340,12 +343,14 @@ fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppEr
         let removed = parts[1].parse::<u32>().unwrap_or(0);
         let path = parts[2].to_string();
         let status = status_map.get(&path).cloned().unwrap_or_else(|| "M".to_string());
+        let committed = !uncommitted_paths.contains(&path);
         seen.insert(path.clone());
         files.push(ChangedFile {
             path,
             lines_added: added,
             lines_removed: removed,
             status,
+            committed,
         });
     }
 
@@ -366,11 +371,12 @@ fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppEr
                 lines_added: added,
                 lines_removed: 0,
                 status: status.clone(),
+                committed: !uncommitted_paths.contains(path),
             });
         }
     }
 
-    files.sort_by(|a, b| a.path.cmp(&b.path));
+    files.sort_by(|a, b| a.committed.cmp(&b.committed).then_with(|| a.path.cmp(&b.path)));
     Ok(files)
 }
 

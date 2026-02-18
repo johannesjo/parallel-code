@@ -31,6 +31,7 @@ export interface ChangedFile {
   lines_added: number;
   lines_removed: number;
   status: string;
+  committed: boolean;
 }
 
 export interface WorktreeStatus {

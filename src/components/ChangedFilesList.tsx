@@ -43,6 +43,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
 
   const totalAdded = () => files().reduce((s, f) => s + f.lines_added, 0);
   const totalRemoved = () => files().reduce((s, f) => s + f.lines_removed, 0);
+  const uncommittedCount = () => files().filter((f) => !f.committed).length;
 
   return (
     <div
@@ -68,6 +69,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                 "white-space": "nowrap",
                 cursor: props.onFileClick ? "pointer" : "default",
                 "border-radius": "3px",
+                opacity: file.committed ? "0.45" : "1",
               }}
               onClick={() => props.onFileClick?.(file)}
             >
@@ -116,6 +118,17 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
           {files().length} files,{" "}
           <span style={{ color: theme.success }}>+{totalAdded()}</span>{" "}
           <span style={{ color: theme.error }}>-{totalRemoved()}</span>
+          <Show
+            when={
+              uncommittedCount() > 0 &&
+              uncommittedCount() < files().length
+            }
+          >
+            {" "}
+            <span style={{ color: theme.warning }}>
+              ({uncommittedCount()} uncommitted)
+            </span>
+          </Show>
         </div>
       </Show>
     </div>

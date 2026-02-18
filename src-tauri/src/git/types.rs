@@ -12,6 +12,7 @@ pub struct ChangedFile {
     pub lines_added: u32,
     pub lines_removed: u32,
     pub status: String,
+    pub committed: bool,
 }
 
 #[derive(Clone, Serialize)]
