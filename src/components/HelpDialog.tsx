@@ -1,4 +1,4 @@
-import { Show } from "solid-js";
+import { Show, createEffect } from "solid-js";
 import { Portal } from "solid-js/web";
 import { theme } from "../lib/theme";
 
@@ -42,6 +42,24 @@ const SECTIONS = [
 ];
 
 export function HelpDialog(props: HelpDialogProps) {
+  let dialogRef: HTMLDivElement | undefined;
+
+  createEffect(() => {
+    if (props.open) {
+      requestAnimationFrame(() => dialogRef?.focus());
+    }
+  });
+
+  function handleKeyDown(e: KeyboardEvent) {
+    if (!dialogRef) return;
+    const step = 40;
+    const page = 200;
+    if (e.key === "ArrowDown") { e.preventDefault(); dialogRef.scrollTop += step; }
+    else if (e.key === "ArrowUp") { e.preventDefault(); dialogRef.scrollTop -= step; }
+    else if (e.key === "PageDown") { e.preventDefault(); dialogRef.scrollTop += page; }
+    else if (e.key === "PageUp") { e.preventDefault(); dialogRef.scrollTop -= page; }
+  }
+
   return (
     <Portal>
       <Show when={props.open}>
@@ -60,6 +78,9 @@ export function HelpDialog(props: HelpDialogProps) {
           }}
         >
           <div
+            ref={dialogRef}
+            tabIndex={0}
+            onKeyDown={handleKeyDown}
             style={{
               background: theme.islandBg,
               border: `1px solid ${theme.border}`,
@@ -71,6 +92,7 @@ export function HelpDialog(props: HelpDialogProps) {
               display: "flex",
               "flex-direction": "column",
               gap: "20px",
+              outline: "none",
               "box-shadow": "0 12px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03) inset",
             }}
             onClick={(e) => e.stopPropagation()}

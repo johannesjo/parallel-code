@@ -15,14 +15,28 @@ interface ConfirmDialogProps {
 }
 
 export function ConfirmDialog(props: ConfirmDialogProps) {
+  let dialogRef: HTMLDivElement | undefined;
+
   createEffect(() => {
     if (!props.open) return;
+    // Auto-focus the dialog panel so arrow keys work immediately
+    requestAnimationFrame(() => dialogRef?.focus());
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") props.onCancel();
     };
     document.addEventListener("keydown", handler);
     onCleanup(() => document.removeEventListener("keydown", handler));
   });
+
+  function handleDialogKeyDown(e: KeyboardEvent) {
+    if (!dialogRef) return;
+    const step = 40;
+    const page = 200;
+    if (e.key === "ArrowDown") { e.preventDefault(); dialogRef.scrollTop += step; }
+    else if (e.key === "ArrowUp") { e.preventDefault(); dialogRef.scrollTop -= step; }
+    else if (e.key === "PageDown") { e.preventDefault(); dialogRef.scrollTop += page; }
+    else if (e.key === "PageUp") { e.preventDefault(); dialogRef.scrollTop -= page; }
+  }
 
   return (
     <Portal>
@@ -43,15 +57,21 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           }}
         >
           <div
+            ref={dialogRef}
+            tabIndex={0}
+            onKeyDown={handleDialogKeyDown}
             style={{
               background: theme.islandBg,
               border: `1px solid ${theme.border}`,
               "border-radius": "14px",
               padding: "28px",
               width: props.width ?? "400px",
+              "max-height": "80vh",
+              overflow: "auto",
               display: "flex",
               "flex-direction": "column",
               gap: "16px",
+              outline: "none",
               "box-shadow":
                 "0 12px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03) inset",
             }}
