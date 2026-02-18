@@ -28,6 +28,8 @@ export const [store, setStore] = createStore<AppStore>({
   notification: null,
   completedTaskDate: getLocalDateKey(),
   completedTaskCount: 0,
+  mergedLinesAdded: 0,
+  mergedLinesRemoved: 0,
   themePreset: "classic",
   windowState: null,
 });

@@ -26,3 +26,10 @@ pub struct MergeStatus {
     pub main_ahead_count: u32,
     pub conflicting_files: Vec<String>,
 }
+
+#[derive(Clone, Serialize)]
+pub struct MergeResult {
+    pub main_branch: String,
+    pub lines_added: u32,
+    pub lines_removed: u32,
+}

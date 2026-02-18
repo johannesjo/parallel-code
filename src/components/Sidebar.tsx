@@ -12,6 +12,7 @@ import {
   adjustFontScale,
   getTaskDotStatus,
   getCompletedTasksTodayCount,
+  getMergedLineTotals,
   registerFocusFn,
   unregisterFocusFn,
   focusSidebar,
@@ -70,6 +71,7 @@ export function Sidebar() {
     return { grouped, orphaned };
   });
   const completedTasksToday = createMemo(() => getCompletedTasksTodayCount());
+  const mergedLines = createMemo(() => getMergedLineTotals());
 
   function handleResizeMouseDown(e: MouseEvent) {
     e.preventDefault();
@@ -610,6 +612,30 @@ export function Sidebar() {
             "font-variant-numeric": "tabular-nums",
           }}>
             {completedTasksToday()}
+          </span>
+        </div>
+        <div style={{
+          display: "flex",
+          "align-items": "center",
+          "justify-content": "space-between",
+          background: theme.bgInput,
+          border: `1px solid ${theme.border}`,
+          "border-radius": "8px",
+          padding: "8px 10px",
+          "font-size": sf(11),
+          color: theme.fgMuted,
+        }}>
+          <span>Merged to main/master</span>
+          <span style={{
+            color: theme.fg,
+            "font-weight": "600",
+            "font-variant-numeric": "tabular-nums",
+            display: "flex",
+            "align-items": "center",
+            gap: "8px",
+          }}>
+            <span style={{ color: theme.success }}>+{mergedLines().added.toLocaleString()}</span>
+            <span style={{ color: theme.error }}>-{mergedLines().removed.toLocaleString()}</span>
           </span>
         </div>
       </div>

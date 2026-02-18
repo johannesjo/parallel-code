@@ -5,7 +5,7 @@ use std::process::Command;
 use tracing::{info, error};
 
 use crate::error::AppError;
-use types::{ChangedFile, MergeStatus, WorktreeInfo, WorktreeStatus};
+use types::{ChangedFile, MergeResult, MergeStatus, WorktreeInfo, WorktreeStatus};
 
 pub fn create_worktree(
     repo_root: &str,
@@ -174,7 +174,7 @@ pub async fn merge_task(
     squash: bool,
     message: Option<String>,
     cleanup: bool,
-) -> Result<String, AppError> {
+) -> Result<MergeResult, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         merge_task_sync(&project_root, &branch_name, squash, message.as_deref(), cleanup)
     })
@@ -188,9 +188,10 @@ fn merge_task_sync(
     squash: bool,
     message: Option<&str>,
     cleanup: bool,
-) -> Result<String, AppError> {
+) -> Result<MergeResult, AppError> {
     info!(branch = %branch_name, root = %project_root, squash, cleanup, "Merging task branch");
     let main_branch = detect_main_branch(project_root)?;
+    let (lines_added, lines_removed) = compute_branch_diff_stats(project_root, &main_branch, branch_name)?;
 
     // Checkout main branch in the repo root
     let output = Command::new("git")
@@ -244,7 +245,43 @@ fn merge_task_sync(
         remove_worktree(project_root, branch_name, true)?;
     }
 
-    Ok(main_branch)
+    Ok(MergeResult {
+        main_branch,
+        lines_added,
+        lines_removed,
+    })
+}
+
+fn compute_branch_diff_stats(
+    project_root: &str,
+    main_branch: &str,
+    branch_name: &str,
+) -> Result<(u32, u32), AppError> {
+    let output = Command::new("git")
+        .args(["diff", "--numstat", &format!("{}..{}", main_branch, branch_name)])
+        .current_dir(project_root)
+        .output()
+        .map_err(|e| AppError::Git(e.to_string()))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::Git(format!("Failed to collect merge diff stats: {}", stderr)));
+    }
+
+    let diff_str = String::from_utf8_lossy(&output.stdout);
+    let mut lines_added: u32 = 0;
+    let mut lines_removed: u32 = 0;
+
+    for line in diff_str.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        lines_added = lines_added.saturating_add(parts[0].parse::<u32>().unwrap_or(0));
+        lines_removed = lines_removed.saturating_add(parts[1].parse::<u32>().unwrap_or(0));
+    }
+
+    Ok((lines_added, lines_removed))
 }
 
 /// Get commit log for a branch relative to main (for pre-filling squash messages).
