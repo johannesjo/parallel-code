@@ -391,6 +391,11 @@ textarea::placeholder {
   z-index: 10;
 }
 
+/* Prompt input already has its own textarea focus treatment */
+.prompt-input-panel:focus-within::after {
+  content: none;
+}
+
 .dialog-overlay {
   animation: fadeIn 0.16s ease;
   background: color-mix(in srgb, #000 44%, transparent);
@@ -565,7 +570,7 @@ body.dragging-task * {
 }
 
 .prompt-send-btn {
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 28%, transparent);
+  box-shadow: none;
 }
 
 .prompt-send-btn:hover:not(:disabled) {
