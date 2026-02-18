@@ -8,6 +8,7 @@ interface ConfirmDialogProps {
   message: string | JSX.Element;
   confirmLabel?: string;
   cancelLabel?: string;
+  confirmLoading?: boolean;
   danger?: boolean;
   confirmDisabled?: boolean;
   autoFocusCancel?: boolean;
@@ -135,8 +136,14 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                   "font-size": "13px",
                   "font-weight": "500",
                   opacity: props.confirmDisabled ? "0.5" : "1",
+                  display: "inline-flex",
+                  "align-items": "center",
+                  gap: "8px",
                 }}
               >
+                <Show when={props.confirmLoading}>
+                  <span class="inline-spinner" aria-hidden="true" />
+                </Show>
                 {props.confirmLabel ?? "Confirm"}
               </button>
             </div>

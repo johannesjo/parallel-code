@@ -1155,7 +1155,8 @@ export function TaskPanel(props: TaskPanelProps) {
             </Show>
           </div>
         }
-        confirmDisabled={hasConflicts() || !hasCommittedChangesToMerge()}
+        confirmDisabled={merging() || hasConflicts() || !hasCommittedChangesToMerge()}
+        confirmLoading={merging()}
         confirmLabel={merging() ? "Merging..." : squash() ? "Squash Merge" : "Merge"}
         onConfirm={async () => {
           setMergeError("");

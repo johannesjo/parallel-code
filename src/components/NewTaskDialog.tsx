@@ -402,8 +402,14 @@ export function NewTaskDialog() {
               "font-size": "13px",
               "font-weight": "500",
               opacity: !canSubmit() ? "0.4" : "1",
+              display: "inline-flex",
+              "align-items": "center",
+              gap: "8px",
             }}
           >
+            <Show when={loading()}>
+              <span class="inline-spinner" aria-hidden="true" />
+            </Show>
             {loading() ? "Creating..." : "Create Task"}
           </button>
         </div>

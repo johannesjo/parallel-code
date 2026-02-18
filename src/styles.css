@@ -440,6 +440,20 @@ textarea::placeholder {
   to { opacity: 1; }
 }
 
+@keyframes spinnerSpin {
+  to { transform: rotate(360deg); }
+}
+
+.inline-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, currentColor 32%, transparent);
+  border-top-color: currentColor;
+  animation: spinnerSpin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(12px) scale(0.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
