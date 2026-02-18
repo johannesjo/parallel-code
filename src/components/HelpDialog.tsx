@@ -37,6 +37,7 @@ const SECTIONS = [
       [`${mod} + N`, "New task"],
       [`${mod} + Shift + A`, "New task"],
       [`${mod} + B`, "Toggle sidebar"],
+      [`${mod} + ,`, "Open settings"],
       [`${mod} + 0`, "Reset zoom"],
       [`${mod} + / or F1`, "Toggle this help"],
       ["Escape", "Close dialogs"],

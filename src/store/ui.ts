@@ -1,5 +1,6 @@
 import { produce } from "solid-js/store";
 import { store, setStore } from "./core";
+import type { LookPreset } from "../lib/look";
 
 // --- Font Scale ---
 
@@ -63,4 +64,8 @@ export function setPanelSizes(entries: Record<string, number>): void {
 
 export function toggleSidebar(): void {
   setStore("sidebarVisible", !store.sidebarVisible);
+}
+
+export function setThemePreset(themePreset: LookPreset): void {
+  setStore("themePreset", themePreset);
 }

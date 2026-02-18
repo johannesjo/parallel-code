@@ -41,6 +41,7 @@ export {
   setPendingAction,
   clearPendingAction,
   toggleHelpDialog,
+  toggleSettingsDialog,
   sendActivePrompt,
   setSidebarFocusedProjectId,
 } from "./focus";
@@ -56,6 +57,7 @@ export {
   getPanelSize,
   setPanelSizes,
   toggleSidebar,
+  setThemePreset,
 } from "./ui";
 export {
   getTaskDotStatus,

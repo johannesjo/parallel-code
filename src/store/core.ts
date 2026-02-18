@@ -24,10 +24,12 @@ export const [store, setStore] = createStore<AppStore>({
   sidebarFocusedProjectId: null,
   sidebarFocusedTaskId: null,
   showHelpDialog: false,
+  showSettingsDialog: false,
   pendingAction: null,
   notification: null,
   completedTaskDate: getLocalDateKey(),
   completedTaskCount: 0,
+  themePreset: "classic",
 });
 
 export function updateWindowTitle(taskName?: string): void {

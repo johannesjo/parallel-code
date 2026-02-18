@@ -12,6 +12,7 @@ export function setupAutosave(): void {
     void store.globalScale;
     void store.completedTaskDate;
     void store.completedTaskCount;
+    void store.themePreset;
     void store.projects.length;
     void store.lastProjectId;
     void store.lastAgentId;

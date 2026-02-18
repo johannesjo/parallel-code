@@ -245,6 +245,10 @@ export function toggleHelpDialog(show?: boolean): void {
   setStore("showHelpDialog", show ?? !store.showHelpDialog);
 }
 
+export function toggleSettingsDialog(show?: boolean): void {
+  setStore("showSettingsDialog", show ?? !store.showSettingsDialog);
+}
+
 export function sendActivePrompt(): void {
   const taskId = store.activeTaskId;
   if (!taskId) return;

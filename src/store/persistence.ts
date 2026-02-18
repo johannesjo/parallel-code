@@ -6,6 +6,7 @@ import { randomPastelColor } from "./projects";
 import { markAgentSpawned } from "./taskStatus";
 import { getLocalDateKey } from "../lib/date";
 import type { Agent, Task, PersistedState, PersistedTask, Project } from "./types";
+import { isLookPreset } from "../lib/look";
 
 export async function saveState(): Promise<void> {
   const persisted: PersistedState = {
@@ -21,6 +22,7 @@ export async function saveState(): Promise<void> {
     globalScale: store.globalScale,
     completedTaskDate: store.completedTaskDate,
     completedTaskCount: store.completedTaskCount,
+    themePreset: store.themePreset,
   };
 
   for (const taskId of store.taskOrder) {
@@ -134,6 +136,7 @@ export async function loadState(): Promise<void> {
         s.completedTaskDate = today;
         s.completedTaskCount = 0;
       }
+      s.themePreset = isLookPreset(rawAny.themePreset) ? rawAny.themePreset : "classic";
 
       for (const taskId of raw.taskOrder) {
         const pt = raw.tasks[taskId];

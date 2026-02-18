@@ -1,4 +1,5 @@
 import type { AgentDef, WorktreeStatus } from "../ipc/types";
+import type { LookPreset } from "../lib/look";
 
 export interface TerminalBookmark {
   id: string;
@@ -67,6 +68,7 @@ export interface PersistedState {
   globalScale?: number;
   completedTaskDate?: string;
   completedTaskCount?: number;
+  themePreset?: LookPreset;
 }
 
 // Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.
@@ -99,8 +101,10 @@ export interface AppStore {
   sidebarFocusedProjectId: string | null;
   sidebarFocusedTaskId: string | null;
   showHelpDialog: boolean;
+  showSettingsDialog: boolean;
   pendingAction: PendingAction | null;
   notification: string | null;
   completedTaskDate: string;
   completedTaskCount: number;
+  themePreset: LookPreset;
 }

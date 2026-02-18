@@ -273,7 +273,7 @@ export function TaskPanel(props: TaskPanelProps) {
             "justify-content": "space-between",
             padding: "0 10px",
             height: "100%",
-            background: theme.islandBg,
+            background: "transparent",
             "border-bottom": `1px solid ${theme.border}`,
             "user-select": "none",
             cursor: "grab",
@@ -399,7 +399,7 @@ export function TaskPanel(props: TaskPanelProps) {
                   style={{
                     width: "100%",
                     height: "100%",
-                    background: theme.bgElevated,
+                    background: theme.taskPanelBg,
                     border: "none",
                     padding: "6px 8px",
                     color: theme.fg,
@@ -422,8 +422,7 @@ export function TaskPanel(props: TaskPanelProps) {
                 <div
                   style={{
                     height: "100%",
-                    background: theme.bgElevated,
-                    "border-left": `1px solid ${theme.border}`,
+                    background: theme.taskPanelBg,
                     display: "flex",
                     "flex-direction": "column",
                   }}
@@ -465,10 +464,10 @@ export function TaskPanel(props: TaskPanelProps) {
       requestSize: () => props.task.shellAgentIds.length > 0 ? 200 : 28,
       content: () => (
         <ScalablePanel panelId={`${props.task.id}:shell`}>
-        <div style={{ height: "100%", display: "flex", "flex-direction": "column", background: theme.bgElevated }}>
+        <div style={{ height: "100%", display: "flex", "flex-direction": "column", background: "transparent" }}>
           <div
             ref={shellToolbarRef}
-            class="focusable-panel"
+            class="focusable-panel shell-toolbar-panel"
             tabIndex={0}
             onClick={() => setTaskFocusedPanel(props.task.id, "shell-toolbar")}
             onFocus={() => setShellToolbarFocused(true)}
@@ -498,9 +497,7 @@ export function TaskPanel(props: TaskPanelProps) {
               display: "flex",
               "align-items": "center",
               padding: "0 8px",
-              background: theme.bgElevated,
-              "border-top": `1px solid ${theme.border}`,
-              "border-bottom": `1px solid ${theme.border}`,
+              background: "transparent",
               gap: "4px",
               outline: "none",
             }}
@@ -514,7 +511,7 @@ export function TaskPanel(props: TaskPanelProps) {
               tabIndex={-1}
               title={`Open terminal (${mod}+Shift+T)`}
               style={{
-                background: "transparent",
+                background: theme.taskPanelBg,
                 border: `1px solid ${shellToolbarIdx() === 0 && shellToolbarFocused() ? theme.accent : theme.border}`,
                 color: theme.fgMuted,
                 cursor: "pointer",
@@ -541,7 +538,7 @@ export function TaskPanel(props: TaskPanelProps) {
                   tabIndex={-1}
                   title={bookmark.command}
                   style={{
-                    background: "transparent",
+                    background: theme.taskPanelBg,
                     border: `1px solid ${shellToolbarIdx() === i() + 1 && shellToolbarFocused() ? theme.accent : theme.border}`,
                     color: theme.fgMuted,
                     cursor: "pointer",
@@ -560,7 +557,14 @@ export function TaskPanel(props: TaskPanelProps) {
             </For>
           </div>
           <Show when={props.task.shellAgentIds.length > 0}>
-            <div style={{ flex: "1", display: "flex", overflow: "hidden", background: theme.bgElevated }}>
+            <div style={{
+              flex: "1",
+              display: "flex",
+              overflow: "hidden",
+              background: theme.taskContainerBg,
+              gap: "6px",
+              "margin-top": "6px",
+            }}>
               <For each={props.task.shellAgentIds}>
                 {(shellId, i) => {
                   const initialCommand = consumePendingShellCommand(shellId);
@@ -581,9 +585,9 @@ export function TaskPanel(props: TaskPanelProps) {
                       class="focusable-panel shell-terminal-container"
                       style={{
                         flex: "1",
-                        "border-left": i() > 0 ? `1px solid ${theme.border}` : "none",
                         overflow: "hidden",
                         position: "relative",
+                        background: theme.taskPanelBg,
                       }}
                       onClick={() => setTaskFocusedPanel(props.task.id, `shell:${i()}`)}
                     >
@@ -655,7 +659,7 @@ export function TaskPanel(props: TaskPanelProps) {
       minSize: 80,
       content: () => (
         <ScalablePanel panelId={`${props.task.id}:ai-terminal`}>
-        <div class="focusable-panel" style={{ height: "100%", position: "relative", background: theme.bgElevated, display: "flex", "flex-direction": "column" }} onClick={() => setTaskFocusedPanel(props.task.id, "ai-terminal")}>
+        <div class="focusable-panel" style={{ height: "100%", position: "relative", background: theme.taskPanelBg, display: "flex", "flex-direction": "column" }} onClick={() => setTaskFocusedPanel(props.task.id, "ai-terminal")}>
           <InfoBar title={props.task.lastPrompt || "No prompts sent yet"}>
             <span style={{ opacity: props.task.lastPrompt ? 1 : 0.4 }}>
               {props.task.lastPrompt
@@ -775,7 +779,7 @@ export function TaskPanel(props: TaskPanelProps) {
         display: "flex",
         "flex-direction": "column",
         height: "100%",
-        background: theme.islandBg,
+        background: theme.taskContainerBg,
         "border-radius": "12px",
         border: `1px solid ${theme.border}`,
         overflow: "clip",

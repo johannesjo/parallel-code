@@ -5,6 +5,7 @@ import { Sidebar } from "./components/Sidebar";
 import { TilingLayout } from "./components/TilingLayout";
 import { NewTaskDialog } from "./components/NewTaskDialog";
 import { HelpDialog } from "./components/HelpDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { theme } from "./lib/theme";
 import {
   store,
@@ -23,6 +24,7 @@ import {
   navigateColumn,
   setPendingAction,
   toggleHelpDialog,
+  toggleSettingsDialog,
   sendActivePrompt,
   spawnShellForTask,
   closeShell,
@@ -112,9 +114,11 @@ function App() {
     registerShortcut({ key: "a", cmdOrCtrl: true, shift: true, global: true, handler: () => toggleNewTaskDialog(true) });
     registerShortcut({ key: "b", ctrl: true, handler: () => toggleSidebar() });
     registerShortcut({ key: "/", ctrl: true, global: true, handler: () => toggleHelpDialog() });
+    registerShortcut({ key: ",", cmdOrCtrl: true, global: true, handler: () => toggleSettingsDialog() });
     registerShortcut({ key: "F1", global: true, handler: () => toggleHelpDialog() });
     registerShortcut({ key: "Escape", handler: () => {
       if (store.showHelpDialog) { toggleHelpDialog(false); return; }
+      if (store.showSettingsDialog) { toggleSettingsDialog(false); return; }
       if (store.showNewTaskDialog) { toggleNewTaskDialog(false); return; }
     } });
     registerShortcut({ key: "0", ctrl: true, handler: () => {
@@ -141,7 +145,7 @@ function App() {
         gap: "16px",
         background: theme.bg,
         color: theme.fg,
-        "font-family": "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+        "font-family": "var(--font-ui, 'Sora', sans-serif)",
       }}>
         <div style={{ "font-size": "18px", "font-weight": "600", color: theme.error }}>
           Something went wrong
@@ -167,6 +171,8 @@ function App() {
     )}>
       <main
         ref={mainRef}
+        class="app-shell"
+        data-look={store.themePreset}
         style={{
           width: `${100 / getGlobalScale()}vw`,
           height: `${100 / getGlobalScale()}vh`,
@@ -175,7 +181,7 @@ function App() {
           display: "flex",
           background: theme.bg,
           color: theme.fg,
-          "font-family": "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          "font-family": "var(--font-ui, 'Sora', sans-serif)",
           "font-size": "13px",
           overflow: "hidden",
         }}
@@ -214,6 +220,7 @@ function App() {
           <NewTaskDialog />
         </Show>
         <HelpDialog open={store.showHelpDialog} onClose={() => toggleHelpDialog(false)} />
+        <SettingsDialog open={store.showSettingsDialog} onClose={() => toggleSettingsDialog(false)} />
         <Show when={store.notification}>
           <div
             onClick={() => clearNotification()}

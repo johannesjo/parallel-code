@@ -33,11 +33,13 @@ export const theme = {
   islandBg: "var(--island-bg)",
   islandBorder: "var(--island-border)",
   islandRadius: "var(--island-radius)",
+  taskContainerBg: "var(--task-container-bg)",
+  taskPanelBg: "var(--task-panel-bg)",
 
-  // Terminal ANSI colors — raw hex required by xterm.js
+  // Terminal ANSI colors
   // background/foreground/cursor/selection mirror the CSS variables above
   terminal: {
-    background: "#1a1b1d",
+    background: "#00000000",
     foreground: "#BCBEC4",
     cursor: "#BCBEC4",
     selectionBackground: "#2a3a6e",

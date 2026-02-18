@@ -50,9 +50,10 @@ export function PromptInput(props: PromptInputProps) {
   }
 
   return (
-    <div class="focusable-panel" style={{ display: "flex", height: "100%", padding: "4px 6px", "border-radius": "12px" }}>
+    <div class="focusable-panel prompt-input-panel" style={{ display: "flex", height: "100%", padding: "4px 6px", "border-radius": "12px" }}>
       <div style={{ position: "relative", flex: "1", display: "flex" }}>
         <textarea
+          class="prompt-textarea"
           ref={(el) => { textareaRef = el; props.ref?.(el); }}
           rows={3}
           value={text()}
@@ -78,6 +79,7 @@ export function PromptInput(props: PromptInputProps) {
           }}
         />
         <button
+          class="prompt-send-btn"
           type="button"
           disabled={!text().trim()}
           onClick={handleSend}
