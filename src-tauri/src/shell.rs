@@ -1,9 +1,10 @@
+use std::process::Stdio;
 use std::sync::OnceLock;
 use tracing::{info, warn};
 
 static LOGIN_PATH: OnceLock<Option<String>> = OnceLock::new();
 
-/// Returns the user's login shell PATH, resolved once via `$SHELL -lc`.
+/// Returns the user's login shell PATH, resolved once via `$SHELL -lic`.
 ///
 /// When the app is launched from a `.desktop` file, the process PATH is
 /// minimal and doesn't include directories like `~/.nvm/.../bin`. Running
@@ -13,7 +14,8 @@ pub fn login_path() -> Option<&'static str> {
         .get_or_init(|| {
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
             let output = std::process::Command::new(&shell)
-                .args(["-lc", r#"printf "MUSH_PATH:%s\n" "$PATH""#])
+                .args(["-lic", r#"printf "MUSH_PATH:%s\n" "$PATH""#])
+                .stdin(Stdio::null())
                 .output();
 
             match output {
