@@ -62,6 +62,7 @@ export {
 export {
   getTaskDotStatus,
   markAgentActive,
+  markAgentOutput,
   clearAgentActivity,
   startTaskStatusPolling,
   stopTaskStatusPolling,

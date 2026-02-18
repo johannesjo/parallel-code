@@ -17,7 +17,7 @@ interface TerminalViewProps {
   cwd: string;
   env?: Record<string, string>;
   onExit?: (exitInfo: { exit_code: number | null; signal: string | null; last_output: string[] }) => void;
-  onData?: () => void;
+  onData?: (data: Uint8Array) => void;
   onPromptDetected?: (text: string) => void;
   onReady?: (focusFn: () => void) => void;
   fontSize?: number;
@@ -148,7 +148,7 @@ export function TerminalView(props: TerminalViewProps) {
       term.write(payload, () => {
         outputWriteInFlight = false;
         scheduleRefresh();
-        props.onData?.();
+        props.onData?.(payload);
         if (outputQueue.length > 0) {
           scheduleOutputFlush();
           return;

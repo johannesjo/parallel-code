@@ -21,7 +21,7 @@ import {
   reorderTask,
   getFontScale,
   getTaskDotStatus,
-  markAgentActive,
+  markAgentOutput,
   registerFocusFn,
   unregisterFocusFn,
   setTaskFocusedPanel,
@@ -732,7 +732,7 @@ export function TaskPanel(props: TaskPanelProps) {
                       args={a().resumed && a().def.resume_args?.length ? a().def.resume_args! : a().def.args}
                       cwd={props.task.worktreePath}
                       onExit={(code) => markAgentExited(a().id, code)}
-                      onData={() => markAgentActive(a().id)}
+                      onData={(data) => markAgentOutput(a().id, data)}
                       onPromptDetected={(text) => setLastPrompt(props.task.id, text)}
                       onReady={(focusFn) => registerFocusFn(`${props.task.id}:ai-terminal`, focusFn)}
                       fontSize={Math.round(13 * getFontScale(`${props.task.id}:ai-terminal`))}
