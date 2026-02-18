@@ -175,7 +175,6 @@ export function navigateColumn(direction: "left" | "right"): void {
   // From sidebar
   if (store.sidebarFocused) {
     if (direction === "right") {
-      if (store.sidebarFocusedProjectId) return; // project focused, no-op
       const targetTaskId = store.sidebarFocusedTaskId ?? taskId;
       if (targetTaskId) {
         if (targetTaskId !== store.activeTaskId) setActiveTask(targetTaskId);
