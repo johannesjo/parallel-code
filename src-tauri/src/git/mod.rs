@@ -143,6 +143,24 @@ fn detect_main_branch(repo_root: &str) -> Result<String, AppError> {
     Err(AppError::Git("Could not find main or master branch".into()))
 }
 
+/// Find the merge base between main and HEAD so diffs only show branch-specific changes.
+fn detect_merge_base(repo_root: &str) -> Result<String, AppError> {
+    let main_branch = detect_main_branch(repo_root)?;
+    let output = Command::new("git")
+        .args(["merge-base", &main_branch, "HEAD"])
+        .current_dir(repo_root)
+        .output()
+        .map_err(|e| AppError::Git(e.to_string()))?;
+    if output.status.success() {
+        let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !hash.is_empty() {
+            return Ok(hash);
+        }
+    }
+    // Fallback to main branch name if merge-base fails (e.g. no common ancestor)
+    Ok(main_branch)
+}
+
 #[tauri::command]
 pub async fn merge_task(
     project_root: String,
@@ -283,11 +301,11 @@ pub async fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>
 
 fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppError> {
     let mut files: Vec<ChangedFile> = Vec::new();
-    let main_branch = detect_main_branch(worktree_path).unwrap_or_else(|_| "HEAD".into());
+    let base = detect_merge_base(worktree_path).unwrap_or_else(|_| "HEAD".into());
 
-    // git diff --name-status against main: statuses for all tracked changes (committed + uncommitted)
+    // git diff --name-status against merge base: only branch-specific changes
     let name_status_str = Command::new("git")
-        .args(["diff", "--name-status", &main_branch])
+        .args(["diff", "--name-status", &base])
         .current_dir(worktree_path)
         .output()
         .ok()
@@ -324,9 +342,9 @@ fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppEr
         uncommitted_paths.insert(path);
     }
 
-    // git diff --numstat against main for line counts
+    // git diff --numstat against merge base for line counts
     let diff_str = Command::new("git")
-        .args(["diff", "--numstat", &main_branch])
+        .args(["diff", "--numstat", &base])
         .current_dir(worktree_path)
         .output()
         .ok()
@@ -390,11 +408,11 @@ pub async fn get_file_diff(worktree_path: String, file_path: String) -> Result<S
 }
 
 fn get_file_diff_sync(worktree_path: &str, file_path: &str) -> Result<String, AppError> {
-    let main_branch = detect_main_branch(worktree_path).unwrap_or_else(|_| "HEAD".into());
+    let base = detect_merge_base(worktree_path).unwrap_or_else(|_| "HEAD".into());
 
-    // Try git diff against main branch
+    // Try git diff against merge base (only branch-specific changes)
     let output = Command::new("git")
-        .args(["diff", &main_branch, "--", file_path])
+        .args(["diff", &base, "--", file_path])
         .current_dir(worktree_path)
         .output()
         .map_err(|e| AppError::Git(e.to_string()))?;
