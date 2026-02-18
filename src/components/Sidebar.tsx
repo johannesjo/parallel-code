@@ -98,7 +98,7 @@ export function Sidebar() {
     const idx = store.taskOrder.indexOf(activeId);
     if (idx < 0) return;
     const el = taskListRef.querySelector<HTMLElement>(`[data-task-index="${idx}"]`);
-    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    el?.scrollIntoView({ block: "nearest", behavior: "instant" });
   });
 
   async function handleAddProject() {

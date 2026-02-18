@@ -14,7 +14,7 @@ export function TilingLayout() {
     const activeId = store.activeTaskId;
     if (!activeId || !containerRef) return;
     const el = containerRef.querySelector<HTMLElement>(`[data-task-id="${activeId}"]`);
-    el?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    el?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
   });
   // Cache PanelChild objects by ID so <For> sees stable references
   // and doesn't unmount/remount panels when taskOrder changes.
