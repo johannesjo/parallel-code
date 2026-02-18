@@ -70,11 +70,9 @@ export function NewTaskDialog() {
     return pid ? getProject(pid) : undefined;
   };
 
-  const noProjects = () => store.projects.length === 0;
-
   const canSubmit = () => {
     const hasContent = !!effectiveName();
-    return hasContent && !noProjects() && !!selectedProjectId() && !loading();
+    return hasContent && !!selectedProjectId() && !loading();
   };
 
   async function handleSubmit(e: Event) {
@@ -224,54 +222,41 @@ export function NewTaskDialog() {
           <label style={{ "font-size": "11px", color: theme.fgMuted, "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
             Project
           </label>
-          <Show when={!noProjects()} fallback={
-            <div style={{
-              "font-size": "12px",
-              color: theme.fgSubtle,
-              background: theme.bgInput,
-              padding: "10px 14px",
-              "border-radius": "8px",
-              border: `1px solid ${theme.border}`,
-            }}>
-              No projects configured. Add one in the sidebar first.
-            </div>
-          }>
-            <div style={{ position: "relative", display: "flex", "align-items": "center" }}>
-              <Show when={selectedProject()}>
-                <div style={{
-                  position: "absolute",
-                  left: "12px",
-                  width: "10px",
-                  height: "10px",
-                  "border-radius": "50%",
-                  background: selectedProject()!.color,
-                  "pointer-events": "none",
-                  "z-index": "1",
-                }} />
-              </Show>
-              <select
-                value={selectedProjectId() ?? ""}
-                onChange={(e) => setSelectedProjectId(e.currentTarget.value || null)}
-                style={{
-                  width: "100%",
-                  background: theme.bgInput,
-                  border: `1px solid ${theme.border}`,
-                  "border-radius": "8px",
-                  padding: selectedProject() ? "10px 14px 10px 30px" : "10px 14px",
-                  color: theme.fg,
-                  "font-size": "13px",
-                  outline: "none",
-                  "color-scheme": "dark",
-                }}
-              >
-                <For each={store.projects}>
-                  {(project) => (
-                    <option value={project.id}>{project.name} — {project.path}</option>
-                  )}
-                </For>
-              </select>
-            </div>
-          </Show>
+          <div style={{ position: "relative", display: "flex", "align-items": "center" }}>
+            <Show when={selectedProject()}>
+              <div style={{
+                position: "absolute",
+                left: "12px",
+                width: "10px",
+                height: "10px",
+                "border-radius": "50%",
+                background: selectedProject()!.color,
+                "pointer-events": "none",
+                "z-index": "1",
+              }} />
+            </Show>
+            <select
+              value={selectedProjectId() ?? ""}
+              onChange={(e) => setSelectedProjectId(e.currentTarget.value || null)}
+              style={{
+                width: "100%",
+                background: theme.bgInput,
+                border: `1px solid ${theme.border}`,
+                "border-radius": "8px",
+                padding: selectedProject() ? "10px 14px 10px 30px" : "10px 14px",
+                color: theme.fg,
+                "font-size": "13px",
+                outline: "none",
+                "color-scheme": "dark",
+              }}
+            >
+              <For each={store.projects}>
+                {(project) => (
+                  <option value={project.id}>{project.name} — {project.path}</option>
+                )}
+              </For>
+            </select>
+          </div>
         </div>
 
         <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
