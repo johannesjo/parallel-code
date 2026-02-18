@@ -393,7 +393,7 @@ export function Sidebar() {
                           <div class="drop-indicator" />
                         </Show>
                         <div
-                          class={`task-item${task()!.closingStatus === "removing" ? " task-item-removing" : ""}`}
+                          class={`task-item${task()!.closingStatus === "removing" ? " task-item-removing" : " task-item-appearing"}`}
                           data-task-index={idx()}
                           onClick={() => { setActiveTask(taskId); focusSidebar(); }}
                           style={{
@@ -451,7 +451,7 @@ export function Sidebar() {
                     <div class="drop-indicator" />
                   </Show>
                   <div
-                    class={`task-item${task()!.closingStatus === "removing" ? " task-item-removing" : ""}`}
+                    class={`task-item${task()!.closingStatus === "removing" ? " task-item-removing" : " task-item-appearing"}`}
                     data-task-index={idx()}
                     onClick={() => { setActiveTask(taskId); focusSidebar(); }}
                     style={{

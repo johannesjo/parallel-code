@@ -141,6 +141,24 @@ textarea::placeholder {
   box-shadow: 0 0 0 1px var(--accent), inset 0 0 12px rgba(85, 85, 85, 0.08);
 }
 
+/* Task appear animation (column content) */
+@keyframes taskAppear {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+.task-appearing {
+  animation: taskAppear 0.3s ease;
+}
+
+/* Task appear animation (sidebar item) */
+@keyframes taskItemAppear {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 40px; }
+}
+.task-item-appearing {
+  animation: taskItemAppear 0.3s ease;
+}
+
 /* Task removal animation (column content) */
 @keyframes taskRemove {
   from { opacity: 1; transform: scale(1); }

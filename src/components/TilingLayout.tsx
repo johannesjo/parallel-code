@@ -41,7 +41,7 @@ export function TilingLayout() {
             return (
               <div
                 data-task-id={taskId}
-                class={task?.closingStatus === "removing" ? "task-removing" : undefined}
+                class={task?.closingStatus === "removing" ? "task-removing" : "task-appearing"}
                 style={{ height: "100%", padding: "6px 3px" }}
               >
                 <ErrorBoundary fallback={(err, reset) => (
