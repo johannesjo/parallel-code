@@ -13,6 +13,7 @@ import {
   getTaskDotStatus,
   registerFocusFn,
   unregisterFocusFn,
+  focusSidebar,
   unfocusSidebar,
   setTaskFocusedPanel,
   getTaskFocusedPanel,
@@ -156,6 +157,7 @@ export function Sidebar() {
         }
       } else {
         setActiveTask(taskId);
+        focusSidebar();
       }
     }
 
@@ -336,20 +338,9 @@ export function Sidebar() {
         tabIndex={0}
         onKeyDown={(e) => {
           if (!store.sidebarFocused) return;
-          const { taskOrder, activeTaskId } = store;
-          if (taskOrder.length === 0) return;
-          const currentIdx = activeTaskId ? taskOrder.indexOf(activeTaskId) : -1;
-
-          if (e.key === "ArrowUp" && e.altKey) {
+          if (e.key === "Enter") {
             e.preventDefault();
-            const prevIdx = Math.max(0, currentIdx - 1);
-            setActiveTask(taskOrder[prevIdx]);
-          } else if (e.key === "ArrowDown" && e.altKey) {
-            e.preventDefault();
-            const nextIdx = Math.min(taskOrder.length - 1, currentIdx + 1);
-            setActiveTask(taskOrder[nextIdx]);
-          } else if (e.key === "Enter") {
-            e.preventDefault();
+            const { activeTaskId } = store;
             if (activeTaskId) {
               unfocusSidebar();
               setTaskFocusedPanel(activeTaskId, getTaskFocusedPanel(activeTaskId));
@@ -396,7 +387,7 @@ export function Sidebar() {
                         <div
                           class="task-item"
                           data-task-index={idx()}
-                          onClick={() => setActiveTask(taskId)}
+                          onClick={() => { setActiveTask(taskId); focusSidebar(); }}
                           style={{
                             padding: "7px 10px",
                             "border-radius": "6px",
@@ -412,6 +403,9 @@ export function Sidebar() {
                             display: "flex",
                             "align-items": "center",
                             gap: "6px",
+                            border: store.sidebarFocused && store.activeTaskId === taskId
+                              ? `1.5px solid var(--border-focus)`
+                              : "1.5px solid transparent",
                           }}
                         >
                           <StatusDot status={getTaskDotStatus(taskId)} size="sm" />
@@ -451,7 +445,7 @@ export function Sidebar() {
                   <div
                     class="task-item"
                     data-task-index={idx()}
-                    onClick={() => setActiveTask(taskId)}
+                    onClick={() => { setActiveTask(taskId); focusSidebar(); }}
                     style={{
                       padding: "7px 10px",
                       "border-radius": "6px",
@@ -467,6 +461,9 @@ export function Sidebar() {
                       display: "flex",
                       "align-items": "center",
                       gap: "6px",
+                      border: store.sidebarFocused && store.activeTaskId === taskId
+                        ? `1.5px solid var(--border-focus)`
+                        : "1.5px solid transparent",
                     }}
                   >
                     <StatusDot status={getTaskDotStatus(taskId)} size="sm" />
@@ -502,7 +499,7 @@ export function Sidebar() {
         </span>
         <span style={{
           "font-size": sf(11),
-          color: theme.fgSubtle,
+          color: theme.fgMuted,
           "line-height": "1.4",
         }}>
           <kbd style={{
@@ -517,7 +514,7 @@ export function Sidebar() {
         </span>
         <span style={{
           "font-size": sf(11),
-          color: theme.fgSubtle,
+          color: theme.fgMuted,
           "line-height": "1.4",
         }}>
           <kbd style={{
