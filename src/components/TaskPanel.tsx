@@ -480,6 +480,7 @@ export function TaskPanel(props: TaskPanelProps) {
                       cwd={props.task.worktreePath}
                       onExit={() => {}}
                       fontSize={Math.round(13 * getFontScale(`${props.task.id}:shell`))}
+                      autoFocus
                     />
                   </div>
                 )}

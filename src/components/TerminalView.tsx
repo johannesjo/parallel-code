@@ -17,6 +17,7 @@ interface TerminalViewProps {
   onData?: () => void;
   onPromptDetected?: (text: string) => void;
   fontSize?: number;
+  autoFocus?: boolean;
 }
 
 export function TerminalView(props: TerminalViewProps) {
@@ -82,6 +83,10 @@ export function TerminalView(props: TerminalViewProps) {
     }
 
     fitAddon.fit();
+
+    if (props.autoFocus) {
+      term.focus();
+    }
 
     // Debounced refresh: ensures the WebGL renderer repaints after data arrives,
     // even when the terminal is off-screen and _isAttached is stale.
