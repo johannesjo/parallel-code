@@ -34,6 +34,8 @@
   --island-bg: #0f141b;
   --island-border: #223040;
   --island-radius: 12px;
+  --task-container-bg: #0b0f14;
+  --task-panel-bg: #12181f;
 
   --shadow-soft: 0 14px 30px rgba(0, 0, 0, 0.28);
   --shadow-pop: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent), 0 14px 36px color-mix(in srgb, var(--accent) 16%, transparent);
@@ -103,12 +105,20 @@ body {
   --island-bg: #111213;
   --island-border: #222426;
   --island-radius: 10px;
+  --task-container-bg: #111213;
+  --task-panel-bg: #1a1b1d;
   --shadow-soft: 0 0 0 rgba(0, 0, 0, 0);
   --shadow-pop: 0 0 8px rgba(99, 102, 241, 0.5);
 }
 
 .app-shell[data-look="classic"]::before {
-  opacity: 0;
+  opacity: 0 !important;
+  background: none !important;
+}
+
+.app-shell[data-look="classic"] .task-column.active {
+  box-shadow: none;
+  border-color: color-mix(in srgb, var(--border) 85%, transparent) !important;
 }
 
 .app-shell[data-look="graphite"] {
@@ -130,6 +140,34 @@ body {
   --link: #73dfff;
   --island-bg: #0f141b;
   --island-border: #223040;
+  --task-container-bg: #0c1015;
+  --task-panel-bg: #121820;
+}
+
+.app-shell[data-look="indigo"] {
+  --bg: radial-gradient(130% 120% at 18% 0%, #161633 0%, #0d1020 58%, #080a12 100%);
+  --bg-elevated: #121529;
+  --bg-input: #101325;
+  --bg-hover: #1b2140;
+  --bg-selected: #232555;
+  --bg-selected-subtle: #23255540;
+  --border: #2c3560;
+  --border-subtle: #1f2746;
+  --border-focus: #7a78ff;
+  --fg: #deddff;
+  --fg-muted: #b1b2de;
+  --fg-subtle: #8286b6;
+  --accent: #7a78ff;
+  --accent-hover: #938fff;
+  --accent-text: #090a18;
+  --link: #a8a6ff;
+  --success: #48d2a2;
+  --error: #ff6c90;
+  --warning: #ffcf7a;
+  --island-bg: #101325;
+  --island-border: #2c3560;
+  --task-container-bg: #0b0d15;
+  --task-panel-bg: #121529;
 }
 
 .app-shell[data-look="ember"] {
@@ -154,6 +192,8 @@ body {
   --warning: #ffd27a;
   --island-bg: #170f0f;
   --island-border: #47302a;
+  --task-container-bg: #130c0c;
+  --task-panel-bg: #1b1312;
 }
 
 .app-shell[data-look="glacier"] {
@@ -178,6 +218,8 @@ body {
   --warning: #ffd57d;
   --island-bg: #131b23;
   --island-border: #2a404e;
+  --task-container-bg: #0e151c;
+  --task-panel-bg: #151e26;
 }
 
 * {

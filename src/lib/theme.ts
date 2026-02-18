@@ -33,6 +33,8 @@ export const theme = {
   islandBg: "var(--island-bg)",
   islandBorder: "var(--island-border)",
   islandRadius: "var(--island-radius)",
+  taskContainerBg: "var(--task-container-bg)",
+  taskPanelBg: "var(--task-panel-bg)",
 
   // Terminal ANSI colors
   // background/foreground/cursor/selection mirror the CSS variables above
