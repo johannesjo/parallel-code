@@ -1,6 +1,6 @@
 import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
-import { onMount, onCleanup, Show, ErrorBoundary } from "solid-js";
+import { onMount, onCleanup, Show, ErrorBoundary, createSignal } from "solid-js";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Sidebar } from "./components/Sidebar";
 import { TilingLayout } from "./components/TilingLayout";
@@ -42,6 +42,21 @@ const appWindow = getCurrentWindow();
 
 function App() {
   let mainRef!: HTMLElement;
+  const [windowFocused, setWindowFocused] = createSignal(true);
+  const [windowMaximized, setWindowMaximized] = createSignal(false);
+
+  let unlistenFocusChanged: (() => void) | null = null;
+  let unlistenResized: (() => void) | null = null;
+
+  const syncWindowFocused = async () => {
+    const focused = await appWindow.isFocused().catch(() => true);
+    setWindowFocused(focused);
+  };
+
+  const syncWindowMaximized = async () => {
+    const maximized = await appWindow.isMaximized().catch(() => false);
+    setWindowMaximized(maximized);
+  };
 
   onMount(async () => {
     if (isMac) {
@@ -54,6 +69,27 @@ function App() {
         console.warn("Failed to disable native decorations", error);
       });
     }
+
+    void syncWindowFocused();
+    void syncWindowMaximized();
+
+    void (async () => {
+      try {
+        unlistenFocusChanged = await appWindow.onFocusChanged((event) => {
+          setWindowFocused(Boolean(event.payload));
+        });
+      } catch {
+        unlistenFocusChanged = null;
+      }
+
+      try {
+        unlistenResized = await appWindow.onResized(() => {
+          void syncWindowMaximized();
+        });
+      } catch {
+        unlistenResized = null;
+      }
+    })();
 
     await loadAgents();
     await loadState();
@@ -146,6 +182,8 @@ function App() {
       mainRef.removeEventListener("wheel", handleWheel);
       cleanupShortcuts();
       stopTaskStatusPolling();
+      unlistenFocusChanged?.();
+      unlistenResized?.();
     });
   });
 
@@ -189,6 +227,9 @@ function App() {
         ref={mainRef}
         class="app-shell"
         data-look={store.themePreset}
+        data-window-border={!isMac ? "true" : "false"}
+        data-window-focused={windowFocused() ? "true" : "false"}
+        data-window-maximized={windowMaximized() ? "true" : "false"}
         style={{
           width: `${100 / getGlobalScale()}vw`,
           height: `${100 / getGlobalScale()}vh`,
