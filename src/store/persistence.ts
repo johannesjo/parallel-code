@@ -157,6 +157,7 @@ export async function loadState(): Promise<void> {
             exitCode: null,
             signal: null,
             lastOutput: [],
+            generation: 0,
           };
           s.agents[agentId] = agent;
         }

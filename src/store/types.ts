@@ -16,6 +16,7 @@ export interface Agent {
   exitCode: number | null;
   signal: string | null;
   lastOutput: string[];
+  generation: number;
 }
 
 export interface Task {

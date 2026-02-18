@@ -31,6 +31,7 @@ export async function addAgentToTask(
     exitCode: null,
     signal: null,
     lastOutput: [],
+    generation: 0,
   };
 
   setStore(
@@ -75,6 +76,7 @@ export function restartAgent(agentId: string, useResumeArgs: boolean): void {
         s.agents[agentId].signal = null;
         s.agents[agentId].lastOutput = [];
         s.agents[agentId].resumed = useResumeArgs;
+        s.agents[agentId].generation += 1;
       }
     })
   );
