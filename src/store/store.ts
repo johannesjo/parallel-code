@@ -70,4 +70,4 @@ export {
 } from "./taskStatus";
 export type { TaskDotStatus } from "./taskStatus";
 export { showNotification, clearNotification } from "./notification";
-export { getCompletedTasksTodayCount } from "./completion";
+export { getCompletedTasksTodayCount, getMergedLineTotals } from "./completion";

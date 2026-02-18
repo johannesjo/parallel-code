@@ -21,6 +21,8 @@ export async function saveState(): Promise<void> {
     globalScale: store.globalScale,
     completedTaskDate: store.completedTaskDate,
     completedTaskCount: store.completedTaskCount,
+    mergedLinesAdded: store.mergedLinesAdded,
+    mergedLinesRemoved: store.mergedLinesRemoved,
     themePreset: store.themePreset,
     windowState: store.windowState ? { ...store.windowState } : undefined,
   };
@@ -165,6 +167,14 @@ export async function loadState(): Promise<void> {
         s.completedTaskDate = today;
         s.completedTaskCount = 0;
       }
+      const mergedLinesAddedRaw = rawAny.mergedLinesAdded;
+      const mergedLinesRemovedRaw = rawAny.mergedLinesRemoved;
+      s.mergedLinesAdded = typeof mergedLinesAddedRaw === "number" && Number.isFinite(mergedLinesAddedRaw)
+        ? Math.max(0, Math.floor(mergedLinesAddedRaw))
+        : 0;
+      s.mergedLinesRemoved = typeof mergedLinesRemovedRaw === "number" && Number.isFinite(mergedLinesRemovedRaw)
+        ? Math.max(0, Math.floor(mergedLinesRemovedRaw))
+        : 0;
       s.themePreset = isLookPreset(rawAny.themePreset) ? rawAny.themePreset : "graphite";
       s.windowState = parsePersistedWindowState(rawAny.windowState);
 

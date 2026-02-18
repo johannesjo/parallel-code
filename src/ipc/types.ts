@@ -43,3 +43,9 @@ export interface MergeStatus {
   main_ahead_count: number;
   conflicting_files: string[];
 }
+
+export interface MergeResult {
+  main_branch: string;
+  lines_added: number;
+  lines_removed: number;
+}

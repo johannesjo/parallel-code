@@ -76,6 +76,8 @@ export interface PersistedState {
   globalScale?: number;
   completedTaskDate?: string;
   completedTaskCount?: number;
+  mergedLinesAdded?: number;
+  mergedLinesRemoved?: number;
   themePreset?: LookPreset;
   windowState?: PersistedWindowState;
 }
@@ -115,6 +117,8 @@ export interface AppStore {
   notification: string | null;
   completedTaskDate: string;
   completedTaskCount: number;
+  mergedLinesAdded: number;
+  mergedLinesRemoved: number;
   themePreset: LookPreset;
   windowState: PersistedWindowState | null;
 }

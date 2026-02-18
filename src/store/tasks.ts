@@ -4,8 +4,8 @@ import { store, setStore, updateWindowTitle } from "./core";
 import { getProject, getProjectPath, getProjectBranchPrefix } from "./projects";
 import { setPendingShellCommand } from "../lib/bookmarks";
 import { markAgentSpawned } from "./taskStatus";
-import { recordTaskCompleted } from "./completion";
-import type { AgentDef, CreateTaskResult } from "../ipc/types";
+import { recordMergedLines, recordTaskCompleted } from "./completion";
+import type { AgentDef, CreateTaskResult, MergeResult } from "../ipc/types";
 import type { Agent, Task } from "./types";
 
 const AGENT_WRITE_READY_TIMEOUT_MS = 8_000;
@@ -212,13 +212,14 @@ export async function mergeTask(
   }
 
   // Merge branch into main. Cleanup is optional.
-  await invoke<string>("merge_task", {
+  const mergeResult = await invoke<MergeResult>("merge_task", {
     projectRoot,
     branchName,
     squash: options?.squash ?? false,
     message: options?.message,
     cleanup,
   });
+  recordMergedLines(mergeResult.lines_added, mergeResult.lines_removed);
 
   if (cleanup) {
     // Remove task UI only when branch/worktree were cleaned up.
