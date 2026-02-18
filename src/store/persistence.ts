@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { store, setStore } from "./core";
 import { randomPastelColor } from "./projects";
+import { markAgentSpawned } from "./taskStatus";
 import type { Agent, Task, PersistedState, PersistedTask, Project } from "./types";
 
 export async function saveState(): Promise<void> {
@@ -102,6 +103,8 @@ export async function loadState(): Promise<void> {
     }
   }
 
+  const restoredRunningAgentIds: string[] = [];
+
   setStore(
     produce((s) => {
       s.projects = projects;
@@ -160,6 +163,7 @@ export async function loadState(): Promise<void> {
             generation: 0,
           };
           s.agents[agentId] = agent;
+          restoredRunningAgentIds.push(agentId);
         }
       }
 
@@ -169,6 +173,11 @@ export async function loadState(): Promise<void> {
       }
     })
   );
+
+  // Restored agents are considered running; reflect that immediately in task status dots.
+  for (const agentId of restoredRunningAgentIds) {
+    markAgentSpawned(agentId);
+  }
 
   // Update window title
   const activeTask = store.activeTaskId ? store.tasks[store.activeTaskId] : null;

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { store, setStore, updateWindowTitle } from "./core";
 import { getProjectPath, getProjectBranchPrefix } from "./projects";
 import { setPendingShellCommand } from "../lib/bookmarks";
+import { markAgentSpawned } from "./taskStatus";
 import type { AgentDef, CreateTaskResult } from "../ipc/types";
 import type { Agent, Task } from "./types";
 
@@ -62,6 +63,8 @@ export async function createTask(
     })
   );
 
+  // Mark as busy immediately; terminal output may arrive later.
+  markAgentSpawned(agentId);
   updateWindowTitle(name);
 }
 

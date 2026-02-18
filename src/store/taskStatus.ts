@@ -8,6 +8,8 @@ export type TaskDotStatus = "busy" | "waiting" | "ready";
 // --- Agent activity tracking ---
 // Plain map for raw timestamps (no reactive cost per PTY byte).
 const lastDataAt = new Map<string, number>();
+// Last time we refreshed each agent's idle timeout.
+const lastIdleResetAt = new Map<string, number>();
 // Reactive set of agent IDs considered "active" (updated on coarser schedule).
 const [activeAgents, setActiveAgents] = createSignal<Set<string>>(new Set());
 
@@ -39,6 +41,7 @@ function removeFromActive(agentId: string): void {
 }
 
 function resetIdleTimer(agentId: string): void {
+  lastIdleResetAt.set(agentId, Date.now());
   const existing = idleTimers.get(agentId);
   if (existing) clearTimeout(existing);
   idleTimers.set(
@@ -61,12 +64,12 @@ export function markAgentSpawned(agentId: string): void {
 /** Call this from the TerminalView Data handler. */
 export function markAgentActive(agentId: string): void {
   const now = Date.now();
-  const prev = lastDataAt.get(agentId) ?? 0;
   lastDataAt.set(agentId, now);
 
   // Already active — just reset the idle timer (throttled).
   if (activeAgents().has(agentId)) {
-    if (now - prev < THROTTLE_MS) return;
+    const lastReset = lastIdleResetAt.get(agentId) ?? 0;
+    if (now - lastReset < THROTTLE_MS) return;
     resetIdleTimer(agentId);
     return;
   }
@@ -79,6 +82,7 @@ export function markAgentActive(agentId: string): void {
 /** Clean up timers when an agent exits. */
 export function clearAgentActivity(agentId: string): void {
   lastDataAt.delete(agentId);
+  lastIdleResetAt.delete(agentId);
   const timer = idleTimers.get(agentId);
   if (timer) {
     clearTimeout(timer);

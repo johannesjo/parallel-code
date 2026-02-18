@@ -307,6 +307,11 @@ export function TerminalView(props: TerminalViewProps) {
       onOutput,
     }).catch((err) => {
       term!.write(`\x1b[31mFailed to spawn: ${err}\x1b[0m\r\n`);
+      props.onExit?.({
+        exit_code: null,
+        signal: "spawn_failed",
+        last_output: [`Failed to spawn: ${String(err)}`],
+      });
     });
 
     onCleanup(() => {
