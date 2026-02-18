@@ -21,6 +21,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { StatusDot } from "./StatusDot";
 import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
+import { mod } from "../lib/platform";
 
 const DRAG_THRESHOLD = 5;
 
@@ -227,7 +228,7 @@ export function Sidebar() {
         <button
           class="icon-btn"
           onClick={() => toggleSidebar()}
-          title="Collapse sidebar (Ctrl+B)"
+          title={`Collapse sidebar (${mod}+B)`}
           style={{
             background: "transparent",
             border: `1px solid ${theme.border}`,
@@ -540,7 +541,7 @@ export function Sidebar() {
             padding: "1px 4px",
             "font-size": sf(10),
             "font-family": "'JetBrains Mono', monospace",
-          }}>Ctrl + /</kbd>{" "}
+          }}>{mod} + /</kbd>{" "}
           for all shortcuts
         </span>
       </div>

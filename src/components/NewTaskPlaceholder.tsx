@@ -1,5 +1,6 @@
 import { toggleNewTaskDialog } from "../store/store";
 import { theme } from "../lib/theme";
+import { mod } from "../lib/platform";
 
 export function NewTaskPlaceholder() {
   return (
@@ -22,7 +23,7 @@ export function NewTaskPlaceholder() {
         "user-select": "none",
         "flex-shrink": "0",
       }}
-      title="New task (Ctrl+N)"
+      title={`New task (${mod}+N)`}
     >
       +
     </div>

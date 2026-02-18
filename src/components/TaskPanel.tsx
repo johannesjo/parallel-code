@@ -42,6 +42,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { DiffViewerDialog } from "./DiffViewerDialog";
 import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
+import { mod } from "../lib/platform";
 import type { Task } from "../store/types";
 import type { ChangedFile, WorktreeStatus } from "../ipc/types";
 
@@ -527,7 +528,7 @@ export function TaskPanel(props: TaskPanelProps) {
                 spawnShellForTask(props.task.id);
               }}
               tabIndex={-1}
-              title="Open terminal (Ctrl+Shift+T)"
+              title={`Open terminal (${mod}+Shift+T)`}
               style={{
                 background: "transparent",
                 border: `1px solid ${shellToolbarIdx() === 0 && shellToolbarFocused() ? theme.accent : theme.border}`,

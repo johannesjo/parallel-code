@@ -4,6 +4,7 @@ import { ResizablePanel, type PanelChild } from "./ResizablePanel";
 import { TaskPanel } from "./TaskPanel";
 import { NewTaskPlaceholder } from "./NewTaskPlaceholder";
 import { theme } from "../lib/theme";
+import { mod } from "../lib/platform";
 
 export function TilingLayout() {
   let containerRef: HTMLDivElement | undefined;
@@ -165,7 +166,7 @@ export function TilingLayout() {
                     "font-size": "11px",
                   }}
                 >
-                  Ctrl+N
+                  {mod}+N
                 </kbd>{" "}
                 to create a new task
               </div>

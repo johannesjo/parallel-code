@@ -28,6 +28,7 @@ import {
 } from "./store/store";
 import { registerShortcut, initShortcuts } from "./lib/shortcuts";
 import { setupAutosave } from "./store/autosave";
+import { mod } from "./lib/platform";
 
 function App() {
   let mainRef!: HTMLElement;
@@ -153,7 +154,7 @@ function App() {
         <Show when={!store.sidebarVisible}>
           <div
             onClick={() => toggleSidebar()}
-            title="Show sidebar (Ctrl+B)"
+            title={`Show sidebar (${mod}+B)`}
             style={{
               width: "24px",
               "min-width": "24px",

@@ -1,6 +1,7 @@
 import { Show, createEffect } from "solid-js";
 import { Portal } from "solid-js/web";
 import { theme } from "../lib/theme";
+import { mod } from "../lib/platform";
 
 interface HelpDialogProps {
   open: boolean;
@@ -21,21 +22,21 @@ const SECTIONS = [
   {
     title: "Task Actions",
     shortcuts: [
-      ["Ctrl + W", "Close active task"],
-      ["Ctrl + Shift + M", "Merge active task"],
-      ["Ctrl + Shift + P", "Push to remote"],
-      ["Ctrl + Shift + T", "New shell terminal"],
-      ["Ctrl + Enter", "Send prompt"],
-      ["Ctrl + Alt + Left/Right", "Reorder tasks"],
+      [`${mod} + W`, "Close active task"],
+      [`${mod} + Shift + M`, "Merge active task"],
+      [`${mod} + Shift + P`, "Push to remote"],
+      [`${mod} + Shift + T`, "New shell terminal"],
+      [`${mod} + Enter`, "Send prompt"],
+      [`${mod} + Alt + Left/Right`, "Reorder tasks"],
     ],
   },
   {
     title: "App",
     shortcuts: [
-      ["Ctrl + N", "New task"],
-      ["Ctrl + B", "Toggle sidebar"],
-      ["Ctrl + 0", "Reset zoom"],
-      ["Ctrl + / or F1", "Toggle this help"],
+      [`${mod} + N`, "New task"],
+      [`${mod} + B`, "Toggle sidebar"],
+      [`${mod} + 0`, "Reset zoom"],
+      [`${mod} + / or F1`, "Toggle this help"],
       ["Escape", "Close dialogs"],
     ],
   },
