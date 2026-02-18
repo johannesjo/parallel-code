@@ -254,7 +254,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               </div>
             </div>
 
-            {/* Delete branch on close */}
+            {/* Merge cleanup preference */}
             <label
               style={{
                 display: "flex",
@@ -271,7 +271,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 onChange={(e) => setDeleteBranchOnClose(e.currentTarget.checked)}
                 style={{ cursor: "pointer" }}
               />
-              Delete branch when closing task
+              Always delete branch and worklog on merge
             </label>
 
             {/* Command Bookmarks */}
