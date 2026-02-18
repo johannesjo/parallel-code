@@ -1,7 +1,6 @@
 import { batch } from "solid-js";
 import { store, setStore } from "./core";
 import { setActiveTask } from "./navigation";
-import type { PanelId } from "./types";
 
 // Imperative focus registry: components register focus callbacks on mount
 const focusRegistry = new Map<string, () => void>();
@@ -31,13 +30,46 @@ export function triggerAction(key: string): void {
   actionRegistry.get(key)?.();
 }
 
-const PANEL_ORDER: PanelId[] = ["notes", "changed-files", "shell", "ai-terminal", "prompt"];
+// --- Dynamic grid-based spatial navigation ---
+//
+// The grid is built per-task based on its shell count:
+//
+//        col 0           col 1         col 2 ...
+// row 0: notes           changed-files
+// row 1: shell-toolbar                           (always present)
+// row 2: shell:0         shell:1       shell:2   (only if shells exist)
+// row 3: ai-terminal
+// row 4: prompt
 
-export function getTaskFocusedPanel(taskId: string): PanelId {
+function buildGrid(taskId: string): string[][] {
+  const task = store.tasks[taskId];
+  const grid: string[][] = [
+    ["notes", "changed-files"],
+    ["shell-toolbar"],
+  ];
+  if (task && task.shellAgentIds.length > 0) {
+    grid.push(task.shellAgentIds.map((_, i) => `shell:${i}`));
+  }
+  grid.push(["ai-terminal"]);
+  grid.push(["prompt"]);
+  return grid;
+}
+
+interface GridPos { row: number; col: number }
+
+function findInGrid(grid: string[][], cell: string): GridPos | null {
+  for (let row = 0; row < grid.length; row++) {
+    const col = grid[row].indexOf(cell);
+    if (col !== -1) return { row, col };
+  }
+  return null;
+}
+
+export function getTaskFocusedPanel(taskId: string): string {
   return store.focusedPanel[taskId] ?? "prompt";
 }
 
-export function setTaskFocusedPanel(taskId: string, panel: PanelId): void {
+export function setTaskFocusedPanel(taskId: string, panel: string): void {
   setStore("focusedPanel", taskId, panel);
   setStore("sidebarFocused", false);
   triggerFocus(`${taskId}:${panel}`);
@@ -52,120 +84,92 @@ export function unfocusSidebar(): void {
   setStore("sidebarFocused", false);
 }
 
-function getAvailablePanels(taskId: string): PanelId[] {
-  const task = store.tasks[taskId];
-  if (!task) return PANEL_ORDER;
-  return task.shellAgentIds.length > 0
-    ? PANEL_ORDER
-    : PANEL_ORDER.filter((p) => p !== "shell");
+function focusTaskPanel(taskId: string, panel: string): void {
+  batch(() => {
+    setStore("focusedPanel", taskId, panel);
+    setStore("sidebarFocused", false);
+    setActiveTask(taskId);
+  });
+  triggerFocus(`${taskId}:${panel}`);
 }
 
 export function navigateRow(direction: "up" | "down"): void {
-  if (store.sidebarFocused) {
-    // In sidebar, up/down navigates tasks (handled by sidebar component)
-    return;
-  }
+  if (store.sidebarFocused) return;
 
   const taskId = store.activeTaskId;
   if (!taskId) return;
 
-  const panels = getAvailablePanels(taskId);
+  const grid = buildGrid(taskId);
   const current = getTaskFocusedPanel(taskId);
-  const idx = panels.indexOf(current);
-  if (idx === -1) {
-    setTaskFocusedPanel(taskId, panels[0]);
-    return;
-  }
+  const pos = findInGrid(grid, current);
+  if (!pos) return;
 
-  const next = direction === "up" ? idx - 1 : idx + 1;
-  if (next < 0 || next >= panels.length) return; // Stop at edges
-  setTaskFocusedPanel(taskId, panels[next]);
+  const nextRow = direction === "up" ? pos.row - 1 : pos.row + 1;
+  if (nextRow < 0 || nextRow >= grid.length) return;
+
+  // Clamp column to target row width
+  const col = Math.min(pos.col, grid[nextRow].length - 1);
+  setTaskFocusedPanel(taskId, grid[nextRow][col]);
 }
 
 export function navigateColumn(direction: "left" | "right"): void {
   const taskId = store.activeTaskId;
 
-  // Sidebar boundary
+  // From sidebar
   if (store.sidebarFocused) {
     if (direction === "right" && taskId) {
       unfocusSidebar();
-      const panel = getTaskFocusedPanel(taskId);
-      setTaskFocusedPanel(taskId, panel);
+      setTaskFocusedPanel(taskId, getTaskFocusedPanel(taskId));
     }
     return;
   }
 
   if (!taskId) return;
 
+  const grid = buildGrid(taskId);
   const current = getTaskFocusedPanel(taskId);
+  const pos = findInGrid(grid, current);
+  if (!pos) return;
 
-  // Inner-column navigation for notes/changed-files row
-  if (current === "notes" && direction === "right") {
-    setTaskFocusedPanel(taskId, "changed-files");
+  const row = grid[pos.row];
+  const nextCol = direction === "left" ? pos.col - 1 : pos.col + 1;
+
+  // Within-row movement
+  if (nextCol >= 0 && nextCol < row.length) {
+    setTaskFocusedPanel(taskId, row[nextCol]);
     return;
   }
-  if (current === "changed-files" && direction === "left") {
-    setTaskFocusedPanel(taskId, "notes");
-    return;
-  }
 
-  // Shell row: navigate between shell tabs
-  if (current === "shell") {
-    const task = store.tasks[taskId];
-    if (task && task.shellAgentIds.length > 1) {
-      // Shell tab navigation — for now, shells are all visible side-by-side
-      // so just cross to adjacent task at edges
-    }
-  }
-
-  // Cross-task or sidebar boundary
+  // Cross task boundary
   const { taskOrder } = store;
   const taskIdx = taskOrder.indexOf(taskId);
 
   if (direction === "left") {
-    // At leftmost cell of first task (or sidebar hidden): go to sidebar
-    if (taskIdx === 0 && (current === "notes" || current === "shell" || current === "ai-terminal" || current === "prompt")) {
-      if (store.sidebarVisible) {
-        focusSidebar();
-      }
+    if (taskIdx === 0) {
+      if (store.sidebarVisible) focusSidebar();
       return;
     }
-    // Cross to previous task, land on rightmost cell of same row
     const prevTaskId = taskOrder[taskIdx - 1];
     if (prevTaskId) {
-      const prevPanel = mapToRowRightmost(current);
-      batch(() => {
-        setStore("focusedPanel", prevTaskId, prevPanel);
-        setActiveTask(prevTaskId);
-      });
-      triggerFocus(`${prevTaskId}:${prevPanel}`);
+      // Land on rightmost cell of same row in prev task
+      const prevGrid = buildGrid(prevTaskId);
+      const prevPos = findInGrid(prevGrid, current);
+      const targetRow = prevPos ? prevPos.row : pos.row;
+      const safeRow = Math.min(targetRow, prevGrid.length - 1);
+      const lastCol = prevGrid[safeRow].length - 1;
+      focusTaskPanel(prevTaskId, prevGrid[safeRow][lastCol]);
     }
   } else {
-    if (current === "changed-files" || current === "shell" || current === "ai-terminal" || current === "prompt") {
-      // At rightmost cell: cross to next task
-      const nextTaskId = taskOrder[taskIdx + 1];
-      if (nextTaskId) {
-        const nextPanel = mapToRowLeftmost(current);
-        batch(() => {
-          setStore("focusedPanel", nextTaskId, nextPanel);
-          setActiveTask(nextTaskId);
-        });
-        triggerFocus(`${nextTaskId}:${nextPanel}`);
-      }
+    const nextTaskId = taskOrder[taskIdx + 1];
+    if (nextTaskId) {
+      // Land on leftmost cell of same row in next task
+      const nextGrid = buildGrid(nextTaskId);
+      const nextPos = findInGrid(nextGrid, current);
+      const targetRow = nextPos ? nextPos.row : pos.row;
+      const safeRow = Math.min(targetRow, nextGrid.length - 1);
+      focusTaskPanel(nextTaskId, nextGrid[safeRow][0]);
     }
   }
-}
-
-/** Map a panel to its leftmost cell in the same row. */
-function mapToRowLeftmost(panel: PanelId): PanelId {
-  if (panel === "changed-files") return "notes";
-  return panel;
-}
-
-/** Map a panel to its rightmost cell in the same row. */
-function mapToRowRightmost(panel: PanelId): PanelId {
-  if (panel === "notes") return "changed-files";
-  return panel;
 }
 
 export function setPendingAction(action: { type: "close" | "merge" | "push"; taskId: string } | null): void {

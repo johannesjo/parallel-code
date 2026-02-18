@@ -57,7 +57,9 @@ export interface PersistedState {
   globalScale?: number;
 }
 
-export type PanelId = "notes" | "changed-files" | "shell" | "ai-terminal" | "prompt";
+// Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.
+// The shell toolbar is "shell-toolbar".
+export type PanelId = string;
 
 export interface PendingAction {
   type: "close" | "merge" | "push";

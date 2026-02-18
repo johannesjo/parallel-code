@@ -69,6 +69,9 @@ export function TaskPanel(props: TaskPanelProps) {
   let promptRef: HTMLTextAreaElement | undefined;
   let notesRef: HTMLTextAreaElement | undefined;
   let changedFilesRef: HTMLDivElement | undefined;
+  let shellToolbarRef: HTMLDivElement | undefined;
+  const [shellToolbarIdx, setShellToolbarIdx] = createSignal(0);
+  const [shellToolbarFocused, setShellToolbarFocused] = createSignal(false);
 
   // Focus registration for this task's panels
   onMount(() => {
@@ -76,12 +79,16 @@ export function TaskPanel(props: TaskPanelProps) {
     registerFocusFn(`${id}:notes`, () => notesRef?.focus());
     registerFocusFn(`${id}:changed-files`, () => { changedFilesRef?.focus(); });
     registerFocusFn(`${id}:prompt`, () => promptRef?.focus());
-    // Shell and AI terminal focus fns are registered via TerminalView.onReady
+    registerFocusFn(`${id}:shell-toolbar`, () => shellToolbarRef?.focus());
+    // Individual shell:N and ai-terminal focus fns are registered via TerminalView.onReady
 
     onCleanup(() => {
       unregisterFocusFn(`${id}:notes`);
       unregisterFocusFn(`${id}:changed-files`);
-      unregisterFocusFn(`${id}:shell`);
+      unregisterFocusFn(`${id}:shell-toolbar`);
+      for (let i = 0; i < props.task.shellAgentIds.length; i++) {
+        unregisterFocusFn(`${id}:shell:${i}`);
+      }
       unregisterFocusFn(`${id}:ai-terminal`);
       unregisterFocusFn(`${id}:prompt`);
     });
@@ -436,6 +443,31 @@ export function TaskPanel(props: TaskPanelProps) {
         <ScalablePanel panelId={`${props.task.id}:shell`}>
         <div style={{ height: "100%", display: "flex", "flex-direction": "column", background: theme.bgElevated }}>
           <div
+            ref={shellToolbarRef}
+            class="focusable-panel"
+            tabIndex={0}
+            onClick={() => setTaskFocusedPanel(props.task.id, "shell-toolbar")}
+            onFocus={() => setShellToolbarFocused(true)}
+            onBlur={() => setShellToolbarFocused(false)}
+            onKeyDown={(e) => {
+              const itemCount = 1 + props.task.shellAgentIds.length;
+              if (e.key === "ArrowRight") {
+                e.preventDefault();
+                setShellToolbarIdx((i) => Math.min(itemCount - 1, i + 1));
+              } else if (e.key === "ArrowLeft") {
+                e.preventDefault();
+                setShellToolbarIdx((i) => Math.max(0, i - 1));
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                const idx = shellToolbarIdx();
+                if (idx === 0) {
+                  spawnShellForTask(props.task.id);
+                } else {
+                  const shellId = props.task.shellAgentIds[idx - 1];
+                  if (shellId) closeShell(props.task.id, shellId);
+                }
+              }
+            }}
             style={{
               height: "28px",
               "min-height": "28px",
@@ -446,6 +478,7 @@ export function TaskPanel(props: TaskPanelProps) {
               "border-top": `1px solid ${theme.border}`,
               "border-bottom": `1px solid ${theme.border}`,
               gap: "4px",
+              outline: "none",
             }}
           >
             <button
@@ -454,10 +487,11 @@ export function TaskPanel(props: TaskPanelProps) {
                 e.stopPropagation();
                 spawnShellForTask(props.task.id);
               }}
-              title="Open terminal"
+              tabIndex={-1}
+              title="Open terminal (Ctrl+Shift+T)"
               style={{
                 background: "transparent",
-                border: `1px solid ${theme.border}`,
+                border: `1px solid ${shellToolbarIdx() === 0 && shellToolbarFocused() ? theme.accent : theme.border}`,
                 color: theme.fgMuted,
                 cursor: "pointer",
                 "border-radius": "4px",
@@ -481,10 +515,15 @@ export function TaskPanel(props: TaskPanelProps) {
                     padding: "2px 4px 2px 8px",
                     "border-radius": "3px",
                     background: theme.bgElevated,
-                    border: `1px solid ${theme.border}`,
+                    border: `1px solid ${shellToolbarIdx() === i() + 1 && shellToolbarFocused() ? theme.accent : theme.border}`,
                     display: "inline-flex",
                     "align-items": "center",
                     gap: "4px",
+                    cursor: "pointer",
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShellToolbarIdx(i() + 1);
                   }}
                 >
                   shell {i() + 1}
@@ -522,7 +561,7 @@ export function TaskPanel(props: TaskPanelProps) {
                       "border-left": i() > 0 ? `1px solid ${theme.border}` : "none",
                       overflow: "hidden",
                     }}
-                    onClick={() => setTaskFocusedPanel(props.task.id, "shell")}
+                    onClick={() => setTaskFocusedPanel(props.task.id, `shell:${i()}`)}
                   >
                     <TerminalView
                       agentId={shellId}
@@ -530,7 +569,7 @@ export function TaskPanel(props: TaskPanelProps) {
                       args={["-l"]}
                       cwd={props.task.worktreePath}
                       onExit={() => {}}
-                      onReady={(focusFn) => registerFocusFn(`${props.task.id}:shell`, focusFn)}
+                      onReady={(focusFn) => registerFocusFn(`${props.task.id}:shell:${i()}`, focusFn)}
                       fontSize={Math.round(13 * getFontScale(`${props.task.id}:shell`))}
                     />
                   </div>
