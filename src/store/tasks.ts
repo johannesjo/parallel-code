@@ -150,7 +150,7 @@ function removeTaskFromStore(taskId: string, agentIds: string[]): void {
 
 export async function mergeTask(
   taskId: string,
-  options?: { squash?: boolean; message?: string }
+  options?: { squash?: boolean; message?: string; cleanup?: boolean }
 ): Promise<void> {
   const task = store.tasks[taskId];
   if (!task || task.closingStatus === "removing") return;
@@ -161,25 +161,31 @@ export async function mergeTask(
   const agentIds = [...task.agentIds];
   const shellAgentIds = [...task.shellAgentIds];
   const branchName = task.branchName;
+  const cleanup = options?.cleanup ?? false;
 
-  // Kill agents first
-  for (const agentId of agentIds) {
-    await invoke("kill_agent", { agentId }).catch(console.error);
-  }
-  for (const shellId of shellAgentIds) {
-    await invoke("kill_agent", { agentId: shellId }).catch(console.error);
+  if (cleanup) {
+    // Closing task flow: stop all running terminals before cleanup.
+    for (const agentId of agentIds) {
+      await invoke("kill_agent", { agentId }).catch(console.error);
+    }
+    for (const shellId of shellAgentIds) {
+      await invoke("kill_agent", { agentId: shellId }).catch(console.error);
+    }
   }
 
-  // Merge branch into main, remove worktree + branch
+  // Merge branch into main. Cleanup is optional.
   await invoke<string>("merge_task", {
     projectRoot,
     branchName,
     squash: options?.squash ?? false,
     message: options?.message,
+    cleanup,
   });
 
-  // Remove from UI
-  removeTaskFromStore(taskId, agentIds);
+  if (cleanup) {
+    // Remove task UI only when branch/worktree were cleaned up.
+    removeTaskFromStore(taskId, agentIds);
+  }
 }
 
 export async function pushTask(taskId: string): Promise<void> {

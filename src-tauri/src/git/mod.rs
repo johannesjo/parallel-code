@@ -173,9 +173,10 @@ pub async fn merge_task(
     branch_name: String,
     squash: bool,
     message: Option<String>,
+    cleanup: bool,
 ) -> Result<String, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
-        merge_task_sync(&project_root, &branch_name, squash, message.as_deref())
+        merge_task_sync(&project_root, &branch_name, squash, message.as_deref(), cleanup)
     })
     .await
     .map_err(|e| AppError::Git(e.to_string()))?
@@ -186,8 +187,9 @@ fn merge_task_sync(
     branch_name: &str,
     squash: bool,
     message: Option<&str>,
+    cleanup: bool,
 ) -> Result<String, AppError> {
-    info!(branch = %branch_name, root = %project_root, squash, "Merging task branch");
+    info!(branch = %branch_name, root = %project_root, squash, cleanup, "Merging task branch");
     let main_branch = detect_main_branch(project_root)?;
 
     // Checkout main branch in the repo root
@@ -237,8 +239,10 @@ fn merge_task_sync(
         }
     }
 
-    // Remove worktree and delete feature branch
-    remove_worktree(project_root, branch_name, true)?;
+    if cleanup {
+        // Remove worktree and delete feature branch.
+        remove_worktree(project_root, branch_name, true)?;
+    }
 
     Ok(main_branch)
 }

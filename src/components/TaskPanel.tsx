@@ -57,6 +57,7 @@ export function TaskPanel(props: TaskPanelProps) {
   const [mergeError, setMergeError] = createSignal("");
   const [merging, setMerging] = createSignal(false);
   const [squash, setSquash] = createSignal(false);
+  const [cleanupAfterMerge, setCleanupAfterMerge] = createSignal(false);
   const [squashMessage, setSquashMessage] = createSignal("");
   const [branchLog] = createResource(
     () => showMergeConfirm() ? props.task.worktreePath : null,
@@ -141,10 +142,15 @@ export function TaskPanel(props: TaskPanelProps) {
     clearPendingAction();
     switch (action.type) {
       case "close": setShowCloseConfirm(true); break;
-      case "merge": setShowMergeConfirm(true); break;
+      case "merge": openMergeConfirm(); break;
       case "push": setShowPushConfirm(true); break;
     }
   });
+
+  function openMergeConfirm() {
+    setCleanupAfterMerge(false);
+    setShowMergeConfirm(true);
+  }
 
   const firstAgent = () => {
     const ids = props.task.agentIds;
@@ -300,7 +306,7 @@ export function TaskPanel(props: TaskPanelProps) {
                   <path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z" />
                 </svg>
               }
-              onClick={() => setShowMergeConfirm(true)}
+              onClick={openMergeConfirm}
               title="Merge into main"
             />
             <IconButton
@@ -1010,6 +1016,25 @@ export function TaskPanel(props: TaskPanelProps) {
             >
               <input
                 type="checkbox"
+                checked={cleanupAfterMerge()}
+                onChange={(e) => setCleanupAfterMerge(e.currentTarget.checked)}
+                style={{ cursor: "pointer" }}
+              />
+              Delete branch and worktree after merge
+            </label>
+            <label
+              style={{
+                display: "flex",
+                "align-items": "center",
+                gap: "8px",
+                "margin-top": "8px",
+                cursor: "pointer",
+                "font-size": "13px",
+                color: theme.fg,
+              }}
+            >
+              <input
+                type="checkbox"
                 checked={squash()}
                 onChange={(e) => {
                   const checked = e.currentTarget.checked;
@@ -1065,10 +1090,11 @@ export function TaskPanel(props: TaskPanelProps) {
           setMergeError("");
           setMerging(true);
           try {
-            await mergeTask(props.task.id, squash() ? {
-              squash: true,
-              message: squashMessage() || undefined,
-            } : undefined);
+            await mergeTask(props.task.id, {
+              squash: squash(),
+              message: squash() ? squashMessage() || undefined : undefined,
+              cleanup: cleanupAfterMerge(),
+            });
             setShowMergeConfirm(false);
           } catch (err) {
             setMergeError(String(err));
@@ -1080,6 +1106,7 @@ export function TaskPanel(props: TaskPanelProps) {
           setShowMergeConfirm(false);
           setMergeError("");
           setSquash(false);
+          setCleanupAfterMerge(false);
           setSquashMessage("");
           setRebaseError("");
           setRebaseSuccess(false);
