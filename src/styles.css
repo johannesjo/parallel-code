@@ -80,7 +80,7 @@ body {
   z-index: 1;
 }
 
-.app-shell[data-look="classic"] {
+html[data-look="classic"] {
   --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --bg: #000000;
@@ -121,7 +121,7 @@ body {
   border-color: color-mix(in srgb, var(--border) 85%, transparent) !important;
 }
 
-.app-shell[data-look="graphite"] {
+html[data-look="graphite"] {
   --bg: radial-gradient(130% 120% at 15% 0%, #1b2b39 0%, #0a0f14 60%, #06080a 100%);
   --bg-elevated: #121820;
   --bg-input: #0f151d;
@@ -144,7 +144,7 @@ body {
   --task-panel-bg: #121820;
 }
 
-.app-shell[data-look="indigo"] {
+html[data-look="indigo"] {
   --bg: radial-gradient(130% 120% at 18% 0%, #161633 0%, #0d1020 58%, #080a12 100%);
   --bg-elevated: #121529;
   --bg-input: #101325;
@@ -170,7 +170,7 @@ body {
   --task-panel-bg: #121529;
 }
 
-.app-shell[data-look="ember"] {
+html[data-look="ember"] {
   --bg: radial-gradient(130% 120% at 85% 0%, #2f2118 0%, #110e10 55%, #09080a 100%);
   --bg-elevated: #1b1312;
   --bg-input: #17100f;
@@ -196,7 +196,7 @@ body {
   --task-panel-bg: #1b1312;
 }
 
-.app-shell[data-look="glacier"] {
+html[data-look="glacier"] {
   --bg: radial-gradient(140% 120% at 0% 0%, #1a2730 0%, #0f171e 52%, #090f14 100%);
   --bg-elevated: #151e26;
   --bg-input: #121a22;

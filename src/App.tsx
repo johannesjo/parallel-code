@@ -1,6 +1,6 @@
 import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
-import { onMount, onCleanup, Show, ErrorBoundary } from "solid-js";
+import { onMount, onCleanup, createEffect, Show, ErrorBoundary } from "solid-js";
 import { Sidebar } from "./components/Sidebar";
 import { TilingLayout } from "./components/TilingLayout";
 import { NewTaskDialog } from "./components/NewTaskDialog";
@@ -37,6 +37,11 @@ import { mod } from "./lib/platform";
 
 function App() {
   let mainRef!: HTMLElement;
+
+  // Sync theme preset to <html> so Portal content inherits CSS variables
+  createEffect(() => {
+    document.documentElement.dataset.look = store.themePreset;
+  });
 
   onMount(async () => {
     await loadAgents();
