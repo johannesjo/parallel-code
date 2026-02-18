@@ -34,7 +34,7 @@ import { DiffViewerDialog } from "./DiffViewerDialog";
 import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
 import type { Task } from "../store/types";
-import type { ChangedFile } from "../ipc/types";
+import type { ChangedFile, WorktreeStatus } from "../ipc/types";
 
 interface TaskPanelProps {
   task: Task;
@@ -51,6 +51,10 @@ export function TaskPanel(props: TaskPanelProps) {
   const [branchLog] = createResource(
     () => showMergeConfirm() ? props.task.worktreePath : null,
     (path) => invoke<string>("get_branch_log", { worktreePath: path }),
+  );
+  const [worktreeStatus] = createResource(
+    () => (showMergeConfirm() || showCloseConfirm()) ? props.task.worktreePath : null,
+    (path) => invoke<WorktreeStatus>("get_worktree_status", { worktreePath: path }),
   );
   const [showPushConfirm, setShowPushConfirm] = createSignal(false);
   const [pushError, setPushError] = createSignal("");
@@ -639,6 +643,41 @@ export function TaskPanel(props: TaskPanelProps) {
         title="Close Task"
         message={
           <div>
+            <Show when={worktreeStatus()?.has_uncommitted_changes || worktreeStatus()?.has_committed_changes}>
+              <div style={{
+                "margin-bottom": "12px",
+                display: "flex",
+                "flex-direction": "column",
+                gap: "8px",
+              }}>
+                <Show when={worktreeStatus()?.has_uncommitted_changes}>
+                  <div style={{
+                    "font-size": "12px",
+                    color: theme.warning,
+                    background: "#f0a03014",
+                    padding: "8px 12px",
+                    "border-radius": "8px",
+                    border: "1px solid #f0a03033",
+                    "font-weight": "600",
+                  }}>
+                    Warning: There are uncommitted changes that will be permanently lost.
+                  </div>
+                </Show>
+                <Show when={worktreeStatus()?.has_committed_changes}>
+                  <div style={{
+                    "font-size": "12px",
+                    color: theme.warning,
+                    background: "#f0a03014",
+                    padding: "8px 12px",
+                    "border-radius": "8px",
+                    border: "1px solid #f0a03033",
+                    "font-weight": "600",
+                  }}>
+                    Warning: This branch has commits that have not been merged into main.
+                  </div>
+                </Show>
+              </div>
+            </Show>
             <p style={{ margin: "0 0 8px" }}>
               This action cannot be undone. The following will be permanently deleted:
             </p>
@@ -662,6 +701,20 @@ export function TaskPanel(props: TaskPanelProps) {
         width="520px"
         message={
           <div>
+            <Show when={worktreeStatus()?.has_uncommitted_changes}>
+              <div style={{
+                "margin-bottom": "12px",
+                "font-size": "12px",
+                color: theme.warning,
+                background: "#f0a03014",
+                padding: "8px 12px",
+                "border-radius": "8px",
+                border: "1px solid #f0a03033",
+                "font-weight": "600",
+              }}>
+                Warning: You have uncommitted changes that will NOT be included in this merge.
+              </div>
+            </Show>
             <p style={{ margin: "0 0 12px" }}>
               Merge <strong>{props.task.branchName}</strong> into main:
             </p>
