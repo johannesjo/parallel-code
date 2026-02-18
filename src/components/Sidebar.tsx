@@ -206,7 +206,7 @@ export function Sidebar() {
             "flex-shrink": "0",
           }}>M</div>
           <span style={{ "font-size": sf(14), "font-weight": "600", color: theme.fg }}>
-            AI Mush
+            Parallel Code
           </span>
         </div>
         <button

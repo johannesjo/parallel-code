@@ -21,6 +21,6 @@ export const [store, setStore] = createStore<AppStore>({
 });
 
 export function updateWindowTitle(taskName?: string): void {
-  const title = taskName ? `AI Mush - ${taskName}` : "AI Mush";
+  const title = taskName ? `Parallel Code - ${taskName}` : "Parallel Code";
   getCurrentWindow().setTitle(title).catch(() => {});
 }

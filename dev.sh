@@ -13,8 +13,8 @@ if [ -n "${APPDIR:-}" ]; then
     unset PERLLIB PYTHONHOME PYTHONPATH QT_PLUGIN_PATH
 
     # Filter AppImage mount paths from PATH and XDG_DATA_DIRS
-    PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '.mount_ai-mus' | tr '\n' ':' | sed 's/:$//')
-    XDG_DATA_DIRS=$(echo "${XDG_DATA_DIRS:-}" | tr ':' '\n' | grep -v '.mount_ai-mus' | tr '\n' ':' | sed 's/:$//')
+    PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '.mount_parallel-cod' | tr '\n' ':' | sed 's/:$//')
+    XDG_DATA_DIRS=$(echo "${XDG_DATA_DIRS:-}" | tr ':' '\n' | grep -v '.mount_parallel-cod' | tr '\n' ':' | sed 's/:$//')
     export PATH XDG_DATA_DIRS
 fi
 

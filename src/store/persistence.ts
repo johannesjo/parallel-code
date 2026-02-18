@@ -172,6 +172,6 @@ export async function loadState(): Promise<void> {
   // Update window title
   const activeTask = store.activeTaskId ? store.tasks[store.activeTaskId] : null;
   if (activeTask) {
-    getCurrentWindow().setTitle(`AI Mush - ${activeTask.name}`).catch(() => {});
+    getCurrentWindow().setTitle(`Parallel Code - ${activeTask.name}`).catch(() => {});
   }
 }

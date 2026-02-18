@@ -14,7 +14,7 @@ use tracing_subscriber::EnvFilter;
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("ai_mush=info")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("parallel_code=info")),
         )
         .init();
 
