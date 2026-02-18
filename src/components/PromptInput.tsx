@@ -12,14 +12,34 @@ interface PromptInputProps {
   ref?: (el: HTMLTextAreaElement) => void;
 }
 
+const INITIAL_PROMPT_AUTOSEND_DELAY_MS = 5_000;
+
 export function PromptInput(props: PromptInputProps) {
   const [text, setText] = createSignal("");
+  const [sending, setSending] = createSignal(false);
+  let autoSendTimer: number | undefined;
+  let autoSentInitialPrompt: string | null = null;
+
+  function clearAutoSendTimer() {
+    if (autoSendTimer !== undefined) {
+      clearTimeout(autoSendTimer);
+      autoSendTimer = undefined;
+    }
+  }
 
   createEffect(() => {
-    const ip = props.initialPrompt;
-    if (ip) {
-      setText(ip);
-    }
+    clearAutoSendTimer();
+    const ip = props.initialPrompt?.trim();
+    if (!ip) return;
+
+    setText(ip);
+    if (autoSentInitialPrompt === ip) return;
+
+    autoSendTimer = window.setTimeout(() => {
+      const currentInitial = props.initialPrompt?.trim();
+      if (!currentInitial || currentInitial !== ip) return;
+      void handleSend("auto");
+    }, INITIAL_PROMPT_AUTOSEND_DELAY_MS);
   });
   let textareaRef: HTMLTextAreaElement | undefined;
 
@@ -34,18 +54,31 @@ export function PromptInput(props: PromptInputProps) {
     });
   });
 
-  async function handleSend() {
+  onCleanup(() => clearAutoSendTimer());
+
+  async function handleSend(mode: "manual" | "auto" = "manual") {
+    if (sending()) return;
+    clearAutoSendTimer();
+
     const val = text().trim();
     if (!val) {
+      if (mode === "auto") return;
       await invoke("write_to_agent", { agentId: props.agentId, data: "\r" });
       return;
     }
+
+    setSending(true);
     try {
       await sendPrompt(props.taskId, props.agentId, val);
+      if (props.initialPrompt?.trim()) {
+        autoSentInitialPrompt = props.initialPrompt.trim();
+      }
       props.onSend?.(val);
       setText("");
     } catch (e) {
       console.error("Failed to send prompt:", e);
+    } finally {
+      setSending(false);
     }
   }
 

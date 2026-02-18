@@ -8,7 +8,7 @@ import { recordTaskCompleted } from "./completion";
 import type { AgentDef, CreateTaskResult } from "../ipc/types";
 import type { Agent, Task } from "./types";
 
-const AGENT_WRITE_READY_TIMEOUT_MS = 4_000;
+const AGENT_WRITE_READY_TIMEOUT_MS = 8_000;
 const AGENT_WRITE_RETRY_MS = 50;
 
 function sleep(ms: number): Promise<void> {
