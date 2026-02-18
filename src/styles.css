@@ -185,7 +185,7 @@ textarea::placeholder {
   transition: box-shadow 0.2s ease;
 }
 .task-column.active {
-  box-shadow: 0 0 8px rgba(230, 210, 180, 0.4);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.5);
 }
 
 /* Panel focus highlight */
