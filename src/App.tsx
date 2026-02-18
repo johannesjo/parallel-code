@@ -128,7 +128,7 @@ function App() {
       try {
         const countLabel = runningCount === 1 ? "1 running terminal session" : `${runningCount} running terminal sessions`;
         const shouldKill = await confirm(
-          `You have ${countLabel}. Kill them and quit, or keep them alive in the background?`,
+          `You have ${countLabel}. They can be restored on app restart. Kill them and quit, or keep them alive in the background?`,
           {
             title: "Running Terminals",
             kind: "warning",
