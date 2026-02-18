@@ -1,4 +1,4 @@
-import { createSignal, onMount, onCleanup } from "solid-js";
+import { createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { sendPrompt, registerFocusFn, unregisterFocusFn, registerAction, unregisterAction } from "../store/store";
 import { theme } from "../lib/theme";
@@ -13,7 +13,14 @@ interface PromptInputProps {
 }
 
 export function PromptInput(props: PromptInputProps) {
-  const [text, setText] = createSignal(props.initialPrompt ?? "");
+  const [text, setText] = createSignal("");
+
+  createEffect(() => {
+    const ip = props.initialPrompt;
+    if (ip) {
+      setText(ip);
+    }
+  });
   let textareaRef: HTMLTextAreaElement | undefined;
 
   onMount(() => {
