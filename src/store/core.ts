@@ -29,6 +29,7 @@ export const [store, setStore] = createStore<AppStore>({
   completedTaskDate: getLocalDateKey(),
   completedTaskCount: 0,
   themePreset: "classic",
+  windowState: null,
 });
 
 export function updateWindowTitle(_taskName?: string): void {

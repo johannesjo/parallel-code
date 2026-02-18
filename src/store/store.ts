@@ -58,6 +58,7 @@ export {
   setPanelSizes,
   toggleSidebar,
   setThemePreset,
+  setWindowState,
 } from "./ui";
 export {
   getTaskDotStatus,

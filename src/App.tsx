@@ -2,6 +2,7 @@ import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
 import { onMount, onCleanup, createEffect, Show, ErrorBoundary, createSignal } from "solid-js";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { Sidebar } from "./components/Sidebar";
@@ -16,6 +17,7 @@ import {
   store,
   loadAgents,
   loadState,
+  saveState,
   toggleNewTaskDialog,
   toggleSidebar,
   moveActiveTask,
@@ -35,12 +37,15 @@ import {
   closeShell,
   clearNotification,
   setTaskFocusedPanel,
+  setWindowState,
 } from "./store/store";
+import type { PersistedWindowState } from "./store/types";
 import { registerShortcut, initShortcuts } from "./lib/shortcuts";
 import { setupAutosave } from "./store/autosave";
 import { isMac, mod } from "./lib/platform";
 
 const appWindow = getCurrentWindow();
+const MIN_WINDOW_DIMENSION = 100;
 
 function App() {
   let mainRef!: HTMLElement;
@@ -49,6 +54,7 @@ function App() {
 
   let unlistenFocusChanged: (() => void) | null = null;
   let unlistenResized: (() => void) | null = null;
+  let unlistenMoved: (() => void) | null = null;
 
   const syncWindowFocused = async () => {
     const focused = await appWindow.isFocused().catch(() => true);
@@ -58,6 +64,56 @@ function App() {
   const syncWindowMaximized = async () => {
     const maximized = await appWindow.isMaximized().catch(() => false);
     setWindowMaximized(maximized);
+  };
+
+  const readWindowGeometry = async (): Promise<Omit<PersistedWindowState, "maximized"> | null> => {
+    const [position, size] = await Promise.all([
+      appWindow.outerPosition().catch(() => null),
+      appWindow.outerSize().catch(() => null),
+    ]);
+
+    if (!position || !size) return null;
+    if (size.width < MIN_WINDOW_DIMENSION || size.height < MIN_WINDOW_DIMENSION) return null;
+
+    return {
+      x: Math.round(position.x),
+      y: Math.round(position.y),
+      width: Math.round(size.width),
+      height: Math.round(size.height),
+    };
+  };
+
+  const captureWindowState = async (): Promise<void> => {
+    const maximized = await appWindow.isMaximized().catch(() => false);
+    const current = store.windowState;
+
+    if (maximized && current) {
+      if (!current.maximized) {
+        setWindowState({ ...current, maximized: true });
+      }
+      return;
+    }
+
+    const geometry = await readWindowGeometry();
+    if (!geometry) return;
+
+    setWindowState({ ...geometry, maximized });
+  };
+
+  const restoreWindowState = async (): Promise<void> => {
+    const saved = store.windowState;
+    if (!saved) return;
+    if (saved.width < MIN_WINDOW_DIMENSION || saved.height < MIN_WINDOW_DIMENSION) return;
+
+    await appWindow.unmaximize().catch(() => {});
+    await appWindow.setSize(new PhysicalSize(saved.width, saved.height)).catch(() => {});
+    await appWindow.setPosition(new PhysicalPosition(saved.x, saved.y)).catch(() => {});
+
+    if (saved.maximized) {
+      await appWindow.maximize().catch(() => {});
+    }
+
+    void syncWindowMaximized();
   };
 
   // Sync theme preset to <html> so Portal content inherits CSS variables
@@ -92,14 +148,25 @@ function App() {
       try {
         unlistenResized = await appWindow.onResized(() => {
           void syncWindowMaximized();
+          void captureWindowState();
         });
       } catch {
         unlistenResized = null;
+      }
+
+      try {
+        unlistenMoved = await appWindow.onMoved(() => {
+          void captureWindowState();
+        });
+      } catch {
+        unlistenMoved = null;
       }
     })();
 
     await loadAgents();
     await loadState();
+    await restoreWindowState();
+    await captureWindowState();
     setupAutosave();
     startTaskStatusPolling();
 
@@ -114,6 +181,9 @@ function App() {
     let allowClose = false;
     let handlingClose = false;
     const unlistenCloseRequested = await appWindow.onCloseRequested(async (event) => {
+      await captureWindowState();
+      await saveState();
+
       if (allowClose) return;
       if (handlingClose) {
         event.preventDefault();
@@ -230,6 +300,7 @@ function App() {
       stopTaskStatusPolling();
       unlistenFocusChanged?.();
       unlistenResized?.();
+      unlistenMoved?.();
     });
   });
 

@@ -13,6 +13,11 @@ export function setupAutosave(): void {
     void store.completedTaskDate;
     void store.completedTaskCount;
     void store.themePreset;
+    void store.windowState?.x;
+    void store.windowState?.y;
+    void store.windowState?.width;
+    void store.windowState?.height;
+    void store.windowState?.maximized;
     void store.projects.length;
     void store.lastProjectId;
     void store.lastAgentId;

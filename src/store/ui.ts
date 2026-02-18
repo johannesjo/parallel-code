@@ -1,6 +1,7 @@
 import { produce } from "solid-js/store";
 import { store, setStore } from "./core";
 import type { LookPreset } from "../lib/look";
+import type { PersistedWindowState } from "./types";
 
 // --- Font Scale ---
 
@@ -68,4 +69,19 @@ export function toggleSidebar(): void {
 
 export function setThemePreset(themePreset: LookPreset): void {
   setStore("themePreset", themePreset);
+}
+
+export function setWindowState(windowState: PersistedWindowState): void {
+  const current = store.windowState;
+  if (
+    current &&
+    current.x === windowState.x &&
+    current.y === windowState.y &&
+    current.width === windowState.width &&
+    current.height === windowState.height &&
+    current.maximized === windowState.maximized
+  ) {
+    return;
+  }
+  setStore("windowState", windowState);
 }

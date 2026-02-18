@@ -55,6 +55,14 @@ export interface PersistedTask {
   agentDef: AgentDef | null;
 }
 
+export interface PersistedWindowState {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  maximized: boolean;
+}
+
 export interface PersistedState {
   projects: Project[];
   lastProjectId: string | null;
@@ -69,6 +77,7 @@ export interface PersistedState {
   completedTaskDate?: string;
   completedTaskCount?: number;
   themePreset?: LookPreset;
+  windowState?: PersistedWindowState;
 }
 
 // Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.
@@ -107,4 +116,5 @@ export interface AppStore {
   completedTaskDate: string;
   completedTaskCount: number;
   themePreset: LookPreset;
+  windowState: PersistedWindowState | null;
 }

@@ -4,7 +4,7 @@ import { store, setStore } from "./core";
 import { randomPastelColor } from "./projects";
 import { markAgentSpawned } from "./taskStatus";
 import { getLocalDateKey } from "../lib/date";
-import type { Agent, Task, PersistedState, PersistedTask, Project } from "./types";
+import type { Agent, Task, PersistedState, PersistedTask, PersistedWindowState, Project } from "./types";
 import { isLookPreset } from "../lib/look";
 
 export async function saveState(): Promise<void> {
@@ -22,6 +22,7 @@ export async function saveState(): Promise<void> {
     completedTaskDate: store.completedTaskDate,
     completedTaskCount: store.completedTaskCount,
     themePreset: store.themePreset,
+    windowState: store.windowState ? { ...store.windowState } : undefined,
   };
 
   for (const taskId of store.taskOrder) {
@@ -50,6 +51,35 @@ export async function saveState(): Promise<void> {
 
 function isStringNumberRecord(v: unknown): v is Record<string, number> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function parsePersistedWindowState(v: unknown): PersistedWindowState | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+
+  const raw = v as Record<string, unknown>;
+  const x = raw.x;
+  const y = raw.y;
+  const width = raw.width;
+  const height = raw.height;
+  const maximized = raw.maximized;
+
+  if (
+    typeof x !== "number" || !Number.isFinite(x) ||
+    typeof y !== "number" || !Number.isFinite(y) ||
+    typeof width !== "number" || !Number.isFinite(width) || width <= 0 ||
+    typeof height !== "number" || !Number.isFinite(height) || height <= 0 ||
+    typeof maximized !== "boolean"
+  ) {
+    return null;
+  }
+
+  return {
+    x: Math.round(x),
+    y: Math.round(y),
+    width: Math.round(width),
+    height: Math.round(height),
+    maximized,
+  };
 }
 
 interface LegacyPersistedState {
@@ -136,6 +166,7 @@ export async function loadState(): Promise<void> {
         s.completedTaskCount = 0;
       }
       s.themePreset = isLookPreset(rawAny.themePreset) ? rawAny.themePreset : "classic";
+      s.windowState = parsePersistedWindowState(rawAny.windowState);
 
       for (const taskId of raw.taskOrder) {
         const pt = raw.tasks[taskId];
