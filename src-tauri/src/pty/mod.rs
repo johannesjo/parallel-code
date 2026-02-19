@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 use tauri::ipc::Channel;
 use tracing::{info, error};
 
+use base64::Engine as _;
 use crate::error::AppError;
 use crate::state::AppState;
 use types::{PtyOutput, PtySession};
@@ -124,7 +125,8 @@ pub fn spawn_agent(
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        let _ = on_output.send(PtyOutput::Data(buf[..n].to_vec()));
+                        let encoded = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
+                        let _ = on_output.send(PtyOutput::Data(encoded));
 
                         // Accumulate lines for crash diagnostics
                         let chunk = String::from_utf8_lossy(&buf[..n]);

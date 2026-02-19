@@ -2421,6 +2421,7 @@ dependencies = [
 name = "parallel-code"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "parking_lot",
  "portable-pty",
  "serde",

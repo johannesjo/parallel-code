@@ -11,6 +11,15 @@ import { isMac } from "../lib/platform";
 import { store } from "../store/store";
 import type { PtyOutput } from "../ipc/types";
 
+function base64ToUint8Array(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) {
+    arr[i] = bin.charCodeAt(i);
+  }
+  return arr;
+}
+
 interface TerminalViewProps {
   taskId: string;
   agentId: string;
@@ -185,7 +194,7 @@ export function TerminalView(props: TerminalViewProps) {
     let initialCommandSent = false;
     onOutput.onmessage = (msg) => {
       if (msg.type === "Data") {
-        enqueueOutput(new Uint8Array(msg.data));
+        enqueueOutput(base64ToUint8Array(msg.data));
         if (!initialCommandSent && props.initialCommand) {
           initialCommandSent = true;
           setTimeout(() => enqueueInput(props.initialCommand! + "\r"), 50);

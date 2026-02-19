@@ -14,7 +14,7 @@ pub struct PtySession {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", content = "data")]
 pub enum PtyOutput {
-    Data(Vec<u8>),
+    Data(String),  // base64-encoded bytes
     Exit {
         exit_code: Option<u32>,
         signal: Option<String>,
