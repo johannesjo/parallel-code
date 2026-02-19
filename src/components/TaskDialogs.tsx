@@ -264,6 +264,26 @@ export function TaskDialogs(props: TaskDialogsProps) {
             <p style={{ margin: "0 0 12px" }}>
               Merge <strong>{props.task.branchName}</strong> into main:
             </p>
+            <Show when={!branchLog.loading && branchLog()}>
+              {(log) => (
+                <div style={{
+                  "margin-bottom": "12px",
+                  "font-size": "12px",
+                  color: theme.fg,
+                  background: theme.bgInput,
+                  padding: "8px 12px",
+                  "border-radius": "8px",
+                  border: `1px solid ${theme.border}`,
+                  "max-height": "120px",
+                  "overflow-y": "auto",
+                  "white-space": "pre-wrap",
+                  "font-family": "'JetBrains Mono', monospace",
+                  "line-height": "1.5",
+                }}>
+                  {log()}
+                </div>
+              )}
+            </Show>
             <div
               style={{
                 border: `1px solid ${theme.border}`,
