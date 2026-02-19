@@ -25,6 +25,7 @@ interface TerminalViewProps {
   fontSize?: number;
   autoFocus?: boolean;
   initialCommand?: string;
+  isActive?: boolean;
 }
 
 export function TerminalView(props: TerminalViewProps) {
@@ -83,10 +84,12 @@ export function TerminalView(props: TerminalViewProps) {
       return true;
     });
 
+    let webgl: WebglAddon | undefined;
     try {
-      const webgl = new WebglAddon();
+      webgl = new WebglAddon();
       webgl.onContextLoss(() => {
-        webgl.dispose();
+        webgl?.dispose();
+        webgl = undefined;
       });
       term.loadAddon(webgl);
     } catch {
@@ -161,12 +164,22 @@ export function TerminalView(props: TerminalViewProps) {
       });
     }
 
+    let outputTimer: number | undefined;
+
     function scheduleOutputFlush() {
-      if (outputRaf !== undefined) return;
-      outputRaf = requestAnimationFrame(() => {
-        outputRaf = undefined;
-        flushOutputQueue();
-      });
+      if (outputRaf !== undefined || outputTimer !== undefined) return;
+      if (props.isActive !== false) {
+        outputRaf = requestAnimationFrame(() => {
+          outputRaf = undefined;
+          flushOutputQueue();
+        });
+      } else {
+        // Inactive: throttle repaints to ~2/s instead of 60fps
+        outputTimer = window.setTimeout(() => {
+          outputTimer = undefined;
+          flushOutputQueue();
+        }, 500);
+      }
     }
 
     function enqueueOutput(chunk: Uint8Array) {
@@ -287,6 +300,55 @@ export function TerminalView(props: TerminalViewProps) {
     });
     intersectionObserver.observe(containerRef);
 
+    // Activate/deactivate terminal based on visibility to save CPU/GPU.
+    // When inactive: stop cursor blink RAF, release WebGL context, disconnect
+    // observers, and throttle output flushing from RAF (~16ms) to 500ms timer.
+    createEffect(() => {
+      const active = props.isActive !== false;
+      if (!term) return;
+
+      // Cursor blink drives a per-terminal requestAnimationFrame loop
+      term.options.cursorBlink = active;
+
+      if (active) {
+        // Restore WebGL rendering
+        if (!webgl) {
+          try {
+            webgl = new WebglAddon();
+            webgl.onContextLoss(() => {
+              webgl?.dispose();
+              webgl = undefined;
+            });
+            term.loadAddon(webgl);
+          } catch {
+            // WebGL2 not supported
+          }
+        }
+
+        // Re-observe for size changes missed while paused
+        resizeObserver.observe(containerRef);
+        intersectionObserver.observe(containerRef);
+
+        // Flush accumulated output immediately
+        if (outputTimer !== undefined) {
+          clearTimeout(outputTimer);
+          outputTimer = undefined;
+        }
+        flushOutputQueue();
+        requestFit();
+      } else {
+        // Release GPU context (WebKit2GTK has hard limits ~8-16 contexts)
+        if (webgl) {
+          webgl.dispose();
+          webgl = undefined;
+        }
+
+        // Stop observing — no point fitting an invisible terminal
+        resizeObserver.disconnect();
+        intersectionObserver.disconnect();
+      }
+    });
+
     invoke("spawn_agent", {
       taskId,
       agentId,
@@ -312,6 +374,7 @@ export function TerminalView(props: TerminalViewProps) {
       if (inputFlushTimer !== undefined) clearTimeout(inputFlushTimer);
       if (resizeFlushTimer !== undefined) clearTimeout(resizeFlushTimer);
       if (outputRaf !== undefined) cancelAnimationFrame(outputRaf);
+      if (outputTimer !== undefined) clearTimeout(outputTimer);
       if (fitRAF !== undefined) cancelAnimationFrame(fitRAF);
       resizeObserver.disconnect();
       intersectionObserver.disconnect();

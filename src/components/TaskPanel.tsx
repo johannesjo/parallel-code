@@ -661,6 +661,7 @@ export function TaskPanel(props: TaskPanelProps) {
                       <TerminalView
                         taskId={props.task.id}
                         agentId={shellId}
+                        isActive={props.isActive}
                         command={getShellCommand()}
                         args={["-l"]}
                         cwd={props.task.worktreePath}
@@ -758,6 +759,7 @@ export function TaskPanel(props: TaskPanelProps) {
                     <TerminalView
                       taskId={props.task.id}
                       agentId={a().id}
+                      isActive={props.isActive}
                       command={a().def.command}
                       args={a().resumed && a().def.resume_args?.length ? a().def.resume_args! : a().def.args}
                       cwd={props.task.worktreePath}
