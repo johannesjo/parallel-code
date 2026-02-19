@@ -3,6 +3,29 @@ import { invoke } from "@tauri-apps/api/core";
 import { store, setStore } from "./core";
 import type { WorktreeStatus } from "../ipc/types";
 
+// --- Trust-specific patterns (subset of QUESTION_PATTERNS) ---
+// These are auto-accepted when autoTrustFolders is enabled.
+const TRUST_PATTERNS: RegExp[] = [
+  /\btrust\b.*\?/i,
+  /\ballow\b.*\?/i,
+];
+
+// Debounce: tracks agents with a pending or recently-fired auto-trust.
+// Cleared after a cooldown so subsequent trust dialogs are also auto-accepted.
+const autoTrustTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const autoTrustCooldowns = new Map<string, ReturnType<typeof setTimeout>>();
+
+function isAutoTrustPending(agentId: string): boolean {
+  return autoTrustTimers.has(agentId) || autoTrustCooldowns.has(agentId);
+}
+
+function clearAutoTrustState(agentId: string): void {
+  const timer = autoTrustTimers.get(agentId);
+  if (timer) { clearTimeout(timer); autoTrustTimers.delete(agentId); }
+  const cooldown = autoTrustCooldowns.get(agentId);
+  if (cooldown) { clearTimeout(cooldown); autoTrustCooldowns.delete(agentId); }
+}
+
 export type TaskDotStatus = "busy" | "waiting" | "ready";
 
 // --- Prompt detection helpers ---
@@ -122,6 +145,17 @@ export function looksLikeQuestion(tail: string): boolean {
   });
 }
 
+/** True when recent output contains a trust or permission dialog. */
+function looksLikeTrustDialog(tail: string): boolean {
+  const visible = stripAnsi(tail);
+  const chunk = visible.slice(-500);
+  const lines = chunk.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  return lines.some((line) => {
+    const trimmed = line.trimEnd();
+    return TRUST_PATTERNS.some((re) => re.test(trimmed));
+  });
+}
+
 // --- Agent question tracking ---
 // Reactive set of agent IDs that currently have a question/dialog in their terminal.
 const [questionAgents, setQuestionAgents] = createSignal<Set<string>>(new Set());
@@ -201,6 +235,7 @@ function resetIdleTimer(agentId: string): void {
 export function markAgentSpawned(agentId: string): void {
   outputTailBuffers.delete(agentId);
   agentDecoders.delete(agentId);
+  clearAutoTrustState(agentId);
   lastDataAt.set(agentId, Date.now());
   addToActive(agentId);
   resetIdleTimer(agentId);
@@ -249,7 +284,25 @@ export function markAgentOutput(agentId: string, data: Uint8Array): void {
 
   // Track whether the terminal is showing a question/dialog.
   const rawTail = outputTailBuffers.get(agentId) ?? "";
-  const hasQuestion = looksLikeQuestion(rawTail);
+  let hasQuestion = looksLikeQuestion(rawTail);
+
+  // Auto-trust: when enabled, auto-accept trust/permission dialogs.
+  if (hasQuestion && store.autoTrustFolders && !isAutoTrustPending(agentId)) {
+    if (looksLikeTrustDialog(rawTail)) {
+      // Brief delay to let the TUI finish rendering before sending Enter.
+      const timer = setTimeout(() => {
+        autoTrustTimers.delete(agentId);
+        invoke("write_to_agent", { agentId, data: "\r" }).catch(() => {});
+        // Cooldown: ignore trust patterns for 3s so the same dialog
+        // isn't re-matched while the PTY output transitions.
+        const cd = setTimeout(() => autoTrustCooldowns.delete(agentId), 3_000);
+        autoTrustCooldowns.set(agentId, cd);
+      }, 150);
+      autoTrustTimers.set(agentId, timer);
+      hasQuestion = false;
+    }
+  }
+
   updateQuestionState(agentId, hasQuestion);
 
   // Extract last non-empty line from recent output for prompt matching.
@@ -319,6 +372,7 @@ export function clearAgentActivity(agentId: string): void {
   outputTailBuffers.delete(agentId);
   agentDecoders.delete(agentId);
   agentReadyCallbacks.delete(agentId);
+  clearAutoTrustState(agentId);
   const timer = idleTimers.get(agentId);
   if (timer) {
     clearTimeout(timer);

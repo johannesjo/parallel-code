@@ -84,6 +84,7 @@ export interface PersistedState {
   terminalFont?: TerminalFont;
   themePreset?: LookPreset;
   windowState?: PersistedWindowState;
+  autoTrustFolders?: boolean;
 }
 
 // Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.
@@ -126,4 +127,5 @@ export interface AppStore {
   terminalFont: TerminalFont;
   themePreset: LookPreset;
   windowState: PersistedWindowState | null;
+  autoTrustFolders: boolean;
 }

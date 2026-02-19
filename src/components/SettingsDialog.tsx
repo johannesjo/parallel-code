@@ -3,7 +3,7 @@ import { Portal } from "solid-js/web";
 import { getAvailableTerminalFonts, getTerminalFontFamily } from "../lib/fonts";
 import { LOOK_PRESETS } from "../lib/look";
 import { theme } from "../lib/theme";
-import { store, setTerminalFont, setThemePreset } from "../store/store";
+import { store, setTerminalFont, setThemePreset, setAutoTrustFolders } from "../store/store";
 import { mod } from "../lib/platform";
 import type { TerminalFont } from "../lib/fonts";
 
@@ -124,6 +124,43 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   )}
                 </For>
               </div>
+            </div>
+
+            <div style={{ display: "flex", "flex-direction": "column", gap: "10px" }}>
+              <div style={{
+                "font-size": "11px",
+                color: theme.fgMuted,
+                "text-transform": "uppercase",
+                "letter-spacing": "0.05em",
+                "font-weight": "600",
+              }}>
+                Behavior
+              </div>
+              <label
+                style={{
+                  display: "flex",
+                  "align-items": "center",
+                  gap: "10px",
+                  cursor: "pointer",
+                  padding: "8px 12px",
+                  "border-radius": "8px",
+                  background: theme.bgInput,
+                  border: `1px solid ${theme.border}`,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={store.autoTrustFolders}
+                  onChange={(e) => setAutoTrustFolders(e.currentTarget.checked)}
+                  style={{ "accent-color": theme.accent, cursor: "pointer" }}
+                />
+                <div style={{ display: "flex", "flex-direction": "column", gap: "2px" }}>
+                  <span style={{ "font-size": "13px", color: theme.fg }}>Auto-trust folders</span>
+                  <span style={{ "font-size": "11px", color: theme.fgSubtle }}>
+                    Automatically accept trust and permission dialogs from agents
+                  </span>
+                </div>
+              </label>
             </div>
 
             <div style={{ display: "flex", "flex-direction": "column", gap: "10px" }}>

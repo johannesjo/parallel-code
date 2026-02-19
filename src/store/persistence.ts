@@ -27,6 +27,7 @@ export async function saveState(): Promise<void> {
     terminalFont: store.terminalFont,
     themePreset: store.themePreset,
     windowState: store.windowState ? { ...store.windowState } : undefined,
+    autoTrustFolders: store.autoTrustFolders,
   };
 
   for (const taskId of store.taskOrder) {
@@ -184,6 +185,7 @@ export async function loadState(): Promise<void> {
       s.terminalFont = isTerminalFont(rawAny.terminalFont) ? rawAny.terminalFont : DEFAULT_TERMINAL_FONT;
       s.themePreset = isLookPreset(rawAny.themePreset) ? rawAny.themePreset : "minimal";
       s.windowState = parsePersistedWindowState(rawAny.windowState);
+      s.autoTrustFolders = typeof rawAny.autoTrustFolders === "boolean" ? rawAny.autoTrustFolders : false;
 
       for (const taskId of raw.taskOrder) {
         const pt = raw.tasks[taskId];

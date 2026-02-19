@@ -76,6 +76,10 @@ export function setThemePreset(themePreset: LookPreset): void {
   setStore("themePreset", themePreset);
 }
 
+export function setAutoTrustFolders(autoTrustFolders: boolean): void {
+  setStore("autoTrustFolders", autoTrustFolders);
+}
+
 export function setWindowState(windowState: PersistedWindowState): void {
   const current = store.windowState;
   if (

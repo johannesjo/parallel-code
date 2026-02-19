@@ -61,6 +61,7 @@ export {
   toggleSidebar,
   setTerminalFont,
   setThemePreset,
+  setAutoTrustFolders,
   setWindowState,
 } from "./ui";
 export {

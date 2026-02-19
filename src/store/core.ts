@@ -34,6 +34,7 @@ export const [store, setStore] = createStore<AppStore>({
   terminalFont: DEFAULT_TERMINAL_FONT,
   themePreset: "minimal",
   windowState: null,
+  autoTrustFolders: false,
 });
 
 export function updateWindowTitle(_taskName?: string): void {
