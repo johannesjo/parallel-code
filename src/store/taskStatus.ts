@@ -521,8 +521,10 @@ export function startTaskStatusPolling(): void {
   if (allTasksTimer || activeTaskTimer) return;
   // Active task polls every 5s for responsive UI
   activeTaskTimer = setInterval(refreshActiveTaskGitStatus, 5_000);
-  // All tasks poll every 30s to reduce git process overhead
-  allTasksTimer = setInterval(refreshAllTaskGitStatus, 30_000);
+  // Scale interval: 30s base + 5s per additional task beyond 3
+  const taskCount = store.taskOrder.length;
+  const allInterval = Math.min(120_000, 30_000 + Math.max(0, taskCount - 3) * 5_000);
+  allTasksTimer = setInterval(refreshAllTaskGitStatus, allInterval);
   // Run once immediately
   refreshActiveTaskGitStatus();
   refreshAllTaskGitStatus();

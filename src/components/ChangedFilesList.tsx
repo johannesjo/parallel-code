@@ -55,7 +55,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
   // Poll every 5s, matching the git status polling interval
   createEffect(() => {
     const path = props.worktreePath;
-    if (props.isActive === false) return;
+    if (!props.isActive) return;
     let cancelled = false;
     const isCancelled = () => cancelled;
     refresh(path, isCancelled);
