@@ -1,5 +1,3 @@
-pub mod types;
-
 use tracing::{info, error};
 use uuid::Uuid;
 
@@ -92,13 +90,18 @@ pub async fn delete_task(
 }
 
 fn slug(name: &str) -> String {
-    name.to_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '-' })
-        .collect::<String>()
-        .trim_matches('-')
-        .to_string()
-        .replace("--", "-")
+    let mut result = String::new();
+    let mut prev_was_hyphen = false;
+    for c in name.to_lowercase().chars() {
+        if c.is_alphanumeric() {
+            result.push(c);
+            prev_was_hyphen = false;
+        } else if !prev_was_hyphen {
+            result.push('-');
+            prev_was_hyphen = true;
+        }
+    }
+    result.trim_matches('-').to_string()
 }
 
 fn sanitize_branch_prefix(prefix: &str) -> String {

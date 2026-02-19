@@ -1,4 +1,4 @@
-import { createEffect } from "solid-js";
+import { createEffect, onCleanup } from "solid-js";
 import { store, saveState } from "./store";
 
 export function setupAutosave(): void {
@@ -53,5 +53,7 @@ export function setupAutosave(): void {
     // Debounce 1s
     clearTimeout(timer);
     timer = window.setTimeout(() => saveState(), 1000);
+
+    onCleanup(() => clearTimeout(timer));
   });
 }

@@ -20,12 +20,9 @@ const STATUS_LABELS: Record<string, string> = {
   "?": "Untracked",
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  M: theme.warning,
-  A: theme.success,
-  D: theme.error,
-  "?": theme.fgMuted,
-};
+function getStatusColor(status: string): string {
+  return ({ M: theme.warning, A: theme.success, D: theme.error, "?": theme.fgMuted }[status] ?? theme.fgMuted);
+}
 
 const EXT_TO_LANG: Record<string, string> = {
   ts: "typescript",
@@ -165,7 +162,7 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
                     "font-weight": "600",
                     padding: "2px 8px",
                     "border-radius": "4px",
-                    color: STATUS_COLORS[file().status] ?? theme.fgMuted,
+                    color: getStatusColor(file().status),
                     background: "rgba(255,255,255,0.06)",
                   }}
                 >

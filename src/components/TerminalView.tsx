@@ -6,6 +6,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { getTerminalTheme } from "../lib/theme";
 import { matchesGlobalShortcut } from "../lib/shortcuts";
+import { isMac } from "../lib/platform";
 import { store } from "../store/store";
 import type { PtyOutput } from "../ipc/types";
 
@@ -58,7 +59,6 @@ export function TerminalView(props: TerminalViewProps) {
       // Let global app shortcuts pass through to the window handler
       if (matchesGlobalShortcut(e)) return false;
 
-      const isMac = navigator.userAgent.includes("Mac");
       const isCopy = isMac
         ? e.metaKey && !e.shiftKey && e.key === "c"
         : e.ctrlKey && e.shiftKey && e.key === "C";

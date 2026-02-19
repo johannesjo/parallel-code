@@ -132,7 +132,7 @@ export async function closeTask(taskId: string): Promise<void> {
     });
 
     // Backend cleanup succeeded — remove from UI
-    removeTaskFromStore(taskId, agentIds);
+    removeTaskFromStore(taskId, [...agentIds, ...shellAgentIds]);
   } catch (err) {
     // Backend cleanup failed — show error, allow retry
     console.error("Failed to close task:", err);
@@ -223,7 +223,7 @@ export async function mergeTask(
 
   if (cleanup) {
     // Remove task UI only when branch/worktree were cleaned up.
-    removeTaskFromStore(taskId, agentIds);
+    removeTaskFromStore(taskId, [...agentIds, ...shellAgentIds]);
   }
 }
 

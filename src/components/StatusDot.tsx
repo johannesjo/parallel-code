@@ -3,11 +3,9 @@ import { theme } from "../lib/theme";
 
 const SIZES = { sm: 6, md: 8 } as const;
 
-const COLORS: Record<TaskDotStatus, string> = {
-  busy: theme.fgMuted,
-  waiting: "#e5a800",
-  ready: theme.success,
-};
+function getDotColor(status: TaskDotStatus): string {
+  return ({ busy: theme.fgMuted, waiting: "#e5a800", ready: theme.success }[status]);
+}
 
 export function StatusDot(props: {
   status: TaskDotStatus;
@@ -22,7 +20,7 @@ export function StatusDot(props: {
         width: `${px()}px`,
         height: `${px()}px`,
         "border-radius": "50%",
-        background: COLORS[props.status],
+        background: getDotColor(props.status),
         "flex-shrink": "0",
       }}
     />

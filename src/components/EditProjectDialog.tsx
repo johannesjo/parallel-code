@@ -81,6 +81,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   return (
     <Portal>
       <Show when={props.project}>
+        {(project) => (
         <div
           class="dialog-overlay"
           style={{
@@ -126,7 +127,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
 
             {/* Path (read-only) */}
             <div style={{ "font-size": "12px", color: theme.fgSubtle, "font-family": "'JetBrains Mono', monospace" }}>
-              {props.project!.path}
+              {project().path}
             </div>
 
             {/* Name */}
@@ -423,6 +424,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
             </div>
           </div>
         </div>
+        )}
       </Show>
     </Portal>
   );

@@ -23,7 +23,7 @@ pub fn create_worktree(
 
     // Create the worktree
     let output = Command::new("git")
-        .args(["worktree", "add", &worktree_path, branch_name])
+        .args(["worktree", "add", &worktree_path, "--", branch_name])
         .current_dir(repo_root)
         .output()
         .map_err(|e| AppError::Git(e.to_string()))?;
@@ -41,7 +41,10 @@ pub fn create_worktree(
         let source = Path::new(repo_root).join(name);
         let target = Path::new(&worktree_path).join(name);
         if source.is_dir() && !target.exists() {
+            #[cfg(unix)]
             let _ = std::os::unix::fs::symlink(&source, &target);
+            #[cfg(windows)]
+            let _ = std::os::windows::fs::symlink_dir(&source, &target);
         }
     }
 
@@ -118,7 +121,7 @@ pub fn remove_worktree(
 
     if delete_branch {
         let _ = Command::new("git")
-            .args(["branch", "-D", branch_name])
+            .args(["branch", "-D", "--", branch_name])
             .current_dir(repo_root)
             .output();
     }
@@ -169,12 +172,15 @@ fn detect_merge_base(repo_root: &str) -> Result<String, AppError> {
 
 #[tauri::command]
 pub async fn merge_task(
+    state: tauri::State<'_, crate::state::AppState>,
     project_root: String,
     branch_name: String,
     squash: bool,
     message: Option<String>,
     cleanup: bool,
 ) -> Result<MergeResult, AppError> {
+    let lock = state.worktree_lock(&project_root);
+    let _guard = lock.lock().await;
     tauri::async_runtime::spawn_blocking(move || {
         merge_task_sync(&project_root, &branch_name, squash, message.as_deref(), cleanup)
     })
@@ -193,6 +199,18 @@ fn merge_task_sync(
     let main_branch = detect_main_branch(project_root)?;
     let (lines_added, lines_removed) = compute_branch_diff_stats(project_root, &main_branch, branch_name)?;
 
+    // Verify project root has a clean working tree before switching branches
+    let status_output = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(project_root)
+        .output()
+        .map_err(|e| AppError::Git(e.to_string()))?;
+    if !status_output.stdout.is_empty() {
+        return Err(AppError::Git(
+            "Project root has uncommitted changes. Please commit or stash them before merging.".into()
+        ));
+    }
+
     // Checkout main branch in the repo root
     let output = Command::new("git")
         .args(["checkout", &main_branch])
@@ -207,7 +225,7 @@ fn merge_task_sync(
     if squash {
         // Squash merge: stages all changes without committing
         let output = Command::new("git")
-            .args(["merge", "--squash", branch_name])
+            .args(["merge", "--squash", "--", branch_name])
             .current_dir(project_root)
             .output()
             .map_err(|e| AppError::Git(e.to_string()))?;
@@ -230,7 +248,7 @@ fn merge_task_sync(
     } else {
         // Regular merge
         let output = Command::new("git")
-            .args(["merge", branch_name])
+            .args(["merge", "--", branch_name])
             .current_dir(project_root)
             .output()
             .map_err(|e| AppError::Git(e.to_string()))?;
@@ -324,7 +342,7 @@ fn push_task_sync(project_root: &str, branch_name: &str) -> Result<(), AppError>
     info!(branch = %branch_name, root = %project_root, "Pushing task branch to remote");
 
     let output = Command::new("git")
-        .args(["push", "-u", "origin", branch_name])
+        .args(["push", "-u", "origin", "--", branch_name])
         .current_dir(project_root)
         .output()
         .map_err(|e| AppError::Git(e.to_string()))?;
@@ -355,9 +373,11 @@ fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppEr
         .args(["diff", "--name-status", &base])
         .current_dir(worktree_path)
         .output()
-        .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            tracing::warn!("git diff --name-status failed: {}", e);
+            String::new()
+        });
 
     let mut status_map = std::collections::HashMap::new();
     for line in name_status_str.lines() {
@@ -380,9 +400,11 @@ fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppEr
         .args(["status", "--porcelain"])
         .current_dir(worktree_path)
         .output()
-        .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            tracing::warn!("git status --porcelain failed: {}", e);
+            String::new()
+        });
 
     let mut uncommitted_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
     for line in status_str.lines() {
@@ -403,9 +425,11 @@ fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppEr
         .args(["diff", "--numstat", &base])
         .current_dir(worktree_path)
         .output()
-        .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            tracing::warn!("git diff --numstat failed: {}", e);
+            String::new()
+        });
 
     let mut seen = std::collections::HashSet::new();
     for line in diff_str.lines() {
@@ -527,7 +551,12 @@ pub async fn get_worktree_status(worktree_path: String) -> Result<WorktreeStatus
 }
 
 #[tauri::command]
-pub async fn check_merge_status(worktree_path: String) -> Result<MergeStatus, AppError> {
+pub async fn check_merge_status(
+    state: tauri::State<'_, crate::state::AppState>,
+    worktree_path: String,
+) -> Result<MergeStatus, AppError> {
+    let lock = state.worktree_lock(&worktree_path);
+    let _guard = lock.lock().await;
     tauri::async_runtime::spawn_blocking(move || {
         check_merge_status_sync(&worktree_path)
     })
@@ -555,9 +584,9 @@ fn check_merge_status_sync(worktree_path: &str) -> Result<MergeStatus, AppError>
         });
     }
 
-    // Dry-run merge to detect conflicts
+    // Use merge-tree for a true dry-run that doesn't touch the worktree or index
     let merge_output = Command::new("git")
-        .args(["merge", "--no-commit", "--no-ff", &main_branch])
+        .args(["merge-tree", "--write-tree", "HEAD", &main_branch])
         .current_dir(worktree_path)
         .output()
         .map_err(|e| AppError::Git(e.to_string()))?;
@@ -565,29 +594,46 @@ fn check_merge_status_sync(worktree_path: &str) -> Result<MergeStatus, AppError>
     let mut conflicting_files = vec![];
 
     if !merge_output.status.success() {
-        // Collect conflicting file names
-        let diff_output = Command::new("git")
-            .args(["diff", "--name-only", "--diff-filter=U"])
-            .current_dir(worktree_path)
-            .output()
-            .ok();
-
-        if let Some(diff) = diff_output {
-            let names = String::from_utf8_lossy(&diff.stdout);
-            for line in names.lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    conflicting_files.push(trimmed.to_string());
+        // merge-tree --write-tree outputs: tree hash on first line, then CONFLICT lines.
+        // Parse file paths from CONFLICT messages (works for all file types including extensionless).
+        // Formats: "CONFLICT (content): Merge conflict in <path>"
+        //          "CONFLICT (modify/delete): <path> deleted in ..."
+        let output_str = String::from_utf8_lossy(&merge_output.stdout);
+        for line in output_str.lines() {
+            let trimmed = line.trim();
+            if !trimmed.starts_with("CONFLICT") {
+                continue;
+            }
+            // Try "Merge conflict in <path>" pattern first
+            if let Some(i) = trimmed.find("Merge conflict in ") {
+                let path = trimmed[i + "Merge conflict in ".len()..].trim();
+                if !path.is_empty() {
+                    conflicting_files.push(path.to_string());
+                    continue;
+                }
+            }
+            // Fallback: extract first token after "): " as the path
+            if let Some(after_paren) = trimmed.find("): ").map(|i| &trimmed[i + 3..]) {
+                if let Some(path) = after_paren.split_whitespace().next() {
+                    if !path.is_empty() {
+                        conflicting_files.push(path.to_string());
+                    }
+                }
+            }
+        }
+        // If stdout parsing found nothing, try stderr as fallback
+        if conflicting_files.is_empty() {
+            let stderr = String::from_utf8_lossy(&merge_output.stderr);
+            for line in stderr.lines() {
+                if let Some(rest) = line.find("Merge conflict in ").map(|i| &line[i + "Merge conflict in ".len()..]) {
+                    let path = rest.trim();
+                    if !path.is_empty() {
+                        conflicting_files.push(path.to_string());
+                    }
                 }
             }
         }
     }
-
-    // Always abort the dry-run merge to restore clean state
-    let _ = Command::new("git")
-        .args(["merge", "--abort"])
-        .current_dir(worktree_path)
-        .output();
 
     Ok(MergeStatus {
         main_ahead_count,
@@ -596,7 +642,12 @@ fn check_merge_status_sync(worktree_path: &str) -> Result<MergeStatus, AppError>
 }
 
 #[tauri::command]
-pub async fn rebase_task(worktree_path: String) -> Result<(), AppError> {
+pub async fn rebase_task(
+    state: tauri::State<'_, crate::state::AppState>,
+    worktree_path: String,
+) -> Result<(), AppError> {
+    let lock = state.worktree_lock(&worktree_path);
+    let _guard = lock.lock().await;
     tauri::async_runtime::spawn_blocking(move || {
         rebase_task_sync(&worktree_path)
     })

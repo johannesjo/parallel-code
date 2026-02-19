@@ -16,6 +16,9 @@ pub enum AppError {
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("Persistence error: {0}")]
+    Persistence(String),
 }
 
 impl Serialize for AppError {

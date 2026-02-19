@@ -11,8 +11,6 @@ import {
   getFontScale,
   adjustFontScale,
   getTaskDotStatus,
-  getCompletedTasksTodayCount,
-  getMergedLineTotals,
   registerFocusFn,
   unregisterFocusFn,
   focusSidebar,
@@ -26,6 +24,7 @@ import {
 import type { Project } from "../store/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { EditProjectDialog } from "./EditProjectDialog";
+import { SidebarFooter } from "./SidebarFooter";
 import { IconButton } from "./IconButton";
 import { StatusDot } from "./StatusDot";
 import { theme } from "../lib/theme";
@@ -70,9 +69,6 @@ export function Sidebar() {
 
     return { grouped, orphaned };
   });
-  const completedTasksToday = createMemo(() => getCompletedTasksTodayCount());
-  const mergedLines = createMemo(() => getMergedLineTotals());
-
   function handleResizeMouseDown(e: MouseEvent) {
     e.preventDefault();
     setResizing(true);
@@ -578,116 +574,7 @@ export function Sidebar() {
         </Show>
       </div>
 
-      <div style={{
-        "border-top": `1px solid ${theme.border}`,
-        "padding-top": "12px",
-        display: "flex",
-        "flex-direction": "column",
-        gap: "6px",
-        "flex-shrink": "0",
-      }}>
-        <span style={{
-          "font-size": sf(10),
-          color: theme.fgSubtle,
-          "text-transform": "uppercase",
-          "letter-spacing": "0.05em",
-        }}>
-          Progress
-        </span>
-        <div style={{
-          display: "flex",
-          "align-items": "center",
-          "justify-content": "space-between",
-          background: theme.bgInput,
-          border: `1px solid ${theme.border}`,
-          "border-radius": "8px",
-          padding: "8px 10px",
-          "font-size": sf(11),
-          color: theme.fgMuted,
-        }}>
-          <span>Completed today</span>
-          <span style={{
-            color: theme.fg,
-            "font-weight": "600",
-            "font-variant-numeric": "tabular-nums",
-          }}>
-            {completedTasksToday()}
-          </span>
-        </div>
-        <div style={{
-          display: "flex",
-          "align-items": "center",
-          "justify-content": "space-between",
-          background: theme.bgInput,
-          border: `1px solid ${theme.border}`,
-          "border-radius": "8px",
-          padding: "8px 10px",
-          "font-size": sf(11),
-          color: theme.fgMuted,
-        }}>
-          <span>Merged to main/master</span>
-          <span style={{
-            color: theme.fg,
-            "font-weight": "600",
-            "font-variant-numeric": "tabular-nums",
-            display: "flex",
-            "align-items": "center",
-            gap: "8px",
-          }}>
-            <span style={{ color: theme.success }}>+{mergedLines().added.toLocaleString()}</span>
-            <span style={{ color: theme.error }}>-{mergedLines().removed.toLocaleString()}</span>
-          </span>
-        </div>
-      </div>
-
-      {/* Tips */}
-      <div style={{
-        "border-top": `1px solid ${theme.border}`,
-        "padding-top": "12px",
-        display: "flex",
-        "flex-direction": "column",
-        gap: "6px",
-        "flex-shrink": "0",
-      }}>
-        <span style={{
-          "font-size": sf(10),
-          color: theme.fgSubtle,
-          "text-transform": "uppercase",
-          "letter-spacing": "0.05em",
-        }}>
-          Tips
-        </span>
-        <span style={{
-          "font-size": sf(11),
-          color: theme.fgMuted,
-          "line-height": "1.4",
-        }}>
-          <kbd style={{
-            background: theme.bgInput,
-            border: `1px solid ${theme.border}`,
-            "border-radius": "3px",
-            padding: "1px 4px",
-            "font-size": sf(10),
-            "font-family": "'JetBrains Mono', monospace",
-          }}>Alt + Arrows</kbd>{" "}
-          to navigate panels
-        </span>
-        <span style={{
-          "font-size": sf(11),
-          color: theme.fgMuted,
-          "line-height": "1.4",
-        }}>
-          <kbd style={{
-            background: theme.bgInput,
-            border: `1px solid ${theme.border}`,
-            "border-radius": "3px",
-            padding: "1px 4px",
-            "font-size": sf(10),
-            "font-family": "'JetBrains Mono', monospace",
-          }}>{mod} + /</kbd>{" "}
-          for all shortcuts
-        </span>
-      </div>
+      <SidebarFooter />
 
       {/* Edit project dialog */}
       <EditProjectDialog

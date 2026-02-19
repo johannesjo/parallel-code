@@ -52,7 +52,10 @@ export async function saveState(): Promise<void> {
 }
 
 function isStringNumberRecord(v: unknown): v is Record<string, number> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  return Object.values(v as Record<string, unknown>).every(
+    (val) => typeof val === "number" && Number.isFinite(val)
+  );
 }
 
 function parsePersistedWindowState(v: unknown): PersistedWindowState | null {

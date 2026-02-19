@@ -277,16 +277,18 @@ export function NewTaskDialog() {
             >
               <span style={{ display: "flex", "align-items": "center", gap: "8px", overflow: "hidden", "min-width": "0" }}>
                 <Show when={selectedProject()}>
-                  <span style={{
-                    width: "10px",
-                    height: "10px",
-                    "border-radius": "50%",
-                    background: selectedProject()!.color,
-                    "flex-shrink": "0",
-                  }} />
+                  {(project) => (
+                    <span style={{
+                      width: "10px",
+                      height: "10px",
+                      "border-radius": "50%",
+                      background: project().color,
+                      "flex-shrink": "0",
+                    }} />
+                  )}
                 </Show>
                 <span style={{ overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>
-                  {selectedProject() ? `${selectedProject()!.name} — ${selectedProject()!.path}` : "Select a project"}
+                  {(() => { const p = selectedProject(); return p ? `${p.name} — ${p.path}` : "Select a project"; })()}
                 </span>
               </span>
               <svg

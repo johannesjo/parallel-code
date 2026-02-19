@@ -11,12 +11,9 @@ interface ChangedFilesListProps {
   ref?: (el: HTMLDivElement) => void;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  M: theme.warning,
-  A: theme.success,
-  D: theme.error,
-  "?": theme.fgMuted,
-};
+function getStatusColor(status: string): string {
+  return ({ M: theme.warning, A: theme.success, D: theme.error, "?": theme.fgMuted }[status] ?? theme.fgMuted);
+}
 
 export function ChangedFilesList(props: ChangedFilesListProps) {
   const [files, setFiles] = createSignal<ChangedFile[]>([]);
@@ -41,15 +38,20 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     }
   }
 
-  async function refresh(path: string) {
-    if (!path) return;
+  let refreshInFlight = false;
+
+  async function refresh(path: string, cancelled: () => boolean) {
+    if (!path || refreshInFlight) return;
+    refreshInFlight = true;
     try {
       const result = await invoke<ChangedFile[]>("get_changed_files", {
         worktreePath: path,
       });
-      setFiles(result);
+      if (!cancelled()) setFiles(result);
     } catch {
       // Silently ignore — worktree may not exist yet
+    } finally {
+      refreshInFlight = false;
     }
   }
 
@@ -57,9 +59,11 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
   createEffect(() => {
     const path = props.worktreePath;
     if (props.isActive === false) return;
-    refresh(path);
-    const timer = setInterval(() => refresh(path), 2000);
-    onCleanup(() => clearInterval(timer));
+    let cancelled = false;
+    const isCancelled = () => cancelled;
+    refresh(path, isCancelled);
+    const timer = setInterval(() => refresh(path, isCancelled), 2000);
+    onCleanup(() => { cancelled = true; clearInterval(timer); });
   });
 
   const totalAdded = () => files().reduce((s, f) => s + f.lines_added, 0);
@@ -102,7 +106,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
             >
               <span
                 style={{
-                  color: STATUS_COLORS[file.status] ?? theme.fgMuted,
+                  color: getStatusColor(file.status),
                   "font-weight": "600",
                   width: "12px",
                   "text-align": "center",

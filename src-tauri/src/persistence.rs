@@ -8,7 +8,7 @@ fn state_file_path(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
     let mut dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| AppError::Git(format!("Failed to resolve app data dir: {}", e)))?;
+        .map_err(|e| AppError::Persistence(format!("Failed to resolve app data dir: {}", e)))?;
 
     if cfg!(debug_assertions) {
         if let Some(name) = dir.file_name() {
@@ -27,6 +27,9 @@ pub fn save_app_state(app: tauri::AppHandle, json: String) -> Result<(), AppErro
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
+
+    // Validate JSON before writing to prevent corrupting state file
+    let _: serde_json::Value = serde_json::from_str(&json)?;
 
     // Atomic write: write to temp file, then rename (atomic on POSIX)
     let tmp_path = path.with_extension("json.tmp");

@@ -225,17 +225,15 @@ async function refreshTaskGitStatus(taskId: string): Promise<void> {
 export async function refreshAllTaskGitStatus(): Promise<void> {
   const taskIds = store.taskOrder;
   const active = activeAgents();
-  for (const taskId of taskIds) {
-    const agents = Object.values(store.agents).filter(
-      (a) => a.taskId === taskId
-    );
-    const hasActive = agents.some(
-      (a) => a.status === "running" && active.has(a.id)
-    );
-    if (!hasActive) {
-      await refreshTaskGitStatus(taskId);
-    }
-  }
+  const promises = taskIds
+    .filter((taskId) => {
+      const agents = Object.values(store.agents).filter(
+        (a) => a.taskId === taskId
+      );
+      return !agents.some((a) => a.status === "running" && active.has(a.id));
+    })
+    .map((taskId) => refreshTaskGitStatus(taskId));
+  await Promise.allSettled(promises);
 }
 
 /** Refresh git status for a single task (e.g. after agent exits). */
