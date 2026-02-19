@@ -6,13 +6,13 @@ Tauri v2 desktop app — SolidJS frontend, Rust backend.
 
 - **Frontend:** SolidJS, TypeScript (strict), Vite
 - **Backend:** Rust (Tauri v2, tokio, portable-pty)
-- **Package manager:** pnpm
+- **Package manager:** npm
 
 ## Commands
 
-- `pnpm dev` — start Vite dev server
-- `pnpm tauri:dev` — run full Tauri app in dev mode
-- `pnpm build` — build frontend
+- `npm run dev` — start Vite dev server
+- `npm run tauri:dev` — run full Tauri app in dev mode
+- `npm run build` — build frontend
 - `cargo test` — run Rust tests (from `src-tauri/`)
 
 ## Project Structure
