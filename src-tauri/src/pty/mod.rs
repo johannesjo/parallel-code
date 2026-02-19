@@ -49,7 +49,11 @@ pub fn spawn_agent(
         command
     };
 
-    let mut cmd = CommandBuilder::new(&command);
+    // Resolve bare command names to absolute paths so portable_pty doesn't
+    // rely on the (possibly minimal) process PATH for lookup.
+    let resolved_command = crate::shell::resolve_command(&command);
+
+    let mut cmd = CommandBuilder::new(&resolved_command);
     cmd.args(&args);
     cmd.cwd(&cwd);
 
@@ -74,7 +78,13 @@ pub fn spawn_agent(
     let child = pair
         .slave
         .spawn_command(cmd)
-        .map_err(|e| AppError::Pty(e.to_string()))?;
+        .map_err(|e| {
+            AppError::Pty(format!(
+                "Failed to spawn '{}' (resolved: '{}'): {}. \
+                 Hint: the command may not be installed or not on PATH.",
+                command, resolved_command, e
+            ))
+        })?;
 
     // Drop slave — we only need the master side
     drop(pair.slave);

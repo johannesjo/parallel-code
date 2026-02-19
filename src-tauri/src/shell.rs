@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -61,6 +62,53 @@ pub fn login_path() -> Option<&'static str> {
             None
         })
         .as_deref()
+}
+
+/// Resolve a command name to an absolute path using the login PATH.
+///
+/// - Absolute or relative paths (contain `/`) are returned unchanged.
+/// - Bare names are searched in the login PATH (or process PATH as fallback).
+/// - If not found, the original name is returned so downstream errors surface.
+pub fn resolve_command(command: &str) -> String {
+    // Already absolute or relative — pass through.
+    if command.contains('/') {
+        return command.to_string();
+    }
+
+    // Determine which PATH to search: prefer login PATH, fall back to process PATH.
+    let search_path = login_path()
+        .map(|s| s.to_string())
+        .or_else(|| std::env::var("PATH").ok());
+
+    if let Some(path_str) = search_path {
+        for dir in path_str.split(':') {
+            let candidate = PathBuf::from(dir).join(command);
+            if is_executable(&candidate) {
+                let resolved = candidate.to_string_lossy().to_string();
+                info!(command = %command, resolved = %resolved, "Resolved command to absolute path");
+                return resolved;
+            }
+        }
+    }
+
+    warn!(command = %command, "Could not resolve command to absolute path; using as-is");
+    command.to_string()
+}
+
+/// Check if a path exists and has the executable bit set.
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    path.is_file()
+        && path
+            .metadata()
+            .map(|m| m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    path.is_file()
 }
 
 /// Resolve PATH by running the user's login shell with `-lc`.
@@ -151,7 +199,20 @@ fn macos_fallback_path() -> String {
     let mut candidates: Vec<String> = Vec::new();
 
     if let Some(ref h) = home {
+        // Node version managers — pick the latest installed version
+        if let Some(dir) = find_latest_version_dir(&format!("{h}/.nvm/versions/node"), "bin") {
+            candidates.push(dir);
+        }
+        if let Some(dir) = find_latest_version_dir(
+            &format!("{h}/.local/share/fnm/node-versions"),
+            "installation/bin",
+        ) {
+            candidates.push(dir);
+        }
+
         candidates.extend([
+            format!("{h}/n/bin"),
+            format!("{h}/.asdf/shims"),
             format!("{h}/.local/bin"),
             format!("{h}/.cargo/bin"),
             format!("{h}/.volta/bin"),
@@ -171,9 +232,40 @@ fn macos_fallback_path() -> String {
 
     candidates
         .into_iter()
-        .filter(|p| std::path::Path::new(p).is_dir())
+        .filter(|p| Path::new(p).is_dir())
         .collect::<Vec<_>>()
         .join(":")
+}
+
+/// Scan a directory of versioned subdirectories (e.g. `v18.19.0`, `v20.11.1`)
+/// and return `<latest_version>/<suffix>` if any exist.
+#[cfg(target_os = "macos")]
+fn find_latest_version_dir(base: &str, suffix: &str) -> Option<String> {
+    let entries = std::fs::read_dir(base).ok()?;
+    let latest = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.metadata().map(|m| m.is_dir()).unwrap_or(false))
+        .max_by(|a, b| {
+            human_sort_key(a.file_name().to_string_lossy().as_ref())
+                .cmp(&human_sort_key(b.file_name().to_string_lossy().as_ref()))
+        })?;
+    let full = PathBuf::from(latest.path()).join(suffix);
+    if full.is_dir() {
+        Some(full.to_string_lossy().to_string())
+    } else {
+        None
+    }
+}
+
+/// Build a sort key from a version-like string: strip leading `v`, split on `.`/`-`,
+/// and parse each segment as a number (falling back to 0).
+#[cfg(target_os = "macos")]
+fn human_sort_key(s: &str) -> Vec<u64> {
+    let stripped = s.strip_prefix('v').unwrap_or(s);
+    stripped
+        .split(|c: char| c == '.' || c == '-')
+        .map(|seg| seg.parse::<u64>().unwrap_or(0))
+        .collect()
 }
 
 /// Run a command with a timeout, returning its stdout on success.
@@ -237,4 +329,54 @@ fn merge_paths(paths: &[String]) -> String {
     }
 
     result.join(":")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_command_absolute_path_passthrough() {
+        let result = resolve_command("/usr/bin/ls");
+        assert_eq!(result, "/usr/bin/ls");
+    }
+
+    #[test]
+    fn resolve_command_relative_path_passthrough() {
+        let result = resolve_command("./my-script");
+        assert_eq!(result, "./my-script");
+    }
+
+    #[test]
+    fn resolve_command_known_binary_resolves() {
+        let result = resolve_command("ls");
+        assert!(
+            result.ends_with("/ls"),
+            "Expected absolute path ending in /ls, got: {result}"
+        );
+        assert!(
+            result.starts_with('/'),
+            "Expected absolute path, got: {result}"
+        );
+    }
+
+    #[test]
+    fn resolve_command_nonexistent_returns_original() {
+        let result = resolve_command("surely_no_binary_has_this_name_42");
+        assert_eq!(result, "surely_no_binary_has_this_name_42");
+    }
+
+    #[test]
+    fn is_minimal_path_positive() {
+        assert!(is_minimal_path("/usr/bin:/bin:/usr/sbin:/sbin"));
+        assert!(is_minimal_path("/usr/bin:/bin"));
+    }
+
+    #[test]
+    fn is_minimal_path_negative() {
+        assert!(!is_minimal_path(
+            "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        ));
+        assert!(!is_minimal_path("/home/user/.local/bin:/usr/bin:/bin"));
+    }
 }
