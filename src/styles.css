@@ -571,14 +571,17 @@ textarea::placeholder {
   left: 0 !important;
 }
 
-/* Transparent terminal layers */
-.xterm,
-.xterm-viewport,
-.xterm-screen,
-.xterm-rows,
-.xterm .xterm-screen canvas {
-  background: transparent !important;
-  background-color: transparent !important;
+/* Terminal rendering performance: let xterm use its own opaque background
+   (set via theme in TerminalView) instead of forcing transparency.
+   Opaque backgrounds enable the WebGL renderer's fast path and avoid
+   per-frame alpha blending — a major win on Linux. */
+
+/* Disable ligatures in the terminal — complex text shaping (especially
+   JetBrains Mono / Fira Code ligatures) is expensive on Linux. */
+.xterm {
+  font-variant-ligatures: none;
+  -webkit-font-variant-ligatures: none;
+  text-rendering: optimizeSpeed;
 }
 
 .drop-indicator {
@@ -654,13 +657,12 @@ body.dragging-task * {
 }
 
 .shell-terminal-container .xterm {
-  opacity: 0.7;
-  transition: opacity 0.15s ease;
+  filter: opacity(0.7);
+  will-change: filter;
 }
 
 .shell-terminal-container:focus-within .xterm {
-  opacity: 1;
-  transition: opacity 0.15s ease;
+  filter: none;
 }
 
 .prompt-textarea {
