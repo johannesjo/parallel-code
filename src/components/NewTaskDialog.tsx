@@ -454,6 +454,42 @@ export function NewTaskDialog() {
           </div>
         </div>
 
+        <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
+          <label style={{ "font-size": "11px", color: theme.fgMuted, "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
+            Agent
+          </label>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <For each={store.availableAgents}>
+              {(agent) => {
+                const isSelected = () => selectedAgent()?.id === agent.id;
+                return (
+                  <button
+                    type="button"
+                    class={`agent-btn ${isSelected() ? "selected" : ""}`}
+                    onClick={() => setSelectedAgent(agent)}
+                    style={{
+                      flex: "1",
+                      padding: "10px 8px",
+                      background: isSelected() ? theme.bgSelected : theme.bgInput,
+                      border: isSelected() ? `1px solid ${theme.accent}` : `1px solid ${theme.border}`,
+                      "border-radius": "8px",
+                      color: isSelected()
+                        ? (store.themePreset === "graphite" || store.themePreset === "minimal" ? "#ffffff" : theme.accentText)
+                        : theme.fg,
+                      cursor: "pointer",
+                      "font-size": "12px",
+                      "font-weight": isSelected() ? "500" : "400",
+                      "text-align": "center",
+                    }}
+                  >
+                    {agent.name}
+                  </button>
+                );
+              }}
+            </For>
+          </div>
+        </div>
+
         {/* Direct mode toggle */}
         <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
           <label
@@ -493,42 +529,6 @@ export function NewTaskDialog() {
               Changes will be made directly on the main branch without worktree isolation.
             </div>
           </Show>
-        </div>
-
-        <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
-          <label style={{ "font-size": "11px", color: theme.fgMuted, "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
-            Agent
-          </label>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <For each={store.availableAgents}>
-              {(agent) => {
-                const isSelected = () => selectedAgent()?.id === agent.id;
-                return (
-                  <button
-                    type="button"
-                    class={`agent-btn ${isSelected() ? "selected" : ""}`}
-                    onClick={() => setSelectedAgent(agent)}
-                    style={{
-                      flex: "1",
-                      padding: "10px 8px",
-                      background: isSelected() ? theme.bgSelected : theme.bgInput,
-                      border: isSelected() ? `1px solid ${theme.accent}` : `1px solid ${theme.border}`,
-                      "border-radius": "8px",
-                      color: isSelected()
-                        ? (store.themePreset === "graphite" || store.themePreset === "minimal" ? "#ffffff" : theme.accentText)
-                        : theme.fg,
-                      cursor: "pointer",
-                      "font-size": "12px",
-                      "font-weight": isSelected() ? "500" : "400",
-                      "text-align": "center",
-                    }}
-                  >
-                    {agent.name}
-                  </button>
-                );
-              }}
-            </For>
-          </div>
         </div>
 
         <Show when={ignoredDirs().length > 0 && !directMode()}>
