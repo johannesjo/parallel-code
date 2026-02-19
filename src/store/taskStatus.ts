@@ -50,10 +50,14 @@ const AGENT_READY_TAIL_PATTERNS: RegExp[] = [
   /›/,               // Codex CLI
 ];
 
-/** Check stripped output for known agent prompt characters. */
+/** Check stripped output for known agent prompt characters.
+ *  Only checks the tail of the chunk — the agent's main prompt renders as
+ *  the last visible element, while TUI selection UIs place ❯ earlier in
+ *  the render followed by option text and other choices. */
 function chunkContainsAgentPrompt(stripped: string): boolean {
   if (stripped.length === 0) return false;
-  return AGENT_READY_TAIL_PATTERNS.some((re) => re.test(stripped));
+  const tail = stripped.slice(-50);
+  return AGENT_READY_TAIL_PATTERNS.some((re) => re.test(tail));
 }
 
 // --- Agent ready event callbacks ---
@@ -101,15 +105,20 @@ const QUESTION_PATTERNS: RegExp[] = [
 
 /** True when recent output contains a question or confirmation prompt.
  *  Checks ALL recent lines because TUI dialogs render the question above
- *  selection options — the question text may not be the last line. */
+ *  selection options — the question text may not be the last line.
+ *
+ *  Strips ANSI before slicing so the character budget covers visible text,
+ *  not escape codes. TUI dialog renders can be 500+ raw ANSI bytes where
+ *  only ~150 chars are visible — slicing raw bytes missed questions at the top. */
 export function looksLikeQuestion(tail: string): boolean {
-  const chunk = tail.slice(-300);
+  const visible = stripAnsi(tail);
+  const chunk = visible.slice(-500);
   const lines = chunk.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length === 0) return false;
   return lines.some((line) => {
-    const stripped = stripAnsi(line).trimEnd();
-    if (stripped.length === 0) return false;
-    return QUESTION_PATTERNS.some((re) => re.test(stripped));
+    const trimmed = line.trimEnd();
+    if (trimmed.length === 0) return false;
+    return QUESTION_PATTERNS.some((re) => re.test(trimmed));
   });
 }
 
@@ -131,7 +140,9 @@ const THROTTLE_MS = 1_000;
 const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 // Tail buffer per agent — keeps the last N chars of PTY output for prompt matching.
-const TAIL_BUFFER_MAX = 512;
+// Must be large enough to hold a full TUI dialog render (with ANSI codes) so that
+// question text at the top of the dialog isn't truncated away.
+const TAIL_BUFFER_MAX = 4096;
 const outputTailBuffers = new Map<string, string>();
 // Per-agent decoders so streaming multi-byte state doesn't corrupt across agents.
 const agentDecoders = new Map<string, TextDecoder>();
@@ -234,9 +245,15 @@ export function markAgentOutput(agentId: string, data: Uint8Array): void {
       .trim();
 
     if (chunkContainsAgentPrompt(chunkStripped)) {
-      const cb = agentReadyCallbacks.get(agentId);
-      agentReadyCallbacks.delete(agentId);
-      if (cb) cb();
+      // Guard: don't fire if the tail buffer contains a question.
+      // TUI selection UIs (e.g. "trust this folder?") also use ❯ as a
+      // cursor, and the question text may appear earlier in the buffer.
+      const rawTail = outputTailBuffers.get(agentId) ?? "";
+      if (!looksLikeQuestion(rawTail)) {
+        const cb = agentReadyCallbacks.get(agentId);
+        agentReadyCallbacks.delete(agentId);
+        if (cb) cb();
+      }
     }
   }
 
