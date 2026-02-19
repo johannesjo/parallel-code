@@ -1,5 +1,6 @@
 import { createMemo } from "solid-js";
 import { getCompletedTasksTodayCount, getMergedLineTotals } from "../store/store";
+import { toggleHelpDialog } from "../store/focus";
 import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
 import { mod } from "../lib/platform";
@@ -73,14 +74,18 @@ export function SidebarFooter() {
       </div>
 
       {/* Tips */}
-      <div style={{
-        "border-top": `1px solid ${theme.border}`,
-        "padding-top": "12px",
-        display: "flex",
-        "flex-direction": "column",
-        gap: "6px",
-        "flex-shrink": "0",
-      }}>
+      <div
+        onClick={() => toggleHelpDialog(true)}
+        style={{
+          "border-top": `1px solid ${theme.border}`,
+          "padding-top": "12px",
+          display: "flex",
+          "flex-direction": "column",
+          gap: "6px",
+          "flex-shrink": "0",
+          cursor: "pointer",
+        }}
+      >
         <span style={{
           "font-size": sf(10),
           color: theme.fgSubtle,

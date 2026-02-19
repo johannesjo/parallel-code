@@ -227,11 +227,11 @@ function App() {
     registerShortcut({ key: "ArrowRight", alt: true, global: true, handler: () => navigateColumn("right") });
 
     // Task reordering
-    registerShortcut({ key: "ArrowLeft", ctrl: true, alt: true, global: true, handler: () => moveActiveTask("left") });
-    registerShortcut({ key: "ArrowRight", ctrl: true, alt: true, global: true, handler: () => moveActiveTask("right") });
+    registerShortcut({ key: "ArrowLeft", cmdOrCtrl: true, alt: true, global: true, handler: () => moveActiveTask("left") });
+    registerShortcut({ key: "ArrowRight", cmdOrCtrl: true, alt: true, global: true, handler: () => moveActiveTask("right") });
 
     // Task actions
-    registerShortcut({ key: "w", ctrl: true, global: true, handler: () => {
+    registerShortcut({ key: "w", cmdOrCtrl: true, global: true, handler: () => {
       const taskId = store.activeTaskId;
       if (!taskId) return;
       const panel = store.focusedPanel[taskId] ?? "";
@@ -241,7 +241,7 @@ function App() {
         if (shellId) closeShell(taskId, shellId);
       }
     } });
-    registerShortcut({ key: "W", ctrl: true, shift: true, global: true, handler: async () => {
+    registerShortcut({ key: "W", cmdOrCtrl: true, shift: true, global: true, handler: async () => {
       const taskId = store.activeTaskId;
       if (!taskId) return;
       const panel = store.focusedPanel[taskId] ?? "";
@@ -262,25 +262,25 @@ function App() {
         }
       });
     } });
-    registerShortcut({ key: "M", ctrl: true, shift: true, global: true, handler: () => {
+    registerShortcut({ key: "M", cmdOrCtrl: true, shift: true, global: true, handler: () => {
       const id = store.activeTaskId;
       if (id) setPendingAction({ type: "merge", taskId: id });
     } });
-    registerShortcut({ key: "P", ctrl: true, shift: true, global: true, handler: () => {
+    registerShortcut({ key: "P", cmdOrCtrl: true, shift: true, global: true, handler: () => {
       const id = store.activeTaskId;
       if (id) setPendingAction({ type: "push", taskId: id });
     } });
-    registerShortcut({ key: "T", ctrl: true, shift: true, global: true, handler: () => {
+    registerShortcut({ key: "T", cmdOrCtrl: true, shift: true, global: true, handler: () => {
       const id = store.activeTaskId;
       if (id) spawnShellForTask(id);
     } });
-    registerShortcut({ key: "Enter", ctrl: true, global: true, handler: () => sendActivePrompt() });
+    registerShortcut({ key: "Enter", cmdOrCtrl: true, global: true, handler: () => sendActivePrompt() });
 
     // App shortcuts
-    registerShortcut({ key: "n", ctrl: true, global: true, handler: () => toggleNewTaskDialog(true) });
+    registerShortcut({ key: "n", cmdOrCtrl: true, global: true, handler: () => toggleNewTaskDialog(true) });
     registerShortcut({ key: "a", cmdOrCtrl: true, shift: true, global: true, handler: () => toggleNewTaskDialog(true) });
-    registerShortcut({ key: "b", ctrl: true, handler: () => toggleSidebar() });
-    registerShortcut({ key: "/", ctrl: true, global: true, handler: () => toggleHelpDialog() });
+    registerShortcut({ key: "b", cmdOrCtrl: true, handler: () => toggleSidebar() });
+    registerShortcut({ key: "/", cmdOrCtrl: true, global: true, handler: () => toggleHelpDialog() });
     registerShortcut({ key: ",", cmdOrCtrl: true, global: true, handler: () => toggleSettingsDialog() });
     registerShortcut({ key: "F1", global: true, handler: () => toggleHelpDialog() });
     registerShortcut({ key: "Escape", handler: () => {
@@ -288,7 +288,7 @@ function App() {
       if (store.showSettingsDialog) { toggleSettingsDialog(false); return; }
       if (store.showNewTaskDialog) { toggleNewTaskDialog(false); return; }
     } });
-    registerShortcut({ key: "0", ctrl: true, handler: () => {
+    registerShortcut({ key: "0", cmdOrCtrl: true, handler: () => {
       resetFontScale(store.activeTaskId ?? "sidebar");
       resetGlobalScale();
     } });
