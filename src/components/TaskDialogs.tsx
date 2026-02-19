@@ -6,6 +6,7 @@ import {
   pushTask,
   getProject,
 } from "../store/store";
+import { sendPrompt } from "../store/tasks";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ChangedFilesList } from "./ChangedFilesList";
 import { DiffViewerDialog } from "./DiffViewerDialog";
@@ -258,6 +259,29 @@ export function TaskDialogs(props: TaskDialogsProps) {
                     >
                       {rebasing() ? "Rebasing..." : "Rebase onto main"}
                     </button>
+                    <Show when={props.task.agentIds.length > 0}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const agentId = props.task.agentIds[0];
+                          props.onMergeConfirmDone();
+                          sendPrompt(props.task.id, agentId, "rebase on main branch");
+                        }}
+                        title="Close dialog and ask the AI agent to rebase"
+                        style={{
+                          padding: "6px 14px",
+                          background: theme.accent,
+                          border: "none",
+                          "border-radius": "8px",
+                          color: theme.bg,
+                          cursor: "pointer",
+                          "font-size": "12px",
+                          "font-weight": "600",
+                        }}
+                      >
+                        Rebase with AI
+                      </button>
+                    </Show>
                     <Show when={rebaseSuccess()}>
                       <span style={{ "font-size": "12px", color: theme.success }}>Rebase successful</span>
                     </Show>
