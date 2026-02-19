@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { store, setStore, updateWindowTitle } from "./core";
 import { getProject, getProjectPath, getProjectBranchPrefix } from "./projects";
 import { setPendingShellCommand } from "../lib/bookmarks";
-import { markAgentSpawned } from "./taskStatus";
+import { markAgentSpawned, clearAgentActivity } from "./taskStatus";
 import { recordMergedLines, recordTaskCompleted } from "./completion";
 import type { AgentDef, CreateTaskResult, MergeResult } from "../ipc/types";
 import type { Agent, Task } from "./types";
@@ -214,6 +214,13 @@ const REMOVE_ANIMATION_MS = 300;
 function removeTaskFromStore(taskId: string, agentIds: string[]): void {
   recordTaskCompleted();
 
+  // Clean up agent activity tracking (timers, buffers, decoders) before
+  // the store entries are deleted — otherwise markAgentExited can't find
+  // the agent and skips cleanup, leaking module-level Map entries.
+  for (const agentId of agentIds) {
+    clearAgentActivity(agentId);
+  }
+
   // Phase 1: mark as removing so UI can animate
   setStore("tasks", taskId, "closingStatus", "removing");
 
@@ -222,6 +229,8 @@ function removeTaskFromStore(taskId: string, agentIds: string[]): void {
     setStore(
       produce((s) => {
         delete s.tasks[taskId];
+        delete s.taskGitStatus[taskId];
+        delete s.focusedPanel[taskId];
         const prefix = taskId + ":";
         for (const key of Object.keys(s.fontScales)) {
           if (key === taskId || key.startsWith(prefix)) delete s.fontScales[key];
@@ -358,6 +367,7 @@ export function spawnShellForTask(taskId: string, initialCommand?: string): stri
 
 export async function closeShell(taskId: string, shellId: string): Promise<void> {
   await invoke("kill_agent", { agentId: shellId }).catch(() => {});
+  clearAgentActivity(shellId);
   setStore(
     produce((s) => {
       const task = s.tasks[taskId];

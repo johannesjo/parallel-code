@@ -279,6 +279,7 @@ export function clearAgentActivity(agentId: string): void {
   lastIdleResetAt.delete(agentId);
   outputTailBuffers.delete(agentId);
   agentDecoders.delete(agentId);
+  agentReadyCallbacks.delete(agentId);
   const timer = idleTimers.get(agentId);
   if (timer) {
     clearTimeout(timer);
