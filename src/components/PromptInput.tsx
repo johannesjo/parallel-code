@@ -19,12 +19,18 @@ import {
 import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
 
+export interface PromptInputHandle {
+  getText: () => string;
+  setText: (value: string) => void;
+}
+
 interface PromptInputProps {
   taskId: string;
   agentId: string;
   initialPrompt?: string;
   onSend?: (text: string) => void;
   ref?: (el: HTMLTextAreaElement) => void;
+  handle?: (h: PromptInputHandle) => void;
 }
 
 // Quiescence: how often to snapshot and how long output must be stable.
@@ -156,6 +162,7 @@ export function PromptInput(props: PromptInputProps) {
   let textareaRef: HTMLTextAreaElement | undefined;
 
   onMount(() => {
+    props.handle?.({ getText: text, setText });
     const focusKey = `${props.taskId}:prompt`;
     const actionKey = `${props.taskId}:send-prompt`;
     registerFocusFn(focusKey, () => textareaRef?.focus());

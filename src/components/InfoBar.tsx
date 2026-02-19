@@ -5,6 +5,7 @@ import type { JSX } from "solid-js";
 interface InfoBarProps {
   children: JSX.Element;
   onClick?: () => void;
+  onDblClick?: () => void;
   title?: string;
   class?: string;
 }
@@ -15,6 +16,7 @@ export function InfoBar(props: InfoBarProps) {
       class={props.class}
       title={props.title}
       onClick={props.onClick}
+      onDblClick={props.onDblClick}
       style={{
         height: "28px",
         "min-height": "28px",

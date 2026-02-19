@@ -28,7 +28,7 @@ import { ResizablePanel, type PanelChild } from "./ResizablePanel";
 import { EditableText, type EditableTextHandle } from "./EditableText";
 import { IconButton } from "./IconButton";
 import { InfoBar } from "./InfoBar";
-import { PromptInput } from "./PromptInput";
+import { PromptInput, type PromptInputHandle } from "./PromptInput";
 import { ChangedFilesList } from "./ChangedFilesList";
 import { StatusDot } from "./StatusDot";
 import { TerminalView } from "./TerminalView";
@@ -60,6 +60,7 @@ export function TaskPanel(props: TaskPanelProps) {
   let changedFilesRef: HTMLDivElement | undefined;
   let shellToolbarRef: HTMLDivElement | undefined;
   let titleEditHandle: EditableTextHandle | undefined;
+  let promptHandle: PromptInputHandle | undefined;
   const [shellToolbarIdx, setShellToolbarIdx] = createSignal(0);
   const [shellToolbarFocused, setShellToolbarFocused] = createSignal(false);
   const projectBookmarks = () => getProject(props.task.projectId)?.terminalBookmarks ?? [];
@@ -691,7 +692,7 @@ export function TaskPanel(props: TaskPanelProps) {
       content: () => (
         <ScalablePanel panelId={`${props.task.id}:ai-terminal`}>
         <div class="focusable-panel shell-terminal-container" data-shell-focused={store.focusedPanel[props.task.id] === "ai-terminal" ? "true" : "false"} style={{ height: "100%", position: "relative", background: theme.taskPanelBg, display: "flex", "flex-direction": "column" }} onClick={() => setTaskFocusedPanel(props.task.id, "ai-terminal")}>
-          <InfoBar title={props.task.lastPrompt || (props.task.initialPrompt ? "Waiting to send prompt…" : "No prompts sent yet")}>
+          <InfoBar title={props.task.lastPrompt || (props.task.initialPrompt ? "Waiting to send prompt…" : "No prompts sent yet")} onDblClick={() => { if (props.task.lastPrompt && promptHandle && !promptHandle.getText()) promptHandle.setText(props.task.lastPrompt); }}>
             <span style={{ opacity: props.task.lastPrompt ? 1 : 0.4 }}>
               {props.task.lastPrompt
                 ? `> ${props.task.lastPrompt}`
@@ -797,6 +798,7 @@ export function TaskPanel(props: TaskPanelProps) {
                 if (props.task.initialPrompt) clearInitialPrompt(props.task.id);
               }}
               ref={(el) => promptRef = el}
+              handle={(h) => promptHandle = h}
             />
           </div>
         </ScalablePanel>
