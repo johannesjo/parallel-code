@@ -386,38 +386,68 @@ export function Sidebar() {
 
         <Show when={store.projects.length === 0}>
           <span style={{ "font-size": sf(10), color: theme.fgSubtle, padding: "0 2px" }}>
-            No projects. Click + to add one.
+            No projects linked yet.
           </span>
         </Show>
       </div>
 
       <div style={{ height: "1px", background: theme.border }} />
 
-      {/* New task button */}
-      <button
-        class="icon-btn"
-        onClick={() => toggleNewTaskDialog(true)}
-        style={{
-          background: "transparent",
-          border: `1px solid ${theme.border}`,
-          "border-radius": "8px",
-          padding: "8px 14px",
-          color: theme.fgMuted,
-          cursor: "pointer",
-          "font-size": sf(12),
-          "font-weight": "500",
-          display: "flex",
-          "align-items": "center",
-          "justify-content": "center",
-          gap: "6px",
-          width: "100%",
-        }}
+      {/* New task / Link project button */}
+      <Show
+        when={store.projects.length > 0}
+        fallback={
+          <button
+            class="icon-btn"
+            onClick={() => pickAndAddProject()}
+            style={{
+              background: "transparent",
+              border: `1px solid ${theme.border}`,
+              "border-radius": "8px",
+              padding: "8px 14px",
+              color: theme.fgMuted,
+              cursor: "pointer",
+              "font-size": sf(12),
+              "font-weight": "500",
+              display: "flex",
+              "align-items": "center",
+              "justify-content": "center",
+              gap: "6px",
+              width: "100%",
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
+            </svg>
+            Link Project
+          </button>
+        }
       >
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
-        </svg>
-        New Task
-      </button>
+        <button
+          class="icon-btn"
+          onClick={() => toggleNewTaskDialog(true)}
+          style={{
+            background: "transparent",
+            border: `1px solid ${theme.border}`,
+            "border-radius": "8px",
+            padding: "8px 14px",
+            color: theme.fgMuted,
+            cursor: "pointer",
+            "font-size": sf(12),
+            "font-weight": "500",
+            display: "flex",
+            "align-items": "center",
+            "justify-content": "center",
+            gap: "6px",
+            width: "100%",
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
+          </svg>
+          New Task
+        </button>
+      </Show>
 
       {/* Tasks grouped by project */}
       <div
@@ -569,7 +599,7 @@ export function Sidebar() {
                       display: "flex",
                       "align-items": "center",
                       gap: "6px",
-                      border: store.sidebarFocused && store.activeTaskId === taskId
+                      border: store.sidebarFocused && store.sidebarFocusedTaskId === taskId
                         ? `1.5px solid var(--border-focus)`
                         : "1.5px solid transparent",
                     }}

@@ -1,5 +1,5 @@
 import { Show, createMemo, createEffect, ErrorBoundary } from "solid-js";
-import { store } from "../store/store";
+import { store, pickAndAddProject } from "../store/store";
 import { closeTask } from "../store/tasks";
 import { ResizablePanel, type PanelChild } from "./ResizablePanel";
 import { TaskPanel } from "./TaskPanel";
@@ -147,50 +147,111 @@ export function TilingLayout() {
               gap: "16px",
             }}
           >
-            <div
-              style={{
-                width: "56px",
-                height: "56px",
-                "border-radius": "16px",
-                background: theme.islandBg,
-                border: `1px solid ${theme.border}`,
-                display: "flex",
-                "align-items": "center",
-                "justify-content": "center",
-                "font-size": "24px",
-                color: theme.fgSubtle,
-              }}
+            <Show
+              when={store.projects.length > 0}
+              fallback={
+                <>
+                  <div
+                    style={{
+                      width: "56px",
+                      height: "56px",
+                      "border-radius": "16px",
+                      background: theme.islandBg,
+                      border: `1px solid ${theme.border}`,
+                      display: "flex",
+                      "align-items": "center",
+                      "justify-content": "center",
+                      color: theme.fgSubtle,
+                    }}
+                  >
+                    <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                      <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
+                    </svg>
+                  </div>
+                  <div style={{ "text-align": "center" }}>
+                    <div
+                      style={{
+                        "font-size": "15px",
+                        color: theme.fgMuted,
+                        "font-weight": "500",
+                        "margin-bottom": "6px",
+                      }}
+                    >
+                      Link your first project to get started
+                    </div>
+                    <div style={{ "font-size": "12px", color: theme.fgSubtle }}>
+                      A project is a local folder with your code
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => pickAndAddProject()}
+                    style={{
+                      background: theme.bgElevated,
+                      border: `1px solid ${theme.border}`,
+                      "border-radius": "8px",
+                      padding: "8px 20px",
+                      color: theme.fg,
+                      cursor: "pointer",
+                      "font-size": "13px",
+                      "font-weight": "500",
+                      display: "flex",
+                      "align-items": "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                      <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
+                    </svg>
+                    Link Project
+                  </button>
+                </>
+              }
             >
-              +
-            </div>
-            <div style={{ "text-align": "center" }}>
               <div
                 style={{
-                  "font-size": "15px",
-                  color: theme.fgMuted,
-                  "font-weight": "500",
-                  "margin-bottom": "6px",
+                  width: "56px",
+                  height: "56px",
+                  "border-radius": "16px",
+                  background: theme.islandBg,
+                  border: `1px solid ${theme.border}`,
+                  display: "flex",
+                  "align-items": "center",
+                  "justify-content": "center",
+                  "font-size": "24px",
+                  color: theme.fgSubtle,
                 }}
               >
-                No tasks yet
+                +
               </div>
-              <div style={{ "font-size": "12px", color: theme.fgSubtle }}>
-                Press{" "}
-                <kbd
+              <div style={{ "text-align": "center" }}>
+                <div
                   style={{
-                    background: theme.bgElevated,
-                    border: `1px solid ${theme.border}`,
-                    "border-radius": "4px",
-                    padding: "2px 6px",
-                    "font-family": "'JetBrains Mono', monospace",
-                    "font-size": "11px",
+                    "font-size": "15px",
+                    color: theme.fgMuted,
+                    "font-weight": "500",
+                    "margin-bottom": "6px",
                   }}
                 >
-                  {mod}+N
-                </kbd>{" "}
-                to create a new task
+                  No tasks yet
+                </div>
+                <div style={{ "font-size": "12px", color: theme.fgSubtle }}>
+                  Press{" "}
+                  <kbd
+                    style={{
+                      background: theme.bgElevated,
+                      border: `1px solid ${theme.border}`,
+                      "border-radius": "4px",
+                      padding: "2px 6px",
+                      "font-family": "'JetBrains Mono', monospace",
+                      "font-size": "11px",
+                    }}
+                  >
+                    {mod}+N
+                  </kbd>{" "}
+                  to create a new task
+                </div>
               </div>
-            </div>
+            </Show>
           </div>
         }
       >
