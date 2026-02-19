@@ -665,6 +665,7 @@ export function TaskPanel(props: TaskPanelProps) {
                         taskId={props.task.id}
                         agentId={shellId}
                         isActive={props.isActive}
+                        isFocused={props.isActive && store.focusedPanel[props.task.id] === `shell:${i()}`}
                         command={getShellCommand()}
                         args={["-l"]}
                         cwd={props.task.worktreePath}
@@ -763,6 +764,7 @@ export function TaskPanel(props: TaskPanelProps) {
                       taskId={props.task.id}
                       agentId={a().id}
                       isActive={props.isActive}
+                      isFocused={props.isActive && store.focusedPanel[props.task.id] === "ai-terminal"}
                       command={a().def.command}
                       args={a().resumed && a().def.resume_args?.length ? a().def.resume_args! : a().def.args}
                       cwd={props.task.worktreePath}

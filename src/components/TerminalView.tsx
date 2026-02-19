@@ -51,6 +51,7 @@ interface TerminalViewProps {
   autoFocus?: boolean;
   initialCommand?: string;
   isActive?: boolean;
+  isFocused?: boolean;
 }
 
 // Status parsing only needs recent output. Capping forwarded bytes avoids
@@ -303,7 +304,7 @@ export function TerminalView(props: TerminalViewProps) {
     // because all task panels are visible simultaneously in the tiling layout.
     createEffect(() => {
       if (!term) return;
-      term.options.cursorBlink = props.isActive !== false;
+      term.options.cursorBlink = props.isFocused === true;
     });
 
     invoke("spawn_agent", {
