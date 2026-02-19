@@ -522,10 +522,10 @@ export function NewTaskDialog() {
             <div style={{
               "font-size": "12px",
               color: theme.warning,
-              background: "#f0a03014",
+              background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
               padding: "8px 12px",
               "border-radius": "8px",
-              border: "1px solid #f0a03033",
+              border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
             }}>
               Changes will be made directly on the main branch without worktree isolation.
             </div>
@@ -584,10 +584,10 @@ export function NewTaskDialog() {
           <div style={{
             "font-size": "12px",
             color: theme.error,
-            background: "#f7546414",
+            background: `color-mix(in srgb, ${theme.error} 8%, transparent)`,
             padding: "8px 12px",
             "border-radius": "8px",
-            border: "1px solid #f7546433",
+            border: `1px solid color-mix(in srgb, ${theme.error} 20%, transparent)`,
           }}>
             {error()}
           </div>

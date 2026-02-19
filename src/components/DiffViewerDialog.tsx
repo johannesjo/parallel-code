@@ -5,6 +5,7 @@ import { DiffView, DiffModeEnum } from "@git-diff-view/solid";
 import "@git-diff-view/solid/styles/diff-view.css";
 import { theme } from "../lib/theme";
 import { isBinaryDiff } from "../lib/diff-parser";
+import { getStatusColor } from "../lib/status-colors";
 import type { ChangedFile } from "../ipc/types";
 
 interface DiffViewerDialogProps {
@@ -19,10 +20,6 @@ const STATUS_LABELS: Record<string, string> = {
   D: "Deleted",
   "?": "Untracked",
 };
-
-function getStatusColor(status: string): string {
-  return ({ M: theme.warning, A: theme.success, D: theme.error, "?": theme.fgMuted }[status] ?? theme.fgMuted);
-}
 
 const EXT_TO_LANG: Record<string, string> = {
   ts: "typescript",

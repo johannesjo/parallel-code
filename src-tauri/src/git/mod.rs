@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use parking_lot::Mutex;
-use tracing::{info, error};
+use tracing::info;
 
 use crate::error::AppError;
 use types::{ChangedFile, MergeResult, MergeStatus, WorktreeInfo, WorktreeStatus};
@@ -155,7 +155,9 @@ pub fn remove_worktree(
             let stderr = String::from_utf8_lossy(&output.stderr);
             // If git doesn't recognize it as a worktree, just remove the directory
             info!(branch = %branch_name, stderr = %stderr, "git worktree remove failed, removing directory directly");
-            std::fs::remove_dir_all(&worktree_path).ok();
+            if let Err(e) = std::fs::remove_dir_all(&worktree_path) {
+                tracing::warn!(path = %worktree_path, err = %e, "Failed to remove worktree directory");
+            }
         }
     }
 
@@ -683,11 +685,10 @@ pub async fn get_worktree_status(worktree_path: String) -> Result<WorktreeStatus
 
 #[tauri::command]
 pub async fn check_merge_status(
-    state: tauri::State<'_, crate::state::AppState>,
     worktree_path: String,
 ) -> Result<MergeStatus, AppError> {
-    let lock = state.worktree_lock(&worktree_path);
-    let _guard = lock.lock().await;
+    // No lock needed: merge-tree --write-tree is a side-effect-free dry-run
+    // that doesn't touch the worktree or index.
     tauri::async_runtime::spawn_blocking(move || {
         check_merge_status_sync(&worktree_path)
     })

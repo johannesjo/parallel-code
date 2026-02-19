@@ -287,6 +287,9 @@ export function markAgentOutput(agentId: string, data: Uint8Array): void {
   let hasQuestion = looksLikeQuestion(rawTail);
 
   // Auto-trust: when enabled, auto-accept trust/permission dialogs.
+  // Sends Enter (\r) which selects the default/focused option in Claude Code's
+  // TUI trust dialogs (where the default is "allow"). Only targets trust/allow
+  // patterns matched by TRUST_PATTERNS above.
   if (hasQuestion && store.autoTrustFolders && !isAutoTrustPending(agentId)) {
     if (looksLikeTrustDialog(rawTail)) {
       // Brief delay to let the TUI finish rendering before sending Enter.
@@ -360,11 +363,6 @@ export function getAgentOutputTail(agentId: string): string {
   return outputTailBuffers.get(agentId) ?? "";
 }
 
-/** True when the agent is not actively producing output (prompt detected or idle timeout). */
-export function isAgentIdle(agentId: string): boolean {
-  return !activeAgents().has(agentId);
-}
-
 /** Clean up timers when an agent exits. */
 export function clearAgentActivity(agentId: string): void {
   lastDataAt.delete(agentId);
@@ -416,22 +414,27 @@ async function refreshTaskGitStatus(taskId: string): Promise<void> {
   }
 }
 
-/** Refresh git status for inactive tasks (active task is handled by its own 5s timer). */
+/** Refresh git status for inactive tasks (active task is handled by its own 5s timer).
+ *  Limits concurrency to avoid spawning too many parallel git processes. */
 export async function refreshAllTaskGitStatus(): Promise<void> {
   const taskIds = store.taskOrder;
   const active = activeAgents();
   const currentTaskId = store.activeTaskId;
-  const promises = taskIds
-    .filter((taskId) => {
-      // Active task is covered by the faster refreshActiveTaskGitStatus timer
-      if (taskId === currentTaskId) return false;
-      const agents = Object.values(store.agents).filter(
-        (a) => a.taskId === taskId
-      );
-      return agents.some((a) => a.status === "running" && active.has(a.id));
-    })
-    .map((taskId) => refreshTaskGitStatus(taskId));
-  await Promise.allSettled(promises);
+  const toRefresh = taskIds.filter((taskId) => {
+    // Active task is covered by the faster refreshActiveTaskGitStatus timer
+    if (taskId === currentTaskId) return false;
+    const agents = Object.values(store.agents).filter(
+      (a) => a.taskId === taskId
+    );
+    return !agents.some((a) => a.status === "running" && active.has(a.id));
+  });
+
+  // Process in batches of 4 to limit concurrent git processes
+  const BATCH_SIZE = 4;
+  for (let i = 0; i < toRefresh.length; i += BATCH_SIZE) {
+    const batch = toRefresh.slice(i, i + BATCH_SIZE);
+    await Promise.allSettled(batch.map((taskId) => refreshTaskGitStatus(taskId)));
+  }
 }
 
 /** Refresh git status for the currently active task only. */

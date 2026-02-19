@@ -273,9 +273,9 @@ export function TaskPanel(props: TaskPanelProps) {
                 "font-weight": "600",
                 padding: "2px 8px",
                 "border-radius": "4px",
-                background: "#f0a03025",
+                background: `color-mix(in srgb, ${theme.warning} 15%, transparent)`,
                 color: theme.warning,
-                border: "1px solid #f0a03040",
+                border: `1px solid color-mix(in srgb, ${theme.warning} 25%, transparent)`,
                 "flex-shrink": "0",
                 "white-space": "nowrap",
               }}>
@@ -374,16 +374,18 @@ export function TaskPanel(props: TaskPanelProps) {
             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ "flex-shrink": "0" }}>
               <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6.25 7.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 7.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 0h5.5a2.5 2.5 0 0 0 2.5-2.5v-.5a.75.75 0 0 0-1.5 0v.5a1 1 0 0 1-1 1H5a3.25 3.25 0 1 0 0 6.5h6.25a.75.75 0 0 0 0-1.5H5a1.75 1.75 0 1 1 0-3.5Z" />
             </svg>
-            {props.task.branchName}
+            <Show when={!props.task.directMode}>
+              {props.task.branchName}
+            </Show>
             <Show when={props.task.directMode}>
               <span style={{
                 "font-size": "10px",
                 "font-weight": "600",
                 padding: "1px 6px",
                 "border-radius": "4px",
-                background: "#f0a03025",
+                background: `color-mix(in srgb, ${theme.warning} 15%, transparent)`,
                 color: theme.warning,
-                border: "1px solid #f0a03040",
+                border: `1px solid color-mix(in srgb, ${theme.warning} 25%, transparent)`,
               }}>
                 {props.task.branchName}
               </span>

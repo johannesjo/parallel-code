@@ -270,6 +270,8 @@ fn human_sort_key(s: &str) -> Vec<u64> {
 
 /// Run a command with a timeout, returning its stdout on success.
 fn run_with_timeout(program: &str, args: &[&str]) -> Option<String> {
+    use std::io::Read;
+
     let mut child = std::process::Command::new(program)
         .args(args)
         .stdin(Stdio::null())
@@ -279,36 +281,46 @@ fn run_with_timeout(program: &str, args: &[&str]) -> Option<String> {
         .map_err(|e| warn!(program = %program, err = %e, "Failed to spawn"))
         .ok()?;
 
+    // Take stdout handle and read in the main thread to avoid pipe buffer deadlock.
+    // The child could block writing to a full pipe if we only poll exit status.
+    let mut stdout = child.stdout.take()?;
+    let mut output_bytes = Vec::new();
+
     let start = Instant::now();
+    let mut buf = [0u8; 4096];
     loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) => {
-                if start.elapsed() > RESOLVE_TIMEOUT {
-                    warn!(program = %program, "Timed out resolving PATH");
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return None;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            Err(e) => {
-                warn!(program = %program, err = %e, "Error waiting for process");
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
+        // Non-blocking read: set a short deadline via try_wait + small reads
+        match stdout.read(&mut buf) {
+            Ok(0) => break, // EOF — child closed stdout
+            Ok(n) => output_bytes.extend_from_slice(&buf[..n]),
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+        if start.elapsed() > RESOLVE_TIMEOUT {
+            warn!(program = %program, "Timed out resolving PATH");
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
         }
     }
 
-    let output = child.wait_with_output().ok()?;
-    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+    // Wait for the child to finish (stdout is already drained)
+    match child.wait() {
+        Ok(status) if status.success() => {}
+        Ok(_) => return None,
+        Err(e) => {
+            warn!(program = %program, err = %e, "Error waiting for process");
+            return None;
+        }
+    }
+
+    Some(String::from_utf8_lossy(&output_bytes).into_owned())
 }
 
 /// Returns true if the PATH looks like the minimal macOS/Linux default
 /// (i.e., only system directories, no user tool directories).
 fn is_minimal_path(path: &str) -> bool {
-    let entries: Vec<&str> = path.split(':').collect();
+    let entries: Vec<&str> = path.split(':').filter(|e| !e.is_empty()).collect();
     // Note: /usr/local/bin is NOT minimal — Homebrew on Intel Macs installs there.
     entries.iter().all(|e| {
         matches!(*e, "/usr/bin" | "/bin" | "/usr/sbin" | "/sbin")

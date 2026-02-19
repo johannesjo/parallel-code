@@ -22,7 +22,7 @@ const FILLER_PREFIXES = [
 ];
 
 const prefixPattern = new RegExp(
-  `^(${FILLER_PREFIXES.map((p) => p.replace(/'/g, "'")).join("|")})\\b\\s*`,
+  `^(${FILLER_PREFIXES.map((p) => p.replace(/'/g, "['\u2019]")).join("|")})\\b\\s*`,
   "i",
 );
 

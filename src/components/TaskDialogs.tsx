@@ -91,10 +91,10 @@ export function TaskDialogs(props: TaskDialogsProps) {
                     <div style={{
                       "font-size": "12px",
                       color: theme.warning,
-                      background: "#f0a03014",
+                      background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
                       padding: "8px 12px",
                       "border-radius": "8px",
-                      border: "1px solid #f0a03033",
+                      border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
                       "font-weight": "600",
                     }}>
                       Warning: There are uncommitted changes that will be permanently lost.
@@ -104,10 +104,10 @@ export function TaskDialogs(props: TaskDialogsProps) {
                     <div style={{
                       "font-size": "12px",
                       color: theme.warning,
-                      background: "#f0a03014",
+                      background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
                       padding: "8px 12px",
                       "border-radius": "8px",
-                      border: "1px solid #f0a03033",
+                      border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
                       "font-weight": "600",
                     }}>
                       Warning: This branch has commits that have not been merged into main.
@@ -162,10 +162,10 @@ export function TaskDialogs(props: TaskDialogsProps) {
                 "margin-bottom": "12px",
                 "font-size": "12px",
                 color: theme.warning,
-                background: "#f0a03014",
+                background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
                 padding: "8px 12px",
                 "border-radius": "8px",
-                border: "1px solid #f0a03033",
+                border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
                 "font-weight": "600",
               }}>
                 Warning: You have uncommitted changes that will NOT be included in this merge.
@@ -176,10 +176,10 @@ export function TaskDialogs(props: TaskDialogsProps) {
                 "margin-bottom": "12px",
                 "font-size": "12px",
                 color: theme.warning,
-                background: "#f0a03014",
+                background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
                 padding: "8px 12px",
                 "border-radius": "8px",
-                border: "1px solid #f0a03033",
+                border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
                 "font-weight": "600",
               }}>
                 Nothing to merge: this branch has no committed changes compared to main/master.
@@ -205,10 +205,10 @@ export function TaskDialogs(props: TaskDialogsProps) {
                     "margin-bottom": "12px",
                     "font-size": "12px",
                     color: hasConflicts() ? theme.error : theme.warning,
-                    background: hasConflicts() ? "#f7546414" : "#f0a03014",
+                    background: hasConflicts() ? `color-mix(in srgb, ${theme.error} 8%, transparent)` : `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
                     padding: "8px 12px",
                     "border-radius": "8px",
-                    border: hasConflicts() ? "1px solid #f7546433" : "1px solid #f0a03033",
+                    border: hasConflicts() ? `1px solid color-mix(in srgb, ${theme.error} 20%, transparent)` : `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
                     "font-weight": "600",
                   }}>
                     <Show when={!hasConflicts()}>
@@ -398,10 +398,10 @@ export function TaskDialogs(props: TaskDialogsProps) {
                 "margin-top": "12px",
                 "font-size": "12px",
                 color: theme.error,
-                background: "#f7546414",
+                background: `color-mix(in srgb, ${theme.error} 8%, transparent)`,
                 padding: "8px 12px",
                 "border-radius": "8px",
-                border: "1px solid #f7546433",
+                border: `1px solid color-mix(in srgb, ${theme.error} 20%, transparent)`,
               }}>
                 {mergeError()}
               </div>
@@ -452,10 +452,10 @@ export function TaskDialogs(props: TaskDialogsProps) {
                 "margin-top": "12px",
                 "font-size": "12px",
                 color: theme.error,
-                background: "#f7546414",
+                background: `color-mix(in srgb, ${theme.error} 8%, transparent)`,
                 padding: "8px 12px",
                 "border-radius": "8px",
-                border: "1px solid #f7546433",
+                border: `1px solid color-mix(in srgb, ${theme.error} 20%, transparent)`,
               }}>
                 {pushError()}
               </div>

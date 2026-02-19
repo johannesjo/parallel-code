@@ -41,7 +41,7 @@ const PROMPT_VERIFY_POLL_MS = 250;
 export function PromptInput(props: PromptInputProps) {
   const [text, setText] = createSignal("");
   const [sending, setSending] = createSignal(false);
-  let autoSentInitialPrompt: string | null = null;
+  const [autoSentInitialPrompt, setAutoSentInitialPrompt] = createSignal<string | null>(null);
   let cleanupAutoSend: (() => void) | undefined;
 
   createEffect(() => {
@@ -52,7 +52,7 @@ export function PromptInput(props: PromptInputProps) {
     if (!ip) return;
 
     setText(ip);
-    if (autoSentInitialPrompt === ip) return;
+    if (autoSentInitialPrompt() === ip) return;
 
     const agentId = props.agentId;
     const spawnedAt = Date.now();
@@ -169,9 +169,10 @@ export function PromptInput(props: PromptInputProps) {
   onCleanup(() => {
     cleanupAutoSend?.();
     cleanupAutoSend = undefined;
+    sendAbortController?.abort();
   });
 
-  async function promptAppearedInOutput(agentId: string, prompt: string, preSendTail: string): Promise<boolean> {
+  async function promptAppearedInOutput(agentId: string, prompt: string, preSendTail: string, signal: AbortSignal): Promise<boolean> {
     const snippet = stripAnsi(prompt).slice(0, 40);
     if (!snippet) return true;
     // If the snippet was already visible before send, skip verification
@@ -180,12 +181,15 @@ export function PromptInput(props: PromptInputProps) {
 
     const deadline = Date.now() + PROMPT_VERIFY_TIMEOUT_MS;
     while (Date.now() < deadline) {
+      if (signal.aborted) return false;
       const tail = stripAnsi(getAgentOutputTail(agentId));
       if (tail.includes(snippet)) return true;
       await new Promise((r) => setTimeout(r, PROMPT_VERIFY_POLL_MS));
     }
     return false;
   }
+
+  let sendAbortController: AbortController | undefined;
 
   async function handleSend(mode: "manual" | "auto" = "manual") {
     if (sending()) return;
@@ -201,6 +205,10 @@ export function PromptInput(props: PromptInputProps) {
       return;
     }
 
+    sendAbortController?.abort();
+    sendAbortController = new AbortController();
+    const { signal } = sendAbortController;
+
     setSending(true);
     try {
       // Snapshot tail before send for verification comparison.
@@ -208,12 +216,12 @@ export function PromptInput(props: PromptInputProps) {
       await sendPrompt(props.taskId, props.agentId, val);
 
       if (mode === "auto") {
-        const confirmed = await promptAppearedInOutput(props.agentId, val, preSendTail);
+        const confirmed = await promptAppearedInOutput(props.agentId, val, preSendTail, signal);
         if (!confirmed) return;
       }
 
       if (props.initialPrompt?.trim()) {
-        autoSentInitialPrompt = props.initialPrompt.trim();
+        setAutoSentInitialPrompt(props.initialPrompt.trim());
       }
       props.onSend?.(val);
       setText("");

@@ -500,58 +500,7 @@ export function Sidebar() {
                   {project.name} ({projectTasks().length})
                 </span>
                 <For each={projectTasks()}>
-                  {(taskId) => {
-                    const task = () => store.tasks[taskId];
-                    const idx = () => globalIndex(taskId);
-                    return (
-                      <Show when={task()}>
-                        <Show when={dropTargetIndex() === idx()}>
-                          <div class="drop-indicator" />
-                        </Show>
-                        <div
-                          class={`task-item${task()!.closingStatus === "removing" ? " task-item-removing" : " task-item-appearing"}`}
-                          data-task-index={idx()}
-                          onClick={() => { setActiveTask(taskId); focusSidebar(); }}
-                          style={{
-                            padding: "7px 10px",
-                            "border-radius": "6px",
-                            background: "transparent",
-                            color: store.activeTaskId === taskId ? theme.fg : theme.fgMuted,
-                            "font-size": sf(12),
-                            "font-weight": store.activeTaskId === taskId ? "500" : "400",
-                            cursor: dragFromIndex() !== null ? "grabbing" : "pointer",
-                            "white-space": "nowrap",
-                            overflow: "hidden",
-                            "text-overflow": "ellipsis",
-                            opacity: dragFromIndex() === idx() ? "0.4" : "1",
-                            display: "flex",
-                            "align-items": "center",
-                            gap: "6px",
-                            border: store.sidebarFocused && store.sidebarFocusedTaskId === taskId
-                              ? `1.5px solid var(--border-focus)`
-                              : "1.5px solid transparent",
-                          }}
-                        >
-                          <StatusDot status={getTaskDotStatus(taskId)} size="sm" />
-                          <Show when={task()!.directMode}>
-                            <span style={{
-                              "font-size": sf(10),
-                              "font-weight": "600",
-                              padding: "1px 5px",
-                              "border-radius": "3px",
-                              background: "#f0a03020",
-                              color: theme.warning,
-                              "flex-shrink": "0",
-                              "line-height": "1.5",
-                            }}>
-                              {task()!.branchName}
-                            </span>
-                          </Show>
-                          <span style={{ overflow: "hidden", "text-overflow": "ellipsis" }}>{task()!.name}</span>
-                        </div>
-                      </Show>
-                    );
-                  }}
+                  {(taskId) => <TaskRow taskId={taskId} globalIndex={globalIndex} dragFromIndex={dragFromIndex} dropTargetIndex={dropTargetIndex} />}
                 </For>
               </Show>
             );
@@ -572,58 +521,7 @@ export function Sidebar() {
             Other ({groupedTasks().orphaned.length})
           </span>
           <For each={groupedTasks().orphaned}>
-            {(taskId) => {
-              const task = () => store.tasks[taskId];
-              const idx = () => globalIndex(taskId);
-              return (
-                <Show when={task()}>
-                  <Show when={dropTargetIndex() === idx()}>
-                    <div class="drop-indicator" />
-                  </Show>
-                  <div
-                    class={`task-item${task()!.closingStatus === "removing" ? " task-item-removing" : " task-item-appearing"}`}
-                    data-task-index={idx()}
-                    onClick={() => { setActiveTask(taskId); focusSidebar(); }}
-                    style={{
-                      padding: "7px 10px",
-                      "border-radius": "6px",
-                      background: "transparent",
-                      color: store.activeTaskId === taskId ? theme.fg : theme.fgMuted,
-                      "font-size": sf(12),
-                      "font-weight": store.activeTaskId === taskId ? "500" : "400",
-                      cursor: dragFromIndex() !== null ? "grabbing" : "pointer",
-                      "white-space": "nowrap",
-                      overflow: "hidden",
-                      "text-overflow": "ellipsis",
-                      opacity: dragFromIndex() === idx() ? "0.4" : "1",
-                      display: "flex",
-                      "align-items": "center",
-                      gap: "6px",
-                      border: store.sidebarFocused && store.sidebarFocusedTaskId === taskId
-                        ? `1.5px solid var(--border-focus)`
-                        : "1.5px solid transparent",
-                    }}
-                  >
-                    <StatusDot status={getTaskDotStatus(taskId)} size="sm" />
-                    <Show when={task()!.directMode}>
-                      <span style={{
-                        "font-size": sf(10),
-                        "font-weight": "600",
-                        padding: "1px 5px",
-                        "border-radius": "3px",
-                        background: "#f0a03020",
-                        color: theme.warning,
-                        "flex-shrink": "0",
-                        "line-height": "1.5",
-                      }}>
-                        {task()!.branchName}
-                      </span>
-                    </Show>
-                    <span style={{ overflow: "hidden", "text-overflow": "ellipsis" }}>{task()!.name}</span>
-                  </div>
-                </Show>
-              );
-            }}
+            {(taskId) => <TaskRow taskId={taskId} globalIndex={globalIndex} dragFromIndex={dragFromIndex} dropTargetIndex={dropTargetIndex} />}
           </For>
         </Show>
 
@@ -665,5 +563,69 @@ export function Sidebar() {
       onMouseDown={handleResizeMouseDown}
     />
     </div>
+  );
+}
+
+interface TaskRowProps {
+  taskId: string;
+  globalIndex: (taskId: string) => number;
+  dragFromIndex: () => number | null;
+  dropTargetIndex: () => number | null;
+}
+
+function TaskRow(props: TaskRowProps) {
+  const task = () => store.tasks[props.taskId];
+  const idx = () => props.globalIndex(props.taskId);
+  return (
+    <Show when={task()}>
+      {(t) => (
+        <>
+          <Show when={props.dropTargetIndex() === idx()}>
+            <div class="drop-indicator" />
+          </Show>
+          <div
+            class={`task-item${t().closingStatus === "removing" ? " task-item-removing" : " task-item-appearing"}`}
+            data-task-index={idx()}
+            onClick={() => { setActiveTask(props.taskId); focusSidebar(); }}
+            style={{
+              padding: "7px 10px",
+              "border-radius": "6px",
+              background: "transparent",
+              color: store.activeTaskId === props.taskId ? theme.fg : theme.fgMuted,
+              "font-size": sf(12),
+              "font-weight": store.activeTaskId === props.taskId ? "500" : "400",
+              cursor: props.dragFromIndex() !== null ? "grabbing" : "pointer",
+              "white-space": "nowrap",
+              overflow: "hidden",
+              "text-overflow": "ellipsis",
+              opacity: props.dragFromIndex() === idx() ? "0.4" : "1",
+              display: "flex",
+              "align-items": "center",
+              gap: "6px",
+              border: store.sidebarFocused && store.sidebarFocusedTaskId === props.taskId
+                ? `1.5px solid var(--border-focus)`
+                : "1.5px solid transparent",
+            }}
+          >
+            <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" />
+            <Show when={t().directMode}>
+              <span style={{
+                "font-size": sf(10),
+                "font-weight": "600",
+                padding: "1px 5px",
+                "border-radius": "3px",
+                background: `color-mix(in srgb, ${theme.warning} 12%, transparent)`,
+                color: theme.warning,
+                "flex-shrink": "0",
+                "line-height": "1.5",
+              }}>
+                {t().branchName}
+              </span>
+            </Show>
+            <span style={{ overflow: "hidden", "text-overflow": "ellipsis" }}>{t().name}</span>
+          </div>
+        </>
+      )}
+    </Show>
   );
 }

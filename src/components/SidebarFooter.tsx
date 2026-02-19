@@ -1,6 +1,5 @@
 import { createMemo } from "solid-js";
-import { getCompletedTasksTodayCount, getMergedLineTotals } from "../store/store";
-import { toggleHelpDialog } from "../store/focus";
+import { getCompletedTasksTodayCount, getMergedLineTotals, toggleHelpDialog } from "../store/store";
 import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
 import { alt, mod } from "../lib/platform";

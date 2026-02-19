@@ -89,10 +89,15 @@ pub async fn delete_task(
     Ok(())
 }
 
+const MAX_SLUG_LEN: usize = 72;
+
 fn slug(name: &str) -> String {
     let mut result = String::new();
     let mut prev_was_hyphen = false;
     for c in name.to_lowercase().chars() {
+        if result.len() >= MAX_SLUG_LEN {
+            break;
+        }
         if c.is_alphanumeric() {
             result.push(c);
             prev_was_hyphen = false;

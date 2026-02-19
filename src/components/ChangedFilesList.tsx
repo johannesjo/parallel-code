@@ -2,6 +2,7 @@ import { createSignal, createMemo, createEffect, onCleanup, For, Show } from "so
 import { invoke } from "@tauri-apps/api/core";
 import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
+import { getStatusColor } from "../lib/status-colors";
 import type { ChangedFile } from "../ipc/types";
 
 interface ChangedFilesListProps {
@@ -9,10 +10,6 @@ interface ChangedFilesListProps {
   isActive?: boolean;
   onFileClick?: (file: ChangedFile) => void;
   ref?: (el: HTMLDivElement) => void;
-}
-
-function getStatusColor(status: string): string {
-  return ({ M: theme.warning, A: theme.success, D: theme.error, "?": theme.fgMuted }[status] ?? theme.fgMuted);
 }
 
 export function ChangedFilesList(props: ChangedFilesListProps) {

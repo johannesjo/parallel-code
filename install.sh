@@ -21,7 +21,7 @@ case "$OS" in
         fi
 
         echo "Mounting $DMG_FILE..."
-        MOUNT_DIR=$(hdiutil attach "$DMG_FILE" -nobrowse | tail -1 | awk '{print $3}')
+        MOUNT_DIR=$(hdiutil attach "$DMG_FILE" -nobrowse | tail -1 | sed 's/.*[[:space:]]\/Volumes/\/Volumes/')
         APP_FILE=$(find "$MOUNT_DIR" -name '*.app' -maxdepth 1 | head -1)
 
         if [ -z "$APP_FILE" ]; then
