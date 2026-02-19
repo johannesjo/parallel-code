@@ -626,7 +626,7 @@ export function TaskPanel(props: TaskPanelProps) {
                       <button
                         class="shell-terminal-close"
                         onClick={(e) => { e.stopPropagation(); closeShell(props.task.id, shellId); }}
-                        title="Close terminal (Ctrl+Shift+W)"
+                        title="Close terminal (Ctrl+Shift+Q)"
                         style={{
                           background: "color-mix(in srgb, var(--island-bg) 85%, transparent)",
                           border: `1px solid ${theme.border}`,

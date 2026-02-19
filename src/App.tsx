@@ -241,7 +241,7 @@ function App() {
         if (shellId) closeShell(taskId, shellId);
       }
     } });
-    registerShortcut({ key: "W", cmdOrCtrl: true, shift: true, global: true, handler: async () => {
+    registerShortcut({ key: "Q", cmdOrCtrl: true, shift: true, global: true, handler: async () => {
       const taskId = store.activeTaskId;
       if (!taskId) return;
       const panel = store.focusedPanel[taskId] ?? "";
