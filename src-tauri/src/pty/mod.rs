@@ -115,19 +115,19 @@ pub fn spawn_agent(
     std::thread::Builder::new()
         .name(format!("pty-reader-{}", agent_id))
         .spawn(move || {
-            // Larger read buffer reduces IPC message count under heavy output.
             let mut buf = [0u8; 16384];
+            let mut batch = Vec::with_capacity(65536);
+            let mut last_flush = std::time::Instant::now();
             let mut line_ring: VecDeque<String> = VecDeque::new();
             let mut current_line = String::new();
             const MAX_LINES: usize = 50;
+            const BATCH_MAX: usize = 64 * 1024;
+            const BATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(8);
 
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        let encoded = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
-                        let _ = on_output.send(PtyOutput::Data(encoded));
-
                         // Accumulate lines for crash diagnostics
                         let chunk = String::from_utf8_lossy(&buf[..n]);
                         for ch in chunk.chars() {
@@ -140,9 +140,27 @@ pub fn spawn_agent(
                                 current_line.push(ch);
                             }
                         }
+
+                        batch.extend_from_slice(&buf[..n]);
+
+                        // Flush when batch is large enough or enough time has passed.
+                        // Note: elapsed() is checked on the next read() return, not a
+                        // real-time deadline — it's a minimum batching window.
+                        if batch.len() >= BATCH_MAX || last_flush.elapsed() >= BATCH_INTERVAL {
+                            let encoded = base64::engine::general_purpose::STANDARD.encode(&batch);
+                            let _ = on_output.send(PtyOutput::Data(encoded));
+                            batch.clear();
+                            last_flush = std::time::Instant::now();
+                        }
                     }
                     Err(_) => break,
                 }
+            }
+
+            // Flush remaining buffered data
+            if !batch.is_empty() {
+                let encoded = base64::engine::general_purpose::STANDARD.encode(&batch);
+                let _ = on_output.send(PtyOutput::Data(encoded));
             }
 
             // Flush any trailing partial line
