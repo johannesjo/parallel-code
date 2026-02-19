@@ -199,6 +199,11 @@ const outputTailBuffers = new Map<string, string>();
 // Per-agent decoders so streaming multi-byte state doesn't corrupt across agents.
 const agentDecoders = new Map<string, TextDecoder>();
 
+// Per-agent timestamp of last expensive analysis (question/prompt detection).
+const lastAnalysisAt = new Map<string, number>();
+const pendingAnalysis = new Map<string, ReturnType<typeof setTimeout>>();
+const ANALYSIS_INTERVAL_MS = 200;
+
 function addToActive(agentId: string): void {
   setActiveAgents((s) => {
     if (s.has(agentId)) return s;
@@ -236,6 +241,13 @@ export function markAgentSpawned(agentId: string): void {
   outputTailBuffers.delete(agentId);
   agentDecoders.delete(agentId);
   clearAutoTrustState(agentId);
+  // Reset analysis throttle state for fresh session.
+  lastAnalysisAt.delete(agentId);
+  const pending = pendingAnalysis.get(agentId);
+  if (pending) {
+    clearTimeout(pending);
+    pendingAnalysis.delete(agentId);
+  }
   lastDataAt.set(agentId, Date.now());
   addToActive(agentId);
   resetIdleTimer(agentId);
@@ -259,30 +271,9 @@ export function markAgentActive(agentId: string): void {
   resetIdleTimer(agentId);
 }
 
-/** Call this from the TerminalView Data handler with the raw PTY bytes.
- *  Detects prompt patterns to immediately mark agents idle instead of
- *  waiting for the full idle timeout. */
-export function markAgentOutput(agentId: string, data: Uint8Array): void {
-  const now = Date.now();
-  lastDataAt.set(agentId, now);
-
-  // Decode and append to tail buffer for prompt detection.
-  let decoder = agentDecoders.get(agentId);
-  if (!decoder) {
-    decoder = new TextDecoder();
-    agentDecoders.set(agentId, decoder);
-  }
-  const text = decoder.decode(data, { stream: true });
-  const prev = outputTailBuffers.get(agentId) ?? "";
-  const combined = prev + text;
-  outputTailBuffers.set(
-    agentId,
-    combined.length > TAIL_BUFFER_MAX
-      ? combined.slice(combined.length - TAIL_BUFFER_MAX)
-      : combined
-  );
-
-  // Track whether the terminal is showing a question/dialog.
+/** Run expensive prompt/question/agent-ready detection on the tail buffer.
+ *  Called at most every ANALYSIS_INTERVAL_MS (200ms) per agent. */
+function analyzeAgentOutput(agentId: string): void {
   const rawTail = outputTailBuffers.get(agentId) ?? "";
   let hasQuestion = looksLikeQuestion(rawTail);
 
@@ -308,22 +299,16 @@ export function markAgentOutput(agentId: string, data: Uint8Array): void {
 
   updateQuestionState(agentId, hasQuestion);
 
-  // Extract last non-empty line from recent output for prompt matching.
-  const tail = combined.slice(-200);
-  const lines = tail.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  const lastLine = lines[lines.length - 1] ?? "";
-
-  // Scan the CURRENT data chunk (not the tail buffer) for prompt characters.
-  // TUI apps render full screens — the prompt may appear early in a large
-  // chunk and get rotated out of the tail buffer.
+  // Agent-ready prompt scanning. Uses the tail buffer (always current) so
+  // throttled/trailing calls don't miss prompts from intermediate chunks.
   if (agentReadyCallbacks.has(agentId)) {
-    const chunkStripped = stripAnsi(text)
+    const tailStripped = stripAnsi(rawTail)
       // eslint-disable-next-line no-control-regex
       .replace(/[\x00-\x1f\x7f]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
 
-    if (chunkContainsAgentPrompt(chunkStripped)) {
+    if (chunkContainsAgentPrompt(tailStripped)) {
       // Guard: don't fire if the tail buffer contains a question.
       // TUI selection UIs (e.g. "trust this folder?") also use ❯ as a
       // cursor, and the question text may appear earlier in the buffer.
@@ -334,9 +319,65 @@ export function markAgentOutput(agentId: string, data: Uint8Array): void {
       }
     }
   }
+}
+
+/** Call this from the TerminalView Data handler with the raw PTY bytes.
+ *  Detects prompt patterns to immediately mark agents idle instead of
+ *  waiting for the full idle timeout. */
+export function markAgentOutput(agentId: string, data: Uint8Array): void {
+  const now = Date.now();
+  lastDataAt.set(agentId, now);
+
+  // Decode and append to tail buffer for prompt detection.
+  let decoder = agentDecoders.get(agentId);
+  if (!decoder) {
+    decoder = new TextDecoder();
+    agentDecoders.set(agentId, decoder);
+  }
+  const text = decoder.decode(data, { stream: true });
+  const prev = outputTailBuffers.get(agentId) ?? "";
+  const combined = prev + text;
+  outputTailBuffers.set(
+    agentId,
+    combined.length > TAIL_BUFFER_MAX
+      ? combined.slice(combined.length - TAIL_BUFFER_MAX)
+      : combined
+  );
+
+  // Throttle expensive analysis (question/prompt/agent-ready detection).
+  const lastAnalysis = lastAnalysisAt.get(agentId) ?? 0;
+  if (now - lastAnalysis >= ANALYSIS_INTERVAL_MS) {
+    lastAnalysisAt.set(agentId, now);
+    if (pendingAnalysis.has(agentId)) {
+      clearTimeout(pendingAnalysis.get(agentId));
+      pendingAnalysis.delete(agentId);
+    }
+    analyzeAgentOutput(agentId);
+  } else if (!pendingAnalysis.has(agentId)) {
+    // Schedule a trailing analysis so the last chunk is always analyzed.
+    pendingAnalysis.set(agentId, setTimeout(() => {
+      pendingAnalysis.delete(agentId);
+      lastAnalysisAt.set(agentId, Date.now());
+      analyzeAgentOutput(agentId);
+    }, ANALYSIS_INTERVAL_MS));
+  }
+
+  // Extract last non-empty line from recent output for prompt matching.
+  // This check is UNTHROTTLED — it's cheap (single line, 6 patterns) and
+  // important for responsive idle detection.
+  const tail = combined.slice(-200);
+  const lines = tail.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  const lastLine = lines[lines.length - 1] ?? "";
 
   if (looksLikePrompt(lastLine)) {
     // Prompt detected — agent is idle. Remove from active set immediately.
+    // Cancel any pending trailing analysis — question detection is irrelevant
+    // once idle, and letting it fire could set a spurious question flag.
+    const pendingTimer = pendingAnalysis.get(agentId);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      pendingAnalysis.delete(agentId);
+    }
     const timer = idleTimers.get(agentId);
     if (timer) {
       clearTimeout(timer);
@@ -371,6 +412,12 @@ export function clearAgentActivity(agentId: string): void {
   agentDecoders.delete(agentId);
   agentReadyCallbacks.delete(agentId);
   clearAutoTrustState(agentId);
+  lastAnalysisAt.delete(agentId);
+  const pending = pendingAnalysis.get(agentId);
+  if (pending) {
+    clearTimeout(pending);
+    pendingAnalysis.delete(agentId);
+  }
   const timer = idleTimers.get(agentId);
   if (timer) {
     clearTimeout(timer);
