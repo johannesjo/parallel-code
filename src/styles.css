@@ -653,12 +653,12 @@ body.dragging-task * {
   pointer-events: auto;
 }
 
-.shell-terminal-container[data-shell-focused="false"] .xterm {
+.shell-terminal-container .xterm {
   opacity: 0.7;
   transition: opacity 0.15s ease;
 }
 
-.shell-terminal-container[data-shell-focused="true"] .xterm {
+.shell-terminal-container:focus-within .xterm {
   opacity: 1;
   transition: opacity 0.15s ease;
 }
