@@ -15,18 +15,24 @@ pub fn create_worktree(
     let worktree_path = format!("{}/.worktrees/{}", repo_root, branch_name);
     info!(branch = %branch_name, path = %worktree_path, "Creating worktree");
 
-    // Create the branch (ignore error if it already exists)
-    let _ = Command::new("git")
-        .args(["branch", branch_name])
-        .current_dir(repo_root)
-        .output();
-
-    // Create the worktree
+    // Create worktree with new branch atomically.
+    // Try -b first (new branch); fall back to existing branch if it already exists.
     let output = Command::new("git")
-        .args(["worktree", "add", &worktree_path, "--", branch_name])
+        .args(["worktree", "add", "-b", branch_name, &worktree_path])
         .current_dir(repo_root)
         .output()
         .map_err(|e| AppError::Git(e.to_string()))?;
+
+    let output = if !output.status.success() {
+        // Branch may already exist — try without -b
+        Command::new("git")
+            .args(["worktree", "add", &worktree_path, branch_name])
+            .current_dir(repo_root)
+            .output()
+            .map_err(|e| AppError::Git(e.to_string()))?
+    } else {
+        output
+    };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

@@ -1,6 +1,18 @@
 import { createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { sendPrompt, registerFocusFn, unregisterFocusFn, registerAction, unregisterAction } from "../store/store";
+import {
+  sendPrompt,
+  registerFocusFn,
+  unregisterFocusFn,
+  registerAction,
+  unregisterAction,
+  getAgentOutputTail,
+  stripAnsi,
+  onAgentReady,
+  offAgentReady,
+  normalizeForComparison,
+  looksLikeQuestion,
+} from "../store/store";
 import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
 
@@ -12,35 +24,116 @@ interface PromptInputProps {
   ref?: (el: HTMLTextAreaElement) => void;
 }
 
-const INITIAL_PROMPT_AUTOSEND_DELAY_MS = 5_000;
+// Quiescence: how often to snapshot and how long output must be stable.
+const QUIESCENCE_POLL_MS = 500;
+const QUIESCENCE_THRESHOLD_MS = 2_500;
+// Never auto-send before this (agent still booting).
+const AUTOSEND_MIN_WAIT_MS = 1_000;
+// Give up after this.
+const AUTOSEND_MAX_WAIT_MS = 45_000;
+// After sending, how long to poll terminal output to confirm the prompt appeared.
+const PROMPT_VERIFY_TIMEOUT_MS = 5_000;
+const PROMPT_VERIFY_POLL_MS = 250;
 
 export function PromptInput(props: PromptInputProps) {
   const [text, setText] = createSignal("");
   const [sending, setSending] = createSignal(false);
-  let autoSendTimer: number | undefined;
   let autoSentInitialPrompt: string | null = null;
-
-  function clearAutoSendTimer() {
-    if (autoSendTimer !== undefined) {
-      clearTimeout(autoSendTimer);
-      autoSendTimer = undefined;
-    }
-  }
+  let cleanupAutoSend: (() => void) | undefined;
 
   createEffect(() => {
-    clearAutoSendTimer();
+    cleanupAutoSend?.();
+    cleanupAutoSend = undefined;
+
     const ip = props.initialPrompt?.trim();
     if (!ip) return;
 
     setText(ip);
     if (autoSentInitialPrompt === ip) return;
 
-    autoSendTimer = window.setTimeout(() => {
-      const currentInitial = props.initialPrompt?.trim();
-      if (!currentInitial || currentInitial !== ip) return;
+    const agentId = props.agentId;
+    const spawnedAt = Date.now();
+    let quiescenceTimer: number | undefined;
+    let pendingSendTimer: ReturnType<typeof setTimeout> | undefined;
+    let lastNormalized = "";
+    let stableSince = 0;
+    let cancelled = false;
+
+    function cleanup() {
+      cancelled = true;
+      offAgentReady(agentId);
+      if (pendingSendTimer) {
+        clearTimeout(pendingSendTimer);
+        pendingSendTimer = undefined;
+      }
+      if (quiescenceTimer !== undefined) {
+        clearInterval(quiescenceTimer);
+        quiescenceTimer = undefined;
+      }
+    }
+    cleanupAutoSend = cleanup;
+
+    function trySend() {
+      if (cancelled) return;
+      cleanup();
       void handleSend("auto");
-    }, INITIAL_PROMPT_AUTOSEND_DELAY_MS);
+    }
+
+    // --- FAST PATH: event from markAgentOutput ---
+    // Fires when a known prompt pattern (❯, ›) is detected in PTY output.
+    onAgentReady(agentId, () => {
+      if (cancelled) return;
+      const elapsed = Date.now() - spawnedAt;
+      if (looksLikeQuestion(getAgentOutputTail(agentId))) return;
+
+      if (elapsed < AUTOSEND_MIN_WAIT_MS) {
+        // Prompt detected early — schedule send for when min wait expires.
+        if (!pendingSendTimer) {
+          pendingSendTimer = setTimeout(() => {
+            if (cancelled) return;
+            if (looksLikeQuestion(getAgentOutputTail(agentId))) return;
+            trySend();
+          }, AUTOSEND_MIN_WAIT_MS - elapsed);
+        }
+        return;
+      }
+
+      trySend();
+    });
+
+    // --- SLOW PATH: quiescence fallback for agents without whitelisted prompts ---
+    quiescenceTimer = window.setInterval(() => {
+      if (cancelled) return;
+      const elapsed = Date.now() - spawnedAt;
+
+      if (elapsed > AUTOSEND_MAX_WAIT_MS) {
+        cleanup();
+        return;
+      }
+      if (elapsed < AUTOSEND_MIN_WAIT_MS) return;
+
+      const tail = getAgentOutputTail(agentId);
+      if (!tail) return;
+      const normalized = normalizeForComparison(tail);
+
+      if (normalized !== lastNormalized) {
+        lastNormalized = normalized;
+        stableSince = Date.now();
+        return;
+      }
+
+      if (Date.now() - stableSince < QUIESCENCE_THRESHOLD_MS) return;
+
+      // Output stable long enough — check it's not a question.
+      if (looksLikeQuestion(tail)) {
+        stableSince = Date.now();
+        return;
+      }
+
+      trySend();
+    }, QUIESCENCE_POLL_MS);
   });
+
   let textareaRef: HTMLTextAreaElement | undefined;
 
   onMount(() => {
@@ -54,11 +147,31 @@ export function PromptInput(props: PromptInputProps) {
     });
   });
 
-  onCleanup(() => clearAutoSendTimer());
+  onCleanup(() => {
+    cleanupAutoSend?.();
+    cleanupAutoSend = undefined;
+  });
+
+  async function promptAppearedInOutput(agentId: string, prompt: string, preSendTail: string): Promise<boolean> {
+    const snippet = stripAnsi(prompt).slice(0, 40);
+    if (!snippet) return true;
+    // If the snippet was already visible before send, skip verification
+    // to avoid false positives.
+    if (stripAnsi(preSendTail).includes(snippet)) return true;
+
+    const deadline = Date.now() + PROMPT_VERIFY_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const tail = stripAnsi(getAgentOutputTail(agentId));
+      if (tail.includes(snippet)) return true;
+      await new Promise((r) => setTimeout(r, PROMPT_VERIFY_POLL_MS));
+    }
+    return false;
+  }
 
   async function handleSend(mode: "manual" | "auto" = "manual") {
     if (sending()) return;
-    clearAutoSendTimer();
+    cleanupAutoSend?.();
+    cleanupAutoSend = undefined;
 
     const val = text().trim();
     if (!val) {
@@ -69,7 +182,15 @@ export function PromptInput(props: PromptInputProps) {
 
     setSending(true);
     try {
+      // Snapshot tail before send for verification comparison.
+      const preSendTail = getAgentOutputTail(props.agentId);
       await sendPrompt(props.taskId, props.agentId, val);
+
+      if (mode === "auto") {
+        const confirmed = await promptAppearedInOutput(props.agentId, val, preSendTail);
+        if (!confirmed) return;
+      }
+
       if (props.initialPrompt?.trim()) {
         autoSentInitialPrompt = props.initialPrompt.trim();
       }
@@ -115,7 +236,7 @@ export function PromptInput(props: PromptInputProps) {
           class="prompt-send-btn"
           type="button"
           disabled={!text().trim()}
-          onClick={handleSend}
+          onClick={() => handleSend()}
           style={{
             position: "absolute",
             right: "6px",

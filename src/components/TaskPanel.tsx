@@ -686,11 +686,13 @@ export function TaskPanel(props: TaskPanelProps) {
       content: () => (
         <ScalablePanel panelId={`${props.task.id}:ai-terminal`}>
         <div class="focusable-panel" style={{ height: "100%", position: "relative", background: theme.taskPanelBg, display: "flex", "flex-direction": "column" }} onClick={() => setTaskFocusedPanel(props.task.id, "ai-terminal")}>
-          <InfoBar title={props.task.lastPrompt || "No prompts sent yet"}>
+          <InfoBar title={props.task.lastPrompt || (props.task.initialPrompt ? "Waiting to send prompt…" : "No prompts sent yet")}>
             <span style={{ opacity: props.task.lastPrompt ? 1 : 0.4 }}>
               {props.task.lastPrompt
                 ? `> ${props.task.lastPrompt}`
-                : "No prompts sent"}
+                : props.task.initialPrompt
+                  ? "⏳ Waiting to send prompt…"
+                  : "No prompts sent"}
             </span>
           </InfoBar>
           <div style={{ flex: "1", position: "relative", overflow: "hidden" }}>

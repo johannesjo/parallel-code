@@ -8,7 +8,7 @@ export type TaskDotStatus = "busy" | "waiting" | "ready";
 // --- Prompt detection helpers ---
 
 /** Strip ANSI escape sequences (CSI, OSC, and single-char escapes) from terminal output. */
-function stripAnsi(text: string): string {
+export function stripAnsi(text: string): string {
   return text.replace(
     // eslint-disable-next-line no-control-regex
     /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nq-uy=><~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g,
@@ -38,6 +38,75 @@ function looksLikePrompt(line: string): boolean {
   const stripped = stripAnsi(line).trimEnd();
   if (stripped.length === 0) return false;
   return PROMPT_PATTERNS.some((re) => re.test(stripped));
+}
+
+/**
+ * Patterns for known agent main input prompts (ready for a new task).
+ * Tested against the stripped data chunk (not a single line), because TUI
+ * apps like Claude Code use cursor positioning instead of newlines.
+ */
+const AGENT_READY_TAIL_PATTERNS: RegExp[] = [
+  /❯/,               // Claude Code
+  /›/,               // Codex CLI
+];
+
+/** Check stripped output for known agent prompt characters. */
+function chunkContainsAgentPrompt(stripped: string): boolean {
+  if (stripped.length === 0) return false;
+  return AGENT_READY_TAIL_PATTERNS.some((re) => re.test(stripped));
+}
+
+// --- Agent ready event callbacks ---
+// Fired from markAgentOutput when a main prompt is detected in a PTY chunk.
+const agentReadyCallbacks = new Map<string, () => void>();
+
+/** Register a callback that fires once when the agent's main prompt is detected. */
+export function onAgentReady(agentId: string, callback: () => void): void {
+  agentReadyCallbacks.set(agentId, callback);
+}
+
+/** Remove a pending agent-ready callback. */
+export function offAgentReady(agentId: string): void {
+  agentReadyCallbacks.delete(agentId);
+}
+
+/**
+ * Normalize terminal output for quiescence comparison.
+ * Strips ANSI, removes control characters, collapses whitespace so that
+ * cursor repositioning and status bar redraws don't register as changes.
+ */
+export function normalizeForComparison(text: string): string {
+  return stripAnsi(text)
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Patterns indicating the terminal is asking a question — do NOT auto-send. */
+const QUESTION_PATTERNS: RegExp[] = [
+  /\[Y\/n\]\s*$/i,
+  /\[y\/N\]\s*$/i,
+  /\(y(?:es)?\/n(?:o)?\)\s*$/i,
+  /\btrust\b.*\?/i,
+  /\bupdate\b.*\?/i,
+  /\bproceed\b.*\?/i,
+  /\boverwrite\b.*\?/i,
+  /\bcontinue\b.*\?/i,
+  /\ballow\b.*\?/i,
+  /Do you want to/i,
+  /Would you like to/i,
+  /Are you sure/i,
+];
+
+/** True when the last visible line of output looks like a question or confirmation. */
+export function looksLikeQuestion(tail: string): boolean {
+  const chunk = tail.slice(-300);
+  const lines = chunk.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  const lastLine = lines[lines.length - 1] ?? "";
+  const stripped = stripAnsi(lastLine).trimEnd();
+  if (stripped.length === 0) return false;
+  return QUESTION_PATTERNS.some((re) => re.test(stripped));
 }
 
 // --- Agent activity tracking ---
@@ -150,6 +219,23 @@ export function markAgentOutput(agentId: string, data: Uint8Array): void {
   const lines = tail.split(/\r?\n/).filter((l) => l.trim().length > 0);
   const lastLine = lines[lines.length - 1] ?? "";
 
+  // Scan the CURRENT data chunk (not the tail buffer) for prompt characters.
+  // TUI apps render full screens — the prompt may appear early in a large
+  // chunk and get rotated out of the 512-byte tail buffer.
+  if (agentReadyCallbacks.has(agentId)) {
+    const chunkStripped = stripAnsi(text)
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x1f\x7f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (chunkContainsAgentPrompt(chunkStripped)) {
+      const cb = agentReadyCallbacks.get(agentId);
+      agentReadyCallbacks.delete(agentId);
+      if (cb) cb();
+    }
+  }
+
   if (looksLikePrompt(lastLine)) {
     // Prompt detected — agent is idle. Remove from active set immediately.
     const timer = idleTimers.get(agentId);
@@ -171,6 +257,16 @@ export function markAgentOutput(agentId: string, data: Uint8Array): void {
 
   addToActive(agentId);
   resetIdleTimer(agentId);
+}
+
+/** Return the last ~512 chars of raw PTY output for `agentId`. */
+export function getAgentOutputTail(agentId: string): string {
+  return outputTailBuffers.get(agentId) ?? "";
+}
+
+/** True when the agent is not actively producing output (prompt detected or idle timeout). */
+export function isAgentIdle(agentId: string): boolean {
+  return !activeAgents().has(agentId);
 }
 
 /** Clean up timers when an agent exits. */

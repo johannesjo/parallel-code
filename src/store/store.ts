@@ -68,6 +68,12 @@ export {
   markAgentActive,
   markAgentOutput,
   clearAgentActivity,
+  getAgentOutputTail,
+  stripAnsi,
+  onAgentReady,
+  offAgentReady,
+  normalizeForComparison,
+  looksLikeQuestion,
   startTaskStatusPolling,
   stopTaskStatusPolling,
 } from "./taskStatus";
