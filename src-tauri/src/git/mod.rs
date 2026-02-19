@@ -119,20 +119,26 @@ pub fn remove_worktree(
         return Ok(());
     }
 
-    let output = Command::new("git")
-        .args(["worktree", "remove", "--force", &worktree_path])
-        .current_dir(repo_root)
-        .output()
-        .map_err(|e| AppError::Git(e.to_string()))?;
+    if Path::new(&worktree_path).exists() {
+        let output = Command::new("git")
+            .args(["worktree", "remove", "--force", &worktree_path])
+            .current_dir(repo_root)
+            .output()
+            .map_err(|e| AppError::Git(e.to_string()))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        error!(branch = %branch_name, stderr = %stderr, "Failed to remove worktree");
-        return Err(AppError::Git(format!(
-            "Failed to remove worktree: {}",
-            stderr
-        )));
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // If git doesn't recognize it as a worktree, just remove the directory
+            info!(branch = %branch_name, stderr = %stderr, "git worktree remove failed, removing directory directly");
+            std::fs::remove_dir_all(&worktree_path).ok();
+        }
     }
+
+    // Prune stale worktree entries so git doesn't keep referencing missing directories
+    let _ = Command::new("git")
+        .args(["worktree", "prune"])
+        .current_dir(repo_root)
+        .output();
 
     if delete_branch {
         let _ = Command::new("git")
