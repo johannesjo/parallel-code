@@ -51,6 +51,7 @@ export {
   getFontScale,
   adjustFontScale,
   resetFontScale,
+  resetAllFontScales,
   getGlobalScale,
   adjustGlobalScale,
   resetGlobalScale,

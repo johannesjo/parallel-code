@@ -33,6 +33,14 @@ export function resetFontScale(panelId: string): void {
   }
 }
 
+export function resetAllFontScales(): void {
+  setStore(produce((s) => {
+    for (const key of Object.keys(s.fontScales)) {
+      s.fontScales[key] = 1.0;
+    }
+  }));
+}
+
 // --- Global Scale ---
 
 export function getGlobalScale(): number {
