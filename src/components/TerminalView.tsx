@@ -99,13 +99,14 @@ export function TerminalView(props: TerminalViewProps) {
       term.focus();
     }
 
-    // Debounced refresh: ensures the WebGL renderer repaints after data arrives,
-    // even when the terminal is off-screen and _isAttached is stale.
-    let dataRefreshRAF: number | undefined;
-    function scheduleRefresh() {
-      if (dataRefreshRAF !== undefined) return;
-      dataRefreshRAF = requestAnimationFrame(() => {
-        dataRefreshRAF = undefined;
+    // Deduplicated fit+refresh: both ResizeObserver and IntersectionObserver
+    // need to refit — a single RAF prevents redundant work in the same frame.
+    let fitRAF: number | undefined;
+    function requestFit() {
+      if (fitRAF !== undefined) return;
+      fitRAF = requestAnimationFrame(() => {
+        fitRAF = undefined;
+        fitAddon!.fit();
         term!.refresh(0, term!.rows - 1);
       });
     }
@@ -121,7 +122,6 @@ export function TerminalView(props: TerminalViewProps) {
     function emitExit(payload: { exit_code: number | null; signal: string | null; last_output: string[] }) {
       if (!term) return;
       term.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
-      scheduleRefresh();
       props.onExit?.(payload);
     }
 
@@ -148,7 +148,6 @@ export function TerminalView(props: TerminalViewProps) {
       outputWriteInFlight = true;
       term.write(payload, () => {
         outputWriteInFlight = false;
-        scheduleRefresh();
         props.onData?.(payload);
         if (outputQueue.length > 0) {
           scheduleOutputFlush();
@@ -275,24 +274,15 @@ export function TerminalView(props: TerminalViewProps) {
       }, 33);
     });
 
-    let resizeRAF: number | undefined;
     const resizeObserver = new ResizeObserver(() => {
-      if (resizeRAF !== undefined) cancelAnimationFrame(resizeRAF);
-      resizeRAF = requestAnimationFrame(() => {
-        fitAddon!.fit();
-        term!.refresh(0, term!.rows - 1);
-        resizeRAF = undefined;
-      });
+      requestFit();
     });
     resizeObserver.observe(containerRef);
 
     // Re-render when the terminal scrolls back into view (e.g. horizontal overflow)
     const intersectionObserver = new IntersectionObserver((entries) => {
       if (entries[0]?.isIntersecting) {
-        requestAnimationFrame(() => {
-          fitAddon!.fit();
-          term!.refresh(0, term!.rows - 1);
-        });
+        requestFit();
       }
     });
     intersectionObserver.observe(containerRef);
@@ -322,8 +312,7 @@ export function TerminalView(props: TerminalViewProps) {
       if (inputFlushTimer !== undefined) clearTimeout(inputFlushTimer);
       if (resizeFlushTimer !== undefined) clearTimeout(resizeFlushTimer);
       if (outputRaf !== undefined) cancelAnimationFrame(outputRaf);
-      if (dataRefreshRAF !== undefined) cancelAnimationFrame(dataRefreshRAF);
-      if (resizeRAF !== undefined) cancelAnimationFrame(resizeRAF);
+      if (fitRAF !== undefined) cancelAnimationFrame(fitRAF);
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
       invoke("kill_agent", { agentId });

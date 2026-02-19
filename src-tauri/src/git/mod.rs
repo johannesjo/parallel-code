@@ -496,31 +496,43 @@ fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppEr
     let mut files: Vec<ChangedFile> = Vec::new();
     let base = detect_merge_base(worktree_path).unwrap_or_else(|_| "HEAD".into());
 
-    // git diff --name-status against merge base: only branch-specific changes
-    let name_status_str = Command::new("git")
-        .args(["diff", "--name-status", &base])
+    // Single git diff call: --name-status + --numstat in one subprocess
+    let diff_str = Command::new("git")
+        .args(["diff", "--name-status", "--numstat", &base])
         .current_dir(worktree_path)
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_else(|e| {
-            tracing::warn!("git diff --name-status failed: {}", e);
+            tracing::warn!("git diff --name-status --numstat failed: {}", e);
             String::new()
         });
 
+    // Parse combined output: numstat lines have 3 tab-separated fields (added\tremoved\tpath),
+    // name-status lines have 2 tab-separated fields (status\tpath).
     let mut status_map = std::collections::HashMap::new();
-    for line in name_status_str.lines() {
+    let mut numstat_map: std::collections::HashMap<String, (u32, u32)> = std::collections::HashMap::new();
+    for line in diff_str.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() < 2 {
-            continue;
+        if parts.len() >= 3 {
+            // numstat line: added\tremoved\tpath
+            if let (Ok(added), Ok(removed)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                let raw_path = parts.last().copied().unwrap_or_default();
+                let path = normalize_status_path(raw_path);
+                if !path.is_empty() {
+                    numstat_map.insert(path, (added, removed));
+                }
+                continue;
+            }
         }
-        let status = parts[0].chars().next().unwrap_or('M').to_string();
-        // For renames/copies, name-status can include old and new paths; keep the destination path.
-        let raw_path = parts.last().copied().unwrap_or_default();
-        let path = normalize_status_path(raw_path);
-        if path.is_empty() {
-            continue;
+        if parts.len() >= 2 {
+            // name-status line: status\tpath
+            let status = parts[0].chars().next().unwrap_or('M').to_string();
+            let raw_path = parts.last().copied().unwrap_or_default();
+            let path = normalize_status_path(raw_path);
+            if !path.is_empty() {
+                status_map.insert(path, status);
+            }
         }
-        status_map.insert(path, status);
     }
 
     // git status --porcelain: collect all uncommitted paths + untracked files
@@ -537,7 +549,6 @@ fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppEr
     let mut uncommitted_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
     for line in status_str.lines() {
         if line.len() < 3 { continue; }
-        // Porcelain rename format uses "old -> new". Track the destination path.
         let path = normalize_status_path(line[3..].trim_start());
         if path.is_empty() {
             continue;
@@ -548,54 +559,36 @@ fn get_changed_files_sync(worktree_path: &str) -> Result<Vec<ChangedFile>, AppEr
         uncommitted_paths.insert(path);
     }
 
-    // git diff --numstat against merge base for line counts
-    let diff_str = Command::new("git")
-        .args(["diff", "--numstat", &base])
-        .current_dir(worktree_path)
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_else(|e| {
-            tracing::warn!("git diff --numstat failed: {}", e);
-            String::new()
-        });
-
     let mut seen = std::collections::HashSet::new();
-    for line in diff_str.lines() {
-        let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() < 3 {
-            continue;
-        }
-        let added = parts[0].parse::<u32>().unwrap_or(0);
-        let removed = parts[1].parse::<u32>().unwrap_or(0);
-        // Keep destination path for rename/copy formats.
-        let raw_path = parts.last().copied().unwrap_or_default();
-        let path = normalize_status_path(raw_path);
-        if path.is_empty() {
-            continue;
-        }
-        let status = status_map.get(&path).cloned().unwrap_or_else(|| "M".to_string());
-        let committed = !uncommitted_paths.contains(&path);
+    for (path, (added, removed)) in &numstat_map {
+        let status = status_map.get(path).cloned().unwrap_or_else(|| "M".to_string());
+        let committed = !uncommitted_paths.contains(path);
         seen.insert(path.clone());
         files.push(ChangedFile {
-            path,
-            lines_added: added,
-            lines_removed: removed,
+            path: path.clone(),
+            lines_added: *added,
+            lines_removed: *removed,
             status,
             committed,
         });
     }
 
     // Add files from status_map not covered by numstat (e.g. untracked files)
+    let worktree = Path::new(worktree_path);
     for (path, status) in &status_map {
         if !seen.contains(path) {
-            // Count lines for untracked/new files not in git diff
-            let added = std::path::Path::new(worktree_path)
-                .join(path)
+            // Count lines for untracked/new files without reading entire file into memory
+            let full_path = worktree.join(path);
+            let added = full_path
                 .metadata()
                 .ok()
                 .filter(|m| m.is_file())
-                .and_then(|_| std::fs::read_to_string(std::path::Path::new(worktree_path).join(path)).ok())
-                .map(|c| c.lines().count() as u32)
+                .and_then(|_| {
+                    use std::io::BufRead;
+                    std::fs::File::open(&full_path)
+                        .ok()
+                        .map(|f| std::io::BufReader::new(f).lines().count() as u32)
+                })
                 .unwrap_or(0);
             files.push(ChangedFile {
                 path: path.clone(),
@@ -651,13 +644,12 @@ fn get_file_diff_sync(worktree_path: &str, file_path: &str) -> Result<String, Ap
         if full_path.exists() {
             let content = std::fs::read_to_string(&full_path)
                 .map_err(|e| AppError::Git(format!("Failed to read file: {}", e)))?;
-            let lines: Vec<&str> = content.lines().collect();
-            let count = lines.len();
+            let count = content.lines().count();
             let mut pseudo = format!(
                 "--- /dev/null\n+++ b/{}\n@@ -0,0 +1,{} @@\n",
                 file_path, count
             );
-            for line in &lines {
+            for line in content.lines() {
                 pseudo.push('+');
                 pseudo.push_str(line);
                 pseudo.push('\n');

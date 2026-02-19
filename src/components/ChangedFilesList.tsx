@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onCleanup, For, Show } from "solid-js";
+import { createSignal, createMemo, createEffect, onCleanup, For, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
@@ -55,20 +55,20 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     }
   }
 
-  // Poll every 2s, but only when active (avoids thundering herd with many tasks)
+  // Poll every 5s, matching the git status polling interval
   createEffect(() => {
     const path = props.worktreePath;
     if (props.isActive === false) return;
     let cancelled = false;
     const isCancelled = () => cancelled;
     refresh(path, isCancelled);
-    const timer = setInterval(() => refresh(path, isCancelled), 2000);
+    const timer = setInterval(() => refresh(path, isCancelled), 5000);
     onCleanup(() => { cancelled = true; clearInterval(timer); });
   });
 
-  const totalAdded = () => files().reduce((s, f) => s + f.lines_added, 0);
-  const totalRemoved = () => files().reduce((s, f) => s + f.lines_removed, 0);
-  const uncommittedCount = () => files().filter((f) => !f.committed).length;
+  const totalAdded = createMemo(() => files().reduce((s, f) => s + f.lines_added, 0));
+  const totalRemoved = createMemo(() => files().reduce((s, f) => s + f.lines_removed, 0));
+  const uncommittedCount = createMemo(() => files().filter((f) => !f.committed).length);
 
   return (
     <div

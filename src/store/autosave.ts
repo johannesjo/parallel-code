@@ -1,57 +1,47 @@
 import { createEffect, onCleanup } from "solid-js";
 import { store, saveState } from "./store";
 
+/** Build a snapshot string of all persisted fields. Using JSON.stringify
+ *  creates a single reactive dependency on the serialized form — the effect
+ *  only re-runs when a persisted value actually changes, instead of on every
+ *  individual field mutation (cursor moves, panel resizes, etc.). */
+function persistedSnapshot(): string {
+  return JSON.stringify({
+    projects: store.projects,
+    lastProjectId: store.lastProjectId,
+    lastAgentId: store.lastAgentId,
+    taskOrder: store.taskOrder,
+    activeTaskId: store.activeTaskId,
+    sidebarVisible: store.sidebarVisible,
+    fontScales: store.fontScales,
+    panelSizes: store.panelSizes,
+    globalScale: store.globalScale,
+    completedTaskDate: store.completedTaskDate,
+    completedTaskCount: store.completedTaskCount,
+    terminalFont: store.terminalFont,
+    themePreset: store.themePreset,
+    windowState: store.windowState,
+    autoTrustFolders: store.autoTrustFolders,
+    tasks: Object.fromEntries(
+      store.taskOrder.map((id) => {
+        const t = store.tasks[id];
+        return [id, t ? { notes: t.notes, lastPrompt: t.lastPrompt, name: t.name } : null];
+      })
+    ),
+  });
+}
+
 export function setupAutosave(): void {
   let timer: number | undefined;
+  let lastSnapshot: string | undefined;
 
   createEffect(() => {
-    // Access reactive fields to track changes
-    void store.taskOrder.length;
-    void store.activeTaskId;
-    void store.sidebarVisible;
-    void store.globalScale;
-    void store.completedTaskDate;
-    void store.completedTaskCount;
-    void store.terminalFont;
-    void store.themePreset;
-    void store.windowState?.x;
-    void store.windowState?.y;
-    void store.windowState?.width;
-    void store.windowState?.height;
-    void store.windowState?.maximized;
-    void store.projects.length;
-    void store.lastProjectId;
-    void store.lastAgentId;
+    const snapshot = persistedSnapshot();
 
-    for (const p of store.projects) {
-      void p.name;
-      void p.path;
-      void p.color;
-      void p.branchPrefix;
-      void p.deleteBranchOnClose;
-      const bookmarks = p.terminalBookmarks ?? [];
-      for (const bookmark of bookmarks) {
-        void bookmark.id;
-        void bookmark.command;
-      }
-    }
+    // Skip if nothing actually changed
+    if (snapshot === lastSnapshot) return;
+    lastSnapshot = snapshot;
 
-    for (const id of store.taskOrder) {
-      const t = store.tasks[id];
-      if (t) {
-        void t.notes;
-        void t.lastPrompt;
-        void t.name;
-      }
-    }
-    for (const key of Object.keys(store.fontScales)) {
-      void store.fontScales[key];
-    }
-    for (const key of Object.keys(store.panelSizes)) {
-      void store.panelSizes[key];
-    }
-
-    // Debounce 1s
     clearTimeout(timer);
     timer = window.setTimeout(() => saveState(), 1000);
 

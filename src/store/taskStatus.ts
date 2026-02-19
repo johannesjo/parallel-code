@@ -428,7 +428,7 @@ export async function refreshAllTaskGitStatus(): Promise<void> {
       const agents = Object.values(store.agents).filter(
         (a) => a.taskId === taskId
       );
-      return !agents.some((a) => a.status === "running" && active.has(a.id));
+      return agents.some((a) => a.status === "running" && active.has(a.id));
     })
     .map((taskId) => refreshTaskGitStatus(taskId));
   await Promise.allSettled(promises);
