@@ -11,7 +11,7 @@ case "$OS" in
         DMG_DIR="$SCRIPT_DIR/src-tauri/target/release/bundle/dmg"
 
         echo "Building release for macOS..."
-        pnpm tauri build --bundles dmg
+        npm run tauri build -- --bundles dmg
 
         DMG_FILE=$(find "$DMG_DIR" -name '*.dmg' -type f | head -1)
 
@@ -41,7 +41,7 @@ case "$OS" in
         DEB_DIR="$SCRIPT_DIR/src-tauri/target/release/bundle/deb"
 
         echo "Building release for Linux..."
-        pnpm tauri build --bundles deb
+        npm run tauri build -- --bundles deb
 
         DEB_FILE=$(find "$DEB_DIR" -name '*.deb' -type f | head -1)
 
