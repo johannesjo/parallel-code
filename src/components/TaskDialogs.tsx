@@ -361,7 +361,7 @@ export function TaskDialogs(props: TaskDialogsProps) {
                 "flex-direction": "column",
               }}
             >
-              <ChangedFilesList worktreePath={props.task.worktreePath} onFileClick={props.onDiffFileClick} />
+              <ChangedFilesList worktreePath={props.task.worktreePath} isActive={props.showMergeConfirm} onFileClick={props.onDiffFileClick} />
             </div>
             <label
               style={{
