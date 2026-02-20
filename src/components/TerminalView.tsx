@@ -172,7 +172,7 @@ export function TerminalView(props: TerminalViewProps) {
         // Resume PTY reader when xterm.js has caught up
         if (watermark < FLOW_LOW && ptyPaused) {
           ptyPaused = false;
-          invoke("resume_agent", { agentId }).catch(() => {});
+          invoke("resume_agent", { agentId }).catch(() => { ptyPaused = false; });
         }
 
         props.onData?.(statusPayload);
