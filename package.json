@@ -56,8 +56,13 @@
         "AppImage",
         "deb"
       ],
-      "desktopName": "com.parallel-code.app.desktop",
-      "category": "Development"
+      "category": "Development",
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "parallel-code",
+          "StartupNotify": "true"
+        }
+      }
     },
     "win": {
       "target": [
