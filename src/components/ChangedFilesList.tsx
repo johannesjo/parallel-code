@@ -1,5 +1,6 @@
 import { createSignal, createMemo, createEffect, onCleanup, For, Show } from "solid-js";
 import { invoke } from "../lib/ipc";
+import { IPC } from "../../electron/ipc/channels";
 import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
 import { getStatusColor } from "../lib/status-colors";
@@ -46,7 +47,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
       if (!path || inFlight) return;
       inFlight = true;
       try {
-        const result = await invoke<ChangedFile[]>("get_changed_files", {
+        const result = await invoke<ChangedFile[]>(IPC.GetChangedFiles, {
           worktreePath: path,
         });
         if (!cancelled) setFiles(result);

@@ -1,5 +1,6 @@
 import { createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import { invoke } from "../lib/ipc";
+import { IPC } from "../../electron/ipc/channels";
 import {
   sendPrompt,
   registerFocusFn,
@@ -227,7 +228,7 @@ export function PromptInput(props: PromptInputProps) {
     const val = text().trim();
     if (!val) {
       if (mode === "auto") return;
-      await invoke("write_to_agent", { agentId: props.agentId, data: "\r" });
+      await invoke(IPC.WriteToAgent, { agentId: props.agentId, data: "\r" });
       return;
     }
 

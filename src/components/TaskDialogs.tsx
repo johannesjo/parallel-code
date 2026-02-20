@@ -1,5 +1,6 @@
 import { Show, For, createSignal, createResource, createEffect } from "solid-js";
 import { invoke } from "../lib/ipc";
+import { IPC } from "../../electron/ipc/channels";
 import {
   closeTask,
   mergeTask,
@@ -46,15 +47,15 @@ export function TaskDialogs(props: TaskDialogsProps) {
   // --- Resources ---
   const [branchLog] = createResource(
     () => props.showMergeConfirm ? props.task.worktreePath : null,
-    (path) => invoke<string>("get_branch_log", { worktreePath: path }),
+    (path) => invoke<string>(IPC.GetBranchLog, { worktreePath: path }),
   );
   const [worktreeStatus] = createResource(
     () => (props.showMergeConfirm || (props.showCloseConfirm && !props.task.directMode)) ? props.task.worktreePath : null,
-    (path) => invoke<WorktreeStatus>("get_worktree_status", { worktreePath: path }),
+    (path) => invoke<WorktreeStatus>(IPC.GetWorktreeStatus, { worktreePath: path }),
   );
   const [mergeStatus, { refetch: refetchMergeStatus }] = createResource(
     () => props.showMergeConfirm ? props.task.worktreePath : null,
-    (path) => invoke<MergeStatus>("check_merge_status", { worktreePath: path }),
+    (path) => invoke<MergeStatus>(IPC.CheckMergeStatus, { worktreePath: path }),
   );
 
   const hasConflicts = () => (mergeStatus()?.conflicting_files.length ?? 0) > 0;
@@ -243,7 +244,7 @@ export function TaskDialogs(props: TaskDialogsProps) {
                         setRebaseError("");
                         setRebaseSuccess(false);
                         try {
-                          await invoke("rebase_task", { worktreePath: props.task.worktreePath });
+                          await invoke(IPC.RebaseTask, { worktreePath: props.task.worktreePath });
                           setRebaseSuccess(true);
                           refetchMergeStatus();
                         } catch (err) {

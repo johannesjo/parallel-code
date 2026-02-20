@@ -2,6 +2,7 @@ import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
 import { onMount, onCleanup, createEffect, Show, ErrorBoundary, createSignal } from "solid-js";
 import { invoke } from "./lib/ipc";
+import { IPC } from "../electron/ipc/channels";
 import { appWindow } from "./lib/window";
 import { confirm } from "./lib/dialog";
 import { Sidebar } from "./components/Sidebar";
@@ -187,7 +188,7 @@ function App() {
         return;
       }
 
-      const runningCount = await invoke<number>("count_running_agents").catch(() => 0);
+      const runningCount = await invoke<number>(IPC.CountRunningAgents).catch(() => 0);
       if (runningCount <= 0) return;
 
       event.preventDefault();
@@ -205,7 +206,7 @@ function App() {
         ).catch(() => false);
 
         if (shouldKill) {
-          await invoke("kill_all_agents").catch(console.error);
+          await invoke(IPC.KillAllAgents).catch(console.error);
           allowClose = true;
           await appWindow.close().catch(console.error);
           return;

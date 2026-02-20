@@ -1,5 +1,6 @@
 import { produce } from "solid-js/store";
 import { invoke } from "../lib/ipc";
+import { IPC } from "../../electron/ipc/channels";
 import { store, setStore } from "./core";
 import { randomPastelColor } from "./projects";
 import { markAgentSpawned } from "./taskStatus";
@@ -50,7 +51,7 @@ export async function saveState(): Promise<void> {
     };
   }
 
-  await invoke("save_app_state", { json: JSON.stringify(persisted) }).catch(
+  await invoke(IPC.SaveAppState, { json: JSON.stringify(persisted) }).catch(
     (e) => console.warn("Failed to save state:", e)
   );
 }
@@ -103,7 +104,7 @@ interface LegacyPersistedState {
 }
 
 export async function loadState(): Promise<void> {
-  const json = await invoke<string | null>("load_app_state").catch(() => null);
+  const json = await invoke<string | null>(IPC.LoadAppState).catch(() => null);
   if (!json) return;
 
   let raw: LegacyPersistedState;

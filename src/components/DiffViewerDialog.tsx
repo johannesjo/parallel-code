@@ -2,6 +2,7 @@ import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { Portal } from "solid-js/web";
 import { createFocusRestore } from "../lib/focus-restore";
 import { invoke } from "../lib/ipc";
+import { IPC } from "../../electron/ipc/channels";
 import { DiffView, DiffModeEnum } from "@git-diff-view/solid";
 import "@git-diff-view/solid/styles/diff-view.css";
 import { theme } from "../lib/theme";
@@ -84,7 +85,7 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
     setBinary(false);
     setRawDiff("");
 
-    invoke<string>("get_file_diff", {
+    invoke<string>(IPC.GetFileDiff, {
       worktreePath: props.worktreePath,
       filePath: file.path,
     })

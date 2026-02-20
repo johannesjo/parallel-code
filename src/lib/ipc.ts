@@ -1,5 +1,7 @@
 // Core IPC — wraps Electron's ipcRenderer for frontend-backend communication.
 
+import { IPC } from "../../electron/ipc/channels";
+
 declare global {
   interface Window {
     electron: {
@@ -39,7 +41,7 @@ export class Channel<T> {
 }
 
 export async function invoke<T>(
-  cmd: string,
+  cmd: IPC,
   args?: Record<string, unknown>
 ): Promise<T> {
   // JSON round-trip ensures all args are structured-clone-safe.

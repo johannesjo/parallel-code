@@ -1,6 +1,7 @@
 import { createSignal, createEffect, For, Show, onMount, onCleanup } from "solid-js";
 import { createFocusRestore } from "../lib/focus-restore";
 import { invoke } from "../lib/ipc";
+import { IPC } from "../../electron/ipc/channels";
 import { store, createTask, createDirectTask, toggleNewTaskDialog, loadAgents, getProjectPath, getProject, getProjectBranchPrefix, updateProject, hasDirectModeTask } from "../store/store";
 import { toBranchName, sanitizeBranchPrefix } from "../lib/branch-name";
 import { cleanTaskName } from "../lib/clean-task-name";
@@ -63,7 +64,7 @@ export function NewTaskDialog() {
 
     void (async () => {
       try {
-        const dirs = await invoke<string[]>("get_gitignored_dirs", { projectRoot: path });
+        const dirs = await invoke<string[]>(IPC.GetGitignoredDirs, { projectRoot: path });
         if (cancelled) return;
         setIgnoredDirs(dirs);
         setSelectedDirs(new Set(dirs)); // all checked by default
@@ -149,8 +150,8 @@ export function NewTaskDialog() {
       if (directMode()) {
         const projectPath = getProjectPath(projectId);
         if (!projectPath) { setError("Project path not found"); return; }
-        const mainBranch = await invoke<string>("get_main_branch", { projectRoot: projectPath });
-        const currentBranch = await invoke<string>("get_current_branch", { projectRoot: projectPath });
+        const mainBranch = await invoke<string>(IPC.GetMainBranch, { projectRoot: projectPath });
+        const currentBranch = await invoke<string>(IPC.GetCurrentBranch, { projectRoot: projectPath });
         if (currentBranch !== mainBranch) {
           setError(`Repository is on branch "${currentBranch}", not "${mainBranch}". Please checkout ${mainBranch} first.`);
           return;

@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { invoke, Channel } from "../lib/ipc";
+import { IPC } from "../../electron/ipc/channels";
 import { getTerminalFontFamily } from "../lib/fonts";
 import { getTerminalTheme } from "../lib/theme";
 import { matchesGlobalShortcut } from "../lib/shortcuts";
@@ -172,7 +173,7 @@ export function TerminalView(props: TerminalViewProps) {
         // Resume PTY reader when xterm.js has caught up
         if (watermark < FLOW_LOW && ptyPaused) {
           ptyPaused = false;
-          invoke("resume_agent", { agentId }).catch(() => { ptyPaused = false; });
+          invoke(IPC.ResumeAgent, { agentId }).catch(() => { ptyPaused = false; });
         }
 
         props.onData?.(statusPayload);
@@ -204,7 +205,7 @@ export function TerminalView(props: TerminalViewProps) {
       // Pause PTY reader when xterm.js falls behind
       if (watermark > FLOW_HIGH && !ptyPaused) {
         ptyPaused = true;
-        invoke("pause_agent", { agentId }).catch(() => { ptyPaused = false; });
+        invoke(IPC.PauseAgent, { agentId }).catch(() => { ptyPaused = false; });
       }
 
       // Flush large bursts promptly to keep perceived latency low.
@@ -247,7 +248,7 @@ export function TerminalView(props: TerminalViewProps) {
         clearTimeout(inputFlushTimer);
         inputFlushTimer = undefined;
       }
-      invoke("write_to_agent", { agentId, data });
+      invoke(IPC.WriteToAgent, { agentId, data });
     }
 
     function enqueueInput(data: string) {
@@ -297,7 +298,7 @@ export function TerminalView(props: TerminalViewProps) {
       if (cols === lastSentCols && rows === lastSentRows) return;
       lastSentCols = cols;
       lastSentRows = rows;
-      invoke("resize_agent", { agentId, cols, rows });
+      invoke(IPC.ResizeAgent, { agentId, cols, rows });
     }
 
     term.onResize(({ cols, rows }) => {
@@ -329,7 +330,7 @@ export function TerminalView(props: TerminalViewProps) {
       // WebGL2 not supported — DOM renderer used automatically
     }
 
-    invoke("spawn_agent", {
+    invoke(IPC.SpawnAgent, {
       taskId,
       agentId,
       command: props.command,
@@ -358,7 +359,7 @@ export function TerminalView(props: TerminalViewProps) {
       webglAddon = undefined;
       unregisterTerminal(agentId);
       // kill_agent already clears paused flag before killing
-      invoke("kill_agent", { agentId });
+      invoke(IPC.KillAgent, { agentId });
       term!.dispose();
     });
   });

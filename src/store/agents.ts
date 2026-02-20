@@ -1,5 +1,6 @@
 import { produce } from "solid-js/store";
 import { invoke } from "../lib/ipc";
+import { IPC } from "../../electron/ipc/channels";
 import { store, setStore } from "./core";
 import type { AgentDef } from "../ipc/types";
 import type { Agent } from "./types";
@@ -10,7 +11,7 @@ import {
 } from "./taskStatus";
 
 export async function loadAgents(): Promise<void> {
-  const agents = await invoke<AgentDef[]>("list_agents");
+  const agents = await invoke<AgentDef[]>(IPC.ListAgents);
   setStore("availableAgents", agents);
 }
 

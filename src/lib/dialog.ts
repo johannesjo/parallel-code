@@ -1,5 +1,7 @@
 // Dialog — wraps Electron dialog IPC calls.
 
+import { IPC } from "../../electron/ipc/channels";
+
 interface ConfirmOptions {
   title?: string;
   kind?: string;
@@ -11,7 +13,7 @@ export async function confirm(
   message: string,
   options?: ConfirmOptions
 ): Promise<boolean> {
-  return window.electron.ipcRenderer.invoke("__dialog_confirm", {
+  return window.electron.ipcRenderer.invoke(IPC.DialogConfirm, {
     message,
     ...options,
   }) as Promise<boolean>;
@@ -26,7 +28,7 @@ export async function openDialog(
   options?: OpenDialogOptions
 ): Promise<string | string[] | null> {
   return window.electron.ipcRenderer.invoke(
-    "__dialog_open",
+    IPC.DialogOpen,
     options
   ) as Promise<string | string[] | null>;
 }

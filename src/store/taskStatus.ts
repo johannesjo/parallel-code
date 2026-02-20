@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { invoke } from "../lib/ipc";
+import { IPC } from "../../electron/ipc/channels";
 import { store, setStore } from "./core";
 import type { WorktreeStatus } from "../ipc/types";
 
@@ -307,7 +308,7 @@ function tryAutoTrust(agentId: string, rawTail: string): boolean {
   // Short delay to let the TUI finish rendering before sending Enter.
   const timer = setTimeout(() => {
     autoTrustTimers.delete(agentId);
-    invoke("write_to_agent", { agentId, data: "\r" }).catch(() => {});
+    invoke(IPC.WriteToAgent, { agentId, data: "\r" }).catch(() => {});
     // Cooldown: ignore trust patterns for 3s so the same dialog
     // isn't re-matched while the PTY output transitions.
     const cd = setTimeout(() => autoTrustCooldowns.delete(agentId), 3_000);
@@ -517,7 +518,7 @@ async function refreshTaskGitStatus(taskId: string): Promise<void> {
   if (!task) return;
 
   try {
-    const status = await invoke<WorktreeStatus>("get_worktree_status", {
+    const status = await invoke<WorktreeStatus>(IPC.GetWorktreeStatus, {
       worktreePath: task.worktreePath,
     });
     setStore("taskGitStatus", taskId, status);

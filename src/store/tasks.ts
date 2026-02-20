@@ -1,5 +1,6 @@
 import { produce } from "solid-js/store";
 import { invoke } from "../lib/ipc";
+import { IPC } from "../../electron/ipc/channels";
 import { store, setStore, updateWindowTitle } from "./core";
 import { getProject, getProjectPath, getProjectBranchPrefix } from "./projects";
 import { setPendingShellCommand } from "../lib/bookmarks";
@@ -25,7 +26,7 @@ async function writeToAgentWhenReady(agentId: string, data: string): Promise<voi
 
   while (Date.now() <= deadline) {
     try {
-      await invoke("write_to_agent", { agentId, data });
+      await invoke(IPC.WriteToAgent, { agentId, data });
       return;
     } catch (err) {
       lastErr = err;
@@ -51,7 +52,7 @@ export async function createTask(
   if (!projectRoot) throw new Error("Project not found");
 
   const branchPrefix = branchPrefixOverride ?? getProjectBranchPrefix(projectId);
-  const result = await invoke<CreateTaskResult>("create_task", {
+  const result = await invoke<CreateTaskResult>(IPC.CreateTask, {
     name,
     projectRoot,
     symlinkDirs,
@@ -176,16 +177,16 @@ export async function closeTask(taskId: string): Promise<void> {
   try {
     // Kill agents
     for (const agentId of agentIds) {
-      await invoke("kill_agent", { agentId }).catch(console.error);
+      await invoke(IPC.KillAgent, { agentId }).catch(console.error);
     }
     for (const shellId of shellAgentIds) {
-      await invoke("kill_agent", { agentId: shellId }).catch(console.error);
+      await invoke(IPC.KillAgent, { agentId: shellId }).catch(console.error);
     }
 
     // Skip git cleanup for direct mode (no worktree/branch to remove)
     if (!task.directMode) {
       // Remove worktree + branch
-      await invoke("delete_task", {
+      await invoke(IPC.DeleteTask, {
         agentIds: [...agentIds, ...shellAgentIds],
         branchName,
         deleteBranch,
@@ -276,15 +277,15 @@ export async function mergeTask(
   if (cleanup) {
     // Closing task flow: stop all running terminals before cleanup.
     for (const agentId of agentIds) {
-      await invoke("kill_agent", { agentId }).catch(console.error);
+      await invoke(IPC.KillAgent, { agentId }).catch(console.error);
     }
     for (const shellId of shellAgentIds) {
-      await invoke("kill_agent", { agentId: shellId }).catch(console.error);
+      await invoke(IPC.KillAgent, { agentId: shellId }).catch(console.error);
     }
   }
 
   // Merge branch into main. Cleanup is optional.
-  const mergeResult = await invoke<MergeResult>("merge_task", {
+  const mergeResult = await invoke<MergeResult>(IPC.MergeTask, {
     projectRoot,
     branchName,
     squash: options?.squash ?? false,
@@ -306,7 +307,7 @@ export async function pushTask(taskId: string): Promise<void> {
   const projectRoot = getProjectPath(task.projectId);
   if (!projectRoot) return;
 
-  await invoke("push_task", {
+  await invoke(IPC.PushTask, {
     projectRoot,
     branchName: task.branchName,
   });
@@ -366,7 +367,7 @@ export function spawnShellForTask(taskId: string, initialCommand?: string): stri
 }
 
 export async function closeShell(taskId: string, shellId: string): Promise<void> {
-  await invoke("kill_agent", { agentId: shellId }).catch(() => {});
+  await invoke(IPC.KillAgent, { agentId: shellId }).catch(() => {});
   clearAgentActivity(shellId);
   setStore(
     produce((s) => {
