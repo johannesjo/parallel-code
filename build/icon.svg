@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <rect width="1024" height="1024" rx="200" fill="#121820"/>
+  <rect width="1024" height="1024" rx="200" fill="#000000"/>
   <g transform="translate(200, 140) scale(11.14)" fill="none" stroke="#2ec8ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
     <!-- Parallel lines -->
     <line x1="10" y1="6" x2="10" y2="50"/>
