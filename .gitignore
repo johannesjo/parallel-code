@@ -4,3 +4,4 @@ src-tauri/target
 .worktrees
 .idea
 .claude
+dist-electron
