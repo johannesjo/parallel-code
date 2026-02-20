@@ -102,7 +102,7 @@ jobs:
           APPLE_API_KEY: ~/private_keys/AuthKey.p8
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: npm run build -- --universal
+        run: npm run build -- --universal --publish never
 
       - name: Upload artifacts
         uses: softprops/action-gh-release@v2
