@@ -56,7 +56,6 @@
         "AppImage",
         "deb"
       ],
-      "desktopName": "com.parallel-code.app.desktop",
       "category": "Development"
     },
     "win": {
