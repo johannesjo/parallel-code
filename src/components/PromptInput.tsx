@@ -35,10 +35,10 @@ interface PromptInputProps {
 }
 
 // Quiescence: how often to snapshot and how long output must be stable.
-const QUIESCENCE_POLL_MS = 1_000;
-const QUIESCENCE_THRESHOLD_MS = 2_500;
+const QUIESCENCE_POLL_MS = 500;
+const QUIESCENCE_THRESHOLD_MS = 1_500;
 // Never auto-send before this (agent still booting).
-const AUTOSEND_MIN_WAIT_MS = 1_000;
+const AUTOSEND_MIN_WAIT_MS = 500;
 // Give up after this.
 const AUTOSEND_MAX_WAIT_MS = 45_000;
 // After sending, how long to poll terminal output to confirm the prompt appeared.
