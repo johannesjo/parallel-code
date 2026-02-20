@@ -52,9 +52,6 @@ jobs:
   build-macos:
     needs: create-release
     runs-on: macos-latest
-    strategy:
-      matrix:
-        arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v4
 
@@ -105,7 +102,7 @@ jobs:
           APPLE_API_KEY: ~/private_keys/AuthKey.p8
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: npm run build -- --${{ matrix.arch }}
+        run: npm run build -- --universal
 
       - name: Upload artifacts
         uses: softprops/action-gh-release@v2
