@@ -3,6 +3,7 @@ import solid from "vite-plugin-solid";
 import path from "path";
 
 export default defineConfig({
+  base: "./",
   plugins: [solid()],
   clearScreen: false,
   server: {
