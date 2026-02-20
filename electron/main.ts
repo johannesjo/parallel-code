@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, shell } from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
@@ -45,6 +45,31 @@ function createWindow() {
   });
 
   registerAllHandlers(mainWindow);
+
+  // Open links in external browser instead of inside Electron
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("http:") || url.startsWith("https:")) {
+      shell.openExternal(url).catch(() => {});
+    }
+    return { action: "deny" };
+  });
+
+  const devOrigin = process.env.VITE_DEV_SERVER_URL;
+  let allowedOrigin: string | undefined;
+  try {
+    if (devOrigin) allowedOrigin = new URL(devOrigin).origin;
+  } catch {
+    // Malformed dev URL — skip origin allowlist
+  }
+
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (allowedOrigin && url.startsWith(allowedOrigin)) return;
+    if (url.startsWith("file://")) return;
+    event.preventDefault();
+    if (url.startsWith("http:") || url.startsWith("https:")) {
+      shell.openExternal(url).catch(() => {});
+    }
+  });
 
   // Inject CSS to make data-tauri-drag-region work in Electron
   mainWindow.webContents.on("did-finish-load", () => {
