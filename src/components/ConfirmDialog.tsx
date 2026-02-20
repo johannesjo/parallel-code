@@ -1,5 +1,6 @@
 import { Show, createEffect, onCleanup, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
+import { createFocusRestore } from "../lib/focus-restore";
 import { theme } from "../lib/theme";
 
 interface ConfirmDialogProps {
@@ -20,6 +21,8 @@ interface ConfirmDialogProps {
 export function ConfirmDialog(props: ConfirmDialogProps) {
   let dialogRef: HTMLDivElement | undefined;
   let cancelRef: HTMLButtonElement | undefined;
+
+  createFocusRestore(() => props.open);
 
   createEffect(() => {
     if (!props.open) return;

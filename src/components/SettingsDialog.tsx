@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo } from "solid-js";
 import { Portal } from "solid-js/web";
+import { createFocusRestore } from "../lib/focus-restore";
 import { getAvailableTerminalFonts, getTerminalFontFamily, LIGATURE_FONTS } from "../lib/fonts";
 import { LOOK_PRESETS } from "../lib/look";
 import { theme } from "../lib/theme";
@@ -14,6 +15,8 @@ interface SettingsDialogProps {
 
 export function SettingsDialog(props: SettingsDialogProps) {
   let dialogRef: HTMLDivElement | undefined;
+
+  createFocusRestore(() => props.open);
 
   const fonts = createMemo<TerminalFont[]>(() => {
     const available = getAvailableTerminalFonts();

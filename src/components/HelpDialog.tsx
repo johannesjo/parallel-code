@@ -1,5 +1,6 @@
 import { Show, createEffect } from "solid-js";
 import { Portal } from "solid-js/web";
+import { createFocusRestore } from "../lib/focus-restore";
 import { theme } from "../lib/theme";
 import { alt, mod } from "../lib/platform";
 
@@ -47,6 +48,8 @@ const SECTIONS = [
 
 export function HelpDialog(props: HelpDialogProps) {
   let dialogRef: HTMLDivElement | undefined;
+
+  createFocusRestore(() => props.open);
 
   createEffect(() => {
     if (props.open) {

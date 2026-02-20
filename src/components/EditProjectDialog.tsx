@@ -1,5 +1,6 @@
 import { createSignal, createEffect, onCleanup, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import { createFocusRestore } from "../lib/focus-restore";
 import { updateProject, PASTEL_HUES } from "../store/store";
 import { sanitizeBranchPrefix, toBranchName } from "../lib/branch-name";
 import { theme } from "../lib/theme";
@@ -16,6 +17,8 @@ function hueFromColor(color: string): number {
 }
 
 export function EditProjectDialog(props: EditProjectDialogProps) {
+  createFocusRestore(() => props.project !== null);
+
   const [name, setName] = createSignal("");
   const [selectedHue, setSelectedHue] = createSignal(0);
   const [branchPrefix, setBranchPrefix] = createSignal("task");

@@ -1,5 +1,6 @@
 import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { Portal } from "solid-js/web";
+import { createFocusRestore } from "../lib/focus-restore";
 import { invoke } from "../lib/ipc";
 import { DiffView, DiffModeEnum } from "@git-diff-view/solid";
 import "@git-diff-view/solid/styles/diff-view.css";
@@ -66,6 +67,8 @@ function detectLang(filePath: string): string {
 }
 
 export function DiffViewerDialog(props: DiffViewerDialogProps) {
+  createFocusRestore(() => props.file !== null);
+
   const [rawDiff, setRawDiff] = createSignal("");
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal("");

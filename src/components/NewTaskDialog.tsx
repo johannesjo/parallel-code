@@ -1,4 +1,5 @@
 import { createSignal, createEffect, For, Show, onMount, onCleanup } from "solid-js";
+import { createFocusRestore } from "../lib/focus-restore";
 import { invoke } from "../lib/ipc";
 import { store, createTask, createDirectTask, toggleNewTaskDialog, loadAgents, getProjectPath, getProject, getProjectBranchPrefix, updateProject, hasDirectModeTask } from "../store/store";
 import { toBranchName, sanitizeBranchPrefix } from "../lib/branch-name";
@@ -7,6 +8,10 @@ import { theme } from "../lib/theme";
 import type { AgentDef } from "../ipc/types";
 
 export function NewTaskDialog() {
+  // NewTaskDialog is conditionally rendered (unmounts on close),
+  // so pass a constant true — focus is saved on mount, restored on cleanup.
+  createFocusRestore(() => true);
+
   const [prompt, setPrompt] = createSignal("");
   const [name, setName] = createSignal("");
   const [selectedAgent, setSelectedAgent] = createSignal<AgentDef | null>(null);
