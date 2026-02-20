@@ -164,6 +164,14 @@ export function looksLikeQuestion(tail: string): boolean {
   const chunk = visible.slice(-500);
   const lines = chunk.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length === 0) return false;
+
+  // If the last visible line is a known agent main prompt (❯ or ›), any
+  // earlier question/trust dialog text in the buffer has already been
+  // answered — this is not a live question.  TUI selection UIs also use ❯
+  // but always followed by option text (e.g. "❯ Yes"), so they won't match.
+  const lastLine = lines[lines.length - 1].trimEnd();
+  if (/^\s*[❯›]\s*$/.test(lastLine)) return false;
+
   return lines.some((line) => {
     const trimmed = line.trimEnd();
     if (trimmed.length === 0) return false;
