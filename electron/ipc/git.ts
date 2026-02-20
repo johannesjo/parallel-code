@@ -189,7 +189,7 @@ export async function createWorktree(
   branchName: string,
   symlinkDirs: string[]
 ): Promise<{ path: string; branch: string }> {
-  const worktreePath = `${repoRoot}/.git/pc-worktrees/${branchName}`;
+  const worktreePath = `${repoRoot}/.worktrees/${branchName}`;
 
   // Try -b first (new branch), fall back to existing branch
   try {
@@ -217,7 +217,7 @@ export async function removeWorktree(
   branchName: string,
   deleteBranch: boolean
 ): Promise<void> {
-  const worktreePath = `${repoRoot}/.git/pc-worktrees/${branchName}`;
+  const worktreePath = `${repoRoot}/.worktrees/${branchName}`;
 
   if (!fs.existsSync(repoRoot)) return;
 

@@ -2,6 +2,7 @@ node_modules
 dist
 dist-electron
 release
+.worktrees
 .idea
 .claude
 .DS_Store
