@@ -125,6 +125,10 @@ export function TerminalView(props: TerminalViewProps) {
     let outputQueue: Uint8Array[] = [];
     let outputQueuedBytes = 0;
     let outputWriteInFlight = false;
+    let watermark = 0;
+    let ptyPaused = false;
+    const FLOW_HIGH = 256 * 1024; // 256KB — pause PTY reader
+    const FLOW_LOW = 32 * 1024;   // 32KB — resume PTY reader
     let pendingExitPayload:
       | { exit_code: number | null; signal: string | null; last_output: string[] }
       | null = null;
@@ -163,6 +167,14 @@ export function TerminalView(props: TerminalViewProps) {
       outputWriteInFlight = true;
       term.write(payload, () => {
         outputWriteInFlight = false;
+        watermark = Math.max(watermark - payload.length, 0);
+
+        // Resume PTY reader when xterm.js has caught up
+        if (watermark < FLOW_LOW && ptyPaused) {
+          ptyPaused = false;
+          invoke("resume_agent", { agentId });
+        }
+
         props.onData?.(statusPayload);
         if (outputQueue.length > 0) {
           scheduleOutputFlush();
@@ -187,6 +199,14 @@ export function TerminalView(props: TerminalViewProps) {
     function enqueueOutput(chunk: Uint8Array) {
       outputQueue.push(chunk);
       outputQueuedBytes += chunk.length;
+      watermark += chunk.length;
+
+      // Pause PTY reader when xterm.js falls behind
+      if (watermark > FLOW_HIGH && !ptyPaused) {
+        ptyPaused = true;
+        invoke("pause_agent", { agentId });
+      }
+
       // Flush large bursts promptly to keep perceived latency low.
       if (outputQueuedBytes >= 64 * 1024) {
         flushOutputQueue();
@@ -337,6 +357,7 @@ export function TerminalView(props: TerminalViewProps) {
       webglAddon?.dispose();
       webglAddon = undefined;
       unregisterTerminal(agentId);
+      if (ptyPaused) invoke("resume_agent", { agentId });
       invoke("kill_agent", { agentId });
       term!.dispose();
     });
