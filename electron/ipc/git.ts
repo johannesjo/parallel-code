@@ -84,7 +84,14 @@ async function detectMainBranchUncached(repoRoot: string): Promise<string> {
     return "master";
   } catch { /* ignore */ }
 
-  throw new Error("Could not find main or master branch");
+  // Empty repo (no commits yet) — use configured default branch or fall back to "main"
+  try {
+    const { stdout } = await exec("git", ["config", "--get", "init.defaultBranch"], { cwd: repoRoot });
+    const configured = stdout.trim();
+    if (configured) return configured;
+  } catch { /* ignore */ }
+
+  return "main";
 }
 
 async function getCurrentBranchName(repoRoot: string): Promise<string> {
