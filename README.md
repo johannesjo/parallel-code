@@ -18,17 +18,23 @@ Parallel Code lets you dispatch tasks to AI coding agents — Claude Code, Codex
 
 ## Features
 
-- Run Claude Code, Codex CLI, and Gemini CLI in parallel
-- Each task gets an isolated git branch and worktree — no conflicts
+### One app for every AI coding CLI
+Use [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) from the same interface. Switch between agents per task, or run all three at once — no juggling terminal windows.
+
+### Automatic branches and worktrees
+Every task gets its own git branch and [worktree](https://git-scm.com/docs/git-worktree) instantly. Agents work in full isolation — no conflicts, no stashing, no waiting. Five agents, five features, one repo. Merge back to main when you're done.
+
+### Keyboard-first, zero friction
+Navigate panels, create tasks, send prompts, merge branches, push to remote — all without touching the mouse. Every action has a shortcut, and `Ctrl+/` shows them all.
+
+### And more
 - Tiled panel layout with drag-to-reorder
 - Built-in diff viewer and changed files list per task
-- Merge to main or push to remote from the UI
 - Shell terminals per task, scoped to the worktree
 - Direct mode for working on the main branch without isolation
 - Six themes — Minimal, Graphite, Classic, Indigo, Ember, Glacier
-- Keyboard-driven — navigate everything without touching the mouse
 - State persists across restarts
-- Cross-platform (macOS, Linux)
+- macOS and Linux
 
 ## Getting Started
 
@@ -60,16 +66,31 @@ This means you can have five agents working on five different features at the sa
 
 ## Keyboard Shortcuts
 
+`Ctrl` = `Cmd` on macOS.
+
 | Shortcut | Action |
 | --- | --- |
+| **Tasks** | |
 | `Ctrl+N` | New task |
+| `Ctrl+Shift+A` | New task (alternative) |
 | `Ctrl+Enter` | Send prompt |
-| `Alt+Arrows` | Navigate panels |
 | `Ctrl+Shift+M` | Merge task to main |
 | `Ctrl+Shift+P` | Push to remote |
-| `Ctrl+Shift+T` | New shell terminal |
+| `Ctrl+W` | Close focused terminal session |
+| `Ctrl+Shift+W` | Close active task |
+| **Navigation** | |
+| `Alt+Arrows` | Navigate between panels |
+| `Ctrl+Alt+Left/Right` | Reorder active task |
 | `Ctrl+B` | Toggle sidebar |
-| `Ctrl+/` | All shortcuts |
+| **Terminals** | |
+| `Ctrl+Shift+T` | New shell terminal |
+| `Ctrl+Shift+D` | New standalone terminal |
+| **App** | |
+| `Ctrl+,` | Open settings |
+| `Ctrl+/` or `F1` | Show all shortcuts |
+| `Ctrl+0` | Reset zoom |
+| `Ctrl+Scroll` | Adjust zoom |
+| `Escape` | Close dialog |
 
 ## Built With
 
