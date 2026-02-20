@@ -187,7 +187,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
     e.preventDefault();
     if (!win.isDestroyed()) {
       win.webContents.send(IPC.WindowCloseRequested);
-      // Fallback: force-close if renderer doesn't respond within 5 seconds
+      // Fallback: force-close if renderer doesn't respond within 5 seconds.
+      // If the renderer calls WindowForceClose first, win.isDestroyed()
+      // will be true and this is a no-op.
       setTimeout(() => {
         if (!win.isDestroyed()) win.destroy();
       }, 5_000);

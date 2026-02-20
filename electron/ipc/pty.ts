@@ -34,9 +34,11 @@ export function spawnAgent(
   const command = args.command || process.env.SHELL || "/bin/sh";
   const cwd = args.cwd || process.env.HOME || "/";
 
-  // Validate command is an absolute path
-  if (!command.startsWith("/")) {
-    throw new Error(`Command must be an absolute path, got: ${command}`);
+  // Reject commands with shell metacharacters (node-pty uses execvp, but
+  // guard against accidental misuse). Allow bare names (resolved via PATH)
+  // and absolute paths.
+  if (/[;&|`$(){}\n]/.test(command)) {
+    throw new Error(`Command contains disallowed characters: ${command}`);
   }
 
   const filteredEnv: Record<string, string> = {};
