@@ -861,11 +861,14 @@ export function TaskPanel(props: TaskPanelProps) {
                           props.isActive && store.focusedPanel[props.task.id] === 'ai-terminal'
                         }
                         command={a().def.command}
-                        args={
-                          a().resumed && a().def.resume_args?.length
+                        args={[
+                          ...(a().resumed && a().def.resume_args?.length
                             ? a().def.resume_args!
-                            : a().def.args
-                        }
+                            : a().def.args),
+                          ...(props.task.skipPermissions && a().def.skip_permissions_args?.length
+                            ? a().def.skip_permissions_args!
+                            : []),
+                        ]}
                         cwd={props.task.worktreePath}
                         onExit={(code) => markAgentExited(a().id, code)}
                         onData={(data) => markAgentOutput(a().id, data, props.task.id)}

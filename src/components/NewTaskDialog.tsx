@@ -39,6 +39,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   const [ignoredDirs, setIgnoredDirs] = createSignal<string[]>([]);
   const [selectedDirs, setSelectedDirs] = createSignal<Set<string>>(new Set());
   const [directMode, setDirectMode] = createSignal(false);
+  const [skipPermissions, setSkipPermissions] = createSignal(false);
   const [branchPrefix, setBranchPrefix] = createSignal('');
   let projectMenuRef!: HTMLDivElement;
   let promptRef!: HTMLTextAreaElement;
@@ -169,6 +170,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     setLoading(false);
     setProjectMenuOpen(false);
     setDirectMode(false);
+    setSkipPermissions(false);
 
     void (async () => {
       if (store.availableAgents.length === 0) {
@@ -295,6 +297,11 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     return pid ? hasDirectModeTask(pid) : false;
   };
 
+  const agentSupportsSkipPermissions = () => {
+    const agent = selectedAgent();
+    return !!agent?.skip_permissions_args?.length;
+  };
+
   const canSubmit = () => {
     const hasContent = !!effectiveName();
     return hasContent && !!selectedProjectId() && !loading();
@@ -352,6 +359,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           mainBranch,
           isFromDrop ? undefined : p,
           ghUrl,
+          agentSupportsSkipPermissions() && skipPermissions(),
         );
       } else {
         taskId = await createTask(
@@ -362,6 +370,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           isFromDrop ? undefined : p,
           prefix,
           ghUrl,
+          agentSupportsSkipPermissions() && skipPermissions(),
         );
       }
       // Drop flow: prefill prompt without auto-sending
@@ -856,6 +865,45 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
             </div>
           </Show>
         </div>
+
+        {/* Skip permissions toggle */}
+        <Show when={agentSupportsSkipPermissions()}>
+          <div data-nav-field="skip-permissions" style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+            <label
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                gap: '8px',
+                'font-size': '12px',
+                color: theme.fg,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={skipPermissions()}
+                onChange={(e) => setSkipPermissions(e.currentTarget.checked)}
+                style={{ 'accent-color': theme.accent, cursor: 'inherit' }}
+              />
+              Dangerously skip all confirms
+            </label>
+            <Show when={skipPermissions()}>
+              <div
+                style={{
+                  'font-size': '12px',
+                  color: theme.warning,
+                  background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
+                  padding: '8px 12px',
+                  'border-radius': '8px',
+                  border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
+                }}
+              >
+                The agent will run without asking for confirmation. It can read, write, and delete
+                files, and execute commands without your approval.
+              </div>
+            </Show>
+          </div>
+        </Show>
 
         <Show when={ignoredDirs().length > 0 && !directMode()}>
           <div data-nav-field="symlink-dirs" style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>

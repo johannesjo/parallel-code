@@ -50,6 +50,7 @@ export async function createTask(
   initialPrompt?: string,
   branchPrefixOverride?: string,
   githubUrl?: string,
+  skipPermissions?: boolean,
 ): Promise<string> {
   const projectRoot = getProjectPath(projectId);
   if (!projectRoot) throw new Error('Project not found');
@@ -74,6 +75,7 @@ export async function createTask(
     notes: '',
     lastPrompt: '',
     initialPrompt: initialPrompt || undefined,
+    skipPermissions: skipPermissions || undefined,
     githubUrl,
     savedInitialPrompt: initialPrompt || undefined,
   };
@@ -116,6 +118,7 @@ export async function createDirectTask(
   mainBranch: string,
   initialPrompt?: string,
   githubUrl?: string,
+  skipPermissions?: boolean,
 ): Promise<string> {
   if (hasDirectModeTask(projectId)) {
     throw new Error('A direct-mode task already exists for this project');
@@ -139,6 +142,7 @@ export async function createDirectTask(
     initialPrompt: initialPrompt || undefined,
     savedInitialPrompt: initialPrompt || undefined,
     directMode: true,
+    skipPermissions: skipPermissions || undefined,
     githubUrl,
   };
 

@@ -57,6 +57,7 @@ export async function saveState(): Promise<void> {
       shellCount: task.shellAgentIds.length,
       agentDef: firstAgent?.def ?? null,
       directMode: task.directMode,
+      skipPermissions: task.skipPermissions,
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
     };
@@ -235,10 +236,13 @@ export async function loadState(): Promise<void> {
         const agentId = crypto.randomUUID();
         const agentDef = pt.agentDef;
 
-        // Enrich with resume_args from fresh defaults (handles old state files)
-        if (agentDef && !agentDef.resume_args) {
+        // Enrich with resume_args/skip_permissions_args from fresh defaults (handles old state files)
+        if (agentDef) {
           const fresh = s.availableAgents.find((a) => a.id === agentDef.id);
-          if (fresh) agentDef.resume_args = fresh.resume_args;
+          if (fresh) {
+            if (!agentDef.resume_args) agentDef.resume_args = fresh.resume_args;
+            if (!agentDef.skip_permissions_args) agentDef.skip_permissions_args = fresh.skip_permissions_args;
+          }
         }
 
         const shellAgentIds: string[] = [];
@@ -257,6 +261,7 @@ export async function loadState(): Promise<void> {
           notes: pt.notes,
           lastPrompt: pt.lastPrompt,
           directMode: pt.directMode,
+          skipPermissions: pt.skipPermissions === true,
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
         };

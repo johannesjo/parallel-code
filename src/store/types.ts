@@ -45,6 +45,7 @@ export interface Task {
   closingStatus?: 'closing' | 'removing' | 'error';
   closingError?: string;
   directMode?: boolean;
+  skipPermissions?: boolean;
   githubUrl?: string;
 }
 
@@ -66,6 +67,7 @@ export interface PersistedTask {
   shellCount: number;
   agentDef: AgentDef | null;
   directMode?: boolean;
+  skipPermissions?: boolean;
   githubUrl?: string;
   savedInitialPrompt?: string;
 }

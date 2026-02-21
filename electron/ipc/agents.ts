@@ -4,6 +4,7 @@ interface AgentDef {
   command: string;
   args: string[];
   resume_args: string[];
+  skip_permissions_args: string[];
   description: string;
 }
 
@@ -14,6 +15,7 @@ const DEFAULT_AGENTS: AgentDef[] = [
     command: 'claude',
     args: [],
     resume_args: ['--continue'],
+    skip_permissions_args: ['--dangerously-skip-permissions'],
     description: "Anthropic's Claude Code CLI agent",
   },
   {
@@ -22,6 +24,7 @@ const DEFAULT_AGENTS: AgentDef[] = [
     command: 'codex',
     args: [],
     resume_args: ['resume', '--last'],
+    skip_permissions_args: ['--full-auto'],
     description: "OpenAI's Codex CLI agent",
   },
   {
@@ -30,6 +33,7 @@ const DEFAULT_AGENTS: AgentDef[] = [
     command: 'gemini',
     args: [],
     resume_args: ['--resume', 'latest'],
+    skip_permissions_args: ['--yolo'],
     description: "Google's Gemini CLI agent",
   },
 ];
