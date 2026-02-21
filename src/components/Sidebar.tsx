@@ -611,7 +611,7 @@ export function Sidebar() {
 
         {/* Connect / Disconnect Phone button */}
         {(() => {
-          const connected = () => store.remoteAccess.enabled;
+          const connected = () => store.remoteAccess.enabled && store.remoteAccess.connectedClients > 0;
           const accent = () => connected() ? theme.error : theme.fgMuted;
           return (
             <button
