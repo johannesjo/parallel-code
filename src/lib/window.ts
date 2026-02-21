@@ -125,7 +125,8 @@ class AppWindow {
           if (!prevented) {
             window.electron.ipcRenderer.invoke(IPC.WindowForceClose);
           }
-        }).catch(() => {
+        }).catch((err) => {
+          console.error("Close handler failed, force-closing:", err);
           window.electron.ipcRenderer.invoke(IPC.WindowForceClose);
         });
       } else if (!prevented) {

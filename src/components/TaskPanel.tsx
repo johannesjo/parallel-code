@@ -40,6 +40,7 @@ import { theme } from "../lib/theme";
 import { sf } from "../lib/fontScale";
 import { mod } from "../lib/platform";
 import { extractLabel, consumePendingShellCommand } from "../lib/bookmarks";
+import { handleDragReorder } from "../lib/dragReorder";
 import type { Task } from "../store/types";
 import type { ChangedFile } from "../ipc/types";
 
@@ -140,105 +141,13 @@ export function TaskPanel(props: TaskPanelProps) {
 
   const firstAgentId = () => props.task.agentIds[0] ?? "";
 
-  const DRAG_THRESHOLD = 5;
-
   function handleTitleMouseDown(e: MouseEvent) {
-    if (e.button !== 0) return;
-    const target = e.target as HTMLElement;
-    if (target.closest("button") || target.tagName === "INPUT") return;
-
-    e.preventDefault();
-    const startX = e.clientX;
-    const titleBarEl = e.currentTarget as HTMLElement;
-    const draggedCol = titleBarEl.closest("[data-task-id]") as HTMLElement;
-    // DOM: ResizablePanel root > size-wrapper div > [data-task-id]
-    const sizeWrapper = draggedCol.parentElement;
-    const columnsContainer = sizeWrapper?.parentElement as HTMLElement;
-    if (!columnsContainer) return;
-
-    let dragging = false;
-    let lastDropIdx = -1;
-    let indicator: HTMLElement | null = null;
-
-    function getColumns(): HTMLElement[] {
-      return Array.from(columnsContainer.querySelectorAll<HTMLElement>("[data-task-id]"));
-    }
-
-    function computeDropIndex(clientX: number): number {
-      const columns = getColumns();
-      for (let i = 0; i < columns.length; i++) {
-        const rect = columns[i].getBoundingClientRect();
-        const midX = rect.left + rect.width / 2;
-        if (clientX < midX) return i;
-      }
-      return columns.length;
-    }
-
-    function positionIndicator(dropIdx: number) {
-      if (!indicator) return;
-      const columns = getColumns();
-      const containerRect = columnsContainer.getBoundingClientRect();
-      let x: number;
-
-      if (dropIdx < columns.length) {
-        // Get the wrapper div (parent of [data-task-id]) for accurate edge position
-        const wrapper = columns[dropIdx].parentElement!;
-        x = wrapper.getBoundingClientRect().left;
-      } else if (columns.length > 0) {
-        const wrapper = columns[columns.length - 1].parentElement!;
-        const rect = wrapper.getBoundingClientRect();
-        x = rect.right;
-      } else {
-        x = containerRect.left;
-      }
-
-      indicator.style.left = `${x - 1}px`;
-      indicator.style.top = `${containerRect.top}px`;
-      indicator.style.height = `${containerRect.height}px`;
-    }
-
-    function onMove(ev: MouseEvent) {
-      if (!dragging && Math.abs(ev.clientX - startX) < DRAG_THRESHOLD) return;
-
-      if (!dragging) {
-        dragging = true;
-        document.body.classList.add("dragging-task");
-        draggedCol.style.opacity = "0.4";
-
-        indicator = document.createElement("div");
-        indicator.className = "drag-drop-indicator";
-        document.body.appendChild(indicator);
-      }
-
-      const dropIdx = computeDropIndex(ev.clientX);
-      if (dropIdx !== lastDropIdx) {
-        lastDropIdx = dropIdx;
-        positionIndicator(dropIdx);
-      }
-    }
-
-    function onUp() {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-
-      if (dragging) {
-        document.body.classList.remove("dragging-task");
-        draggedCol.style.opacity = "";
-        indicator?.remove();
-        indicator = null;
-
-        const fromIdx = store.taskOrder.indexOf(props.task.id);
-        if (fromIdx !== -1 && lastDropIdx !== -1 && fromIdx !== lastDropIdx) {
-          const adjustedTo = lastDropIdx > fromIdx ? lastDropIdx - 1 : lastDropIdx;
-          reorderTask(fromIdx, adjustedTo);
-        }
-      } else {
-        setActiveTask(props.task.id);
-      }
-    }
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    handleDragReorder(e, {
+      itemId: props.task.id,
+      getTaskOrder: () => store.taskOrder,
+      onReorder: reorderTask,
+      onTap: () => setActiveTask(props.task.id),
+    });
   }
 
   function titleBar(): PanelChild {

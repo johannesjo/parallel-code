@@ -35,6 +35,18 @@ function validatePath(p: unknown, label: string): void {
   if (p.includes("..")) throw new Error(`${label} must not contain ".."`);
 }
 
+/** Reject relative paths that attempt directory traversal. */
+function validateRelativePath(p: unknown, label: string): void {
+  if (typeof p !== "string") throw new Error(`${label} must be a string`);
+  if (p.includes("..")) throw new Error(`${label} must not contain ".."`);
+}
+
+/** Reject branch names that could be misinterpreted as git flags. */
+function validateBranchName(name: unknown, label: string): void {
+  if (typeof name !== "string" || !name) throw new Error(`${label} must be a non-empty string`);
+  if (name.startsWith("-")) throw new Error(`${label} must not start with "-"`);
+}
+
 export function registerAllHandlers(win: BrowserWindow): void {
   // --- PTY commands ---
   ipcMain.handle(IPC.SpawnAgent, (_e, args) => {
@@ -59,6 +71,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.DeleteTask, (_e, args) => {
     validatePath(args.projectRoot, "projectRoot");
+    validateBranchName(args.branchName, "branchName");
     return deleteTask(args.agentIds, args.branchName, args.deleteBranch, args.projectRoot);
   });
 
@@ -69,6 +82,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.GetFileDiff, (_e, args) => {
     validatePath(args.worktreePath, "worktreePath");
+    validateRelativePath(args.filePath, "filePath");
     return getFileDiff(args.worktreePath, args.filePath);
   });
   ipcMain.handle(IPC.GetGitignoredDirs, (_e, args) => {
@@ -85,6 +99,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.MergeTask, (_e, args) => {
     validatePath(args.projectRoot, "projectRoot");
+    validateBranchName(args.branchName, "branchName");
     return mergeTask(args.projectRoot, args.branchName, args.squash, args.message, args.cleanup);
   });
   ipcMain.handle(IPC.GetBranchLog, (_e, args) => {
@@ -93,6 +108,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.PushTask, (_e, args) => {
     validatePath(args.projectRoot, "projectRoot");
+    validateBranchName(args.branchName, "branchName");
     return pushTask(args.projectRoot, args.branchName);
   });
   ipcMain.handle(IPC.RebaseTask, (_e, args) => {
@@ -166,8 +182,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   // --- Shell/Opener ---
-  ipcMain.handle(IPC.ShellReveal, (_e, filePath) => {
-    shell.showItemInFolder(filePath as string);
+  ipcMain.handle(IPC.ShellReveal, (_e, args) => {
+    validatePath(args.filePath, "filePath");
+    shell.showItemInFolder(args.filePath);
   });
 
   // --- Forward window events to renderer ---

@@ -230,8 +230,6 @@ const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // question text at the top of the dialog isn't truncated away.
 const TAIL_BUFFER_MAX = 4096;
 const outputTailBuffers = new Map<string, string>();
-// Per-agent decoders so streaming multi-byte state doesn't corrupt across agents.
-const agentDecoders = new Map<string, TextDecoder>();
 
 // Per-agent timestamp of last expensive analysis (question/prompt detection).
 const lastAnalysisAt = new Map<string, number>();
@@ -273,7 +271,6 @@ function resetIdleTimer(agentId: string): void {
  *  Ensures agents start as "busy" before any PTY data arrives. */
 export function markAgentSpawned(agentId: string): void {
   outputTailBuffers.delete(agentId);
-  agentDecoders.delete(agentId);
   clearAutoTrustState(agentId);
   // Reset analysis throttle state for fresh session.
   lastAnalysisAt.delete(agentId);
@@ -363,15 +360,9 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
   const now = Date.now();
   lastDataAt.set(agentId, now);
 
-  // Decode and append to tail buffer for prompt detection.
-  let decoder = agentDecoders.get(agentId);
-  if (!decoder) {
-    decoder = new TextDecoder();
-    agentDecoders.set(agentId, decoder);
-  }
   // Decode each chunk independently: TerminalView may pass only a tail slice
   // for performance, so streaming decoder state would be invalid here.
-  const text = decoder.decode(data);
+  const text = new TextDecoder().decode(data);
   const prev = outputTailBuffers.get(agentId) ?? "";
   const combined = prev + text;
   outputTailBuffers.set(
@@ -483,7 +474,6 @@ export function clearAgentActivity(agentId: string): void {
   lastDataAt.delete(agentId);
   lastIdleResetAt.delete(agentId);
   outputTailBuffers.delete(agentId);
-  agentDecoders.delete(agentId);
   agentReadyCallbacks.delete(agentId);
   clearAutoTrustState(agentId);
   lastAnalysisAt.delete(agentId);
@@ -582,18 +572,33 @@ export function refreshTaskStatus(taskId: string): void {
 
 let allTasksTimer: ReturnType<typeof setInterval> | null = null;
 let activeTaskTimer: ReturnType<typeof setInterval> | null = null;
+let lastPollingTaskCount = 0;
+
+function computeAllTasksInterval(): number {
+  const taskCount = store.taskOrder.length;
+  return Math.min(120_000, 30_000 + Math.max(0, taskCount - 3) * 5_000);
+}
 
 export function startTaskStatusPolling(): void {
   if (allTasksTimer || activeTaskTimer) return;
   // Active task polls every 5s for responsive UI
   activeTaskTimer = setInterval(refreshActiveTaskGitStatus, 5_000);
   // Scale interval: 30s base + 5s per additional task beyond 3
-  const taskCount = store.taskOrder.length;
-  const allInterval = Math.min(120_000, 30_000 + Math.max(0, taskCount - 3) * 5_000);
-  allTasksTimer = setInterval(refreshAllTaskGitStatus, allInterval);
+  lastPollingTaskCount = store.taskOrder.length;
+  allTasksTimer = setInterval(refreshAllTaskGitStatus, computeAllTasksInterval());
   // Run once immediately
   refreshActiveTaskGitStatus();
   refreshAllTaskGitStatus();
+}
+
+/** Call when tasks are added/removed to recalculate the all-tasks polling interval. */
+export function rescheduleTaskStatusPolling(): void {
+  if (!allTasksTimer) return;
+  const currentCount = store.taskOrder.length;
+  if (currentCount === lastPollingTaskCount) return;
+  lastPollingTaskCount = currentCount;
+  clearInterval(allTasksTimer);
+  allTasksTimer = setInterval(refreshAllTaskGitStatus, computeAllTasksInterval());
 }
 
 export function stopTaskStatusPolling(): void {
@@ -605,4 +610,5 @@ export function stopTaskStatusPolling(): void {
     clearInterval(activeTaskTimer);
     activeTaskTimer = null;
   }
+  lastPollingTaskCount = 0;
 }

@@ -42,6 +42,7 @@ export {
   setTaskFocusedPanel,
   focusSidebar,
   unfocusSidebar,
+  unfocusPlaceholder,
   navigateRow,
   navigateColumn,
   setPendingAction,
@@ -82,6 +83,7 @@ export {
   isAgentAskingQuestion,
   startTaskStatusPolling,
   stopTaskStatusPolling,
+  rescheduleTaskStatusPolling,
 } from "./taskStatus";
 export type { TaskDotStatus } from "./taskStatus";
 export { showNotification, clearNotification } from "./notification";

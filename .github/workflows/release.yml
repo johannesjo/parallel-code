@@ -82,10 +82,10 @@ jobs:
 
       - name: Prepare API key for notarization
         env:
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY }}
         run: |
           mkdir -p "$RUNNER_TEMP/private_keys"
-          echo -n "$APPLE_API_KEY" | base64 --decode > "$RUNNER_TEMP/private_keys/AuthKey.p8"
+          echo -n "$APPLE_API_KEY_B64" | base64 --decode > "$RUNNER_TEMP/private_keys/AuthKey.p8"
 
       - run: npm ci
 
@@ -102,3 +102,10 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: release/*.dmg
           draft: true
+
+      - name: Cleanup signing artifacts
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/private_keys/AuthKey.p8" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/build_certificate.p12" 2>/dev/null || true

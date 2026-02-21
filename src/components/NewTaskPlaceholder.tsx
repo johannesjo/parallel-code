@@ -1,6 +1,4 @@
-import { toggleNewTaskDialog, createTerminal } from "../store/store";
-import { store } from "../store/core";
-import { unfocusPlaceholder } from "../store/focus";
+import { toggleNewTaskDialog, createTerminal, store, unfocusPlaceholder } from "../store/store";
 import { theme } from "../lib/theme";
 import { mod } from "../lib/platform";
 
@@ -35,6 +33,9 @@ export function NewTaskPlaceholder() {
       {/* Add task button — fills remaining space */}
       <div
         class="new-task-placeholder"
+        role="button"
+        tabIndex={0}
+        aria-label="New task"
         onClick={() => toggleNewTaskDialog(true)}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -64,6 +65,9 @@ export function NewTaskPlaceholder() {
       {/* Terminal button — same width, fixed height */}
       <div
         class="new-task-placeholder"
+        role="button"
+        tabIndex={0}
+        aria-label="New terminal"
         onClick={() => createTerminal()}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {

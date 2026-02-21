@@ -45,11 +45,24 @@ export function spawnAgent(
   for (const [k, v] of Object.entries(process.env)) {
     if (v !== undefined) filteredEnv[k] = v;
   }
+
+  // Only allow safe env overrides from renderer. Reject vars that could
+  // alter process loading or execution behavior.
+  const ENV_BLOCK_LIST = new Set([
+    "PATH", "HOME", "USER", "SHELL",
+    "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
+    "NODE_OPTIONS", "ELECTRON_RUN_AS_NODE",
+  ]);
+  const safeEnvOverrides: Record<string, string> = {};
+  for (const [k, v] of Object.entries(args.env ?? {})) {
+    if (!ENV_BLOCK_LIST.has(k)) safeEnvOverrides[k] = v;
+  }
+
   const spawnEnv: Record<string, string> = {
     ...filteredEnv,
     TERM: "xterm-256color",
     COLORTERM: "truecolor",
-    ...args.env,
+    ...safeEnvOverrides,
   };
 
   // Clear env vars that prevent nested agent sessions

@@ -75,9 +75,12 @@
     "mac": {
       "target": "dmg",
       "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "notarize": true,
       "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/**",
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.inherit.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist"
     }
   }
 }

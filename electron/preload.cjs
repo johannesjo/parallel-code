@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-// Allowlist of valid IPC channels (must match electron/ipc/channels.ts IPC enum values)
+// Allowlist of valid IPC channels.
+// IMPORTANT: This list MUST stay in sync with the IPC enum in electron/ipc/channels.ts.
+// The main process verifies this at startup — a mismatch will log a warning in dev.
 const ALLOWED_CHANNELS = new Set([
   // Agent/PTY
   "spawn_agent", "write_to_agent", "resize_agent", "pause_agent",

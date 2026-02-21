@@ -5,7 +5,7 @@ import { store, setStore, updateWindowTitle } from "./core";
 import { setTaskFocusedPanel } from "./focus";
 import { getProject, getProjectPath, getProjectBranchPrefix } from "./projects";
 import { setPendingShellCommand } from "../lib/bookmarks";
-import { markAgentSpawned, clearAgentActivity } from "./taskStatus";
+import { markAgentSpawned, clearAgentActivity, rescheduleTaskStatusPolling } from "./taskStatus";
 import { recordMergedLines, recordTaskCompleted } from "./completion";
 import type { AgentDef, CreateTaskResult, MergeResult } from "../ipc/types";
 import { parseGitHubUrl, taskNameFromGitHubUrl } from "../lib/github-url";
@@ -101,6 +101,7 @@ export async function createTask(
 
   // Mark as busy immediately; terminal output may arrive later.
   markAgentSpawned(agentId);
+  rescheduleTaskStatusPolling();
   updateWindowTitle(name);
   return result.id;
 }
@@ -160,6 +161,7 @@ export async function createDirectTask(
   );
 
   markAgentSpawned(agentId);
+  rescheduleTaskStatusPolling();
   updateWindowTitle(name);
   return id;
 }
@@ -260,6 +262,7 @@ function removeTaskFromStore(taskId: string, agentIds: string[]): void {
       })
     );
 
+    rescheduleTaskStatusPolling();
     const activeId = store.activeTaskId;
     const activeTask = activeId ? store.tasks[activeId] : null;
     const activeTerminal = activeId ? store.terminals[activeId] : null;

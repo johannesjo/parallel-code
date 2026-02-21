@@ -13,6 +13,11 @@ export function createFocusRestore(open: () => boolean): void {
     const el = saved;
     saved = null;
     requestAnimationFrame(() => {
+      // Don't steal focus if the user already clicked on a meaningful target
+      // (e.g. clicked a task panel to dismiss the dialog). Only restore if
+      // focus is on <body> or no element, which means nothing else claimed it.
+      const current = document.activeElement;
+      if (current && current !== document.body) return;
       if (el.isConnected) el.focus();
     });
   }
