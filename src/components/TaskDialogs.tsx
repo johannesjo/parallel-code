@@ -1,7 +1,7 @@
 import { Show, For, createSignal, createResource, createEffect } from 'solid-js';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
-import { closeTask, mergeTask, pushTask, getProject } from '../store/store';
+import { store, closeTask, mergeTask, pushTask, getProject } from '../store/store';
 import { sendPrompt } from '../store/tasks';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ChangedFilesList } from './ChangedFilesList';
@@ -323,18 +323,22 @@ export function TaskDialogs(props: TaskDialogsProps) {
                     >
                       {rebasing() ? 'Rebasing...' : 'Rebase onto main'}
                     </button>
-                    <Show when={props.task.agentIds.length > 0}>
+                    <Show
+                      when={
+                        props.task.agentIds.length > 0 &&
+                        store.agents[props.task.agentIds[0]]?.status === 'running'
+                      }
+                    >
                       <button
                         type="button"
-                        onClick={async () => {
+                        onClick={() => {
                           const agentId = props.task.agentIds[0];
-                          try {
-                            setRebaseError('');
-                            await sendPrompt(props.task.id, agentId, 'rebase on main branch');
-                            props.onMergeConfirmDone();
-                          } catch (err) {
-                            setRebaseError(String(err));
-                          }
+                          props.onMergeConfirmDone();
+                          sendPrompt(props.task.id, agentId, 'rebase on main branch').catch(
+                            (err) => {
+                              console.error('Failed to send rebase prompt:', err);
+                            },
+                          );
                         }}
                         title="Close dialog and ask the AI agent to rebase"
                         style={{
