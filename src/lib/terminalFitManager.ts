@@ -42,7 +42,6 @@ function scheduleFlush() {
       if (!entry.dirty) continue;
       entry.dirty = false;
       entry.fitAddon.fit();
-      entry.term.refresh(0, entry.term.rows - 1);
     }
   });
 }

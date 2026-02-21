@@ -254,9 +254,14 @@ function App() {
       }
 
       try {
+        let resizeTimer: ReturnType<typeof setTimeout> | undefined;
         unlistenResized = await appWindow.onResized(() => {
-          void syncWindowMaximized();
-          void captureWindowState();
+          if (resizeTimer !== undefined) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            resizeTimer = undefined;
+            void syncWindowMaximized();
+            void captureWindowState();
+          }, 200);
         });
       } catch {
         unlistenResized = null;
