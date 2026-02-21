@@ -225,7 +225,7 @@ export async function loadState(): Promise<void> {
       s.inactiveColumnOpacity =
         typeof rawOpacity === 'number' && Number.isFinite(rawOpacity) && rawOpacity >= 0.3 && rawOpacity <= 1.0
           ? Math.round(rawOpacity * 100) / 100
-          : 0.8;
+          : 0.6;
 
       for (const taskId of raw.taskOrder) {
         const pt = raw.tasks[taskId];
