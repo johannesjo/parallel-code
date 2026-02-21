@@ -4,7 +4,13 @@ import { createFocusRestore } from '../lib/focus-restore';
 import { getAvailableTerminalFonts, getTerminalFontFamily, LIGATURE_FONTS } from '../lib/fonts';
 import { LOOK_PRESETS } from '../lib/look';
 import { theme } from '../lib/theme';
-import { store, setTerminalFont, setThemePreset, setAutoTrustFolders } from '../store/store';
+import {
+  store,
+  setTerminalFont,
+  setThemePreset,
+  setAutoTrustFolders,
+  setInactiveColumnOpacity,
+} from '../store/store';
 import { mod } from '../lib/platform';
 import type { TerminalFont } from '../lib/fonts';
 
@@ -186,6 +192,78 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   </span>
                 </div>
               </label>
+            </div>
+
+            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
+              <div
+                style={{
+                  'font-size': '11px',
+                  color: theme.fgMuted,
+                  'text-transform': 'uppercase',
+                  'letter-spacing': '0.05em',
+                  'font-weight': '600',
+                }}
+              >
+                Focus Dimming
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  'flex-direction': 'column',
+                  gap: '8px',
+                  padding: '8px 12px',
+                  'border-radius': '8px',
+                  background: theme.bgInput,
+                  border: `1px solid ${theme.border}`,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    'align-items': 'center',
+                    'justify-content': 'space-between',
+                  }}
+                >
+                  <span style={{ 'font-size': '13px', color: theme.fg }}>
+                    Inactive column opacity
+                  </span>
+                  <span
+                    style={{
+                      'font-size': '12px',
+                      color: theme.fgMuted,
+                      'font-family': "'JetBrains Mono', monospace",
+                      'min-width': '36px',
+                      'text-align': 'right',
+                    }}
+                  >
+                    {Math.round(store.inactiveColumnOpacity * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="30"
+                  max="100"
+                  step="5"
+                  value={store.inactiveColumnOpacity * 100}
+                  onInput={(e) => setInactiveColumnOpacity(Number(e.currentTarget.value) / 100)}
+                  style={{
+                    width: '100%',
+                    'accent-color': theme.accent,
+                    cursor: 'pointer',
+                  }}
+                />
+                <div
+                  style={{
+                    display: 'flex',
+                    'justify-content': 'space-between',
+                    'font-size': '10px',
+                    color: theme.fgSubtle,
+                  }}
+                >
+                  <span>More dimmed</span>
+                  <span>No dimming</span>
+                </div>
+              </div>
             </div>
 
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>

@@ -486,7 +486,7 @@ textarea::placeholder {
   box-shadow: var(--shadow-soft);
   border-color: color-mix(in srgb, var(--border) 85%, transparent) !important;
   margin: 0 2px;
-  opacity: 0.8;
+  opacity: var(--inactive-column-opacity, 0.8);
 }
 
 .task-column.active {

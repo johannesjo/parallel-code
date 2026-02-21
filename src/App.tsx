@@ -587,6 +587,7 @@ function App() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         style={{
+          '--inactive-column-opacity': store.inactiveColumnOpacity,
           width: `${100 / getGlobalScale()}vw`,
           height: `${100 / getGlobalScale()}vh`,
           transform: `scale(${getGlobalScale()})`,
