@@ -9,18 +9,24 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // When launched from a .desktop file, PATH is minimal (/usr/bin:/bin).
-// Resolve the user's full login shell PATH so spawned PTYs can find
-// CLI tools like claude, codex, gemini, etc.
+// Resolve the user's full login-interactive shell PATH so spawned PTYs
+// can find CLI tools like claude, codex, gemini, etc.
+// Uses -ilc (interactive + login) to source both .zprofile/.profile AND
+// .zshrc/.bashrc, where version managers (nvm, volta, fnm) add to PATH.
+// Sentinel markers isolate PATH from noisy shell init output.
 function fixPath(): void {
   if (process.platform === "win32") return;
   try {
     const loginShell = process.env.SHELL || "/bin/sh";
-    const result = execFileSync(loginShell, ["-lc", "echo -n $PATH"], {
-      encoding: "utf8",
-      timeout: 5000,
-    });
-    if (result.trim()) {
-      process.env.PATH = result.trim();
+    const sentinel = "__PCODE_PATH__";
+    const result = execFileSync(
+      loginShell,
+      ["-ilc", `printf "${sentinel}%s${sentinel}" "$PATH"`],
+      { encoding: "utf8", timeout: 5000 }
+    );
+    const match = result.match(new RegExp(`${sentinel}(.+?)${sentinel}`));
+    if (match?.[1]) {
+      process.env.PATH = match[1];
     }
   } catch {
     // Keep existing PATH if shell invocation fails
@@ -31,10 +37,19 @@ fixPath();
 
 let mainWindow: BrowserWindow | null = null;
 
+function getIconPath(): string | undefined {
+  if (process.platform !== "linux") return undefined;
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "icon.png");
+  }
+  return path.join(__dirname, "..", "build", "icon.png");
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
+    icon: getIconPath(),
     frame: process.platform === "darwin",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : undefined,
     resizable: true,
