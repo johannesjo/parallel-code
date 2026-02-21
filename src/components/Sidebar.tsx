@@ -100,7 +100,7 @@ export function Sidebar() {
         if (!target) return;
         const index = Number(target.dataset.taskIndex);
         const taskId = store.taskOrder[index];
-        if (taskId == null) return;
+        if (taskId === undefined || taskId === null) return;
         handleTaskMouseDown(e, taskId, index);
       };
       el.addEventListener('mousedown', handler);
@@ -124,7 +124,7 @@ export function Sidebar() {
     const activeId = store.activeTaskId;
     if (!activeId || !taskListRef) return;
     const idx = taskIndexById().get(activeId);
-    if (idx == null) return;
+    if (idx === undefined) return;
     const el = taskListRef.querySelector<HTMLElement>(`[data-task-index="${idx}"]`);
     el?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
   });
@@ -134,7 +134,7 @@ export function Sidebar() {
     const focusedId = store.sidebarFocusedTaskId;
     if (!focusedId || !taskListRef) return;
     const idx = taskIndexById().get(focusedId);
-    if (idx == null) return;
+    if (idx === undefined) return;
     const el = taskListRef.querySelector<HTMLElement>(`[data-task-index="${idx}"]`);
     el?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
   });

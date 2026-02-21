@@ -7,7 +7,16 @@ import eslintConfigPrettier from 'eslint-config-prettier/flat';
 export default [
   // Ignore build output
   {
-    ignores: ['dist/**', 'dist-electron/**', 'release/**', 'node_modules/**'],
+    ignores: [
+      'dist/**',
+      'dist-electron/**',
+      'release/**',
+      'node_modules/**',
+      // CJS preload script uses require(); excluding from TS rules avoids no-require-imports/no-undef
+      '**/*.cjs',
+      // Build config excluded from electron tsconfig; not worth linting separately
+      'electron/vite.config.electron.ts',
+    ],
   },
 
   // Base JS recommended rules
@@ -70,6 +79,15 @@ export default [
 
       // Prevent non-null assertions (prefer explicit checks)
       '@typescript-eslint/no-non-null-assertion': 'warn',
+    },
+  },
+
+  // SolidJS store files use `produce()` which provides a mutable draft where
+  // `delete` on dynamic keys is the intended API for removing store entries.
+  {
+    files: ['src/store/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-dynamic-delete': 'off',
     },
   },
 

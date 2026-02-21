@@ -1,4 +1,4 @@
-import { createSignal, Show } from 'solid-js';
+import { createSignal, onMount, Show } from 'solid-js';
 import { theme } from '../lib/theme';
 
 export interface EditableTextHandle {
@@ -22,7 +22,9 @@ export function EditableText(props: EditableTextProps) {
     setEditing(true);
   }
 
-  props.ref?.({ startEdit });
+  onMount(() => {
+    props.ref?.({ startEdit });
+  });
 
   function commit() {
     const val = draft().trim();

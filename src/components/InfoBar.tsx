@@ -15,8 +15,8 @@ export function InfoBar(props: InfoBarProps) {
     <div
       class={props.class}
       title={props.title}
-      onClick={props.onClick}
-      onDblClick={props.onDblClick}
+      onClick={() => props.onClick?.()}
+      onDblClick={() => props.onDblClick?.()}
       style={{
         height: '28px',
         'min-height': '28px',

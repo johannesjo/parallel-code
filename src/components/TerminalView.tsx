@@ -356,6 +356,7 @@ export function TerminalView(props: TerminalViewProps) {
       onOutput,
     }).catch((err) => {
       // Strip control/escape characters to prevent terminal escape injection
+      // eslint-disable-next-line no-control-regex -- intentionally stripping control/escape chars to prevent terminal injection
       const safeErr = String(err).replace(/[\x00-\x1f\x7f]/g, '');
       term!.write(`\x1b[31mFailed to spawn: ${safeErr}\x1b[0m\r\n`);
       props.onExit?.({
@@ -383,7 +384,7 @@ export function TerminalView(props: TerminalViewProps) {
 
   createEffect(() => {
     const size = props.fontSize;
-    if (size == null || !term || !fitAddon) return;
+    if (size === undefined || size === null || !term || !fitAddon) return;
     term.options.fontSize = size;
     markDirty(props.agentId);
   });

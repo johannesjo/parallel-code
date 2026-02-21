@@ -1,3 +1,4 @@
+import { For } from 'solid-js';
 import { appWindow } from '../lib/window';
 
 type ResizeDirection =
@@ -33,12 +34,14 @@ export function WindowResizeHandles() {
 
   return (
     <div class="window-resize-handles" aria-hidden="true">
-      {resizeHandles.map((handle) => (
-        <div
-          class={`window-resize-handle ${handle.className}`}
-          onMouseDown={(event) => startResize(event, handle.direction)}
-        />
-      ))}
+      <For each={resizeHandles}>
+        {(handle) => (
+          <div
+            class={`window-resize-handle ${handle.className}`}
+            onMouseDown={(event) => startResize(event, handle.direction)}
+          />
+        )}
+      </For>
     </div>
   );
 }

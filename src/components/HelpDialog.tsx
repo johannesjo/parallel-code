@@ -1,4 +1,4 @@
-import { Show, createEffect } from 'solid-js';
+import { Show, For, createEffect } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { createFocusRestore } from '../lib/focus-restore';
 import { theme } from '../lib/theme';
@@ -146,47 +146,51 @@ export function HelpDialog(props: HelpDialogProps) {
               </button>
             </div>
 
-            {SECTIONS.map((section) => (
-              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
-                <div
-                  style={{
-                    'font-size': '11px',
-                    color: theme.fgMuted,
-                    'text-transform': 'uppercase',
-                    'letter-spacing': '0.05em',
-                    'font-weight': '600',
-                  }}
-                >
-                  {section.title}
-                </div>
-                {section.shortcuts.map(([key, desc]) => (
+            <For each={SECTIONS}>
+              {(section) => (
+                <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
                   <div
                     style={{
-                      display: 'flex',
-                      'justify-content': 'space-between',
-                      'align-items': 'center',
-                      padding: '4px 0',
+                      'font-size': '11px',
+                      color: theme.fgMuted,
+                      'text-transform': 'uppercase',
+                      'letter-spacing': '0.05em',
+                      'font-weight': '600',
                     }}
                   >
-                    <span style={{ color: theme.fgMuted, 'font-size': '12px' }}>{desc}</span>
-                    <kbd
-                      style={{
-                        background: theme.bgInput,
-                        border: `1px solid ${theme.border}`,
-                        'border-radius': '4px',
-                        padding: '2px 8px',
-                        'font-size': '11px',
-                        color: theme.fg,
-                        'font-family': "'JetBrains Mono', monospace",
-                        'white-space': 'nowrap',
-                      }}
-                    >
-                      {key}
-                    </kbd>
+                    {section.title}
                   </div>
-                ))}
-              </div>
-            ))}
+                  <For each={section.shortcuts}>
+                    {([key, desc]) => (
+                      <div
+                        style={{
+                          display: 'flex',
+                          'justify-content': 'space-between',
+                          'align-items': 'center',
+                          padding: '4px 0',
+                        }}
+                      >
+                        <span style={{ color: theme.fgMuted, 'font-size': '12px' }}>{desc}</span>
+                        <kbd
+                          style={{
+                            background: theme.bgInput,
+                            border: `1px solid ${theme.border}`,
+                            'border-radius': '4px',
+                            padding: '2px 8px',
+                            'font-size': '11px',
+                            color: theme.fg,
+                            'font-family': "'JetBrains Mono', monospace",
+                            'white-space': 'nowrap',
+                          }}
+                        >
+                          {key}
+                        </kbd>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              )}
+            </For>
           </div>
         </div>
       </Show>
