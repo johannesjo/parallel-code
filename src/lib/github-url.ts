@@ -14,6 +14,7 @@ const TYPE_LABELS: Record<string, string> = {
   issues: 'issue',
   pull: 'pr',
   discussions: 'discussion',
+  'actions/runs': 'run',
 };
 
 /** Extract org, repo, type, number from a GitHub URL. Returns null if not valid. */
@@ -30,7 +31,10 @@ export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
   if (segments.length < 2) return null;
 
   const result: ParsedGitHubUrl = { org: segments[0], repo: segments[1] };
-  if (segments.length >= 4 && NUMBERED_TYPES.has(segments[2])) {
+  if (segments[2] === 'actions' && segments.length >= 5 && segments[3] === 'runs') {
+    result.type = 'actions/runs';
+    result.number = segments[4];
+  } else if (segments.length >= 4 && NUMBERED_TYPES.has(segments[2])) {
     result.type = segments[2];
     result.number = segments[3];
   }
