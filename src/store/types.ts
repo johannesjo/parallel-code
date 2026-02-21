@@ -44,6 +44,7 @@ export interface Task {
   closingStatus?: 'closing' | 'removing' | 'error';
   closingError?: string;
   directMode?: boolean;
+  githubUrl?: string;
 }
 
 export interface Terminal {
@@ -64,6 +65,7 @@ export interface PersistedTask {
   shellCount: number;
   agentDef: AgentDef | null;
   directMode?: boolean;
+  githubUrl?: string;
 }
 
 export interface PersistedTerminal {

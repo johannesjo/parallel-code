@@ -49,6 +49,7 @@ export async function createTask(
   symlinkDirs: string[] = [],
   initialPrompt?: string,
   branchPrefixOverride?: string,
+  githubUrl?: string,
 ): Promise<string> {
   const projectRoot = getProjectPath(projectId);
   if (!projectRoot) throw new Error('Project not found');
@@ -73,6 +74,7 @@ export async function createTask(
     notes: '',
     lastPrompt: '',
     initialPrompt: initialPrompt || undefined,
+    githubUrl,
   };
 
   const agent: Agent = {
@@ -112,6 +114,7 @@ export async function createDirectTask(
   projectId: string,
   mainBranch: string,
   initialPrompt?: string,
+  githubUrl?: string,
 ): Promise<string> {
   if (hasDirectModeTask(projectId)) {
     throw new Error('A direct-mode task already exists for this project');
@@ -134,6 +137,7 @@ export async function createDirectTask(
     lastPrompt: '',
     initialPrompt: initialPrompt || undefined,
     directMode: true,
+    githubUrl,
   };
 
   const agent: Agent = {

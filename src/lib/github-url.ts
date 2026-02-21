@@ -54,3 +54,10 @@ export function taskNameFromGitHubUrl(parsed: ParsedGitHubUrl): string {
 export function isGitHubUrl(text: string): boolean {
   return parseGitHubUrl(text) !== null;
 }
+
+/** Find the first GitHub URL embedded in a string (e.g. a prompt). */
+export function extractGitHubUrl(text: string): string | null {
+  const match = text.match(/https?:\/\/(?:www\.)?github\.com\/[^\s)>\]"']+/i);
+  if (!match) return null;
+  return parseGitHubUrl(match[0]) ? match[0] : null;
+}

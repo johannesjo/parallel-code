@@ -18,6 +18,7 @@ import {
 } from '../store/store';
 import { toBranchName, sanitizeBranchPrefix } from '../lib/branch-name';
 import { cleanTaskName } from '../lib/clean-task-name';
+import { extractGitHubUrl } from '../lib/github-url';
 import { theme } from '../lib/theme';
 import type { AgentDef } from '../ipc/types';
 
@@ -172,6 +173,7 @@ export function NewTaskDialog() {
     const p = prompt().trim() || undefined;
     const isFromDrop = !!store.newTaskDropUrl;
     const prefix = sanitizeBranchPrefix(branchPrefix());
+    const ghUrl = (p ? extractGitHubUrl(p) : null) ?? store.newTaskDropUrl ?? undefined;
     try {
       // Persist the branch prefix to the project for next time
       updateProject(projectId, { branchPrefix: prefix });
@@ -199,6 +201,7 @@ export function NewTaskDialog() {
           projectId,
           mainBranch,
           isFromDrop ? undefined : p,
+          ghUrl,
         );
       } else {
         taskId = await createTask(
@@ -208,6 +211,7 @@ export function NewTaskDialog() {
           [...selectedDirs()],
           isFromDrop ? undefined : p,
           prefix,
+          ghUrl,
         );
       }
       // Drop flow: prefill prompt without auto-sending

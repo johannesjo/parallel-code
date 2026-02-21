@@ -278,6 +278,26 @@ function App() {
     setupAutosave();
     startTaskStatusPolling();
 
+    const handlePaste = (e: ClipboardEvent) => {
+      if (store.showNewTaskDialog || store.showHelpDialog || store.showSettingsDialog) return;
+      const el = document.activeElement;
+      if (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        (el instanceof HTMLElement && el.isContentEditable) ||
+        el?.closest?.('.xterm')
+      ) {
+        return;
+      }
+      const text = e.clipboardData?.getData('text/plain')?.trim();
+      if (text && isGitHubUrl(text)) {
+        e.preventDefault();
+        setNewTaskDropUrl(text);
+        toggleNewTaskDialog(true);
+      }
+    };
+    document.addEventListener('paste', handlePaste);
+
     const handleWheel = createCtrlWheelZoomHandler((delta) => adjustGlobalScale(delta));
     mainRef.addEventListener('wheel', handleWheel, { passive: false });
 
@@ -497,6 +517,7 @@ function App() {
     });
 
     onCleanup(() => {
+      document.removeEventListener('paste', handlePaste);
       mainRef.removeEventListener('wheel', handleWheel);
       unlistenCloseRequested();
       cleanupShortcuts();
