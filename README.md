@@ -5,7 +5,7 @@
 <h1 align="center">Parallel Code</h1>
 
 <p align="center">
-  Run multiple AI coding agents side by side, each in their own isolated git worktree.
+  Run multiple AI coding agents side by side, each in their own isolated git worktree and monitor from your phone.
 </p>
 
 <p align="center">
