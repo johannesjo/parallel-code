@@ -65,7 +65,17 @@ body {
 .app-shell {
   position: relative;
   isolation: isolate;
-  transition: box-shadow 0.16s ease;
+}
+
+.app-shell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  transition: border-color 0.16s ease;
 }
 
 .app-shell::before {
@@ -89,12 +99,12 @@ body {
   z-index: 1;
 }
 
-.app-shell[data-window-border='true'][data-window-maximized='false'] {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg-subtle) 42%, transparent);
+.app-shell[data-window-border='true'][data-window-maximized='false']::after {
+  border-color: color-mix(in srgb, var(--fg-subtle) 42%, transparent);
 }
 
-.app-shell[data-window-border='true'][data-window-maximized='false'][data-window-focused='false'] {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg-subtle) 26%, transparent);
+.app-shell[data-window-border='true'][data-window-maximized='false'][data-window-focused='false']::after {
+  border-color: color-mix(in srgb, var(--fg-subtle) 26%, transparent);
 }
 
 html[data-look='classic'] {
