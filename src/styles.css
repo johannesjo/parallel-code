@@ -379,11 +379,16 @@ textarea::placeholder {
 }
 
 .input-field:focus,
-.prompt-textarea:focus {
+.prompt-textarea:focus,
+.new-task-project-trigger:focus-visible,
+.agent-btn:focus-visible,
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible {
   border-color: var(--border-focus) !important;
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--border-focus) 23%, transparent),
     0 8px 20px color-mix(in srgb, var(--border-focus) 10%, transparent);
+  outline: none;
 }
 
 .new-task-project-trigger {
@@ -412,6 +417,13 @@ textarea::placeholder {
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--accent) 85%, transparent),
     0 0 14px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.agent-btn.selected:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 85%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--border-focus) 23%, transparent),
+    0 8px 20px color-mix(in srgb, var(--border-focus) 10%, transparent);
 }
 
 @keyframes taskAppear {

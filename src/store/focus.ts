@@ -133,6 +133,8 @@ function focusTaskPanel(taskId: string, panel: string): void {
 }
 
 export function navigateRow(direction: 'up' | 'down'): void {
+  if (store.showNewTaskDialog || store.showHelpDialog || store.showSettingsDialog) return;
+
   if (store.placeholderFocused) {
     if (direction === 'up') {
       setStore('placeholderFocusedButton', 'add-task');
@@ -201,6 +203,8 @@ export function navigateRow(direction: 'up' | 'down'): void {
 }
 
 export function navigateColumn(direction: 'left' | 'right'): void {
+  if (store.showNewTaskDialog || store.showHelpDialog || store.showSettingsDialog) return;
+
   const taskId = store.activeTaskId;
 
   // From placeholder

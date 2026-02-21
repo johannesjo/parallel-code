@@ -32,6 +32,7 @@ export function NewTaskDialog() {
   const [selectedAgent, setSelectedAgent] = createSignal<AgentDef | null>(null);
   const [selectedProjectId, setSelectedProjectId] = createSignal<string | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = createSignal(false);
+  const [highlightedProjectIndex, setHighlightedProjectIndex] = createSignal(-1);
   const [error, setError] = createSignal('');
   const [loading, setLoading] = createSignal(false);
   const [ignoredDirs, setIgnoredDirs] = createSignal<string[]>([]);
@@ -40,6 +41,121 @@ export function NewTaskDialog() {
   const [branchPrefix, setBranchPrefix] = createSignal('');
   let projectMenuRef!: HTMLDivElement;
   let promptRef!: HTMLTextAreaElement;
+  let formRef!: HTMLFormElement;
+
+  const handleProjectMenuKeyDown = (e: KeyboardEvent) => {
+    const projects = store.projects;
+    if (!projects.length) return;
+
+    if (!projectMenuOpen()) {
+      // Open on ArrowDown/ArrowUp/Enter/Space
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        const currentIdx = projects.findIndex((p) => p.id === selectedProjectId());
+        setHighlightedProjectIndex(currentIdx >= 0 ? currentIdx : 0);
+        setProjectMenuOpen(true);
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case 'ArrowDown': {
+        e.preventDefault();
+        setHighlightedProjectIndex((i) => (i < projects.length - 1 ? i + 1 : 0));
+        scrollHighlightedIntoView();
+        break;
+      }
+      case 'ArrowUp': {
+        e.preventDefault();
+        setHighlightedProjectIndex((i) => (i > 0 ? i - 1 : projects.length - 1));
+        scrollHighlightedIntoView();
+        break;
+      }
+      case 'Enter':
+      case ' ': {
+        e.preventDefault();
+        const idx = highlightedProjectIndex();
+        if (idx >= 0 && idx < projects.length) {
+          setSelectedProjectId(projects[idx].id);
+        }
+        setProjectMenuOpen(false);
+        break;
+      }
+      case 'Escape': {
+        e.preventDefault();
+        setProjectMenuOpen(false);
+        break;
+      }
+      case 'Home': {
+        e.preventDefault();
+        setHighlightedProjectIndex(0);
+        scrollHighlightedIntoView();
+        break;
+      }
+      case 'End': {
+        e.preventDefault();
+        setHighlightedProjectIndex(projects.length - 1);
+        scrollHighlightedIntoView();
+        break;
+      }
+    }
+  };
+
+  function scrollHighlightedIntoView() {
+    requestAnimationFrame(() => {
+      projectMenuRef
+        ?.querySelector('.new-task-project-option.highlighted')
+        ?.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  const focusableSelector =
+    'textarea:not(:disabled), input:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+  function navigateDialogFields(direction: 'up' | 'down'): void {
+    if (!formRef) return;
+    const sections = Array.from(formRef.querySelectorAll<HTMLElement>('[data-nav-field]'));
+    if (sections.length === 0) return;
+
+    const active = document.activeElement as HTMLElement | null;
+    const currentIdx = active ? sections.findIndex((s) => s.contains(active)) : -1;
+
+    let nextIdx: number;
+    if (currentIdx === -1) {
+      nextIdx = direction === 'down' ? 0 : sections.length - 1;
+    } else if (direction === 'down') {
+      nextIdx = (currentIdx + 1) % sections.length;
+    } else {
+      nextIdx = (currentIdx - 1 + sections.length) % sections.length;
+    }
+
+    const target = sections[nextIdx];
+    const focusable = target.querySelector<HTMLElement>(focusableSelector);
+    focusable?.focus();
+  }
+
+  function navigateWithinField(direction: 'left' | 'right'): void {
+    if (!formRef) return;
+    const active = document.activeElement as HTMLElement | null;
+    if (!active) return;
+
+    const section = active.closest<HTMLElement>('[data-nav-field]');
+    if (!section) return;
+
+    const focusables = Array.from(section.querySelectorAll<HTMLElement>(focusableSelector));
+    if (focusables.length <= 1) return;
+
+    const idx = focusables.indexOf(active);
+    if (idx === -1) return;
+
+    let nextIdx: number;
+    if (direction === 'right') {
+      nextIdx = (idx + 1) % focusables.length;
+    } else {
+      nextIdx = (idx - 1 + focusables.length) % focusables.length;
+    }
+    focusables[nextIdx].focus();
+  }
 
   onMount(async () => {
     if (store.availableAgents.length === 0) {
@@ -68,8 +184,28 @@ export function NewTaskDialog() {
       }
     };
     window.addEventListener('pointerdown', handleOutsidePointerDown);
+
+    // Capture-phase handler for Alt+Arrow to navigate form sections / within fields
+    const handleAltArrow = (e: KeyboardEvent) => {
+      if (!e.altKey) return;
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        navigateDialogFields(e.key === 'ArrowDown' ? 'down' : 'up');
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        // Preserve native word-jump (Alt+Arrow) in text inputs
+        const tag = (document.activeElement as HTMLElement)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        navigateWithinField(e.key === 'ArrowRight' ? 'right' : 'left');
+      }
+    };
+    window.addEventListener('keydown', handleAltArrow, true);
+
     onCleanup(() => {
       window.removeEventListener('pointerdown', handleOutsidePointerDown);
+      window.removeEventListener('keydown', handleAltArrow, true);
     });
   });
 
@@ -246,6 +382,7 @@ export function NewTaskDialog() {
       }}
     >
       <form
+        ref={formRef}
         onSubmit={handleSubmit}
         style={{
           background: theme.islandBg,
@@ -281,7 +418,7 @@ export function NewTaskDialog() {
         </div>
 
         {/* Prompt input (optional) */}
-        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+        <div data-nav-field="prompt" style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
           <label
             style={{
               'font-size': '11px',
@@ -320,7 +457,7 @@ export function NewTaskDialog() {
           />
         </div>
 
-        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+        <div data-nav-field="task-name" style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
           <label
             style={{
               'font-size': '11px',
@@ -350,9 +487,50 @@ export function NewTaskDialog() {
               outline: 'none',
             }}
           />
-          <Show when={!directMode()}>
+          <Show when={directMode() && selectedProjectPath()}>
             <div
-              style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'padding-top': '4px' }}
+              style={{
+                'font-size': '11px',
+                'font-family': "'JetBrains Mono', monospace",
+                color: theme.fgSubtle,
+                display: 'flex',
+                'flex-direction': 'column',
+                gap: '2px',
+                padding: '4px 2px 0',
+              }}
+            >
+              <span style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  style={{ 'flex-shrink': '0' }}
+                >
+                  <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6.25 7.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 7.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 0h5.5a2.5 2.5 0 0 0 2.5-2.5v-.5a.75.75 0 0 0-1.5 0v.5a1 1 0 0 1-1 1H5a3.25 3.25 0 1 0 0 6.5h6.25a.75.75 0 0 0 0-1.5H5a1.75 1.75 0 1 1 0-3.5Z" />
+                </svg>
+                main branch (detected on create)
+              </span>
+              <span style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  style={{ 'flex-shrink': '0' }}
+                >
+                  <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z" />
+                </svg>
+                {selectedProjectPath()}
+              </span>
+            </div>
+          </Show>
+        </div>
+
+        <Show when={!directMode()}>
+          <div data-nav-field="branch-prefix" style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+            <div
+              style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}
             >
               <label
                 style={{ 'font-size': '11px', color: theme.fgSubtle, 'white-space': 'nowrap' }}
@@ -416,49 +594,11 @@ export function NewTaskDialog() {
                 </span>
               </div>
             </Show>
-          </Show>
-          <Show when={directMode() && selectedProjectPath()}>
-            <div
-              style={{
-                'font-size': '11px',
-                'font-family': "'JetBrains Mono', monospace",
-                color: theme.fgSubtle,
-                display: 'flex',
-                'flex-direction': 'column',
-                gap: '2px',
-                padding: '4px 2px 0',
-              }}
-            >
-              <span style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  style={{ 'flex-shrink': '0' }}
-                >
-                  <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6.25 7.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 7.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 0h5.5a2.5 2.5 0 0 0 2.5-2.5v-.5a.75.75 0 0 0-1.5 0v.5a1 1 0 0 1-1 1H5a3.25 3.25 0 1 0 0 6.5h6.25a.75.75 0 0 0 0-1.5H5a1.75 1.75 0 1 1 0-3.5Z" />
-                </svg>
-                main branch (detected on create)
-              </span>
-              <span style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  style={{ 'flex-shrink': '0' }}
-                >
-                  <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z" />
-                </svg>
-                {selectedProjectPath()}
-              </span>
-            </div>
-          </Show>
-        </div>
+          </div>
+        </Show>
 
         {/* Project selector */}
-        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+        <div data-nav-field="project" style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
           <label
             style={{
               'font-size': '11px',
@@ -476,7 +616,11 @@ export function NewTaskDialog() {
             <button
               type="button"
               class="new-task-project-trigger"
+              role="combobox"
+              aria-expanded={projectMenuOpen()}
+              aria-haspopup="listbox"
               onClick={() => setProjectMenuOpen((open) => !open)}
+              onKeyDown={handleProjectMenuKeyDown}
               style={{
                 width: '100%',
                 background: 'transparent',
@@ -492,9 +636,6 @@ export function NewTaskDialog() {
                 gap: '10px',
                 cursor: 'pointer',
                 'text-align': 'left',
-                'box-shadow': projectMenuOpen()
-                  ? `0 0 0 2px color-mix(in srgb, ${theme.borderFocus} 23%, transparent)`
-                  : 'none',
               }}
             >
               <span
@@ -557,6 +698,7 @@ export function NewTaskDialog() {
 
             <Show when={projectMenuOpen()}>
               <div
+                role="listbox"
                 style={{
                   position: 'absolute',
                   top: 'calc(100% + 6px)',
@@ -573,16 +715,20 @@ export function NewTaskDialog() {
                 }}
               >
                 <For each={store.projects}>
-                  {(project) => {
+                  {(project, index) => {
                     const isSelected = () => selectedProjectId() === project.id;
+                    const isHighlighted = () => highlightedProjectIndex() === index();
                     return (
                       <button
                         type="button"
-                        class={`new-task-project-option${isSelected() ? ' selected' : ''}`}
+                        role="option"
+                        aria-selected={isSelected()}
+                        class={`new-task-project-option${isSelected() ? ' selected' : ''}${isHighlighted() ? ' highlighted' : ''}`}
                         onClick={() => {
                           setSelectedProjectId(project.id);
                           setProjectMenuOpen(false);
                         }}
+                        onPointerEnter={() => setHighlightedProjectIndex(index())}
                         style={{
                           width: '100%',
                           border: `1px solid ${isSelected() ? 'color-mix(in srgb, var(--accent) 70%, transparent)' : 'transparent'}`,
@@ -591,9 +737,13 @@ export function NewTaskDialog() {
                           display: 'flex',
                           'align-items': 'center',
                           gap: '8px',
-                          background: isSelected()
-                            ? 'color-mix(in srgb, var(--accent) 10%, transparent)'
-                            : 'transparent',
+                          background: isHighlighted()
+                            ? isSelected()
+                              ? 'color-mix(in srgb, var(--accent) 16%, transparent)'
+                              : 'color-mix(in srgb, var(--accent) 8%, transparent)'
+                            : isSelected()
+                              ? 'color-mix(in srgb, var(--accent) 10%, transparent)'
+                              : 'transparent',
                           color: theme.fg,
                           cursor: 'pointer',
                           'text-align': 'left',
@@ -627,7 +777,7 @@ export function NewTaskDialog() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+        <div data-nav-field="agent" style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
           <label
             style={{
               'font-size': '11px',
@@ -675,7 +825,7 @@ export function NewTaskDialog() {
         </div>
 
         {/* Direct mode toggle */}
-        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+        <div data-nav-field="direct-mode" style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
           <label
             style={{
               display: 'flex',
@@ -718,7 +868,7 @@ export function NewTaskDialog() {
         </div>
 
         <Show when={ignoredDirs().length > 0 && !directMode()}>
-          <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+          <div data-nav-field="symlink-dirs" style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
             <label
               style={{
                 'font-size': '11px',
@@ -792,6 +942,7 @@ export function NewTaskDialog() {
         </Show>
 
         <div
+          data-nav-field="footer"
           style={{
             display: 'flex',
             gap: '8px',
