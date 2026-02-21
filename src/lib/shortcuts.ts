@@ -8,6 +8,8 @@ interface Shortcut {
   shift?: boolean;
   /** When true, the shortcut fires even when an input/textarea/select is focused (e.g. inside a terminal). */
   global?: boolean;
+  /** When true, the shortcut fires even when a dialog overlay is open. */
+  dialogSafe?: boolean;
   handler: ShortcutHandler;
 }
 
@@ -43,8 +45,11 @@ export function initShortcuts(): () => void {
     const tag = (e.target as HTMLElement)?.tagName;
     const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 
+    // Suppress non-dialog-safe shortcuts when a dialog overlay is open
+    const dialogOpen = document.querySelector('.dialog-overlay') !== null;
+
     for (const s of shortcuts) {
-      if (matches(e, s) && (!inInput || s.global)) {
+      if (matches(e, s) && (!inInput || s.global) && (!dialogOpen || s.dialogSafe)) {
         e.preventDefault();
         e.stopPropagation();
         s.handler(e);

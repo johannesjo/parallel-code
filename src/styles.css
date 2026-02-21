@@ -372,6 +372,13 @@ textarea::placeholder {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important;
 }
 
+.dialog-overlay .btn-secondary:focus,
+.dialog-overlay .btn-primary:focus,
+.dialog-overlay .btn-danger:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .input-field,
 .prompt-textarea {
   background: color-mix(in srgb, var(--bg-input) 88%, transparent);

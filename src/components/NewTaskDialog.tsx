@@ -1,5 +1,5 @@
-import { createSignal, createEffect, For, Show, onMount, onCleanup } from 'solid-js';
-import { createFocusRestore } from '../lib/focus-restore';
+import { createSignal, createEffect, For, Show, onCleanup } from 'solid-js';
+import { Dialog } from './Dialog';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import {
@@ -22,11 +22,12 @@ import { extractGitHubUrl } from '../lib/github-url';
 import { theme } from '../lib/theme';
 import type { AgentDef } from '../ipc/types';
 
-export function NewTaskDialog() {
-  // NewTaskDialog is conditionally rendered (unmounts on close),
-  // so pass a constant true — focus is saved on mount, restored on cleanup.
-  createFocusRestore(() => true);
+interface NewTaskDialogProps {
+  open: boolean;
+  onClose: () => void;
+}
 
+export function NewTaskDialog(props: NewTaskDialogProps) {
   const [prompt, setPrompt] = createSignal('');
   const [name, setName] = createSignal('');
   const [selectedAgent, setSelectedAgent] = createSignal<AgentDef | null>(null);
@@ -157,25 +158,38 @@ export function NewTaskDialog() {
     focusables[nextIdx].focus();
   }
 
-  onMount(async () => {
-    if (store.availableAgents.length === 0) {
-      await loadAgents();
-    }
-    const lastAgent = store.lastAgentId
-      ? (store.availableAgents.find((a) => a.id === store.lastAgentId) ?? null)
-      : null;
-    setSelectedAgent(lastAgent ?? store.availableAgents[0] ?? null);
+  // Initialize state each time the dialog opens
+  createEffect(() => {
+    if (!props.open) return;
 
-    // Pre-fill from drop data if present
-    const dropUrl = store.newTaskDropUrl;
-    const fallbackProjectId = store.lastProjectId ?? store.projects[0]?.id ?? null;
-    const defaults = dropUrl ? getGitHubDropDefaults(dropUrl) : null;
+    // Reset signals for a fresh dialog
+    setPrompt('');
+    setName('');
+    setError('');
+    setLoading(false);
+    setProjectMenuOpen(false);
+    setDirectMode(false);
 
-    if (dropUrl) setPrompt(`review ${dropUrl}`);
-    if (defaults) setName(defaults.name);
-    setSelectedProjectId(defaults?.projectId ?? fallbackProjectId);
+    void (async () => {
+      if (store.availableAgents.length === 0) {
+        await loadAgents();
+      }
+      const lastAgent = store.lastAgentId
+        ? (store.availableAgents.find((a) => a.id === store.lastAgentId) ?? null)
+        : null;
+      setSelectedAgent(lastAgent ?? store.availableAgents[0] ?? null);
 
-    promptRef?.focus();
+      // Pre-fill from drop data if present
+      const dropUrl = store.newTaskDropUrl;
+      const fallbackProjectId = store.lastProjectId ?? store.projects[0]?.id ?? null;
+      const defaults = dropUrl ? getGitHubDropDefaults(dropUrl) : null;
+
+      if (dropUrl) setPrompt(`review ${dropUrl}`);
+      if (defaults) setName(defaults.name);
+      setSelectedProjectId(defaults?.projectId ?? fallbackProjectId);
+
+      promptRef?.focus();
+    })();
 
     const handleOutsidePointerDown = (event: PointerEvent) => {
       if (!projectMenuRef) return;
@@ -363,39 +377,15 @@ export function NewTaskDialog() {
   }
 
   return (
-    <div
-      class="dialog-overlay"
-      style={{
-        position: 'fixed',
-        inset: '0',
-        display: 'flex',
-        'align-items': 'center',
-        'justify-content': 'center',
-        background: 'rgba(0,0,0,0.55)',
-        'z-index': '1000',
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) toggleNewTaskDialog(false);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') toggleNewTaskDialog(false);
-      }}
-    >
+    <Dialog open={props.open} onClose={props.onClose} width="420px" panelStyle={{ gap: '20px' }}>
       <form
         ref={formRef}
         onSubmit={handleSubmit}
         style={{
-          background: theme.islandBg,
-          border: `1px solid ${theme.border}`,
-          'border-radius': '14px',
-          padding: '28px',
-          width: '420px',
           display: 'flex',
           'flex-direction': 'column',
           gap: '20px',
-          'box-shadow': '0 12px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03) inset',
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div>
           <h2
@@ -953,7 +943,7 @@ export function NewTaskDialog() {
           <button
             type="button"
             class="btn-secondary"
-            onClick={() => toggleNewTaskDialog(false)}
+            onClick={() => props.onClose()}
             style={{
               padding: '9px 18px',
               background: theme.bgInput,
@@ -992,6 +982,6 @@ export function NewTaskDialog() {
           </button>
         </div>
       </form>
-    </div>
+    </Dialog>
   );
 }

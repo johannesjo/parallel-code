@@ -1,6 +1,5 @@
-import { Show, createSignal, createEffect, onCleanup } from 'solid-js';
-import { Portal } from 'solid-js/web';
-import { createFocusRestore } from '../lib/focus-restore';
+import { Show, createSignal, createEffect } from 'solid-js';
+import { Dialog } from './Dialog';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { DiffView, DiffModeEnum } from '@git-diff-view/solid';
@@ -68,8 +67,6 @@ function detectLang(filePath: string): string {
 }
 
 export function DiffViewerDialog(props: DiffViewerDialogProps) {
-  createFocusRestore(() => props.file !== null);
-
   const [rawDiff, setRawDiff] = createSignal('');
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal('');
@@ -100,206 +97,176 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
       .finally(() => setLoading(false));
   });
 
-  // Escape key to close
-  createEffect(() => {
-    if (!props.file) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') props.onClose();
-    };
-    document.addEventListener('keydown', handler);
-    onCleanup(() => document.removeEventListener('keydown', handler));
-  });
-
   return (
-    <Portal>
+    <Dialog
+      open={props.file !== null}
+      onClose={props.onClose}
+      width="90vw"
+      panelStyle={{
+        height: '85vh',
+        'max-width': '1400px',
+        overflow: 'hidden',
+        padding: '0',
+        gap: '0',
+      }}
+    >
       <Show when={props.file}>
         {(file) => (
-          <div
-            class="dialog-overlay"
-            style={{
-              position: 'fixed',
-              inset: '0',
-              display: 'flex',
-              'align-items': 'center',
-              'justify-content': 'center',
-              background: 'rgba(0,0,0,0.55)',
-              'z-index': '1000',
-            }}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) props.onClose();
-            }}
-          >
+          <>
+            {/* Header */}
             <div
-              class="dialog-content"
               style={{
-                background: theme.islandBg,
-                border: `1px solid ${theme.border}`,
-                'border-radius': '14px',
-                width: '90vw',
-                height: '85vh',
-                'max-width': '1400px',
                 display: 'flex',
-                'flex-direction': 'column',
-                overflow: 'hidden',
-                'box-shadow': '0 12px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03) inset',
+                'align-items': 'center',
+                gap: '10px',
+                padding: '16px 20px',
+                'border-bottom': `1px solid ${theme.border}`,
+                'flex-shrink': '0',
               }}
-              onClick={(e) => e.stopPropagation()}
             >
-              {/* Header */}
+              <span
+                style={{
+                  'font-size': '11px',
+                  'font-weight': '600',
+                  padding: '2px 8px',
+                  'border-radius': '4px',
+                  color: getStatusColor(file().status),
+                  background: 'rgba(255,255,255,0.06)',
+                }}
+              >
+                {STATUS_LABELS[file().status] ?? file().status}
+              </span>
+              <span
+                style={{
+                  flex: '1',
+                  'font-size': '13px',
+                  'font-family': "'JetBrains Mono', monospace",
+                  color: theme.fg,
+                  overflow: 'hidden',
+                  'text-overflow': 'ellipsis',
+                  'white-space': 'nowrap',
+                }}
+              >
+                {file().path}
+              </span>
+
+              {/* Split / Unified toggle */}
               <div
                 style={{
                   display: 'flex',
-                  'align-items': 'center',
-                  gap: '10px',
-                  padding: '16px 20px',
-                  'border-bottom': `1px solid ${theme.border}`,
-                  'flex-shrink': '0',
+                  gap: '2px',
+                  background: 'rgba(255,255,255,0.04)',
+                  'border-radius': '6px',
+                  padding: '2px',
                 }}
               >
-                <span
-                  style={{
-                    'font-size': '11px',
-                    'font-weight': '600',
-                    padding: '2px 8px',
-                    'border-radius': '4px',
-                    color: getStatusColor(file().status),
-                    background: 'rgba(255,255,255,0.06)',
-                  }}
-                >
-                  {STATUS_LABELS[file().status] ?? file().status}
-                </span>
-                <span
-                  style={{
-                    flex: '1',
-                    'font-size': '13px',
-                    'font-family': "'JetBrains Mono', monospace",
-                    color: theme.fg,
-                    overflow: 'hidden',
-                    'text-overflow': 'ellipsis',
-                    'white-space': 'nowrap',
-                  }}
-                >
-                  {file().path}
-                </span>
-
-                {/* Split / Unified toggle */}
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: '2px',
-                    background: 'rgba(255,255,255,0.04)',
-                    'border-radius': '6px',
-                    padding: '2px',
-                  }}
-                >
-                  <button
-                    onClick={() => setViewMode(DiffModeEnum.Split)}
-                    style={{
-                      background:
-                        viewMode() === DiffModeEnum.Split
-                          ? 'rgba(255,255,255,0.10)'
-                          : 'transparent',
-                      border: 'none',
-                      color: viewMode() === DiffModeEnum.Split ? theme.fg : theme.fgMuted,
-                      'font-size': '11px',
-                      padding: '3px 10px',
-                      'border-radius': '4px',
-                      cursor: 'pointer',
-                      'font-family': 'inherit',
-                    }}
-                  >
-                    Split
-                  </button>
-                  <button
-                    onClick={() => setViewMode(DiffModeEnum.Unified)}
-                    style={{
-                      background:
-                        viewMode() === DiffModeEnum.Unified
-                          ? 'rgba(255,255,255,0.10)'
-                          : 'transparent',
-                      border: 'none',
-                      color: viewMode() === DiffModeEnum.Unified ? theme.fg : theme.fgMuted,
-                      'font-size': '11px',
-                      padding: '3px 10px',
-                      'border-radius': '4px',
-                      cursor: 'pointer',
-                      'font-family': 'inherit',
-                    }}
-                  >
-                    Unified
-                  </button>
-                </div>
-
                 <button
-                  onClick={() => props.onClose()}
+                  onClick={() => setViewMode(DiffModeEnum.Split)}
                   style={{
-                    background: 'transparent',
+                    background:
+                      viewMode() === DiffModeEnum.Split
+                        ? 'rgba(255,255,255,0.10)'
+                        : 'transparent',
                     border: 'none',
-                    color: theme.fgMuted,
-                    cursor: 'pointer',
-                    padding: '4px',
-                    display: 'flex',
-                    'align-items': 'center',
+                    color: viewMode() === DiffModeEnum.Split ? theme.fg : theme.fgMuted,
+                    'font-size': '11px',
+                    padding: '3px 10px',
                     'border-radius': '4px',
+                    cursor: 'pointer',
+                    'font-family': 'inherit',
                   }}
-                  title="Close"
                 >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
-                  </svg>
+                  Split
+                </button>
+                <button
+                  onClick={() => setViewMode(DiffModeEnum.Unified)}
+                  style={{
+                    background:
+                      viewMode() === DiffModeEnum.Unified
+                        ? 'rgba(255,255,255,0.10)'
+                        : 'transparent',
+                    border: 'none',
+                    color: viewMode() === DiffModeEnum.Unified ? theme.fg : theme.fgMuted,
+                    'font-size': '11px',
+                    padding: '3px 10px',
+                    'border-radius': '4px',
+                    cursor: 'pointer',
+                    'font-family': 'inherit',
+                  }}
+                >
+                  Unified
                 </button>
               </div>
 
-              {/* Body */}
-              <div
+              <button
+                onClick={() => props.onClose()}
                 style={{
-                  flex: '1',
-                  overflow: 'auto',
+                  background: 'transparent',
+                  border: 'none',
+                  color: theme.fgMuted,
+                  cursor: 'pointer',
+                  padding: '4px',
+                  display: 'flex',
+                  'align-items': 'center',
+                  'border-radius': '4px',
                 }}
+                title="Close"
               >
-                <Show when={loading()}>
-                  <div style={{ padding: '40px', 'text-align': 'center', color: theme.fgMuted }}>
-                    Loading diff...
-                  </div>
-                </Show>
-
-                <Show when={error()}>
-                  <div style={{ padding: '40px', 'text-align': 'center', color: theme.error }}>
-                    {error()}
-                  </div>
-                </Show>
-
-                <Show when={binary()}>
-                  <div style={{ padding: '40px', 'text-align': 'center', color: theme.fgMuted }}>
-                    Binary file — cannot display diff
-                  </div>
-                </Show>
-
-                <Show when={!loading() && !error() && !binary() && !rawDiff()}>
-                  <div style={{ padding: '40px', 'text-align': 'center', color: theme.fgMuted }}>
-                    No changes
-                  </div>
-                </Show>
-
-                <Show when={!loading() && !error() && !binary() && rawDiff()}>
-                  <DiffView
-                    data={{
-                      oldFile: { fileName: file().path, fileLang: detectLang(file().path) },
-                      newFile: { fileName: file().path, fileLang: detectLang(file().path) },
-                      hunks: [rawDiff()],
-                    }}
-                    diffViewMode={viewMode()}
-                    diffViewTheme="dark"
-                    diffViewHighlight
-                    diffViewWrap={false}
-                    diffViewFontSize={12}
-                  />
-                </Show>
-              </div>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+                </svg>
+              </button>
             </div>
-          </div>
+
+            {/* Body */}
+            <div
+              style={{
+                flex: '1',
+                overflow: 'auto',
+              }}
+            >
+              <Show when={loading()}>
+                <div style={{ padding: '40px', 'text-align': 'center', color: theme.fgMuted }}>
+                  Loading diff...
+                </div>
+              </Show>
+
+              <Show when={error()}>
+                <div style={{ padding: '40px', 'text-align': 'center', color: theme.error }}>
+                  {error()}
+                </div>
+              </Show>
+
+              <Show when={binary()}>
+                <div style={{ padding: '40px', 'text-align': 'center', color: theme.fgMuted }}>
+                  Binary file — cannot display diff
+                </div>
+              </Show>
+
+              <Show when={!loading() && !error() && !binary() && !rawDiff()}>
+                <div style={{ padding: '40px', 'text-align': 'center', color: theme.fgMuted }}>
+                  No changes
+                </div>
+              </Show>
+
+              <Show when={!loading() && !error() && !binary() && rawDiff()}>
+                <DiffView
+                  data={{
+                    oldFile: { fileName: file().path, fileLang: detectLang(file().path) },
+                    newFile: { fileName: file().path, fileLang: detectLang(file().path) },
+                    hunks: [rawDiff()],
+                  }}
+                  diffViewMode={viewMode()}
+                  diffViewTheme="dark"
+                  diffViewHighlight
+                  diffViewWrap={false}
+                  diffViewFontSize={12}
+                />
+              </Show>
+            </div>
+          </>
         )}
       </Show>
-    </Portal>
+    </Dialog>
   );
 }

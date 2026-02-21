@@ -1,6 +1,5 @@
-import { createSignal, createEffect, onCleanup, For, Show } from 'solid-js';
-import { Portal } from 'solid-js/web';
-import { createFocusRestore } from '../lib/focus-restore';
+import { createSignal, createEffect, For, Show } from 'solid-js';
+import { Dialog } from './Dialog';
 import { updateProject, PASTEL_HUES } from '../store/store';
 import { sanitizeBranchPrefix, toBranchName } from '../lib/branch-name';
 import { theme } from '../lib/theme';
@@ -17,8 +16,6 @@ function hueFromColor(color: string): number {
 }
 
 export function EditProjectDialog(props: EditProjectDialogProps) {
-  createFocusRestore(() => props.project !== null);
-
   const [name, setName] = createSignal('');
   const [selectedHue, setSelectedHue] = createSignal(0);
   const [branchPrefix, setBranchPrefix] = createSignal('task');
@@ -38,16 +35,6 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
     setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
     setNewCommand('');
     requestAnimationFrame(() => nameRef?.focus());
-  });
-
-  // Escape key
-  createEffect(() => {
-    if (!props.project) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') props.onClose();
-    };
-    document.addEventListener('keydown', handler);
-    onCleanup(() => document.removeEventListener('keydown', handler));
   });
 
   function addBookmark() {
@@ -82,373 +69,342 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   }
 
   return (
-    <Portal>
+    <Dialog open={props.project !== null} onClose={props.onClose} width="480px" panelStyle={{ gap: '20px' }}>
       <Show when={props.project}>
         {(project) => (
-          <div
-            class="dialog-overlay"
-            style={{
-              position: 'fixed',
-              inset: '0',
-              display: 'flex',
-              'align-items': 'center',
-              'justify-content': 'center',
-              background: 'rgba(0,0,0,0.55)',
-              'z-index': '1000',
-            }}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) props.onClose();
-            }}
-          >
+          <>
+            <h2
+              style={{
+                margin: '0',
+                'font-size': '16px',
+                color: theme.fg,
+                'font-weight': '600',
+              }}
+            >
+              Edit Project
+            </h2>
+
+            {/* Path (read-only) */}
             <div
               style={{
-                background: theme.islandBg,
-                border: `1px solid ${theme.border}`,
-                'border-radius': '14px',
-                padding: '28px',
-                width: '480px',
-                'max-height': '80vh',
-                overflow: 'auto',
-                display: 'flex',
-                'flex-direction': 'column',
-                gap: '20px',
-                'box-shadow': '0 12px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03) inset',
+                'font-size': '12px',
+                color: theme.fgSubtle,
+                'font-family': "'JetBrains Mono', monospace",
               }}
-              onClick={(e) => e.stopPropagation()}
             >
-              <h2
+              {project().path}
+            </div>
+
+            {/* Name */}
+            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+              <label
                 style={{
-                  margin: '0',
-                  'font-size': '16px',
+                  'font-size': '11px',
+                  color: theme.fgMuted,
+                  'text-transform': 'uppercase',
+                  'letter-spacing': '0.05em',
+                }}
+              >
+                Name
+              </label>
+              <input
+                ref={nameRef}
+                class="input-field"
+                type="text"
+                value={name()}
+                onInput={(e) => setName(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && canSave()) handleSave();
+                }}
+                style={{
+                  background: theme.bgInput,
+                  border: `1px solid ${theme.border}`,
+                  'border-radius': '8px',
+                  padding: '10px 14px',
                   color: theme.fg,
-                  'font-weight': '600',
+                  'font-size': '13px',
+                  outline: 'none',
                 }}
-              >
-                Edit Project
-              </h2>
+              />
+            </div>
 
-              {/* Path (read-only) */}
-              <div
+            {/* Branch prefix */}
+            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+              <label
                 style={{
-                  'font-size': '12px',
-                  color: theme.fgSubtle,
-                  'font-family': "'JetBrains Mono', monospace",
+                  'font-size': '11px',
+                  color: theme.fgMuted,
+                  'text-transform': 'uppercase',
+                  'letter-spacing': '0.05em',
                 }}
               >
-                {project().path}
-              </div>
-
-              {/* Name */}
-              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-                <label
+                Branch prefix
+              </label>
+              <input
+                class="input-field"
+                type="text"
+                value={branchPrefix()}
+                onInput={(e) => setBranchPrefix(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && canSave()) handleSave();
+                }}
+                placeholder="task"
+                style={{
+                  background: theme.bgInput,
+                  border: `1px solid ${theme.border}`,
+                  'border-radius': '8px',
+                  padding: '10px 14px',
+                  color: theme.fg,
+                  'font-size': '13px',
+                  'font-family': "'JetBrains Mono', monospace",
+                  outline: 'none',
+                }}
+              />
+              <Show when={branchPrefix().trim()}>
+                <div
                   style={{
                     'font-size': '11px',
-                    color: theme.fgMuted,
-                    'text-transform': 'uppercase',
-                    'letter-spacing': '0.05em',
+                    'font-family': "'JetBrains Mono', monospace",
+                    color: theme.fgSubtle,
+                    padding: '2px 2px 0',
+                    display: 'flex',
+                    'align-items': 'center',
+                    gap: '6px',
                   }}
                 >
-                  Name
-                </label>
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    style={{ 'flex-shrink': '0' }}
+                  >
+                    <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6.25 7.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 7.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 0h5.5a2.5 2.5 0 0 0 2.5-2.5v-.5a.75.75 0 0 0-1.5 0v.5a1 1 0 0 1-1 1H5a3.25 3.25 0 1 0 0 6.5h6.25a.75.75 0 0 0 0-1.5H5a1.75 1.75 0 1 1 0-3.5Z" />
+                  </svg>
+                  {sanitizeBranchPrefix(branchPrefix())}/{toBranchName('example-branch-name')}
+                </div>
+              </Show>
+            </div>
+
+            {/* Color palette */}
+            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+              <label
+                style={{
+                  'font-size': '11px',
+                  color: theme.fgMuted,
+                  'text-transform': 'uppercase',
+                  'letter-spacing': '0.05em',
+                }}
+              >
+                Color
+              </label>
+              <div style={{ display: 'flex', gap: '8px', 'flex-wrap': 'wrap' }}>
+                <For each={PASTEL_HUES}>
+                  {(hue) => {
+                    const color = `hsl(${hue}, 70%, 75%)`;
+                    const isSelected = () => selectedHue() === hue;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedHue(hue)}
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          'border-radius': '50%',
+                          background: color,
+                          border: isSelected()
+                            ? `2px solid ${theme.fg}`
+                            : '2px solid transparent',
+                          outline: isSelected() ? `2px solid ${theme.accent}` : 'none',
+                          'outline-offset': '1px',
+                          cursor: 'pointer',
+                          padding: '0',
+                          'flex-shrink': '0',
+                        }}
+                        title={`Hue ${hue}`}
+                      />
+                    );
+                  }}
+                </For>
+              </div>
+            </div>
+
+            {/* Merge cleanup preference */}
+            <label
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                gap: '8px',
+                cursor: 'pointer',
+                'font-size': '13px',
+                color: theme.fg,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={deleteBranchOnClose()}
+                onChange={(e) => setDeleteBranchOnClose(e.currentTarget.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              Always delete branch and worklog on merge
+            </label>
+
+            {/* Command Bookmarks */}
+            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+              <label
+                style={{
+                  'font-size': '11px',
+                  color: theme.fgMuted,
+                  'text-transform': 'uppercase',
+                  'letter-spacing': '0.05em',
+                }}
+              >
+                Command Bookmarks
+              </label>
+              <Show when={bookmarks().length > 0}>
+                <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
+                  <For each={bookmarks()}>
+                    {(bookmark) => (
+                      <div
+                        style={{
+                          display: 'flex',
+                          'align-items': 'center',
+                          gap: '8px',
+                          padding: '4px 8px',
+                          background: theme.bgInput,
+                          'border-radius': '6px',
+                          border: `1px solid ${theme.border}`,
+                        }}
+                      >
+                        <span
+                          style={{
+                            flex: '1',
+                            'font-size': '11px',
+                            'font-family': "'JetBrains Mono', monospace",
+                            color: theme.fgSubtle,
+                            overflow: 'hidden',
+                            'text-overflow': 'ellipsis',
+                            'white-space': 'nowrap',
+                          }}
+                        >
+                          {bookmark.command}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeBookmark(bookmark.id)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: theme.fgSubtle,
+                            cursor: 'pointer',
+                            padding: '2px',
+                            'line-height': '1',
+                            'flex-shrink': '0',
+                          }}
+                          title="Remove bookmark"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <div style={{ display: 'flex', gap: '6px' }}>
                 <input
-                  ref={nameRef}
                   class="input-field"
                   type="text"
-                  value={name()}
-                  onInput={(e) => setName(e.currentTarget.value)}
+                  value={newCommand()}
+                  onInput={(e) => setNewCommand(e.currentTarget.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && canSave()) handleSave();
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addBookmark();
+                    }
                   }}
+                  placeholder="e.g. npm run dev"
                   style={{
+                    flex: '1',
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
                     'border-radius': '8px',
-                    padding: '10px 14px',
+                    padding: '8px 12px',
                     color: theme.fg,
-                    'font-size': '13px',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              {/* Branch prefix */}
-              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-                <label
-                  style={{
-                    'font-size': '11px',
-                    color: theme.fgMuted,
-                    'text-transform': 'uppercase',
-                    'letter-spacing': '0.05em',
-                  }}
-                >
-                  Branch prefix
-                </label>
-                <input
-                  class="input-field"
-                  type="text"
-                  value={branchPrefix()}
-                  onInput={(e) => setBranchPrefix(e.currentTarget.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && canSave()) handleSave();
-                  }}
-                  placeholder="task"
-                  style={{
-                    background: theme.bgInput,
-                    border: `1px solid ${theme.border}`,
-                    'border-radius': '8px',
-                    padding: '10px 14px',
-                    color: theme.fg,
-                    'font-size': '13px',
+                    'font-size': '12px',
                     'font-family': "'JetBrains Mono', monospace",
                     outline: 'none',
                   }}
                 />
-                <Show when={branchPrefix().trim()}>
-                  <div
-                    style={{
-                      'font-size': '11px',
-                      'font-family': "'JetBrains Mono', monospace",
-                      color: theme.fgSubtle,
-                      padding: '2px 2px 0',
-                      display: 'flex',
-                      'align-items': 'center',
-                      gap: '6px',
-                    }}
-                  >
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 16 16"
-                      fill="currentColor"
-                      style={{ 'flex-shrink': '0' }}
-                    >
-                      <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6.25 7.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 7.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 0h5.5a2.5 2.5 0 0 0 2.5-2.5v-.5a.75.75 0 0 0-1.5 0v.5a1 1 0 0 1-1 1H5a3.25 3.25 0 1 0 0 6.5h6.25a.75.75 0 0 0 0-1.5H5a1.75 1.75 0 1 1 0-3.5Z" />
-                    </svg>
-                    {sanitizeBranchPrefix(branchPrefix())}/{toBranchName('example-branch-name')}
-                  </div>
-                </Show>
-              </div>
-
-              {/* Color palette */}
-              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-                <label
-                  style={{
-                    'font-size': '11px',
-                    color: theme.fgMuted,
-                    'text-transform': 'uppercase',
-                    'letter-spacing': '0.05em',
-                  }}
-                >
-                  Color
-                </label>
-                <div style={{ display: 'flex', gap: '8px', 'flex-wrap': 'wrap' }}>
-                  <For each={PASTEL_HUES}>
-                    {(hue) => {
-                      const color = `hsl(${hue}, 70%, 75%)`;
-                      const isSelected = () => selectedHue() === hue;
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedHue(hue)}
-                          style={{
-                            width: '28px',
-                            height: '28px',
-                            'border-radius': '50%',
-                            background: color,
-                            border: isSelected()
-                              ? `2px solid ${theme.fg}`
-                              : '2px solid transparent',
-                            outline: isSelected() ? `2px solid ${theme.accent}` : 'none',
-                            'outline-offset': '1px',
-                            cursor: 'pointer',
-                            padding: '0',
-                            'flex-shrink': '0',
-                          }}
-                          title={`Hue ${hue}`}
-                        />
-                      );
-                    }}
-                  </For>
-                </div>
-              </div>
-
-              {/* Merge cleanup preference */}
-              <label
-                style={{
-                  display: 'flex',
-                  'align-items': 'center',
-                  gap: '8px',
-                  cursor: 'pointer',
-                  'font-size': '13px',
-                  color: theme.fg,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={deleteBranchOnClose()}
-                  onChange={(e) => setDeleteBranchOnClose(e.currentTarget.checked)}
-                  style={{ cursor: 'pointer' }}
-                />
-                Always delete branch and worklog on merge
-              </label>
-
-              {/* Command Bookmarks */}
-              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-                <label
-                  style={{
-                    'font-size': '11px',
-                    color: theme.fgMuted,
-                    'text-transform': 'uppercase',
-                    'letter-spacing': '0.05em',
-                  }}
-                >
-                  Command Bookmarks
-                </label>
-                <Show when={bookmarks().length > 0}>
-                  <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
-                    <For each={bookmarks()}>
-                      {(bookmark) => (
-                        <div
-                          style={{
-                            display: 'flex',
-                            'align-items': 'center',
-                            gap: '8px',
-                            padding: '4px 8px',
-                            background: theme.bgInput,
-                            'border-radius': '6px',
-                            border: `1px solid ${theme.border}`,
-                          }}
-                        >
-                          <span
-                            style={{
-                              flex: '1',
-                              'font-size': '11px',
-                              'font-family': "'JetBrains Mono', monospace",
-                              color: theme.fgSubtle,
-                              overflow: 'hidden',
-                              'text-overflow': 'ellipsis',
-                              'white-space': 'nowrap',
-                            }}
-                          >
-                            {bookmark.command}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => removeBookmark(bookmark.id)}
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              color: theme.fgSubtle,
-                              cursor: 'pointer',
-                              padding: '2px',
-                              'line-height': '1',
-                              'flex-shrink': '0',
-                            }}
-                            title="Remove bookmark"
-                          >
-                            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                              <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
-                            </svg>
-                          </button>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <input
-                    class="input-field"
-                    type="text"
-                    value={newCommand()}
-                    onInput={(e) => setNewCommand(e.currentTarget.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        addBookmark();
-                      }
-                    }}
-                    placeholder="e.g. npm run dev"
-                    style={{
-                      flex: '1',
-                      background: theme.bgInput,
-                      border: `1px solid ${theme.border}`,
-                      'border-radius': '8px',
-                      padding: '8px 12px',
-                      color: theme.fg,
-                      'font-size': '12px',
-                      'font-family': "'JetBrains Mono', monospace",
-                      outline: 'none',
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={addBookmark}
-                    disabled={!newCommand().trim()}
-                    style={{
-                      padding: '8px 14px',
-                      background: theme.bgInput,
-                      border: `1px solid ${theme.border}`,
-                      'border-radius': '8px',
-                      color: newCommand().trim() ? theme.fg : theme.fgSubtle,
-                      cursor: newCommand().trim() ? 'pointer' : 'not-allowed',
-                      'font-size': '12px',
-                      'flex-shrink': '0',
-                    }}
-                  >
-                    Add
-                  </button>
-                </div>
-              </div>
-
-              {/* Buttons */}
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '8px',
-                  'justify-content': 'flex-end',
-                  'padding-top': '4px',
-                }}
-              >
                 <button
                   type="button"
-                  class="btn-secondary"
-                  onClick={() => props.onClose()}
+                  onClick={addBookmark}
+                  disabled={!newCommand().trim()}
                   style={{
-                    padding: '9px 18px',
+                    padding: '8px 14px',
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
                     'border-radius': '8px',
-                    color: theme.fgMuted,
-                    cursor: 'pointer',
-                    'font-size': '13px',
+                    color: newCommand().trim() ? theme.fg : theme.fgSubtle,
+                    cursor: newCommand().trim() ? 'pointer' : 'not-allowed',
+                    'font-size': '12px',
+                    'flex-shrink': '0',
                   }}
                 >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  class="btn-primary"
-                  disabled={!canSave()}
-                  onClick={handleSave}
-                  style={{
-                    padding: '9px 20px',
-                    background: theme.accent,
-                    border: 'none',
-                    'border-radius': '8px',
-                    color: theme.accentText,
-                    cursor: canSave() ? 'pointer' : 'not-allowed',
-                    'font-size': '13px',
-                    'font-weight': '500',
-                    opacity: canSave() ? '1' : '0.4',
-                  }}
-                >
-                  Save
+                  Add
                 </button>
               </div>
             </div>
-          </div>
+
+            {/* Buttons */}
+            <div
+              style={{
+                display: 'flex',
+                gap: '8px',
+                'justify-content': 'flex-end',
+                'padding-top': '4px',
+              }}
+            >
+              <button
+                type="button"
+                class="btn-secondary"
+                onClick={() => props.onClose()}
+                style={{
+                  padding: '9px 18px',
+                  background: theme.bgInput,
+                  border: `1px solid ${theme.border}`,
+                  'border-radius': '8px',
+                  color: theme.fgMuted,
+                  cursor: 'pointer',
+                  'font-size': '13px',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="btn-primary"
+                disabled={!canSave()}
+                onClick={handleSave}
+                style={{
+                  padding: '9px 20px',
+                  background: theme.accent,
+                  border: 'none',
+                  'border-radius': '8px',
+                  color: theme.accentText,
+                  cursor: canSave() ? 'pointer' : 'not-allowed',
+                  'font-size': '13px',
+                  'font-weight': '500',
+                  opacity: canSave() ? '1' : '0.4',
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </>
         )}
       </Show>
-    </Portal>
+    </Dialog>
   );
 }
