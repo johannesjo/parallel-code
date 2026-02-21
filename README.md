@@ -9,6 +9,14 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Electron-47848F?logo=electron&logoColor=white" alt="Electron">
+  <img src="https://img.shields.io/badge/SolidJS-2C4F7C?logo=solid&logoColor=white" alt="SolidJS">
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-lightgrey" alt="macOS | Linux">
+  <img src="https://img.shields.io/github/license/johannesjo/parallel-code" alt="License">
+</p>
+
+<p align="center">
   <img src="screens/demo.gif" alt="Parallel Code demo" width="800">
 </p>
 
@@ -16,12 +24,10 @@ Parallel Code lets you dispatch tasks to AI coding agents — Claude Code, Codex
 
 ## Screenshots
 
-| Agent working on a task                     | Commit & merge workflow           |
-| ------------------------------------------- | --------------------------------- |
+| Agent working on a task | Commit & merge workflow |
+|---|---|
 | ![Agent working](screens/agent-working.png) | ![Workflow](screens/workflow.png) |
-
-| Direct mode (main branch)               | Themes                        |
-| --------------------------------------- | ----------------------------- |
+| **Direct mode (main branch)** | **Themes** |
 | ![Direct mode](screens/direct-mode.png) | ![Themes](screens/themes.png) |
 
 ## Features
@@ -33,6 +39,10 @@ Use [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](h
 ### Automatic branches and worktrees
 
 Every task gets its own git branch and [worktree](https://git-scm.com/docs/git-worktree) instantly. Agents work in full isolation — no conflicts, no stashing, no waiting. Five agents, five features, one repo. Merge back to main when you're done.
+
+### Monitor from your phone
+
+Scan a QR code and watch all your agent terminals live on your phone — over Wi-Fi or Tailscale. Step away from your desk while your agents keep working.
 
 ### Keyboard-first, zero friction
 
@@ -76,7 +86,8 @@ When you create a task, Parallel Code:
 
 This means you can have five agents working on five different features at the same time, all from the same repo, with zero conflicts. When you're happy with the result, merge the branch back to main from the sidebar.
 
-## Keyboard Shortcuts
+<details>
+<summary><strong>Keyboard Shortcuts</strong></summary>
 
 `Ctrl` = `Cmd` on macOS.
 
@@ -104,9 +115,7 @@ This means you can have five agents working on five different features at the sa
 | `Ctrl+Scroll`         | Adjust zoom                    |
 | `Escape`              | Close dialog                   |
 
-## Built With
-
-[Electron](https://www.electronjs.org/) · [SolidJS](https://www.solidjs.com/) · [Node.js](https://nodejs.org/) · [xterm.js](https://xtermjs.org/)
+</details>
 
 ## License
 
