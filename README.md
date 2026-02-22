@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Run multiple AI coding agents side by side, each in their own isolated git worktree and monitor from your phone.
+  Run multiple AI coding agents without the chaos.
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
   <img src="screens/longer-video.gif" alt="Parallel Code demo" width="800">
 </p>
 
-**Parallel Code** lets you dispatch tasks to AI coding agents — Claude Code, Codex CLI, or Gemini CLI — and watch them work simultaneously. Each task gets its own git branch and worktree, so agents never step on each other's code. When a task is done, merge it back to main with one click.
+**Parallel Code** gives Claude Code, Codex CLI, and Gemini CLI each their own git branch and worktree — automatically. No agents stepping on each other's code, no juggling terminals, no mental overhead. Just one clean interface where you can see everything, navigate fast, merge results when they're ready — and monitor it all from your phone.
 
 ## Screenshots
 
@@ -27,10 +27,6 @@
 | ![Agent working](screens/agent-working.png) | ![Workflow](screens/workflow.png) |
 | **Direct mode (main branch)**               | **Themes**                        |
 | ![Direct mode](screens/direct-mode.png)     | ![Themes](screens/themes.png)     |
-
-<p align="center">
-  <img src="screens/best-video.gif" alt="Parallel Code in action" width="800">
-</p>
 
 ## Features
 
@@ -62,6 +58,8 @@ Navigate panels, create tasks, send prompts, merge branches, push to remote — 
 
 ## Why Parallel Code?
 
+Running multiple AI coding agents is powerful — but chaotic. On the same branch, agents interfere with each other's code. Across terminals, you lose track of what's happening where. Setting up feature branches and worktrees manually works, but adds cognitive load you shouldn't have to deal with.
+
 | Approach | What's missing |
 | --- | --- |
 | **Multiple terminal windows / tmux** | No GUI, no automatic git isolation — you manage worktrees, branches, and merges by hand |
@@ -69,6 +67,17 @@ Navigate panels, create tasks, send prompts, merge branches, push to remote — 
 | **Running agents sequentially** | One task at a time — blocks your workflow while each agent finishes |
 
 Parallel Code combines a dedicated GUI, automatic worktree isolation, and multi-agent orchestration into one app — so you can dispatch five tasks and walk away.
+
+## How Parallel Code Solves It
+
+When you create a task, Parallel Code:
+
+1. Creates a new git branch from your main branch
+2. Sets up a [git worktree](https://git-scm.com/docs/git-worktree) so the agent works in a separate directory
+3. Symlinks `node_modules` and other gitignored directories into the worktree
+4. Spawns the AI agent in that worktree
+
+This means you can have five agents working on five different features at the same time, all from the same repo, with zero conflicts. When you're happy with the result, merge the branch back to main from the sidebar.
 
 ## Getting Started
 
@@ -93,17 +102,6 @@ npm run dev
 Requires [Node.js](https://nodejs.org/) v18+.
 
 </details>
-
-## How It Works
-
-When you create a task, Parallel Code:
-
-1. Creates a new git branch from your main branch
-2. Sets up a [git worktree](https://git-scm.com/docs/git-worktree) so the agent works in a separate directory
-3. Symlinks `node_modules` and other gitignored directories into the worktree
-4. Spawns the AI agent in that worktree
-
-This means you can have five agents working on five different features at the same time, all from the same repo, with zero conflicts. When you're happy with the result, merge the branch back to main from the sidebar.
 
 <details>
 <summary><strong>Keyboard Shortcuts</strong></summary>
@@ -135,6 +133,10 @@ This means you can have five agents working on five different features at the sa
 | `Escape`              | Close dialog                   |
 
 </details>
+
+---
+
+If Parallel Code saves you time, consider giving it a [star on GitHub](https://github.com/johannesjo/parallel-code). It helps others find the project.
 
 ## License
 
