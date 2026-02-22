@@ -32,11 +32,11 @@
 
 Running multiple AI coding agents is powerful — but chaotic. On the same branch, agents interfere with each other's code. Across terminals, you lose track of what's happening where. Setting up feature branches and worktrees manually works, but adds cognitive load you shouldn't have to deal with.
 
-| Approach | What's missing |
-| --- | --- |
-| **Multiple terminal windows / tmux** | No GUI, no automatic git isolation — you manage worktrees, branches, and merges by hand |
-| **VS Code extensions** (Kilo Code, Roo Code, etc.) | Tied to VS Code; no true parallel worktree isolation between agents |
-| **Running agents sequentially** | One task at a time — blocks your workflow while each agent finishes |
+| Approach                                           | What's missing                                                                          |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **Multiple terminal windows / tmux**               | No GUI, no automatic git isolation — you manage worktrees, branches, and merges by hand |
+| **VS Code extensions** (Kilo Code, Roo Code, etc.) | Tied to VS Code; no true parallel worktree isolation between agents                     |
+| **Running agents sequentially**                    | One task at a time — blocks your workflow while each agent finishes                     |
 
 Parallel Code combines a dedicated GUI, automatic worktree isolation, and multi-agent orchestration into one app — so you can dispatch five tasks and walk away.
 
