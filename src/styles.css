@@ -476,12 +476,12 @@ textarea::placeholder {
   border: none;
   color: inherit;
   font: inherit;
-  padding: 0;
+  padding: 0 0 0 20px;
   cursor: pointer;
 }
 
 .new-task-project-select selectedcontent .project-color-dot {
-  margin-right: 4px;
+  display: none;
 }
 
 .project-color-dot {

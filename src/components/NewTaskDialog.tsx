@@ -55,6 +55,12 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     }
   });
 
+  const selectedProjectColor = () => {
+    const pid = selectedProjectId();
+    const project = pid ? getProject(pid) : null;
+    return project?.color ?? 'transparent';
+  };
+
   const focusableSelector =
     'textarea:not(:disabled), input:not(:disabled), select:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
@@ -368,23 +374,37 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           >
             Project
           </label>
-          <select
-            ref={projectSelectRef}
-            class="new-task-project-select"
-            value={selectedProjectId() ?? ''}
-            onChange={(e) => setSelectedProjectId(e.currentTarget.value || null)}
-          >
-            <For each={store.projects}>
-              {(project) => (
-                <option value={project.id}>
-                  <span class="project-color-dot" style={{ background: project.color }} />
-                  <span>
-                    {project.name} — {project.path}
-                  </span>
-                </option>
-              )}
-            </For>
-          </select>
+          <div style={{ position: 'relative' }}>
+            <span
+              class="project-color-dot"
+              style={{
+                position: 'absolute',
+                left: '10px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                'z-index': '1',
+                'pointer-events': 'none',
+                background: selectedProjectColor(),
+              }}
+            />
+            <select
+              ref={projectSelectRef}
+              class="new-task-project-select"
+              value={selectedProjectId() ?? ''}
+              onChange={(e) => setSelectedProjectId(e.currentTarget.value || null)}
+            >
+              <For each={store.projects}>
+                {(project) => (
+                  <option value={project.id}>
+                    <span class="project-color-dot" style={{ background: project.color }} />
+                    <span>
+                      {project.name} — {project.path}
+                    </span>
+                  </option>
+                )}
+              </For>
+            </select>
+          </div>
         </div>
 
         {/* Prompt input (optional) */}
