@@ -211,6 +211,12 @@ export function registerAllHandlers(win: BrowserWindow): void {
     shell.showItemInFolder(args.filePath);
   });
 
+  ipcMain.handle(IPC.ShellOpenFile, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    validateRelativePath(args.filePath, 'filePath');
+    return shell.openPath(path.join(args.worktreePath, args.filePath));
+  });
+
   // --- Remote access ---
   ipcMain.handle(IPC.StartRemoteServer, (_e, args: { port?: number }) => {
     if (remoteServer)

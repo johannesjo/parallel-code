@@ -56,6 +56,7 @@ const ALLOWED_CHANNELS = new Set([
   '__dialog_open',
   // Shell
   '__shell_reveal',
+  '__shell_open_file',
   // Remote access
   'start_remote_server',
   'stop_remote_server',

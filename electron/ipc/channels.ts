@@ -57,6 +57,7 @@ export enum IPC {
 
   // Shell
   ShellReveal = '__shell_reveal',
+  ShellOpenFile = '__shell_open_file',
 
   // Remote access
   StartRemoteServer = 'start_remote_server',
