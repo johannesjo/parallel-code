@@ -43,7 +43,15 @@ export function removeProject(projectId: string): void {
 export function updateProject(
   projectId: string,
   updates: Partial<
-    Pick<Project, 'name' | 'color' | 'branchPrefix' | 'deleteBranchOnClose' | 'terminalBookmarks'>
+    Pick<
+      Project,
+      | 'name'
+      | 'color'
+      | 'branchPrefix'
+      | 'deleteBranchOnClose'
+      | 'defaultDirectMode'
+      | 'terminalBookmarks'
+    >
   >,
 ): void {
   setStore(
@@ -56,6 +64,8 @@ export function updateProject(
         s.projects[idx].branchPrefix = sanitizeBranchPrefix(updates.branchPrefix);
       if (updates.deleteBranchOnClose !== undefined)
         s.projects[idx].deleteBranchOnClose = updates.deleteBranchOnClose;
+      if (updates.defaultDirectMode !== undefined)
+        s.projects[idx].defaultDirectMode = updates.defaultDirectMode;
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
     }),

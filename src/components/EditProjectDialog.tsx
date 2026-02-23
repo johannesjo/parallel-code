@@ -20,6 +20,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [selectedHue, setSelectedHue] = createSignal(0);
   const [branchPrefix, setBranchPrefix] = createSignal('task');
   const [deleteBranchOnClose, setDeleteBranchOnClose] = createSignal(true);
+  const [defaultDirectMode, setDefaultDirectMode] = createSignal(false);
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
   const [newCommand, setNewCommand] = createSignal('');
   let nameRef!: HTMLInputElement;
@@ -32,6 +33,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
     setSelectedHue(hueFromColor(p.color));
     setBranchPrefix(sanitizeBranchPrefix(p.branchPrefix ?? 'task'));
     setDeleteBranchOnClose(p.deleteBranchOnClose ?? true);
+    setDefaultDirectMode(p.defaultDirectMode ?? false);
     setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
     setNewCommand('');
     requestAnimationFrame(() => nameRef?.focus());
@@ -63,6 +65,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
       color: `hsl(${selectedHue()}, 70%, 75%)`,
       branchPrefix: sanitizedPrefix,
       deleteBranchOnClose: deleteBranchOnClose(),
+      defaultDirectMode: defaultDirectMode(),
       terminalBookmarks: bookmarks(),
     });
     props.onClose();
@@ -250,6 +253,26 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 style={{ cursor: 'pointer' }}
               />
               Always delete branch and worklog on merge
+            </label>
+
+            {/* Default direct mode preference */}
+            <label
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                gap: '8px',
+                cursor: 'pointer',
+                'font-size': '13px',
+                color: theme.fg,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={defaultDirectMode()}
+                onChange={(e) => setDefaultDirectMode(e.currentTarget.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              Default to working directly on main branch
             </label>
 
             {/* Command Bookmarks */}
