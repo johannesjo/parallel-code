@@ -19,7 +19,9 @@ const ALLOWED_CHANNELS = new Set([
   'delete_task',
   // Git
   'get_changed_files',
+  'get_changed_files_from_branch',
   'get_file_diff',
+  'get_file_diff_from_branch',
   'get_gitignored_dirs',
   'get_worktree_status',
   'commit_all',
@@ -64,6 +66,7 @@ const ALLOWED_CHANNELS = new Set([
   'load_arena_data',
   'create_arena_worktree',
   'remove_arena_worktree',
+  'check_path_exists',
   // Remote access
   'start_remote_server',
   'stop_remote_server',

@@ -19,7 +19,9 @@ import {
   getMainBranch,
   getCurrentBranch,
   getChangedFiles,
+  getChangedFilesFromBranch,
   getFileDiff,
+  getFileDiffFromBranch,
   getWorktreeStatus,
   commitAll,
   discardUncommitted,
@@ -94,10 +96,21 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.worktreePath, 'worktreePath');
     return getChangedFiles(args.worktreePath);
   });
+  ipcMain.handle(IPC.GetChangedFilesFromBranch, (_e, args) => {
+    validatePath(args.projectRoot, 'projectRoot');
+    validateBranchName(args.branchName, 'branchName');
+    return getChangedFilesFromBranch(args.projectRoot, args.branchName);
+  });
   ipcMain.handle(IPC.GetFileDiff, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
     validateRelativePath(args.filePath, 'filePath');
     return getFileDiff(args.worktreePath, args.filePath);
+  });
+  ipcMain.handle(IPC.GetFileDiffFromBranch, (_e, args) => {
+    validatePath(args.projectRoot, 'projectRoot');
+    validateBranchName(args.branchName, 'branchName');
+    validateRelativePath(args.filePath, 'filePath');
+    return getFileDiffFromBranch(args.projectRoot, args.branchName, args.filePath);
   });
   ipcMain.handle(IPC.GetGitignoredDirs, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');

@@ -11,6 +11,10 @@ interface ChangedFilesListProps {
   isActive?: boolean;
   onFileClick?: (file: ChangedFile) => void;
   ref?: (el: HTMLDivElement) => void;
+  /** Project root for branch-based fallback when worktree doesn't exist */
+  projectRoot?: string;
+  /** Branch name for branch-based fallback when worktree doesn't exist */
+  branchName?: string | null;
 }
 
 export function ChangedFilesList(props: ChangedFilesListProps) {
@@ -36,30 +40,56 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     }
   }
 
-  // Poll every 5s, matching the git status polling interval
+  // Poll every 5s, matching the git status polling interval.
+  // Falls back to branch-based diff when worktree path doesn't exist.
   createEffect(() => {
     const path = props.worktreePath;
+    const projectRoot = props.projectRoot;
+    const branchName = props.branchName;
     if (!props.isActive) return;
     let cancelled = false;
     let inFlight = false;
+    let usingBranchFallback = false;
 
     async function refresh() {
-      if (!path || inFlight) return;
+      if (inFlight) return;
       inFlight = true;
       try {
-        const result = await invoke<ChangedFile[]>(IPC.GetChangedFiles, {
-          worktreePath: path,
-        });
-        if (!cancelled) setFiles(result);
-      } catch {
-        // Silently ignore — worktree may not exist yet
+        // Try worktree-based fetch first
+        if (path && !usingBranchFallback) {
+          try {
+            const result = await invoke<ChangedFile[]>(IPC.GetChangedFiles, {
+              worktreePath: path,
+            });
+            if (!cancelled) setFiles(result);
+            return;
+          } catch {
+            // Worktree may not exist — try branch fallback below
+          }
+        }
+
+        // Branch-based fallback: static data, no need to re-poll
+        if (!usingBranchFallback && projectRoot && branchName) {
+          usingBranchFallback = true;
+          try {
+            const result = await invoke<ChangedFile[]>(IPC.GetChangedFilesFromBranch, {
+              projectRoot,
+              branchName,
+            });
+            if (!cancelled) setFiles(result);
+          } catch {
+            // Branch may no longer exist
+          }
+        }
       } finally {
         inFlight = false;
       }
     }
 
-    refresh();
-    const timer = setInterval(refresh, 5000);
+    void refresh();
+    const timer = setInterval(() => {
+      if (!usingBranchFallback) void refresh();
+    }, 5000);
     onCleanup(() => {
       cancelled = true;
       clearInterval(timer);

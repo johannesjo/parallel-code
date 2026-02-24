@@ -14,6 +14,10 @@ interface DiffViewerDialogProps {
   file: ChangedFile | null;
   worktreePath: string;
   onClose: () => void;
+  /** Project root for branch-based fallback when worktree doesn't exist */
+  projectRoot?: string;
+  /** Branch name for branch-based fallback when worktree doesn't exist */
+  branchName?: string | null;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -78,15 +82,31 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
     const file = props.file;
     if (!file) return;
 
+    const worktreePath = props.worktreePath;
+    const projectRoot = props.projectRoot;
+    const branchName = props.branchName;
+
     setLoading(true);
     setError('');
     setBinary(false);
     setRawDiff('');
 
-    invoke<string>(IPC.GetFileDiff, {
-      worktreePath: props.worktreePath,
-      filePath: file.path,
-    })
+    const worktreePromise = worktreePath
+      ? invoke<string>(IPC.GetFileDiff, { worktreePath, filePath: file.path })
+      : Promise.reject(new Error('no worktree'));
+
+    worktreePromise
+      .catch(() => {
+        // Worktree may not exist — try branch-based fallback
+        if (projectRoot && branchName) {
+          return invoke<string>(IPC.GetFileDiffFromBranch, {
+            projectRoot,
+            branchName,
+            filePath: file.path,
+          });
+        }
+        return '';
+      })
       .then((raw) => {
         if (isBinaryDiff(raw)) {
           setBinary(true);
@@ -199,11 +219,13 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
 
               <button
                 onClick={() => openFileInEditor(props.worktreePath, file().path)}
+                disabled={!props.worktreePath}
                 style={{
                   background: 'transparent',
                   border: 'none',
                   color: theme.fgMuted,
-                  cursor: 'pointer',
+                  cursor: props.worktreePath ? 'pointer' : 'default',
+                  opacity: props.worktreePath ? '1' : '0.3',
                   padding: '4px',
                   display: 'flex',
                   'align-items': 'center',

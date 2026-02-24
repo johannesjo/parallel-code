@@ -632,6 +632,99 @@ export async function getBranchLog(worktreePath: string): Promise<string> {
   }
 }
 
+export async function getChangedFilesFromBranch(
+  projectRoot: string,
+  branchName: string,
+): Promise<
+  Array<{
+    path: string;
+    lines_added: number;
+    lines_removed: number;
+    status: string;
+    committed: boolean;
+  }>
+> {
+  const mainBranch = await detectMainBranch(projectRoot);
+
+  let diffStr = '';
+  try {
+    const { stdout } = await exec(
+      'git',
+      ['diff', '--raw', '--numstat', `${mainBranch}...${branchName}`],
+      { cwd: projectRoot, maxBuffer: MAX_BUFFER },
+    );
+    diffStr = stdout;
+  } catch {
+    return [];
+  }
+
+  const statusMap = new Map<string, string>();
+  const numstatMap = new Map<string, [number, number]>();
+
+  for (const line of diffStr.split('\n')) {
+    if (line.startsWith(':')) {
+      const parts = line.split('\t');
+      if (parts.length >= 2) {
+        const statusLetter = parts[0].split(/\s+/).pop()?.charAt(0) ?? 'M';
+        const rawPath = parts[parts.length - 1];
+        const p = normalizeStatusPath(rawPath);
+        if (p) statusMap.set(p, statusLetter);
+      }
+      continue;
+    }
+    const parts = line.split('\t');
+    if (parts.length >= 3) {
+      const added = parseInt(parts[0], 10);
+      const removed = parseInt(parts[1], 10);
+      if (!isNaN(added) && !isNaN(removed)) {
+        const rawPath = parts[parts.length - 1];
+        const p = normalizeStatusPath(rawPath);
+        if (p) numstatMap.set(p, [added, removed]);
+      }
+    }
+  }
+
+  const files: Array<{
+    path: string;
+    lines_added: number;
+    lines_removed: number;
+    status: string;
+    committed: boolean;
+  }> = [];
+
+  for (const [p, [added, removed]] of numstatMap) {
+    const status = statusMap.get(p) ?? 'M';
+    files.push({ path: p, lines_added: added, lines_removed: removed, status, committed: true });
+  }
+
+  // Include files in statusMap but not in numstat (e.g. binary files)
+  for (const [p, status] of statusMap) {
+    if (numstatMap.has(p)) continue;
+    files.push({ path: p, lines_added: 0, lines_removed: 0, status, committed: true });
+  }
+
+  files.sort((a, b) => a.path.localeCompare(b.path));
+  return files;
+}
+
+export async function getFileDiffFromBranch(
+  projectRoot: string,
+  branchName: string,
+  filePath: string,
+): Promise<string> {
+  const mainBranch = await detectMainBranch(projectRoot);
+  try {
+    const { stdout } = await exec(
+      'git',
+      ['diff', `${mainBranch}...${branchName}`, '--', filePath],
+      { cwd: projectRoot, maxBuffer: MAX_BUFFER },
+    );
+    return stdout;
+  } catch {
+    return '';
+  }
+}
+
 export async function pushTask(projectRoot: string, branchName: string): Promise<void> {
   await exec('git', ['push', '-u', 'origin', '--', branchName], { cwd: projectRoot });
 }

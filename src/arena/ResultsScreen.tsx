@@ -55,6 +55,7 @@ export function ResultsScreen() {
   const [ratings, setRatings] = createSignal<Record<string, number>>(initialRatings());
   const [diffFile, setDiffFile] = createSignal<ChangedFile | null>(null);
   const [diffWorktree, setDiffWorktree] = createSignal('');
+  const [diffBranch, setDiffBranch] = createSignal<string | null>(null);
   const [expandedOutputs, setExpandedOutputs] = createSignal<Record<string, boolean>>({});
 
   const merge = createMergeWorkflow();
@@ -170,8 +171,9 @@ export function ResultsScreen() {
     setBattleSaved(true);
   }
 
-  function handleFileClick(worktreePath: string, file: ChangedFile) {
+  function handleFileClick(worktreePath: string, branchName: string | null, file: ChangedFile) {
     setDiffWorktree(worktreePath);
+    setDiffBranch(branchName);
     setDiffFile(file);
   }
 
@@ -228,19 +230,19 @@ export function ResultsScreen() {
                 </Show>
 
                 {/* Changed files */}
-                <Show when={competitor.worktreePath}>
-                  {(worktreePath) => (
-                    <div class="arena-result-column-files">
-                      <span class="arena-section-label">Changed files</span>
-                      <div class="arena-result-column-files-list">
-                        <ChangedFilesList
-                          worktreePath={worktreePath()}
-                          isActive={true}
-                          onFileClick={(file) => handleFileClick(worktreePath(), file)}
-                        />
-                      </div>
+                <Show when={competitor.worktreePath || competitor.branchName}>
+                  <div class="arena-result-column-files">
+                    <span class="arena-section-label">Changed files</span>
+                    <div class="arena-result-column-files-list">
+                      <ChangedFilesList
+                        worktreePath={competitor.worktreePath ?? ''}
+                        isActive={true}
+                        projectRoot={arenaStore.cwd || undefined}
+                        branchName={competitor.branchName}
+                        onFileClick={(file) => handleFileClick(competitor.worktreePath ?? '', competitor.branchName, file)}
+                      />
                     </div>
-                  )}
+                  </div>
                 </Show>
 
                 {/* Star rating */}
@@ -360,6 +362,8 @@ export function ResultsScreen() {
       <DiffViewerDialog
         file={diffFile()}
         worktreePath={diffWorktree()}
+        projectRoot={arenaStore.cwd || undefined}
+        branchName={diffBranch()}
         onClose={() => setDiffFile(null)}
       />
 
