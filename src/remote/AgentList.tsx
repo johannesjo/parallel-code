@@ -16,7 +16,7 @@ export function AgentList(props: AgentListProps) {
         display: 'flex',
         'flex-direction': 'column',
         height: '100%',
-        background: '#1e1e1e',
+        background: '#0b0f14',
       }}
     >
       {/* Header */}
@@ -25,11 +25,12 @@ export function AgentList(props: AgentListProps) {
           display: 'flex',
           'align-items': 'center',
           'justify-content': 'space-between',
-          padding: '16px 16px 12px',
-          'border-bottom': '1px solid #333',
+          padding: '14px 16px 12px',
+          'border-bottom': '1px solid #223040',
+          background: '#12181f',
         }}
       >
-        <span style={{ 'font-size': '18px', 'font-weight': '600', color: '#e0e0e0' }}>
+        <span style={{ 'font-size': '17px', 'font-weight': '600', color: '#d7e4f0' }}>
           Parallel Code
         </span>
         <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
@@ -40,13 +41,13 @@ export function AgentList(props: AgentListProps) {
               'border-radius': '50%',
               background:
                 status() === 'connected'
-                  ? '#4ade80'
+                  ? '#2fd198'
                   : status() === 'connecting'
-                    ? '#facc15'
-                    : '#ef4444',
+                    ? '#ffc569'
+                    : '#ff5f73',
             }}
           />
-          <span style={{ 'font-size': '13px', color: '#999' }}>
+          <span style={{ 'font-size': '13px', color: '#678197' }}>
             {running()}/{total()}
           </span>
         </div>
@@ -85,7 +86,7 @@ export function AgentList(props: AgentListProps) {
           <div
             style={{
               'text-align': 'center',
-              color: '#666',
+              color: '#678197',
               'padding-top': '60px',
               'font-size': '14px',
             }}
@@ -100,11 +101,11 @@ export function AgentList(props: AgentListProps) {
         <div
           style={{
             padding: '8px 12px',
-            background: '#2a2a1e',
-            border: '1px solid #444422',
-            'border-radius': '8px',
+            background: '#11182080',
+            border: '1px solid #223040',
+            'border-radius': '12px',
             'font-size': '12px',
-            color: '#ccc',
+            color: '#9bb0c3',
             'text-align': 'center',
             'line-height': '1.5',
           }}
@@ -114,7 +115,7 @@ export function AgentList(props: AgentListProps) {
             href="https://github.com/johannesjo/parallel-code/issues"
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: '#4ade80' }}
+            style={{ color: '#2ec8ff' }}
           >
             Report bugs
           </a>
@@ -125,15 +126,16 @@ export function AgentList(props: AgentListProps) {
             <div
               onClick={() => props.onSelect(agent.agentId, agent.taskName)}
               style={{
-                background: '#2a2a2a',
-                border: '1px solid #333',
-                'border-radius': '10px',
+                background: '#0f141b',
+                border: '1px solid #223040',
+                'border-radius': '12px',
                 padding: '14px 16px',
                 cursor: 'pointer',
                 display: 'flex',
                 'flex-direction': 'column',
                 gap: '6px',
                 'touch-action': 'manipulation',
+                transition: 'background 0.16s ease',
               }}
             >
               <div
@@ -157,7 +159,7 @@ export function AgentList(props: AgentListProps) {
                       width: '8px',
                       height: '8px',
                       'border-radius': '50%',
-                      background: agent.status === 'running' ? '#4ade80' : '#666',
+                      background: agent.status === 'running' ? '#2fd198' : '#678197',
                       'flex-shrink': '0',
                     }}
                   />
@@ -165,7 +167,7 @@ export function AgentList(props: AgentListProps) {
                     style={{
                       'font-size': '14px',
                       'font-weight': '500',
-                      color: '#e0e0e0',
+                      color: '#d7e4f0',
                       overflow: 'hidden',
                       'text-overflow': 'ellipsis',
                       'white-space': 'nowrap',
@@ -177,7 +179,7 @@ export function AgentList(props: AgentListProps) {
                 <span
                   style={{
                     'font-size': '12px',
-                    color: agent.status === 'running' ? '#4ade80' : '#666',
+                    color: agent.status === 'running' ? '#2fd198' : '#678197',
                     'flex-shrink': '0',
                   }}
                 >
@@ -189,7 +191,7 @@ export function AgentList(props: AgentListProps) {
                 style={{
                   'font-size': '11px',
                   'font-family': "'JetBrains Mono', 'Courier New', monospace",
-                  color: '#666',
+                  color: '#678197',
                   'white-space': 'nowrap',
                   overflow: 'hidden',
                   'text-overflow': 'ellipsis',

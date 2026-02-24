@@ -57,6 +57,10 @@ export function AgentDetail(props: AgentDetailProps) {
   let fitAddon: FitAddon | undefined;
   const [inputText, setInputText] = createSignal('');
   const [atBottom, setAtBottom] = createSignal(true);
+  const [termFontSize, setTermFontSize] = createSignal(10);
+
+  const MIN_FONT = 6;
+  const MAX_FONT = 24;
 
   const agentInfo = () => agents().find((a) => a.agentId === props.agentId);
 
@@ -90,7 +94,7 @@ export function AgentDetail(props: AgentDetailProps) {
     term = new Terminal({
       fontSize: 10,
       fontFamily: "'JetBrains Mono', 'Courier New', monospace",
-      theme: { background: '#1e1e1e' },
+      theme: { background: '#0b0f14' },
       scrollback: 5000,
       cursorBlink: false,
       disableStdin: true,
@@ -211,7 +215,7 @@ export function AgentDetail(props: AgentDetailProps) {
         display: 'flex',
         'flex-direction': 'column',
         height: '100%',
-        background: '#1e1e1e',
+        background: '#0b0f14',
         position: 'relative',
       }}
     >
@@ -220,12 +224,13 @@ export function AgentDetail(props: AgentDetailProps) {
         style={{
           display: 'flex',
           'align-items': 'center',
-          gap: '12px',
-          padding: '12px 16px',
-          'border-bottom': '1px solid #333',
+          gap: '10px',
+          padding: '10px 14px',
+          'border-bottom': '1px solid #223040',
           'flex-shrink': '0',
           position: 'relative',
           'z-index': '10',
+          background: '#12181f',
         }}
       >
         <button
@@ -233,10 +238,10 @@ export function AgentDetail(props: AgentDetailProps) {
           style={{
             background: 'none',
             border: 'none',
-            color: '#4ade80',
-            'font-size': '18px',
+            color: '#2ec8ff',
+            'font-size': '16px',
             cursor: 'pointer',
-            padding: '8px 12px',
+            padding: '8px 10px',
             'touch-action': 'manipulation',
           }}
         >
@@ -244,9 +249,9 @@ export function AgentDetail(props: AgentDetailProps) {
         </button>
         <span
           style={{
-            'font-size': '15px',
+            'font-size': '14px',
             'font-weight': '500',
-            color: '#e0e0e0',
+            color: '#d7e4f0',
             flex: '1',
             overflow: 'hidden',
             'text-overflow': 'ellipsis',
@@ -260,7 +265,7 @@ export function AgentDetail(props: AgentDetailProps) {
             width: '8px',
             height: '8px',
             'border-radius': '50%',
-            background: agentInfo()?.status === 'running' ? '#4ade80' : '#666',
+            background: agentInfo()?.status === 'running' ? '#2fd198' : '#678197',
           }}
         />
       </div>
@@ -302,13 +307,13 @@ export function AgentDetail(props: AgentDetailProps) {
             position: 'absolute',
             bottom: '140px',
             right: '16px',
-            width: '44px',
-            height: '44px',
+            width: '40px',
+            height: '40px',
             'border-radius': '50%',
-            background: '#333',
-            border: '1px solid #555',
-            color: '#e0e0e0',
-            'font-size': '18px',
+            background: '#12181f',
+            border: '1px solid #223040',
+            color: '#d7e4f0',
+            'font-size': '16px',
             cursor: 'pointer',
             display: 'flex',
             'align-items': 'center',
@@ -324,20 +329,20 @@ export function AgentDetail(props: AgentDetailProps) {
       {/* Input area */}
       <div
         style={{
-          'border-top': '1px solid #333',
-          padding: '10px 12px max(10px, env(safe-area-inset-bottom)) 12px',
+          'border-top': '1px solid #223040',
+          padding: '8px 10px max(8px, env(safe-area-inset-bottom)) 10px',
           display: 'flex',
           'flex-direction': 'column',
-          gap: '8px',
+          gap: '6px',
           'flex-shrink': '0',
-          background: '#252525',
+          background: '#12181f',
           position: 'relative',
           'z-index': '10',
         }}
       >
         {/* No <form> — it triggers Chrome's autofill heuristics on Android.
              name/id/autocomplete use gibberish so Chrome can't classify the field. */}
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', 'align-items': 'center' }}>
           <input
             ref={inputRef}
             type="text"
@@ -366,32 +371,48 @@ export function AgentDetail(props: AgentDetailProps) {
             placeholder="Type command..."
             style={{
               flex: '1',
-              background: '#1e1e1e',
-              border: '1px solid #444',
-              'border-radius': '8px',
-              padding: '12px 14px',
-              color: '#e0e0e0',
-              'font-size': '15px',
+              background: '#10161d',
+              border: '1px solid #223040',
+              'border-radius': '12px',
+              padding: '10px 14px',
+              color: '#d7e4f0',
+              'font-size': '14px',
               'font-family': "'JetBrains Mono', 'Courier New', monospace",
               outline: 'none',
+              transition: 'border-color 0.16s ease',
             }}
           />
           <button
             type="button"
+            disabled={!inputText().trim()}
             onClick={() => handleSend()}
             style={{
-              background: '#4ade80',
+              background: inputText().trim() ? '#2ec8ff' : '#1a2430',
               border: 'none',
-              'border-radius': '8px',
-              padding: '12px 20px',
-              color: '#000',
-              'font-weight': '600',
-              'font-size': '15px',
-              cursor: 'pointer',
+              'border-radius': '50%',
+              width: '40px',
+              height: '40px',
+              color: inputText().trim() ? '#031018' : '#678197',
+              cursor: inputText().trim() ? 'pointer' : 'default',
+              display: 'flex',
+              'align-items': 'center',
+              'justify-content': 'center',
+              padding: '0',
+              'flex-shrink': '0',
               'touch-action': 'manipulation',
+              transition: 'background 0.15s, color 0.15s',
             }}
+            title="Send"
           >
-            Send
+            <svg width="18" height="18" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M7 12V2M7 2L3 6M7 2l4 4"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
           </button>
         </div>
 
@@ -408,21 +429,78 @@ export function AgentDetail(props: AgentDetailProps) {
               <button
                 onClick={() => handleQuickAction(action.data())}
                 style={{
-                  background: '#333',
-                  border: '1px solid #444',
+                  background: '#1a2430',
+                  border: '1px solid #223040',
                   'border-radius': '8px',
-                  padding: '12px 20px',
-                  color: '#ccc',
-                  'font-size': '15px',
+                  padding: '10px 16px',
+                  color: '#9bb0c3',
+                  'font-size': '13px',
                   'font-family': "'JetBrains Mono', 'Courier New', monospace",
                   cursor: 'pointer',
                   'touch-action': 'manipulation',
+                  transition: 'background 0.16s ease',
                 }}
               >
                 {action.label}
               </button>
             )}
           </For>
+          <div style={{ 'margin-left': 'auto', display: 'flex', gap: '6px' }}>
+            <button
+              onClick={() => {
+                const next = Math.max(MIN_FONT, termFontSize() - 1);
+                setTermFontSize(next);
+                if (term) {
+                  term.options.fontSize = next;
+                  fitAddon?.fit();
+                }
+              }}
+              disabled={termFontSize() <= MIN_FONT}
+              style={{
+                background: '#1a2430',
+                border: '1px solid #223040',
+                'border-radius': '8px',
+                padding: '10px 14px',
+                color: termFontSize() <= MIN_FONT ? '#344050' : '#9bb0c3',
+                'font-size': '13px',
+                'font-weight': '700',
+                'font-family': "'JetBrains Mono', 'Courier New', monospace",
+                cursor: termFontSize() <= MIN_FONT ? 'default' : 'pointer',
+                'touch-action': 'manipulation',
+                transition: 'background 0.16s ease',
+              }}
+              title="Decrease font size"
+            >
+              A-
+            </button>
+            <button
+              onClick={() => {
+                const next = Math.min(MAX_FONT, termFontSize() + 1);
+                setTermFontSize(next);
+                if (term) {
+                  term.options.fontSize = next;
+                  fitAddon?.fit();
+                }
+              }}
+              disabled={termFontSize() >= MAX_FONT}
+              style={{
+                background: '#1a2430',
+                border: '1px solid #223040',
+                'border-radius': '8px',
+                padding: '10px 14px',
+                color: termFontSize() >= MAX_FONT ? '#344050' : '#9bb0c3',
+                'font-size': '13px',
+                'font-weight': '700',
+                'font-family': "'JetBrains Mono', 'Courier New', monospace",
+                cursor: termFontSize() >= MAX_FONT ? 'default' : 'pointer',
+                'touch-action': 'manipulation',
+                transition: 'background 0.16s ease',
+              }}
+              title="Increase font size"
+            >
+              A+
+            </button>
+          </div>
         </div>
       </div>
     </div>
