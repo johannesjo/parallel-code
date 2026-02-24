@@ -13,6 +13,7 @@ import type {
   PersistedWindowState,
   Project,
 } from './types';
+import type { AgentDef } from '../ipc/types';
 import { DEFAULT_TERMINAL_FONT, isTerminalFont } from '../lib/fonts';
 import { isLookPreset } from '../lib/look';
 import { syncTerminalCounter } from './terminals';
@@ -38,6 +39,7 @@ export async function saveState(): Promise<void> {
     windowState: store.windowState ? { ...store.windowState } : undefined,
     autoTrustFolders: store.autoTrustFolders,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
+    customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
   };
 
   for (const taskId of store.taskOrder) {
@@ -231,6 +233,26 @@ export async function loadState(): Promise<void> {
         rawOpacity <= 1.0
           ? Math.round(rawOpacity * 100) / 100
           : 0.6;
+
+      // Restore custom agents
+      const rawCustomAgents = rawAny.customAgents;
+      if (Array.isArray(rawCustomAgents)) {
+        s.customAgents = rawCustomAgents.filter(
+          (a: unknown): a is AgentDef =>
+            typeof a === 'object' &&
+            a !== null &&
+            typeof (a as AgentDef).id === 'string' &&
+            typeof (a as AgentDef).name === 'string' &&
+            typeof (a as AgentDef).command === 'string',
+        );
+      }
+
+      // Make custom agents findable during task restoration
+      for (const ca of s.customAgents) {
+        if (!s.availableAgents.some((a) => a.id === ca.id)) {
+          s.availableAgents.push(ca);
+        }
+      }
 
       for (const taskId of raw.taskOrder) {
         const pt = raw.tasks[taskId];
