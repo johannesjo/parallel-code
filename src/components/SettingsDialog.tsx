@@ -10,6 +10,7 @@ import {
   setAutoTrustFolders,
   setInactiveColumnOpacity,
 } from '../store/store';
+import { CustomAgentEditor } from './CustomAgentEditor';
 import { mod } from '../lib/platform';
 import type { TerminalFont } from '../lib/fonts';
 
@@ -219,6 +220,21 @@ export function SettingsDialog(props: SettingsDialogProps) {
             <span>No dimming</span>
           </div>
         </div>
+      </div>
+
+      <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
+        <div
+          style={{
+            'font-size': '11px',
+            color: theme.fgMuted,
+            'text-transform': 'uppercase',
+            'letter-spacing': '0.05em',
+            'font-weight': '600',
+          }}
+        >
+          Custom Agents
+        </div>
+        <CustomAgentEditor />
       </div>
 
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
