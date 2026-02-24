@@ -7,8 +7,10 @@ import type { Agent } from './types';
 import { refreshTaskStatus, clearAgentActivity, markAgentSpawned } from './taskStatus';
 
 export async function loadAgents(): Promise<void> {
-  const agents = await invoke<AgentDef[]>(IPC.ListAgents);
-  setStore('availableAgents', agents);
+  const defaults = await invoke<AgentDef[]>(IPC.ListAgents);
+  const custom = store.customAgents;
+  const customIds = new Set(custom.map((a) => a.id));
+  setStore('availableAgents', [...defaults.filter((d) => !customIds.has(d.id)), ...custom]);
 }
 
 export async function addAgentToTask(taskId: string, agentDef: AgentDef): Promise<void> {
@@ -75,4 +77,40 @@ export function restartAgent(agentId: string, useResumeArgs: boolean): void {
     }),
   );
   markAgentSpawned(agentId);
+}
+
+export function addCustomAgent(agent: AgentDef): void {
+  setStore(
+    produce((s) => {
+      s.customAgents.push(agent);
+    }),
+  );
+  void refreshAvailableAgents();
+}
+
+export function removeCustomAgent(agentId: string): void {
+  setStore(
+    produce((s) => {
+      s.customAgents = s.customAgents.filter((a) => a.id !== agentId);
+    }),
+  );
+  void refreshAvailableAgents();
+}
+
+export function updateCustomAgent(agentId: string, updated: AgentDef): void {
+  setStore(
+    produce((s) => {
+      const idx = s.customAgents.findIndex((a) => a.id === agentId);
+      if (idx >= 0) s.customAgents[idx] = updated;
+    }),
+  );
+  void refreshAvailableAgents();
+}
+
+/** Rebuild availableAgents from backend defaults + custom agents. */
+async function refreshAvailableAgents(): Promise<void> {
+  const defaults = await invoke<AgentDef[]>(IPC.ListAgents);
+  const custom = store.customAgents;
+  const customIds = new Set(custom.map((a) => a.id));
+  setStore('availableAgents', [...defaults.filter((d) => !customIds.has(d.id)), ...custom]);
 }
