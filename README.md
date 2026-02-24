@@ -140,4 +140,6 @@ If Parallel Code saves you time, consider giving it a [star on GitHub](https://g
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
+
+All third-party dependencies use commercially permissive licenses (MIT, Apache-2.0, BSD-3-Clause, ISC). See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for the full list.
