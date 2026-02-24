@@ -13,6 +13,7 @@ export interface AgentDef {
   resume_args?: string[];
   skip_permissions_args?: string[];
   description: string;
+  available?: boolean;
 }
 
 export interface CreateTaskResult {

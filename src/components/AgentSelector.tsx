@@ -49,6 +49,17 @@ export function AgentSelector(props: AgentSelectorProps) {
                 }}
               >
                 {agent.name}
+                {agent.available === false && (
+                  <span
+                    style={{
+                      'font-size': '10px',
+                      color: theme.fgMuted,
+                      'margin-left': '4px',
+                    }}
+                  >
+                    (not installed)
+                  </span>
+                )}
               </button>
             );
           }}
