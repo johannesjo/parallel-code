@@ -21,7 +21,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run lint && npm run format:check",
+    "check:licenses": "license-checker-rseidelsohn --production --onlyAllow \"MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;BlueOak-1.0.0;0BSD;Python-2.0;CC-BY-4.0;WTFPL;CC0-1.0\"",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:licenses",
     "release": "npm run typecheck && npm version patch && git push --follow-tags",
     "prepare": "husky"
   },
@@ -51,6 +52,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-solid": "^0.14.5",
     "husky": "^9.1.7",
+    "license-checker-rseidelsohn": "^4.4.2",
     "lint-staged": "^16.2.7",
     "prettier": "^3.8.1",
     "typescript": "~5.9.3",
