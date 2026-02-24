@@ -148,15 +148,12 @@ export function setSelectedHistoryMatch(match: ArenaMatch | null): void {
   setState('selectedHistoryMatch', match);
 }
 
-export function updateHistoryRating(matchId: string, competitorIndex: number, rating: number): void {
-  setState(
-    'history',
-    (m) => m.id === matchId,
-    'competitors',
-    competitorIndex,
-    'rating',
-    rating,
-  );
+export function updateHistoryRating(
+  matchId: string,
+  competitorIndex: number,
+  rating: number,
+): void {
+  setState('history', (m) => m.id === matchId, 'competitors', competitorIndex, 'rating', rating);
 }
 
 // --- Presets ---

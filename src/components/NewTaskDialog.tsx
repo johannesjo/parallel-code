@@ -367,10 +367,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           >
             Project
           </label>
-          <ProjectSelect
-            value={selectedProjectId()}
-            onChange={setSelectedProjectId}
-          />
+          <ProjectSelect value={selectedProjectId()} onChange={setSelectedProjectId} />
         </div>
 
         {/* Prompt input (optional) */}

@@ -73,12 +73,8 @@ export function ResultsScreen() {
     const sections: string[] = [];
     for (let i = 0; i < competitors.length; i++) {
       const c = competitors[i];
-      const timeStr = c.endTime !== null
-        ? formatDuration(c.endTime - c.startTime)
-        : 'DNF';
-      const exitStr = c.exitCode !== null && c.exitCode !== 0
-        ? ` | exit code ${c.exitCode}`
-        : '';
+      const timeStr = c.endTime !== null ? formatDuration(c.endTime - c.startTime) : 'DNF';
+      const exitStr = c.exitCode !== null && c.exitCode !== 0 ? ` | exit code ${c.exitCode}` : '';
 
       let filesStr = '  (no project worktree)';
       if (c.worktreePath) {
@@ -100,8 +96,8 @@ export function ResultsScreen() {
 
       sections.push(
         `## Approach ${i + 1}: ${c.name} (${timeStr}${exitStr})\n` +
-        (c.worktreePath ? `Worktree: ${c.worktreePath}\n` : '') +
-        `Changed files:\n${filesStr}`
+          (c.worktreePath ? `Worktree: ${c.worktreePath}\n` : '') +
+          `Changed files:\n${filesStr}`,
       );
     }
 
@@ -136,8 +132,8 @@ export function ResultsScreen() {
 
     // Persist rating to history — use selectedHistoryMatch for history views,
     // or the most recent history entry for fresh battles
-    const match = arenaStore.selectedHistoryMatch
-      ?? (arenaStore.battleSaved ? arenaStore.history[0] : null);
+    const match =
+      arenaStore.selectedHistoryMatch ?? (arenaStore.battleSaved ? arenaStore.history[0] : null);
     if (match) {
       const idx = arenaStore.battle.findIndex((b) => b.id === competitorId);
       if (idx !== -1) {
@@ -239,7 +235,13 @@ export function ResultsScreen() {
                         isActive={true}
                         projectRoot={arenaStore.cwd || undefined}
                         branchName={competitor.branchName}
-                        onFileClick={(file) => handleFileClick(competitor.worktreePath ?? '', competitor.branchName, file)}
+                        onFileClick={(file) =>
+                          handleFileClick(
+                            competitor.worktreePath ?? '',
+                            competitor.branchName,
+                            file,
+                          )
+                        }
                       />
                     </div>
                   </div>
@@ -310,7 +312,16 @@ export function ResultsScreen() {
 
       <Show when={projectLabel()}>
         <div class="arena-results-project">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <path d="M2 4l6-2 6 2v8l-6 2-6-2z" />
             <path d="M8 2v12" />
           </svg>
@@ -320,14 +331,32 @@ export function ResultsScreen() {
 
       <div class="arena-config-actions">
         <button class="arena-close-btn" onClick={() => void openCompareTask()}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <path d="M3 3h4v10H3zM9 3h4v10H9zM5 6H3M5 8H3M5 10H3M11 6H9M11 8H9M11 10H9" />
           </svg>
           Compare All
         </button>
         <Show when={!isHistoryView()}>
           <button class="arena-close-btn" onClick={() => void resetForRematch()}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <path d="M2 8a6 6 0 0 1 10.2-4.3" />
               <path d="M14 8a6 6 0 0 1-10.2 4.3" />
               <path d="M12 1v3h-3" />
@@ -336,13 +365,31 @@ export function ResultsScreen() {
             Rematch
           </button>
           <button class="arena-close-btn" onClick={() => void resetForNewMatch()}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <path d="M8 3v10M3 8h10" />
             </svg>
             New Match
           </button>
           <button class="arena-close-btn" onClick={() => setPhase('history')}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <circle cx="8" cy="8" r="6" />
               <path d="M8 4.5V8l2.5 2.5" />
             </svg>
@@ -351,7 +398,16 @@ export function ResultsScreen() {
         </Show>
         <Show when={isHistoryView()}>
           <button class="arena-close-btn" onClick={returnToHistory}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <path d="M10 3L5 8l5 5" />
             </svg>
             Back to History

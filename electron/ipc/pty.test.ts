@@ -8,15 +8,11 @@ describe('validateCommand', () => {
   });
 
   it('throws a descriptive error for a missing command', () => {
-    expect(() => validateCommand('nonexistent-binary-xyz')).toThrow(
-      /not found in PATH/,
-    );
+    expect(() => validateCommand('nonexistent-binary-xyz')).toThrow(/not found in PATH/);
   });
 
   it('throws a descriptive error naming the command', () => {
-    expect(() => validateCommand('nonexistent-binary-xyz')).toThrow(
-      /nonexistent-binary-xyz/,
-    );
+    expect(() => validateCommand('nonexistent-binary-xyz')).toThrow(/nonexistent-binary-xyz/);
   });
 
   it('throws for a nonexistent absolute path', () => {

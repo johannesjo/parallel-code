@@ -23,7 +23,7 @@
     "test": "vitest run",
     "check": "npm run typecheck && npm run lint && npm run format:check",
     "release": "npm run typecheck && npm version patch && git push --follow-tags",
-    "prepare": "husky"
+    "prepare": "husky && git config core.hooksPath .husky"
   },
   "license": "MIT",
   "dependencies": {

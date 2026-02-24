@@ -198,7 +198,7 @@ export function ConfigScreen() {
       <span class="arena-section-label">Project</span>
       <ProjectSelect
         value={store.projects.find((p) => p.path === arenaStore.cwd)?.id ?? null}
-        onChange={(id) => setCwd(id ? getProject(id)?.path ?? '' : '')}
+        onChange={(id) => setCwd(id ? (getProject(id)?.path ?? '') : '')}
         placeholder="Select a project..."
       />
 
