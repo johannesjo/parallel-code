@@ -40,6 +40,7 @@ export {
   hasDirectModeTask,
   getGitHubDropDefaults,
   setNewTaskDropUrl,
+  setNewTaskPrefillPrompt,
 } from './tasks';
 export {
   setActiveTask,

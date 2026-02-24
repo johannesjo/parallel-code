@@ -453,3 +453,7 @@ export function getGitHubDropDefaults(
 export function setNewTaskDropUrl(url: string): void {
   setStore('newTaskDropUrl', url);
 }
+
+export function setNewTaskPrefillPrompt(prompt: string, projectId: string | null): void {
+  setStore('newTaskPrefillPrompt', { prompt, projectId });
+}

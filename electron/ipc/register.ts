@@ -206,6 +206,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return removeWorktree(args.projectRoot, args.branchName, true);
   });
 
+  ipcMain.handle(IPC.CheckPathExists, (_e, args) => {
+    validatePath(args.path, 'path');
+    return fs.existsSync(args.path);
+  });
+
   // --- Window management ---
   ipcMain.handle(IPC.WindowIsFocused, () => win.isFocused());
   ipcMain.handle(IPC.WindowIsMaximized, () => win.isMaximized());

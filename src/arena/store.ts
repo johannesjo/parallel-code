@@ -27,6 +27,7 @@ const [state, setState] = createStore<ArenaStore>({
   history: [],
   battle: [],
   selectedHistoryMatch: null,
+  battleSaved: false,
 });
 
 /** Read-only access to the arena store */
@@ -111,10 +112,17 @@ export function markBranchMerged(competitorId: string): void {
   setState('battle', (c) => c.id === competitorId, 'merged', true);
 }
 
+// --- Battle saved ---
+
+export function setBattleSaved(saved: boolean): void {
+  setState('battleSaved', saved);
+}
+
 // --- Worktree cleanup ---
 
 export async function cleanupBattleWorktrees(): Promise<void> {
   if (!state.cwd) return;
+  if (state.battleSaved) return; // Preserved for history viewing
   for (const c of state.battle) {
     // Skip already-merged competitors — mergeTask with cleanup:true already removed the worktree/branch
     if (c.branchName && !c.merged) {
@@ -140,6 +148,17 @@ export function setSelectedHistoryMatch(match: ArenaMatch | null): void {
   setState('selectedHistoryMatch', match);
 }
 
+export function updateHistoryRating(matchId: string, competitorIndex: number, rating: number): void {
+  setState(
+    'history',
+    (m) => m.id === matchId,
+    'competitors',
+    competitorIndex,
+    'rating',
+    rating,
+  );
+}
+
 // --- Presets ---
 
 export function loadPresets(presets: ArenaPreset[]): void {
@@ -148,6 +167,60 @@ export function loadPresets(presets: ArenaPreset[]): void {
 
 export function loadHistory(history: ArenaMatch[]): void {
   setState('history', history);
+}
+
+export function loadBattleFromHistory(match: ArenaMatch): void {
+  // Use startTime=0 and endTime=duration so (endTime - startTime) yields the
+  // correct duration for display and sorting in ResultsScreen.
+  const battle: BattleCompetitor[] = match.competitors.map((c, i) => ({
+    id: `history-${match.id}-${i}`,
+    name: c.name,
+    command: c.command,
+    agentId: '',
+    status: 'exited' as const,
+    startTime: 0,
+    endTime: c.timeMs,
+    exitCode: c.exitCode,
+    worktreePath: c.worktreePath,
+    branchName: c.branchName,
+    merged: c.merged,
+    terminalOutput: c.terminalOutput ?? undefined,
+  }));
+  setState('battle', battle);
+  setState('cwd', match.cwd ?? '');
+  setState('prompt', match.prompt);
+  setState('selectedHistoryMatch', match);
+  setState('battleSaved', true);
+  setState('phase', 'results');
+}
+
+export function returnToHistory(): void {
+  setState('selectedHistoryMatch', null);
+  setState('battle', []);
+  setState('phase', 'history');
+}
+
+export async function deleteHistoryMatch(matchId: string): Promise<void> {
+  const match = state.history.find((m) => m.id === matchId);
+  if (!match) return;
+
+  const cwd = match.cwd;
+  if (cwd) {
+    for (const c of match.competitors) {
+      if (c.branchName && !c.merged) {
+        try {
+          await invoke(IPC.RemoveArenaWorktree, {
+            projectRoot: cwd,
+            branchName: c.branchName,
+          });
+        } catch (e) {
+          console.warn('Failed to remove history worktree:', c.branchName, e);
+        }
+      }
+    }
+  }
+
+  setState('history', (prev) => prev.filter((m) => m.id !== matchId));
 }
 
 export function applyPreset(preset: ArenaPreset): void {
@@ -178,6 +251,7 @@ export function deletePreset(id: string): void {
 
 export async function resetForNewMatch(): Promise<void> {
   await cleanupBattleWorktrees();
+  setState('battleSaved', false);
   setState('phase', 'config');
   setState('battle', []);
   setState('competitors', [makeEmptyCompetitor(), makeEmptyCompetitor()]);
@@ -188,6 +262,7 @@ export async function resetForNewMatch(): Promise<void> {
 
 export async function resetForRematch(): Promise<void> {
   await cleanupBattleWorktrees();
+  setState('battleSaved', false);
   setState('phase', 'config');
   setState('battle', []);
   setState('selectedHistoryMatch', null);

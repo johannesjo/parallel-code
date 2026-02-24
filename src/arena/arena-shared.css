@@ -100,6 +100,9 @@
 }
 
 .arena-close-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -111,8 +114,17 @@
   transition: background 0.15s ease;
 }
 
+.arena-close-btn > svg {
+  flex-shrink: 0;
+}
+
 .arena-close-btn:hover {
   background: var(--bg-hover);
+}
+
+.arena-close-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .arena-section-label {

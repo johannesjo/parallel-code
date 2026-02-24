@@ -30,8 +30,22 @@ export async function loadArenaHistory(): Promise<void> {
   }).catch(() => null);
   if (!json) return;
   try {
-    const history = JSON.parse(json) as ArenaMatch[];
-    if (Array.isArray(history)) loadHistory(history);
+    const raw = JSON.parse(json) as ArenaMatch[];
+    if (Array.isArray(raw)) {
+      // Normalize old entries that lack new fields
+      const history = raw.map((m) => ({
+        ...m,
+        cwd: m.cwd ?? null,
+        competitors: m.competitors.map((c) => ({
+          ...c,
+          worktreePath: c.worktreePath ?? null,
+          branchName: c.branchName ?? null,
+          merged: c.merged ?? false,
+          terminalOutput: c.terminalOutput ?? null,
+        })),
+      }));
+      loadHistory(history);
+    }
   } catch {
     console.warn('Failed to parse arena history');
   }

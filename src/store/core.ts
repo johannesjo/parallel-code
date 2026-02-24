@@ -41,6 +41,7 @@ export const [store, setStore] = createStore<AppStore>({
   autoTrustFolders: false,
   inactiveColumnOpacity: 0.6,
   newTaskDropUrl: null,
+  newTaskPrefillPrompt: null,
   remoteAccess: {
     enabled: false,
     token: null,

@@ -159,8 +159,8 @@
 }
 
 .arena-preset-btn {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: none;
+  border: 1px solid transparent;
   border-radius: 6px;
   padding: 5px 12px;
   color: var(--fg-muted);
@@ -169,11 +169,13 @@
   cursor: pointer;
   transition:
     background 0.15s ease,
+    border-color 0.15s ease,
     color 0.15s ease;
 }
 
 .arena-preset-btn:hover {
   background: var(--bg-hover);
+  border-color: var(--border);
   color: var(--fg);
 }
 

@@ -31,6 +31,8 @@ export interface ArenaMatch {
   id: string;
   date: string;
   prompt: string;
+  /** Project root used for the battle */
+  cwd: string | null;
   competitors: Array<{
     name: string;
     command: string;
@@ -38,6 +40,10 @@ export interface ArenaMatch {
     exitCode: number | null;
     /** 1-5 star rating, null if not rated */
     rating: number | null;
+    worktreePath: string | null;
+    branchName: string | null;
+    merged: boolean;
+    terminalOutput: string | null;
   }>;
 }
 
@@ -64,4 +70,6 @@ export interface ArenaStore {
   history: ArenaMatch[];
   battle: BattleCompetitor[];
   selectedHistoryMatch: ArenaMatch | null;
+  /** Whether the current battle results have been saved to history */
+  battleSaved: boolean;
 }

@@ -8,6 +8,16 @@
   align-items: center;
 }
 
+.arena-results-prompt {
+  max-width: 600px;
+  font-size: 14px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
 .arena-results-grid {
   width: 100%;
   display: flex;
@@ -222,6 +232,16 @@
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* Project label */
+
+.arena-results-project {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--fg-muted);
 }
 
 /* Terminal output */

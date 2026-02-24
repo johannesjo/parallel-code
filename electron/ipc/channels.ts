@@ -66,6 +66,7 @@ export enum IPC {
   LoadArenaData = 'load_arena_data',
   CreateArenaWorktree = 'create_arena_worktree',
   RemoveArenaWorktree = 'remove_arena_worktree',
+  CheckPathExists = 'check_path_exists',
 
   // Remote access
   StartRemoteServer = 'start_remote_server',

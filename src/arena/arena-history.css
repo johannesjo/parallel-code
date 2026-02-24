@@ -58,3 +58,49 @@
   font-size: 14px;
   padding: 40px 0;
 }
+
+.arena-history-row[data-has-worktrees] {
+  border-left: 3px solid var(--accent);
+}
+
+.arena-history-row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.arena-history-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.arena-history-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--fg-subtle);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.arena-history-delete-btn:hover:not(:disabled) {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+}
+
+.arena-history-delete-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.arena-history-delete-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

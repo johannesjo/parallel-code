@@ -53,6 +53,9 @@ export function toggleNewTaskDialog(show?: boolean): void {
     pickAndAddProject();
     return;
   }
-  if (!shouldShow) setStore('newTaskDropUrl', null);
+  if (!shouldShow) {
+    setStore('newTaskDropUrl', null);
+    setStore('newTaskPrefillPrompt', null);
+  }
   setStore('showNewTaskDialog', shouldShow);
 }

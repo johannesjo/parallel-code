@@ -167,6 +167,7 @@ export interface AppStore {
   autoTrustFolders: boolean;
   inactiveColumnOpacity: number;
   newTaskDropUrl: string | null;
+  newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
   remoteAccess: RemoteAccess;
   showArena: boolean;
 }
