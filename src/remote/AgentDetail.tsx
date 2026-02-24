@@ -57,6 +57,10 @@ export function AgentDetail(props: AgentDetailProps) {
   let fitAddon: FitAddon | undefined;
   const [inputText, setInputText] = createSignal('');
   const [atBottom, setAtBottom] = createSignal(true);
+  const [termFontSize, setTermFontSize] = createSignal(10);
+
+  const MIN_FONT = 6;
+  const MAX_FONT = 24;
 
   const agentInfo = () => agents().find((a) => a.agentId === props.agentId);
 
@@ -378,20 +382,35 @@ export function AgentDetail(props: AgentDetailProps) {
           />
           <button
             type="button"
+            disabled={!inputText().trim()}
             onClick={() => handleSend()}
             style={{
-              background: '#4ade80',
+              background: inputText().trim() ? '#4ade80' : '#333',
               border: 'none',
               'border-radius': '8px',
-              padding: '12px 20px',
-              color: '#000',
-              'font-weight': '600',
-              'font-size': '15px',
-              cursor: 'pointer',
+              width: '44px',
+              height: '44px',
+              color: inputText().trim() ? '#000' : '#666',
+              cursor: inputText().trim() ? 'pointer' : 'default',
+              display: 'flex',
+              'align-items': 'center',
+              'justify-content': 'center',
+              padding: '0',
+              'flex-shrink': '0',
               'touch-action': 'manipulation',
+              transition: 'background 0.15s, color 0.15s',
             }}
+            title="Send"
           >
-            Send
+            <svg width="20" height="20" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M7 12V2M7 2L3 6M7 2l4 4"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
           </button>
         </div>
 
@@ -423,6 +442,60 @@ export function AgentDetail(props: AgentDetailProps) {
               </button>
             )}
           </For>
+          <div style={{ 'margin-left': 'auto', display: 'flex', gap: '6px' }}>
+            <button
+              onClick={() => {
+                const next = Math.max(MIN_FONT, termFontSize() - 1);
+                setTermFontSize(next);
+                if (term) {
+                  term.options.fontSize = next;
+                  fitAddon?.fit();
+                }
+              }}
+              disabled={termFontSize() <= MIN_FONT}
+              style={{
+                background: '#333',
+                border: '1px solid #444',
+                'border-radius': '8px',
+                padding: '12px 16px',
+                color: termFontSize() <= MIN_FONT ? '#555' : '#ccc',
+                'font-size': '15px',
+                'font-weight': '700',
+                'font-family': "'JetBrains Mono', 'Courier New', monospace",
+                cursor: termFontSize() <= MIN_FONT ? 'default' : 'pointer',
+                'touch-action': 'manipulation',
+              }}
+              title="Decrease font size"
+            >
+              A-
+            </button>
+            <button
+              onClick={() => {
+                const next = Math.min(MAX_FONT, termFontSize() + 1);
+                setTermFontSize(next);
+                if (term) {
+                  term.options.fontSize = next;
+                  fitAddon?.fit();
+                }
+              }}
+              disabled={termFontSize() >= MAX_FONT}
+              style={{
+                background: '#333',
+                border: '1px solid #444',
+                'border-radius': '8px',
+                padding: '12px 16px',
+                color: termFontSize() >= MAX_FONT ? '#555' : '#ccc',
+                'font-size': '15px',
+                'font-weight': '700',
+                'font-family': "'JetBrains Mono', 'Courier New', monospace",
+                cursor: termFontSize() >= MAX_FONT ? 'default' : 'pointer',
+                'touch-action': 'manipulation',
+              }}
+              title="Increase font size"
+            >
+              A+
+            </button>
+          </div>
         </div>
       </div>
     </div>
