@@ -88,6 +88,7 @@ export {
   setThemePreset,
   setAutoTrustFolders,
   setInactiveColumnOpacity,
+  setEditorCommand,
   setWindowState,
 } from './ui';
 export {

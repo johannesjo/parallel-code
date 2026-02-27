@@ -1,6 +1,6 @@
 import { Show, For, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import { revealItemInDir } from '../lib/shell';
+import { revealItemInDir, openInEditor } from '../lib/shell';
 import {
   store,
   retryCloseTask,
@@ -24,6 +24,7 @@ import {
   setTaskFocusedPanel,
   triggerFocus,
   clearPendingAction,
+  showNotification,
 } from '../store/store';
 import { ResizablePanel, type PanelChild } from './ResizablePanel';
 import { EditableText, type EditableTextHandle } from './EditableText';
@@ -41,7 +42,7 @@ import { DiffViewerDialog } from './DiffViewerDialog';
 import { EditProjectDialog } from './EditProjectDialog';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
-import { mod } from '../lib/platform';
+import { mod, isMac } from '../lib/platform';
 import { extractLabel, consumePendingShellCommand } from '../lib/bookmarks';
 import { handleDragReorder } from '../lib/dragReorder';
 import type { Task } from '../store/types';
@@ -307,8 +308,22 @@ export function TaskPanel(props: TaskPanelProps) {
       fixed: true,
       content: () => (
         <InfoBar
-          title={props.task.worktreePath}
-          onClick={() => revealItemInDir(props.task.worktreePath).catch(() => {})}
+          title={
+            store.editorCommand
+              ? `Click to open in ${store.editorCommand} · ${isMac ? 'Cmd' : 'Ctrl'}+Click to reveal in file manager`
+              : props.task.worktreePath
+          }
+          onClick={(e?: MouseEvent) => {
+            if (store.editorCommand && !(e && (e.ctrlKey || e.metaKey))) {
+              openInEditor(store.editorCommand, props.task.worktreePath).catch((err) =>
+                showNotification(
+                  `Editor failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+                ),
+              );
+            } else {
+              revealItemInDir(props.task.worktreePath).catch(() => {});
+            }
+          }}
         >
           {(() => {
             const project = getProject(props.task.projectId);

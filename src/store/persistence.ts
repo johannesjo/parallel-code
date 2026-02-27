@@ -39,6 +39,7 @@ export async function saveState(): Promise<void> {
     windowState: store.windowState ? { ...store.windowState } : undefined,
     autoTrustFolders: store.autoTrustFolders,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
+    editorCommand: store.editorCommand || undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
   };
 
@@ -141,6 +142,7 @@ interface LegacyPersistedState {
   windowState?: unknown;
   autoTrustFolders?: unknown;
   inactiveColumnOpacity?: unknown;
+  editorCommand?: unknown;
   customAgents?: unknown;
   terminals?: unknown;
 }
@@ -244,6 +246,9 @@ export async function loadState(): Promise<void> {
         rawOpacity <= 1.0
           ? Math.round(rawOpacity * 100) / 100
           : 0.6;
+
+      const rawEditorCommand = raw.editorCommand;
+      s.editorCommand = typeof rawEditorCommand === 'string' ? rawEditorCommand.trim() : '';
 
       // Restore custom agents
       if (Array.isArray(raw.customAgents)) {

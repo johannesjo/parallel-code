@@ -107,6 +107,7 @@ export interface PersistedState {
   windowState?: PersistedWindowState;
   autoTrustFolders?: boolean;
   inactiveColumnOpacity?: number;
+  editorCommand?: string;
   customAgents?: AgentDef[];
 }
 
@@ -166,6 +167,7 @@ export interface AppStore {
   windowState: PersistedWindowState | null;
   autoTrustFolders: boolean;
   inactiveColumnOpacity: number;
+  editorCommand: string;
   newTaskDropUrl: string | null;
   newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
   remoteAccess: RemoteAccess;

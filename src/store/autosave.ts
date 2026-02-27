@@ -25,6 +25,7 @@ function persistedSnapshot(): string {
     windowState: store.windowState,
     autoTrustFolders: store.autoTrustFolders,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
+    editorCommand: store.editorCommand,
     customAgents: store.customAgents,
     tasks: Object.fromEntries(
       store.taskOrder

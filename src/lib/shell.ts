@@ -13,3 +13,10 @@ export async function openFileInEditor(worktreePath: string, filePath: string): 
   })) as string;
   if (errorMessage) throw new Error(errorMessage);
 }
+
+export async function openInEditor(editorCommand: string, worktreePath: string): Promise<void> {
+  await window.electron.ipcRenderer.invoke(IPC.ShellOpenInEditor, {
+    editorCommand,
+    worktreePath,
+  });
+}

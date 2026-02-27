@@ -36,6 +36,7 @@ import {
 import { createTask, deleteTask } from './tasks.js';
 import { listAgents } from './agents.js';
 import { saveAppState, loadAppState } from './persistence.js';
+import { spawn } from 'child_process';
 import path from 'path';
 import {
   assertString,
@@ -328,6 +329,37 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.worktreePath, 'worktreePath');
     validateRelativePath(args.filePath, 'filePath');
     return shell.openPath(path.join(args.worktreePath, args.filePath));
+  });
+
+  ipcMain.handle(IPC.ShellOpenInEditor, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    if (typeof args.editorCommand !== 'string' || !args.editorCommand.trim()) {
+      throw new Error('editorCommand must be a non-empty string');
+    }
+    const cmd = args.editorCommand.trim();
+    if (/[;&|`$(){}[\]<>\\'"*?!#~]/.test(cmd)) {
+      throw new Error('editorCommand must not contain shell metacharacters');
+    }
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const child = spawn(cmd, [args.worktreePath], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.on('error', (err) => {
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Failed to launch "${cmd}": ${err.message}`));
+        }
+      });
+      child.on('spawn', () => {
+        if (!settled) {
+          settled = true;
+          child.unref();
+          resolve();
+        }
+      });
+    });
   });
 
   // --- Remote access ---

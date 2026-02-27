@@ -61,6 +61,7 @@ const ALLOWED_CHANNELS = new Set([
   // Shell
   '__shell_reveal',
   '__shell_open_file',
+  '__shell_open_in_editor',
   // Arena
   'save_arena_data',
   'load_arena_data',
