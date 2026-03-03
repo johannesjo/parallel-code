@@ -76,9 +76,9 @@ export function MonacoDiffEditor(props: MonacoDiffEditorProps) {
   });
 
   onCleanup(() => {
+    editor?.dispose();
     originalModel?.dispose();
     modifiedModel?.dispose();
-    editor?.dispose();
   });
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
