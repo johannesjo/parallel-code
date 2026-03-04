@@ -8,6 +8,7 @@ import {
   setTerminalFont,
   setThemePreset,
   setAutoTrustFolders,
+  setShowPlans,
   setInactiveColumnOpacity,
   setEditorCommand,
 } from '../store/store';
@@ -148,6 +149,31 @@ export function SettingsDialog(props: SettingsDialogProps) {
             <span style={{ 'font-size': '13px', color: theme.fg }}>Auto-trust folders</span>
             <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
               Automatically accept trust and permission dialogs from agents
+            </span>
+          </div>
+        </label>
+        <label
+          style={{
+            display: 'flex',
+            'align-items': 'center',
+            gap: '10px',
+            cursor: 'pointer',
+            padding: '8px 12px',
+            'border-radius': '8px',
+            background: theme.bgInput,
+            border: `1px solid ${theme.border}`,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={store.showPlans}
+            onChange={(e) => setShowPlans(e.currentTarget.checked)}
+            style={{ 'accent-color': theme.accent, cursor: 'pointer' }}
+          />
+          <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
+            <span style={{ 'font-size': '13px', color: theme.fg }}>Show plans</span>
+            <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+              Display Claude Code plan files in a tab next to Notes
             </span>
           </div>
         </label>

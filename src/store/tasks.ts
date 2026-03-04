@@ -604,3 +604,12 @@ export function setNewTaskDropUrl(url: string): void {
 export function setNewTaskPrefillPrompt(prompt: string, projectId: string | null): void {
   setStore('newTaskPrefillPrompt', { prompt, projectId });
 }
+
+export function setPlanContent(
+  taskId: string,
+  content: string | null,
+  fileName: string | null,
+): void {
+  setStore('tasks', taskId, 'planContent', content ?? undefined);
+  setStore('tasks', taskId, 'planFileName', fileName ?? undefined);
+}

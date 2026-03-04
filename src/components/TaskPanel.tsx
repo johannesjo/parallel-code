@@ -37,6 +37,7 @@ import { ChangedFilesList } from './ChangedFilesList';
 import { StatusDot } from './StatusDot';
 import { TerminalView } from './TerminalView';
 import { ScalablePanel } from './ScalablePanel';
+import { Dialog } from './Dialog';
 import { CloseTaskDialog } from './CloseTaskDialog';
 import { MergeDialog } from './MergeDialog';
 import { PushDialog } from './PushDialog';
@@ -47,6 +48,7 @@ import { sf } from '../lib/fontScale';
 import { mod, isMac } from '../lib/platform';
 import { extractLabel, consumePendingShellCommand } from '../lib/bookmarks';
 import { handleDragReorder } from '../lib/dragReorder';
+import { marked } from 'marked';
 import type { Task } from '../store/types';
 import type { ChangedFile } from '../ipc/types';
 
@@ -57,6 +59,21 @@ interface TaskPanelProps {
 
 export function TaskPanel(props: TaskPanelProps) {
   const [showCloseConfirm, setShowCloseConfirm] = createSignal(false);
+  const [notesTab, setNotesTab] = createSignal<'notes' | 'plan'>('notes');
+  const [planFullscreen, setPlanFullscreen] = createSignal(false);
+
+  // Auto-switch to plan tab when plan content first appears
+  let hadPlan = false;
+  createEffect(() => {
+    const hasPlan = store.showPlans && !!props.task.planContent;
+    if (hasPlan && !hadPlan) {
+      setNotesTab('plan');
+    } else if (!hasPlan && hadPlan) {
+      setNotesTab('notes');
+    }
+    hadPlan = hasPlan;
+  });
+
   const [showMergeConfirm, setShowMergeConfirm] = createSignal(false);
   const [showPushConfirm, setShowPushConfirm] = createSignal(false);
   const [pushSuccess, setPushSuccess] = createSignal(false);
@@ -490,27 +507,118 @@ export function TaskPanel(props: TaskPanelProps) {
                 <ScalablePanel panelId={`${props.task.id}:notes`}>
                   <div
                     class="focusable-panel"
-                    style={{ width: '100%', height: '100%' }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      display: 'flex',
+                      'flex-direction': 'column',
+                    }}
                     onClick={() => setTaskFocusedPanel(props.task.id, 'notes')}
                   >
-                    <textarea
-                      ref={notesRef}
-                      value={props.task.notes}
-                      onInput={(e) => updateTaskNotes(props.task.id, e.currentTarget.value)}
-                      placeholder="Notes..."
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        background: theme.taskPanelBg,
-                        border: 'none',
-                        padding: '6px 8px',
-                        color: theme.fg,
-                        'font-size': sf(11),
-                        'font-family': "'JetBrains Mono', monospace",
-                        resize: 'none',
-                        outline: 'none',
-                      }}
-                    />
+                    <Show when={store.showPlans && props.task.planContent}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          'border-bottom': `1px solid ${theme.border}`,
+                          'flex-shrink': '0',
+                        }}
+                      >
+                        <button
+                          style={{
+                            padding: '2px 8px',
+                            'font-size': sf(10),
+                            background: notesTab() === 'notes' ? theme.taskPanelBg : 'transparent',
+                            color: notesTab() === 'notes' ? theme.fg : theme.fgMuted,
+                            border: 'none',
+                            'border-bottom':
+                              notesTab() === 'notes'
+                                ? `2px solid ${theme.accent}`
+                                : '2px solid transparent',
+                            cursor: 'pointer',
+                            'font-family': "'JetBrains Mono', monospace",
+                          }}
+                          onClick={() => setNotesTab('notes')}
+                        >
+                          Notes
+                        </button>
+                        <button
+                          style={{
+                            padding: '2px 8px',
+                            'font-size': sf(10),
+                            background: notesTab() === 'plan' ? theme.taskPanelBg : 'transparent',
+                            color: notesTab() === 'plan' ? theme.fg : theme.fgMuted,
+                            border: 'none',
+                            'border-bottom':
+                              notesTab() === 'plan'
+                                ? `2px solid ${theme.accent}`
+                                : '2px solid transparent',
+                            cursor: 'pointer',
+                            'font-family': "'JetBrains Mono', monospace",
+                          }}
+                          onClick={() => setNotesTab('plan')}
+                        >
+                          Plan
+                        </button>
+                        <button
+                          style={{
+                            'margin-left': 'auto',
+                            padding: '2px 6px',
+                            'font-size': sf(10),
+                            background: 'transparent',
+                            color: theme.fgMuted,
+                            border: 'none',
+                            cursor: 'pointer',
+                            'font-family': "'JetBrains Mono', monospace",
+                          }}
+                          title="Open plan fullscreen"
+                          onClick={() => setPlanFullscreen(true)}
+                        >
+                          {'⤢'}
+                        </button>
+                      </div>
+                    </Show>
+
+                    <Show
+                      when={notesTab() === 'notes' || !store.showPlans || !props.task.planContent}
+                    >
+                      <textarea
+                        ref={notesRef}
+                        value={props.task.notes}
+                        onInput={(e) => updateTaskNotes(props.task.id, e.currentTarget.value)}
+                        placeholder="Notes..."
+                        style={{
+                          width: '100%',
+                          flex: '1',
+                          background: theme.taskPanelBg,
+                          border: 'none',
+                          padding: '6px 8px',
+                          color: theme.fg,
+                          'font-size': sf(11),
+                          'font-family': "'JetBrains Mono', monospace",
+                          resize: 'none',
+                          outline: 'none',
+                        }}
+                      />
+                    </Show>
+
+                    <Show when={notesTab() === 'plan' && store.showPlans && props.task.planContent}>
+                      <div
+                        class="plan-markdown"
+                        style={{
+                          flex: '1',
+                          overflow: 'auto',
+                          padding: '6px 8px',
+                          background: theme.taskPanelBg,
+                          color: theme.fg,
+                          'font-size': sf(11),
+                          'font-family': "'JetBrains Mono', monospace",
+                        }}
+                        // eslint-disable-next-line solid/no-innerhtml -- plan files are local, written by Claude Code in the worktree
+                        innerHTML={
+                          marked.parse(props.task.planContent ?? '', { async: false }) as string
+                        }
+                      />
+                    </Show>
                   </div>
                 </ScalablePanel>
               ),
@@ -1083,6 +1191,20 @@ export function TaskPanel(props: TaskPanelProps) {
         onClose={() => setDiffFile(null)}
       />
       <EditProjectDialog project={editingProject()} onClose={() => setEditingProjectId(null)} />
+      <Dialog open={planFullscreen()} onClose={() => setPlanFullscreen(false)} width="800px">
+        <div
+          class="plan-markdown"
+          style={{
+            color: theme.fg,
+            'font-size': '15px',
+            'font-family': "'JetBrains Mono', monospace",
+            'max-height': '70vh',
+            overflow: 'auto',
+          }}
+          // eslint-disable-next-line solid/no-innerhtml -- plan files are local, written by Claude Code in the worktree
+          innerHTML={marked.parse(props.task.planContent ?? '', { async: false }) as string}
+        />
+      </Dialog>
     </div>
   );
 }

@@ -39,6 +39,7 @@ export async function saveState(): Promise<void> {
     themePreset: store.themePreset,
     windowState: store.windowState ? { ...store.windowState } : undefined,
     autoTrustFolders: store.autoTrustFolders,
+    showPlans: store.showPlans,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand || undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
@@ -167,6 +168,7 @@ interface LegacyPersistedState {
   themePreset?: unknown;
   windowState?: unknown;
   autoTrustFolders?: unknown;
+  showPlans?: unknown;
   inactiveColumnOpacity?: unknown;
   editorCommand?: unknown;
   customAgents?: unknown;
@@ -264,6 +266,7 @@ export async function loadState(): Promise<void> {
       s.themePreset = isLookPreset(raw.themePreset) ? raw.themePreset : 'minimal';
       s.windowState = parsePersistedWindowState(raw.windowState);
       s.autoTrustFolders = typeof raw.autoTrustFolders === 'boolean' ? raw.autoTrustFolders : false;
+      s.showPlans = typeof raw.showPlans === 'boolean' ? raw.showPlans : true;
       const rawOpacity = raw.inactiveColumnOpacity;
       s.inactiveColumnOpacity =
         typeof rawOpacity === 'number' &&

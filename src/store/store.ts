@@ -47,6 +47,7 @@ export {
   getGitHubDropDefaults,
   setNewTaskDropUrl,
   setNewTaskPrefillPrompt,
+  setPlanContent,
 } from './tasks';
 export {
   setActiveTask,
@@ -93,6 +94,7 @@ export {
   setTerminalFont,
   setThemePreset,
   setAutoTrustFolders,
+  setShowPlans,
   setInactiveColumnOpacity,
   setEditorCommand,
   setWindowState,

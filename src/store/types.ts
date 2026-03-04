@@ -50,6 +50,8 @@ export interface Task {
   githubUrl?: string;
   collapsed?: boolean;
   savedAgentDef?: AgentDef;
+  planContent?: string;
+  planFileName?: string;
 }
 
 export interface Terminal {
@@ -110,6 +112,7 @@ export interface PersistedState {
   themePreset?: LookPreset;
   windowState?: PersistedWindowState;
   autoTrustFolders?: boolean;
+  showPlans?: boolean;
   inactiveColumnOpacity?: number;
   editorCommand?: string;
   customAgents?: AgentDef[];
@@ -171,6 +174,7 @@ export interface AppStore {
   themePreset: LookPreset;
   windowState: PersistedWindowState | null;
   autoTrustFolders: boolean;
+  showPlans: boolean;
   inactiveColumnOpacity: number;
   editorCommand: string;
   newTaskDropUrl: string | null;

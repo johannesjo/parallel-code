@@ -72,6 +72,8 @@ const ALLOWED_CHANNELS = new Set([
   'start_remote_server',
   'stop_remote_server',
   'get_remote_status',
+  // Plan
+  'plan_content',
 ]);
 
 function isAllowedChannel(channel) {

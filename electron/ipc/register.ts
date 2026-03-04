@@ -13,6 +13,7 @@ import {
   killAllAgents,
   getAgentMeta,
 } from './pty.js';
+import { ensurePlansDirectory, startPlanWatcher } from './plans.js';
 import { startRemoteServer } from '../remote/server.js';
 import {
   getGitIgnoredDirs,
@@ -75,7 +76,22 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // --- PTY commands ---
   ipcMain.handle(IPC.SpawnAgent, (_e, args) => {
     if (args.cwd) validatePath(args.cwd, 'cwd');
-    return spawnAgent(win, args);
+    if (!args.isShell && args.cwd) {
+      try {
+        ensurePlansDirectory(args.cwd);
+      } catch (err) {
+        console.warn('Failed to set up plans directory:', err);
+      }
+    }
+    const result = spawnAgent(win, args);
+    if (!args.isShell && args.cwd) {
+      try {
+        startPlanWatcher(win, args.taskId, args.cwd);
+      } catch (err) {
+        console.warn('Failed to start plan watcher:', err);
+      }
+    }
+    return result;
   });
   ipcMain.handle(IPC.WriteToAgent, (_e, args) => {
     assertString(args.agentId, 'agentId');

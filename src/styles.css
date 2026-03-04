@@ -1119,3 +1119,56 @@ body.dragging-task * {
 .monaco-editor .diff-hidden-lines .bottom {
   display: none;
 }
+
+/* Plan markdown rendering */
+.plan-markdown h1,
+.plan-markdown h2,
+.plan-markdown h3 {
+  margin: 0.5em 0 0.3em;
+  font-weight: 600;
+}
+.plan-markdown h1 {
+  font-size: 1.2em;
+}
+.plan-markdown h2 {
+  font-size: 1.1em;
+}
+.plan-markdown h3 {
+  font-size: 1em;
+}
+.plan-markdown p {
+  margin: 0.3em 0;
+}
+.plan-markdown ul,
+.plan-markdown ol {
+  margin: 0.3em 0;
+  padding-left: 1.5em;
+}
+.plan-markdown li {
+  margin: 0.1em 0;
+}
+.plan-markdown code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+.plan-markdown pre {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.5em;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 0.3em 0;
+}
+.plan-markdown pre code {
+  background: none;
+  padding: 0;
+}
+.plan-markdown input[type='checkbox'] {
+  margin-right: 0.4em;
+}
+.plan-markdown hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  margin: 0.5em 0;
+}

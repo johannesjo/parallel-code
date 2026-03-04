@@ -75,4 +75,7 @@ export enum IPC {
   StartRemoteServer = 'start_remote_server',
   StopRemoteServer = 'stop_remote_server',
   GetRemoteStatus = 'get_remote_status',
+
+  // Plan
+  PlanContent = 'plan_content',
 }
