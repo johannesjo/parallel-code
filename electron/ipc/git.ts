@@ -451,23 +451,64 @@ export async function getChangedFiles(worktreePath: string): Promise<
   }
 
   // Uncommitted-only files (in status but not in committed diff)
-  for (const [p, statusLetter] of uncommittedPaths) {
-    if (seen.has(p)) continue;
-    const fullPath = path.join(worktreePath, p);
-    let added = 0;
+  // Use git diff --numstat HEAD for tracked files to get actual changed line counts
+  const uncommittedNumstat = new Map<string, [number, number]>();
+  const hasTrackedUncommitted = [...uncommittedPaths.keys()].some(
+    (p) => !seen.has(p) && !untrackedPaths.has(p),
+  );
+  if (hasTrackedUncommitted) {
     try {
-      const stat = await fs.promises.stat(fullPath);
-      if (stat.isFile() && stat.size < MAX_BUFFER) {
-        const content = await fs.promises.readFile(fullPath, 'utf8');
-        added = content.split('\n').length;
+      const { stdout } = await exec('git', ['diff', '--numstat', 'HEAD'], {
+        cwd: worktreePath,
+        maxBuffer: MAX_BUFFER,
+      });
+      for (const line of stdout.split('\n')) {
+        const parts = line.split('\t');
+        if (parts.length >= 3) {
+          const a = parseInt(parts[0], 10);
+          const r = parseInt(parts[1], 10);
+          if (!isNaN(a) && !isNaN(r)) {
+            const rawPath = parts[parts.length - 1];
+            const np = normalizeStatusPath(rawPath);
+            if (np) uncommittedNumstat.set(np, [a, r]);
+          }
+        }
       }
     } catch {
       /* ignore */
     }
+  }
+
+  for (const [p, statusLetter] of uncommittedPaths) {
+    if (seen.has(p)) continue;
+    let added = 0;
+    let removed = 0;
+
+    if (untrackedPaths.has(p)) {
+      // Untracked (new) files: count all lines as added
+      const fullPath = path.join(worktreePath, p);
+      try {
+        const stat = await fs.promises.stat(fullPath);
+        if (stat.isFile() && stat.size < MAX_BUFFER) {
+          const content = await fs.promises.readFile(fullPath, 'utf8');
+          const lines = content.split('\n');
+          added = content.endsWith('\n') ? lines.length - 1 : lines.length;
+        }
+      } catch {
+        /* ignore */
+      }
+    } else {
+      // Tracked files: use actual diff stats
+      const stats = uncommittedNumstat.get(p);
+      if (stats) {
+        [added, removed] = stats;
+      }
+    }
+
     files.push({
       path: p,
       lines_added: added,
-      lines_removed: 0,
+      lines_removed: removed,
       status: statusLetter,
       committed: false,
     });
