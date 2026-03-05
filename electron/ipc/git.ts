@@ -60,6 +60,9 @@ const SYMLINK_CANDIDATES = [
   'node_modules',
 ];
 
+/** Entries inside `.claude` that must NOT be symlinked (kept per-worktree). */
+const CLAUDE_DIR_EXCLUDE = new Set(['plans', 'settings.local.json']);
+
 // --- Internal helpers ---
 
 async function detectMainBranch(repoRoot: string): Promise<string> {
@@ -259,6 +262,33 @@ async function computeBranchDiffStats(
   return { linesAdded, linesRemoved };
 }
 
+/**
+ * "Shallow-symlink" a directory: create a real directory at `target` and
+ * symlink each entry from `source` into it, EXCEPT entries in `exclude`.
+ */
+function shallowSymlinkDir(source: string, target: string, exclude: Set<string>): void {
+  fs.mkdirSync(target, { recursive: true });
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(source, { withFileTypes: true });
+  } catch (err) {
+    console.warn(`Failed to read directory ${source} for shallow-symlink:`, err);
+    return;
+  }
+  for (const entry of entries) {
+    if (exclude.has(entry.name)) continue;
+    const src = path.join(source, entry.name);
+    const dst = path.join(target, entry.name);
+    try {
+      if (!fs.existsSync(dst)) {
+        fs.symlinkSync(src, dst);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 // --- Public functions (used by tasks.ts and register.ts) ---
 
 export async function createWorktree(
@@ -300,7 +330,13 @@ export async function createWorktree(
     const source = path.join(repoRoot, name);
     const target = path.join(worktreePath, name);
     try {
-      if (fs.existsSync(source) && !fs.existsSync(target)) {
+      if (!fs.existsSync(source)) continue;
+      if (fs.existsSync(target)) continue;
+
+      if (name === '.claude') {
+        // Shallow-symlink: real dir with per-entry symlinks, excluding per-worktree entries
+        shallowSymlinkDir(source, target, CLAUDE_DIR_EXCLUDE);
+      } else {
         fs.symlinkSync(source, target);
       }
     } catch {
