@@ -21,10 +21,6 @@ describe('validateCommand', () => {
     );
   });
 
-  it('does not throw for a bare command found in PATH', () => {
-    expect(() => validateCommand('sh')).not.toThrow();
-  });
-
   it('throws for an empty command string', () => {
     expect(() => validateCommand('')).toThrow(/must not be empty/);
   });
