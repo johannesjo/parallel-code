@@ -13,7 +13,8 @@ import {
   rescheduleTaskStatusPolling,
 } from './taskStatus';
 import { recordMergedLines, recordTaskCompleted } from './completion';
-import type { AgentDef, CreateTaskResult, MergeResult } from '../ipc/types';
+import { cleanTaskName } from '../lib/clean-task-name';
+import type { AgentDef, CreateTaskResult, ImportableWorktree, MergeResult } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
 import type { Agent, Task } from './types';
 
@@ -139,6 +140,19 @@ export interface CreateDirectTaskOptions {
   skipPermissions?: boolean;
 }
 
+export interface CreateImportedTaskOptions {
+  projectId: string;
+  worktree: ImportableWorktree;
+  agentDef: AgentDef;
+}
+
+function deriveImportedTaskName(branchName: string, worktreePath: string): string {
+  const branchTail = branchName.split('/').pop()?.trim() ?? '';
+  const normalized = branchTail.replace(/[-_]+/g, ' ').trim();
+  if (normalized) return cleanTaskName(normalized);
+  return worktreePath.split('/').pop()?.trim() || branchName;
+}
+
 export async function createDirectTask(opts: CreateDirectTaskOptions): Promise<string> {
   const { name, agentDef, projectId, mainBranch, initialPrompt, githubUrl, skipPermissions } = opts;
   if (hasDirectModeTask(projectId)) {
@@ -198,6 +212,58 @@ export async function createDirectTask(opts: CreateDirectTaskOptions): Promise<s
   return id;
 }
 
+export async function createImportedTask(opts: CreateImportedTaskOptions): Promise<string> {
+  const { projectId, worktree, agentDef } = opts;
+  if (!getProjectPath(projectId)) throw new Error('Project not found');
+  if (isProjectMissing(projectId)) throw new Error('Project folder not found');
+
+  const id = crypto.randomUUID();
+  const agentId = crypto.randomUUID();
+  const name = deriveImportedTaskName(worktree.branch_name, worktree.path);
+
+  const task: Task = {
+    id,
+    name,
+    projectId,
+    branchName: worktree.branch_name,
+    worktreePath: worktree.path,
+    agentIds: [agentId],
+    shellAgentIds: [],
+    notes: '',
+    lastPrompt: '',
+    externalWorktree: true,
+  };
+
+  const agent: Agent = {
+    id: agentId,
+    taskId: id,
+    def: agentDef,
+    resumed: false,
+    status: 'running',
+    exitCode: null,
+    signal: null,
+    lastOutput: [],
+    generation: 0,
+  };
+
+  setStore(
+    produce((s) => {
+      s.tasks[id] = task;
+      s.agents[agentId] = agent;
+      s.taskOrder.push(id);
+      s.activeTaskId = id;
+      s.activeAgentId = agentId;
+      s.lastProjectId = projectId;
+      s.lastAgentId = agentDef.id;
+    }),
+  );
+
+  markAgentSpawned(agentId);
+  rescheduleTaskStatusPolling();
+  updateWindowTitle(name);
+  return id;
+}
+
 export async function closeTask(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
   if (!task || task.closingStatus === 'closing' || task.closingStatus === 'removing') return;
@@ -206,7 +272,9 @@ export async function closeTask(taskId: string): Promise<void> {
   const shellAgentIds = [...task.shellAgentIds];
   const branchName = task.branchName;
   const projectRoot = getProjectPath(task.projectId) ?? '';
-  const deleteBranch = getProject(task.projectId)?.deleteBranchOnClose ?? true;
+  const deleteBranch = task.externalWorktree
+    ? false
+    : (getProject(task.projectId)?.deleteBranchOnClose ?? true);
 
   // Mark as closing — task stays visible but UI shows closing state
   setStore('tasks', taskId, 'closingStatus', 'closing');
@@ -222,7 +290,7 @@ export async function closeTask(taskId: string): Promise<void> {
     }
 
     // Skip git cleanup for direct mode (no worktree/branch to remove)
-    if (!task.directMode) {
+    if (!task.directMode && !task.externalWorktree) {
       // Remove worktree + branch
       await invoke(IPC.DeleteTask, {
         agentIds: [...agentIds, ...shellAgentIds],

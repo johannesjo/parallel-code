@@ -27,6 +27,7 @@ export {
 export {
   createTask,
   createDirectTask,
+  createImportedTask,
   closeTask,
   retryCloseTask,
   mergeTask,
