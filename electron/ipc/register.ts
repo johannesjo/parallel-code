@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron';
+import { ipcMain, dialog, shell, app, BrowserWindow, clipboard } from 'electron';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { IPC } from './channels.js';
@@ -336,6 +336,36 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const result = await dialog.showOpenDialog(win, { properties });
     if (result.canceled) return null;
     return args?.multiple ? result.filePaths : (result.filePaths[0] ?? null);
+  });
+
+  // --- Clipboard ---
+  ipcMain.handle(IPC.ClipboardRead, (_e, args) => {
+    const target = args?.target;
+    if (target !== undefined && target !== 'clipboard' && target !== 'selection') {
+      throw new Error('target must be "clipboard" or "selection"');
+    }
+    if (target === 'selection' && process.platform === 'linux') {
+      return clipboard.readText('selection');
+    }
+    return clipboard.readText();
+  });
+
+  ipcMain.handle(IPC.ClipboardWrite, (_e, args) => {
+    assertString(args?.text, 'text');
+    const target = args?.target;
+    if (
+      target !== undefined &&
+      target !== 'clipboard' &&
+      target !== 'selection' &&
+      target !== 'both'
+    ) {
+      throw new Error('target must be "clipboard", "selection", or "both"');
+    }
+
+    if (target !== 'selection') clipboard.writeText(args.text);
+    if ((target === 'selection' || target === 'both') && process.platform === 'linux') {
+      clipboard.writeText(args.text, 'selection');
+    }
   });
 
   // --- Shell/Opener ---

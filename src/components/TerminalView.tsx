@@ -8,7 +8,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { getTerminalFontFamily } from '../lib/fonts';
 import { getTerminalTheme } from '../lib/theme';
 import { matchesGlobalShortcut } from '../lib/shortcuts';
-import { isMac } from '../lib/platform';
+import { isLinux, isMac } from '../lib/platform';
 import { store } from '../store/store';
 import { registerTerminal, unregisterTerminal, markDirty } from '../lib/terminalFitManager';
 import type { PtyOutput } from '../ipc/types';
@@ -115,6 +115,33 @@ export function TerminalView(props: TerminalViewProps) {
       return lines.join('\n');
     });
 
+    function getSelectionText(): string {
+      return term?.getSelection() ?? '';
+    }
+
+    function clearSelection(): void {
+      term?.clearSelection();
+    }
+
+    function copySelectionToClipboard(): boolean {
+      const selection = getSelectionText();
+      if (!selection) return false;
+      fireAndForget(IPC.ClipboardWrite, {
+        text: selection,
+        target: isLinux ? 'both' : 'clipboard',
+      });
+      return true;
+    }
+
+    function pasteClipboard(target: 'clipboard' | 'selection' = 'clipboard'): void {
+      term?.focus();
+      invoke<string>(IPC.ClipboardRead, { target })
+        .then((text) => {
+          if (text) enqueueInput(text);
+        })
+        .catch(() => {});
+    }
+
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== 'keydown') return true;
 
@@ -123,21 +150,20 @@ export function TerminalView(props: TerminalViewProps) {
 
       const isCopy = isMac
         ? e.metaKey && !e.shiftKey && e.key === 'c'
-        : e.ctrlKey && e.shiftKey && e.key === 'C';
+        : (e.ctrlKey && e.shiftKey && e.key === 'C') ||
+          (e.ctrlKey && !e.shiftKey && e.key === 'Insert');
       const isPaste = isMac
         ? e.metaKey && !e.shiftKey && e.key === 'v'
-        : e.ctrlKey && e.shiftKey && e.key === 'V';
+        : (e.ctrlKey && e.shiftKey && e.key === 'V') ||
+          (e.shiftKey && !e.ctrlKey && e.key === 'Insert');
 
       if (isCopy) {
-        const sel = term?.getSelection();
-        if (sel) navigator.clipboard.writeText(sel);
+        copySelectionToClipboard();
         return false;
       }
 
       if (isPaste) {
-        navigator.clipboard.readText().then((text) => {
-          if (text) enqueueInput(text);
-        });
+        pasteClipboard();
         return false;
       }
 
@@ -149,6 +175,38 @@ export function TerminalView(props: TerminalViewProps) {
 
     if (props.autoFocus) {
       term.focus();
+    }
+
+    let handleMouseDown: ((e: MouseEvent) => void) | undefined;
+    let handleAuxClick: ((e: MouseEvent) => void) | undefined;
+    let handleContextMenu: ((e: MouseEvent) => void) | undefined;
+
+    if (isLinux) {
+      // Follow the Linux/WSL terminal flow:
+      // left drag selects, right-click copies the current selection and clears
+      // it, and a subsequent right-click pastes.
+      handleMouseDown = (e: MouseEvent) => {
+        if (e.button === 1) e.preventDefault();
+      };
+      handleAuxClick = (e: MouseEvent) => {
+        if (e.button !== 1) return;
+        e.preventDefault();
+        pasteClipboard('selection');
+      };
+      handleContextMenu = (e: MouseEvent) => {
+        e.preventDefault();
+        requestAnimationFrame(() => {
+          if (copySelectionToClipboard()) {
+            clearSelection();
+            return;
+          }
+          pasteClipboard();
+        });
+      };
+
+      containerRef.addEventListener('mousedown', handleMouseDown);
+      containerRef.addEventListener('auxclick', handleAuxClick);
+      containerRef.addEventListener('contextmenu', handleContextMenu);
     }
 
     let outputRaf: number | undefined;
@@ -402,6 +460,9 @@ export function TerminalView(props: TerminalViewProps) {
       if (inputFlushTimer !== undefined) clearTimeout(inputFlushTimer);
       if (resizeFlushTimer !== undefined) clearTimeout(resizeFlushTimer);
       if (outputRaf !== undefined) cancelAnimationFrame(outputRaf);
+      if (handleMouseDown) containerRef.removeEventListener('mousedown', handleMouseDown);
+      if (handleAuxClick) containerRef.removeEventListener('auxclick', handleAuxClick);
+      if (handleContextMenu) containerRef.removeEventListener('contextmenu', handleContextMenu);
       onOutput.cleanup?.();
       webglAddon?.dispose();
       webglAddon = undefined;

@@ -58,6 +58,8 @@ export enum IPC {
   // Dialog
   DialogConfirm = '__dialog_confirm',
   DialogOpen = '__dialog_open',
+  ClipboardRead = '__clipboard_read',
+  ClipboardWrite = '__clipboard_write',
 
   // Shell
   ShellReveal = '__shell_reveal',
