@@ -58,6 +58,8 @@ const ALLOWED_CHANNELS = new Set([
   // Dialog
   '__dialog_confirm',
   '__dialog_open',
+  '__clipboard_read',
+  '__clipboard_write',
   // Shell
   '__shell_reveal',
   '__shell_open_file',
