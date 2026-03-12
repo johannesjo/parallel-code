@@ -15,7 +15,10 @@ interface CloseTaskDialogProps {
 
 export function CloseTaskDialog(props: CloseTaskDialogProps) {
   const [worktreeStatus] = createResource(
-    () => (props.open && !props.task.directMode ? props.task.worktreePath : null),
+    () =>
+      props.open && !props.task.directMode && !props.task.externalWorktree
+        ? props.task.worktreePath
+        : null,
     (path) => invoke<WorktreeStatus>(IPC.GetWorktreeStatus, { worktreePath: path }),
   );
 
@@ -34,7 +37,9 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
           <Show when={!props.task.directMode}>
             <Show
               when={
-                worktreeStatus()?.has_uncommitted_changes || worktreeStatus()?.has_committed_changes
+                !props.task.externalWorktree &&
+                (worktreeStatus()?.has_uncommitted_changes ||
+                  worktreeStatus()?.has_committed_changes)
               }
             >
               <div
@@ -79,45 +84,51 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
             </Show>
             {(() => {
               const project = getProject(props.task.projectId);
-              const willDeleteBranch = project?.deleteBranchOnClose ?? true;
+              const willDeleteBranch = props.task.externalWorktree
+                ? false
+                : (project?.deleteBranchOnClose ?? true);
               return (
                 <>
                   <p style={{ margin: '0 0 8px' }}>
-                    {willDeleteBranch
-                      ? 'This action cannot be undone. The following will be permanently deleted:'
-                      : 'The worktree will be removed but the branch will be kept:'}
+                    {props.task.externalWorktree
+                      ? 'This will stop all running agents and shells and remove the imported task from Parallel Code. The existing git worktree will be left untouched.'
+                      : willDeleteBranch
+                        ? 'This action cannot be undone. The following will be permanently deleted:'
+                        : 'The worktree will be removed but the branch will be kept:'}
                   </p>
-                  <ul
-                    style={{
-                      margin: '0',
-                      'padding-left': '20px',
-                      display: 'flex',
-                      'flex-direction': 'column',
-                      gap: '4px',
-                    }}
-                  >
-                    <Show when={willDeleteBranch}>
+                  <Show when={!props.task.externalWorktree}>
+                    <ul
+                      style={{
+                        margin: '0',
+                        'padding-left': '20px',
+                        display: 'flex',
+                        'flex-direction': 'column',
+                        gap: '4px',
+                      }}
+                    >
+                      <Show when={willDeleteBranch}>
+                        <li>
+                          Local feature branch <strong>{props.task.branchName}</strong>
+                        </li>
+                      </Show>
                       <li>
-                        Local feature branch <strong>{props.task.branchName}</strong>
+                        Worktree at <strong>{props.task.worktreePath}</strong>
                       </li>
-                    </Show>
-                    <li>
-                      Worktree at <strong>{props.task.worktreePath}</strong>
-                    </li>
-                    <Show when={!willDeleteBranch}>
-                      <li style={{ color: theme.fgMuted }}>
-                        Branch <strong>{props.task.branchName}</strong> will be kept
-                      </li>
-                    </Show>
-                  </ul>
+                      <Show when={!willDeleteBranch}>
+                        <li style={{ color: theme.fgMuted }}>
+                          Branch <strong>{props.task.branchName}</strong> will be kept
+                        </li>
+                      </Show>
+                    </ul>
+                  </Show>
                 </>
               );
             })()}
           </Show>
         </div>
       }
-      confirmLabel={props.task.directMode ? 'Close' : 'Delete'}
-      danger={!props.task.directMode}
+      confirmLabel={props.task.directMode || props.task.externalWorktree ? 'Close' : 'Delete'}
+      danger={!props.task.directMode && !props.task.externalWorktree}
       onConfirm={() => {
         props.onDone();
         closeTask(props.task.id);

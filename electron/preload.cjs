@@ -23,6 +23,7 @@ const ALLOWED_CHANNELS = new Set([
   'get_file_diff',
   'get_file_diff_from_branch',
   'get_gitignored_dirs',
+  'list_importable_worktrees',
   'get_worktree_status',
   'commit_all',
   'discard_uncommitted',

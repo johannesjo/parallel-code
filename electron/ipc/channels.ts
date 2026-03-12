@@ -20,6 +20,7 @@ export enum IPC {
   GetFileDiff = 'get_file_diff',
   GetFileDiffFromBranch = 'get_file_diff_from_branch',
   GetGitignoredDirs = 'get_gitignored_dirs',
+  ListImportableWorktrees = 'list_importable_worktrees',
   GetWorktreeStatus = 'get_worktree_status',
   CheckMergeStatus = 'check_merge_status',
   MergeTask = 'merge_task',

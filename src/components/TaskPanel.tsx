@@ -239,6 +239,23 @@ export function TaskPanel(props: TaskPanelProps) {
                 {props.task.branchName}
               </span>
             </Show>
+            <Show when={props.task.externalWorktree}>
+              <span
+                style={{
+                  'font-size': '11px',
+                  'font-weight': '600',
+                  padding: '2px 8px',
+                  'border-radius': '4px',
+                  background: `color-mix(in srgb, ${theme.accent} 14%, transparent)`,
+                  color: theme.accent,
+                  border: `1px solid color-mix(in srgb, ${theme.accent} 24%, transparent)`,
+                  'flex-shrink': '0',
+                  'white-space': 'nowrap',
+                }}
+              >
+                Imported
+              </span>
+            </Show>
             <EditableText
               value={props.task.name}
               onCommit={(v) => updateTaskName(props.task.id, v)}
@@ -485,6 +502,18 @@ export function TaskPanel(props: TaskPanelProps) {
             </svg>
             {props.task.worktreePath}
           </span>
+          <Show when={props.task.externalWorktree}>
+            <span
+              style={{
+                display: 'inline-flex',
+                'align-items': 'center',
+                gap: '4px',
+                color: theme.accent,
+              }}
+            >
+              Existing worktree
+            </span>
+          </Show>
         </InfoBar>
       ),
     };
@@ -1284,7 +1313,11 @@ export function TaskPanel(props: TaskPanelProps) {
       <MergeDialog
         open={showMergeConfirm()}
         task={props.task}
-        initialCleanup={getProject(props.task.projectId)?.deleteBranchOnClose ?? true}
+        initialCleanup={
+          props.task.externalWorktree
+            ? false
+            : (getProject(props.task.projectId)?.deleteBranchOnClose ?? true)
+        }
         onDone={() => setShowMergeConfirm(false)}
         onDiffFileClick={setDiffFile}
       />
