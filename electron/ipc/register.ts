@@ -209,7 +209,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.PushTask, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
-    return pushTask(args.projectRoot, args.branchName);
+    assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
+    return pushTask(win, args.projectRoot, args.branchName, args.onOutput.__CHANNEL_ID__);
   });
   ipcMain.handle(IPC.RebaseTask, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');

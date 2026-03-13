@@ -1,7 +1,8 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
+import type { BrowserWindow } from 'electron';
 
 const exec = promisify(execFile);
 
@@ -1016,8 +1017,56 @@ export async function getFileDiffFromBranch(
   return { diff, oldContent, newContent };
 }
 
-export async function pushTask(projectRoot: string, branchName: string): Promise<void> {
-  await exec('git', ['push', '-u', 'origin', '--', branchName], { cwd: projectRoot });
+export function pushTask(
+  win: BrowserWindow,
+  projectRoot: string,
+  branchName: string,
+  channelId: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('git', ['push', '--progress', '-u', 'origin', '--', branchName], {
+      cwd: projectRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const send = (msg: string) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(`channel:${channelId}`, msg);
+      }
+    };
+
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      send(chunk.toString('utf8'));
+    });
+
+    let stderrBuf = '';
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString('utf8');
+      stderrBuf += text;
+      send(text);
+    });
+
+    let settled = false;
+    proc.on('close', (code, signal) => {
+      if (settled) return;
+      settled = true;
+      if (code === 0) {
+        resolve();
+      } else {
+        const lastLine = stderrBuf.trim().split('\n').pop() || '';
+        const fallback = signal
+          ? `git push killed by signal ${signal}`
+          : `git push exited with code ${code}`;
+        reject(new Error(lastLine || fallback));
+      }
+    });
+
+    proc.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`git push failed: ${err.message}`));
+    });
+  });
 }
 
 export async function rebaseTask(worktreePath: string): Promise<void> {

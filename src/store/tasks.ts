@@ -1,5 +1,5 @@
 import { produce } from 'solid-js/store';
-import { invoke } from '../lib/ipc';
+import { invoke, Channel } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore, updateWindowTitle, cleanupPanelEntries } from './core';
 import { setTaskFocusedPanel } from './focus';
@@ -338,7 +338,7 @@ export async function mergeTask(
   }
 }
 
-export async function pushTask(taskId: string): Promise<void> {
+export async function pushTask(taskId: string, onOutput: Channel<string>): Promise<void> {
   const task = store.tasks[taskId];
   if (!task || task.directMode) return;
 
@@ -348,6 +348,7 @@ export async function pushTask(taskId: string): Promise<void> {
   await invoke(IPC.PushTask, {
     projectRoot,
     branchName: task.branchName,
+    onOutput,
   });
 }
 

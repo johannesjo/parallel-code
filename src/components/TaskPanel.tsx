@@ -1323,12 +1323,19 @@ export function TaskPanel(props: TaskPanelProps) {
           setPushSuccess(false);
           clearTimeout(pushSuccessTimer);
         }}
+        onClose={() => {
+          setShowPushConfirm(false);
+        }}
         onDone={(success) => {
+          const wasHidden = !showPushConfirm();
           setShowPushConfirm(false);
           setPushing(false);
           if (success) {
             setPushSuccess(true);
             pushSuccessTimer = setTimeout(() => setPushSuccess(false), 3000);
+          }
+          if (wasHidden) {
+            showNotification(success ? 'Push completed' : 'Push failed');
           }
         }}
       />
