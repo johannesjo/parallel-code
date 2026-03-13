@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Run multiple AI coding agents without the chaos.
+  Turn wait time into parallel progress.
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
   <img src="screens/longer-video.gif" alt="Parallel Code demo" width="800">
 </p>
 
-**Parallel Code** gives Claude Code, Codex CLI, and Gemini CLI each their own git branch and worktree — automatically. No agents stepping on each other's code, no juggling terminals, no mental overhead. Just one clean interface where you can see everything, navigate fast, merge results when they're ready — and monitor it all from your phone.
+**Parallel Code** is a desktop app that gives every AI coding agent its own git branch and worktree — automatically.
 
 ## Screenshots
 
@@ -30,7 +30,16 @@
 
 ## Why Parallel Code?
 
-Running multiple AI coding agents is powerful — but chaotic. On the same branch, agents interfere with each other's code. Across terminals, you lose track of what's happening where. Setting up feature branches and worktrees manually works, but adds cognitive load you shouldn't have to deal with.
+- **Use the AI coding tools you already trust** — [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli) — all from one interface.
+- **Free and open source** — no extra subscription required. MIT licensed.
+- **Keep every change isolated and reviewable** — each task gets its own git branch and worktree automatically.
+- **Run agents in parallel, not in sequence** — five agents on five features at the same time, zero conflicts.
+- **See every session in one place** — switch context without losing momentum.
+- **Control everything keyboard-first** — every action has a shortcut, mouse optional.
+- **Monitor progress from your phone** — scan a QR code, watch agents work over Wi-Fi or Tailscale.
+
+<details>
+<summary><strong>How does it compare?</strong></summary>
 
 | Approach                                           | What's missing                                                                          |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -38,9 +47,9 @@ Running multiple AI coding agents is powerful — but chaotic. On the same branc
 | **VS Code extensions** (Kilo Code, Roo Code, etc.) | Tied to VS Code; no true parallel worktree isolation between agents                     |
 | **Running agents sequentially**                    | One task at a time — blocks your workflow while each agent finishes                     |
 
-Parallel Code combines a dedicated GUI, automatic worktree isolation, and multi-agent orchestration into one app — so you can dispatch five tasks and walk away.
+</details>
 
-## How Parallel Code Solves It
+## How it works
 
 When you create a task, Parallel Code:
 
@@ -49,27 +58,10 @@ When you create a task, Parallel Code:
 3. Symlinks `node_modules` and other gitignored directories into the worktree
 4. Spawns the AI agent in that worktree
 
-This means you can have five agents working on five different features at the same time, all from the same repo, with zero conflicts. When you're happy with the result, merge the branch back to main from the sidebar.
+When you're happy with the result, merge the branch back to main from the sidebar.
 
-## Features
-
-### One interface, every AI coding agent
-
-Use [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) from the same interface. Switch between agents per task, or run all three at once — no juggling terminal windows.
-
-### 5 agents, 5 features, zero conflicts
-
-Every task gets its own git branch and [worktree](https://git-scm.com/docs/git-worktree) instantly. Agents work in full isolation — no conflicts, no stashing, no waiting. Five agents, five features, one repo. Merge back to main when you're done.
-
-### Walk away — monitor from your phone
-
-Scan a QR code and watch all your agent terminals live on your phone — over Wi-Fi or Tailscale. Step away from your desk while your agents keep working.
-
-### Keyboard-first, mouse-optional
-
-Navigate panels, create tasks, send prompts, merge branches, push to remote — all without touching the mouse. Every action has a shortcut, and `Ctrl+/` shows them all.
-
-### And more
+<details>
+<summary><strong>More features</strong></summary>
 
 - Tiled panel layout with drag-to-reorder
 - Built-in diff viewer and changed files list per task
@@ -78,6 +70,8 @@ Navigate panels, create tasks, send prompts, merge branches, push to remote — 
 - Six themes — Minimal, Graphite, Classic, Indigo, Ember, Glacier
 - State persists across restarts
 - macOS and Linux
+
+</details>
 
 ## Getting Started
 
