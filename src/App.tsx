@@ -51,6 +51,7 @@ import { setupAutosave } from './store/autosave';
 import { isMac, mod } from './lib/platform';
 import { createCtrlWheelZoomHandler } from './lib/wheelZoom';
 import { ArenaOverlay } from './arena/ArenaOverlay';
+import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 
 const MIN_WINDOW_DIMENSION = 100;
 
@@ -307,6 +308,7 @@ function App() {
     await captureWindowState();
     setupAutosave();
     startTaskStatusPolling();
+    const stopNotificationWatcher = startDesktopNotificationWatcher(windowFocused);
 
     // Listen for plan content pushed from backend plan watcher
     const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
@@ -571,6 +573,7 @@ function App() {
       unlistenCloseRequested();
       cleanupShortcuts();
       stopTaskStatusPolling();
+      stopNotificationWatcher();
       offPlanContent();
       unlistenFocusChanged?.();
       unlistenResized?.();

@@ -79,6 +79,9 @@ const ALLOWED_CHANNELS = new Set([
   // Ask about code
   'ask_about_code',
   'cancel_ask_about_code',
+  // Notifications
+  'show_notification',
+  'notification_clicked',
 ]);
 
 function isAllowedChannel(channel) {

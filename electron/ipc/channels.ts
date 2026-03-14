@@ -85,4 +85,8 @@ export enum IPC {
   // Ask about code
   AskAboutCode = 'ask_about_code',
   CancelAskAboutCode = 'cancel_ask_about_code',
+
+  // Notifications
+  ShowNotification = 'show_notification',
+  NotificationClicked = 'notification_clicked',
 }
