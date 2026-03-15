@@ -92,6 +92,7 @@ export {
   setPanelSizes,
   toggleSidebar,
   toggleArena,
+  toggleFocusMode,
   setTerminalFont,
   setThemePreset,
   setAutoTrustFolders,

@@ -43,6 +43,7 @@ export async function saveState(): Promise<void> {
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand || undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
+    focusMode: store.focusMode || undefined,
   };
 
   for (const taskId of store.taskOrder) {
@@ -175,6 +176,7 @@ interface LegacyPersistedState {
   editorCommand?: unknown;
   customAgents?: unknown;
   terminals?: unknown;
+  focusMode?: unknown;
 }
 
 export async function loadState(): Promise<void> {
@@ -280,6 +282,7 @@ export async function loadState(): Promise<void> {
 
       const rawEditorCommand = raw.editorCommand;
       s.editorCommand = typeof rawEditorCommand === 'string' ? rawEditorCommand.trim() : '';
+      s.focusMode = raw.focusMode === true;
 
       // Restore custom agents
       if (Array.isArray(raw.customAgents)) {
