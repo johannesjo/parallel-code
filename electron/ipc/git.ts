@@ -96,33 +96,56 @@ async function detectMainBranch(repoRoot: string): Promise<string> {
   return result;
 }
 
-async function detectMainBranchUncached(repoRoot: string): Promise<string> {
-  // Try remote HEAD reference first
+/** Read the branch name that refs/remotes/origin/HEAD points to, or null. */
+async function resolveOriginHead(repoRoot: string): Promise<string | null> {
+  const prefix = 'refs/remotes/origin/';
   try {
     const { stdout } = await exec('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], {
       cwd: repoRoot,
     });
     const refname = stdout.trim();
-    const prefix = 'refs/remotes/origin/';
-    if (refname.startsWith(prefix)) return refname.slice(prefix.length);
+    return refname.startsWith(prefix) ? refname.slice(prefix.length) : null;
   } catch {
-    /* ignore */
+    return null;
+  }
+}
+
+/** Check whether the remote-tracking ref origin/<branch> exists locally. */
+async function remoteTrackingRefExists(repoRoot: string, branch: string): Promise<boolean> {
+  try {
+    await exec('git', ['rev-parse', '--verify', `refs/remotes/origin/${branch}`], {
+      cwd: repoRoot,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function detectMainBranchUncached(repoRoot: string): Promise<string> {
+  // Try remote HEAD reference first
+  const branch = await resolveOriginHead(repoRoot);
+  if (branch) {
+    // Verify the remote-tracking ref exists — refs/remotes/origin/HEAD can go
+    // stale when the default branch is changed on the remote.
+    if (await remoteTrackingRefExists(repoRoot, branch)) return branch;
+
+    // Stale ref — try refreshing from the remote
+    try {
+      await exec('git', ['remote', 'set-head', 'origin', '--auto'], {
+        cwd: repoRoot,
+        timeout: 5_000,
+      });
+      const refreshed = await resolveOriginHead(repoRoot);
+      if (refreshed && (await remoteTrackingRefExists(repoRoot, refreshed))) return refreshed;
+    } catch {
+      /* no network or no remote — fall through */
+    }
   }
 
-  // Check if 'main' exists
-  try {
-    await exec('git', ['rev-parse', '--verify', 'main'], { cwd: repoRoot });
-    return 'main';
-  } catch {
-    /* ignore */
-  }
-
-  // Fallback to 'master'
-  try {
-    await exec('git', ['rev-parse', '--verify', 'master'], { cwd: repoRoot });
-    return 'master';
-  } catch {
-    /* ignore */
+  // Check common default branch names
+  for (const candidate of ['main', 'master']) {
+    if (await remoteTrackingRefExists(repoRoot, candidate)) return candidate;
   }
 
   // Empty repo (no commits yet) — use configured default branch or fall back to "main"

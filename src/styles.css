@@ -816,6 +816,15 @@ body.dragging-task * {
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 3%, transparent);
 }
 
+.prompt-textarea::placeholder {
+  opacity: 0.35;
+  transition: opacity 0.15s ease;
+}
+
+.prompt-textarea:focus::placeholder {
+  opacity: 0.6;
+}
+
 .prompt-send-btn {
   box-shadow: none;
 }
