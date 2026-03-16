@@ -12,6 +12,9 @@ export {
   validateProjectPaths,
   relinkProject,
   isProjectMissing,
+  getProjectSetupCommands,
+  getProjectTeardownCommands,
+  getProjectDefaultSymlinkDirs,
   PASTEL_HUES,
 } from './projects';
 export {
@@ -49,6 +52,8 @@ export {
   setNewTaskDropUrl,
   setNewTaskPrefillPrompt,
   setPlanContent,
+  retrySetup,
+  skipSetup,
 } from './tasks';
 export {
   setActiveTask,

@@ -64,6 +64,9 @@ export function updateProject(
       | 'deleteBranchOnClose'
       | 'defaultDirectMode'
       | 'terminalBookmarks'
+      | 'setupCommands'
+      | 'teardownCommands'
+      | 'defaultSymlinkDirs'
     >
   >,
 ): void {
@@ -81,6 +84,12 @@ export function updateProject(
         s.projects[idx].defaultDirectMode = updates.defaultDirectMode;
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
+      if (updates.setupCommands !== undefined)
+        s.projects[idx].setupCommands = updates.setupCommands;
+      if (updates.teardownCommands !== undefined)
+        s.projects[idx].teardownCommands = updates.teardownCommands;
+      if (updates.defaultSymlinkDirs !== undefined)
+        s.projects[idx].defaultSymlinkDirs = updates.defaultSymlinkDirs;
     }),
   );
 }
@@ -166,6 +175,20 @@ export async function relinkProject(projectId: string): Promise<boolean> {
     });
   }
   return exists;
+}
+
+export function getProjectTeardownCommands(projectId: string): string[] | undefined {
+  const cmds = store.projects.find((p) => p.id === projectId)?.teardownCommands;
+  return cmds && cmds.length > 0 ? cmds : undefined;
+}
+
+export function getProjectSetupCommands(projectId: string): string[] | undefined {
+  const cmds = store.projects.find((p) => p.id === projectId)?.setupCommands;
+  return cmds && cmds.length > 0 ? cmds : undefined;
+}
+
+export function getProjectDefaultSymlinkDirs(projectId: string): string[] | undefined {
+  return store.projects.find((p) => p.id === projectId)?.defaultSymlinkDirs;
 }
 
 export function isProjectMissing(projectId: string): boolean {

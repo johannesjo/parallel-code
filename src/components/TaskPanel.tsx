@@ -44,6 +44,7 @@ import { PushDialog } from './PushDialog';
 import { DiffViewerDialog } from './DiffViewerDialog';
 import { PlanViewerDialog } from './PlanViewerDialog';
 import { EditProjectDialog } from './EditProjectDialog';
+import { SetupBanner } from './SetupBanner';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { mod, isMac } from '../lib/platform';
@@ -1033,6 +1034,7 @@ export function TaskPanel(props: TaskPanelProps) {
                     : 'No prompts sent'}
               </span>
             </InfoBar>
+            <SetupBanner task={props.task} />
             <div style={{ flex: '1', position: 'relative', overflow: 'hidden' }}>
               <Show when={firstAgent()}>
                 {(a) => (

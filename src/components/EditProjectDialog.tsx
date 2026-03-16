@@ -9,7 +9,9 @@ import {
 } from '../store/store';
 import { sanitizeBranchPrefix, toBranchName } from '../lib/branch-name';
 import { theme } from '../lib/theme';
-import type { Project, TerminalBookmark } from '../store/types';
+import { CommandListEditor, type CommandVariable } from './CommandListEditor';
+import { PathSelector } from './PathSelector';
+import type { Project } from '../store/types';
 
 interface EditProjectDialogProps {
   project: Project | null;
@@ -27,8 +29,10 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [branchPrefix, setBranchPrefix] = createSignal('task');
   const [deleteBranchOnClose, setDeleteBranchOnClose] = createSignal(true);
   const [defaultDirectMode, setDefaultDirectMode] = createSignal(false);
-  const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
-  const [newCommand, setNewCommand] = createSignal('');
+  const [bookmarks, setBookmarks] = createSignal<string[]>([]);
+  const [setupCommands, setSetupCommands] = createSignal<string[]>([]);
+  const [teardownCommands, setTeardownCommands] = createSignal<string[]>([]);
+  const [symlinkDirs, setSymlinkDirs] = createSignal<string[]>([]);
   let nameRef!: HTMLInputElement;
 
   // Sync signals when project prop changes
@@ -40,26 +44,25 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
     setBranchPrefix(sanitizeBranchPrefix(p.branchPrefix ?? 'task'));
     setDeleteBranchOnClose(p.deleteBranchOnClose ?? true);
     setDefaultDirectMode(p.defaultDirectMode ?? false);
-    setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
-    setNewCommand('');
+    setBookmarks(p.terminalBookmarks ? p.terminalBookmarks.map((b) => b.command) : []);
+    setSetupCommands(p.setupCommands ? [...p.setupCommands] : []);
+    setTeardownCommands(p.teardownCommands ? [...p.teardownCommands] : []);
+    setSymlinkDirs(p.defaultSymlinkDirs ? [...p.defaultSymlinkDirs] : []);
     requestAnimationFrame(() => nameRef?.focus());
   });
 
-  function addBookmark() {
-    const cmd = newCommand().trim();
-    if (!cmd) return;
-    const existing = bookmarks();
-    const bookmark: TerminalBookmark = {
-      id: crypto.randomUUID(),
-      command: cmd,
-    };
-    setBookmarks([...existing, bookmark]);
-    setNewCommand('');
-  }
-
-  function removeBookmark(id: string) {
-    setBookmarks(bookmarks().filter((b) => b.id !== id));
-  }
+  const commandVariables = (projectPath: string): CommandVariable[] => [
+    {
+      name: 'PROJECT_ROOT',
+      description: 'Root repository path',
+      example: projectPath,
+    },
+    {
+      name: 'WORKTREE',
+      description: 'Current task worktree path',
+      example: `${projectPath}/.worktrees/task/my-task`,
+    },
+  ];
 
   const canSave = () => name().trim().length > 0;
 
@@ -72,7 +75,10 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
       branchPrefix: sanitizedPrefix,
       deleteBranchOnClose: deleteBranchOnClose(),
       defaultDirectMode: defaultDirectMode(),
-      terminalBookmarks: bookmarks(),
+      terminalBookmarks: bookmarks().map((cmd) => ({ id: crypto.randomUUID(), command: cmd })),
+      setupCommands: setupCommands().length > 0 ? setupCommands() : undefined,
+      teardownCommands: teardownCommands().length > 0 ? teardownCommands() : undefined,
+      defaultSymlinkDirs: symlinkDirs().length > 0 ? [...symlinkDirs()] : undefined,
     });
     props.onClose();
   }
@@ -367,112 +373,45 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
             </label>
 
             {/* Command Bookmarks */}
-            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label
-                style={{
-                  'font-size': '11px',
-                  color: theme.fgMuted,
-                  'text-transform': 'uppercase',
-                  'letter-spacing': '0.05em',
-                }}
-              >
-                Command Bookmarks
-              </label>
-              <Show when={bookmarks().length > 0}>
-                <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
-                  <For each={bookmarks()}>
-                    {(bookmark) => (
-                      <div
-                        style={{
-                          display: 'flex',
-                          'align-items': 'center',
-                          gap: '8px',
-                          padding: '4px 8px',
-                          background: theme.bgInput,
-                          'border-radius': '6px',
-                          border: `1px solid ${theme.border}`,
-                        }}
-                      >
-                        <span
-                          style={{
-                            flex: '1',
-                            'font-size': '11px',
-                            'font-family': "'JetBrains Mono', monospace",
-                            color: theme.fgSubtle,
-                            overflow: 'hidden',
-                            'text-overflow': 'ellipsis',
-                            'white-space': 'nowrap',
-                          }}
-                        >
-                          {bookmark.command}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeBookmark(bookmark.id)}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: theme.fgSubtle,
-                            cursor: 'pointer',
-                            padding: '2px',
-                            'line-height': '1',
-                            'flex-shrink': '0',
-                          }}
-                          title="Remove bookmark"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
-                          </svg>
-                        </button>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </Show>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <input
-                  class="input-field"
-                  type="text"
-                  value={newCommand()}
-                  onInput={(e) => setNewCommand(e.currentTarget.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addBookmark();
-                    }
-                  }}
-                  placeholder="e.g. npm run dev"
-                  style={{
-                    flex: '1',
-                    background: theme.bgInput,
-                    border: `1px solid ${theme.border}`,
-                    'border-radius': '8px',
-                    padding: '8px 12px',
-                    color: theme.fg,
-                    'font-size': '12px',
-                    'font-family': "'JetBrains Mono', monospace",
-                    outline: 'none',
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={addBookmark}
-                  disabled={!newCommand().trim()}
-                  style={{
-                    padding: '8px 14px',
-                    background: theme.bgInput,
-                    border: `1px solid ${theme.border}`,
-                    'border-radius': '8px',
-                    color: newCommand().trim() ? theme.fg : theme.fgSubtle,
-                    cursor: newCommand().trim() ? 'pointer' : 'not-allowed',
-                    'font-size': '12px',
-                    'flex-shrink': '0',
-                  }}
-                >
-                  Add
-                </button>
-              </div>
-            </div>
+            <CommandListEditor
+              label="Command Bookmarks"
+              placeholder="e.g. npm run dev"
+              items={bookmarks()}
+              onAdd={(cmd) => setBookmarks([...bookmarks(), cmd])}
+              onRemove={(i) => setBookmarks(bookmarks().filter((_, idx) => idx !== i))}
+            />
+
+            {/* Setup Commands */}
+            <CommandListEditor
+              label="Setup Commands"
+              description="Run in each new worktree before the agent starts"
+              placeholder="e.g. npm install"
+              items={setupCommands()}
+              onAdd={(cmd) => setSetupCommands([...setupCommands(), cmd])}
+              onRemove={(i) => setSetupCommands(setupCommands().filter((_, idx) => idx !== i))}
+              variables={commandVariables(project().path)}
+            />
+
+            {/* Teardown Commands */}
+            <CommandListEditor
+              label="Teardown Commands"
+              description="Run in worktree before it is removed on task close"
+              placeholder="e.g. npm run cleanup"
+              items={teardownCommands()}
+              onAdd={(cmd) => setTeardownCommands([...teardownCommands(), cmd])}
+              onRemove={(i) =>
+                setTeardownCommands(teardownCommands().filter((_, idx) => idx !== i))
+              }
+              variables={commandVariables(project().path)}
+            />
+
+            {/* Default Symlink Dirs */}
+            <PathSelector
+              dirs={symlinkDirs()}
+              projectRoot={project().path}
+              onAdd={(dir) => setSymlinkDirs([...symlinkDirs(), dir])}
+              onRemove={(i) => setSymlinkDirs(symlinkDirs().filter((_, idx) => idx !== i))}
+            />
 
             {/* Buttons */}
             <div
