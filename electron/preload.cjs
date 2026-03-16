@@ -24,7 +24,7 @@ const ALLOWED_CHANNELS = new Set([
   'get_file_diff_from_branch',
   'get_all_file_diffs',
   'get_all_file_diffs_from_branch',
-  'get_gitignored_dirs',
+  'list_project_entries',
   'get_worktree_status',
   'commit_all',
   'discard_uncommitted',
@@ -76,6 +76,8 @@ const ALLOWED_CHANNELS = new Set([
   'get_remote_status',
   // Plan
   'plan_content',
+  // Setup
+  'run_setup_commands',
   // Ask about code
   'ask_about_code',
   'cancel_ask_about_code',

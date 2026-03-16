@@ -16,7 +16,7 @@ import {
 import { ensurePlansDirectory, startPlanWatcher, readPlanForWorktree } from './plans.js';
 import { startRemoteServer } from '../remote/server.js';
 import {
-  getGitIgnoredDirs,
+  listProjectEntries,
   getMainBranch,
   getCurrentBranch,
   getChangedFiles,
@@ -41,6 +41,7 @@ import { listAgents } from './agents.js';
 import { saveAppState, loadAppState } from './persistence.js';
 import { spawn } from 'child_process';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
+import { runSetupCommands } from './setup.js';
 import path from 'path';
 import {
   assertString,
@@ -173,9 +174,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validateRelativePath(args.filePath, 'filePath');
     return getFileDiffFromBranch(args.projectRoot, args.branchName, args.filePath);
   });
-  ipcMain.handle(IPC.GetGitignoredDirs, (_e, args) => {
+  ipcMain.handle(IPC.ListProjectEntries, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
-    return getGitIgnoredDirs(args.projectRoot);
+    return listProjectEntries(args.projectRoot, args.subpath);
   });
   ipcMain.handle(IPC.GetWorktreeStatus, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
@@ -302,6 +303,20 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const fileName = typeof args.fileName === 'string' ? args.fileName : undefined;
     if (fileName) validateRelativePath(fileName, 'fileName');
     return readPlanForWorktree(args.worktreePath, fileName);
+  });
+
+  // --- Setup commands ---
+  ipcMain.handle(IPC.RunSetupCommands, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    validatePath(args.projectRoot, 'projectRoot');
+    assertStringArray(args.commands, 'commands');
+    assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
+    return runSetupCommands(win, {
+      worktreePath: args.worktreePath,
+      projectRoot: args.projectRoot,
+      commands: args.commands,
+      channelId: args.onOutput.__CHANNEL_ID__,
+    });
   });
 
   // --- Ask about code ---

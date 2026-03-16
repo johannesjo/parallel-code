@@ -64,23 +64,6 @@ function withWorktreeLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-// --- Symlink candidates ---
-
-const SYMLINK_CANDIDATES = [
-  '.claude',
-  '.cursor',
-  '.aider',
-  '.copilot',
-  '.codeium',
-  '.continue',
-  '.windsurf',
-  '.env',
-  'node_modules',
-];
-
-/** Entries inside `.claude` that must NOT be symlinked (kept per-worktree). */
-const CLAUDE_DIR_EXCLUDE = new Set(['plans', 'settings.local.json']);
-
 // --- Internal helpers ---
 
 async function detectMainBranch(repoRoot: string): Promise<string> {
@@ -303,33 +286,6 @@ async function computeBranchDiffStats(
   return { linesAdded, linesRemoved };
 }
 
-/**
- * "Shallow-symlink" a directory: create a real directory at `target` and
- * symlink each entry from `source` into it, EXCEPT entries in `exclude`.
- */
-function shallowSymlinkDir(source: string, target: string, exclude: Set<string>): void {
-  fs.mkdirSync(target, { recursive: true });
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(source, { withFileTypes: true });
-  } catch (err) {
-    console.warn(`Failed to read directory ${source} for shallow-symlink:`, err);
-    return;
-  }
-  for (const entry of entries) {
-    if (exclude.has(entry.name)) continue;
-    const src = path.join(source, entry.name);
-    const dst = path.join(target, entry.name);
-    try {
-      if (!fs.existsSync(dst)) {
-        fs.symlinkSync(src, dst);
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-}
-
 // --- Public functions (used by tasks.ts and register.ts) ---
 
 export async function createWorktree(
@@ -365,21 +321,19 @@ export async function createWorktree(
   await exec('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd: repoRoot });
 
   // Symlink selected directories
+  const resolvedRoot = path.resolve(repoRoot) + path.sep;
+  const resolvedWorktree = path.resolve(worktreePath) + path.sep;
   for (const name of symlinkDirs) {
-    // Reject names that could escape the worktree directory
-    if (name.includes('/') || name.includes('\\') || name.includes('..') || name === '.') continue;
+    if (name.includes('..')) continue;
     const source = path.join(repoRoot, name);
     const target = path.join(worktreePath, name);
+    if (!path.resolve(source).startsWith(resolvedRoot)) continue;
+    if (!path.resolve(target).startsWith(resolvedWorktree)) continue;
     try {
       if (!fs.existsSync(source)) continue;
       if (fs.existsSync(target)) continue;
-
-      if (name === '.claude') {
-        // Shallow-symlink: real dir with per-entry symlinks, excluding per-worktree entries
-        shallowSymlinkDir(source, target, CLAUDE_DIR_EXCLUDE);
-      } else {
-        fs.symlinkSync(source, target);
-      }
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.symlinkSync(source, target);
     } catch {
       /* ignore */
     }
@@ -425,23 +379,24 @@ export async function removeWorktree(
 
 // --- IPC command functions ---
 
-export async function getGitIgnoredDirs(projectRoot: string): Promise<string[]> {
-  const results: string[] = [];
-  for (const name of SYMLINK_CANDIDATES) {
-    const dirPath = path.join(projectRoot, name);
-    try {
-      fs.statSync(dirPath); // throws if entry doesn't exist
-    } catch {
-      continue;
-    }
-    try {
-      await exec('git', ['check-ignore', '-q', name], { cwd: projectRoot });
-      results.push(name);
-    } catch {
-      /* not ignored */
-    }
+export function listProjectEntries(
+  projectRoot: string,
+  subpath?: string,
+): { name: string; isDir: boolean }[] {
+  const HIDDEN = new Set(['.git', '.worktrees']);
+  const dir = subpath ? path.join(projectRoot, subpath) : projectRoot;
+  // Prevent traversal outside project root
+  const resolvedDir = path.resolve(dir);
+  const resolvedRoot = path.resolve(projectRoot);
+  if (resolvedDir !== resolvedRoot && !resolvedDir.startsWith(resolvedRoot + path.sep)) return [];
+  try {
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((e) => !HIDDEN.has(e.name))
+      .map((e) => ({ name: e.name, isDir: e.isDirectory() }));
+  } catch {
+    return [];
   }
-  return results;
 }
 
 export async function getMainBranch(projectRoot: string): Promise<string> {
