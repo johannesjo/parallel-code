@@ -40,6 +40,9 @@ const LINE_BG: Record<DiffLine['type'], string> = {
   context: 'transparent',
 };
 
+/** Gaps with this many lines or fewer are auto-expanded instead of collapsed. */
+const MIN_COLLAPSE_LINES = 5;
+
 const INDICATOR: Record<DiffLine['type'], string> = {
   add: '+',
   remove: '-',
@@ -303,6 +306,10 @@ function ExpandableGap(props: {
     return props.currentHunk.newStart - prevEnd;
   };
 
+  onMount(() => {
+    if (hiddenCount() > 0 && hiddenCount() <= MIN_COLLAPSE_LINES) expand();
+  });
+
   async function expand() {
     if (expanded() || loading()) return;
     setLoading(true);
@@ -378,6 +385,220 @@ function ExpandableGap(props: {
           />
         )}
       </For>
+    </Show>
+  );
+}
+
+function LeadingGap(props: {
+  firstHunk: Hunk;
+  lang: string;
+  worktreePath: string;
+  filePath: string;
+  searchQuery?: string;
+  highlightedRange?: HighlightRange | null;
+}) {
+  const [expanded, setExpanded] = createSignal(false);
+  const [lines, setLines] = createSignal<DiffLine[]>([]);
+  const [highlighted, setHighlighted] = createSignal<string[] | null>(null);
+  const [loading, setLoading] = createSignal(false);
+
+  const hiddenCount = () => props.firstHunk.newStart - 1;
+
+  onMount(() => {
+    if (hiddenCount() > 0 && hiddenCount() <= MIN_COLLAPSE_LINES) expand();
+  });
+
+  async function expand() {
+    if (expanded() || loading()) return;
+    setLoading(true);
+    try {
+      const result = await invoke<FileDiffResult>(IPC.GetFileDiff, {
+        worktreePath: props.worktreePath,
+        filePath: props.filePath,
+      });
+      const fileLines = result.newContent.split('\n');
+      const endLine = props.firstHunk.newStart;
+      const gapLines: DiffLine[] = [];
+      for (let n = 1; n < endLine; n++) {
+        gapLines.push({
+          type: 'context',
+          content: fileLines[n - 1] ?? '',
+          oldLine: n,
+          newLine: n,
+        });
+      }
+      setLines(gapLines);
+      setExpanded(true);
+
+      const code = gapLines.map((l) => l.content).join('\n');
+      highlightLines(code, props.lang)
+        .then(setHighlighted)
+        .catch(() => {});
+    } catch {
+      /* fetch failed — keep collapsed */
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Show when={hiddenCount() > 0}>
+      <Show
+        when={expanded()}
+        fallback={
+          <div
+            onClick={expand}
+            style={{
+              padding: '2px 0',
+              'text-align': 'center',
+              color: theme.fgSubtle,
+              'font-size': sf(11),
+              'font-family': "'JetBrains Mono', monospace",
+              background: theme.bgElevated,
+              'border-bottom': `1px solid ${theme.borderSubtle}`,
+              'user-select': 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {loading() ? 'Loading...' : `${hiddenCount()} lines hidden`}
+          </div>
+        }
+      >
+        <For each={lines()}>
+          {(line, i) => (
+            <DiffLineView
+              line={line}
+              highlightedHtml={highlighted()?.[i()] ?? null}
+              searchQuery={props.searchQuery}
+              filePath={props.filePath}
+              highlighted={isLineHighlighted(props.highlightedRange, props.filePath, line.newLine)}
+            />
+          )}
+        </For>
+      </Show>
+    </Show>
+  );
+}
+
+function TrailingGap(props: {
+  lastHunk: Hunk;
+  lang: string;
+  worktreePath: string;
+  filePath: string;
+  searchQuery?: string;
+  highlightedRange?: HighlightRange | null;
+}) {
+  const [expanded, setExpanded] = createSignal(false);
+  const [lines, setLines] = createSignal<DiffLine[]>([]);
+  const [highlighted, setHighlighted] = createSignal<string[] | null>(null);
+  const [loading, setLoading] = createSignal(false);
+  const [hiddenCount, setHiddenCount] = createSignal<number | null>(null);
+
+  async function fetchGapLines(): Promise<DiffLine[]> {
+    const result = await invoke<FileDiffResult>(IPC.GetFileDiff, {
+      worktreePath: props.worktreePath,
+      filePath: props.filePath,
+    });
+    const fileLines = result.newContent.split('\n');
+    const totalLines = result.newContent.endsWith('\n') ? fileLines.length - 1 : fileLines.length;
+    const startLine = props.lastHunk.newStart + props.lastHunk.newCount;
+    const lastOldEnd = props.lastHunk.oldStart + props.lastHunk.oldCount;
+    const gapLines: DiffLine[] = [];
+    for (let n = startLine; n <= totalLines; n++) {
+      gapLines.push({
+        type: 'context',
+        content: fileLines[n - 1] ?? '',
+        oldLine: lastOldEnd + (n - startLine),
+        newLine: n,
+      });
+    }
+    return gapLines;
+  }
+
+  function showLines(gapLines: DiffLine[]) {
+    setLines(gapLines);
+    setExpanded(true);
+    const code = gapLines.map((l) => l.content).join('\n');
+    highlightLines(code, props.lang)
+      .then(setHighlighted)
+      .catch(() => {});
+  }
+
+  let cachedGapLines: DiffLine[] | null = null;
+
+  onMount(async () => {
+    setLoading(true);
+    try {
+      cachedGapLines = await fetchGapLines();
+      setHiddenCount(cachedGapLines.length);
+      if (cachedGapLines.length > 0 && cachedGapLines.length <= MIN_COLLAPSE_LINES) {
+        showLines(cachedGapLines);
+        cachedGapLines = null;
+      }
+    } catch {
+      setHiddenCount(0);
+    } finally {
+      setLoading(false);
+    }
+  });
+
+  async function expand() {
+    if (expanded() || loading()) return;
+    setLoading(true);
+    try {
+      const gapLines = cachedGapLines ?? (await fetchGapLines());
+      cachedGapLines = null;
+      if (gapLines.length === 0) {
+        setHiddenCount(0);
+        return;
+      }
+      showLines(gapLines);
+    } catch {
+      /* fetch failed — keep collapsed */
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Show when={hiddenCount() !== 0}>
+      <Show
+        when={expanded()}
+        fallback={
+          <div
+            onClick={expand}
+            style={{
+              padding: '2px 0',
+              'text-align': 'center',
+              color: theme.fgSubtle,
+              'font-size': sf(11),
+              'font-family': "'JetBrains Mono', monospace",
+              background: theme.bgElevated,
+              'border-top': `1px solid ${theme.borderSubtle}`,
+              'user-select': 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {loading()
+              ? 'Loading...'
+              : hiddenCount() !== null
+                ? `${hiddenCount()} lines hidden`
+                : '\u00B7\u00B7\u00B7'}
+          </div>
+        }
+      >
+        <For each={lines()}>
+          {(line, i) => (
+            <DiffLineView
+              line={line}
+              highlightedHtml={highlighted()?.[i()] ?? null}
+              searchQuery={props.searchQuery}
+              filePath={props.filePath}
+              highlighted={isLineHighlighted(props.highlightedRange, props.filePath, line.newLine)}
+            />
+          )}
+        </For>
+      </Show>
     </Show>
   );
 }
@@ -539,6 +760,16 @@ function FileSection(props: {
 
         <Show when={!props.file.binary}>
           <div style={{ 'padding-bottom': '8px', background: 'rgba(0, 0, 0, 0.15)' }}>
+            <Show when={props.file.hunks.length > 0 && props.file.status !== 'D'}>
+              <LeadingGap
+                firstHunk={props.file.hunks[0]}
+                lang={lang()}
+                worktreePath={props.worktreePath}
+                filePath={props.file.path}
+                searchQuery={props.searchQuery}
+                highlightedRange={props.highlightedRange}
+              />
+            </Show>
             <For each={props.file.hunks}>
               {(hunk, hunkIdx) => (
                 <>
@@ -618,6 +849,16 @@ function FileSection(props: {
                 </>
               )}
             </For>
+            <Show when={props.file.hunks.length > 0 && props.file.status !== 'D'}>
+              <TrailingGap
+                lastHunk={props.file.hunks[props.file.hunks.length - 1]}
+                lang={lang()}
+                worktreePath={props.worktreePath}
+                filePath={props.file.path}
+                searchQuery={props.searchQuery}
+                highlightedRange={props.highlightedRange}
+              />
+            </Show>
           </div>
         </Show>
       </Show>
