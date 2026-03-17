@@ -323,24 +323,27 @@ export function registerAllHandlers(win: BrowserWindow): void {
     cancelAskAboutCode(args.requestId);
   });
 
-  // --- Notifications ---
-  ipcMain.handle(IPC.ShowNotification, (_e, args) => {
-    assertString(args.title, 'title');
-    assertString(args.body, 'body');
-    assertString(args.threadId, 'threadId');
-    assertStringArray(args.taskIds, 'taskIds');
-    const notification = new Notification({
-      title: args.title,
-      body: args.body,
-    });
-    notification.on('click', () => {
-      if (!win.isDestroyed()) {
-        win.show();
-        win.focus();
-        win.webContents.send(IPC.NotificationClicked, { taskIds: args.taskIds });
-      }
-    });
-    notification.show();
+  // --- Notifications (fire-and-forget via ipcMain.on) ---
+  ipcMain.on(IPC.ShowNotification, (_e, args) => {
+    try {
+      assertString(args.title, 'title');
+      assertString(args.body, 'body');
+      assertStringArray(args.taskIds, 'taskIds');
+      const notification = new Notification({
+        title: args.title,
+        body: args.body,
+      });
+      notification.on('click', () => {
+        if (!win.isDestroyed()) {
+          win.show();
+          win.focus();
+          win.webContents.send(IPC.NotificationClicked, { taskIds: args.taskIds });
+        }
+      });
+      notification.show();
+    } catch (err) {
+      console.warn('ShowNotification failed:', err);
+    }
   });
 
   // --- Window management ---

@@ -114,6 +114,7 @@ export interface PersistedState {
   windowState?: PersistedWindowState;
   autoTrustFolders?: boolean;
   showPlans?: boolean;
+  desktopNotificationsEnabled?: boolean;
   inactiveColumnOpacity?: number;
   editorCommand?: string;
   customAgents?: AgentDef[];
@@ -176,6 +177,7 @@ export interface AppStore {
   windowState: PersistedWindowState | null;
   autoTrustFolders: boolean;
   showPlans: boolean;
+  desktopNotificationsEnabled: boolean;
   inactiveColumnOpacity: number;
   editorCommand: string;
   newTaskDropUrl: string | null;

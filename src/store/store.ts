@@ -96,6 +96,7 @@ export {
   setThemePreset,
   setAutoTrustFolders,
   setShowPlans,
+  setDesktopNotificationsEnabled,
   setInactiveColumnOpacity,
   setEditorCommand,
   setWindowState,

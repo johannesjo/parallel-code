@@ -2,7 +2,6 @@ import { createEffect, onCleanup, type Accessor } from 'solid-js';
 import { store } from './store';
 import { getTaskDotStatus, type TaskDotStatus } from './taskStatus';
 import { setActiveTask } from './navigation';
-import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 
 const DEBOUNCE_MS = 3_000;
@@ -34,12 +33,11 @@ export function startDesktopNotificationWatcher(windowFocused: Accessor<boolean>
         ready.length === 1
           ? `${taskName(taskIds[0])} is ready for review`
           : `${ready.length} tasks ready for review`;
-      invoke(IPC.ShowNotification, {
+      window.electron.ipcRenderer.send(IPC.ShowNotification, {
         title: 'Task Ready',
         body,
-        threadId: 'pc-task-ready',
         taskIds,
-      }).catch(console.warn);
+      });
     }
 
     if (waiting.length > 0) {
@@ -48,12 +46,11 @@ export function startDesktopNotificationWatcher(windowFocused: Accessor<boolean>
         waiting.length === 1
           ? `${taskName(taskIds[0])} needs your attention`
           : `${waiting.length} tasks need your attention`;
-      invoke(IPC.ShowNotification, {
+      window.electron.ipcRenderer.send(IPC.ShowNotification, {
         title: 'Task Waiting',
         body,
-        threadId: 'pc-task-waiting',
         taskIds,
-      }).catch(console.warn);
+      });
     }
   }
 
@@ -62,6 +59,7 @@ export function startDesktopNotificationWatcher(windowFocused: Accessor<boolean>
   }
 
   function scheduleBatch(notification: PendingNotification): void {
+    if (!store.desktopNotificationsEnabled) return;
     pending.push(notification);
     if (debounceTimer === undefined) {
       debounceTimer = setTimeout(flushNotifications, DEBOUNCE_MS);
@@ -111,9 +109,10 @@ export function startDesktopNotificationWatcher(windowFocused: Accessor<boolean>
   const offNotificationClicked = window.electron.ipcRenderer.on(
     IPC.NotificationClicked,
     (data: unknown) => {
-      const msg = data as { taskIds: string[] };
-      if (msg.taskIds?.length) {
-        setActiveTask(msg.taskIds[0]);
+      const msg = data as Record<string, unknown>;
+      const taskIds = Array.isArray(msg?.taskIds) ? (msg.taskIds as string[]) : [];
+      if (taskIds.length) {
+        setActiveTask(taskIds[0]);
       }
     },
   );

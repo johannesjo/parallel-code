@@ -87,6 +87,10 @@ export function setShowPlans(showPlans: boolean): void {
   setStore('showPlans', showPlans);
 }
 
+export function setDesktopNotificationsEnabled(enabled: boolean): void {
+  setStore('desktopNotificationsEnabled', enabled);
+}
+
 export function setInactiveColumnOpacity(opacity: number): void {
   setStore('inactiveColumnOpacity', Math.round(Math.max(0.3, Math.min(1.0, opacity)) * 100) / 100);
 }

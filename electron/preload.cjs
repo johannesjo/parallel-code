@@ -94,6 +94,10 @@ contextBridge.exposeInMainWorld('electron', {
       if (!isAllowedChannel(channel)) throw new Error(`Blocked IPC channel: ${channel}`);
       return ipcRenderer.invoke(channel, ...args);
     },
+    send: (channel, ...args) => {
+      if (!isAllowedChannel(channel)) throw new Error(`Blocked IPC channel: ${channel}`);
+      ipcRenderer.send(channel, ...args);
+    },
     on: (channel, listener) => {
       if (!isAllowedChannel(channel)) throw new Error(`Blocked IPC channel: ${channel}`);
       const wrapped = (_event, ...eventArgs) => listener(...eventArgs);

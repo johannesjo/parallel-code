@@ -40,6 +40,7 @@ export async function saveState(): Promise<void> {
     windowState: store.windowState ? { ...store.windowState } : undefined,
     autoTrustFolders: store.autoTrustFolders,
     showPlans: store.showPlans,
+    desktopNotificationsEnabled: store.desktopNotificationsEnabled,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand || undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
@@ -171,6 +172,7 @@ interface LegacyPersistedState {
   windowState?: unknown;
   autoTrustFolders?: unknown;
   showPlans?: unknown;
+  desktopNotificationsEnabled?: unknown;
   inactiveColumnOpacity?: unknown;
   editorCommand?: unknown;
   customAgents?: unknown;
@@ -269,6 +271,10 @@ export async function loadState(): Promise<void> {
       s.windowState = parsePersistedWindowState(raw.windowState);
       s.autoTrustFolders = typeof raw.autoTrustFolders === 'boolean' ? raw.autoTrustFolders : false;
       s.showPlans = typeof raw.showPlans === 'boolean' ? raw.showPlans : true;
+      s.desktopNotificationsEnabled =
+        typeof raw.desktopNotificationsEnabled === 'boolean'
+          ? raw.desktopNotificationsEnabled
+          : false;
       const rawOpacity = raw.inactiveColumnOpacity;
       s.inactiveColumnOpacity =
         typeof rawOpacity === 'number' &&
