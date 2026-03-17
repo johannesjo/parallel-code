@@ -41,6 +41,7 @@ function persistedSnapshot(): string {
               lastPrompt: t.lastPrompt,
               name: t.name,
               directMode: t.directMode,
+              externalWorktree: t.externalWorktree,
               savedInitialPrompt: t.savedInitialPrompt,
               collapsed: t.collapsed,
             },
