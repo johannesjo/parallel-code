@@ -67,6 +67,7 @@ export async function saveState(): Promise<void> {
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
+      baseBranch: task.baseBranch,
     };
   }
 
@@ -92,6 +93,7 @@ export async function saveState(): Promise<void> {
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
       collapsed: true,
+      baseBranch: task.baseBranch,
     };
   }
 
@@ -343,6 +345,7 @@ export async function loadState(): Promise<void> {
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,
+          baseBranch: pt.baseBranch,
         };
 
         s.tasks[taskId] = task;
@@ -410,6 +413,7 @@ export async function loadState(): Promise<void> {
           planFileName: pt.planFileName,
           collapsed: true,
           savedAgentDef: agentDef ?? undefined,
+          baseBranch: pt.baseBranch,
         };
 
         s.tasks[taskId] = task;

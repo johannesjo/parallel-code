@@ -337,6 +337,7 @@ export async function createWorktree(
   branchName: string,
   symlinkDirs: string[],
   forceClean = false,
+  startPoint?: string,
 ): Promise<{ path: string; branch: string }> {
   const worktreePath = `${repoRoot}/.worktrees/${branchName}`;
 
@@ -362,7 +363,11 @@ export async function createWorktree(
   }
 
   // Create fresh worktree with new branch
-  await exec('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd: repoRoot });
+  await exec(
+    'git',
+    ['worktree', 'add', '-b', branchName, worktreePath, ...(startPoint ? [startPoint] : [])],
+    { cwd: repoRoot },
+  );
 
   // Symlink selected directories
   for (const name of symlinkDirs) {
@@ -863,11 +868,12 @@ export async function mergeTask(
   squash: boolean,
   message: string | null,
   cleanup: boolean,
+  targetBranch?: string,
 ): Promise<{ main_branch: string; lines_added: number; lines_removed: number }> {
   const lockKey = await detectRepoLockKey(projectRoot).catch(() => projectRoot);
 
   return withWorktreeLock(lockKey, async () => {
-    const mainBranch = await detectMainBranch(projectRoot);
+    const mainBranch = targetBranch ?? (await detectMainBranch(projectRoot));
     const { linesAdded, linesRemoved } = await computeBranchDiffStats(
       projectRoot,
       mainBranch,
