@@ -43,6 +43,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   const [directMode, setDirectMode] = createSignal(false);
   const [skipPermissions, setSkipPermissions] = createSignal(false);
   const [branchPrefix, setBranchPrefix] = createSignal('');
+  const [baseBranch, setBaseBranch] = createSignal('');
   let promptRef!: HTMLTextAreaElement;
   let formRef!: HTMLFormElement;
 
@@ -105,6 +106,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     setLoading(false);
     setDirectMode(false);
     setSkipPermissions(false);
+    setBaseBranch('');
 
     void (async () => {
       if (store.availableAgents.length === 0) {
@@ -192,6 +194,32 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   createEffect(() => {
     const pid = selectedProjectId();
     setBranchPrefix(pid ? getProjectBranchPrefix(pid) : 'task');
+  });
+
+  // Auto-detect base branch when project changes
+  createEffect(() => {
+    const pid = selectedProjectId();
+    const path = pid ? getProjectPath(pid) : undefined;
+    let cancelled = false;
+
+    if (!path) {
+      setBaseBranch('');
+      return;
+    }
+
+    void (async () => {
+      try {
+        const detected = await invoke<string>(IPC.GetMainBranch, { projectRoot: path });
+        if (cancelled) return;
+        setBaseBranch((prev) => (prev === '' ? detected : prev));
+      } catch {
+        /* ignore */
+      }
+    })();
+
+    onCleanup(() => {
+      cancelled = true;
+    });
   });
 
   // Pre-check direct mode based on project setting
@@ -298,6 +326,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
         });
       } else {
+        const bb = baseBranch().trim() || undefined;
         taskId = await createTask({
           name: n,
           agentDef: agent,
@@ -307,6 +336,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           branchPrefixOverride: prefix,
           githubUrl: ghUrl,
           skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
+          baseBranch: bb,
         });
       }
       // Drop flow: prefill prompt without auto-sending
@@ -493,6 +523,45 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
             projectPath={selectedProjectPath()}
             onPrefixChange={setBranchPrefix}
           />
+        </Show>
+
+        <Show when={!directMode()}>
+          <div
+            data-nav-field="base-branch"
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
+          >
+            <label
+              style={{
+                'font-size': '11px',
+                color: theme.fgMuted,
+                'text-transform': 'uppercase',
+                'letter-spacing': '0.05em',
+              }}
+            >
+              Base branch{' '}
+              <span style={{ opacity: '0.5', 'text-transform': 'none' }}>(merge target)</span>
+            </label>
+            <input
+              class="input-field"
+              type="text"
+              value={baseBranch()}
+              onInput={(e) => setBaseBranch(e.currentTarget.value)}
+              placeholder="main"
+              style={{
+                background: theme.bgInput,
+                border: `1px solid ${theme.border}`,
+                'border-radius': '8px',
+                padding: '10px 14px',
+                color: theme.fg,
+                'font-size': '13px',
+                'font-family': "'JetBrains Mono', monospace",
+                outline: 'none',
+              }}
+            />
+            <span style={{ 'font-size': '11px', color: theme.fgSubtle, padding: '0 2px' }}>
+              Worktree branches from and merges back into this branch.
+            </span>
+          </div>
         </Show>
 
         <AgentSelector

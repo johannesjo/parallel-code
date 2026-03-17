@@ -57,6 +57,7 @@ export interface CreateTaskOptions {
   branchPrefixOverride?: string;
   githubUrl?: string;
   skipPermissions?: boolean;
+  baseBranch?: string;
 }
 
 export async function createTask(opts: CreateTaskOptions): Promise<string> {
@@ -68,6 +69,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     initialPrompt,
     githubUrl,
     skipPermissions,
+    baseBranch,
   } = opts;
   const projectRoot = getProjectPath(projectId);
   if (!projectRoot) throw new Error('Project not found');
@@ -79,6 +81,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     projectRoot,
     symlinkDirs,
     branchPrefix,
+    baseBranch,
   });
 
   const agentId = crypto.randomUUID();
@@ -96,6 +99,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     skipPermissions: skipPermissions || undefined,
     githubUrl,
     savedInitialPrompt: initialPrompt || undefined,
+    baseBranch: baseBranch || undefined,
   };
 
   const agent: Agent = {
@@ -327,6 +331,7 @@ export async function mergeTask(
     squash: options?.squash ?? false,
     message: options?.message,
     cleanup,
+    targetBranch: task.baseBranch,
   });
   recordMergedLines(mergeResult.lines_added, mergeResult.lines_removed);
 

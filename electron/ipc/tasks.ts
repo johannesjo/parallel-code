@@ -33,10 +33,11 @@ export async function createTask(
   projectRoot: string,
   symlinkDirs: string[],
   branchPrefix: string,
+  baseBranch?: string,
 ): Promise<{ id: string; branch_name: string; worktree_path: string }> {
   const prefix = sanitizeBranchPrefix(branchPrefix);
   const branchName = `${prefix}/${slug(name)}`;
-  const worktree = await createWorktree(projectRoot, branchName, symlinkDirs);
+  const worktree = await createWorktree(projectRoot, branchName, symlinkDirs, false, baseBranch);
   return {
     id: randomUUID(),
     branch_name: worktree.branch,

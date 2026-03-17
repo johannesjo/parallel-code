@@ -131,7 +131,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.projectRoot, 'projectRoot');
     assertStringArray(args.symlinkDirs, 'symlinkDirs');
     assertOptionalString(args.branchPrefix, 'branchPrefix');
-    const result = createTask(args.name, args.projectRoot, args.symlinkDirs, args.branchPrefix);
+    assertOptionalString(args.baseBranch, 'baseBranch');
+    const result = createTask(
+      args.name,
+      args.projectRoot,
+      args.symlinkDirs,
+      args.branchPrefix,
+      args.baseBranch,
+    );
     result.then((r: { id: string }) => taskNames.set(r.id, args.name)).catch(() => {});
     return result;
   });
@@ -200,7 +207,15 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertBoolean(args.squash, 'squash');
     assertOptionalString(args.message, 'message');
     assertOptionalBoolean(args.cleanup, 'cleanup');
-    return mergeTask(args.projectRoot, args.branchName, args.squash, args.message, args.cleanup);
+    assertOptionalString(args.targetBranch, 'targetBranch');
+    return mergeTask(
+      args.projectRoot,
+      args.branchName,
+      args.squash,
+      args.message,
+      args.cleanup,
+      args.targetBranch,
+    );
   });
   ipcMain.handle(IPC.GetBranchLog, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');

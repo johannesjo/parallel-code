@@ -52,6 +52,7 @@ export interface Task {
   savedAgentDef?: AgentDef;
   planContent?: string;
   planFileName?: string;
+  baseBranch?: string;
 }
 
 export interface Terminal {
@@ -77,6 +78,7 @@ export interface PersistedTask {
   savedInitialPrompt?: string;
   collapsed?: boolean;
   planFileName?: string;
+  baseBranch?: string;
 }
 
 export interface PersistedTerminal {
