@@ -62,6 +62,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     imageTag: string;
     buildContext: string;
   } | null>(null);
+  const [coordinatorMode, setCoordinatorMode] = createSignal(false);
   const [branchPrefix, setBranchPrefix] = createSignal('');
   let promptRef!: HTMLTextAreaElement;
   const titleId = createUniqueId();
@@ -133,6 +134,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     setDockerBuildOutput('');
     setDockerBuildError('');
     setProjectDockerfile(null);
+    setCoordinatorMode(false);
 
     void (async () => {
       // Check Docker availability in background
@@ -531,6 +533,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
         dockerImage: dockerMode()
           ? (projDocker?.imageTag ?? (store.dockerImage || DEFAULT_DOCKER_IMAGE))
           : undefined,
+        coordinatorMode: coordinatorMode() || undefined,
       });
       // Drop flow: prefill prompt without auto-sending
       if (isFromDrop && p) {
@@ -701,6 +704,46 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           onSelect={setSelectedAgent}
           wrap={false}
         />
+
+        {/* Coordinator mode toggle */}
+        <div
+          data-nav-field="coordinator-mode"
+          style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
+        >
+          <label
+            style={{
+              display: 'flex',
+              'align-items': 'center',
+              gap: '8px',
+              'font-size': '13px',
+              color: theme.fg,
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={coordinatorMode()}
+              onChange={(e) => setCoordinatorMode(e.currentTarget.checked)}
+              style={{ 'accent-color': theme.accent, cursor: 'inherit' }}
+            />
+            Coordinator mode
+          </label>
+          <Show when={coordinatorMode()}>
+            <div
+              style={{
+                'font-size': '12px',
+                color: theme.warning,
+                background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
+                padding: '8px 12px',
+                'border-radius': '8px',
+                border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
+              }}
+            >
+              This agent will be able to create tasks, send prompts, and merge branches
+              automatically via MCP tools. The remote server will be started automatically.
+            </div>
+          </Show>
+        </div>
 
         {/* Isolation mode selector — hidden for non-git projects */}
         <Show when={!isNonGitProject()}>

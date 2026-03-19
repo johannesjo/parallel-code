@@ -132,4 +132,12 @@ export enum IPC {
 
   // Logging
   LogFromRenderer = 'log_from_renderer',
+
+  // MCP / Coordinating agent
+  StartMCPServer = 'start_mcp_server',
+  StopMCPServer = 'stop_mcp_server',
+  GetMCPStatus = 'get_mcp_status',
+  MCP_TaskCreated = 'mcp_task_created',
+  MCP_TaskClosed = 'mcp_task_closed',
+  MCP_TaskStateSync = 'mcp_task_state_sync',
 }

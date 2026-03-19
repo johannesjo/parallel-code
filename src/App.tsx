@@ -47,6 +47,7 @@ import {
   setStepsContent,
   setDockerAvailable,
   toggleTaskFocusMode,
+  initMCPListeners,
 } from './store/store';
 import { isGitHubUrl } from './lib/github-url';
 import type { PersistedWindowState } from './store/types';
@@ -355,6 +356,7 @@ function App() {
     await captureWindowState();
     setupAutosave();
     startTaskStatusPolling();
+    const stopMCPListeners = initMCPListeners();
     const stopNotificationWatcher = startDesktopNotificationWatcher(windowFocused);
     const stopPrChecksSubscription = startPrChecksSubscription();
 
@@ -531,6 +533,7 @@ function App() {
       unlistenCloseRequested();
       cleanupShortcuts();
       stopTaskStatusPolling();
+      stopMCPListeners();
       stopNotificationWatcher();
       stopPrChecksSubscription();
       offPlanContent();

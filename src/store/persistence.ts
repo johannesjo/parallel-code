@@ -96,6 +96,8 @@ export async function saveState(): Promise<void> {
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
       stepsEnabled: task.stepsEnabled,
+      coordinatorMode: task.coordinatorMode,
+      coordinatedBy: task.coordinatedBy,
     };
   }
 
@@ -128,6 +130,8 @@ export async function saveState(): Promise<void> {
       planFileName: task.planFileName,
       stepsEnabled: task.stepsEnabled,
       collapsed: true,
+      coordinatorMode: task.coordinatorMode,
+      coordinatedBy: task.coordinatedBy,
     };
   }
 
@@ -470,6 +474,8 @@ export async function loadState(): Promise<void> {
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,
           stepsEnabled: pt.stepsEnabled,
+          coordinatorMode: pt.coordinatorMode,
+          coordinatedBy: pt.coordinatedBy,
         };
 
         s.tasks[taskId] = task;
@@ -547,6 +553,8 @@ export async function loadState(): Promise<void> {
           stepsEnabled: pt.stepsEnabled,
           collapsed: true,
           savedAgentDef: agentDef ?? undefined,
+          coordinatorMode: pt.coordinatorMode,
+          coordinatedBy: pt.coordinatedBy,
         };
 
         s.tasks[taskId] = task;

@@ -889,6 +889,11 @@ function NoGitBadge() {
 function CollapsedTaskRow(props: { taskId: string }) {
   const task = () => store.tasks[props.taskId];
   const offscreenAttention = createOffscreenAttentionState(() => props.taskId);
+  const coordinatorName = () => {
+    const t = task();
+    if (!t?.coordinatedBy) return null;
+    return store.tasks[t.coordinatedBy]?.name ?? null;
+  };
   return (
     <Show when={task()}>
       {(t) => (
@@ -920,8 +925,8 @@ function CollapsedTaskRow(props: { taskId: string }) {
             'text-overflow': 'ellipsis',
             opacity: offscreenAttention.hasAttention() ? '1' : '0.6',
             display: 'flex',
-            'align-items': 'center',
-            gap: '6px',
+            'flex-direction': 'column',
+            gap: '1px',
             border:
               store.sidebarFocused && store.sidebarFocusedTaskId === props.taskId
                 ? `1.5px solid var(--border-focus)`
@@ -945,6 +950,19 @@ function CollapsedTaskRow(props: { taskId: string }) {
             {t().name}
           </span>
           <OffscreenAttentionBadge taskId={props.taskId} />
+          <Show when={coordinatorName()}>
+            {(name) => (
+              <span
+                style={{
+                  'font-size': sf(10),
+                  color: theme.fgSubtle,
+                  'padding-left': '14px',
+                }}
+              >
+                via {name()}
+              </span>
+            )}
+          </Show>
         </div>
       )}
     </Show>
@@ -962,6 +980,11 @@ function TaskRow(props: TaskRowProps) {
   const task = () => store.tasks[props.taskId];
   const idx = () => props.globalIndex(props.taskId);
   const offscreenAttention = createOffscreenAttentionState(() => props.taskId);
+  const coordinatorName = () => {
+    const t = task();
+    if (!t?.coordinatedBy) return null;
+    return store.tasks[t.coordinatedBy]?.name ?? null;
+  };
   return (
     <Show when={task()}>
       {(t) => (
@@ -997,8 +1020,8 @@ function TaskRow(props: TaskRowProps) {
               'text-overflow': 'ellipsis',
               opacity: props.dragFromIndex() === idx() ? '0.4' : '1',
               display: 'flex',
-              'align-items': 'center',
-              gap: '6px',
+              'flex-direction': 'column',
+              gap: '1px',
               border:
                 store.sidebarFocused && store.sidebarFocusedTaskId === props.taskId
                   ? `1.5px solid var(--border-focus)`
@@ -1035,6 +1058,25 @@ function TaskRow(props: TaskRowProps) {
               {t().name}
             </span>
             <OffscreenAttentionBadge taskId={props.taskId} />
+            <Show when={coordinatorName()}>
+              {(name) => (
+                <span
+                  style={{
+                    'font-size': sf(10),
+                    color: theme.fgSubtle,
+                    'padding-left': '14px',
+                    cursor: 'pointer',
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const coordId = t().coordinatedBy;
+                    if (coordId) setActiveTask(coordId);
+                  }}
+                >
+                  via {name()}
+                </span>
+              )}
+            </Show>
           </div>
         </>
       )}

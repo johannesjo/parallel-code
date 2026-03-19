@@ -73,6 +73,9 @@ export interface Task {
   stepsEnabled?: boolean;
   stepsContent?: StepEntry[];
   lastInputAt?: string;
+  coordinatorMode?: boolean;
+  coordinatedBy?: string; // taskId of the coordinator that created this task
+  mcpConfigPath?: string; // path to MCP config file (for coordinator tasks)
 }
 
 export interface Terminal {
@@ -105,6 +108,8 @@ export interface PersistedTask {
   collapsed?: boolean;
   planFileName?: string;
   stepsEnabled?: boolean;
+  coordinatorMode?: boolean;
+  coordinatedBy?: string;
 }
 
 export interface PersistedTerminal {

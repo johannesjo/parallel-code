@@ -95,6 +95,7 @@ export type TaskDotStatus = 'busy' | 'waiting' | 'ready' | 'review';
 export type TaskAttentionState = 'idle' | 'active' | 'needs_input' | 'error' | 'ready';
 
 // --- Prompt detection helpers ---
+// Re-exported from shared module for backward compatibility.
 
 /** Strip ANSI escape sequences (CSI, OSC, and single-char escapes) from terminal output. */
 export function stripAnsi(text: string): string {
