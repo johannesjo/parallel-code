@@ -54,6 +54,7 @@ export {
   setStepsContent,
   setTaskStepsEnabled,
   setTaskLastInputAt,
+  initMCPListeners,
 } from './tasks';
 export {
   setActiveTask,

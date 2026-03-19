@@ -19,6 +19,7 @@ import {
   onPtyEvent,
 } from '../ipc/pty.js';
 import { parseClientMessage, type ServerMessage, type RemoteAgent } from './protocol.js';
+import type { Orchestrator } from '../mcp/orchestrator.js';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html',
@@ -102,6 +103,7 @@ export function startRemoteServer(opts: {
     exitCode: number | null;
     lastLine: string;
   };
+  orchestrator?: Orchestrator;
 }): RemoteServer {
   const token = randomBytes(24).toString('base64url');
   const ips = getNetworkIps();
@@ -167,6 +169,132 @@ export function startRemoteServer(opts: {
           }),
         );
         return;
+      }
+
+      // --- Orchestrator task API routes ---
+      const orch = opts.orchestrator;
+      if (orch) {
+        // Helper to read JSON body
+        const readBody = (): Promise<Record<string, unknown>> =>
+          new Promise((resolve, reject) => {
+            let data = '';
+            req.on('data', (chunk: Buffer) => {
+              data += chunk.toString();
+              if (data.length > 1_000_000) {
+                reject(new Error('Body too large'));
+                req.destroy();
+              }
+            });
+            req.on('end', () => {
+              try {
+                resolve(data ? (JSON.parse(data) as Record<string, unknown>) : {});
+              } catch {
+                resolve({});
+              }
+            });
+            req.on('error', reject);
+          });
+
+        const jsonReply = (status: number, body: unknown) => {
+          res.writeHead(status, { ...SECURITY_HEADERS, 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(body));
+        };
+
+        const taskIdMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)(?:\/(.+))?$/);
+
+        if (url.pathname === '/api/tasks' && req.method === 'POST') {
+          readBody()
+            .then(async (body) => {
+              const result = await orch.createTask({
+                name: body.name as string,
+                prompt: body.prompt as string | undefined,
+                coordinatorTaskId: (body.coordinatorTaskId as string) ?? 'api',
+                projectId: body.projectId as string | undefined,
+              });
+              jsonReply(201, orch.getTaskStatus(result.id));
+            })
+            .catch((err) => jsonReply(500, { error: String(err) }));
+          return;
+        }
+
+        if (url.pathname === '/api/tasks' && req.method === 'GET') {
+          jsonReply(200, orch.listTasks());
+          return;
+        }
+
+        if (taskIdMatch && !taskIdMatch[2] && req.method === 'GET') {
+          const detail = orch.getTaskStatus(decodeURIComponent(taskIdMatch[1]));
+          if (!detail) {
+            jsonReply(404, { error: 'task not found' });
+          } else {
+            jsonReply(200, detail);
+          }
+          return;
+        }
+
+        if (taskIdMatch && taskIdMatch[2] === 'prompt' && req.method === 'POST') {
+          readBody()
+            .then(async (body) => {
+              await orch.sendPrompt(decodeURIComponent(taskIdMatch[1]), body.prompt as string);
+              jsonReply(200, { ok: true });
+            })
+            .catch((err) => jsonReply(500, { error: String(err) }));
+          return;
+        }
+
+        if (taskIdMatch && taskIdMatch[2] === 'wait' && req.method === 'POST') {
+          readBody()
+            .then(async (body) => {
+              await orch.waitForIdle(
+                decodeURIComponent(taskIdMatch[1]),
+                body.timeoutMs as number | undefined,
+              );
+              const status = orch.getTaskStatus(decodeURIComponent(taskIdMatch[1]));
+              jsonReply(200, { status: status?.status ?? 'unknown' });
+            })
+            .catch((err) => jsonReply(500, { error: String(err) }));
+          return;
+        }
+
+        if (taskIdMatch && taskIdMatch[2] === 'diff' && req.method === 'GET') {
+          orch
+            .getTaskDiff(decodeURIComponent(taskIdMatch[1]))
+            .then((result) => jsonReply(200, result))
+            .catch((err) => jsonReply(500, { error: String(err) }));
+          return;
+        }
+
+        if (taskIdMatch && taskIdMatch[2] === 'output' && req.method === 'GET') {
+          try {
+            const output = orch.getTaskOutput(decodeURIComponent(taskIdMatch[1]));
+            jsonReply(200, { output });
+          } catch (err) {
+            jsonReply(500, { error: String(err) });
+          }
+          return;
+        }
+
+        if (taskIdMatch && taskIdMatch[2] === 'merge' && req.method === 'POST') {
+          readBody()
+            .then(async (body) => {
+              const result = await orch.mergeTask(decodeURIComponent(taskIdMatch[1]), {
+                squash: body.squash as boolean | undefined,
+                message: body.message as string | undefined,
+                cleanup: body.cleanup as boolean | undefined,
+              });
+              jsonReply(200, result);
+            })
+            .catch((err) => jsonReply(500, { error: String(err) }));
+          return;
+        }
+
+        if (taskIdMatch && !taskIdMatch[2] && req.method === 'DELETE') {
+          orch
+            .closeTask(decodeURIComponent(taskIdMatch[1]))
+            .then(() => jsonReply(200, { ok: true }))
+            .catch((err) => jsonReply(500, { error: String(err) }));
+          return;
+        }
       }
 
       res.writeHead(404, { ...SECURITY_HEADERS, 'Content-Type': 'application/json' });

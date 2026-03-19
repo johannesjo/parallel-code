@@ -32,6 +32,7 @@ import { TaskAITerminal } from './TaskAITerminal';
 import { TaskClosingOverlay } from './TaskClosingOverlay';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
+import { SubTaskStrip } from './SubTaskStrip';
 import { theme } from '../lib/theme';
 import type { Task } from '../store/types';
 import type { CommitInfo } from '../ipc/types';
@@ -367,6 +368,9 @@ export function TaskPanel(props: TaskPanelProps) {
         closingError={props.task.closingError}
         onRetry={() => retryCloseTask(props.task.id)}
       />
+      <Show when={props.task.coordinatorMode}>
+        <SubTaskStrip coordinatorTaskId={props.task.id} />
+      </Show>
       <div
         class="task-header-stack"
         style={{

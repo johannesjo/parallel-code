@@ -28,6 +28,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@xterm/addon-fit": "^0.12.0-beta.195",
     "@xterm/addon-web-links": "^0.13.0-beta.195",
     "@xterm/addon-webgl": "^0.20.0-beta.194",
@@ -74,8 +75,8 @@
     "*.{js,cjs,json,md,html,css}": "prettier --write"
   },
   "build": {
-    "appId": "com.parallel-code.app",
-    "productName": "Parallel Code",
+    "appId": "com.parallel-code.app.dev",
+    "productName": "Parallel Code Dev",
     "directories": {
       "buildResources": "build",
       "output": "release"
