@@ -9,12 +9,13 @@
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
-    "dev": "npm run compile && concurrently -k \"vite --config electron/vite.config.electron.ts\" \"wait-on http://localhost:1421 && VITE_DEV_SERVER_URL=http://localhost:1421 electron --no-sandbox dist-electron/main.js\"",
+    "dev": "npm run compile && npm run build:mcp && concurrently -k \"vite --config electron/vite.config.electron.ts\" \"wait-on http://localhost:1421 && VITE_DEV_SERVER_URL=http://localhost:1421 electron --no-sandbox dist-electron/main.js\"",
     "typecheck": "tsc --noEmit",
     "compile": "tsc -p electron/tsconfig.json",
+    "build:mcp": "esbuild dist-electron/mcp/server.js --bundle --platform=node --format=cjs --outfile=dist-electron/mcp-server.cjs",
     "build:frontend": "vite build --config electron/vite.config.electron.ts",
     "build:remote": "vite build --config src/remote/vite.config.ts",
-    "build": "npm run build:frontend && npm run build:remote && npm run compile && electron-builder",
+    "build": "npm run build:frontend && npm run build:remote && npm run compile && npm run build:mcp && electron-builder",
     "serve": "vite preview --config electron/vite.config.electron.ts",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
@@ -49,6 +50,7 @@
     "concurrently": "^9.2.1",
     "electron": "^40.6.0",
     "electron-builder": "^26.8.1",
+    "esbuild": "^0.27.4",
     "eslint": "^9.39.3",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-solid": "^0.14.5",
@@ -83,7 +85,8 @@
       "electron/preload.cjs"
     ],
     "asarUnpack": [
-      "**/node-pty/**"
+      "**/node-pty/**",
+      "dist-electron/mcp-server.cjs"
     ],
     "extraResources": [
       {

@@ -144,10 +144,17 @@ export interface RemoteAccess {
   connectedClients: number;
 }
 
+export interface MCPStatus {
+  mcpRunning: boolean;
+  remoteRunning: boolean;
+}
+
 export interface AppStore {
   projects: Project[];
   lastProjectId: string | null;
   lastAgentId: string | null;
+  /** Ordered active task IDs. Coordinated children are present here but filtered
+   *  out of the sidebar's flat list — they render nested under their coordinator. */
   taskOrder: string[];
   collapsedTaskOrder: string[];
   tasks: Record<string, Task>;
@@ -189,5 +196,6 @@ export interface AppStore {
   newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
   missingProjectIds: Record<string, true>;
   remoteAccess: RemoteAccess;
+  mcpStatus: MCPStatus;
   showArena: boolean;
 }

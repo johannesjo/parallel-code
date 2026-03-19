@@ -56,6 +56,10 @@ export const [store, setStore] = createStore<AppStore>({
     tailscaleUrl: null,
     connectedClients: 0,
   },
+  mcpStatus: {
+    mcpRunning: false,
+    remoteRunning: false,
+  },
   showArena: false,
 });
 

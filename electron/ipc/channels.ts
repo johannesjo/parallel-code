@@ -94,6 +94,7 @@ export enum IPC {
   StartMCPServer = 'start_mcp_server',
   StopMCPServer = 'stop_mcp_server',
   GetMCPStatus = 'get_mcp_status',
+  GetMCPLogs = 'get_mcp_logs',
   MCP_TaskCreated = 'mcp_task_created',
   MCP_TaskClosed = 'mcp_task_closed',
   MCP_TaskStateSync = 'mcp_task_state_sync',

@@ -50,6 +50,7 @@ export {
   setNewTaskPrefillPrompt,
   setPlanContent,
   initMCPListeners,
+  getCoordinatorCloseWarning,
 } from './tasks';
 export {
   setActiveTask,
@@ -129,3 +130,9 @@ export {
   syncTerminalCounter,
 } from './terminals';
 export { startRemoteAccess, stopRemoteAccess, refreshRemoteStatus } from './remote';
+export {
+  hasAnyCoordinatorTask,
+  refreshMCPStatus,
+  startMCPStatusPolling,
+  stopMCPStatusPolling,
+} from './mcpStatus';

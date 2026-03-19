@@ -76,12 +76,21 @@ const ALLOWED_CHANNELS = new Set([
   'get_remote_status',
   // Plan
   'plan_content',
+  'read_plan_content',
   // Ask about code
   'ask_about_code',
   'cancel_ask_about_code',
   // Notifications
   'show_notification',
   'notification_clicked',
+  // MCP orchestration
+  'start_mcp_server',
+  'stop_mcp_server',
+  'get_mcp_status',
+  'get_mcp_logs',
+  'mcp_task_created',
+  'mcp_task_closed',
+  'mcp_task_state_sync',
 ]);
 
 function isAllowedChannel(channel) {

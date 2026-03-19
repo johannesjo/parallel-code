@@ -8,8 +8,9 @@ export interface OrchestratedTask {
   worktreePath: string;
   agentId: string;
   coordinatorTaskId: string;
-  status: 'creating' | 'running' | 'idle' | 'exited';
+  status: 'creating' | 'running' | 'idle' | 'exited' | 'error';
   exitCode: number | null;
+  pendingPrompt?: string;
 }
 
 // --- MCP tool input schemas ---
@@ -70,6 +71,7 @@ export interface ApiTaskDetail extends ApiTaskSummary {
   projectId: string;
   agentId: string;
   exitCode: number | null;
+  pendingPrompt?: string;
 }
 
 export interface ApiDiffResult {
