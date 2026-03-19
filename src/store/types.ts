@@ -52,6 +52,9 @@ export interface Task {
   savedAgentDef?: AgentDef;
   planContent?: string;
   planFileName?: string;
+  coordinatorMode?: boolean;
+  coordinatedBy?: string; // taskId of the coordinator that created this task
+  mcpConfigPath?: string; // path to MCP config file (for coordinator tasks)
 }
 
 export interface Terminal {
@@ -77,6 +80,8 @@ export interface PersistedTask {
   savedInitialPrompt?: string;
   collapsed?: boolean;
   planFileName?: string;
+  coordinatorMode?: boolean;
+  coordinatedBy?: string;
 }
 
 export interface PersistedTerminal {

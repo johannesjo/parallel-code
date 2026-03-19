@@ -57,6 +57,7 @@ export interface CreateTaskOptions {
   branchPrefixOverride?: string;
   githubUrl?: string;
   skipPermissions?: boolean;
+  coordinatorMode?: boolean;
 }
 
 export async function createTask(opts: CreateTaskOptions): Promise<string> {
@@ -96,6 +97,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     skipPermissions: skipPermissions || undefined,
     githubUrl,
     savedInitialPrompt: initialPrompt || undefined,
+    coordinatorMode: opts.coordinatorMode || undefined,
   };
 
   const agent: Agent = {
@@ -126,6 +128,21 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   markAgentSpawned(agentId);
   rescheduleTaskStatusPolling();
   updateWindowTitle(name);
+
+  // Start MCP server for coordinator tasks
+  if (opts.coordinatorMode) {
+    try {
+      const mcpResult = await invoke<{ configPath: string }>(IPC.StartMCPServer, {
+        coordinatorTaskId: result.id,
+        projectId,
+        projectRoot,
+      });
+      setStore('tasks', result.id, 'mcpConfigPath', mcpResult.configPath);
+    } catch (err) {
+      console.warn('Failed to start MCP server for coordinator:', err);
+    }
+  }
+
   return result.id;
 }
 
@@ -599,6 +616,108 @@ export function setNewTaskDropUrl(url: string): void {
 
 export function setNewTaskPrefillPrompt(prompt: string, projectId: string | null): void {
   setStore('newTaskPrefillPrompt', { prompt, projectId });
+}
+
+// --- MCP orchestrator event listeners ---
+
+interface MCPTaskCreatedEvent {
+  taskId: string;
+  name: string;
+  projectId: string;
+  branchName: string;
+  worktreePath: string;
+  agentId: string;
+  coordinatorTaskId: string;
+}
+
+/** Call once during app initialization to listen for orchestrator events. */
+export function initMCPListeners(): () => void {
+  const cleanups: Array<() => void> = [];
+
+  cleanups.push(
+    window.electron.ipcRenderer.on(IPC.MCP_TaskCreated, (data: unknown) => {
+      const evt = data as MCPTaskCreatedEvent;
+      const task: Task = {
+        id: evt.taskId,
+        name: evt.name,
+        projectId: evt.projectId,
+        branchName: evt.branchName,
+        worktreePath: evt.worktreePath,
+        agentIds: [evt.agentId],
+        shellAgentIds: [],
+        notes: '',
+        lastPrompt: '',
+        coordinatedBy: evt.coordinatorTaskId,
+      };
+
+      const agent: Agent = {
+        id: evt.agentId,
+        taskId: evt.taskId,
+        def: {
+          id: 'claude',
+          name: 'Claude Code',
+          command: 'claude',
+          args: [],
+          resume_args: [],
+          skip_permissions_args: [],
+          description: '',
+        },
+        resumed: false,
+        status: 'running',
+        exitCode: null,
+        signal: null,
+        lastOutput: [],
+        generation: 0,
+      };
+
+      setStore(
+        produce((s) => {
+          s.tasks[evt.taskId] = task;
+          s.agents[evt.agentId] = agent;
+          s.taskOrder.push(evt.taskId);
+        }),
+      );
+      markAgentSpawned(evt.agentId);
+      rescheduleTaskStatusPolling();
+    }),
+  );
+
+  cleanups.push(
+    window.electron.ipcRenderer.on(IPC.MCP_TaskClosed, (data: unknown) => {
+      const { taskId } = data as { taskId: string };
+      const task = store.tasks[taskId];
+      if (!task) return;
+
+      const agentIds = [...task.agentIds];
+      for (const agentId of agentIds) {
+        clearAgentActivity(agentId);
+      }
+
+      setStore(
+        produce((s) => {
+          delete s.tasks[taskId];
+          delete s.taskGitStatus[taskId];
+          cleanupPanelEntries(s, taskId);
+          for (const agentId of agentIds) {
+            delete s.agents[agentId];
+          }
+          if (s.activeTaskId === taskId) {
+            const idx = s.taskOrder.indexOf(taskId);
+            const filtered = s.taskOrder.filter((id) => id !== taskId);
+            const neighborIdx = idx <= 0 ? 0 : idx - 1;
+            s.activeTaskId = filtered[neighborIdx] ?? null;
+            const neighbor = s.activeTaskId ? s.tasks[s.activeTaskId] : null;
+            s.activeAgentId = neighbor?.agentIds[0] ?? null;
+          }
+        }),
+      );
+      rescheduleTaskStatusPolling();
+    }),
+  );
+
+  return () => {
+    for (const cleanup of cleanups) cleanup();
+  };
 }
 
 export function setPlanContent(

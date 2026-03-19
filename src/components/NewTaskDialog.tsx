@@ -42,6 +42,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   const [selectedDirs, setSelectedDirs] = createSignal<Set<string>>(new Set());
   const [directMode, setDirectMode] = createSignal(false);
   const [skipPermissions, setSkipPermissions] = createSignal(false);
+  const [coordinatorMode, setCoordinatorMode] = createSignal(false);
   const [branchPrefix, setBranchPrefix] = createSignal('');
   let promptRef!: HTMLTextAreaElement;
   let formRef!: HTMLFormElement;
@@ -105,6 +106,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     setLoading(false);
     setDirectMode(false);
     setSkipPermissions(false);
+    setCoordinatorMode(false);
 
     void (async () => {
       if (store.availableAgents.length === 0) {
@@ -307,6 +309,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           branchPrefixOverride: prefix,
           githubUrl: ghUrl,
           skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
+          coordinatorMode: coordinatorMode() || undefined,
         });
       }
       // Drop flow: prefill prompt without auto-sending
@@ -500,6 +503,48 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           selectedAgent={selectedAgent()}
           onSelect={setSelectedAgent}
         />
+
+        {/* Coordinator mode toggle */}
+        <div
+          data-nav-field="coordinator-mode"
+          style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
+        >
+          <label
+            style={{
+              display: 'flex',
+              'align-items': 'center',
+              gap: '8px',
+              'font-size': '12px',
+              color: directMode() ? theme.fgSubtle : theme.fg,
+              cursor: directMode() ? 'not-allowed' : 'pointer',
+              opacity: directMode() ? '0.5' : '1',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={coordinatorMode()}
+              disabled={directMode()}
+              onChange={(e) => setCoordinatorMode(e.currentTarget.checked)}
+              style={{ 'accent-color': theme.accent, cursor: 'inherit' }}
+            />
+            Coordinator mode
+          </label>
+          <Show when={coordinatorMode()}>
+            <div
+              style={{
+                'font-size': '12px',
+                color: theme.warning,
+                background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
+                padding: '8px 12px',
+                'border-radius': '8px',
+                border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
+              }}
+            >
+              This agent will be able to create tasks, send prompts, and merge branches
+              automatically via MCP tools. The remote server will be started automatically.
+            </div>
+          </Show>
+        </div>
 
         {/* Direct mode toggle */}
         <div

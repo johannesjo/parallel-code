@@ -43,6 +43,7 @@ import {
   setNewTaskDropUrl,
   validateProjectPaths,
   setPlanContent,
+  initMCPListeners,
 } from './store/store';
 import { isGitHubUrl } from './lib/github-url';
 import type { PersistedWindowState } from './store/types';
@@ -310,6 +311,7 @@ function App() {
     await captureWindowState();
     setupAutosave();
     startTaskStatusPolling();
+    const stopMCPListeners = initMCPListeners();
     const stopNotificationWatcher = startDesktopNotificationWatcher(windowFocused);
 
     // Listen for plan content pushed from backend plan watcher
@@ -575,6 +577,7 @@ function App() {
       unlistenCloseRequested();
       cleanupShortcuts();
       stopTaskStatusPolling();
+      stopMCPListeners();
       stopNotificationWatcher();
       offPlanContent();
       unlistenFocusChanged?.();

@@ -67,6 +67,8 @@ export async function saveState(): Promise<void> {
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
+      coordinatorMode: task.coordinatorMode,
+      coordinatedBy: task.coordinatedBy,
     };
   }
 
@@ -92,6 +94,8 @@ export async function saveState(): Promise<void> {
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
       collapsed: true,
+      coordinatorMode: task.coordinatorMode,
+      coordinatedBy: task.coordinatedBy,
     };
   }
 
@@ -343,6 +347,8 @@ export async function loadState(): Promise<void> {
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,
+          coordinatorMode: pt.coordinatorMode,
+          coordinatedBy: pt.coordinatedBy,
         };
 
         s.tasks[taskId] = task;
@@ -410,6 +416,8 @@ export async function loadState(): Promise<void> {
           planFileName: pt.planFileName,
           collapsed: true,
           savedAgentDef: agentDef ?? undefined,
+          coordinatorMode: pt.coordinatorMode,
+          coordinatedBy: pt.coordinatedBy,
         };
 
         s.tasks[taskId] = task;

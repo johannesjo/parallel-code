@@ -3,6 +3,11 @@ import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
 import type { WorktreeStatus } from '../ipc/types';
+import {
+  stripAnsi as sharedStripAnsi,
+  PROMPT_PATTERNS as SHARED_PROMPT_PATTERNS,
+  chunkContainsAgentPrompt as sharedChunkContainsAgentPrompt,
+} from '../../electron/mcp/prompt-detect';
 
 // --- Trust-specific patterns (subset of QUESTION_PATTERNS) ---
 // These are auto-accepted when autoTrustFolders is enabled.
@@ -78,32 +83,10 @@ function clearAutoTrustState(agentId: string): void {
 export type TaskDotStatus = 'busy' | 'waiting' | 'ready';
 
 // --- Prompt detection helpers ---
+// Re-exported from shared module for backward compatibility.
 
-/** Strip ANSI escape sequences (CSI, OSC, and single-char escapes) from terminal output. */
-export function stripAnsi(text: string): string {
-  return text.replace(
-    // eslint-disable-next-line no-control-regex
-    /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nq-uy=><~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g,
-    '',
-  );
-}
-
-/**
- * Patterns that indicate the agent is waiting for user input (i.e. idle).
- * Each regex is tested against the last non-empty line of stripped output.
- *
- * - Claude Code prompt: ends with ❯ (possibly with trailing whitespace)
- * - Common shell prompts: $, %, #, >
- * - Y/n confirmation prompts
- */
-const PROMPT_PATTERNS: RegExp[] = [
-  /❯\s*$/, // Claude Code prompt
-  /(?:^|\s)\$\s*$/, // bash/zsh dollar prompt (preceded by whitespace or BOL)
-  /(?:^|\s)%\s*$/, // zsh percent prompt
-  /(?:^|\s)#\s*$/, // root prompt
-  /\[Y\/n\]\s*$/i, // Y/n confirmation
-  /\[y\/N\]\s*$/i, // y/N confirmation
-];
+export const stripAnsi = sharedStripAnsi;
+const PROMPT_PATTERNS = SHARED_PROMPT_PATTERNS;
 
 /** Returns true if `line` looks like a prompt waiting for input. */
 function looksLikePrompt(line: string): boolean {
@@ -112,25 +95,7 @@ function looksLikePrompt(line: string): boolean {
   return PROMPT_PATTERNS.some((re) => re.test(stripped));
 }
 
-/**
- * Patterns for known agent main input prompts (ready for a new task).
- * Tested against the stripped data chunk (not a single line), because TUI
- * apps like Claude Code use cursor positioning instead of newlines.
- */
-const AGENT_READY_TAIL_PATTERNS: RegExp[] = [
-  /❯/, // Claude Code
-  /›/, // Codex CLI
-];
-
-/** Check stripped output for known agent prompt characters.
- *  Only checks the tail of the chunk — the agent's main prompt renders as
- *  the last visible element, while TUI selection UIs place ❯ earlier in
- *  the render followed by option text and other choices. */
-function chunkContainsAgentPrompt(stripped: string): boolean {
-  if (stripped.length === 0) return false;
-  const tail = stripped.slice(-50);
-  return AGENT_READY_TAIL_PATTERNS.some((re) => re.test(tail));
-}
+const chunkContainsAgentPrompt = sharedChunkContainsAgentPrompt;
 
 // --- Agent ready event callbacks ---
 // Fired from markAgentOutput when a main prompt is detected in a PTY chunk.

@@ -15,6 +15,7 @@ import {
 } from './pty.js';
 import { ensurePlansDirectory, startPlanWatcher, readPlanForWorktree } from './plans.js';
 import { startRemoteServer } from '../remote/server.js';
+import { Orchestrator } from '../mcp/orchestrator.js';
 import {
   getGitIgnoredDirs,
   getMainBranch,
@@ -75,6 +76,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // --- Remote access state ---
   let remoteServer: ReturnType<typeof startRemoteServer> | null = null;
   const taskNames = new Map<string, string>();
+
+  // --- MCP orchestrator ---
+  const orchestrator = new Orchestrator();
+  orchestrator.setWindow(win);
+  let mcpProcess: ReturnType<typeof spawn> | null = null;
 
   // --- PTY commands ---
   ipcMain.handle(IPC.SpawnAgent, (_e, args) => {
@@ -469,6 +475,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
           lastLine: '',
         };
       },
+      orchestrator,
     });
     return {
       url: remoteServer.url,
@@ -496,6 +503,83 @@ export function registerAllHandlers(win: BrowserWindow): void {
       tailscaleUrl: remoteServer.tailscaleUrl,
       token: remoteServer.token,
       port: remoteServer.port,
+    };
+  });
+
+  // --- MCP server management ---
+  ipcMain.handle(
+    IPC.StartMCPServer,
+    async (
+      _e,
+      args: {
+        coordinatorTaskId: string;
+        projectId: string;
+        projectRoot: string;
+      },
+    ) => {
+      // Set orchestrator's default project
+      orchestrator.setDefaultProject(args.projectId, args.projectRoot);
+
+      // Start remote server if not running
+      if (!remoteServer) {
+        const thisDir = path.dirname(fileURLToPath(import.meta.url));
+        const distRemote = path.join(thisDir, '..', '..', 'dist-remote');
+        remoteServer = startRemoteServer({
+          port: 7777,
+          staticDir: distRemote,
+          getTaskName: (taskId: string) => taskNames.get(taskId) ?? taskId,
+          getAgentStatus: (agentId: string) => {
+            const meta = getAgentMeta(agentId);
+            return {
+              status: meta ? ('running' as const) : ('exited' as const),
+              exitCode: null,
+              lastLine: '',
+            };
+          },
+          orchestrator,
+        });
+      }
+
+      // Write temp MCP config file
+      const thisDir = path.dirname(fileURLToPath(import.meta.url));
+      const mcpServerPath = path.join(thisDir, '..', 'mcp', 'server.js');
+      const serverUrl = `http://127.0.0.1:${remoteServer.port}`;
+
+      const mcpConfig = {
+        mcpServers: {
+          'parallel-code': {
+            command: 'node',
+            args: [mcpServerPath, '--url', serverUrl, '--token', remoteServer.token],
+          },
+        },
+      };
+
+      const configPath = path.join(
+        app.getPath('temp'),
+        `parallel-code-mcp-${args.coordinatorTaskId}.json`,
+      );
+      fs.writeFileSync(configPath, JSON.stringify(mcpConfig, null, 2));
+
+      return {
+        configPath,
+        serverUrl,
+        token: remoteServer.token,
+        port: remoteServer.port,
+      };
+    },
+  );
+
+  ipcMain.handle(IPC.StopMCPServer, async () => {
+    if (mcpProcess) {
+      mcpProcess.kill();
+      mcpProcess = null;
+    }
+  });
+
+  ipcMain.handle(IPC.GetMCPStatus, () => {
+    return {
+      mcpRunning: mcpProcess !== null && mcpProcess.exitCode === null,
+      remoteRunning: remoteServer !== null,
     };
   });
 

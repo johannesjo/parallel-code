@@ -49,6 +49,7 @@ export {
   setNewTaskDropUrl,
   setNewTaskPrefillPrompt,
   setPlanContent,
+  initMCPListeners,
 } from './tasks';
 export {
   setActiveTask,

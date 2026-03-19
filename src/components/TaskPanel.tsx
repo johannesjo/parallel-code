@@ -44,6 +44,7 @@ import { PushDialog } from './PushDialog';
 import { DiffViewerDialog } from './DiffViewerDialog';
 import { PlanViewerDialog } from './PlanViewerDialog';
 import { EditProjectDialog } from './EditProjectDialog';
+import { SubTaskStrip } from './SubTaskStrip';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { mod, isMac } from '../lib/platform';
@@ -1234,6 +1235,9 @@ export function TaskPanel(props: TaskPanelProps) {
                           ...(props.task.skipPermissions && a().def.skip_permissions_args?.length
                             ? (a().def.skip_permissions_args ?? [])
                             : []),
+                          ...(props.task.coordinatorMode && props.task.mcpConfigPath
+                            ? ['--mcp-config', props.task.mcpConfigPath]
+                            : []),
                         ]}
                         cwd={props.task.worktreePath}
                         onExit={(code) => markAgentExited(a().id, code)}
@@ -1362,6 +1366,16 @@ export function TaskPanel(props: TaskPanelProps) {
         children={[
           titleBar(),
           branchInfoBar(),
+          ...(props.task.coordinatorMode
+            ? [
+                {
+                  id: 'subtask-strip',
+                  initialSize: 32,
+                  fixed: true,
+                  content: () => <SubTaskStrip coordinatorTaskId={props.task.id} />,
+                } as PanelChild,
+              ]
+            : []),
           notesAndFiles(),
           shellSection(),
           aiTerminal(),
