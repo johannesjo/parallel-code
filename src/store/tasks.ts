@@ -2,6 +2,7 @@ import { produce } from 'solid-js/store';
 import { invoke, Channel } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore, updateWindowTitle, cleanupPanelEntries } from './core';
+import { saveState } from './persistence';
 import { setTaskFocusedPanel } from './focus';
 import { getProject, getProjectPath, getProjectBranchPrefix, isProjectMissing } from './projects';
 import { setPendingShellCommand } from '../lib/bookmarks';
@@ -125,6 +126,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   // Mark as busy immediately; terminal output may arrive later.
   markAgentSpawned(agentId);
   rescheduleTaskStatusPolling();
+  await saveState();
   updateWindowTitle(name);
   return result.id;
 }
@@ -194,6 +196,7 @@ export async function createDirectTask(opts: CreateDirectTaskOptions): Promise<s
 
   markAgentSpawned(agentId);
   rescheduleTaskStatusPolling();
+  await saveState();
   updateWindowTitle(name);
   return id;
 }
