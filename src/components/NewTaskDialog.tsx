@@ -12,6 +12,7 @@ import {
   getProjectPath,
   getProjectBranchPrefix,
   updateProject,
+  getProjectDefaultSymlinkDirs,
   hasDirectModeTask,
   getGitHubDropDefaults,
   setPrefillPrompt,
@@ -23,7 +24,7 @@ import { theme } from '../lib/theme';
 import { AgentSelector } from './AgentSelector';
 import { BranchPrefixField } from './BranchPrefixField';
 import { ProjectSelect } from './ProjectSelect';
-import { SymlinkDirPicker } from './SymlinkDirPicker';
+import { PathSelector } from './PathSelector';
 import type { AgentDef } from '../ipc/types';
 
 interface NewTaskDialogProps {
@@ -38,8 +39,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   const [selectedProjectId, setSelectedProjectId] = createSignal<string | null>(null);
   const [error, setError] = createSignal('');
   const [loading, setLoading] = createSignal(false);
-  const [ignoredDirs, setIgnoredDirs] = createSignal<string[]>([]);
-  const [selectedDirs, setSelectedDirs] = createSignal<Set<string>>(new Set());
+  const [symlinkDirs, setSymlinkDirs] = createSignal<string[]>([]);
   const [directMode, setDirectMode] = createSignal(false);
   const [skipPermissions, setSkipPermissions] = createSignal(false);
   const [branchPrefix, setBranchPrefix] = createSignal('');
@@ -158,34 +158,18 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     });
   });
 
-  // Fetch gitignored dirs when project changes
+  // Load symlink dirs from project defaults
   createEffect(() => {
     const pid = selectedProjectId();
-    const path = pid ? getProjectPath(pid) : undefined;
-    let cancelled = false;
+    const projectPath = pid ? getProjectPath(pid) : undefined;
 
-    if (!path) {
-      setIgnoredDirs([]);
-      setSelectedDirs(new Set<string>());
+    if (!projectPath) {
+      setSymlinkDirs([]);
       return;
     }
 
-    void (async () => {
-      try {
-        const dirs = await invoke<string[]>(IPC.GetGitignoredDirs, { projectRoot: path });
-        if (cancelled) return;
-        setIgnoredDirs(dirs);
-        setSelectedDirs(new Set(dirs)); // all checked by default
-      } catch {
-        if (cancelled) return;
-        setIgnoredDirs([]);
-        setSelectedDirs(new Set<string>());
-      }
-    })();
-
-    onCleanup(() => {
-      cancelled = true;
-    });
+    const defaults = pid ? getProjectDefaultSymlinkDirs(pid) : undefined;
+    setSymlinkDirs(defaults ? [...defaults] : []);
   });
 
   // Sync branch prefix when project changes
@@ -302,7 +286,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           name: n,
           agentDef: agent,
           projectId,
-          symlinkDirs: [...selectedDirs()],
+          symlinkDirs: [...symlinkDirs()],
           initialPrompt: isFromDrop ? undefined : p,
           branchPrefixOverride: prefix,
           githubUrl: ghUrl,
@@ -589,16 +573,12 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           </div>
         </Show>
 
-        <Show when={ignoredDirs().length > 0 && !directMode()}>
-          <SymlinkDirPicker
-            dirs={ignoredDirs()}
-            selectedDirs={selectedDirs()}
-            onToggle={(dir) => {
-              const next = new Set(selectedDirs());
-              if (next.has(dir)) next.delete(dir);
-              else next.add(dir);
-              setSelectedDirs(next);
-            }}
+        <Show when={!directMode()}>
+          <PathSelector
+            dirs={symlinkDirs()}
+            projectRoot={selectedProjectPath()}
+            onAdd={(dir) => setSymlinkDirs([...symlinkDirs(), dir])}
+            onRemove={(i) => setSymlinkDirs(symlinkDirs().filter((_, idx) => idx !== i))}
           />
         </Show>
 

@@ -3,7 +3,14 @@ import { invoke, Channel } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore, updateWindowTitle, cleanupPanelEntries } from './core';
 import { setTaskFocusedPanel } from './focus';
-import { getProject, getProjectPath, getProjectBranchPrefix, isProjectMissing } from './projects';
+import {
+  getProject,
+  getProjectPath,
+  getProjectBranchPrefix,
+  getProjectSetupCommands,
+  getProjectTeardownCommands,
+  isProjectMissing,
+} from './projects';
 import { setPendingShellCommand } from '../lib/bookmarks';
 import {
   markAgentSpawned,
@@ -16,6 +23,9 @@ import { recordMergedLines, recordTaskCompleted } from './completion';
 import type { AgentDef, CreateTaskResult, MergeResult } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
 import type { Agent, Task } from './types';
+
+// Map of taskId -> stashed initialPrompt (held while setup is running)
+const stashedPrompts = new Map<string, string>();
 
 const AGENT_WRITE_READY_TIMEOUT_MS = 8_000;
 const AGENT_WRITE_RETRY_MS = 50;
@@ -126,6 +136,10 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   markAgentSpawned(agentId);
   rescheduleTaskStatusPolling();
   updateWindowTitle(name);
+
+  // Run setup commands if configured in project settings
+  runSetupForTask(result.id, result.worktree_path, projectId);
+
   return result.id;
 }
 
@@ -223,6 +237,21 @@ export async function closeTask(taskId: string): Promise<void> {
 
     // Skip git cleanup for direct mode (no worktree/branch to remove)
     if (!task.directMode) {
+      // Run teardown commands before removing worktree (best-effort)
+      const teardownCmds = getProjectTeardownCommands(task.projectId);
+      if (teardownCmds) {
+        try {
+          await invoke(IPC.RunSetupCommands, {
+            worktreePath: task.worktreePath,
+            projectRoot: projectRoot || task.worktreePath,
+            commands: teardownCmds,
+            onOutput: new Channel<string>(),
+          });
+        } catch (err) {
+          console.warn('Teardown commands failed:', err);
+        }
+      }
+
       // Remove worktree + branch
       await invoke(IPC.DeleteTask, {
         agentIds: [...agentIds, ...shellAgentIds],
@@ -599,6 +628,83 @@ export function setNewTaskDropUrl(url: string): void {
 
 export function setNewTaskPrefillPrompt(prompt: string, projectId: string | null): void {
   setStore('newTaskPrefillPrompt', { prompt, projectId });
+}
+
+// --- Setup commands ---
+
+function runSetupForTask(taskId: string, worktreePath: string, projectId: string): void {
+  const task = store.tasks[taskId];
+  if (!task || task.directMode) return;
+
+  const commands = getProjectSetupCommands(projectId);
+  if (!commands) return; // nothing configured — skip silently
+
+  // Stash initialPrompt so agent doesn't send it during setup
+  if (task.initialPrompt) {
+    stashedPrompts.set(taskId, task.initialPrompt);
+    setStore('tasks', taskId, 'initialPrompt', undefined);
+  }
+
+  setStore('tasks', taskId, 'setupStatus', 'running');
+  setStore('tasks', taskId, 'setupLog', '');
+  setStore('tasks', taskId, 'setupError', undefined);
+
+  const channel = new Channel<string>();
+  let logBuffer = '';
+  let flushScheduled = false;
+  channel.onmessage = (msg) => {
+    logBuffer += msg;
+    if (!flushScheduled) {
+      flushScheduled = true;
+      requestAnimationFrame(() => {
+        flushScheduled = false;
+        const current = store.tasks[taskId]?.setupLog ?? '';
+        setStore('tasks', taskId, 'setupLog', current + logBuffer);
+        logBuffer = '';
+      });
+    }
+  };
+
+  const projectRoot = getProjectPath(projectId) ?? worktreePath;
+
+  invoke(IPC.RunSetupCommands, {
+    worktreePath,
+    projectRoot,
+    commands,
+    onOutput: channel,
+  })
+    .then(() => {
+      setStore('tasks', taskId, 'setupStatus', 'done');
+    })
+    .catch((err: unknown) => {
+      setStore('tasks', taskId, 'setupStatus', 'failed');
+      setStore('tasks', taskId, 'setupError', String(err));
+    })
+    .finally(() => {
+      restoreStashedPrompt(taskId);
+      channel.cleanup?.();
+    });
+}
+
+function restoreStashedPrompt(taskId: string): void {
+  const prompt = stashedPrompts.get(taskId);
+  if (prompt) {
+    stashedPrompts.delete(taskId);
+    setStore('tasks', taskId, 'initialPrompt', prompt);
+  }
+}
+
+export function retrySetup(taskId: string): void {
+  const task = store.tasks[taskId];
+  if (!task) return;
+  runSetupForTask(taskId, task.worktreePath, task.projectId);
+}
+
+export function skipSetup(taskId: string): void {
+  setStore('tasks', taskId, 'setupStatus', undefined);
+  setStore('tasks', taskId, 'setupLog', undefined);
+  setStore('tasks', taskId, 'setupError', undefined);
+  restoreStashedPrompt(taskId);
 }
 
 export function setPlanContent(

@@ -16,6 +16,9 @@ export interface Project {
   deleteBranchOnClose?: boolean; // default true if unset
   defaultDirectMode?: boolean; // default false if unset
   terminalBookmarks?: TerminalBookmark[];
+  setupCommands?: string[];
+  teardownCommands?: string[];
+  defaultSymlinkDirs?: string[];
 }
 
 export interface Agent {
@@ -52,6 +55,9 @@ export interface Task {
   savedAgentDef?: AgentDef;
   planContent?: string;
   planFileName?: string;
+  setupStatus?: 'running' | 'done' | 'failed';
+  setupLog?: string;
+  setupError?: string;
 }
 
 export interface Terminal {
