@@ -278,6 +278,23 @@ export function TaskPanel(props: TaskPanelProps) {
               title={props.task.savedInitialPrompt}
               ref={(h) => (titleEditHandle = h)}
             />
+            <Show when={props.task.dockerMode}>
+              <span
+                style={{
+                  'font-size': '11px',
+                  'font-weight': '600',
+                  padding: '2px 6px',
+                  'border-radius': '4px',
+                  background: `color-mix(in srgb, ${theme.fgMuted} 12%, transparent)`,
+                  color: theme.fgMuted,
+                  border: `1px solid color-mix(in srgb, ${theme.fgMuted} 25%, transparent)`,
+                  'flex-shrink': '0',
+                  'white-space': 'nowrap',
+                }}
+              >
+                Docker
+              </span>
+            </Show>
           </div>
           <div style={{ display: 'flex', gap: '4px', 'margin-left': '8px', 'flex-shrink': '0' }}>
             <Show when={!props.task.directMode}>
@@ -968,6 +985,8 @@ export function TaskPanel(props: TaskPanelProps) {
                           command={getShellCommand()}
                           args={['-l']}
                           cwd={props.task.worktreePath}
+                          dockerMode={props.task.dockerMode}
+                          dockerImage={props.task.dockerImage}
                           initialCommand={initialCommand}
                           onData={(data) => markAgentOutput(shellId, data, props.task.id)}
                           onExit={(info) =>

@@ -1,5 +1,5 @@
 import * as pty from 'node-pty';
-import { execFileSync } from 'child_process';
+import { execFileSync, execFile } from 'child_process';
 import fs from 'fs';
 import type { BrowserWindow } from 'electron';
 import { RingBuffer } from '../remote/ring-buffer.js';
@@ -13,6 +13,8 @@ interface PtySession {
   flushTimer: ReturnType<typeof setTimeout> | null;
   subscribers: Set<(encoded: string) => void>;
   scrollback: RingBuffer;
+  /** Assigned container name when running in Docker mode, null otherwise. */
+  containerName: string | null;
 }
 
 const sessions = new Map<string, PtySession>();
@@ -158,6 +160,12 @@ export function spawnAgent(
   let spawnCommand: string;
   let spawnArgs: string[];
 
+  // Derive a predictable, unique container name from the agentId so we can
+  // reliably stop it later without having to parse docker inspect output.
+  const containerName = args.dockerMode
+    ? `parallel-code-${args.agentId.slice(0, 8)}`
+    : null;
+
   if (args.dockerMode) {
     const image = args.dockerImage || 'ubuntu:latest';
     spawnCommand = 'docker';
@@ -165,6 +173,21 @@ export function spawnAgent(
       'run',
       '--rm',
       '-it',
+      // Predictable name so we can stop the container on kill
+      '--name',
+      containerName!,
+      // Label so we can identify all containers owned by this app
+      '--label',
+      'parallel-code=true',
+      // Host networking — agents need internet access for API calls and package installs.
+      // Filesystem isolation (volume mounts) is the primary safety goal, not network isolation.
+      '--network',
+      'host',
+      // Resource limits to prevent runaway containers
+      '--memory',
+      '8g',
+      '--pids-limit',
+      '512',
       // Mount the project directory as the only writable volume
       '-v',
       `${cwd}:${cwd}`,
@@ -200,6 +223,7 @@ export function spawnAgent(
     flushTimer: null,
     subscribers: new Set(),
     scrollback: new RingBuffer(),
+    containerName,
   };
   sessions.set(args.agentId, session);
 
@@ -324,6 +348,12 @@ export function killAgent(agentId: string): void {
     // notify stale listeners. Let onExit handle sessions.delete
     // and emitPtyEvent to avoid the race condition.
     session.subscribers.clear();
+    // Stop the Docker container first so it doesn't keep running after the
+    // local PTY process (docker run) is killed. Fire-and-forget; the PTY kill
+    // below is the authoritative termination signal.
+    if (session.containerName) {
+      stopDockerContainer(session.containerName);
+    }
     session.proc.kill();
   }
 }
@@ -336,6 +366,9 @@ export function killAllAgents(): void {
   for (const [, session] of sessions) {
     if (session.flushTimer) clearTimeout(session.flushTimer);
     session.subscribers.clear();
+    if (session.containerName) {
+      stopDockerContainer(session.containerName);
+    }
     session.proc.kill();
   }
   // Let onExit handlers clean up sessions individually
@@ -382,29 +415,63 @@ export function getAgentCols(agentId: string): number {
 
 // --- Docker mode helpers ---
 
-/** Env vars to forward into the Docker container (API keys, git identity, etc.). */
-const DOCKER_ENV_FORWARD = [
-  'ANTHROPIC_API_KEY',
-  'OPENAI_API_KEY',
-  'GEMINI_API_KEY',
-  'GOOGLE_API_KEY',
-  'GIT_AUTHOR_NAME',
-  'GIT_AUTHOR_EMAIL',
-  'GIT_COMMITTER_NAME',
-  'GIT_COMMITTER_EMAIL',
-  'TERM',
-  'COLORTERM',
-  'LANG',
-  'HOME',
-  'USER',
-  'PATH',
-];
+/**
+ * Env vars that are desktop/host-specific and must NOT be forwarded into the
+ * container. Everything else is forwarded so agents can use arbitrary vars
+ * (custom API keys, feature flags, tool config, etc.) without needing an
+ * ever-growing allowlist.
+ */
+const DOCKER_ENV_BLOCK_LIST = new Set([
+  // Display / desktop session
+  'DISPLAY',
+  'WAYLAND_DISPLAY',
+  'DBUS_SESSION_BUS_ADDRESS',
+  'DBUS_SYSTEM_BUS_ADDRESS',
+  'DESKTOP_SESSION',
+  'XDG_CURRENT_DESKTOP',
+  'XDG_RUNTIME_DIR',
+  'XDG_SESSION_CLASS',
+  'XDG_SESSION_ID',
+  'XDG_SESSION_TYPE',
+  'XDG_VTNR',
+  'WINDOWID',
+  'XAUTHORITY',
+  // Electron / Node host internals
+  'ELECTRON_RUN_AS_NODE',
+  'ELECTRON_NO_ATTACH_CONSOLE',
+  'ELECTRON_ENABLE_LOGGING',
+  'ELECTRON_ENABLE_STACK_DUMPING',
+  // Host-specific paths / linker
+  'LD_PRELOAD',
+  'LD_LIBRARY_PATH',
+  'DYLD_INSERT_LIBRARIES',
+  'DYLD_LIBRARY_PATH',
+  // Session / PAM
+  'LOGNAME',
+  'MAIL',
+  'XDG_DATA_DIRS',
+  'XDG_CONFIG_DIRS',
+  // Active Claude Code session markers (prevent nested session confusion)
+  'CLAUDECODE',
+  'CLAUDE_CODE_SESSION',
+  'CLAUDE_CODE_ENTRYPOINT',
+]);
+
+/** Returns true for env var names that should be blocked from Docker forwarding. */
+function isBlockedDockerEnvKey(key: string): boolean {
+  if (DOCKER_ENV_BLOCK_LIST.has(key)) return true;
+  // Block all remaining XDG_* vars not explicitly listed above
+  if (key.startsWith('XDG_')) return true;
+  // Block all ELECTRON_* vars not explicitly listed above
+  if (key.startsWith('ELECTRON_')) return true;
+  return false;
+}
 
 function buildDockerEnvFlags(env: Record<string, string>): string[] {
   const flags: string[] = [];
-  for (const key of DOCKER_ENV_FORWARD) {
-    if (env[key]) {
-      flags.push('-e', `${key}=${env[key]}`);
+  for (const [key, value] of Object.entries(env)) {
+    if (!isBlockedDockerEnvKey(key) && value !== undefined) {
+      flags.push('-e', `${key}=${value}`);
     }
   }
   return flags;
@@ -415,25 +482,49 @@ function buildDockerCredentialMounts(): string[] {
   const home = process.env.HOME;
   if (!home) return mounts;
 
-  // Mount SSH directory read-only for git push/pull
-  const sshDir = `${home}/.ssh`;
-  try {
-    fs.accessSync(sshDir, fs.constants.R_OK);
-    mounts.push('-v', `${sshDir}:${sshDir}:ro`);
-  } catch {
-    // No .ssh dir — skip
-  }
+  /** Mount a path read-only if it is readable; silently skip if absent. */
+  const mountIfExists = (hostPath: string): void => {
+    try {
+      fs.accessSync(hostPath, fs.constants.R_OK);
+      mounts.push('-v', `${hostPath}:${hostPath}:ro`);
+    } catch {
+      // Path absent or unreadable — skip
+    }
+  };
 
-  // Mount git config read-only
-  const gitconfig = `${home}/.gitconfig`;
-  try {
-    fs.accessSync(gitconfig, fs.constants.R_OK);
-    mounts.push('-v', `${gitconfig}:${gitconfig}:ro`);
-  } catch {
-    // No .gitconfig — skip
+  // SSH keys for git push/pull
+  mountIfExists(`${home}/.ssh`);
+
+  // Git identity / config
+  mountIfExists(`${home}/.gitconfig`);
+
+  // GitHub CLI auth tokens (~/.config/gh/)
+  mountIfExists(`${home}/.config/gh`);
+
+  // npm auth token
+  mountIfExists(`${home}/.npmrc`);
+
+  // General HTTP/git HTTPS credentials (used by git credential helper)
+  mountIfExists(`${home}/.netrc`);
+
+  // Google Application Credentials file (for Vertex AI / gcloud)
+  const googleCredsFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (googleCredsFile) {
+    mountIfExists(googleCredsFile);
   }
 
   return mounts;
+}
+
+/**
+ * Asynchronously stop a Docker container by name. Fire-and-forget — errors are
+ * silently swallowed because the container may have already exited by the time
+ * this is called.
+ */
+function stopDockerContainer(name: string): void {
+  execFile('docker', ['stop', name], { timeout: 10_000 }, () => {
+    // Intentionally ignore errors: container may not exist or may have already stopped.
+  });
 }
 
 /** Check if Docker is available on the system. */

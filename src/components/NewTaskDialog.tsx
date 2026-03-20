@@ -215,6 +215,13 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     if (directModeDisabled()) setDirectMode(false);
   });
 
+  // Auto-enable Docker when skip-permissions is turned on and Docker is available
+  createEffect(() => {
+    if (skipPermissions() && store.dockerAvailable) {
+      setDockerMode(true);
+    }
+  });
+
   const effectiveName = () => {
     const n = name().trim();
     if (n) return n;
@@ -598,6 +605,16 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
                 The agent will run without asking for confirmation. It can read, write, and delete
                 files, and execute commands without your approval.
               </div>
+              <Show when={!dockerMode() && store.dockerAvailable}>
+                <div style={{ 'font-size': '11px', color: theme.fgMuted }}>
+                  Tip: Enable Docker isolation to limit the blast radius of skip-permissions mode.
+                </div>
+              </Show>
+              <Show when={!store.dockerAvailable}>
+                <div style={{ 'font-size': '11px', color: theme.fgMuted }}>
+                  Install Docker to enable container isolation for safer skip-permissions mode.
+                </div>
+              </Show>
             </Show>
           </div>
         </Show>
