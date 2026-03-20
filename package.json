@@ -1,6 +1,6 @@
 {
   "name": "parallel-code",
-  "version": "1.1.1",
+  "version": "1.0.0",
   "description": "",
   "author": {
     "name": "Johannes Millan",
@@ -88,10 +88,6 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
-      },
-      {
-        "from": "docker/",
-        "to": "docker/"
       }
     ],
     "linux": {
