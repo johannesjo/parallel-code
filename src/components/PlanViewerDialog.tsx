@@ -77,7 +77,12 @@ interface PlanViewerContentProps {
 }
 
 /** Inner content rendered inside ReviewProvider so it can call useReview(). */
-interface HighlightRect { top: number; left: number; width: number; height: number }
+interface HighlightRect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
 
 function PlanViewerContent(props: PlanViewerContentProps) {
   const review = useReview();
@@ -100,7 +105,7 @@ function PlanViewerContent(props: PlanViewerContentProps) {
     const target = review.scrollTarget();
     if (!target) return;
     const y = cardOffsets()[target.id];
-    if (y != null && scrollRef) {
+    if (y !== undefined && scrollRef) {
       scrollRef.scrollTo({ top: Math.max(0, y - 100), behavior: 'smooth' });
     }
   });
@@ -253,7 +258,15 @@ function PlanViewerContent(props: PlanViewerContentProps) {
 
             {/* Inline input for pending selection — positioned near the selection */}
             <Show when={review.pendingSelection()}>
-              <div style={{ position: 'absolute', top: `${selectionY()}px`, left: '0', right: '0', 'z-index': '10' }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: `${selectionY()}px`,
+                  left: '0',
+                  right: '0',
+                  'z-index': '10',
+                }}
+              >
                 <InlineInput
                   onSubmit={handleSubmitWithPosition}
                   onDismiss={review.clearPendingSelection}

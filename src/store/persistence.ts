@@ -18,6 +18,17 @@ import { DEFAULT_TERMINAL_FONT, isTerminalFont } from '../lib/fonts';
 import { isLookPreset } from '../lib/look';
 import { syncTerminalCounter } from './terminals';
 
+/** Enrich an agent def with resume/skip-permissions args from fresh defaults. */
+function enrichAgentDef(agentDef: AgentDef | null | undefined, availableAgents: AgentDef[]): void {
+  if (!agentDef) return;
+  const fresh = availableAgents.find((a) => a.id === agentDef.id);
+  if (fresh) {
+    if (!agentDef.resume_args) agentDef.resume_args = fresh.resume_args;
+    if (!agentDef.skip_permissions_args)
+      agentDef.skip_permissions_args = fresh.skip_permissions_args;
+  }
+}
+
 export async function saveState(): Promise<void> {
   const persisted: PersistedState = {
     projects: store.projects.map((p) => ({ ...p })),
@@ -40,8 +51,10 @@ export async function saveState(): Promise<void> {
     windowState: store.windowState ? { ...store.windowState } : undefined,
     autoTrustFolders: store.autoTrustFolders,
     showPlans: store.showPlans,
+    desktopNotificationsEnabled: store.desktopNotificationsEnabled,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand || undefined,
+    dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
   };
 
@@ -63,6 +76,8 @@ export async function saveState(): Promise<void> {
       agentDef: firstAgent?.def ?? null,
       directMode: task.directMode,
       skipPermissions: task.skipPermissions,
+      dockerMode: task.dockerMode,
+      dockerImage: task.dockerImage,
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
@@ -87,6 +102,8 @@ export async function saveState(): Promise<void> {
       agentDef: firstAgent?.def ?? task.savedAgentDef ?? null,
       directMode: task.directMode,
       skipPermissions: task.skipPermissions,
+      dockerMode: task.dockerMode,
+      dockerImage: task.dockerImage,
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
@@ -171,8 +188,10 @@ interface LegacyPersistedState {
   windowState?: unknown;
   autoTrustFolders?: unknown;
   showPlans?: unknown;
+  desktopNotificationsEnabled?: unknown;
   inactiveColumnOpacity?: unknown;
   editorCommand?: unknown;
+  dockerImage?: unknown;
   customAgents?: unknown;
   terminals?: unknown;
 }
@@ -269,6 +288,10 @@ export async function loadState(): Promise<void> {
       s.windowState = parsePersistedWindowState(raw.windowState);
       s.autoTrustFolders = typeof raw.autoTrustFolders === 'boolean' ? raw.autoTrustFolders : false;
       s.showPlans = typeof raw.showPlans === 'boolean' ? raw.showPlans : true;
+      s.desktopNotificationsEnabled =
+        typeof raw.desktopNotificationsEnabled === 'boolean'
+          ? raw.desktopNotificationsEnabled
+          : false;
       const rawOpacity = raw.inactiveColumnOpacity;
       s.inactiveColumnOpacity =
         typeof rawOpacity === 'number' &&
@@ -280,6 +303,12 @@ export async function loadState(): Promise<void> {
 
       const rawEditorCommand = raw.editorCommand;
       s.editorCommand = typeof rawEditorCommand === 'string' ? rawEditorCommand.trim() : '';
+
+      const rawDockerImage = raw.dockerImage;
+      s.dockerImage =
+        typeof rawDockerImage === 'string' && rawDockerImage.trim()
+          ? rawDockerImage.trim()
+          : 'parallel-code-agent:latest';
 
       // Restore custom agents
       if (Array.isArray(raw.customAgents)) {
@@ -307,15 +336,7 @@ export async function loadState(): Promise<void> {
         const agentId = crypto.randomUUID();
         const agentDef = pt.agentDef;
 
-        // Enrich with resume_args/skip_permissions_args from fresh defaults (handles old state files)
-        if (agentDef) {
-          const fresh = s.availableAgents.find((a) => a.id === agentDef.id);
-          if (fresh) {
-            if (!agentDef.resume_args) agentDef.resume_args = fresh.resume_args;
-            if (!agentDef.skip_permissions_args)
-              agentDef.skip_permissions_args = fresh.skip_permissions_args;
-          }
-        }
+        enrichAgentDef(agentDef, s.availableAgents);
 
         const shellAgentIds: string[] = [];
         for (let i = 0; i < pt.shellCount; i++) {
@@ -334,6 +355,8 @@ export async function loadState(): Promise<void> {
           lastPrompt: pt.lastPrompt,
           directMode: pt.directMode,
           skipPermissions: pt.skipPermissions === true,
+          dockerMode: pt.dockerMode === true ? true : undefined,
+          dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,
@@ -376,16 +399,8 @@ export async function loadState(): Promise<void> {
         const pt = raw.tasks[taskId];
         if (!pt || !pt.collapsed) continue;
 
-        // Enrich agentDef with fresh defaults
         const agentDef = pt.agentDef;
-        if (agentDef) {
-          const fresh = s.availableAgents.find((a) => a.id === agentDef.id);
-          if (fresh) {
-            if (!agentDef.resume_args) agentDef.resume_args = fresh.resume_args;
-            if (!agentDef.skip_permissions_args)
-              agentDef.skip_permissions_args = fresh.skip_permissions_args;
-          }
-        }
+        enrichAgentDef(agentDef, s.availableAgents);
 
         const task: Task = {
           id: pt.id,
@@ -399,6 +414,8 @@ export async function loadState(): Promise<void> {
           lastPrompt: pt.lastPrompt,
           directMode: pt.directMode,
           skipPermissions: pt.skipPermissions === true,
+          dockerMode: pt.dockerMode === true ? true : undefined,
+          dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,

@@ -20,12 +20,30 @@ export function createDialogScroll(
       const step = 40;
       const page = Math.max(100, el.clientHeight - 40);
       switch (e.key) {
-        case 'ArrowDown':  e.preventDefault(); el.scrollTop += step; break;
-        case 'ArrowUp':    e.preventDefault(); el.scrollTop -= step; break;
-        case 'PageDown':   e.preventDefault(); el.scrollTop += page; break;
-        case 'PageUp':     e.preventDefault(); el.scrollTop -= page; break;
-        case 'Home':       e.preventDefault(); el.scrollTop = 0; break;
-        case 'End':        e.preventDefault(); el.scrollTop = el.scrollHeight; break;
+        case 'ArrowDown':
+          e.preventDefault();
+          el.scrollTop += step;
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          el.scrollTop -= step;
+          break;
+        case 'PageDown':
+          e.preventDefault();
+          el.scrollTop += page;
+          break;
+        case 'PageUp':
+          e.preventDefault();
+          el.scrollTop -= page;
+          break;
+        case 'Home':
+          e.preventDefault();
+          el.scrollTop = 0;
+          break;
+        case 'End':
+          e.preventDefault();
+          el.scrollTop = el.scrollHeight;
+          break;
       }
     };
     document.addEventListener('keydown', handler);

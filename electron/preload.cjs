@@ -76,9 +76,18 @@ const ALLOWED_CHANNELS = new Set([
   'get_remote_status',
   // Plan
   'plan_content',
+  'read_plan_content',
+  'stop_plan_watcher',
+  // Docker
+  'check_docker_available',
+  'check_docker_image_exists',
+  'build_docker_image',
   // Ask about code
   'ask_about_code',
   'cancel_ask_about_code',
+  // Notifications
+  'show_notification',
+  'notification_clicked',
 ]);
 
 function isAllowedChannel(channel) {

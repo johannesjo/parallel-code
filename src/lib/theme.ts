@@ -41,11 +41,11 @@ export const theme = {
 
 /** Opaque terminal background per preset — matches --task-panel-bg */
 const terminalBackground: Record<LookPreset, string> = {
-  classic: '#222326',
-  graphite: '#121820',
-  indigo: '#121529',
-  ember: '#1b1312',
-  glacier: '#1d2833',
+  classic: '#2d2e32',
+  graphite: '#1c2630',
+  indigo: '#1c2038',
+  ember: '#211918',
+  glacier: '#232e3a',
   minimal: '#262626',
 };
 
@@ -55,3 +55,22 @@ export function getTerminalTheme(preset: LookPreset) {
     background: terminalBackground[preset],
   };
 }
+
+/** Generates a styled banner (warning/error/info) using color-mix for background+border. */
+export function bannerStyle(color: string): Record<string, string> {
+  return {
+    color,
+    background: `color-mix(in srgb, ${color} 8%, transparent)`,
+    padding: '8px 12px',
+    'border-radius': '8px',
+    border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`,
+  };
+}
+
+/** Shared style for uppercase section label headings in dialogs. */
+export const sectionLabelStyle: Record<string, string> = {
+  'font-size': '11px',
+  color: 'var(--fg-muted)',
+  'text-transform': 'uppercase',
+  'letter-spacing': '0.05em',
+};

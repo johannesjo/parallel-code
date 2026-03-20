@@ -58,14 +58,12 @@ const AUTOSEND_MAX_WAIT_MS = 45_000;
 // After sending, how long to poll terminal output to confirm the prompt appeared.
 const PROMPT_VERIFY_TIMEOUT_MS = 5_000;
 const PROMPT_VERIFY_POLL_MS = 250;
+const PROMPT_MARKER_SCAN_CHARS = 200;
 
 /** True when auto-send should be blocked by a question in the output.
  *  Trust-dialog questions are NOT blocking when auto-trust handles them. */
-function isQuestionBlockingAutoSend(tail: string): boolean {
-  if (!looksLikeQuestion(tail)) return false;
-  if (isTrustQuestionAutoHandled(tail)) return false;
-  return true;
-}
+const isQuestionBlockingAutoSend = (tail: string): boolean =>
+  looksLikeQuestion(tail) && !isTrustQuestionAutoHandled(tail);
 
 export function PromptInput(props: PromptInputProps) {
   const [text, setText] = createSignal('');
@@ -152,7 +150,10 @@ export function PromptInput(props: PromptInputProps) {
             return;
           }
           const normalized = normalizeForComparison(tail);
-          if (!/[❯›]/.test(stripAnsi(tail).slice(-200)) || normalized !== snapshot) {
+          if (
+            !/[❯›]/.test(stripAnsi(tail).slice(-PROMPT_MARKER_SCAN_CHARS)) ||
+            normalized !== snapshot
+          ) {
             // Prompt gone or output changed — re-register for next detection.
             onAgentReady(agentId, onReady);
             return;
@@ -196,7 +197,7 @@ export function PromptInput(props: PromptInputProps) {
       // instead of pure quiescence — they verify ❯ persists AND output is stable.
       // Kick off the checks directly rather than just re-registering a callback,
       // because the agent may be idle (no new PTY data to trigger the callback).
-      if (/[❯›]/.test(stripAnsi(tail).slice(-200))) {
+      if (/[❯›]/.test(stripAnsi(tail).slice(-PROMPT_MARKER_SCAN_CHARS))) {
         if (!pendingSendTimer) startStabilityChecks();
         return;
       }
@@ -270,13 +271,6 @@ export function PromptInput(props: PromptInputProps) {
     sendAbortController?.abort();
   });
 
-  function checkPromptInOutput(agentId: string, prompt: string, preSendTail: string): boolean {
-    const snippet = stripAnsi(prompt).slice(0, 40);
-    if (!snippet) return true;
-    if (stripAnsi(preSendTail).includes(snippet)) return true;
-    return stripAnsi(getAgentOutputTail(agentId)).includes(snippet);
-  }
-
   async function promptAppearedInOutput(
     agentId: string,
     prompt: string,
@@ -334,16 +328,8 @@ export function PromptInput(props: PromptInputProps) {
       await sendPrompt(props.taskId, props.agentId, val);
 
       if (mode === 'auto') {
-        let confirmed = await promptAppearedInOutput(props.agentId, val, preSendTail, signal);
-        if (!confirmed && !signal.aborted) {
-          await new Promise((r) => setTimeout(r, 1_000));
-          confirmed = checkPromptInOutput(props.agentId, val, preSendTail);
-        }
-        if (!confirmed && !signal.aborted) {
-          await new Promise((r) => setTimeout(r, 2_000));
-          confirmed = checkPromptInOutput(props.agentId, val, preSendTail);
-        }
-        // Proceed regardless — prompt was already sent via sendPrompt above
+        // Wait for the prompt to appear in output before clearing the text field.
+        await promptAppearedInOutput(props.agentId, val, preSendTail, signal);
       }
 
       if (signal.aborted) return;

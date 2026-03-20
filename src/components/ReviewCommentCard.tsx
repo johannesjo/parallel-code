@@ -1,3 +1,4 @@
+import { createSignal, Show } from 'solid-js';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import type { ReviewAnnotation } from './review-types';
@@ -5,6 +6,7 @@ import type { ReviewAnnotation } from './review-types';
 interface ReviewCommentCardProps {
   annotation: ReviewAnnotation;
   onDismiss: () => void;
+  onUpdate?: (comment: string) => void;
   /** Use a semi-transparent, brighter style (for overlaying plan content). */
   overlay?: boolean;
 }
@@ -20,6 +22,27 @@ export function ReviewCommentCard(props: ReviewCommentCardProps) {
       ? `line ${props.annotation.startLine}`
       : `lines ${props.annotation.startLine}\u2013${props.annotation.endLine}`;
   };
+
+  const [editing, setEditing] = createSignal(false);
+  const [editText, setEditText] = createSignal('');
+
+  function startEdit() {
+    setEditText(props.annotation.comment);
+    setEditing(true);
+  }
+
+  function saveEdit() {
+    if (!editing()) return;
+    const trimmed = editText().trim();
+    if (trimmed && trimmed !== props.annotation.comment) {
+      props.onUpdate?.(trimmed);
+    }
+    setEditing(false);
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+  }
 
   return (
     <div
@@ -71,16 +94,51 @@ export function ReviewCommentCard(props: ReviewCommentCardProps) {
       </div>
 
       {/* Comment text */}
-      <div
-        style={{
-          color: theme.fg,
-          'white-space': 'pre-wrap',
-          'font-size': sf(12),
-          'margin-top': '4px',
-        }}
+      <Show
+        when={!editing()}
+        fallback={
+          <input
+            ref={(el) => requestAnimationFrame(() => el.focus())}
+            type="text"
+            value={editText()}
+            onInput={(e) => setEditText(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                saveEdit();
+              }
+              if (e.key === 'Escape') cancelEdit();
+            }}
+            onBlur={saveEdit}
+            style={{
+              width: '100%',
+              background: theme.bgInput,
+              border: `1px solid ${theme.borderSubtle}`,
+              'border-radius': '4px',
+              color: theme.fg,
+              'font-size': sf(12),
+              'font-family': "'JetBrains Mono', monospace",
+              padding: '4px 8px',
+              'margin-top': '4px',
+              outline: 'none',
+              'box-sizing': 'border-box',
+            }}
+          />
+        }
       >
-        {props.annotation.comment}
-      </div>
+        <div
+          onClick={() => props.onUpdate && startEdit()}
+          style={{
+            color: theme.fg,
+            'white-space': 'pre-wrap',
+            'font-size': sf(12),
+            'margin-top': '4px',
+            cursor: props.onUpdate ? 'text' : 'default',
+          }}
+        >
+          {props.annotation.comment}
+        </div>
+      </Show>
     </div>
   );
 }

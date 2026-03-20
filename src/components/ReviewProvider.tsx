@@ -26,6 +26,7 @@ export interface ReviewContextValue {
   annotations: () => ReviewAnnotation[];
   addAnnotation: (annotation: ReviewAnnotation) => void;
   dismissAnnotation: (id: string) => void;
+  updateAnnotation: (id: string, comment: string) => void;
   replaceAnnotations: (fn: (prev: ReviewAnnotation[]) => ReviewAnnotation[]) => void;
 
   sidebarOpen: () => boolean;
@@ -80,6 +81,10 @@ export function ReviewProvider(props: ReviewProviderProps) {
 
   function dismissAnnotation(id: string) {
     setAnnotations((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  function updateAnnotation(id: string, comment: string) {
+    setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, comment } : a)));
   }
 
   function replaceAnnotations(fn: (prev: ReviewAnnotation[]) => ReviewAnnotation[]) {
@@ -158,6 +163,7 @@ export function ReviewProvider(props: ReviewProviderProps) {
     annotations,
     addAnnotation,
     dismissAnnotation,
+    updateAnnotation,
     replaceAnnotations,
     sidebarOpen,
     setSidebarOpen,

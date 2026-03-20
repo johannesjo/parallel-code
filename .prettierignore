@@ -1,7 +1,10 @@
 dist/
 dist-electron/
+dist-remote/
 release/
 node_modules/
+.worktrees/
+.claude/
 package-lock.json
 *.AppImage
 *.deb

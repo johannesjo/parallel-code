@@ -51,7 +51,9 @@ export function ensurePlansDirectory(worktreePath: string): void {
 }
 
 /** Reads the newest `.md` file by mtime from a single plans directory. */
-function readNewestPlan(plansDir: string): { content: string; fileName: string; mtime: number } | null {
+function readNewestPlan(
+  plansDir: string,
+): { content: string; fileName: string; mtime: number } | null {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(plansDir, { withFileTypes: true });
@@ -174,7 +176,11 @@ export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePat
   const claudePlansDir = path.join(worktreePath, '.claude', 'plans');
   fs.mkdirSync(claudePlansDir, { recursive: true });
 
-  sendPlanContent(win, taskId, plansDirs);
+  // Don't read existing plans on startup — fresh sessions should not
+  // inherit stale plan files (e.g. committed docs/plans/ files that appear
+  // in every worktree).  Restored/uncollapsed tasks already have their plan
+  // content populated via the ReadPlanContent IPC in App.tsx.  New plans
+  // written by the agent are picked up by the fs.watch onChange handler.
 
   const entry: PlanWatcher = {
     fsWatchers: [],
@@ -203,8 +209,8 @@ export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePat
     }
   }
 
-  startDirPolling(taskId, entry, onChange);
   watchers.set(taskId, entry);
+  startDirPolling(taskId, entry, onChange);
 }
 
 /** Stops and removes the plan watcher for a given task. */
@@ -220,7 +226,10 @@ export function stopPlanWatcher(taskId: string): void {
 }
 
 /** Read a specific plan file from a worktree, or the newest if no name given. */
-export function readPlanForWorktree(worktreePath: string, fileName?: string): { content: string; fileName: string } | null {
+export function readPlanForWorktree(
+  worktreePath: string,
+  fileName?: string,
+): { content: string; fileName: string } | null {
   const plansDirs = PLAN_DIRS.map((rel) => path.join(worktreePath, rel));
 
   if (fileName) {

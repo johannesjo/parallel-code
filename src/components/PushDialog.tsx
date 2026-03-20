@@ -2,7 +2,7 @@ import { Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { pushTask } from '../store/store';
 import { Channel } from '../lib/ipc';
 import { Dialog } from './Dialog';
-import { theme } from '../lib/theme';
+import { theme, bannerStyle } from '../lib/theme';
 import type { Task } from '../store/types';
 
 interface PushDialogProps {
@@ -69,7 +69,11 @@ export function PushDialog(props: PushDialogProps) {
   }
 
   return (
-    <Dialog open={props.open} onClose={() => (pushing() ? props.onClose() : props.onDone(false))} width="480px">
+    <Dialog
+      open={props.open}
+      onClose={() => (pushing() ? props.onClose() : props.onDone(false))}
+      width="480px"
+    >
       <h2
         style={{
           margin: '0',
@@ -114,13 +118,9 @@ export function PushDialog(props: PushDialogProps) {
         <Show when={pushError()}>
           <div
             style={{
+              ...bannerStyle(theme.error),
               'margin-top': '12px',
               'font-size': '12px',
-              color: theme.error,
-              background: `color-mix(in srgb, ${theme.error} 8%, transparent)`,
-              padding: '8px 12px',
-              'border-radius': '8px',
-              border: `1px solid color-mix(in srgb, ${theme.error} 20%, transparent)`,
             }}
           >
             {pushError()}

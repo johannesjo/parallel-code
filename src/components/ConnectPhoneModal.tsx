@@ -1,8 +1,7 @@
 // src/components/ConnectPhoneModal.tsx
 
 import { Show, createSignal, createEffect, onCleanup, createMemo, untrack } from 'solid-js';
-import { Portal } from 'solid-js/web';
-import { createFocusRestore } from '../lib/focus-restore';
+import { Dialog } from './Dialog';
 import { store } from '../store/core';
 import { startRemoteAccess, stopRemoteAccess, refreshRemoteStatus } from '../store/remote';
 import { theme } from '../lib/theme';
@@ -20,7 +19,6 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
   const [error, setError] = createSignal<string | null>(null);
   const [copied, setCopied] = createSignal(false);
   const [mode, setMode] = createSignal<NetworkMode>('wifi');
-  let dialogRef: HTMLDivElement | undefined;
   let stopPolling: (() => void) | undefined;
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => {
@@ -32,18 +30,19 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
     return mode() === 'tailscale' ? store.remoteAccess.tailscaleUrl : store.remoteAccess.wifiUrl;
   });
 
-  createFocusRestore(() => props.open);
-
   async function generateQr(url: string) {
     try {
-      const QRCode = await import('qrcode');
+      const mod = await import('qrcode');
+      // qrcode is CJS — Vite dev wraps it as .default only, prod adds named re-exports
+      const QRCode = mod.default ?? mod;
       const dataUrl = await QRCode.toDataURL(url, {
         width: 256,
         margin: 2,
         color: { dark: '#000000', light: '#ffffff' },
       });
       setQrDataUrl(dataUrl);
-    } catch {
+    } catch (err) {
+      console.error('[ConnectPhoneModal] QR generation failed:', err);
       setQrDataUrl(null);
     }
   }
@@ -57,17 +56,18 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
     }
   });
 
+  // Focus the dialog panel when it opens (Dialog doesn't auto-focus)
+  createEffect(() => {
+    if (!props.open) return;
+    requestAnimationFrame(() => {
+      const panel = document.querySelector<HTMLElement>('.dialog-panel');
+      panel?.focus();
+    });
+  });
+
   // Start server when modal opens
   createEffect(() => {
     if (!props.open) return;
-
-    requestAnimationFrame(() => dialogRef?.focus());
-
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') props.onClose();
-    };
-    document.addEventListener('keydown', handler);
-    onCleanup(() => document.removeEventListener('keydown', handler));
 
     if (!store.remoteAccess.enabled && !untrack(starting)) {
       setStarting(true);
@@ -143,247 +143,210 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
   });
 
   return (
-    <Portal>
-      <Show when={props.open}>
+    <Dialog
+      open={props.open}
+      onClose={props.onClose}
+      width="380px"
+      panelStyle={{ 'align-items': 'center', gap: '20px' }}
+    >
+      <div style={{ 'text-align': 'center' }}>
+        <h2 style={{ margin: '0', 'font-size': '16px', color: theme.fg, 'font-weight': '600' }}>
+          Connect Phone
+        </h2>
+        <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>Experimental</span>
+      </div>
+
+      <Show when={starting()}>
+        <div style={{ color: theme.fgMuted, 'font-size': '13px' }}>Starting server...</div>
+      </Show>
+
+      <Show when={error()}>
+        <div style={{ color: theme.error, 'font-size': '13px', 'text-align': 'center' }}>
+          {error()}
+        </div>
+      </Show>
+
+      <Show when={!starting() && store.remoteAccess.enabled}>
+        {/* Network mode toggle */}
         <div
           style={{
-            position: 'fixed',
-            inset: '0',
             display: 'flex',
-            'align-items': 'center',
-            'justify-content': 'center',
-            background: 'rgba(0,0,0,0.55)',
-            'z-index': '1000',
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) props.onClose();
+            gap: '4px',
+            background: theme.bgInput,
+            'border-radius': '8px',
+            padding: '3px',
           }}
         >
           <div
-            ref={dialogRef}
-            tabIndex={0}
             style={{
-              background: theme.islandBg,
-              border: `1px solid ${theme.border}`,
-              'border-radius': '14px',
-              padding: '28px',
-              width: '380px',
               display: 'flex',
               'flex-direction': 'column',
               'align-items': 'center',
-              gap: '20px',
-              outline: 'none',
-              'box-shadow': '0 12px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03) inset',
+              gap: '2px',
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ 'text-align': 'center' }}>
-              <h2
-                style={{ margin: '0', 'font-size': '16px', color: theme.fg, 'font-weight': '600' }}
-              >
-                Connect Phone
-              </h2>
-              <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>Experimental</span>
-            </div>
-
-            <Show when={starting()}>
-              <div style={{ color: theme.fgMuted, 'font-size': '13px' }}>Starting server...</div>
+            <button
+              onClick={() => setMode('wifi')}
+              disabled={!store.remoteAccess.wifiUrl}
+              style={{
+                ...pillStyle(mode() === 'wifi' && !!store.remoteAccess.wifiUrl),
+                ...(!store.remoteAccess.wifiUrl ? { opacity: '0.35', cursor: 'default' } : {}),
+              }}
+            >
+              WiFi
+            </button>
+            <Show when={!store.remoteAccess.wifiUrl}>
+              <span style={{ 'font-size': '9px', color: theme.fgSubtle }}>Not detected</span>
             </Show>
-
-            <Show when={error()}>
-              <div style={{ color: theme.error, 'font-size': '13px', 'text-align': 'center' }}>
-                {error()}
-              </div>
-            </Show>
-
-            <Show when={!starting() && store.remoteAccess.enabled}>
-              {/* Network mode toggle */}
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '4px',
-                  background: theme.bgInput,
-                  'border-radius': '8px',
-                  padding: '3px',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    'flex-direction': 'column',
-                    'align-items': 'center',
-                    gap: '2px',
-                  }}
-                >
-                  <button
-                    onClick={() => setMode('wifi')}
-                    disabled={!store.remoteAccess.wifiUrl}
-                    style={{
-                      ...pillStyle(mode() === 'wifi' && !!store.remoteAccess.wifiUrl),
-                      ...(!store.remoteAccess.wifiUrl
-                        ? { opacity: '0.35', cursor: 'default' }
-                        : {}),
-                    }}
-                  >
-                    WiFi
-                  </button>
-                  <Show when={!store.remoteAccess.wifiUrl}>
-                    <span style={{ 'font-size': '9px', color: theme.fgSubtle }}>Not detected</span>
-                  </Show>
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    'flex-direction': 'column',
-                    'align-items': 'center',
-                    gap: '2px',
-                  }}
-                >
-                  <button
-                    onClick={() => setMode('tailscale')}
-                    disabled={!store.remoteAccess.tailscaleUrl}
-                    style={{
-                      ...pillStyle(mode() === 'tailscale' && !!store.remoteAccess.tailscaleUrl),
-                      ...(!store.remoteAccess.tailscaleUrl
-                        ? { opacity: '0.35', cursor: 'default' }
-                        : {}),
-                    }}
-                  >
-                    Tailscale
-                  </button>
-                  <Show when={!store.remoteAccess.tailscaleUrl}>
-                    <span style={{ 'font-size': '9px', color: theme.fgSubtle }}>Not detected</span>
-                  </Show>
-                </div>
-              </div>
-
-              {/* QR Code */}
-              <Show when={qrDataUrl()}>
-                {(url) => (
-                  <img
-                    src={url()}
-                    alt="Connection QR code"
-                    style={{ width: '200px', height: '200px', 'border-radius': '8px' }}
-                  />
-                )}
-              </Show>
-
-              {/* URL */}
-              <div
-                style={{
-                  width: '100%',
-                  background: theme.bgInput,
-                  border: `1px solid ${theme.border}`,
-                  'border-radius': '8px',
-                  padding: '10px 12px',
-                  'font-size': '12px',
-                  'font-family': "'JetBrains Mono', monospace",
-                  color: theme.fg,
-                  'word-break': 'break-all',
-                  'text-align': 'center',
-                  cursor: 'pointer',
-                }}
-                onClick={handleCopyUrl}
-                title="Click to copy"
-              >
-                {activeUrl() ?? store.remoteAccess.url}
-              </div>
-
-              <Show when={copied()}>
-                <span style={{ 'font-size': '12px', color: theme.success }}>Copied!</span>
-              </Show>
-
-              {/* Instructions */}
-              <p
-                style={{
-                  'font-size': '12px',
-                  color: theme.fgMuted,
-                  'text-align': 'center',
-                  margin: '0',
-                  'line-height': '1.5',
-                }}
-              >
-                Scan the QR code or copy the URL to monitor and interact with your agent terminals
-                from your phone.
-                <Show
-                  when={mode() === 'tailscale'}
-                  fallback={<> Your phone and this computer must be on the same WiFi network.</>}
-                >
-                  <> Your phone and this computer must be on the same Tailscale network.</>
-                </Show>
-              </p>
-
-              {/* Connected clients */}
-              <Show
-                when={store.remoteAccess.connectedClients > 0}
-                fallback={
-                  <div
-                    style={{
-                      'font-size': '12px',
-                      color: theme.fgSubtle,
-                      display: 'flex',
-                      'align-items': 'center',
-                      gap: '6px',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '8px',
-                        height: '8px',
-                        'border-radius': '50%',
-                        background: theme.fgSubtle,
-                      }}
-                    />
-                    Waiting for connection...
-                  </div>
-                }
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    'flex-direction': 'column',
-                    'align-items': 'center',
-                    gap: '8px',
-                  }}
-                >
-                  <svg
-                    width="48"
-                    height="48"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke={theme.success}
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                  <span style={{ 'font-size': '14px', color: theme.success, 'font-weight': '500' }}>
-                    {store.remoteAccess.connectedClients} client(s) connected
-                  </span>
-                </div>
-              </Show>
-
-              {/* Disconnect — always available when server is running */}
-              <button
-                onClick={handleDisconnect}
-                style={{
-                  padding: '7px 16px',
-                  background: 'transparent',
-                  border: 'none',
-                  'border-radius': '8px',
-                  color: theme.fgSubtle,
-                  cursor: 'pointer',
-                  'font-size': '12px',
-                  'font-weight': '400',
-                }}
-              >
-                Disconnect
-              </button>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              'flex-direction': 'column',
+              'align-items': 'center',
+              gap: '2px',
+            }}
+          >
+            <button
+              onClick={() => setMode('tailscale')}
+              disabled={!store.remoteAccess.tailscaleUrl}
+              style={{
+                ...pillStyle(mode() === 'tailscale' && !!store.remoteAccess.tailscaleUrl),
+                ...(!store.remoteAccess.tailscaleUrl ? { opacity: '0.35', cursor: 'default' } : {}),
+              }}
+            >
+              Tailscale
+            </button>
+            <Show when={!store.remoteAccess.tailscaleUrl}>
+              <span style={{ 'font-size': '9px', color: theme.fgSubtle }}>Not detected</span>
             </Show>
           </div>
         </div>
+
+        {/* QR Code */}
+        <Show when={qrDataUrl()}>
+          {(url) => (
+            <img
+              src={url()}
+              alt="Connection QR code"
+              style={{ width: '200px', height: '200px', 'border-radius': '8px' }}
+            />
+          )}
+        </Show>
+
+        {/* URL */}
+        <div
+          style={{
+            width: '100%',
+            background: theme.bgInput,
+            border: `1px solid ${theme.border}`,
+            'border-radius': '8px',
+            padding: '10px 12px',
+            'font-size': '12px',
+            'font-family': "'JetBrains Mono', monospace",
+            color: theme.fg,
+            'word-break': 'break-all',
+            'text-align': 'center',
+            cursor: 'pointer',
+          }}
+          onClick={handleCopyUrl}
+          title="Click to copy"
+        >
+          {activeUrl() ?? store.remoteAccess.url}
+        </div>
+
+        <Show when={copied()}>
+          <span style={{ 'font-size': '12px', color: theme.success }}>Copied!</span>
+        </Show>
+
+        {/* Instructions */}
+        <p
+          style={{
+            'font-size': '12px',
+            color: theme.fgMuted,
+            'text-align': 'center',
+            margin: '0',
+            'line-height': '1.5',
+          }}
+        >
+          Scan the QR code or copy the URL to monitor and interact with your agent terminals from
+          your phone.
+          <Show
+            when={mode() === 'tailscale'}
+            fallback={<> Your phone and this computer must be on the same WiFi network.</>}
+          >
+            <> Your phone and this computer must be on the same Tailscale network.</>
+          </Show>
+        </p>
+
+        {/* Connected clients */}
+        <Show
+          when={store.remoteAccess.connectedClients > 0}
+          fallback={
+            <div
+              style={{
+                'font-size': '12px',
+                color: theme.fgSubtle,
+                display: 'flex',
+                'align-items': 'center',
+                gap: '6px',
+              }}
+            >
+              <div
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  'border-radius': '50%',
+                  background: theme.fgSubtle,
+                }}
+              />
+              Waiting for connection...
+            </div>
+          }
+        >
+          <div
+            style={{
+              display: 'flex',
+              'flex-direction': 'column',
+              'align-items': 'center',
+              gap: '8px',
+            }}
+          >
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={theme.success}
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+            <span style={{ 'font-size': '14px', color: theme.success, 'font-weight': '500' }}>
+              {store.remoteAccess.connectedClients} client(s) connected
+            </span>
+          </div>
+        </Show>
+
+        {/* Disconnect — always available when server is running */}
+        <button
+          onClick={handleDisconnect}
+          style={{
+            padding: '7px 16px',
+            background: 'transparent',
+            border: 'none',
+            'border-radius': '8px',
+            color: theme.fgSubtle,
+            cursor: 'pointer',
+            'font-size': '12px',
+            'font-weight': '400',
+          }}
+        >
+          Disconnect
+        </button>
       </Show>
-    </Portal>
+    </Dialog>
   );
 }

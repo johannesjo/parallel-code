@@ -32,6 +32,12 @@ export class Channel<T> {
   toJSON() {
     return { __CHANNEL_ID__: this._id };
   }
+
+  dispose(): void {
+    this.cleanup?.();
+    this.cleanup = null;
+    this.onmessage = null;
+  }
 }
 
 export async function invoke<T>(cmd: IPC, args?: Record<string, unknown>): Promise<T> {

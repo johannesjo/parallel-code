@@ -96,8 +96,11 @@ export {
   setThemePreset,
   setAutoTrustFolders,
   setShowPlans,
+  setDesktopNotificationsEnabled,
   setInactiveColumnOpacity,
   setEditorCommand,
+  setDockerImage,
+  setDockerAvailable,
   setWindowState,
 } from './ui';
 export {

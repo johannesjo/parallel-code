@@ -3,7 +3,7 @@ import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { closeTask, getProject } from '../store/store';
 import { ConfirmDialog } from './ConfirmDialog';
-import { theme } from '../lib/theme';
+import { theme, bannerStyle } from '../lib/theme';
 import type { Task } from '../store/types';
 import type { WorktreeStatus } from '../ipc/types';
 
@@ -48,12 +48,8 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
                 <Show when={worktreeStatus()?.has_uncommitted_changes}>
                   <div
                     style={{
+                      ...bannerStyle(theme.warning),
                       'font-size': '12px',
-                      color: theme.warning,
-                      background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
-                      padding: '8px 12px',
-                      'border-radius': '8px',
-                      border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
                       'font-weight': '600',
                     }}
                   >
@@ -63,12 +59,8 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
                 <Show when={worktreeStatus()?.has_committed_changes}>
                   <div
                     style={{
+                      ...bannerStyle(theme.warning),
                       'font-size': '12px',
-                      color: theme.warning,
-                      background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
-                      padding: '8px 12px',
-                      'border-radius': '8px',
-                      border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
                       'font-weight': '600',
                     }}
                   >

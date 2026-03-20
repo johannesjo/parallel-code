@@ -17,10 +17,7 @@ const HEADING_SELECTOR = 'h1, h2, h3, h4, h5, h6';
  * Extract structured selection info from the current DOM selection
  * within a plan viewer container. Returns null if no valid selection.
  */
-export function getPlanSelection(
-  containerEl: HTMLElement,
-  source: string,
-): PlanSelection | null {
+export function getPlanSelection(containerEl: HTMLElement, source: string): PlanSelection | null {
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed) return null;
 

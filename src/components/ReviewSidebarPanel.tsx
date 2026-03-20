@@ -52,6 +52,7 @@ export function ReviewSidebarPanel() {
           annotations={review.annotations()}
           canSubmit={review.canSubmit()}
           onDismiss={review.dismissAnnotation}
+          onUpdate={review.updateAnnotation}
           onScrollTo={review.setScrollTarget}
           onSubmit={review.submitReview}
         />

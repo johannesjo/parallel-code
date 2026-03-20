@@ -20,6 +20,20 @@ interface ChangedFilesListProps {
 export function ChangedFilesList(props: ChangedFilesListProps) {
   const [files, setFiles] = createSignal<ChangedFile[]>([]);
   const [selectedIndex, setSelectedIndex] = createSignal(-1);
+  const rowRefs: HTMLDivElement[] = [];
+
+  // Scroll selected item into view reactively
+  createEffect(() => {
+    const idx = selectedIndex();
+    if (idx >= 0) rowRefs[idx]?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+  });
+
+  // Trim stale refs and clamp selection when file list shrinks
+  createEffect(() => {
+    const len = files().length;
+    rowRefs.length = len;
+    setSelectedIndex((i) => (i >= len ? len - 1 : i));
+  });
 
   function handleKeyDown(e: KeyboardEvent) {
     const list = files();
@@ -159,6 +173,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
         <For each={files()}>
           {(file, i) => (
             <div
+              ref={(el) => (rowRefs[i()] = el)}
               class="file-row"
               style={{
                 display: 'flex',

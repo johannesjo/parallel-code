@@ -8,7 +8,7 @@ import {
   removeProjectWithTasks,
 } from '../store/store';
 import { sanitizeBranchPrefix, toBranchName } from '../lib/branch-name';
-import { theme } from '../lib/theme';
+import { theme, sectionLabelStyle } from '../lib/theme';
 import type { Project, TerminalBookmark } from '../store/types';
 
 interface EditProjectDialogProps {
@@ -196,16 +196,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
 
             {/* Name */}
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label
-                style={{
-                  'font-size': '11px',
-                  color: theme.fgMuted,
-                  'text-transform': 'uppercase',
-                  'letter-spacing': '0.05em',
-                }}
-              >
-                Name
-              </label>
+              <label style={sectionLabelStyle}>Name</label>
               <input
                 ref={nameRef}
                 class="input-field"
@@ -229,16 +220,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
 
             {/* Branch prefix */}
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label
-                style={{
-                  'font-size': '11px',
-                  color: theme.fgMuted,
-                  'text-transform': 'uppercase',
-                  'letter-spacing': '0.05em',
-                }}
-              >
-                Branch prefix
-              </label>
+              <label style={sectionLabelStyle}>Branch prefix</label>
               <input
                 class="input-field"
                 type="text"
@@ -287,16 +269,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
 
             {/* Color palette */}
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label
-                style={{
-                  'font-size': '11px',
-                  color: theme.fgMuted,
-                  'text-transform': 'uppercase',
-                  'letter-spacing': '0.05em',
-                }}
-              >
-                Color
-              </label>
+              <label style={sectionLabelStyle}>Color</label>
               <div style={{ display: 'flex', gap: '8px', 'flex-wrap': 'wrap' }}>
                 <For each={PASTEL_HUES}>
                   {(hue) => {
@@ -368,16 +341,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
 
             {/* Command Bookmarks */}
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label
-                style={{
-                  'font-size': '11px',
-                  color: theme.fgMuted,
-                  'text-transform': 'uppercase',
-                  'letter-spacing': '0.05em',
-                }}
-              >
-                Command Bookmarks
-              </label>
+              <label style={sectionLabelStyle}>Command Bookmarks</label>
               <Show when={bookmarks().length > 0}>
                 <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
                   <For each={bookmarks()}>

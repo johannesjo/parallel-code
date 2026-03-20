@@ -22,25 +22,40 @@ const TRUST_PATTERNS: RegExp[] = [
 const TRUST_EXCLUSION_KEYWORDS =
   /\b(delet|remov|credential|secret|password|key|token|destro|format|drop)/i;
 
-// Debounce: tracks agents with a pending or recently-fired auto-trust.
-// Cleared after a cooldown so subsequent trust dialogs are also auto-accepted.
-const autoTrustTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const autoTrustCooldowns = new Map<string, ReturnType<typeof setTimeout>>();
-
-function isAutoTrustPending(agentId: string): boolean {
-  return autoTrustTimers.has(agentId) || autoTrustCooldowns.has(agentId);
+// --- Consolidated per-agent tracking state ---
+// Groups all per-agent Maps into one to prevent cleanup leaks.
+interface AgentTrackingState {
+  autoTrustTimer?: ReturnType<typeof setTimeout>;
+  autoTrustCooldown?: ReturnType<typeof setTimeout>;
+  lastAutoTrustCheckAt?: number;
+  autoTrustAcceptedAt?: number;
+  lastDataAt?: number;
+  lastIdleResetAt?: number;
+  idleTimer?: ReturnType<typeof setTimeout>;
+  outputTailBuffer: string;
+  decoder: TextDecoder;
+  lastAnalysisAt?: number;
+  pendingAnalysis?: ReturnType<typeof setTimeout>;
 }
 
-// Throttle for background (non-active) auto-trust checks so we don't run
-// ANSI strip + regex on every PTY chunk from every agent.
-const AUTO_TRUST_BG_THROTTLE_MS = 500;
-const lastAutoTrustCheckAt = new Map<string, number>();
+const agentStates = new Map<string, AgentTrackingState>();
 
-// Tracks when auto-trust last accepted a dialog for each agent.
-// Used to enforce a settling period before auto-send can fire — some agents
-// (e.g. Claude Code) render their ❯ prompt before fully initializing.
-const autoTrustAcceptedAt = new Map<string, number>();
+function getAgentState(agentId: string): AgentTrackingState {
+  let state = agentStates.get(agentId);
+  if (!state) {
+    state = { outputTailBuffer: '', decoder: new TextDecoder() };
+    agentStates.set(agentId, state);
+  }
+  return state;
+}
+
 const POST_AUTO_TRUST_SETTLE_MS = 1_000;
+
+function isAutoTrustPending(agentId: string): boolean {
+  const state = agentStates.get(agentId);
+  if (!state) return false;
+  return state.autoTrustTimer !== undefined || state.autoTrustCooldown !== undefined;
+}
 
 /** True while auto-trust is handling or settling a dialog for this agent.
  *  Covers both the pending phase (timer scheduled, Enter not yet sent) and
@@ -48,30 +63,28 @@ const POST_AUTO_TRUST_SETTLE_MS = 1_000;
  *  Auto-send should wait until this returns false.
  *  Note: cleans up expired entries as a side effect to avoid a separate timer. */
 export function isAutoTrustSettling(agentId: string): boolean {
-  // Pending: auto-trust timer is scheduled but hasn't fired yet, or cooldown
-  // is active (Enter just sent, waiting for PTY output to transition).
   if (isAutoTrustPending(agentId)) return true;
-  const acceptedAt = autoTrustAcceptedAt.get(agentId);
-  if (!acceptedAt) return false;
-  if (Date.now() - acceptedAt >= POST_AUTO_TRUST_SETTLE_MS) {
-    autoTrustAcceptedAt.delete(agentId);
+  const state = agentStates.get(agentId);
+  if (!state?.autoTrustAcceptedAt) return false;
+  if (Date.now() - state.autoTrustAcceptedAt >= POST_AUTO_TRUST_SETTLE_MS) {
+    state.autoTrustAcceptedAt = undefined;
     return false;
   }
   return true;
 }
 
 function clearAutoTrustState(agentId: string): void {
-  lastAutoTrustCheckAt.delete(agentId);
-  autoTrustAcceptedAt.delete(agentId);
-  const timer = autoTrustTimers.get(agentId);
-  if (timer) {
-    clearTimeout(timer);
-    autoTrustTimers.delete(agentId);
+  const state = agentStates.get(agentId);
+  if (!state) return;
+  state.lastAutoTrustCheckAt = undefined;
+  state.autoTrustAcceptedAt = undefined;
+  if (state.autoTrustTimer !== undefined) {
+    clearTimeout(state.autoTrustTimer);
+    state.autoTrustTimer = undefined;
   }
-  const cooldown = autoTrustCooldowns.get(agentId);
-  if (cooldown) {
-    clearTimeout(cooldown);
-    autoTrustCooldowns.delete(agentId);
+  if (state.autoTrustCooldown !== undefined) {
+    clearTimeout(state.autoTrustCooldown);
+    state.autoTrustCooldown = undefined;
   }
 }
 
@@ -149,7 +162,8 @@ export function offAgentReady(agentId: string): void {
 /** Fire the one-shot agentReady callback if the tail buffer shows a known agent prompt. */
 function tryFireAgentReadyCallback(agentId: string): void {
   if (!agentReadyCallbacks.has(agentId)) return;
-  const rawTail = outputTailBuffers.get(agentId) ?? '';
+  const state = agentStates.get(agentId);
+  const rawTail = state?.outputTailBuffer ?? '';
   const tailStripped = stripAnsi(rawTail)
     // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x1f\x7f]/g, ' ')
@@ -277,10 +291,6 @@ function updateQuestionState(agentId: string, hasQuestion: boolean): void {
 }
 
 // --- Agent activity tracking ---
-// Plain map for raw timestamps (no reactive cost per PTY byte).
-const lastDataAt = new Map<string, number>();
-// Last time we refreshed each agent's idle timeout.
-const lastIdleResetAt = new Map<string, number>();
 // Reactive set of agent IDs considered "active" (updated on coarser schedule).
 const [activeAgents, setActiveAgents] = createSignal<Set<string>>(new Set());
 
@@ -291,19 +301,16 @@ const IDLE_TIMEOUT_MS = 15_000;
 // Throttle reactive updates while already active.
 const THROTTLE_MS = 1_000;
 
-const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
 // Tail buffer per agent — keeps the last N chars of PTY output for prompt matching.
 // Must be large enough to hold a full TUI dialog render (with ANSI codes) so that
 // question text at the top of the dialog isn't truncated away.
 const TAIL_BUFFER_MAX = 4096;
-const outputTailBuffers = new Map<string, string>();
-// Per-agent UTF-8 decoders to correctly handle multi-byte characters split across chunks.
-const agentDecoders = new Map<string, TextDecoder>();
+
+// Throttle for background (non-active) auto-trust checks so we don't run
+// ANSI strip + regex on every PTY chunk from every agent.
+const AUTO_TRUST_BG_THROTTLE_MS = 500;
 
 // Per-agent timestamp of last expensive analysis (question/prompt detection).
-const lastAnalysisAt = new Map<string, number>();
-const pendingAnalysis = new Map<string, ReturnType<typeof setTimeout>>();
 const ANALYSIS_INTERVAL_MS = 200;
 
 function addToActive(agentId: string): void {
@@ -325,31 +332,27 @@ function removeFromActive(agentId: string): void {
 }
 
 function resetIdleTimer(agentId: string): void {
-  lastIdleResetAt.set(agentId, Date.now());
-  const existing = idleTimers.get(agentId);
-  if (existing) clearTimeout(existing);
-  idleTimers.set(
-    agentId,
-    setTimeout(() => {
-      removeFromActive(agentId);
-      idleTimers.delete(agentId);
-    }, IDLE_TIMEOUT_MS),
-  );
+  const state = getAgentState(agentId);
+  state.lastIdleResetAt = Date.now();
+  if (state.idleTimer !== undefined) clearTimeout(state.idleTimer);
+  state.idleTimer = setTimeout(() => {
+    removeFromActive(agentId);
+    state.idleTimer = undefined;
+  }, IDLE_TIMEOUT_MS);
 }
 
 /** Mark an agent as active when it is first spawned.
  *  Ensures agents start as "busy" before any PTY data arrives. */
 export function markAgentSpawned(agentId: string): void {
-  outputTailBuffers.delete(agentId);
+  const state = getAgentState(agentId);
+  state.outputTailBuffer = '';
   clearAutoTrustState(agentId);
-  // Reset analysis throttle state for fresh session.
-  lastAnalysisAt.delete(agentId);
-  const pending = pendingAnalysis.get(agentId);
-  if (pending) {
-    clearTimeout(pending);
-    pendingAnalysis.delete(agentId);
+  state.lastAnalysisAt = undefined;
+  if (state.pendingAnalysis !== undefined) {
+    clearTimeout(state.pendingAnalysis);
+    state.pendingAnalysis = undefined;
   }
-  lastDataAt.set(agentId, Date.now());
+  state.lastDataAt = Date.now();
   addToActive(agentId);
   resetIdleTimer(agentId);
 }
@@ -362,12 +365,13 @@ function tryAutoTrust(agentId: string, rawTail: string): boolean {
   const visibleTail = stripAnsi(rawTail).slice(-500);
   if (TRUST_EXCLUSION_KEYWORDS.test(visibleTail)) return false;
 
+  const state = getAgentState(agentId);
   // Short delay to let the TUI finish rendering before sending Enter.
-  const timer = setTimeout(() => {
-    autoTrustTimers.delete(agentId);
+  state.autoTrustTimer = setTimeout(() => {
+    state.autoTrustTimer = undefined;
     // Clear stale trust-dialog content (including ❯ selection cursor) so
     // chunkContainsAgentPrompt only fires on the agent's real prompt.
-    outputTailBuffers.set(agentId, '');
+    state.outputTailBuffer = '';
     // Deregister the agent-ready callback so the fast path (immediate ❯
     // detection) is disabled.  The agent may render ❯ before it's fully
     // initialized — the quiescence fallback (1500ms of stable output)
@@ -375,21 +379,22 @@ function tryAutoTrust(agentId: string, rawTail: string): boolean {
     agentReadyCallbacks.delete(agentId);
     // Start the settling period — blocks auto-send for POST_AUTO_TRUST_SETTLE_MS
     // to give slow-starting agents (e.g. Claude Code) time to fully initialize.
-    autoTrustAcceptedAt.set(agentId, Date.now());
+    state.autoTrustAcceptedAt = Date.now();
     invoke(IPC.WriteToAgent, { agentId, data: '\r' }).catch(() => {});
     // Cooldown: ignore trust patterns for 3s so the same dialog
     // isn't re-matched while the PTY output transitions.
-    const cd = setTimeout(() => autoTrustCooldowns.delete(agentId), 3_000);
-    autoTrustCooldowns.set(agentId, cd);
+    state.autoTrustCooldown = setTimeout(() => {
+      state.autoTrustCooldown = undefined;
+    }, 3_000);
   }, 50);
-  autoTrustTimers.set(agentId, timer);
   return true;
 }
 
 /** Run expensive prompt/question/agent-ready detection on the tail buffer.
  *  Called at most every ANALYSIS_INTERVAL_MS (200ms) per agent. */
 function analyzeAgentOutput(agentId: string): void {
-  const rawTail = outputTailBuffers.get(agentId) ?? '';
+  const state = getAgentState(agentId);
+  const rawTail = state.outputTailBuffer;
   let hasQuestion = looksLikeQuestion(rawTail);
 
   // Suppress question state for trust dialogs when auto-trust is enabled —
@@ -398,8 +403,10 @@ function analyzeAgentOutput(agentId: string): void {
   // the tail buffer and set hasQuestion=true, which disables the prompt
   // textarea and steals focus to the terminal.
   if (hasQuestion && store.autoTrustFolders) {
-    const visibleTail = stripAnsi(rawTail).slice(-500);
-    if (looksLikeTrustDialog(rawTail) && !TRUST_EXCLUSION_KEYWORDS.test(visibleTail)) {
+    if (
+      looksLikeTrustDialog(rawTail) &&
+      !TRUST_EXCLUSION_KEYWORDS.test(stripAnsi(rawTail).slice(-500))
+    ) {
       // Auto-trust may not have fired yet if this is the first analysis for
       // an active task that just became visible — trigger it now.
       tryAutoTrust(agentId, rawTail);
@@ -416,7 +423,7 @@ function analyzeAgentOutput(agentId: string): void {
   // Also skip while auto-trust Enter is scheduled (50ms window) — the ❯ in
   // the selection UI is a false positive.  After the timer fires, the tail
   // buffer is cleared so only the agent's real prompt can trigger this.
-  if (!hasQuestion && !autoTrustTimers.has(agentId)) tryFireAgentReadyCallback(agentId);
+  if (!hasQuestion && state.autoTrustTimer === undefined) tryFireAgentReadyCallback(agentId);
 }
 
 /** Call this from the TerminalView Data handler with the raw PTY bytes.
@@ -424,22 +431,15 @@ function analyzeAgentOutput(agentId: string): void {
  *  waiting for the full idle timeout. */
 export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: string): void {
   const now = Date.now();
-  lastDataAt.set(agentId, now);
+  const state = getAgentState(agentId);
+  state.lastDataAt = now;
 
-  let decoder = agentDecoders.get(agentId);
-  if (!decoder) {
-    decoder = new TextDecoder();
-    agentDecoders.set(agentId, decoder);
-  }
-  const text = decoder.decode(data, { stream: true });
-  const prev = outputTailBuffers.get(agentId) ?? '';
-  const combined = prev + text;
-  outputTailBuffers.set(
-    agentId,
+  const text = state.decoder.decode(data, { stream: true });
+  const combined = state.outputTailBuffer + text;
+  state.outputTailBuffer =
     combined.length > TAIL_BUFFER_MAX
       ? combined.slice(combined.length - TAIL_BUFFER_MAX)
-      : combined,
-  );
+      : combined;
 
   // Expensive analysis (regex, ANSI strip) — only for active task's agents.
   const isActiveTask = !taskId || taskId === store.activeTaskId;
@@ -449,32 +449,29 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
   // Active-task agents get this via analyzeAgentOutput; background agents
   // are throttled to avoid ANSI strip + regex on every PTY chunk.
   if (store.autoTrustFolders && !isAutoTrustPending(agentId) && !isActiveTask) {
-    const lastCheck = lastAutoTrustCheckAt.get(agentId) ?? 0;
+    const lastCheck = state.lastAutoTrustCheckAt ?? 0;
     if (now - lastCheck >= AUTO_TRUST_BG_THROTTLE_MS) {
-      lastAutoTrustCheckAt.set(agentId, now);
-      tryAutoTrust(agentId, outputTailBuffers.get(agentId) ?? '');
+      state.lastAutoTrustCheckAt = now;
+      tryAutoTrust(agentId, state.outputTailBuffer);
     }
   }
   if (isActiveTask) {
     // Throttle expensive analysis (question/prompt/agent-ready detection).
-    const lastAnalysis = lastAnalysisAt.get(agentId) ?? 0;
+    const lastAnalysis = state.lastAnalysisAt ?? 0;
     if (now - lastAnalysis >= ANALYSIS_INTERVAL_MS) {
-      lastAnalysisAt.set(agentId, now);
-      if (pendingAnalysis.has(agentId)) {
-        clearTimeout(pendingAnalysis.get(agentId));
-        pendingAnalysis.delete(agentId);
+      state.lastAnalysisAt = now;
+      if (state.pendingAnalysis !== undefined) {
+        clearTimeout(state.pendingAnalysis);
+        state.pendingAnalysis = undefined;
       }
       analyzeAgentOutput(agentId);
-    } else if (!pendingAnalysis.has(agentId)) {
+    } else if (state.pendingAnalysis === undefined) {
       // Schedule a trailing analysis so the last chunk is always analyzed.
-      pendingAnalysis.set(
-        agentId,
-        setTimeout(() => {
-          pendingAnalysis.delete(agentId);
-          lastAnalysisAt.set(agentId, Date.now());
-          analyzeAgentOutput(agentId);
-        }, ANALYSIS_INTERVAL_MS),
-      );
+      state.pendingAnalysis = setTimeout(() => {
+        state.pendingAnalysis = undefined;
+        state.lastAnalysisAt = Date.now();
+        analyzeAgentOutput(agentId);
+      }, ANALYSIS_INTERVAL_MS);
     }
   }
 
@@ -498,17 +495,16 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
     // Prompt detected — agent is idle. Remove from active set immediately.
     // Cancel any pending trailing analysis — question detection is irrelevant
     // once idle, and letting it fire could set a spurious question flag.
-    const pendingTimer = pendingAnalysis.get(agentId);
-    if (pendingTimer) {
-      clearTimeout(pendingTimer);
-      pendingAnalysis.delete(agentId);
+    if (state.pendingAnalysis !== undefined) {
+      clearTimeout(state.pendingAnalysis);
+      state.pendingAnalysis = undefined;
     }
 
     // Agent is at its prompt — clear stale question state so auto-send
     // isn't blocked by old dialog text (e.g. trust dialogs that were already
     // accepted). Only clear if the tail buffer is genuinely free of questions
     // to avoid briefly hiding a real Y/n prompt that also matches looksLikePrompt.
-    if (!looksLikeQuestion(outputTailBuffers.get(agentId) ?? '')) {
+    if (!looksLikeQuestion(state.outputTailBuffer)) {
       updateQuestionState(agentId, false);
     }
 
@@ -518,10 +514,9 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
     // tryFireAgentReadyCallback ensures shell prompts ($, %) don't trigger it.
     tryFireAgentReadyCallback(agentId);
 
-    const timer = idleTimers.get(agentId);
-    if (timer) {
-      clearTimeout(timer);
-      idleTimers.delete(agentId);
+    if (state.idleTimer !== undefined) {
+      clearTimeout(state.idleTimer);
+      state.idleTimer = undefined;
     }
     removeFromActive(agentId);
     return;
@@ -529,7 +524,7 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
 
   // Non-prompt output — agent is producing real work.
   if (activeAgents().has(agentId)) {
-    const lastReset = lastIdleResetAt.get(agentId) ?? 0;
+    const lastReset = state.lastIdleResetAt ?? 0;
     if (now - lastReset < THROTTLE_MS) return;
     resetIdleTimer(agentId);
     return;
@@ -541,7 +536,7 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
 
 /** Return the last ~4096 chars of raw PTY output for `agentId`. */
 export function getAgentOutputTail(agentId: string): string {
-  return outputTailBuffers.get(agentId) ?? '';
+  return agentStates.get(agentId)?.outputTailBuffer ?? '';
 }
 
 /** True when the agent is NOT producing output (e.g. sitting at a prompt). */
@@ -558,23 +553,14 @@ export function markAgentBusy(agentId: string): void {
 
 /** Clean up timers when an agent exits. */
 export function clearAgentActivity(agentId: string): void {
-  lastDataAt.delete(agentId);
-  lastIdleResetAt.delete(agentId);
-  outputTailBuffers.delete(agentId);
-  agentDecoders.delete(agentId);
+  const state = agentStates.get(agentId);
+  if (state) {
+    clearAutoTrustState(agentId);
+    if (state.idleTimer !== undefined) clearTimeout(state.idleTimer);
+    if (state.pendingAnalysis !== undefined) clearTimeout(state.pendingAnalysis);
+  }
+  agentStates.delete(agentId);
   agentReadyCallbacks.delete(agentId);
-  clearAutoTrustState(agentId);
-  lastAnalysisAt.delete(agentId);
-  const pending = pendingAnalysis.get(agentId);
-  if (pending) {
-    clearTimeout(pending);
-    pendingAnalysis.delete(agentId);
-  }
-  const timer = idleTimers.get(agentId);
-  if (timer) {
-    clearTimeout(timer);
-    idleTimers.delete(agentId);
-  }
   removeFromActive(agentId);
   updateQuestionState(agentId, false);
 }
@@ -613,12 +599,14 @@ async function refreshTaskGitStatus(taskId: string): Promise<void> {
 }
 
 let isRefreshingAll = false;
+let refreshAllStartedAt = 0;
 
 /** Refresh git status for inactive tasks (active task is handled by its own 5s timer).
  *  Limits concurrency to avoid spawning too many parallel git processes. */
 export async function refreshAllTaskGitStatus(): Promise<void> {
-  if (isRefreshingAll) return;
+  if (isRefreshingAll && Date.now() - refreshAllStartedAt < 60_000) return;
   isRefreshingAll = true;
+  refreshAllStartedAt = Date.now();
   try {
     const taskIds = store.taskOrder;
     const active = activeAgents();

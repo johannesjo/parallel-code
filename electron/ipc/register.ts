@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron';
+import { ipcMain, dialog, shell, app, BrowserWindow, Notification } from 'electron';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { IPC } from './channels.js';
@@ -12,8 +12,16 @@ import {
   countRunningAgents,
   killAllAgents,
   getAgentMeta,
+  isDockerAvailable,
+  dockerImageExists,
+  buildDockerImage,
 } from './pty.js';
-import { ensurePlansDirectory, startPlanWatcher, readPlanForWorktree } from './plans.js';
+import {
+  ensurePlansDirectory,
+  startPlanWatcher,
+  stopPlanWatcher,
+  readPlanForWorktree,
+} from './plans.js';
 import { startRemoteServer } from '../remote/server.js';
 import {
   getGitIgnoredDirs,
@@ -35,6 +43,7 @@ import {
   rebaseTask,
   createWorktree,
   removeWorktree,
+  isGitRepo,
 } from './git.js';
 import { createTask, deleteTask } from './tasks.js';
 import { listAgents } from './agents.js';
@@ -71,6 +80,36 @@ function validateBranchName(name: unknown, label: string): void {
   if (name.startsWith('-')) throw new Error(`${label} must not start with "-"`);
 }
 
+/**
+ * Create a leading+trailing throttled event forwarder.
+ * Fires immediately, suppresses for `intervalMs`, then fires once more
+ * if events arrived during suppression (ensures the final state is always forwarded).
+ */
+function createThrottledForwarder(
+  win: BrowserWindow,
+  channel: string,
+  intervalMs: number,
+): () => void {
+  let throttled = false;
+  let pending = false;
+  return () => {
+    if (win.isDestroyed()) return;
+    if (throttled) {
+      pending = true;
+      return;
+    }
+    throttled = true;
+    win.webContents.send(channel);
+    setTimeout(() => {
+      throttled = false;
+      if (pending) {
+        pending = false;
+        if (!win.isDestroyed()) win.webContents.send(channel);
+      }
+    }, intervalMs);
+  };
+}
+
 export function registerAllHandlers(win: BrowserWindow): void {
   // --- Remote access state ---
   let remoteServer: ReturnType<typeof startRemoteServer> | null = null;
@@ -78,6 +117,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   // --- PTY commands ---
   ipcMain.handle(IPC.SpawnAgent, (_e, args) => {
+    assertString(args.command, 'command');
+    assertStringArray(args.args, 'args');
+    assertString(args.taskId, 'taskId');
+    assertString(args.agentId, 'agentId');
+    assertInt(args.cols, 'cols');
+    assertInt(args.rows, 'rows');
+    assertOptionalBoolean(args.dockerMode, 'dockerMode');
+    assertOptionalString(args.dockerImage, 'dockerImage');
     if (args.cwd) validatePath(args.cwd, 'cwd');
     if (!args.isShell && args.cwd) {
       try {
@@ -124,6 +171,15 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   // --- Agent commands ---
   ipcMain.handle(IPC.ListAgents, () => listAgents());
+  ipcMain.handle(IPC.CheckDockerAvailable, () => isDockerAvailable());
+  ipcMain.handle(IPC.CheckDockerImageExists, (_e, args) => {
+    assertString(args.image, 'image');
+    return dockerImageExists(args.image);
+  });
+  ipcMain.handle(IPC.BuildDockerImage, (_e, args) => {
+    assertString(args.onOutputChannel, 'onOutputChannel');
+    return buildDockerImage(win, args.onOutputChannel);
+  });
 
   // --- Task commands ---
   ipcMain.handle(IPC.CreateTask, (_e, args) => {
@@ -131,7 +187,12 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.projectRoot, 'projectRoot');
     assertStringArray(args.symlinkDirs, 'symlinkDirs');
     assertOptionalString(args.branchPrefix, 'branchPrefix');
-    const result = createTask(args.name, args.projectRoot, args.symlinkDirs, args.branchPrefix);
+    const result = createTask(
+      args.name,
+      args.projectRoot,
+      args.symlinkDirs,
+      args.branchPrefix ?? 'task',
+    );
     result.then((r: { id: string }) => taskNames.set(r.id, args.name)).catch(() => {});
     return result;
   });
@@ -140,7 +201,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
     assertBoolean(args.deleteBranch, 'deleteBranch');
-    return deleteTask(args.agentIds, args.branchName, args.deleteBranch, args.projectRoot);
+    assertOptionalString(args.taskId, 'taskId');
+    return deleteTask({
+      taskId: args.taskId,
+      agentIds: args.agentIds,
+      branchName: args.branchName,
+      deleteBranch: args.deleteBranch,
+      projectRoot: args.projectRoot,
+    });
   });
 
   // --- Git commands ---
@@ -200,7 +268,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertBoolean(args.squash, 'squash');
     assertOptionalString(args.message, 'message');
     assertOptionalBoolean(args.cleanup, 'cleanup');
-    return mergeTask(args.projectRoot, args.branchName, args.squash, args.message, args.cleanup);
+    return mergeTask(
+      args.projectRoot,
+      args.branchName,
+      args.squash,
+      args.message ?? null,
+      args.cleanup ?? false,
+    );
   });
   ipcMain.handle(IPC.GetBranchLog, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
@@ -223,6 +297,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.GetCurrentBranch, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     return getCurrentBranch(args.projectRoot);
+  });
+  ipcMain.handle(IPC.CheckIsGitRepo, (_e, args) => {
+    validatePath(args.path, 'path');
+    return isGitRepo(args.path);
   });
 
   // --- Persistence ---
@@ -296,6 +374,12 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return fs.existsSync(args.path);
   });
 
+  // --- Plan watcher cleanup ---
+  ipcMain.handle(IPC.StopPlanWatcher, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    stopPlanWatcher(args.taskId);
+  });
+
   // --- Plan content (one-shot read) ---
   ipcMain.handle(IPC.ReadPlanContent, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
@@ -321,6 +405,43 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.CancelAskAboutCode, (_e, args) => {
     assertString(args.requestId, 'requestId');
     cancelAskAboutCode(args.requestId);
+  });
+
+  // --- Notifications (fire-and-forget via ipcMain.on) ---
+  const activeNotifications = new Set<Notification>();
+  ipcMain.on(IPC.ShowNotification, (_e, args) => {
+    try {
+      if (!Notification.isSupported()) return;
+      assertString(args.title, 'title');
+      assertString(args.body, 'body');
+      assertStringArray(args.taskIds, 'taskIds');
+      const notification = new Notification({
+        title: args.title,
+        body: args.body,
+      });
+      activeNotifications.add(notification);
+      const release = () => activeNotifications.delete(notification);
+      notification.on('click', () => {
+        release();
+        if (!win.isDestroyed()) {
+          win.show();
+          win.focus();
+          win.webContents.send(IPC.NotificationClicked, { taskIds: args.taskIds });
+        }
+      });
+      notification.on('close', release);
+      notification.show();
+      // On Linux, notifications may not auto-dismiss. Close after 30 seconds
+      // to prevent accumulation in the notification tray.
+      if (process.platform === 'linux') {
+        setTimeout(() => {
+          notification.close();
+          release();
+        }, 30_000);
+      }
+    } catch (err) {
+      console.warn('ShowNotification failed:', err);
+    }
   });
 
   // --- Window management ---
@@ -483,44 +604,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
   win.on('blur', () => {
     if (!win.isDestroyed()) win.webContents.send(IPC.WindowBlur);
   });
-  // Leading+trailing throttle: fire immediately, suppress for 100ms, then fire once more
-  // if events arrived during suppression (ensures the final state is always forwarded).
-  let resizeThrottled = false;
-  let resizePending = false;
-  win.on('resize', () => {
-    if (win.isDestroyed()) return;
-    if (resizeThrottled) {
-      resizePending = true;
-      return;
-    }
-    resizeThrottled = true;
-    win.webContents.send(IPC.WindowResized);
-    setTimeout(() => {
-      resizeThrottled = false;
-      if (resizePending) {
-        resizePending = false;
-        if (!win.isDestroyed()) win.webContents.send(IPC.WindowResized);
-      }
-    }, 100);
-  });
-  let moveThrottled = false;
-  let movePending = false;
-  win.on('move', () => {
-    if (win.isDestroyed()) return;
-    if (moveThrottled) {
-      movePending = true;
-      return;
-    }
-    moveThrottled = true;
-    win.webContents.send(IPC.WindowMoved);
-    setTimeout(() => {
-      moveThrottled = false;
-      if (movePending) {
-        movePending = false;
-        if (!win.isDestroyed()) win.webContents.send(IPC.WindowMoved);
-      }
-    }, 100);
-  });
+  win.on('resize', createThrottledForwarder(win, IPC.WindowResized, 100));
+  win.on('move', createThrottledForwarder(win, IPC.WindowMoved, 100));
   win.on('close', (e) => {
     e.preventDefault();
     if (!win.isDestroyed()) {

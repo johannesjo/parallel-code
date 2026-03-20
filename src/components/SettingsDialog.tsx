@@ -2,15 +2,17 @@ import { For, Show, createMemo } from 'solid-js';
 import { Dialog } from './Dialog';
 import { getAvailableTerminalFonts, getTerminalFontFamily, LIGATURE_FONTS } from '../lib/fonts';
 import { LOOK_PRESETS } from '../lib/look';
-import { theme } from '../lib/theme';
+import { theme, sectionLabelStyle } from '../lib/theme';
 import {
   store,
   setTerminalFont,
   setThemePreset,
   setAutoTrustFolders,
   setShowPlans,
+  setDesktopNotificationsEnabled,
   setInactiveColumnOpacity,
   setEditorCommand,
+  setDockerImage,
 } from '../store/store';
 import { CustomAgentEditor } from './CustomAgentEditor';
 import { mod } from '../lib/platform';
@@ -90,10 +92,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
         <div
           style={{
-            'font-size': '11px',
-            color: theme.fgMuted,
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            ...sectionLabelStyle,
             'font-weight': '600',
           }}
         >
@@ -118,10 +117,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
         <div
           style={{
-            'font-size': '11px',
-            color: theme.fgMuted,
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            ...sectionLabelStyle,
             'font-weight': '600',
           }}
         >
@@ -177,15 +173,37 @@ export function SettingsDialog(props: SettingsDialogProps) {
             </span>
           </div>
         </label>
+        <label
+          style={{
+            display: 'flex',
+            'align-items': 'center',
+            gap: '10px',
+            cursor: 'pointer',
+            padding: '8px 12px',
+            'border-radius': '8px',
+            background: theme.bgInput,
+            border: `1px solid ${theme.border}`,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={store.desktopNotificationsEnabled}
+            onChange={(e) => setDesktopNotificationsEnabled(e.currentTarget.checked)}
+            style={{ 'accent-color': theme.accent, cursor: 'pointer' }}
+          />
+          <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
+            <span style={{ 'font-size': '13px', color: theme.fg }}>Desktop notifications</span>
+            <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+              Show native notifications when tasks finish or need attention
+            </span>
+          </div>
+        </label>
       </div>
 
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
         <div
           style={{
-            'font-size': '11px',
-            color: theme.fgMuted,
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            ...sectionLabelStyle,
             'font-weight': '600',
           }}
         >
@@ -236,13 +254,70 @@ export function SettingsDialog(props: SettingsDialogProps) {
         </div>
       </div>
 
+      <Show when={store.dockerAvailable}>
+        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
+          <div
+            style={{
+              'font-size': '11px',
+              color: theme.fgMuted,
+              'text-transform': 'uppercase',
+              'letter-spacing': '0.05em',
+              'font-weight': '600',
+            }}
+          >
+            Docker Isolation
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              'flex-direction': 'column',
+              gap: '6px',
+              padding: '8px 12px',
+              'border-radius': '8px',
+              background: theme.bgInput,
+              border: `1px solid ${theme.border}`,
+            }}
+          >
+            <label
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                gap: '10px',
+              }}
+            >
+              <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
+                Default image
+              </span>
+              <input
+                type="text"
+                value={store.dockerImage}
+                onInput={(e) => setDockerImage(e.currentTarget.value)}
+                placeholder="parallel-code-agent:latest"
+                style={{
+                  flex: '1',
+                  background: theme.taskPanelBg,
+                  border: `1px solid ${theme.border}`,
+                  'border-radius': '6px',
+                  padding: '6px 10px',
+                  color: theme.fg,
+                  'font-size': '13px',
+                  'font-family': "'JetBrains Mono', monospace",
+                  outline: 'none',
+                }}
+              />
+            </label>
+            <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+              Docker image used when "Run in Docker container" is enabled for a task. The agent runs
+              inside the container with only the project directory mounted.
+            </span>
+          </div>
+        </div>
+      </Show>
+
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
         <div
           style={{
-            'font-size': '11px',
-            color: theme.fgMuted,
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            ...sectionLabelStyle,
             'font-weight': '600',
           }}
         >
@@ -309,10 +384,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
         <div
           style={{
-            'font-size': '11px',
-            color: theme.fgMuted,
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            ...sectionLabelStyle,
             'font-weight': '600',
           }}
         >
@@ -324,10 +396,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
         <div
           style={{
-            'font-size': '11px',
-            color: theme.fgMuted,
-            'text-transform': 'uppercase',
-            'letter-spacing': '0.05em',
+            ...sectionLabelStyle,
             'font-weight': '600',
           }}
         >

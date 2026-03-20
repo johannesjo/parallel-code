@@ -47,6 +47,8 @@ export interface Task {
   closingError?: string;
   directMode?: boolean;
   skipPermissions?: boolean;
+  dockerMode?: boolean;
+  dockerImage?: string;
   githubUrl?: string;
   collapsed?: boolean;
   savedAgentDef?: AgentDef;
@@ -73,6 +75,8 @@ export interface PersistedTask {
   agentDef: AgentDef | null;
   directMode?: boolean;
   skipPermissions?: boolean;
+  dockerMode?: boolean;
+  dockerImage?: string;
   githubUrl?: string;
   savedInitialPrompt?: string;
   collapsed?: boolean;
@@ -114,13 +118,15 @@ export interface PersistedState {
   windowState?: PersistedWindowState;
   autoTrustFolders?: boolean;
   showPlans?: boolean;
+  desktopNotificationsEnabled?: boolean;
   inactiveColumnOpacity?: number;
   editorCommand?: string;
+  dockerImage?: string;
   customAgents?: AgentDef[];
 }
 
 // Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.
-// The shell toolbar is "shell-toolbar".
+// Shell toolbar buttons use "shell-toolbar:0", "shell-toolbar:1", etc.
 export type PanelId = string;
 
 export interface PendingAction {
@@ -176,8 +182,11 @@ export interface AppStore {
   windowState: PersistedWindowState | null;
   autoTrustFolders: boolean;
   showPlans: boolean;
+  desktopNotificationsEnabled: boolean;
   inactiveColumnOpacity: number;
   editorCommand: string;
+  dockerImage: string;
+  dockerAvailable: boolean;
   newTaskDropUrl: string | null;
   newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
   missingProjectIds: Record<string, true>;

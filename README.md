@@ -15,6 +15,12 @@
 </p>
 
 <p align="center">
+  <a href="https://youtu.be/sLf0tsQA3pU">
+    <img src="https://img.shields.io/badge/Watch%20Intro-YouTube-red?logo=youtube&logoColor=white&style=for-the-badge" alt="Watch intro on YouTube">
+  </a>
+</p>
+
+<p align="center">
   <img src="screens/longer-video.gif" alt="Parallel Code demo" width="800">
 </p>
 
@@ -72,6 +78,12 @@ When you're happy with the result, merge the branch back to main from the sideba
 - macOS and Linux
 
 </details>
+
+## Demo
+
+<p align="center">
+  <video src="screens/showcase.mp4" width="800" controls></video>
+</p>
 
 ## Getting Started
 

@@ -50,7 +50,10 @@ interface TokenLike {
 }
 
 /** Recursively collect code-fence tokens from a token tree (including list items). */
-function collectCodeTokens(tokens: readonly TokenLike[], out: { lang: string; text: string }[]): void {
+function collectCodeTokens(
+  tokens: readonly TokenLike[],
+  out: { lang: string; text: string }[],
+): void {
   for (const token of tokens) {
     if (token.type === 'code') {
       out.push({ lang: (token.lang as string) ?? '', text: (token.text as string) ?? '' });
@@ -70,7 +73,11 @@ function collectCodeTokens(tokens: readonly TokenLike[], out: { lang: string; te
 }
 
 function escapeAttr(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function escapeHtml(value: string): string {

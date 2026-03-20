@@ -107,6 +107,7 @@ export function TaskPanel(props: TaskPanelProps) {
   onMount(() => {
     const id = props.task.id;
     registerFocusFn(`${id}:title`, () => titleEditHandle?.startEdit());
+    // eslint-disable-next-line solid/reactivity -- callback stored for later invocation, not reactive tracking
     registerFocusFn(`${id}:notes`, () => {
       if (notesTab() === 'plan') {
         planScrollRef?.focus();
@@ -118,17 +119,40 @@ export function TaskPanel(props: TaskPanelProps) {
       changedFilesRef?.focus();
     });
     registerFocusFn(`${id}:prompt`, () => promptRef?.focus());
-    registerFocusFn(`${id}:shell-toolbar`, () => shellToolbarRef?.focus());
+    // shell-toolbar:N focus fns are registered reactively below
     // Individual shell:N and ai-terminal focus fns are registered via TerminalView.onReady
 
     onCleanup(() => {
       unregisterFocusFn(`${id}:title`);
       unregisterFocusFn(`${id}:notes`);
       unregisterFocusFn(`${id}:changed-files`);
-      unregisterFocusFn(`${id}:shell-toolbar`);
+      // shell-toolbar:N cleanup is handled by the reactive effect below
       // Individual shell:N focus fns are cleaned up by their own onCleanup
       unregisterFocusFn(`${id}:ai-terminal`);
       unregisterFocusFn(`${id}:prompt`);
+    });
+  });
+
+  // Reactively register shell-toolbar:N focus fns (count changes with bookmarks)
+  createEffect(() => {
+    const id = props.task.id;
+    const count = 1 + projectBookmarks().length;
+    // Clamp toolbar index when bookmarks are removed
+    if (shellToolbarIdx() >= count) {
+      setShellToolbarIdx(count - 1);
+    }
+    // Register new set
+    for (let n = 0; n < count; n++) {
+      const idx = n; // capture for closure
+      registerFocusFn(`${id}:shell-toolbar:${idx}`, () => {
+        setShellToolbarIdx(idx);
+        shellToolbarRef?.focus();
+      });
+    }
+    onCleanup(() => {
+      for (let i = 0; i < count; i++) {
+        unregisterFocusFn(`${id}:shell-toolbar:${i}`);
+      }
     });
   });
 
@@ -170,17 +194,13 @@ export function TaskPanel(props: TaskPanelProps) {
         setShowCloseConfirm(true);
         break;
       case 'merge':
-        if (!props.task.directMode) openMergeConfirm();
+        if (!props.task.directMode) setShowMergeConfirm(true);
         break;
       case 'push':
         if (!props.task.directMode) setShowPushConfirm(true);
         break;
     }
   });
-
-  function openMergeConfirm() {
-    setShowMergeConfirm(true);
-  }
 
   const firstAgent = () => {
     const ids = props.task.agentIds;
@@ -247,6 +267,23 @@ export function TaskPanel(props: TaskPanelProps) {
                 {props.task.branchName}
               </span>
             </Show>
+            <Show when={props.task.dockerMode}>
+              <span
+                style={{
+                  'font-size': '11px',
+                  'font-weight': '600',
+                  padding: '2px 8px',
+                  'border-radius': '4px',
+                  background: `color-mix(in srgb, ${theme.fgMuted} 15%, transparent)`,
+                  color: theme.fgMuted,
+                  border: `1px solid color-mix(in srgb, ${theme.fgMuted} 25%, transparent)`,
+                  'flex-shrink': '0',
+                  'white-space': 'nowrap',
+                }}
+              >
+                Docker
+              </span>
+            </Show>
             <EditableText
               value={props.task.name}
               onCommit={(v) => updateTaskName(props.task.id, v)}
@@ -263,7 +300,7 @@ export function TaskPanel(props: TaskPanelProps) {
                     <path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z" />
                   </svg>
                 }
-                onClick={openMergeConfirm}
+                onClick={() => setShowMergeConfirm(true)}
                 title="Merge into main"
               />
               <div style={{ position: 'relative', display: 'inline-flex' }}>
@@ -345,29 +382,33 @@ export function TaskPanel(props: TaskPanelProps) {
   }
 
   function branchInfoBar(): PanelChild {
+    const editorTitle = () =>
+      store.editorCommand
+        ? `Click to open in ${store.editorCommand} · ${isMac ? 'Cmd' : 'Ctrl'}+Click to reveal in file manager`
+        : 'Click to reveal in file manager';
+
+    const handleOpenInEditor = (e: MouseEvent) => {
+      if (store.editorCommand && !e.ctrlKey && !e.metaKey) {
+        openInEditor(store.editorCommand, props.task.worktreePath).catch((err) =>
+          showNotification(
+            `Editor failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+          ),
+        );
+      } else {
+        revealItemInDir(props.task.worktreePath).catch((err) =>
+          showNotification(
+            `Could not open folder: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
+    };
+
     return {
       id: 'branch',
       initialSize: 28,
       fixed: true,
       content: () => (
-        <InfoBar
-          title={
-            store.editorCommand
-              ? `Click to open in ${store.editorCommand} · ${isMac ? 'Cmd' : 'Ctrl'}+Click to reveal in file manager`
-              : props.task.worktreePath
-          }
-          onClick={(e?: MouseEvent) => {
-            if (store.editorCommand && !(e && (e.ctrlKey || e.metaKey))) {
-              openInEditor(store.editorCommand, props.task.worktreePath).catch((err) =>
-                showNotification(
-                  `Editor failed: ${err instanceof Error ? err.message : 'unknown error'}`,
-                ),
-              );
-            } else {
-              revealItemInDir(props.task.worktreePath).catch(() => {});
-            }
-          }}
-        >
+        <InfoBar>
           {(() => {
             const project = getProject(props.task.projectId);
             return (
@@ -375,10 +416,7 @@ export function TaskPanel(props: TaskPanelProps) {
                 {(p) => (
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingProjectId(p().id);
-                    }}
+                    onClick={() => setEditingProjectId(p().id)}
                     title="Project settings"
                     style={{
                       display: 'inline-flex',
@@ -386,8 +424,9 @@ export function TaskPanel(props: TaskPanelProps) {
                       gap: '4px',
                       background: 'transparent',
                       border: 'none',
-                      padding: '0',
-                      margin: '0 12px 0 0',
+                      padding: '0 4px',
+                      margin: '0 8px 0 0',
+                      'align-self': 'stretch',
                       color: 'inherit',
                       cursor: 'pointer',
                       'font-family': 'inherit',
@@ -413,19 +452,17 @@ export function TaskPanel(props: TaskPanelProps) {
             {(url) => (
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  window.open(url(), '_blank');
-                }}
+                onClick={() => window.open(url(), '_blank')}
                 title={url()}
                 style={{
                   display: 'inline-flex',
                   'align-items': 'center',
                   gap: '4px',
-                  'margin-right': '12px',
+                  'margin-right': '8px',
                   background: 'transparent',
                   border: 'none',
-                  padding: '0',
+                  padding: '0 4px',
+                  'align-self': 'stretch',
                   color: theme.accent,
                   cursor: 'pointer',
                   'font-family': 'inherit',
@@ -445,12 +482,23 @@ export function TaskPanel(props: TaskPanelProps) {
               </button>
             )}
           </Show>
-          <span
+          <button
+            type="button"
+            title={editorTitle()}
+            onClick={handleOpenInEditor}
             style={{
               display: 'inline-flex',
               'align-items': 'center',
               gap: '4px',
               'margin-right': '12px',
+              'align-self': 'stretch',
+              background: 'transparent',
+              border: 'none',
+              padding: '0 4px',
+              color: 'inherit',
+              cursor: 'pointer',
+              'font-family': 'inherit',
+              'font-size': 'inherit',
             }}
           >
             <svg
@@ -478,9 +526,25 @@ export function TaskPanel(props: TaskPanelProps) {
                 {props.task.branchName}
               </span>
             </Show>
-          </span>
-          <span
-            style={{ display: 'inline-flex', 'align-items': 'center', gap: '4px', opacity: 0.6 }}
+          </button>
+          <button
+            type="button"
+            title={editorTitle()}
+            onClick={handleOpenInEditor}
+            style={{
+              display: 'inline-flex',
+              'align-items': 'center',
+              gap: '4px',
+              'align-self': 'stretch',
+              background: 'transparent',
+              border: 'none',
+              padding: '0 4px',
+              color: 'inherit',
+              cursor: 'pointer',
+              opacity: 0.6,
+              'font-family': 'inherit',
+              'font-size': 'inherit',
+            }}
           >
             <svg
               width="12"
@@ -492,7 +556,7 @@ export function TaskPanel(props: TaskPanelProps) {
               <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z" />
             </svg>
             {props.task.worktreePath}
-          </span>
+          </button>
         </InfoBar>
       ),
     };
@@ -619,16 +683,39 @@ export function TaskPanel(props: TaskPanelProps) {
                             outline: 'none',
                           }}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') { e.preventDefault(); setPlanFullscreen(true); return; }
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              setPlanFullscreen(true);
+                              return;
+                            }
+                            if (!planScrollRef) return;
                             const step = 40;
-                            const page = Math.max(100, planScrollRef!.clientHeight - 40);
+                            const page = Math.max(100, planScrollRef.clientHeight - 40);
                             switch (e.key) {
-                              case 'ArrowDown':  e.preventDefault(); planScrollRef!.scrollTop += step; break;
-                              case 'ArrowUp':    e.preventDefault(); planScrollRef!.scrollTop -= step; break;
-                              case 'PageDown':   e.preventDefault(); planScrollRef!.scrollTop += page; break;
-                              case 'PageUp':     e.preventDefault(); planScrollRef!.scrollTop -= page; break;
-                              case 'Home':       e.preventDefault(); planScrollRef!.scrollTop = 0; break;
-                              case 'End':        e.preventDefault(); planScrollRef!.scrollTop = planScrollRef!.scrollHeight; break;
+                              case 'ArrowDown':
+                                e.preventDefault();
+                                planScrollRef.scrollTop += step;
+                                break;
+                              case 'ArrowUp':
+                                e.preventDefault();
+                                planScrollRef.scrollTop -= step;
+                                break;
+                              case 'PageDown':
+                                e.preventDefault();
+                                planScrollRef.scrollTop += page;
+                                break;
+                              case 'PageUp':
+                                e.preventDefault();
+                                planScrollRef.scrollTop -= page;
+                                break;
+                              case 'Home':
+                                e.preventDefault();
+                                planScrollRef.scrollTop = 0;
+                                break;
+                              case 'End':
+                                e.preventDefault();
+                                planScrollRef.scrollTop = planScrollRef.scrollHeight;
+                                break;
                             }
                           }}
                           // eslint-disable-next-line solid/no-innerhtml -- plan files are local, written by Claude Code in the worktree
@@ -644,9 +731,9 @@ export function TaskPanel(props: TaskPanelProps) {
                             padding: '4px 16px',
                             'font-size': sf(11),
                             'font-family': "'JetBrains Mono', monospace",
-                            background: theme.bgInput,
-                            color: theme.fgMuted,
-                            border: `1px solid ${theme.border}`,
+                            background: `color-mix(in srgb, ${theme.accent} 12%, ${theme.bgInput})`,
+                            color: theme.fg,
+                            border: `1px solid color-mix(in srgb, ${theme.accent} 25%, ${theme.border})`,
                             'border-radius': '6px',
                             cursor: 'pointer',
                             'z-index': '1',
@@ -731,17 +818,25 @@ export function TaskPanel(props: TaskPanelProps) {
               ref={shellToolbarRef}
               class="focusable-panel shell-toolbar-panel"
               tabIndex={0}
-              onClick={() => setTaskFocusedPanel(props.task.id, 'shell-toolbar')}
+              onClick={() =>
+                setTaskFocusedPanel(props.task.id, `shell-toolbar:${shellToolbarIdx()}`)
+              }
               onFocus={() => setShellToolbarFocused(true)}
               onBlur={() => setShellToolbarFocused(false)}
               onKeyDown={(e) => {
+                // Alt+Arrow is handled by global shortcuts (grid navigation)
+                if (e.altKey) return;
                 const itemCount = 1 + projectBookmarks().length;
                 if (e.key === 'ArrowRight') {
                   e.preventDefault();
-                  setShellToolbarIdx((i) => Math.min(itemCount - 1, i + 1));
+                  const next = Math.min(itemCount - 1, shellToolbarIdx() + 1);
+                  setShellToolbarIdx(next);
+                  setTaskFocusedPanel(props.task.id, `shell-toolbar:${next}`);
                 } else if (e.key === 'ArrowLeft') {
                   e.preventDefault();
-                  setShellToolbarIdx((i) => Math.max(0, i - 1));
+                  const next = Math.max(0, shellToolbarIdx() - 1);
+                  setShellToolbarIdx(next);
+                  setTaskFocusedPanel(props.task.id, `shell-toolbar:${next}`);
                 } else if (e.key === 'Enter') {
                   e.preventDefault();
                   const idx = shellToolbarIdx();
@@ -910,9 +1005,11 @@ export function TaskPanel(props: TaskPanelProps) {
                           isFocused={
                             props.isActive && store.focusedPanel[props.task.id] === `shell:${i()}`
                           }
-                          command={getShellCommand()}
+                          command={''}
                           args={['-l']}
                           cwd={props.task.worktreePath}
+                          dockerMode={props.task.dockerMode}
+                          dockerImage={props.task.dockerImage}
                           initialCommand={initialCommand}
                           onData={(data) => markAgentOutput(shellId, data, props.task.id)}
                           onExit={(info) =>
@@ -1181,6 +1278,8 @@ export function TaskPanel(props: TaskPanelProps) {
                             : []),
                         ]}
                         cwd={props.task.worktreePath}
+                        dockerMode={props.task.dockerMode}
+                        dockerImage={props.task.dockerImage}
                         onExit={(code) => markAgentExited(a().id, code)}
                         onData={(data) => markAgentOutput(a().id, data, props.task.id)}
                         onPromptDetected={(text) => setLastPrompt(props.task.id, text)}
@@ -1370,9 +1469,4 @@ export function TaskPanel(props: TaskPanelProps) {
       />
     </div>
   );
-}
-
-function getShellCommand(): string {
-  // Empty string tells the backend to use $SHELL (Unix) or %COMSPEC% (Windows)
-  return '';
 }
