@@ -307,8 +307,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
               />
             </label>
             <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
-              Docker image used when "Run in Docker container" is enabled for a task. The agent
-              runs inside the container with only the project directory mounted.
+              Docker image used when "Run in Docker container" is enabled for a task. The agent runs
+              inside the container with only the project directory mounted.
             </span>
           </div>
         </div>

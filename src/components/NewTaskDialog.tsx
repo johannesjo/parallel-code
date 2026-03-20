@@ -728,7 +728,9 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
                   }}
                 >
                   <span>Image not found locally.</span>
-                  <Show when={store.dockerImage === 'parallel-code-agent:latest' || !store.dockerImage}>
+                  <Show
+                    when={store.dockerImage === 'parallel-code-agent:latest' || !store.dockerImage}
+                  >
                     <button
                       type="button"
                       onClick={handleBuildImage}
@@ -748,7 +750,15 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
                 </div>
               </Show>
               <Show when={dockerBuilding()}>
-                <div style={{ 'font-size': '11px', color: theme.fgMuted, display: 'flex', 'align-items': 'center', gap: '6px' }}>
+                <div
+                  style={{
+                    'font-size': '11px',
+                    color: theme.fgMuted,
+                    display: 'flex',
+                    'align-items': 'center',
+                    gap: '6px',
+                  }}
+                >
                   <span class="inline-spinner" aria-hidden="true" />
                   Building image... this may take a few minutes.
                 </div>

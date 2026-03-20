@@ -155,7 +155,17 @@ export interface CreateDirectTaskOptions {
 }
 
 export async function createDirectTask(opts: CreateDirectTaskOptions): Promise<string> {
-  const { name, agentDef, projectId, mainBranch, initialPrompt, githubUrl, skipPermissions, dockerMode, dockerImage } = opts;
+  const {
+    name,
+    agentDef,
+    projectId,
+    mainBranch,
+    initialPrompt,
+    githubUrl,
+    skipPermissions,
+    dockerMode,
+    dockerImage,
+  } = opts;
   if (hasDirectModeTask(projectId)) {
     throw new Error('A direct-mode task already exists for this project');
   }

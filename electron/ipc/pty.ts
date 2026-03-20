@@ -167,9 +167,7 @@ export function spawnAgent(
 
   // Derive a predictable, unique container name from the agentId so we can
   // reliably stop it later without having to parse docker inspect output.
-  const containerName = args.dockerMode
-    ? `parallel-code-${args.agentId.slice(0, 12)}`
-    : null;
+  const containerName = args.dockerMode ? `parallel-code-${args.agentId.slice(0, 12)}` : null;
 
   if (args.dockerMode) {
     const name = containerName as string;
@@ -623,9 +621,13 @@ export function buildDockerImage(
       }
     };
 
-    const proc = cpSpawn('docker', ['build', '-t', DOCKER_DEFAULT_IMAGE, '-f', dockerfilePath, dockerDir], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const proc = cpSpawn(
+      'docker',
+      ['build', '-t', DOCKER_DEFAULT_IMAGE, '-f', dockerfilePath, dockerDir],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
 
     proc.stdout?.on('data', (chunk: Buffer) => send(chunk.toString('utf8')));
     proc.stderr?.on('data', (chunk: Buffer) => send(chunk.toString('utf8')));
