@@ -57,6 +57,8 @@ export interface CreateTaskOptions {
   branchPrefixOverride?: string;
   githubUrl?: string;
   skipPermissions?: boolean;
+  dockerMode?: boolean;
+  dockerImage?: string;
 }
 
 export async function createTask(opts: CreateTaskOptions): Promise<string> {
@@ -68,6 +70,8 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     initialPrompt,
     githubUrl,
     skipPermissions,
+    dockerMode,
+    dockerImage,
   } = opts;
   const projectRoot = getProjectPath(projectId);
   if (!projectRoot) throw new Error('Project not found');
@@ -94,6 +98,8 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     lastPrompt: '',
     initialPrompt: initialPrompt || undefined,
     skipPermissions: skipPermissions || undefined,
+    dockerMode: dockerMode || undefined,
+    dockerImage: dockerImage || undefined,
     githubUrl,
     savedInitialPrompt: initialPrompt || undefined,
   };
@@ -137,10 +143,12 @@ export interface CreateDirectTaskOptions {
   initialPrompt?: string;
   githubUrl?: string;
   skipPermissions?: boolean;
+  dockerMode?: boolean;
+  dockerImage?: string;
 }
 
 export async function createDirectTask(opts: CreateDirectTaskOptions): Promise<string> {
-  const { name, agentDef, projectId, mainBranch, initialPrompt, githubUrl, skipPermissions } = opts;
+  const { name, agentDef, projectId, mainBranch, initialPrompt, githubUrl, skipPermissions, dockerMode, dockerImage } = opts;
   if (hasDirectModeTask(projectId)) {
     throw new Error('A direct-mode task already exists for this project');
   }
@@ -165,6 +173,8 @@ export async function createDirectTask(opts: CreateDirectTaskOptions): Promise<s
     savedInitialPrompt: initialPrompt || undefined,
     directMode: true,
     skipPermissions: skipPermissions || undefined,
+    dockerMode: dockerMode || undefined,
+    dockerImage: dockerImage || undefined,
     githubUrl,
   };
 
@@ -211,6 +221,9 @@ export async function closeTask(taskId: string): Promise<void> {
   // Mark as closing — task stays visible but UI shows closing state
   setStore('tasks', taskId, 'closingStatus', 'closing');
   setStore('tasks', taskId, 'closingError', undefined);
+
+  // Stop plan file watcher to prevent FSWatcher leak
+  invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
 
   try {
     // Kill agents
@@ -474,6 +487,9 @@ export function hasDirectModeTask(projectId: string): boolean {
 export async function collapseTask(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
   if (!task || task.collapsed || task.closingStatus) return;
+
+  // Stop plan file watcher to prevent FSWatcher leak
+  invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
 
   // Save agent def before killing so uncollapse can restart cleanly.
   // Collapsing unmounts the TaskPanel which destroys the TerminalView,

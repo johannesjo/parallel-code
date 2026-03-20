@@ -88,6 +88,10 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "docker/",
+        "to": "docker/"
       }
     ],
     "linux": {

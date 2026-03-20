@@ -15,6 +15,8 @@ import {
   hasDirectModeTask,
   getGitHubDropDefaults,
   setPrefillPrompt,
+  setDockerAvailable,
+  setDockerImage,
 } from '../store/store';
 import { toBranchName, sanitizeBranchPrefix } from '../lib/branch-name';
 import { cleanTaskName } from '../lib/clean-task-name';
@@ -42,9 +44,15 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   const [selectedDirs, setSelectedDirs] = createSignal<Set<string>>(new Set());
   const [directMode, setDirectMode] = createSignal(false);
   const [skipPermissions, setSkipPermissions] = createSignal(false);
+  const [dockerMode, setDockerMode] = createSignal(false);
+  const [dockerImageReady, setDockerImageReady] = createSignal<boolean | null>(null); // null = unknown
+  const [dockerBuilding, setDockerBuilding] = createSignal(false);
+  const [dockerBuildOutput, setDockerBuildOutput] = createSignal('');
+  const [dockerBuildError, setDockerBuildError] = createSignal('');
   const [branchPrefix, setBranchPrefix] = createSignal('');
   let promptRef!: HTMLTextAreaElement;
   let formRef!: HTMLFormElement;
+  let buildOutputRef!: HTMLPreElement;
 
   const focusableSelector =
     'textarea:not(:disabled), input:not(:disabled), select:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex="-1"])';
@@ -105,8 +113,18 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     setLoading(false);
     setDirectMode(false);
     setSkipPermissions(false);
+    setDockerMode(false);
+    setDockerImageReady(null);
+    setDockerBuilding(false);
+    setDockerBuildOutput('');
+    setDockerBuildError('');
 
     void (async () => {
+      // Check Docker availability in background
+      invoke<boolean>(IPC.CheckDockerAvailable).then(
+        (available) => setDockerAvailable(available),
+        () => setDockerAvailable(false),
+      );
       if (store.availableAgents.length === 0) {
         await loadAgents();
       }
@@ -206,6 +224,68 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     if (directModeDisabled()) setDirectMode(false);
   });
 
+  // Auto-enable Docker when skip-permissions is turned on and Docker is available
+  createEffect(() => {
+    if (skipPermissions() && store.dockerAvailable) {
+      setDockerMode(true);
+    }
+  });
+
+  // Check if the default Docker image exists when Docker mode is enabled (debounced)
+  let checkTimer: ReturnType<typeof setTimeout>;
+  createEffect(() => {
+    if (dockerMode() && store.dockerAvailable) {
+      const image = store.dockerImage || 'parallel-code-agent:latest';
+      clearTimeout(checkTimer);
+      checkTimer = setTimeout(() => {
+        invoke<boolean>(IPC.CheckDockerImageExists, { image }).then(
+          (exists) => setDockerImageReady(exists),
+          () => setDockerImageReady(false),
+        );
+      }, 300);
+    } else {
+      setDockerImageReady(null);
+    }
+  });
+
+  // Auto-scroll build output to bottom
+  createEffect(() => {
+    dockerBuildOutput(); // track
+    if (buildOutputRef) {
+      buildOutputRef.scrollTop = buildOutputRef.scrollHeight;
+    }
+  });
+
+  async function handleBuildImage() {
+    setDockerBuilding(true);
+    setDockerBuildOutput('');
+    setDockerBuildError('');
+
+    const channelId = `docker-build-${Date.now()}`;
+
+    // Listen for build output
+    const cleanup = window.electron.ipcRenderer.on(`channel:${channelId}`, (...args: unknown[]) => {
+      setDockerBuildOutput((prev) => prev + String(args[0] ?? ''));
+    });
+
+    try {
+      const result = await invoke<{ ok: boolean; error?: string }>(IPC.BuildDockerImage, {
+        onOutputChannel: `channel:${channelId}`,
+      });
+      if (result.ok) {
+        setDockerImageReady(true);
+        setDockerBuildOutput((prev) => prev + '\nImage built successfully!');
+      } else {
+        setDockerBuildError(result.error || 'Build failed');
+      }
+    } catch (err) {
+      setDockerBuildError(String(err));
+    } finally {
+      setDockerBuilding(false);
+      if (cleanup) cleanup();
+    }
+  }
+
   const effectiveName = () => {
     const n = name().trim();
     if (n) return n;
@@ -296,6 +376,8 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           initialPrompt: isFromDrop ? undefined : p,
           githubUrl: ghUrl,
           skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
+          dockerMode: dockerMode() || undefined,
+          dockerImage: dockerMode() ? store.dockerImage : undefined,
         });
       } else {
         taskId = await createTask({
@@ -307,6 +389,8 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           branchPrefixOverride: prefix,
           githubUrl: ghUrl,
           skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
+          dockerMode: dockerMode() || undefined,
+          dockerImage: dockerMode() ? store.dockerImage : undefined,
         });
       }
       // Drop flow: prefill prompt without auto-sending
@@ -585,6 +669,147 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
                 The agent will run without asking for confirmation. It can read, write, and delete
                 files, and execute commands without your approval.
               </div>
+              <Show when={!dockerMode() && store.dockerAvailable}>
+                <div style={{ 'font-size': '11px', color: theme.fgMuted }}>
+                  Tip: Enable Docker isolation to limit the blast radius of skip-permissions mode.
+                </div>
+              </Show>
+              <Show when={!store.dockerAvailable}>
+                <div style={{ 'font-size': '11px', color: theme.fgMuted }}>
+                  Install Docker to enable container isolation for safer skip-permissions mode.
+                </div>
+              </Show>
+            </Show>
+          </div>
+        </Show>
+
+        {/* Docker isolation toggle */}
+        <Show when={store.dockerAvailable}>
+          <div
+            data-nav-field="docker-mode"
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
+          >
+            <label
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                gap: '8px',
+                'font-size': '12px',
+                color: theme.fg,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={dockerMode()}
+                onChange={(e) => setDockerMode(e.currentTarget.checked)}
+                style={{ 'accent-color': theme.accent, cursor: 'inherit' }}
+              />
+              Run in Docker container
+            </label>
+            <Show when={dockerMode()}>
+              <div
+                style={{
+                  'font-size': '12px',
+                  color: theme.success ?? theme.accent,
+                  background: `color-mix(in srgb, ${theme.success ?? theme.accent} 8%, transparent)`,
+                  padding: '8px 12px',
+                  'border-radius': '8px',
+                  border: `1px solid color-mix(in srgb, ${theme.success ?? theme.accent} 20%, transparent)`,
+                }}
+              >
+                The agent will run inside a Docker container. Only the project directory is mounted
+                — files outside the project are protected from accidental deletion.
+              </div>
+              <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+                <label
+                  style={{ 'font-size': '11px', color: theme.fgMuted, 'white-space': 'nowrap' }}
+                >
+                  Image:
+                </label>
+                <input
+                  type="text"
+                  value={store.dockerImage}
+                  onInput={(e) => setDockerImage(e.currentTarget.value)}
+                  placeholder="parallel-code-agent:latest"
+                  style={{
+                    flex: '1',
+                    background: theme.bgInput,
+                    border: `1px solid ${theme.border}`,
+                    'border-radius': '6px',
+                    padding: '5px 10px',
+                    color: theme.fg,
+                    'font-size': '12px',
+                    'font-family': "'JetBrains Mono', monospace",
+                    outline: 'none',
+                  }}
+                />
+              </div>
+              <Show when={dockerImageReady() === false && !dockerBuilding()}>
+                <div
+                  style={{
+                    display: 'flex',
+                    'align-items': 'center',
+                    gap: '8px',
+                    'font-size': '11px',
+                    color: theme.fgMuted,
+                  }}
+                >
+                  <span>Image not found locally.</span>
+                  <Show when={store.dockerImage === 'parallel-code-agent:latest' || !store.dockerImage}>
+                    <button
+                      type="button"
+                      onClick={handleBuildImage}
+                      style={{
+                        background: theme.accent,
+                        color: theme.accentText,
+                        border: 'none',
+                        'border-radius': '4px',
+                        padding: '3px 10px',
+                        'font-size': '11px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Build Image
+                    </button>
+                  </Show>
+                </div>
+              </Show>
+              <Show when={dockerBuilding()}>
+                <div style={{ 'font-size': '11px', color: theme.fgMuted, display: 'flex', 'align-items': 'center', gap: '6px' }}>
+                  <span class="inline-spinner" aria-hidden="true" />
+                  Building image... this may take a few minutes.
+                </div>
+                <Show when={dockerBuildOutput()}>
+                  <pre
+                    ref={buildOutputRef}
+                    style={{
+                      'font-size': '10px',
+                      color: theme.fgSubtle,
+                      background: theme.bgInput,
+                      'border-radius': '4px',
+                      padding: '6px 8px',
+                      'max-height': '120px',
+                      'overflow-y': 'auto',
+                      'white-space': 'pre-wrap',
+                      'word-break': 'break-all',
+                      margin: '0',
+                    }}
+                  >
+                    {dockerBuildOutput()}
+                  </pre>
+                </Show>
+              </Show>
+              <Show when={dockerBuildError()}>
+                <div style={{ 'font-size': '11px', color: theme.error }}>
+                  Build failed: {dockerBuildError()}
+                </div>
+              </Show>
+              <Show when={dockerImageReady() === true && !dockerBuilding()}>
+                <div style={{ 'font-size': '11px', color: theme.success ?? theme.accent }}>
+                  Image ready.
+                </div>
+              </Show>
             </Show>
           </div>
         </Show>

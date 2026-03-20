@@ -271,6 +271,23 @@ export function TaskPanel(props: TaskPanelProps) {
                 {props.task.branchName}
               </span>
             </Show>
+            <Show when={props.task.dockerMode}>
+              <span
+                style={{
+                  'font-size': '11px',
+                  'font-weight': '600',
+                  padding: '2px 8px',
+                  'border-radius': '4px',
+                  background: `color-mix(in srgb, ${theme.fgMuted} 15%, transparent)`,
+                  color: theme.fgMuted,
+                  border: `1px solid color-mix(in srgb, ${theme.fgMuted} 25%, transparent)`,
+                  'flex-shrink': '0',
+                  'white-space': 'nowrap',
+                }}
+              >
+                Docker
+              </span>
+            </Show>
             <EditableText
               value={props.task.name}
               onCommit={(v) => updateTaskName(props.task.id, v)}
@@ -968,6 +985,8 @@ export function TaskPanel(props: TaskPanelProps) {
                           command={getShellCommand()}
                           args={['-l']}
                           cwd={props.task.worktreePath}
+                          dockerMode={props.task.dockerMode}
+                          dockerImage={props.task.dockerImage}
                           initialCommand={initialCommand}
                           onData={(data) => markAgentOutput(shellId, data, props.task.id)}
                           onExit={(info) =>
@@ -1236,6 +1255,8 @@ export function TaskPanel(props: TaskPanelProps) {
                             : []),
                         ]}
                         cwd={props.task.worktreePath}
+                        dockerMode={props.task.dockerMode}
+                        dockerImage={props.task.dockerImage}
                         onExit={(code) => markAgentExited(a().id, code)}
                         onData={(data) => markAgentOutput(a().id, data, props.task.id)}
                         onPromptDetected={(text) => setLastPrompt(props.task.id, text)}

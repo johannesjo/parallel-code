@@ -12,8 +12,11 @@ import {
   countRunningAgents,
   killAllAgents,
   getAgentMeta,
+  isDockerAvailable,
+  dockerImageExists,
+  buildDockerImage,
 } from './pty.js';
-import { ensurePlansDirectory, startPlanWatcher, readPlanForWorktree } from './plans.js';
+import { ensurePlansDirectory, startPlanWatcher, stopPlanWatcher, readPlanForWorktree } from './plans.js';
 import { startRemoteServer } from '../remote/server.js';
 import {
   getGitIgnoredDirs,
@@ -78,6 +81,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   // --- PTY commands ---
   ipcMain.handle(IPC.SpawnAgent, (_e, args) => {
+    assertString(args.command, 'command');
+    assertStringArray(args.args, 'args');
+    assertString(args.taskId, 'taskId');
+    assertString(args.agentId, 'agentId');
+    assertInt(args.cols, 'cols');
+    assertInt(args.rows, 'rows');
+    assertOptionalBoolean(args.dockerMode, 'dockerMode');
+    assertOptionalString(args.dockerImage, 'dockerImage');
     if (args.cwd) validatePath(args.cwd, 'cwd');
     if (!args.isShell && args.cwd) {
       try {
@@ -124,6 +135,15 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   // --- Agent commands ---
   ipcMain.handle(IPC.ListAgents, () => listAgents());
+  ipcMain.handle(IPC.CheckDockerAvailable, () => isDockerAvailable());
+  ipcMain.handle(IPC.CheckDockerImageExists, (_e, args) => {
+    assertString(args.image, 'image');
+    return dockerImageExists(args.image);
+  });
+  ipcMain.handle(IPC.BuildDockerImage, (_e, args) => {
+    assertString(args.onOutputChannel, 'onOutputChannel');
+    return buildDockerImage(win, args.onOutputChannel);
+  });
 
   // --- Task commands ---
   ipcMain.handle(IPC.CreateTask, (_e, args) => {
@@ -296,6 +316,12 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return fs.existsSync(args.path);
   });
 
+  // --- Plan watcher cleanup ---
+  ipcMain.handle(IPC.StopPlanWatcher, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    stopPlanWatcher(args.taskId);
+  });
+
   // --- Plan content (one-shot read) ---
   ipcMain.handle(IPC.ReadPlanContent, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
@@ -326,6 +352,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // --- Notifications (fire-and-forget via ipcMain.on) ---
   ipcMain.on(IPC.ShowNotification, (_e, args) => {
     try {
+      if (!Notification.isSupported()) return;
       assertString(args.title, 'title');
       assertString(args.body, 'body');
       assertStringArray(args.taskIds, 'taskIds');
@@ -341,6 +368,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
         }
       });
       notification.show();
+      // On Linux, notifications may not auto-dismiss. Close after 30 seconds
+      // to prevent accumulation in the notification tray.
+      if (process.platform === 'linux') {
+        setTimeout(() => notification.close(), 30_000);
+      }
     } catch (err) {
       console.warn('ShowNotification failed:', err);
     }

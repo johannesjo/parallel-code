@@ -45,6 +45,8 @@ interface TerminalViewProps {
   cwd: string;
   env?: Record<string, string>;
   isShell?: boolean;
+  dockerMode?: boolean;
+  dockerImage?: string;
   onExit?: (exitInfo: {
     exit_code: number | null;
     signal: string | null;
@@ -383,6 +385,8 @@ export function TerminalView(props: TerminalViewProps) {
       cols: term.cols,
       rows: term.rows,
       isShell: props.isShell,
+      dockerMode: props.dockerMode,
+      dockerImage: props.dockerImage,
       onOutput,
       // eslint-disable-next-line solid/reactivity -- promise catch handler reads current prop values intentionally
     }).catch((err) => {

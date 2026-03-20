@@ -81,10 +81,16 @@ export enum IPC {
   // Plan
   PlanContent = 'plan_content',
   ReadPlanContent = 'read_plan_content',
+  StopPlanWatcher = 'stop_plan_watcher',
 
   // Ask about code
   AskAboutCode = 'ask_about_code',
   CancelAskAboutCode = 'cancel_ask_about_code',
+
+  // Docker
+  CheckDockerAvailable = 'check_docker_available',
+  CheckDockerImageExists = 'check_docker_image_exists',
+  BuildDockerImage = 'build_docker_image',
 
   // Notifications
   ShowNotification = 'show_notification',

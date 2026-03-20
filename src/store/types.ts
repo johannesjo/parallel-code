@@ -47,6 +47,8 @@ export interface Task {
   closingError?: string;
   directMode?: boolean;
   skipPermissions?: boolean;
+  dockerMode?: boolean;
+  dockerImage?: string;
   githubUrl?: string;
   collapsed?: boolean;
   savedAgentDef?: AgentDef;
@@ -73,6 +75,8 @@ export interface PersistedTask {
   agentDef: AgentDef | null;
   directMode?: boolean;
   skipPermissions?: boolean;
+  dockerMode?: boolean;
+  dockerImage?: string;
   githubUrl?: string;
   savedInitialPrompt?: string;
   collapsed?: boolean;
@@ -117,6 +121,7 @@ export interface PersistedState {
   desktopNotificationsEnabled?: boolean;
   inactiveColumnOpacity?: number;
   editorCommand?: string;
+  dockerImage?: string;
   customAgents?: AgentDef[];
 }
 
@@ -180,6 +185,8 @@ export interface AppStore {
   desktopNotificationsEnabled: boolean;
   inactiveColumnOpacity: number;
   editorCommand: string;
+  dockerImage: string;
+  dockerAvailable: boolean;
   newTaskDropUrl: string | null;
   newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
   missingProjectIds: Record<string, true>;

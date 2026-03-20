@@ -43,6 +43,7 @@ import {
   setNewTaskDropUrl,
   validateProjectPaths,
   setPlanContent,
+  setDockerAvailable,
 } from './store/store';
 import { isGitHubUrl } from './lib/github-url';
 import type { PersistedWindowState } from './store/types';
@@ -287,6 +288,10 @@ function App() {
     })();
 
     await loadAgents();
+    invoke<boolean>(IPC.CheckDockerAvailable).then(
+      (available) => setDockerAvailable(available),
+      () => setDockerAvailable(false),
+    );
     await loadState();
 
     // Restore plan content for tasks that had a plan file before restart

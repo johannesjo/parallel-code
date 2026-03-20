@@ -99,6 +99,14 @@ export function setEditorCommand(command: string): void {
   setStore('editorCommand', command);
 }
 
+export function setDockerImage(image: string): void {
+  setStore('dockerImage', image || 'parallel-code-agent:latest');
+}
+
+export function setDockerAvailable(available: boolean): void {
+  setStore('dockerAvailable', available);
+}
+
 export function toggleArena(show?: boolean): void {
   setStore('showArena', show ?? !store.showArena);
 }

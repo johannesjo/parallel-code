@@ -43,6 +43,7 @@ export async function saveState(): Promise<void> {
     desktopNotificationsEnabled: store.desktopNotificationsEnabled,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand || undefined,
+    dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
   };
 
@@ -64,6 +65,8 @@ export async function saveState(): Promise<void> {
       agentDef: firstAgent?.def ?? null,
       directMode: task.directMode,
       skipPermissions: task.skipPermissions,
+      dockerMode: task.dockerMode,
+      dockerImage: task.dockerImage,
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
@@ -88,6 +91,8 @@ export async function saveState(): Promise<void> {
       agentDef: firstAgent?.def ?? task.savedAgentDef ?? null,
       directMode: task.directMode,
       skipPermissions: task.skipPermissions,
+      dockerMode: task.dockerMode,
+      dockerImage: task.dockerImage,
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
@@ -175,6 +180,7 @@ interface LegacyPersistedState {
   desktopNotificationsEnabled?: unknown;
   inactiveColumnOpacity?: unknown;
   editorCommand?: unknown;
+  dockerImage?: unknown;
   customAgents?: unknown;
   terminals?: unknown;
 }
@@ -287,6 +293,12 @@ export async function loadState(): Promise<void> {
       const rawEditorCommand = raw.editorCommand;
       s.editorCommand = typeof rawEditorCommand === 'string' ? rawEditorCommand.trim() : '';
 
+      const rawDockerImage = raw.dockerImage;
+      s.dockerImage =
+        typeof rawDockerImage === 'string' && rawDockerImage.trim()
+          ? rawDockerImage.trim()
+          : 'parallel-code-agent:latest';
+
       // Restore custom agents
       if (Array.isArray(raw.customAgents)) {
         s.customAgents = raw.customAgents.filter(
@@ -340,6 +352,8 @@ export async function loadState(): Promise<void> {
           lastPrompt: pt.lastPrompt,
           directMode: pt.directMode,
           skipPermissions: pt.skipPermissions === true,
+          dockerMode: pt.dockerMode === true ? true : undefined,
+          dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,
@@ -405,6 +419,8 @@ export async function loadState(): Promise<void> {
           lastPrompt: pt.lastPrompt,
           directMode: pt.directMode,
           skipPermissions: pt.skipPermissions === true,
+          dockerMode: pt.dockerMode === true ? true : undefined,
+          dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,
