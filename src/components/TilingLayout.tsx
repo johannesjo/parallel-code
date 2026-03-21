@@ -1,26 +1,16 @@
-import { Show, createMemo, createEffect, onMount, onCleanup, ErrorBoundary } from 'solid-js';
+import { Show, For, createMemo, createEffect, ErrorBoundary } from 'solid-js';
 import { store, pickAndAddProject, closeTerminal } from '../store/store';
 import { closeTask } from '../store/tasks';
-import { ResizablePanel, type PanelChild, type ResizablePanelHandle } from './ResizablePanel';
+import type { PanelChild } from './ResizablePanel';
 import { TaskPanel } from './TaskPanel';
 import { TerminalPanel } from './TerminalPanel';
 import { NewTaskPlaceholder } from './NewTaskPlaceholder';
+import { markDirty } from '../lib/terminalFitManager';
 import { theme } from '../lib/theme';
 import { mod } from '../lib/platform';
-import { createCtrlShiftWheelResizeHandler } from '../lib/wheelZoom';
 
 export function TilingLayout() {
   let containerRef: HTMLDivElement | undefined;
-  let panelHandle: ResizablePanelHandle | undefined;
-
-  onMount(() => {
-    if (!containerRef) return;
-    const handleWheel = createCtrlShiftWheelResizeHandler((deltaPx) => {
-      panelHandle?.resizeAll(deltaPx);
-    });
-    containerRef.addEventListener('wheel', handleWheel, { passive: false });
-    onCleanup(() => containerRef?.removeEventListener('wheel', handleWheel));
-  });
 
   // Scroll the active task panel into view when selection changes
   createEffect(() => {
@@ -28,6 +18,20 @@ export function TilingLayout() {
     if (!activeId || !containerRef) return;
     const el = containerRef.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(activeId)}"]`);
     el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+  });
+
+  // When switching tasks in focus mode, mark all terminals of the newly active
+  // task as dirty so they re-fit to the correct size.
+  createEffect(() => {
+    const activeId = store.activeTaskId;
+    if (!store.focusMode || !activeId) return;
+    const task = store.tasks[activeId];
+    if (task) {
+      for (const agentId of task.agentIds) markDirty(agentId);
+      for (const shellId of task.shellAgentIds) markDirty(shellId);
+    }
+    const terminal = store.terminals[activeId];
+    if (terminal) markDirty(terminal.agentId);
   });
   // Cache PanelChild objects by ID so <For> sees stable references
   // and doesn't unmount/remount panels when taskOrder changes.
@@ -48,7 +52,7 @@ export function TilingLayout() {
         cached = {
           id: panelId,
           initialSize: 520,
-          minSize: 300,
+          minSize: 520,
           content: () => {
             const task = store.tasks[panelId];
             const terminal = store.terminals[panelId];
@@ -334,15 +338,52 @@ export function TilingLayout() {
           </div>
         }
       >
-        <ResizablePanel
-          direction="horizontal"
-          children={panelChildren()}
-          fitContent
-          persistKey="tiling"
-          onHandle={(h) => {
-            panelHandle = h;
+        <div
+          style={{
+            display: 'flex',
+            'flex-direction': 'row',
+            width: '100%',
+            'min-width': '100%',
+            height: '100%',
+            position: 'relative',
           }}
-        />
+        >
+          <For each={panelChildren()}>
+            {(child) => {
+              const isPlaceholder = child.id === '__placeholder';
+              const hidden = () =>
+                store.focusMode && !isPlaceholder && child.id !== store.activeTaskId;
+              const hidePlaceholder = () => store.focusMode && isPlaceholder;
+              return (
+                <div
+                  style={{
+                    // Focus mode: stack all panels on top of each other at full size
+                    // so terminals always compute correct dimensions.
+                    // Normal mode: standard flex row layout.
+                    ...(store.focusMode && !isPlaceholder
+                      ? {
+                          position: hidden() ? 'absolute' : 'relative',
+                          inset: '0',
+                          width: '100%',
+                          height: '100%',
+                          visibility: hidden() ? 'hidden' : undefined,
+                          'pointer-events': hidden() ? 'none' : undefined,
+                        }
+                      : {
+                          flex: isPlaceholder ? '0 0 54px' : '1 1 0px',
+                          'min-width': isPlaceholder ? undefined : '520px',
+                          height: '100%',
+                          display: hidePlaceholder() ? 'none' : undefined,
+                        }),
+                    overflow: 'hidden',
+                  }}
+                >
+                  {child.content()}
+                </div>
+              );
+            }}
+          </For>
+        </div>
       </Show>
     </div>
   );

@@ -56,6 +56,7 @@ export async function saveState(): Promise<void> {
     editorCommand: store.editorCommand || undefined,
     dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
+    focusMode: store.focusMode || undefined,
   };
 
   for (const taskId of store.taskOrder) {
@@ -194,6 +195,7 @@ interface LegacyPersistedState {
   dockerImage?: unknown;
   customAgents?: unknown;
   terminals?: unknown;
+  focusMode?: unknown;
 }
 
 export async function loadState(): Promise<void> {
@@ -303,6 +305,7 @@ export async function loadState(): Promise<void> {
 
       const rawEditorCommand = raw.editorCommand;
       s.editorCommand = typeof rawEditorCommand === 'string' ? rawEditorCommand.trim() : '';
+      s.focusMode = raw.focusMode === true;
 
       const rawDockerImage = raw.dockerImage;
       s.dockerImage =
