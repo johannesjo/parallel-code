@@ -267,44 +267,33 @@ export function navigateColumn(direction: 'left' | 'right'): void {
   const taskIdx = taskOrder.indexOf(taskId);
   const isCurrentTerminal = !store.tasks[taskId];
 
+  const focusAdjacentTask = (targetId: string, entryEdge: 'left' | 'right') => {
+    if (isCurrentTerminal && store.tasks[targetId]) {
+      focusTaskPanel(targetId, getTaskFocusedPanel(targetId));
+    } else if (!store.tasks[targetId]) {
+      focusTaskPanel(targetId, defaultPanelFor(targetId));
+    } else {
+      const targetGrid = buildGrid(targetId);
+      const targetPos = findInGrid(targetGrid, current);
+      const targetRow = targetPos ? targetPos.row : pos.row;
+      const safeRow = Math.min(targetRow, targetGrid.length - 1);
+      const col = entryEdge === 'right' ? 0 : targetGrid[safeRow].length - 1;
+      focusTaskPanel(targetId, targetGrid[safeRow][col]);
+    }
+  };
+
   if (direction === 'left') {
     if (taskIdx === 0) {
       if (store.sidebarVisible) focusSidebar();
       return;
     }
     const prevTaskId = taskOrder[taskIdx - 1];
-    if (prevTaskId) {
-      if (isCurrentTerminal && store.tasks[prevTaskId]) {
-        // Terminal → Task: restore last focused panel
-        focusTaskPanel(prevTaskId, getTaskFocusedPanel(prevTaskId));
-      } else if (!store.tasks[prevTaskId]) {
-        focusTaskPanel(prevTaskId, defaultPanelFor(prevTaskId));
-      } else {
-        const prevGrid = buildGrid(prevTaskId);
-        const prevPos = findInGrid(prevGrid, current);
-        const targetRow = prevPos ? prevPos.row : pos.row;
-        const safeRow = Math.min(targetRow, prevGrid.length - 1);
-        const lastCol = prevGrid[safeRow].length - 1;
-        focusTaskPanel(prevTaskId, prevGrid[safeRow][lastCol]);
-      }
-    }
+    if (prevTaskId) focusAdjacentTask(prevTaskId, 'left');
   } else {
     const nextTaskId = taskOrder[taskIdx + 1];
     if (nextTaskId) {
-      if (isCurrentTerminal && store.tasks[nextTaskId]) {
-        // Terminal → Task: restore last focused panel
-        focusTaskPanel(nextTaskId, getTaskFocusedPanel(nextTaskId));
-      } else if (!store.tasks[nextTaskId]) {
-        focusTaskPanel(nextTaskId, defaultPanelFor(nextTaskId));
-      } else {
-        const nextGrid = buildGrid(nextTaskId);
-        const nextPos = findInGrid(nextGrid, current);
-        const targetRow = nextPos ? nextPos.row : pos.row;
-        const safeRow = Math.min(targetRow, nextGrid.length - 1);
-        focusTaskPanel(nextTaskId, nextGrid[safeRow][0]);
-      }
+      focusAdjacentTask(nextTaskId, 'right');
     } else {
-      // Past last task: focus placeholder
       focusPlaceholder('add-task');
     }
   }

@@ -5,6 +5,7 @@ release/
 node_modules/
 .worktrees/
 .claude/
+.letta/
 package-lock.json
 *.AppImage
 *.deb

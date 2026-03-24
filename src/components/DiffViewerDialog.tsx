@@ -22,6 +22,8 @@ interface DiffViewerDialogProps {
   projectRoot?: string;
   /** Branch name for branch-based fallback when worktree doesn't exist */
   branchName?: string | null;
+  /** Base branch for diff comparison (e.g. 'main', 'develop'). Undefined = auto-detect. */
+  baseBranch?: string;
   taskId?: string;
   agentId?: string;
 }
@@ -67,6 +69,7 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
             onClose={props.onClose}
             projectRoot={props.projectRoot}
             branchName={props.branchName}
+            baseBranch={props.baseBranch}
             taskId={props.taskId}
             agentId={props.agentId}
           />
@@ -114,6 +117,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
     const worktreePath = props.worktreePath;
     const projectRoot = props.projectRoot;
     const branchName = props.branchName;
+    const baseBranch = props.baseBranch;
     const thisGen = ++fetchGeneration;
 
     setSearchQuery('');
@@ -122,7 +126,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
     setParsedFiles([]);
 
     const worktreePromise = worktreePath
-      ? invoke<string>(IPC.GetAllFileDiffs, { worktreePath })
+      ? invoke<string>(IPC.GetAllFileDiffs, { worktreePath, baseBranch })
       : Promise.reject(new Error('no worktree'));
 
     worktreePromise
@@ -131,6 +135,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
           return invoke<string>(IPC.GetAllFileDiffsFromBranch, {
             projectRoot,
             branchName,
+            baseBranch,
           });
         }
         const msg = err instanceof Error ? err.message : String(err);
@@ -307,6 +312,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
               files={parsedFiles()}
               scrollToPath={props.scrollToFile}
               worktreePath={props.worktreePath}
+              baseBranch={props.baseBranch}
               searchQuery={searchQuery()}
               reviewAnnotations={review.annotations()}
               onAnnotationAdd={review.addAnnotation}

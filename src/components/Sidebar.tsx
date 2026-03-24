@@ -165,14 +165,6 @@ export function Sidebar() {
     });
   });
 
-  async function handleAddProject() {
-    await pickAndAddProject();
-  }
-
-  function handleRemoveProject(projectId: string) {
-    setConfirmRemove(projectId);
-  }
-
   function computeDropIndex(clientY: number, fromIdx: number): number {
     if (!taskListRef) return fromIdx;
     const items = taskListRef.querySelectorAll<HTMLElement>('[data-task-index]');
@@ -350,7 +342,7 @@ export function Sidebar() {
                   <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
                 </svg>
               }
-              onClick={() => handleAddProject()}
+              onClick={() => pickAndAddProject()}
               title="Add project"
               size="sm"
             />
@@ -422,7 +414,7 @@ export function Sidebar() {
                   class="icon-btn"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleRemoveProject(project.id);
+                    setConfirmRemove(project.id);
                   }}
                   title="Remove project"
                   style={{
@@ -735,6 +727,27 @@ export function Sidebar() {
 // their position in taskOrder (they're filtered out of computeGroupedTasks).
 // So moving the coordinator itself is sufficient — children follow visually.
 
+function DirectModeBadge(props: { branchName: string }) {
+  return (
+    <span
+      style={{
+        'font-size': sf(10),
+        'font-weight': '600',
+        padding: '1px 5px',
+        'border-radius': '3px',
+        background: `color-mix(in srgb, ${theme.warning} 12%, transparent)`,
+        color: theme.warning,
+        'flex-shrink': '0',
+        'line-height': '1.5',
+      }}
+    >
+      {props.branchName}
+    </span>
+  );
+}
+
+
+
 // --- Task entry: renders a task row OR a coordinator folder with nested children ---
 
 interface TaskEntryProps {
@@ -818,8 +831,13 @@ function CoordinatorFolder(props: TaskEntryProps) {
             }}
           >
             <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
-              <CoordinatorIcon />
+              <Show when={t().coordinatorMode}>
+                <CoordinatorIcon />
+              </Show>
               <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" />
+              <Show when={t().gitIsolation === 'direct'}>
+                <DirectModeBadge branchName={t().branchName} />
+              </Show>
               <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', flex: '1' }}>
                 {t().name}
               </span>
@@ -915,7 +933,7 @@ function CollapsedTaskEntry(props: { taskId: string; indented?: boolean }) {
                 <CoordinatorIcon />
               </Show>
               <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" />
-              <Show when={t().directMode}>
+              <Show when={t().gitIsolation === 'direct'}>
                 <span
                   style={{
                     'font-size': sf(10),
@@ -1018,7 +1036,7 @@ function TaskRow(props: TaskRowProps) {
           >
             <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
               <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" />
-              <Show when={t().directMode}>
+              <Show when={t().gitIsolation === 'direct'}>
                 <span
                   style={{
                     'font-size': sf(10),

@@ -1,10 +1,8 @@
 import type { FitAddon } from '@xterm/addon-fit';
-import type { Terminal } from '@xterm/xterm';
 
 interface TerminalEntry {
   container: HTMLElement;
   fitAddon: FitAddon;
-  term: Terminal;
   dirty: boolean;
 }
 
@@ -42,7 +40,9 @@ function flush() {
   for (const [, entry] of entries) {
     if (!entry.dirty) continue;
     entry.dirty = false;
+
     entry.fitAddon.fit();
+
     didWork = true;
   }
   // Only update throttle timestamp when we actually fitted something —
@@ -73,13 +73,8 @@ function scheduleFlush() {
   }, THROTTLE_MS);
 }
 
-export function registerTerminal(
-  id: string,
-  container: HTMLElement,
-  fitAddon: FitAddon,
-  term: Terminal,
-): void {
-  entries.set(id, { container, fitAddon, term, dirty: false });
+export function registerTerminal(id: string, container: HTMLElement, fitAddon: FitAddon): void {
+  entries.set(id, { container, fitAddon, dirty: false });
   resizeObserver.observe(container);
   intersectionObserver.observe(container);
 }

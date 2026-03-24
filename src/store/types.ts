@@ -1,6 +1,7 @@
 import type { AgentDef, WorktreeStatus } from '../ipc/types';
-import type { TerminalFont } from '../lib/fonts';
 import type { LookPreset } from '../lib/look';
+
+export type GitIsolationMode = 'worktree' | 'direct';
 
 export interface TerminalBookmark {
   id: string;
@@ -14,7 +15,8 @@ export interface Project {
   color: string;
   branchPrefix?: string; // default "task" if unset
   deleteBranchOnClose?: boolean; // default true if unset
-  defaultDirectMode?: boolean; // default false if unset
+  defaultGitIsolation?: GitIsolationMode;
+  defaultBaseBranch?: string;
   terminalBookmarks?: TerminalBookmark[];
 }
 
@@ -45,8 +47,11 @@ export interface Task {
   prefillPrompt?: string; // fills prompt input without sending
   closingStatus?: 'closing' | 'removing' | 'error';
   closingError?: string;
-  directMode?: boolean;
+  gitIsolation: GitIsolationMode;
+  baseBranch?: string;
   skipPermissions?: boolean;
+  dockerMode?: boolean;
+  dockerImage?: string;
   githubUrl?: string;
   collapsed?: boolean;
   savedAgentDef?: AgentDef;
@@ -74,8 +79,11 @@ export interface PersistedTask {
   lastPrompt: string;
   shellCount: number;
   agentDef: AgentDef | null;
-  directMode?: boolean;
+  gitIsolation: GitIsolationMode;
+  baseBranch?: string;
   skipPermissions?: boolean;
+  dockerMode?: boolean;
+  dockerImage?: string;
   githubUrl?: string;
   savedInitialPrompt?: string;
   collapsed?: boolean;
@@ -114,7 +122,7 @@ export interface PersistedState {
   completedTaskCount?: number;
   mergedLinesAdded?: number;
   mergedLinesRemoved?: number;
-  terminalFont?: TerminalFont;
+  terminalFont?: string;
   themePreset?: LookPreset;
   windowState?: PersistedWindowState;
   autoTrustFolders?: boolean;
@@ -122,6 +130,7 @@ export interface PersistedState {
   desktopNotificationsEnabled?: boolean;
   inactiveColumnOpacity?: number;
   editorCommand?: string;
+  dockerImage?: string;
   customAgents?: AgentDef[];
 }
 
@@ -184,7 +193,7 @@ export interface AppStore {
   completedTaskCount: number;
   mergedLinesAdded: number;
   mergedLinesRemoved: number;
-  terminalFont: TerminalFont;
+  terminalFont: string;
   themePreset: LookPreset;
   windowState: PersistedWindowState | null;
   autoTrustFolders: boolean;
@@ -192,6 +201,8 @@ export interface AppStore {
   desktopNotificationsEnabled: boolean;
   inactiveColumnOpacity: number;
   editorCommand: string;
+  dockerImage: string;
+  dockerAvailable: boolean;
   newTaskDropUrl: string | null;
   newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
   missingProjectIds: Record<string, true>;

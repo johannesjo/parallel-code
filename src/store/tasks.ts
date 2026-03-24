@@ -1,7 +1,7 @@
 import { produce } from 'solid-js/store';
 import { invoke, Channel } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
-import { store, setStore, updateWindowTitle, cleanupPanelEntries } from './core';
+import { store, setStore, cleanupPanelEntries } from './core';
 import { setTaskFocusedPanel } from './focus';
 import { getProject, getProjectPath, getProjectBranchPrefix, isProjectMissing } from './projects';
 import { setPendingShellCommand } from '../lib/bookmarks';
@@ -15,9 +15,31 @@ import {
 import { recordMergedLines, recordTaskCompleted } from './completion';
 import type { AgentDef, CreateTaskResult, MergeResult } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
-import type { Agent, Task } from './types';
+import type { Agent, Task, GitIsolationMode } from './types';
 import { COORDINATOR_PREAMBLE } from './coordinator-preamble';
 import { getCoordinatorChildren } from './sidebar-order';
+
+function initTaskInStore(
+  taskId: string,
+  task: Task,
+  agent: Agent,
+  projectId: string,
+  agentDef: AgentDef | undefined,
+): void {
+  setStore(
+    produce((s) => {
+      s.tasks[taskId] = task;
+      s.agents[agent.id] = agent;
+      s.taskOrder.push(taskId);
+      s.activeTaskId = taskId;
+      s.activeAgentId = agent.id;
+      s.lastProjectId = projectId;
+      if (agentDef) s.lastAgentId = agentDef.id;
+    }),
+  );
+  markAgentSpawned(agent.id);
+  rescheduleTaskStatusPolling();
+}
 
 const AGENT_WRITE_READY_TIMEOUT_MS = 8_000;
 const AGENT_WRITE_RETRY_MS = 50;
@@ -54,12 +76,16 @@ export interface CreateTaskOptions {
   name: string;
   agentDef: AgentDef;
   projectId: string;
+  gitIsolation: GitIsolationMode;
+  baseBranch: string;
   symlinkDirs?: string[];
-  initialPrompt?: string;
   branchPrefixOverride?: string;
+  initialPrompt?: string;
   githubUrl?: string;
   skipPermissions?: boolean;
   coordinatorMode?: boolean;
+  dockerMode?: boolean;
+  dockerImage?: string;
 }
 
 export async function createTask(opts: CreateTaskOptions): Promise<string> {
@@ -67,22 +93,43 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     name,
     agentDef,
     projectId,
+    gitIsolation,
+    baseBranch,
     symlinkDirs = [],
     initialPrompt,
     githubUrl,
     skipPermissions,
+    dockerMode,
+    dockerImage,
   } = opts;
   const projectRoot = getProjectPath(projectId);
   if (!projectRoot) throw new Error('Project not found');
   if (isProjectMissing(projectId)) throw new Error('Project folder not found');
 
-  const branchPrefix = opts.branchPrefixOverride ?? getProjectBranchPrefix(projectId);
-  const result = await invoke<CreateTaskResult>(IPC.CreateTask, {
-    name,
-    projectRoot,
-    symlinkDirs,
-    branchPrefix,
-  });
+  let taskId: string;
+  let branchName: string;
+  let worktreePath: string;
+
+  if (gitIsolation === 'worktree') {
+    const branchPrefix = opts.branchPrefixOverride ?? getProjectBranchPrefix(projectId);
+    const result = await invoke<CreateTaskResult>(IPC.CreateTask, {
+      name,
+      projectRoot,
+      symlinkDirs,
+      branchPrefix,
+      baseBranch,
+    });
+    taskId = result.id;
+    branchName = result.branch_name;
+    worktreePath = result.worktree_path;
+  } else {
+    if (hasDirectTask(projectId)) {
+      throw new Error('A direct-mode task already exists for this project');
+    }
+    taskId = crypto.randomUUID();
+    branchName = baseBranch;
+    worktreePath = projectRoot;
+  }
 
   // Start MCP server BEFORE adding task to store — the store update triggers
   // a reactive render of TerminalView which spawns the PTY immediately.
@@ -91,10 +138,10 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   if (opts.coordinatorMode) {
     try {
       const mcpResult = await invoke<{ configPath: string }>(IPC.StartMCPServer, {
-        coordinatorTaskId: result.id,
+        coordinatorTaskId: taskId,
         projectId,
         projectRoot,
-        worktreePath: result.worktree_path,
+        worktreePath,
       });
       mcpConfigPath = mcpResult.configPath;
       console.log('[MCP] Coordinator config path:', mcpConfigPath);
@@ -105,28 +152,32 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
 
   const agentId = crypto.randomUUID();
   const task: Task = {
-    id: result.id,
+    id: taskId,
     name,
     projectId,
-    branchName: result.branch_name,
-    worktreePath: result.worktree_path,
+    gitIsolation,
+    baseBranch,
+    branchName,
+    worktreePath,
     agentIds: [agentId],
     shellAgentIds: [],
     notes: '',
     lastPrompt: '',
     initialPrompt: (opts.coordinatorMode && initialPrompt
       ? COORDINATOR_PREAMBLE + initialPrompt
-      : initialPrompt) || undefined,
-    skipPermissions: skipPermissions || undefined,
+      : initialPrompt) ?? undefined,
+    savedInitialPrompt: initialPrompt ?? undefined,
+    skipPermissions: skipPermissions ?? undefined,
+    dockerMode: dockerMode ?? undefined,
+    dockerImage: dockerImage ?? undefined,
     githubUrl,
-    savedInitialPrompt: initialPrompt || undefined,
     coordinatorMode: opts.coordinatorMode || undefined,
     mcpConfigPath,
   };
 
   const agent: Agent = {
     id: agentId,
-    taskId: result.id,
+    taskId,
     def: agentDef,
     resumed: false,
     status: 'running',
@@ -136,93 +187,8 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     generation: 0,
   };
 
-  setStore(
-    produce((s) => {
-      s.tasks[result.id] = task;
-      s.agents[agentId] = agent;
-      s.taskOrder.push(result.id);
-      s.activeTaskId = result.id;
-      s.activeAgentId = agentId;
-      s.lastProjectId = projectId;
-      s.lastAgentId = agentDef.id;
-    }),
-  );
-
-  // Mark as busy immediately; terminal output may arrive later.
-  markAgentSpawned(agentId);
-  rescheduleTaskStatusPolling();
-  updateWindowTitle(name);
-
-  return result.id;
-}
-
-export interface CreateDirectTaskOptions {
-  name: string;
-  agentDef: AgentDef;
-  projectId: string;
-  mainBranch: string;
-  initialPrompt?: string;
-  githubUrl?: string;
-  skipPermissions?: boolean;
-}
-
-export async function createDirectTask(opts: CreateDirectTaskOptions): Promise<string> {
-  const { name, agentDef, projectId, mainBranch, initialPrompt, githubUrl, skipPermissions } = opts;
-  if (hasDirectModeTask(projectId)) {
-    throw new Error('A direct-mode task already exists for this project');
-  }
-  const projectRoot = getProjectPath(projectId);
-  if (!projectRoot) throw new Error('Project not found');
-  if (isProjectMissing(projectId)) throw new Error('Project folder not found');
-
-  const id = crypto.randomUUID();
-  const agentId = crypto.randomUUID();
-
-  const task: Task = {
-    id,
-    name,
-    projectId,
-    branchName: mainBranch,
-    worktreePath: projectRoot,
-    agentIds: [agentId],
-    shellAgentIds: [],
-    notes: '',
-    lastPrompt: '',
-    initialPrompt: initialPrompt || undefined,
-    savedInitialPrompt: initialPrompt || undefined,
-    directMode: true,
-    skipPermissions: skipPermissions || undefined,
-    githubUrl,
-  };
-
-  const agent: Agent = {
-    id: agentId,
-    taskId: id,
-    def: agentDef,
-    resumed: false,
-    status: 'running',
-    exitCode: null,
-    signal: null,
-    lastOutput: [],
-    generation: 0,
-  };
-
-  setStore(
-    produce((s) => {
-      s.tasks[id] = task;
-      s.agents[agentId] = agent;
-      s.taskOrder.push(id);
-      s.activeTaskId = id;
-      s.activeAgentId = agentId;
-      s.lastProjectId = projectId;
-      s.lastAgentId = agentDef.id;
-    }),
-  );
-
-  markAgentSpawned(agentId);
-  rescheduleTaskStatusPolling();
-  updateWindowTitle(name);
-  return id;
+  initTaskInStore(taskId, task, agent, projectId, agentDef);
+  return taskId;
 }
 
 /**
@@ -269,6 +235,9 @@ export async function closeTask(taskId: string): Promise<void> {
   setStore('tasks', taskId, 'closingStatus', 'closing');
   setStore('tasks', taskId, 'closingError', undefined);
 
+  // Stop plan file watcher to prevent FSWatcher leak
+  invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
+
   try {
     // Kill agents
     for (const agentId of agentIds) {
@@ -279,9 +248,10 @@ export async function closeTask(taskId: string): Promise<void> {
     }
 
     // Skip git cleanup for direct mode (no worktree/branch to remove)
-    if (!task.directMode) {
+    if (task.gitIsolation === 'worktree') {
       // Remove worktree + branch
       await invoke(IPC.DeleteTask, {
+        taskId,
         agentIds: [...agentIds, ...shellAgentIds],
         branchName,
         deleteBranch,
@@ -309,6 +279,12 @@ const REMOVE_ANIMATION_MS = 300;
 
 function removeTaskFromStore(taskId: string, agentIds: string[]): void {
   recordTaskCompleted();
+
+  // Stop the plan file watcher (fs.FSWatcher + poll interval) on the backend.
+  // This is the single convergence point for all task removal paths (close,
+  // merge+cleanup, direct-mode close), so placing it here prevents leaks
+  // regardless of which path removed the task.  Idempotent if already stopped.
+  invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
 
   // Clean up agent activity tracking (timers, buffers, decoders) before
   // the store entries are deleted — otherwise markAgentExited can't find
@@ -351,10 +327,6 @@ function removeTaskFromStore(taskId: string, agentIds: string[]): void {
     );
 
     rescheduleTaskStatusPolling();
-    const activeId = store.activeTaskId;
-    const activeTask = activeId ? store.tasks[activeId] : null;
-    const activeTerminal = activeId ? store.terminals[activeId] : null;
-    updateWindowTitle(activeTask?.name ?? activeTerminal?.name);
   }, REMOVE_ANIMATION_MS);
 }
 
@@ -364,7 +336,7 @@ export async function mergeTask(
 ): Promise<void> {
   const task = store.tasks[taskId];
   if (!task || task.closingStatus === 'removing') return;
-  if (task.directMode) return;
+  if (task.gitIsolation === 'direct') return;
 
   const projectRoot = getProjectPath(task.projectId);
   if (!projectRoot) return;
@@ -381,6 +353,7 @@ export async function mergeTask(
   const mergeResult = await invoke<MergeResult>(IPC.MergeTask, {
     projectRoot,
     branchName,
+    baseBranch: task.baseBranch,
     squash: options?.squash ?? false,
     message: options?.message,
     cleanup,
@@ -397,7 +370,7 @@ export async function mergeTask(
 
 export async function pushTask(taskId: string, onOutput: Channel<string>): Promise<void> {
   const task = store.tasks[taskId];
-  if (!task || task.directMode) return;
+  if (!task || task.gitIsolation === 'direct') return;
 
   const projectRoot = getProjectPath(task.projectId);
   if (!projectRoot) return;
@@ -411,9 +384,6 @@ export async function pushTask(taskId: string, onOutput: Channel<string>): Promi
 
 export function updateTaskName(taskId: string, name: string): void {
   setStore('tasks', taskId, 'name', name);
-  if (store.activeTaskId === taskId) {
-    updateWindowTitle(name);
-  }
 }
 
 export function updateTaskNotes(taskId: string, notes: string): void {
@@ -518,12 +488,15 @@ export async function closeShell(taskId: string, shellId: string): Promise<void>
   }
 }
 
-export function hasDirectModeTask(projectId: string): boolean {
+export function hasDirectTask(projectId: string): boolean {
   const allTaskIds = [...store.taskOrder, ...store.collapsedTaskOrder];
   return allTaskIds.some((taskId) => {
     const task = store.tasks[taskId];
     return (
-      task && task.projectId === projectId && task.directMode && task.closingStatus !== 'removing'
+      task &&
+      task.projectId === projectId &&
+      task.gitIsolation === 'direct' &&
+      task.closingStatus !== 'removing'
     );
   });
 }
@@ -531,6 +504,9 @@ export function hasDirectModeTask(projectId: string): boolean {
 export async function collapseTask(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
   if (!task || task.collapsed || task.closingStatus) return;
+
+  // Stop plan file watcher to prevent FSWatcher leak
+  invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
 
   // Save agent def before killing so uncollapse can restart cleanly.
   // Collapsing unmounts the TaskPanel which destroys the TerminalView,
@@ -540,14 +516,12 @@ export async function collapseTask(taskId: string): Promise<void> {
   const agentIds = [...task.agentIds];
   const shellAgentIds = [...task.shellAgentIds];
 
-  for (const agentId of agentIds) {
-    await invoke(IPC.KillAgent, { agentId }).catch(console.error);
-    clearAgentActivity(agentId);
-  }
-  for (const shellId of shellAgentIds) {
-    await invoke(IPC.KillAgent, { agentId: shellId }).catch(console.error);
-    clearAgentActivity(shellId);
-  }
+  invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
+  const allIds = [...agentIds, ...shellAgentIds];
+  await Promise.allSettled(
+    allIds.map((id) => invoke(IPC.KillAgent, { agentId: id }).catch(console.error)),
+  );
+  for (const id of allIds) clearAgentActivity(id);
 
   setStore(
     produce((s) => {
@@ -576,10 +550,6 @@ export async function collapseTask(taskId: string): Promise<void> {
   );
 
   rescheduleTaskStatusPolling();
-  const activeId = store.activeTaskId;
-  const activeTask = activeId ? store.tasks[activeId] : null;
-  const activeTerminal = activeId ? store.terminals[activeId] : null;
-  updateWindowTitle(activeTask?.name ?? activeTerminal?.name);
 }
 
 export function uncollapseTask(taskId: string): void {
@@ -622,8 +592,6 @@ export function uncollapseTask(taskId: string): void {
     markAgentSpawned(agentId);
     rescheduleTaskStatusPolling();
   }
-
-  updateWindowTitle(task.name);
 }
 
 // --- GitHub drop-to-create helpers ---
@@ -682,6 +650,8 @@ export function initMCPListeners(): () => void {
         id: evt.taskId,
         name: evt.name,
         projectId: evt.projectId,
+        gitIsolation: 'worktree',
+        baseBranch: '',
         branchName: evt.branchName,
         worktreePath: evt.worktreePath,
         agentIds: [evt.agentId],

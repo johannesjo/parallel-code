@@ -209,8 +209,8 @@ export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePat
     }
   }
 
-  startDirPolling(taskId, entry, onChange);
   watchers.set(taskId, entry);
+  startDirPolling(taskId, entry, onChange);
 }
 
 /** Stops and removes the plan watcher for a given task. */

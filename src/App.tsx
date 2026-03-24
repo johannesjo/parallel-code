@@ -44,6 +44,7 @@ import {
   validateProjectPaths,
   setPlanContent,
   initMCPListeners,
+  setDockerAvailable,
 } from './store/store';
 import { isGitHubUrl } from './lib/github-url';
 import type { PersistedWindowState } from './store/types';
@@ -288,6 +289,10 @@ function App() {
     })();
 
     await loadAgents();
+    invoke<boolean>(IPC.CheckDockerAvailable).then(
+      (available) => setDockerAvailable(available),
+      () => setDockerAvailable(false),
+    );
     await loadState();
 
     // Restore plan content for tasks that had a plan file before restart
@@ -316,6 +321,7 @@ function App() {
 
     // Listen for plan content pushed from backend plan watcher
     const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
       const msg = data as { taskId: string; content: string | null; fileName: string | null };
       if (msg.taskId && store.tasks[msg.taskId]) {
         setPlanContent(msg.taskId, msg.content, msg.fileName);
@@ -564,6 +570,7 @@ function App() {
     registerShortcut({
       key: '0',
       cmdOrCtrl: true,
+      global: true,
       handler: () => {
         const taskId = store.activeTaskId;
         if (taskId) resetFontScale(taskId);

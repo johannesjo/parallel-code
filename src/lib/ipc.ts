@@ -7,7 +7,6 @@ declare global {
     electron: {
       ipcRenderer: {
         invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
-        send: (channel: string, ...args: unknown[]) => void;
         on: (channel: string, listener: (...args: unknown[]) => void) => () => void;
         removeAllListeners: (channel: string) => void;
       };
@@ -32,6 +31,12 @@ export class Channel<T> {
 
   toJSON() {
     return { __CHANNEL_ID__: this._id };
+  }
+
+  dispose(): void {
+    this.cleanup?.();
+    this.cleanup = null;
+    this.onmessage = null;
   }
 }
 

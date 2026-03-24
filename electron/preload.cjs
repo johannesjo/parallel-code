@@ -35,6 +35,8 @@ const ALLOWED_CHANNELS = new Set([
   'rebase_task',
   'get_main_branch',
   'get_current_branch',
+  'get_branches',
+  'check_is_git_repo',
   // Persistence
   'save_app_state',
   'load_app_state',
@@ -77,9 +79,16 @@ const ALLOWED_CHANNELS = new Set([
   // Plan
   'plan_content',
   'read_plan_content',
+  'stop_plan_watcher',
+  // Docker
+  'check_docker_available',
+  'check_docker_image_exists',
+  'build_docker_image',
   // Ask about code
   'ask_about_code',
   'cancel_ask_about_code',
+  // System
+  'get_system_fonts',
   // Notifications
   'show_notification',
   'notification_clicked',
@@ -102,10 +111,6 @@ contextBridge.exposeInMainWorld('electron', {
     invoke: (channel, ...args) => {
       if (!isAllowedChannel(channel)) throw new Error(`Blocked IPC channel: ${channel}`);
       return ipcRenderer.invoke(channel, ...args);
-    },
-    send: (channel, ...args) => {
-      if (!isAllowedChannel(channel)) throw new Error(`Blocked IPC channel: ${channel}`);
-      ipcRenderer.send(channel, ...args);
     },
     on: (channel, listener) => {
       if (!isAllowedChannel(channel)) throw new Error(`Blocked IPC channel: ${channel}`);

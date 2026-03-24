@@ -12,8 +12,16 @@ import {
   countRunningAgents,
   killAllAgents,
   getAgentMeta,
+  isDockerAvailable,
+  dockerImageExists,
+  buildDockerImage,
 } from './pty.js';
-import { ensurePlansDirectory, startPlanWatcher, readPlanForWorktree } from './plans.js';
+import {
+  ensurePlansDirectory,
+  startPlanWatcher,
+  stopPlanWatcher,
+  readPlanForWorktree,
+} from './plans.js';
 import { startRemoteServer, getMCPLogs } from '../remote/server.js';
 import { Orchestrator } from '../mcp/orchestrator.js';
 import {
@@ -36,12 +44,15 @@ import {
   rebaseTask,
   createWorktree,
   removeWorktree,
+  isGitRepo,
+  getBranches,
 } from './git.js';
 import { createTask, deleteTask } from './tasks.js';
 import { listAgents } from './agents.js';
 import { saveAppState, loadAppState } from './persistence.js';
 import { spawn } from 'child_process';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
+import { getSystemMonospaceFonts } from './system-fonts.js';
 import path from 'path';
 import {
   assertString,
@@ -72,6 +83,36 @@ function validateBranchName(name: unknown, label: string): void {
   if (name.startsWith('-')) throw new Error(`${label} must not start with "-"`);
 }
 
+/**
+ * Create a leading+trailing throttled event forwarder.
+ * Fires immediately, suppresses for `intervalMs`, then fires once more
+ * if events arrived during suppression (ensures the final state is always forwarded).
+ */
+function createThrottledForwarder(
+  win: BrowserWindow,
+  channel: string,
+  intervalMs: number,
+): () => void {
+  let throttled = false;
+  let pending = false;
+  return () => {
+    if (win.isDestroyed()) return;
+    if (throttled) {
+      pending = true;
+      return;
+    }
+    throttled = true;
+    win.webContents.send(channel);
+    setTimeout(() => {
+      throttled = false;
+      if (pending) {
+        pending = false;
+        if (!win.isDestroyed()) win.webContents.send(channel);
+      }
+    }, intervalMs);
+  };
+}
+
 export function registerAllHandlers(win: BrowserWindow): void {
   // --- Remote access state ---
   let remoteServer: ReturnType<typeof startRemoteServer> | null = null;
@@ -83,6 +124,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   // --- PTY commands ---
   ipcMain.handle(IPC.SpawnAgent, (_e, args) => {
+    assertString(args.command, 'command');
+    assertStringArray(args.args, 'args');
+    assertString(args.taskId, 'taskId');
+    assertString(args.agentId, 'agentId');
+    assertInt(args.cols, 'cols');
+    assertInt(args.rows, 'rows');
+    assertOptionalBoolean(args.dockerMode, 'dockerMode');
+    assertOptionalString(args.dockerImage, 'dockerImage');
     if (args.cwd) validatePath(args.cwd, 'cwd');
     if (!args.isShell && args.cwd) {
       try {
@@ -129,6 +178,15 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   // --- Agent commands ---
   ipcMain.handle(IPC.ListAgents, () => listAgents());
+  ipcMain.handle(IPC.CheckDockerAvailable, () => isDockerAvailable());
+  ipcMain.handle(IPC.CheckDockerImageExists, (_e, args) => {
+    assertString(args.image, 'image');
+    return dockerImageExists(args.image);
+  });
+  ipcMain.handle(IPC.BuildDockerImage, (_e, args) => {
+    assertString(args.onOutputChannel, 'onOutputChannel');
+    return buildDockerImage(win, args.onOutputChannel);
+  });
 
   // --- Task commands ---
   ipcMain.handle(IPC.CreateTask, (_e, args) => {
@@ -136,7 +194,16 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.projectRoot, 'projectRoot');
     assertStringArray(args.symlinkDirs, 'symlinkDirs');
     assertOptionalString(args.branchPrefix, 'branchPrefix');
-    const result = createTask(args.name, args.projectRoot, args.symlinkDirs, args.branchPrefix);
+    assertOptionalString(args.baseBranch, 'baseBranch');
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    const result = createTask(
+      args.name,
+      args.projectRoot,
+      args.symlinkDirs,
+      args.branchPrefix ?? 'task',
+      baseBranch,
+    );
     result.then((r: { id: string }) => taskNames.set(r.id, args.name)).catch(() => {});
     return result;
   });
@@ -145,38 +212,57 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
     assertBoolean(args.deleteBranch, 'deleteBranch');
-    return deleteTask(args.agentIds, args.branchName, args.deleteBranch, args.projectRoot);
+    assertOptionalString(args.taskId, 'taskId');
+    return deleteTask({
+      taskId: args.taskId,
+      agentIds: args.agentIds,
+      branchName: args.branchName,
+      deleteBranch: args.deleteBranch,
+      projectRoot: args.projectRoot,
+    });
   });
 
   // --- Git commands ---
   ipcMain.handle(IPC.GetChangedFiles, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    return getChangedFiles(args.worktreePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getChangedFiles(args.worktreePath, baseBranch);
   });
   ipcMain.handle(IPC.GetChangedFilesFromBranch, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
-    return getChangedFilesFromBranch(args.projectRoot, args.branchName);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getChangedFilesFromBranch(args.projectRoot, args.branchName, baseBranch);
   });
   ipcMain.handle(IPC.GetAllFileDiffs, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    return getAllFileDiffs(args.worktreePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getAllFileDiffs(args.worktreePath, baseBranch);
   });
   ipcMain.handle(IPC.GetAllFileDiffsFromBranch, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
-    return getAllFileDiffsFromBranch(args.projectRoot, args.branchName);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getAllFileDiffsFromBranch(args.projectRoot, args.branchName, baseBranch);
   });
   ipcMain.handle(IPC.GetFileDiff, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
     validateRelativePath(args.filePath, 'filePath');
-    return getFileDiff(args.worktreePath, args.filePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getFileDiff(args.worktreePath, args.filePath, baseBranch);
   });
   ipcMain.handle(IPC.GetFileDiffFromBranch, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
     validateRelativePath(args.filePath, 'filePath');
-    return getFileDiffFromBranch(args.projectRoot, args.branchName, args.filePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getFileDiffFromBranch(args.projectRoot, args.branchName, args.filePath, baseBranch);
   });
   ipcMain.handle(IPC.GetGitignoredDirs, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
@@ -184,7 +270,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.GetWorktreeStatus, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    return getWorktreeStatus(args.worktreePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getWorktreeStatus(args.worktreePath, baseBranch);
   });
   ipcMain.handle(IPC.CommitAll, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
@@ -197,7 +285,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.CheckMergeStatus, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    return checkMergeStatus(args.worktreePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return checkMergeStatus(args.worktreePath, baseBranch);
   });
   ipcMain.handle(IPC.MergeTask, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
@@ -205,11 +295,22 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertBoolean(args.squash, 'squash');
     assertOptionalString(args.message, 'message');
     assertOptionalBoolean(args.cleanup, 'cleanup');
-    return mergeTask(args.projectRoot, args.branchName, args.squash, args.message, args.cleanup);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return mergeTask(
+      args.projectRoot,
+      args.branchName,
+      args.squash,
+      args.message ?? null,
+      args.cleanup ?? false,
+      baseBranch,
+    );
   });
   ipcMain.handle(IPC.GetBranchLog, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    return getBranchLog(args.worktreePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getBranchLog(args.worktreePath, baseBranch);
   });
   ipcMain.handle(IPC.PushTask, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
@@ -219,7 +320,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.RebaseTask, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    return rebaseTask(args.worktreePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return rebaseTask(args.worktreePath, baseBranch);
   });
   ipcMain.handle(IPC.GetMainBranch, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
@@ -228,6 +331,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.GetCurrentBranch, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     return getCurrentBranch(args.projectRoot);
+  });
+  ipcMain.handle(IPC.CheckIsGitRepo, (_e, args) => {
+    validatePath(args.path, 'path');
+    return isGitRepo(args.path);
+  });
+  ipcMain.handle(IPC.GetBranches, (_e, args) => {
+    validatePath(args.projectRoot, 'projectRoot');
+    return getBranches(args.projectRoot);
   });
 
   // --- Persistence ---
@@ -287,7 +398,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.CreateArenaWorktree, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
-    return createWorktree(args.projectRoot, args.branchName, args.symlinkDirs ?? [], true);
+    return createWorktree(
+      args.projectRoot,
+      args.branchName,
+      args.symlinkDirs ?? [],
+      undefined,
+      true,
+    );
   });
 
   ipcMain.handle(IPC.RemoveArenaWorktree, (_e, args) => {
@@ -299,6 +416,12 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.CheckPathExists, (_e, args) => {
     validatePath(args.path, 'path');
     return fs.existsSync(args.path);
+  });
+
+  // --- Plan watcher cleanup ---
+  ipcMain.handle(IPC.StopPlanWatcher, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    stopPlanWatcher(args.taskId);
   });
 
   // --- Plan content (one-shot read) ---
@@ -328,9 +451,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
     cancelAskAboutCode(args.requestId);
   });
 
+  // --- System ---
+  ipcMain.handle(IPC.GetSystemFonts, () => getSystemMonospaceFonts());
+
   // --- Notifications (fire-and-forget via ipcMain.on) ---
+  const activeNotifications = new Set<Notification>();
   ipcMain.on(IPC.ShowNotification, (_e, args) => {
     try {
+      if (!Notification.isSupported()) return;
       assertString(args.title, 'title');
       assertString(args.body, 'body');
       assertStringArray(args.taskIds, 'taskIds');
@@ -338,14 +466,26 @@ export function registerAllHandlers(win: BrowserWindow): void {
         title: args.title,
         body: args.body,
       });
+      activeNotifications.add(notification);
+      const release = () => activeNotifications.delete(notification);
       notification.on('click', () => {
+        release();
         if (!win.isDestroyed()) {
           win.show();
           win.focus();
           win.webContents.send(IPC.NotificationClicked, { taskIds: args.taskIds });
         }
       });
+      notification.on('close', release);
       notification.show();
+      // On Linux, notifications may not auto-dismiss. Close after 30 seconds
+      // to prevent accumulation in the notification tray.
+      if (process.platform === 'linux') {
+        setTimeout(() => {
+          notification.close();
+          release();
+        }, 30_000);
+      }
     } catch (err) {
       console.warn('ShowNotification failed:', err);
     }
@@ -643,44 +783,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
   win.on('blur', () => {
     if (!win.isDestroyed()) win.webContents.send(IPC.WindowBlur);
   });
-  // Leading+trailing throttle: fire immediately, suppress for 100ms, then fire once more
-  // if events arrived during suppression (ensures the final state is always forwarded).
-  let resizeThrottled = false;
-  let resizePending = false;
-  win.on('resize', () => {
-    if (win.isDestroyed()) return;
-    if (resizeThrottled) {
-      resizePending = true;
-      return;
-    }
-    resizeThrottled = true;
-    win.webContents.send(IPC.WindowResized);
-    setTimeout(() => {
-      resizeThrottled = false;
-      if (resizePending) {
-        resizePending = false;
-        if (!win.isDestroyed()) win.webContents.send(IPC.WindowResized);
-      }
-    }, 100);
-  });
-  let moveThrottled = false;
-  let movePending = false;
-  win.on('move', () => {
-    if (win.isDestroyed()) return;
-    if (moveThrottled) {
-      movePending = true;
-      return;
-    }
-    moveThrottled = true;
-    win.webContents.send(IPC.WindowMoved);
-    setTimeout(() => {
-      moveThrottled = false;
-      if (movePending) {
-        movePending = false;
-        if (!win.isDestroyed()) win.webContents.send(IPC.WindowMoved);
-      }
-    }, 100);
-  });
+  win.on('resize', createThrottledForwarder(win, IPC.WindowResized, 100));
+  win.on('move', createThrottledForwarder(win, IPC.WindowMoved, 100));
   win.on('close', (e) => {
     e.preventDefault();
     if (!win.isDestroyed()) {

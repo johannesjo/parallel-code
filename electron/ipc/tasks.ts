@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { createWorktree, removeWorktree } from './git.js';
 import { killAgent, notifyAgentListChanged } from './pty.js';
+import { stopPlanWatcher } from './plans.js';
 
 const MAX_SLUG_LEN = 72;
 
@@ -33,30 +34,36 @@ export async function createTask(
   projectRoot: string,
   symlinkDirs: string[],
   branchPrefix: string,
+  baseBranch?: string,
 ): Promise<{ id: string; branch_name: string; worktree_path: string }> {
+  const id = randomUUID();
   const prefix = sanitizeBranchPrefix(branchPrefix);
-  const branchName = `${prefix}/${slug(name)}`;
-  const worktree = await createWorktree(projectRoot, branchName, symlinkDirs);
+  const branchName = `${prefix}/${slug(name)}-${id.slice(0, 6)}`;
+  const worktree = await createWorktree(projectRoot, branchName, symlinkDirs, baseBranch);
   return {
-    id: randomUUID(),
+    id,
     branch_name: worktree.branch,
     worktree_path: worktree.path,
   };
 }
 
-export async function deleteTask(
-  agentIds: string[],
-  branchName: string,
-  deleteBranch: boolean,
-  projectRoot: string,
-): Promise<void> {
-  for (const agentId of agentIds) {
+interface DeleteTaskOpts {
+  taskId?: string;
+  agentIds: string[];
+  branchName: string;
+  deleteBranch: boolean;
+  projectRoot: string;
+}
+
+export async function deleteTask(opts: DeleteTaskOpts): Promise<void> {
+  if (opts.taskId) stopPlanWatcher(opts.taskId);
+  for (const agentId of opts.agentIds) {
     try {
       killAgent(agentId);
     } catch {
       /* already dead */
     }
   }
-  await removeWorktree(projectRoot, branchName, deleteBranch);
+  await removeWorktree(opts.projectRoot, opts.branchName, opts.deleteBranch);
   notifyAgentListChanged();
 }

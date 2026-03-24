@@ -1,7 +1,7 @@
 import { produce } from 'solid-js/store';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
-import { store, setStore, updateWindowTitle, cleanupPanelEntries } from './core';
+import { store, setStore, cleanupPanelEntries } from './core';
 import { clearAgentActivity } from './taskStatus';
 import { triggerFocus, getTaskFocusedPanel } from './focus';
 import type { Terminal } from './types';
@@ -29,8 +29,6 @@ export function createTerminal(): void {
   setStore('activeTaskId', id);
   setStore('activeAgentId', null);
   setStore('sidebarFocused', false);
-
-  updateWindowTitle(name);
 
   requestAnimationFrame(() => {
     document
@@ -83,22 +81,14 @@ export async function closeTerminal(terminalId: string): Promise<void> {
 
     const activeId = store.activeTaskId;
     if (activeId) {
-      const activeTask = store.tasks[activeId];
-      const activeTerminal = store.terminals[activeId];
-      updateWindowTitle(activeTask?.name ?? activeTerminal?.name);
       const panel = getTaskFocusedPanel(activeId);
       requestAnimationFrame(() => triggerFocus(`${activeId}:${panel}`));
-    } else {
-      updateWindowTitle(undefined);
     }
   }, REMOVE_ANIMATION_MS);
 }
 
 export function updateTerminalName(terminalId: string, name: string): void {
   setStore('terminals', terminalId, 'name', name);
-  if (store.activeTaskId === terminalId) {
-    updateWindowTitle(name);
-  }
 }
 
 /** Restore the auto-increment counter from persisted state. */

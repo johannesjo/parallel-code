@@ -3,7 +3,7 @@ import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { closeTask, getProject, getCoordinatorCloseWarning } from '../store/store';
 import { ConfirmDialog } from './ConfirmDialog';
-import { theme } from '../lib/theme';
+import { theme, bannerStyle } from '../lib/theme';
 import type { Task } from '../store/types';
 import type { WorktreeStatus } from '../ipc/types';
 
@@ -15,7 +15,7 @@ interface CloseTaskDialogProps {
 
 export function CloseTaskDialog(props: CloseTaskDialogProps) {
   const [worktreeStatus] = createResource(
-    () => (props.open && !props.task.directMode ? props.task.worktreePath : null),
+    () => (props.open && props.task.gitIsolation === 'worktree' ? props.task.worktreePath : null),
     (path) => invoke<WorktreeStatus>(IPC.GetWorktreeStatus, { worktreePath: path }),
   );
 
@@ -43,13 +43,13 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
               </div>
             )}
           </Show>
-          <Show when={props.task.directMode}>
+          <Show when={props.task.gitIsolation === 'direct'}>
             <p style={{ margin: '0' }}>
               This will stop all running agents and shells for this task. No git operations will be
               performed.
             </p>
           </Show>
-          <Show when={!props.task.directMode}>
+          <Show when={props.task.gitIsolation === 'worktree'}>
             <Show
               when={
                 worktreeStatus()?.has_uncommitted_changes || worktreeStatus()?.has_committed_changes
@@ -66,12 +66,8 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
                 <Show when={worktreeStatus()?.has_uncommitted_changes}>
                   <div
                     style={{
+                      ...bannerStyle(theme.warning),
                       'font-size': '12px',
-                      color: theme.warning,
-                      background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
-                      padding: '8px 12px',
-                      'border-radius': '8px',
-                      border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
                       'font-weight': '600',
                     }}
                   >
@@ -81,12 +77,8 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
                 <Show when={worktreeStatus()?.has_committed_changes}>
                   <div
                     style={{
+                      ...bannerStyle(theme.warning),
                       'font-size': '12px',
-                      color: theme.warning,
-                      background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
-                      padding: '8px 12px',
-                      'border-radius': '8px',
-                      border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
                       'font-weight': '600',
                     }}
                   >
@@ -134,8 +126,8 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
           </Show>
         </div>
       }
-      confirmLabel={props.task.directMode ? 'Close' : 'Delete'}
-      danger={!props.task.directMode}
+      confirmLabel={props.task.gitIsolation === 'direct' ? 'Close' : 'Delete'}
+      danger={props.task.gitIsolation === 'worktree'}
       onConfirm={() => {
         props.onDone();
         closeTask(props.task.id);

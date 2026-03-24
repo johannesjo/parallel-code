@@ -15,11 +15,27 @@ interface ChangedFilesListProps {
   projectRoot?: string;
   /** Branch name for branch-based fallback when worktree doesn't exist */
   branchName?: string | null;
+  /** Base branch for diff comparison (e.g. 'main', 'develop'). Undefined = auto-detect. */
+  baseBranch?: string;
 }
 
 export function ChangedFilesList(props: ChangedFilesListProps) {
   const [files, setFiles] = createSignal<ChangedFile[]>([]);
   const [selectedIndex, setSelectedIndex] = createSignal(-1);
+  const rowRefs: HTMLDivElement[] = [];
+
+  // Scroll selected item into view reactively
+  createEffect(() => {
+    const idx = selectedIndex();
+    if (idx >= 0) rowRefs[idx]?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+  });
+
+  // Trim stale refs and clamp selection when file list shrinks
+  createEffect(() => {
+    const len = files().length;
+    rowRefs.length = len;
+    setSelectedIndex((i) => (i >= len ? len - 1 : i));
+  });
 
   function handleKeyDown(e: KeyboardEvent) {
     const list = files();
@@ -46,6 +62,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     const path = props.worktreePath;
     const projectRoot = props.projectRoot;
     const branchName = props.branchName;
+    const baseBranch = props.baseBranch;
     if (!props.isActive) return;
     let cancelled = false;
     let inFlight = false;
@@ -60,6 +77,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
           try {
             const result = await invoke<ChangedFile[]>(IPC.GetChangedFiles, {
               worktreePath: path,
+              baseBranch,
             });
             if (!cancelled) setFiles(result);
             return;
@@ -75,6 +93,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
             const result = await invoke<ChangedFile[]>(IPC.GetChangedFilesFromBranch, {
               projectRoot,
               branchName,
+              baseBranch,
             });
             if (!cancelled) setFiles(result);
           } catch {
@@ -96,8 +115,12 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     });
   });
 
-  const totalAdded = createMemo(() => files().reduce((s, f) => s + f.lines_added, 0));
-  const totalRemoved = createMemo(() => files().reduce((s, f) => s + f.lines_removed, 0));
+  const totalAdded = createMemo(() =>
+    files().reduce((s, f) => s + (f.committed ? f.lines_added : 0), 0),
+  );
+  const totalRemoved = createMemo(() =>
+    files().reduce((s, f) => s + (f.committed ? f.lines_removed : 0), 0),
+  );
   const uncommittedCount = createMemo(() => files().filter((f) => !f.committed).length);
 
   /** For each file, compute the display filename and an optional disambiguating directory. */
@@ -159,6 +182,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
         <For each={files()}>
           {(file, i) => (
             <div
+              ref={(el) => (rowRefs[i()] = el)}
               class="file-row"
               style={{
                 display: 'flex',

@@ -8,8 +8,9 @@ import {
   removeProjectWithTasks,
 } from '../store/store';
 import { sanitizeBranchPrefix, toBranchName } from '../lib/branch-name';
-import { theme } from '../lib/theme';
-import type { Project, TerminalBookmark } from '../store/types';
+import { theme, sectionLabelStyle } from '../lib/theme';
+import type { Project, TerminalBookmark, GitIsolationMode } from '../store/types';
+import { SegmentedButtons } from './SegmentedButtons';
 
 interface EditProjectDialogProps {
   project: Project | null;
@@ -26,7 +27,8 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [selectedHue, setSelectedHue] = createSignal(0);
   const [branchPrefix, setBranchPrefix] = createSignal('task');
   const [deleteBranchOnClose, setDeleteBranchOnClose] = createSignal(true);
-  const [defaultDirectMode, setDefaultDirectMode] = createSignal(false);
+  const [defaultGitIsolation, setDefaultGitIsolation] = createSignal<GitIsolationMode>('worktree');
+  const [defaultBaseBranch, setDefaultBaseBranch] = createSignal('');
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
   const [newCommand, setNewCommand] = createSignal('');
   let nameRef!: HTMLInputElement;
@@ -39,7 +41,8 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
     setSelectedHue(hueFromColor(p.color));
     setBranchPrefix(sanitizeBranchPrefix(p.branchPrefix ?? 'task'));
     setDeleteBranchOnClose(p.deleteBranchOnClose ?? true);
-    setDefaultDirectMode(p.defaultDirectMode ?? false);
+    setDefaultGitIsolation(p.defaultGitIsolation ?? 'worktree');
+    setDefaultBaseBranch(p.defaultBaseBranch ?? '');
     setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
     setNewCommand('');
     requestAnimationFrame(() => nameRef?.focus());
@@ -71,7 +74,8 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
       color: `hsl(${selectedHue()}, 70%, 75%)`,
       branchPrefix: sanitizedPrefix,
       deleteBranchOnClose: deleteBranchOnClose(),
-      defaultDirectMode: defaultDirectMode(),
+      defaultGitIsolation: defaultGitIsolation(),
+      defaultBaseBranch: defaultBaseBranch() || undefined,
       terminalBookmarks: bookmarks(),
     });
     props.onClose();
@@ -196,16 +200,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
 
             {/* Name */}
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label
-                style={{
-                  'font-size': '11px',
-                  color: theme.fgMuted,
-                  'text-transform': 'uppercase',
-                  'letter-spacing': '0.05em',
-                }}
-              >
-                Name
-              </label>
+              <label style={sectionLabelStyle}>Name</label>
               <input
                 ref={nameRef}
                 class="input-field"
@@ -229,16 +224,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
 
             {/* Branch prefix */}
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label
-                style={{
-                  'font-size': '11px',
-                  color: theme.fgMuted,
-                  'text-transform': 'uppercase',
-                  'letter-spacing': '0.05em',
-                }}
-              >
-                Branch prefix
-              </label>
+              <label style={sectionLabelStyle}>Branch prefix</label>
               <input
                 class="input-field"
                 type="text"
@@ -287,16 +273,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
 
             {/* Color palette */}
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label
-                style={{
-                  'font-size': '11px',
-                  color: theme.fgMuted,
-                  'text-transform': 'uppercase',
-                  'letter-spacing': '0.05em',
-                }}
-              >
-                Color
-              </label>
+              <label style={sectionLabelStyle}>Color</label>
               <div style={{ display: 'flex', gap: '8px', 'flex-wrap': 'wrap' }}>
                 <For each={PASTEL_HUES}>
                   {(hue) => {
@@ -346,38 +323,48 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               Always delete branch and worklog on merge
             </label>
 
-            {/* Default direct mode preference */}
-            <label
-              style={{
-                display: 'flex',
-                'align-items': 'center',
-                gap: '8px',
-                cursor: 'pointer',
-                'font-size': '13px',
-                color: theme.fg,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={defaultDirectMode()}
-                onChange={(e) => setDefaultDirectMode(e.currentTarget.checked)}
-                style={{ cursor: 'pointer' }}
+            {/* Default isolation mode */}
+            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+              <label style={sectionLabelStyle}>Default Git Isolation</label>
+              <SegmentedButtons
+                options={[
+                  { value: 'worktree', label: 'Worktree' },
+                  { value: 'direct', label: 'Direct' },
+                ]}
+                value={defaultGitIsolation()}
+                onChange={setDefaultGitIsolation}
               />
-              Default to working directly on main branch
-            </label>
+            </div>
+
+            {/* Default base branch */}
+            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+              <label style={sectionLabelStyle}>
+                Default base branch{' '}
+                <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
+                  (blank = auto-detect main)
+                </span>
+              </label>
+              <input
+                class="input-field"
+                type="text"
+                value={defaultBaseBranch()}
+                onInput={(e) => setDefaultBaseBranch(e.currentTarget.value)}
+                placeholder="main"
+                style={{
+                  background: theme.bgInput,
+                  border: `1px solid ${theme.border}`,
+                  'border-radius': '8px',
+                  padding: '10px 14px',
+                  color: theme.fg,
+                  'font-size': '13px',
+                  outline: 'none',
+                }}
+              />
+            </div>
 
             {/* Command Bookmarks */}
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label
-                style={{
-                  'font-size': '11px',
-                  color: theme.fgMuted,
-                  'text-transform': 'uppercase',
-                  'letter-spacing': '0.05em',
-                }}
-              >
-                Command Bookmarks
-              </label>
+              <label style={sectionLabelStyle}>Command Bookmarks</label>
               <Show when={bookmarks().length > 0}>
                 <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
                   <For each={bookmarks()}>

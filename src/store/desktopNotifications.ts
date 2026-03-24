@@ -2,55 +2,50 @@ import { createEffect, onCleanup, type Accessor } from 'solid-js';
 import { store } from './store';
 import { getTaskDotStatus, type TaskDotStatus } from './taskStatus';
 import { setActiveTask } from './navigation';
+import { fireAndForget } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 
 const DEBOUNCE_MS = 3_000;
 
-interface PendingNotification {
-  type: 'ready' | 'waiting';
-  taskId: string;
-}
+type NotificationType = 'ready' | 'waiting';
 
 export function startDesktopNotificationWatcher(windowFocused: Accessor<boolean>): () => void {
   const previousStatus = new Map<string, TaskDotStatus>();
-  let pending: PendingNotification[] = [];
+  // Map keyed by taskId — naturally deduplicates and last transition wins.
+  // If a task goes busy→waiting→ready within the debounce window, only
+  // 'ready' is kept, avoiding contradictory notifications.
+  let pending = new Map<string, NotificationType>();
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
   function flushNotifications(): void {
     debounceTimer = undefined;
-    if (windowFocused() || pending.length === 0) {
-      pending = [];
+    if (!store.desktopNotificationsEnabled || windowFocused() || pending.size === 0) {
+      pending = new Map();
       return;
     }
 
-    const ready = pending.filter((n) => n.type === 'ready');
-    const waiting = pending.filter((n) => n.type === 'waiting');
-    pending = [];
+    const items = [...pending.entries()];
+    pending = new Map();
+
+    const ready = items.filter(([, type]) => type === 'ready');
+    const waiting = items.filter(([, type]) => type === 'waiting');
 
     if (ready.length > 0) {
-      const taskIds = ready.map((n) => n.taskId);
+      const taskIds = ready.map(([id]) => id);
       const body =
         ready.length === 1
           ? `${taskName(taskIds[0])} is ready for review`
           : `${ready.length} tasks ready for review`;
-      window.electron.ipcRenderer.send(IPC.ShowNotification, {
-        title: 'Task Ready',
-        body,
-        taskIds,
-      });
+      fireAndForget(IPC.ShowNotification, { title: 'Task Ready', body, taskIds });
     }
 
     if (waiting.length > 0) {
-      const taskIds = waiting.map((n) => n.taskId);
+      const taskIds = waiting.map(([id]) => id);
       const body =
         waiting.length === 1
           ? `${taskName(taskIds[0])} needs your attention`
           : `${waiting.length} tasks need your attention`;
-      window.electron.ipcRenderer.send(IPC.ShowNotification, {
-        title: 'Task Waiting',
-        body,
-        taskIds,
-      });
+      fireAndForget(IPC.ShowNotification, { title: 'Task Waiting', body, taskIds });
     }
   }
 
@@ -58,9 +53,9 @@ export function startDesktopNotificationWatcher(windowFocused: Accessor<boolean>
     return store.tasks[taskId]?.name ?? taskId;
   }
 
-  function scheduleBatch(notification: PendingNotification): void {
+  function scheduleBatch(type: NotificationType, taskId: string): void {
     if (!store.desktopNotificationsEnabled) return;
-    pending.push(notification);
+    pending.set(taskId, type);
     if (debounceTimer === undefined) {
       debounceTimer = setTimeout(flushNotifications, DEBOUNCE_MS);
     }
@@ -82,9 +77,9 @@ export function startDesktopNotificationWatcher(windowFocused: Accessor<boolean>
       if (prev === current) continue;
 
       if (current === 'ready' && prev !== 'ready') {
-        scheduleBatch({ type: 'ready', taskId });
+        scheduleBatch('ready', taskId);
       } else if (current === 'waiting' && prev === 'busy') {
-        scheduleBatch({ type: 'waiting', taskId });
+        scheduleBatch('waiting', taskId);
       }
     }
 
@@ -97,7 +92,7 @@ export function startDesktopNotificationWatcher(windowFocused: Accessor<boolean>
   // Clear pending when window regains focus
   createEffect(() => {
     if (windowFocused()) {
-      pending = [];
+      pending = new Map();
       if (debounceTimer !== undefined) {
         clearTimeout(debounceTimer);
         debounceTimer = undefined;

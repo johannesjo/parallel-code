@@ -62,7 +62,7 @@ export function TilingLayout() {
                     ? 'task-removing'
                     : 'task-appearing'
                 }
-                style={{ height: '100%', padding: '6px 3px' }}
+                style={{ height: '100%', padding: '6px 3px', 'box-sizing': 'border-box' }}
                 onAnimationEnd={(e) => {
                   if (e.animationName === 'taskAppear')
                     e.currentTarget.classList.remove('task-appearing');
@@ -114,9 +114,10 @@ export function TilingLayout() {
                           onClick={() => {
                             const task = store.tasks[panelId];
                             if (task) {
-                              const msg = task.directMode
-                                ? 'Close this task? Running agents and shells will be stopped.'
-                                : 'Close this task? The worktree and branch will be deleted.';
+                              const msg =
+                                task.gitIsolation === 'direct'
+                                  ? 'Close this task? Running agents and shells will be stopped.'
+                                  : 'Close this task? The worktree and branch will be deleted.';
                               if (window.confirm(msg)) closeTask(panelId);
                             } else if (store.terminals[panelId]) {
                               closeTerminal(panelId);
