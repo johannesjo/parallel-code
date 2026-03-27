@@ -12,6 +12,7 @@ import { HelpDialog } from './components/HelpDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { WindowTitleBar } from './components/WindowTitleBar';
 import { WindowResizeHandles } from './components/WindowResizeHandles';
+import { HeaderTabBar } from './components/HeaderTabBar';
 import { theme } from './lib/theme';
 import {
   store,
@@ -670,6 +671,7 @@ function App() {
         <Show when={isMac}>
           <div class="mac-titlebar-spacer" data-tauri-drag-region />
         </Show>
+        <HeaderTabBar />
         <main style={{ flex: '1', display: 'flex', overflow: 'hidden' }}>
           <Show when={store.sidebarVisible}>
             <Sidebar />
