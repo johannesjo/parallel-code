@@ -415,7 +415,26 @@ function shallowSymlinkDir(source: string, target: string, exclude: Set<string>)
     const src = path.join(source, entry.name);
     const dst = path.join(target, entry.name);
     try {
-      if (!fs.existsSync(dst)) {
+      // Check for broken symlinks (existsSync returns false for broken ones)
+      let dstExists = false;
+      try {
+        const stat = fs.lstatSync(dst);
+        dstExists = true;
+        // If it's a broken symlink, remove and recreate
+        if (stat.isSymbolicLink()) {
+          try {
+            fs.realpathSync(dst);
+            // Valid symlink — skip
+          } catch {
+            // Broken symlink — remove and recreate
+            fs.unlinkSync(dst);
+            dstExists = false;
+          }
+        }
+      } catch {
+        // Doesn't exist — create
+      }
+      if (!dstExists) {
         fs.symlinkSync(src, dst);
       }
     } catch (err) {
@@ -431,7 +450,7 @@ export async function createWorktree(
   branchName: string,
   symlinkDirs: string[],
   baseBranch?: string,
-  forceClean = false,
+  forceClean = true,
 ): Promise<{ path: string; branch: string }> {
   const worktreePath = `${repoRoot}/.worktrees/${branchName}`;
 
@@ -469,7 +488,25 @@ export async function createWorktree(
     const target = path.join(worktreePath, name);
     try {
       if (!fs.existsSync(source)) continue;
-      if (fs.existsSync(target)) continue;
+
+      // Check for broken symlinks (existsSync returns false for broken ones)
+      let targetExists = false;
+      try {
+        const stat = fs.lstatSync(target);
+        if (stat.isSymbolicLink()) {
+          try {
+            fs.realpathSync(target);
+            targetExists = true; // Valid symlink exists
+          } catch {
+            fs.unlinkSync(target); // Broken symlink — remove
+          }
+        } else {
+          targetExists = true; // Real file/dir exists
+        }
+      } catch {
+        // Doesn't exist — proceed to create
+      }
+      if (targetExists) continue;
 
       if (name === '.claude') {
         // Shallow-symlink: real dir with per-entry symlinks, excluding per-worktree entries
@@ -480,6 +517,25 @@ export async function createWorktree(
     } catch (err) {
       console.warn(`Failed to symlink directory '${name}' into worktree:`, err);
     }
+  }
+
+  // Verify symlinks
+  const created: string[] = [];
+  const failed: string[] = [];
+  for (const name of symlinkDirs) {
+    if (name.includes('/') || name.includes('\\') || name.includes('..') || name === '.') continue;
+    const target = path.join(worktreePath, name);
+    try {
+      fs.lstatSync(target);
+      created.push(name);
+    } catch {
+      failed.push(name);
+    }
+  }
+  if (failed.length > 0) {
+    console.warn(
+      `Worktree symlink verification — created: [${created.join(', ')}], failed: [${failed.join(', ')}]`,
+    );
   }
 
   return { path: worktreePath, branch: branchName };
