@@ -509,7 +509,7 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
     }
 
     // The cancelled trailing analysis may have been the only chance to fire
-    // the agentReady callback (used by PromptInput auto-send). Fire it here
+    // the agentReady callback. Fire it here
     // so the callback isn't lost. The chunkContainsAgentPrompt guard inside
     // tryFireAgentReadyCallback ensures shell prompts ($, %) don't trigger it.
     tryFireAgentReadyCallback(agentId);

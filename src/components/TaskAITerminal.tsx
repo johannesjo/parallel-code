@@ -17,12 +17,10 @@ import { TerminalView } from './TerminalView';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import type { Task } from '../store/types';
-import type { PromptInputHandle } from './PromptInput';
 
 interface TaskAITerminalProps {
   task: Task;
   isActive: boolean;
-  promptHandle: PromptInputHandle | undefined;
 }
 
 export function TaskAITerminal(props: TaskAITerminalProps) {
@@ -58,10 +56,7 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                   ? 'Waiting to send prompt…'
                   : 'No prompts sent yet')
           }
-          onDblClick={() => {
-            if (props.task.lastPrompt && props.promptHandle && !props.promptHandle.getText())
-              props.promptHandle.setText(props.task.lastPrompt);
-          }}
+          onDblClick={() => {}}
         >
           <span style={{ opacity: props.task.lastPrompt ? 1 : 0.4 }}>
             {props.task.lastPrompt

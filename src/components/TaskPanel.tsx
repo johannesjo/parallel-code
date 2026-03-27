@@ -31,7 +31,7 @@ export function TaskPanel(props: TaskPanelProps) {
         onRetry={() => retryCloseTask(props.task.id)}
       />
       <div style={{ flex: 1, overflow: 'hidden' }}>
-        <TaskAITerminal task={props.task} isActive={props.isActive} promptHandle={undefined} />
+        <TaskAITerminal task={props.task} isActive={props.isActive} />
       </div>
     </div>
   );
