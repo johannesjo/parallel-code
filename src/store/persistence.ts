@@ -35,7 +35,6 @@ export async function saveState(): Promise<void> {
     lastProjectId: store.lastProjectId,
     lastAgentId: store.lastAgentId,
     taskOrder: [...store.taskOrder],
-    collapsedTaskOrder: [...store.collapsedTaskOrder],
     tasks: {},
     activeTaskId: store.activeTaskId,
     sidebarVisible: store.sidebarVisible,
@@ -82,34 +81,6 @@ export async function saveState(): Promise<void> {
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
-    };
-  }
-
-  for (const taskId of store.collapsedTaskOrder) {
-    const task = store.tasks[taskId];
-    if (!task) continue;
-
-    const firstAgent = task.agentIds[0] ? store.agents[task.agentIds[0]] : null;
-
-    persisted.tasks[taskId] = {
-      id: task.id,
-      name: task.name,
-      projectId: task.projectId,
-      branchName: task.branchName,
-      worktreePath: task.worktreePath,
-      notes: task.notes,
-      lastPrompt: task.lastPrompt,
-      shellCount: task.shellAgentIds.length,
-      agentDef: firstAgent?.def ?? task.savedAgentDef ?? null,
-      gitIsolation: task.gitIsolation,
-      baseBranch: task.baseBranch,
-      skipPermissions: task.skipPermissions,
-      dockerMode: task.dockerMode,
-      dockerImage: task.dockerImage,
-      githubUrl: task.githubUrl,
-      savedInitialPrompt: task.savedInitialPrompt,
-      planFileName: task.planFileName,
-      collapsed: true,
     };
   }
 
@@ -173,7 +144,6 @@ interface LegacyPersistedState {
   lastProjectId?: string | null;
   lastAgentId?: string | null;
   taskOrder: string[];
-  collapsedTaskOrder?: string[];
   tasks: Record<string, PersistedTask & { projectId?: string }>;
   activeTaskId: string | null;
   sidebarVisible: boolean;
@@ -227,15 +197,8 @@ export async function loadState(): Promise<void> {
   const lastAgentId: string | null = raw.lastAgentId ?? null;
 
   // Assign colors to projects that don't have one (backward compat)
-  // Also migrate defaultDirectMode -> defaultGitIsolation
   for (const p of projects) {
     if (!p.color) p.color = randomPastelColor();
-    // Migrate defaultDirectMode -> defaultGitIsolation
-    const legacy = p as Project & { defaultDirectMode?: boolean };
-    if (legacy.defaultDirectMode !== undefined && p.defaultGitIsolation === undefined) {
-      p.defaultGitIsolation = legacy.defaultDirectMode ? 'direct' : undefined;
-      delete (legacy as unknown as Record<string, unknown>).defaultDirectMode;
-    }
   }
 
   if (projects.length === 0 && raw.projectRoot) {
@@ -406,47 +369,6 @@ export async function loadState(): Promise<void> {
 
       // Remove orphaned entries from taskOrder
       s.taskOrder = s.taskOrder.filter((id) => s.tasks[id] || s.terminals[id]);
-
-      // Restore collapsed tasks
-      const collapsedOrder = raw.collapsedTaskOrder ?? [];
-      for (const taskId of collapsedOrder) {
-        const pt = raw.tasks[taskId];
-        if (!pt || !pt.collapsed) continue;
-
-        const agentDef = pt.agentDef;
-        enrichAgentDef(agentDef, s.availableAgents);
-
-        const legacyCollapsed = pt as PersistedTask & { directMode?: boolean };
-        const task: Task = {
-          id: pt.id,
-          name: pt.name,
-          projectId: pt.projectId ?? '',
-          branchName: pt.branchName,
-          worktreePath: pt.worktreePath,
-          agentIds: [],
-          shellAgentIds: [],
-          notes: pt.notes,
-          lastPrompt: pt.lastPrompt,
-          gitIsolation:
-            legacyCollapsed.gitIsolation ?? (legacyCollapsed.directMode ? 'direct' : 'worktree'),
-          baseBranch: legacyCollapsed.baseBranch || undefined,
-          skipPermissions: pt.skipPermissions === true,
-          dockerMode: pt.dockerMode === true ? true : undefined,
-          dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
-          githubUrl: pt.githubUrl,
-          savedInitialPrompt: pt.savedInitialPrompt,
-          planFileName: pt.planFileName,
-          collapsed: true,
-          savedAgentDef: agentDef ?? undefined,
-        };
-
-        s.tasks[taskId] = task;
-      }
-      s.collapsedTaskOrder = collapsedOrder.filter((id) => s.tasks[id]);
-
-      // Defensive: ensure no task appears in both arrays (corrupted state)
-      const activeSet = new Set(s.taskOrder);
-      s.collapsedTaskOrder = s.collapsedTaskOrder.filter((id) => !activeSet.has(id));
 
       // Set activeAgentId from the active task
       if (s.activeTaskId && s.tasks[s.activeTaskId]) {

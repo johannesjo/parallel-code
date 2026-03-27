@@ -9,8 +9,7 @@ import {
 } from '../store/store';
 import { sanitizeBranchPrefix, toBranchName } from '../lib/branch-name';
 import { theme, sectionLabelStyle } from '../lib/theme';
-import type { Project, TerminalBookmark, GitIsolationMode } from '../store/types';
-import { SegmentedButtons } from './SegmentedButtons';
+import type { Project, TerminalBookmark } from '../store/types';
 
 interface EditProjectDialogProps {
   project: Project | null;
@@ -27,7 +26,6 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [selectedHue, setSelectedHue] = createSignal(0);
   const [branchPrefix, setBranchPrefix] = createSignal('task');
   const [deleteBranchOnClose, setDeleteBranchOnClose] = createSignal(true);
-  const [defaultGitIsolation, setDefaultGitIsolation] = createSignal<GitIsolationMode>('worktree');
   const [defaultBaseBranch, setDefaultBaseBranch] = createSignal('');
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
   const [newCommand, setNewCommand] = createSignal('');
@@ -41,7 +39,6 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
     setSelectedHue(hueFromColor(p.color));
     setBranchPrefix(sanitizeBranchPrefix(p.branchPrefix ?? 'task'));
     setDeleteBranchOnClose(p.deleteBranchOnClose ?? true);
-    setDefaultGitIsolation(p.defaultGitIsolation ?? 'worktree');
     setDefaultBaseBranch(p.defaultBaseBranch ?? '');
     setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
     setNewCommand('');
@@ -74,7 +71,6 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
       color: `hsl(${selectedHue()}, 70%, 75%)`,
       branchPrefix: sanitizedPrefix,
       deleteBranchOnClose: deleteBranchOnClose(),
-      defaultGitIsolation: defaultGitIsolation(),
       defaultBaseBranch: defaultBaseBranch() || undefined,
       terminalBookmarks: bookmarks(),
     });
@@ -322,19 +318,6 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               />
               Always delete branch and worklog on merge
             </label>
-
-            {/* Default isolation mode */}
-            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label style={sectionLabelStyle}>Default Git Isolation</label>
-              <SegmentedButtons
-                options={[
-                  { value: 'worktree', label: 'Worktree' },
-                  { value: 'direct', label: 'Direct' },
-                ]}
-                value={defaultGitIsolation()}
-                onChange={setDefaultGitIsolation}
-              />
-            </div>
 
             {/* Default base branch */}
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>

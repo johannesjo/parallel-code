@@ -15,7 +15,6 @@ export interface Project {
   color: string;
   branchPrefix?: string; // default "task" if unset
   deleteBranchOnClose?: boolean; // default true if unset
-  defaultGitIsolation?: GitIsolationMode;
   defaultBaseBranch?: string;
   terminalBookmarks?: TerminalBookmark[];
 }
@@ -53,8 +52,6 @@ export interface Task {
   dockerMode?: boolean;
   dockerImage?: string;
   githubUrl?: string;
-  collapsed?: boolean;
-  savedAgentDef?: AgentDef;
   planContent?: string;
   planFileName?: string;
 }
@@ -83,7 +80,6 @@ export interface PersistedTask {
   dockerImage?: string;
   githubUrl?: string;
   savedInitialPrompt?: string;
-  collapsed?: boolean;
   planFileName?: string;
 }
 
@@ -105,7 +101,6 @@ export interface PersistedState {
   lastProjectId: string | null;
   lastAgentId: string | null;
   taskOrder: string[];
-  collapsedTaskOrder?: string[];
   tasks: Record<string, PersistedTask>;
   terminals?: Record<string, PersistedTerminal>;
   activeTaskId: string | null;
@@ -153,7 +148,6 @@ export interface AppStore {
   lastProjectId: string | null;
   lastAgentId: string | null;
   taskOrder: string[];
-  collapsedTaskOrder: string[];
   tasks: Record<string, Task>;
   terminals: Record<string, Terminal>;
   agents: Record<string, Agent>;
@@ -161,7 +155,6 @@ export interface AppStore {
   activeAgentId: string | null;
   availableAgents: AgentDef[];
   customAgents: AgentDef[];
-  showNewTaskDialog: boolean;
   sidebarVisible: boolean;
   fontScales: Record<string, number>;
   panelSizes: Record<string, number>;

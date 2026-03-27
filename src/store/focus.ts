@@ -2,7 +2,6 @@ import { batch } from 'solid-js';
 import { store, setStore } from './core';
 import { setActiveTask } from './navigation';
 import { computeSidebarTaskOrder } from './sidebar-order';
-import { uncollapseTask } from './tasks';
 
 // Imperative focus registry: components register focus callbacks on mount
 const focusRegistry = new Map<string, () => void>();
@@ -140,7 +139,7 @@ function focusTaskPanel(taskId: string, panel: string): void {
 }
 
 export function navigateRow(direction: 'up' | 'down'): void {
-  if (store.showNewTaskDialog || store.showHelpDialog || store.showSettingsDialog) return;
+  if (store.showHelpDialog || store.showSettingsDialog) return;
 
   if (store.placeholderFocused) {
     const btn = direction === 'up' ? 'add-task' : 'add-terminal';
@@ -209,7 +208,7 @@ export function navigateRow(direction: 'up' | 'down'): void {
 }
 
 export function navigateColumn(direction: 'left' | 'right'): void {
-  if (store.showNewTaskDialog || store.showHelpDialog || store.showSettingsDialog) return;
+  if (store.showHelpDialog || store.showSettingsDialog) return;
 
   const taskId = store.activeTaskId;
 
@@ -233,11 +232,6 @@ export function navigateColumn(direction: 'left' | 'right'): void {
     if (direction === 'right') {
       const targetTaskId = store.sidebarFocusedTaskId ?? taskId;
       if (targetTaskId) {
-        // If the focused task is collapsed, uncollapse it instead of navigating into it
-        if (store.tasks[targetTaskId]?.collapsed) {
-          uncollapseTask(targetTaskId);
-          return;
-        }
         if (targetTaskId !== store.activeTaskId) setActiveTask(targetTaskId);
         unfocusSidebar();
         setTaskFocusedPanel(targetTaskId, getTaskFocusedPanel(targetTaskId));

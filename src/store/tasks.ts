@@ -103,30 +103,17 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   if (!projectRoot) throw new Error('Project not found');
   if (isProjectMissing(projectId)) throw new Error('Project folder not found');
 
-  let taskId: string;
-  let branchName: string;
-  let worktreePath: string;
-
-  if (gitIsolation === 'worktree') {
-    const branchPrefix = opts.branchPrefixOverride ?? getProjectBranchPrefix(projectId);
-    const result = await invoke<CreateTaskResult>(IPC.CreateTask, {
-      name,
-      projectRoot,
-      symlinkDirs,
-      branchPrefix,
-      baseBranch: baseBranch || undefined,
-    });
-    taskId = result.id;
-    branchName = result.branch_name;
-    worktreePath = result.worktree_path;
-  } else {
-    if (hasDirectTask(projectId)) {
-      throw new Error('A direct-mode task already exists for this project');
-    }
-    taskId = crypto.randomUUID();
-    branchName = baseBranch;
-    worktreePath = projectRoot;
-  }
+  const branchPrefix = opts.branchPrefixOverride ?? getProjectBranchPrefix(projectId);
+  const result = await invoke<CreateTaskResult>(IPC.CreateTask, {
+    name,
+    projectRoot,
+    symlinkDirs,
+    branchPrefix,
+    baseBranch: baseBranch || undefined,
+  });
+  const taskId = result.id;
+  const branchName = result.branch_name;
+  const worktreePath = result.worktree_path;
 
   const agentId = crypto.randomUUID();
   const task: Task = {
@@ -433,112 +420,6 @@ export async function closeShell(taskId: string, shellId: string): Promise<void>
       const focusIndex = Math.min(closedIndex, remaining - 1);
       setTaskFocusedPanel(taskId, `shell:${focusIndex}`);
     }
-  }
-}
-
-export function hasDirectTask(projectId: string): boolean {
-  const allTaskIds = [...store.taskOrder, ...store.collapsedTaskOrder];
-  return allTaskIds.some((taskId) => {
-    const task = store.tasks[taskId];
-    return (
-      task &&
-      task.projectId === projectId &&
-      task.gitIsolation === 'direct' &&
-      task.closingStatus !== 'removing'
-    );
-  });
-}
-
-export async function collapseTask(taskId: string): Promise<void> {
-  const task = store.tasks[taskId];
-  if (!task || task.collapsed || task.closingStatus) return;
-
-  // Stop plan file watcher to prevent FSWatcher leak
-  invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
-
-  // Save agent def before killing so uncollapse can restart cleanly.
-  // Collapsing unmounts the TaskPanel which destroys the TerminalView,
-  // so agents must be killed explicitly to avoid orphaned PTY processes.
-  const firstAgent = task.agentIds[0] ? store.agents[task.agentIds[0]] : null;
-  const agentDef = firstAgent?.def;
-  const agentIds = [...task.agentIds];
-  const shellAgentIds = [...task.shellAgentIds];
-
-  invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
-  const allIds = [...agentIds, ...shellAgentIds];
-  await Promise.allSettled(
-    allIds.map((id) => invoke(IPC.KillAgent, { agentId: id }).catch(console.error)),
-  );
-  for (const id of allIds) clearAgentActivity(id);
-
-  setStore(
-    produce((s) => {
-      if (!s.tasks[taskId]) return;
-      s.tasks[taskId].collapsed = true;
-      s.tasks[taskId].savedAgentDef = agentDef;
-      s.tasks[taskId].agentIds = [];
-      s.tasks[taskId].shellAgentIds = [];
-      const idx = s.taskOrder.indexOf(taskId);
-      if (idx !== -1) s.taskOrder.splice(idx, 1);
-      s.collapsedTaskOrder.push(taskId);
-
-      // Clean up agent entries
-      for (const agentId of agentIds) {
-        delete s.agents[agentId];
-      }
-
-      // Switch active task to neighbor
-      if (s.activeTaskId === taskId) {
-        const neighbor = s.taskOrder[Math.max(0, idx - 1)] ?? null;
-        s.activeTaskId = neighbor;
-        const neighborTask = neighbor ? s.tasks[neighbor] : null;
-        s.activeAgentId = neighborTask?.agentIds[0] ?? null;
-      }
-    }),
-  );
-
-  rescheduleTaskStatusPolling();
-}
-
-export function uncollapseTask(taskId: string): void {
-  const task = store.tasks[taskId];
-  if (!task || !task.collapsed) return;
-
-  const savedDef = task.savedAgentDef;
-  const agentId = savedDef ? crypto.randomUUID() : null;
-
-  setStore(
-    produce((s) => {
-      const t = s.tasks[taskId];
-      t.collapsed = false;
-      s.collapsedTaskOrder = s.collapsedTaskOrder.filter((id) => id !== taskId);
-      s.taskOrder.push(taskId);
-      s.activeTaskId = taskId;
-
-      if (agentId && savedDef) {
-        const agent: Agent = {
-          id: agentId,
-          taskId,
-          def: savedDef,
-          resumed: true,
-          status: 'running',
-          exitCode: null,
-          signal: null,
-          lastOutput: [],
-          generation: 0,
-        };
-        s.agents[agentId] = agent;
-        t.agentIds = [agentId];
-        t.savedAgentDef = undefined;
-      }
-
-      s.activeAgentId = t.agentIds[0] ?? null;
-    }),
-  );
-
-  if (agentId) {
-    markAgentSpawned(agentId);
-    rescheduleTaskStatusPolling();
   }
 }
 

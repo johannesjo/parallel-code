@@ -42,9 +42,6 @@ export {
   spawnShellForTask,
   runBookmarkInTask,
   closeShell,
-  hasDirectTask,
-  collapseTask,
-  uncollapseTask,
   getGitHubDropDefaults,
   setNewTaskDropUrl,
   setNewTaskPrefillPrompt,
@@ -56,7 +53,6 @@ export {
   navigateTask,
   navigateAgent,
   moveActiveTask,
-  toggleNewTaskDialog,
 } from './navigation';
 export {
   registerFocusFn,

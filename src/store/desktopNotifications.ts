@@ -63,7 +63,7 @@ export function startDesktopNotificationWatcher(windowFocused: Accessor<boolean>
 
   // Track status transitions
   createEffect(() => {
-    const allTaskIds = [...store.taskOrder, ...store.collapsedTaskOrder];
+    const allTaskIds = store.taskOrder;
     const seen = new Set<string>();
 
     for (const taskId of allTaskIds) {

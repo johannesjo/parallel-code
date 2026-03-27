@@ -4,7 +4,6 @@ import {
   pickAndAddProject,
   removeProject,
   removeProjectWithTasks,
-  toggleNewTaskDialog,
   setActiveTask,
   toggleSidebar,
   reorderTask,
@@ -18,7 +17,6 @@ import {
   getPanelSize,
   setPanelSizes,
   toggleSettingsDialog,
-  uncollapseTask,
   isProjectMissing,
 } from '../store/store';
 import type { Project } from '../store/types';
@@ -427,45 +425,11 @@ export function Sidebar() {
 
         <div style={{ height: '1px', background: theme.border }} />
 
-        {/* New task / Link project button */}
-        <Show
-          when={store.projects.length > 0}
-          fallback={
-            <button
-              class="icon-btn"
-              onClick={() => pickAndAddProject()}
-              style={{
-                background: 'transparent',
-                border: `1px solid ${theme.border}`,
-                'border-radius': '8px',
-                padding: '8px 14px',
-                color: theme.fgMuted,
-                cursor: 'pointer',
-                'font-size': sf(12),
-                'font-weight': '500',
-                display: 'flex',
-                'align-items': 'center',
-                'justify-content': 'center',
-                gap: '6px',
-                width: '100%',
-              }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 16 16"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
-              </svg>
-              Link Project
-            </button>
-          }
-        >
+        {/* Link project button (only shown when no projects) */}
+        <Show when={store.projects.length === 0}>
           <button
             class="icon-btn"
-            onClick={() => toggleNewTaskDialog(true)}
+            onClick={() => pickAndAddProject()}
             style={{
               background: 'transparent',
               border: `1px solid ${theme.border}`,
@@ -482,10 +446,10 @@ export function Sidebar() {
               width: '100%',
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
             </svg>
-            New Task
+            Link Project
           </button>
         </Show>
 
@@ -505,13 +469,9 @@ export function Sidebar() {
               }
               const taskId = store.sidebarFocusedTaskId;
               if (taskId) {
-                if (store.tasks[taskId]?.collapsed) {
-                  uncollapseTask(taskId);
-                } else {
-                  setActiveTask(taskId);
-                  unfocusSidebar();
-                  setTaskFocusedPanel(taskId, getTaskFocusedPanel(taskId));
-                }
+                setActiveTask(taskId);
+                unfocusSidebar();
+                setTaskFocusedPanel(taskId, getTaskFocusedPanel(taskId));
               }
             }
           }}
@@ -528,8 +488,7 @@ export function Sidebar() {
             {(project) => {
               const group = () => groupedTasks().grouped[project.id];
               const activeTasks = () => group()?.active ?? [];
-              const collapsedTasks = () => group()?.collapsed ?? [];
-              const totalCount = () => activeTasks().length + collapsedTasks().length;
+              const totalCount = () => activeTasks().length;
               return (
                 <Show when={totalCount() > 0}>
                   <span
@@ -567,20 +526,13 @@ export function Sidebar() {
                       />
                     )}
                   </For>
-                  <For each={collapsedTasks()}>
-                    {(taskId) => <CollapsedTaskRow taskId={taskId} />}
-                  </For>
                 </Show>
               );
             }}
           </For>
 
           {/* Orphaned tasks (no matching project) */}
-          <Show
-            when={
-              groupedTasks().orphanedActive.length + groupedTasks().orphanedCollapsed.length > 0
-            }
-          >
+          <Show when={groupedTasks().orphanedActive.length > 0}>
             <span
               style={{
                 'font-size': sf(10),
@@ -592,8 +544,7 @@ export function Sidebar() {
                 padding: '0 2px',
               }}
             >
-              Other (
-              {groupedTasks().orphanedActive.length + groupedTasks().orphanedCollapsed.length})
+              Other ({groupedTasks().orphanedActive.length})
             </span>
             <For each={groupedTasks().orphanedActive}>
               {(taskId) => (
@@ -604,9 +555,6 @@ export function Sidebar() {
                   dropTargetIndex={dropTargetIndex}
                 />
               )}
-            </For>
-            <For each={groupedTasks().orphanedCollapsed}>
-              {(taskId) => <CollapsedTaskRow taskId={taskId} />}
             </For>
           </Show>
 
@@ -667,9 +615,7 @@ export function Sidebar() {
         {(() => {
           const id = confirmRemove();
           const taskCount = id
-            ? [...store.taskOrder, ...store.collapsedTaskOrder].filter(
-                (tid) => store.tasks[tid]?.projectId === id,
-              ).length
+            ? store.taskOrder.filter((tid) => store.tasks[tid]?.projectId === id).length
             : 0;
           return (
             <ConfirmDialog
@@ -703,75 +649,6 @@ export function Sidebar() {
         onMouseDown={handleResizeMouseDown}
       />
     </div>
-  );
-}
-
-function DirectModeBadge(props: { branchName: string }) {
-  return (
-    <span
-      style={{
-        'font-size': sf(10),
-        'font-weight': '600',
-        padding: '1px 5px',
-        'border-radius': '3px',
-        background: `color-mix(in srgb, ${theme.warning} 12%, transparent)`,
-        color: theme.warning,
-        'flex-shrink': '0',
-        'line-height': '1.5',
-      }}
-    >
-      {props.branchName}
-    </span>
-  );
-}
-
-function CollapsedTaskRow(props: { taskId: string }) {
-  const task = () => store.tasks[props.taskId];
-  return (
-    <Show when={task()}>
-      {(t) => (
-        <div
-          class="task-item task-item-appearing"
-          role="button"
-          tabIndex={0}
-          data-sidebar-task-id={props.taskId}
-          onClick={() => uncollapseTask(props.taskId)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              uncollapseTask(props.taskId);
-            }
-          }}
-          title="Click to restore"
-          style={{
-            padding: '7px 10px',
-            'border-radius': '6px',
-            background: 'transparent',
-            color: theme.fgSubtle,
-            'font-size': sf(12),
-            'font-weight': '400',
-            cursor: 'pointer',
-            'white-space': 'nowrap',
-            overflow: 'hidden',
-            'text-overflow': 'ellipsis',
-            opacity: '0.6',
-            display: 'flex',
-            'align-items': 'center',
-            gap: '6px',
-            border:
-              store.sidebarFocused && store.sidebarFocusedTaskId === props.taskId
-                ? `1.5px solid var(--border-focus)`
-                : '1.5px solid transparent',
-          }}
-        >
-          <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" />
-          <Show when={t().gitIsolation === 'direct'}>
-            <DirectModeBadge branchName={t().branchName} />
-          </Show>
-          <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis' }}>{t().name}</span>
-        </div>
-      )}
-    </Show>
   );
 }
 
@@ -821,22 +698,6 @@ function TaskRow(props: TaskRowProps) {
             }}
           >
             <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" />
-            <Show when={t().gitIsolation === 'direct'}>
-              <span
-                style={{
-                  'font-size': sf(10),
-                  'font-weight': '600',
-                  padding: '1px 5px',
-                  'border-radius': '3px',
-                  background: `color-mix(in srgb, ${theme.warning} 12%, transparent)`,
-                  color: theme.warning,
-                  'flex-shrink': '0',
-                  'line-height': '1.5',
-                }}
-              >
-                {t().branchName}
-              </span>
-            </Show>
             <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis' }}>{t().name}</span>
           </div>
         </>

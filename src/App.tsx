@@ -7,7 +7,6 @@ import { appWindow } from './lib/window';
 import { confirm } from './lib/dialog';
 import { Sidebar } from './components/Sidebar';
 import { TilingLayout } from './components/TilingLayout';
-import { NewTaskDialog } from './components/NewTaskDialog';
 import { HelpDialog } from './components/HelpDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { WindowTitleBar } from './components/WindowTitleBar';
@@ -19,7 +18,6 @@ import {
   loadAgents,
   loadState,
   saveState,
-  toggleNewTaskDialog,
   toggleSidebar,
   toggleArena,
   moveActiveTask,
@@ -164,7 +162,6 @@ function App() {
     const url = extractGitHubUrl(e.dataTransfer);
     if (!url) return;
     setNewTaskDropUrl(url);
-    toggleNewTaskDialog(true);
   }
 
   let unlistenFocusChanged: (() => void) | null = null;
@@ -296,7 +293,7 @@ function App() {
     await loadState();
 
     // Restore plan content for tasks that had a plan file before restart
-    for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
+    for (const taskId of store.taskOrder) {
       const task = store.tasks[taskId];
       if (!task?.worktreePath || !task.planFileName) continue;
       invoke<{ content: string; fileName: string } | null>(IPC.ReadPlanContent, {
@@ -328,7 +325,7 @@ function App() {
     });
 
     const handlePaste = (e: ClipboardEvent) => {
-      if (store.showNewTaskDialog || store.showHelpDialog || store.showSettingsDialog) return;
+      if (store.showHelpDialog || store.showSettingsDialog) return;
       const el = document.activeElement;
       if (
         el instanceof HTMLInputElement ||
@@ -342,7 +339,6 @@ function App() {
       if (text && isGitHubUrl(text)) {
         e.preventDefault();
         setNewTaskDropUrl(text);
-        toggleNewTaskDialog(true);
       }
     };
     document.addEventListener('paste', handlePaste);
@@ -511,19 +507,6 @@ function App() {
         if (!e.repeat) createTerminal();
       },
     });
-    registerShortcut({
-      key: 'n',
-      cmdOrCtrl: true,
-      global: true,
-      handler: () => toggleNewTaskDialog(true),
-    });
-    registerShortcut({
-      key: 'a',
-      cmdOrCtrl: true,
-      shift: true,
-      global: true,
-      handler: () => toggleNewTaskDialog(true),
-    });
     registerShortcut({ key: 'b', cmdOrCtrl: true, handler: () => toggleSidebar() });
     registerShortcut({
       key: '/',
@@ -558,10 +541,6 @@ function App() {
         }
         if (store.showSettingsDialog) {
           toggleSettingsDialog(false);
-          return;
-        }
-        if (store.showNewTaskDialog) {
-          toggleNewTaskDialog(false);
           return;
         }
       },
@@ -707,10 +686,6 @@ function App() {
             </button>
           </Show>
           <TilingLayout />
-          <NewTaskDialog
-            open={store.showNewTaskDialog}
-            onClose={() => toggleNewTaskDialog(false)}
-          />
         </main>
         <Show when={!isMac}>
           <WindowResizeHandles />

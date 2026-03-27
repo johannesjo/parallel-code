@@ -17,7 +17,7 @@ import { saveArenaHistory } from './persistence';
 import { formatDuration } from './utils';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
-import { store, toggleNewTaskDialog, toggleArena, setNewTaskPrefillPrompt } from '../store/store';
+import { store, toggleArena, setNewTaskPrefillPrompt } from '../store/store';
 import type { ArenaMatch } from './types';
 import type { ChangedFile } from '../ipc/types';
 
@@ -114,7 +114,6 @@ export function ResultsScreen() {
     const projectId = store.projects.find((p) => p.path === arenaStore.cwd)?.id ?? null;
     setNewTaskPrefillPrompt(fullPrompt, projectId);
     toggleArena(false);
-    toggleNewTaskDialog(true);
   }
 
   const sorted = () =>

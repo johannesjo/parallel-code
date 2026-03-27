@@ -1,7 +1,5 @@
 import { store, setStore } from './core';
 import { getTaskFocusedPanel, setTaskFocusedPanel } from './focus';
-import { showNotification } from './notification';
-import { pickAndAddProject } from './projects';
 import { reorderTask } from './tasks';
 
 export function setActiveTask(id: string): void {
@@ -46,18 +44,4 @@ export function moveActiveTask(direction: 'left' | 'right'): void {
   reorderTask(idx, target);
   // Re-focus the moved task and scroll it into view (DOM node move loses focus)
   setTaskFocusedPanel(activeTaskId, getTaskFocusedPanel(activeTaskId));
-}
-
-export function toggleNewTaskDialog(show?: boolean): void {
-  const shouldShow = show ?? !store.showNewTaskDialog;
-  if (shouldShow && store.projects.length === 0) {
-    showNotification('Add a project first');
-    pickAndAddProject();
-    return;
-  }
-  if (!shouldShow) {
-    setStore('newTaskDropUrl', null);
-    setStore('newTaskPrefillPrompt', null);
-  }
-  setStore('showNewTaskDialog', shouldShow);
 }

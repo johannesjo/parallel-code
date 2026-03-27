@@ -33,8 +33,7 @@ export function addProject(name: string, path: string): string {
 
 export function removeProject(projectId: string): void {
   // Guard: skip removal if any tasks still reference this project
-  const allTaskIds = [...store.taskOrder, ...store.collapsedTaskOrder];
-  const hasLinkedTasks = allTaskIds.some((tid) => store.tasks[tid]?.projectId === projectId);
+  const hasLinkedTasks = store.taskOrder.some((tid) => store.tasks[tid]?.projectId === projectId);
   if (hasLinkedTasks) {
     console.warn(
       'removeProject: skipped — tasks still reference this project. Use removeProjectWithTasks.',
@@ -62,7 +61,6 @@ export function updateProject(
       | 'color'
       | 'branchPrefix'
       | 'deleteBranchOnClose'
-      | 'defaultGitIsolation'
       | 'defaultBaseBranch'
       | 'terminalBookmarks'
     >
@@ -78,8 +76,6 @@ export function updateProject(
         s.projects[idx].branchPrefix = sanitizeBranchPrefix(updates.branchPrefix);
       if (updates.deleteBranchOnClose !== undefined)
         s.projects[idx].deleteBranchOnClose = updates.deleteBranchOnClose;
-      if (updates.defaultGitIsolation !== undefined)
-        s.projects[idx].defaultGitIsolation = updates.defaultGitIsolation;
       if (updates.defaultBaseBranch !== undefined)
         s.projects[idx].defaultBaseBranch = updates.defaultBaseBranch;
       if (updates.terminalBookmarks !== undefined)
@@ -100,9 +96,6 @@ export function getProjectPath(projectId: string): string | undefined {
 export async function removeProjectWithTasks(projectId: string): Promise<void> {
   // Collect task IDs belonging to this project BEFORE removing anything
   const taskIds = store.taskOrder.filter((tid) => store.tasks[tid]?.projectId === projectId);
-  const collapsedTaskIds = store.collapsedTaskOrder.filter(
-    (tid) => store.tasks[tid]?.projectId === projectId,
-  );
 
   // Close tasks sequentially to avoid concurrent git operations on the same repo.
   // Must happen before removeProject() since closeTask needs the project path.
@@ -110,13 +103,9 @@ export async function removeProjectWithTasks(projectId: string): Promise<void> {
     // closeTask handles and stores its own errors, so this should not throw.
     await closeTask(tid);
   }
-  for (const tid of collapsedTaskIds) {
-    await closeTask(tid);
-  }
 
   // If any tasks failed to close, keep the project so users can retry.
-  const allTaskIds = [...taskIds, ...collapsedTaskIds];
-  const hasRemainingTasks = allTaskIds.some((tid) => store.tasks[tid]?.projectId === projectId);
+  const hasRemainingTasks = taskIds.some((tid) => store.tasks[tid]?.projectId === projectId);
   if (hasRemainingTasks) return;
 
   // Now remove the project itself

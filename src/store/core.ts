@@ -8,7 +8,6 @@ export const [store, setStore] = createStore<AppStore>({
   lastProjectId: null,
   lastAgentId: null,
   taskOrder: [],
-  collapsedTaskOrder: [],
   tasks: {},
   terminals: {},
   agents: {},
@@ -16,7 +15,6 @@ export const [store, setStore] = createStore<AppStore>({
   activeAgentId: null,
   availableAgents: [],
   customAgents: [],
-  showNewTaskDialog: false,
   sidebarVisible: true,
   fontScales: {},
   panelSizes: {},
@@ -74,6 +72,5 @@ export function cleanupPanelEntries(s: AppStore, id: string): number {
     if (key === id || key.startsWith(prefix)) delete s.panelSizes[key];
   }
   s.taskOrder = s.taskOrder.filter((x) => x !== id);
-  s.collapsedTaskOrder = s.collapsedTaskOrder.filter((x) => x !== id);
   return idx;
 }
