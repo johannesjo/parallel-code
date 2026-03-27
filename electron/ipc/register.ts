@@ -50,10 +50,14 @@ import {
 import { createTask, deleteTask } from './tasks.js';
 import { listAgents } from './agents.js';
 import { saveAppState, loadAppState } from './persistence.js';
-import { spawn } from 'child_process';
+import { execFile, spawn } from 'child_process';
+import { promisify } from 'util';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
 import path from 'path';
+
+const exec = promisify(execFile);
+
 import {
   assertString,
   assertInt,
@@ -340,6 +344,21 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.GetBranches, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     return getBranches(args.projectRoot);
+  });
+
+  // --- PR commands ---
+  ipcMain.handle(IPC.CreatePR, async (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    const { stdout } = await exec('gh', ['pr', 'create', '--fill'], {
+      cwd: args.worktreePath,
+    });
+    return stdout.trim();
+  });
+  ipcMain.handle(IPC.OpenPR, async (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    await exec('gh', ['pr', 'view', '--web'], {
+      cwd: args.worktreePath,
+    });
   });
 
   // --- Persistence ---

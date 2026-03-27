@@ -98,6 +98,10 @@ export enum IPC {
   // System
   GetSystemFonts = 'get_system_fonts',
 
+  // PR
+  CreatePR = 'create_pr',
+  OpenPR = 'open_pr',
+
   // Notifications
   ShowNotification = 'show_notification',
   NotificationClicked = 'notification_clicked',

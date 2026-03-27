@@ -38,6 +38,9 @@ const ALLOWED_CHANNELS = new Set([
   'checkout_branch',
   'get_branches',
   'check_is_git_repo',
+  // PR
+  'create_pr',
+  'open_pr',
   // Persistence
   'save_app_state',
   'load_app_state',

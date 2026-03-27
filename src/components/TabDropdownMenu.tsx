@@ -32,7 +32,7 @@ export function TabDropdownMenu(props: TabDropdownMenuProps) {
         const t = task();
         if (!t) return;
         try {
-          await window.electron.ipcRenderer.invoke('create_pr', { worktreePath: t.worktreePath });
+          await invoke(IPC.CreatePR, { worktreePath: t.worktreePath });
         } catch (err) {
           showNotification(`Create PR failed: ${String(err)}`);
         }
@@ -45,7 +45,7 @@ export function TabDropdownMenu(props: TabDropdownMenuProps) {
         const t = task();
         if (!t) return;
         try {
-          await window.electron.ipcRenderer.invoke('open_pr', { worktreePath: t.worktreePath });
+          await invoke(IPC.OpenPR, { worktreePath: t.worktreePath });
         } catch (err) {
           showNotification(`Open PR failed: ${String(err)}`);
         }
