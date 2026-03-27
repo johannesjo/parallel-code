@@ -3,6 +3,12 @@ import { store, setActiveTask, createTask, showNotification } from '../store/sto
 import { getTaskDotStatus } from '../store/taskStatus';
 import { TabDropdownMenu } from './TabDropdownMenu';
 
+// Global ref so Cmd+N can trigger the inline input from outside
+let _openInlineInputFn: (() => void) | null = null;
+export function triggerNewTask(): void {
+  _openInlineInputFn?.();
+}
+
 export function HeaderTabBar() {
   const [creatingTask, setCreatingTask] = createSignal(false);
   const [inputValue, setInputValue] = createSignal('');
@@ -47,6 +53,9 @@ export function HeaderTabBar() {
     setInputValue('');
     requestAnimationFrame(() => inputRef?.focus());
   }
+
+  // Register global trigger
+  _openInlineInputFn = openInlineInput;
 
   async function handleCreateTask() {
     const prompt = inputValue().trim();

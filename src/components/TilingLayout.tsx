@@ -5,6 +5,7 @@ import { ResizablePanel, type PanelChild, type ResizablePanelHandle } from './Re
 import { TaskPanel } from './TaskPanel';
 import { TerminalPanel } from './TerminalPanel';
 import { NewTaskPlaceholder } from './NewTaskPlaceholder';
+import { triggerNewTask } from './HeaderTabBar';
 import { theme } from '../lib/theme';
 import { mod } from '../lib/platform';
 import { createCtrlShiftWheelResizeHandler } from '../lib/wheelZoom';
@@ -267,6 +268,7 @@ export function TilingLayout() {
               }
             >
               <div
+                onClick={() => triggerNewTask()}
                 style={{
                   width: '56px',
                   height: '56px',
@@ -278,6 +280,7 @@ export function TilingLayout() {
                   'justify-content': 'center',
                   'font-size': '24px',
                   color: theme.fgSubtle,
+                  cursor: 'pointer',
                 }}
               >
                 +
@@ -307,7 +310,7 @@ export function TilingLayout() {
                   >
                     {mod}+N
                   </kbd>{' '}
-                  to create a new task
+                  or click + to create a new task
                 </div>
               </div>
             </Show>

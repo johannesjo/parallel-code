@@ -11,7 +11,7 @@ import { HelpDialog } from './components/HelpDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { WindowTitleBar } from './components/WindowTitleBar';
 import { WindowResizeHandles } from './components/WindowResizeHandles';
-import { HeaderTabBar } from './components/HeaderTabBar';
+import { HeaderTabBar, triggerNewTask } from './components/HeaderTabBar';
 import { theme } from './lib/theme';
 import {
   store,
@@ -508,6 +508,7 @@ function App() {
       },
     });
     registerShortcut({ key: 'b', cmdOrCtrl: true, handler: () => toggleSidebar() });
+    registerShortcut({ key: 'n', cmdOrCtrl: true, handler: () => triggerNewTask() });
     registerShortcut({
       key: '/',
       cmdOrCtrl: true,
