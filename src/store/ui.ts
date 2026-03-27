@@ -1,6 +1,5 @@
 import { produce } from 'solid-js/store';
 import { store, setStore } from './core';
-import type { LookPreset } from '../lib/look';
 import type { PersistedWindowState } from './types';
 
 // --- Font Scale (per-panel) ---
@@ -72,10 +71,6 @@ export function toggleSidebar(): void {
 
 export function setTerminalFont(terminalFont: string): void {
   setStore('terminalFont', terminalFont);
-}
-
-export function setThemePreset(themePreset: LookPreset): void {
-  setStore('themePreset', themePreset);
 }
 
 export function setAutoTrustFolders(autoTrustFolders: boolean): void {

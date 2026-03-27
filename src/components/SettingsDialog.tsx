@@ -6,12 +6,10 @@ import {
   getTerminalFontFamily,
   LIGATURE_FONTS,
 } from '../lib/fonts';
-import { LOOK_PRESETS } from '../lib/look';
 import { theme, sectionLabelStyle } from '../lib/theme';
 import {
   store,
   setTerminalFont,
-  setThemePreset,
   setAutoTrustFolders,
   setShowPlans,
   setDesktopNotificationsEnabled,
@@ -19,7 +17,6 @@ import {
   setEditorCommand,
   setDockerImage,
 } from '../store/store';
-import { CustomAgentEditor } from './CustomAgentEditor';
 import { mod } from '../lib/platform';
 
 interface SettingsDialogProps {
@@ -105,31 +102,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
         >
           &times;
         </button>
-      </div>
-
-      <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
-        <div
-          style={{
-            ...sectionLabelStyle,
-            'font-weight': '600',
-          }}
-        >
-          Theme
-        </div>
-        <div class="settings-theme-grid">
-          <For each={LOOK_PRESETS}>
-            {(preset) => (
-              <button
-                type="button"
-                class={`settings-theme-card${store.themePreset === preset.id ? ' active' : ''}`}
-                onClick={() => setThemePreset(preset.id)}
-              >
-                <span class="settings-theme-title">{preset.label}</span>
-                <span class="settings-theme-desc">{preset.description}</span>
-              </button>
-            )}
-          </For>
-        </div>
       </div>
 
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
@@ -397,18 +369,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
             <span>No dimming</span>
           </div>
         </div>
-      </div>
-
-      <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
-        <div
-          style={{
-            ...sectionLabelStyle,
-            'font-weight': '600',
-          }}
-        >
-          Custom Agents
-        </div>
-        <CustomAgentEditor />
       </div>
 
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>

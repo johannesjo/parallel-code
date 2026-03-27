@@ -89,7 +89,6 @@ export {
   toggleSidebar,
   toggleArena,
   setTerminalFont,
-  setThemePreset,
   setAutoTrustFolders,
   setShowPlans,
   setDesktopNotificationsEnabled,
