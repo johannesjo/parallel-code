@@ -296,7 +296,7 @@ export async function loadState(): Promise<void> {
         typeof raw.terminalFont === 'string' && raw.terminalFont.trim()
           ? raw.terminalFont
           : DEFAULT_TERMINAL_FONT;
-      s.themePreset = isLookPreset(raw.themePreset) ? raw.themePreset : 'minimal';
+      s.themePreset = isLookPreset(raw.themePreset) ? raw.themePreset : 'warp';
       s.windowState = parsePersistedWindowState(raw.windowState);
       s.autoTrustFolders = typeof raw.autoTrustFolders === 'boolean' ? raw.autoTrustFolders : false;
       s.showPlans = typeof raw.showPlans === 'boolean' ? raw.showPlans : true;

@@ -1,5 +1,4 @@
 import { For, Show } from 'solid-js';
-import { store } from '../store/store';
 import { theme } from '../lib/theme';
 import type { AgentDef } from '../ipc/types';
 
@@ -67,13 +66,7 @@ export function AgentSelector(props: AgentSelectorProps) {
                   background: isSelected() ? theme.bgSelected : theme.bgInput,
                   border: isSelected() ? `1px solid ${theme.accent}` : `1px solid ${theme.border}`,
                   'border-radius': '8px',
-                  color: isSelected()
-                    ? store.themePreset === 'graphite' ||
-                      store.themePreset === 'minimal' ||
-                      store.themePreset === 'zenburnesque'
-                      ? '#ffffff'
-                      : theme.accentText
-                    : theme.fg,
+                  color: isSelected() ? theme.accentText : theme.fg,
                   cursor: 'pointer',
                   'font-size': '12px',
                   'font-weight': isSelected() ? '500' : '400',

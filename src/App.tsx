@@ -232,7 +232,7 @@ function App() {
 
   // Sync theme preset to <html> so Portal content inherits CSS variables
   createEffect(() => {
-    document.documentElement.dataset.look = store.themePreset;
+    document.documentElement.dataset.look = 'warp';
   });
 
   onMount(async () => {
@@ -640,7 +640,7 @@ function App() {
       <div
         ref={mainRef}
         class="app-shell"
-        data-look={store.themePreset}
+        data-look="warp"
         data-window-border={!isMac ? 'true' : 'false'}
         data-window-focused={windowFocused() ? 'true' : 'false'}
         data-window-maximized={windowMaximized() ? 'true' : 'false'}

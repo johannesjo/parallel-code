@@ -39,21 +39,10 @@ export const theme = {
   taskPanelBg: 'var(--task-panel-bg)',
 } as const;
 
-/** Opaque terminal background per preset — matches --task-panel-bg */
-const terminalBackground: Record<LookPreset, string> = {
-  classic: '#2d2e32',
-  graphite: '#1c2630',
-  indigo: '#1c2038',
-  ember: '#211918',
-  glacier: '#232e3a',
-  minimal: '#262626',
-  zenburnesque: '#2e2d2a',
-};
-
 /** Returns an xterm-compatible theme object for the given preset */
-export function getTerminalTheme(preset: LookPreset) {
+export function getTerminalTheme(_preset: LookPreset) {
   return {
-    background: terminalBackground[preset],
+    background: '#131315',
   };
 }
 
