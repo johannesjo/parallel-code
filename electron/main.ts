@@ -139,10 +139,19 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  // Grant microphone and clipboard access
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(permission === 'media' || permission === 'clipboard-read');
-  });
+  // Grant microphone and clipboard access (deny camera/video)
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents, permission, callback, details) => {
+      if (permission === 'clipboard-read') {
+        return callback(true);
+      }
+      if (permission === 'media') {
+        const types = (details as { mediaTypes?: string[] }).mediaTypes ?? [];
+        return callback(types.every((t) => t === 'audio'));
+      }
+      callback(false);
+    },
+  );
 
   createWindow();
 });

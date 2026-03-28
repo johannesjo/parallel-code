@@ -113,6 +113,9 @@
       "target": "dmg",
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Parallel Code needs microphone access for voice input in terminal sessions."
+      },
       "gatekeeperAssess": false,
       "notarize": true,
       "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/**",
