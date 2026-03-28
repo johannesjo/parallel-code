@@ -29,6 +29,14 @@ const presetColors: Record<LookPreset, PresetColors> = {
     border: '#2e3e50',
     accent: '#2ec8ff',
   },
+  midnight: {
+    bgElevated: '#000000',
+    fg: '#d7e4f0',
+    fgMuted: '#9bb0c3',
+    fgSubtle: '#678197',
+    border: '#2e3e50',
+    accent: '#2ec8ff',
+  },
   indigo: {
     bgElevated: '#1c2038',
     fg: '#deddff',

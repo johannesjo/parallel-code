@@ -43,6 +43,7 @@ export const theme = {
 const terminalBackground: Record<LookPreset, string> = {
   classic: '#2d2e32',
   graphite: '#1c2630',
+  midnight: '#000000',
   indigo: '#1c2038',
   ember: '#211918',
   glacier: '#232e3a',

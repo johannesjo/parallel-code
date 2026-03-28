@@ -1,6 +1,7 @@
 export type LookPreset =
   | 'classic'
   | 'graphite'
+  | 'midnight'
   | 'indigo'
   | 'ember'
   | 'glacier'
@@ -23,6 +24,11 @@ export const LOOK_PRESETS: LookPresetOption[] = [
     id: 'graphite',
     label: 'Graphite',
     description: 'Cool neon blue with subtle glow',
+  },
+  {
+    id: 'midnight',
+    label: 'Midnight',
+    description: 'Graphite with pure black terminals',
   },
   {
     id: 'classic',

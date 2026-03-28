@@ -171,6 +171,29 @@ html[data-look='graphite'] {
   --task-panel-bg: #1c2630;
 }
 
+html[data-look='midnight'] {
+  --bg: radial-gradient(130% 120% at 15% 0%, #253848 0%, #141c26 60%, #101418 100%);
+  --bg-elevated: #1c2630;
+  --bg-input: #19232e;
+  --bg-hover: #253240;
+  --bg-selected: #1c3e55;
+  --bg-selected-subtle: #1c3e5540;
+  --border: #2e3e50;
+  --border-subtle: #222e3a;
+  --border-focus: #2ec8ff;
+  --fg: #d7e4f0;
+  --fg-muted: #9bb0c3;
+  --fg-subtle: #678197;
+  --accent: #2ec8ff;
+  --accent-hover: #59d7ff;
+  --accent-text: #031018;
+  --link: #73dfff;
+  --island-bg: #192028;
+  --island-border: #2e3e50;
+  --task-container-bg: #161e28;
+  --task-panel-bg: #000000;
+}
+
 html[data-look='indigo'] {
   --bg: radial-gradient(130% 120% at 18% 0%, #202044 0%, #171c30 58%, #12151f 100%);
   --bg-elevated: #1c2038;
