@@ -171,7 +171,10 @@ export function TerminalView(props: TerminalViewProps) {
     });
 
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      if (e.type !== 'keydown') return true;
+      if (e.type !== 'keydown') {
+        if (e.key === 'Enter' && e.shiftKey) return false;
+        return true;
+      }
 
       // Let global app shortcuts pass through to the window handler
       if (matchesGlobalShortcut(e)) return false;
@@ -195,6 +198,25 @@ export function TerminalView(props: TerminalViewProps) {
           if (text) enqueueInput(text);
         });
         return false;
+      }
+
+      // Shift+Enter → send as Alt+Enter (newline in CLI agents like Claude Code)
+      if (e.key === 'Enter' && e.shiftKey) {
+        e.preventDefault();
+        enqueueInput('\x1b\r');
+        return false;
+      }
+
+      // CmdOrCtrl+Left/Right → Home/End escape sequences
+      if ((isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !(isMac ? e.ctrlKey : e.metaKey)) {
+        if (e.key === 'ArrowLeft') {
+          enqueueInput('\x1b[H'); // Home
+          return false;
+        }
+        if (e.key === 'ArrowRight') {
+          enqueueInput('\x1b[F'); // End
+          return false;
+        }
       }
 
       return true;
