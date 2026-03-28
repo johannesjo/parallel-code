@@ -202,14 +202,14 @@ export function TerminalView(props: TerminalViewProps) {
       }
 
       // Shift+Enter → send as Alt+Enter (newline in CLI agents like Claude Code)
-      if (e.key === 'Enter' && e.shiftKey) {
+      if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         enqueueInput('\x1b\r');
         return false;
       }
 
       // Cmd+Left/Right → Home/End (macOS only; on Linux Ctrl+Arrow is word-jump)
-      if (isMac && e.metaKey && !e.altKey && !e.ctrlKey) {
+      if (isMac && e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey) {
         if (e.key === 'ArrowLeft') {
           e.preventDefault();
           enqueueInput('\x1b[H'); // Home
