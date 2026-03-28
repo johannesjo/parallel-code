@@ -668,7 +668,7 @@ textarea::placeholder {
 .dialog-overlay {
   animation: fadeIn 0.16s ease;
   background: color-mix(in srgb, #000 44%, transparent);
-  backdrop-filter: blur(6px) saturate(1.15);
+  backdrop-filter: saturate(1.15);
 }
 
 .dialog-overlay > form,
