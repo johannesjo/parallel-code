@@ -100,6 +100,26 @@ function PlanViewerContent(props: PlanViewerContentProps) {
     () => !!props.planContent,
   );
 
+  // Render mermaid blocks after HTML is inserted
+  createEffect(() => {
+    void planHtml(); // track dependency
+    if (!contentRef) return;
+    const blocks = contentRef.querySelectorAll('.mermaid-block');
+    if (blocks.length === 0) return;
+    import('mermaid').then(({ default: mermaid }) => {
+      mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+      blocks.forEach((el, i) => {
+        const source = el.getAttribute('data-mermaid');
+        if (!source) return;
+        const id = `mermaid-plan-${Date.now()}-${i}`;
+        mermaid.render(id, source).then(({ svg }) => {
+          el.innerHTML = svg;
+          el.classList.add('mermaid-rendered');
+        });
+      });
+    });
+  });
+
   // Scroll to annotation when scrollTarget changes
   createEffect(() => {
     const target = review.scrollTarget();

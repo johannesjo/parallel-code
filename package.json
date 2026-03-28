@@ -33,6 +33,7 @@
     "@xterm/xterm": "^6.1.0-beta.195",
     "dompurify": "^3.3.3",
     "marked": "^17.0.3",
+    "mermaid": "^11.13.0",
     "monaco-editor": "^0.55.1",
     "node-pty": "^1.1.0",
     "qrcode": "^1.5.4",

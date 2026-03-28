@@ -1390,6 +1390,24 @@ body.dragging-task * {
   text-decoration: underline;
 }
 
+/* Mermaid diagram blocks */
+.mermaid-block {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 1em;
+  margin: 0.8em 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  white-space: pre;
+  color: var(--fg-muted);
+}
+.mermaid-block.mermaid-rendered {
+  white-space: normal;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.03);
+}
+
 /* AskCodeCard loading animation */
 @keyframes askcode-pulse {
   0%,
