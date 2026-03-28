@@ -172,6 +172,7 @@ export function TerminalView(props: TerminalViewProps) {
 
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== 'keydown') {
+        // Suppress Shift+Enter keyup so xterm doesn't echo a bare Enter
         if (e.key === 'Enter' && e.shiftKey) return false;
         return true;
       }
@@ -207,13 +208,15 @@ export function TerminalView(props: TerminalViewProps) {
         return false;
       }
 
-      // CmdOrCtrl+Left/Right → Home/End escape sequences
-      if ((isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !(isMac ? e.ctrlKey : e.metaKey)) {
+      // Cmd+Left/Right → Home/End (macOS only; on Linux Ctrl+Arrow is word-jump)
+      if (isMac && e.metaKey && !e.altKey && !e.ctrlKey) {
         if (e.key === 'ArrowLeft') {
+          e.preventDefault();
           enqueueInput('\x1b[H'); // Home
           return false;
         }
         if (e.key === 'ArrowRight') {
+          e.preventDefault();
           enqueueInput('\x1b[F'); // End
           return false;
         }
