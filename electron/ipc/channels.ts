@@ -100,6 +100,7 @@ export enum IPC {
 
   // File links
   OpenPath = 'open_path',
+  ReadFileText = 'read_file_text',
 
   // Notifications
   ShowNotification = 'show_notification',

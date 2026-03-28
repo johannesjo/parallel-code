@@ -92,6 +92,7 @@ const ALLOWED_CHANNELS = new Set([
   'get_system_fonts',
   // File links
   'open_path',
+  'read_file_text',
   // Notifications
   'show_notification',
   'notification_clicked',

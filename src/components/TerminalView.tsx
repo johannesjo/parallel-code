@@ -144,8 +144,8 @@ export function TerminalView(props: TerminalViewProps) {
               const filePath = link.text.replace(/:\d+(:\d+)?$/, '');
               // Resolve relative paths against the task's working directory
               const resolved = filePath.startsWith('/') ? filePath : `${props.cwd}/${filePath}`;
-              // Cmd+click always opens externally; otherwise use callback if provided
-              if (!event.metaKey && props.onFileLink) {
+              // Cmd+click always opens externally; otherwise use callback for .md files
+              if (!event.metaKey && resolved.endsWith('.md') && props.onFileLink) {
                 props.onFileLink(resolved);
               } else {
                 invoke(IPC.OpenPath, { filePath: resolved }).catch(console.error);

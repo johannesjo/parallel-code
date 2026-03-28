@@ -458,6 +458,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return shell.openPath(args.filePath);
   });
 
+  ipcMain.handle(IPC.ReadFileText, (_e, args) => {
+    validatePath(args.filePath, 'filePath');
+    return fs.readFileSync(args.filePath, 'utf8');
+  });
+
   // --- System ---
   ipcMain.handle(IPC.GetSystemFonts, () => getSystemMonospaceFonts());
 

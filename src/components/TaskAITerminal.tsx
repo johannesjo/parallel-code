@@ -14,8 +14,12 @@ import {
 import { ScalablePanel } from './ScalablePanel';
 import { InfoBar } from './InfoBar';
 import { TerminalView } from './TerminalView';
+import { Dialog } from './Dialog';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
+import { invoke } from '../lib/ipc';
+import { IPC } from '../../electron/ipc/channels';
+import { createHighlightedMarkdown } from '../lib/marked-shiki';
 import type { Task } from '../store/types';
 import type { PromptInputHandle } from './PromptInput';
 
@@ -28,155 +32,264 @@ interface TaskAITerminalProps {
 export function TaskAITerminal(props: TaskAITerminalProps) {
   onCleanup(() => unregisterFocusFn(`${props.task.id}:ai-terminal`));
 
+  // --- Markdown file viewer ---
+  const [mdViewerContent, setMdViewerContent] = createSignal('');
+  const [mdViewerFileName, setMdViewerFileName] = createSignal('');
+  const [mdViewerOpen, setMdViewerOpen] = createSignal(false);
+
+  function handleFileLink(filePath: string) {
+    invoke<string>(IPC.ReadFileText, { filePath })
+      .then((content) => {
+        setMdViewerContent(content);
+        setMdViewerFileName(filePath.split('/').pop() ?? filePath);
+        setMdViewerOpen(true);
+      })
+      .catch(console.error);
+  }
+
   const firstAgent = () => {
     const ids = props.task.agentIds;
     return ids.length > 0 ? store.agents[ids[0]] : undefined;
   };
 
   return (
-    <ScalablePanel panelId={`${props.task.id}:ai-terminal`}>
-      <div
-        class="focusable-panel shell-terminal-container"
-        data-shell-focused={store.focusedPanel[props.task.id] === 'ai-terminal' ? 'true' : 'false'}
-        style={{
-          height: '100%',
-          position: 'relative',
-          background: theme.taskPanelBg,
-          display: 'flex',
-          'flex-direction': 'column',
-        }}
-        onClick={() => setTaskFocusedPanel(props.task.id, 'ai-terminal')}
-      >
-        <InfoBar
-          title={
-            props.task.lastPrompt ||
-            (firstAgent()?.status === 'exited' && props.task.initialPrompt
-              ? 'Agent exited before prompt was sent'
-              : props.task.dockerMode && props.task.initialPrompt
-                ? 'Starting Docker container…'
-                : props.task.initialPrompt
-                  ? 'Waiting to send prompt…'
-                  : 'No prompts sent yet')
+    <>
+      <ScalablePanel panelId={`${props.task.id}:ai-terminal`}>
+        <div
+          class="focusable-panel shell-terminal-container"
+          data-shell-focused={
+            store.focusedPanel[props.task.id] === 'ai-terminal' ? 'true' : 'false'
           }
-          onDblClick={() => {
-            if (props.task.lastPrompt && props.promptHandle && !props.promptHandle.getText())
-              props.promptHandle.setText(props.task.lastPrompt);
+          style={{
+            height: '100%',
+            position: 'relative',
+            background: theme.taskPanelBg,
+            display: 'flex',
+            'flex-direction': 'column',
           }}
+          onClick={() => setTaskFocusedPanel(props.task.id, 'ai-terminal')}
         >
-          <span style={{ opacity: props.task.lastPrompt ? 1 : 0.4 }}>
-            {props.task.lastPrompt
-              ? `> ${props.task.lastPrompt}`
-              : firstAgent()?.status === 'exited' && props.task.initialPrompt
+          <InfoBar
+            title={
+              props.task.lastPrompt ||
+              (firstAgent()?.status === 'exited' && props.task.initialPrompt
                 ? 'Agent exited before prompt was sent'
                 : props.task.dockerMode && props.task.initialPrompt
                   ? 'Starting Docker container…'
                   : props.task.initialPrompt
                     ? 'Waiting to send prompt…'
-                    : 'No prompts sent'}
-          </span>
-        </InfoBar>
-        <div style={{ flex: '1', position: 'relative', overflow: 'hidden' }}>
-          <Show when={props.task.dockerMode}>
-            <div
-              style={{
-                position: 'absolute',
-                top: '8px',
-                left: '12px',
-                'z-index': '10',
-                'font-size': sf(10),
-                color: theme.fgMuted,
-                background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
-                padding: '2px 8px',
-                'border-radius': '6px',
-                border: `1px solid ${theme.border}`,
-                'pointer-events': 'none',
-              }}
-            >
-              docker
-            </div>
-          </Show>
-          <Show when={firstAgent()}>
-            {(a) => (
-              <>
-                <Show when={a().status === 'exited'}>
-                  <div
-                    class="exit-badge"
-                    title={a().lastOutput.length ? a().lastOutput.join('\n') : undefined}
-                    style={{
-                      position: 'absolute',
-                      top: '8px',
-                      right: '12px',
-                      'z-index': '10',
-                      'font-size': sf(11),
-                      color: a().exitCode === 0 ? theme.success : theme.error,
-                      background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
-                      padding: '4px 12px',
-                      'border-radius': '8px',
-                      border: `1px solid ${theme.border}`,
-                      display: 'flex',
-                      'align-items': 'center',
-                      gap: '8px',
-                    }}
-                  >
-                    <span>
-                      {a().signal === 'spawn_failed'
-                        ? 'Failed to start'
-                        : `Process exited (${a().exitCode ?? '?'})`}
-                    </span>
-                    <AgentRestartMenu agentId={a().id} agentDefId={a().def.id} />
-                    <Show when={a().def.resume_args?.length}>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          restartAgent(a().id, true);
-                        }}
-                        style={{
-                          background: theme.bgElevated,
-                          border: `1px solid ${theme.border}`,
-                          color: theme.fg,
-                          padding: '2px 8px',
-                          'border-radius': '4px',
-                          cursor: 'pointer',
-                          'font-size': sf(10),
-                        }}
-                      >
-                        Resume
-                      </button>
-                    </Show>
-                  </div>
-                </Show>
-                <Show when={`${a().id}:${a().generation}`} keyed>
-                  <TerminalView
-                    taskId={props.task.id}
-                    agentId={a().id}
-                    isFocused={
-                      props.isActive && store.focusedPanel[props.task.id] === 'ai-terminal'
-                    }
-                    command={a().def.command}
-                    args={[
-                      ...(a().resumed && a().def.resume_args?.length
-                        ? (a().def.resume_args ?? [])
-                        : a().def.args),
-                      ...(props.task.skipPermissions && a().def.skip_permissions_args?.length
-                        ? (a().def.skip_permissions_args ?? [])
-                        : []),
-                    ]}
-                    cwd={props.task.worktreePath}
-                    dockerMode={props.task.dockerMode}
-                    dockerImage={props.task.dockerImage}
-                    onExit={(code) => markAgentExited(a().id, code)}
-                    onData={(data) => markAgentOutput(a().id, data, props.task.id)}
-                    onPromptDetected={(text) => setLastPrompt(props.task.id, text)}
-                    onReady={(focusFn) => registerFocusFn(`${props.task.id}:ai-terminal`, focusFn)}
-                    fontSize={Math.round(13 * getFontScale(`${props.task.id}:ai-terminal`))}
-                  />
-                </Show>
-              </>
-            )}
-          </Show>
+                    : 'No prompts sent yet')
+            }
+            onDblClick={() => {
+              if (props.task.lastPrompt && props.promptHandle && !props.promptHandle.getText())
+                props.promptHandle.setText(props.task.lastPrompt);
+            }}
+          >
+            <span style={{ opacity: props.task.lastPrompt ? 1 : 0.4 }}>
+              {props.task.lastPrompt
+                ? `> ${props.task.lastPrompt}`
+                : firstAgent()?.status === 'exited' && props.task.initialPrompt
+                  ? 'Agent exited before prompt was sent'
+                  : props.task.dockerMode && props.task.initialPrompt
+                    ? 'Starting Docker container…'
+                    : props.task.initialPrompt
+                      ? 'Waiting to send prompt…'
+                      : 'No prompts sent'}
+            </span>
+          </InfoBar>
+          <div style={{ flex: '1', position: 'relative', overflow: 'hidden' }}>
+            <Show when={props.task.dockerMode}>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '8px',
+                  left: '12px',
+                  'z-index': '10',
+                  'font-size': sf(10),
+                  color: theme.fgMuted,
+                  background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
+                  padding: '2px 8px',
+                  'border-radius': '6px',
+                  border: `1px solid ${theme.border}`,
+                  'pointer-events': 'none',
+                }}
+              >
+                docker
+              </div>
+            </Show>
+            <Show when={firstAgent()}>
+              {(a) => (
+                <>
+                  <Show when={a().status === 'exited'}>
+                    <div
+                      class="exit-badge"
+                      title={a().lastOutput.length ? a().lastOutput.join('\n') : undefined}
+                      style={{
+                        position: 'absolute',
+                        top: '8px',
+                        right: '12px',
+                        'z-index': '10',
+                        'font-size': sf(11),
+                        color: a().exitCode === 0 ? theme.success : theme.error,
+                        background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
+                        padding: '4px 12px',
+                        'border-radius': '8px',
+                        border: `1px solid ${theme.border}`,
+                        display: 'flex',
+                        'align-items': 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <span>
+                        {a().signal === 'spawn_failed'
+                          ? 'Failed to start'
+                          : `Process exited (${a().exitCode ?? '?'})`}
+                      </span>
+                      <AgentRestartMenu agentId={a().id} agentDefId={a().def.id} />
+                      <Show when={a().def.resume_args?.length}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            restartAgent(a().id, true);
+                          }}
+                          style={{
+                            background: theme.bgElevated,
+                            border: `1px solid ${theme.border}`,
+                            color: theme.fg,
+                            padding: '2px 8px',
+                            'border-radius': '4px',
+                            cursor: 'pointer',
+                            'font-size': sf(10),
+                          }}
+                        >
+                          Resume
+                        </button>
+                      </Show>
+                    </div>
+                  </Show>
+                  <Show when={`${a().id}:${a().generation}`} keyed>
+                    <TerminalView
+                      taskId={props.task.id}
+                      agentId={a().id}
+                      isFocused={
+                        props.isActive && store.focusedPanel[props.task.id] === 'ai-terminal'
+                      }
+                      command={a().def.command}
+                      args={[
+                        ...(a().resumed && a().def.resume_args?.length
+                          ? (a().def.resume_args ?? [])
+                          : a().def.args),
+                        ...(props.task.skipPermissions && a().def.skip_permissions_args?.length
+                          ? (a().def.skip_permissions_args ?? [])
+                          : []),
+                      ]}
+                      cwd={props.task.worktreePath}
+                      dockerMode={props.task.dockerMode}
+                      dockerImage={props.task.dockerImage}
+                      onExit={(code) => markAgentExited(a().id, code)}
+                      onData={(data) => markAgentOutput(a().id, data, props.task.id)}
+                      onFileLink={handleFileLink}
+                      onPromptDetected={(text) => setLastPrompt(props.task.id, text)}
+                      onReady={(focusFn) =>
+                        registerFocusFn(`${props.task.id}:ai-terminal`, focusFn)
+                      }
+                      fontSize={Math.round(13 * getFontScale(`${props.task.id}:ai-terminal`))}
+                    />
+                  </Show>
+                </>
+              )}
+            </Show>
+          </div>
         </div>
+      </ScalablePanel>
+      <MarkdownViewerDialog
+        open={mdViewerOpen()}
+        onClose={() => setMdViewerOpen(false)}
+        content={mdViewerContent()}
+        fileName={mdViewerFileName()}
+      />
+    </>
+  );
+}
+
+function MarkdownViewerDialog(props: {
+  open: boolean;
+  onClose: () => void;
+  content: string;
+  fileName: string;
+}) {
+  const html = createHighlightedMarkdown(() => props.content);
+
+  return (
+    <Dialog
+      open={props.open}
+      onClose={props.onClose}
+      width="fit-content"
+      panelStyle={{
+        width: '80vw',
+        'max-width': '1200px',
+        height: '80vh',
+        overflow: 'hidden',
+        padding: '0',
+        gap: '0',
+        resize: 'both',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          'align-items': 'center',
+          gap: '10px',
+          padding: '12px 20px',
+          'border-bottom': `1px solid ${theme.border}`,
+          'flex-shrink': '0',
+        }}
+      >
+        <span
+          style={{
+            'font-size': sf(13),
+            color: theme.fg,
+            'font-weight': '600',
+            'font-family': "'JetBrains Mono', monospace",
+          }}
+        >
+          {props.fileName}
+        </span>
+        <span style={{ flex: '1' }} />
+        <button
+          onClick={() => props.onClose()}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: theme.fgMuted,
+            cursor: 'pointer',
+            padding: '4px',
+            display: 'flex',
+            'align-items': 'center',
+            'border-radius': '4px',
+          }}
+          title="Close"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+          </svg>
+        </button>
       </div>
-    </ScalablePanel>
+      <div
+        style={{
+          flex: '1',
+          'overflow-y': 'auto',
+          padding: '28px 40px',
+        }}
+      >
+        <div
+          class="plan-markdown plan-markdown-dialog"
+          style={{ color: theme.fg, 'max-width': '100%' }}
+          // eslint-disable-next-line solid/no-innerhtml -- local markdown files from worktree
+          innerHTML={html()}
+        />
+      </div>
+    </Dialog>
   );
 }
 
