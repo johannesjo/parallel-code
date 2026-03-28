@@ -98,6 +98,9 @@ export enum IPC {
   // System
   GetSystemFonts = 'get_system_fonts',
 
+  // File links
+  OpenPath = 'open_path',
+
   // Notifications
   ShowNotification = 'show_notification',
   NotificationClicked = 'notification_clicked',

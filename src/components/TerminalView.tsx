@@ -54,6 +54,7 @@ interface TerminalViewProps {
   }) => void;
   onData?: (data: Uint8Array) => void;
   onPromptDetected?: (text: string) => void;
+  onFileLink?: (filePath: string) => void;
   onReady?: (focusFn: () => void) => void;
   onBufferReady?: (getBuffer: () => string) => void;
   fontSize?: number;
@@ -103,6 +104,58 @@ export function TerminalView(props: TerminalViewProps) {
     );
 
     term.open(containerRef);
+
+    // File path link provider — makes file paths clickable in terminal output
+    // Must be registered after term.open() so the DOM is available.
+    term.registerLinkProvider({
+      provideLinks(y, callback) {
+        if (!term) {
+          callback(undefined);
+          return;
+        }
+        const line = term.buffer.active.getLine(y - 1)?.translateToString(true) ?? '';
+        // Match file paths: absolute, ./ or ../ relative, and bare relative with /
+        // Supports @scoped packages, line:col suffixes like foo.ts:42:10
+        const regex =
+          /(?:~?\/[\w@./-]+|\.{1,2}\/[\w@./-]+|[\w@][\w@./-]*\/[\w@./-]+)(?::\d+(?::\d+)?)?/g;
+        const links: { startIndex: number; length: number; text: string }[] = [];
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(line)) !== null) {
+          // Strip trailing punctuation that's not part of the path
+          const text = match[0].replace(/[.,;:!?)]+$/, '');
+          if (!text) continue;
+          // Must contain a dot somewhere (file extension) to avoid matching plain directories
+          if (!text.includes('.')) continue;
+          links.push({
+            startIndex: match.index,
+            length: text.length,
+            text,
+          });
+        }
+        callback(
+          links.map((link) => ({
+            range: {
+              start: { x: link.startIndex + 1, y },
+              end: { x: link.startIndex + link.length + 1, y },
+            },
+            text: link.text,
+            activate(event: MouseEvent, _text: string) {
+              // Strip line:col suffix for opening
+              const filePath = link.text.replace(/:\d+(:\d+)?$/, '');
+              // Resolve relative paths against the task's working directory
+              const resolved = filePath.startsWith('/') ? filePath : `${props.cwd}/${filePath}`;
+              // Cmd+click always opens externally; otherwise use callback if provided
+              if (!event.metaKey && props.onFileLink) {
+                props.onFileLink(resolved);
+              } else {
+                invoke(IPC.OpenPath, { filePath: resolved }).catch(console.error);
+              }
+            },
+          })),
+        );
+      },
+    });
+
     props.onReady?.(() => term?.focus());
     props.onBufferReady?.(() => {
       if (!term) return '';
