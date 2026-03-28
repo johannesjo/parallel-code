@@ -119,6 +119,7 @@ export interface PersistedState {
   mergedLinesRemoved?: number;
   terminalFont?: string;
   themePreset?: LookPreset;
+  showPromptInput?: boolean;
   windowState?: PersistedWindowState;
   autoTrustFolders?: boolean;
   showPlans?: boolean;
@@ -183,6 +184,7 @@ export interface AppStore {
   mergedLinesRemoved: number;
   terminalFont: string;
   themePreset: LookPreset;
+  showPromptInput: boolean;
   windowState: PersistedWindowState | null;
   autoTrustFolders: boolean;
   showPlans: boolean;

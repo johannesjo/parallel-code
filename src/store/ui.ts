@@ -86,6 +86,10 @@ export function setShowPlans(showPlans: boolean): void {
   setStore('showPlans', showPlans);
 }
 
+export function setShowPromptInput(show: boolean): void {
+  setStore('showPromptInput', show);
+}
+
 export function setDesktopNotificationsEnabled(enabled: boolean): void {
   setStore('desktopNotificationsEnabled', enabled);
 }

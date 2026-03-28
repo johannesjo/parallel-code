@@ -48,6 +48,7 @@ export async function saveState(): Promise<void> {
     mergedLinesRemoved: store.mergedLinesRemoved,
     terminalFont: store.terminalFont,
     themePreset: store.themePreset,
+    showPromptInput: store.showPromptInput,
     windowState: store.windowState ? { ...store.windowState } : undefined,
     autoTrustFolders: store.autoTrustFolders,
     showPlans: store.showPlans,
@@ -187,6 +188,7 @@ interface LegacyPersistedState {
   mergedLinesRemoved?: unknown;
   terminalFont?: unknown;
   themePreset?: unknown;
+  showPromptInput?: unknown;
   windowState?: unknown;
   autoTrustFolders?: unknown;
   showPlans?: unknown;
@@ -297,6 +299,7 @@ export async function loadState(): Promise<void> {
           ? raw.terminalFont
           : DEFAULT_TERMINAL_FONT;
       s.themePreset = isLookPreset(raw.themePreset) ? raw.themePreset : 'minimal';
+      s.showPromptInput = typeof raw.showPromptInput === 'boolean' ? raw.showPromptInput : true;
       s.windowState = parsePersistedWindowState(raw.windowState);
       s.autoTrustFolders = typeof raw.autoTrustFolders === 'boolean' ? raw.autoTrustFolders : false;
       s.showPlans = typeof raw.showPlans === 'boolean' ? raw.showPlans : true;

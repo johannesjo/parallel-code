@@ -86,7 +86,12 @@ export function TaskPanel(props: TaskPanelProps) {
       autoFocusTimer = setTimeout(() => {
         autoFocusTimer = undefined;
         if (!store.focusedPanel[id] && !panelRef.contains(document.activeElement)) {
-          promptRef?.focus();
+          if (store.showPromptInput) {
+            promptRef?.focus();
+          } else {
+            setTaskFocusedPanel(id, 'ai-terminal');
+            triggerFocus(`${id}:ai-terminal`);
+          }
         }
       }, 0);
     }
@@ -243,7 +248,7 @@ export function TaskPanel(props: TaskPanelProps) {
           notesAndFiles(),
           shellSection(),
           aiTerminal(),
-          promptInput(),
+          ...(store.showPromptInput ? [promptInput()] : []),
         ]}
       />
       <CloseTaskDialog
