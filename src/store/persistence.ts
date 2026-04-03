@@ -58,6 +58,8 @@ export async function saveState(): Promise<void> {
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand || undefined,
     dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
+    askCodeProvider: store.askCodeProvider !== 'claude' ? store.askCodeProvider : undefined,
+    minimaxApiKey: store.minimaxApiKey || undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
   };
 
@@ -203,6 +205,8 @@ interface LegacyPersistedState {
   inactiveColumnOpacity?: unknown;
   editorCommand?: unknown;
   dockerImage?: unknown;
+  askCodeProvider?: unknown;
+  minimaxApiKey?: unknown;
   customAgents?: unknown;
   terminals?: unknown;
 }
@@ -332,6 +336,11 @@ export async function loadState(): Promise<void> {
         typeof rawDockerImage === 'string' && rawDockerImage.trim()
           ? rawDockerImage.trim()
           : 'parallel-code-agent:latest';
+
+      s.askCodeProvider =
+        raw.askCodeProvider === 'minimax' ? 'minimax' : 'claude';
+      s.minimaxApiKey =
+        typeof raw.minimaxApiKey === 'string' ? raw.minimaxApiKey.trim() : '';
 
       // Restore custom agents
       if (Array.isArray(raw.customAgents)) {

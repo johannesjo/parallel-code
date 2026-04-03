@@ -1,12 +1,17 @@
 import { spawn, type ChildProcess } from 'child_process';
 import type { BrowserWindow } from 'electron';
 import { validateCommand } from './pty.js';
+import { askAboutCodeMinimax, cancelAskAboutCodeMinimax } from './ask-code-minimax.js';
+
+export type AskCodeProvider = 'claude' | 'minimax';
 
 interface AskCodeRequest {
   requestId: string;
   channelId: string;
   prompt: string;
   cwd: string;
+  provider?: AskCodeProvider;
+  minimaxApiKey?: string;
 }
 
 const MAX_PROMPT_LENGTH = 50_000;
@@ -17,7 +22,16 @@ const activeRequests = new Map<string, ChildProcess>();
 const activeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
-  const { requestId, channelId, prompt, cwd } = args;
+  const { requestId, channelId, prompt, cwd, provider, minimaxApiKey } = args;
+
+  // Route to MiniMax backend when configured
+  if (provider === 'minimax') {
+    if (!minimaxApiKey) {
+      throw new Error('MiniMax API key is required when using the MiniMax provider');
+    }
+    askAboutCodeMinimax(win, { requestId, channelId, prompt, apiKey: minimaxApiKey });
+    return;
+  }
 
   if (prompt.length > MAX_PROMPT_LENGTH) {
     throw new Error(`Prompt too long (${prompt.length} chars, max ${MAX_PROMPT_LENGTH})`);
@@ -123,6 +137,7 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
 }
 
 export function cancelAskAboutCode(requestId: string): void {
+  cancelAskAboutCodeMinimax(requestId);
   const proc = activeRequests.get(requestId);
   if (proc) {
     proc.kill('SIGTERM');

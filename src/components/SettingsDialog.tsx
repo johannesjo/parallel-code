@@ -20,6 +20,8 @@ import {
   setInactiveColumnOpacity,
   setEditorCommand,
   setDockerImage,
+  setAskCodeProvider,
+  setMinimaxApiKey,
 } from '../store/store';
 import { CustomAgentEditor } from './CustomAgentEditor';
 import { mod } from '../lib/platform';
@@ -323,6 +325,96 @@ export function SettingsDialog(props: SettingsDialogProps) {
           </label>
           <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
             CLI command to open worktree folders. Click the path bar in a task to open it.
+          </span>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
+        <div
+          style={{
+            ...sectionLabelStyle,
+            'font-weight': '600',
+          }}
+        >
+          Ask about Code
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            'flex-direction': 'column',
+            gap: '6px',
+            padding: '8px 12px',
+            'border-radius': '8px',
+            background: theme.bgInput,
+            border: `1px solid ${theme.border}`,
+          }}
+        >
+          <label
+            style={{
+              display: 'flex',
+              'align-items': 'center',
+              gap: '10px',
+            }}
+          >
+            <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
+              LLM provider
+            </span>
+            <select
+              value={store.askCodeProvider}
+              onChange={(e) =>
+                setAskCodeProvider(e.currentTarget.value as 'claude' | 'minimax')
+              }
+              style={{
+                flex: '1',
+                background: theme.taskPanelBg,
+                border: `1px solid ${theme.border}`,
+                'border-radius': '6px',
+                padding: '6px 10px',
+                color: theme.fg,
+                'font-size': '13px',
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="claude">Claude Code (claude CLI)</option>
+              <option value="minimax">MiniMax (M2.7)</option>
+            </select>
+          </label>
+          <Show when={store.askCodeProvider === 'minimax'}>
+            <label
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                gap: '10px',
+                'margin-top': '4px',
+              }}
+            >
+              <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
+                MiniMax API key
+              </span>
+              <input
+                type="password"
+                value={store.minimaxApiKey}
+                onInput={(e) => setMinimaxApiKey(e.currentTarget.value)}
+                placeholder="Enter your MINIMAX_API_KEY"
+                style={{
+                  flex: '1',
+                  background: theme.taskPanelBg,
+                  border: `1px solid ${theme.border}`,
+                  'border-radius': '6px',
+                  padding: '6px 10px',
+                  color: theme.fg,
+                  'font-size': '13px',
+                  'font-family': "'JetBrains Mono', monospace",
+                  outline: 'none',
+                }}
+              />
+            </label>
+          </Show>
+          <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+            {store.askCodeProvider === 'minimax'
+              ? 'Uses MiniMax M2.7 (204K context) via the OpenAI-compatible API — no Claude Code CLI required.'
+              : 'Uses the claude CLI to answer questions about selected code. Requires Claude Code to be installed.'}
           </span>
         </div>
       </div>

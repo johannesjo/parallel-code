@@ -89,6 +89,14 @@ export function setDockerImage(image: string): void {
   setStore('dockerImage', image || 'parallel-code-agent:latest');
 }
 
+export function setAskCodeProvider(provider: 'claude' | 'minimax'): void {
+  setStore('askCodeProvider', provider);
+}
+
+export function setMinimaxApiKey(key: string): void {
+  setStore('minimaxApiKey', key.trim());
+}
+
 export function setDockerAvailable(available: boolean): void {
   setStore('dockerAvailable', available);
 }

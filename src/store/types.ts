@@ -137,6 +137,8 @@ export interface PersistedState {
   inactiveColumnOpacity?: number;
   editorCommand?: string;
   dockerImage?: string;
+  askCodeProvider?: string;
+  minimaxApiKey?: string;
   customAgents?: AgentDef[];
 }
 
@@ -205,6 +207,8 @@ export interface AppStore {
   editorCommand: string;
   dockerImage: string;
   dockerAvailable: boolean;
+  askCodeProvider: 'claude' | 'minimax';
+  minimaxApiKey: string;
   newTaskDropUrl: string | null;
   newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
   missingProjectIds: Record<string, true>;

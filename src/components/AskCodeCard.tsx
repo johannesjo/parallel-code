@@ -3,6 +3,7 @@ import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { Channel, invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
+import { store } from '../store/store';
 
 interface AskCodeCardProps {
   requestId: string;
@@ -61,6 +62,8 @@ export function AskCodeCard(props: AskCodeCardProps) {
       prompt,
       cwd: props.worktreePath,
       onOutput: channel,
+      provider: store.askCodeProvider,
+      minimaxApiKey: store.minimaxApiKey,
     }).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : String(err));
       setLoading(false);
