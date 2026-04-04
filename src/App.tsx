@@ -590,7 +590,14 @@ function App() {
               >
                 Pick a preset for your coding agent
               </span>{' '}
-              or keep your current defaults.
+              or{' '}
+              <span
+                onClick={() => dismissMigrationBanner()}
+                style={{ color: theme.fgMuted, cursor: 'pointer', 'text-decoration': 'underline' }}
+              >
+                dismiss
+              </span>
+              .
             </span>
             <button
               onClick={() => dismissMigrationBanner()}

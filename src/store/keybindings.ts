@@ -1,5 +1,4 @@
 import { createMemo } from 'solid-js';
-import { produce } from 'solid-js/store';
 import { store, setStore } from './core';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
@@ -65,21 +64,19 @@ export function setUserOverride(
   bindingId: string,
   override: Partial<Pick<KeyBinding, 'key' | 'modifiers'>> | null,
 ): void {
-  setStore(
-    produce((s) => {
-      (s.keybindingUserOverrides as Record<string, unknown>)[bindingId] = override;
-    }),
-  );
+  // Replace the entire object to guarantee SolidJS reactivity triggers
+  setStore('keybindingUserOverrides', {
+    ...store.keybindingUserOverrides,
+    [bindingId]: override,
+  } as Record<string, Record<string, unknown> | null>);
   persist().catch(console.error);
 }
 
 /** Remove a user override (revert to preset/default). */
 export function clearUserOverride(bindingId: string): void {
-  setStore(
-    produce((s) => {
-      delete (s.keybindingUserOverrides as Record<string, unknown>)[bindingId];
-    }),
-  );
+  const updated = { ...store.keybindingUserOverrides };
+  delete updated[bindingId];
+  setStore('keybindingUserOverrides', updated);
   persist().catch(console.error);
 }
 
