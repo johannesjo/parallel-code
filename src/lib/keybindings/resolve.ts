@@ -12,13 +12,29 @@ function platformMatches(binding: KeyBinding): boolean {
   return true;
 }
 
+/**
+ * Semantically compare two modifier sets, accounting for platform equivalence.
+ * On macOS: cmdOrCtrl and meta both mean "Cmd key" — they're equivalent.
+ * On Linux: cmdOrCtrl and ctrl both mean "Ctrl key" — they're equivalent.
+ */
 function modifiersMatch(a: Modifiers, b: Modifiers): boolean {
+  // Normalize: resolve cmdOrCtrl into the platform-specific modifier
+  const aCmd = isMac
+    ? (a.cmdOrCtrl ?? false) || (a.meta ?? false)
+    : (a.cmdOrCtrl ?? false) || (a.ctrl ?? false);
+  const bCmd = isMac
+    ? (b.cmdOrCtrl ?? false) || (b.meta ?? false)
+    : (b.cmdOrCtrl ?? false) || (b.ctrl ?? false);
+
+  // On macOS, raw ctrl (without cmdOrCtrl) is a separate modifier
+  const aCtrl = isMac ? (a.ctrl ?? false) && !(a.cmdOrCtrl ?? false) : false;
+  const bCtrl = isMac ? (b.ctrl ?? false) && !(b.cmdOrCtrl ?? false) : false;
+
   return (
-    (a.ctrl ?? false) === (b.ctrl ?? false) &&
-    (a.meta ?? false) === (b.meta ?? false) &&
+    aCmd === bCmd &&
+    aCtrl === bCtrl &&
     (a.alt ?? false) === (b.alt ?? false) &&
-    (a.shift ?? false) === (b.shift ?? false) &&
-    (a.cmdOrCtrl ?? false) === (b.cmdOrCtrl ?? false)
+    (a.shift ?? false) === (b.shift ?? false)
   );
 }
 

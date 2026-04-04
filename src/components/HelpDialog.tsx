@@ -1,5 +1,6 @@
 import { For, Show, createSignal, onCleanup, createEffect } from 'solid-js';
 import { Dialog } from './Dialog';
+import { confirm as appConfirm } from '../lib/dialog';
 import { theme } from '../lib/theme';
 import { isMac } from '../lib/platform';
 import { PRESETS } from '../lib/keybindings';
@@ -109,15 +110,15 @@ export function HelpDialog(props: HelpDialogProps) {
     if (!rid) return;
 
     const handler = (e: KeyboardEvent) => {
-      // Escape cancels recording — let it propagate so Dialog can also close
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Escape cancels recording
       if (e.key === 'Escape') {
         setRecordingId(null);
         setConflictInfo(null);
         return;
       }
-
-      e.preventDefault();
-      e.stopPropagation();
 
       // Ignore bare modifier keys
       if (['Control', 'Meta', 'Alt', 'Shift'].includes(e.key)) return;
@@ -196,8 +197,9 @@ export function HelpDialog(props: HelpDialogProps) {
     setConflictInfo(null);
   }
 
-  function handleResetAll() {
-    if (confirm('Reset all keybindings to defaults for the current preset?')) {
+  async function handleResetAll() {
+    const confirmed = await appConfirm('Reset all keybindings to defaults for the current preset?');
+    if (confirmed) {
       resetAllBindings(store.keybindingPreset);
     }
   }

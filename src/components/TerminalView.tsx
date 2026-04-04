@@ -10,7 +10,7 @@ import { getTerminalTheme } from '../lib/theme';
 import { matchesGlobalShortcut } from '../lib/shortcuts';
 import { isMac } from '../lib/platform';
 import { resolvedBindings } from '../store/keybindings';
-import type { KeyBinding } from '../lib/keybindings';
+import { matchesKeyEvent } from '../lib/keybindings';
 import { store } from '../store/store';
 import { registerTerminal, unregisterTerminal, markDirty } from '../lib/terminalFitManager';
 import type { PtyOutput } from '../ipc/types';
@@ -69,23 +69,11 @@ interface TerminalViewProps {
 // expensive full-chunk decoding during large terminal bursts.
 const STATUS_ANALYSIS_MAX_BYTES = 8 * 1024;
 
-function matchesTerminalBinding(e: KeyboardEvent, binding: KeyBinding): boolean {
-  if (e.key.toLowerCase() !== binding.key.toLowerCase()) return false;
-  const m = binding.modifiers;
-
-  // cmdOrCtrl: Cmd on mac, Ctrl on linux
-  if (m.cmdOrCtrl) {
-    if (!(isMac ? e.metaKey : e.ctrlKey)) return false;
-  } else {
-    if (m.meta && !e.metaKey) return false;
-    if (!m.meta && e.metaKey) return false;
-    if (m.ctrl && !e.ctrlKey) return false;
-    if (!m.ctrl && !m.cmdOrCtrl && e.ctrlKey) return false;
-  }
-
-  if (!!m.alt !== e.altKey) return false;
-  if (!!m.shift !== e.shiftKey) return false;
-  return true;
+/** Terminal-layer bindings — filtered from resolved bindings.
+ *  Called in the key handler (hot path) but the underlying resolvedBindings()
+ *  memo only recomputes on config change, so the filter is cheap. */
+function getTerminalBindings() {
+  return resolvedBindings().filter((b) => b.layer === 'terminal');
 }
 
 export function TerminalView(props: TerminalViewProps) {
@@ -207,9 +195,8 @@ export function TerminalView(props: TerminalViewProps) {
       if (matchesGlobalShortcut(e)) return false;
 
       // Look up terminal bindings from registry
-      const termBindings = resolvedBindings().filter((b) => b.layer === 'terminal');
-      for (const binding of termBindings) {
-        if (!matchesTerminalBinding(e, binding)) continue;
+      for (const binding of getTerminalBindings()) {
+        if (!matchesKeyEvent(e, binding)) continue;
 
         e.preventDefault();
 
