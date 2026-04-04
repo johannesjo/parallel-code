@@ -60,6 +60,9 @@ export const [store, setStore] = createStore<AppStore>({
     connectedClients: 0,
   },
   showArena: false,
+  keybindingPreset: 'default',
+  keybindingUserOverrides: {},
+  keybindingMigrationDismissed: false,
 });
 
 /** Remove fontScales, panelSizes, focusedPanel, and taskOrder entries for a given ID.

@@ -57,6 +57,7 @@ export async function saveState(): Promise<void> {
     editorCommand: store.editorCommand || undefined,
     dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
+    keybindingMigrationDismissed: store.keybindingMigrationDismissed || undefined,
   };
 
   for (const taskId of store.taskOrder) {
@@ -198,6 +199,7 @@ interface LegacyPersistedState {
   dockerImage?: unknown;
   customAgents?: unknown;
   terminals?: unknown;
+  keybindingMigrationDismissed?: unknown;
 }
 
 export async function loadState(): Promise<void> {
@@ -335,6 +337,10 @@ export async function loadState(): Promise<void> {
             typeof (a as AgentDef).name === 'string' &&
             typeof (a as AgentDef).command === 'string',
         );
+      }
+
+      if (raw.keybindingMigrationDismissed) {
+        s.keybindingMigrationDismissed = true;
       }
 
       // Make custom agents findable during task restoration

@@ -128,6 +128,7 @@ export interface PersistedState {
   editorCommand?: string;
   dockerImage?: string;
   customAgents?: AgentDef[];
+  keybindingMigrationDismissed?: boolean;
 }
 
 // Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.
@@ -198,4 +199,7 @@ export interface AppStore {
   missingProjectIds: Record<string, true>;
   remoteAccess: RemoteAccess;
   showArena: boolean;
+  keybindingPreset: string;
+  keybindingUserOverrides: Record<string, Record<string, unknown> | null>;
+  keybindingMigrationDismissed: boolean;
 }

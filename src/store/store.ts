@@ -131,3 +131,13 @@ export {
   syncTerminalCounter,
 } from './terminals';
 export { startRemoteAccess, stopRemoteAccess, refreshRemoteStatus } from './remote';
+export {
+  resolvedBindings,
+  loadKeybindings,
+  selectPreset,
+  setUserOverride,
+  clearUserOverride,
+  resetAllBindings,
+  checkConflict,
+  dismissMigrationBanner,
+} from './keybindings';
