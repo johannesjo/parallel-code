@@ -109,15 +109,15 @@ export function HelpDialog(props: HelpDialogProps) {
     if (!rid) return;
 
     const handler = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Escape cancels recording
+      // Escape cancels recording — let it propagate so Dialog can also close
       if (e.key === 'Escape') {
         setRecordingId(null);
         setConflictInfo(null);
         return;
       }
+
+      e.preventDefault();
+      e.stopPropagation();
 
       // Ignore bare modifier keys
       if (['Control', 'Meta', 'Alt', 'Shift'].includes(e.key)) return;
