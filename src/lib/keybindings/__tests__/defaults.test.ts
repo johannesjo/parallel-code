@@ -2,19 +2,19 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_BINDINGS } from '../defaults';
 
 const APP_LAYER_IDS = [
-  'app.navigate-row-up',
-  'app.navigate-row-down',
-  'app.navigate-column-left',
-  'app.navigate-column-right',
-  'app.move-active-task-left',
-  'app.move-active-task-right',
-  'app.close-shell',
-  'app.close-task',
-  'app.merge-task',
-  'app.push-task',
-  'app.spawn-shell',
-  'app.send-prompt',
-  'app.create-terminal',
+  'app.nav.row-up',
+  'app.nav.row-down',
+  'app.nav.column-left',
+  'app.nav.column-right',
+  'app.task.reorder-left',
+  'app.task.reorder-right',
+  'app.task.close-shell',
+  'app.task.close',
+  'app.task.merge',
+  'app.task.push',
+  'app.task.new-shell',
+  'app.task.send-prompt',
+  'app.new-terminal',
   'app.new-task',
   'app.new-task-alt',
   'app.toggle-sidebar',
@@ -26,14 +26,14 @@ const APP_LAYER_IDS = [
 ];
 
 const TERMINAL_LAYER_IDS = [
-  'terminal.copy',
-  'terminal.copy-linux',
-  'terminal.paste',
-  'terminal.paste-linux',
-  'terminal.shift-enter',
-  'terminal.home',
-  'terminal.end',
-  'terminal.kill-line-backward',
+  'term.copy',
+  'term.copy-linux',
+  'term.paste',
+  'term.paste-linux',
+  'term.shift-enter',
+  'term.home',
+  'term.end',
+  'term.kill-line',
 ];
 
 describe('DEFAULT_BINDINGS', () => {

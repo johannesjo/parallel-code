@@ -5,7 +5,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   // App layer — Navigation
   // -------------------------------------------------------------------------
   {
-    id: 'app.navigate-row-up',
+    id: 'app.nav.row-up',
     layer: 'app',
     category: 'Navigation',
     description: 'Navigate row up',
@@ -16,7 +16,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
-    id: 'app.navigate-row-down',
+    id: 'app.nav.row-down',
     layer: 'app',
     category: 'Navigation',
     description: 'Navigate row down',
@@ -27,7 +27,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
-    id: 'app.navigate-column-left',
+    id: 'app.nav.column-left',
     layer: 'app',
     category: 'Navigation',
     description: 'Navigate column left',
@@ -38,7 +38,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
-    id: 'app.navigate-column-right',
+    id: 'app.nav.column-right',
     layer: 'app',
     category: 'Navigation',
     description: 'Navigate column right',
@@ -53,7 +53,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   // App layer — Task reordering
   // -------------------------------------------------------------------------
   {
-    id: 'app.move-active-task-left',
+    id: 'app.task.reorder-left',
     layer: 'app',
     category: 'Tasks',
     description: 'Move active task left',
@@ -64,7 +64,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
-    id: 'app.move-active-task-right',
+    id: 'app.task.reorder-right',
     layer: 'app',
     category: 'Tasks',
     description: 'Move active task right',
@@ -79,7 +79,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   // App layer — Task actions
   // -------------------------------------------------------------------------
   {
-    id: 'app.close-shell',
+    id: 'app.task.close-shell',
     layer: 'app',
     category: 'Tasks',
     description: 'Close current shell',
@@ -90,7 +90,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
-    id: 'app.close-task',
+    id: 'app.task.close',
     layer: 'app',
     category: 'Tasks',
     description: 'Close task',
@@ -101,7 +101,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
-    id: 'app.merge-task',
+    id: 'app.task.merge',
     layer: 'app',
     category: 'Tasks',
     description: 'Merge task',
@@ -112,7 +112,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
-    id: 'app.push-task',
+    id: 'app.task.push',
     layer: 'app',
     category: 'Tasks',
     description: 'Push task',
@@ -123,7 +123,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
-    id: 'app.spawn-shell',
+    id: 'app.task.new-shell',
     layer: 'app',
     category: 'Tasks',
     description: 'Spawn shell for task',
@@ -134,7 +134,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
-    id: 'app.send-prompt',
+    id: 'app.task.send-prompt',
     layer: 'app',
     category: 'Tasks',
     description: 'Send prompt',
@@ -149,7 +149,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   // App layer — App shortcuts
   // -------------------------------------------------------------------------
   {
-    id: 'app.create-terminal',
+    id: 'app.new-terminal',
     layer: 'app',
     category: 'App',
     description: 'Create terminal',
@@ -256,7 +256,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   // Terminal layer — Copy / Paste
   // -------------------------------------------------------------------------
   {
-    id: 'terminal.copy',
+    id: 'term.copy',
     layer: 'terminal',
     category: 'Clipboard',
     description: 'Copy selection',
@@ -266,7 +266,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     action: 'copy',
   },
   {
-    id: 'terminal.copy-linux',
+    id: 'term.copy-linux',
     layer: 'terminal',
     category: 'Clipboard',
     description: 'Copy selection',
@@ -276,7 +276,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     action: 'copy',
   },
   {
-    id: 'terminal.paste',
+    id: 'term.paste',
     layer: 'terminal',
     category: 'Clipboard',
     description: 'Paste clipboard',
@@ -286,7 +286,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     action: 'paste',
   },
   {
-    id: 'terminal.paste-linux',
+    id: 'term.paste-linux',
     layer: 'terminal',
     category: 'Clipboard',
     description: 'Paste clipboard',
@@ -300,7 +300,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   // Terminal layer — Special keys
   // -------------------------------------------------------------------------
   {
-    id: 'terminal.shift-enter',
+    id: 'term.shift-enter',
     layer: 'terminal',
     category: 'Editing',
     description: 'Send newline (Shift+Enter)',
@@ -310,7 +310,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     escapeSequence: '\x1b\r',
   },
   {
-    id: 'terminal.home',
+    id: 'term.home',
     layer: 'terminal',
     category: 'Editing',
     description: 'Move to beginning of line',
@@ -320,7 +320,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     escapeSequence: '\x1b[H',
   },
   {
-    id: 'terminal.end',
+    id: 'term.end',
     layer: 'terminal',
     category: 'Editing',
     description: 'Move to end of line',
@@ -330,7 +330,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     escapeSequence: '\x1b[F',
   },
   {
-    id: 'terminal.kill-line-backward',
+    id: 'term.kill-line',
     layer: 'terminal',
     category: 'Editing',
     description: 'Kill line backward',
