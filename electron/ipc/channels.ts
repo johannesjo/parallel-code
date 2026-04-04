@@ -40,6 +40,10 @@ export enum IPC {
   SaveAppState = 'save_app_state',
   LoadAppState = 'load_app_state',
 
+  // Keybindings
+  LoadKeybindings = 'load_keybindings',
+  SaveKeybindings = 'save_keybindings',
+
   // Window
   WindowIsFocused = '__window_is_focused',
   WindowIsMaximized = '__window_is_maximized',

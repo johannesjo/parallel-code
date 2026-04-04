@@ -41,6 +41,9 @@ const ALLOWED_CHANNELS = new Set([
   // Persistence
   'save_app_state',
   'load_app_state',
+  // Keybindings
+  'load_keybindings',
+  'save_keybindings',
   // Window
   '__window_is_focused',
   '__window_is_maximized',
