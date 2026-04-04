@@ -37,9 +37,10 @@ export function registerShortcut(shortcut: Shortcut): () => void {
   };
 }
 
-/** Returns true if the event matches any shortcut with `global: true`. */
+/** Returns true if the event matches any shortcut that should bypass terminal input. */
 export function matchesGlobalShortcut(e: KeyboardEvent): boolean {
-  return shortcuts.some((s) => s.global && matches(e, s));
+  const dialogOpen = document.querySelector('.dialog-overlay') !== null;
+  return shortcuts.some((s) => (s.global || (dialogOpen && s.dialogSafe)) && matches(e, s));
 }
 
 export function initShortcuts(): () => void {
