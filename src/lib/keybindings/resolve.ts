@@ -63,6 +63,46 @@ export function resolveBindings(defaults: KeyBinding[], config: KeybindingConfig
 }
 
 /**
+ * Like resolveBindings, but includes ALL platform-filtered bindings — even those
+ * unbound by a preset or user override. Unbound bindings have `unbound: true`.
+ * Used by the keybinding editor to show the full picture.
+ */
+export function resolveAllBindings(defaults: KeyBinding[], config: KeybindingConfig): KeyBinding[] {
+  const preset = getPreset(config.preset);
+  const result: KeyBinding[] = [];
+
+  for (const binding of defaults) {
+    if (!platformMatches(binding)) continue;
+
+    const userOverride = Object.prototype.hasOwnProperty.call(config.userOverrides, binding.id)
+      ? config.userOverrides[binding.id]
+      : undefined;
+
+    const presetOverride = Object.prototype.hasOwnProperty.call(preset.overrides, binding.id)
+      ? preset.overrides[binding.id]
+      : undefined;
+
+    // Check if unbound
+    const isUnbound =
+      userOverride === null || (presetOverride === null && userOverride === undefined);
+
+    if (isUnbound) {
+      result.push({ ...binding, unbound: true });
+      continue;
+    }
+
+    // Apply overrides: user > preset > default
+    const key = userOverride?.key ?? presetOverride?.key ?? binding.key;
+    const modifiers: Modifiers =
+      userOverride?.modifiers ?? presetOverride?.modifiers ?? binding.modifiers;
+
+    result.push({ ...binding, key, modifiers });
+  }
+
+  return result;
+}
+
+/**
  * Checks for a keybinding conflict when assigning a proposed key+modifiers
  * to the binding identified by `editingId`.
  *

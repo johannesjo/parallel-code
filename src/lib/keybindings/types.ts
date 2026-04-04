@@ -21,6 +21,8 @@ export interface KeyBinding {
   // Shortcut flags carried over from existing system
   global?: boolean;
   dialogSafe?: boolean;
+  // Set by resolveAllBindings when a preset or user override unbinds this key
+  unbound?: boolean;
 }
 
 export interface Preset {

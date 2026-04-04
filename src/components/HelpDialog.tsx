@@ -6,7 +6,7 @@ import { PRESETS } from '../lib/keybindings';
 import type { KeyBinding, Modifiers } from '../lib/keybindings';
 import { store } from '../store/store';
 import {
-  resolvedBindings,
+  allBindings,
   selectPreset,
   setUserOverride,
   clearUserOverride,
@@ -174,7 +174,7 @@ export function HelpDialog(props: HelpDialogProps) {
     const info = conflictInfo();
     if (!info) return;
     // Find the current key+modifiers of the editing binding
-    const editingBinding = resolvedBindings().find((b) => b.id === info.editingId);
+    const editingBinding = allBindings().find((b) => b.id === info.editingId);
     if (!editingBinding) return;
     // Assign the proposed combo to the editing binding
     setUserOverride(info.editingId, {
@@ -202,7 +202,7 @@ export function HelpDialog(props: HelpDialogProps) {
   }
 
   const hasOverrides = () => Object.keys(store.keybindingUserOverrides).length > 0;
-  const sections = () => groupByCategory(resolvedBindings());
+  const sections = () => groupByCategory(allBindings());
 
   function secondaryText(binding: KeyBinding): string | null {
     if (binding.escapeSequence) {
@@ -333,7 +333,13 @@ export function HelpDialog(props: HelpDialogProps) {
                           gap: '1px',
                         }}
                       >
-                        <span style={{ color: theme.fgMuted, 'font-size': '12px' }}>
+                        <span
+                          style={{
+                            color: theme.fgMuted,
+                            'font-size': '12px',
+                            ...(binding.unbound ? { opacity: '0.5' } : {}),
+                          }}
+                        >
                           {binding.description}
                         </span>
                         <Show when={secondary}>
@@ -378,9 +384,11 @@ export function HelpDialog(props: HelpDialogProps) {
                             'font-size': '11px',
                             color: recording()
                               ? theme.accentText
-                              : overridden()
-                                ? theme.accent
-                                : theme.fg,
+                              : binding.unbound
+                                ? theme.fgMuted
+                                : overridden()
+                                  ? theme.accent
+                                  : theme.fg,
                             'font-family': "'JetBrains Mono', monospace",
                             'white-space': 'nowrap',
                             cursor: 'pointer',
@@ -390,7 +398,11 @@ export function HelpDialog(props: HelpDialogProps) {
                               : {}),
                           }}
                         >
-                          {recording() ? 'Press shortcut...' : formatKeyCombo(binding)}
+                          {recording()
+                            ? 'Press shortcut...'
+                            : binding.unbound
+                              ? '\u2014'
+                              : formatKeyCombo(binding)}
                         </kbd>
                       </div>
                     </div>

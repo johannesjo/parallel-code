@@ -3,7 +3,12 @@ import { produce } from 'solid-js/store';
 import { store, setStore } from './core';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
-import { DEFAULT_BINDINGS, resolveBindings, findConflict } from '../lib/keybindings';
+import {
+  DEFAULT_BINDINGS,
+  resolveBindings,
+  resolveAllBindings,
+  findConflict,
+} from '../lib/keybindings';
 import type { KeyBinding, Modifiers, KeybindingConfig } from '../lib/keybindings';
 
 /** Reactive memo: resolved bindings based on current preset + user overrides. */
@@ -13,6 +18,15 @@ export const resolvedBindings = createMemo(() => {
     userOverrides: store.keybindingUserOverrides as KeybindingConfig['userOverrides'],
   };
   return resolveBindings(DEFAULT_BINDINGS, config);
+});
+
+/** Reactive memo: ALL bindings including unbound ones (for the editor UI). */
+export const allBindings = createMemo(() => {
+  const config: KeybindingConfig = {
+    preset: store.keybindingPreset,
+    userOverrides: store.keybindingUserOverrides as KeybindingConfig['userOverrides'],
+  };
+  return resolveAllBindings(DEFAULT_BINDINGS, config);
 });
 
 /** Load keybinding config from disk on app start. */

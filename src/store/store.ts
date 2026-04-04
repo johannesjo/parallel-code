@@ -133,6 +133,7 @@ export {
 export { startRemoteAccess, stopRemoteAccess, refreshRemoteStatus } from './remote';
 export {
   resolvedBindings,
+  allBindings,
   loadKeybindings,
   selectPreset,
   setUserOverride,
