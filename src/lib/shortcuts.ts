@@ -1,4 +1,7 @@
+import type { KeyBinding } from './keybindings';
+
 type ShortcutHandler = (e: KeyboardEvent) => void;
+type ActionHandler = (e: KeyboardEvent) => void;
 
 interface Shortcut {
   key: string;
@@ -63,4 +66,43 @@ export function initShortcuts(): () => void {
 
   window.addEventListener('keydown', handler);
   return () => window.removeEventListener('keydown', handler);
+}
+
+export function registerFromRegistry(
+  bindings: KeyBinding[],
+  handlers: Record<string, ActionHandler>,
+): () => void {
+  const cleanups: (() => void)[] = [];
+
+  for (const binding of bindings) {
+    if (binding.layer !== 'app') continue;
+    if (!binding.action) continue;
+
+    const handler = handlers[binding.action];
+    if (!handler) continue;
+
+    const opts: Shortcut = {
+      key: binding.key,
+      global: binding.global,
+      dialogSafe: binding.dialogSafe,
+      handler,
+    };
+
+    if (binding.modifiers.cmdOrCtrl) {
+      opts.cmdOrCtrl = true;
+    }
+    if (binding.modifiers.ctrl) {
+      opts.ctrl = true;
+    }
+    if (binding.modifiers.alt) {
+      opts.alt = true;
+    }
+    if (binding.modifiers.shift) {
+      opts.shift = true;
+    }
+
+    cleanups.push(registerShortcut(opts));
+  }
+
+  return () => cleanups.forEach((fn) => fn());
 }
