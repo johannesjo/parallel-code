@@ -48,7 +48,7 @@ import {
 import { isGitHubUrl } from './lib/github-url';
 import type { PersistedWindowState } from './store/types';
 import { initShortcuts, registerFromRegistry } from './lib/shortcuts';
-import { resolvedBindings, loadKeybindings } from './store/keybindings';
+import { resolvedBindings, loadKeybindings, dismissMigrationBanner } from './store/keybindings';
 import { setupAutosave } from './store/autosave';
 import { isMac, mod } from './lib/platform';
 import { createCtrlWheelZoomHandler } from './lib/wheelZoom';
@@ -563,6 +563,50 @@ function App() {
         </Show>
         <Show when={isMac}>
           <div class="mac-titlebar-spacer" data-tauri-drag-region />
+        </Show>
+        <Show when={!store.keybindingMigrationDismissed}>
+          <div
+            style={{
+              background: theme.bgInput,
+              border: `1px solid ${theme.border}`,
+              'border-bottom': `1px solid ${theme.border}`,
+              padding: '8px 16px',
+              display: 'flex',
+              'align-items': 'center',
+              'justify-content': 'space-between',
+              'font-size': '13px',
+              color: theme.fg,
+              'flex-shrink': '0',
+            }}
+          >
+            <span>
+              Keyboard shortcuts are now configurable.{' '}
+              <span
+                onClick={() => {
+                  toggleHelpDialog(true);
+                  dismissMigrationBanner();
+                }}
+                style={{ color: theme.accent, cursor: 'pointer', 'text-decoration': 'underline' }}
+              >
+                Pick a preset for your coding agent
+              </span>{' '}
+              or keep your current defaults.
+            </span>
+            <button
+              onClick={() => dismissMigrationBanner()}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: theme.fgMuted,
+                cursor: 'pointer',
+                'font-size': '16px',
+                padding: '0 4px',
+                'line-height': '1',
+              }}
+            >
+              &times;
+            </button>
+          </div>
         </Show>
         <main style={{ flex: '1', display: 'flex', overflow: 'hidden' }}>
           <Show when={store.sidebarVisible}>
