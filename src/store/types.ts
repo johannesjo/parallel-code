@@ -200,6 +200,7 @@ export interface AppStore {
   remoteAccess: RemoteAccess;
   showArena: boolean;
   keybindingPreset: string;
-  keybindingUserOverrides: Record<string, Record<string, unknown> | null>;
+  /** Per-preset user overrides. Outer key = preset ID, inner = binding overrides. */
+  keybindingOverridesByPreset: Record<string, Record<string, Record<string, unknown> | null>>;
   keybindingMigrationDismissed: boolean;
 }

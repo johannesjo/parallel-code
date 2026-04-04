@@ -53,7 +53,8 @@ function escapeSequenceName(seq: string): string {
 }
 
 function isOverridden(bindingId: string): boolean {
-  return Object.prototype.hasOwnProperty.call(store.keybindingUserOverrides, bindingId);
+  const presetOverrides = store.keybindingOverridesByPreset[store.keybindingPreset];
+  return !!presetOverrides && Object.prototype.hasOwnProperty.call(presetOverrides, bindingId);
 }
 
 /** Section display order */
@@ -201,7 +202,10 @@ export function HelpDialog(props: HelpDialogProps) {
     }
   }
 
-  const hasOverrides = () => Object.keys(store.keybindingUserOverrides).length > 0;
+  const hasOverrides = () => {
+    const presetOverrides = store.keybindingOverridesByPreset[store.keybindingPreset];
+    return !!presetOverrides && Object.keys(presetOverrides).length > 0;
+  };
   const sections = () => groupByCategory(allBindings());
 
   function secondaryText(binding: KeyBinding): string | null {
