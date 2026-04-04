@@ -1,8 +1,9 @@
 export interface Modifiers {
   ctrl?: boolean;
-  meta?: boolean; // Cmd on macOS
+  meta?: boolean; // Cmd on macOS, Super on Linux (rarely needed directly)
   alt?: boolean; // Option on macOS
   shift?: boolean;
+  cmdOrCtrl?: boolean; // Cmd on macOS, Ctrl on Linux — use for cross-platform shortcuts
 }
 
 export interface KeyBinding {

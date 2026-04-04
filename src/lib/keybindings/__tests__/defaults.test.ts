@@ -76,4 +76,16 @@ describe('DEFAULT_BINDINGS', () => {
       ).toBe(true);
     }
   });
+
+  it('platform:both bindings do not use meta without cmdOrCtrl', () => {
+    const bothBindings = DEFAULT_BINDINGS.filter((b) => b.platform === 'both');
+    for (const b of bothBindings) {
+      if (b.modifiers.meta) {
+        expect(
+          b.modifiers.cmdOrCtrl,
+          `${b.id} uses meta on platform:both — should use cmdOrCtrl`,
+        ).toBe(true);
+      }
+    }
+  });
 });
