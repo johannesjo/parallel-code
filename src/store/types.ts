@@ -120,6 +120,7 @@ export interface PersistedState {
   terminalFont?: string;
   themePreset?: LookPreset;
   showPromptInput?: boolean;
+  fontSmoothing?: boolean;
   windowState?: PersistedWindowState;
   autoTrustFolders?: boolean;
   showPlans?: boolean;
@@ -185,6 +186,7 @@ export interface AppStore {
   terminalFont: string;
   themePreset: LookPreset;
   showPromptInput: boolean;
+  fontSmoothing: boolean;
   windowState: PersistedWindowState | null;
   autoTrustFolders: boolean;
   showPlans: boolean;

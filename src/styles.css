@@ -58,8 +58,12 @@ body,
 body {
   font-family: var(--font-ui);
   color: var(--fg);
-  text-rendering: geometricPrecision;
+}
+
+body.font-smoothing {
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
 }
 
 .app-shell {

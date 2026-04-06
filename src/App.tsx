@@ -235,6 +235,11 @@ function App() {
     document.documentElement.dataset.look = store.themePreset;
   });
 
+  // Toggle font smoothing CSS class on body
+  createEffect(() => {
+    document.body.classList.toggle('font-smoothing', store.fontSmoothing);
+  });
+
   onMount(async () => {
     if (isMac) {
       await appWindow.setTitleBarStyle('overlay').catch((error) => {

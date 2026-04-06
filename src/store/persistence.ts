@@ -49,6 +49,7 @@ export async function saveState(): Promise<void> {
     terminalFont: store.terminalFont,
     themePreset: store.themePreset,
     showPromptInput: store.showPromptInput,
+    fontSmoothing: store.fontSmoothing,
     windowState: store.windowState ? { ...store.windowState } : undefined,
     autoTrustFolders: store.autoTrustFolders,
     showPlans: store.showPlans,
@@ -189,6 +190,7 @@ interface LegacyPersistedState {
   terminalFont?: unknown;
   themePreset?: unknown;
   showPromptInput?: unknown;
+  fontSmoothing?: unknown;
   windowState?: unknown;
   autoTrustFolders?: unknown;
   showPlans?: unknown;
@@ -300,6 +302,7 @@ export async function loadState(): Promise<void> {
           : DEFAULT_TERMINAL_FONT;
       s.themePreset = isLookPreset(raw.themePreset) ? raw.themePreset : 'minimal';
       s.showPromptInput = typeof raw.showPromptInput === 'boolean' ? raw.showPromptInput : true;
+      s.fontSmoothing = typeof raw.fontSmoothing === 'boolean' ? raw.fontSmoothing : true;
       s.windowState = parsePersistedWindowState(raw.windowState);
       s.autoTrustFolders = typeof raw.autoTrustFolders === 'boolean' ? raw.autoTrustFolders : false;
       s.showPlans = typeof raw.showPlans === 'boolean' ? raw.showPlans : true;

@@ -97,6 +97,7 @@ export {
   setAutoTrustFolders,
   setShowPlans,
   setShowPromptInput,
+  setFontSmoothing,
   setDesktopNotificationsEnabled,
   setInactiveColumnOpacity,
   setEditorCommand,

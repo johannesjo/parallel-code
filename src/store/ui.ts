@@ -90,6 +90,10 @@ export function setShowPromptInput(show: boolean): void {
   setStore('showPromptInput', show);
 }
 
+export function setFontSmoothing(enabled: boolean): void {
+  setStore('fontSmoothing', enabled);
+}
+
 export function setDesktopNotificationsEnabled(enabled: boolean): void {
   setStore('desktopNotificationsEnabled', enabled);
 }

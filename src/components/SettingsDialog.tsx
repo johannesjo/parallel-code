@@ -15,6 +15,7 @@ import {
   setAutoTrustFolders,
   setShowPlans,
   setShowPromptInput,
+  setFontSmoothing,
   setDesktopNotificationsEnabled,
   setInactiveColumnOpacity,
   setEditorCommand,
@@ -241,6 +242,31 @@ export function SettingsDialog(props: SettingsDialogProps) {
             </span>
             <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
               When hidden, the terminal occupies the full panel and auto-focuses on activation
+            </span>
+          </div>
+        </label>
+        <label
+          style={{
+            display: 'flex',
+            'align-items': 'flex-start',
+            gap: '10px',
+            cursor: 'pointer',
+            padding: '8px 12px',
+            'border-radius': '8px',
+            background: theme.bgInput,
+            border: `1px solid ${theme.border}`,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={store.fontSmoothing}
+            onChange={(e) => setFontSmoothing(e.currentTarget.checked)}
+            style={{ 'accent-color': theme.accent, cursor: 'pointer' }}
+          />
+          <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
+            <span style={{ 'font-size': '13px', color: theme.fg }}>Font smoothing</span>
+            <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+              Enable antialiasing and geometric text rendering
             </span>
           </div>
         </label>
