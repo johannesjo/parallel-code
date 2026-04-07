@@ -147,6 +147,18 @@ async function remoteTrackingRefExists(repoRoot: string, branch: string): Promis
   }
 }
 
+/** Check whether a local branch ref exists. */
+async function localBranchExists(repoRoot: string, branch: string): Promise<boolean> {
+  try {
+    await exec('git', ['rev-parse', '--verify', `refs/heads/${branch}`], {
+      cwd: repoRoot,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function detectMainBranchUncached(repoRoot: string): Promise<string> {
   // Try remote HEAD reference first
   const branch = await resolveOriginHead(repoRoot);
@@ -168,9 +180,12 @@ async function detectMainBranchUncached(repoRoot: string): Promise<string> {
     }
   }
 
-  // Check common default branch names
+  // Check common default branch names (remote-tracking first, then local)
   for (const candidate of ['main', 'master']) {
     if (await remoteTrackingRefExists(repoRoot, candidate)) return candidate;
+  }
+  for (const candidate of ['main', 'master']) {
+    if (await localBranchExists(repoRoot, candidate)) return candidate;
   }
 
   // Empty repo (no commits yet) — use configured default branch or fall back to "main"
@@ -391,6 +406,26 @@ export async function createWorktree(
     } catch {
       // Branch doesn't exist — fine
     }
+  }
+
+  // Validate the start-point ref exists before attempting worktree creation
+  const startRef = baseBranch || 'HEAD';
+  try {
+    await exec('git', ['rev-parse', '--verify', startRef], { cwd: repoRoot });
+  } catch {
+    const isEmptyRepo = await exec('git', ['rev-list', '-n1', '--all'], { cwd: repoRoot })
+      .then(({ stdout }) => !stdout.trim())
+      .catch(() => true);
+    if (isEmptyRepo) {
+      throw new Error(
+        'Cannot create a worktree in a repository with no commits. ' +
+          'Please make an initial commit first.',
+      );
+    }
+    throw new Error(
+      `Branch "${startRef}" does not exist. ` +
+        'Please select a valid base branch or create the branch first.',
+    );
   }
 
   // Create fresh worktree with new branch
