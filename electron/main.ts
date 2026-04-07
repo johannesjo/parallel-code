@@ -25,25 +25,33 @@ const __dirname = path.dirname(__filename);
 // welcome messages). Login-only (-lc) would be quieter but would miss tools
 // that are only added to PATH in .bashrc/.zshrc (e.g. nvm). We accept the
 // side effects since the sentinel-based parsing discards all other output.
-function fixPath(): void {
+function fixEnv(): void {
   if (process.platform === 'win32') return;
   try {
     const loginShell = resolveUserShell();
-    const sentinel = '__PCODE_PATH__';
-    const result = execFileSync(loginShell, ['-ilc', `printf "${sentinel}%s${sentinel}" "$PATH"`], {
-      encoding: 'utf8',
-      timeout: 5000,
-    });
-    const match = result.match(new RegExp(`${sentinel}(.+?)${sentinel}`));
-    if (match?.[1]) {
-      process.env.PATH = match[1];
+    const sentinel = '__PCODE_ENV__';
+    const result = execFileSync(
+      loginShell,
+      ['-ilc', `printf '${sentinel}' && env -0 && printf '${sentinel}'`],
+      { encoding: 'utf8', timeout: 5000 },
+    );
+    const startIdx = result.indexOf(sentinel);
+    const endIdx = result.lastIndexOf(sentinel);
+    if (startIdx === -1 || endIdx === -1 || startIdx === endIdx) return;
+
+    const envBlock = result.slice(startIdx + sentinel.length, endIdx);
+    for (const entry of envBlock.split('\0')) {
+      if (!entry) continue;
+      const eqIdx = entry.indexOf('=');
+      if (eqIdx <= 0) continue;
+      process.env[entry.slice(0, eqIdx)] = entry.slice(eqIdx + 1);
     }
   } catch (err) {
-    console.warn('[fixPath] Failed to resolve login shell PATH:', err);
+    console.warn('[fixEnv] Failed to resolve login shell environment:', err);
   }
 }
 
-fixPath();
+fixEnv();
 
 // Verify that preload.cjs ALLOWED_CHANNELS stays in sync with the IPC enum.
 // Logs a warning in dev if they drift — catches mismatches before they hit users.
