@@ -37,9 +37,14 @@ export function registerShortcut(shortcut: Shortcut): () => void {
   };
 }
 
+/** Whether a dialog overlay is currently mounted in the DOM. */
+function isDialogOpen(): boolean {
+  return document.querySelector('.dialog-overlay') !== null;
+}
+
 /** Returns true if the event matches any shortcut that should bypass terminal input. */
 export function matchesGlobalShortcut(e: KeyboardEvent): boolean {
-  const dialogOpen = document.querySelector('.dialog-overlay') !== null;
+  const dialogOpen = isDialogOpen();
   return shortcuts.some((s) => (s.global || (dialogOpen && s.dialogSafe)) && matches(e, s));
 }
 
@@ -50,7 +55,7 @@ export function initShortcuts(): () => void {
     const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 
     // Suppress non-dialog-safe shortcuts when a dialog overlay is open
-    const dialogOpen = document.querySelector('.dialog-overlay') !== null;
+    const dialogOpen = isDialogOpen();
 
     for (const s of shortcuts) {
       if (matches(e, s) && (!inInput || s.global) && (!dialogOpen || s.dialogSafe)) {
