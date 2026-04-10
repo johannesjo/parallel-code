@@ -110,6 +110,9 @@ export function HelpDialog(props: HelpDialogProps) {
     if (!rid) return;
 
     const handler = (e: KeyboardEvent) => {
+      // Ignore key repeat so holding a key doesn't spam rebinds
+      if (e.repeat) return;
+
       e.preventDefault();
       e.stopPropagation();
 
@@ -373,6 +376,13 @@ export function HelpDialog(props: HelpDialogProps) {
                           </button>
                         </Show>
                         <kbd
+                          role="button"
+                          tabIndex={0}
+                          aria-label={
+                            binding.unbound
+                              ? `${binding.description}: unbound, click to assign`
+                              : `${binding.description}: ${formatKeyCombo(binding)}, click to rebind`
+                          }
                           onClick={() => {
                             if (recording()) {
                               setRecordingId(null);
@@ -380,6 +390,21 @@ export function HelpDialog(props: HelpDialogProps) {
                             } else {
                               setConflictInfo(null);
                               setRecordingId(binding.id);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              if (recording()) {
+                                setRecordingId(null);
+                                setConflictInfo(null);
+                              } else {
+                                setConflictInfo(null);
+                                // Defer activation so the Enter/Space keyup
+                                // has time to fire before the recording
+                                // listener attaches.
+                                setTimeout(() => setRecordingId(binding.id), 0);
+                              }
                             }
                           }}
                           style={{

@@ -13,18 +13,14 @@ export function matchesKeyEvent(e: KeyboardEvent, binding: KeyBinding): boolean 
   if (e.key.toLowerCase() !== binding.key.toLowerCase()) return false;
   const m = binding.modifiers;
 
-  // cmdOrCtrl: Cmd on mac, Ctrl on linux
-  if (m.cmdOrCtrl) {
-    if (!(isMac ? e.metaKey : e.ctrlKey)) return false;
-  } else {
-    // Direct meta (rare — mac-only terminal bindings like Cmd+Left)
-    if (m.meta && !e.metaKey) return false;
-    if (!m.meta && e.metaKey) return false;
-    // Direct ctrl (rare — linux-only terminal bindings)
-    if (m.ctrl && !e.ctrlKey) return false;
-    if (!m.ctrl && !m.cmdOrCtrl && e.ctrlKey) return false;
-  }
+  // Normalize modifier expectations so matching is exact on every platform.
+  // cmdOrCtrl contributes Cmd on macOS and Ctrl elsewhere. Explicit meta/ctrl
+  // flags remain additive so bindings that intentionally require both still work.
+  const expectedMeta = !!m.meta || (isMac && !!m.cmdOrCtrl);
+  const expectedCtrl = !!m.ctrl || (!isMac && !!m.cmdOrCtrl);
 
+  if (e.metaKey !== expectedMeta) return false;
+  if (e.ctrlKey !== expectedCtrl) return false;
   if (!!m.alt !== e.altKey) return false;
   if (!!m.shift !== e.shiftKey) return false;
   return true;

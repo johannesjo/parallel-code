@@ -1,5 +1,9 @@
 import type { AgentDef, WorktreeStatus } from '../ipc/types';
 import type { LookPreset } from '../lib/look';
+import type { KeyBinding } from '../lib/keybindings';
+
+/** A user override for a binding: partial key/modifiers to apply, or null to unbind. */
+export type KeybindingOverride = Partial<Pick<KeyBinding, 'key' | 'modifiers'>> | null;
 
 export type GitIsolationMode = 'worktree' | 'direct';
 
@@ -200,7 +204,7 @@ export interface AppStore {
   remoteAccess: RemoteAccess;
   showArena: boolean;
   keybindingPreset: string;
-  /** Per-preset user overrides. Outer key = preset ID, inner = binding overrides. */
-  keybindingOverridesByPreset: Record<string, Record<string, Record<string, unknown> | null>>;
+  /** Per-preset user overrides. Outer key = preset ID, inner = binding ID → override. */
+  keybindingOverridesByPreset: Record<string, Record<string, KeybindingOverride>>;
   keybindingMigrationDismissed: boolean;
 }

@@ -339,8 +339,8 @@ export async function loadState(): Promise<void> {
         );
       }
 
-      if (raw.keybindingMigrationDismissed) {
-        s.keybindingMigrationDismissed = true;
+      if (typeof raw.keybindingMigrationDismissed === 'boolean') {
+        s.keybindingMigrationDismissed = raw.keybindingMigrationDismissed;
       }
 
       // Make custom agents findable during task restoration

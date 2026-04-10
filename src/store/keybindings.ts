@@ -1,5 +1,6 @@
 import { createMemo } from 'solid-js';
 import { store, setStore } from './core';
+import { saveState } from './persistence';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import {
@@ -9,9 +10,12 @@ import {
   findConflict,
 } from '../lib/keybindings';
 import type { KeyBinding, Modifiers, KeybindingConfig } from '../lib/keybindings';
+import type { KeybindingOverride } from './types';
+
+type PresetOverrides = Record<string, KeybindingOverride>;
 
 /** Get user overrides for the active preset. */
-function activeOverrides(): Record<string, Record<string, unknown> | null> {
+function activeOverrides(): PresetOverrides {
   return store.keybindingOverridesByPreset[store.keybindingPreset] ?? {};
 }
 
@@ -19,7 +23,7 @@ function activeOverrides(): Record<string, Record<string, unknown> | null> {
 export const resolvedBindings = createMemo(() => {
   const config: KeybindingConfig = {
     preset: store.keybindingPreset,
-    userOverrides: activeOverrides() as KeybindingConfig['userOverrides'],
+    userOverrides: activeOverrides(),
   };
   return resolveBindings(DEFAULT_BINDINGS, config);
 });
@@ -28,30 +32,29 @@ export const resolvedBindings = createMemo(() => {
 export const allBindings = createMemo(() => {
   const config: KeybindingConfig = {
     preset: store.keybindingPreset,
-    userOverrides: activeOverrides() as KeybindingConfig['userOverrides'],
+    userOverrides: activeOverrides(),
   };
   return resolveAllBindings(DEFAULT_BINDINGS, config);
 });
 
+interface LoadedKeybindings {
+  preset: string;
+  overridesByPreset?: Record<string, PresetOverrides>;
+  /** @deprecated legacy flat shape, still accepted for backward compat */
+  userOverrides?: PresetOverrides;
+}
+
 /** Load keybinding config from disk on app start. */
 export async function loadKeybindings(): Promise<void> {
   try {
-    const config = await invoke<{
-      preset: string;
-      overridesByPreset?: Record<string, Record<string, unknown>>;
-      // Legacy format support
-      userOverrides?: Record<string, unknown>;
-    }>(IPC.LoadKeybindings);
+    const config = await invoke<LoadedKeybindings>(IPC.LoadKeybindings);
     setStore('keybindingPreset', config.preset);
     if (config.overridesByPreset) {
-      setStore(
-        'keybindingOverridesByPreset',
-        config.overridesByPreset as Record<string, Record<string, Record<string, unknown> | null>>,
-      );
+      setStore('keybindingOverridesByPreset', config.overridesByPreset);
     } else if (config.userOverrides && Object.keys(config.userOverrides).length > 0) {
       // Migrate old flat format: assign existing overrides to the active preset
       setStore('keybindingOverridesByPreset', {
-        [config.preset]: config.userOverrides as Record<string, Record<string, unknown> | null>,
+        [config.preset]: config.userOverrides,
       });
     }
   } catch {
@@ -75,16 +78,13 @@ export function selectPreset(presetId: string): void {
 }
 
 /** Set a user override for a specific binding on the ACTIVE preset. */
-export function setUserOverride(
-  bindingId: string,
-  override: Partial<Pick<KeyBinding, 'key' | 'modifiers'>> | null,
-): void {
+export function setUserOverride(bindingId: string, override: KeybindingOverride): void {
   const presetId = store.keybindingPreset;
   const current = store.keybindingOverridesByPreset[presetId] ?? {};
   setStore('keybindingOverridesByPreset', {
     ...store.keybindingOverridesByPreset,
     [presetId]: { ...current, [bindingId]: override },
-  } as Record<string, Record<string, Record<string, unknown> | null>>);
+  });
   persist().catch(console.error);
 }
 
@@ -98,7 +98,7 @@ export function clearUserOverride(bindingId: string): void {
   setStore('keybindingOverridesByPreset', {
     ...store.keybindingOverridesByPreset,
     [presetId]: updated,
-  } as Record<string, Record<string, Record<string, unknown> | null>>);
+  });
   persist().catch(console.error);
 }
 
@@ -109,7 +109,7 @@ export function resetAllBindings(presetId?: string): void {
   setStore('keybindingOverridesByPreset', {
     ...store.keybindingOverridesByPreset,
     [targetPreset]: {},
-  } as Record<string, Record<string, Record<string, unknown> | null>>);
+  });
   persist().catch(console.error);
 }
 
@@ -123,4 +123,7 @@ export function checkConflict(
 
 export function dismissMigrationBanner(): void {
   setStore('keybindingMigrationDismissed', true);
+  // Persist immediately so dismissal is never lost (autosave snapshot might not
+  // fire if nothing else changes before the user closes the app).
+  void saveState();
 }
