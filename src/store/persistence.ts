@@ -382,6 +382,7 @@ export async function loadState(): Promise<void> {
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,
+          stepsFileName: pt.stepsFileName,
         };
 
         s.tasks[taskId] = task;
@@ -444,6 +445,7 @@ export async function loadState(): Promise<void> {
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,
+          stepsFileName: pt.stepsFileName,
           collapsed: true,
           savedAgentDef: agentDef ?? undefined,
         };

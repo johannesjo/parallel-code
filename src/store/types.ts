@@ -58,6 +58,7 @@ export interface Task {
   planContent?: string;
   planFileName?: string;
   stepsContent?: StepEntry[];
+  stepsFileName?: string;
 }
 
 export interface Terminal {

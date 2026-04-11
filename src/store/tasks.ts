@@ -237,6 +237,7 @@ function removeTaskFromStore(taskId: string, agentIds: string[]): void {
   // merge+cleanup, current-branch-mode close), so placing it here prevents leaks
   // regardless of which path removed the task.  Idempotent if already stopped.
   invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
+  invoke(IPC.StopStepsWatcher, { taskId }).catch(console.error);
 
   // Clean up agent activity tracking (timers, buffers, decoders) before
   // the store entries are deleted — otherwise markAgentExited can't find
@@ -461,8 +462,9 @@ export async function collapseTask(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
   if (!task || task.collapsed || task.closingStatus) return;
 
-  // Stop plan file watcher to prevent FSWatcher leak
+  // Stop file watchers to prevent FSWatcher leak
   invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
+  invoke(IPC.StopStepsWatcher, { taskId }).catch(console.error);
 
   // Save agent def before killing so uncollapse can restart cleanly.
   // Collapsing unmounts the TaskPanel which destroys the TerminalView,
@@ -471,8 +473,6 @@ export async function collapseTask(taskId: string): Promise<void> {
   const agentDef = firstAgent?.def;
   const agentIds = [...task.agentIds];
   const shellAgentIds = [...task.shellAgentIds];
-
-  invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
   const allIds = [...agentIds, ...shellAgentIds];
   await Promise.allSettled(
     allIds.map((id) => invoke(IPC.KillAgent, { agentId: id }).catch(console.error)),
