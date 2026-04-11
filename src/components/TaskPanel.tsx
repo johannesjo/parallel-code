@@ -26,6 +26,7 @@ import { TaskTitleBar } from './TaskTitleBar';
 import { TaskBranchInfoBar } from './TaskBranchInfoBar';
 import { TaskNotesPanel } from './TaskNotesPanel';
 import { TaskShellSection } from './TaskShellSection';
+import { TaskStepsSection } from './TaskStepsSection';
 import { TaskAITerminal } from './TaskAITerminal';
 import { TaskClosingOverlay } from './TaskClosingOverlay';
 import { theme } from '../lib/theme';
@@ -148,6 +149,19 @@ export function TaskPanel(props: TaskPanelProps) {
     };
   }
 
+  function stepsSection(): PanelChild {
+    return {
+      id: 'steps-section',
+      initialSize: 28,
+      minSize: 28,
+      get fixed() {
+        return !props.task.stepsContent?.length;
+      },
+      requestSize: () => (props.task.stepsContent?.length ? 150 : 28),
+      content: () => <TaskStepsSection task={props.task} isActive={props.isActive} />,
+    };
+  }
+
   function notesAndFiles(): PanelChild {
     return {
       id: 'notes-files',
@@ -245,6 +259,7 @@ export function TaskPanel(props: TaskPanelProps) {
         children={[
           titleBar(),
           branchInfoBar(),
+          ...(store.showSteps ? [stepsSection()] : []),
           notesAndFiles(),
           shellSection(),
           aiTerminal(),

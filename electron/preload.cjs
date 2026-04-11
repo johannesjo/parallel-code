@@ -81,6 +81,10 @@ const ALLOWED_CHANNELS = new Set([
   'plan_content',
   'read_plan_content',
   'stop_plan_watcher',
+  // Steps
+  'steps_content',
+  'read_steps_content',
+  'stop_steps_watcher',
   // Docker
   'check_docker_available',
   'check_docker_image_exists',

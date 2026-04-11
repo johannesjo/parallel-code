@@ -14,6 +14,7 @@ import {
   setThemePreset,
   setAutoTrustFolders,
   setShowPlans,
+  setShowSteps,
   setShowPromptInput,
   setDesktopNotificationsEnabled,
   setInactiveColumnOpacity,
@@ -189,6 +190,32 @@ export function SettingsDialog(props: SettingsDialogProps) {
             <span style={{ 'font-size': '13px', color: theme.fg }}>Show plans</span>
             <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
               Display Claude Code plan files in a tab next to Notes
+            </span>
+          </div>
+        </label>
+        <label
+          style={{
+            display: 'flex',
+            'align-items': 'center',
+            gap: '10px',
+            cursor: 'pointer',
+            padding: '8px 12px',
+            'border-radius': '8px',
+            background: theme.bgInput,
+            border: `1px solid ${theme.border}`,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={store.showSteps}
+            onChange={(e) => setShowSteps(e.currentTarget.checked)}
+            style={{ 'accent-color': theme.accent, cursor: 'pointer' }}
+          />
+          <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
+            <span style={{ 'font-size': '13px', color: theme.fg }}>Steps tracking</span>
+            <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+              Show agent progress from steps.json in a collapsible panel. Agents are instructed to
+              maintain a .claude/steps.json file via the initial prompt.
             </span>
           </div>
         </label>

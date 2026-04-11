@@ -52,6 +52,7 @@ export async function saveState(): Promise<void> {
     windowState: store.windowState ? { ...store.windowState } : undefined,
     autoTrustFolders: store.autoTrustFolders,
     showPlans: store.showPlans,
+    showSteps: store.showSteps,
     desktopNotificationsEnabled: store.desktopNotificationsEnabled,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand || undefined,
@@ -83,6 +84,7 @@ export async function saveState(): Promise<void> {
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
+      stepsFileName: task.stepsContent?.length ? 'steps.json' : undefined,
     };
   }
 
@@ -110,6 +112,7 @@ export async function saveState(): Promise<void> {
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
+      stepsFileName: task.stepsContent?.length ? 'steps.json' : undefined,
       collapsed: true,
     };
   }
@@ -192,6 +195,7 @@ interface LegacyPersistedState {
   windowState?: unknown;
   autoTrustFolders?: unknown;
   showPlans?: unknown;
+  showSteps?: unknown;
   desktopNotificationsEnabled?: unknown;
   inactiveColumnOpacity?: unknown;
   editorCommand?: unknown;
@@ -303,6 +307,7 @@ export async function loadState(): Promise<void> {
       s.windowState = parsePersistedWindowState(raw.windowState);
       s.autoTrustFolders = typeof raw.autoTrustFolders === 'boolean' ? raw.autoTrustFolders : false;
       s.showPlans = typeof raw.showPlans === 'boolean' ? raw.showPlans : true;
+      s.showSteps = typeof raw.showSteps === 'boolean' ? raw.showSteps : false;
       s.desktopNotificationsEnabled =
         typeof raw.desktopNotificationsEnabled === 'boolean'
           ? raw.desktopNotificationsEnabled

@@ -1,4 +1,4 @@
-import type { AgentDef, WorktreeStatus } from '../ipc/types';
+import type { AgentDef, StepEntry, WorktreeStatus } from '../ipc/types';
 import type { LookPreset } from '../lib/look';
 
 export type GitIsolationMode = 'worktree' | 'direct';
@@ -57,6 +57,7 @@ export interface Task {
   savedAgentDef?: AgentDef;
   planContent?: string;
   planFileName?: string;
+  stepsContent?: StepEntry[];
 }
 
 export interface Terminal {
@@ -85,6 +86,7 @@ export interface PersistedTask {
   savedInitialPrompt?: string;
   collapsed?: boolean;
   planFileName?: string;
+  stepsFileName?: string;
 }
 
 export interface PersistedTerminal {
@@ -123,6 +125,7 @@ export interface PersistedState {
   windowState?: PersistedWindowState;
   autoTrustFolders?: boolean;
   showPlans?: boolean;
+  showSteps?: boolean;
   desktopNotificationsEnabled?: boolean;
   inactiveColumnOpacity?: number;
   editorCommand?: string;
@@ -188,6 +191,7 @@ export interface AppStore {
   windowState: PersistedWindowState | null;
   autoTrustFolders: boolean;
   showPlans: boolean;
+  showSteps: boolean;
   desktopNotificationsEnabled: boolean;
   inactiveColumnOpacity: number;
   editorCommand: string;

@@ -88,7 +88,7 @@ function clearAutoTrustState(agentId: string): void {
   }
 }
 
-export type TaskDotStatus = 'busy' | 'waiting' | 'ready';
+export type TaskDotStatus = 'busy' | 'waiting' | 'ready' | 'review';
 
 // --- Prompt detection helpers ---
 
@@ -576,6 +576,13 @@ export function getTaskDotStatus(taskId: string): TaskDotStatus {
     return a?.status === 'running' && active.has(id);
   });
   if (hasActive) return 'busy';
+
+  // Check if the latest step requests review (priority above ready/waiting)
+  const steps = task.stepsContent;
+  if (steps && steps.length > 0) {
+    const latest = steps[steps.length - 1];
+    if (latest.status === 'awaiting_review') return 'review';
+  }
 
   const git = store.taskGitStatus[taskId];
   if (git?.has_committed_changes && !git?.has_uncommitted_changes) return 'ready';

@@ -13,7 +13,7 @@ import {
   rescheduleTaskStatusPolling,
 } from './taskStatus';
 import { recordMergedLines, recordTaskCompleted } from './completion';
-import type { AgentDef, CreateTaskResult, MergeResult } from '../ipc/types';
+import type { AgentDef, CreateTaskResult, MergeResult, StepEntry } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
 import type { Agent, Task, GitIsolationMode } from './types';
 
@@ -129,6 +129,14 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   }
 
   const agentId = crypto.randomUUID();
+
+  // When steps tracking is enabled, prepend a compact instruction to the initial prompt
+  let effectivePrompt = initialPrompt;
+  if (store.showSteps && effectivePrompt) {
+    const stepsInstruction = `[Progress tracking: maintain .claude/steps.json — a JSON array of {summary, status, detail?, files_touched?, timestamp}. Statuses: investigating, implementing, testing, awaiting_review, done. Append a new entry after each major step. Set awaiting_review and STOP when you want human review.]\n\n`;
+    effectivePrompt = stepsInstruction + effectivePrompt;
+  }
+
   const task: Task = {
     id: taskId,
     name,
@@ -141,7 +149,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     shellAgentIds: [],
     notes: '',
     lastPrompt: '',
-    initialPrompt: initialPrompt ?? undefined,
+    initialPrompt: effectivePrompt ?? undefined,
     savedInitialPrompt: initialPrompt ?? undefined,
     skipPermissions: skipPermissions ?? undefined,
     dockerMode: dockerMode ?? undefined,
@@ -581,4 +589,13 @@ export function setPlanContent(
 ): void {
   setStore('tasks', taskId, 'planContent', content ?? undefined);
   setStore('tasks', taskId, 'planFileName', fileName ?? undefined);
+}
+
+export function setStepsContent(taskId: string, steps: unknown[] | null): void {
+  setStore(
+    'tasks',
+    taskId,
+    'stepsContent',
+    steps && steps.length > 0 ? (steps as StepEntry[]) : undefined,
+  );
 }

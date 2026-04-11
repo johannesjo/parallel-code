@@ -61,3 +61,11 @@ export interface FileDiffResult {
   oldContent: string;
   newContent: string;
 }
+
+export interface StepEntry {
+  summary: string;
+  detail?: string;
+  status: 'investigating' | 'implementing' | 'testing' | 'awaiting_review' | 'done';
+  files_touched?: string[];
+  timestamp: string;
+}

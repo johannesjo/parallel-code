@@ -86,6 +86,10 @@ export function setShowPlans(showPlans: boolean): void {
   setStore('showPlans', showPlans);
 }
 
+export function setShowSteps(showSteps: boolean): void {
+  setStore('showSteps', showSteps);
+}
+
 export function setShowPromptInput(show: boolean): void {
   setStore('showPromptInput', show);
 }

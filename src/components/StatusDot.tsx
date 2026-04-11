@@ -4,7 +4,9 @@ import { theme } from '../lib/theme';
 const SIZES = { sm: 6, md: 8 } as const;
 
 function getDotColor(status: TaskDotStatus): string {
-  return { busy: theme.fgMuted, waiting: '#e5a800', ready: theme.success }[status];
+  return { busy: theme.fgMuted, waiting: '#e5a800', ready: theme.success, review: '#c084fc' }[
+    status
+  ];
 }
 
 export function StatusDot(props: { status: TaskDotStatus; size?: 'sm' | 'md' }) {

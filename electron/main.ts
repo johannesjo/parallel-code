@@ -6,6 +6,7 @@ import { execFileSync } from 'child_process';
 import { registerAllHandlers } from './ipc/register.js';
 import { killAllAgents } from './ipc/pty.js';
 import { stopAllPlanWatchers } from './ipc/plans.js';
+import { stopAllStepsWatchers } from './ipc/steps.js';
 import { IPC } from './ipc/channels.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -159,6 +160,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   killAllAgents();
   stopAllPlanWatchers();
+  stopAllStepsWatchers();
 });
 
 app.on('window-all-closed', () => {

@@ -23,6 +23,7 @@ import {
   stopPlanWatcher,
   readPlanForWorktree,
 } from './plans.js';
+import { startStepsWatcher, stopStepsWatcher, readStepsForWorktree } from './steps.js';
 import { startRemoteServer } from '../remote/server.js';
 import {
   getGitIgnoredDirs,
@@ -143,6 +144,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
         startPlanWatcher(win, args.taskId, args.cwd);
       } catch (err) {
         console.warn('Failed to start plan watcher:', err);
+      }
+      try {
+        startStepsWatcher(win, args.taskId, args.cwd);
+      } catch (err) {
+        console.warn('Failed to start steps watcher:', err);
       }
     }
     return result;
@@ -432,6 +438,18 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const fileName = typeof args.fileName === 'string' ? args.fileName : undefined;
     if (fileName) validateRelativePath(fileName, 'fileName');
     return readPlanForWorktree(args.worktreePath, fileName);
+  });
+
+  // --- Steps watcher cleanup ---
+  ipcMain.handle(IPC.StopStepsWatcher, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    stopStepsWatcher(args.taskId);
+  });
+
+  // --- Steps content (one-shot read) ---
+  ipcMain.handle(IPC.ReadStepsContent, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    return readStepsForWorktree(args.worktreePath);
   });
 
   // --- Ask about code ---

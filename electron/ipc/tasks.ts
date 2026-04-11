@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { createWorktree, removeWorktree } from './git.js';
 import { killAgent, notifyAgentListChanged } from './pty.js';
 import { stopPlanWatcher } from './plans.js';
+import { stopStepsWatcher } from './steps.js';
 
 const MAX_SLUG_LEN = 72;
 
@@ -57,6 +58,7 @@ interface DeleteTaskOpts {
 
 export async function deleteTask(opts: DeleteTaskOpts): Promise<void> {
   if (opts.taskId) stopPlanWatcher(opts.taskId);
+  if (opts.taskId) stopStepsWatcher(opts.taskId);
   for (const agentId of opts.agentIds) {
     try {
       killAgent(agentId);

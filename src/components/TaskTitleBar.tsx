@@ -1,4 +1,4 @@
-import { Show, type JSX } from 'solid-js';
+import { Show } from 'solid-js';
 import {
   store,
   reorderTask,
@@ -11,20 +11,9 @@ import { EditableText, type EditableTextHandle } from './EditableText';
 import { IconButton } from './IconButton';
 import { StatusDot } from './StatusDot';
 import { theme } from '../lib/theme';
+import { badgeStyle } from '../lib/badgeStyle';
 import { handleDragReorder } from '../lib/dragReorder';
 import type { Task } from '../store/types';
-
-const badgeStyle = (color: string): JSX.CSSProperties => ({
-  'font-size': '11px',
-  'font-weight': '600',
-  padding: '2px 8px',
-  'border-radius': '4px',
-  background: `color-mix(in srgb, ${color} 15%, transparent)`,
-  color: color,
-  border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
-  'flex-shrink': '0',
-  'white-space': 'nowrap',
-});
 
 interface TaskTitleBarProps {
   task: Task;
