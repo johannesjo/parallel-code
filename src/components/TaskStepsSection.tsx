@@ -4,15 +4,18 @@ import { sf } from '../lib/fontScale';
 import { badgeStyle } from '../lib/badgeStyle';
 import { ScalablePanel } from './ScalablePanel';
 import type { Task } from '../store/types';
-import type { StepEntry } from '../ipc/types';
 
-const STATUS_COLORS: Record<StepEntry['status'], string> = {
+const STATUS_COLORS: Record<string, string> = {
   investigating: '#60a5fa',
   implementing: '#c084fc',
   testing: '#e5a800',
   awaiting_review: '#f87171',
   done: theme.success,
 };
+
+function statusColor(status: string): string {
+  return STATUS_COLORS[status] ?? theme.fgMuted;
+}
 
 function relativeTime(timestamp: string): string {
   const now = Date.now();
@@ -109,7 +112,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                   'min-width': '0',
                 }}
               >
-                <span style={badgeStyle(STATUS_COLORS[step().status])}>
+                <span style={badgeStyle(statusColor(step().status))}>
                   {step().status.replace('_', ' ')}
                 </span>
                 <span
@@ -159,7 +162,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                       'margin-bottom': '4px',
                     }}
                   >
-                    <span style={badgeStyle(STATUS_COLORS[step().status])}>
+                    <span style={badgeStyle(statusColor(step().status))}>
                       {step().status.replace('_', ' ')}
                     </span>
                     <span
@@ -264,7 +267,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                           </span>
                           <span
                             style={{
-                              ...badgeStyle(STATUS_COLORS[step.status]),
+                              ...badgeStyle(statusColor(step.status)),
                               'font-size': sf(9),
                               padding: '1px 5px',
                             }}
