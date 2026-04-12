@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createEffect, onCleanup, For, Show } from 'solid-js';
+import { createSignal, createMemo, createEffect, onCleanup, Index, Show } from 'solid-js';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { theme } from '../lib/theme';
@@ -30,6 +30,29 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
   const visibleRows = createMemo(() => flattenVisibleTree(tree(), collapsed()));
 
   function toggleDir(path: string) {
+    const isCollapsing = !collapsed().has(path);
+
+    // When collapsing, snap selection to the directory if selected item is a child
+    if (isCollapsing) {
+      const rows = visibleRows();
+      const dirIdx = rows.findIndex((r) => r.node.path === path);
+      if (dirIdx >= 0) {
+        const dirDepth = rows[dirIdx].depth;
+        const sel = selectedIndex();
+        // Find end of this directory's subtree
+        let subtreeEnd = rows.length;
+        for (let j = dirIdx + 1; j < rows.length; j++) {
+          if (rows[j].depth <= dirDepth) {
+            subtreeEnd = j;
+            break;
+          }
+        }
+        if (sel > dirIdx && sel < subtreeEnd) {
+          setSelectedIndex(dirIdx);
+        }
+      }
+    }
+
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
@@ -183,33 +206,34 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
       }}
     >
       <div style={{ flex: '1', overflow: 'auto', padding: '4px 0' }}>
-        <For each={visibleRows()}>
+        <Index each={visibleRows()}>
           {(row, i) => (
             <div
-              ref={(el) => (rowRefs[i()] = el)}
+              ref={(el) => (rowRefs[i] = el)}
               class="file-row"
               style={{
                 display: 'flex',
                 'align-items': 'center',
                 gap: '6px',
                 padding: '2px 8px',
-                'padding-left': `${8 + row.depth * 16}px`,
+                'padding-left': `${8 + row().depth * 16}px`,
                 'white-space': 'nowrap',
                 cursor: 'pointer',
                 'border-radius': '3px',
-                opacity: !row.isDir && row.node.file?.committed ? '0.45' : '1',
-                background: selectedIndex() === i() ? theme.bgHover : 'transparent',
+                opacity: !row().isDir && row().node.file?.committed ? '0.45' : '1',
+                background: selectedIndex() === i ? theme.bgHover : 'transparent',
               }}
               onClick={() => {
-                setSelectedIndex(i());
-                if (row.isDir) {
-                  toggleDir(row.node.path);
-                } else if (row.node.file) {
-                  props.onFileClick?.(row.node.file);
+                setSelectedIndex(i);
+                const r = row();
+                if (r.isDir) {
+                  toggleDir(r.node.path);
+                } else if (r.node.file) {
+                  props.onFileClick?.(r.node.file);
                 }
               }}
             >
-              {row.isDir ? (
+              {row().isDir ? (
                 <>
                   <span
                     style={{
@@ -220,7 +244,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                       'font-size': sf(9),
                     }}
                   >
-                    {collapsed().has(row.node.path) ? '\u25B8' : '\u25BE'}
+                    {collapsed().has(row().node.path) ? '\u25B8' : '\u25BE'}
                   </span>
                   <span
                     style={{
@@ -229,9 +253,9 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                       'text-overflow': 'ellipsis',
                       color: theme.fg,
                     }}
-                    title={row.node.path}
+                    title={row().node.path}
                   >
-                    {row.node.name}/
+                    {row().node.name}/
                   </span>
                   <span
                     style={{
@@ -240,14 +264,14 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                       'flex-shrink': '0',
                     }}
                   >
-                    {row.node.fileCount}
+                    {row().node.fileCount}
                   </span>
-                  <Show when={row.node.linesAdded > 0 || row.node.linesRemoved > 0}>
+                  <Show when={row().node.linesAdded > 0 || row().node.linesRemoved > 0}>
                     <span style={{ color: theme.success, 'flex-shrink': '0' }}>
-                      +{row.node.linesAdded}
+                      +{row().node.linesAdded}
                     </span>
                     <span style={{ color: theme.error, 'flex-shrink': '0' }}>
-                      -{row.node.linesRemoved}
+                      -{row().node.linesRemoved}
                     </span>
                   </Show>
                 </>
@@ -255,14 +279,14 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                 <>
                   <span
                     style={{
-                      color: getStatusColor(row.node.file?.status ?? ''),
+                      color: getStatusColor(row().node.file?.status ?? ''),
                       'font-weight': '600',
                       width: '12px',
                       'text-align': 'center',
                       'flex-shrink': '0',
                     }}
                   >
-                    {row.node.file?.status}
+                    {row().node.file?.status}
                   </span>
                   <span
                     style={{
@@ -271,28 +295,28 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                       'text-overflow': 'ellipsis',
                       color: theme.fg,
                     }}
-                    title={row.node.path}
+                    title={row().node.path}
                   >
-                    {row.node.name}
+                    {row().node.name}
                   </span>
                   <Show
                     when={
-                      (row.node.file?.lines_added ?? 0) > 0 ||
-                      (row.node.file?.lines_removed ?? 0) > 0
+                      (row().node.file?.lines_added ?? 0) > 0 ||
+                      (row().node.file?.lines_removed ?? 0) > 0
                     }
                   >
                     <span style={{ color: theme.success, 'flex-shrink': '0' }}>
-                      +{row.node.file?.lines_added}
+                      +{row().node.file?.lines_added}
                     </span>
                     <span style={{ color: theme.error, 'flex-shrink': '0' }}>
-                      -{row.node.file?.lines_removed}
+                      -{row().node.file?.lines_removed}
                     </span>
                   </Show>
                 </>
               )}
             </div>
           )}
-        </For>
+        </Index>
       </div>
       <Show when={files().length > 0}>
         <div

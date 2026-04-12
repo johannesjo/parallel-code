@@ -81,7 +81,9 @@ export function buildFileTree(files: ChangedFile[]): FileTreeNode[] {
         let compactedPath = fullPath;
 
         while (cur.children.size === 1) {
-          const [onlyName, onlyChild] = [...cur.children.entries()][0];
+          const entry = cur.children.entries().next();
+          if (entry.done) break;
+          const [onlyName, onlyChild] = entry.value;
           if (onlyChild.file) break; // stop before a file leaf
           compactedName += '/' + onlyName;
           compactedPath += '/' + onlyName;
