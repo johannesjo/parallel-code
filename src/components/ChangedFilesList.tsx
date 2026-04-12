@@ -4,6 +4,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { getStatusColor } from '../lib/status-colors';
+import { buildFileTree, flattenVisibleTree } from '../lib/file-tree';
 import type { ChangedFile } from '../ipc/types';
 
 interface ChangedFilesListProps {
@@ -22,7 +23,20 @@ interface ChangedFilesListProps {
 export function ChangedFilesList(props: ChangedFilesListProps) {
   const [files, setFiles] = createSignal<ChangedFile[]>([]);
   const [selectedIndex, setSelectedIndex] = createSignal(-1);
+  const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set());
   const rowRefs: HTMLDivElement[] = [];
+
+  const tree = createMemo(() => buildFileTree(files()));
+  const visibleRows = createMemo(() => flattenVisibleTree(tree(), collapsed()));
+
+  function toggleDir(path: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
 
   // Scroll selected item into view reactively
   createEffect(() => {
@@ -30,28 +44,61 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     if (idx >= 0) rowRefs[idx]?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
   });
 
-  // Trim stale refs and clamp selection when file list shrinks
+  // Trim stale refs and clamp selection when visible rows change
   createEffect(() => {
-    const len = files().length;
+    const len = visibleRows().length;
     rowRefs.length = len;
     setSelectedIndex((i) => (i >= len ? len - 1 : i));
   });
 
   function handleKeyDown(e: KeyboardEvent) {
-    const list = files();
-    if (list.length === 0) return;
+    const rows = visibleRows();
+    if (rows.length === 0) return;
+    const idx = selectedIndex();
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex((i) => Math.min(list.length - 1, i + 1));
+      setSelectedIndex((i) => Math.min(rows.length - 1, i + 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedIndex((i) => Math.max(0, i - 1));
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (idx >= 0 && idx < rows.length) {
+        const row = rows[idx];
+        if (row.isDir && collapsed().has(row.node.path)) {
+          toggleDir(row.node.path);
+        } else if (row.isDir && idx + 1 < rows.length) {
+          // Already expanded — move to first child
+          setSelectedIndex(idx + 1);
+        }
+      }
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (idx >= 0 && idx < rows.length) {
+        const row = rows[idx];
+        if (row.isDir && !collapsed().has(row.node.path)) {
+          // Collapse this directory
+          toggleDir(row.node.path);
+        } else if (row.depth > 0) {
+          // Move to parent directory
+          for (let j = idx - 1; j >= 0; j--) {
+            if (rows[j].isDir && rows[j].depth === row.depth - 1) {
+              setSelectedIndex(j);
+              break;
+            }
+          }
+        }
+      }
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const idx = selectedIndex();
-      if (idx >= 0 && idx < list.length) {
-        props.onFileClick?.(list[idx]);
+      if (idx >= 0 && idx < rows.length) {
+        const row = rows[idx];
+        if (row.isDir) {
+          toggleDir(row.node.path);
+        } else if (row.node.file) {
+          props.onFileClick?.(row.node.file);
+        }
       }
     }
   }
@@ -119,45 +166,6 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
   const totalRemoved = createMemo(() => files().reduce((s, f) => s + f.lines_removed, 0));
   const uncommittedCount = createMemo(() => files().filter((f) => !f.committed).length);
 
-  /** For each file, compute the display filename and an optional disambiguating directory. */
-  const fileDisplays = createMemo(() => {
-    const list = files();
-
-    // Count how many times each filename appears
-    const nameCounts = new Map<string, number>();
-    const parsed = list.map((f) => {
-      const sep = f.path.lastIndexOf('/');
-      const name = sep >= 0 ? f.path.slice(sep + 1) : f.path;
-      const dir = sep >= 0 ? f.path.slice(0, sep) : '';
-      nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
-      return { name, dir, fullPath: f.path };
-    });
-
-    // For duplicates, find the shortest disambiguating parent suffix
-    return parsed.map((p) => {
-      if ((nameCounts.get(p.name) ?? 0) <= 1 || !p.dir) {
-        return { name: p.name, disambig: '', fullPath: p.fullPath };
-      }
-      // Find all entries with the same filename
-      const siblings = parsed.filter((s) => s.name === p.name && s.fullPath !== p.fullPath);
-      const parts = p.dir.split('/');
-      // Walk from the immediate parent upward until unique
-      for (let depth = 1; depth <= parts.length; depth++) {
-        const suffix = parts.slice(parts.length - depth).join('/');
-        const isUnique = siblings.every((s) => {
-          const sParts = s.dir.split('/');
-          const sSuffix = sParts.slice(sParts.length - depth).join('/');
-          return sSuffix !== suffix;
-        });
-        if (isUnique) {
-          return { name: p.name, disambig: suffix + '/', fullPath: p.fullPath };
-        }
-      }
-      // Fallback: show full directory
-      return { name: p.name, disambig: p.dir + '/', fullPath: p.fullPath };
-    });
-  });
-
   return (
     <div
       ref={props.ref}
@@ -175,8 +183,8 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
       }}
     >
       <div style={{ flex: '1', overflow: 'auto', padding: '4px 0' }}>
-        <For each={files()}>
-          {(file, i) => (
+        <For each={visibleRows()}>
+          {(row, i) => (
             <div
               ref={(el) => (rowRefs[i()] = el)}
               class="file-row"
@@ -185,54 +193,103 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                 'align-items': 'center',
                 gap: '6px',
                 padding: '2px 8px',
+                'padding-left': `${8 + row.depth * 16}px`,
                 'white-space': 'nowrap',
-                cursor: props.onFileClick ? 'pointer' : 'default',
+                cursor: 'pointer',
                 'border-radius': '3px',
-                opacity: file.committed ? '0.45' : '1',
+                opacity: !row.isDir && row.node.file?.committed ? '0.45' : '1',
                 background: selectedIndex() === i() ? theme.bgHover : 'transparent',
               }}
               onClick={() => {
                 setSelectedIndex(i());
-                props.onFileClick?.(file);
+                if (row.isDir) {
+                  toggleDir(row.node.path);
+                } else if (row.node.file) {
+                  props.onFileClick?.(row.node.file);
+                }
               }}
             >
-              <span
-                style={{
-                  color: getStatusColor(file.status),
-                  'font-weight': '600',
-                  width: '12px',
-                  'text-align': 'center',
-                  'flex-shrink': '0',
-                }}
-              >
-                {file.status}
-              </span>
-              <span
-                style={{
-                  flex: '1',
-                  overflow: 'hidden',
-                  'text-overflow': 'ellipsis',
-                  display: 'flex',
-                  gap: '4px',
-                  'align-items': 'baseline',
-                }}
-                title={file.path}
-              >
-                <span style={{ color: theme.fg }}>{fileDisplays()[i()].name}</span>
-                <Show when={fileDisplays()[i()].disambig}>
-                  <span style={{ color: theme.fgMuted, 'font-size': sf(10) }}>
-                    {fileDisplays()[i()].disambig}
+              {row.isDir ? (
+                <>
+                  <span
+                    style={{
+                      color: theme.fgMuted,
+                      width: '12px',
+                      'text-align': 'center',
+                      'flex-shrink': '0',
+                      'font-size': sf(9),
+                    }}
+                  >
+                    {collapsed().has(row.node.path) ? '\u25B8' : '\u25BE'}
                   </span>
-                </Show>
-              </span>
-              <Show when={file.lines_added > 0 || file.lines_removed > 0}>
-                <span style={{ color: theme.success, 'flex-shrink': '0' }}>
-                  +{file.lines_added}
-                </span>
-                <span style={{ color: theme.error, 'flex-shrink': '0' }}>
-                  -{file.lines_removed}
-                </span>
-              </Show>
+                  <span
+                    style={{
+                      flex: '1',
+                      overflow: 'hidden',
+                      'text-overflow': 'ellipsis',
+                      color: theme.fg,
+                    }}
+                    title={row.node.path}
+                  >
+                    {row.node.name}/
+                  </span>
+                  <span
+                    style={{
+                      color: theme.fgMuted,
+                      'font-size': sf(10),
+                      'flex-shrink': '0',
+                    }}
+                  >
+                    {row.node.fileCount}
+                  </span>
+                  <Show when={row.node.linesAdded > 0 || row.node.linesRemoved > 0}>
+                    <span style={{ color: theme.success, 'flex-shrink': '0' }}>
+                      +{row.node.linesAdded}
+                    </span>
+                    <span style={{ color: theme.error, 'flex-shrink': '0' }}>
+                      -{row.node.linesRemoved}
+                    </span>
+                  </Show>
+                </>
+              ) : (
+                <>
+                  <span
+                    style={{
+                      color: getStatusColor(row.node.file?.status ?? ''),
+                      'font-weight': '600',
+                      width: '12px',
+                      'text-align': 'center',
+                      'flex-shrink': '0',
+                    }}
+                  >
+                    {row.node.file?.status}
+                  </span>
+                  <span
+                    style={{
+                      flex: '1',
+                      overflow: 'hidden',
+                      'text-overflow': 'ellipsis',
+                      color: theme.fg,
+                    }}
+                    title={row.node.path}
+                  >
+                    {row.node.name}
+                  </span>
+                  <Show
+                    when={
+                      (row.node.file?.lines_added ?? 0) > 0 ||
+                      (row.node.file?.lines_removed ?? 0) > 0
+                    }
+                  >
+                    <span style={{ color: theme.success, 'flex-shrink': '0' }}>
+                      +{row.node.file?.lines_added}
+                    </span>
+                    <span style={{ color: theme.error, 'flex-shrink': '0' }}>
+                      -{row.node.file?.lines_removed}
+                    </span>
+                  </Show>
+                </>
+              )}
             </div>
           )}
         </For>
