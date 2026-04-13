@@ -6,7 +6,7 @@ import type { KeyBinding } from '../lib/keybindings';
 /** A user override for a binding: partial key/modifiers to apply, or null to unbind. */
 export type KeybindingOverride = Partial<Pick<KeyBinding, 'key' | 'modifiers'>> | null;
 
-export type GitIsolationMode = 'worktree' | 'direct';
+export type GitIsolationMode = 'worktree' | 'direct' | 'none';
 
 export type TaskViewportVisibility = 'visible' | 'offscreen-left' | 'offscreen-right';
 
@@ -25,6 +25,7 @@ export interface Project {
   defaultGitIsolation?: GitIsolationMode;
   defaultBaseBranch?: string;
   terminalBookmarks?: TerminalBookmark[];
+  isGitRepo?: boolean; // undefined treated as true for backward compat
 }
 
 export interface Agent {

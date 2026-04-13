@@ -308,21 +308,29 @@ export function TaskPanel(props: TaskPanelProps) {
   };
 
   // Stack-mode inner horizontal split: notes on the left, changed-files on the right.
-  const stackNotesSplitChildren: PanelChild[] = [
-    { id: 'notes', initialSize: 200, minSize: 100, content: () => notesBodyEl },
-    { id: 'changed-files', initialSize: 200, minSize: 100, content: () => changedFilesEl },
-  ];
+  // Non-git tasks only get the notes panel (no changed-files split).
+  const isNoneGit = () => props.task.gitIsolation === 'none';
+  const stackNotesSplitChildren = (): PanelChild[] =>
+    isNoneGit()
+      ? [{ id: 'notes', initialSize: 200, minSize: 100, content: () => notesBodyEl }]
+      : [
+          { id: 'notes', initialSize: 200, minSize: 100, content: () => notesBodyEl },
+          { id: 'changed-files', initialSize: 200, minSize: 100, content: () => changedFilesEl },
+        ];
   const notesAndFilesChild: PanelChild = {
     id: 'notes-files',
     initialSize: 150,
     minSize: 60,
-    content: () => (
-      <ResizablePanel
-        direction="horizontal"
-        persistKey={`task:${props.task.id}:notes-split`}
-        children={stackNotesSplitChildren}
-      />
-    ),
+    content: () =>
+      isNoneGit() ? (
+        notesBodyEl
+      ) : (
+        <ResizablePanel
+          direction="horizontal"
+          persistKey={`task:${props.task.id}:notes-split`}
+          children={stackNotesSplitChildren()}
+        />
+      ),
   };
 
   // Split-mode right-column children.
@@ -421,7 +429,7 @@ export function TaskPanel(props: TaskPanelProps) {
                     direction="vertical"
                     persistKey={`task:${props.task.id}:split-right`}
                     children={[
-                      splitChangedFilesChild,
+                      ...(isNoneGit() ? [] : [splitChangedFilesChild]),
                       splitNotesBodyChild,
                       ...(props.task.stepsEnabled ? [stepsSectionChild] : []),
                       shellSectionChild,
@@ -438,55 +446,57 @@ export function TaskPanel(props: TaskPanelProps) {
         task={props.task}
         onDone={() => setShowCloseConfirm(false)}
       />
-      <MergeDialog
-        open={showMergeConfirm()}
-        task={props.task}
-        initialCleanup={
-          props.task.externalWorktree
-            ? false
-            : (getProject(props.task.projectId)?.deleteBranchOnClose ?? true)
-        }
-        onDone={() => setShowMergeConfirm(false)}
-        onDiffFileClick={(file) => setDiffScrollTarget(file.path)}
-      />
-      <PushDialog
-        open={showPushConfirm()}
-        task={props.task}
-        onStart={() => {
-          setPushing(true);
-          setPushSuccess(false);
-          clearTimeout(pushSuccessTimer);
-        }}
-        onClose={() => {
-          setShowPushConfirm(false);
-        }}
-        onDone={(success) => {
-          const wasHidden = !showPushConfirm();
-          setShowPushConfirm(false);
-          setPushing(false);
-          if (success) {
-            setPushSuccess(true);
-            pushSuccessTimer = setTimeout(() => setPushSuccess(false), 3000);
+      <Show when={props.task.gitIsolation !== 'none'}>
+        <MergeDialog
+          open={showMergeConfirm()}
+          task={props.task}
+          initialCleanup={
+            props.task.externalWorktree
+              ? false
+              : (getProject(props.task.projectId)?.deleteBranchOnClose ?? true)
           }
-          if (wasHidden) {
-            showNotification(success ? 'Push completed' : 'Push failed');
-          }
-        }}
-      />
-      <DiffViewerDialog
-        scrollToFile={diffScrollTarget()}
-        worktreePath={props.task.worktreePath}
-        projectRoot={getProject(props.task.projectId)?.path}
-        branchName={props.task.branchName}
-        baseBranch={props.task.baseBranch}
-        onClose={() => setDiffScrollTarget(null)}
-        taskId={props.task.id}
-        agentId={props.task.agentIds[0]}
-        commitList={commitList()}
-        selectedCommit={selectedCommit()}
-        onCommitNavigate={setSelectedCommit}
-        gitIsolation={props.task.gitIsolation}
-      />
+          onDone={() => setShowMergeConfirm(false)}
+          onDiffFileClick={(file) => setDiffScrollTarget(file.path)}
+        />
+        <PushDialog
+          open={showPushConfirm()}
+          task={props.task}
+          onStart={() => {
+            setPushing(true);
+            setPushSuccess(false);
+            clearTimeout(pushSuccessTimer);
+          }}
+          onClose={() => {
+            setShowPushConfirm(false);
+          }}
+          onDone={(success) => {
+            const wasHidden = !showPushConfirm();
+            setShowPushConfirm(false);
+            setPushing(false);
+            if (success) {
+              setPushSuccess(true);
+              pushSuccessTimer = setTimeout(() => setPushSuccess(false), 3000);
+            }
+            if (wasHidden) {
+              showNotification(success ? 'Push completed' : 'Push failed');
+            }
+          }}
+        />
+        <DiffViewerDialog
+          scrollToFile={diffScrollTarget()}
+          worktreePath={props.task.worktreePath}
+          projectRoot={getProject(props.task.projectId)?.path}
+          branchName={props.task.branchName}
+          baseBranch={props.task.baseBranch}
+          onClose={() => setDiffScrollTarget(null)}
+          taskId={props.task.id}
+          agentId={props.task.agentIds[0]}
+          commitList={commitList()}
+          selectedCommit={selectedCommit()}
+          onCommitNavigate={setSelectedCommit}
+          gitIsolation={props.task.gitIsolation}
+        />
+      </Show>
       <EditProjectDialog project={editingProject()} onClose={() => setEditingProjectId(null)} />
       <PlanViewerDialog
         open={planFullscreen()}

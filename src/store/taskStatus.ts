@@ -808,6 +808,7 @@ export function getTaskDotStatus(taskId: string): TaskDotStatus {
     if (latest.status === 'awaiting_review') return 'review';
   }
 
+  if (task.gitIsolation === 'none') return 'waiting';
   if (isTaskReady(taskId)) return 'ready';
   return 'waiting';
 }
@@ -816,7 +817,7 @@ export function getTaskDotStatus(taskId: string): TaskDotStatus {
 
 async function refreshTaskGitStatus(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
-  if (!task) return;
+  if (!task || task.gitIsolation === 'none') return;
 
   try {
     const status = await invoke<WorktreeStatus>(IPC.GetWorktreeStatus, {

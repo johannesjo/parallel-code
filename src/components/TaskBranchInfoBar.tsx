@@ -126,38 +126,40 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
           );
         }}
       </Show>
-      <button
-        type="button"
-        title={editorTitle()}
-        onClick={handleOpenInEditor}
-        style={{ ...infoBarBtnStyle, 'margin-right': '12px' }}
-      >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 16 16"
-          fill="currentColor"
-          style={{ 'flex-shrink': '0' }}
+      <Show when={props.task.gitIsolation !== 'none'}>
+        <button
+          type="button"
+          title={editorTitle()}
+          onClick={handleOpenInEditor}
+          style={{ ...infoBarBtnStyle, 'margin-right': '12px' }}
         >
-          <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6.25 7.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 7.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 0h5.5a2.5 2.5 0 0 0 2.5-2.5v-.5a.75.75 0 0 0-1.5 0v.5a1 1 0 0 1-1 1H5a3.25 3.25 0 1 0 0 6.5h6.25a.75.75 0 0 0 0-1.5H5a1.75 1.75 0 1 1 0-3.5Z" />
-        </svg>
-        <Show when={props.task.gitIsolation !== 'direct'}>{props.task.branchName}</Show>
-        <Show when={props.task.gitIsolation === 'direct'}>
-          <span
-            style={{
-              'font-size': '11px',
-              'font-weight': '600',
-              padding: '1px 6px',
-              'border-radius': '4px',
-              background: `color-mix(in srgb, ${theme.warning} 15%, transparent)`,
-              color: theme.warning,
-              border: `1px solid color-mix(in srgb, ${theme.warning} 25%, transparent)`,
-            }}
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            style={{ 'flex-shrink': '0' }}
           >
-            {props.task.branchName}
-          </span>
-        </Show>
-      </button>
+            <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6.25 7.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 7.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 0h5.5a2.5 2.5 0 0 0 2.5-2.5v-.5a.75.75 0 0 0-1.5 0v.5a1 1 0 0 1-1 1H5a3.25 3.25 0 1 0 0 6.5h6.25a.75.75 0 0 0 0-1.5H5a1.75 1.75 0 1 1 0-3.5Z" />
+          </svg>
+          <Show when={props.task.gitIsolation !== 'direct'}>{props.task.branchName}</Show>
+          <Show when={props.task.gitIsolation === 'direct'}>
+            <span
+              style={{
+                'font-size': '11px',
+                'font-weight': '600',
+                padding: '1px 6px',
+                'border-radius': '4px',
+                background: `color-mix(in srgb, ${theme.warning} 15%, transparent)`,
+                color: theme.warning,
+                border: `1px solid color-mix(in srgb, ${theme.warning} 25%, transparent)`,
+              }}
+            >
+              {props.task.branchName}
+            </span>
+          </Show>
+        </button>
+      </Show>
       <button
         type="button"
         title={editorTitle()}

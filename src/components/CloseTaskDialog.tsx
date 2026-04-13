@@ -28,7 +28,7 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
       title="Close Task"
       message={
         <div>
-          <Show when={props.task.gitIsolation === 'direct'}>
+          <Show when={props.task.gitIsolation !== 'worktree'}>
             <p style={{ margin: '0' }}>
               This will stop all running agents and shells for this task. No git operations will be
               performed.
@@ -120,7 +120,7 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
         </div>
       }
       confirmLabel={
-        props.task.gitIsolation === 'direct' || props.task.externalWorktree ? 'Close' : 'Delete'
+        props.task.gitIsolation !== 'worktree' || props.task.externalWorktree ? 'Close' : 'Delete'
       }
       danger={props.task.gitIsolation === 'worktree' && !props.task.externalWorktree}
       onConfirm={() => {

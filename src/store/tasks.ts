@@ -146,12 +146,17 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     taskId = result.id;
     branchName = result.branch_name;
     worktreePath = result.worktree_path;
-  } else {
+  } else if (gitIsolation === 'direct') {
     if (hasDirectTask(projectId)) {
       throw new Error('This project already has a task on the current branch');
     }
     taskId = crypto.randomUUID();
     branchName = baseBranch;
+    worktreePath = projectRoot;
+  } else {
+    // 'none' — no git, work directly in the project folder
+    taskId = crypto.randomUUID();
+    branchName = '';
     worktreePath = projectRoot;
   }
 
@@ -388,7 +393,7 @@ export async function mergeTask(
 ): Promise<void> {
   const task = store.tasks[taskId];
   if (!task || task.closingStatus === 'removing') return;
-  if (task.gitIsolation === 'direct') return;
+  if (task.gitIsolation !== 'worktree') return;
 
   const projectRoot = getProjectPath(task.projectId);
   if (!projectRoot) return;
@@ -425,7 +430,7 @@ export async function mergeTask(
 
 export async function pushTask(taskId: string, onOutput: Channel<string>): Promise<void> {
   const task = store.tasks[taskId];
-  if (!task || task.gitIsolation === 'direct') return;
+  if (!task || task.gitIsolation !== 'worktree') return;
 
   const projectRoot = getProjectPath(task.projectId);
   if (!projectRoot) return;

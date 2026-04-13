@@ -12,6 +12,7 @@ export {
   validateProjectPaths,
   relinkProject,
   isProjectMissing,
+  projectIsGitRepo,
   PASTEL_HUES,
 } from './projects';
 export {

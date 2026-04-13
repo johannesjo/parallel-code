@@ -12,6 +12,7 @@ import {
   getProjectBranchPrefix,
   updateProject,
   hasDirectTask,
+  projectIsGitRepo,
   getGitHubDropDefaults,
   setPrefillPrompt,
   setDockerAvailable,
@@ -193,11 +194,15 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   createEffect(() => {
     const pid = selectedProjectId();
     const path = pid ? getProjectPath(pid) : undefined;
+    const isGit = pid ? projectIsGitRepo(pid) : true;
     let cancelled = false;
 
-    if (!path) {
+    if (!path || !isGit) {
       setIgnoredDirs([]);
       setSelectedDirs(new Set<string>());
+      onCleanup(() => {
+        cancelled = true;
+      });
       return;
     }
 
@@ -233,7 +238,9 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     const projectPath = pid ? getProjectPath(pid) : undefined;
     let cancelled = false;
 
-    if (!open || !projectPath) {
+    const isGit = pid ? projectIsGitRepo(pid) : true;
+
+    if (!open || !projectPath || !isGit) {
       setBranches([]);
       setBaseBranch('');
       setBranchesLoading(false);
@@ -283,6 +290,10 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   createEffect(() => {
     const pid = selectedProjectId();
     if (!pid) return;
+    if (!projectIsGitRepo(pid)) {
+      setGitIsolation('none');
+      return;
+    }
     if (hasDirectTask(pid)) {
       setGitIsolation('worktree');
       return;
@@ -424,6 +435,11 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   const selectedProjectPath = () => {
     const pid = selectedProjectId();
     return pid ? getProjectPath(pid) : undefined;
+  };
+
+  const isNonGitProject = () => {
+    const pid = selectedProjectId();
+    return pid ? !projectIsGitRepo(pid) : false;
   };
 
   const directDisabled = () => {
@@ -630,7 +646,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
               outline: 'none',
             }}
           />
-          <Show when={gitIsolation() === 'direct' && selectedProjectPath()}>
+          <Show when={gitIsolation() === 'direct' && !isNonGitProject() && selectedProjectPath()}>
             <div
               style={{
                 'font-size': '12px',
@@ -685,78 +701,82 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           onSelect={setSelectedAgent}
         />
 
-        {/* Isolation mode selector */}
-        <div
-          data-nav-field="git-isolation"
-          style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
-        >
-          <label style={sectionLabelStyle}>Git Isolation</label>
-          <SegmentedButtons
-            options={[
-              {
-                value: 'worktree',
-                label: 'Worktree',
-                title:
-                  'Creates a git branch and worktree so the AI agent can work in isolation without affecting your current branch.',
-              },
-              {
-                value: 'direct',
-                label: 'Current Branch',
-                disabled: directDisabled(),
-                title: 'The AI agent will work on your current branch in the project root.',
-              },
-            ]}
-            value={gitIsolation()}
-            onChange={setGitIsolation}
-          />
-          <Show when={directDisabled()}>
-            <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
-              This project already has a task on the current branch
-            </span>
-          </Show>
-          <Show when={gitIsolation() === 'direct'}>
-            <div style={{ ...bannerStyle(theme.warning), 'font-size': '13px' }}>
-              Changes will be made on the selected branch without worktree isolation.
-            </div>
-          </Show>
-        </div>
-
-        {/* Branch picker */}
-        <div
-          data-nav-field="base-branch"
-          style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
-        >
-          <label style={sectionLabelStyle}>
-            {gitIsolation() === 'worktree' ? 'Base branch' : 'Branch'}
-            <Show when={branchesLoading()}>
-              {' '}
-              <span
-                class="inline-spinner"
-                aria-hidden="true"
-                style={{ 'vertical-align': 'middle' }}
-              />
-            </Show>
-          </label>
-          <select
-            class="input-field"
-            value={baseBranch()}
-            onChange={(e) => setBaseBranch(e.currentTarget.value)}
-            disabled={branchesLoading()}
-            style={{
-              background: theme.bgInput,
-              border: `1px solid ${theme.border}`,
-              'border-radius': '8px',
-              padding: '10px 14px',
-              color: theme.fg,
-              'font-size': '14px',
-              'font-family': "'JetBrains Mono', monospace",
-              outline: 'none',
-              opacity: branchesLoading() ? '0.5' : '1',
-            }}
+        {/* Isolation mode selector — hidden for non-git projects */}
+        <Show when={!isNonGitProject()}>
+          <div
+            data-nav-field="git-isolation"
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
           >
-            <For each={branches()}>{(b) => <option value={b}>{b}</option>}</For>
-          </select>
-        </div>
+            <label style={sectionLabelStyle}>Git Isolation</label>
+            <SegmentedButtons
+              options={[
+                {
+                  value: 'worktree',
+                  label: 'Worktree',
+                  title:
+                    'Creates a git branch and worktree so the AI agent can work in isolation without affecting your current branch.',
+                },
+                {
+                  value: 'direct',
+                  label: 'Current Branch',
+                  disabled: directDisabled(),
+                  title: 'The AI agent will work on your current branch in the project root.',
+                },
+              ]}
+              value={gitIsolation()}
+              onChange={setGitIsolation}
+            />
+            <Show when={directDisabled()}>
+              <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
+                This project already has a task on the current branch
+              </span>
+            </Show>
+            <Show when={gitIsolation() === 'direct'}>
+              <div style={{ ...bannerStyle(theme.warning), 'font-size': '13px' }}>
+                Changes will be made on the selected branch without worktree isolation.
+              </div>
+            </Show>
+          </div>
+        </Show>
+
+        {/* Branch picker — hidden for non-git projects */}
+        <Show when={!isNonGitProject()}>
+          <div
+            data-nav-field="base-branch"
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
+          >
+            <label style={sectionLabelStyle}>
+              {gitIsolation() === 'worktree' ? 'Base branch' : 'Branch'}
+              <Show when={branchesLoading()}>
+                {' '}
+                <span
+                  class="inline-spinner"
+                  aria-hidden="true"
+                  style={{ 'vertical-align': 'middle' }}
+                />
+              </Show>
+            </label>
+            <select
+              class="input-field"
+              value={baseBranch()}
+              onChange={(e) => setBaseBranch(e.currentTarget.value)}
+              disabled={branchesLoading()}
+              style={{
+                background: theme.bgInput,
+                border: `1px solid ${theme.border}`,
+                'border-radius': '8px',
+                padding: '10px 14px',
+                color: theme.fg,
+                'font-size': '14px',
+                'font-family': "'JetBrains Mono', monospace",
+                outline: 'none',
+                opacity: branchesLoading() ? '0.5' : '1',
+              }}
+            >
+              <For each={branches()}>{(b) => <option value={b}>{b}</option>}</For>
+            </select>
+          </div>
+        </Show>
 
         {/* Checkboxes group */}
         <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>

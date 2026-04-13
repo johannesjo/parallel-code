@@ -70,6 +70,9 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
         <Show when={props.task.gitIsolation === 'direct'}>
           <span style={badgeStyle(theme.warning)}>{props.task.branchName}</span>
         </Show>
+        <Show when={props.task.gitIsolation === 'none'}>
+          <span style={badgeStyle(theme.fgMuted)}>no git</span>
+        </Show>
         <Show when={props.task.dockerMode}>
           <span style={badgeStyle(theme.fgMuted)} title={props.task.dockerImage}>
             {dockerBadgeLabel()}
@@ -87,7 +90,7 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
         />
       </div>
       <div style={{ display: 'flex', gap: '4px', 'margin-left': '8px', 'flex-shrink': '0' }}>
-        <Show when={props.task.gitIsolation !== 'direct'}>
+        <Show when={props.task.gitIsolation === 'worktree'}>
           <IconButton
             icon={
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">

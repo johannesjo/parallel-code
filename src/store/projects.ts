@@ -1,5 +1,5 @@
 import { produce } from 'solid-js/store';
-import { confirm, openDialog } from '../lib/dialog';
+import { openDialog } from '../lib/dialog';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
@@ -18,10 +18,10 @@ export function getProject(projectId: string): Project | undefined {
   return store.projects.find((p) => p.id === projectId);
 }
 
-export function addProject(name: string, path: string): string {
+export function addProject(name: string, path: string, isGitRepo?: boolean): string {
   const id = crypto.randomUUID();
   const color = randomPastelColor();
-  const project: Project = { id, name, path, color };
+  const project: Project = { id, name, path, color, isGitRepo };
   setStore(
     produce((s) => {
       s.projects.push(project);
@@ -65,6 +65,7 @@ export function updateProject(
       | 'defaultGitIsolation'
       | 'defaultBaseBranch'
       | 'terminalBookmarks'
+      | 'isGitRepo'
     >
   >,
 ): void {
@@ -84,6 +85,7 @@ export function updateProject(
         s.projects[idx].defaultBaseBranch = updates.defaultBaseBranch;
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
+      if (updates.isGitRepo !== undefined) s.projects[idx].isGitRepo = updates.isGitRepo;
     }),
   );
 }
@@ -123,15 +125,8 @@ export async function removeProjectWithTasks(projectId: string): Promise<void> {
   removeProject(projectId);
 }
 
-/** Returns true if the path is not a git repo root (and shows a warning dialog). */
-async function rejectNonGitFolder(dirPath: string): Promise<boolean> {
-  const isGit = await invoke<boolean>(IPC.CheckIsGitRepo, { path: dirPath });
-  if (isGit) return false;
-  await confirm(
-    'Parallel Code requires each project to be a git repository. It uses branches and worktrees to let AI agents work in isolation.\n\nTo initialize git, run "git init" in your project folder, then try again.',
-    { title: 'Not a Git Repository', kind: 'warning', okLabel: 'OK' },
-  );
-  return true;
+export function projectIsGitRepo(projectId: string): boolean {
+  return getProject(projectId)?.isGitRepo !== false;
 }
 
 export async function pickAndAddProject(): Promise<string | null> {
@@ -139,11 +134,11 @@ export async function pickAndAddProject(): Promise<string | null> {
   if (!selected) return null;
   const path = selected as string;
 
-  if (await rejectNonGitFolder(path)) return null;
+  const isGitRepo = await invoke<boolean>(IPC.CheckIsGitRepo, { path });
 
   const segments = path.split('/');
   const name = segments[segments.length - 1] || path;
-  return addProject(name, path);
+  return addProject(name, path, isGitRepo);
 }
 
 /** Check each project path and record which ones are missing. */
@@ -166,13 +161,14 @@ export async function relinkProject(projectId: string): Promise<boolean> {
   if (!selected) return false;
   const newPath = selected as string;
 
-  if (await rejectNonGitFolder(newPath)) return false;
+  const isGitRepo = await invoke<boolean>(IPC.CheckIsGitRepo, { path: newPath });
 
   setStore(
     produce((s) => {
       const idx = s.projects.findIndex((p) => p.id === projectId);
       if (idx === -1) return;
       s.projects[idx].path = newPath;
+      s.projects[idx].isGitRepo = isGitRepo;
     }),
   );
 

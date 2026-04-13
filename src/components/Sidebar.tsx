@@ -827,6 +827,25 @@ function OffscreenAttentionBadge(props: { taskId: string }) {
   );
 }
 
+function NoGitBadge() {
+  return (
+    <span
+      style={{
+        'font-size': sf(10),
+        'font-weight': '600',
+        padding: '1px 5px',
+        'border-radius': '3px',
+        background: `color-mix(in srgb, ${theme.fgMuted} 12%, transparent)`,
+        color: theme.fgMuted,
+        'flex-shrink': '0',
+        'line-height': '1.5',
+      }}
+    >
+      no git
+    </span>
+  );
+}
+
 function CollapsedTaskRow(props: { taskId: string }) {
   const task = () => store.tasks[props.taskId];
   const offscreenAttention = createOffscreenAttentionState(() => props.taskId);
@@ -878,6 +897,9 @@ function CollapsedTaskRow(props: { taskId: string }) {
           />
           <Show when={t().gitIsolation === 'direct'}>
             <CurrentBranchBadge branchName={t().branchName} />
+          </Show>
+          <Show when={t().gitIsolation === 'none'}>
+            <NoGitBadge />
           </Show>
           <span style={{ flex: '1', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
             {t().name}
@@ -965,6 +987,9 @@ function TaskRow(props: TaskRowProps) {
               >
                 {t().branchName}
               </span>
+            </Show>
+            <Show when={t().gitIsolation === 'none'}>
+              <NoGitBadge />
             </Show>
             <span style={{ flex: '1', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
               {t().name}
