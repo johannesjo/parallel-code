@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createEffect, onCleanup, Index, Show } from 'solid-js';
+import { createSignal, createMemo, createEffect, onCleanup, batch, Index, Show } from 'solid-js';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { theme } from '../lib/theme';
@@ -31,15 +31,14 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
 
   function toggleDir(path: string) {
     const isCollapsing = !collapsed().has(path);
+    const rows = visibleRows();
+    const dirIdx = isCollapsing ? rows.findIndex((r) => r.node.path === path) : -1;
 
-    // When collapsing, snap selection to the directory if selected item is a child
-    if (isCollapsing) {
-      const rows = visibleRows();
-      const dirIdx = rows.findIndex((r) => r.node.path === path);
+    batch(() => {
+      // When collapsing, snap selection to the directory if selected item is a child
       if (dirIdx >= 0) {
         const dirDepth = rows[dirIdx].depth;
         const sel = selectedIndex();
-        // Find end of this directory's subtree
         let subtreeEnd = rows.length;
         for (let j = dirIdx + 1; j < rows.length; j++) {
           if (rows[j].depth <= dirDepth) {
@@ -51,13 +50,13 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
           setSelectedIndex(dirIdx);
         }
       }
-    }
 
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+        return next;
+      });
     });
   }
 
@@ -216,7 +215,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                 'align-items': 'center',
                 gap: '6px',
                 padding: '2px 8px',
-                'padding-left': `${8 + row().depth * 16}px`,
+                'padding-left': `${8 + row().depth * 10}px`,
                 'white-space': 'nowrap',
                 cursor: 'pointer',
                 'border-radius': '3px',

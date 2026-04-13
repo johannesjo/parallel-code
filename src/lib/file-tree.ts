@@ -91,13 +91,21 @@ export function buildFileTree(files: ChangedFile[]): FileTreeNode[] {
         }
 
         const children = convert(cur, compactedPath);
+        let linesAdded = 0,
+          linesRemoved = 0,
+          fileCount = 0;
+        for (const c of children) {
+          linesAdded += c.linesAdded;
+          linesRemoved += c.linesRemoved;
+          fileCount += c.fileCount;
+        }
         result.push({
           name: compactedName,
           path: compactedPath,
           children,
-          linesAdded: children.reduce((s, c) => s + c.linesAdded, 0),
-          linesRemoved: children.reduce((s, c) => s + c.linesRemoved, 0),
-          fileCount: children.reduce((s, c) => s + c.fileCount, 0),
+          linesAdded,
+          linesRemoved,
+          fileCount,
         });
       }
     }
@@ -122,7 +130,9 @@ export function flattenVisibleTree(
     const isDir = node.children.length > 0;
     result.push({ node, depth, isDir });
     if (isDir && !collapsed.has(node.path)) {
-      result.push(...flattenVisibleTree(node.children, collapsed, depth + 1));
+      for (const row of flattenVisibleTree(node.children, collapsed, depth + 1)) {
+        result.push(row);
+      }
     }
   }
   return result;
