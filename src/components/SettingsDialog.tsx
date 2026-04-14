@@ -361,9 +361,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
             </span>
             <select
               value={store.askCodeProvider}
-              onChange={(e) =>
-                setAskCodeProvider(e.currentTarget.value as 'claude' | 'minimax')
-              }
+              onChange={(e) => setAskCodeProvider(e.currentTarget.value as 'claude' | 'minimax')}
               style={{
                 flex: '1',
                 background: theme.taskPanelBg,
@@ -394,9 +392,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </span>
               <input
                 type="password"
-                value={store.minimaxApiKey}
                 onInput={(e) => setMinimaxApiKey(e.currentTarget.value)}
-                placeholder="Enter your MINIMAX_API_KEY"
+                placeholder="Enter your MINIMAX_API_KEY (stored in memory only)"
                 style={{
                   flex: '1',
                   background: theme.taskPanelBg,

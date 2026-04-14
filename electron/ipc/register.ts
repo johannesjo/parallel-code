@@ -59,6 +59,7 @@ import { listAgents } from './agents.js';
 import { saveAppState, loadAppState } from './persistence.js';
 import { spawn } from 'child_process';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
+import { setMinimaxApiKey } from './ask-code-minimax.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
 import path from 'path';
 import {
@@ -522,6 +523,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   // --- Ask about code ---
+  ipcMain.handle(IPC.SetMinimaxApiKey, (_e, args) => {
+    assertString(args.key, 'key');
+    setMinimaxApiKey(args.key);
+  });
+
   ipcMain.handle(IPC.AskAboutCode, (_e, args) => {
     assertString(args.requestId, 'requestId');
     assertString(args.prompt, 'prompt');
@@ -529,17 +535,12 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.cwd, 'cwd');
     const provider: string | undefined =
       typeof args.provider === 'string' ? args.provider : undefined;
-    const minimaxApiKey: string | undefined =
-      typeof args.minimaxApiKey === 'string' && args.minimaxApiKey.trim()
-        ? args.minimaxApiKey.trim()
-        : undefined;
     askAboutCode(win, {
       requestId: args.requestId,
       channelId: args.onOutput.__CHANNEL_ID__,
       prompt: args.prompt,
       cwd: args.cwd,
       provider: provider === 'minimax' ? 'minimax' : 'claude',
-      minimaxApiKey,
     });
   });
 

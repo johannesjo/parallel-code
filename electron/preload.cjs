@@ -96,6 +96,7 @@ const ALLOWED_CHANNELS = new Set([
   // Ask about code
   'ask_about_code',
   'cancel_ask_about_code',
+  'set_minimax_api_key',
   // System
   'get_system_fonts',
   // File links

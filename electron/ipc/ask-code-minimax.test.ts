@@ -4,7 +4,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
-import { askAboutCodeMinimax, cancelAskAboutCodeMinimax, MINIMAX_MODEL } from './ask-code-minimax.js';
+import {
+  askAboutCodeMinimax,
+  cancelAskAboutCodeMinimax,
+  MINIMAX_MODEL,
+  setMinimaxApiKey,
+} from './ask-code-minimax.js';
 
 function makeMockWin() {
   const messages: unknown[] = [];
@@ -57,6 +62,7 @@ function sseChunk(content: string): string {
 describe('askAboutCodeMinimax', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setMinimaxApiKey('test-key');
   });
 
   it('throws if prompt exceeds max length', () => {
@@ -67,7 +73,6 @@ describe('askAboutCodeMinimax', () => {
         requestId: 'r1',
         channelId: 'ch1',
         prompt: longPrompt,
-        apiKey: 'test-key',
       }),
     ).toThrow(/Prompt too long/);
   });
@@ -82,7 +87,6 @@ describe('askAboutCodeMinimax', () => {
       requestId: 'r2',
       channelId: 'ch2',
       prompt: 'Explain this code',
-      apiKey: 'test-key',
     });
 
     await waitForDone(messages);
@@ -106,7 +110,6 @@ describe('askAboutCodeMinimax', () => {
       requestId: 'r3',
       channelId: 'ch3',
       prompt: 'What is this?',
-      apiKey: 'bad-key',
     });
 
     await waitForDone(messages);
@@ -128,7 +131,6 @@ describe('askAboutCodeMinimax', () => {
       requestId: 'r4',
       channelId: 'ch4',
       prompt: 'Explain',
-      apiKey: 'test-key',
     });
 
     await waitForDone(messages);
@@ -143,11 +145,11 @@ describe('askAboutCodeMinimax', () => {
 
     mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
 
+    setMinimaxApiKey('my-secret-key');
     askAboutCodeMinimax(win, {
       requestId: 'r5',
       channelId: 'ch5',
       prompt: 'Explain',
-      apiKey: 'my-secret-key',
     });
 
     await waitForDone(messages);
@@ -171,7 +173,6 @@ describe('askAboutCodeMinimax', () => {
       requestId: 'r6',
       channelId: 'ch6',
       prompt: 'Test',
-      apiKey: 'key',
     });
 
     await waitForDone(messages);
@@ -191,7 +192,6 @@ describe('askAboutCodeMinimax', () => {
       requestId: 'r7',
       channelId: 'ch7',
       prompt: 'Test',
-      apiKey: 'key',
     });
 
     await waitForDone(messages);
@@ -212,7 +212,6 @@ describe('askAboutCodeMinimax', () => {
       requestId: 'r8',
       channelId: 'ch8',
       prompt: 'Test',
-      apiKey: 'key',
     });
 
     await waitForDone(messages);
@@ -233,7 +232,6 @@ describe('askAboutCodeMinimax', () => {
       requestId: 'r9',
       channelId: 'ch9',
       prompt: 'Test',
-      apiKey: 'key',
     });
 
     // Small delay to let the async chain run
@@ -250,7 +248,6 @@ describe('askAboutCodeMinimax', () => {
       requestId: 'r10',
       channelId: 'ch10',
       prompt: 'Explain this',
-      apiKey: 'key',
     });
 
     await waitForDone(messages);
@@ -267,13 +264,13 @@ describe('askAboutCodeMinimax', () => {
 describe('cancelAskAboutCodeMinimax', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setMinimaxApiKey('test-key');
   });
 
   it('cancels a pending request without sending an error message', async () => {
     const { win, messages } = makeMockWin();
 
     // Simulate a slow response that never closes
-    let rejectReader!: (err: unknown) => void;
     const neverEnding = new ReadableStream({
       start(controller) {
         // Enqueue one empty byte so the response is ok
@@ -287,7 +284,6 @@ describe('cancelAskAboutCodeMinimax', () => {
       requestId: 'cancel-1',
       channelId: 'ch-cancel',
       prompt: 'Test',
-      apiKey: 'key',
     });
 
     // Give fetch time to start

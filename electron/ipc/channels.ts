@@ -97,6 +97,7 @@ export enum IPC {
   // Ask about code
   AskAboutCode = 'ask_about_code',
   CancelAskAboutCode = 'cancel_ask_about_code',
+  SetMinimaxApiKey = 'set_minimax_api_key',
 
   // Docker
   CheckDockerAvailable = 'check_docker_available',

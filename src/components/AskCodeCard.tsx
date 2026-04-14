@@ -63,7 +63,6 @@ export function AskCodeCard(props: AskCodeCardProps) {
       cwd: props.worktreePath,
       onOutput: channel,
       provider: store.askCodeProvider,
-      minimaxApiKey: store.minimaxApiKey,
     }).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : String(err));
       setLoading(false);

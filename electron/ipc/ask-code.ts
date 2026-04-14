@@ -11,7 +11,6 @@ interface AskCodeRequest {
   prompt: string;
   cwd: string;
   provider?: AskCodeProvider;
-  minimaxApiKey?: string;
 }
 
 const MAX_PROMPT_LENGTH = 50_000;
@@ -20,16 +19,15 @@ const TIMEOUT_MS = 120_000;
 
 const activeRequests = new Map<string, ChildProcess>();
 const activeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const activeProviders = new Map<string, AskCodeProvider>();
 
 export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
-  const { requestId, channelId, prompt, cwd, provider, minimaxApiKey } = args;
+  const { requestId, channelId, prompt, cwd, provider } = args;
 
   // Route to MiniMax backend when configured
   if (provider === 'minimax') {
-    if (!minimaxApiKey) {
-      throw new Error('MiniMax API key is required when using the MiniMax provider');
-    }
-    askAboutCodeMinimax(win, { requestId, channelId, prompt, apiKey: minimaxApiKey });
+    activeProviders.set(requestId, 'minimax');
+    askAboutCodeMinimax(win, { requestId, channelId, prompt });
     return;
   }
 
@@ -43,6 +41,7 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
   // Cancel any existing request with the same ID
   cancelAskAboutCode(requestId);
 
+  activeProviders.set(requestId, 'claude');
   validateCommand('claude');
 
   const filteredEnv: Record<string, string> = {};
@@ -89,6 +88,7 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
 
   function cleanup() {
     activeRequests.delete(requestId);
+    activeProviders.delete(requestId);
     const timer = activeTimers.get(requestId);
     if (timer) {
       clearTimeout(timer);
@@ -137,7 +137,14 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
 }
 
 export function cancelAskAboutCode(requestId: string): void {
-  cancelAskAboutCodeMinimax(requestId);
+  const provider = activeProviders.get(requestId);
+  activeProviders.delete(requestId);
+
+  if (provider === 'minimax') {
+    cancelAskAboutCodeMinimax(requestId);
+    return;
+  }
+
   const proc = activeRequests.get(requestId);
   if (proc) {
     proc.kill('SIGTERM');

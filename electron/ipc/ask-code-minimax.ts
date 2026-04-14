@@ -4,7 +4,6 @@ interface MinimaxAskCodeRequest {
   requestId: string;
   channelId: string;
   prompt: string;
-  apiKey: string;
 }
 
 const MAX_PROMPT_LENGTH = 50_000;
@@ -16,8 +15,24 @@ export const MINIMAX_MODEL = 'MiniMax-M2.7';
 const activeRequests = new Map<string, AbortController>();
 const activeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+/** Main-process storage for the MiniMax API key. Never sent back to the renderer. */
+let storedApiKey = '';
+
+export function setMinimaxApiKey(key: string): void {
+  storedApiKey = key.trim();
+}
+
+export function getMinimaxApiKey(): string {
+  return storedApiKey;
+}
+
 export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequest): void {
-  const { requestId, channelId, prompt, apiKey } = args;
+  const { requestId, channelId, prompt } = args;
+  const apiKey = storedApiKey;
+
+  if (!apiKey) {
+    throw new Error('MiniMax API key is not set. Please configure it in Settings.');
+  }
 
   if (prompt.length > MAX_PROMPT_LENGTH) {
     throw new Error(`Prompt too long (${prompt.length} chars, max ${MAX_PROMPT_LENGTH})`);
@@ -77,6 +92,7 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
       ],
       // MiniMax temperature must be in (0.0, 1.0]
       temperature: 0.3,
+      max_tokens: 2048,
       stream: true,
     }),
     signal: controller.signal,
@@ -128,7 +144,7 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
       cleanup();
       if (!finished) {
         finished = true;
-        send({ type: 'done', exitCode: aborted ? 1 : 0 });
+        send({ type: 'done', exitCode: 0, cancelled: aborted });
       }
     })
     .catch((err: unknown) => {
@@ -136,11 +152,12 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
       if (!finished) {
         finished = true;
         if (err instanceof Error && err.name === 'AbortError') {
-          // request was cancelled — send done without error
+          // request was cancelled — send done without error, neutral exit code
+          send({ type: 'done', exitCode: 0, cancelled: true });
         } else {
           send({ type: 'error', text: err instanceof Error ? err.message : String(err) });
+          send({ type: 'done', exitCode: 1 });
         }
-        send({ type: 'done', exitCode: 1 });
       }
     });
 }
