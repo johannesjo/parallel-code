@@ -65,6 +65,11 @@ export interface FileDiffResult {
   newContent: string;
 }
 
+export interface CommitInfo {
+  hash: string;
+  message: string;
+}
+
 export interface StepEntry {
   summary: string;
   detail?: string;

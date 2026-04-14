@@ -3,15 +3,20 @@ import { store, updateTaskNotes, setTaskFocusedPanel } from '../store/store';
 import { ResizablePanel } from './ResizablePanel';
 import { ScalablePanel } from './ScalablePanel';
 import { ChangedFilesList } from './ChangedFilesList';
+import { CommitNavBar } from './CommitNavBar';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { createHighlightedMarkdown } from '../lib/marked-shiki';
 import { useFocusRegistration } from '../lib/focus-registration';
 import type { Task } from '../store/types';
+import type { CommitInfo } from '../ipc/types';
 
 interface TaskNotesPanelProps {
   task: Task;
   isActive: boolean;
+  commitList: CommitInfo[];
+  selectedCommit: string | null;
+  onCommitNavigate: (hash: string | null) => void;
   onPlanFullscreen: () => void;
   onDiffFileClick: (path: string) => void;
 }
@@ -253,15 +258,26 @@ export function TaskNotesPanel(props: TaskNotesPanelProps) {
                     'letter-spacing': '0.05em',
                     'border-bottom': `1px solid ${theme.border}`,
                     'flex-shrink': '0',
+                    display: 'flex',
+                    'align-items': 'center',
+                    gap: '6px',
                   }}
                 >
-                  Changed Files
+                  <span style={{ 'flex-shrink': '0' }}>Changed Files</span>
+                  <span style={{ flex: '1' }} />
+                  <CommitNavBar
+                    commits={props.commitList}
+                    selectedCommitHash={props.selectedCommit}
+                    onNavigate={props.onCommitNavigate}
+                    compact={true}
+                  />
                 </div>
                 <div style={{ flex: '1', overflow: 'hidden' }}>
                   <ChangedFilesList
                     worktreePath={props.task.worktreePath}
                     baseBranch={props.task.baseBranch}
                     isActive={props.isActive}
+                    selectedCommit={props.selectedCommit}
                     onFileClick={(file) => props.onDiffFileClick(file.path)}
                     ref={(el) => (changedFilesRef = el)}
                   />

@@ -18,6 +18,8 @@ interface ChangedFilesListProps {
   branchName?: string | null;
   /** Base branch for diff comparison (e.g. 'main', 'develop'). Undefined = auto-detect. */
   baseBranch?: string;
+  /** When set to a commit hash, show files for that single commit. null/undefined = all changes. */
+  selectedCommit?: string | null;
 }
 
 export function ChangedFilesList(props: ChangedFilesListProps) {
@@ -127,11 +129,13 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
 
   // Poll every 5s, matching the git status polling interval.
   // Falls back to branch-based diff when worktree path doesn't exist.
+  // When selectedCommit is set, fetches files for that single commit (no polling).
   createEffect(() => {
     const path = props.worktreePath;
     const projectRoot = props.projectRoot;
     const branchName = props.branchName;
     const baseBranch = props.baseBranch;
+    const commitHash = props.selectedCommit;
     if (!props.isActive) return;
     let cancelled = false;
     let inFlight = false;
@@ -141,6 +145,20 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
       if (inFlight) return;
       inFlight = true;
       try {
+        // Single-commit mode: fetch files for that commit only
+        if (commitHash && path) {
+          try {
+            const result = await invoke<ChangedFile[]>(IPC.GetCommitChangedFiles, {
+              worktreePath: path,
+              commitHash,
+            });
+            if (!cancelled) setFiles(result);
+          } catch {
+            if (!cancelled) setFiles([]);
+          }
+          return;
+        }
+
         // Try worktree-based fetch first
         if (path && !usingBranchFallback) {
           try {
@@ -175,12 +193,15 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     }
 
     void refresh();
-    const timer = setInterval(() => {
-      if (!usingBranchFallback) void refresh();
-    }, 5000);
+    // No polling needed for single-commit view (committed data is immutable)
+    const timer = commitHash
+      ? undefined
+      : setInterval(() => {
+          if (!usingBranchFallback) void refresh();
+        }, 5000);
     onCleanup(() => {
       cancelled = true;
-      clearInterval(timer);
+      if (timer !== undefined) clearInterval(timer);
     });
   });
 

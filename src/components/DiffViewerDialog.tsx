@@ -8,10 +8,12 @@ import { sf } from '../lib/fontScale';
 import { parseUnifiedDiff } from '../lib/unified-diff-parser';
 import { evictStaleAnnotations } from '../lib/review-eviction';
 import { ScrollingDiffView } from './ScrollingDiffView';
+import { CommitNavBar } from './CommitNavBar';
 import { ReviewCommentsButton, ReviewSidebarPanel } from './ReviewSidebarPanel';
 import { ReviewProvider, useReview } from './ReviewProvider';
 import type { FileDiff } from '../lib/unified-diff-parser';
 import type { ReviewAnnotation } from './review-types';
+import type { CommitInfo } from '../ipc/types';
 
 interface DiffViewerDialogProps {
   /** Which file to auto-scroll to (the one the user clicked). Null = closed. */
@@ -26,6 +28,12 @@ interface DiffViewerDialogProps {
   baseBranch?: string;
   taskId?: string;
   agentId?: string;
+  /** List of commits on this branch (oldest first) for commit navigation */
+  commitList?: CommitInfo[];
+  /** Currently selected commit hash, or null for "all changes" mode */
+  selectedCommit?: string | null;
+  /** Callback to navigate to a different commit or null for all changes */
+  onCommitNavigate?: (hash: string | null) => void;
 }
 
 /** Compile review annotations into a prompt string for the agent. */
@@ -72,6 +80,9 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
             baseBranch={props.baseBranch}
             taskId={props.taskId}
             agentId={props.agentId}
+            commitList={props.commitList}
+            selectedCommit={props.selectedCommit}
+            onCommitNavigate={props.onCommitNavigate}
           />
         </ReviewProvider>
       </Show>
@@ -118,6 +129,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
     const projectRoot = props.projectRoot;
     const branchName = props.branchName;
     const baseBranch = props.baseBranch;
+    const commitHash = props.selectedCommit;
     const thisGen = ++fetchGeneration;
 
     setSearchQuery('');
@@ -125,12 +137,18 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
     setError('');
     setParsedFiles([]);
 
-    const worktreePromise = worktreePath
-      ? invoke<string>(IPC.GetAllFileDiffs, { worktreePath, baseBranch })
-      : Promise.reject(new Error('no worktree'));
+    let diffPromise: Promise<string>;
 
-    worktreePromise
-      .catch((err: unknown) => {
+    if (commitHash && worktreePath) {
+      // Single-commit mode
+      diffPromise = invoke<string>(IPC.GetCommitDiffs, { worktreePath, commitHash });
+    } else {
+      // All-changes mode (existing behavior)
+      const worktreePromise = worktreePath
+        ? invoke<string>(IPC.GetAllFileDiffs, { worktreePath, baseBranch })
+        : Promise.reject(new Error('no worktree'));
+
+      diffPromise = worktreePromise.catch((err: unknown) => {
         if (projectRoot && branchName) {
           return invoke<string>(IPC.GetAllFileDiffsFromBranch, {
             projectRoot,
@@ -140,7 +158,10 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
         }
         const msg = err instanceof Error ? err.message : String(err);
         throw new Error(`Could not load diffs: ${msg}`);
-      })
+      });
+    }
+
+    diffPromise
       .then((rawDiff) => {
         if (thisGen !== fetchGeneration) return;
         const newFiles = parseUnifiedDiff(rawDiff);
@@ -229,6 +250,23 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
         >
           -{totalRemoved()}
         </span>
+
+        <Show when={props.commitList && props.commitList.length > 0}>
+          <span
+            style={{
+              width: '1px',
+              height: '16px',
+              background: theme.border,
+              'flex-shrink': '0',
+              margin: '0 4px',
+            }}
+          />
+          <CommitNavBar
+            commits={props.commitList ?? []}
+            selectedCommitHash={props.selectedCommit ?? null}
+            onNavigate={(hash) => props.onCommitNavigate?.(hash)}
+          />
+        </Show>
 
         <ReviewCommentsButton />
 

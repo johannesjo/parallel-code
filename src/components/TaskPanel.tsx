@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, batch } from 'solid-js';
 import {
   store,
   retryCloseTask,
@@ -29,8 +29,11 @@ import { TaskShellSection } from './TaskShellSection';
 import { TaskStepsSection } from './TaskStepsSection';
 import { TaskAITerminal } from './TaskAITerminal';
 import { TaskClosingOverlay } from './TaskClosingOverlay';
+import { invoke } from '../lib/ipc';
+import { IPC } from '../../electron/ipc/channels';
 import { theme } from '../lib/theme';
 import type { Task } from '../store/types';
+import type { CommitInfo } from '../ipc/types';
 
 interface TaskPanelProps {
   task: Task;
@@ -48,6 +51,8 @@ export function TaskPanel(props: TaskPanelProps) {
   let pushSuccessTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(pushSuccessTimer));
   const [diffScrollTarget, setDiffScrollTarget] = createSignal<string | null>(null);
+  const [commitList, setCommitList] = createSignal<CommitInfo[]>([]);
+  const [selectedCommit, setSelectedCommit] = createSignal<string | null>(null);
   const [editingProjectId, setEditingProjectId] = createSignal<string | null>(null);
   let panelRef!: HTMLDivElement;
   let promptRef: HTMLTextAreaElement | undefined;
@@ -116,6 +121,41 @@ export function TaskPanel(props: TaskPanelProps) {
     }
   });
 
+  // Poll for branch commits (same cadence as git status)
+  createEffect(() => {
+    const worktreePath = props.task.worktreePath;
+    const baseBranch = props.task.baseBranch;
+    if (!worktreePath || !props.isActive) return;
+    let cancelled = false;
+
+    async function fetchCommits() {
+      try {
+        const result = await invoke<CommitInfo[]>(IPC.GetBranchCommits, {
+          worktreePath,
+          baseBranch,
+        });
+        if (cancelled) return;
+        batch(() => {
+          setCommitList(result);
+          // Reset selection if the selected commit no longer exists
+          const sel = selectedCommit();
+          if (sel !== null && !result.some((c) => c.hash === sel)) {
+            setSelectedCommit(null);
+          }
+        });
+      } catch {
+        /* worktree may not exist yet */
+      }
+    }
+
+    void fetchCommits();
+    const timer = setInterval(() => void fetchCommits(), 5000);
+    onCleanup(() => {
+      cancelled = true;
+      clearInterval(timer);
+    });
+  });
+
   const firstAgentId = () => props.task.agentIds[0] ?? '';
 
   function titleBar(): PanelChild {
@@ -177,6 +217,9 @@ export function TaskPanel(props: TaskPanelProps) {
         <TaskNotesPanel
           task={props.task}
           isActive={props.isActive}
+          commitList={commitList()}
+          selectedCommit={selectedCommit()}
+          onCommitNavigate={setSelectedCommit}
           onPlanFullscreen={() => setPlanFullscreen(true)}
           onDiffFileClick={(path) => setDiffScrollTarget(path)}
         />
@@ -317,6 +360,9 @@ export function TaskPanel(props: TaskPanelProps) {
         onClose={() => setDiffScrollTarget(null)}
         taskId={props.task.id}
         agentId={props.task.agentIds[0]}
+        commitList={commitList()}
+        selectedCommit={selectedCommit()}
+        onCommitNavigate={setSelectedCommit}
       />
       <EditProjectDialog project={editingProject()} onClose={() => setEditingProjectId(null)} />
       <PlanViewerDialog

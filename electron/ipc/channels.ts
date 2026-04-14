@@ -35,6 +35,9 @@ export enum IPC {
   CheckIsGitRepo = 'check_is_git_repo',
   CommitAll = 'commit_all',
   DiscardUncommitted = 'discard_uncommitted',
+  GetBranchCommits = 'get_branch_commits',
+  GetCommitChangedFiles = 'get_commit_changed_files',
+  GetCommitDiffs = 'get_commit_diffs',
 
   // Persistence
   SaveAppState = 'save_app_state',

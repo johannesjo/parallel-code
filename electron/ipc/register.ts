@@ -48,6 +48,9 @@ import {
   isGitRepo,
   getBranches,
   checkoutBranch,
+  getBranchCommits,
+  getCommitChangedFiles,
+  getCommitDiffs,
 } from './git.js';
 import { createTask, deleteTask } from './tasks.js';
 import { listAgents } from './agents.js';
@@ -83,6 +86,12 @@ function validateRelativePath(p: unknown, label: string): void {
 function validateBranchName(name: unknown, label: string): void {
   if (typeof name !== 'string' || !name) throw new Error(`${label} must be a non-empty string`);
   if (name.startsWith('-')) throw new Error(`${label} must not start with "-"`);
+}
+
+/** Reject commit hashes that are not valid hex strings. */
+function validateCommitHash(hash: unknown, label: string): void {
+  if (typeof hash !== 'string') throw new Error(`${label} must be a string`);
+  if (!/^[0-9a-f]{4,40}$/i.test(hash)) throw new Error(`${label} must be a valid hex commit hash`);
 }
 
 /**
@@ -317,6 +326,22 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const baseBranch = args.baseBranch || undefined;
     if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
     return getBranchLog(args.worktreePath, baseBranch);
+  });
+  ipcMain.handle(IPC.GetBranchCommits, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getBranchCommits(args.worktreePath, baseBranch);
+  });
+  ipcMain.handle(IPC.GetCommitChangedFiles, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    validateCommitHash(args.commitHash, 'commitHash');
+    return getCommitChangedFiles(args.worktreePath, args.commitHash);
+  });
+  ipcMain.handle(IPC.GetCommitDiffs, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    validateCommitHash(args.commitHash, 'commitHash');
+    return getCommitDiffs(args.worktreePath, args.commitHash);
   });
   ipcMain.handle(IPC.PushTask, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
