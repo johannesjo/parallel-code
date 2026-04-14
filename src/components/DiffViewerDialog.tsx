@@ -123,13 +123,15 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
 
   createEffect(() => {
     const scrollTarget = props.scrollToFile;
+    // Access selectedCommit before the early return so the effect tracks it
+    // even when the dialog is closed — ensures we re-run on reopen.
+    const commitHash = props.selectedCommit;
     if (!scrollTarget) return;
 
     const worktreePath = props.worktreePath;
     const projectRoot = props.projectRoot;
     const branchName = props.branchName;
     const baseBranch = props.baseBranch;
-    const commitHash = props.selectedCommit;
     const thisGen = ++fetchGeneration;
 
     setSearchQuery('');
