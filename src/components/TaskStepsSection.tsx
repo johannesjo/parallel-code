@@ -303,7 +303,11 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                                 {truncate(step.detail ?? '', 280)}
                               </div>
                             </Show>
-                            <Show when={step.files_touched && step.files_touched.length > 0}>
+                            <Show
+                              when={
+                                Array.isArray(step.files_touched) && step.files_touched.length > 0
+                              }
+                            >
                               <div
                                 style={{
                                   display: 'flex',

@@ -609,12 +609,10 @@ export function setPlanContent(
 }
 
 export function setStepsContent(taskId: string, steps: unknown[] | null): void {
-  setStore(
-    'tasks',
-    taskId,
-    'stepsContent',
-    steps && steps.length > 0 ? (steps as StepEntry[]) : undefined,
-  );
+  const valid = steps
+    ? (steps.filter((s) => s !== null && typeof s === 'object' && !Array.isArray(s)) as StepEntry[])
+    : [];
+  setStore('tasks', taskId, 'stepsContent', valid.length > 0 ? valid : undefined);
 }
 
 export function setTaskLastInputAt(taskId: string): void {
