@@ -284,7 +284,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                               flex: '1',
                             }}
                           >
-                            {truncate(step.summary, 140)}
+                            {truncate(step.summary ?? '', 140)}
                           </span>
                         </div>
 
@@ -355,7 +355,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                         flex: '1',
                       }}
                     >
-                      {truncate(step().summary, 140)}
+                      {truncate(step().summary ?? '', 140)}
                     </span>
                     <Show when={step().timestamp}>
                       <span
