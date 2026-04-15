@@ -13,18 +13,24 @@ import { resolveUserShell } from './user-shell.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// When launched from a .desktop file, PATH is minimal (/usr/bin:/bin).
-// Resolve the user's full login-interactive shell PATH so spawned PTYs
-// can find CLI tools like claude, codex, gemini, etc.
+// When launched from a .desktop file (e.g. AppImage), the environment is
+// minimal — often just PATH=/usr/bin:/bin. Resolve the user's full
+// login-interactive shell environment and merge it into process.env so
+// spawned PTYs can find CLI tools (claude, codex, gemini, etc.) and
+// inherit other expected variables (SSH_AGENT_LAUNCHER, KUBECONFIG, etc.).
 //
 // Uses -ilc (interactive + login) to source both .zprofile/.profile AND
 // .zshrc/.bashrc, where version managers (nvm, volta, fnm) add to PATH.
-// Sentinel markers isolate PATH from noisy shell init output.
+// A perl one-liner dumps every env var as null-delimited key=value pairs,
+// bounded by sentinel markers to isolate the data from noisy shell init.
 //
 // Trade-off: -i (interactive) triggers .zshrc side effects (compinit, conda,
 // welcome messages). Login-only (-lc) would be quieter but would miss tools
 // that are only added to PATH in .bashrc/.zshrc (e.g. nvm). We accept the
 // side effects since the sentinel-based parsing discards all other output.
+// Another trade-off: inheriting the *full* environment (rather than just PATH)
+// can pull in large variables (certificates, tokens, kubeconfig). We set a
+// generous maxBuffer and fall back to the original environment on failure.
 function fixEnv(): void {
   if (process.platform === 'win32') return;
   try {
@@ -36,7 +42,7 @@ function fixEnv(): void {
         '-ilc',
         `printf '${sentinel}' && perl -e 'print "$_=$ENV{$_}\\0" for keys %ENV' && printf '${sentinel}'`,
       ],
-      { encoding: 'utf8', timeout: 5000 },
+      { encoding: 'utf8', timeout: 5000, maxBuffer: 10 * 1024 * 1024 },
     );
     const startIdx = result.indexOf(sentinel);
     const endIdx = result.lastIndexOf(sentinel);
