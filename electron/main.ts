@@ -32,7 +32,10 @@ function fixEnv(): void {
     const sentinel = '__PCODE_ENV__';
     const result = execFileSync(
       loginShell,
-      ['-ilc', `printf '${sentinel}' && env -0 && printf '${sentinel}'`],
+      [
+        '-ilc',
+        `printf '${sentinel}' && perl -e 'print "$_=$ENV{$_}\\0" for keys %ENV' && printf '${sentinel}'`,
+      ],
       { encoding: 'utf8', timeout: 5000 },
     );
     const startIdx = result.indexOf(sentinel);
