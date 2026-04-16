@@ -18,6 +18,10 @@ const watchers = new Map<string, StepsWatcher>();
  * timestamp overwritten with the host clock — regardless of what the AI wrote.
  * Entries below that index keep their existing timestamps (they were stamped by
  * us on a previous read, possibly before an app restart).
+ *
+ * A missing map entry means we haven't observed this task yet in this process —
+ * on that first read we only fill in missing timestamps and seed the counter,
+ * so existing stamps from prior sessions survive a restart.
  */
 const processedCount = new Map<string, number>();
 
@@ -36,7 +40,8 @@ function sendStepsContent(win: BrowserWindow, taskId: string, stepsFile: string)
  * changed; the subsequent watcher event finds nothing new and stops.
  */
 function applyTimestamps(steps: unknown[], stepsFile: string, taskId: string): void {
-  const prevCount = processedCount.get(taskId) ?? 0;
+  const firstRun = !processedCount.has(taskId);
+  const prevCount = processedCount.get(taskId) ?? steps.length;
   const now = new Date().toISOString();
   let dirty = false;
 
@@ -44,7 +49,8 @@ function applyTimestamps(steps: unknown[], stepsFile: string, taskId: string): v
     const entry = steps[i];
     if (entry !== null && typeof entry === 'object' && !Array.isArray(entry)) {
       const e = entry as Record<string, unknown>;
-      if (i >= prevCount || !e['timestamp']) {
+      const isNew = !firstRun && i >= prevCount;
+      if (isNew || !e['timestamp']) {
         e['timestamp'] = now;
         dirty = true;
       }
