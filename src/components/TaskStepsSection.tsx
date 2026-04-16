@@ -1,4 +1,4 @@
-import { Show, For, createSignal, createMemo, createEffect, onMount } from 'solid-js';
+import { Show, For, createSignal, createMemo, createEffect, onCleanup, onMount } from 'solid-js';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { badgeStyle } from '../lib/badgeStyle';
@@ -119,7 +119,7 @@ function WaitingIndicator(props: { fontSize: string }) {
 export function TaskStepsSection(props: TaskStepsSectionProps) {
   const [expandedHistory, setExpandedHistory] = createSignal<Set<number>>(new Set());
   let scrollRef!: HTMLDivElement;
-  let latestCardRef: HTMLDivElement | undefined;
+  const [latestCardRef, setLatestCardRef] = createSignal<HTMLDivElement | undefined>();
 
   onMount(() => {
     useFocusRegistration(`${props.task.id}:steps`, () => scrollRef?.focus());
@@ -150,13 +150,29 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
     }
   });
 
+  const reportHeight = () => {
+    const el = latestCardRef();
+    if (!el) return;
+    const indicatorH = isInteracting() ? 28 : 0;
+    props.onNaturalHeight?.(el.offsetHeight + indicatorH + 24);
+  };
+
   createEffect(() => {
-    const step = latestStep();
-    const interacting = isInteracting();
-    if (!step || !latestCardRef) return;
-    const cardH = latestCardRef.offsetHeight;
-    const indicatorH = interacting ? 28 : 0;
-    props.onNaturalHeight?.(cardH + indicatorH + 24);
+    // Re-measure when the step content, interaction state, or card ref changes.
+    latestStep();
+    isInteracting();
+    latestCardRef();
+    reportHeight();
+  });
+
+  // Re-measure when the card itself resizes (e.g. window width changes cause
+  // the `next` line to wrap differently).
+  createEffect(() => {
+    const el = latestCardRef();
+    if (!el) return;
+    const ro = new ResizeObserver(() => reportHeight());
+    ro.observe(el);
+    onCleanup(() => ro.disconnect());
   });
 
   function toggleHistory(originalIndex: number) {
@@ -394,9 +410,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
           <Show when={latestStep()}>
             {(step) => (
               <div
-                ref={(el) => {
-                  latestCardRef = el;
-                }}
+                ref={setLatestCardRef}
                 style={{
                   'border-radius': '6px',
                   padding: '8px 10px',
