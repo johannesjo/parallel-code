@@ -20,6 +20,11 @@ function statusColor(status: string): string {
   return STATUS_COLORS[status] ?? theme.fgMuted;
 }
 
+/** Visual offset applied to a sub-agent step. The collapsed history row absorbs this
+ *  via padding; the latest card via margin; the expanded detail panel adds it on top
+ *  of the base 32px indent so the detail aligns under the row's text. */
+const SUB_AGENT_INDENT_PX = 16;
+
 /** Append Z when no timezone is present — ISO strings without TZ are parsed as local time. */
 function normalizeIsoTimestamp(ts: string): string {
   if (!ts) return '';
@@ -93,7 +98,8 @@ function FileBadge(props: { file: string; onFileClick?: (file: string) => void }
   );
 }
 
-/** Dashed badge identifying a sub-agent's entries. */
+/** Dashed badge identifying a sub-agent's entries. Caps width so an oversized agent_id
+ *  can't push controls off the row. */
 function AgentBadge(props: { agentId: string }) {
   return (
     <span
@@ -107,6 +113,10 @@ function AgentBadge(props: { agentId: string }) {
         border: `1px dashed color-mix(in srgb, ${theme.fgMuted} 50%, transparent)`,
         'flex-shrink': '0',
         'font-family': "'JetBrains Mono', monospace",
+        'max-width': '120px',
+        overflow: 'hidden',
+        'text-overflow': 'ellipsis',
+        'white-space': 'nowrap',
       }}
     >
       {props.agentId}
@@ -117,6 +127,10 @@ function AgentBadge(props: { agentId: string }) {
 /** Inline copy-to-clipboard control. Only meaningful on hover (parent toggles `visible`). */
 function CopyButton(props: { text: string; visible: boolean; label: string }) {
   const [copied, setCopied] = createSignal(false);
+  let resetTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => {
+    if (resetTimer !== undefined) clearTimeout(resetTimer);
+  });
   return (
     <button
       type="button"
@@ -128,7 +142,11 @@ function CopyButton(props: { text: string; visible: boolean; label: string }) {
           .writeText(props.text)
           .then(() => {
             setCopied(true);
-            setTimeout(() => setCopied(false), 1200);
+            if (resetTimer !== undefined) clearTimeout(resetTimer);
+            resetTimer = setTimeout(() => {
+              resetTimer = undefined;
+              setCopied(false);
+            }, 1200);
           })
           .catch(() => {});
       }}
@@ -146,6 +164,35 @@ function CopyButton(props: { text: string; visible: boolean; label: string }) {
       }}
     >
       {copied() ? '✓' : '⧉'}
+    </button>
+  );
+}
+
+/** Hover-revealed button that scrolls the AI terminal back to a step's moment. */
+function JumpButton(props: { onClick: () => void; visible: boolean }) {
+  return (
+    <button
+      type="button"
+      title="Jump to terminal moment"
+      aria-label="Jump to terminal moment"
+      onClick={(e) => {
+        e.stopPropagation();
+        props.onClick();
+      }}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        padding: '0 4px',
+        cursor: 'pointer',
+        color: theme.fgSubtle,
+        opacity: props.visible ? 1 : 0,
+        transition: 'opacity 120ms',
+        'font-size': sf(11),
+        'flex-shrink': '0',
+        'line-height': '1',
+      }}
+    >
+      ↗
     </button>
   );
 }
@@ -357,7 +404,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                           'border-radius': '4px',
                           'user-select': 'none',
                           'border-left': `3px solid ${statusColor(String(step.status ?? ''))}`,
-                          'padding-left': indented() ? '24px' : '8px',
+                          'padding-left': indented() ? `${8 + SUB_AGENT_INDENT_PX}px` : '8px',
                           background: isHovered()
                             ? `color-mix(in srgb, ${theme.fgMuted} 8%, transparent)`
                             : 'transparent',
@@ -405,29 +452,10 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                           label="summary"
                         />
                         <Show when={props.onJumpToStep}>
-                          <button
-                            type="button"
-                            title="Jump to terminal moment"
-                            aria-label="Jump to terminal moment"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              props.onJumpToStep?.(idx());
-                            }}
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              padding: '0 4px',
-                              cursor: 'pointer',
-                              color: theme.fgSubtle,
-                              opacity: isHovered() ? 1 : 0,
-                              transition: 'opacity 120ms',
-                              'font-size': sf(11),
-                              'flex-shrink': '0',
-                              'line-height': '1',
-                            }}
-                          >
-                            ↗
-                          </button>
+                          <JumpButton
+                            visible={isHovered()}
+                            onClick={() => props.onJumpToStep?.(idx())}
+                          />
                         </Show>
                         <Show when={step.timestamp}>
                           <span
@@ -460,7 +488,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                       <Show when={isExpanded()}>
                         <div
                           style={{
-                            'margin-left': indented() ? '52px' : '32px',
+                            'margin-left': indented() ? `${32 + SUB_AGENT_INDENT_PX}px` : '32px',
                             padding: '4px 8px',
                             'font-size': sf(12),
                             color: theme.fgMuted,
@@ -530,7 +558,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                     'border-radius': '6px',
                     padding: '8px 10px 8px 12px',
                     'border-left': `3px solid ${statusColor(String(step().status ?? ''))}`,
-                    'margin-left': indented() ? '16px' : '0',
+                    'margin-left': indented() ? `${SUB_AGENT_INDENT_PX}px` : '0',
                   }}
                 >
                   <div
@@ -566,30 +594,13 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                       label="summary"
                     />
                     <Show when={props.onJumpToStep}>
-                      <button
-                        type="button"
-                        title="Jump to terminal moment"
-                        aria-label="Jump to terminal moment"
-                        onClick={(e) => {
-                          e.stopPropagation();
+                      <JumpButton
+                        visible={latestHovered() === 'summary'}
+                        onClick={() => {
                           const len = steps().length;
                           if (len > 0) props.onJumpToStep?.(len - 1);
                         }}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          padding: '0 4px',
-                          cursor: 'pointer',
-                          color: theme.fgSubtle,
-                          opacity: latestHovered() === 'summary' ? 1 : 0,
-                          transition: 'opacity 120ms',
-                          'font-size': sf(11),
-                          'flex-shrink': '0',
-                          'line-height': '1',
-                        }}
-                      >
-                        ↗
-                      </button>
+                      />
                     </Show>
                     <Show when={step().timestamp}>
                       <span

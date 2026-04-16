@@ -60,8 +60,12 @@ interface TerminalViewProps {
   onReady?: (focusFn: () => void) => void;
   onBufferReady?: (getBuffer: () => string) => void;
   /** Exposes step-bookmark API: `mark(i)` registers a marker at the current line for
-   *  step index `i`; `jump(i)` scrolls the viewport so that marker is visible. */
-  onStepNavReady?: (api: { mark: (i: number) => void; jump: (i: number) => boolean }) => void;
+   *  step index `i`; `jump(i)` scrolls the viewport so that marker is visible.
+   *  Called with `undefined` on unmount so the consumer can reset its state — important
+   *  on agent restart, where this component remounts but the parent does not. */
+  onStepNavReady?: (
+    api: { mark: (i: number) => void; jump: (i: number) => boolean } | undefined,
+  ) => void;
   fontSize?: number;
   autoFocus?: boolean;
   initialCommand?: string;
@@ -172,21 +176,24 @@ export function TerminalView(props: TerminalViewProps) {
     // user can jump from the steps panel back to the terminal moment a step was written.
     // Markers auto-track buffer truncation; once the marker scrolls past the scrollback
     // limit xterm disposes it, in which case `jump` returns false so the caller can no-op.
+    // The map is owned by xterm and freed implicitly when term.dispose() runs in onCleanup.
     const stepMarkers = new Map<number, IMarker>();
-    props.onStepNavReady?.({
-      mark(i) {
+    const stepNavApi = {
+      mark(i: number) {
         if (!term || stepMarkers.has(i)) return;
         const m = term.registerMarker(0);
         if (m) stepMarkers.set(i, m);
       },
-      jump(i) {
+      jump(i: number): boolean {
         if (!term) return false;
         const m = stepMarkers.get(i);
         if (!m || m.isDisposed) return false;
         term.scrollToLine(m.line);
         return true;
       },
-    });
+    };
+    props.onStepNavReady?.(stepNavApi);
+    onCleanup(() => props.onStepNavReady?.(undefined));
 
     props.onBufferReady?.(() => {
       if (!term) return '';
