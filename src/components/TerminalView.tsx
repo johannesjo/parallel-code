@@ -1,5 +1,5 @@
 import { onMount, onCleanup, createEffect } from 'solid-js';
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type IMarker } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -59,6 +59,9 @@ interface TerminalViewProps {
   onFileLink?: (filePath: string) => void;
   onReady?: (focusFn: () => void) => void;
   onBufferReady?: (getBuffer: () => string) => void;
+  /** Exposes step-bookmark API: `mark(i)` registers a marker at the current line for
+   *  step index `i`; `jump(i)` scrolls the viewport so that marker is visible. */
+  onStepNavReady?: (api: { mark: (i: number) => void; jump: (i: number) => boolean }) => void;
   fontSize?: number;
   autoFocus?: boolean;
   initialCommand?: string;
@@ -164,6 +167,27 @@ export function TerminalView(props: TerminalViewProps) {
     });
 
     props.onReady?.(() => term?.focus());
+
+    // Step bookmarks — anchor each agent step to the current scrollback line so the
+    // user can jump from the steps panel back to the terminal moment a step was written.
+    // Markers auto-track buffer truncation; once the marker scrolls past the scrollback
+    // limit xterm disposes it, in which case `jump` returns false so the caller can no-op.
+    const stepMarkers = new Map<number, IMarker>();
+    props.onStepNavReady?.({
+      mark(i) {
+        if (!term || stepMarkers.has(i)) return;
+        const m = term.registerMarker(0);
+        if (m) stepMarkers.set(i, m);
+      },
+      jump(i) {
+        if (!term) return false;
+        const m = stepMarkers.get(i);
+        if (!m || m.isDisposed) return false;
+        term.scrollToLine(m.line);
+        return true;
+      },
+    });
+
     props.onBufferReady?.(() => {
       if (!term) return '';
       const buf = term.buffer.active;

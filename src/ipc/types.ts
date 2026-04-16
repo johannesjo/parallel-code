@@ -76,5 +76,8 @@ export interface StepEntry {
   next?: string;
   status: 'starting' | 'investigating' | 'implementing' | 'testing' | 'awaiting_review' | 'done';
   files_touched?: string[];
+  /** Optional sub-agent identifier — short label (e.g. "auth-worker") so the UI can
+   *  group entries written on behalf of delegated work. Omit for the top-level agent. */
+  agent_id?: string;
   timestamp: string;
 }

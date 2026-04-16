@@ -81,8 +81,10 @@ const STEPS_INSTRUCTION =
   '  detail: one sentence max, only if it adds context the summary and next fields cannot carry — omit otherwise.\n' +
   '  status: starting | investigating | implementing | testing | awaiting_review | done.\n' +
   '  files_touched: only files you actually wrote or modified in this step, not files you read.\n' +
-  'Sub-agents: when you spawn sub-agents, append one entry describing what each will work on. When they finish, append a completion entry with their outcome.\n' +
+  '  agent_id: short label for the sub-agent doing this work (e.g. "auth-worker", "test-runner"). Omit for your own entries. Use the same id consistently across all entries from one delegated agent so the UI can group them.\n' +
+  'Sub-agents: when you spawn a sub-agent, append one entry describing what it will work on, including its agent_id. When it finishes, append a completion entry with the same agent_id and its outcome.\n' +
   'Example: {"summary":"Auth middleware complete — JWT + rate-limit","next":"Write integration tests for token expiry edge cases","status":"implementing","files_touched":["src/middleware/auth.ts"]}.\n' +
+  'Sub-agent example: {"summary":"Schema migration generated","next":"Run migration in staging","status":"implementing","agent_id":"db-worker","files_touched":["migrations/0042_users.sql"]}.\n' +
   'When you want the user to review your work: write an entry with status "awaiting_review", set next to the decision or action you need from them, then pause.';
 
 export interface CreateTaskOptions {
