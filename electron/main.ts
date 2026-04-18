@@ -31,6 +31,19 @@ const __dirname = path.dirname(__filename);
 // Another trade-off: inheriting the *full* environment (rather than just PATH)
 // can pull in large variables (certificates, tokens, kubeconfig). We set a
 // generous maxBuffer and fall back to the original environment on failure.
+//
+// Skip vars that would alter Electron/Node runtime behavior if a user's shell
+// rc sets them — those belong to our process, not the login shell.
+const PROTECTED_ENV_KEYS = new Set([
+  'ELECTRON_RUN_AS_NODE',
+  'NODE_OPTIONS',
+  'NODE_EXTRA_CA_CERTS',
+  'LD_PRELOAD',
+  'LD_LIBRARY_PATH',
+  'DYLD_INSERT_LIBRARIES',
+  'DYLD_LIBRARY_PATH',
+]);
+
 function fixEnv(): void {
   if (process.platform === 'win32') return;
   try {
@@ -53,7 +66,9 @@ function fixEnv(): void {
       if (!entry) continue;
       const eqIdx = entry.indexOf('=');
       if (eqIdx <= 0) continue;
-      process.env[entry.slice(0, eqIdx)] = entry.slice(eqIdx + 1);
+      const key = entry.slice(0, eqIdx);
+      if (PROTECTED_ENV_KEYS.has(key)) continue;
+      process.env[key] = entry.slice(eqIdx + 1);
     }
   } catch (err) {
     console.warn('[fixEnv] Failed to resolve login shell environment:', err);
