@@ -58,8 +58,11 @@ export function saveKeybindings(dir: string, json: string): void {
   const filePath = path.join(dir, FILENAME);
   fs.mkdirSync(dir, { recursive: true });
 
-  // Validate JSON before writing
-  JSON.parse(json);
+  // Validate JSON structure before writing
+  const parsed: unknown = JSON.parse(json);
+  if (!isValidShape(parsed)) {
+    throw new Error('Invalid keybinding config shape');
+  }
 
   const tmpPath = filePath + '.tmp';
   try {

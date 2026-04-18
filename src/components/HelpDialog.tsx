@@ -165,8 +165,8 @@ export function HelpDialog(props: HelpDialogProps) {
   function handleOverride() {
     const info = conflictInfo();
     if (!info) return;
-    // Unbind the conflicting binding, then apply the proposed one
-    setUserOverride(info.conflicting.id, null);
+    // Revert the conflicting binding to its preset/default, then apply the proposed one
+    clearUserOverride(info.conflicting.id);
     setUserOverride(info.editingId, {
       key: info.proposedKey,
       modifiers: info.proposedModifiers,
@@ -203,7 +203,7 @@ export function HelpDialog(props: HelpDialogProps) {
   async function handleResetAll() {
     const confirmed = await appConfirm('Reset all keybindings to defaults for the current preset?');
     if (confirmed) {
-      resetAllBindings(store.keybindingPreset);
+      resetAllBindings();
     }
   }
 

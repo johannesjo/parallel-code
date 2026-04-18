@@ -1,4 +1,3 @@
-import { createMemo } from 'solid-js';
 import { store, setStore } from './core';
 import { saveState } from './persistence';
 import { invoke } from '../lib/ipc';
@@ -19,23 +18,30 @@ function activeOverrides(): PresetOverrides {
   return store.keybindingOverridesByPreset[store.keybindingPreset] ?? {};
 }
 
-/** Reactive memo: resolved bindings based on current preset + its user overrides. */
-export const resolvedBindings = createMemo(() => {
-  const config: KeybindingConfig = {
+/** Build the config object from current store state. */
+function activeConfig(): KeybindingConfig {
+  return {
     preset: store.keybindingPreset,
     userOverrides: activeOverrides(),
   };
-  return resolveBindings(DEFAULT_BINDINGS, config);
-});
+}
 
-/** Reactive memo: ALL bindings including unbound ones (for the editor UI). */
-export const allBindings = createMemo(() => {
-  const config: KeybindingConfig = {
-    preset: store.keybindingPreset,
-    userOverrides: activeOverrides(),
-  };
-  return resolveAllBindings(DEFAULT_BINDINGS, config);
-});
+/**
+ * Resolved bindings for the active preset (excluding unbound).
+ * Plain function — reads reactively from the SolidJS store, so callers
+ * inside components/effects will track automatically. No createMemo needed.
+ */
+export function resolvedBindings(): KeyBinding[] {
+  return resolveBindings(DEFAULT_BINDINGS, activeConfig());
+}
+
+/**
+ * ALL bindings including unbound ones (for the editor UI).
+ * Plain function — same reactivity characteristics as resolvedBindings().
+ */
+export function allBindings(): KeyBinding[] {
+  return resolveAllBindings(DEFAULT_BINDINGS, activeConfig());
+}
 
 interface LoadedKeybindings {
   preset: string;
@@ -103,12 +109,11 @@ export function clearUserOverride(bindingId: string): void {
 }
 
 /** Reset all user overrides for the active preset. */
-export function resetAllBindings(presetId?: string): void {
-  const targetPreset = presetId ?? store.keybindingPreset;
-  if (presetId) setStore('keybindingPreset', presetId);
+export function resetAllBindings(): void {
+  const presetId = store.keybindingPreset;
   setStore('keybindingOverridesByPreset', {
     ...store.keybindingOverridesByPreset,
-    [targetPreset]: {},
+    [presetId]: {},
   });
   persist().catch(console.error);
 }
