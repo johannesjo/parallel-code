@@ -581,22 +581,40 @@ function App() {
           >
             <span>
               Keyboard shortcuts are now configurable.{' '}
-              <span
+              <button
+                type="button"
                 onClick={() => {
                   toggleHelpDialog(true);
                   dismissMigrationBanner();
                 }}
-                style={{ color: theme.accent, cursor: 'pointer', 'text-decoration': 'underline' }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '0',
+                  font: 'inherit',
+                  color: theme.accent,
+                  cursor: 'pointer',
+                  'text-decoration': 'underline',
+                }}
               >
                 Pick a preset for your coding agent
-              </span>{' '}
+              </button>{' '}
               or{' '}
-              <span
+              <button
+                type="button"
                 onClick={() => dismissMigrationBanner()}
-                style={{ color: theme.fgMuted, cursor: 'pointer', 'text-decoration': 'underline' }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '0',
+                  font: 'inherit',
+                  color: theme.fgMuted,
+                  cursor: 'pointer',
+                  'text-decoration': 'underline',
+                }}
               >
                 dismiss
-              </span>
+              </button>
               .
             </span>
             <button

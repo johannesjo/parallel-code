@@ -70,8 +70,8 @@ interface TerminalViewProps {
 const STATUS_ANALYSIS_MAX_BYTES = 8 * 1024;
 
 /** Terminal-layer bindings — filtered from resolved bindings.
- *  Called in the key handler (hot path) but the underlying resolvedBindings()
- *  memo only recomputes on config change, so the filter is cheap. */
+ *  Called in the key handler (hot path); resolveBindings walks the full
+ *  defaults list on each call, which is fine at human typing speed. */
 function getTerminalBindings() {
   return resolvedBindings().filter((b) => b.layer === 'terminal');
 }
