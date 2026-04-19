@@ -94,6 +94,7 @@ export {
   setTaskViewportVisibility,
   toggleSidebar,
   toggleArena,
+  toggleFocusMode,
   setTerminalFont,
   setThemePreset,
   setAutoTrustFolders,

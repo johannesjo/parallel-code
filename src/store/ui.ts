@@ -97,6 +97,10 @@ export function toggleArena(show?: boolean): void {
   setStore('showArena', show ?? !store.showArena);
 }
 
+export function toggleFocusMode(on?: boolean): void {
+  setStore('focusMode', on ?? !store.focusMode);
+}
+
 export function setWindowState(windowState: PersistedWindowState): void {
   const current = store.windowState;
   if (
