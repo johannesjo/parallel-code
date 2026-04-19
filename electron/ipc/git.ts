@@ -106,7 +106,7 @@ const SYMLINK_CANDIDATES = [
  * Entries inside `.claude/` that must NOT be seeded from the main repo's
  * `.claude/` into new worktrees (per-worktree-local state).
  */
-const CLAUDE_DIR_EXCLUDE = new Set(['plans']);
+const CLAUDE_DIR_EXCLUDE = new Set(['plans', 'steps.json']);
 
 /**
  * Files Claude Code's sandbox (bwrap) read-only-binds on startup. They must
