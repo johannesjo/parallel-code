@@ -4,9 +4,7 @@
 
 Let users monitor and interact with their parallel-code AI agents from a phone
 or tablet on the same local network (or Tailscale) without returning to the
-desktop. The Electron main process embeds an on-demand HTTP + WebSocket server
-that serves a mobile-optimized SPA and streams live PTY output from every
-running agent.
+desktop.
 
 ## Requirements
 
@@ -19,8 +17,8 @@ port so that other devices on the same network can reach it.
 #### Scenario: User starts the remote server
 
 - **WHEN** the renderer sends the `StartRemoteServer` IPC request
-- **THEN** the main process starts an `http.createServer` instance with a
-  `ws` WebSocketServer mounted on the same port
+- **THEN** the main process starts an HTTP server with a WebSocket server
+  accepting upgrades on the same listener
 - **AND** the server binds to `0.0.0.0` on the configured port
 - **AND** the response includes the generated auth token and the access URLs
   for the detected WiFi and Tailscale interfaces
@@ -61,8 +59,8 @@ timing-safe comparison.
 #### Scenario: Token is generated per server session
 
 - **WHEN** the server starts
-- **THEN** a new 24-byte random token is generated via `crypto.randomBytes`
-  and base64url-encoded (32 characters)
+- **THEN** a fresh token is generated from the platform's cryptographic RNG
+  and base64url-encoded
 - **AND** the token is not persisted to disk
 - **AND** stopping and restarting the server produces a new token
 
@@ -70,7 +68,7 @@ timing-safe comparison.
 
 - **WHEN** a client connects and sends `{ "type": "auth", "token": "<valid>" }`
   as its first message
-- **THEN** the server compares tokens via `crypto.timingSafeEqual`
+- **THEN** the server compares tokens with a timing-safe comparison
 - **AND** marks the connection as authenticated
 - **AND** sends the current agent list as an `agents` message
 
@@ -105,13 +103,12 @@ message.
 
 - **WHEN** an 11th WebSocket client attempts to connect while 10 are already
   authenticated
-- **THEN** `verifyClient` rejects the upgrade with HTTP `429`
+- **THEN** the server rejects the upgrade handshake with HTTP `429`
 
 #### Scenario: Oversized WebSocket frame
 
-- **WHEN** a client sends a message larger than 64 KB
-- **THEN** the `ws` server rejects the frame via its `maxPayload` setting and
-  closes the connection
+- **WHEN** a client sends a WebSocket frame larger than 64 KB
+- **THEN** the server rejects the frame and closes the connection
 
 #### Scenario: Malformed or unknown client message
 
@@ -236,9 +233,8 @@ client-side routing.
 #### Scenario: Static asset request
 
 - **WHEN** a request maps to an existing file in the static root
-- **THEN** the server streams the file with `Cache-Control: public,
-  max-age=31536000, immutable` for hashed assets
-- **AND** serves `index.html` with `Cache-Control: no-cache`
+- **THEN** hashed assets are served with a long-lived, immutable cache policy
+- **AND** `index.html` is served with a no-cache policy
 
 #### Scenario: Path traversal is rejected
 
@@ -277,5 +273,10 @@ connected clients, and SHALL drive start/stop through IPC.
 - **THEN** the renderer sends `StartRemoteServer`
 - **AND** the returned URL and token are rendered as a QR code plus copyable
   text
-- **AND** the connected-client counter updates as the server reports
-  connection churn
+
+#### Scenario: Connected-client counter stays current
+
+- **WHEN** the server's connected-client count changes while the UI is
+  visible
+- **THEN** the displayed counter updates within a few seconds via periodic
+  `GetRemoteStatus` polling

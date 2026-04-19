@@ -2,12 +2,9 @@
 
 ## Purpose
 
-Give users a compact, structured progress timeline for each running AI agent
-that is separate from the raw terminal scrollback. The agent is asked (via an
-opt-in prompt injection) to append structured step entries to
-`.claude/steps.json` inside its worktree. The Electron main process watches
-that file and streams updates to the renderer, which renders a live timeline
-inside the task panel.
+Give users a compact, structured progress timeline for each running AI agent so
+they can see at a glance what the agent has done and is doing now, without
+reading through raw terminal scrollback.
 
 ## Requirements
 
@@ -46,8 +43,9 @@ how to write step entries, while preserving the user's original prompt text.
 - **THEN** the prompt sent to the agent is the user's original prompt
   followed by `\n\n---\n` and the standard steps instruction
 - **AND** the instruction tells the agent to write `.claude/steps.json`, the
-  append-only JSON array format, the 60-character summary limit, the allowed
-  status values, and the `awaiting_review` pause behavior
+  append-only JSON array format, the summary length limit, the allowed
+  status values, and to pause and wait for user input after writing a step
+  whose status is `awaiting_review`
 
 #### Scenario: Original prompt is preserved
 
@@ -61,31 +59,26 @@ how to write step entries, while preserving the user's original prompt text.
 - **THEN** the prompt sent to the agent is exactly what the user typed, with
   no separator or instruction appended
 
-### Requirement: Append-only `steps.json` format
+### Requirement: Step entry format
 
-The steps file SHALL be a JSON array of objects where each entry describes one
-step with a bounded set of fields, and the agent SHALL only append — never
-edit existing entries.
+The steps file SHALL be a JSON array of step entry objects. The app SHALL
+treat the file as append-only: it never rewrites existing entries on the
+agent's behalf, and it expects new entries to appear only at the end.
 
 #### Scenario: Valid step entry shape
 
-- **WHEN** the agent appends a step entry
-- **THEN** the entry has `summary` (≤ 60 chars, string), `status` (one of
-  `starting`, `investigating`, `implementing`, `testing`, `awaiting_review`,
-  `done`), and `timestamp` (ISO 8601 string)
-- **AND** MAY have `detail` (one-sentence string) and `files_touched` (array
-  of worktree-relative paths the agent wrote or modified in this step)
+- **WHEN** the app accepts a step entry
+- **THEN** the entry has `summary` (string, agent-enforced to ≤ 60 chars),
+  `status` (one of `starting`, `investigating`, `implementing`, `testing`,
+  `awaiting_review`, `done`), and `timestamp` (ISO 8601 string)
+- **AND** MAY have `detail` (string) and `files_touched` (array of
+  worktree-relative paths the agent wrote or modified in this step)
 
-#### Scenario: Timestamp without timezone defaults to UTC
+#### Scenario: Renderer tolerates timestamps without a timezone
 
 - **WHEN** a step entry's `timestamp` has no timezone suffix
-- **THEN** the renderer treats it as UTC by appending `Z`
-
-#### Scenario: `awaiting_review` pauses the agent
-
-- **WHEN** the agent writes a step whose `status` is `awaiting_review`
-- **THEN** the agent pauses and waits for user input before writing another
-  step
+- **THEN** the renderer treats it as UTC for display purposes
+- **AND** timestamps emitted by the app itself always include a UTC suffix
 
 ### Requirement: Backend file watching with debounce
 
@@ -188,22 +181,18 @@ two-zone timeline inside the task panel.
 - **AND** renders an always-expanded latest-step zone with status badge,
   summary, relative timestamp, detail text, and file badges
 
-#### Scenario: Auto-scroll on new step
-
-- **WHEN** a new step entry arrives
-- **THEN** the timeline auto-scrolls the latest-step zone into view
-
 #### Scenario: Waiting indicator after user input
 
-- **WHEN** the user has sent terminal input since the last step completed and
-  no new step has arrived
+- **WHEN** the user has sent terminal input to the task since the last step
+  entry was written and no new step entry has arrived
 - **THEN** the timeline shows a pulsing "Waiting for next step" indicator
+- **AND** the indicator clears as soon as a new step entry arrives
 
-#### Scenario: Keyboard navigation
+#### Scenario: Keyboard navigation through history
 
 - **WHEN** the timeline has keyboard focus
-- **THEN** Arrow keys, Page Up, and Page Down move selection through the
-  history entries
+- **THEN** Arrow keys move selection one history entry at a time
+- **AND** Page Up and Page Down move selection one page at a time
 
 ### Requirement: Panel integration
 

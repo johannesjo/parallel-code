@@ -1,32 +1,17 @@
 schema: spec-driven
 
 context: |
-  Project: parallel-code — an Electron desktop app that runs Claude Code,
-  Codex, and Gemini side by side, each in its own git worktree.
+  Project: parallel-code — Electron desktop app that runs Claude Code, Codex,
+  and Gemini side by side, each in its own git worktree. macOS + Linux only.
 
-  Published for macOS and Linux only. No Windows support.
-
-  Stack:
-  - Frontend: SolidJS (functional components, signals/stores — no classes),
-    TypeScript with `strict: true` and no `any`, Vite.
-  - Backend: Node.js inside the Electron main process, node-pty for terminals.
-  - Package manager: npm.
-
-  Layout:
-  - `src/` — SolidJS renderer (components, store, IPC wrappers, lib utilities).
-  - `src/store/` — app state (signals + stores, persisted via electron-store).
-  - `electron/` — Electron main process (window, preload, IPC handlers).
-  - `electron/ipc/` — backend IPC handlers (pty, git, tasks, persistence,
-    steps, remote). IPC channel names live in `electron/ipc/channels.ts` as a
-    shared enum imported by both processes.
-
-  Conventions:
-  - All frontend ↔ backend communication goes through typed Electron IPC.
-  - Channel names are defined once in the `IPC` enum in
-    `electron/ipc/channels.ts` and re-exported to the preload allowlist in
-    `electron/preload.cjs`.
-  - IPC message payload types live in `src/ipc/types.ts`.
-  - Commits follow conventional-commit style (`feat:`, `fix:`, `docs:`, etc.).
+  For stack, layout, and conventions see `CLAUDE.md` (the single source of
+  truth). Highlights relevant when authoring specs:
+  - Frontend ↔ backend communication goes through typed Electron IPC.
+  - IPC channel names live in the `IPC` enum in `electron/ipc/channels.ts`
+    and are re-exported to the preload allowlist in `electron/preload.cjs`.
+  - IPC payload types live in `src/ipc/types.ts`.
+  - Capability specs describe CURRENT behavior; propose new behavior through
+    `openspec/changes/<name>/` (run `/opsx:propose`).
 
 rules:
   proposal:
@@ -34,3 +19,7 @@ rules:
   specs:
     - Requirements MUST use SHALL/MUST; avoid should/may for normative text.
     - Every requirement MUST have at least one scenario with WHEN/THEN.
+    - Describe observable behavior, not library names or internal APIs. If
+      you need to name an exported identifier (e.g. an IPC channel the
+      renderer calls), prefer ones that are already part of the public
+      contract rather than internal helpers.

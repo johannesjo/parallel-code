@@ -28,3 +28,11 @@ Electron desktop app — SolidJS frontend, Node.js backend. Published for **macO
 - Electron IPC for all frontend-backend communication
 - IPC channel names defined in `electron/ipc/channels.ts` (shared enum)
 - `strict: true` TypeScript, no `any`
+
+## Specs
+
+This repo uses OpenSpec. Capability specs for current behavior live under
+`openspec/specs/`. For new or changed behavior, propose a change in
+`openspec/changes/<name>/` (e.g. via `/opsx:propose`) rather than editing
+specs directly — the change is archived into `specs/` when it ships. Run
+`openspec validate --all --strict` before committing.
