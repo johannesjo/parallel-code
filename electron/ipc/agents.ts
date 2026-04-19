@@ -12,6 +12,7 @@ interface AgentDef {
   skip_permissions_args: string[];
   description: string;
   available?: boolean;
+  prompt_ready_delay_ms?: number;
 }
 
 const DEFAULT_AGENTS: AgentDef[] = [
@@ -50,6 +51,19 @@ const DEFAULT_AGENTS: AgentDef[] = [
     resume_args: [],
     skip_permissions_args: [],
     description: 'Open source AI coding agent (opencode.ai)',
+  },
+  {
+    id: 'copilot',
+    name: 'Copilot CLI',
+    command: 'copilot',
+    args: [],
+    resume_args: [],
+    skip_permissions_args: ['--yolo'],
+    description: "GitHub's Copilot CLI agent",
+    // Copilot CLI shows up to two init dialogs (folder trust + instructions init)
+    // before reaching its real prompt.  A modest stability delay lets the prompt
+    // settle before sending, without being so long that the user notices the wait.
+    prompt_ready_delay_ms: 1_000,
   },
 ];
 

@@ -10,6 +10,7 @@ declare global {
         on: (channel: string, listener: (...args: unknown[]) => void) => () => void;
         removeAllListeners: (channel: string) => void;
       };
+      setZoomFactor: (factor: number) => void;
     };
   }
 }
@@ -31,6 +32,12 @@ export class Channel<T> {
 
   toJSON() {
     return { __CHANNEL_ID__: this._id };
+  }
+
+  dispose(): void {
+    this.cleanup?.();
+    this.cleanup = null;
+    this.onmessage = null;
   }
 }
 

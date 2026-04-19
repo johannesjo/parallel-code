@@ -53,7 +53,7 @@ export function ResultsScreen() {
   }
 
   const [ratings, setRatings] = createSignal<Record<string, number>>(initialRatings());
-  const [diffFile, setDiffFile] = createSignal<ChangedFile | null>(null);
+  const [diffScrollTarget, setDiffScrollTarget] = createSignal<string | null>(null);
   const [diffWorktree, setDiffWorktree] = createSignal('');
   const [diffBranch, setDiffBranch] = createSignal<string | null>(null);
   const [expandedOutputs, setExpandedOutputs] = createSignal<Record<string, boolean>>({});
@@ -167,10 +167,10 @@ export function ResultsScreen() {
     setBattleSaved(true);
   }
 
-  function handleFileClick(worktreePath: string, branchName: string | null, file: ChangedFile) {
+  function handleFileClick(worktreePath: string, branchName: string | null, filePath: string) {
     setDiffWorktree(worktreePath);
     setDiffBranch(branchName);
-    setDiffFile(file);
+    setDiffScrollTarget(filePath);
   }
 
   return (
@@ -239,7 +239,7 @@ export function ResultsScreen() {
                           handleFileClick(
                             competitor.worktreePath ?? '',
                             competitor.branchName,
-                            file,
+                            file.path,
                           )
                         }
                       />
@@ -416,11 +416,11 @@ export function ResultsScreen() {
       </div>
 
       <DiffViewerDialog
-        file={diffFile()}
+        scrollToFile={diffScrollTarget()}
         worktreePath={diffWorktree()}
         projectRoot={arenaStore.cwd || undefined}
         branchName={diffBranch()}
-        onClose={() => setDiffFile(null)}
+        onClose={() => setDiffScrollTarget(null)}
       />
 
       <Show when={merge.commitTarget()}>

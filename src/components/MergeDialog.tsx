@@ -1,11 +1,10 @@
 import { Show, For, createSignal, createResource, createEffect } from 'solid-js';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
-import { store, mergeTask } from '../store/store';
-import { sendPrompt } from '../store/tasks';
+import { store, mergeTask, sendPrompt, updateTaskBranch } from '../store/store';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ChangedFilesList } from './ChangedFilesList';
-import { theme } from '../lib/theme';
+import { theme, bannerStyle } from '../lib/theme';
 import type { Task } from '../store/types';
 import type { ChangedFile, MergeStatus, WorktreeStatus } from '../ipc/types';
 
@@ -27,21 +26,35 @@ export function MergeDialog(props: MergeDialogProps) {
   const [rebaseError, setRebaseError] = createSignal('');
   const [rebaseSuccess, setRebaseSuccess] = createSignal(false);
 
-  const [branchLog, { refetch: refetchBranchLog }] = createResource(
-    () => (props.open ? props.task.worktreePath : null),
-    (path) => invoke<string>(IPC.GetBranchLog, { worktreePath: path }),
+  const resourceSource = () =>
+    props.open ? { path: props.task.worktreePath, baseBranch: props.task.baseBranch } : null;
+  const [branchLog, { refetch: refetchBranchLog }] = createResource(resourceSource, (src) =>
+    invoke<string>(IPC.GetBranchLog, { worktreePath: src.path, baseBranch: src.baseBranch }),
   );
   const [worktreeStatus, { refetch: refetchWorktreeStatus }] = createResource(
-    () => (props.open ? props.task.worktreePath : null),
-    (path) => invoke<WorktreeStatus>(IPC.GetWorktreeStatus, { worktreePath: path }),
+    resourceSource,
+    (src) =>
+      invoke<WorktreeStatus>(IPC.GetWorktreeStatus, {
+        worktreePath: src.path,
+        baseBranch: src.baseBranch,
+      }),
   );
-  const [mergeStatus, { refetch: refetchMergeStatus }] = createResource(
-    () => (props.open ? props.task.worktreePath : null),
-    (path) => invoke<MergeStatus>(IPC.CheckMergeStatus, { worktreePath: path }),
+  const [mergeStatus, { refetch: refetchMergeStatus }] = createResource(resourceSource, (src) =>
+    invoke<MergeStatus>(IPC.CheckMergeStatus, {
+      worktreePath: src.path,
+      baseBranch: src.baseBranch,
+    }),
   );
 
   const hasConflicts = () => (mergeStatus()?.conflicting_files.length ?? 0) > 0;
   const hasCommittedChangesToMerge = () => worktreeStatus()?.has_committed_changes ?? false;
+  const hasBranchMismatch = () => {
+    const status = worktreeStatus();
+    if (!status) return false;
+    const current = status.current_branch;
+    // null means detached HEAD — also a mismatch
+    return current === null || current !== props.task.branchName;
+  };
 
   createEffect(() => {
     if (props.open) {
@@ -70,16 +83,66 @@ export function MergeDialog(props: MergeDialogProps) {
       autoFocusCancel
       message={
         <div>
+          <Show when={hasBranchMismatch()}>
+            <div
+              style={{
+                ...bannerStyle(theme.error),
+                'margin-bottom': '12px',
+                'font-size': '13px',
+              }}
+            >
+              <Show when={worktreeStatus()?.current_branch === null}>
+                <div style={{ 'font-weight': '600' }}>
+                  Worktree has a detached HEAD — merging '{props.task.branchName}' would discard
+                  work.
+                </div>
+              </Show>
+              <Show when={worktreeStatus()?.current_branch !== null}>
+                <div style={{ 'font-weight': '600' }}>
+                  The worktree is on '{worktreeStatus()?.current_branch}' but this task tracks '
+                  {props.task.branchName}'.
+                </div>
+                <div
+                  style={{
+                    'margin-top': '8px',
+                    display: 'flex',
+                    'align-items': 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = worktreeStatus()?.current_branch;
+                      if (current) {
+                        updateTaskBranch(props.task.id, current);
+                        refetchBranchLog();
+                        refetchMergeStatus();
+                        refetchWorktreeStatus();
+                      }
+                    }}
+                    style={{
+                      padding: '4px 12px',
+                      background: theme.bgInput,
+                      border: `1px solid ${theme.border}`,
+                      'border-radius': '6px',
+                      color: theme.fg,
+                      cursor: 'pointer',
+                      'font-size': '13px',
+                    }}
+                  >
+                    Use '{worktreeStatus()?.current_branch}'
+                  </button>
+                </div>
+              </Show>
+            </div>
+          </Show>
           <Show when={worktreeStatus()?.has_uncommitted_changes}>
             <div
               style={{
+                ...bannerStyle(theme.warning),
                 'margin-bottom': '12px',
-                'font-size': '12px',
-                color: theme.warning,
-                background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
-                padding: '8px 12px',
-                'border-radius': '8px',
-                border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
+                'font-size': '13px',
                 'font-weight': '600',
               }}
             >
@@ -89,13 +152,9 @@ export function MergeDialog(props: MergeDialogProps) {
           <Show when={!worktreeStatus.loading && !hasCommittedChangesToMerge()}>
             <div
               style={{
+                ...bannerStyle(theme.warning),
                 'margin-bottom': '12px',
-                'font-size': '12px',
-                color: theme.warning,
-                background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
-                padding: '8px 12px',
-                'border-radius': '8px',
-                border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
+                'font-size': '13px',
                 'font-weight': '600',
               }}
             >
@@ -106,7 +165,7 @@ export function MergeDialog(props: MergeDialogProps) {
             <div
               style={{
                 'margin-bottom': '12px',
-                'font-size': '12px',
+                'font-size': '13px',
                 color: theme.fgMuted,
                 padding: '8px 12px',
                 'border-radius': '8px',
@@ -122,17 +181,9 @@ export function MergeDialog(props: MergeDialogProps) {
               <Show when={status().main_ahead_count > 0}>
                 <div
                   style={{
+                    ...bannerStyle(hasConflicts() ? theme.error : theme.warning),
                     'margin-bottom': '12px',
-                    'font-size': '12px',
-                    color: hasConflicts() ? theme.error : theme.warning,
-                    background: hasConflicts()
-                      ? `color-mix(in srgb, ${theme.error} 8%, transparent)`
-                      : `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
-                    padding: '8px 12px',
-                    'border-radius': '8px',
-                    border: hasConflicts()
-                      ? `1px solid color-mix(in srgb, ${theme.error} 20%, transparent)`
-                      : `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
+                    'font-size': '13px',
                     'font-weight': '600',
                   }}
                 >
@@ -169,7 +220,10 @@ export function MergeDialog(props: MergeDialogProps) {
                       setRebaseError('');
                       setRebaseSuccess(false);
                       try {
-                        await invoke(IPC.RebaseTask, { worktreePath: props.task.worktreePath });
+                        await invoke(IPC.RebaseTask, {
+                          worktreePath: props.task.worktreePath,
+                          baseBranch: props.task.baseBranch,
+                        });
                         setRebaseSuccess(true);
                         refetchMergeStatus();
                         refetchBranchLog();
@@ -195,7 +249,7 @@ export function MergeDialog(props: MergeDialogProps) {
                         rebasing() || worktreeStatus()?.has_uncommitted_changes
                           ? 'not-allowed'
                           : 'pointer',
-                      'font-size': '12px',
+                      'font-size': '13px',
                       opacity:
                         rebasing() || worktreeStatus()?.has_uncommitted_changes ? '0.5' : '1',
                     }}
@@ -225,7 +279,7 @@ export function MergeDialog(props: MergeDialogProps) {
                         'border-radius': '8px',
                         color: theme.accentText,
                         cursor: 'pointer',
-                        'font-size': '12px',
+                        'font-size': '13px',
                         'font-weight': '600',
                       }}
                     >
@@ -233,12 +287,12 @@ export function MergeDialog(props: MergeDialogProps) {
                     </button>
                   </Show>
                   <Show when={rebaseSuccess()}>
-                    <span style={{ 'font-size': '12px', color: theme.success }}>
+                    <span style={{ 'font-size': '13px', color: theme.success }}>
                       Rebase successful
                     </span>
                   </Show>
                   <Show when={rebaseError()}>
-                    <span style={{ 'font-size': '12px', color: theme.error }}>{rebaseError()}</span>
+                    <span style={{ 'font-size': '13px', color: theme.error }}>{rebaseError()}</span>
                   </Show>
                 </div>
               </Show>
@@ -270,11 +324,11 @@ export function MergeDialog(props: MergeDialogProps) {
                     'margin-bottom': '12px',
                     'max-height': '120px',
                     'overflow-y': 'auto',
+                    'overflow-x': 'hidden',
                     'font-family': "'JetBrains Mono', monospace",
-                    'font-size': '11px',
+                    'font-size': '12px',
                     border: `1px solid ${theme.border}`,
                     'border-radius': '8px',
-                    overflow: 'hidden',
                     padding: '4px 0',
                   }}
                 >
@@ -342,6 +396,7 @@ export function MergeDialog(props: MergeDialogProps) {
               worktreePath={props.task.worktreePath}
               isActive={props.open}
               onFileClick={props.onDiffFileClick}
+              baseBranch={props.task.baseBranch}
             />
           </div>
           <label
@@ -351,7 +406,7 @@ export function MergeDialog(props: MergeDialogProps) {
               gap: '8px',
               'margin-top': '12px',
               cursor: 'pointer',
-              'font-size': '13px',
+              'font-size': '14px',
               color: theme.fg,
             }}
           >
@@ -370,7 +425,7 @@ export function MergeDialog(props: MergeDialogProps) {
               gap: '8px',
               'margin-top': '8px',
               cursor: 'pointer',
-              'font-size': '13px',
+              'font-size': '14px',
               color: theme.fg,
             }}
           >
@@ -407,7 +462,7 @@ export function MergeDialog(props: MergeDialogProps) {
                 'border-radius': '8px',
                 padding: '8px 10px',
                 color: theme.fg,
-                'font-size': '12px',
+                'font-size': '13px',
                 'font-family': "'JetBrains Mono', monospace",
                 resize: 'vertical',
                 outline: 'none',
@@ -418,13 +473,9 @@ export function MergeDialog(props: MergeDialogProps) {
           <Show when={mergeError()}>
             <div
               style={{
+                ...bannerStyle(theme.error),
                 'margin-top': '12px',
-                'font-size': '12px',
-                color: theme.error,
-                background: `color-mix(in srgb, ${theme.error} 8%, transparent)`,
-                padding: '8px 12px',
-                'border-radius': '8px',
-                border: `1px solid color-mix(in srgb, ${theme.error} 20%, transparent)`,
+                'font-size': '13px',
               }}
             >
               {mergeError()}
@@ -432,7 +483,9 @@ export function MergeDialog(props: MergeDialogProps) {
           </Show>
         </div>
       }
-      confirmDisabled={merging() || hasConflicts() || !hasCommittedChangesToMerge()}
+      confirmDisabled={
+        merging() || hasConflicts() || !hasCommittedChangesToMerge() || hasBranchMismatch()
+      }
       confirmLoading={merging()}
       confirmLabel={merging() ? 'Merging...' : squash() ? 'Squash Merge' : 'Merge'}
       onConfirm={() => {
@@ -455,15 +508,7 @@ export function MergeDialog(props: MergeDialogProps) {
             setMerging(false);
           });
       }}
-      onCancel={() => {
-        props.onDone();
-        setMergeError('');
-        setSquash(false);
-        setCleanupAfterMerge(false);
-        setSquashMessage('');
-        setRebaseError('');
-        setRebaseSuccess(false);
-      }}
+      onCancel={() => props.onDone()}
     />
   );
 }

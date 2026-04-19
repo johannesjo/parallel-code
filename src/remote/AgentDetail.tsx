@@ -1,6 +1,7 @@
 import { onMount, onCleanup, createSignal, Show, For } from 'solid-js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { TERMINAL_SCROLLBACK_LINES } from '../lib/terminalConstants';
 import {
   subscribeAgent,
   unsubscribeAgent,
@@ -95,7 +96,7 @@ export function AgentDetail(props: AgentDetailProps) {
       fontSize: 10,
       fontFamily: "'JetBrains Mono', 'Courier New', monospace",
       theme: { background: '#0b0f14' },
-      scrollback: 5000,
+      scrollback: TERMINAL_SCROLLBACK_LINES,
       cursorBlink: false,
       disableStdin: true,
       convertEol: false,
@@ -239,7 +240,7 @@ export function AgentDetail(props: AgentDetailProps) {
             background: 'none',
             border: 'none',
             color: '#2ec8ff',
-            'font-size': '16px',
+            'font-size': '17px',
             cursor: 'pointer',
             padding: '8px 10px',
             'touch-action': 'manipulation',
@@ -249,7 +250,7 @@ export function AgentDetail(props: AgentDetailProps) {
         </button>
         <span
           style={{
-            'font-size': '14px',
+            'font-size': '15px',
             'font-weight': '500',
             color: '#d7e4f0',
             flex: '1',
@@ -277,7 +278,7 @@ export function AgentDetail(props: AgentDetailProps) {
             padding: '6px 16px',
             background: status() === 'connecting' ? '#78350f' : '#7f1d1d',
             color: status() === 'connecting' ? '#fde68a' : '#fca5a5',
-            'font-size': '12px',
+            'font-size': '13px',
             'text-align': 'center',
             'flex-shrink': '0',
           }}
@@ -313,7 +314,7 @@ export function AgentDetail(props: AgentDetailProps) {
             background: '#12181f',
             border: '1px solid #223040',
             color: '#d7e4f0',
-            'font-size': '16px',
+            'font-size': '17px',
             cursor: 'pointer',
             display: 'flex',
             'align-items': 'center',
@@ -376,7 +377,7 @@ export function AgentDetail(props: AgentDetailProps) {
               'border-radius': '12px',
               padding: '10px 14px',
               color: '#d7e4f0',
-              'font-size': '14px',
+              'font-size': '15px',
               'font-family': "'JetBrains Mono', 'Courier New', monospace",
               outline: 'none',
               transition: 'border-color 0.16s ease',
@@ -434,7 +435,7 @@ export function AgentDetail(props: AgentDetailProps) {
                   'border-radius': '8px',
                   padding: '10px 16px',
                   color: '#9bb0c3',
-                  'font-size': '13px',
+                  'font-size': '14px',
                   'font-family': "'JetBrains Mono', 'Courier New', monospace",
                   cursor: 'pointer',
                   'touch-action': 'manipulation',
@@ -462,7 +463,7 @@ export function AgentDetail(props: AgentDetailProps) {
                 'border-radius': '8px',
                 padding: '10px 14px',
                 color: termFontSize() <= MIN_FONT ? '#344050' : '#9bb0c3',
-                'font-size': '13px',
+                'font-size': '14px',
                 'font-weight': '700',
                 'font-family': "'JetBrains Mono', 'Courier New', monospace",
                 cursor: termFontSize() <= MIN_FONT ? 'default' : 'pointer',
@@ -489,7 +490,7 @@ export function AgentDetail(props: AgentDetailProps) {
                 'border-radius': '8px',
                 padding: '10px 14px',
                 color: termFontSize() >= MAX_FONT ? '#344050' : '#9bb0c3',
-                'font-size': '13px',
+                'font-size': '14px',
                 'font-weight': '700',
                 'font-family': "'JetBrains Mono', 'Courier New', monospace",
                 cursor: termFontSize() >= MAX_FONT ? 'default' : 'pointer',

@@ -91,6 +91,7 @@ jobs:
 
       - name: Build and sign
         env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
           APPLE_API_KEY: ${{ runner.temp }}/private_keys/AuthKey.p8
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}

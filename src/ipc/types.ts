@@ -14,6 +14,9 @@ export interface AgentDef {
   skip_permissions_args: string[];
   description: string;
   available?: boolean;
+  /** Per-agent override for the stability-check delay (ms) used before auto-sending
+   *  the initial prompt.  Agents with multi-step init dialogs need a longer wait. */
+  prompt_ready_delay_ms?: number;
 }
 
 export interface CreateTaskResult {
@@ -42,6 +45,7 @@ export interface ChangedFile {
 export interface WorktreeStatus {
   has_committed_changes: boolean;
   has_uncommitted_changes: boolean;
+  current_branch: string | null;
 }
 
 export interface ImportableWorktree {
@@ -66,4 +70,21 @@ export interface FileDiffResult {
   diff: string;
   oldContent: string;
   newContent: string;
+}
+
+export interface CommitInfo {
+  hash: string;
+  message: string;
+}
+
+export interface StepEntry {
+  summary: string;
+  detail?: string;
+  next?: string;
+  status: 'starting' | 'investigating' | 'implementing' | 'testing' | 'awaiting_review' | 'done';
+  files_touched?: string[];
+  /** Optional sub-agent identifier — short label (e.g. "auth-worker") so the UI can
+   *  group entries written on behalf of delegated work. Omit for the top-level agent. */
+  agent_id?: string;
+  timestamp: string;
 }

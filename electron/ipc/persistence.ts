@@ -26,19 +26,29 @@ export function saveAppState(json: string): void {
 
   // Atomic write: write to temp, then rename
   const tmpPath = statePath + '.tmp';
-  fs.writeFileSync(tmpPath, json, 'utf8');
+  try {
+    fs.writeFileSync(tmpPath, json, 'utf8');
 
-  // Keep one backup (copy so statePath is never missing during the operation)
-  if (fs.existsSync(statePath)) {
-    const bakPath = statePath + '.bak';
-    try {
-      fs.copyFileSync(statePath, bakPath);
-    } catch {
-      /* ignore */
+    // Keep one backup (copy so statePath is never missing during the operation)
+    if (fs.existsSync(statePath)) {
+      const bakPath = statePath + '.bak';
+      try {
+        fs.copyFileSync(statePath, bakPath);
+      } catch {
+        /* ignore */
+      }
     }
-  }
 
-  fs.renameSync(tmpPath, statePath);
+    fs.renameSync(tmpPath, statePath);
+  } catch (err) {
+    // Clean up orphaned temp file on failure
+    try {
+      fs.unlinkSync(tmpPath);
+    } catch {
+      /* temp file may not exist */
+    }
+    throw err;
+  }
 }
 
 export function loadAppState(): string | null {
@@ -48,19 +58,25 @@ export function loadAppState(): string | null {
   try {
     if (fs.existsSync(statePath)) {
       const content = fs.readFileSync(statePath, 'utf8');
-      if (content.trim()) return content;
+      if (content.trim()) {
+        JSON.parse(content); // validate JSON; falls through to backup on invalid
+        return content;
+      }
     }
   } catch {
-    // Primary state file unreadable — try backup
+    // Primary state file unreadable or invalid JSON — try backup
   }
 
   try {
     if (fs.existsSync(bakPath)) {
       const content = fs.readFileSync(bakPath, 'utf8');
-      if (content.trim()) return content;
+      if (content.trim()) {
+        JSON.parse(content); // validate JSON
+        return content;
+      }
     }
   } catch {
-    // Backup also unreadable
+    // Backup also unreadable or invalid JSON
   }
 
   return null;

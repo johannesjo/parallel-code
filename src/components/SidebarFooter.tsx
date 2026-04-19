@@ -27,7 +27,7 @@ export function SidebarFooter() {
       >
         <span
           style={{
-            'font-size': sf(10),
+            'font-size': sf(11),
             color: theme.fgSubtle,
             'text-transform': 'uppercase',
             'letter-spacing': '0.05em',
@@ -44,7 +44,7 @@ export function SidebarFooter() {
             border: `1px solid ${theme.border}`,
             'border-radius': '8px',
             padding: '8px 10px',
-            'font-size': sf(11),
+            'font-size': sf(12),
             color: theme.fgMuted,
           }}
         >
@@ -68,7 +68,7 @@ export function SidebarFooter() {
             border: `1px solid ${theme.border}`,
             'border-radius': '8px',
             padding: '8px 10px',
-            'font-size': sf(11),
+            'font-size': sf(12),
             color: theme.fgMuted,
           }}
         >
@@ -99,7 +99,7 @@ export function SidebarFooter() {
             border: `1px solid ${theme.border}`,
             'border-radius': '8px',
             padding: '8px 14px',
-            'font-size': sf(12),
+            'font-size': sf(13),
             color: theme.fgMuted,
             cursor: 'pointer',
             'font-family': 'inherit',
@@ -147,7 +147,7 @@ export function SidebarFooter() {
       >
         <span
           style={{
-            'font-size': sf(10),
+            'font-size': sf(11),
             color: theme.fgSubtle,
             'text-transform': 'uppercase',
             'letter-spacing': '0.05em',
@@ -157,7 +157,7 @@ export function SidebarFooter() {
         </span>
         <span
           style={{
-            'font-size': sf(11),
+            'font-size': sf(12),
             color: theme.fgMuted,
             'line-height': '1.4',
           }}
@@ -168,7 +168,7 @@ export function SidebarFooter() {
               border: `1px solid ${theme.border}`,
               'border-radius': '3px',
               padding: '1px 4px',
-              'font-size': sf(10),
+              'font-size': sf(11),
               'font-family': "'JetBrains Mono', monospace",
             }}
           >
@@ -178,7 +178,7 @@ export function SidebarFooter() {
         </span>
         <span
           style={{
-            'font-size': sf(11),
+            'font-size': sf(12),
             color: theme.fgMuted,
             'line-height': '1.4',
           }}
@@ -189,7 +189,7 @@ export function SidebarFooter() {
               border: `1px solid ${theme.border}`,
               'border-radius': '3px',
               padding: '1px 4px',
-              'font-size': sf(10),
+              'font-size': sf(11),
               'font-family': "'JetBrains Mono', monospace",
             }}
           >

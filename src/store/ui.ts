@@ -1,40 +1,10 @@
-import { produce } from 'solid-js/store';
 import { store, setStore } from './core';
-import type { TerminalFont } from '../lib/fonts';
 import type { LookPreset } from '../lib/look';
-import type { PersistedWindowState } from './types';
-
-// --- Font Scale (per-panel) ---
+import type { PersistedWindowState, TaskViewportVisibility } from './types';
 
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 2.0;
 const SCALE_STEP = 0.1;
-
-export function getFontScale(panelId: string): number {
-  return store.fontScales[panelId] ?? 1;
-}
-
-export function adjustFontScale(panelId: string, delta: 1 | -1): void {
-  const current = getFontScale(panelId);
-  const next =
-    Math.round(Math.min(MAX_SCALE, Math.max(MIN_SCALE, current + delta * SCALE_STEP)) * 10) / 10;
-  setStore('fontScales', panelId, next);
-}
-
-export function resetFontScale(panelId: string): void {
-  if (panelId.includes(':')) {
-    setStore('fontScales', panelId, 1.0);
-  } else {
-    setStore(
-      produce((s) => {
-        const prefix = panelId + ':';
-        for (const key of Object.keys(s.fontScales)) {
-          if (key === panelId || key.startsWith(prefix)) s.fontScales[key] = 1.0;
-        }
-      }),
-    );
-  }
-}
 
 // --- Global Scale ---
 
@@ -65,13 +35,21 @@ export function setPanelSizes(entries: Record<string, number>): void {
   }
 }
 
+export function getTaskViewportVisibility(taskId: string): TaskViewportVisibility | null {
+  return store.taskViewportVisibility[taskId] ?? null;
+}
+
+export function setTaskViewportVisibility(entries: Record<string, TaskViewportVisibility>): void {
+  setStore('taskViewportVisibility', entries);
+}
+
 // --- Sidebar ---
 
 export function toggleSidebar(): void {
   setStore('sidebarVisible', !store.sidebarVisible);
 }
 
-export function setTerminalFont(terminalFont: TerminalFont): void {
+export function setTerminalFont(terminalFont: string): void {
   setStore('terminalFont', terminalFont);
 }
 
@@ -87,12 +65,32 @@ export function setShowPlans(showPlans: boolean): void {
   setStore('showPlans', showPlans);
 }
 
+export function setShowPromptInput(show: boolean): void {
+  setStore('showPromptInput', show);
+}
+
+export function setFontSmoothing(enabled: boolean): void {
+  setStore('fontSmoothing', enabled);
+}
+
+export function setDesktopNotificationsEnabled(enabled: boolean): void {
+  setStore('desktopNotificationsEnabled', enabled);
+}
+
 export function setInactiveColumnOpacity(opacity: number): void {
   setStore('inactiveColumnOpacity', Math.round(Math.max(0.3, Math.min(1.0, opacity)) * 100) / 100);
 }
 
 export function setEditorCommand(command: string): void {
   setStore('editorCommand', command);
+}
+
+export function setDockerImage(image: string): void {
+  setStore('dockerImage', image || 'parallel-code-agent:latest');
+}
+
+export function setDockerAvailable(available: boolean): void {
+  setStore('dockerAvailable', available);
 }
 
 export function toggleArena(show?: boolean): void {

@@ -1,6 +1,10 @@
-import type { AgentDef, WorktreeStatus } from '../ipc/types';
-import type { TerminalFont } from '../lib/fonts';
+import type { AgentDef, StepEntry, WorktreeStatus } from '../ipc/types';
+import type { DockerSource } from '../lib/docker';
 import type { LookPreset } from '../lib/look';
+
+export type GitIsolationMode = 'worktree' | 'direct';
+
+export type TaskViewportVisibility = 'visible' | 'offscreen-left' | 'offscreen-right';
 
 export interface TerminalBookmark {
   id: string;
@@ -14,7 +18,8 @@ export interface Project {
   color: string;
   branchPrefix?: string; // default "task" if unset
   deleteBranchOnClose?: boolean; // default true if unset
-  defaultDirectMode?: boolean; // default false if unset
+  defaultGitIsolation?: GitIsolationMode;
+  defaultBaseBranch?: string;
   terminalBookmarks?: TerminalBookmark[];
 }
 
@@ -45,14 +50,21 @@ export interface Task {
   prefillPrompt?: string; // fills prompt input without sending
   closingStatus?: 'closing' | 'removing' | 'error';
   closingError?: string;
-  directMode?: boolean;
+  gitIsolation: GitIsolationMode;
+  baseBranch?: string;
   externalWorktree?: boolean;
   skipPermissions?: boolean;
+  dockerMode?: boolean;
+  dockerSource?: DockerSource;
+  dockerImage?: string;
   githubUrl?: string;
   collapsed?: boolean;
   savedAgentDef?: AgentDef;
   planContent?: string;
   planFileName?: string;
+  stepsEnabled?: boolean;
+  stepsContent?: StepEntry[];
+  lastInputAt?: string;
 }
 
 export interface Terminal {
@@ -72,12 +84,18 @@ export interface PersistedTask {
   lastPrompt: string;
   shellCount: number;
   agentDef: AgentDef | null;
-  directMode?: boolean;
+  gitIsolation: GitIsolationMode;
+  baseBranch?: string;
   externalWorktree?: boolean;
   skipPermissions?: boolean;
+  dockerMode?: boolean;
+  dockerSource?: DockerSource;
+  dockerImage?: string;
   githubUrl?: string;
   savedInitialPrompt?: string;
   collapsed?: boolean;
+  planFileName?: string;
+  stepsEnabled?: boolean;
 }
 
 export interface PersistedTerminal {
@@ -103,25 +121,29 @@ export interface PersistedState {
   terminals?: Record<string, PersistedTerminal>;
   activeTaskId: string | null;
   sidebarVisible: boolean;
-  fontScales?: Record<string, number>;
   panelSizes?: Record<string, number>;
   globalScale?: number;
   completedTaskDate?: string;
   completedTaskCount?: number;
   mergedLinesAdded?: number;
   mergedLinesRemoved?: number;
-  terminalFont?: TerminalFont;
+  terminalFont?: string;
   themePreset?: LookPreset;
+  showPromptInput?: boolean;
+  fontSmoothing?: boolean;
   windowState?: PersistedWindowState;
   autoTrustFolders?: boolean;
   showPlans?: boolean;
+  showSteps?: boolean;
+  desktopNotificationsEnabled?: boolean;
   inactiveColumnOpacity?: number;
   editorCommand?: string;
+  dockerImage?: string;
   customAgents?: AgentDef[];
 }
 
 // Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.
-// The shell toolbar is "shell-toolbar".
+// Shell toolbar buttons use "shell-toolbar:0", "shell-toolbar:1", etc.
 export type PanelId = string;
 
 export interface PendingAction {
@@ -154,10 +176,10 @@ export interface AppStore {
   customAgents: AgentDef[];
   showNewTaskDialog: boolean;
   sidebarVisible: boolean;
-  fontScales: Record<string, number>;
   panelSizes: Record<string, number>;
   globalScale: number;
   taskGitStatus: Record<string, WorktreeStatus>;
+  taskViewportVisibility: Record<string, TaskViewportVisibility>;
   focusedPanel: Record<string, PanelId>;
   sidebarFocused: boolean;
   sidebarFocusedProjectId: string | null;
@@ -172,13 +194,19 @@ export interface AppStore {
   completedTaskCount: number;
   mergedLinesAdded: number;
   mergedLinesRemoved: number;
-  terminalFont: TerminalFont;
+  terminalFont: string;
   themePreset: LookPreset;
+  showPromptInput: boolean;
+  fontSmoothing: boolean;
   windowState: PersistedWindowState | null;
   autoTrustFolders: boolean;
   showPlans: boolean;
+  showSteps: boolean;
+  desktopNotificationsEnabled: boolean;
   inactiveColumnOpacity: number;
   editorCommand: string;
+  dockerImage: string;
+  dockerAvailable: boolean;
   newTaskDropUrl: string | null;
   newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
   missingProjectIds: Record<string, true>;

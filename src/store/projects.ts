@@ -1,5 +1,5 @@
 import { produce } from 'solid-js/store';
-import { openDialog } from '../lib/dialog';
+import { confirm, openDialog } from '../lib/dialog';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
@@ -62,7 +62,8 @@ export function updateProject(
       | 'color'
       | 'branchPrefix'
       | 'deleteBranchOnClose'
-      | 'defaultDirectMode'
+      | 'defaultGitIsolation'
+      | 'defaultBaseBranch'
       | 'terminalBookmarks'
     >
   >,
@@ -77,8 +78,10 @@ export function updateProject(
         s.projects[idx].branchPrefix = sanitizeBranchPrefix(updates.branchPrefix);
       if (updates.deleteBranchOnClose !== undefined)
         s.projects[idx].deleteBranchOnClose = updates.deleteBranchOnClose;
-      if (updates.defaultDirectMode !== undefined)
-        s.projects[idx].defaultDirectMode = updates.defaultDirectMode;
+      if (updates.defaultGitIsolation !== undefined)
+        s.projects[idx].defaultGitIsolation = updates.defaultGitIsolation;
+      if (updates.defaultBaseBranch !== undefined)
+        s.projects[idx].defaultBaseBranch = updates.defaultBaseBranch;
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
     }),
@@ -120,10 +123,24 @@ export async function removeProjectWithTasks(projectId: string): Promise<void> {
   removeProject(projectId);
 }
 
+/** Returns true if the path is not a git repo root (and shows a warning dialog). */
+async function rejectNonGitFolder(dirPath: string): Promise<boolean> {
+  const isGit = await invoke<boolean>(IPC.CheckIsGitRepo, { path: dirPath });
+  if (isGit) return false;
+  await confirm(
+    'Parallel Code requires each project to be a git repository. It uses branches and worktrees to let AI agents work in isolation.\n\nTo initialize git, run "git init" in your project folder, then try again.',
+    { title: 'Not a Git Repository', kind: 'warning', okLabel: 'OK' },
+  );
+  return true;
+}
+
 export async function pickAndAddProject(): Promise<string | null> {
   const selected = await openDialog({ directory: true, multiple: false });
   if (!selected) return null;
   const path = selected as string;
+
+  if (await rejectNonGitFolder(path)) return null;
+
   const segments = path.split('/');
   const name = segments[segments.length - 1] || path;
   return addProject(name, path);
@@ -148,6 +165,8 @@ export async function relinkProject(projectId: string): Promise<boolean> {
   const selected = await openDialog({ directory: true, multiple: false });
   if (!selected) return false;
   const newPath = selected as string;
+
+  if (await rejectNonGitFolder(newPath)) return false;
 
   setStore(
     produce((s) => {

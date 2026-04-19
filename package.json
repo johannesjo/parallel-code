@@ -1,6 +1,6 @@
 {
   "name": "parallel-code",
-  "version": "0.6.0",
+  "version": "1.5.0",
   "description": "",
   "author": {
     "name": "Johannes Millan",
@@ -27,25 +27,29 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/addon-web-links": "^0.12.0",
-    "@xterm/addon-webgl": "^0.19.0",
-    "@xterm/xterm": "^6.0.0",
+    "@xterm/addon-fit": "^0.12.0-beta.195",
+    "@xterm/addon-web-links": "^0.13.0-beta.195",
+    "@xterm/addon-webgl": "^0.20.0-beta.194",
+    "@xterm/xterm": "^6.1.0-beta.195",
+    "dompurify": "^3.4.0",
     "marked": "^17.0.3",
+    "mermaid": "^11.13.0",
     "monaco-editor": "^0.55.1",
     "node-pty": "^1.1.0",
     "qrcode": "^1.5.4",
+    "shiki": "^4.0.2",
     "solid-js": "^1.9.11",
     "ws": "^8.19.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
+    "@types/dompurify": "^3.0.5",
     "@types/node": "^25.3.0",
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.1",
     "@typescript-eslint/parser": "^8.56.0",
     "concurrently": "^9.2.1",
-    "electron": "^40.6.0",
+    "electron": "^40.8.5",
     "electron-builder": "^26.8.1",
     "eslint": "^9.39.3",
     "eslint-config-prettier": "^10.1.8",
@@ -55,14 +59,14 @@
     "prettier": "^3.8.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.56.0",
-    "vite": "^7.3.1",
+    "vite": "^7.3.2",
     "vite-plugin-solid": "^2.11.10",
     "vitest": "^4.0.18",
     "wait-on": "^9.0.4"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
-      "eslint --max-warnings 0",
+      "eslint --max-warnings 0 --no-warn-ignored",
       "prettier --write"
     ],
     "*.{js,cjs,json,md,html,css}": "prettier --write"
@@ -87,6 +91,10 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "docker/",
+        "to": "docker/"
       }
     ],
     "linux": {
@@ -106,6 +114,9 @@
       "target": "dmg",
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Parallel Code needs microphone access for voice input in terminal sessions."
+      },
       "gatekeeperAssess": false,
       "notarize": true,
       "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/**",

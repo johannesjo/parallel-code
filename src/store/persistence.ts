@@ -14,9 +14,21 @@ import type {
   Project,
 } from './types';
 import type { AgentDef } from '../ipc/types';
-import { DEFAULT_TERMINAL_FONT, isTerminalFont } from '../lib/fonts';
+import { inferDockerSource } from '../lib/docker';
+import { DEFAULT_TERMINAL_FONT } from '../lib/fonts';
 import { isLookPreset } from '../lib/look';
 import { syncTerminalCounter } from './terminals';
+
+/** Enrich an agent def with resume/skip-permissions args from fresh defaults. */
+function enrichAgentDef(agentDef: AgentDef | null | undefined, availableAgents: AgentDef[]): void {
+  if (!agentDef) return;
+  const fresh = availableAgents.find((a) => a.id === agentDef.id);
+  if (fresh) {
+    if (!agentDef.resume_args) agentDef.resume_args = fresh.resume_args;
+    if (!agentDef.skip_permissions_args)
+      agentDef.skip_permissions_args = fresh.skip_permissions_args;
+  }
+}
 
 export async function saveState(): Promise<void> {
   const persisted: PersistedState = {
@@ -28,7 +40,6 @@ export async function saveState(): Promise<void> {
     tasks: {},
     activeTaskId: store.activeTaskId,
     sidebarVisible: store.sidebarVisible,
-    fontScales: { ...store.fontScales },
     panelSizes: { ...store.panelSizes },
     globalScale: store.globalScale,
     completedTaskDate: store.completedTaskDate,
@@ -37,11 +48,16 @@ export async function saveState(): Promise<void> {
     mergedLinesRemoved: store.mergedLinesRemoved,
     terminalFont: store.terminalFont,
     themePreset: store.themePreset,
+    showPromptInput: store.showPromptInput,
+    fontSmoothing: store.fontSmoothing,
     windowState: store.windowState ? { ...store.windowState } : undefined,
     autoTrustFolders: store.autoTrustFolders,
     showPlans: store.showPlans,
+    showSteps: store.showSteps,
+    desktopNotificationsEnabled: store.desktopNotificationsEnabled,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand || undefined,
+    dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
   };
 
@@ -61,11 +77,17 @@ export async function saveState(): Promise<void> {
       lastPrompt: task.lastPrompt,
       shellCount: task.shellAgentIds.length,
       agentDef: firstAgent?.def ?? null,
-      directMode: task.directMode,
+      gitIsolation: task.gitIsolation,
+      baseBranch: task.baseBranch,
       externalWorktree: task.externalWorktree,
       skipPermissions: task.skipPermissions,
+      dockerMode: task.dockerMode,
+      dockerSource: task.dockerSource,
+      dockerImage: task.dockerImage,
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
+      planFileName: task.planFileName,
+      stepsEnabled: task.stepsEnabled,
     };
   }
 
@@ -85,11 +107,17 @@ export async function saveState(): Promise<void> {
       lastPrompt: task.lastPrompt,
       shellCount: task.shellAgentIds.length,
       agentDef: firstAgent?.def ?? task.savedAgentDef ?? null,
-      directMode: task.directMode,
+      gitIsolation: task.gitIsolation,
+      baseBranch: task.baseBranch,
       externalWorktree: task.externalWorktree,
       skipPermissions: task.skipPermissions,
+      dockerMode: task.dockerMode,
+      dockerSource: task.dockerSource,
+      dockerImage: task.dockerImage,
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
+      planFileName: task.planFileName,
+      stepsEnabled: task.stepsEnabled,
       collapsed: true,
     };
   }
@@ -159,7 +187,6 @@ interface LegacyPersistedState {
   activeTaskId: string | null;
   sidebarVisible: boolean;
   // Fields that may be present in newer state files (validated at runtime)
-  fontScales?: unknown;
   panelSizes?: unknown;
   globalScale?: unknown;
   completedTaskDate?: unknown;
@@ -168,11 +195,16 @@ interface LegacyPersistedState {
   mergedLinesRemoved?: unknown;
   terminalFont?: unknown;
   themePreset?: unknown;
+  showPromptInput?: unknown;
+  fontSmoothing?: unknown;
   windowState?: unknown;
   autoTrustFolders?: unknown;
   showPlans?: unknown;
+  showSteps?: unknown;
+  desktopNotificationsEnabled?: unknown;
   inactiveColumnOpacity?: unknown;
   editorCommand?: unknown;
+  dockerImage?: unknown;
   customAgents?: unknown;
   terminals?: unknown;
 }
@@ -206,8 +238,15 @@ export async function loadState(): Promise<void> {
   const lastAgentId: string | null = raw.lastAgentId ?? null;
 
   // Assign colors to projects that don't have one (backward compat)
+  // Also migrate defaultDirectMode -> defaultGitIsolation
   for (const p of projects) {
     if (!p.color) p.color = randomPastelColor();
+    // Migrate defaultDirectMode -> defaultGitIsolation
+    const legacy = p as Project & { defaultDirectMode?: boolean };
+    if (legacy.defaultDirectMode !== undefined && p.defaultGitIsolation === undefined) {
+      p.defaultGitIsolation = legacy.defaultDirectMode ? 'direct' : undefined;
+      delete (legacy as unknown as Record<string, unknown>).defaultDirectMode;
+    }
   }
 
   if (projects.length === 0 && raw.projectRoot) {
@@ -237,7 +276,6 @@ export async function loadState(): Promise<void> {
       s.taskOrder = raw.taskOrder;
       s.activeTaskId = raw.activeTaskId;
       s.sidebarVisible = raw.sidebarVisible;
-      s.fontScales = isStringNumberRecord(raw.fontScales) ? raw.fontScales : {};
       s.panelSizes = isStringNumberRecord(raw.panelSizes) ? raw.panelSizes : {};
       s.globalScale = typeof raw.globalScale === 'number' ? raw.globalScale : 1;
       const completedTaskDate =
@@ -264,11 +302,21 @@ export async function loadState(): Promise<void> {
         typeof mergedLinesRemovedRaw === 'number' && Number.isFinite(mergedLinesRemovedRaw)
           ? Math.max(0, Math.floor(mergedLinesRemovedRaw))
           : 0;
-      s.terminalFont = isTerminalFont(raw.terminalFont) ? raw.terminalFont : DEFAULT_TERMINAL_FONT;
+      s.terminalFont =
+        typeof raw.terminalFont === 'string' && raw.terminalFont.trim()
+          ? raw.terminalFont
+          : DEFAULT_TERMINAL_FONT;
       s.themePreset = isLookPreset(raw.themePreset) ? raw.themePreset : 'minimal';
+      s.showPromptInput = typeof raw.showPromptInput === 'boolean' ? raw.showPromptInput : true;
+      s.fontSmoothing = typeof raw.fontSmoothing === 'boolean' ? raw.fontSmoothing : true;
       s.windowState = parsePersistedWindowState(raw.windowState);
       s.autoTrustFolders = typeof raw.autoTrustFolders === 'boolean' ? raw.autoTrustFolders : false;
       s.showPlans = typeof raw.showPlans === 'boolean' ? raw.showPlans : true;
+      s.showSteps = typeof raw.showSteps === 'boolean' ? raw.showSteps : false;
+      s.desktopNotificationsEnabled =
+        typeof raw.desktopNotificationsEnabled === 'boolean'
+          ? raw.desktopNotificationsEnabled
+          : false;
       const rawOpacity = raw.inactiveColumnOpacity;
       s.inactiveColumnOpacity =
         typeof rawOpacity === 'number' &&
@@ -280,6 +328,12 @@ export async function loadState(): Promise<void> {
 
       const rawEditorCommand = raw.editorCommand;
       s.editorCommand = typeof rawEditorCommand === 'string' ? rawEditorCommand.trim() : '';
+
+      const rawDockerImage = raw.dockerImage;
+      s.dockerImage =
+        typeof rawDockerImage === 'string' && rawDockerImage.trim()
+          ? rawDockerImage.trim()
+          : 'parallel-code-agent:latest';
 
       // Restore custom agents
       if (Array.isArray(raw.customAgents)) {
@@ -307,21 +361,14 @@ export async function loadState(): Promise<void> {
         const agentId = crypto.randomUUID();
         const agentDef = pt.agentDef;
 
-        // Enrich with resume_args/skip_permissions_args from fresh defaults (handles old state files)
-        if (agentDef) {
-          const fresh = s.availableAgents.find((a) => a.id === agentDef.id);
-          if (fresh) {
-            if (!agentDef.resume_args) agentDef.resume_args = fresh.resume_args;
-            if (!agentDef.skip_permissions_args)
-              agentDef.skip_permissions_args = fresh.skip_permissions_args;
-          }
-        }
+        enrichAgentDef(agentDef, s.availableAgents);
 
         const shellAgentIds: string[] = [];
         for (let i = 0; i < pt.shellCount; i++) {
           shellAgentIds.push(crypto.randomUUID());
         }
 
+        const legacy = pt as PersistedTask & { directMode?: boolean };
         const task: Task = {
           id: pt.id,
           name: pt.name,
@@ -332,11 +379,21 @@ export async function loadState(): Promise<void> {
           shellAgentIds,
           notes: pt.notes,
           lastPrompt: pt.lastPrompt,
-          directMode: pt.directMode,
+          gitIsolation: legacy.gitIsolation ?? (legacy.directMode ? 'direct' : 'worktree'),
+          baseBranch: legacy.baseBranch || undefined,
           externalWorktree: pt.externalWorktree,
           skipPermissions: pt.skipPermissions === true,
+          dockerMode: pt.dockerMode === true ? true : undefined,
+          dockerSource:
+            pt.dockerMode === true
+              ? (pt.dockerSource ??
+                inferDockerSource(typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined))
+              : undefined,
+          dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
+          planFileName: pt.planFileName,
+          stepsEnabled: pt.stepsEnabled,
         };
 
         s.tasks[taskId] = task;
@@ -376,17 +433,10 @@ export async function loadState(): Promise<void> {
         const pt = raw.tasks[taskId];
         if (!pt || !pt.collapsed) continue;
 
-        // Enrich agentDef with fresh defaults
         const agentDef = pt.agentDef;
-        if (agentDef) {
-          const fresh = s.availableAgents.find((a) => a.id === agentDef.id);
-          if (fresh) {
-            if (!agentDef.resume_args) agentDef.resume_args = fresh.resume_args;
-            if (!agentDef.skip_permissions_args)
-              agentDef.skip_permissions_args = fresh.skip_permissions_args;
-          }
-        }
+        enrichAgentDef(agentDef, s.availableAgents);
 
+        const legacyCollapsed = pt as PersistedTask & { directMode?: boolean };
         const task: Task = {
           id: pt.id,
           name: pt.name,
@@ -397,11 +447,22 @@ export async function loadState(): Promise<void> {
           shellAgentIds: [],
           notes: pt.notes,
           lastPrompt: pt.lastPrompt,
-          directMode: pt.directMode,
+          gitIsolation:
+            legacyCollapsed.gitIsolation ?? (legacyCollapsed.directMode ? 'direct' : 'worktree'),
+          baseBranch: legacyCollapsed.baseBranch || undefined,
           externalWorktree: pt.externalWorktree,
           skipPermissions: pt.skipPermissions === true,
+          dockerMode: pt.dockerMode === true ? true : undefined,
+          dockerSource:
+            pt.dockerMode === true
+              ? (pt.dockerSource ??
+                inferDockerSource(typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined))
+              : undefined,
+          dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
+          planFileName: pt.planFileName,
+          stepsEnabled: pt.stepsEnabled,
           collapsed: true,
           savedAgentDef: agentDef ?? undefined,
         };

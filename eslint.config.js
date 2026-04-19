@@ -10,10 +10,14 @@ export default [
     ignores: [
       'dist/**',
       'dist-electron/**',
+      'dist-remote/**',
       'release/**',
       'node_modules/**',
-      // Build config excluded from electron tsconfig; not worth linting separately
+      '.worktrees/**',
+      '.claude/**',
+      // Build config is excluded from electron tsconfig; ignore the config and its test.
       'electron/vite.config.electron.ts',
+      'electron/vite.config.electron.test.ts',
     ],
   },
 

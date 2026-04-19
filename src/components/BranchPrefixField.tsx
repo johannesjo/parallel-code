@@ -15,7 +15,7 @@ export function BranchPrefixField(props: BranchPrefixFieldProps) {
       style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
     >
       <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
-        <label style={{ 'font-size': '11px', color: theme.fgSubtle, 'white-space': 'nowrap' }}>
+        <label style={{ 'font-size': '12px', color: theme.fgSubtle, 'white-space': 'nowrap' }}>
           Branch prefix
         </label>
         <input
@@ -30,7 +30,7 @@ export function BranchPrefixField(props: BranchPrefixFieldProps) {
             'border-radius': '6px',
             padding: '4px 8px',
             color: theme.fg,
-            'font-size': '12px',
+            'font-size': '13px',
             'font-family': "'JetBrains Mono', monospace",
             outline: 'none',
             width: '120px',
@@ -40,7 +40,7 @@ export function BranchPrefixField(props: BranchPrefixFieldProps) {
       <Show when={props.branchPreview && props.projectPath}>
         <div
           style={{
-            'font-size': '11px',
+            'font-size': '12px',
             'font-family': "'JetBrains Mono', monospace",
             color: theme.fgSubtle,
             display: 'flex',

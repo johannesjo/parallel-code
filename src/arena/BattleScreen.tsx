@@ -13,7 +13,6 @@ import {
   setTerminalOutput,
 } from './store';
 import { formatDuration } from './utils';
-import type { ChangedFile } from '../ipc/types';
 
 /** Format elapsed ms for a live timer — whole seconds above 60s to avoid jitter */
 function formatElapsed(ms: number): string {
@@ -40,7 +39,7 @@ function buildCommand(template: string, prompt: string): { command: string; args
 
 export function BattleScreen() {
   const [elapsed, setElapsed] = createSignal<Record<string, number>>({});
-  const [diffFile, setDiffFile] = createSignal<ChangedFile | null>(null);
+  const [diffScrollTarget, setDiffScrollTarget] = createSignal<string | null>(null);
   const [diffWorktree, setDiffWorktree] = createSignal('');
 
   // Store buffer serializers keyed by competitor id
@@ -81,9 +80,9 @@ export function BattleScreen() {
     });
   }
 
-  function handleFileClick(worktreePath: string, file: ChangedFile) {
+  function handleFileClick(worktreePath: string, filePath: string) {
     setDiffWorktree(worktreePath);
-    setDiffFile(file);
+    setDiffScrollTarget(filePath);
   }
 
   return (
@@ -139,7 +138,7 @@ export function BattleScreen() {
                       <ChangedFilesList
                         worktreePath={cwd}
                         isActive={true}
-                        onFileClick={(file) => handleFileClick(cwd, file)}
+                        onFileClick={(file) => handleFileClick(cwd, file.path)}
                       />
                     </div>
                   </Show>
@@ -150,9 +149,9 @@ export function BattleScreen() {
         </For>
       </div>
       <DiffViewerDialog
-        file={diffFile()}
+        scrollToFile={diffScrollTarget()}
         worktreePath={diffWorktree()}
-        onClose={() => setDiffFile(null)}
+        onClose={() => setDiffScrollTarget(null)}
       />
     </>
   );

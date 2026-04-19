@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 // Allowlist of valid IPC channels.
 // IMPORTANT: This list MUST stay in sync with the IPC enum in electron/ipc/channels.ts.
@@ -22,6 +22,8 @@ const ALLOWED_CHANNELS = new Set([
   'get_changed_files_from_branch',
   'get_file_diff',
   'get_file_diff_from_branch',
+  'get_all_file_diffs',
+  'get_all_file_diffs_from_branch',
   'get_gitignored_dirs',
   'list_importable_worktrees',
   'get_worktree_status',
@@ -30,10 +32,16 @@ const ALLOWED_CHANNELS = new Set([
   'check_merge_status',
   'merge_task',
   'get_branch_log',
+  'get_branch_commits',
+  'get_commit_changed_files',
+  'get_commit_diffs',
   'push_task',
   'rebase_task',
   'get_main_branch',
   'get_current_branch',
+  'checkout_branch',
+  'get_branches',
+  'check_is_git_repo',
   // Persistence
   'save_app_state',
   'load_app_state',
@@ -75,6 +83,30 @@ const ALLOWED_CHANNELS = new Set([
   'get_remote_status',
   // Plan
   'plan_content',
+  'read_plan_content',
+  'stop_plan_watcher',
+  // Steps
+  'steps_content',
+  'read_steps_content',
+  'stop_steps_watcher',
+  // Docker
+  'check_docker_available',
+  'check_docker_image_exists',
+  'build_docker_image',
+  'resolve_project_dockerfile',
+  // Ask about code
+  'ask_about_code',
+  'cancel_ask_about_code',
+  // System
+  'get_system_fonts',
+  // File links
+  'open_path',
+  'read_file_text',
+  // Clipboard
+  'save_clipboard_image',
+  // Notifications
+  'show_notification',
+  'notification_clicked',
 ]);
 
 function isAllowedChannel(channel) {
@@ -98,4 +130,5 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeAllListeners(channel);
     },
   },
+  setZoomFactor: (factor) => webFrame.setZoomFactor(factor),
 });

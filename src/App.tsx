@@ -22,10 +22,8 @@ import {
   toggleSidebar,
   toggleArena,
   moveActiveTask,
-  getGlobalScale,
   adjustGlobalScale,
   resetGlobalScale,
-  resetFontScale,
   startTaskStatusPolling,
   stopTaskStatusPolling,
   navigateRow,
@@ -43,6 +41,8 @@ import {
   setNewTaskDropUrl,
   validateProjectPaths,
   setPlanContent,
+  setStepsContent,
+  setDockerAvailable,
 } from './store/store';
 import { isGitHubUrl } from './lib/github-url';
 import type { PersistedWindowState } from './store/types';
@@ -51,6 +51,7 @@ import { setupAutosave } from './store/autosave';
 import { isMac, mod } from './lib/platform';
 import { createCtrlWheelZoomHandler } from './lib/wheelZoom';
 import { ArenaOverlay } from './arena/ArenaOverlay';
+import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 
 const MIN_WINDOW_DIMENSION = 100;
 
@@ -83,7 +84,7 @@ function DropOverlay() {
       <span
         style={{
           color: theme.fg,
-          'font-size': '16px',
+          'font-size': '17px',
           'font-weight': '600',
           'font-family': 'var(--font-ui)',
         }}
@@ -93,7 +94,7 @@ function DropOverlay() {
       <span
         style={{
           color: theme.fgMuted,
-          'font-size': '12px',
+          'font-size': '13px',
           'font-family': 'var(--font-ui)',
         }}
       >
@@ -233,6 +234,20 @@ function App() {
     document.documentElement.dataset.look = store.themePreset;
   });
 
+  // Toggle font smoothing CSS class on body
+  createEffect(() => {
+    document.body.classList.toggle('font-smoothing', store.fontSmoothing);
+  });
+
+  // Apply zoom via Electron's webFrame so window.devicePixelRatio scales with it.
+  // CSS transform: scale() does not affect devicePixelRatio, so canvas-based renderers
+  // (xterm.js WebGL) would render at insufficient pixel density and look blurry.
+  // webFrame.setZoomFactor() raises devicePixelRatio proportionally, triggering
+  // xterm's ScreenDprMonitor to re-render at the correct resolution.
+  createEffect(() => {
+    window.electron.setZoomFactor(store.globalScale);
+  });
+
   onMount(async () => {
     if (isMac) {
       await appWindow.setTitleBarStyle('overlay').catch((error) => {
@@ -286,18 +301,65 @@ function App() {
     })();
 
     await loadAgents();
+    invoke<boolean>(IPC.CheckDockerAvailable).then(
+      (available) => setDockerAvailable(available),
+      () => setDockerAvailable(false),
+    );
     await loadState();
+
+    // Restore plan content for tasks that had a plan file before restart
+    for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
+      const task = store.tasks[taskId];
+      if (!task?.worktreePath || !task.planFileName) continue;
+      invoke<{ content: string; fileName: string } | null>(IPC.ReadPlanContent, {
+        worktreePath: task.worktreePath,
+        fileName: task.planFileName,
+      })
+        .then((result) => {
+          if (result) setPlanContent(taskId, result.content, result.fileName);
+        })
+        .catch((err) => {
+          console.warn(`Failed to restore plan for task ${taskId}:`, err);
+        });
+    }
+
+    // Restore steps content for tasks that had steps before restart
+    for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
+      const task = store.tasks[taskId];
+      if (!task?.worktreePath || !task.stepsEnabled) continue;
+      invoke<unknown[] | null>(IPC.ReadStepsContent, {
+        worktreePath: task.worktreePath,
+      })
+        .then((result) => {
+          if (result) setStepsContent(taskId, result);
+        })
+        .catch((err) => {
+          console.warn(`Failed to restore steps for task ${taskId}:`, err);
+        });
+    }
+
     await validateProjectPaths();
     await restoreWindowState();
     await captureWindowState();
     setupAutosave();
     startTaskStatusPolling();
+    const stopNotificationWatcher = startDesktopNotificationWatcher(windowFocused);
 
     // Listen for plan content pushed from backend plan watcher
     const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
       const msg = data as { taskId: string; content: string | null; fileName: string | null };
       if (msg.taskId && store.tasks[msg.taskId]) {
         setPlanContent(msg.taskId, msg.content, msg.fileName);
+      }
+    });
+
+    // Listen for steps content pushed from backend steps watcher
+    const offStepsContent = window.electron.ipcRenderer.on(IPC.StepsContent, (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const msg = data as { taskId: string; steps: unknown[] | null };
+      if (msg.taskId && store.tasks[msg.taskId]) {
+        setStepsContent(msg.taskId, msg.steps);
       }
     });
 
@@ -540,12 +602,47 @@ function App() {
         }
       },
     });
+    // Zoom in: three variants because keyboard layouts differ.
+    // matches() requires an exact shift-state match (!!e.shiftKey === !!s.shift),
+    // so we need separate registrations for each case:
+    //   key '=' no shift  — Ctrl+= on US/UK keyboards
+    //   key '+' shift     — Ctrl+Shift+= on US/UK keyboards (e.key is '+' when Shift held)
+    //   key '+' no shift  — Ctrl++ on European keyboards (dedicated + key) and NumPad+
+    registerShortcut({
+      key: '=',
+      cmdOrCtrl: true,
+      global: true,
+      dialogSafe: true,
+      handler: () => adjustGlobalScale(1),
+    });
+    registerShortcut({
+      key: '+',
+      cmdOrCtrl: true,
+      shift: true,
+      global: true,
+      dialogSafe: true,
+      handler: () => adjustGlobalScale(1),
+    });
+    registerShortcut({
+      key: '+',
+      cmdOrCtrl: true,
+      global: true,
+      dialogSafe: true,
+      handler: () => adjustGlobalScale(1),
+    });
+    registerShortcut({
+      key: '-',
+      cmdOrCtrl: true,
+      global: true,
+      dialogSafe: true,
+      handler: () => adjustGlobalScale(-1),
+    });
     registerShortcut({
       key: '0',
       cmdOrCtrl: true,
+      global: true,
+      dialogSafe: true,
       handler: () => {
-        const taskId = store.activeTaskId;
-        if (taskId) resetFontScale(taskId);
         resetGlobalScale();
       },
     });
@@ -556,7 +653,9 @@ function App() {
       unlistenCloseRequested();
       cleanupShortcuts();
       stopTaskStatusPolling();
+      stopNotificationWatcher();
       offPlanContent();
+      offStepsContent();
       unlistenFocusChanged?.();
       unlistenResized?.();
       unlistenMoved?.();
@@ -580,7 +679,7 @@ function App() {
             'font-family': "var(--font-ui, 'Sora', sans-serif)",
           }}
         >
-          <div style={{ 'font-size': '18px', 'font-weight': '600', color: theme.error }}>
+          <div style={{ 'font-size': '19px', 'font-weight': '600', color: theme.error }}>
             Something went wrong
           </div>
           <div
@@ -602,7 +701,7 @@ function App() {
               padding: '8px 24px',
               'border-radius': '8px',
               cursor: 'pointer',
-              'font-size': '14px',
+              'font-size': '15px',
             }}
           >
             Reload
@@ -623,17 +722,15 @@ function App() {
         onDrop={handleDrop}
         style={{
           '--inactive-column-opacity': store.inactiveColumnOpacity,
-          width: `${100 / getGlobalScale()}vw`,
-          height: `${100 / getGlobalScale()}vh`,
-          transform: `scale(${getGlobalScale()})`,
-          'transform-origin': '0 0',
+          width: '100vw',
+          height: '100vh',
           display: 'flex',
           'flex-direction': 'column',
           position: 'relative',
           background: theme.bg,
           color: theme.fg,
           'font-family': "var(--font-ui, 'Sora', sans-serif)",
-          'font-size': '13px',
+          'font-size': '14px',
           overflow: 'hidden',
         }}
       >
@@ -710,7 +807,7 @@ function App() {
               'border-radius': '8px',
               padding: '10px 20px',
               color: theme.fg,
-              'font-size': '13px',
+              'font-size': '14px',
               'z-index': '2000',
               'box-shadow': '0 4px 24px rgba(0,0,0,0.4)',
               cursor: 'pointer',

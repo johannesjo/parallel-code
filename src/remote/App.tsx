@@ -38,14 +38,14 @@ export function App() {
             'justify-content': 'center',
             height: '100%',
             color: '#999',
-            'font-size': '16px',
+            'font-size': '17px',
             padding: '20px',
             'text-align': 'center',
           }}
         >
           <div>
             <p style={{ 'margin-bottom': '12px' }}>Not authenticated.</p>
-            <p style={{ 'font-size': '13px', color: '#666' }}>
+            <p style={{ 'font-size': '14px', color: '#666' }}>
               Scan the QR code from the Parallel Code desktop app to connect.
             </p>
           </div>

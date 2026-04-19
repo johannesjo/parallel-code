@@ -1,9 +1,10 @@
-import { createSignal, createMemo, createEffect, onCleanup, For, Show } from 'solid-js';
+import { createSignal, createMemo, createEffect, onCleanup, batch, Index, Show } from 'solid-js';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { getStatusColor } from '../lib/status-colors';
+import { buildFileTree, flattenVisibleTree } from '../lib/file-tree';
 import type { ChangedFile } from '../ipc/types';
 
 interface ChangedFilesListProps {
@@ -15,38 +16,129 @@ interface ChangedFilesListProps {
   projectRoot?: string;
   /** Branch name for branch-based fallback when worktree doesn't exist */
   branchName?: string | null;
+  /** Base branch for diff comparison (e.g. 'main', 'develop'). Undefined = auto-detect. */
+  baseBranch?: string;
+  /** When set to a commit hash, show files for that single commit. null/undefined = all changes. */
+  selectedCommit?: string | null;
 }
 
 export function ChangedFilesList(props: ChangedFilesListProps) {
   const [files, setFiles] = createSignal<ChangedFile[]>([]);
   const [selectedIndex, setSelectedIndex] = createSignal(-1);
+  const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set());
+  const rowRefs: HTMLDivElement[] = [];
+
+  const tree = createMemo(() => buildFileTree(files()));
+  const visibleRows = createMemo(() => flattenVisibleTree(tree(), collapsed()));
+
+  function toggleDir(path: string) {
+    const isCollapsing = !collapsed().has(path);
+    const rows = visibleRows();
+    const dirIdx = isCollapsing ? rows.findIndex((r) => r.node.path === path) : -1;
+
+    batch(() => {
+      // When collapsing, snap selection to the directory if selected item is a child
+      if (dirIdx >= 0) {
+        const dirDepth = rows[dirIdx].depth;
+        const sel = selectedIndex();
+        let subtreeEnd = rows.length;
+        for (let j = dirIdx + 1; j < rows.length; j++) {
+          if (rows[j].depth <= dirDepth) {
+            subtreeEnd = j;
+            break;
+          }
+        }
+        if (sel > dirIdx && sel < subtreeEnd) {
+          setSelectedIndex(dirIdx);
+        }
+      }
+
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+        return next;
+      });
+    });
+  }
+
+  // Scroll selected item into view reactively
+  createEffect(() => {
+    const idx = selectedIndex();
+    if (idx >= 0) rowRefs[idx]?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+  });
+
+  // Trim stale refs and clamp selection when visible rows change
+  createEffect(() => {
+    const len = visibleRows().length;
+    rowRefs.length = len;
+    setSelectedIndex((i) => (i >= len ? len - 1 : i));
+  });
 
   function handleKeyDown(e: KeyboardEvent) {
-    const list = files();
-    if (list.length === 0) return;
+    const rows = visibleRows();
+    if (rows.length === 0) return;
+    const idx = selectedIndex();
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex((i) => Math.min(list.length - 1, i + 1));
+      setSelectedIndex((i) => Math.min(rows.length - 1, i + 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedIndex((i) => Math.max(0, i - 1));
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (idx >= 0 && idx < rows.length) {
+        const row = rows[idx];
+        if (row.isDir && collapsed().has(row.node.path)) {
+          toggleDir(row.node.path);
+        } else if (row.isDir && idx + 1 < rows.length) {
+          // Already expanded — move to first child
+          setSelectedIndex(idx + 1);
+        }
+      }
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (idx >= 0 && idx < rows.length) {
+        const row = rows[idx];
+        if (row.isDir && !collapsed().has(row.node.path)) {
+          // Collapse this directory
+          toggleDir(row.node.path);
+        } else if (row.depth > 0) {
+          // Move to parent directory
+          for (let j = idx - 1; j >= 0; j--) {
+            if (rows[j].isDir && rows[j].depth === row.depth - 1) {
+              setSelectedIndex(j);
+              break;
+            }
+          }
+        }
+      }
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const idx = selectedIndex();
-      if (idx >= 0 && idx < list.length) {
-        props.onFileClick?.(list[idx]);
+      if (idx >= 0 && idx < rows.length) {
+        const row = rows[idx];
+        if (row.isDir) {
+          toggleDir(row.node.path);
+        } else if (row.node.file) {
+          props.onFileClick?.(row.node.file);
+        }
       }
     }
   }
 
   // Poll every 5s, matching the git status polling interval.
   // Falls back to branch-based diff when worktree path doesn't exist.
+  // When selectedCommit is set, fetches files for that single commit (no polling).
   createEffect(() => {
     const path = props.worktreePath;
     const projectRoot = props.projectRoot;
     const branchName = props.branchName;
-    if (!props.isActive) return;
+    const baseBranch = props.baseBranch;
+    const commitHash = props.selectedCommit;
+    // In single-commit mode the user explicitly navigated — always fetch.
+    // In all-changes mode skip when inactive to avoid background polling.
+    if (!commitHash && !props.isActive) return;
     let cancelled = false;
     let inFlight = false;
     let usingBranchFallback = false;
@@ -55,11 +147,26 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
       if (inFlight) return;
       inFlight = true;
       try {
+        // Single-commit mode: fetch files for that commit only
+        if (commitHash && path) {
+          try {
+            const result = await invoke<ChangedFile[]>(IPC.GetCommitChangedFiles, {
+              worktreePath: path,
+              commitHash,
+            });
+            if (!cancelled) setFiles(result);
+          } catch {
+            if (!cancelled) setFiles([]);
+          }
+          return;
+        }
+
         // Try worktree-based fetch first
         if (path && !usingBranchFallback) {
           try {
             const result = await invoke<ChangedFile[]>(IPC.GetChangedFiles, {
               worktreePath: path,
+              baseBranch,
             });
             if (!cancelled) setFiles(result);
             return;
@@ -75,6 +182,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
             const result = await invoke<ChangedFile[]>(IPC.GetChangedFilesFromBranch, {
               projectRoot,
               branchName,
+              baseBranch,
             });
             if (!cancelled) setFiles(result);
           } catch {
@@ -87,57 +195,21 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     }
 
     void refresh();
-    const timer = setInterval(() => {
-      if (!usingBranchFallback) void refresh();
-    }, 5000);
+    // No polling needed for single-commit view (committed data is immutable)
+    const timer = commitHash
+      ? undefined
+      : setInterval(() => {
+          if (!usingBranchFallback) void refresh();
+        }, 5000);
     onCleanup(() => {
       cancelled = true;
-      clearInterval(timer);
+      if (timer !== undefined) clearInterval(timer);
     });
   });
 
   const totalAdded = createMemo(() => files().reduce((s, f) => s + f.lines_added, 0));
   const totalRemoved = createMemo(() => files().reduce((s, f) => s + f.lines_removed, 0));
   const uncommittedCount = createMemo(() => files().filter((f) => !f.committed).length);
-
-  /** For each file, compute the display filename and an optional disambiguating directory. */
-  const fileDisplays = createMemo(() => {
-    const list = files();
-
-    // Count how many times each filename appears
-    const nameCounts = new Map<string, number>();
-    const parsed = list.map((f) => {
-      const sep = f.path.lastIndexOf('/');
-      const name = sep >= 0 ? f.path.slice(sep + 1) : f.path;
-      const dir = sep >= 0 ? f.path.slice(0, sep) : '';
-      nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
-      return { name, dir, fullPath: f.path };
-    });
-
-    // For duplicates, find the shortest disambiguating parent suffix
-    return parsed.map((p) => {
-      if ((nameCounts.get(p.name) ?? 0) <= 1 || !p.dir) {
-        return { name: p.name, disambig: '', fullPath: p.fullPath };
-      }
-      // Find all entries with the same filename
-      const siblings = parsed.filter((s) => s.name === p.name && s.fullPath !== p.fullPath);
-      const parts = p.dir.split('/');
-      // Walk from the immediate parent upward until unique
-      for (let depth = 1; depth <= parts.length; depth++) {
-        const suffix = parts.slice(parts.length - depth).join('/');
-        const isUnique = siblings.every((s) => {
-          const sParts = s.dir.split('/');
-          const sSuffix = sParts.slice(sParts.length - depth).join('/');
-          return sSuffix !== suffix;
-        });
-        if (isUnique) {
-          return { name: p.name, disambig: suffix + '/', fullPath: p.fullPath };
-        }
-      }
-      // Fallback: show full directory
-      return { name: p.name, disambig: p.dir + '/', fullPath: p.fullPath };
-    });
-  });
 
   return (
     <div
@@ -151,71 +223,127 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
         height: '100%',
         overflow: 'hidden',
         'font-family': "'JetBrains Mono', monospace",
-        'font-size': sf(11),
+        'font-size': sf(12),
         outline: 'none',
       }}
     >
       <div style={{ flex: '1', overflow: 'auto', padding: '4px 0' }}>
-        <For each={files()}>
-          {(file, i) => (
+        <Index each={visibleRows()}>
+          {(row, i) => (
             <div
+              ref={(el) => (rowRefs[i] = el)}
               class="file-row"
               style={{
                 display: 'flex',
                 'align-items': 'center',
                 gap: '6px',
                 padding: '2px 8px',
+                'padding-left': `${8 + row().depth * 8}px`,
                 'white-space': 'nowrap',
-                cursor: props.onFileClick ? 'pointer' : 'default',
+                cursor: 'pointer',
                 'border-radius': '3px',
-                opacity: file.committed ? '0.45' : '1',
-                background: selectedIndex() === i() ? theme.bgHover : 'transparent',
+                opacity:
+                  !props.selectedCommit && (row().isDir || row().node.file?.committed)
+                    ? '0.45'
+                    : '1',
+                background: selectedIndex() === i ? theme.bgHover : 'transparent',
               }}
               onClick={() => {
-                setSelectedIndex(i());
-                props.onFileClick?.(file);
+                setSelectedIndex(i);
+                const r = row();
+                if (r.isDir) {
+                  toggleDir(r.node.path);
+                } else if (r.node.file) {
+                  props.onFileClick?.(r.node.file);
+                }
               }}
             >
-              <span
-                style={{
-                  color: getStatusColor(file.status),
-                  'font-weight': '600',
-                  width: '12px',
-                  'text-align': 'center',
-                  'flex-shrink': '0',
-                }}
-              >
-                {file.status}
-              </span>
-              <span
-                style={{
-                  flex: '1',
-                  overflow: 'hidden',
-                  'text-overflow': 'ellipsis',
-                  display: 'flex',
-                  gap: '4px',
-                  'align-items': 'baseline',
-                }}
-                title={file.path}
-              >
-                <span style={{ color: theme.fg }}>{fileDisplays()[i()].name}</span>
-                <Show when={fileDisplays()[i()].disambig}>
-                  <span style={{ color: theme.fgMuted, 'font-size': sf(10) }}>
-                    {fileDisplays()[i()].disambig}
+              {row().isDir ? (
+                <>
+                  <span
+                    style={{
+                      color: theme.fg,
+                      width: '10px',
+                      'text-align': 'center',
+                      'flex-shrink': '0',
+                      'font-size': sf(10),
+                    }}
+                  >
+                    {collapsed().has(row().node.path) ? '\u25B8' : '\u25BE'}
                   </span>
-                </Show>
-              </span>
-              <Show when={file.lines_added > 0 || file.lines_removed > 0}>
-                <span style={{ color: theme.success, 'flex-shrink': '0' }}>
-                  +{file.lines_added}
-                </span>
-                <span style={{ color: theme.error, 'flex-shrink': '0' }}>
-                  -{file.lines_removed}
-                </span>
-              </Show>
+                  <span
+                    style={{
+                      flex: '1',
+                      overflow: 'hidden',
+                      'text-overflow': 'ellipsis',
+                      color: theme.fg,
+                    }}
+                    title={row().node.path}
+                  >
+                    {row().node.name}/
+                  </span>
+                  <Show when={collapsed().has(row().node.path)}>
+                    <span
+                      style={{
+                        color: theme.fg,
+                        'font-size': sf(11),
+                        'flex-shrink': '0',
+                      }}
+                    >
+                      {row().node.fileCount}
+                    </span>
+                    <Show when={row().node.linesAdded > 0 || row().node.linesRemoved > 0}>
+                      <span style={{ color: theme.success, 'flex-shrink': '0' }}>
+                        +{row().node.linesAdded}
+                      </span>
+                      <span style={{ color: theme.error, 'flex-shrink': '0' }}>
+                        -{row().node.linesRemoved}
+                      </span>
+                    </Show>
+                  </Show>
+                </>
+              ) : (
+                <>
+                  <span
+                    style={{
+                      color: getStatusColor(row().node.file?.status ?? ''),
+                      'font-weight': '600',
+                      width: '12px',
+                      'text-align': 'center',
+                      'flex-shrink': '0',
+                    }}
+                  >
+                    {row().node.file?.status}
+                  </span>
+                  <span
+                    style={{
+                      flex: '1',
+                      overflow: 'hidden',
+                      'text-overflow': 'ellipsis',
+                      color: theme.fg,
+                    }}
+                    title={row().node.path}
+                  >
+                    {row().node.name}
+                  </span>
+                  <Show
+                    when={
+                      (row().node.file?.lines_added ?? 0) > 0 ||
+                      (row().node.file?.lines_removed ?? 0) > 0
+                    }
+                  >
+                    <span style={{ color: theme.success, 'flex-shrink': '0' }}>
+                      +{row().node.file?.lines_added}
+                    </span>
+                    <span style={{ color: theme.error, 'flex-shrink': '0' }}>
+                      -{row().node.file?.lines_removed}
+                    </span>
+                  </Show>
+                </>
+              )}
             </div>
           )}
-        </For>
+        </Index>
       </div>
       <Show when={files().length > 0}>
         <div
@@ -228,7 +356,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
         >
           {files().length} files, <span style={{ color: theme.success }}>+{totalAdded()}</span>{' '}
           <span style={{ color: theme.error }}>-{totalRemoved()}</span>
-          <Show when={uncommittedCount() > 0 && uncommittedCount() < files().length}>
+          <Show when={uncommittedCount() > 0}>
             {' '}
             <span style={{ color: theme.warning }}>({uncommittedCount()} uncommitted)</span>
           </Show>

@@ -1,5 +1,6 @@
-import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron';
+import { ipcMain, dialog, shell, app, clipboard, BrowserWindow, Notification } from 'electron';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { IPC } from './channels.js';
 import {
@@ -12,8 +13,19 @@ import {
   countRunningAgents,
   killAllAgents,
   getAgentMeta,
+  isDockerAvailable,
+  dockerImageExists,
+  buildDockerImage,
+  resolveProjectDockerfile,
+  projectImageTag,
 } from './pty.js';
-import { ensurePlansDirectory, startPlanWatcher } from './plans.js';
+import {
+  ensurePlansDirectory,
+  startPlanWatcher,
+  stopPlanWatcher,
+  readPlanForWorktree,
+} from './plans.js';
+import { startStepsWatcher, stopStepsWatcher, readStepsForWorktree } from './steps.js';
 import { startRemoteServer } from '../remote/server.js';
 import {
   getGitIgnoredDirs,
@@ -21,6 +33,8 @@ import {
   getCurrentBranch,
   getChangedFiles,
   getChangedFilesFromBranch,
+  getAllFileDiffs,
+  getAllFileDiffsFromBranch,
   getFileDiff,
   getFileDiffFromBranch,
   getWorktreeStatus,
@@ -34,11 +48,19 @@ import {
   rebaseTask,
   createWorktree,
   removeWorktree,
+  isGitRepo,
+  getBranches,
+  checkoutBranch,
+  getBranchCommits,
+  getCommitChangedFiles,
+  getCommitDiffs,
 } from './git.js';
 import { createTask, deleteTask } from './tasks.js';
 import { listAgents } from './agents.js';
 import { saveAppState, loadAppState } from './persistence.js';
 import { spawn } from 'child_process';
+import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
+import { getSystemMonospaceFonts } from './system-fonts.js';
 import path from 'path';
 import {
   assertString,
@@ -69,6 +91,61 @@ function validateBranchName(name: unknown, label: string): void {
   if (name.startsWith('-')) throw new Error(`${label} must not start with "-"`);
 }
 
+/** Reject commit hashes that are not valid hex strings. */
+function validateCommitHash(hash: unknown, label: string): void {
+  if (typeof hash !== 'string') throw new Error(`${label} must be a string`);
+  if (!/^[0-9a-f]{4,40}$/i.test(hash)) throw new Error(`${label} must be a valid hex commit hash`);
+}
+
+function getOptionalDockerfilePath(value: unknown): string | undefined {
+  assertOptionalString(value, 'dockerfilePath');
+  if (value !== undefined) validatePath(value, 'dockerfilePath');
+  return value;
+}
+
+function getOptionalBuildContext(value: unknown): string | undefined {
+  assertOptionalString(value, 'buildContext');
+  if (value !== undefined) validatePath(value, 'buildContext');
+  return value;
+}
+
+function getOptionalImageTag(value: unknown): string | undefined {
+  assertOptionalString(value, 'imageTag');
+  const imageTag = value?.trim();
+  if (imageTag === '') throw new Error('imageTag must be a non-empty string');
+  return imageTag;
+}
+
+/**
+ * Create a leading+trailing throttled event forwarder.
+ * Fires immediately, suppresses for `intervalMs`, then fires once more
+ * if events arrived during suppression (ensures the final state is always forwarded).
+ */
+function createThrottledForwarder(
+  win: BrowserWindow,
+  channel: string,
+  intervalMs: number,
+): () => void {
+  let throttled = false;
+  let pending = false;
+  return () => {
+    if (win.isDestroyed()) return;
+    if (throttled) {
+      pending = true;
+      return;
+    }
+    throttled = true;
+    win.webContents.send(channel);
+    setTimeout(() => {
+      throttled = false;
+      if (pending) {
+        pending = false;
+        if (!win.isDestroyed()) win.webContents.send(channel);
+      }
+    }, intervalMs);
+  };
+}
+
 export function registerAllHandlers(win: BrowserWindow): void {
   // --- Remote access state ---
   let remoteServer: ReturnType<typeof startRemoteServer> | null = null;
@@ -76,6 +153,15 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   // --- PTY commands ---
   ipcMain.handle(IPC.SpawnAgent, (_e, args) => {
+    assertString(args.command, 'command');
+    assertStringArray(args.args, 'args');
+    assertString(args.taskId, 'taskId');
+    assertString(args.agentId, 'agentId');
+    assertInt(args.cols, 'cols');
+    assertInt(args.rows, 'rows');
+    assertOptionalBoolean(args.dockerMode, 'dockerMode');
+    assertOptionalString(args.dockerImage, 'dockerImage');
+    assertOptionalBoolean(args.stepsEnabled, 'stepsEnabled');
     if (args.cwd) validatePath(args.cwd, 'cwd');
     if (!args.isShell && args.cwd) {
       try {
@@ -90,6 +176,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
         startPlanWatcher(win, args.taskId, args.cwd);
       } catch (err) {
         console.warn('Failed to start plan watcher:', err);
+      }
+      if (args.stepsEnabled) {
+        try {
+          startStepsWatcher(win, args.taskId, args.cwd);
+        } catch (err) {
+          console.warn('Failed to start steps watcher:', err);
+        }
       }
     }
     return result;
@@ -122,6 +215,35 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   // --- Agent commands ---
   ipcMain.handle(IPC.ListAgents, () => listAgents());
+  ipcMain.handle(IPC.CheckDockerAvailable, () => isDockerAvailable());
+  ipcMain.handle(IPC.CheckDockerImageExists, (_e, args) => {
+    assertString(args.image, 'image');
+    const dockerfilePath = getOptionalDockerfilePath(args.dockerfilePath);
+    return dockerImageExists(args.image, dockerfilePath ? { dockerfilePath } : undefined);
+  });
+  ipcMain.handle(IPC.BuildDockerImage, (_e, args) => {
+    assertString(args.onOutputChannel, 'onOutputChannel');
+    const dockerfilePath = getOptionalDockerfilePath(args.dockerfilePath);
+    const buildContext = getOptionalBuildContext(args.buildContext);
+    const imageTag = getOptionalImageTag(args.imageTag);
+    return buildDockerImage(
+      win,
+      args.onOutputChannel,
+      dockerfilePath || buildContext || imageTag
+        ? { dockerfilePath, buildContext, imageTag }
+        : undefined,
+    );
+  });
+  ipcMain.handle(IPC.ResolveProjectDockerfile, (_e, args) => {
+    validatePath(args.projectRoot, 'projectRoot');
+    const dockerfilePath = resolveProjectDockerfile(args.projectRoot);
+    if (!dockerfilePath) return null;
+    return {
+      dockerfilePath,
+      imageTag: projectImageTag(dockerfilePath),
+      buildContext: args.projectRoot,
+    };
+  });
 
   // --- Task commands ---
   ipcMain.handle(IPC.CreateTask, (_e, args) => {
@@ -129,7 +251,16 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.projectRoot, 'projectRoot');
     assertStringArray(args.symlinkDirs, 'symlinkDirs');
     assertOptionalString(args.branchPrefix, 'branchPrefix');
-    const result = createTask(args.name, args.projectRoot, args.symlinkDirs, args.branchPrefix);
+    assertOptionalString(args.baseBranch, 'baseBranch');
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    const result = createTask(
+      args.name,
+      args.projectRoot,
+      args.symlinkDirs,
+      args.branchPrefix ?? 'task',
+      baseBranch,
+    );
     result.then((r: { id: string }) => taskNames.set(r.id, args.name)).catch(() => {});
     return result;
   });
@@ -138,29 +269,57 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
     assertBoolean(args.deleteBranch, 'deleteBranch');
-    return deleteTask(args.agentIds, args.branchName, args.deleteBranch, args.projectRoot);
+    assertOptionalString(args.taskId, 'taskId');
+    return deleteTask({
+      taskId: args.taskId,
+      agentIds: args.agentIds,
+      branchName: args.branchName,
+      deleteBranch: args.deleteBranch,
+      projectRoot: args.projectRoot,
+    });
   });
 
   // --- Git commands ---
   ipcMain.handle(IPC.GetChangedFiles, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    return getChangedFiles(args.worktreePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getChangedFiles(args.worktreePath, baseBranch);
   });
   ipcMain.handle(IPC.GetChangedFilesFromBranch, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
-    return getChangedFilesFromBranch(args.projectRoot, args.branchName);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getChangedFilesFromBranch(args.projectRoot, args.branchName, baseBranch);
+  });
+  ipcMain.handle(IPC.GetAllFileDiffs, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getAllFileDiffs(args.worktreePath, baseBranch);
+  });
+  ipcMain.handle(IPC.GetAllFileDiffsFromBranch, (_e, args) => {
+    validatePath(args.projectRoot, 'projectRoot');
+    validateBranchName(args.branchName, 'branchName');
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getAllFileDiffsFromBranch(args.projectRoot, args.branchName, baseBranch);
   });
   ipcMain.handle(IPC.GetFileDiff, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
     validateRelativePath(args.filePath, 'filePath');
-    return getFileDiff(args.worktreePath, args.filePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getFileDiff(args.worktreePath, args.filePath, baseBranch);
   });
   ipcMain.handle(IPC.GetFileDiffFromBranch, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
     validateRelativePath(args.filePath, 'filePath');
-    return getFileDiffFromBranch(args.projectRoot, args.branchName, args.filePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getFileDiffFromBranch(args.projectRoot, args.branchName, args.filePath, baseBranch);
   });
   ipcMain.handle(IPC.GetGitignoredDirs, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
@@ -172,7 +331,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.GetWorktreeStatus, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    return getWorktreeStatus(args.worktreePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getWorktreeStatus(args.worktreePath, baseBranch);
   });
   ipcMain.handle(IPC.CommitAll, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
@@ -185,7 +346,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.CheckMergeStatus, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    return checkMergeStatus(args.worktreePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return checkMergeStatus(args.worktreePath, baseBranch);
   });
   ipcMain.handle(IPC.MergeTask, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
@@ -193,20 +356,50 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertBoolean(args.squash, 'squash');
     assertOptionalString(args.message, 'message');
     assertOptionalBoolean(args.cleanup, 'cleanup');
-    return mergeTask(args.projectRoot, args.branchName, args.squash, args.message, args.cleanup);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return mergeTask(
+      args.projectRoot,
+      args.branchName,
+      args.squash,
+      args.message ?? null,
+      args.cleanup ?? false,
+      baseBranch,
+    );
   });
   ipcMain.handle(IPC.GetBranchLog, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    return getBranchLog(args.worktreePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getBranchLog(args.worktreePath, baseBranch);
+  });
+  ipcMain.handle(IPC.GetBranchCommits, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getBranchCommits(args.worktreePath, baseBranch);
+  });
+  ipcMain.handle(IPC.GetCommitChangedFiles, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    validateCommitHash(args.commitHash, 'commitHash');
+    return getCommitChangedFiles(args.worktreePath, args.commitHash);
+  });
+  ipcMain.handle(IPC.GetCommitDiffs, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    validateCommitHash(args.commitHash, 'commitHash');
+    return getCommitDiffs(args.worktreePath, args.commitHash);
   });
   ipcMain.handle(IPC.PushTask, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
-    return pushTask(args.projectRoot, args.branchName);
+    assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
+    return pushTask(win, args.projectRoot, args.branchName, args.onOutput.__CHANNEL_ID__);
   });
   ipcMain.handle(IPC.RebaseTask, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    return rebaseTask(args.worktreePath);
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return rebaseTask(args.worktreePath, baseBranch);
   });
   ipcMain.handle(IPC.GetMainBranch, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
@@ -215,6 +408,19 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.GetCurrentBranch, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     return getCurrentBranch(args.projectRoot);
+  });
+  ipcMain.handle(IPC.CheckoutBranch, (_e, args) => {
+    validatePath(args.projectRoot, 'projectRoot');
+    validateBranchName(args.branchName, 'branchName');
+    return checkoutBranch(args.projectRoot, args.branchName);
+  });
+  ipcMain.handle(IPC.CheckIsGitRepo, (_e, args) => {
+    validatePath(args.path, 'path');
+    return isGitRepo(args.path);
+  });
+  ipcMain.handle(IPC.GetBranches, (_e, args) => {
+    validatePath(args.projectRoot, 'projectRoot');
+    return getBranches(args.projectRoot);
   });
 
   // --- Persistence ---
@@ -274,7 +480,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.CreateArenaWorktree, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
-    return createWorktree(args.projectRoot, args.branchName, args.symlinkDirs ?? [], true);
+    return createWorktree(
+      args.projectRoot,
+      args.branchName,
+      args.symlinkDirs ?? [],
+      undefined,
+      true,
+    );
   });
 
   ipcMain.handle(IPC.RemoveArenaWorktree, (_e, args) => {
@@ -286,6 +498,129 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.CheckPathExists, (_e, args) => {
     validatePath(args.path, 'path');
     return fs.existsSync(args.path);
+  });
+
+  // --- Plan watcher cleanup ---
+  ipcMain.handle(IPC.StopPlanWatcher, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    stopPlanWatcher(args.taskId);
+  });
+
+  // --- Plan content (one-shot read) ---
+  ipcMain.handle(IPC.ReadPlanContent, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    const fileName = typeof args.fileName === 'string' ? args.fileName : undefined;
+    if (fileName) validateRelativePath(fileName, 'fileName');
+    return readPlanForWorktree(args.worktreePath, fileName);
+  });
+
+  // --- Steps watcher cleanup ---
+  ipcMain.handle(IPC.StopStepsWatcher, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    stopStepsWatcher(args.taskId);
+  });
+
+  // --- Steps content (one-shot read) ---
+  ipcMain.handle(IPC.ReadStepsContent, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    return readStepsForWorktree(args.worktreePath);
+  });
+
+  // --- Ask about code ---
+  ipcMain.handle(IPC.AskAboutCode, (_e, args) => {
+    assertString(args.requestId, 'requestId');
+    assertString(args.prompt, 'prompt');
+    assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
+    validatePath(args.cwd, 'cwd');
+    askAboutCode(win, {
+      requestId: args.requestId,
+      channelId: args.onOutput.__CHANNEL_ID__,
+      prompt: args.prompt,
+      cwd: args.cwd,
+    });
+  });
+
+  ipcMain.handle(IPC.CancelAskAboutCode, (_e, args) => {
+    assertString(args.requestId, 'requestId');
+    cancelAskAboutCode(args.requestId);
+  });
+
+  // --- File links ---
+  ipcMain.handle(IPC.OpenPath, (_e, args) => {
+    validatePath(args.filePath, 'filePath');
+    // Block executable extensions to prevent accidental code execution
+    const dangerous = /\.(sh|bash|exe|bat|cmd|app|command|desktop|appimage|run)$/i;
+    if (dangerous.test(args.filePath)) {
+      throw new Error('Cannot open executable files');
+    }
+    return shell.openPath(args.filePath);
+  });
+
+  ipcMain.handle(IPC.ReadFileText, async (_e, args) => {
+    validatePath(args.filePath, 'filePath');
+    if (!/\.md$/i.test(args.filePath)) {
+      throw new Error('Only .md files can be read');
+    }
+    const stat = await fs.promises.stat(args.filePath);
+    if (stat.size > 2 * 1024 * 1024) {
+      throw new Error('File too large to preview (max 2 MB)');
+    }
+    return fs.promises.readFile(args.filePath, 'utf8');
+  });
+
+  // --- Clipboard ---
+  const clipboardImagePath = path.join(os.tmpdir(), 'parallel-code-clipboard.png');
+  ipcMain.handle(IPC.SaveClipboardImage, async () => {
+    try {
+      const img = clipboard.readImage();
+      if (img.isEmpty()) return null;
+      const buf = img.toPNG();
+      await fs.promises.writeFile(clipboardImagePath, buf);
+      return clipboardImagePath;
+    } catch (e) {
+      console.error('[clipboard] Failed to save clipboard image:', e);
+      return null;
+    }
+  });
+
+  // --- System ---
+  ipcMain.handle(IPC.GetSystemFonts, () => getSystemMonospaceFonts());
+
+  // --- Notifications (fire-and-forget via ipcMain.on) ---
+  const activeNotifications = new Set<Notification>();
+  ipcMain.on(IPC.ShowNotification, (_e, args) => {
+    try {
+      if (!Notification.isSupported()) return;
+      assertString(args.title, 'title');
+      assertString(args.body, 'body');
+      assertStringArray(args.taskIds, 'taskIds');
+      const notification = new Notification({
+        title: args.title,
+        body: args.body,
+      });
+      activeNotifications.add(notification);
+      const release = () => activeNotifications.delete(notification);
+      notification.on('click', () => {
+        release();
+        if (!win.isDestroyed()) {
+          win.show();
+          win.focus();
+          win.webContents.send(IPC.NotificationClicked, { taskIds: args.taskIds });
+        }
+      });
+      notification.on('close', release);
+      notification.show();
+      // On Linux, notifications may not auto-dismiss. Close after 30 seconds
+      // to prevent accumulation in the notification tray.
+      if (process.platform === 'linux') {
+        setTimeout(() => {
+          notification.close();
+          release();
+        }, 30_000);
+      }
+    } catch (err) {
+      console.warn('ShowNotification failed:', err);
+    }
   });
 
   // --- Window management ---
@@ -448,44 +783,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
   win.on('blur', () => {
     if (!win.isDestroyed()) win.webContents.send(IPC.WindowBlur);
   });
-  // Leading+trailing throttle: fire immediately, suppress for 100ms, then fire once more
-  // if events arrived during suppression (ensures the final state is always forwarded).
-  let resizeThrottled = false;
-  let resizePending = false;
-  win.on('resize', () => {
-    if (win.isDestroyed()) return;
-    if (resizeThrottled) {
-      resizePending = true;
-      return;
-    }
-    resizeThrottled = true;
-    win.webContents.send(IPC.WindowResized);
-    setTimeout(() => {
-      resizeThrottled = false;
-      if (resizePending) {
-        resizePending = false;
-        if (!win.isDestroyed()) win.webContents.send(IPC.WindowResized);
-      }
-    }, 100);
-  });
-  let moveThrottled = false;
-  let movePending = false;
-  win.on('move', () => {
-    if (win.isDestroyed()) return;
-    if (moveThrottled) {
-      movePending = true;
-      return;
-    }
-    moveThrottled = true;
-    win.webContents.send(IPC.WindowMoved);
-    setTimeout(() => {
-      moveThrottled = false;
-      if (movePending) {
-        movePending = false;
-        if (!win.isDestroyed()) win.webContents.send(IPC.WindowMoved);
-      }
-    }, 100);
-  });
+  win.on('resize', createThrottledForwarder(win, IPC.WindowResized, 100));
+  win.on('move', createThrottledForwarder(win, IPC.WindowMoved, 100));
   win.on('close', (e) => {
     e.preventDefault();
     if (!win.isDestroyed()) {

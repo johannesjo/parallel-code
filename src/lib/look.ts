@@ -1,4 +1,12 @@
-export type LookPreset = 'classic' | 'graphite' | 'indigo' | 'ember' | 'glacier' | 'minimal';
+export type LookPreset =
+  | 'classic'
+  | 'graphite'
+  | 'midnight'
+  | 'indigo'
+  | 'ember'
+  | 'glacier'
+  | 'minimal'
+  | 'zenburnesque';
 
 export interface LookPresetOption {
   id: LookPreset;
@@ -16,6 +24,11 @@ export const LOOK_PRESETS: LookPresetOption[] = [
     id: 'graphite',
     label: 'Graphite',
     description: 'Cool neon blue with subtle glow',
+  },
+  {
+    id: 'midnight',
+    label: 'Midnight',
+    description: 'Graphite with pure black terminals',
   },
   {
     id: 'classic',
@@ -36,6 +49,11 @@ export const LOOK_PRESETS: LookPresetOption[] = [
     id: 'glacier',
     label: 'Glacier',
     description: 'Clean teal accents with softer depth',
+  },
+  {
+    id: 'zenburnesque',
+    label: 'Zenburnesque',
+    description: 'Warm sage and muted earth tones',
   },
 ];
 

@@ -12,5 +12,10 @@
     "types": ["node"]
   },
   "include": ["./**/*.ts"],
-  "exclude": ["./preload.ts", "./shims/**", "./vite.config.electron.ts"]
+  "exclude": [
+    "./preload.ts",
+    "./shims/**",
+    "./vite.config.electron.ts",
+    "./vite.config.electron.test.ts"
+  ]
 }

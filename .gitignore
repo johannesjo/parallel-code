@@ -8,3 +8,15 @@ release
 .claude
 .DS_Store
 docs/plans
+
+# Sandbox bind-mount artifacts from user home (not project files).
+# Root-anchored so legitimate nested files with these names are still tracked.
+/.bash_profile
+/.bashrc
+/.gitconfig
+/.gitmodules
+/.mcp.json
+/.profile
+/.ripgreprc
+/.zprofile
+/.zshrc

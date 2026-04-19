@@ -1,7 +1,15 @@
 dist/
 dist-electron/
+dist-remote/
 release/
 node_modules/
+.worktrees/
+.claude/
+.enzyme/
+.omc/
+.planning/
+.letta/
+CLAUDE.local.md
 package-lock.json
 *.AppImage
 *.deb

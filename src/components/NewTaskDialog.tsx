@@ -1,30 +1,35 @@
-import { createSignal, createEffect, Show, onCleanup } from 'solid-js';
+import { createSignal, createEffect, Show, For, onCleanup } from 'solid-js';
 import { Dialog } from './Dialog';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import {
   store,
   createTask,
-  createDirectTask,
   toggleNewTaskDialog,
   loadAgents,
   getProject,
   getProjectPath,
   getProjectBranchPrefix,
   updateProject,
-  hasDirectModeTask,
+  hasDirectTask,
   getGitHubDropDefaults,
   setPrefillPrompt,
+  setDockerAvailable,
+  setDockerImage,
+  showNotification,
 } from '../store/store';
+import type { GitIsolationMode } from '../store/types';
 import { toBranchName, sanitizeBranchPrefix } from '../lib/branch-name';
+import { SegmentedButtons } from './SegmentedButtons';
 import { cleanTaskName } from '../lib/clean-task-name';
 import { extractGitHubUrl } from '../lib/github-url';
-import { theme } from '../lib/theme';
+import { theme, sectionLabelStyle, bannerStyle } from '../lib/theme';
 import { AgentSelector } from './AgentSelector';
 import { BranchPrefixField } from './BranchPrefixField';
 import { ProjectSelect } from './ProjectSelect';
 import { SymlinkDirPicker } from './SymlinkDirPicker';
 import type { AgentDef } from '../ipc/types';
+import { DEFAULT_DOCKER_IMAGE, PROJECT_DOCKERFILE_RELATIVE_PATH } from '../lib/docker';
 
 interface NewTaskDialogProps {
   open: boolean;
@@ -40,11 +45,26 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   const [loading, setLoading] = createSignal(false);
   const [ignoredDirs, setIgnoredDirs] = createSignal<string[]>([]);
   const [selectedDirs, setSelectedDirs] = createSignal<Set<string>>(new Set());
-  const [directMode, setDirectMode] = createSignal(false);
+  const [gitIsolation, setGitIsolation] = createSignal<GitIsolationMode>('worktree');
+  const [baseBranch, setBaseBranch] = createSignal('');
+  const [branches, setBranches] = createSignal<string[]>([]);
+  const [branchesLoading, setBranchesLoading] = createSignal(false);
+  const [stepsEnabled, setStepsEnabled] = createSignal(store.showSteps);
   const [skipPermissions, setSkipPermissions] = createSignal(false);
+  const [dockerMode, setDockerMode] = createSignal(false);
+  const [dockerImageReady, setDockerImageReady] = createSignal<boolean | null>(null); // null = unknown
+  const [dockerBuilding, setDockerBuilding] = createSignal(false);
+  const [dockerBuildOutput, setDockerBuildOutput] = createSignal('');
+  const [dockerBuildError, setDockerBuildError] = createSignal('');
+  const [projectDockerfile, setProjectDockerfile] = createSignal<{
+    dockerfilePath: string;
+    imageTag: string;
+    buildContext: string;
+  } | null>(null);
   const [branchPrefix, setBranchPrefix] = createSignal('');
   let promptRef!: HTMLTextAreaElement;
   let formRef!: HTMLFormElement;
+  let buildOutputRef!: HTMLPreElement;
 
   const focusableSelector =
     'textarea:not(:disabled), input:not(:disabled), select:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex="-1"])';
@@ -103,10 +123,21 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     setName('');
     setError('');
     setLoading(false);
-    setDirectMode(false);
+    setGitIsolation('worktree');
     setSkipPermissions(false);
+    setDockerMode(false);
+    setDockerImageReady(null);
+    setDockerBuilding(false);
+    setDockerBuildOutput('');
+    setDockerBuildError('');
+    setProjectDockerfile(null);
 
     void (async () => {
+      // Check Docker availability in background
+      invoke<boolean>(IPC.CheckDockerAvailable).then(
+        (available) => setDockerAvailable(available),
+        () => setDockerAvailable(false),
+      );
       if (store.availableAgents.length === 0) {
         await loadAgents();
       }
@@ -194,17 +225,184 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     setBranchPrefix(pid ? getProjectBranchPrefix(pid) : 'task');
   });
 
-  // Pre-check direct mode based on project setting
+  // Fetch branches on every dialog open and on project change (D-02 merged effect)
+  createEffect(() => {
+    // D-02, D-03: All reactive reads synchronous before any async code
+    const open = props.open;
+    const pid = selectedProjectId();
+    const projectPath = pid ? getProjectPath(pid) : undefined;
+    let cancelled = false;
+
+    if (!open || !projectPath) {
+      setBranches([]);
+      setBaseBranch('');
+      setBranchesLoading(false);
+      // D-03: onCleanup registered synchronously even on early return
+      onCleanup(() => {
+        cancelled = true;
+      });
+      return;
+    }
+
+    // D-01: Clear list and show spinner immediately on every open
+    setBranches([]);
+    setBranchesLoading(true);
+
+    const doFetch = async () => {
+      const [branchList, mainBranch] = await Promise.all([
+        invoke<string[]>(IPC.GetBranches, { projectRoot: projectPath }),
+        invoke<string>(IPC.GetMainBranch, { projectRoot: projectPath }),
+      ]);
+      if (cancelled) return;
+      // Set both in same synchronous sequence — avoids SolidJS #2241 select value race
+      setBranches(branchList);
+      const proj = pid ? getProject(pid) : undefined;
+      setBaseBranch(proj?.defaultBaseBranch ?? mainBranch);
+      setBranchesLoading(false);
+    };
+
+    void doFetch().catch(async () => {
+      // D-04: Retry once silently
+      if (cancelled) return;
+      try {
+        await doFetch();
+      } catch (err) {
+        if (cancelled) return;
+        setBranchesLoading(false);
+        showNotification(`Failed to load branches: ${String(err)}`);
+      }
+    });
+
+    // D-03: onCleanup MUST be synchronous in effect body, not inside the IIFE
+    onCleanup(() => {
+      cancelled = true;
+    });
+  });
+
+  // Set isolation mode from project defaults, enforce worktree if a direct task already exists
   createEffect(() => {
     const pid = selectedProjectId();
     if (!pid) return;
+    if (hasDirectTask(pid)) {
+      setGitIsolation('worktree');
+      return;
+    }
     const proj = getProject(pid);
-    setDirectMode(proj?.defaultDirectMode ?? false);
+    setGitIsolation(proj?.defaultGitIsolation ?? 'worktree');
   });
 
+  // Detect per-project Dockerfile when Docker mode is enabled
   createEffect(() => {
-    if (directModeDisabled()) setDirectMode(false);
+    if (!dockerMode() || !store.dockerAvailable) {
+      setProjectDockerfile(null);
+      return;
+    }
+
+    const pid = selectedProjectId();
+    if (!pid) {
+      setProjectDockerfile(null);
+      return;
+    }
+
+    const projectRoot = getProjectPath(pid);
+    if (!projectRoot) {
+      setProjectDockerfile(null);
+      return;
+    }
+
+    let cancelled = false;
+    invoke<{ dockerfilePath: string; imageTag: string; buildContext: string } | null>(
+      IPC.ResolveProjectDockerfile,
+      { projectRoot },
+    ).then(
+      (result) => {
+        if (!cancelled) setProjectDockerfile(result);
+      },
+      () => {
+        if (!cancelled) setProjectDockerfile(null);
+      },
+    );
+
+    onCleanup(() => {
+      cancelled = true;
+    });
   });
+
+  // Check if the Docker image exists when Docker mode is enabled (debounced)
+  let checkTimer: ReturnType<typeof setTimeout>;
+  createEffect(() => {
+    if (!dockerMode() || !store.dockerAvailable) {
+      clearTimeout(checkTimer);
+      setDockerImageReady(null);
+      return;
+    }
+
+    const projDocker = projectDockerfile();
+    const image = projDocker ? projDocker.imageTag : store.dockerImage || DEFAULT_DOCKER_IMAGE;
+    const checkArgs: Record<string, string> = { image };
+    if (projDocker) checkArgs.dockerfilePath = projDocker.dockerfilePath;
+
+    let cancelled = false;
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(() => {
+      invoke<boolean>(IPC.CheckDockerImageExists, checkArgs).then(
+        (exists) => {
+          if (!cancelled) setDockerImageReady(exists);
+        },
+        () => {
+          if (!cancelled) setDockerImageReady(false);
+        },
+      );
+    }, 300);
+
+    onCleanup(() => {
+      cancelled = true;
+      clearTimeout(checkTimer);
+    });
+  });
+
+  // Auto-scroll build output to bottom
+  createEffect(() => {
+    dockerBuildOutput(); // track
+    if (buildOutputRef) {
+      buildOutputRef.scrollTop = buildOutputRef.scrollHeight;
+    }
+  });
+
+  async function handleBuildImage() {
+    setDockerBuilding(true);
+    setDockerBuildOutput('');
+    setDockerBuildError('');
+
+    const channelId = `docker-build-${Date.now()}`;
+
+    // Listen for build output
+    const cleanup = window.electron.ipcRenderer.on(`channel:${channelId}`, (...args: unknown[]) => {
+      setDockerBuildOutput((prev) => prev + String(args[0] ?? ''));
+    });
+
+    try {
+      const projDocker = projectDockerfile();
+      const buildArgs: Record<string, string> = { onOutputChannel: `channel:${channelId}` };
+      if (projDocker) {
+        buildArgs.dockerfilePath = projDocker.dockerfilePath;
+        buildArgs.imageTag = projDocker.imageTag;
+        buildArgs.buildContext = projDocker.buildContext;
+      }
+      const result = await invoke<{ ok: boolean; error?: string }>(IPC.BuildDockerImage, buildArgs);
+      if (result.ok) {
+        setDockerImageReady(true);
+        setDockerBuildOutput((prev) => prev + '\nImage built successfully!');
+      } else {
+        setDockerBuildError(result.error || 'Build failed');
+      }
+    } catch (err) {
+      setDockerBuildError(String(err));
+    } finally {
+      setDockerBuilding(false);
+      if (cleanup) cleanup();
+    }
+  }
 
   const effectiveName = () => {
     const n = name().trim();
@@ -228,9 +426,9 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     return pid ? getProjectPath(pid) : undefined;
   };
 
-  const directModeDisabled = () => {
+  const directDisabled = () => {
     const pid = selectedProjectId();
-    return pid ? hasDirectModeTask(pid) : false;
+    return pid ? hasDirectTask(pid) : false;
   };
 
   const agentSupportsSkipPermissions = () => {
@@ -271,44 +469,55 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
       // Persist the branch prefix to the project for next time
       updateProject(projectId, { branchPrefix: prefix });
 
-      let taskId: string;
-      if (directMode()) {
+      if (gitIsolation() === 'direct') {
         const projectPath = getProjectPath(projectId);
         if (!projectPath) {
           setError('Project path not found');
           return;
         }
-        const mainBranch = await invoke<string>(IPC.GetMainBranch, { projectRoot: projectPath });
         const currentBranch = await invoke<string>(IPC.GetCurrentBranch, {
           projectRoot: projectPath,
         });
-        if (currentBranch !== mainBranch) {
-          setError(
-            `Repository is on branch "${currentBranch}", not "${mainBranch}". Please checkout ${mainBranch} first.`,
-          );
-          return;
+        if (currentBranch !== baseBranch()) {
+          try {
+            await invoke(IPC.CheckoutBranch, {
+              projectRoot: projectPath,
+              branchName: baseBranch(),
+            });
+          } catch (err) {
+            setError(
+              `Cannot switch to "${baseBranch()}": ${err instanceof Error ? err.message : String(err)}`,
+            );
+            return;
+          }
         }
-        taskId = await createDirectTask({
-          name: n,
-          agentDef: agent,
-          projectId,
-          mainBranch,
-          initialPrompt: isFromDrop ? undefined : p,
-          githubUrl: ghUrl,
-          skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
-        });
-      } else {
-        taskId = await createTask({
-          name: n,
-          agentDef: agent,
-          projectId,
-          symlinkDirs: [...selectedDirs()],
-          initialPrompt: isFromDrop ? undefined : p,
-          branchPrefixOverride: prefix,
-          githubUrl: ghUrl,
-          skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
-        });
       }
+
+      const projDocker = projectDockerfile();
+      const taskId = await createTask({
+        name: n,
+        agentDef: agent,
+        projectId,
+        gitIsolation: gitIsolation(),
+        baseBranch: baseBranch(),
+        symlinkDirs: gitIsolation() === 'worktree' ? [...selectedDirs()] : undefined,
+        branchPrefixOverride: gitIsolation() === 'worktree' ? prefix : undefined,
+        initialPrompt: isFromDrop ? undefined : p,
+        githubUrl: ghUrl,
+        stepsEnabled: stepsEnabled(),
+        skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
+        dockerMode: dockerMode() || undefined,
+        dockerSource: dockerMode()
+          ? projDocker
+            ? 'project'
+            : store.dockerImage && store.dockerImage !== DEFAULT_DOCKER_IMAGE
+              ? 'custom'
+              : 'default'
+          : undefined,
+        dockerImage: dockerMode()
+          ? (projDocker?.imageTag ?? (store.dockerImage || DEFAULT_DOCKER_IMAGE))
+          : undefined,
+      });
       // Drop flow: prefill prompt without auto-sending
       if (isFromDrop && p) {
         setPrefillPrompt(taskId, p);
@@ -322,7 +531,12 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   }
 
   return (
-    <Dialog open={props.open} onClose={props.onClose} width="420px" panelStyle={{ gap: '20px' }}>
+    <Dialog
+      open={props.open}
+      onClose={props.onClose}
+      width={store.availableAgents.length > 8 ? '620px' : '520px'}
+      panelStyle={{ gap: '20px' }}
+    >
       <form
         ref={formRef}
         onSubmit={handleSubmit}
@@ -335,21 +549,14 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
         <div>
           <h2
             style={{
-              margin: '0 0 6px',
-              'font-size': '16px',
+              margin: '0',
+              'font-size': '17px',
               color: theme.fg,
               'font-weight': '600',
             }}
           >
             New Task
           </h2>
-          <p
-            style={{ margin: '0', 'font-size': '12px', color: theme.fgMuted, 'line-height': '1.5' }}
-          >
-            {directMode()
-              ? 'The AI agent will work directly on your main branch in the project root.'
-              : 'Creates a git branch and worktree so the AI agent can work in isolation without affecting your main branch.'}
-          </p>
         </div>
 
         {/* Project selector */}
@@ -357,16 +564,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           data-nav-field="project"
           style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
         >
-          <label
-            style={{
-              'font-size': '11px',
-              color: theme.fgMuted,
-              'text-transform': 'uppercase',
-              'letter-spacing': '0.05em',
-            }}
-          >
-            Project
-          </label>
+          <label style={sectionLabelStyle}>Project</label>
           <ProjectSelect value={selectedProjectId()} onChange={setSelectedProjectId} />
         </div>
 
@@ -375,14 +573,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           data-nav-field="prompt"
           style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
         >
-          <label
-            style={{
-              'font-size': '11px',
-              color: theme.fgMuted,
-              'text-transform': 'uppercase',
-              'letter-spacing': '0.05em',
-            }}
-          >
+          <label style={sectionLabelStyle}>
             Prompt <span style={{ opacity: '0.5', 'text-transform': 'none' }}>(optional)</span>
           </label>
           <textarea
@@ -405,7 +596,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
               'border-radius': '8px',
               padding: '10px 14px',
               color: theme.fg,
-              'font-size': '13px',
+              'font-size': '14px',
               'font-family': "'JetBrains Mono', monospace",
               outline: 'none',
               resize: 'vertical',
@@ -417,14 +608,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           data-nav-field="task-name"
           style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
         >
-          <label
-            style={{
-              'font-size': '11px',
-              color: theme.fgMuted,
-              'text-transform': 'uppercase',
-              'letter-spacing': '0.05em',
-            }}
-          >
+          <label style={sectionLabelStyle}>
             Task name{' '}
             <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
               (optional — derived from prompt)
@@ -442,14 +626,14 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
               'border-radius': '8px',
               padding: '10px 14px',
               color: theme.fg,
-              'font-size': '13px',
+              'font-size': '14px',
               outline: 'none',
             }}
           />
-          <Show when={directMode() && selectedProjectPath()}>
+          <Show when={gitIsolation() === 'direct' && selectedProjectPath()}>
             <div
               style={{
-                'font-size': '11px',
+                'font-size': '12px',
                 'font-family': "'JetBrains Mono', monospace",
                 color: theme.fgSubtle,
                 display: 'flex',
@@ -486,7 +670,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           </Show>
         </div>
 
-        <Show when={!directMode()}>
+        <Show when={gitIsolation() === 'worktree'}>
           <BranchPrefixField
             branchPrefix={branchPrefix()}
             branchPreview={branchPreview()}
@@ -501,95 +685,319 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           onSelect={setSelectedAgent}
         />
 
-        {/* Direct mode toggle */}
+        {/* Isolation mode selector */}
         <div
-          data-nav-field="direct-mode"
+          data-nav-field="git-isolation"
           style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
         >
-          <label
-            style={{
-              display: 'flex',
-              'align-items': 'center',
-              gap: '8px',
-              'font-size': '12px',
-              color: directModeDisabled() ? theme.fgSubtle : theme.fg,
-              cursor: directModeDisabled() ? 'not-allowed' : 'pointer',
-              opacity: directModeDisabled() ? '0.5' : '1',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={directMode()}
-              disabled={directModeDisabled()}
-              onChange={(e) => setDirectMode(e.currentTarget.checked)}
-              style={{ 'accent-color': theme.accent, cursor: 'inherit' }}
-            />
-            Work directly on main branch
-          </label>
-          <Show when={directModeDisabled()}>
-            <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
-              A direct-mode task already exists for this project
+          <label style={sectionLabelStyle}>Git Isolation</label>
+          <SegmentedButtons
+            options={[
+              {
+                value: 'worktree',
+                label: 'Worktree',
+                title:
+                  'Creates a git branch and worktree so the AI agent can work in isolation without affecting your current branch.',
+              },
+              {
+                value: 'direct',
+                label: 'Current Branch',
+                disabled: directDisabled(),
+                title: 'The AI agent will work on your current branch in the project root.',
+              },
+            ]}
+            value={gitIsolation()}
+            onChange={setGitIsolation}
+          />
+          <Show when={directDisabled()}>
+            <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
+              This project already has a task on the current branch
             </span>
           </Show>
-          <Show when={directMode()}>
-            <div
-              style={{
-                'font-size': '12px',
-                color: theme.warning,
-                background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
-                padding: '8px 12px',
-                'border-radius': '8px',
-                border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
-              }}
-            >
-              Changes will be made directly on the main branch without worktree isolation.
+          <Show when={gitIsolation() === 'direct'}>
+            <div style={{ ...bannerStyle(theme.warning), 'font-size': '13px' }}>
+              Changes will be made on the selected branch without worktree isolation.
             </div>
           </Show>
         </div>
 
-        {/* Skip permissions toggle */}
-        <Show when={agentSupportsSkipPermissions()}>
-          <div
-            data-nav-field="skip-permissions"
-            style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
+        {/* Branch picker */}
+        <div
+          data-nav-field="base-branch"
+          style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
+        >
+          <label style={sectionLabelStyle}>
+            {gitIsolation() === 'worktree' ? 'Base branch' : 'Branch'}
+            <Show when={branchesLoading()}>
+              {' '}
+              <span
+                class="inline-spinner"
+                aria-hidden="true"
+                style={{ 'vertical-align': 'middle' }}
+              />
+            </Show>
+          </label>
+          <select
+            class="input-field"
+            value={baseBranch()}
+            onChange={(e) => setBaseBranch(e.currentTarget.value)}
+            disabled={branchesLoading()}
+            style={{
+              background: theme.bgInput,
+              border: `1px solid ${theme.border}`,
+              'border-radius': '8px',
+              padding: '10px 14px',
+              color: theme.fg,
+              'font-size': '14px',
+              'font-family': "'JetBrains Mono', monospace",
+              outline: 'none',
+              opacity: branchesLoading() ? '0.5' : '1',
+            }}
           >
+            <For each={branches()}>{(b) => <option value={b}>{b}</option>}</For>
+          </select>
+        </div>
+
+        {/* Checkboxes group */}
+        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
+          {/* Steps tracking toggle */}
+          <div data-nav-field="steps-enabled">
             <label
+              title="Instructs the agent to append progress entries to .claude/steps.json. Each entry is shown live in the Steps panel as the agent works."
               style={{
                 display: 'flex',
                 'align-items': 'center',
                 gap: '8px',
-                'font-size': '12px',
+                'font-size': '13px',
                 color: theme.fg,
                 cursor: 'pointer',
               }}
             >
               <input
                 type="checkbox"
-                checked={skipPermissions()}
-                onChange={(e) => setSkipPermissions(e.currentTarget.checked)}
+                checked={stepsEnabled()}
+                onChange={(e) => setStepsEnabled(e.currentTarget.checked)}
                 style={{ 'accent-color': theme.accent, cursor: 'inherit' }}
               />
-              Dangerously skip all confirms
+              Steps tracking
             </label>
-            <Show when={skipPermissions()}>
-              <div
+          </div>
+
+          {/* Skip permissions toggle */}
+          <Show when={agentSupportsSkipPermissions()}>
+            <div
+              data-nav-field="skip-permissions"
+              style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
+            >
+              <label
                 style={{
-                  'font-size': '12px',
-                  color: theme.warning,
-                  background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
-                  padding: '8px 12px',
-                  'border-radius': '8px',
-                  border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
+                  display: 'flex',
+                  'align-items': 'center',
+                  gap: '8px',
+                  'font-size': '13px',
+                  color: theme.fg,
+                  cursor: 'pointer',
                 }}
               >
-                The agent will run without asking for confirmation. It can read, write, and delete
-                files, and execute commands without your approval.
-              </div>
-            </Show>
-          </div>
-        </Show>
+                <input
+                  type="checkbox"
+                  checked={skipPermissions()}
+                  onChange={(e) => setSkipPermissions(e.currentTarget.checked)}
+                  style={{ 'accent-color': theme.accent, cursor: 'inherit' }}
+                />
+                Dangerously skip all confirms
+              </label>
+              <Show when={skipPermissions()}>
+                <div
+                  style={{
+                    ...bannerStyle(theme.warning),
+                    'font-size': '13px',
+                  }}
+                >
+                  The agent will run without asking for confirmation. It can read, write, and delete
+                  files, and execute commands without your approval.
+                </div>
+                <Show when={!dockerMode() && store.dockerAvailable}>
+                  <div style={{ 'font-size': '12px', color: theme.fgMuted }}>
+                    Tip: Enable Docker isolation to limit the blast radius of skip-permissions mode.
+                  </div>
+                </Show>
+                <Show when={!store.dockerAvailable}>
+                  <div style={{ 'font-size': '12px', color: theme.fgMuted }}>
+                    Install Docker to enable container isolation for safer skip-permissions mode.
+                  </div>
+                </Show>
+              </Show>
+            </div>
+          </Show>
 
-        <Show when={ignoredDirs().length > 0 && !directMode()}>
+          {/* Docker isolation toggle */}
+          <Show when={store.dockerAvailable}>
+            <div
+              data-nav-field="docker-mode"
+              style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
+            >
+              <label
+                style={{
+                  display: 'flex',
+                  'align-items': 'center',
+                  gap: '8px',
+                  'font-size': '13px',
+                  color: theme.fg,
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={dockerMode()}
+                  onChange={(e) => setDockerMode(e.currentTarget.checked)}
+                  style={{ 'accent-color': theme.accent, cursor: 'inherit' }}
+                />
+                Run in Docker container
+              </label>
+              <Show when={dockerMode()}>
+                <div
+                  style={{
+                    'font-size': '13px',
+                    color: theme.success ?? theme.accent,
+                    background: `color-mix(in srgb, ${theme.success ?? theme.accent} 8%, transparent)`,
+                    padding: '8px 12px',
+                    'border-radius': '8px',
+                    border: `1px solid color-mix(in srgb, ${theme.success ?? theme.accent} 20%, transparent)`,
+                  }}
+                >
+                  The agent will run inside a Docker container. Only the project directory is
+                  mounted — files outside the project are protected from accidental deletion.
+                </div>
+                <Show when={projectDockerfile()}>
+                  <div
+                    style={{
+                      'font-size': '12px',
+                      color: theme.accent,
+                      display: 'flex',
+                      'align-items': 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <span aria-hidden="true">📁</span>
+                    Using project Dockerfile:{' '}
+                    <code style={{ 'font-family': "'JetBrains Mono', monospace" }}>
+                      {PROJECT_DOCKERFILE_RELATIVE_PATH}
+                    </code>
+                  </div>
+                </Show>
+                <Show when={!projectDockerfile()}>
+                  <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+                    <label
+                      style={{ 'font-size': '12px', color: theme.fgMuted, 'white-space': 'nowrap' }}
+                    >
+                      Image:
+                    </label>
+                    <input
+                      type="text"
+                      value={store.dockerImage}
+                      onInput={(e) => setDockerImage(e.currentTarget.value)}
+                      placeholder={DEFAULT_DOCKER_IMAGE}
+                      style={{
+                        flex: '1',
+                        background: theme.bgInput,
+                        border: `1px solid ${theme.border}`,
+                        'border-radius': '6px',
+                        padding: '5px 10px',
+                        color: theme.fg,
+                        'font-size': '13px',
+                        'font-family': "'JetBrains Mono', monospace",
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                </Show>
+                <Show when={dockerImageReady() === false && !dockerBuilding()}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      'align-items': 'center',
+                      gap: '8px',
+                      'font-size': '12px',
+                      color: theme.fgMuted,
+                    }}
+                  >
+                    <span>Image not found locally.</span>
+                    <Show
+                      when={
+                        projectDockerfile() ||
+                        store.dockerImage === DEFAULT_DOCKER_IMAGE ||
+                        !store.dockerImage
+                      }
+                    >
+                      <button
+                        type="button"
+                        onClick={handleBuildImage}
+                        style={{
+                          background: theme.accent,
+                          color: theme.accentText,
+                          border: 'none',
+                          'border-radius': '4px',
+                          padding: '3px 10px',
+                          'font-size': '12px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Build Image
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
+                <Show when={dockerBuilding()}>
+                  <div
+                    style={{
+                      'font-size': '12px',
+                      color: theme.fgMuted,
+                      display: 'flex',
+                      'align-items': 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <span class="inline-spinner" aria-hidden="true" />
+                    Building image... this may take a few minutes.
+                  </div>
+                  <Show when={dockerBuildOutput()}>
+                    <pre
+                      ref={buildOutputRef}
+                      style={{
+                        'font-size': '11px',
+                        color: theme.fgSubtle,
+                        background: theme.bgInput,
+                        'border-radius': '4px',
+                        padding: '6px 8px',
+                        'max-height': '120px',
+                        'overflow-y': 'auto',
+                        'white-space': 'pre-wrap',
+                        'word-break': 'break-all',
+                        margin: '0',
+                      }}
+                    >
+                      {dockerBuildOutput()}
+                    </pre>
+                  </Show>
+                </Show>
+                <Show when={dockerBuildError()}>
+                  <div style={{ 'font-size': '12px', color: theme.error }}>
+                    Build failed: {dockerBuildError()}
+                  </div>
+                </Show>
+                <Show when={dockerImageReady() === true && !dockerBuilding()}>
+                  <div style={{ 'font-size': '12px', color: theme.success ?? theme.accent }}>
+                    {projectDockerfile() ? 'Project image ready.' : 'Image ready.'}
+                  </div>
+                </Show>
+              </Show>
+            </div>
+          </Show>
+        </div>
+        {/* end checkboxes group */}
+
+        <Show when={ignoredDirs().length > 0 && gitIsolation() === 'worktree'}>
           <SymlinkDirPicker
             dirs={ignoredDirs()}
             selectedDirs={selectedDirs()}
@@ -605,12 +1013,8 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
         <Show when={error()}>
           <div
             style={{
-              'font-size': '12px',
-              color: theme.error,
-              background: `color-mix(in srgb, ${theme.error} 8%, transparent)`,
-              padding: '8px 12px',
-              'border-radius': '8px',
-              border: `1px solid color-mix(in srgb, ${theme.error} 20%, transparent)`,
+              ...bannerStyle(theme.error),
+              'font-size': '13px',
             }}
           >
             {error()}
@@ -637,7 +1041,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
               'border-radius': '8px',
               color: theme.fgMuted,
               cursor: 'pointer',
-              'font-size': '13px',
+              'font-size': '14px',
             }}
           >
             Cancel
@@ -653,7 +1057,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
               'border-radius': '8px',
               color: theme.accentText,
               cursor: 'pointer',
-              'font-size': '13px',
+              'font-size': '14px',
               'font-weight': '500',
               opacity: !canSubmit() ? '0.4' : '1',
               display: 'inline-flex',

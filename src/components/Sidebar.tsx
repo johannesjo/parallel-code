@@ -9,6 +9,8 @@ import {
   toggleSidebar,
   reorderTask,
   getTaskDotStatus,
+  getTaskAttentionState,
+  getTaskViewportVisibility,
   registerFocusFn,
   unregisterFocusFn,
   focusSidebar,
@@ -22,6 +24,8 @@ import {
   isProjectMissing,
 } from '../store/store';
 import type { Project } from '../store/types';
+import type { TaskAttentionState } from '../store/store';
+import { computeGroupedTasks } from '../store/sidebar-order';
 import { ConnectPhoneModal } from './ConnectPhoneModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { EditProjectDialog } from './EditProjectDialog';
@@ -42,6 +46,43 @@ const SIDEBAR_MIN_WIDTH = 160;
 const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_SIZE_KEY = 'sidebar:width';
 
+function getAttentionColor(attention: TaskAttentionState): string | null {
+  if (attention === 'active') return theme.accent;
+  if (attention === 'needs_input') return theme.warning;
+  if (attention === 'error') return theme.error;
+  return null;
+}
+
+interface OffscreenAttentionInfo {
+  attention: TaskAttentionState;
+  color: string;
+  label: string | null;
+}
+
+function getOffscreenAttentionInfo(taskId: string): OffscreenAttentionInfo | null {
+  const visibility = getTaskViewportVisibility(taskId);
+  if (!visibility || visibility === 'visible') return null;
+  const attention = getTaskAttentionState(taskId);
+  if (attention === 'idle' || attention === 'ready') return null;
+  const color = getAttentionColor(attention) ?? theme.accent;
+  const side = visibility === 'offscreen-left' ? 'left' : 'right';
+  const prefix = visibility === 'offscreen-left' ? '←' : '→';
+  let label: string | null = null;
+  if (attention === 'needs_input') label = `${prefix} input (${side})`;
+  if (attention === 'error') label = `${prefix} error (${side})`;
+  return { attention, color, label };
+}
+
+function createOffscreenAttentionState(taskId: () => string) {
+  const info = createMemo(() => getOffscreenAttentionInfo(taskId()));
+  return {
+    hasAttention: () => info() !== null,
+    attention: () => info()?.attention,
+    color: () => info()?.color ?? theme.accent,
+    label: () => info()?.label ?? null,
+  };
+}
+
 export function Sidebar() {
   const [confirmRemove, setConfirmRemove] = createSignal<string | null>(null);
   const [editingProject, setEditingProject] = createSignal<Project | null>(null);
@@ -61,27 +102,7 @@ export function Sidebar() {
     store.taskOrder.forEach((taskId, idx) => map.set(taskId, idx));
     return map;
   });
-  const groupedTasks = createMemo(() => {
-    const grouped: Record<string, string[]> = {};
-    const orphaned: string[] = [];
-    const projectIds = new Set(store.projects.map((p) => p.id));
-
-    for (const taskId of store.taskOrder) {
-      const task = store.tasks[taskId];
-      if (!task) continue;
-      const projectId = task.projectId;
-      if (projectId && projectIds.has(projectId)) {
-        (grouped[projectId] ??= []).push(taskId);
-      } else {
-        orphaned.push(taskId);
-      }
-    }
-
-    return { grouped, orphaned };
-  });
-  const collapsedTasks = createMemo(() =>
-    store.collapsedTaskOrder.filter((id) => store.tasks[id]?.collapsed),
-  );
+  const groupedTasks = createMemo(() => computeGroupedTasks());
   function handleResizeMouseDown(e: MouseEvent) {
     e.preventDefault();
     setResizing(true);
@@ -151,11 +172,14 @@ export function Sidebar() {
     const focusedId = store.sidebarFocusedTaskId;
     if (!focusedId || !taskListRef) return;
     const idx = taskIndexById().get(focusedId);
-    if (idx === undefined) return;
-    const el = taskListRef.querySelector<HTMLElement>(
-      `[data-task-index="${CSS.escape(String(idx))}"]`,
-    );
-    el?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+    const el =
+      idx !== undefined
+        ? taskListRef.querySelector<HTMLElement>(`[data-task-index="${CSS.escape(String(idx))}"]`)
+        : taskListRef.querySelector<HTMLElement>(
+            `[data-sidebar-task-id="${CSS.escape(focusedId)}"]`,
+          );
+    if (!el) return;
+    el.scrollIntoView({ block: 'nearest', behavior: 'instant' });
   });
 
   // Scroll the focused project into view when it changes
@@ -187,17 +211,6 @@ export function Sidebar() {
       }
     } catch (err) {
       console.warn('Failed to scan importable worktrees:', err);
-    }
-  }
-
-  function handleRemoveProject(projectId: string) {
-    const hasTasks =
-      store.taskOrder.some((tid) => store.tasks[tid]?.projectId === projectId) ||
-      store.collapsedTaskOrder.some((tid) => store.tasks[tid]?.projectId === projectId);
-    if (hasTasks) {
-      setConfirmRemove(projectId);
-    } else {
-      removeProject(projectId);
     }
   }
 
@@ -324,13 +337,13 @@ export function Sidebar() {
             </svg>
             <span
               style={{
-                'font-size': sf(14),
+                'font-size': sf(15),
                 'font-weight': '600',
                 color: theme.fg,
                 'font-family': "'JetBrains Mono', monospace",
               }}
             >
-              Parallel Code
+              ParallelCode
             </span>
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
@@ -367,7 +380,7 @@ export function Sidebar() {
           >
             <label
               style={{
-                'font-size': sf(11),
+                'font-size': sf(12),
                 color: theme.fgMuted,
                 'text-transform': 'uppercase',
                 'letter-spacing': '0.05em',
@@ -406,7 +419,7 @@ export function Sidebar() {
                   background: isProjectMissing(project.id)
                     ? `color-mix(in srgb, ${theme.warning} 8%, ${theme.bgInput})`
                     : theme.bgInput,
-                  'font-size': sf(11),
+                  'font-size': sf(12),
                   cursor: 'pointer',
                   border:
                     store.sidebarFocused && store.sidebarFocusedProjectId === project.id
@@ -438,7 +451,7 @@ export function Sidebar() {
                   <div
                     style={{
                       color: isProjectMissing(project.id) ? theme.warning : theme.fgSubtle,
-                      'font-size': sf(10),
+                      'font-size': sf(11),
                       'white-space': 'nowrap',
                       overflow: 'hidden',
                       'text-overflow': 'ellipsis',
@@ -453,7 +466,7 @@ export function Sidebar() {
                   class="icon-btn"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleRemoveProject(project.id);
+                    setConfirmRemove(project.id);
                   }}
                   title="Remove project"
                   style={{
@@ -461,7 +474,7 @@ export function Sidebar() {
                     border: 'none',
                     color: theme.fgSubtle,
                     cursor: 'pointer',
-                    'font-size': sf(12),
+                    'font-size': sf(13),
                     'line-height': '1',
                     padding: '0 2px',
                     'flex-shrink': '0',
@@ -474,7 +487,7 @@ export function Sidebar() {
           </For>
 
           <Show when={store.projects.length === 0}>
-            <span style={{ 'font-size': sf(10), color: theme.fgSubtle, padding: '0 2px' }}>
+            <span style={{ 'font-size': sf(11), color: theme.fgSubtle, padding: '0 2px' }}>
               No projects linked yet.
             </span>
           </Show>
@@ -496,7 +509,7 @@ export function Sidebar() {
                 padding: '8px 14px',
                 color: theme.fgMuted,
                 cursor: 'pointer',
-                'font-size': sf(12),
+                'font-size': sf(13),
                 'font-weight': '500',
                 display: 'flex',
                 'align-items': 'center',
@@ -528,7 +541,7 @@ export function Sidebar() {
               padding: '8px 14px',
               color: theme.fgMuted,
               cursor: 'pointer',
-              'font-size': sf(12),
+              'font-size': sf(13),
               'font-weight': '500',
               display: 'flex',
               'align-items': 'center',
@@ -560,9 +573,13 @@ export function Sidebar() {
               }
               const taskId = store.sidebarFocusedTaskId;
               if (taskId) {
-                setActiveTask(taskId);
-                unfocusSidebar();
-                setTaskFocusedPanel(taskId, getTaskFocusedPanel(taskId));
+                if (store.tasks[taskId]?.collapsed) {
+                  uncollapseTask(taskId);
+                } else {
+                  setActiveTask(taskId);
+                  unfocusSidebar();
+                  setTaskFocusedPanel(taskId, getTaskFocusedPanel(taskId));
+                }
               }
             }
           }}
@@ -577,12 +594,15 @@ export function Sidebar() {
         >
           <For each={store.projects}>
             {(project) => {
-              const projectTasks = () => groupedTasks().grouped[project.id] ?? [];
+              const group = () => groupedTasks().grouped[project.id];
+              const activeTasks = () => group()?.active ?? [];
+              const collapsedTasks = () => group()?.collapsed ?? [];
+              const totalCount = () => activeTasks().length + collapsedTasks().length;
               return (
-                <Show when={projectTasks().length > 0}>
+                <Show when={totalCount() > 0}>
                   <span
                     style={{
-                      'font-size': sf(10),
+                      'font-size': sf(11),
                       color: theme.fgSubtle,
                       'text-transform': 'uppercase',
                       'letter-spacing': '0.05em',
@@ -603,9 +623,9 @@ export function Sidebar() {
                         'flex-shrink': '0',
                       }}
                     />
-                    {project.name} ({projectTasks().length})
+                    {project.name} ({totalCount()})
                   </span>
-                  <For each={projectTasks()}>
+                  <For each={activeTasks()}>
                     {(taskId) => (
                       <TaskRow
                         taskId={taskId}
@@ -615,16 +635,23 @@ export function Sidebar() {
                       />
                     )}
                   </For>
+                  <For each={collapsedTasks()}>
+                    {(taskId) => <CollapsedTaskRow taskId={taskId} />}
+                  </For>
                 </Show>
               );
             }}
           </For>
 
           {/* Orphaned tasks (no matching project) */}
-          <Show when={groupedTasks().orphaned.length > 0}>
+          <Show
+            when={
+              groupedTasks().orphanedActive.length + groupedTasks().orphanedCollapsed.length > 0
+            }
+          >
             <span
               style={{
-                'font-size': sf(10),
+                'font-size': sf(11),
                 color: theme.fgSubtle,
                 'text-transform': 'uppercase',
                 'letter-spacing': '0.05em',
@@ -633,9 +660,10 @@ export function Sidebar() {
                 padding: '0 2px',
               }}
             >
-              Other ({groupedTasks().orphaned.length})
+              Other (
+              {groupedTasks().orphanedActive.length + groupedTasks().orphanedCollapsed.length})
             </span>
-            <For each={groupedTasks().orphaned}>
+            <For each={groupedTasks().orphanedActive}>
               {(taskId) => (
                 <TaskRow
                   taskId={taskId}
@@ -645,83 +673,8 @@ export function Sidebar() {
                 />
               )}
             </For>
-          </Show>
-
-          <Show when={collapsedTasks().length > 0}>
-            <span
-              style={{
-                'font-size': sf(10),
-                color: theme.fgSubtle,
-                'text-transform': 'uppercase',
-                'letter-spacing': '0.05em',
-                'margin-top': '8px',
-                'margin-bottom': '4px',
-                padding: '0 2px',
-              }}
-            >
-              Collapsed ({collapsedTasks().length})
-            </span>
-            <For each={collapsedTasks()}>
-              {(taskId) => {
-                const task = () => store.tasks[taskId];
-                return (
-                  <Show when={task()}>
-                    {(t) => (
-                      <div
-                        class="task-item task-item-appearing"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => uncollapseTask(taskId)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            uncollapseTask(taskId);
-                          }
-                        }}
-                        title="Click to restore"
-                        style={{
-                          padding: '7px 10px',
-                          'border-radius': '6px',
-                          background: 'transparent',
-                          color: theme.fgSubtle,
-                          'font-size': sf(12),
-                          'font-weight': '400',
-                          cursor: 'pointer',
-                          'white-space': 'nowrap',
-                          overflow: 'hidden',
-                          'text-overflow': 'ellipsis',
-                          opacity: '0.6',
-                          display: 'flex',
-                          'align-items': 'center',
-                          gap: '6px',
-                          border: '1.5px solid transparent',
-                        }}
-                      >
-                        <StatusDot status={getTaskDotStatus(taskId)} size="sm" />
-                        <Show when={t().directMode}>
-                          <span
-                            style={{
-                              'font-size': sf(10),
-                              'font-weight': '600',
-                              padding: '1px 5px',
-                              'border-radius': '3px',
-                              background: `color-mix(in srgb, ${theme.warning} 12%, transparent)`,
-                              color: theme.warning,
-                              'flex-shrink': '0',
-                              'line-height': '1.5',
-                            }}
-                          >
-                            {t().branchName}
-                          </span>
-                        </Show>
-                        <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
-                          {t().name}
-                        </span>
-                      </div>
-                    )}
-                  </Show>
-                );
-              }}
+            <For each={groupedTasks().orphanedCollapsed}>
+              {(taskId) => <CollapsedTaskRow taskId={taskId} />}
             </For>
           </Show>
 
@@ -748,7 +701,7 @@ export function Sidebar() {
                 border: `1px solid ${connected() ? theme.success : theme.border}`,
                 'border-radius': '8px',
                 color: accent(),
-                'font-size': sf(12),
+                'font-size': sf(13),
                 cursor: 'pointer',
                 'flex-shrink': '0',
               }}
@@ -788,23 +741,38 @@ export function Sidebar() {
         />
 
         {/* Confirm remove project dialog */}
-        <ConfirmDialog
-          open={confirmRemove() !== null}
-          title="Remove project?"
-          message={`This project has ${
-            [...store.taskOrder, ...store.collapsedTaskOrder].filter(
-              (tid) => store.tasks[tid]?.projectId === confirmRemove(),
-            ).length
-          } open task(s). Removing it will also close all tasks, delete their worktrees and branches.`}
-          confirmLabel="Remove all"
-          danger
-          onConfirm={() => {
-            const id = confirmRemove();
-            if (id) removeProjectWithTasks(id);
-            setConfirmRemove(null);
-          }}
-          onCancel={() => setConfirmRemove(null)}
-        />
+        {(() => {
+          const id = confirmRemove();
+          const taskCount = id
+            ? [...store.taskOrder, ...store.collapsedTaskOrder].filter(
+                (tid) => store.tasks[tid]?.projectId === id,
+              ).length
+            : 0;
+          return (
+            <ConfirmDialog
+              open={id !== null}
+              title="Remove project?"
+              message={
+                taskCount > 0
+                  ? `This project has ${taskCount} open task(s). Removing it will also close all tasks, delete their worktrees and branches.`
+                  : 'Are you sure you want to remove this project?'
+              }
+              confirmLabel={taskCount > 0 ? 'Remove all' : 'Remove'}
+              danger
+              onConfirm={() => {
+                if (id) {
+                  if (taskCount > 0) {
+                    removeProjectWithTasks(id);
+                  } else {
+                    removeProject(id);
+                  }
+                }
+                setConfirmRemove(null);
+              }}
+              onCancel={() => setConfirmRemove(null)}
+            />
+          );
+        })()}
       </div>
       {/* Resize handle */}
       <div
@@ -812,6 +780,108 @@ export function Sidebar() {
         onMouseDown={handleResizeMouseDown}
       />
     </div>
+  );
+}
+
+function CurrentBranchBadge(props: { branchName: string }) {
+  return (
+    <span
+      style={{
+        'font-size': sf(11),
+        'font-weight': '600',
+        padding: '1px 5px',
+        'border-radius': '3px',
+        background: `color-mix(in srgb, ${theme.warning} 12%, transparent)`,
+        color: theme.warning,
+        'flex-shrink': '0',
+        'line-height': '1.5',
+      }}
+    >
+      {props.branchName}
+    </span>
+  );
+}
+
+function OffscreenAttentionBadge(props: { taskId: string }) {
+  const offscreenAttention = createOffscreenAttentionState(() => props.taskId);
+  return (
+    <Show when={offscreenAttention.label()}>
+      {(text) => (
+        <span
+          class="sidebar-offscreen-attention-badge"
+          title={text()}
+          style={{
+            color: offscreenAttention.color(),
+            border: `1px solid color-mix(in srgb, ${offscreenAttention.color()} 30%, transparent)`,
+            background: `color-mix(in srgb, ${offscreenAttention.color()} 10%, transparent)`,
+          }}
+        >
+          {text()}
+        </span>
+      )}
+    </Show>
+  );
+}
+
+function CollapsedTaskRow(props: { taskId: string }) {
+  const task = () => store.tasks[props.taskId];
+  const offscreenAttention = createOffscreenAttentionState(() => props.taskId);
+  return (
+    <Show when={task()}>
+      {(t) => (
+        <div
+          class="task-item task-item-appearing"
+          role="button"
+          tabIndex={0}
+          data-sidebar-task-id={props.taskId}
+          onClick={() => uncollapseTask(props.taskId)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              uncollapseTask(props.taskId);
+            }
+          }}
+          title="Click to restore"
+          style={{
+            padding: '7px 10px',
+            'border-radius': '6px',
+            background: offscreenAttention.hasAttention()
+              ? `color-mix(in srgb, ${offscreenAttention.color()} 10%, transparent)`
+              : 'transparent',
+            color: offscreenAttention.hasAttention() ? theme.fg : theme.fgSubtle,
+            'font-size': sf(13),
+            'font-weight': '400',
+            cursor: 'pointer',
+            'white-space': 'nowrap',
+            overflow: 'hidden',
+            'text-overflow': 'ellipsis',
+            opacity: offscreenAttention.hasAttention() ? '1' : '0.6',
+            display: 'flex',
+            'align-items': 'center',
+            gap: '6px',
+            border:
+              store.sidebarFocused && store.sidebarFocusedTaskId === props.taskId
+                ? `1.5px solid var(--border-focus)`
+                : offscreenAttention.hasAttention()
+                  ? `1.5px solid color-mix(in srgb, ${offscreenAttention.color()} 38%, transparent)`
+                  : '1.5px solid transparent',
+          }}
+        >
+          <StatusDot
+            status={getTaskDotStatus(props.taskId)}
+            size="sm"
+            attention={offscreenAttention.attention()}
+          />
+          <Show when={t().gitIsolation === 'direct'}>
+            <CurrentBranchBadge branchName={t().branchName} />
+          </Show>
+          <span style={{ flex: '1', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
+            {t().name}
+          </span>
+          <OffscreenAttentionBadge taskId={props.taskId} />
+        </div>
+      )}
+    </Show>
   );
 }
 
@@ -825,6 +895,7 @@ interface TaskRowProps {
 function TaskRow(props: TaskRowProps) {
   const task = () => store.tasks[props.taskId];
   const idx = () => props.globalIndex(props.taskId);
+  const offscreenAttention = createOffscreenAttentionState(() => props.taskId);
   return (
     <Show when={task()}>
       {(t) => (
@@ -842,10 +913,18 @@ function TaskRow(props: TaskRowProps) {
             style={{
               padding: '7px 10px',
               'border-radius': '6px',
-              background: 'transparent',
-              color: store.activeTaskId === props.taskId ? theme.fg : theme.fgMuted,
-              'font-size': sf(12),
-              'font-weight': store.activeTaskId === props.taskId ? '500' : '400',
+              background: offscreenAttention.hasAttention()
+                ? `color-mix(in srgb, ${offscreenAttention.color()} 10%, transparent)`
+                : 'transparent',
+              color:
+                store.activeTaskId === props.taskId || offscreenAttention.hasAttention()
+                  ? theme.fg
+                  : theme.fgMuted,
+              'font-size': sf(13),
+              'font-weight':
+                store.activeTaskId === props.taskId || offscreenAttention.hasAttention()
+                  ? '500'
+                  : '400',
               cursor: props.dragFromIndex() !== null ? 'grabbing' : 'pointer',
               'white-space': 'nowrap',
               overflow: 'hidden',
@@ -857,14 +936,20 @@ function TaskRow(props: TaskRowProps) {
               border:
                 store.sidebarFocused && store.sidebarFocusedTaskId === props.taskId
                   ? `1.5px solid var(--border-focus)`
-                  : '1.5px solid transparent',
+                  : offscreenAttention.hasAttention()
+                    ? `1.5px solid color-mix(in srgb, ${offscreenAttention.color()} 38%, transparent)`
+                    : '1.5px solid transparent',
             }}
           >
-            <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" />
-            <Show when={t().directMode}>
+            <StatusDot
+              status={getTaskDotStatus(props.taskId)}
+              size="sm"
+              attention={offscreenAttention.attention()}
+            />
+            <Show when={t().gitIsolation === 'direct'}>
               <span
                 style={{
-                  'font-size': sf(10),
+                  'font-size': sf(11),
                   'font-weight': '600',
                   padding: '1px 5px',
                   'border-radius': '3px',
@@ -877,7 +962,10 @@ function TaskRow(props: TaskRowProps) {
                 {t().branchName}
               </span>
             </Show>
-            <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis' }}>{t().name}</span>
+            <span style={{ flex: '1', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
+              {t().name}
+            </span>
+            <OffscreenAttentionBadge taskId={props.taskId} />
           </div>
         </>
       )}

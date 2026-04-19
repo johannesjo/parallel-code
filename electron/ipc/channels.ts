@@ -17,6 +17,8 @@ export enum IPC {
   // Git
   GetChangedFiles = 'get_changed_files',
   GetChangedFilesFromBranch = 'get_changed_files_from_branch',
+  GetAllFileDiffs = 'get_all_file_diffs',
+  GetAllFileDiffsFromBranch = 'get_all_file_diffs_from_branch',
   GetFileDiff = 'get_file_diff',
   GetFileDiffFromBranch = 'get_file_diff_from_branch',
   GetGitignoredDirs = 'get_gitignored_dirs',
@@ -29,8 +31,14 @@ export enum IPC {
   RebaseTask = 'rebase_task',
   GetMainBranch = 'get_main_branch',
   GetCurrentBranch = 'get_current_branch',
+  CheckoutBranch = 'checkout_branch',
+  GetBranches = 'get_branches',
+  CheckIsGitRepo = 'check_is_git_repo',
   CommitAll = 'commit_all',
   DiscardUncommitted = 'discard_uncommitted',
+  GetBranchCommits = 'get_branch_commits',
+  GetCommitChangedFiles = 'get_commit_changed_files',
+  GetCommitDiffs = 'get_commit_diffs',
 
   // Persistence
   SaveAppState = 'save_app_state',
@@ -79,4 +87,35 @@ export enum IPC {
 
   // Plan
   PlanContent = 'plan_content',
+  ReadPlanContent = 'read_plan_content',
+  StopPlanWatcher = 'stop_plan_watcher',
+
+  // Steps
+  StepsContent = 'steps_content',
+  ReadStepsContent = 'read_steps_content',
+  StopStepsWatcher = 'stop_steps_watcher',
+
+  // Ask about code
+  AskAboutCode = 'ask_about_code',
+  CancelAskAboutCode = 'cancel_ask_about_code',
+
+  // Docker
+  CheckDockerAvailable = 'check_docker_available',
+  CheckDockerImageExists = 'check_docker_image_exists',
+  BuildDockerImage = 'build_docker_image',
+  ResolveProjectDockerfile = 'resolve_project_dockerfile',
+
+  // System
+  GetSystemFonts = 'get_system_fonts',
+
+  // File links
+  OpenPath = 'open_path',
+  ReadFileText = 'read_file_text',
+
+  // Clipboard
+  SaveClipboardImage = 'save_clipboard_image',
+
+  // Notifications
+  ShowNotification = 'show_notification',
+  NotificationClicked = 'notification_clicked',
 }

@@ -39,6 +39,7 @@ const SECTIONS = [
       [`${mod} + Shift + A`, 'New task'],
       [`${mod} + B`, 'Toggle sidebar'],
       [`${mod} + ,`, 'Open settings'],
+      [`${mod} + = / ${mod} + -`, 'Zoom in / out'],
       [`${mod} + 0`, 'Reset zoom'],
       ['Ctrl + Shift + Scroll', 'Resize all panel widths'],
       [`${mod} + / or F1`, 'Toggle this help'],
@@ -57,7 +58,7 @@ export function HelpDialog(props: HelpDialogProps) {
           'justify-content': 'space-between',
         }}
       >
-        <h2 style={{ margin: '0', 'font-size': '16px', color: theme.fg, 'font-weight': '600' }}>
+        <h2 style={{ margin: '0', 'font-size': '17px', color: theme.fg, 'font-weight': '600' }}>
           Keyboard Shortcuts
         </h2>
         <button
@@ -67,7 +68,7 @@ export function HelpDialog(props: HelpDialogProps) {
             border: 'none',
             color: theme.fgMuted,
             cursor: 'pointer',
-            'font-size': '18px',
+            'font-size': '19px',
             padding: '0 4px',
             'line-height': '1',
           }}
@@ -81,7 +82,7 @@ export function HelpDialog(props: HelpDialogProps) {
           <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
             <div
               style={{
-                'font-size': '11px',
+                'font-size': '12px',
                 color: theme.fgMuted,
                 'text-transform': 'uppercase',
                 'letter-spacing': '0.05em',
@@ -100,14 +101,14 @@ export function HelpDialog(props: HelpDialogProps) {
                     padding: '4px 0',
                   }}
                 >
-                  <span style={{ color: theme.fgMuted, 'font-size': '12px' }}>{desc}</span>
+                  <span style={{ color: theme.fgMuted, 'font-size': '13px' }}>{desc}</span>
                   <kbd
                     style={{
                       background: theme.bgInput,
                       border: `1px solid ${theme.border}`,
                       'border-radius': '4px',
                       padding: '2px 8px',
-                      'font-size': '11px',
+                      'font-size': '12px',
                       color: theme.fg,
                       'font-family': "'JetBrains Mono', monospace",
                       'white-space': 'nowrap',

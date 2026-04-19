@@ -40,7 +40,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       <h2
         style={{
           margin: '0',
-          'font-size': '16px',
+          'font-size': '17px',
           color: theme.fg,
           'font-weight': '600',
         }}
@@ -48,7 +48,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         {props.title}
       </h2>
 
-      <div style={{ 'font-size': '13px', color: theme.fgMuted, 'line-height': '1.5' }}>
+      <div style={{ 'font-size': '14px', color: theme.fgMuted, 'line-height': '1.5' }}>
         {props.message}
       </div>
 
@@ -72,7 +72,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             'border-radius': '8px',
             color: theme.fgMuted,
             cursor: 'pointer',
-            'font-size': '13px',
+            'font-size': '14px',
           }}
         >
           {props.cancelLabel ?? 'Cancel'}
@@ -89,7 +89,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             'border-radius': '8px',
             color: props.danger ? '#fff' : theme.accentText,
             cursor: props.confirmDisabled ? 'not-allowed' : 'pointer',
-            'font-size': '13px',
+            'font-size': '14px',
             'font-weight': '500',
             opacity: props.confirmDisabled ? '0.5' : '1',
             display: 'inline-flex',

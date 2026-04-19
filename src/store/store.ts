@@ -26,13 +26,13 @@ export {
 } from './agents';
 export {
   createTask,
-  createDirectTask,
   createImportedTask,
   closeTask,
   retryCloseTask,
   mergeTask,
   pushTask,
   updateTaskName,
+  updateTaskBranch,
   updateTaskNotes,
   sendPrompt,
   setLastPrompt,
@@ -43,13 +43,16 @@ export {
   spawnShellForTask,
   runBookmarkInTask,
   closeShell,
-  hasDirectModeTask,
+  hasDirectTask,
   collapseTask,
   uncollapseTask,
   getGitHubDropDefaults,
   setNewTaskDropUrl,
   setNewTaskPrefillPrompt,
   setPlanContent,
+  setStepsContent,
+  setTaskStepsEnabled,
+  setTaskLastInputAt,
 } from './tasks';
 export {
   setActiveTask,
@@ -80,29 +83,35 @@ export {
   sendActivePrompt,
   setSidebarFocusedProjectId,
 } from './focus';
-export type { PanelId, PendingAction } from './types';
+export type { PanelId, PendingAction, TaskViewportVisibility } from './types';
 export { saveState, loadState } from './persistence';
 export {
-  getFontScale,
-  adjustFontScale,
-  resetFontScale,
   getGlobalScale,
   adjustGlobalScale,
   resetGlobalScale,
   getPanelSize,
   setPanelSizes,
+  getTaskViewportVisibility,
+  setTaskViewportVisibility,
   toggleSidebar,
   toggleArena,
   setTerminalFont,
   setThemePreset,
   setAutoTrustFolders,
   setShowPlans,
+  setShowPromptInput,
+  setFontSmoothing,
+  setDesktopNotificationsEnabled,
   setInactiveColumnOpacity,
   setEditorCommand,
+  setDockerImage,
+  setDockerAvailable,
   setWindowState,
 } from './ui';
 export {
   getTaskDotStatus,
+  getTaskAttentionState,
+  taskNeedsAttention,
   markAgentOutput,
   clearAgentActivity,
   getAgentOutputTail,
@@ -110,6 +119,7 @@ export {
   onAgentReady,
   offAgentReady,
   normalizeForComparison,
+  normalizeCurrentFrame,
   looksLikeQuestion,
   isTrustQuestionAutoHandled,
   isAutoTrustSettling,
@@ -118,7 +128,7 @@ export {
   stopTaskStatusPolling,
   rescheduleTaskStatusPolling,
 } from './taskStatus';
-export type { TaskDotStatus } from './taskStatus';
+export type { TaskAttentionState, TaskDotStatus } from './taskStatus';
 export { showNotification, clearNotification } from './notification';
 export { getCompletedTasksTodayCount, getMergedLineTotals } from './completion';
 export {
