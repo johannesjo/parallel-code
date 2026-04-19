@@ -26,6 +26,7 @@ export {
 } from './agents';
 export {
   createTask,
+  createImportedTask,
   closeTask,
   retryCloseTask,
   mergeTask,
@@ -49,6 +50,9 @@ export {
   setNewTaskDropUrl,
   setNewTaskPrefillPrompt,
   setPlanContent,
+  setStepsContent,
+  setTaskStepsEnabled,
+  setTaskLastInputAt,
 } from './tasks';
 export {
   setActiveTask,
@@ -79,33 +83,38 @@ export {
   sendActivePrompt,
   setSidebarFocusedProjectId,
 } from './focus';
-export type { PanelId, PendingAction } from './types';
+export type { PanelId, PendingAction, TaskViewportVisibility } from './types';
 export { saveState, loadState } from './persistence';
 export {
-  getFontScale,
-  adjustFontScale,
-  resetFontScale,
   getGlobalScale,
   adjustGlobalScale,
   resetGlobalScale,
   getPanelSize,
   setPanelSizes,
+  getTaskViewportVisibility,
+  setTaskViewportVisibility,
   toggleSidebar,
   toggleArena,
+  toggleFocusMode,
   setTerminalFont,
   setThemePreset,
   setAutoTrustFolders,
   setShowPlans,
   setShowPromptInput,
+  setFontSmoothing,
   setDesktopNotificationsEnabled,
   setInactiveColumnOpacity,
   setEditorCommand,
   setDockerImage,
   setDockerAvailable,
+  setAskCodeProvider,
+  setMinimaxApiKey,
   setWindowState,
 } from './ui';
 export {
   getTaskDotStatus,
+  getTaskAttentionState,
+  taskNeedsAttention,
   markAgentOutput,
   clearAgentActivity,
   getAgentOutputTail,
@@ -113,6 +122,7 @@ export {
   onAgentReady,
   offAgentReady,
   normalizeForComparison,
+  normalizeCurrentFrame,
   looksLikeQuestion,
   isTrustQuestionAutoHandled,
   isAutoTrustSettling,
@@ -121,7 +131,7 @@ export {
   stopTaskStatusPolling,
   rescheduleTaskStatusPolling,
 } from './taskStatus';
-export type { TaskDotStatus } from './taskStatus';
+export type { TaskAttentionState, TaskDotStatus } from './taskStatus';
 export { showNotification, clearNotification } from './notification';
 export { getCompletedTasksTodayCount, getMergedLineTotals } from './completion';
 export {

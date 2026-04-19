@@ -14,6 +14,7 @@ import type {
   Project,
 } from './types';
 import type { AgentDef } from '../ipc/types';
+import { inferDockerSource } from '../lib/docker';
 import { DEFAULT_TERMINAL_FONT } from '../lib/fonts';
 import { isLookPreset } from '../lib/look';
 import { syncTerminalCounter } from './terminals';
@@ -39,7 +40,6 @@ export async function saveState(): Promise<void> {
     tasks: {},
     activeTaskId: store.activeTaskId,
     sidebarVisible: store.sidebarVisible,
-    fontScales: { ...store.fontScales },
     panelSizes: { ...store.panelSizes },
     globalScale: store.globalScale,
     completedTaskDate: store.completedTaskDate,
@@ -49,15 +49,19 @@ export async function saveState(): Promise<void> {
     terminalFont: store.terminalFont,
     themePreset: store.themePreset,
     showPromptInput: store.showPromptInput,
+    fontSmoothing: store.fontSmoothing,
     windowState: store.windowState ? { ...store.windowState } : undefined,
     autoTrustFolders: store.autoTrustFolders,
     showPlans: store.showPlans,
+    showSteps: store.showSteps,
     desktopNotificationsEnabled: store.desktopNotificationsEnabled,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand || undefined,
     dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
+    askCodeProvider: store.askCodeProvider !== 'claude' ? store.askCodeProvider : undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
     keybindingMigrationDismissed: store.keybindingMigrationDismissed || undefined,
+    focusMode: store.focusMode || undefined,
   };
 
   for (const taskId of store.taskOrder) {
@@ -78,12 +82,15 @@ export async function saveState(): Promise<void> {
       agentDef: firstAgent?.def ?? null,
       gitIsolation: task.gitIsolation,
       baseBranch: task.baseBranch,
+      externalWorktree: task.externalWorktree,
       skipPermissions: task.skipPermissions,
       dockerMode: task.dockerMode,
+      dockerSource: task.dockerSource,
       dockerImage: task.dockerImage,
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
+      stepsEnabled: task.stepsEnabled,
     };
   }
 
@@ -105,12 +112,15 @@ export async function saveState(): Promise<void> {
       agentDef: firstAgent?.def ?? task.savedAgentDef ?? null,
       gitIsolation: task.gitIsolation,
       baseBranch: task.baseBranch,
+      externalWorktree: task.externalWorktree,
       skipPermissions: task.skipPermissions,
       dockerMode: task.dockerMode,
+      dockerSource: task.dockerSource,
       dockerImage: task.dockerImage,
       githubUrl: task.githubUrl,
       savedInitialPrompt: task.savedInitialPrompt,
       planFileName: task.planFileName,
+      stepsEnabled: task.stepsEnabled,
       collapsed: true,
     };
   }
@@ -180,7 +190,6 @@ interface LegacyPersistedState {
   activeTaskId: string | null;
   sidebarVisible: boolean;
   // Fields that may be present in newer state files (validated at runtime)
-  fontScales?: unknown;
   panelSizes?: unknown;
   globalScale?: unknown;
   completedTaskDate?: unknown;
@@ -190,16 +199,21 @@ interface LegacyPersistedState {
   terminalFont?: unknown;
   themePreset?: unknown;
   showPromptInput?: unknown;
+  fontSmoothing?: unknown;
   windowState?: unknown;
   autoTrustFolders?: unknown;
   showPlans?: unknown;
+  showSteps?: unknown;
   desktopNotificationsEnabled?: unknown;
   inactiveColumnOpacity?: unknown;
   editorCommand?: unknown;
   dockerImage?: unknown;
+  askCodeProvider?: unknown;
+  minimaxApiKey?: unknown;
   customAgents?: unknown;
   terminals?: unknown;
   keybindingMigrationDismissed?: unknown;
+  focusMode?: unknown;
 }
 
 export async function loadState(): Promise<void> {
@@ -269,7 +283,6 @@ export async function loadState(): Promise<void> {
       s.taskOrder = raw.taskOrder;
       s.activeTaskId = raw.activeTaskId;
       s.sidebarVisible = raw.sidebarVisible;
-      s.fontScales = isStringNumberRecord(raw.fontScales) ? raw.fontScales : {};
       s.panelSizes = isStringNumberRecord(raw.panelSizes) ? raw.panelSizes : {};
       s.globalScale = typeof raw.globalScale === 'number' ? raw.globalScale : 1;
       const completedTaskDate =
@@ -302,9 +315,11 @@ export async function loadState(): Promise<void> {
           : DEFAULT_TERMINAL_FONT;
       s.themePreset = isLookPreset(raw.themePreset) ? raw.themePreset : 'minimal';
       s.showPromptInput = typeof raw.showPromptInput === 'boolean' ? raw.showPromptInput : true;
+      s.fontSmoothing = typeof raw.fontSmoothing === 'boolean' ? raw.fontSmoothing : true;
       s.windowState = parsePersistedWindowState(raw.windowState);
       s.autoTrustFolders = typeof raw.autoTrustFolders === 'boolean' ? raw.autoTrustFolders : false;
       s.showPlans = typeof raw.showPlans === 'boolean' ? raw.showPlans : true;
+      s.showSteps = typeof raw.showSteps === 'boolean' ? raw.showSteps : false;
       s.desktopNotificationsEnabled =
         typeof raw.desktopNotificationsEnabled === 'boolean'
           ? raw.desktopNotificationsEnabled
@@ -321,11 +336,15 @@ export async function loadState(): Promise<void> {
       const rawEditorCommand = raw.editorCommand;
       s.editorCommand = typeof rawEditorCommand === 'string' ? rawEditorCommand.trim() : '';
 
+      s.focusMode = raw.focusMode === true;
+
       const rawDockerImage = raw.dockerImage;
       s.dockerImage =
         typeof rawDockerImage === 'string' && rawDockerImage.trim()
           ? rawDockerImage.trim()
           : 'parallel-code-agent:latest';
+
+      s.askCodeProvider = raw.askCodeProvider === 'minimax' ? 'minimax' : 'claude';
 
       // Restore custom agents
       if (Array.isArray(raw.customAgents)) {
@@ -377,12 +396,19 @@ export async function loadState(): Promise<void> {
           lastPrompt: pt.lastPrompt,
           gitIsolation: legacy.gitIsolation ?? (legacy.directMode ? 'direct' : 'worktree'),
           baseBranch: legacy.baseBranch || undefined,
+          externalWorktree: pt.externalWorktree,
           skipPermissions: pt.skipPermissions === true,
           dockerMode: pt.dockerMode === true ? true : undefined,
+          dockerSource:
+            pt.dockerMode === true
+              ? (pt.dockerSource ??
+                inferDockerSource(typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined))
+              : undefined,
           dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,
+          stepsEnabled: pt.stepsEnabled,
         };
 
         s.tasks[taskId] = task;
@@ -439,12 +465,19 @@ export async function loadState(): Promise<void> {
           gitIsolation:
             legacyCollapsed.gitIsolation ?? (legacyCollapsed.directMode ? 'direct' : 'worktree'),
           baseBranch: legacyCollapsed.baseBranch || undefined,
+          externalWorktree: pt.externalWorktree,
           skipPermissions: pt.skipPermissions === true,
           dockerMode: pt.dockerMode === true ? true : undefined,
+          dockerSource:
+            pt.dockerMode === true
+              ? (pt.dockerSource ??
+                inferDockerSource(typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined))
+              : undefined,
           dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
           githubUrl: pt.githubUrl,
           savedInitialPrompt: pt.savedInitialPrompt,
           planFileName: pt.planFileName,
+          stepsEnabled: pt.stepsEnabled,
           collapsed: true,
           savedAgentDef: agentDef ?? undefined,
         };
@@ -456,6 +489,18 @@ export async function loadState(): Promise<void> {
       // Defensive: ensure no task appears in both arrays (corrupted state)
       const activeSet = new Set(s.taskOrder);
       s.collapsedTaskOrder = s.collapsedTaskOrder.filter((id) => !activeSet.has(id));
+
+      // Focus mode requires a valid active panel; without one, every panel is
+      // hidden and the strip reads blank. Repair or drop focus mode.
+      if (s.focusMode) {
+        const activeValid =
+          s.activeTaskId !== null &&
+          (s.tasks[s.activeTaskId] !== undefined || s.terminals[s.activeTaskId] !== undefined);
+        if (!activeValid) {
+          s.activeTaskId = s.taskOrder[0] ?? null;
+          if (s.activeTaskId === null) s.focusMode = false;
+        }
+      }
 
       // Set activeAgentId from the active task
       if (s.activeTaskId && s.tasks[s.activeTaskId]) {

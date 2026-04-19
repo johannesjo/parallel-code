@@ -1,4 +1,5 @@
-import type { AgentDef, WorktreeStatus } from '../ipc/types';
+import type { AgentDef, StepEntry, WorktreeStatus } from '../ipc/types';
+import type { DockerSource } from '../lib/docker';
 import type { LookPreset } from '../lib/look';
 import type { KeyBinding } from '../lib/keybindings';
 
@@ -6,6 +7,8 @@ import type { KeyBinding } from '../lib/keybindings';
 export type KeybindingOverride = Partial<Pick<KeyBinding, 'key' | 'modifiers'>> | null;
 
 export type GitIsolationMode = 'worktree' | 'direct';
+
+export type TaskViewportVisibility = 'visible' | 'offscreen-left' | 'offscreen-right';
 
 export interface TerminalBookmark {
   id: string;
@@ -53,14 +56,19 @@ export interface Task {
   closingError?: string;
   gitIsolation: GitIsolationMode;
   baseBranch?: string;
+  externalWorktree?: boolean;
   skipPermissions?: boolean;
   dockerMode?: boolean;
+  dockerSource?: DockerSource;
   dockerImage?: string;
   githubUrl?: string;
   collapsed?: boolean;
   savedAgentDef?: AgentDef;
   planContent?: string;
   planFileName?: string;
+  stepsEnabled?: boolean;
+  stepsContent?: StepEntry[];
+  lastInputAt?: string;
 }
 
 export interface Terminal {
@@ -82,13 +90,16 @@ export interface PersistedTask {
   agentDef: AgentDef | null;
   gitIsolation: GitIsolationMode;
   baseBranch?: string;
+  externalWorktree?: boolean;
   skipPermissions?: boolean;
   dockerMode?: boolean;
+  dockerSource?: DockerSource;
   dockerImage?: string;
   githubUrl?: string;
   savedInitialPrompt?: string;
   collapsed?: boolean;
   planFileName?: string;
+  stepsEnabled?: boolean;
 }
 
 export interface PersistedTerminal {
@@ -114,7 +125,6 @@ export interface PersistedState {
   terminals?: Record<string, PersistedTerminal>;
   activeTaskId: string | null;
   sidebarVisible: boolean;
-  fontScales?: Record<string, number>;
   panelSizes?: Record<string, number>;
   globalScale?: number;
   completedTaskDate?: string;
@@ -124,15 +134,19 @@ export interface PersistedState {
   terminalFont?: string;
   themePreset?: LookPreset;
   showPromptInput?: boolean;
+  fontSmoothing?: boolean;
   windowState?: PersistedWindowState;
   autoTrustFolders?: boolean;
   showPlans?: boolean;
+  showSteps?: boolean;
   desktopNotificationsEnabled?: boolean;
   inactiveColumnOpacity?: number;
   editorCommand?: string;
   dockerImage?: string;
+  askCodeProvider?: 'claude' | 'minimax';
   customAgents?: AgentDef[];
   keybindingMigrationDismissed?: boolean;
+  focusMode?: boolean;
 }
 
 // Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.
@@ -169,10 +183,10 @@ export interface AppStore {
   customAgents: AgentDef[];
   showNewTaskDialog: boolean;
   sidebarVisible: boolean;
-  fontScales: Record<string, number>;
   panelSizes: Record<string, number>;
   globalScale: number;
   taskGitStatus: Record<string, WorktreeStatus>;
+  taskViewportVisibility: Record<string, TaskViewportVisibility>;
   focusedPanel: Record<string, PanelId>;
   sidebarFocused: boolean;
   sidebarFocusedProjectId: string | null;
@@ -190,14 +204,17 @@ export interface AppStore {
   terminalFont: string;
   themePreset: LookPreset;
   showPromptInput: boolean;
+  fontSmoothing: boolean;
   windowState: PersistedWindowState | null;
   autoTrustFolders: boolean;
   showPlans: boolean;
+  showSteps: boolean;
   desktopNotificationsEnabled: boolean;
   inactiveColumnOpacity: number;
   editorCommand: string;
   dockerImage: string;
   dockerAvailable: boolean;
+  askCodeProvider: 'claude' | 'minimax';
   newTaskDropUrl: string | null;
   newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
   missingProjectIds: Record<string, true>;
@@ -207,4 +224,5 @@ export interface AppStore {
   /** Per-preset user overrides. Outer key = preset ID, inner = binding ID → override. */
   keybindingOverridesByPreset: Record<string, Record<string, KeybindingOverride>>;
   keybindingMigrationDismissed: boolean;
+  focusMode: boolean;
 }

@@ -11,6 +11,7 @@ import { sanitizeBranchPrefix, toBranchName } from '../lib/branch-name';
 import { theme, sectionLabelStyle } from '../lib/theme';
 import type { Project, TerminalBookmark, GitIsolationMode } from '../store/types';
 import { SegmentedButtons } from './SegmentedButtons';
+import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 
 interface EditProjectDialogProps {
   project: Project | null;
@@ -31,6 +32,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [defaultBaseBranch, setDefaultBaseBranch] = createSignal('');
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
   const [newCommand, setNewCommand] = createSignal('');
+  const [showImportDialog, setShowImportDialog] = createSignal(false);
   let nameRef!: HTMLInputElement;
 
   // Sync signals when project prop changes
@@ -94,7 +96,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
             <h2
               style={{
                 margin: '0',
-                'font-size': '16px',
+                'font-size': '17px',
                 color: theme.fg,
                 'font-weight': '600',
               }}
@@ -112,7 +114,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
             >
               <div
                 style={{
-                  'font-size': '12px',
+                  'font-size': '13px',
                   color: theme.fgSubtle,
                   'font-family': "'JetBrains Mono', monospace",
                   flex: '1',
@@ -126,7 +128,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               </div>
               <button
                 type="button"
-                onClick={() => relinkProject(project().id)}
+                onClick={() => setShowImportDialog(true)}
                 style={{
                   padding: '3px 10px',
                   background: theme.bgInput,
@@ -135,6 +137,22 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   color: theme.fgMuted,
                   cursor: 'pointer',
                   'font-size': '11px',
+                  'flex-shrink': '0',
+                }}
+              >
+                Import Worktrees
+              </button>
+              <button
+                type="button"
+                onClick={() => relinkProject(project().id)}
+                style={{
+                  padding: '3px 10px',
+                  background: theme.bgInput,
+                  border: `1px solid ${theme.border}`,
+                  'border-radius': '6px',
+                  color: theme.fgMuted,
+                  cursor: 'pointer',
+                  'font-size': '12px',
                   'flex-shrink': '0',
                 }}
               >
@@ -153,7 +171,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   background: `color-mix(in srgb, ${theme.warning} 10%, transparent)`,
                   border: `1px solid color-mix(in srgb, ${theme.warning} 30%, transparent)`,
                   color: theme.warning,
-                  'font-size': '12px',
+                  'font-size': '13px',
                 }}
               >
                 <span style={{ flex: '1' }}>This folder no longer exists.</span>
@@ -170,7 +188,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                     'border-radius': '6px',
                     color: theme.fg,
                     cursor: 'pointer',
-                    'font-size': '12px',
+                    'font-size': '13px',
                     'flex-shrink': '0',
                   }}
                 >
@@ -189,7 +207,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                     'border-radius': '6px',
                     color: theme.error,
                     cursor: 'pointer',
-                    'font-size': '12px',
+                    'font-size': '13px',
                     'flex-shrink': '0',
                   }}
                 >
@@ -216,7 +234,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   'border-radius': '8px',
                   padding: '10px 14px',
                   color: theme.fg,
-                  'font-size': '13px',
+                  'font-size': '14px',
                   outline: 'none',
                 }}
               />
@@ -240,7 +258,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   'border-radius': '8px',
                   padding: '10px 14px',
                   color: theme.fg,
-                  'font-size': '13px',
+                  'font-size': '14px',
                   'font-family': "'JetBrains Mono', monospace",
                   outline: 'none',
                 }}
@@ -248,7 +266,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               <Show when={branchPrefix().trim()}>
                 <div
                   style={{
-                    'font-size': '11px',
+                    'font-size': '12px',
                     'font-family': "'JetBrains Mono', monospace",
                     color: theme.fgSubtle,
                     padding: '2px 2px 0',
@@ -310,7 +328,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 'align-items': 'center',
                 gap: '8px',
                 cursor: 'pointer',
-                'font-size': '13px',
+                'font-size': '14px',
                 color: theme.fg,
               }}
             >
@@ -356,7 +374,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   'border-radius': '8px',
                   padding: '10px 14px',
                   color: theme.fg,
-                  'font-size': '13px',
+                  'font-size': '14px',
                   outline: 'none',
                 }}
               />
@@ -383,7 +401,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                         <span
                           style={{
                             flex: '1',
-                            'font-size': '11px',
+                            'font-size': '12px',
                             'font-family': "'JetBrains Mono', monospace",
                             color: theme.fgSubtle,
                             overflow: 'hidden',
@@ -436,7 +454,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                     'border-radius': '8px',
                     padding: '8px 12px',
                     color: theme.fg,
-                    'font-size': '12px',
+                    'font-size': '13px',
                     'font-family': "'JetBrains Mono', monospace",
                     outline: 'none',
                   }}
@@ -452,7 +470,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                     'border-radius': '8px',
                     color: newCommand().trim() ? theme.fg : theme.fgSubtle,
                     cursor: newCommand().trim() ? 'pointer' : 'not-allowed',
-                    'font-size': '12px',
+                    'font-size': '13px',
                     'flex-shrink': '0',
                   }}
                 >
@@ -481,7 +499,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   'border-radius': '8px',
                   color: theme.fgMuted,
                   cursor: 'pointer',
-                  'font-size': '13px',
+                  'font-size': '14px',
                 }}
               >
                 Cancel
@@ -498,7 +516,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   'border-radius': '8px',
                   color: theme.accentText,
                   cursor: canSave() ? 'pointer' : 'not-allowed',
-                  'font-size': '13px',
+                  'font-size': '14px',
                   'font-weight': '500',
                   opacity: canSave() ? '1' : '0.4',
                 }}
@@ -506,6 +524,11 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 Save
               </button>
             </div>
+            <ImportWorktreesDialog
+              open={showImportDialog()}
+              project={project()}
+              onClose={() => setShowImportDialog(false)}
+            />
           </>
         )}
       </Show>

@@ -30,7 +30,7 @@ export function AgentList(props: AgentListProps) {
           background: '#12181f',
         }}
       >
-        <span style={{ 'font-size': '17px', 'font-weight': '600', color: '#d7e4f0' }}>
+        <span style={{ 'font-size': '18px', 'font-weight': '600', color: '#d7e4f0' }}>
           Parallel Code
         </span>
         <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
@@ -47,7 +47,7 @@ export function AgentList(props: AgentListProps) {
                     : '#ff5f73',
             }}
           />
-          <span style={{ 'font-size': '13px', color: '#678197' }}>
+          <span style={{ 'font-size': '14px', color: '#678197' }}>
             {running()}/{total()}
           </span>
         </div>
@@ -60,7 +60,7 @@ export function AgentList(props: AgentListProps) {
             padding: '8px 16px',
             background: status() === 'connecting' ? '#78350f' : '#7f1d1d',
             color: status() === 'connecting' ? '#fde68a' : '#fca5a5',
-            'font-size': '13px',
+            'font-size': '14px',
             'text-align': 'center',
             'flex-shrink': '0',
           }}
@@ -88,7 +88,7 @@ export function AgentList(props: AgentListProps) {
               'text-align': 'center',
               color: '#678197',
               'padding-top': '60px',
-              'font-size': '14px',
+              'font-size': '15px',
             }}
           >
             <Show when={status() === 'connected'} fallback={<span>Connecting...</span>}>
@@ -104,7 +104,7 @@ export function AgentList(props: AgentListProps) {
             background: '#11182080',
             border: '1px solid #223040',
             'border-radius': '12px',
-            'font-size': '12px',
+            'font-size': '13px',
             color: '#9bb0c3',
             'text-align': 'center',
             'line-height': '1.5',
@@ -165,7 +165,7 @@ export function AgentList(props: AgentListProps) {
                   />
                   <span
                     style={{
-                      'font-size': '14px',
+                      'font-size': '15px',
                       'font-weight': '500',
                       color: '#d7e4f0',
                       overflow: 'hidden',
@@ -178,7 +178,7 @@ export function AgentList(props: AgentListProps) {
                 </div>
                 <span
                   style={{
-                    'font-size': '12px',
+                    'font-size': '13px',
                     color: agent.status === 'running' ? '#2fd198' : '#678197',
                     'flex-shrink': '0',
                   }}
@@ -189,7 +189,7 @@ export function AgentList(props: AgentListProps) {
 
               <div
                 style={{
-                  'font-size': '11px',
+                  'font-size': '12px',
                   'font-family': "'JetBrains Mono', 'Courier New', monospace",
                   color: '#678197',
                   'white-space': 'nowrap',

@@ -3,6 +3,7 @@ import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { Channel, invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
+import { store } from '../store/store';
 
 interface AskCodeCardProps {
   requestId: string;
@@ -61,6 +62,7 @@ export function AskCodeCard(props: AskCodeCardProps) {
       prompt,
       cwd: props.worktreePath,
       onOutput: channel,
+      provider: store.askCodeProvider,
     }).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : String(err));
       setLoading(false);
@@ -103,7 +105,7 @@ export function AskCodeCard(props: AskCodeCardProps) {
       >
         <span
           style={{
-            'font-size': sf(11),
+            'font-size': sf(12),
             color: theme.fgMuted,
             'font-family': "'JetBrains Mono', monospace",
           }}
@@ -119,7 +121,7 @@ export function AskCodeCard(props: AskCodeCardProps) {
             cursor: 'pointer',
             padding: '2px 4px',
             'border-radius': '3px',
-            'font-size': sf(14),
+            'font-size': sf(15),
             'line-height': '1',
           }}
           title="Dismiss"
@@ -132,7 +134,7 @@ export function AskCodeCard(props: AskCodeCardProps) {
       <div
         style={{
           padding: '8px 12px',
-          'font-size': sf(12),
+          'font-size': sf(13),
           'font-family': "'JetBrains Mono', monospace",
           'line-height': '1.5',
           color: theme.fg,
@@ -157,7 +159,7 @@ export function AskCodeCard(props: AskCodeCardProps) {
           <span
             style={{
               color: theme.accent,
-              'font-size': sf(10),
+              'font-size': sf(11),
               animation: 'askcode-pulse 1s ease-in-out infinite',
             }}
           >

@@ -54,7 +54,8 @@ export function connect(): void {
     let msg: ServerMessage;
     try {
       msg = JSON.parse(String(event.data));
-    } catch {
+    } catch (e) {
+      console.error('[ws] Failed to parse server message:', e);
       return;
     }
 

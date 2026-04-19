@@ -88,7 +88,7 @@ export function MergeDialog(props: MergeDialogProps) {
               style={{
                 ...bannerStyle(theme.error),
                 'margin-bottom': '12px',
-                'font-size': '12px',
+                'font-size': '13px',
               }}
             >
               <Show when={worktreeStatus()?.current_branch === null}>
@@ -128,7 +128,7 @@ export function MergeDialog(props: MergeDialogProps) {
                       'border-radius': '6px',
                       color: theme.fg,
                       cursor: 'pointer',
-                      'font-size': '12px',
+                      'font-size': '13px',
                     }}
                   >
                     Use '{worktreeStatus()?.current_branch}'
@@ -142,7 +142,7 @@ export function MergeDialog(props: MergeDialogProps) {
               style={{
                 ...bannerStyle(theme.warning),
                 'margin-bottom': '12px',
-                'font-size': '12px',
+                'font-size': '13px',
                 'font-weight': '600',
               }}
             >
@@ -154,7 +154,7 @@ export function MergeDialog(props: MergeDialogProps) {
               style={{
                 ...bannerStyle(theme.warning),
                 'margin-bottom': '12px',
-                'font-size': '12px',
+                'font-size': '13px',
                 'font-weight': '600',
               }}
             >
@@ -165,7 +165,7 @@ export function MergeDialog(props: MergeDialogProps) {
             <div
               style={{
                 'margin-bottom': '12px',
-                'font-size': '12px',
+                'font-size': '13px',
                 color: theme.fgMuted,
                 padding: '8px 12px',
                 'border-radius': '8px',
@@ -183,7 +183,7 @@ export function MergeDialog(props: MergeDialogProps) {
                   style={{
                     ...bannerStyle(hasConflicts() ? theme.error : theme.warning),
                     'margin-bottom': '12px',
-                    'font-size': '12px',
+                    'font-size': '13px',
                     'font-weight': '600',
                   }}
                 >
@@ -249,7 +249,7 @@ export function MergeDialog(props: MergeDialogProps) {
                         rebasing() || worktreeStatus()?.has_uncommitted_changes
                           ? 'not-allowed'
                           : 'pointer',
-                      'font-size': '12px',
+                      'font-size': '13px',
                       opacity:
                         rebasing() || worktreeStatus()?.has_uncommitted_changes ? '0.5' : '1',
                     }}
@@ -279,7 +279,7 @@ export function MergeDialog(props: MergeDialogProps) {
                         'border-radius': '8px',
                         color: theme.accentText,
                         cursor: 'pointer',
-                        'font-size': '12px',
+                        'font-size': '13px',
                         'font-weight': '600',
                       }}
                     >
@@ -287,12 +287,12 @@ export function MergeDialog(props: MergeDialogProps) {
                     </button>
                   </Show>
                   <Show when={rebaseSuccess()}>
-                    <span style={{ 'font-size': '12px', color: theme.success }}>
+                    <span style={{ 'font-size': '13px', color: theme.success }}>
                       Rebase successful
                     </span>
                   </Show>
                   <Show when={rebaseError()}>
-                    <span style={{ 'font-size': '12px', color: theme.error }}>{rebaseError()}</span>
+                    <span style={{ 'font-size': '13px', color: theme.error }}>{rebaseError()}</span>
                   </Show>
                 </div>
               </Show>
@@ -326,7 +326,7 @@ export function MergeDialog(props: MergeDialogProps) {
                     'overflow-y': 'auto',
                     'overflow-x': 'hidden',
                     'font-family': "'JetBrains Mono', monospace",
-                    'font-size': '11px',
+                    'font-size': '12px',
                     border: `1px solid ${theme.border}`,
                     'border-radius': '8px',
                     padding: '4px 0',
@@ -399,25 +399,28 @@ export function MergeDialog(props: MergeDialogProps) {
               baseBranch={props.task.baseBranch}
             />
           </div>
-          <label
-            style={{
-              display: 'flex',
-              'align-items': 'center',
-              gap: '8px',
-              'margin-top': '12px',
-              cursor: 'pointer',
-              'font-size': '13px',
-              color: theme.fg,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={cleanupAfterMerge()}
-              onChange={(e) => setCleanupAfterMerge(e.currentTarget.checked)}
-              style={{ cursor: 'pointer' }}
-            />
-            Delete branch and worktree after merge
-          </label>
+          {/* Imported worktrees are user-owned — never offer to delete them or their branch. */}
+          <Show when={!props.task.externalWorktree}>
+            <label
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                gap: '8px',
+                'margin-top': '12px',
+                cursor: 'pointer',
+                'font-size': '14px',
+                color: theme.fg,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={cleanupAfterMerge()}
+                onChange={(e) => setCleanupAfterMerge(e.currentTarget.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              Delete branch and worktree after merge
+            </label>
+          </Show>
           <label
             style={{
               display: 'flex',
@@ -425,7 +428,7 @@ export function MergeDialog(props: MergeDialogProps) {
               gap: '8px',
               'margin-top': '8px',
               cursor: 'pointer',
-              'font-size': '13px',
+              'font-size': '14px',
               color: theme.fg,
             }}
           >
@@ -462,7 +465,7 @@ export function MergeDialog(props: MergeDialogProps) {
                 'border-radius': '8px',
                 padding: '8px 10px',
                 color: theme.fg,
-                'font-size': '12px',
+                'font-size': '13px',
                 'font-family': "'JetBrains Mono', monospace",
                 resize: 'vertical',
                 outline: 'none',
@@ -475,7 +478,7 @@ export function MergeDialog(props: MergeDialogProps) {
               style={{
                 ...bannerStyle(theme.error),
                 'margin-top': '12px',
-                'font-size': '12px',
+                'font-size': '13px',
               }}
             >
               {mergeError()}

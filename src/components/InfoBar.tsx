@@ -24,7 +24,7 @@ export function InfoBar(props: InfoBarProps) {
         'align-items': 'center',
         padding: '0 10px',
         'font-family': "'JetBrains Mono', monospace",
-        'font-size': sf(11),
+        'font-size': sf(12),
         color: theme.fgMuted,
         'white-space': 'nowrap',
         overflow: 'hidden',

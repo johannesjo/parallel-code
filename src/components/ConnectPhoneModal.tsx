@@ -135,7 +135,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
     padding: '6px 14px',
     'border-radius': '6px',
     border: 'none',
-    'font-size': '12px',
+    'font-size': '13px',
     cursor: 'pointer',
     background: active ? theme.accent : 'transparent',
     color: active ? theme.accentText : theme.fgMuted,
@@ -150,18 +150,18 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
       panelStyle={{ 'align-items': 'center', gap: '20px' }}
     >
       <div style={{ 'text-align': 'center' }}>
-        <h2 style={{ margin: '0', 'font-size': '16px', color: theme.fg, 'font-weight': '600' }}>
+        <h2 style={{ margin: '0', 'font-size': '17px', color: theme.fg, 'font-weight': '600' }}>
           Connect Phone
         </h2>
-        <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>Experimental</span>
+        <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>Experimental</span>
       </div>
 
       <Show when={starting()}>
-        <div style={{ color: theme.fgMuted, 'font-size': '13px' }}>Starting server...</div>
+        <div style={{ color: theme.fgMuted, 'font-size': '14px' }}>Starting server...</div>
       </Show>
 
       <Show when={error()}>
-        <div style={{ color: theme.error, 'font-size': '13px', 'text-align': 'center' }}>
+        <div style={{ color: theme.error, 'font-size': '14px', 'text-align': 'center' }}>
           {error()}
         </div>
       </Show>
@@ -196,7 +196,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               WiFi
             </button>
             <Show when={!store.remoteAccess.wifiUrl}>
-              <span style={{ 'font-size': '9px', color: theme.fgSubtle }}>Not detected</span>
+              <span style={{ 'font-size': '10px', color: theme.fgSubtle }}>Not detected</span>
             </Show>
           </div>
           <div
@@ -218,7 +218,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               Tailscale
             </button>
             <Show when={!store.remoteAccess.tailscaleUrl}>
-              <span style={{ 'font-size': '9px', color: theme.fgSubtle }}>Not detected</span>
+              <span style={{ 'font-size': '10px', color: theme.fgSubtle }}>Not detected</span>
             </Show>
           </div>
         </div>
@@ -242,7 +242,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             border: `1px solid ${theme.border}`,
             'border-radius': '8px',
             padding: '10px 12px',
-            'font-size': '12px',
+            'font-size': '13px',
             'font-family': "'JetBrains Mono', monospace",
             color: theme.fg,
             'word-break': 'break-all',
@@ -256,13 +256,13 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
         </div>
 
         <Show when={copied()}>
-          <span style={{ 'font-size': '12px', color: theme.success }}>Copied!</span>
+          <span style={{ 'font-size': '13px', color: theme.success }}>Copied!</span>
         </Show>
 
         {/* Instructions */}
         <p
           style={{
-            'font-size': '12px',
+            'font-size': '13px',
             color: theme.fgMuted,
             'text-align': 'center',
             margin: '0',
@@ -285,7 +285,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
           fallback={
             <div
               style={{
-                'font-size': '12px',
+                'font-size': '13px',
                 color: theme.fgSubtle,
                 display: 'flex',
                 'align-items': 'center',
@@ -324,7 +324,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             >
               <path d="M20 6L9 17l-5-5" />
             </svg>
-            <span style={{ 'font-size': '14px', color: theme.success, 'font-weight': '500' }}>
+            <span style={{ 'font-size': '15px', color: theme.success, 'font-weight': '500' }}>
               {store.remoteAccess.connectedClients} client(s) connected
             </span>
           </div>
@@ -340,7 +340,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             'border-radius': '8px',
             color: theme.fgSubtle,
             cursor: 'pointer',
-            'font-size': '12px',
+            'font-size': '13px',
             'font-weight': '400',
           }}
         >

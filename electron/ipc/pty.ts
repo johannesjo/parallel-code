@@ -6,6 +6,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import type { BrowserWindow } from 'electron';
 import { RingBuffer } from '../remote/ring-buffer.js';
+import { resolveUserShell } from '../user-shell.js';
+import { ensureClaudeSandboxFiles, ensureSandboxExcludes } from './git.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -102,7 +104,7 @@ export function spawnAgent(
   },
 ): void {
   const channelId = args.onOutput.__CHANNEL_ID__;
-  const command = args.command || process.env.SHELL || '/bin/sh';
+  const command = args.command || resolveUserShell();
   const cwd = args.cwd || process.env.HOME || '/';
 
   // Reject commands with shell metacharacters (node-pty uses execvp, but
@@ -162,6 +164,13 @@ export function spawnAgent(
   delete spawnEnv.CLAUDECODE;
   delete spawnEnv.CLAUDE_CODE_SESSION;
   delete spawnEnv.CLAUDE_CODE_ENTRYPOINT;
+
+  // Backfill sandbox placeholders for pre-existing worktrees (and anywhere
+  // Claude Code may launch). See ensureClaudeSandboxFiles for the why.
+  if (!args.dockerMode && fs.existsSync(cwd)) {
+    ensureClaudeSandboxFiles(cwd);
+    ensureSandboxExcludes(cwd);
+  }
 
   let spawnCommand: string;
   let spawnArgs: string[];
@@ -464,22 +473,31 @@ export function getAgentCols(agentId: string): number {
 // --- Docker mode helpers ---
 
 /**
+ * Writable HOME inside the Docker container.
+ *
+ * Docker tasks run as the host user's uid/gid so files created in the mounted
+ * project worktree stay owned by the host user. On macOS that is often 501:20,
+ * which cannot write to the image-owned /home/agent directory. Using /tmp keeps
+ * HOME writable for arbitrary host-mapped users and avoids agents hanging
+ * during startup while trying to initialize config under an unwritable home.
+ */
+export const DOCKER_CONTAINER_HOME = '/tmp';
+
+/**
  * Env vars that are desktop/host-specific and must NOT be forwarded into the
  * container. Everything else is forwarded so agents can use arbitrary vars
  * (custom API keys, feature flags, tool config, etc.) without needing an
  * ever-growing allowlist.
  */
-/** Home directory inside the Docker container (writable by uid 1000). */
-const DOCKER_CONTAINER_HOME = '/home/agent';
 
 const DOCKER_ENV_BLOCK_LIST = new Set([
   // Host PATH must not override the container's PATH — agent CLIs like
   // `claude` are installed at /usr/local/bin inside the image and won't be
   // found if the host PATH (pointing at host-only dirs) is forwarded.
   'PATH',
-  // Host HOME points to a non-writable directory inside the container
-  // (created by Docker for read-only credential mounts). Agents need a
-  // writable HOME for config files — we set HOME=/home/agent explicitly.
+  // Host HOME points to a non-writable directory inside the container when we
+  // run as the host user's uid/gid. Agents need a writable HOME for config
+  // files, so Docker mode sets HOME to DOCKER_CONTAINER_HOME explicitly.
   'HOME',
   // Display / desktop session
   'DISPLAY',
@@ -547,8 +565,6 @@ function buildDockerCredentialMounts(): string[] {
   const home = process.env.HOME;
   if (!home) return mounts;
 
-  const containerHome = DOCKER_CONTAINER_HOME;
-
   /** Mount a host path read-only into the container home. Skips if absent. */
   const mountIfExists = (hostPath: string, containerPath: string): void => {
     try {
@@ -560,19 +576,19 @@ function buildDockerCredentialMounts(): string[] {
   };
 
   // SSH keys for git push/pull
-  mountIfExists(`${home}/.ssh`, `${containerHome}/.ssh`);
+  mountIfExists(`${home}/.ssh`, `${DOCKER_CONTAINER_HOME}/.ssh`);
 
   // Git identity / config
-  mountIfExists(`${home}/.gitconfig`, `${containerHome}/.gitconfig`);
+  mountIfExists(`${home}/.gitconfig`, `${DOCKER_CONTAINER_HOME}/.gitconfig`);
 
   // GitHub CLI auth tokens (~/.config/gh/)
-  mountIfExists(`${home}/.config/gh`, `${containerHome}/.config/gh`);
+  mountIfExists(`${home}/.config/gh`, `${DOCKER_CONTAINER_HOME}/.config/gh`);
 
   // npm auth token
-  mountIfExists(`${home}/.npmrc`, `${containerHome}/.npmrc`);
+  mountIfExists(`${home}/.npmrc`, `${DOCKER_CONTAINER_HOME}/.npmrc`);
 
   // General HTTP/git HTTPS credentials (used by git credential helper)
-  mountIfExists(`${home}/.netrc`, `${containerHome}/.netrc`);
+  mountIfExists(`${home}/.netrc`, `${DOCKER_CONTAINER_HOME}/.netrc`);
 
   // Google Application Credentials file (for Vertex AI / gcloud) — mounted
   // at its original path since the env var points there.
@@ -625,20 +641,68 @@ function resolveDockerfilePath(): string | null {
   return fs.existsSync(p) ? p : null;
 }
 
-/** SHA-256 hex digest of the current Dockerfile, or null if not found. */
+/** SHA-256 hex digest of an arbitrary Dockerfile, or null if unreadable. */
+export function hashDockerfile(dockerfilePath: string): string | null {
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(dockerfilePath)).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
+/** SHA-256 hex digest of the bundled Dockerfile, or null if not found. */
 function getDockerfileHash(): string | null {
   const p = resolveDockerfilePath();
   if (!p) return null;
-  return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+  return hashDockerfile(p);
+}
+
+/**
+ * Check if a project has a local Dockerfile at .parallel-code/Dockerfile.
+ * Returns the absolute path if found, null otherwise.
+ */
+export function resolveProjectDockerfile(projectRoot: string): string | null {
+  const p = path.join(projectRoot, '.parallel-code', 'Dockerfile');
+  try {
+    return fs.statSync(p).isFile() ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Derive a deterministic image tag for a project Dockerfile.
+ * Tag format: parallel-code-project:<first-12-of-sha256>
+ */
+export function projectImageTag(dockerfilePath: string): string {
+  const hash = hashDockerfile(dockerfilePath);
+  return `parallel-code-project:${(hash ?? 'unknown').slice(0, 12)}`;
 }
 
 /**
  * Check if a Docker image exists locally **and** matches the current Dockerfile.
  * Returns false when the image is missing or was built from a different Dockerfile,
  * so the UI will prompt the user to (re)build.
+ *
+ * When `opts.dockerfilePath` is provided, hash that file for the staleness check.
+ * When the image is not the default and no `dockerfilePath` is given, skip the hash
+ * check entirely (just verify the image exists).
  */
-export async function dockerImageExists(image: string): Promise<boolean> {
-  const expectedHash = getDockerfileHash();
+export async function dockerImageExists(
+  image: string,
+  opts?: { dockerfilePath?: string },
+): Promise<boolean> {
+  const customPath = opts?.dockerfilePath;
+  const expectedHash = customPath
+    ? hashDockerfile(customPath)
+    : image === DOCKER_DEFAULT_IMAGE
+      ? getDockerfileHash()
+      : null;
+
+  if (customPath && !expectedHash) {
+    return false;
+  }
+
   return new Promise((resolve) => {
     execFile(
       'docker',
@@ -655,7 +719,6 @@ export async function dockerImageExists(image: string): Promise<boolean> {
           resolve(false);
           return;
         }
-        // If we can't compute the expected hash (Dockerfile missing), accept any existing image
         if (!expectedHash) {
           resolve(true);
           return;
@@ -670,32 +733,42 @@ export async function dockerImageExists(image: string): Promise<boolean> {
 let activeBuild: Promise<{ ok: boolean; error?: string }> | null = null;
 
 /**
- * Build the bundled Dockerfile into parallel-code-agent:latest.
+ * Build a Dockerfile into a Docker image.
  * Streams build output to the renderer via an IPC channel so the user can see progress.
  * Returns a promise that resolves on success, rejects on failure.
- * Concurrent calls return the same in-flight promise.
+ *
+ * When no `opts` are given, builds the bundled Dockerfile into the default image
+ * (backward compatible). Concurrent calls for the default image share the same
+ * in-flight promise; custom builds are never deduplicated.
  */
 export function buildDockerImage(
   win: BrowserWindow,
   onOutputChannel: string,
+  opts?: { dockerfilePath?: string; buildContext?: string; imageTag?: string },
 ): Promise<{ ok: boolean; error?: string }> {
-  if (activeBuild !== null) {
+  const isDefaultBuild = !opts?.dockerfilePath && !opts?.buildContext && !opts?.imageTag;
+
+  // Only dedup when building the default image
+  if (isDefaultBuild && activeBuild !== null) {
     return activeBuild;
   }
 
-  activeBuild = new Promise((resolve) => {
+  const buildPromise = new Promise<{ ok: boolean; error?: string }>((resolve) => {
     const finish = (result: { ok: boolean; error?: string }) => {
-      activeBuild = null;
+      if (isDefaultBuild) {
+        activeBuild = null;
+      }
       resolve(result);
     };
 
-    const dockerfilePath = resolveDockerfilePath();
-    if (!dockerfilePath) {
+    const resolvedDockerfilePath = opts?.dockerfilePath ?? resolveDockerfilePath();
+    if (!resolvedDockerfilePath) {
       finish({ ok: false, error: 'Dockerfile not found' });
       return;
     }
-    const dockerDir = path.dirname(dockerfilePath);
-    const hash = getDockerfileHash() ?? 'unknown';
+    const buildContext = opts?.buildContext ?? path.dirname(resolvedDockerfilePath);
+    const hash = hashDockerfile(resolvedDockerfilePath) ?? 'unknown';
+    const imageTag = opts?.imageTag ?? DOCKER_DEFAULT_IMAGE;
 
     const send = (text: string) => {
       if (!win.isDestroyed()) {
@@ -708,12 +781,12 @@ export function buildDockerImage(
       [
         'build',
         '-t',
-        DOCKER_DEFAULT_IMAGE,
+        imageTag,
         '--label',
         `${DOCKERFILE_HASH_LABEL}=${hash}`,
         '-f',
-        dockerfilePath,
-        dockerDir,
+        resolvedDockerfilePath,
+        buildContext,
       ],
       {
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -736,5 +809,9 @@ export function buildDockerImage(
     });
   });
 
-  return activeBuild;
+  if (isDefaultBuild) {
+    activeBuild = buildPromise;
+  }
+
+  return buildPromise;
 }

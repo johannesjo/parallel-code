@@ -15,7 +15,7 @@ export function SymlinkDirPicker(props: SymlinkDirPickerProps) {
     >
       <label
         style={{
-          'font-size': '11px',
+          'font-size': '12px',
           color: theme.fgMuted,
           'text-transform': 'uppercase',
           'letter-spacing': '0.05em',
@@ -43,7 +43,7 @@ export function SymlinkDirPicker(props: SymlinkDirPickerProps) {
                   display: 'flex',
                   'align-items': 'center',
                   gap: '8px',
-                  'font-size': '12px',
+                  'font-size': '13px',
                   'font-family': "'JetBrains Mono', monospace",
                   color: theme.fg,
                   cursor: 'pointer',

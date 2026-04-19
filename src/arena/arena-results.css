@@ -10,7 +10,7 @@
 
 .arena-results-prompt {
   max-width: 600px;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--fg-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -74,7 +74,7 @@
 }
 
 .arena-result-column-rank {
-  font-size: 36px;
+  font-size: 37px;
   font-weight: 700;
   font-family: var(--font-display);
   color: var(--fg-subtle);
@@ -95,18 +95,18 @@
 
 .arena-result-column-name {
   font-weight: 700;
-  font-size: 18px;
+  font-size: 19px;
 }
 
 .arena-result-column-time {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 15px;
   color: var(--fg-muted);
 }
 
 .arena-result-column-exit {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--error);
 }
 
@@ -134,7 +134,7 @@
 }
 
 .arena-result-rating-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--fg-muted);
   text-transform: uppercase;
@@ -192,7 +192,7 @@
   border: none;
   border-radius: 8px;
   color: var(--accent-text);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   padding: 6px 16px;
   cursor: pointer;
@@ -216,7 +216,7 @@
   gap: 6px;
   background: var(--success, #22c55e);
   color: #fff;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   padding: 4px 14px;
   border-radius: 12px;
@@ -240,7 +240,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--fg-muted);
 }
 
@@ -259,7 +259,7 @@
   background: none;
   border: none;
   color: var(--fg-subtle);
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
   padding: 2px 0;
 }
@@ -269,7 +269,7 @@
 }
 
 .arena-output-toggle-icon {
-  font-size: 9px;
+  font-size: 10px;
   transition: transform 0.15s ease;
   display: inline-block;
 }
@@ -284,7 +284,7 @@
   border-radius: 6px;
   padding: 8px 10px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--fg);
   overflow: auto;
   max-height: 300px;
@@ -318,7 +318,7 @@
 }
 
 .arena-commit-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--fg);
 }
@@ -327,7 +327,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--fg-subtle);
 }
 
@@ -336,7 +336,7 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--fg);
-  font-size: 13px;
+  font-size: 14px;
   padding: 6px 10px;
   outline: none;
 }

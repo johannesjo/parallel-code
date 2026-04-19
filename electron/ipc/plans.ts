@@ -35,7 +35,10 @@ export function ensurePlansDirectory(worktreePath: string): void {
   try {
     const raw = fs.readFileSync(settingsPath, 'utf-8');
     settings = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('[plans] settings.local.json is invalid, starting fresh:', e);
+    }
     // File doesn't exist or is invalid — start fresh
   }
 
@@ -82,7 +85,8 @@ function readNewestPlan(
   try {
     const content = fs.readFileSync(path.join(plansDir, newest.name), 'utf-8');
     return { content, fileName: newest.name, mtime: newest.mtime };
-  } catch {
+  } catch (e) {
+    console.warn('[plans] Failed to read plan file:', e);
     return null;
   }
 }

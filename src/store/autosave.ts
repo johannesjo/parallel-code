@@ -14,7 +14,6 @@ function persistedSnapshot(): string {
     collapsedTaskOrder: store.collapsedTaskOrder,
     activeTaskId: store.activeTaskId,
     sidebarVisible: store.sidebarVisible,
-    fontScales: store.fontScales,
     panelSizes: store.panelSizes,
     globalScale: store.globalScale,
     completedTaskDate: store.completedTaskDate,
@@ -26,10 +25,12 @@ function persistedSnapshot(): string {
     windowState: store.windowState,
     autoTrustFolders: store.autoTrustFolders,
     showPlans: store.showPlans,
+    showSteps: store.showSteps,
     desktopNotificationsEnabled: store.desktopNotificationsEnabled,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand,
     customAgents: store.customAgents,
+    focusMode: store.focusMode,
     tasks: Object.fromEntries(
       [...store.taskOrder, ...store.collapsedTaskOrder]
         .filter((id) => store.tasks[id])
@@ -44,6 +45,7 @@ function persistedSnapshot(): string {
               gitIsolation: t.gitIsolation,
               baseBranch: t.baseBranch,
               branchName: t.branchName,
+              externalWorktree: t.externalWorktree,
               savedInitialPrompt: t.savedInitialPrompt,
               collapsed: t.collapsed,
             },

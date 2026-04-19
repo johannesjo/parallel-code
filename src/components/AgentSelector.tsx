@@ -38,7 +38,7 @@ export function AgentSelector(props: AgentSelectorProps) {
     <div data-nav-field="agent" style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
       <label
         style={{
-          'font-size': '11px',
+          'font-size': '12px',
           color: theme.fgMuted,
           'text-transform': 'uppercase',
           'letter-spacing': '0.05em',
@@ -75,7 +75,7 @@ export function AgentSelector(props: AgentSelectorProps) {
                       : theme.accentText
                     : theme.fg,
                   cursor: 'pointer',
-                  'font-size': '12px',
+                  'font-size': '13px',
                   'font-weight': isSelected() ? '500' : '400',
                   'text-align': 'center',
                 }}
@@ -84,7 +84,7 @@ export function AgentSelector(props: AgentSelectorProps) {
                 <Show when={agent.available === false}>
                   <span
                     style={{
-                      'font-size': '10px',
+                      'font-size': '11px',
                       color: theme.fgMuted,
                       'margin-left': '4px',
                     }}

@@ -1,17 +1,18 @@
 import { onMount, onCleanup, createEffect } from 'solid-js';
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type IMarker } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { invoke, fireAndForget, Channel } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { getTerminalFontFamily } from '../lib/fonts';
+import { TERMINAL_SCROLLBACK_LINES } from '../lib/terminalConstants';
 import { getTerminalTheme } from '../lib/theme';
 import { matchesGlobalShortcut } from '../lib/shortcuts';
 import { isMac } from '../lib/platform';
 import { resolvedBindings } from '../store/keybindings';
 import { matchesKeyEvent } from '../lib/keybindings';
-import { store } from '../store/store';
+import { store, setTaskLastInputAt } from '../store/store';
 import { registerTerminal, unregisterTerminal, markDirty } from '../lib/terminalFitManager';
 import type { PtyOutput } from '../ipc/types';
 
@@ -47,6 +48,7 @@ interface TerminalViewProps {
   cwd: string;
   env?: Record<string, string>;
   isShell?: boolean;
+  stepsEnabled?: boolean;
   dockerMode?: boolean;
   dockerImage?: string;
   onExit?: (exitInfo: {
@@ -59,6 +61,13 @@ interface TerminalViewProps {
   onFileLink?: (filePath: string) => void;
   onReady?: (focusFn: () => void) => void;
   onBufferReady?: (getBuffer: () => string) => void;
+  /** Exposes step-bookmark API: `mark(i)` registers a marker at the current line for
+   *  step index `i`; `jump(i)` scrolls the viewport so that marker is visible.
+   *  Called with `undefined` on unmount so the consumer can reset its state — important
+   *  on agent restart, where this component remounts but the parent does not. */
+  onStepNavReady?: (
+    api: { mark: (i: number) => void; jump: (i: number) => boolean } | undefined,
+  ) => void;
   fontSize?: number;
   autoFocus?: boolean;
   initialCommand?: string;
@@ -94,7 +103,7 @@ export function TerminalView(props: TerminalViewProps) {
       fontFamily: getTerminalFontFamily(store.terminalFont),
       theme: getTerminalTheme(store.themePreset),
       allowProposedApi: true,
-      scrollback: 3000,
+      scrollback: TERMINAL_SCROLLBACK_LINES,
     });
 
     fitAddon = new FitAddon();
@@ -171,6 +180,30 @@ export function TerminalView(props: TerminalViewProps) {
     });
 
     props.onReady?.(() => term?.focus());
+
+    // Step bookmarks — anchor each agent step to the current scrollback line so the
+    // user can jump from the steps panel back to the terminal moment a step was written.
+    // Markers auto-track buffer truncation; once the marker scrolls past the scrollback
+    // limit xterm disposes it, in which case `jump` returns false so the caller can no-op.
+    // The map is owned by xterm and freed implicitly when term.dispose() runs in onCleanup.
+    const stepMarkers = new Map<number, IMarker>();
+    const stepNavApi = {
+      mark(i: number) {
+        if (!term || stepMarkers.has(i)) return;
+        const m = term.registerMarker(0);
+        if (m) stepMarkers.set(i, m);
+      },
+      jump(i: number): boolean {
+        if (!term) return false;
+        const m = stepMarkers.get(i);
+        if (!m || m.isDisposed) return false;
+        term.scrollToLine(m.line);
+        return true;
+      },
+    };
+    props.onStepNavReady?.(stepNavApi);
+    onCleanup(() => props.onStepNavReady?.(undefined));
+
     props.onBufferReady?.(() => {
       if (!term) return '';
       const buf = term.buffer.active;
@@ -377,6 +410,9 @@ export function TerminalView(props: TerminalViewProps) {
         inputFlushTimer = undefined;
       }
       fireAndForget(IPC.WriteToAgent, { agentId, data });
+      if (!props.isShell && (data.includes('\r') || data.includes('\n'))) {
+        setTaskLastInputAt(props.taskId);
+      }
     }
 
     function enqueueInput(data: string) {
@@ -386,6 +422,7 @@ export function TerminalView(props: TerminalViewProps) {
         return;
       }
       if (inputFlushTimer !== undefined) return;
+      // eslint-disable-next-line solid/reactivity
       inputFlushTimer = window.setTimeout(() => {
         inputFlushTimer = undefined;
         flushPendingInput();
@@ -469,6 +506,7 @@ export function TerminalView(props: TerminalViewProps) {
       cols: term.cols,
       rows: term.rows,
       isShell: props.isShell,
+      stepsEnabled: props.stepsEnabled,
       dockerMode: props.dockerMode,
       dockerImage: props.dockerImage,
       onOutput,

@@ -16,7 +16,7 @@ export function ReviewCommentsButton() {
           background: review.sidebarOpen() ? theme.warning : 'transparent',
           color: review.sidebarOpen() ? theme.accentText : theme.warning,
           border: `1px solid ${theme.warning}`,
-          'font-size': sf(11),
+          'font-size': sf(12),
           padding: '2px 10px',
           'border-radius': '4px',
           cursor: 'pointer',
@@ -40,7 +40,7 @@ export function ReviewSidebarPanel() {
             style={{
               padding: '6px 12px',
               color: theme.error,
-              'font-size': sf(11),
+              'font-size': sf(12),
               'border-bottom': `1px solid ${theme.border}`,
               background: 'rgba(255, 95, 115, 0.08)',
             }}

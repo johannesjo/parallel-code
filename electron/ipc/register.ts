@@ -16,6 +16,8 @@ import {
   isDockerAvailable,
   dockerImageExists,
   buildDockerImage,
+  resolveProjectDockerfile,
+  projectImageTag,
 } from './pty.js';
 import {
   ensurePlansDirectory,
@@ -23,6 +25,7 @@ import {
   stopPlanWatcher,
   readPlanForWorktree,
 } from './plans.js';
+import { startStepsWatcher, stopStepsWatcher, readStepsForWorktree } from './steps.js';
 import { startRemoteServer } from '../remote/server.js';
 import {
   getGitIgnoredDirs,
@@ -35,6 +38,7 @@ import {
   getFileDiff,
   getFileDiffFromBranch,
   getWorktreeStatus,
+  listImportableWorktrees,
   commitAll,
   discardUncommitted,
   checkMergeStatus,
@@ -47,6 +51,9 @@ import {
   isGitRepo,
   getBranches,
   checkoutBranch,
+  getBranchCommits,
+  getCommitChangedFiles,
+  getCommitDiffs,
 } from './git.js';
 import { createTask, deleteTask } from './tasks.js';
 import { listAgents } from './agents.js';
@@ -54,6 +61,7 @@ import { saveAppState, loadAppState } from './persistence.js';
 import { loadKeybindings, saveKeybindings } from './keybindings.js';
 import { spawn } from 'child_process';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
+import { setMinimaxApiKey } from './ask-code-minimax.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
 import path from 'path';
 import {
@@ -83,6 +91,31 @@ function validateRelativePath(p: unknown, label: string): void {
 function validateBranchName(name: unknown, label: string): void {
   if (typeof name !== 'string' || !name) throw new Error(`${label} must be a non-empty string`);
   if (name.startsWith('-')) throw new Error(`${label} must not start with "-"`);
+}
+
+/** Reject commit hashes that are not valid hex strings. */
+function validateCommitHash(hash: unknown, label: string): void {
+  if (typeof hash !== 'string') throw new Error(`${label} must be a string`);
+  if (!/^[0-9a-f]{4,40}$/i.test(hash)) throw new Error(`${label} must be a valid hex commit hash`);
+}
+
+function getOptionalDockerfilePath(value: unknown): string | undefined {
+  assertOptionalString(value, 'dockerfilePath');
+  if (value !== undefined) validatePath(value, 'dockerfilePath');
+  return value;
+}
+
+function getOptionalBuildContext(value: unknown): string | undefined {
+  assertOptionalString(value, 'buildContext');
+  if (value !== undefined) validatePath(value, 'buildContext');
+  return value;
+}
+
+function getOptionalImageTag(value: unknown): string | undefined {
+  assertOptionalString(value, 'imageTag');
+  const imageTag = value?.trim();
+  if (imageTag === '') throw new Error('imageTag must be a non-empty string');
+  return imageTag;
 }
 
 /**
@@ -130,6 +163,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertInt(args.rows, 'rows');
     assertOptionalBoolean(args.dockerMode, 'dockerMode');
     assertOptionalString(args.dockerImage, 'dockerImage');
+    assertOptionalBoolean(args.stepsEnabled, 'stepsEnabled');
     if (args.cwd) validatePath(args.cwd, 'cwd');
     if (!args.isShell && args.cwd) {
       try {
@@ -144,6 +178,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
         startPlanWatcher(win, args.taskId, args.cwd);
       } catch (err) {
         console.warn('Failed to start plan watcher:', err);
+      }
+      if (args.stepsEnabled) {
+        try {
+          startStepsWatcher(win, args.taskId, args.cwd);
+        } catch (err) {
+          console.warn('Failed to start steps watcher:', err);
+        }
       }
     }
     return result;
@@ -179,11 +220,31 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.CheckDockerAvailable, () => isDockerAvailable());
   ipcMain.handle(IPC.CheckDockerImageExists, (_e, args) => {
     assertString(args.image, 'image');
-    return dockerImageExists(args.image);
+    const dockerfilePath = getOptionalDockerfilePath(args.dockerfilePath);
+    return dockerImageExists(args.image, dockerfilePath ? { dockerfilePath } : undefined);
   });
   ipcMain.handle(IPC.BuildDockerImage, (_e, args) => {
     assertString(args.onOutputChannel, 'onOutputChannel');
-    return buildDockerImage(win, args.onOutputChannel);
+    const dockerfilePath = getOptionalDockerfilePath(args.dockerfilePath);
+    const buildContext = getOptionalBuildContext(args.buildContext);
+    const imageTag = getOptionalImageTag(args.imageTag);
+    return buildDockerImage(
+      win,
+      args.onOutputChannel,
+      dockerfilePath || buildContext || imageTag
+        ? { dockerfilePath, buildContext, imageTag }
+        : undefined,
+    );
+  });
+  ipcMain.handle(IPC.ResolveProjectDockerfile, (_e, args) => {
+    validatePath(args.projectRoot, 'projectRoot');
+    const dockerfilePath = resolveProjectDockerfile(args.projectRoot);
+    if (!dockerfilePath) return null;
+    return {
+      dockerfilePath,
+      imageTag: projectImageTag(dockerfilePath),
+      buildContext: args.projectRoot,
+    };
   });
 
   // --- Task commands ---
@@ -266,6 +327,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.projectRoot, 'projectRoot');
     return getGitIgnoredDirs(args.projectRoot);
   });
+  ipcMain.handle(IPC.ListImportableWorktrees, (_e, args) => {
+    validatePath(args.projectRoot, 'projectRoot');
+    return listImportableWorktrees(args.projectRoot);
+  });
   ipcMain.handle(IPC.GetWorktreeStatus, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
     const baseBranch = args.baseBranch || undefined;
@@ -295,6 +360,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertOptionalBoolean(args.cleanup, 'cleanup');
     const baseBranch = args.baseBranch || undefined;
     if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    const worktreePath = args.worktreePath || undefined;
+    if (worktreePath) validatePath(worktreePath, 'worktreePath');
     return mergeTask(
       args.projectRoot,
       args.branchName,
@@ -302,6 +369,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       args.message ?? null,
       args.cleanup ?? false,
       baseBranch,
+      worktreePath,
     );
   });
   ipcMain.handle(IPC.GetBranchLog, (_e, args) => {
@@ -309,6 +377,22 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const baseBranch = args.baseBranch || undefined;
     if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
     return getBranchLog(args.worktreePath, baseBranch);
+  });
+  ipcMain.handle(IPC.GetBranchCommits, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    const baseBranch = args.baseBranch || undefined;
+    if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    return getBranchCommits(args.worktreePath, baseBranch);
+  });
+  ipcMain.handle(IPC.GetCommitChangedFiles, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    validateCommitHash(args.commitHash, 'commitHash');
+    return getCommitChangedFiles(args.worktreePath, args.commitHash);
+  });
+  ipcMain.handle(IPC.GetCommitDiffs, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    validateCommitHash(args.commitHash, 'commitHash');
+    return getCommitDiffs(args.worktreePath, args.commitHash);
   });
   ipcMain.handle(IPC.PushTask, (_e, args) => {
     validatePath(args.projectRoot, 'projectRoot');
@@ -454,17 +538,37 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return readPlanForWorktree(args.worktreePath, fileName);
   });
 
+  // --- Steps watcher cleanup ---
+  ipcMain.handle(IPC.StopStepsWatcher, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    stopStepsWatcher(args.taskId);
+  });
+
+  // --- Steps content (one-shot read) ---
+  ipcMain.handle(IPC.ReadStepsContent, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    return readStepsForWorktree(args.worktreePath);
+  });
+
   // --- Ask about code ---
+  ipcMain.handle(IPC.SetMinimaxApiKey, (_e, args) => {
+    assertString(args.key, 'key');
+    setMinimaxApiKey(args.key);
+  });
+
   ipcMain.handle(IPC.AskAboutCode, (_e, args) => {
     assertString(args.requestId, 'requestId');
     assertString(args.prompt, 'prompt');
     assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
     validatePath(args.cwd, 'cwd');
+    const provider: string | undefined =
+      typeof args.provider === 'string' ? args.provider : undefined;
     askAboutCode(win, {
       requestId: args.requestId,
       channelId: args.onOutput.__CHANNEL_ID__,
       prompt: args.prompt,
       cwd: args.cwd,
+      provider: provider === 'minimax' ? 'minimax' : 'claude',
     });
   });
 
@@ -505,7 +609,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       const buf = img.toPNG();
       await fs.promises.writeFile(clipboardImagePath, buf);
       return clipboardImagePath;
-    } catch {
+    } catch (e) {
+      console.error('[clipboard] Failed to save clipboard image:', e);
       return null;
     }
   });

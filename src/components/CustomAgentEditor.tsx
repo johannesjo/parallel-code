@@ -42,7 +42,7 @@ export function CustomAgentEditor() {
     border: `1px solid ${theme.border}`,
     'border-radius': '6px',
     color: theme.fg,
-    'font-size': '12px',
+    'font-size': '13px',
     width: '100%',
     'box-sizing': 'border-box' as const,
   });
@@ -63,10 +63,10 @@ export function CustomAgentEditor() {
             }}
           >
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
-              <span style={{ 'font-size': '13px', color: theme.fg }}>{agent.name}</span>
+              <span style={{ 'font-size': '14px', color: theme.fg }}>{agent.name}</span>
               <span
                 style={{
-                  'font-size': '11px',
+                  'font-size': '12px',
                   color: theme.fgSubtle,
                   'font-family': "'JetBrains Mono', monospace",
                 }}
@@ -82,7 +82,7 @@ export function CustomAgentEditor() {
                 border: 'none',
                 color: theme.fgMuted,
                 cursor: 'pointer',
-                'font-size': '16px',
+                'font-size': '17px',
                 padding: '0 4px',
               }}
             >
@@ -103,7 +103,7 @@ export function CustomAgentEditor() {
             'border-radius': '8px',
             color: theme.fgMuted,
             cursor: 'pointer',
-            'font-size': '12px',
+            'font-size': '13px',
           }}
         >
           + Add custom agent
@@ -161,7 +161,7 @@ export function CustomAgentEditor() {
                 'border-radius': '6px',
                 color: theme.fgMuted,
                 cursor: 'pointer',
-                'font-size': '12px',
+                'font-size': '13px',
               }}
             >
               Cancel
@@ -176,7 +176,7 @@ export function CustomAgentEditor() {
                 'border-radius': '6px',
                 color: theme.accentText,
                 cursor: 'pointer',
-                'font-size': '12px',
+                'font-size': '13px',
                 opacity: name().trim() && command().trim() ? 1 : 0.5,
               }}
             >

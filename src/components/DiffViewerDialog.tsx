@@ -8,10 +8,13 @@ import { sf } from '../lib/fontScale';
 import { parseUnifiedDiff } from '../lib/unified-diff-parser';
 import { evictStaleAnnotations } from '../lib/review-eviction';
 import { ScrollingDiffView } from './ScrollingDiffView';
+import { CommitNavBar } from './CommitNavBar';
 import { ReviewCommentsButton, ReviewSidebarPanel } from './ReviewSidebarPanel';
 import { ReviewProvider, useReview } from './ReviewProvider';
 import type { FileDiff } from '../lib/unified-diff-parser';
 import type { ReviewAnnotation } from './review-types';
+import type { CommitInfo } from '../ipc/types';
+import type { GitIsolationMode } from '../store/types';
 
 interface DiffViewerDialogProps {
   /** Which file to auto-scroll to (the one the user clicked). Null = closed. */
@@ -26,6 +29,14 @@ interface DiffViewerDialogProps {
   baseBranch?: string;
   taskId?: string;
   agentId?: string;
+  /** List of commits on this branch (oldest first) for commit navigation */
+  commitList?: CommitInfo[];
+  /** Currently selected commit hash, or null for "all changes" mode */
+  selectedCommit?: string | null;
+  /** Callback to navigate to a different commit or null for all changes */
+  onCommitNavigate?: (hash: string | null) => void;
+  /** Git isolation mode — CommitNavBar is only shown for worktree-isolated tasks */
+  gitIsolation?: GitIsolationMode;
 }
 
 /** Compile review annotations into a prompt string for the agent. */
@@ -72,6 +83,10 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
             baseBranch={props.baseBranch}
             taskId={props.taskId}
             agentId={props.agentId}
+            commitList={props.commitList}
+            selectedCommit={props.selectedCommit}
+            onCommitNavigate={props.onCommitNavigate}
+            gitIsolation={props.gitIsolation}
           />
         </ReviewProvider>
       </Show>
@@ -91,6 +106,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
   let fetchGeneration = 0;
   let searchInputRef: HTMLInputElement | undefined;
   let diffScrollRef: HTMLDivElement | undefined;
+  let containerRef: HTMLDivElement | undefined;
 
   createDialogScroll(
     () => diffScrollRef,
@@ -112,6 +128,9 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
 
   createEffect(() => {
     const scrollTarget = props.scrollToFile;
+    // Access selectedCommit before the early return so the effect tracks it
+    // even when the dialog is closed — ensures we re-run on reopen.
+    const commitHash = props.selectedCommit;
     if (!scrollTarget) return;
 
     const worktreePath = props.worktreePath;
@@ -125,12 +144,18 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
     setError('');
     setParsedFiles([]);
 
-    const worktreePromise = worktreePath
-      ? invoke<string>(IPC.GetAllFileDiffs, { worktreePath, baseBranch })
-      : Promise.reject(new Error('no worktree'));
+    let diffPromise: Promise<string>;
 
-    worktreePromise
-      .catch((err: unknown) => {
+    if (commitHash && worktreePath) {
+      // Single-commit mode
+      diffPromise = invoke<string>(IPC.GetCommitDiffs, { worktreePath, commitHash });
+    } else {
+      // All-changes mode (existing behavior)
+      const worktreePromise = worktreePath
+        ? invoke<string>(IPC.GetAllFileDiffs, { worktreePath, baseBranch })
+        : Promise.reject(new Error('no worktree'));
+
+      diffPromise = worktreePromise.catch((err: unknown) => {
         if (projectRoot && branchName) {
           return invoke<string>(IPC.GetAllFileDiffsFromBranch, {
             projectRoot,
@@ -140,7 +165,10 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
         }
         const msg = err instanceof Error ? err.message : String(err);
         throw new Error(`Could not load diffs: ${msg}`);
-      })
+      });
+    }
+
+    diffPromise
       .then((rawDiff) => {
         if (thisGen !== fetchGeneration) return;
         const newFiles = parseUnifiedDiff(rawDiff);
@@ -190,7 +218,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
   };
 
   return (
-    <>
+    <div ref={containerRef} style={{ display: 'flex', 'flex-direction': 'column', height: '100%' }}>
       {/* Header */}
       <div
         style={{
@@ -202,9 +230,27 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
           'flex-shrink': '0',
         }}
       >
+        <Show when={props.worktreePath && props.gitIsolation === 'worktree'}>
+          <CommitNavBar
+            commits={props.commitList ?? []}
+            selectedCommitHash={props.selectedCommit ?? null}
+            onNavigate={(hash) => props.onCommitNavigate?.(hash)}
+            showMessage={true}
+          />
+          <span
+            style={{
+              width: '1px',
+              height: '16px',
+              background: theme.border,
+              'flex-shrink': '0',
+              margin: '0 4px',
+            }}
+          />
+        </Show>
+
         <span
           style={{
-            'font-size': sf(13),
+            'font-size': sf(14),
             color: theme.fg,
             'font-weight': '600',
           }}
@@ -213,7 +259,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
         </span>
         <span
           style={{
-            'font-size': sf(12),
+            'font-size': sf(13),
             color: theme.success,
             'font-family': "'JetBrains Mono', monospace",
           }}
@@ -222,7 +268,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
         </span>
         <span
           style={{
-            'font-size': sf(12),
+            'font-size': sf(13),
             color: theme.error,
             'font-family': "'JetBrains Mono', monospace",
           }}
@@ -245,7 +291,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
             border: `1px solid ${theme.borderSubtle}`,
             'border-radius': '4px',
             color: theme.fg,
-            'font-size': sf(12),
+            'font-size': sf(13),
             'font-family': "'JetBrains Mono', monospace",
             padding: '3px 8px',
             width: '200px',
@@ -253,7 +299,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
           }}
         />
         <Show when={searchQuery().length > 0}>
-          <span style={{ 'font-size': sf(11), color: theme.fgSubtle, 'white-space': 'nowrap' }}>
+          <span style={{ 'font-size': sf(12), color: theme.fgSubtle, 'white-space': 'nowrap' }}>
             {countMatches()} matches
           </span>
         </Show>
@@ -287,7 +333,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
                 padding: '40px',
                 'text-align': 'center',
                 color: theme.fgMuted,
-                'font-size': sf(13),
+                'font-size': sf(14),
               }}
             >
               Loading diffs...
@@ -300,7 +346,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
                 padding: '40px',
                 'text-align': 'center',
                 color: theme.error,
-                'font-size': sf(13),
+                'font-size': sf(14),
               }}
             >
               {error()}
@@ -328,6 +374,6 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
 
         <ReviewSidebarPanel />
       </div>
-    </>
+    </div>
   );
 }

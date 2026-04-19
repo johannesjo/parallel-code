@@ -71,7 +71,7 @@ export function bannerStyle(color: string): Record<string, string> {
 
 /** Shared style for uppercase section label headings in dialogs. */
 export const sectionLabelStyle: Record<string, string> = {
-  'font-size': '11px',
+  'font-size': '12px',
   color: 'var(--fg-muted)',
   'text-transform': 'uppercase',
   'letter-spacing': '0.05em',

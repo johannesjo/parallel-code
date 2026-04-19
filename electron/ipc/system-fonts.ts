@@ -9,7 +9,8 @@ export async function getSystemMonospaceFonts(): Promise<string[]> {
     const fonts = await queryFcList();
     cachedFonts = fonts;
     return fonts;
-  } catch {
+  } catch (e) {
+    console.warn('[system-fonts] Failed to query fonts:', e);
     cachedFonts = [];
     return [];
   }

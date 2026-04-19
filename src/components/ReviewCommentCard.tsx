@@ -69,7 +69,7 @@ export function ReviewCommentCard(props: ReviewCommentCardProps) {
       >
         <span
           style={{
-            'font-size': sf(11),
+            'font-size': sf(12),
             color: props.overlay ? theme.fg : theme.warning,
           }}
         >
@@ -84,7 +84,7 @@ export function ReviewCommentCard(props: ReviewCommentCardProps) {
             cursor: 'pointer',
             padding: '2px 4px',
             'border-radius': '3px',
-            'font-size': sf(14),
+            'font-size': sf(15),
             'line-height': '1',
           }}
           title="Dismiss"
@@ -116,7 +116,7 @@ export function ReviewCommentCard(props: ReviewCommentCardProps) {
               border: `1px solid ${theme.borderSubtle}`,
               'border-radius': '4px',
               color: theme.fg,
-              'font-size': sf(12),
+              'font-size': sf(13),
               'font-family': "'JetBrains Mono', monospace",
               padding: '4px 8px',
               'margin-top': '4px',
@@ -131,7 +131,7 @@ export function ReviewCommentCard(props: ReviewCommentCardProps) {
           style={{
             color: theme.fg,
             'white-space': 'pre-wrap',
-            'font-size': sf(12),
+            'font-size': sf(13),
             'margin-top': '4px',
             cursor: props.onUpdate ? 'text' : 'default',
           }}

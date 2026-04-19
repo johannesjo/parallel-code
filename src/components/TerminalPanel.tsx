@@ -5,7 +5,6 @@ import {
   updateTerminalName,
   setActiveTask,
   reorderTask,
-  getFontScale,
   registerFocusFn,
   unregisterFocusFn,
   triggerFocus,
@@ -14,7 +13,6 @@ import {
 import { EditableText, type EditableTextHandle } from './EditableText';
 import { IconButton } from './IconButton';
 import { TerminalView } from './TerminalView';
-import { ScalablePanel } from './ScalablePanel';
 import { theme } from '../lib/theme';
 import { handleDragReorder } from '../lib/dragReorder';
 import type { Terminal } from '../store/types';
@@ -102,7 +100,7 @@ export function TerminalPanel(props: TerminalPanelProps) {
           <span
             style={{
               'font-family': 'monospace',
-              'font-size': '13px',
+              'font-size': '14px',
               color: theme.fgMuted,
               'flex-shrink': '0',
             }}
@@ -130,29 +128,27 @@ export function TerminalPanel(props: TerminalPanelProps) {
       </div>
 
       {/* Terminal */}
-      <ScalablePanel panelId={`${props.terminal.id}:terminal`}>
-        <div
-          class="focusable-panel"
-          style={{
-            height: '100%',
-            position: 'relative',
-          }}
-          onClick={() => setTaskFocusedPanel(props.terminal.id, 'terminal')}
-        >
-          <TerminalView
-            taskId={props.terminal.id}
-            agentId={props.terminal.agentId}
-            isShell
-            isFocused={props.isActive && store.focusedPanel[props.terminal.id] === 'terminal'}
-            command=""
-            args={['-l']}
-            cwd=""
-            onReady={(focusFn) => registerFocusFn(`${props.terminal.id}:terminal`, focusFn)}
-            fontSize={Math.round(13 * getFontScale(`${props.terminal.id}:terminal`))}
-            autoFocus
-          />
-        </div>
-      </ScalablePanel>
+      <div
+        class="focusable-panel"
+        style={{
+          height: '100%',
+          position: 'relative',
+        }}
+        onClick={() => setTaskFocusedPanel(props.terminal.id, 'terminal')}
+      >
+        <TerminalView
+          taskId={props.terminal.id}
+          agentId={props.terminal.agentId}
+          isShell
+          isFocused={props.isActive && store.focusedPanel[props.terminal.id] === 'terminal'}
+          command=""
+          args={['-l']}
+          cwd=""
+          onReady={(focusFn) => registerFocusFn(`${props.terminal.id}:terminal`, focusFn)}
+          fontSize={14}
+          autoFocus
+        />
+      </div>
     </div>
   );
 }

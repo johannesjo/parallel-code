@@ -22,6 +22,7 @@ export enum IPC {
   GetFileDiff = 'get_file_diff',
   GetFileDiffFromBranch = 'get_file_diff_from_branch',
   GetGitignoredDirs = 'get_gitignored_dirs',
+  ListImportableWorktrees = 'list_importable_worktrees',
   GetWorktreeStatus = 'get_worktree_status',
   CheckMergeStatus = 'check_merge_status',
   MergeTask = 'merge_task',
@@ -35,6 +36,9 @@ export enum IPC {
   CheckIsGitRepo = 'check_is_git_repo',
   CommitAll = 'commit_all',
   DiscardUncommitted = 'discard_uncommitted',
+  GetBranchCommits = 'get_branch_commits',
+  GetCommitChangedFiles = 'get_commit_changed_files',
+  GetCommitDiffs = 'get_commit_diffs',
 
   // Persistence
   SaveAppState = 'save_app_state',
@@ -90,14 +94,21 @@ export enum IPC {
   ReadPlanContent = 'read_plan_content',
   StopPlanWatcher = 'stop_plan_watcher',
 
+  // Steps
+  StepsContent = 'steps_content',
+  ReadStepsContent = 'read_steps_content',
+  StopStepsWatcher = 'stop_steps_watcher',
+
   // Ask about code
   AskAboutCode = 'ask_about_code',
   CancelAskAboutCode = 'cancel_ask_about_code',
+  SetMinimaxApiKey = 'set_minimax_api_key',
 
   // Docker
   CheckDockerAvailable = 'check_docker_available',
   CheckDockerImageExists = 'check_docker_image_exists',
   BuildDockerImage = 'build_docker_image',
+  ResolveProjectDockerfile = 'resolve_project_dockerfile',
 
   // System
   GetSystemFonts = 'get_system_fonts',

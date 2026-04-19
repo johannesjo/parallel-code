@@ -232,7 +232,7 @@ export function HelpDialog(props: HelpDialogProps) {
           'justify-content': 'space-between',
         }}
       >
-        <h2 style={{ margin: '0', 'font-size': '16px', color: theme.fg, 'font-weight': '600' }}>
+        <h2 style={{ margin: '0', 'font-size': '17px', color: theme.fg, 'font-weight': '600' }}>
           Keyboard Shortcuts
         </h2>
         <button
@@ -242,7 +242,7 @@ export function HelpDialog(props: HelpDialogProps) {
             border: 'none',
             color: theme.fgMuted,
             cursor: 'pointer',
-            'font-size': '18px',
+            'font-size': '19px',
             padding: '0 4px',
             'line-height': '1',
           }}
@@ -306,7 +306,7 @@ export function HelpDialog(props: HelpDialogProps) {
           <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
             <div
               style={{
-                'font-size': '11px',
+                'font-size': '12px',
                 color: theme.fgMuted,
                 'text-transform': 'uppercase',
                 'letter-spacing': '0.05em',

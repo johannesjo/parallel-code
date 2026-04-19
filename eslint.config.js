@@ -15,8 +15,9 @@ export default [
       'node_modules/**',
       '.worktrees/**',
       '.claude/**',
-      // Build config excluded from electron tsconfig; not worth linting separately
+      // Build config is excluded from electron tsconfig; ignore the config and its test.
       'electron/vite.config.electron.ts',
+      'electron/vite.config.electron.test.ts',
     ],
   },
 

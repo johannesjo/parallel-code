@@ -68,7 +68,7 @@ function SidebarAnnotationItem(props: {
           color: theme.fgSubtle,
           cursor: 'pointer',
           padding: '2px 4px',
-          'font-size': sf(11),
+          'font-size': sf(12),
           'line-height': '1',
           'border-radius': '2px',
         }}
@@ -79,7 +79,7 @@ function SidebarAnnotationItem(props: {
       {/* File path + line range */}
       <div
         style={{
-          'font-size': sf(10),
+          'font-size': sf(11),
           color: theme.fgSubtle,
           'font-family': "'JetBrains Mono', monospace",
           overflow: 'hidden',
@@ -94,7 +94,7 @@ function SidebarAnnotationItem(props: {
       {/* Code snippet */}
       <div
         style={{
-          'font-size': sf(10),
+          'font-size': sf(11),
           color: theme.fgMuted,
           'font-family': "'JetBrains Mono', monospace",
           'max-height': '2.4em',
@@ -129,7 +129,7 @@ function SidebarAnnotationItem(props: {
               border: `1px solid ${theme.borderSubtle}`,
               'border-radius': '4px',
               color: theme.fg,
-              'font-size': sf(11),
+              'font-size': sf(12),
               'font-family': "'JetBrains Mono', monospace",
               padding: '4px 8px',
               'margin-top': '4px',
@@ -142,7 +142,7 @@ function SidebarAnnotationItem(props: {
         <div
           onClick={startEdit}
           style={{
-            'font-size': sf(11),
+            'font-size': sf(12),
             color: theme.fg,
             'white-space': 'pre-wrap',
             'margin-top': '4px',
@@ -174,7 +174,7 @@ export function ReviewSidebar(props: ReviewSidebarProps) {
           padding: '10px 14px',
           'border-bottom': `1px solid ${theme.border}`,
           'font-weight': '600',
-          'font-size': sf(12),
+          'font-size': sf(13),
           color: theme.fg,
         }}
       >
@@ -217,7 +217,7 @@ export function ReviewSidebar(props: ReviewSidebarProps) {
             color: props.canSubmit ? theme.accentText : theme.fgMuted,
             border: 'none',
             'font-weight': '600',
-            'font-size': sf(12),
+            'font-size': sf(13),
             padding: '8px 16px',
             'border-radius': '4px',
             cursor: props.canSubmit ? 'pointer' : 'default',

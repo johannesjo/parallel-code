@@ -35,12 +35,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--fg-subtle);
 }
 
 .arena-history-row-prompt {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--fg);
   white-space: nowrap;
   overflow: hidden;
@@ -48,14 +48,14 @@
 }
 
 .arena-history-row-competitors {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--fg-muted);
 }
 
 .arena-history-empty {
   text-align: center;
   color: var(--fg-subtle);
-  font-size: 14px;
+  font-size: 15px;
   padding: 40px 0;
 }
 
@@ -70,7 +70,7 @@
 }
 
 .arena-history-badge {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;

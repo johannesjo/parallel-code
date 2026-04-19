@@ -10,6 +10,7 @@ declare global {
         on: (channel: string, listener: (...args: unknown[]) => void) => () => void;
         removeAllListeners: (channel: string) => void;
       };
+      setZoomFactor: (factor: number) => void;
     };
   }
 }

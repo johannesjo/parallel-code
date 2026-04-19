@@ -26,15 +26,15 @@ export function TaskClosingOverlay(props: TaskClosingOverlayProps) {
         }}
       >
         <Show when={props.closingStatus === 'closing'}>
-          <div style={{ 'font-size': '13px', color: theme.fgMuted }}>Closing task...</div>
+          <div style={{ 'font-size': '14px', color: theme.fgMuted }}>Closing task...</div>
         </Show>
         <Show when={props.closingStatus === 'error'}>
-          <div style={{ 'font-size': '13px', color: theme.error, 'font-weight': '600' }}>
+          <div style={{ 'font-size': '14px', color: theme.error, 'font-weight': '600' }}>
             Close failed
           </div>
           <div
             style={{
-              'font-size': '11px',
+              'font-size': '12px',
               color: theme.fgMuted,
               'max-width': '260px',
               'text-align': 'center',
@@ -55,7 +55,7 @@ export function TaskClosingOverlay(props: TaskClosingOverlayProps) {
               padding: '6px 16px',
               'border-radius': '6px',
               cursor: 'pointer',
-              'font-size': '12px',
+              'font-size': '13px',
             }}
           >
             Retry

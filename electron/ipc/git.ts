@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'child_process';
+import { execFile, execFileSync, spawn } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
@@ -92,7 +92,6 @@ function withWorktreeLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 // --- Symlink candidates ---
 
 const SYMLINK_CANDIDATES = [
-  '.claude',
   '.cursor',
   '.aider',
   '.copilot',
@@ -103,8 +102,40 @@ const SYMLINK_CANDIDATES = [
   'node_modules',
 ];
 
-/** Entries inside `.claude` that must NOT be symlinked (kept per-worktree). */
-const CLAUDE_DIR_EXCLUDE = new Set(['plans', 'settings.local.json']);
+/**
+ * Entries inside `.claude/` that must NOT be seeded from the main repo's
+ * `.claude/` into new worktrees (per-worktree-local state).
+ */
+const CLAUDE_DIR_EXCLUDE = new Set(['plans']);
+
+/**
+ * Files Claude Code's sandbox (bwrap) read-only-binds on startup. They must
+ * exist at the worktree path or the sandbox fails before Claude launches.
+ */
+const CLAUDE_REQUIRED_FILES = ['settings.json', 'settings.local.json'];
+
+/**
+ * Worktree-root filenames bwrap leaves behind as character-device placeholders
+ * when it bind-mounts user-home dotfiles into the Claude Code sandbox. They
+ * aren't project files and must not surface in `git status` / changed-files.
+ * Mirrored into `.git/info/exclude` so the filter works on branches whose
+ * committed `.gitignore` predates the fix. Patterns are root-anchored (`/`)
+ * so a legitimate nested file with the same name (e.g. `subproj/.gitmodules`)
+ * is still shown.
+ */
+const SANDBOX_EXCLUDE_PATTERNS = [
+  '/.bash_profile',
+  '/.bashrc',
+  '/.gitconfig',
+  '/.gitmodules',
+  '/.mcp.json',
+  '/.profile',
+  '/.ripgreprc',
+  '/.zprofile',
+  '/.zshrc',
+];
+const SANDBOX_EXCLUDE_HEADER = '# parallel-code: sandbox bind-mount artifacts';
+const seededSandboxExcludes = new Set<string>();
 
 // --- Internal helpers ---
 
@@ -147,6 +178,18 @@ async function remoteTrackingRefExists(repoRoot: string, branch: string): Promis
   }
 }
 
+/** Check whether a local branch ref exists. */
+async function localBranchExists(repoRoot: string, branch: string): Promise<boolean> {
+  try {
+    await exec('git', ['rev-parse', '--verify', `refs/heads/${branch}`], {
+      cwd: repoRoot,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function detectMainBranchUncached(repoRoot: string): Promise<string> {
   // Try remote HEAD reference first
   const branch = await resolveOriginHead(repoRoot);
@@ -168,9 +211,12 @@ async function detectMainBranchUncached(repoRoot: string): Promise<string> {
     }
   }
 
-  // Check common default branch names
+  // Check common default branch names (remote-tracking first, then local)
   for (const candidate of ['main', 'master']) {
     if (await remoteTrackingRefExists(repoRoot, candidate)) return candidate;
+  }
+  for (const candidate of ['main', 'master']) {
+    if (await localBranchExists(repoRoot, candidate)) return candidate;
   }
 
   // Empty repo (no commits yet) — use configured default branch or fall back to "main"
@@ -314,6 +360,58 @@ function parseConflictPath(line: string): string | null {
   return candidate || null;
 }
 
+function safeRealpath(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+interface ListedWorktree {
+  path: string;
+  branchName: string | null;
+  detached: boolean;
+}
+
+function parseWorktreeList(output: string): ListedWorktree[] {
+  const entries: ListedWorktree[] = [];
+  let current: ListedWorktree | null = null;
+
+  for (const rawLine of output.split('\n')) {
+    const line = rawLine.trimEnd();
+    if (!line) {
+      if (current?.path) entries.push(current);
+      current = null;
+      continue;
+    }
+
+    if (line.startsWith('worktree ')) {
+      if (current?.path) entries.push(current);
+      current = {
+        path: line.slice('worktree '.length).trim(),
+        branchName: null,
+        detached: false,
+      };
+      continue;
+    }
+
+    if (!current) continue;
+    if (line.startsWith('branch ')) {
+      const ref = line.slice('branch '.length).trim();
+      const prefix = 'refs/heads/';
+      current.branchName = ref.startsWith(prefix) ? ref.slice(prefix.length) : ref;
+      continue;
+    }
+    if (line === 'detached') {
+      current.detached = true;
+    }
+  }
+
+  if (current?.path) entries.push(current);
+  return entries;
+}
+
 async function computeBranchDiffStats(
   projectRoot: string,
   mainBranch: string,
@@ -332,33 +430,6 @@ async function computeBranchDiffStats(
     linesRemoved += parseInt(parts[1], 10) || 0;
   }
   return { linesAdded, linesRemoved };
-}
-
-/**
- * "Shallow-symlink" a directory: create a real directory at `target` and
- * symlink each entry from `source` into it, EXCEPT entries in `exclude`.
- */
-function shallowSymlinkDir(source: string, target: string, exclude: Set<string>): void {
-  fs.mkdirSync(target, { recursive: true });
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(source, { withFileTypes: true });
-  } catch (err) {
-    console.warn(`Failed to read directory ${source} for shallow-symlink:`, err);
-    return;
-  }
-  for (const entry of entries) {
-    if (exclude.has(entry.name)) continue;
-    const src = path.join(source, entry.name);
-    const dst = path.join(target, entry.name);
-    try {
-      if (!fs.existsSync(dst)) {
-        fs.symlinkSync(src, dst);
-      }
-    } catch (err) {
-      console.warn(`Failed to symlink ${src} -> ${dst}:`, err);
-    }
-  }
 }
 
 // --- Public functions (used by tasks.ts and register.ts) ---
@@ -393,13 +464,36 @@ export async function createWorktree(
     }
   }
 
+  // Validate the start-point ref exists before attempting worktree creation
+  const startRef = baseBranch || 'HEAD';
+  try {
+    await exec('git', ['rev-parse', '--verify', startRef], { cwd: repoRoot });
+  } catch {
+    const isEmptyRepo = await exec('git', ['rev-list', '-n1', '--all'], { cwd: repoRoot })
+      .then(({ stdout }) => !stdout.trim())
+      .catch(() => true);
+    if (isEmptyRepo) {
+      throw new Error(
+        'Cannot create a worktree in a repository with no commits. ' +
+          'Please make an initial commit first.',
+      );
+    }
+    throw new Error(
+      `Branch "${startRef}" does not exist. ` +
+        'Please select a valid base branch or create the branch first.',
+    );
+  }
+
   // Create fresh worktree with new branch
   const worktreeArgs = ['worktree', 'add', '-b', branchName, worktreePath];
   if (baseBranch) worktreeArgs.push(baseBranch);
   await exec('git', worktreeArgs, { cwd: repoRoot });
 
-  // Symlink selected directories
+  // Symlink selected directories. `.claude` is handled separately below — it
+  // can't be a symlink because Claude Code's bwrap sandbox binds specific
+  // entries inside it, and bwrap refuses to bind-mount at symlink paths.
   for (const name of symlinkDirs) {
+    if (name === '.claude') continue;
     // Reject names that could escape the worktree directory
     if (name.includes('/') || name.includes('\\') || name.includes('..') || name === '.') continue;
     const source = path.join(repoRoot, name);
@@ -407,19 +501,167 @@ export async function createWorktree(
     try {
       if (!fs.existsSync(source)) continue;
       if (fs.existsSync(target)) continue;
-
-      if (name === '.claude') {
-        // Shallow-symlink: real dir with per-entry symlinks, excluding per-worktree entries
-        shallowSymlinkDir(source, target, CLAUDE_DIR_EXCLUDE);
-      } else {
-        fs.symlinkSync(source, target);
-      }
+      fs.symlinkSync(source, target);
     } catch (err) {
       console.warn(`Failed to symlink directory '${name}' into worktree:`, err);
     }
   }
 
+  ensureClaudeSandboxFiles(worktreePath, repoRoot);
+  ensureSandboxExcludes(worktreePath);
+
   return { path: worktreePath, branch: branchName };
+}
+
+/**
+ * Ensure the worktree's `.claude/` is bwrap-safe and seeded from the main
+ * repo's `.claude/`, matching Claude Code's `/worktree` model: each worktree
+ * gets an independent real `.claude/` directory (no symlinks), one-time
+ * copied from the source at creation. bwrap's `create_file` cannot place a
+ * bind-mount placeholder at a symlink destination — it fails with
+ * "Can't create file at … .claude/X: No such file or directory" — so every
+ * entry must be a real file or directory.
+ *
+ * Also runs as a backfill on agent spawn: deletes any symlinks left over
+ * from the previous shallow-symlink behavior and seeds any newly-missing
+ * entries from the source.
+ */
+export function ensureClaudeSandboxFiles(worktreePath: string, repoRoot?: string): void {
+  const claudeDir = path.join(worktreePath, '.claude');
+  try {
+    fs.mkdirSync(claudeDir, { recursive: true });
+  } catch (err) {
+    console.warn(`Failed to create ${claudeDir}:`, err);
+    return;
+  }
+
+  // Remove any symlinks under .claude/ — they're leftover from the old
+  // shallow-symlink behavior and bwrap cannot bind to them. Real files/dirs
+  // are preserved (may contain worktree-local edits).
+  let existing: fs.Dirent[] = [];
+  try {
+    existing = fs.readdirSync(claudeDir, { withFileTypes: true });
+  } catch (err) {
+    console.warn(`Failed to readdir ${claudeDir}:`, err);
+  }
+  for (const entry of existing) {
+    if (!entry.isSymbolicLink()) continue;
+    try {
+      fs.unlinkSync(path.join(claudeDir, entry.name));
+    } catch (err) {
+      console.warn(`Failed to unlink ${path.join(claudeDir, entry.name)}:`, err);
+    }
+  }
+
+  // Seed missing entries from the main repo's .claude/. Dereferences any
+  // symlinks in the source so the copy is pure real files (bwrap-safe).
+  const root = repoRoot ?? detectRepoRoot(worktreePath);
+  if (root && root !== worktreePath) {
+    const source = path.join(root, '.claude');
+    if (fs.existsSync(source)) {
+      let srcEntries: fs.Dirent[] = [];
+      try {
+        srcEntries = fs.readdirSync(source, { withFileTypes: true });
+      } catch (err) {
+        console.warn(`Failed to readdir ${source}:`, err);
+      }
+      for (const entry of srcEntries) {
+        if (CLAUDE_DIR_EXCLUDE.has(entry.name)) continue;
+        const dst = path.join(claudeDir, entry.name);
+        if (fs.existsSync(dst)) continue;
+        try {
+          fs.cpSync(path.join(source, entry.name), dst, {
+            recursive: true,
+            dereference: true,
+          });
+        } catch (err) {
+          console.warn(`Failed to seed ${dst} from source:`, err);
+        }
+      }
+    }
+  }
+
+  // Ensure required settings placeholders exist — bwrap binds them even when
+  // absent from both worktree and source.
+  for (const file of CLAUDE_REQUIRED_FILES) {
+    const p = path.join(claudeDir, file);
+    if (fs.existsSync(p)) continue;
+    try {
+      fs.writeFileSync(p, '{}\n');
+    } catch (err) {
+      console.warn(`Failed to create placeholder ${p}:`, err);
+    }
+  }
+}
+
+/**
+ * Append `SANDBOX_EXCLUDE_PATTERNS` to the shared `.git/info/exclude` so the
+ * bwrap-left char-device placeholders at the worktree root are filtered out
+ * of `git status` / `git ls-files` regardless of what the branch's committed
+ * `.gitignore` looks like. Uses the header line as an idempotency marker;
+ * safe to call on every agent spawn. Memoized per common git dir for the
+ * process lifetime.
+ */
+export function ensureSandboxExcludes(worktreePath: string): void {
+  let commonDir: string;
+  try {
+    const out = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: worktreePath,
+      encoding: 'utf8',
+      timeout: 3000,
+    }).trim();
+    commonDir = path.isAbsolute(out) ? out : path.join(worktreePath, out);
+  } catch {
+    return;
+  }
+
+  if (seededSandboxExcludes.has(commonDir)) return;
+
+  const excludePath = path.join(commonDir, 'info', 'exclude');
+  let existing = '';
+  try {
+    existing = fs.readFileSync(excludePath, 'utf8');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      console.warn(`Failed to read ${excludePath}:`, err);
+      return;
+    }
+    // File is absent — `.git/info/` itself is guaranteed by `git init`, so no mkdir needed.
+  }
+
+  if (existing.includes(SANDBOX_EXCLUDE_HEADER)) {
+    seededSandboxExcludes.add(commonDir);
+    return;
+  }
+
+  const prefix = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+  const block = prefix + SANDBOX_EXCLUDE_HEADER + '\n' + SANDBOX_EXCLUDE_PATTERNS.join('\n') + '\n';
+
+  try {
+    fs.appendFileSync(excludePath, block);
+    seededSandboxExcludes.add(commonDir);
+  } catch (err) {
+    console.warn(`Failed to append to ${excludePath}:`, err);
+  }
+}
+
+/**
+ * Find the main repository root for a worktree via `git rev-parse
+ * --git-common-dir`. Returns null when the cwd isn't inside a git repo.
+ */
+function detectRepoRoot(worktreePath: string): string | null {
+  try {
+    const out = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: worktreePath,
+      encoding: 'utf8',
+      timeout: 3000,
+    }).trim();
+    const abs = path.isAbsolute(out) ? out : path.join(worktreePath, out);
+    return path.dirname(abs);
+  } catch {
+    return null;
+  }
 }
 
 export async function removeWorktree(
@@ -851,6 +1093,58 @@ export async function getWorktreeStatus(
   };
 }
 
+export async function listImportableWorktrees(projectRoot: string): Promise<
+  Array<{
+    path: string;
+    branch_name: string;
+    has_committed_changes: boolean;
+    has_uncommitted_changes: boolean;
+  }>
+> {
+  const projectRealPath = safeRealpath(projectRoot);
+  const { stdout } = await exec('git', ['worktree', 'list', '--porcelain'], {
+    cwd: projectRoot,
+    maxBuffer: MAX_BUFFER,
+  });
+
+  const candidates = parseWorktreeList(stdout).filter((entry) => {
+    if (!entry.path || !entry.branchName || entry.detached) return false;
+    return safeRealpath(entry.path) !== projectRealPath;
+  });
+
+  const results = await Promise.all(
+    candidates.map(async (entry) => {
+      try {
+        const status = await getWorktreeStatus(entry.path);
+        return {
+          path: entry.path,
+          branch_name: entry.branchName ?? '',
+          has_committed_changes: status.has_committed_changes,
+          has_uncommitted_changes: status.has_uncommitted_changes,
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  const filtered = results.filter(
+    (
+      entry,
+    ): entry is {
+      path: string;
+      branch_name: string;
+      has_committed_changes: boolean;
+      has_uncommitted_changes: boolean;
+    } => entry !== null,
+  );
+
+  filtered.sort(
+    (a, b) => a.branch_name.localeCompare(b.branch_name) || a.path.localeCompare(b.path),
+  );
+  return filtered;
+}
+
 /** Stage all changes and commit in a worktree. */
 export async function commitAll(worktreePath: string, message: string): Promise<void> {
   await exec('git', ['add', '-A'], { cwd: worktreePath });
@@ -903,6 +1197,7 @@ export async function mergeTask(
   message: string | null,
   cleanup: boolean,
   baseBranch?: string,
+  worktreePath?: string,
 ): Promise<{ main_branch: string; lines_added: number; lines_removed: number }> {
   const lockKey = await detectRepoLockKey(projectRoot).catch(() => projectRoot);
 
@@ -912,9 +1207,11 @@ export async function mergeTask(
     // Safety check: verify the worktree is actually on the expected branch.
     // AI agents sometimes check out a different branch (or detach HEAD),
     // and merging the original branch would silently discard their work.
-    const worktreePath = path.join(projectRoot, '.worktrees', branchName);
-    if (fs.existsSync(worktreePath)) {
-      const actualBranch = await getCurrentBranchName(worktreePath).catch(() => null);
+    // For imported/external worktrees, the caller passes the real path; for
+    // managed ones we fall back to the conventional .worktrees/<branch> layout.
+    const checkWorktreePath = worktreePath ?? path.join(projectRoot, '.worktrees', branchName);
+    if (fs.existsSync(checkWorktreePath)) {
+      const actualBranch = await getCurrentBranchName(checkWorktreePath).catch(() => null);
       if (actualBranch === null) {
         throw new Error(
           `The worktree for '${branchName}' has a detached HEAD. ` +
@@ -1194,5 +1491,83 @@ export async function isGitRepo(dirPath: string): Promise<boolean> {
     return toplevel === resolved;
   } catch {
     return false;
+  }
+}
+
+// --- Per-commit operations ---
+
+export interface CommitInfo {
+  hash: string;
+  message: string;
+}
+
+export async function getBranchCommits(
+  worktreePath: string,
+  baseBranch?: string,
+): Promise<CommitInfo[]> {
+  const mergeBase = await detectMergeBase(worktreePath, 'HEAD', baseBranch);
+  try {
+    const { stdout } = await exec(
+      'git',
+      ['log', `${mergeBase}..HEAD`, '--pretty=format:%H%x00%s', '--reverse'],
+      { cwd: worktreePath, maxBuffer: MAX_BUFFER },
+    );
+    if (!stdout.trim()) return [];
+    return stdout
+      .trim()
+      .split('\n')
+      .map((line) => {
+        const sep = line.indexOf('\0');
+        return {
+          hash: sep >= 0 ? line.slice(0, sep) : line,
+          message: sep >= 0 ? line.slice(sep + 1) : '',
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+export async function getCommitChangedFiles(
+  worktreePath: string,
+  commitHash: string,
+): Promise<ChangedFile[]> {
+  let diffStr = '';
+  try {
+    const { stdout } = await exec(
+      'git',
+      ['diff', '--raw', '--numstat', `${commitHash}^..${commitHash}`],
+      { cwd: worktreePath, maxBuffer: MAX_BUFFER },
+    );
+    diffStr = stdout;
+  } catch {
+    return [];
+  }
+
+  const { statusMap, numstatMap } = parseDiffRawNumstat(diffStr);
+
+  const files: ChangedFile[] = [];
+  for (const [p, [added, removed]] of numstatMap) {
+    const status = statusMap.get(p) ?? 'M';
+    files.push({ path: p, lines_added: added, lines_removed: removed, status, committed: true });
+  }
+  for (const [p, status] of statusMap) {
+    if (numstatMap.has(p)) continue;
+    files.push({ path: p, lines_added: 0, lines_removed: 0, status, committed: true });
+  }
+
+  files.sort((a, b) => a.path.localeCompare(b.path));
+  return files;
+}
+
+export async function getCommitDiffs(worktreePath: string, commitHash: string): Promise<string> {
+  try {
+    const { stdout } = await exec('git', ['diff', '-U3', `${commitHash}^..${commitHash}`], {
+      cwd: worktreePath,
+      maxBuffer: MAX_BUFFER,
+    });
+    return stdout;
+  } catch {
+    return '';
   }
 }

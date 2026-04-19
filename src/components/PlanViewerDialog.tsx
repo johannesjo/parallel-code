@@ -202,7 +202,7 @@ function PlanViewerContent(props: PlanViewerContentProps) {
       >
         <span
           style={{
-            'font-size': sf(13),
+            'font-size': sf(14),
             color: theme.fg,
             'font-weight': '600',
             'font-family': "'JetBrains Mono', monospace",

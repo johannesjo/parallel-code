@@ -68,7 +68,7 @@ export function InlineInput(props: InlineInputProps) {
             background: mode() === 'review' ? theme.warning : 'transparent',
             color: mode() === 'review' ? theme.accentText : theme.fgMuted,
             border: 'none',
-            'font-size': sf(10),
+            'font-size': sf(11),
             padding: '2px 8px',
             cursor: 'pointer',
           }}
@@ -81,7 +81,7 @@ export function InlineInput(props: InlineInputProps) {
             background: mode() === 'ask' ? theme.accent : 'transparent',
             color: mode() === 'ask' ? theme.accentText : theme.fgMuted,
             border: 'none',
-            'font-size': sf(10),
+            'font-size': sf(11),
             padding: '2px 8px',
             cursor: 'pointer',
           }}
@@ -104,7 +104,7 @@ export function InlineInput(props: InlineInputProps) {
           border: `1px solid ${theme.borderSubtle}`,
           'border-radius': '4px',
           color: theme.fg,
-          'font-size': sf(12),
+          'font-size': sf(13),
           'font-family': "'JetBrains Mono', monospace",
           padding: '4px 8px',
           outline: 'none',
@@ -122,7 +122,7 @@ export function InlineInput(props: InlineInputProps) {
           cursor: text().trim() ? 'pointer' : 'default',
           padding: '4px 10px',
           'border-radius': '4px',
-          'font-size': sf(11),
+          'font-size': sf(12),
           'font-weight': '600',
         }}
       >

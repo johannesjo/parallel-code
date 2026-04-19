@@ -113,7 +113,7 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
         <Show when={props.task.gitIsolation === 'direct'}>
           <span
             style={{
-              'font-size': '10px',
+              'font-size': '11px',
               'font-weight': '600',
               padding: '1px 6px',
               'border-radius': '4px',
@@ -143,6 +143,18 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
         </svg>
         {props.task.worktreePath}
       </button>
+      <Show when={props.task.externalWorktree}>
+        <span
+          style={{
+            display: 'inline-flex',
+            'align-items': 'center',
+            gap: '4px',
+            color: theme.accent,
+          }}
+        >
+          Existing worktree
+        </span>
+      </Show>
     </InfoBar>
   );
 }

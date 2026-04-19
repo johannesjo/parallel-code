@@ -66,7 +66,7 @@ export function NewTaskPlaceholder() {
           border: focusedBorder('add-task'),
           color: focusedColor('add-task'),
           background: focusedBg('add-task'),
-          'font-size': '20px',
+          'font-size': '21px',
           'user-select': 'none',
         }}
         title={`New task (${mod}+N)`}
@@ -99,7 +99,7 @@ export function NewTaskPlaceholder() {
           border: focusedBorder('add-terminal'),
           color: focusedColor('add-terminal'),
           background: focusedBg('add-terminal'),
-          'font-size': '13px',
+          'font-size': '14px',
           'font-family': 'monospace',
           'user-select': 'none',
           'flex-shrink': '0',

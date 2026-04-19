@@ -12,13 +12,14 @@ import {
   stripAnsi,
   onAgentReady,
   offAgentReady,
-  normalizeForComparison,
+  normalizeCurrentFrame,
   looksLikeQuestion,
   isTrustQuestionAutoHandled,
   isAutoTrustSettling,
   isAgentAskingQuestion,
   getTaskFocusedPanel,
   setTaskFocusedPanel,
+  setTaskLastInputAt,
 } from '../store/store';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
@@ -54,12 +55,15 @@ const PROMPT_RECHECK_DELAY_MS = 1_500;
 // then silently load (no PTY output) — a single check can't distinguish
 // "silently loading" from "truly idle at prompt".
 const PROMPT_STABILITY_CHECKS = 2;
+// How many consecutive stability-check failures (prompt visible but still changing)
+// before we relax the isStable requirement and send anyway.
+const STABILITY_MAX_FAILURES = 3;
 // Give up after this.
 const AUTOSEND_MAX_WAIT_MS = 45_000;
 // After sending, how long to poll terminal output to confirm the prompt appeared.
 const PROMPT_VERIFY_TIMEOUT_MS = 5_000;
 const PROMPT_VERIFY_POLL_MS = 250;
-const PROMPT_MARKER_SCAN_CHARS = 200;
+const PROMPT_MARKER_SCAN_CHARS = 500;
 
 /** True when auto-send should be blocked by a question in the output.
  *  Trust-dialog questions are NOT blocking when auto-trust handles them. */
@@ -88,8 +92,18 @@ export function PromptInput(props: PromptInputProps) {
     let pendingSendTimer: ReturnType<typeof setTimeout> | undefined;
     let lastRawTail = '';
     let lastNormalized = '';
-    let stableSince = Date.now();
+    // Start stableSince at 0, not Date.now().  Quiescence requires visible
+    // content — agents that emit only escape sequences initially (e.g. Copilot
+    // CLI entering alternate screen) must not trigger a send before anything
+    // meaningful appears.  stableSince is set when the first non-empty
+    // normalizeForComparison result is seen and stays updated from there.
+    let stableSince = 0;
     let cancelled = false;
+    // Counts consecutive stability-check failures where the prompt was visible
+    // but the content was still changing (isStable=false).  After
+    // STABILITY_MAX_FAILURES attempts we relax the requirement — the agent is
+    // already showing its prompt so the content is good enough to send into.
+    let stabilityCheckFailures = 0;
 
     function cleanup() {
       cancelled = true;
@@ -132,6 +146,14 @@ export function PromptInput(props: PromptInputProps) {
         onAgentReady(agentId, onReady);
         return;
       }
+      // Don't start stability checks while auto-trust is actively handling a
+      // trust/permission dialog — the ❯ in the TUI selection UI is not the
+      // agent's main prompt yet.  Re-register; we'll be called again once the
+      // agent fires tryFireAgentReadyCallback after the trust flow completes.
+      if (isAutoTrustSettling(agentId)) {
+        onAgentReady(agentId, onReady);
+        return;
+      }
 
       // Start a series of stability checks.  Some agents (e.g. Claude Code)
       // render ❯ before fully initializing — the marker persists while the
@@ -144,12 +166,15 @@ export function PromptInput(props: PromptInputProps) {
     }
 
     function startStabilityChecks() {
+      stabilityCheckFailures = 0;
       let checksRemaining = PROMPT_STABILITY_CHECKS;
       const elapsed = Date.now() - spawnedAt;
-      const firstDelay = Math.max(PROMPT_RECHECK_DELAY_MS, AUTOSEND_MIN_WAIT_MS - elapsed);
+      const recheckDelay =
+        store.agents[agentId]?.def?.prompt_ready_delay_ms ?? PROMPT_RECHECK_DELAY_MS;
+      const firstDelay = Math.max(recheckDelay, AUTOSEND_MIN_WAIT_MS - elapsed);
 
       function scheduleCheck(delay: number) {
-        const snapshot = normalizeForComparison(getAgentOutputTail(agentId));
+        const snapshot = normalizeCurrentFrame(getAgentOutputTail(agentId));
         pendingSendTimer = setTimeout(() => {
           pendingSendTimer = undefined;
           if (cancelled) return;
@@ -158,20 +183,25 @@ export function PromptInput(props: PromptInputProps) {
             onAgentReady(agentId, onReady);
             return;
           }
-          const normalized = normalizeForComparison(tail);
-          if (
-            !/[❯›]/.test(stripAnsi(tail).slice(-PROMPT_MARKER_SCAN_CHARS)) ||
-            normalized !== snapshot
-          ) {
-            // Prompt gone or output changed — re-register for next detection.
+          if (isAutoTrustSettling(agentId)) {
             onAgentReady(agentId, onReady);
             return;
           }
+          const normalized = normalizeCurrentFrame(tail);
+          const hasPrompt = /[❯›]/.test(stripAnsi(tail).slice(-PROMPT_MARKER_SCAN_CHARS));
+          const isStable = normalized === snapshot;
+          if (!hasPrompt || (!isStable && stabilityCheckFailures < STABILITY_MAX_FAILURES)) {
+            if (hasPrompt && !isStable) stabilityCheckFailures++;
+            onAgentReady(agentId, onReady);
+            return;
+          }
+          // When isStable is false but we've exceeded failure limit, proceed anyway —
+          // the prompt is visible and the agent is ready enough.
           checksRemaining--;
           if (checksRemaining <= 0) {
             trySend();
           } else {
-            scheduleCheck(PROMPT_RECHECK_DELAY_MS);
+            scheduleCheck(recheckDelay);
           }
         }, delay);
       }
@@ -210,8 +240,11 @@ export function PromptInput(props: PromptInputProps) {
       // instead of pure quiescence — they verify ❯ persists AND output is stable.
       // Kick off the checks directly rather than just re-registering a callback,
       // because the agent may be idle (no new PTY data to trigger the callback).
+      // Guard: skip if the agent is known to be showing a question (e.g. a TUI
+      // dialog with a ❯ selection cursor).  The stability check inside also guards,
+      // but skipping here avoids scheduling unnecessary timers.
       if (/[❯›]/.test(stripAnsi(tail).slice(-PROMPT_MARKER_SCAN_CHARS))) {
-        if (!pendingSendTimer) startStabilityChecks();
+        if (!pendingSendTimer && !questionActive()) startStabilityChecks();
         return;
       }
 
@@ -228,10 +261,20 @@ export function PromptInput(props: PromptInputProps) {
       }
       lastRawTail = tail;
 
-      const normalized = normalizeForComparison(tail);
+      const normalized = normalizeCurrentFrame(tail);
+
+      // No visible content yet (e.g. only ANSI setup sequences) — don't start
+      // the stability clock until something meaningful appears on screen.
+      if (!normalized) return;
 
       if (normalized !== lastNormalized) {
         lastNormalized = normalized;
+        stableSince = Date.now();
+        return;
+      }
+
+      // First time we see non-empty normalized content, start the clock.
+      if (stableSince === 0) {
         stableSince = Date.now();
         return;
       }
@@ -315,10 +358,21 @@ export function PromptInput(props: PromptInputProps) {
     // signal — the signal may be stale (updated by throttled analysis) while
     // the callers (onReady, quiescence timer) already verified with fresh data.
     if (mode === 'auto') {
-      if (isQuestionBlockingAutoSend(getAgentOutputTail(props.agentId))) return;
-      if (isAutoTrustSettling(props.agentId)) return;
+      const tail = getAgentOutputTail(props.agentId);
+      if (isQuestionBlockingAutoSend(tail)) {
+        return;
+      }
+      if (isAutoTrustSettling(props.agentId)) {
+        return;
+      }
     } else {
       if (questionActive()) return;
+      // Also block manual sends while auto-trust is actively handling a trust
+      // dialog.  With autoTrustFolders enabled, questionActive is suppressed to
+      // false for trust dialogs so the textarea stays enabled — but the user
+      // must not accidentally send text into the dialog before auto-trust
+      // accepts it (the \r from sendPrompt would confirm the TUI selection).
+      if (isAutoTrustSettling(props.agentId)) return;
     }
     cleanupAutoSend?.();
     cleanupAutoSend = undefined;
@@ -327,6 +381,7 @@ export function PromptInput(props: PromptInputProps) {
     if (!val) {
       if (mode === 'auto') return;
       fireAndForget(IPC.WriteToAgent, { agentId: props.agentId, data: '\r' });
+      setTaskLastInputAt(props.taskId);
       return;
     }
 
@@ -393,7 +448,7 @@ export function PromptInput(props: PromptInputProps) {
             'border-radius': '12px',
             padding: '6px 36px 6px 10px',
             color: theme.fg,
-            'font-size': sf(12),
+            'font-size': sf(13),
             'font-family': "'JetBrains Mono', monospace",
             resize: 'none',
             outline: 'none',

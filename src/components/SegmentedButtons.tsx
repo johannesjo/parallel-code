@@ -5,6 +5,7 @@ export interface SegmentedOption<T extends string> {
   value: T;
   label: string;
   disabled?: boolean;
+  title?: string;
 }
 
 interface SegmentedButtonsProps<T extends string> {
@@ -64,12 +65,13 @@ export function SegmentedButtons<T extends string>(props: SegmentedButtonsProps<
               aria-checked={isActive()}
               disabled={opt.disabled}
               tabIndex={isActive() ? 0 : -1}
+              title={opt.title}
               onClick={() => !opt.disabled && props.onChange(opt.value)}
               onKeyDown={(e) => handleKeyDown(e, i())}
               style={{
                 flex: '1',
                 padding: '6px 12px',
-                'font-size': '12px',
+                'font-size': '13px',
                 'border-radius': '6px',
                 border: `1px solid ${isActive() ? theme.accent : theme.border}`,
                 background: isActive()

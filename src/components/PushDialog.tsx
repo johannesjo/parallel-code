@@ -77,7 +77,7 @@ export function PushDialog(props: PushDialogProps) {
       <h2
         style={{
           margin: '0',
-          'font-size': '16px',
+          'font-size': '17px',
           color: theme.fg,
           'font-weight': '600',
         }}
@@ -85,7 +85,7 @@ export function PushDialog(props: PushDialogProps) {
         Push to Remote
       </h2>
 
-      <div style={{ 'font-size': '13px', color: theme.fgMuted, 'line-height': '1.5' }}>
+      <div style={{ 'font-size': '14px', color: theme.fgMuted, 'line-height': '1.5' }}>
         <Show
           when={pushing() || output()}
           fallback={
@@ -99,7 +99,7 @@ export function PushDialog(props: PushDialogProps) {
             style={{
               margin: '0',
               'font-family': "'JetBrains Mono', monospace",
-              'font-size': '11px',
+              'font-size': '12px',
               'line-height': '1.5',
               'white-space': 'pre-wrap',
               'word-break': 'break-all',
@@ -120,7 +120,7 @@ export function PushDialog(props: PushDialogProps) {
             style={{
               ...bannerStyle(theme.error),
               'margin-top': '12px',
-              'font-size': '12px',
+              'font-size': '13px',
             }}
           >
             {pushError()}
@@ -155,7 +155,7 @@ export function PushDialog(props: PushDialogProps) {
             'border-radius': '8px',
             color: theme.fgMuted,
             cursor: 'pointer',
-            'font-size': '13px',
+            'font-size': '14px',
           }}
         >
           {pushing() ? 'Close' : 'Cancel'}
@@ -172,7 +172,7 @@ export function PushDialog(props: PushDialogProps) {
               'border-radius': '8px',
               color: theme.accentText,
               cursor: 'pointer',
-              'font-size': '13px',
+              'font-size': '14px',
               'font-weight': '500',
             }}
           >

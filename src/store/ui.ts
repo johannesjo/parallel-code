@@ -1,39 +1,13 @@
-import { produce } from 'solid-js/store';
+import { batch } from 'solid-js';
 import { store, setStore } from './core';
 import type { LookPreset } from '../lib/look';
-import type { PersistedWindowState } from './types';
-
-// --- Font Scale (per-panel) ---
+import type { PersistedWindowState, TaskViewportVisibility } from './types';
+import { invoke } from '../lib/ipc';
+import { IPC } from '../../electron/ipc/channels';
 
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 2.0;
 const SCALE_STEP = 0.1;
-
-export function getFontScale(panelId: string): number {
-  return store.fontScales[panelId] ?? 1;
-}
-
-export function adjustFontScale(panelId: string, delta: 1 | -1): void {
-  const current = getFontScale(panelId);
-  const next =
-    Math.round(Math.min(MAX_SCALE, Math.max(MIN_SCALE, current + delta * SCALE_STEP)) * 10) / 10;
-  setStore('fontScales', panelId, next);
-}
-
-export function resetFontScale(panelId: string): void {
-  if (panelId.includes(':')) {
-    setStore('fontScales', panelId, 1.0);
-  } else {
-    setStore(
-      produce((s) => {
-        const prefix = panelId + ':';
-        for (const key of Object.keys(s.fontScales)) {
-          if (key === panelId || key.startsWith(prefix)) s.fontScales[key] = 1.0;
-        }
-      }),
-    );
-  }
-}
 
 // --- Global Scale ---
 
@@ -59,9 +33,19 @@ export function getPanelSize(key: string): number | undefined {
 }
 
 export function setPanelSizes(entries: Record<string, number>): void {
-  for (const [key, value] of Object.entries(entries)) {
-    setStore('panelSizes', key, value);
-  }
+  batch(() => {
+    for (const [key, value] of Object.entries(entries)) {
+      setStore('panelSizes', key, value);
+    }
+  });
+}
+
+export function getTaskViewportVisibility(taskId: string): TaskViewportVisibility | null {
+  return store.taskViewportVisibility[taskId] ?? null;
+}
+
+export function setTaskViewportVisibility(entries: Record<string, TaskViewportVisibility>): void {
+  setStore('taskViewportVisibility', entries);
 }
 
 // --- Sidebar ---
@@ -90,6 +74,10 @@ export function setShowPromptInput(show: boolean): void {
   setStore('showPromptInput', show);
 }
 
+export function setFontSmoothing(enabled: boolean): void {
+  setStore('fontSmoothing', enabled);
+}
+
 export function setDesktopNotificationsEnabled(enabled: boolean): void {
   setStore('desktopNotificationsEnabled', enabled);
 }
@@ -106,12 +94,26 @@ export function setDockerImage(image: string): void {
   setStore('dockerImage', image || 'parallel-code-agent:latest');
 }
 
+export function setAskCodeProvider(provider: 'claude' | 'minimax'): void {
+  setStore('askCodeProvider', provider);
+}
+
+export function setMinimaxApiKey(key: string): void {
+  invoke(IPC.SetMinimaxApiKey, { key: key.trim() }).catch((e) =>
+    console.warn('Failed to set MiniMax API key:', e),
+  );
+}
+
 export function setDockerAvailable(available: boolean): void {
   setStore('dockerAvailable', available);
 }
 
 export function toggleArena(show?: boolean): void {
   setStore('showArena', show ?? !store.showArena);
+}
+
+export function toggleFocusMode(on?: boolean): void {
+  setStore('focusMode', on ?? !store.focusMode);
 }
 
 export function setWindowState(windowState: PersistedWindowState): void {

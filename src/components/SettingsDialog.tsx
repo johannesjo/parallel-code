@@ -15,13 +15,17 @@ import {
   setAutoTrustFolders,
   setShowPlans,
   setShowPromptInput,
+  setFontSmoothing,
   setDesktopNotificationsEnabled,
   setInactiveColumnOpacity,
   setEditorCommand,
   setDockerImage,
+  setAskCodeProvider,
+  setMinimaxApiKey,
 } from '../store/store';
 import { CustomAgentEditor } from './CustomAgentEditor';
 import { mod } from '../lib/platform';
+import { DEFAULT_DOCKER_IMAGE, PROJECT_DOCKERFILE_RELATIVE_PATH } from '../lib/docker';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -69,14 +73,14 @@ export function SettingsDialog(props: SettingsDialogProps) {
           <h2
             style={{
               margin: '0',
-              'font-size': '16px',
+              'font-size': '17px',
               color: theme.fg,
               'font-weight': '600',
             }}
           >
             Settings
           </h2>
-          <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
+          <span style={{ 'font-size': '13px', color: theme.fgSubtle }}>
             Customize your workspace. Shortcut:{' '}
             <kbd
               style={{
@@ -99,7 +103,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
             border: 'none',
             color: theme.fgMuted,
             cursor: 'pointer',
-            'font-size': '18px',
+            'font-size': '19px',
             padding: '0 4px',
             'line-height': '1',
           }}
@@ -161,8 +165,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
             style={{ 'accent-color': theme.accent, cursor: 'pointer' }}
           />
           <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
-            <span style={{ 'font-size': '13px', color: theme.fg }}>Auto-trust folders</span>
-            <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+            <span style={{ 'font-size': '14px', color: theme.fg }}>Auto-trust folders</span>
+            <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
               Automatically accept trust and permission dialogs from agents
             </span>
           </div>
@@ -186,8 +190,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
             style={{ 'accent-color': theme.accent, cursor: 'pointer' }}
           />
           <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
-            <span style={{ 'font-size': '13px', color: theme.fg }}>Show plans</span>
-            <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+            <span style={{ 'font-size': '14px', color: theme.fg }}>Show plans</span>
+            <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
               Display Claude Code plan files in a tab next to Notes
             </span>
           </div>
@@ -211,8 +215,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
             style={{ 'accent-color': theme.accent, cursor: 'pointer' }}
           />
           <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
-            <span style={{ 'font-size': '13px', color: theme.fg }}>Desktop notifications</span>
-            <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+            <span style={{ 'font-size': '14px', color: theme.fg }}>Desktop notifications</span>
+            <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
               Show native notifications when tasks finish or need attention
             </span>
           </div>
@@ -236,11 +240,36 @@ export function SettingsDialog(props: SettingsDialogProps) {
             style={{ 'accent-color': theme.accent, cursor: 'pointer' }}
           />
           <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
-            <span style={{ 'font-size': '13px', color: theme.fg }}>
+            <span style={{ 'font-size': '14px', color: theme.fg }}>
               Show prompt input box below terminal
             </span>
-            <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+            <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
               When hidden, the terminal occupies the full panel and auto-focuses on activation
+            </span>
+          </div>
+        </label>
+        <label
+          style={{
+            display: 'flex',
+            'align-items': 'flex-start',
+            gap: '10px',
+            cursor: 'pointer',
+            padding: '8px 12px',
+            'border-radius': '8px',
+            background: theme.bgInput,
+            border: `1px solid ${theme.border}`,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={store.fontSmoothing}
+            onChange={(e) => setFontSmoothing(e.currentTarget.checked)}
+            style={{ 'accent-color': theme.accent, cursor: 'pointer' }}
+          />
+          <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
+            <span style={{ 'font-size': '14px', color: theme.fg }}>Font smoothing</span>
+            <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
+              Enable antialiasing and geometric text rendering
             </span>
           </div>
         </label>
@@ -273,7 +302,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               gap: '10px',
             }}
           >
-            <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
+            <span style={{ 'font-size': '14px', color: theme.fg, 'white-space': 'nowrap' }}>
               Editor command
             </span>
             <input
@@ -288,14 +317,101 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 'border-radius': '6px',
                 padding: '6px 10px',
                 color: theme.fg,
-                'font-size': '13px',
+                'font-size': '14px',
                 'font-family': "'JetBrains Mono', monospace",
                 outline: 'none',
               }}
             />
           </label>
-          <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+          <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
             CLI command to open worktree folders. Click the path bar in a task to open it.
+          </span>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
+        <div
+          style={{
+            ...sectionLabelStyle,
+            'font-weight': '600',
+          }}
+        >
+          Ask about Code
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            'flex-direction': 'column',
+            gap: '6px',
+            padding: '8px 12px',
+            'border-radius': '8px',
+            background: theme.bgInput,
+            border: `1px solid ${theme.border}`,
+          }}
+        >
+          <label
+            style={{
+              display: 'flex',
+              'align-items': 'center',
+              gap: '10px',
+            }}
+          >
+            <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
+              LLM provider
+            </span>
+            <select
+              value={store.askCodeProvider}
+              onChange={(e) => setAskCodeProvider(e.currentTarget.value as 'claude' | 'minimax')}
+              style={{
+                flex: '1',
+                background: theme.taskPanelBg,
+                border: `1px solid ${theme.border}`,
+                'border-radius': '6px',
+                padding: '6px 10px',
+                color: theme.fg,
+                'font-size': '13px',
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="claude">Claude Code (claude CLI)</option>
+              <option value="minimax">MiniMax (M2.7)</option>
+            </select>
+          </label>
+          <Show when={store.askCodeProvider === 'minimax'}>
+            <label
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                gap: '10px',
+                'margin-top': '4px',
+              }}
+            >
+              <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
+                MiniMax API key
+              </span>
+              <input
+                type="password"
+                onInput={(e) => setMinimaxApiKey(e.currentTarget.value)}
+                placeholder="Enter your MINIMAX_API_KEY (stored in memory only)"
+                style={{
+                  flex: '1',
+                  background: theme.taskPanelBg,
+                  border: `1px solid ${theme.border}`,
+                  'border-radius': '6px',
+                  padding: '6px 10px',
+                  color: theme.fg,
+                  'font-size': '13px',
+                  'font-family': "'JetBrains Mono', monospace",
+                  outline: 'none',
+                }}
+              />
+            </label>
+          </Show>
+          <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+            {store.askCodeProvider === 'minimax'
+              ? 'Uses MiniMax M2.7 (204K context) via the OpenAI-compatible API — no Claude Code CLI required.'
+              : 'Uses the claude CLI to answer questions about selected code. Requires Claude Code to be installed.'}
           </span>
         </div>
       </div>
@@ -304,7 +420,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
         <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
           <div
             style={{
-              'font-size': '11px',
+              'font-size': '12px',
               color: theme.fgMuted,
               'text-transform': 'uppercase',
               'letter-spacing': '0.05em',
@@ -331,14 +447,14 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 gap: '10px',
               }}
             >
-              <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
+              <span style={{ 'font-size': '14px', color: theme.fg, 'white-space': 'nowrap' }}>
                 Default image
               </span>
               <input
                 type="text"
                 value={store.dockerImage}
                 onInput={(e) => setDockerImage(e.currentTarget.value)}
-                placeholder="parallel-code-agent:latest"
+                placeholder={DEFAULT_DOCKER_IMAGE}
                 style={{
                   flex: '1',
                   background: theme.taskPanelBg,
@@ -346,16 +462,23 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   'border-radius': '6px',
                   padding: '6px 10px',
                   color: theme.fg,
-                  'font-size': '13px',
+                  'font-size': '14px',
                   'font-family': "'JetBrains Mono', monospace",
                   outline: 'none',
                 }}
               />
             </label>
-            <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+            <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
               Docker image used when "Run in Docker container" is enabled for a task. The agent runs
               inside the container with only the project directory mounted.
             </span>
+            <div style={{ 'font-size': '11px', color: theme.fgMuted, 'margin-top': '4px' }}>
+              Projects with a{' '}
+              <code style={{ 'font-family': "'JetBrains Mono', monospace", 'font-size': '11px' }}>
+                {PROJECT_DOCKERFILE_RELATIVE_PATH}
+              </code>{' '}
+              will use a project-specific image instead.
+            </div>
           </div>
         </div>
       </Show>
@@ -387,10 +510,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
               'justify-content': 'space-between',
             }}
           >
-            <span style={{ 'font-size': '13px', color: theme.fg }}>Inactive column opacity</span>
+            <span style={{ 'font-size': '14px', color: theme.fg }}>Inactive column opacity</span>
             <span
               style={{
-                'font-size': '12px',
+                'font-size': '13px',
                 color: theme.fgMuted,
                 'font-family': "'JetBrains Mono', monospace",
                 'min-width': '36px',
@@ -417,7 +540,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
             style={{
               display: 'flex',
               'justify-content': 'space-between',
-              'font-size': '10px',
+              'font-size': '11px',
               color: theme.fgSubtle,
             }}
           >
@@ -468,7 +591,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
           </For>
         </div>
         <Show when={LIGATURE_FONTS.has(store.terminalFont)}>
-          <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
+          <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
             This font includes ligatures which may impact rendering performance.
           </span>
         </Show>

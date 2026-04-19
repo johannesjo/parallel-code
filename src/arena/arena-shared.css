@@ -72,7 +72,7 @@
 }
 
 .arena-title {
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -109,7 +109,7 @@
   padding: 6px 16px;
   color: var(--fg);
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   transition: background 0.15s ease;
 }
@@ -128,7 +128,7 @@
 }
 
 .arena-section-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--fg-subtle);
   text-transform: uppercase;
@@ -162,7 +162,7 @@
   padding: 16px 40px;
   color: var(--accent-text);
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -222,7 +222,7 @@
   border: 1px solid var(--error, #ef4444);
   border-radius: 8px;
   color: var(--error, #ef4444);
-  font-size: 12px;
+  font-size: 13px;
   padding: 8px 12px;
   margin-bottom: 8px;
   text-align: center;
