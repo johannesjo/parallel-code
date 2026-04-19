@@ -475,6 +475,18 @@ export async function loadState(): Promise<void> {
       const activeSet = new Set(s.taskOrder);
       s.collapsedTaskOrder = s.collapsedTaskOrder.filter((id) => !activeSet.has(id));
 
+      // Focus mode requires a valid active panel; without one, every panel is
+      // hidden and the strip reads blank. Repair or drop focus mode.
+      if (s.focusMode) {
+        const activeValid =
+          s.activeTaskId !== null &&
+          (s.tasks[s.activeTaskId] !== undefined || s.terminals[s.activeTaskId] !== undefined);
+        if (!activeValid) {
+          s.activeTaskId = s.taskOrder[0] ?? null;
+          if (s.activeTaskId === null) s.focusMode = false;
+        }
+      }
+
       // Set activeAgentId from the active task
       if (s.activeTaskId && s.tasks[s.activeTaskId]) {
         s.activeAgentId = s.tasks[s.activeTaskId].agentIds[0] ?? null;

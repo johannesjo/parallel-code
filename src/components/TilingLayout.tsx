@@ -35,8 +35,13 @@ export function TilingLayout() {
   const [hasOverflowLeft, setHasOverflowLeft] = createSignal(false);
   const [hasOverflowRight, setHasOverflowRight] = createSignal(false);
   const [dragging, setDragging] = createSignal<number | null>(null);
+  // Transient per-drag width overrides. Written on mousemove, committed to
+  // store.panelSizes on mouseup. Keeps autosave's snapshot stable mid-drag.
+  const [dragPreview, setDragPreview] = createSignal<Record<string, number>>({});
 
   function sizeFor(child: PanelChild): number {
+    const preview = dragPreview()[child.id];
+    if (preview !== undefined) return preview;
     const saved = getPanelSize(`tiling:${child.id}`);
     if (saved !== undefined) return saved;
     return child.initialSize ?? 200;
@@ -62,7 +67,7 @@ export function TilingLayout() {
   };
 
   const updateViewportState = () => {
-    if (!containerRef) {
+    if (!containerRef || store.focusMode) {
       setHasOverflowLeft(false);
       setHasOverflowRight(false);
       syncTaskViewportVisibility({});
@@ -343,14 +348,17 @@ export function TilingLayout() {
     const minSize = child.minSize ?? 30;
     const maxSize = child.maxSize ?? Infinity;
     const key = `tiling:${child.id}`;
+    let latest = startSize;
     setDragging(index);
 
     function onMove(ev: MouseEvent) {
-      const next = Math.min(maxSize, Math.max(minSize, startSize + (ev.clientX - startX)));
-      setPanelSizes({ [key]: next });
+      latest = Math.min(maxSize, Math.max(minSize, startSize + (ev.clientX - startX)));
+      setDragPreview({ [child.id]: latest });
     }
     function onUp() {
       setDragging(null);
+      setDragPreview({});
+      setPanelSizes({ [key]: latest });
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     }
@@ -540,8 +548,8 @@ export function TilingLayout() {
                       inset: '0',
                       width: '100%',
                       height: '100%',
-                      visibility: isActive ? undefined : 'hidden',
-                      'pointer-events': isActive ? undefined : 'none',
+                      visibility: isActive ? 'visible' : 'hidden',
+                      'pointer-events': isActive ? 'auto' : 'none',
                       overflow: 'hidden',
                     };
                   }
@@ -554,13 +562,8 @@ export function TilingLayout() {
                     overflow: 'hidden',
                   };
                 });
-                const isLast = () => i() >= panelChildren().length - 1;
-                const showHandle = () => !store.focusMode && !child.fixed && !isLast();
-                const showSpacer = () => {
-                  if (store.focusMode || isLast() || showHandle()) return false;
-                  const right = panelChildren()[i() + 1];
-                  return !(child.fixed && right?.fixed);
-                };
+                const showHandle = () =>
+                  !store.focusMode && !child.fixed && i() < panelChildren().length - 1;
                 return (
                   <>
                     <div style={wrapperStyle()}>{child.content()}</div>
@@ -569,9 +572,6 @@ export function TilingLayout() {
                         class={`resize-handle resize-handle-h ${dragging() === i() ? 'dragging' : ''}`}
                         onMouseDown={(e) => handleDragStart(i(), e)}
                       />
-                    </Show>
-                    <Show when={showSpacer()}>
-                      <div style={{ width: '12px', 'flex-shrink': '0' }} />
                     </Show>
                   </>
                 );
