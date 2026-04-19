@@ -1,11 +1,13 @@
 import {
   Show,
+  For,
   createMemo,
   createEffect,
   createSignal,
   onMount,
   onCleanup,
   ErrorBoundary,
+  type JSX,
 } from 'solid-js';
 import {
   store,
@@ -13,12 +15,15 @@ import {
   closeTerminal,
   setTaskViewportVisibility,
   taskNeedsAttention,
+  getPanelSize,
+  setPanelSizes,
 } from '../store/store';
 import { closeTask } from '../store/tasks';
-import { ResizablePanel, type PanelChild, type ResizablePanelHandle } from './ResizablePanel';
+import type { PanelChild } from './ResizablePanel';
 import { TaskPanel } from './TaskPanel';
 import { TerminalPanel } from './TerminalPanel';
 import { NewTaskPlaceholder } from './NewTaskPlaceholder';
+import { markDirty } from '../lib/terminalFitManager';
 import { theme } from '../lib/theme';
 import { mod } from '../lib/platform';
 import { createCtrlShiftWheelResizeHandler } from '../lib/wheelZoom';
@@ -27,9 +32,15 @@ const VIEWPORT_EPSILON_PX = 4;
 
 export function TilingLayout() {
   let containerRef: HTMLDivElement | undefined;
-  let panelHandle: ResizablePanelHandle | undefined;
   const [hasOverflowLeft, setHasOverflowLeft] = createSignal(false);
   const [hasOverflowRight, setHasOverflowRight] = createSignal(false);
+  const [dragging, setDragging] = createSignal<number | null>(null);
+
+  function sizeFor(child: PanelChild): number {
+    const saved = getPanelSize(`tiling:${child.id}`);
+    if (saved !== undefined) return saved;
+    return child.initialSize ?? 200;
+  }
 
   const syncTaskViewportVisibility = (
     entries: Record<string, 'visible' | 'offscreen-left' | 'offscreen-right'>,
@@ -99,7 +110,16 @@ export function TilingLayout() {
   onMount(() => {
     if (!containerRef) return;
     const handleWheel = createCtrlShiftWheelResizeHandler((deltaPx) => {
-      panelHandle?.resizeAll(deltaPx);
+      if (store.focusMode) return;
+      const entries: Record<string, number> = {};
+      for (const child of panelChildren()) {
+        if (child.fixed) continue;
+        const current = sizeFor(child);
+        const min = child.minSize ?? 30;
+        const max = child.maxSize ?? Infinity;
+        entries[`tiling:${child.id}`] = Math.min(max, Math.max(min, current + deltaPx));
+      }
+      setPanelSizes(entries);
       requestAnimationFrame(() => updateViewportState());
     });
     let scrollRafPending = false;
@@ -143,10 +163,12 @@ export function TilingLayout() {
     requestAnimationFrame(() => updateViewportState());
   });
 
-  // Scroll the active task panel into view when selection changes
+  // Scroll the active task panel into view when selection changes.
+  // No-op in focus mode: panels are absolute-positioned, scrolling is meaningless.
   createEffect(() => {
     const activeId = store.activeTaskId;
     if (!containerRef) return;
+    if (store.focusMode) return;
     if (!activeId) {
       updateViewportState();
       return;
@@ -156,6 +178,22 @@ export function TilingLayout() {
     el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
     requestAnimationFrame(() => updateViewportState());
   });
+
+  // In focus mode: re-fit terminals of the newly active task so xterm picks up
+  // the full-width container dimensions (visibility:hidden doesn't trigger
+  // ResizeObserver).
+  createEffect(() => {
+    const activeId = store.activeTaskId;
+    if (!store.focusMode || !activeId) return;
+    const task = store.tasks[activeId];
+    if (task) {
+      for (const agentId of task.agentIds) markDirty(agentId);
+      for (const shellId of task.shellAgentIds) markDirty(shellId);
+    }
+    const terminal = store.terminals[activeId];
+    if (terminal) markDirty(terminal.agentId);
+  });
+
   // Cache PanelChild objects by ID so <For> sees stable references
   // and doesn't unmount/remount panels when taskOrder changes.
   const panelCache = new Map<string, PanelChild>();
@@ -294,6 +332,31 @@ export function TilingLayout() {
 
     return panels;
   });
+
+  function handleDragStart(index: number, e: MouseEvent) {
+    const panels = panelChildren();
+    const child = panels[index];
+    if (!child || child.fixed) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startSize = sizeFor(child);
+    const minSize = child.minSize ?? 30;
+    const maxSize = child.maxSize ?? Infinity;
+    const key = `tiling:${child.id}`;
+    setDragging(index);
+
+    function onMove(ev: MouseEvent) {
+      const next = Math.min(maxSize, Math.max(minSize, startSize + (ev.clientX - startX)));
+      setPanelSizes({ [key]: next });
+    }
+    function onUp() {
+      setDragging(null);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
 
   return (
     <div class="tiling-layout-shell">
@@ -454,15 +517,67 @@ export function TilingLayout() {
             </div>
           }
         >
-          <ResizablePanel
-            direction="horizontal"
-            children={panelChildren()}
-            fitContent
-            persistKey="tiling"
-            onHandle={(h) => {
-              panelHandle = h;
+          <div
+            style={{
+              display: 'flex',
+              'flex-direction': 'row',
+              height: '100%',
+              position: 'relative',
+              ...(store.focusMode
+                ? { width: '100%', overflow: 'hidden' }
+                : { width: 'fit-content', 'min-width': '100%' }),
             }}
-          />
+          >
+            <For each={panelChildren()}>
+              {(child, i) => {
+                const wrapperStyle = createMemo((): JSX.CSSProperties => {
+                  const isPlaceholder = child.id === '__placeholder';
+                  if (store.focusMode) {
+                    if (isPlaceholder) return { display: 'none' };
+                    const isActive = child.id === store.activeTaskId;
+                    return {
+                      position: 'absolute',
+                      inset: '0',
+                      width: '100%',
+                      height: '100%',
+                      visibility: isActive ? undefined : 'hidden',
+                      'pointer-events': isActive ? undefined : 'none',
+                      overflow: 'hidden',
+                    };
+                  }
+                  const s = sizeFor(child);
+                  const min = child.minSize ?? 0;
+                  return {
+                    width: `${s}px`,
+                    'min-width': `${min}px`,
+                    'flex-shrink': '0',
+                    overflow: 'hidden',
+                  };
+                });
+                const isLast = () => i() >= panelChildren().length - 1;
+                const showHandle = () => !store.focusMode && !child.fixed && !isLast();
+                const showSpacer = () => {
+                  if (store.focusMode || isLast() || showHandle()) return false;
+                  const right = panelChildren()[i() + 1];
+                  return !(child.fixed && right?.fixed);
+                };
+                return (
+                  <>
+                    <div style={wrapperStyle()}>{child.content()}</div>
+                    <Show when={showHandle()}>
+                      <div
+                        class={`resize-handle resize-handle-h ${dragging() === i() ? 'dragging' : ''}`}
+                        onMouseDown={(e) => handleDragStart(i(), e)}
+                      />
+                    </Show>
+                    <Show when={showSpacer()}>
+                      <div style={{ width: '12px', 'flex-shrink': '0' }} />
+                    </Show>
+                  </>
+                );
+              }}
+            </For>
+          </div>
         </Show>
       </div>
 
