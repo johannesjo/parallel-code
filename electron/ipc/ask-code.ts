@@ -1,7 +1,11 @@
 import { spawn, type ChildProcess } from 'child_process';
 import type { BrowserWindow } from 'electron';
 import { validateCommand } from './pty.js';
-import { askAboutCodeMinimax, cancelAskAboutCodeMinimax } from './ask-code-minimax.js';
+import {
+  askAboutCodeMinimax,
+  cancelAskAboutCodeMinimax,
+  isMinimaxRequestActive,
+} from './ask-code-minimax.js';
 
 export type AskCodeProvider = 'claude' | 'minimax';
 
@@ -19,14 +23,12 @@ const TIMEOUT_MS = 120_000;
 
 const activeRequests = new Map<string, ChildProcess>();
 const activeTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const activeProviders = new Map<string, AskCodeProvider>();
 
 export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
   const { requestId, channelId, prompt, cwd, provider } = args;
 
   // Route to MiniMax backend when configured
   if (provider === 'minimax') {
-    activeProviders.set(requestId, 'minimax');
     askAboutCodeMinimax(win, { requestId, channelId, prompt });
     return;
   }
@@ -41,7 +43,6 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
   // Cancel any existing request with the same ID
   cancelAskAboutCode(requestId);
 
-  activeProviders.set(requestId, 'claude');
   validateCommand('claude');
 
   const filteredEnv: Record<string, string> = {};
@@ -88,7 +89,6 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
 
   function cleanup() {
     activeRequests.delete(requestId);
-    activeProviders.delete(requestId);
     const timer = activeTimers.get(requestId);
     if (timer) {
       clearTimeout(timer);
@@ -137,10 +137,7 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
 }
 
 export function cancelAskAboutCode(requestId: string): void {
-  const provider = activeProviders.get(requestId);
-  activeProviders.delete(requestId);
-
-  if (provider === 'minimax') {
+  if (isMinimaxRequestActive(requestId)) {
     cancelAskAboutCodeMinimax(requestId);
     return;
   }

@@ -174,3 +174,7 @@ export function cancelAskAboutCodeMinimax(requestId: string): void {
     activeTimers.delete(requestId);
   }
 }
+
+export function isMinimaxRequestActive(requestId: string): boolean {
+  return activeRequests.has(requestId);
+}
