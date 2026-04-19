@@ -22,6 +22,7 @@ export enum IPC {
   GetFileDiff = 'get_file_diff',
   GetFileDiffFromBranch = 'get_file_diff_from_branch',
   GetGitignoredDirs = 'get_gitignored_dirs',
+  ListProjectEntries = 'list_project_entries',
   ListImportableWorktrees = 'list_importable_worktrees',
   GetWorktreeStatus = 'get_worktree_status',
   CheckMergeStatus = 'check_merge_status',
@@ -99,6 +100,11 @@ export enum IPC {
   AskAboutCode = 'ask_about_code',
   CancelAskAboutCode = 'cancel_ask_about_code',
   SetMinimaxApiKey = 'set_minimax_api_key',
+
+  // Setup / teardown commands (per-project, run on worktree create / remove)
+  RunSetupCommands = 'run_setup_commands',
+  RunTeardownCommands = 'run_teardown_commands',
+  CancelProjectCommands = 'cancel_project_commands',
 
   // Docker
   CheckDockerAvailable = 'check_docker_available',

@@ -11,7 +11,18 @@ import { sanitizeBranchPrefix, toBranchName } from '../lib/branch-name';
 import { theme, sectionLabelStyle } from '../lib/theme';
 import type { Project, TerminalBookmark, GitIsolationMode } from '../store/types';
 import { SegmentedButtons } from './SegmentedButtons';
+import { CommandListEditor } from './CommandListEditor';
+import { PathSelector } from './PathSelector';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
+
+const COMMAND_VARIABLES = [
+  { name: 'PROJECT_ROOT', description: 'Project root directory', example: '/Users/me/myproject' },
+  {
+    name: 'WORKTREE',
+    description: "This task's worktree directory",
+    example: '/Users/me/myproject/.worktrees/task/some-branch',
+  },
+];
 
 interface EditProjectDialogProps {
   project: Project | null;
@@ -32,6 +43,9 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [defaultBaseBranch, setDefaultBaseBranch] = createSignal('');
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
   const [newCommand, setNewCommand] = createSignal('');
+  const [defaultSymlinkDirs, setDefaultSymlinkDirs] = createSignal<string[]>([]);
+  const [setupCommands, setSetupCommands] = createSignal<string[]>([]);
+  const [teardownCommands, setTeardownCommands] = createSignal<string[]>([]);
   const [showImportDialog, setShowImportDialog] = createSignal(false);
   let nameRef!: HTMLInputElement;
 
@@ -46,6 +60,9 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
     setDefaultGitIsolation(p.defaultGitIsolation ?? 'worktree');
     setDefaultBaseBranch(p.defaultBaseBranch ?? '');
     setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
+    setDefaultSymlinkDirs(p.defaultSymlinkDirs ? [...p.defaultSymlinkDirs] : []);
+    setSetupCommands(p.setupCommands ? [...p.setupCommands] : []);
+    setTeardownCommands(p.teardownCommands ? [...p.teardownCommands] : []);
     setNewCommand('');
     requestAnimationFrame(() => nameRef?.focus());
   });
@@ -79,6 +96,9 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
       defaultGitIsolation: defaultGitIsolation(),
       defaultBaseBranch: defaultBaseBranch() || undefined,
       terminalBookmarks: bookmarks(),
+      defaultSymlinkDirs: defaultSymlinkDirs(),
+      setupCommands: setupCommands(),
+      teardownCommands: teardownCommands(),
     });
     props.onClose();
   }
@@ -478,6 +498,40 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 </button>
               </div>
             </div>
+
+            {/* Default symlink dirs */}
+            <PathSelector
+              dirs={defaultSymlinkDirs()}
+              projectRoot={project().path}
+              onAdd={(dir) => setDefaultSymlinkDirs([...defaultSymlinkDirs(), dir])}
+              onRemove={(i) =>
+                setDefaultSymlinkDirs(defaultSymlinkDirs().filter((_, idx) => idx !== i))
+              }
+            />
+
+            {/* Setup commands */}
+            <CommandListEditor
+              label="Setup commands"
+              description="Run in each new worktree before the agent starts (e.g. npm install)."
+              placeholder="npm install"
+              items={setupCommands()}
+              variables={COMMAND_VARIABLES}
+              onAdd={(cmd) => setSetupCommands([...setupCommands(), cmd])}
+              onRemove={(i) => setSetupCommands(setupCommands().filter((_, idx) => idx !== i))}
+            />
+
+            {/* Teardown commands */}
+            <CommandListEditor
+              label="Teardown commands"
+              description="Run before a worktree is removed (e.g. docker compose down)."
+              placeholder='rm -rf "$WORKTREE/build"'
+              items={teardownCommands()}
+              variables={COMMAND_VARIABLES}
+              onAdd={(cmd) => setTeardownCommands([...teardownCommands(), cmd])}
+              onRemove={(i) =>
+                setTeardownCommands(teardownCommands().filter((_, idx) => idx !== i))
+              }
+            />
 
             {/* Buttons */}
             <div

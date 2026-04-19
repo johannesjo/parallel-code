@@ -27,6 +27,7 @@ import { TaskNotesPanel } from './TaskNotesPanel';
 import { TaskShellSection } from './TaskShellSection';
 import { TaskStepsSection } from './TaskStepsSection';
 import { TaskAITerminal } from './TaskAITerminal';
+import { SetupBanner } from './SetupBanner';
 import { TaskClosingOverlay } from './TaskClosingOverlay';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
@@ -263,14 +264,26 @@ export function TaskPanel(props: TaskPanelProps) {
       id: 'ai-terminal',
       minSize: 80,
       content: () => (
-        <TaskAITerminal
-          task={props.task}
-          isActive={props.isActive}
-          promptHandle={promptHandle}
-          onStepJumpReady={(fn, fromIdx) => {
-            setStepNav(fn ? { jump: fn, firstIndex: fromIdx } : undefined);
+        <div
+          style={{
+            display: 'flex',
+            'flex-direction': 'column',
+            height: '100%',
+            'min-height': '0',
           }}
-        />
+        >
+          <SetupBanner task={props.task} />
+          <div style={{ flex: '1', 'min-height': '0', position: 'relative' }}>
+            <TaskAITerminal
+              task={props.task}
+              isActive={props.isActive}
+              promptHandle={promptHandle}
+              onStepJumpReady={(fn, fromIdx) => {
+                setStepNav(fn ? { jump: fn, firstIndex: fromIdx } : undefined);
+              }}
+            />
+          </div>
+        </div>
       ),
     };
   }

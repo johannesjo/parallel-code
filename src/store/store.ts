@@ -8,6 +8,7 @@ export {
   updateProject,
   getProjectPath,
   getProjectBranchPrefix,
+  getProjectDefaultSymlinkDirs,
   pickAndAddProject,
   validateProjectPaths,
   relinkProject,
@@ -53,6 +54,8 @@ export {
   setStepsContent,
   setTaskStepsEnabled,
   setTaskLastInputAt,
+  retrySetup,
+  skipSetup,
 } from './tasks';
 export {
   setActiveTask,

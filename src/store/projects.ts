@@ -65,6 +65,9 @@ export function updateProject(
       | 'defaultGitIsolation'
       | 'defaultBaseBranch'
       | 'terminalBookmarks'
+      | 'defaultSymlinkDirs'
+      | 'setupCommands'
+      | 'teardownCommands'
     >
   >,
 ): void {
@@ -84,8 +87,30 @@ export function updateProject(
         s.projects[idx].defaultBaseBranch = updates.defaultBaseBranch;
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
+      if (updates.defaultSymlinkDirs !== undefined)
+        s.projects[idx].defaultSymlinkDirs = updates.defaultSymlinkDirs;
+      if (updates.setupCommands !== undefined)
+        s.projects[idx].setupCommands = updates.setupCommands;
+      if (updates.teardownCommands !== undefined)
+        s.projects[idx].teardownCommands = updates.teardownCommands;
     }),
   );
+}
+
+/** Returns non-empty commands array, or undefined when unset/empty. */
+export function getProjectSetupCommands(projectId: string): string[] | undefined {
+  const cmds = store.projects.find((p) => p.id === projectId)?.setupCommands;
+  return cmds && cmds.length > 0 ? cmds : undefined;
+}
+
+export function getProjectTeardownCommands(projectId: string): string[] | undefined {
+  const cmds = store.projects.find((p) => p.id === projectId)?.teardownCommands;
+  return cmds && cmds.length > 0 ? cmds : undefined;
+}
+
+export function getProjectDefaultSymlinkDirs(projectId: string): string[] | undefined {
+  const dirs = store.projects.find((p) => p.id === projectId)?.defaultSymlinkDirs;
+  return dirs && dirs.length > 0 ? dirs : undefined;
 }
 
 export function getProjectBranchPrefix(projectId: string): string {

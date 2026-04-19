@@ -489,21 +489,27 @@ export async function createWorktree(
   if (baseBranch) worktreeArgs.push(baseBranch);
   await exec('git', worktreeArgs, { cwd: repoRoot });
 
-  // Symlink selected directories. `.claude` is handled separately below — it
-  // can't be a symlink because Claude Code's bwrap sandbox binds specific
-  // entries inside it, and bwrap refuses to bind-mount at symlink paths.
+  // Symlink selected directories (or files). `.claude` is handled separately
+  // below — it can't be a symlink because Claude Code's bwrap sandbox binds
+  // specific entries inside it, and bwrap refuses to bind-mount at symlink
+  // paths. Nested paths like `packages/app/node_modules` are supported: the
+  // parent directory is created with mkdir -p before the symlink is placed.
   for (const name of symlinkDirs) {
     if (name === '.claude') continue;
-    // Reject names that could escape the worktree directory
-    if (name.includes('/') || name.includes('\\') || name.includes('..') || name === '.') continue;
-    const source = path.join(repoRoot, name);
-    const target = path.join(worktreePath, name);
+    if (path.isAbsolute(name) || name === '.' || name === '') continue;
+    // Reject names that would escape the worktree root after normalization
+    // (blocks both leading `..` and embedded segments like `foo/../..`).
+    const normalized = path.normalize(name);
+    if (normalized.startsWith('..') || normalized === '.' || path.isAbsolute(normalized)) continue;
+    const source = path.join(repoRoot, normalized);
+    const target = path.join(worktreePath, normalized);
     try {
       if (!fs.existsSync(source)) continue;
       if (fs.existsSync(target)) continue;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.symlinkSync(source, target);
     } catch (err) {
-      console.warn(`Failed to symlink directory '${name}' into worktree:`, err);
+      console.warn(`Failed to symlink '${name}' into worktree:`, err);
     }
   }
 
@@ -700,6 +706,30 @@ export async function removeWorktree(
 }
 
 // --- IPC command functions ---
+
+/**
+ * List immediate children of `projectRoot`. Used by `PathSelector` to
+ * autocomplete symlink-dir candidates. The `.git` directory is filtered out;
+ * other dotfiles are kept so users can pick e.g. `.env` or `.venv`. Users
+ * who need nested paths type them freely into the input.
+ */
+export async function listProjectEntries(
+  projectRoot: string,
+): Promise<Array<{ name: string; isDir: boolean }>> {
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(projectRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((e) => e.name !== '.git')
+    .map((e) => ({ name: e.name, isDir: e.isDirectory() }))
+    .sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+}
 
 export async function getGitIgnoredDirs(projectRoot: string): Promise<string[]> {
   const results: string[] = [];

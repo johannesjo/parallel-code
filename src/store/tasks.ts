@@ -4,7 +4,14 @@ import { IPC } from '../../electron/ipc/channels';
 import { store, setStore, cleanupPanelEntries } from './core';
 import { saveState } from './persistence';
 import { setTaskFocusedPanel } from './focus';
-import { getProject, getProjectPath, getProjectBranchPrefix, isProjectMissing } from './projects';
+import {
+  getProject,
+  getProjectPath,
+  getProjectBranchPrefix,
+  getProjectSetupCommands,
+  getProjectTeardownCommands,
+  isProjectMissing,
+} from './projects';
 import { setPendingShellCommand } from '../lib/bookmarks';
 import {
   markAgentSpawned,
@@ -204,6 +211,14 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
 
   initTaskInStore(taskId, task, agent, projectId, agentDef);
   saveState(); // fire-and-forget — errors handled internally
+
+  // Run project setup commands after the worktree exists but while the agent
+  // is still initializing. The agent's initialPrompt is stashed so it can't
+  // fire off work before setup completes.
+  if (gitIsolation === 'worktree') {
+    runSetupForTask(taskId, worktreePath, projectId);
+  }
+
   return taskId;
 }
 
@@ -289,6 +304,16 @@ export async function closeTask(taskId: string): Promise<void> {
   // Stop plan file watcher to prevent FSWatcher leak
   invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
 
+  // Cancel in-flight setup if any — avoids zombie processes and the `.finally()`
+  // in runSetupForTask writing to a task that's about to be removed. Marking
+  // the taskId as cancelled lets the .catch handler distinguish an abort from
+  // a real failure without error-message string matching.
+  const setupChan = setupChannels.get(taskId);
+  if (setupChan) {
+    cancelledSetups.add(taskId);
+    invoke(IPC.CancelProjectCommands, { channelId: setupChan }).catch(console.error);
+  }
+
   try {
     // Kill agents
     for (const agentId of agentIds) {
@@ -300,6 +325,12 @@ export async function closeTask(taskId: string): Promise<void> {
 
     // Skip git cleanup for direct mode (no worktree/branch) and imported worktrees (user-owned).
     if (task.gitIsolation === 'worktree' && !task.externalWorktree) {
+      // Run project teardown commands before removing the worktree. Best-effort:
+      // a failing teardown logs but does not block cleanup.
+      await runTeardownForTask(taskId, task.worktreePath, task.projectId).catch((err) =>
+        console.warn('Teardown failed:', err),
+      );
+
       // Remove worktree + branch
       await invoke(IPC.DeleteTask, {
         taskId,
@@ -451,6 +482,11 @@ export function updateTaskNotes(taskId: string, notes: string): void {
 
 export async function sendPrompt(taskId: string, agentId: string, text: string): Promise<void> {
   const task = store.tasks[taskId];
+
+  // Drop user input while project setup is still running. The SetupBanner is
+  // visible above the terminal, so dropping silently won't confuse the user,
+  // and it prevents prompts from firing at the agent mid-`npm install`.
+  if (task?.setupStatus === 'running') return;
 
   // When steps tracking is enabled but no initial prompt was provided in the dialog,
   // the steps instruction was never injected in createTask.  Append it to the first
@@ -722,4 +758,147 @@ export function setTaskLastInputAt(taskId: string): void {
 export function setTaskStepsEnabled(taskId: string, enabled: boolean): void {
   setStore('tasks', taskId, 'stepsEnabled', enabled || undefined);
   setStore('showSteps', enabled); // remember as default for future tasks
+}
+
+// --- Setup / teardown ---
+
+/** Cap the setupLog at this many bytes. Noisy commands like `npm install` can
+ *  emit megabytes of output; letting setupLog grow unbounded becomes O(n²) in
+ *  string concatenation and layout cost. Head is trimmed on overflow — tail
+ *  is what the user usually cares about on failure. */
+const MAX_SETUP_LOG_BYTES = 64 * 1024;
+const SETUP_LOG_TRIM_NOTICE = '…(earlier output trimmed)…\n';
+const TEARDOWN_TIMEOUT_MS = 30_000;
+
+// Task initialPrompt stashed while setup is running, restored on success or skip.
+const stashedPrompts = new Map<string, string>();
+// Active setup/teardown channel per task, used so closeTask can cancel in-flight work.
+const setupChannels = new Map<string, string>();
+// Tracks taskIds whose setup was deliberately cancelled, so the .catch handler
+// can distinguish cancellation from a real failure without error-string matching.
+const cancelledSetups = new Set<string>();
+
+function appendSetupLog(taskId: string, msg: string): void {
+  if (!store.tasks[taskId]) return;
+  const current = store.tasks[taskId].setupLog ?? '';
+  const combined = current + msg;
+  if (combined.length <= MAX_SETUP_LOG_BYTES) {
+    setStore('tasks', taskId, 'setupLog', combined);
+    return;
+  }
+  const keep = MAX_SETUP_LOG_BYTES - SETUP_LOG_TRIM_NOTICE.length;
+  setStore('tasks', taskId, 'setupLog', SETUP_LOG_TRIM_NOTICE + combined.slice(-keep));
+}
+
+function restoreStashedPrompt(taskId: string): void {
+  const prompt = stashedPrompts.get(taskId);
+  if (prompt !== undefined) {
+    stashedPrompts.delete(taskId);
+    if (store.tasks[taskId]) setStore('tasks', taskId, 'initialPrompt', prompt);
+  }
+}
+
+function runSetupForTask(taskId: string, worktreePath: string, projectId: string): void {
+  const task = store.tasks[taskId];
+  if (!task) return;
+
+  const commands = getProjectSetupCommands(projectId);
+  if (!commands) return;
+
+  // Stash the initial prompt so the agent doesn't send it while setup runs.
+  if (task.initialPrompt) {
+    stashedPrompts.set(taskId, task.initialPrompt);
+    setStore('tasks', taskId, 'initialPrompt', undefined);
+  }
+
+  setStore('tasks', taskId, 'setupStatus', 'running');
+  setStore('tasks', taskId, 'setupLog', '');
+  setStore('tasks', taskId, 'setupError', undefined);
+
+  const channel = new Channel<string>();
+  setupChannels.set(taskId, channel.id);
+  cancelledSetups.delete(taskId);
+
+  channel.onmessage = (msg: string) => appendSetupLog(taskId, msg);
+
+  const projectRoot = getProjectPath(projectId) ?? worktreePath;
+
+  invoke(IPC.RunSetupCommands, {
+    worktreePath,
+    projectRoot,
+    commands,
+    onOutput: channel,
+  })
+    .then(() => {
+      if (!store.tasks[taskId]) return;
+      setStore('tasks', taskId, 'setupStatus', 'done');
+      restoreStashedPrompt(taskId);
+    })
+    .catch((err: unknown) => {
+      // Deliberate cancellation during close — not a failure to surface.
+      if (cancelledSetups.has(taskId)) return;
+      if (!store.tasks[taskId]) return;
+      setStore('tasks', taskId, 'setupStatus', 'failed');
+      setStore('tasks', taskId, 'setupError', String(err));
+    })
+    .finally(() => {
+      if (setupChannels.get(taskId) === channel.id) setupChannels.delete(taskId);
+      cancelledSetups.delete(taskId);
+      stashedPrompts.delete(taskId);
+      channel.dispose();
+    });
+}
+
+async function runTeardownForTask(
+  taskId: string,
+  worktreePath: string,
+  projectId: string,
+): Promise<void> {
+  const commands = getProjectTeardownCommands(projectId);
+  if (!commands) return;
+
+  // Surface teardown output to console so failures are diagnosable.
+  const channel = new Channel<string>();
+  channel.onmessage = (msg: string) => {
+    console.warn(`[teardown ${taskId}]`, msg.replace(/\n$/, ''));
+  };
+
+  // Reuse setupChannels so closeTask's cancel path can abort a stuck teardown too.
+  setupChannels.set(taskId, channel.id);
+
+  // Teardown commands like `docker compose down` can hang indefinitely; fall
+  // back to aborting after a generous timeout so closeTask never blocks forever.
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    invoke(IPC.CancelProjectCommands, { channelId: channel.id }).catch(console.error);
+  }, TEARDOWN_TIMEOUT_MS);
+
+  const projectRoot = getProjectPath(projectId) ?? worktreePath;
+  try {
+    await invoke(IPC.RunTeardownCommands, {
+      worktreePath,
+      projectRoot,
+      commands,
+      onOutput: channel,
+    });
+  } finally {
+    clearTimeout(timer);
+    if (setupChannels.get(taskId) === channel.id) setupChannels.delete(taskId);
+    channel.dispose();
+    if (timedOut) console.warn(`[teardown ${taskId}] aborted after ${TEARDOWN_TIMEOUT_MS}ms`);
+  }
+}
+
+export function retrySetup(taskId: string): void {
+  const task = store.tasks[taskId];
+  if (!task) return;
+  runSetupForTask(taskId, task.worktreePath, task.projectId);
+}
+
+export function skipSetup(taskId: string): void {
+  setStore('tasks', taskId, 'setupStatus', undefined);
+  setStore('tasks', taskId, 'setupLog', undefined);
+  setStore('tasks', taskId, 'setupError', undefined);
+  restoreStashedPrompt(taskId);
 }

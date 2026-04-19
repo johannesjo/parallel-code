@@ -21,6 +21,9 @@ export interface Project {
   defaultGitIsolation?: GitIsolationMode;
   defaultBaseBranch?: string;
   terminalBookmarks?: TerminalBookmark[];
+  defaultSymlinkDirs?: string[];
+  setupCommands?: string[];
+  teardownCommands?: string[];
 }
 
 export interface Agent {
@@ -65,6 +68,9 @@ export interface Task {
   stepsEnabled?: boolean;
   stepsContent?: StepEntry[];
   lastInputAt?: string;
+  setupStatus?: 'running' | 'done' | 'failed';
+  setupLog?: string;
+  setupError?: string;
 }
 
 export interface Terminal {
