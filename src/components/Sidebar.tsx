@@ -22,6 +22,7 @@ import {
   toggleSettingsDialog,
   uncollapseTask,
   isProjectMissing,
+  showNotification,
 } from '../store/store';
 import type { Project } from '../store/types';
 import type { TaskAttentionState } from '../store/store';
@@ -210,7 +211,10 @@ export function Sidebar() {
         setImportProject(project);
       }
     } catch (err) {
-      console.warn('Failed to scan importable worktrees:', err);
+      console.error('Failed to scan importable worktrees:', err);
+      showNotification(
+        `Couldn't scan existing worktrees: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

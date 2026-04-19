@@ -358,6 +358,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertOptionalBoolean(args.cleanup, 'cleanup');
     const baseBranch = args.baseBranch || undefined;
     if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    const worktreePath = args.worktreePath || undefined;
+    if (worktreePath) validatePath(worktreePath, 'worktreePath');
     return mergeTask(
       args.projectRoot,
       args.branchName,
@@ -365,6 +367,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       args.message ?? null,
       args.cleanup ?? false,
       baseBranch,
+      worktreePath,
     );
   });
   ipcMain.handle(IPC.GetBranchLog, (_e, args) => {

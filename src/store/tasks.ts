@@ -236,12 +236,14 @@ export async function createImportedTask(opts: CreateImportedTaskOptions): Promi
   const id = crypto.randomUUID();
   const agentId = crypto.randomUUID();
   const name = deriveImportedTaskName(worktree.branch_name, worktree.path);
+  const baseBranch = getProject(projectId)?.defaultBaseBranch || undefined;
 
   const task: Task = {
     id,
     name,
     projectId,
     gitIsolation: 'worktree',
+    baseBranch,
     branchName: worktree.branch_name,
     worktreePath: worktree.path,
     agentIds: [agentId],
@@ -394,7 +396,9 @@ export async function mergeTask(
   const agentIds = [...task.agentIds];
   const shellAgentIds = [...task.shellAgentIds];
   const branchName = task.branchName;
-  const cleanup = options?.cleanup ?? false;
+  // Imported worktrees are user-owned; never let cleanup delete them or their branch,
+  // even if the caller (or a dialog toggle) requests it.
+  const cleanup = task.externalWorktree ? false : (options?.cleanup ?? false);
 
   // Merge branch into main. Cleanup is optional.
   // NOTE: agents are killed AFTER merge succeeds — killing them before would
@@ -403,6 +407,7 @@ export async function mergeTask(
   const mergeResult = await invoke<MergeResult>(IPC.MergeTask, {
     projectRoot,
     branchName,
+    worktreePath: task.worktreePath,
     baseBranch: task.baseBranch,
     squash: options?.squash ?? false,
     message: options?.message,

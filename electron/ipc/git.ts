@@ -1197,6 +1197,7 @@ export async function mergeTask(
   message: string | null,
   cleanup: boolean,
   baseBranch?: string,
+  worktreePath?: string,
 ): Promise<{ main_branch: string; lines_added: number; lines_removed: number }> {
   const lockKey = await detectRepoLockKey(projectRoot).catch(() => projectRoot);
 
@@ -1206,9 +1207,11 @@ export async function mergeTask(
     // Safety check: verify the worktree is actually on the expected branch.
     // AI agents sometimes check out a different branch (or detach HEAD),
     // and merging the original branch would silently discard their work.
-    const worktreePath = path.join(projectRoot, '.worktrees', branchName);
-    if (fs.existsSync(worktreePath)) {
-      const actualBranch = await getCurrentBranchName(worktreePath).catch(() => null);
+    // For imported/external worktrees, the caller passes the real path; for
+    // managed ones we fall back to the conventional .worktrees/<branch> layout.
+    const checkWorktreePath = worktreePath ?? path.join(projectRoot, '.worktrees', branchName);
+    if (fs.existsSync(checkWorktreePath)) {
+      const actualBranch = await getCurrentBranchName(checkWorktreePath).catch(() => null);
       if (actualBranch === null) {
         throw new Error(
           `The worktree for '${branchName}' has a detached HEAD. ` +

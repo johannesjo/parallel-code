@@ -399,25 +399,28 @@ export function MergeDialog(props: MergeDialogProps) {
               baseBranch={props.task.baseBranch}
             />
           </div>
-          <label
-            style={{
-              display: 'flex',
-              'align-items': 'center',
-              gap: '8px',
-              'margin-top': '12px',
-              cursor: 'pointer',
-              'font-size': '14px',
-              color: theme.fg,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={cleanupAfterMerge()}
-              onChange={(e) => setCleanupAfterMerge(e.currentTarget.checked)}
-              style={{ cursor: 'pointer' }}
-            />
-            Delete branch and worktree after merge
-          </label>
+          {/* Imported worktrees are user-owned — never offer to delete them or their branch. */}
+          <Show when={!props.task.externalWorktree}>
+            <label
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                gap: '8px',
+                'margin-top': '12px',
+                cursor: 'pointer',
+                'font-size': '14px',
+                color: theme.fg,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={cleanupAfterMerge()}
+                onChange={(e) => setCleanupAfterMerge(e.currentTarget.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              Delete branch and worktree after merge
+            </label>
+          </Show>
           <label
             style={{
               display: 'flex',
