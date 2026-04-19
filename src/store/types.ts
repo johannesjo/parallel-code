@@ -55,6 +55,7 @@ export interface Task {
   closingError?: string;
   gitIsolation: GitIsolationMode;
   baseBranch?: string;
+  externalWorktree?: boolean;
   skipPermissions?: boolean;
   dockerMode?: boolean;
   dockerSource?: DockerSource;
@@ -91,6 +92,7 @@ export interface PersistedTask {
   agentDef: AgentDef | null;
   gitIsolation: GitIsolationMode;
   baseBranch?: string;
+  externalWorktree?: boolean;
   skipPermissions?: boolean;
   dockerMode?: boolean;
   dockerSource?: DockerSource;
@@ -145,6 +147,7 @@ export interface PersistedState {
   dockerImage?: string;
   askCodeProvider?: 'claude' | 'minimax';
   customAgents?: AgentDef[];
+  focusMode?: boolean;
 }
 
 // Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.
@@ -218,4 +221,5 @@ export interface AppStore {
   missingProjectIds: Record<string, true>;
   remoteAccess: RemoteAccess;
   showArena: boolean;
+  focusMode: boolean;
 }

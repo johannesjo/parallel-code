@@ -360,6 +360,58 @@ function parseConflictPath(line: string): string | null {
   return candidate || null;
 }
 
+function safeRealpath(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+interface ListedWorktree {
+  path: string;
+  branchName: string | null;
+  detached: boolean;
+}
+
+function parseWorktreeList(output: string): ListedWorktree[] {
+  const entries: ListedWorktree[] = [];
+  let current: ListedWorktree | null = null;
+
+  for (const rawLine of output.split('\n')) {
+    const line = rawLine.trimEnd();
+    if (!line) {
+      if (current?.path) entries.push(current);
+      current = null;
+      continue;
+    }
+
+    if (line.startsWith('worktree ')) {
+      if (current?.path) entries.push(current);
+      current = {
+        path: line.slice('worktree '.length).trim(),
+        branchName: null,
+        detached: false,
+      };
+      continue;
+    }
+
+    if (!current) continue;
+    if (line.startsWith('branch ')) {
+      const ref = line.slice('branch '.length).trim();
+      const prefix = 'refs/heads/';
+      current.branchName = ref.startsWith(prefix) ? ref.slice(prefix.length) : ref;
+      continue;
+    }
+    if (line === 'detached') {
+      current.detached = true;
+    }
+  }
+
+  if (current?.path) entries.push(current);
+  return entries;
+}
+
 async function computeBranchDiffStats(
   projectRoot: string,
   mainBranch: string,
@@ -1071,6 +1123,58 @@ export async function getWorktreeStatus(
   };
 }
 
+export async function listImportableWorktrees(projectRoot: string): Promise<
+  Array<{
+    path: string;
+    branch_name: string;
+    has_committed_changes: boolean;
+    has_uncommitted_changes: boolean;
+  }>
+> {
+  const projectRealPath = safeRealpath(projectRoot);
+  const { stdout } = await exec('git', ['worktree', 'list', '--porcelain'], {
+    cwd: projectRoot,
+    maxBuffer: MAX_BUFFER,
+  });
+
+  const candidates = parseWorktreeList(stdout).filter((entry) => {
+    if (!entry.path || !entry.branchName || entry.detached) return false;
+    return safeRealpath(entry.path) !== projectRealPath;
+  });
+
+  const results = await Promise.all(
+    candidates.map(async (entry) => {
+      try {
+        const status = await getWorktreeStatus(entry.path);
+        return {
+          path: entry.path,
+          branch_name: entry.branchName ?? '',
+          has_committed_changes: status.has_committed_changes,
+          has_uncommitted_changes: status.has_uncommitted_changes,
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  const filtered = results.filter(
+    (
+      entry,
+    ): entry is {
+      path: string;
+      branch_name: string;
+      has_committed_changes: boolean;
+      has_uncommitted_changes: boolean;
+    } => entry !== null,
+  );
+
+  filtered.sort(
+    (a, b) => a.branch_name.localeCompare(b.branch_name) || a.path.localeCompare(b.path),
+  );
+  return filtered;
+}
+
 /** Stage all changes and commit in a worktree. */
 export async function commitAll(worktreePath: string, message: string): Promise<void> {
   await exec('git', ['add', '-A'], { cwd: worktreePath });
@@ -1123,6 +1227,7 @@ export async function mergeTask(
   message: string | null,
   cleanup: boolean,
   baseBranch?: string,
+  worktreePath?: string,
 ): Promise<{ main_branch: string; lines_added: number; lines_removed: number }> {
   const lockKey = await detectRepoLockKey(projectRoot).catch(() => projectRoot);
 
@@ -1132,9 +1237,11 @@ export async function mergeTask(
     // Safety check: verify the worktree is actually on the expected branch.
     // AI agents sometimes check out a different branch (or detach HEAD),
     // and merging the original branch would silently discard their work.
-    const worktreePath = path.join(projectRoot, '.worktrees', branchName);
-    if (fs.existsSync(worktreePath)) {
-      const actualBranch = await getCurrentBranchName(worktreePath).catch(() => null);
+    // For imported/external worktrees, the caller passes the real path; for
+    // managed ones we fall back to the conventional .worktrees/<branch> layout.
+    const checkWorktreePath = worktreePath ?? path.join(projectRoot, '.worktrees', branchName);
+    if (fs.existsSync(checkWorktreePath)) {
+      const actualBranch = await getCurrentBranchName(checkWorktreePath).catch(() => null);
       if (actualBranch === null) {
         throw new Error(
           `The worktree for '${branchName}' has a detached HEAD. ` +

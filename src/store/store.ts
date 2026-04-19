@@ -27,6 +27,7 @@ export {
 } from './agents';
 export {
   createTask,
+  createImportedTask,
   closeTask,
   retryCloseTask,
   mergeTask,
@@ -97,6 +98,7 @@ export {
   setTaskViewportVisibility,
   toggleSidebar,
   toggleArena,
+  toggleFocusMode,
   setTerminalFont,
   setThemePreset,
   setAutoTrustFolders,

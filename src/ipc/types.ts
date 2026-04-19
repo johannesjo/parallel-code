@@ -48,6 +48,13 @@ export interface WorktreeStatus {
   current_branch: string | null;
 }
 
+export interface ImportableWorktree {
+  path: string;
+  branch_name: string;
+  has_committed_changes: boolean;
+  has_uncommitted_changes: boolean;
+}
+
 export interface MergeStatus {
   main_ahead_count: number;
   conflicting_files: string[];

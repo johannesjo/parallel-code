@@ -60,6 +60,7 @@ export async function saveState(): Promise<void> {
     dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
     askCodeProvider: store.askCodeProvider !== 'claude' ? store.askCodeProvider : undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
+    focusMode: store.focusMode || undefined,
   };
 
   for (const taskId of store.taskOrder) {
@@ -80,6 +81,7 @@ export async function saveState(): Promise<void> {
       agentDef: firstAgent?.def ?? null,
       gitIsolation: task.gitIsolation,
       baseBranch: task.baseBranch,
+      externalWorktree: task.externalWorktree,
       skipPermissions: task.skipPermissions,
       dockerMode: task.dockerMode,
       dockerSource: task.dockerSource,
@@ -109,6 +111,7 @@ export async function saveState(): Promise<void> {
       agentDef: firstAgent?.def ?? task.savedAgentDef ?? null,
       gitIsolation: task.gitIsolation,
       baseBranch: task.baseBranch,
+      externalWorktree: task.externalWorktree,
       skipPermissions: task.skipPermissions,
       dockerMode: task.dockerMode,
       dockerSource: task.dockerSource,
@@ -208,6 +211,7 @@ interface LegacyPersistedState {
   minimaxApiKey?: unknown;
   customAgents?: unknown;
   terminals?: unknown;
+  focusMode?: unknown;
 }
 
 export async function loadState(): Promise<void> {
@@ -330,6 +334,8 @@ export async function loadState(): Promise<void> {
       const rawEditorCommand = raw.editorCommand;
       s.editorCommand = typeof rawEditorCommand === 'string' ? rawEditorCommand.trim() : '';
 
+      s.focusMode = raw.focusMode === true;
+
       const rawDockerImage = raw.dockerImage;
       s.dockerImage =
         typeof rawDockerImage === 'string' && rawDockerImage.trim()
@@ -384,6 +390,7 @@ export async function loadState(): Promise<void> {
           lastPrompt: pt.lastPrompt,
           gitIsolation: legacy.gitIsolation ?? (legacy.directMode ? 'direct' : 'worktree'),
           baseBranch: legacy.baseBranch || undefined,
+          externalWorktree: pt.externalWorktree,
           skipPermissions: pt.skipPermissions === true,
           dockerMode: pt.dockerMode === true ? true : undefined,
           dockerSource:
@@ -452,6 +459,7 @@ export async function loadState(): Promise<void> {
           gitIsolation:
             legacyCollapsed.gitIsolation ?? (legacyCollapsed.directMode ? 'direct' : 'worktree'),
           baseBranch: legacyCollapsed.baseBranch || undefined,
+          externalWorktree: pt.externalWorktree,
           skipPermissions: pt.skipPermissions === true,
           dockerMode: pt.dockerMode === true ? true : undefined,
           dockerSource:
@@ -475,6 +483,18 @@ export async function loadState(): Promise<void> {
       // Defensive: ensure no task appears in both arrays (corrupted state)
       const activeSet = new Set(s.taskOrder);
       s.collapsedTaskOrder = s.collapsedTaskOrder.filter((id) => !activeSet.has(id));
+
+      // Focus mode requires a valid active panel; without one, every panel is
+      // hidden and the strip reads blank. Repair or drop focus mode.
+      if (s.focusMode) {
+        const activeValid =
+          s.activeTaskId !== null &&
+          (s.tasks[s.activeTaskId] !== undefined || s.terminals[s.activeTaskId] !== undefined);
+        if (!activeValid) {
+          s.activeTaskId = s.taskOrder[0] ?? null;
+          if (s.activeTaskId === null) s.focusMode = false;
+        }
+      }
 
       // Set activeAgentId from the active task
       if (s.activeTaskId && s.tasks[s.activeTaskId]) {

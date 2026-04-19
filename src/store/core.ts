@@ -63,6 +63,7 @@ export const [store, setStore] = createStore<AppStore>({
     connectedClients: 0,
   },
   showArena: false,
+  focusMode: false,
 });
 
 type CleanupPanelStore = Pick<

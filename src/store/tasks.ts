@@ -21,7 +21,14 @@ import {
   rescheduleTaskStatusPolling,
 } from './taskStatus';
 import { recordMergedLines, recordTaskCompleted } from './completion';
-import type { AgentDef, CreateTaskResult, MergeResult, StepEntry } from '../ipc/types';
+import { cleanTaskName } from '../lib/clean-task-name';
+import type {
+  AgentDef,
+  CreateTaskResult,
+  ImportableWorktree,
+  MergeResult,
+  StepEntry,
+} from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
 import type { Agent, Task, GitIsolationMode } from './types';
 import type { DockerSource } from '../lib/docker';
@@ -215,6 +222,69 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   return taskId;
 }
 
+export interface CreateImportedTaskOptions {
+  projectId: string;
+  worktree: ImportableWorktree;
+  agentDef: AgentDef;
+}
+
+function deriveImportedTaskName(branchName: string, worktreePath: string): string {
+  const branchTail = branchName.split('/').pop()?.trim() ?? '';
+  const normalized = branchTail.replace(/[-_]+/g, ' ').trim();
+  if (normalized) return cleanTaskName(normalized);
+  return worktreePath.split('/').pop()?.trim() || branchName;
+}
+
+function hasTaskForWorktreePath(worktreePath: string): boolean {
+  const allIds = [...store.taskOrder, ...store.collapsedTaskOrder];
+  return allIds.some((id) => store.tasks[id]?.worktreePath === worktreePath);
+}
+
+export async function createImportedTask(opts: CreateImportedTaskOptions): Promise<string> {
+  const { projectId, worktree, agentDef } = opts;
+  if (!getProjectPath(projectId)) throw new Error('Project not found');
+  if (isProjectMissing(projectId)) throw new Error('Project folder not found');
+  if (hasTaskForWorktreePath(worktree.path)) {
+    throw new Error('Worktree is already tracked as a task');
+  }
+
+  const id = crypto.randomUUID();
+  const agentId = crypto.randomUUID();
+  const name = deriveImportedTaskName(worktree.branch_name, worktree.path);
+  const baseBranch = getProject(projectId)?.defaultBaseBranch || undefined;
+
+  const task: Task = {
+    id,
+    name,
+    projectId,
+    gitIsolation: 'worktree',
+    baseBranch,
+    branchName: worktree.branch_name,
+    worktreePath: worktree.path,
+    agentIds: [agentId],
+    shellAgentIds: [],
+    notes: '',
+    lastPrompt: '',
+    externalWorktree: true,
+  };
+
+  const agent: Agent = {
+    id: agentId,
+    taskId: id,
+    def: agentDef,
+    resumed: false,
+    status: 'running',
+    exitCode: null,
+    signal: null,
+    lastOutput: [],
+    generation: 0,
+  };
+
+  initTaskInStore(id, task, agent, projectId, agentDef);
+  saveState();
+  return id;
+}
+
 export async function closeTask(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
   if (!task || task.closingStatus === 'closing' || task.closingStatus === 'removing') return;
@@ -223,7 +293,9 @@ export async function closeTask(taskId: string): Promise<void> {
   const shellAgentIds = [...task.shellAgentIds];
   const branchName = task.branchName;
   const projectRoot = getProjectPath(task.projectId) ?? '';
-  const deleteBranch = getProject(task.projectId)?.deleteBranchOnClose ?? true;
+  const deleteBranch = task.externalWorktree
+    ? false
+    : (getProject(task.projectId)?.deleteBranchOnClose ?? true);
 
   // Mark as closing — task stays visible but UI shows closing state
   setStore('tasks', taskId, 'closingStatus', 'closing');
@@ -251,8 +323,8 @@ export async function closeTask(taskId: string): Promise<void> {
       await invoke(IPC.KillAgent, { agentId: shellId }).catch(console.error);
     }
 
-    // Skip git cleanup for "Current Branch" mode (no worktree/branch to remove)
-    if (task.gitIsolation === 'worktree') {
+    // Skip git cleanup for direct mode (no worktree/branch) and imported worktrees (user-owned).
+    if (task.gitIsolation === 'worktree' && !task.externalWorktree) {
       // Run project teardown commands before removing the worktree. Best-effort:
       // a failing teardown logs but does not block cleanup.
       await runTeardownForTask(taskId, task.worktreePath, task.projectId).catch((err) =>
@@ -355,7 +427,9 @@ export async function mergeTask(
   const agentIds = [...task.agentIds];
   const shellAgentIds = [...task.shellAgentIds];
   const branchName = task.branchName;
-  const cleanup = options?.cleanup ?? false;
+  // Imported worktrees are user-owned; never let cleanup delete them or their branch,
+  // even if the caller (or a dialog toggle) requests it.
+  const cleanup = task.externalWorktree ? false : (options?.cleanup ?? false);
 
   // Merge branch into main. Cleanup is optional.
   // NOTE: agents are killed AFTER merge succeeds — killing them before would
@@ -364,6 +438,7 @@ export async function mergeTask(
   const mergeResult = await invoke<MergeResult>(IPC.MergeTask, {
     projectRoot,
     branchName,
+    worktreePath: task.worktreePath,
     baseBranch: task.baseBranch,
     squash: options?.squash ?? false,
     message: options?.message,

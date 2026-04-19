@@ -30,6 +30,7 @@ function persistedSnapshot(): string {
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand,
     customAgents: store.customAgents,
+    focusMode: store.focusMode,
     tasks: Object.fromEntries(
       [...store.taskOrder, ...store.collapsedTaskOrder]
         .filter((id) => store.tasks[id])
@@ -44,6 +45,7 @@ function persistedSnapshot(): string {
               gitIsolation: t.gitIsolation,
               baseBranch: t.baseBranch,
               branchName: t.branchName,
+              externalWorktree: t.externalWorktree,
               savedInitialPrompt: t.savedInitialPrompt,
               collapsed: t.collapsed,
             },

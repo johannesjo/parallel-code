@@ -13,6 +13,7 @@ import type { Project, TerminalBookmark, GitIsolationMode } from '../store/types
 import { SegmentedButtons } from './SegmentedButtons';
 import { CommandListEditor } from './CommandListEditor';
 import { PathSelector } from './PathSelector';
+import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 
 const COMMAND_VARIABLES = [
   { name: 'PROJECT_ROOT', description: 'Project root directory', example: '/Users/me/myproject' },
@@ -45,6 +46,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [defaultSymlinkDirs, setDefaultSymlinkDirs] = createSignal<string[]>([]);
   const [setupCommands, setSetupCommands] = createSignal<string[]>([]);
   const [teardownCommands, setTeardownCommands] = createSignal<string[]>([]);
+  const [showImportDialog, setShowImportDialog] = createSignal(false);
   let nameRef!: HTMLInputElement;
 
   // Sync signals when project prop changes
@@ -144,6 +146,22 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               >
                 {project().path}
               </div>
+              <button
+                type="button"
+                onClick={() => setShowImportDialog(true)}
+                style={{
+                  padding: '3px 10px',
+                  background: theme.bgInput,
+                  border: `1px solid ${theme.border}`,
+                  'border-radius': '6px',
+                  color: theme.fgMuted,
+                  cursor: 'pointer',
+                  'font-size': '11px',
+                  'flex-shrink': '0',
+                }}
+              >
+                Import Worktrees
+              </button>
               <button
                 type="button"
                 onClick={() => relinkProject(project().id)}
@@ -560,6 +578,11 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 Save
               </button>
             </div>
+            <ImportWorktreesDialog
+              open={showImportDialog()}
+              project={project()}
+              onClose={() => setShowImportDialog(false)}
+            />
           </>
         )}
       </Show>

@@ -1,3 +1,4 @@
+import { batch } from 'solid-js';
 import { store, setStore } from './core';
 import type { LookPreset } from '../lib/look';
 import type { PersistedWindowState, TaskViewportVisibility } from './types';
@@ -32,9 +33,11 @@ export function getPanelSize(key: string): number | undefined {
 }
 
 export function setPanelSizes(entries: Record<string, number>): void {
-  for (const [key, value] of Object.entries(entries)) {
-    setStore('panelSizes', key, value);
-  }
+  batch(() => {
+    for (const [key, value] of Object.entries(entries)) {
+      setStore('panelSizes', key, value);
+    }
+  });
 }
 
 export function getTaskViewportVisibility(taskId: string): TaskViewportVisibility | null {
@@ -107,6 +110,10 @@ export function setDockerAvailable(available: boolean): void {
 
 export function toggleArena(show?: boolean): void {
   setStore('showArena', show ?? !store.showArena);
+}
+
+export function toggleFocusMode(on?: boolean): void {
+  setStore('focusMode', on ?? !store.focusMode);
 }
 
 export function setWindowState(windowState: PersistedWindowState): void {

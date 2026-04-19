@@ -359,7 +359,11 @@ export function TaskPanel(props: TaskPanelProps) {
       <MergeDialog
         open={showMergeConfirm()}
         task={props.task}
-        initialCleanup={getProject(props.task.projectId)?.deleteBranchOnClose ?? true}
+        initialCleanup={
+          props.task.externalWorktree
+            ? false
+            : (getProject(props.task.projectId)?.deleteBranchOnClose ?? true)
+        }
         onDone={() => setShowMergeConfirm(false)}
         onDiffFileClick={(file) => setDiffScrollTarget(file.path)}
       />

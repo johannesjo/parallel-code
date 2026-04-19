@@ -22,6 +22,7 @@ import {
   toggleSettingsDialog,
   uncollapseTask,
   isProjectMissing,
+  showNotification,
 } from '../store/store';
 import type { Project } from '../store/types';
 import type { TaskAttentionState } from '../store/store';
@@ -29,12 +30,16 @@ import { computeGroupedTasks } from '../store/sidebar-order';
 import { ConnectPhoneModal } from './ConnectPhoneModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { EditProjectDialog } from './EditProjectDialog';
+import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { SidebarFooter } from './SidebarFooter';
 import { IconButton } from './IconButton';
 import { StatusDot } from './StatusDot';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { mod } from '../lib/platform';
+import { invoke } from '../lib/ipc';
+import { IPC } from '../../electron/ipc/channels';
+import type { ImportableWorktree } from '../ipc/types';
 
 const DRAG_THRESHOLD = 5;
 const SIDEBAR_DEFAULT_WIDTH = 240;
@@ -83,6 +88,10 @@ export function Sidebar() {
   const [confirmRemove, setConfirmRemove] = createSignal<string | null>(null);
   const [editingProject, setEditingProject] = createSignal<Project | null>(null);
   const [showConnectPhone, setShowConnectPhone] = createSignal(false);
+  const [importProject, setImportProject] = createSignal<Project | null>(null);
+  const [initialImportCandidates, setInitialImportCandidates] = createSignal<
+    ImportableWorktree[] | null
+  >(null);
   const [dragFromIndex, setDragFromIndex] = createSignal<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = createSignal<number | null>(null);
   const [resizing, setResizing] = createSignal(false);
@@ -185,6 +194,29 @@ export function Sidebar() {
       el?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
     });
   });
+
+  async function handleAddProject() {
+    const projectId = await pickAndAddProject();
+    if (!projectId) return;
+
+    const project = store.projects.find((entry) => entry.id === projectId) ?? null;
+    if (!project) return;
+
+    try {
+      const candidates = await invoke<ImportableWorktree[]>(IPC.ListImportableWorktrees, {
+        projectRoot: project.path,
+      });
+      if (candidates.length > 0) {
+        setInitialImportCandidates(candidates);
+        setImportProject(project);
+      }
+    } catch (err) {
+      console.error('Failed to scan importable worktrees:', err);
+      showNotification(
+        `Couldn't scan existing worktrees: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   function computeDropIndex(clientY: number, fromIdx: number): number {
     if (!taskListRef) return fromIdx;
@@ -366,7 +398,7 @@ export function Sidebar() {
                   <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
                 </svg>
               }
-              onClick={() => pickAndAddProject()}
+              onClick={() => handleAddProject()}
               title="Add project"
               size="sm"
             />
@@ -473,7 +505,7 @@ export function Sidebar() {
           fallback={
             <button
               class="icon-btn"
-              onClick={() => pickAndAddProject()}
+              onClick={() => handleAddProject()}
               style={{
                 background: 'transparent',
                 border: `1px solid ${theme.border}`,
@@ -702,6 +734,15 @@ export function Sidebar() {
 
         {/* Edit project dialog */}
         <EditProjectDialog project={editingProject()} onClose={() => setEditingProject(null)} />
+        <ImportWorktreesDialog
+          open={importProject() !== null}
+          project={importProject()}
+          initialCandidates={initialImportCandidates()}
+          onClose={() => {
+            setImportProject(null);
+            setInitialImportCandidates(null);
+          }}
+        />
 
         {/* Confirm remove project dialog */}
         {(() => {
