@@ -200,9 +200,6 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     if (!path || !isGit) {
       setIgnoredDirs([]);
       setSelectedDirs(new Set<string>());
-      onCleanup(() => {
-        cancelled = true;
-      });
       return;
     }
 
