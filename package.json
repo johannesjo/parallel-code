@@ -31,7 +31,7 @@
     "@xterm/addon-web-links": "^0.13.0-beta.195",
     "@xterm/addon-webgl": "^0.20.0-beta.194",
     "@xterm/xterm": "^6.1.0-beta.195",
-    "dompurify": "^3.4.0",
+    "dompurify": "^3.4.1",
     "marked": "^17.0.3",
     "mermaid": "^11.13.0",
     "monaco-editor": "^0.55.1",
