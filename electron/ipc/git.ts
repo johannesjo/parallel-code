@@ -874,13 +874,12 @@ export async function getAllFileDiffs(worktreePath: string, baseBranch?: string)
   // Untracked files: build pseudo-diffs
   const untrackedParts: string[] = [];
   try {
-    const { stdout } = await exec('git', ['status', '--porcelain'], {
+    const { stdout } = await exec('git', ['ls-files', '--others', '--exclude-standard'], {
       cwd: worktreePath,
       maxBuffer: MAX_BUFFER,
     });
     for (const line of stdout.split('\n')) {
-      if (!line.startsWith('??')) continue;
-      const filePath = normalizeStatusPath(line.slice(3));
+      const filePath = normalizeStatusPath(line);
       if (!filePath) continue;
       const fullPath = path.join(worktreePath, filePath);
       try {
