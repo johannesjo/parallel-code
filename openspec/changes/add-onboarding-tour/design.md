@@ -3,16 +3,24 @@
 ## Trigger and gating
 
 The tour is gated by a single persisted field, `tourCompletedAt: number |
-null`, stored alongside other UI state in `src/store/persistence.ts`. The
-field is `null` for fresh installs and existing users alike — meaning existing
-users who upgrade also see the tour once. This is intentional: the tour
-explains the worktree model, which existing users may have figured out
-imperfectly.
+null`, stored alongside other UI state in `src/store/persistence.ts`.
 
-The tour activates from `App.tsx` `onMount`, after `loadState()` resolves, if
-`tourCompletedAt === null` and no other modal is open. If the keybinding
-migration banner would also have been shown, the tour suppresses it; on
-completion or skip, the banner can render on the next state change.
+`tourCompletedAt` is `null` after `loadState()` for both fresh installs and
+existing users who upgrade. To avoid hijacking the UI for users who already
+know the app, the activation pass first inspects the loaded state for any
+prior project or task. If at least one exists, the tour is treated as
+already completed: `tourCompletedAt` is set to the current timestamp and no
+overlay is shown. Only installs with zero projects and zero tasks proceed to
+actual activation.
+
+When activation does proceed, the tour starts from `App.tsx` `onMount` after
+`loadState()` resolves. If a modal dialog is open at that moment (unlikely
+on first launch, but possible after `restartTour` from settings), activation
+is deferred: a Solid effect watches the modal-flag signals (`showHelpDialog`,
+`showSettingsDialog`, `showNewTaskDialog`, `showArena`) and triggers
+activation as soon as they are all false, provided `tourCompletedAt` is
+still `null`. The keybinding migration banner is suppressed while the tour
+is active and re-evaluates after completion or skip.
 
 ## Architecture
 
@@ -61,7 +69,7 @@ anchor element so the spotlight follows window resizes and layout shifts.
 | 5 | `tour-task-terminal`    | "Watch the agent work live; type to interject."                        |
 | 6 | `tour-changed-files`    | "Review diffs as files change; click for full Monaco view."            |
 | 7 | `tour-merge-action`     | "Merge back to main from the sidebar when you're happy."               |
-| 8 | `tour-help-button`      | "Press `?` anytime — full shortcut list lives here. You're done."      |
+| 8 | `null` (centered)       | "Press `?` anytime to see all shortcuts. You're done."                 |
 
 Step 4 needs the `NewTaskDialog` open so its anchor exists. The step uses
 `beforeEnter: () => toggleNewTaskDialog(true)` and
@@ -90,9 +98,40 @@ re-trigger.
   `aria-describedby` (body).
 - `lib/focus-trap.ts` is reused to trap focus inside the tooltip; on close,
   focus is restored to the anchor element.
+- An `aria-live="polite"` region inside the overlay announces step
+  transitions ("Step N of M — <title>") so screen-reader users hear forward
+  / back navigation. The live region only updates on actual step changes,
+  not on anchor reposition.
 - `prefers-reduced-motion: reduce` disables the spotlight transition and any
   fade-ins.
 - The overlay's dimmer has `aria-hidden="true"` so screen readers ignore it.
+
+## Known implementation risks
+
+These are not spec-level requirements but implementation decisions that need
+care during the actual build. Calling them out here so they don't surprise
+the implementer.
+
+- **Anchor lookup timing.** A flat 300 ms wait for the anchor to appear is
+  fragile on slow machines; prefer a `MutationObserver` that resolves as
+  soon as the element appears, with a longer absolute fallback (e.g. 3 s)
+  before skipping. Skipping a step should be logged.
+- **Anchor disappearance mid-step.** If the anchor unmounts while a step is
+  visible (e.g. user collapses a panel via shortcut), advance the tour
+  rather than render a spotlight over an empty rectangle.
+- **Anchor existence test.** Add a test that walks the step list, mounts
+  the relevant components, and asserts every non-null `anchorId` resolves
+  to a DOM node — so a future refactor that drops a `data-tour-id` fails
+  loudly instead of producing a silently broken tour.
+- **Global shortcut suppression.** While `tourActive` is true, suppress
+  global keybindings (new task, focus mode, help, settings, etc.) so a key
+  press does not open another modal on top of the tour. Only Esc (skip)
+  and Enter (next) should be live.
+- **Single-window scope.** Activation logic assumes a single renderer; if
+  the app ever opens a second window, only the first window to read
+  `tourCompletedAt === null` runs the tour. The implementation may guard
+  against this with a per-process flag, but the spec does not promise
+  multi-window behavior.
 
 ## Out of scope
 

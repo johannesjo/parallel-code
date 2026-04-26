@@ -20,6 +20,9 @@ gap without forcing users to read documentation.
   existing components (no DOM restructuring).
 - Persist a single `tourCompletedAt` timestamp so the tour does not re-trigger
   after dismissal or completion.
+- Auto-mark the tour completed for users who upgrade with prior projects or
+  tasks already in their persisted state, so existing installs do not get
+  hijacked by a tour they did not ask for.
 - Add a "Restart tour" button to `SettingsDialog` so users can replay it on
   demand.
 - Defer the existing keybinding-migration banner until the tour is dismissed
@@ -31,8 +34,10 @@ gap without forcing users to read documentation.
 - New persisted store field `tourCompletedAt: number | null` (handled by the
   existing autosave persistence path; no migration code needed for additive
   optional fields).
-- Additions to `App.tsx` (mount the overlay), `SettingsDialog.tsx` ("Restart
-  tour" button), and a small set of existing components (`Sidebar`,
-  `NewTaskDialog`, `TaskPanel`, `HelpDialog`) which gain `data-tour-id`
-  attributes.
+- Additions to `App.tsx` (mount the overlay, gate first-launch activation),
+  `SettingsDialog.tsx` ("Restart tour" button), and a small set of existing
+  components (`Sidebar`, `NewTaskDialog`, `TaskPanel`) which gain
+  `data-tour-id` attributes. The final step is centered with no anchor since
+  the app does not surface a visible help button — help is invoked via the
+  `?` shortcut, which the step text mentions.
 - No new IPC channels, no new backend work.

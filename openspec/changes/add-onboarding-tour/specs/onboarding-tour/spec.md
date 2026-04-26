@@ -6,19 +6,40 @@
 
 The app SHALL run the onboarding tour exactly once per install, on the first
 launch where persisted state has no record of the tour having completed or
-been skipped.
+been skipped, and SHALL skip the tour for users who already have prior task
+or project data so existing installs are not interrupted by a tour they did
+not ask for.
 
 #### Scenario: Fresh install starts the tour
 
 - **WHEN** the app boots and persisted state's `tourCompletedAt` is `null`
-- **AND** no other modal dialog is open
-- **THEN** the app activates the tour at step 0 after `loadState()` resolves
+- **AND** the persisted state has no projects and no tasks
+- **THEN** the app activates the tour at step 0 once `loadState()` has
+  resolved and no modal dialog is currently open
+
+#### Scenario: Existing user with prior data skips the tour
+
+- **WHEN** the app boots and `tourCompletedAt` is `null`
+- **AND** the persisted state contains at least one project or one task
+- **THEN** the app sets `tourCompletedAt` to the current timestamp without
+  activating the tour
+- **AND** the tour does not activate on this or any subsequent launch unless
+  the user invokes "Restart tour"
 
 #### Scenario: Returning user does not see the tour
 
 - **WHEN** the app boots and `tourCompletedAt` is a non-null number
 - **THEN** the tour does not activate
 - **AND** no overlay is rendered
+
+#### Scenario: Activation defers when a modal is open
+
+- **WHEN** the activation conditions are otherwise met
+- **AND** a modal dialog (`HelpDialog`, `SettingsDialog`, `NewTaskDialog`,
+  or `ArenaOverlay`) is open at the moment activation would occur
+- **THEN** the app holds activation
+- **AND** activates the tour as soon as all such modals close, provided
+  `tourCompletedAt` is still `null`
 
 #### Scenario: Tour suppresses the keybinding migration banner
 
@@ -43,8 +64,10 @@ flow at any step.
 
 - **WHEN** the user clicks "Back" on any step except step 0
 - **THEN** `tourStep` decrements by 1
-- **AND** the `afterLeave` and `beforeEnter` hooks run in the same order as
-  forward navigation
+- **AND** the step being left runs its `afterLeave` hook before the new
+  current step's `beforeEnter` hook runs and the new anchor is queried,
+  so a hook that opens a dialog for one step is paired with a hook that
+  closes it on the way back
 
 #### Scenario: Skip the tour
 
@@ -76,8 +99,17 @@ window resizes or layout changes.
 #### Scenario: Anchor missing when step activates
 
 - **WHEN** a step with a non-null `anchorId` activates
-- **AND** no matching element is found within 300 ms
+- **AND** no matching element appears in the DOM before the
+  implementation-defined wait expires
 - **THEN** the tour skips the step and advances to the next one
+- **AND** the skip is logged
+
+#### Scenario: Anchor disappears mid-step
+
+- **WHEN** the anchor element of the currently displayed step is removed
+  from the DOM (e.g. the user collapses a panel via shortcut)
+- **THEN** the tour advances to the next step rather than rendering a
+  spotlight over an empty rectangle
 
 #### Scenario: Window resize updates the spotlight
 
@@ -113,10 +145,27 @@ still see all steps without the app fabricating demo data.
 - **THEN** the tour activates phase 2 (steps that explain the terminal,
   changed-files panel, merge action, and help)
 
+#### Scenario: Phase 2 resume token persists across launches
+
+- **WHEN** phase 1 completed without skipping in a previous session
+- **AND** no task panel has yet mounted
+- **THEN** the resume token persists across app restarts
+- **AND** phase 2 activates the next time a task panel mounts in any future
+  session, regardless of how many launches have passed
+
+#### Scenario: Mid-phase-1 quit restarts phase 1
+
+- **WHEN** the app quits while phase 1 is mid-flight (the user neither
+  finished phase 1 nor explicitly skipped)
+- **THEN** the next launch treats the tour as not yet started
+- **AND** phase 1 begins again at step 0
+- **AND** any partial `tourStep` value from the prior session is discarded
+
 #### Scenario: Skipping in either phase finalises the tour
 
 - **WHEN** the user skips during phase 1 or phase 2
 - **THEN** `tourCompletedAt` is set
+- **AND** any phase-2 resume token is cleared
 - **AND** the tour does not re-activate on subsequent launches
 
 ### Requirement: Restart from settings
@@ -154,3 +203,11 @@ assistive technology, and respect the user's reduced-motion preference.
 - **WHEN** the user agent reports `prefers-reduced-motion: reduce`
 - **THEN** the spotlight and tooltip render without fade-in or movement
   transitions
+
+#### Scenario: Step transitions are announced to assistive technology
+
+- **WHEN** the active step changes (forward, back, or initial activation)
+- **THEN** an `aria-live="polite"` region announces the new step's position
+  ("Step N of M") and its title
+- **AND** the announcement does not duplicate when the same step re-renders
+  for non-step reasons such as an anchor reposition
