@@ -5,9 +5,11 @@
 ### Requirement: Unified logger surface
 
 The app SHALL expose a single logger surface in both the renderer and the
-main process with four levels — `debug`, `info`, `warn`, and `error` — that
-accept a category tag, a message, an optional structured context object,
-and (for `error`) the underlying error or thrown value.
+main process with four levels — `debug`, `info`, `warn`, and `error`. The
+`debug`, `info`, and `warn` functions accept a category tag, a message,
+and an optional structured context object. The `error` function takes the
+underlying error or thrown value as a required argument so it cannot be
+confused with the optional context object.
 
 #### Scenario: Logger module is callable from any module
 
@@ -15,6 +17,14 @@ and (for `error`) the underlying error or thrown value.
   any of the four level functions
 - **THEN** the call returns synchronously without throwing
 - **AND** the caller does not need to construct any logger instance
+
+#### Scenario: error has a required error argument
+
+- **WHEN** the `error` function is called
+- **THEN** its signature is `error(category: string, msg: string, err:
+  unknown, ctx?: Record<string, unknown>)`
+- **AND** the third argument is required so a caller cannot accidentally
+  pass a context object in the error slot
 
 #### Scenario: Category tag prefixes every entry
 
@@ -27,6 +37,24 @@ and (for `error`) the underlying error or thrown value.
 - **WHEN** `error(category, msg, err)` is called with an `Error` instance
 - **THEN** the emitted output includes both the message line and the stack
   trace from `err`
+
+#### Scenario: Non-Error throwables are normalised
+
+- **WHEN** `error(category, msg, err)` is called and `err` is not an
+  `Error` instance (e.g. a string, a plain object, a rejected non-Error
+  value, or `undefined`)
+- **THEN** the logger normalises the value to a stable string
+  representation in the emitted output without throwing
+- **AND** if the value carries a `stack` property the stack is included
+
+#### Scenario: Unserialisable context falls back safely
+
+- **WHEN** any logger function is called with a `ctx` object that cannot
+  be safely JSON-serialised (e.g. it contains circular references, Solid
+  signals, or DOM nodes)
+- **THEN** the logger emits the entry with a placeholder representation
+  of the offending fields rather than throwing
+- **AND** the rest of the entry (level, category, message) still appears
 
 ### Requirement: Level gating by build and verbose flag
 
@@ -123,6 +151,15 @@ across launches, and default it to `false` for new installs.
 - **WHEN** persisted state has no value for `verboseLogging`
 - **THEN** the loaded state treats it as `false`
 
+#### Scenario: Non-boolean persisted value coerces to false
+
+- **WHEN** the persisted state contains `verboseLogging` with any value
+  that is not a JavaScript boolean (e.g. `"true"`, `1`, `null`, `{}`, or
+  any other truthy non-boolean)
+- **THEN** the loader treats `verboseLogging` as `false`
+- **AND** does not allow corrupted persisted state to silently enable
+  verbose mode in production
+
 #### Scenario: Toggle persists
 
 - **WHEN** the user enables the toggle in `SettingsDialog`
@@ -134,3 +171,39 @@ across launches, and default it to `false` for new installs.
 - **THEN** a "Verbose logging" toggle is shown in a diagnostics section
 - **AND** a one-line explainer describes that it makes the app log debug
   output to the developer console
+
+### Requirement: Dev-mode IPC, git, and pty traces
+
+In development builds (and whenever `verboseLogging` is `true`) the app
+SHALL emit `debug` traces from the IPC layer, the git helpers, and the
+pty layer so a developer can reconstruct what happened without adding
+ad-hoc `console.log` calls.
+
+#### Scenario: IPC handlers trace at debug level
+
+- **WHEN** a renderer-to-main IPC call is dispatched in dev or with
+  verbose on
+- **THEN** the main process logs a `debug` entry under category `ipc`
+  with the channel name and (where safe) a summary of the payload
+- **AND** an entry is logged on completion with the result kind
+  (success / failure)
+
+#### Scenario: Git helpers trace command and exit code
+
+- **WHEN** a git helper in `electron/ipc/git.ts` runs a git command in
+  dev or with verbose on
+- **THEN** the main process logs a `debug` entry under category `git`
+  including the command (with arguments) and the exit code
+
+#### Scenario: Pty lifecycle traces at debug level
+
+- **WHEN** a pty is spawned, exits, or receives a signal in dev or with
+  verbose on
+- **THEN** the main process logs a `debug` entry under category `pty`
+  describing the event
+
+#### Scenario: Production without verbose has no debug traces
+
+- **WHEN** the build is production and `verboseLogging` is `false`
+- **THEN** none of the `ipc`, `git`, or `pty` debug traces produce
+  output

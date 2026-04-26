@@ -75,9 +75,52 @@ file or feature; this is enforced by review, not by lint. Existing
 ## Settings UI
 
 A "Verbose logging" toggle in `SettingsDialog`'s diagnostics section,
-with a one-line explainer and a "Reveal log location" link in dev (no-op
-in prod for now). Toggle persists via the existing autosave path; it
-does not require a restart — the logger reads the setting reactively.
+with a one-line explainer. The toggle persists via the existing autosave
+path; it does not require a restart — the logger reads the setting
+reactively.
+
+## Known implementation risks
+
+These are not spec-level requirements but implementation decisions that
+need care during the actual build. Calling them out here so they don't
+surprise the implementer.
+
+- **Rate limiting `LogFromRenderer`.** Fire-and-forget IPC with no cap
+  could flood main if a render-loop bug emits a `warn` per frame. The
+  implementation should coalesce or rate-limit forwarded entries (e.g.
+  drop after N entries per second per category and emit a single
+  "suppressed N entries" notice). The renderer's own `console` output
+  is not rate-limited.
+- **Verbose toggle synchronisation.** The IPC that pushes the new level
+  to main has no ack and no ordering guarantee. Quick toggling could
+  briefly leave main at a different level than the renderer. The
+  implementation should reconcile main's level on each `LogFromRenderer`
+  payload (the level travels alongside the entry) so drift converges
+  within one round-trip.
+- **Lifecycle gaps.** `LogFromRenderer` is unavailable during preload
+  init, after `beforeunload`, and during a renderer reload. In each of
+  these windows the renderer logger MUST still emit to its own console
+  so startup / shutdown diagnosis is possible without a working IPC.
+- **Sweep batching.** The catch-block sweep touches dozens of files. It
+  is split into per-directory phases in `tasks.md` (`src/store/`,
+  `src/components/`, `electron/ipc/`) so each phase is reviewable on
+  its own. Production code paths between phases retain their existing
+  silent-swallow behaviour until the final sweep lands; no scenario
+  promises full compliance until then.
+- **No-silent-swallow enforcement.** The spec requires the rule but does
+  not enforce it. A follow-up may add a custom ESLint rule that flags
+  empty arrow functions in `.catch()` and empty `catch {}` blocks. Until
+  then, code review is the only check.
+- **Token / secret leakage.** Verbose mode exposes IPC payloads, git
+  command arguments, and pty events. None of these are redacted. Users
+  who turn verbose on for bug reports may inadvertently include paths,
+  remote URLs, or env-derived tokens in shared logs. A future
+  redaction layer is out of scope for this proposal but should be
+  flagged in the verbose toggle's explainer copy.
+- **Category sprawl.** Categories are kebab strings with no registry.
+  Without a follow-up registry or lint rule, near-duplicates (`tasks.spawn`
+  vs `task-spawn`) will appear. Initial implementation should keep the
+  list short and document existing categories in `electron/log.ts`.
 
 ## Out of scope
 
