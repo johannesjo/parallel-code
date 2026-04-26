@@ -45,7 +45,17 @@ confused with the optional context object.
   value, or `undefined`)
 - **THEN** the logger normalises the value to a stable string
   representation in the emitted output without throwing
-- **AND** if the value carries a `stack` property the stack is included
+- **AND** if the value carries a `stack` property whose own type is a
+  string the stack is included; non-string `stack` values (functions,
+  objects, etc.) are ignored
+
+#### Scenario: error called without a real error value
+
+- **WHEN** the caller has no underlying error but wants to record an
+  error-shaped event
+- **THEN** the caller passes `undefined` as the third argument
+- **AND** the emitted output still carries the `error` level and
+  category but omits the stack section
 
 #### Scenario: Unserialisable context falls back safely
 
@@ -53,8 +63,11 @@ confused with the optional context object.
   be safely JSON-serialised (e.g. it contains circular references, Solid
   signals, or DOM nodes)
 - **THEN** the logger emits the entry with a placeholder representation
-  of the offending fields rather than throwing
+  for the offending fields rather than throwing
 - **AND** the rest of the entry (level, category, message) still appears
+- **AND** if the safe-fallback path itself throws (e.g. `Object.keys()`
+  hits a Proxy with a throwing trap) the logger emits the entry with
+  `ctx` omitted entirely rather than propagating the error
 
 ### Requirement: Level gating by build and verbose flag
 
@@ -89,7 +102,19 @@ and the user's `verboseLogging` setting.
 
 The codebase SHALL route every caught error through the logger; silent
 swallows (e.g. `.catch(() => {})`) are not allowed in production code
-paths.
+paths. Compliance is measured per-directory: a directory is compliant
+once its sweep task in `tasks.md` has landed. The proposal explicitly
+admits a transitional period in which earlier-swept directories are
+compliant and later-swept ones still hold legacy `.catch(() => {})`
+calls.
+
+#### Scenario: Compliance is per-swept-directory during the transition
+
+- **WHEN** one of the sweep tasks in `tasks.md` has landed but later
+  ones have not
+- **THEN** the swept directory contains no silent swallows
+- **AND** the unswept directory may still contain legacy patterns
+  without violating this requirement until its sweep also lands
 
 #### Scenario: Recoverable failure logs at warn level
 
@@ -141,6 +166,26 @@ holds a single timeline of the session.
 - **THEN** the renderer still emits the entry to its own `console`
 - **AND** the failure does not throw or block the calling code
 
+#### Scenario: Forwarding is rate-capped per category
+
+- **WHEN** the renderer logger emits more than 50 forwardable entries
+  in any rolling one-second window for a single category
+- **THEN** further entries in that window for that category are not
+  forwarded over `LogFromRenderer`
+- **AND** at the end of the window a single entry is forwarded with the
+  same category at level `warn` summarising how many entries were
+  suppressed
+- **AND** the renderer's own `console` continues to receive every entry
+
+#### Scenario: Forwarding rules apply equally in development
+
+- **WHEN** the build is development
+- **THEN** the renderer still forwards `warn` and `error` entries (and
+  `info` entries iff `verboseLogging` is `true`) over `LogFromRenderer`
+- **AND** forwarding behaviour does not change merely because the build
+  is dev — the dev build only changes which entries pass the
+  level-gate, not which ones forward once they pass it
+
 ### Requirement: Verbose logging setting
 
 The app SHALL expose a `verboseLogging` toggle in settings, persist it
@@ -184,7 +229,10 @@ ad-hoc `console.log` calls.
 - **WHEN** a renderer-to-main IPC call is dispatched in dev or with
   verbose on
 - **THEN** the main process logs a `debug` entry under category `ipc`
-  with the channel name and (where safe) a summary of the payload
+  with the channel name
+- **AND** the payload is included only for channels that are not in the
+  module-level `SENSITIVE_CHANNELS` set (channels carrying tokens,
+  paths under the user's home directory, or shell input)
 - **AND** an entry is logged on completion with the result kind
   (success / failure)
 

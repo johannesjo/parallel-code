@@ -37,10 +37,14 @@
       `git` (every git command + exit code), `pty` (spawn, exit,
       signal). These are `debug` level so they only show in dev or with
       verbose on.
-- [ ] Tests: `src/lib/__tests__/log.test.ts` and
-      `electron/__tests__/log.test.ts` covering level gating, category
-      formatting, forwarding behavior, the `verbose` runtime flip,
-      circular-ctx safety, non-Error normalisation, and corrupted
-      `verboseLogging` coercion.
+- [ ] Tests colocated next to the modules (the repo's convention is
+      `*.test.ts` next to the file, not a `__tests__/` directory):
+      `src/lib/log.test.ts` and `electron/log.test.ts` covering level
+      gating, category formatting, forwarding behavior, the per-category
+      rate cap and suppression notice, the `verbose` runtime flip,
+      circular-ctx safety (including a Proxy whose trap throws),
+      non-Error normalisation (including non-string `stack`),
+      `error(cat, msg, undefined)` omitting the stack section, and
+      corrupted `verboseLogging` coercion to `false`.
 - [ ] Validate with `npm run typecheck`, `npm test`, and
       `openspec validate --all --strict`.

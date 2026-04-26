@@ -17,11 +17,17 @@ untagged `<h2>`. `MergeDialog` (and any future wrapper) cannot point
 The extension:
 
 - Add optional `labelledBy?: string` and `describedBy?: string` props.
-- Generate a fallback title id via Solid's `createUniqueId()` when the
-  consumer does not supply one. Apply that id to the rendered `<h2>`.
-- Forward whichever id is in effect (consumer-supplied or generated) to
-  `Dialog` as `labelledBy`, and forward `describedBy` if the consumer
-  passes one.
+- Always generate a title id via Solid's `createUniqueId()` and apply it
+  to the rendered `<h2>` so the heading is reliably referenceable.
+- When the consumer does NOT supply `labelledBy`, forward
+  `ConfirmDialog`'s own generated id to `Dialog` so the link works
+  out of the box.
+- When the consumer DOES supply `labelledBy`, forward that value
+  unchanged; `ConfirmDialog`'s generated id remains on the `<h2>` but
+  is unused as a label reference. This avoids overwriting the
+  consumer's intent and the duplicate id is harmless.
+- Forward `describedBy` to `Dialog` if the consumer passes one;
+  `ConfirmDialog` does not synthesise a description id.
 
 `MergeDialog` keeps its `<ConfirmDialog title="..."/>` call-site
 unchanged; the link is set up automatically because the generated id is
@@ -55,30 +61,71 @@ written as a descendant of the app shell (e.g.
 The fix is a class hook on the panel itself:
 
 ```css
-.dialog-panel :is(button, input, select, textarea):focus-visible {
+.dialog-panel
+  :is(
+    button,
+    input,
+    select,
+    textarea,
+    a[href],
+    [tabindex]:not([tabindex='-1']),
+    [role='button'],
+    [role='switch'],
+    [role='checkbox'],
+    [role='link']
+  ):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 ```
 
 Adding the `dialog-panel` class on the panel element in `Dialog.tsx`
-makes the rule portable to portaled and non-portaled mounts alike.
+makes the rule portable to portaled and non-portaled mounts alike. The
+selector list mirrors the spec's enumeration of interactive elements so
+custom widgets (toggles, icon buttons, etc.) pick up the indicator.
+
+## DiffViewerDialog visually hidden title
+
+`DiffViewerDialog` currently has no heading. The spec mandates a clip /
+sr-only pattern so the heading is in the accessibility tree but
+invisible. The repo does not currently ship an `.sr-only` utility; the
+implementation should add one alongside the focus-visible rule:
+
+```css
+.dialog-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+```
+
+Naming it `.dialog-sr-only` (rather than the more common `.sr-only`)
+keeps the new utility scoped to this proposal so it cannot collide with
+a future general-purpose visually-hidden helper.
 
 ## `describedBy` usage guidance
 
-`describedBy` should be supplied when the dialog has a meaningful body
-lead — typically a one-paragraph explanation under the title:
+`describedBy` is optional per the spec; this section is **advisory**
+only and does not bind implementations. The guidance below describes
+the editorial choice the initial implementation should make:
 
-- `ConfirmDialog` — yes, when `message` is non-empty.
-- `MergeDialog` — yes, the merge-destination paragraph is a natural
-  description.
-- `SettingsDialog`, `HelpDialog` — no, they have sectioned content with
-  multiple sub-headings; pointing `describedBy` at one section misleads
-  the user.
-- `NewTaskDialog`, `DiffViewerDialog` — no for the same reason.
+- `ConfirmDialog` — pass `describedBy` when `message` is non-empty.
+- `MergeDialog` — pass `describedBy`; the merge-destination paragraph
+  is a natural description.
+- `SettingsDialog`, `HelpDialog` — do not pass `describedBy`; they have
+  sectioned content with multiple sub-headings, and pointing the
+  description at one section misleads the user.
+- `NewTaskDialog`, `DiffViewerDialog` — same; do not pass.
 
-This guidance lives here, not in the spec, because it is a styling /
-content-pattern call rather than a normative requirement.
+A future change can revisit any of these without violating the spec,
+which only requires `describedBy` to be optional and to render correctly
+when supplied.
 
 ## Test surface
 

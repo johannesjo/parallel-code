@@ -85,12 +85,12 @@ These are not spec-level requirements but implementation decisions that
 need care during the actual build. Calling them out here so they don't
 surprise the implementer.
 
-- **Rate limiting `LogFromRenderer`.** Fire-and-forget IPC with no cap
-  could flood main if a render-loop bug emits a `warn` per frame. The
-  implementation should coalesce or rate-limit forwarded entries (e.g.
-  drop after N entries per second per category and emit a single
-  "suppressed N entries" notice). The renderer's own `console` output
-  is not rate-limited.
+- **Rate-cap implementation.** The spec's "Forwarding is rate-capped per
+  category" scenario pins 50 entries per rolling second per category.
+  The implementation can use a simple ring buffer keyed on category,
+  with a single timer per category for the suppression notice. The
+  renderer's own `console` output stays uncapped — only the IPC forward
+  is bounded.
 - **Verbose toggle synchronisation.** The IPC that pushes the new level
   to main has no ack and no ordering guarantee. Quick toggling could
   briefly leave main at a different level than the renderer. The
@@ -101,22 +101,29 @@ surprise the implementer.
   init, after `beforeunload`, and during a renderer reload. In each of
   these windows the renderer logger MUST still emit to its own console
   so startup / shutdown diagnosis is possible without a working IPC.
-- **Sweep batching.** The catch-block sweep touches dozens of files. It
-  is split into per-directory phases in `tasks.md` (`src/store/`,
-  `src/components/`, `electron/ipc/`) so each phase is reviewable on
-  its own. Production code paths between phases retain their existing
-  silent-swallow behaviour until the final sweep lands; no scenario
-  promises full compliance until then.
+- **Sweep phasing.** The catch-block sweep is split into per-directory
+  phases in `tasks.md` (`src/store/`, `src/components/`,
+  `electron/ipc/`) so each phase is reviewable on its own. The spec's
+  "Compliance is per-swept-directory" scenario explicitly admits the
+  transitional state.
 - **No-silent-swallow enforcement.** The spec requires the rule but does
   not enforce it. A follow-up may add a custom ESLint rule that flags
   empty arrow functions in `.catch()` and empty `catch {}` blocks. Until
   then, code review is the only check.
-- **Token / secret leakage.** Verbose mode exposes IPC payloads, git
-  command arguments, and pty events. None of these are redacted. Users
-  who turn verbose on for bug reports may inadvertently include paths,
-  remote URLs, or env-derived tokens in shared logs. A future
-  redaction layer is out of scope for this proposal but should be
-  flagged in the verbose toggle's explainer copy.
+- **Sensitive-channel taxonomy.** The spec's IPC trace scenario gates
+  payload logging on a `SENSITIVE_CHANNELS` set. The initial
+  implementation populates that set with at minimum: any channel that
+  forwards user input from a pty, any channel that round-trips a token
+  or auth header (e.g. ask-code provider channels), and any channel
+  whose payload includes a path under the user's home directory. The
+  set is module-level and reviewed alongside new channels.
+- **Token / secret leakage beyond IPC.** Verbose mode also exposes git
+  command arguments and pty events. These are not gated by
+  `SENSITIVE_CHANNELS` because they are not IPC. Users who turn verbose
+  on for bug reports may inadvertently include paths, remote URLs, or
+  env-derived tokens in shared logs. A redaction layer for these
+  surfaces is out of scope for this proposal but should be flagged in
+  the verbose toggle's explainer copy.
 - **Category sprawl.** Categories are kebab strings with no registry.
   Without a follow-up registry or lint rule, near-duplicates (`tasks.spawn`
   vs `task-spawn`) will appear. Initial implementation should keep the

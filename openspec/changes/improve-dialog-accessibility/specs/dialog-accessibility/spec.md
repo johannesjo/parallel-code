@@ -30,6 +30,14 @@ makes that promise true SHALL remain wired up.
 - **AND** the underlying panel's `aria-modal` is removed (or the panel
   is re-rendered without it) until the topmost dialog closes
 
+#### Scenario: aria-modal is restored when the topmost dialog closes
+
+- **WHEN** the topmost of two stacked dialogs closes while the
+  underlying dialog is still open
+- **THEN** the underlying dialog regains `aria-modal="true"` on its
+  panel
+- **AND** subsequent dialog opens see it as the new top of the stack
+
 ### Requirement: Dialog panels link to their title
 
 Every dialog SHALL link its panel to a visible (or visually hidden) title
@@ -47,18 +55,31 @@ text.
 - **WHEN** any of `SettingsDialog`, `NewTaskDialog`, `HelpDialog`,
   `ConfirmDialog`, `MergeDialog`, or `DiffViewerDialog` renders
 - **THEN** its title element has an id that is unique within the
-  document for the lifetime of that render (e.g. produced by
-  `createUniqueId` so two open dialogs cannot collide)
+  document for the lifetime of the dialog's open mount (produced by
+  `createUniqueId` so two simultaneously-open dialogs cannot collide,
+  and stable across re-renders of the same component instance)
 - **AND** the dialog passes that id to `Dialog` as `labelledBy`
 - **AND** the referenced element exists in the rendered DOM
+
+#### Scenario: Consumer-supplied labelledBy wins over ConfirmDialog's title
+
+- **WHEN** a consumer passes a `labelledBy` to `ConfirmDialog` while
+  also providing a `title` string
+- **THEN** the value forwarded to `Dialog` as `aria-labelledby` is the
+  consumer-supplied id
+- **AND** `ConfirmDialog`'s own internally-generated title id is left
+  on the rendered `<h2>` but is not used as `aria-labelledby`
 
 #### Scenario: Title element has accessible text
 
 - **WHEN** an element referenced by a dialog's `aria-labelledby` is in
   the DOM
-- **THEN** it contains non-empty text content
+- **THEN** its `textContent` after trimming whitespace is non-empty
 - **AND** it is not itself hidden via `aria-hidden="true"`,
   `display: none`, or `visibility: hidden`
+- **AND** the spec does not attempt to police further CSS-based
+  hiding tricks (e.g. `font-size: 0`, `color: transparent`); the
+  proposal relies on author discipline for those
 
 #### Scenario: DiffViewerDialog provides a visually hidden title
 
@@ -102,10 +123,13 @@ indicator when focused via keyboard, distinct from the hover or active
 state. The focus-style scope SHALL be expressed in a way that survives
 the panel being mounted in a Solid `<Portal>` outside the app root.
 
-#### Scenario: Buttons inside dialogs show a focus ring
+#### Scenario: Interactive elements inside dialogs show a focus ring
 
-- **WHEN** a `button`, `input`, `select`, or `textarea` inside a dialog
-  panel receives focus via Tab or Shift-Tab
+- **WHEN** an interactive element inside a dialog panel receives focus
+  via Tab or Shift-Tab — including any of `button`, `input`, `select`,
+  `textarea`, `a[href]`, `[tabindex]:not([tabindex="-1"])`,
+  `[role="button"]`, `[role="switch"]`, `[role="checkbox"]`, and
+  `[role="link"]`
 - **THEN** a visible focus indicator (e.g. an outline or ring matching
   the app's accent colour) is rendered
 

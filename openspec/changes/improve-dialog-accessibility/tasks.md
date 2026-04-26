@@ -27,22 +27,34 @@
       handled by the extended `ConfirmDialog` API; verify the link
       resolves at render time. (`MergeDialog` does not render its own
       close button, so no `aria-label` work is needed here.)
-- [ ] Update `DiffViewerDialog.tsx`: add a heading element (visible or
-      visually hidden via the `clip` / sr-only pattern, **not**
-      `display: none`) and wire its id as `labelledBy`.
+- [ ] Update `DiffViewerDialog.tsx`: add a heading element using the
+      `.dialog-sr-only` utility class (clip-based hiding that keeps the
+      node in the accessibility tree, **not** `display: none` or
+      `visibility: hidden`) and wire its id as `labelledBy`.
 - [ ] Add a `:focus-visible` outline rule in `src/styles.css` keyed on
-      a class on the dialog panel (e.g.
-      `.dialog-panel button:focus-visible`) so the rule applies to
-      portaled panels.
+      `.dialog-panel` and matching the spec's broader interactive
+      enumeration (`button`, `input`, `select`, `textarea`, `a[href]`,
+      `[tabindex]:not([tabindex="-1"])`, `[role="button"]`,
+      `[role="switch"]`, `[role="checkbox"]`, `[role="link"]`) so the
+      rule covers icon buttons, toggles, and links inside dialogs.
+- [ ] Add the `.dialog-sr-only` utility (clip / sr-only) to
+      `src/styles.css` so `DiffViewerDialog`'s hidden heading can use
+      it without inventing a recipe.
+- [ ] Stack-aware `aria-modal` must restore the underlying panel's
+      `aria-modal="true"` when a topmost dialog closes, so reopening a
+      third dialog still finds the underlying as the next-top. Cover
+      this in tests.
 - [ ] Tests: add `Dialog.test.tsx`, `ConfirmDialog.test.tsx`, and
       per-dialog assertions colocated next to each component (the
       repo's convention is colocated `*.test.ts` / `*.test.tsx`, not a
       `__tests__/` subdirectory) covering: panel has `role="dialog"`
-      and `aria-modal="true"`, the focus trap holds Tab inside the
-      panel, `aria-labelledby` resolves to a node containing non-empty
-      text, and stack-aware `aria-modal` removes the attribute from the
-      underlying panel when a second dialog opens. Note that jsdom does
-      not run AT name computation, so these tests verify structure, not
-      announcement.
+      and `aria-modal="true"`; the focus trap holds Tab inside the
+      panel; `aria-labelledby` resolves to a node whose trimmed
+      `textContent` is non-empty; stack-aware `aria-modal` removes the
+      attribute from the underlying panel when a second dialog opens
+      and restores it when the topmost closes; consumer-supplied
+      `labelledBy` to `ConfirmDialog` wins over the internal generated
+      id. Note that jsdom does not run AT name computation, so these
+      tests verify structure, not announcement.
 - [ ] Validate with `npm run typecheck`, `npm test`, and
       `openspec validate --all --strict`.

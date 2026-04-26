@@ -37,9 +37,20 @@
 - [ ] Add a "Restart tour" button to `SettingsDialog`.
 - [ ] Resume Phase 2 of the tour the first time a task panel mounts after
       Phase 1 completed (driven by the persisted `tourStep` resume token).
-- [ ] Tests: `src/store/__tests__/tour.test.ts` covering start, navigate
-      (forward + back, including hook ordering), skip, finish, restart,
-      existing-user carve-out, deferred-activation-while-modal-open, and
-      the resume-after-task-spawn path.
+- [ ] Restart-tour while `tourActive` is true must run the current step's
+      `afterLeave` hook (if any), reset `tourStep` to 0, clear
+      `tourCompletedAt`, and re-activate after `SettingsDialog` closes.
+- [ ] Treat empty-string `anchorId` as `null` (centered, no lookup) so a
+      coding error producing `data-tour-id=""` does not waste the
+      MutationObserver wait.
+- [ ] Route hook failures and anchor-skip events through the structured
+      logger (category `tour`) rather than `console.warn`; depends on or
+      coexists with the `add-structured-logging` proposal.
+- [ ] Tests: colocated `src/store/tour.test.ts` (matching the repo's
+      colocated test convention) covering start, navigate (forward +
+      back, including hook ordering), skip, finish, restart,
+      restart-while-active, mid-phase-2 quit, existing-user carve-out,
+      deferred-activation-while-modal-open, and the resume-after-task
+      -spawn path.
 - [ ] Validate with `npm run typecheck`, `npm test`, and
       `openspec validate --all --strict`.

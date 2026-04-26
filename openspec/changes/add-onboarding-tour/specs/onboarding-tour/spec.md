@@ -120,14 +120,18 @@ window resizes or layout changes.
 
 #### Scenario: Centered step has no spotlight
 
-- **WHEN** a step's `anchorId` is `null`
+- **WHEN** a step's `anchorId` is `null` or the empty string `""`
 - **THEN** the overlay renders a uniform dimmer with no cutout
 - **AND** the tooltip is centered in the viewport
+- **AND** no anchor lookup is attempted
 
 ### Requirement: Two-phase flow when no project exists
 
 The tour SHALL split into two phases so a fresh user with no project can
-still see all steps without the app fabricating demo data.
+still see all steps without the app fabricating demo data. `tourStep` is
+a single global 0-indexed counter across both phases; phase 2 resumes at
+the step index immediately following the last phase-1 step rather than
+restarting at zero.
 
 #### Scenario: First launch with no project
 
@@ -137,13 +141,14 @@ still see all steps without the app fabricating demo data.
 - **AND** the final phase-1 step prompts the user to create their first task
   or skip
 - **AND** the `tourStep` resume token is persisted so phase 2 can resume
+  from the next global step index
 
 #### Scenario: Phase 2 resumes after first task
 
 - **WHEN** phase 1 completed without skipping
 - **AND** a task panel mounts for the first time afterward
-- **THEN** the tour activates phase 2 (steps that explain the terminal,
-  changed-files panel, merge action, and help)
+- **THEN** the tour activates phase 2 at the global step index that
+  immediately follows the last phase-1 step (not phase-relative zero)
 
 #### Scenario: Phase 2 resume token persists across launches
 
@@ -161,6 +166,24 @@ still see all steps without the app fabricating demo data.
 - **AND** phase 1 begins again at step 0
 - **AND** any partial `tourStep` value from the prior session is discarded
 
+#### Scenario: Mid-phase-2 quit resumes at the same step
+
+- **WHEN** the app quits while phase 2 is mid-flight (after phase 1
+  finished, before phase 2 was completed or skipped)
+- **THEN** the persisted `tourStep` retains the global index of the
+  current step
+- **AND** the next launch resumes phase 2 at that step the next time a
+  task panel mounts
+
+#### Scenario: Existing user restarts the tour with anchors already in scope
+
+- **WHEN** an existing user (one with at least one prior project or task)
+  invokes "Restart tour" from `SettingsDialog`
+- **AND** at least one task panel is already mounted at the moment phase 1
+  finishes
+- **THEN** phase 2 activates immediately when phase 1 ends, without
+  waiting for a new task-panel mount
+
 #### Scenario: Skipping in either phase finalises the tour
 
 - **WHEN** the user skips during phase 1 or phase 2
@@ -170,14 +193,46 @@ still see all steps without the app fabricating demo data.
 
 ### Requirement: Restart from settings
 
-The app SHALL let the user replay the tour from the settings dialog.
+The app SHALL let the user replay the tour from the settings dialog
+regardless of whether the tour is currently active.
 
 #### Scenario: Restart tour clears completion
 
 - **WHEN** the user clicks "Restart tour" in `SettingsDialog`
+- **AND** the tour is not currently active
 - **THEN** `tourCompletedAt` is set to `null`
 - **AND** the `tourStep` resume token is reset
-- **AND** the tour activates immediately at step 0
+- **AND** the tour activates immediately at step 0 once `SettingsDialog`
+  closes (deferred via the same modal-aware activation rules)
+
+#### Scenario: Restart tour while the tour is already active
+
+- **WHEN** the user clicks "Restart tour" while the tour is currently
+  active (e.g. in phase 2 step 6)
+- **THEN** the current step is abandoned and any pending `afterLeave`
+  hook of that step still runs
+- **AND** `tourCompletedAt` is set to `null`
+- **AND** `tourStep` is reset to 0
+- **AND** the tour resumes at step 0 once `SettingsDialog` closes
+
+### Requirement: Global shortcuts are suppressed during the tour
+
+The app SHALL suppress its global keybindings while the tour is active so
+a stray key press cannot open another modal on top of the tour.
+
+#### Scenario: Global keybindings do nothing while the tour is active
+
+- **WHEN** `tourActive` is `true`
+- **AND** the user presses a keybinding that would normally trigger a
+  global action (new task, focus mode, help, settings, etc.)
+- **THEN** the action does not run
+- **AND** only Esc (skip) and Enter (advance) are honoured by the tour
+  tooltip itself
+
+#### Scenario: Global keybindings resume after the tour ends
+
+- **WHEN** the tour deactivates via Done, Skip, or Restart
+- **THEN** subsequent global keybindings run normally
 
 ### Requirement: Accessibility
 

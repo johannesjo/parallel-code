@@ -123,15 +123,31 @@ the implementer.
   the relevant components, and asserts every non-null `anchorId` resolves
   to a DOM node — so a future refactor that drops a `data-tour-id` fails
   loudly instead of producing a silently broken tour.
-- **Global shortcut suppression.** While `tourActive` is true, suppress
-  global keybindings (new task, focus mode, help, settings, etc.) so a key
-  press does not open another modal on top of the tour. Only Esc (skip)
-  and Enter (next) should be live.
+- **`aria-live` region implementation.** The live region must be keyed on
+  `tourStep` (not re-rendered on every overlay tick) so that anchor
+  repositions or focus restorations don't re-announce the step. A naive
+  implementation that sets `textContent` inside an effect with broader
+  dependencies will violate the spec's de-duplication scenario.
 - **Single-window scope.** Activation logic assumes a single renderer; if
   the app ever opens a second window, only the first window to read
   `tourCompletedAt === null` runs the tour. The implementation may guard
   against this with a per-process flag, but the spec does not promise
   multi-window behavior.
+- **Hook failure logging.** `beforeEnter` and `afterLeave` hooks (e.g.
+  opening / closing `NewTaskDialog`) can throw; anchor lookups can time
+  out and skip. These catch sites must route through the structured
+  logger added by the `add-structured-logging` proposal under category
+  `tour`, not `console.warn`. If logging lands first, this is a hard
+  dependency at implementation time; if tour lands first, expect a
+  follow-up sweep.
+- **Cross-proposal: dialog stack.** The spec lists four named modal
+  signals to defer activation against. The `improve-dialog-accessibility`
+  proposal introduces a stack-counted store of open dialogs; if it lands
+  first the tour implementation should consume that stack instead of
+  enumerating named signals, so a future fifth dialog doesn't silently
+  let the tour activate over it. The spec deliberately states the
+  observable behaviour (defer while a modal is open) without committing
+  to either source of truth.
 
 ## Out of scope
 

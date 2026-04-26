@@ -34,7 +34,13 @@ cycles substantially.
 - New capability `logging`.
 - New modules `src/lib/log.ts` and `electron/log.ts`.
 - New IPC channel `LogFromRenderer` (renderer → main, fire-and-forget).
-- Sweep touches dozens of files; no behavioral change beyond replacing
-  `console.*` and silent swallows with logger calls.
-- New persisted field `verboseLogging: boolean` (default `false`).
+  As with every other channel, it must be added both to the `IPC` enum
+  in `electron/ipc/channels.ts` and to the preload script's allowlist
+  before the renderer can call it.
+- Sweep touches dozens of files split into per-directory phases. The
+  spec admits a transitional period where earlier-swept directories
+  are compliant and later ones still hold legacy patterns.
+- New persisted field `verboseLogging: boolean` (default `false`); the
+  loader coerces non-boolean values to `false` to avoid corrupted state
+  silently enabling verbose mode in production.
 - No new runtime dependencies.
