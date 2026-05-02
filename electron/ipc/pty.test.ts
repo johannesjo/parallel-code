@@ -4,63 +4,66 @@ import path from 'path';
 import type { BrowserWindow } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockExecFileSync, mockExecFile, mockChildProcessSpawn, mockPtySpawn } = vi.hoisted(() => {
-  const mockExecFileSync = vi.fn((command: string, args?: string[]) => {
-    if (command === 'which' && args?.[0] === 'nonexistent-binary-xyz') {
-      throw new Error('not found');
-    }
-    return '';
-  });
+const { mockExecFileSync, mockExecFile, mockChildProcessSpawn, mockPtySpawn, mockLogDebug } =
+  vi.hoisted(() => {
+    const mockExecFileSync = vi.fn((command: string, args?: string[]) => {
+      if (command === 'which' && args?.[0] === 'nonexistent-binary-xyz') {
+        throw new Error('not found');
+      }
+      return '';
+    });
 
-  const mockExecFile = vi.fn();
-  const mockChildProcessSpawn = vi.fn(() => ({
-    stdout: { on: vi.fn() },
-    stderr: { on: vi.fn() },
-    on: vi.fn(),
-  }));
+    const mockExecFile = vi.fn();
+    const mockChildProcessSpawn = vi.fn(() => ({
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+      on: vi.fn(),
+    }));
 
-  const mockPtySpawn = vi.fn(
-    (_command: string, _args: string[], options: { cols: number; rows: number }) => {
-      let onDataHandler: ((data: string) => void) | undefined;
-      let onExitHandler:
-        | ((event: { exitCode: number; signal: number | undefined }) => void)
-        | undefined;
+    const mockPtySpawn = vi.fn(
+      (_command: string, _args: string[], options: { cols: number; rows: number }) => {
+        let onDataHandler: ((data: string) => void) | undefined;
+        let onExitHandler:
+          | ((event: { exitCode: number; signal: number | undefined }) => void)
+          | undefined;
 
-      const proc = {
-        cols: options.cols,
-        rows: options.rows,
-        write: vi.fn(),
-        resize: vi.fn((cols: number, rows: number) => {
-          proc.cols = cols;
-          proc.rows = rows;
-        }),
-        pause: vi.fn(),
-        resume: vi.fn(),
-        kill: vi.fn(() => {
-          onExitHandler?.({ exitCode: 0, signal: 15 });
-        }),
-        onData: vi.fn((handler: (data: string) => void) => {
-          onDataHandler = handler;
-        }),
-        onExit: vi.fn(
-          (handler: (event: { exitCode: number; signal: number | undefined }) => void) => {
-            onExitHandler = handler;
+        const proc = {
+          cols: options.cols,
+          rows: options.rows,
+          write: vi.fn(),
+          resize: vi.fn((cols: number, rows: number) => {
+            proc.cols = cols;
+            proc.rows = rows;
+          }),
+          pause: vi.fn(),
+          resume: vi.fn(),
+          kill: vi.fn(() => {
+            onExitHandler?.({ exitCode: 0, signal: 15 });
+          }),
+          onData: vi.fn((handler: (data: string) => void) => {
+            onDataHandler = handler;
+          }),
+          onExit: vi.fn(
+            (handler: (event: { exitCode: number; signal: number | undefined }) => void) => {
+              onExitHandler = handler;
+            },
+          ),
+          emitData(data: string) {
+            onDataHandler?.(data);
           },
-        ),
-        emitData(data: string) {
-          onDataHandler?.(data);
-        },
-        emitExit(event: { exitCode: number; signal: number | undefined }) {
-          onExitHandler?.(event);
-        },
-      };
+          emitExit(event: { exitCode: number; signal: number | undefined }) {
+            onExitHandler?.(event);
+          },
+        };
 
-      return proc;
-    },
-  );
+        return proc;
+      },
+    );
 
-  return { mockExecFileSync, mockExecFile, mockChildProcessSpawn, mockPtySpawn };
-});
+    const mockLogDebug = vi.fn();
+
+    return { mockExecFileSync, mockExecFile, mockChildProcessSpawn, mockPtySpawn, mockLogDebug };
+  });
 
 vi.mock('child_process', async () => {
   const actual = await vi.importActual<typeof import('child_process')>('child_process');
@@ -74,6 +77,10 @@ vi.mock('child_process', async () => {
 
 vi.mock('node-pty', () => ({
   spawn: mockPtySpawn,
+}));
+
+vi.mock('../log.js', () => ({
+  debug: mockLogDebug,
 }));
 
 import {
@@ -155,6 +162,14 @@ function getFlagValues(args: string[], flag: string): string[] {
   return values;
 }
 
+function getSpawnCommandLogCtx(): { args: string[]; command: string } {
+  const call = mockLogDebug.mock.calls.find(
+    ([category, msg]) => category === 'pty' && String(msg).startsWith('spawn command '),
+  );
+  expect(call).toBeTruthy();
+  return call?.[2] as { args: string[]; command: string };
+}
+
 function makeTempHome(entries: string[]): string {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pty-docker-home-'));
   tempPaths.push(home);
@@ -227,6 +242,61 @@ describe('spawnAgent docker mode', () => {
     ]);
     expect(envFlags).not.toContain(`HOME=${hostHome}`);
     expect(envFlags).not.toContain(`HOME=${rendererHome}`);
+  });
+
+  it('redacts docker env values in spawn debug logs', () => {
+    spawnAgent(
+      createMockWindow(),
+      buildSpawnArgs({
+        env: {
+          API_KEY: 'secret-api-key',
+          NO_VALUE: '',
+        },
+      }),
+    );
+
+    const ctx = getSpawnCommandLogCtx();
+    const logged = ctx.args.join(' ');
+
+    expect(ctx.command).toBe('docker');
+    expect(getFlagValues(ctx.args, '-e')).toContain('API_KEY=<redacted>');
+    expect(getFlagValues(ctx.args, '-e')).toContain('NO_VALUE=<redacted>');
+    expect(getFlagValues(ctx.args, '-e')).toContain(`HOME=<redacted>`);
+    expect(logged).not.toContain('secret-api-key');
+    expect(logged).not.toContain(`HOME=${DOCKER_CONTAINER_HOME}`);
+    expect(logged).toContain('parallel-code-agent:test');
+  });
+
+  it('redacts inline docker env values in spawn debug logs', () => {
+    spawnAgent(
+      createMockWindow(),
+      buildSpawnArgs({
+        args: ['--env=INLINE_TOKEN=inline-secret', '--env', 'SPLIT_TOKEN=split-secret'],
+      }),
+    );
+
+    const logged = getSpawnCommandLogCtx().args.join(' ');
+
+    expect(logged).toContain('--env=INLINE_TOKEN=<redacted>');
+    expect(logged).toContain('SPLIT_TOKEN=<redacted>');
+    expect(logged).not.toContain('inline-secret');
+    expect(logged).not.toContain('split-secret');
+  });
+
+  it('redacts shell command strings in spawn debug logs', () => {
+    spawnAgent(
+      createMockWindow(),
+      buildSpawnArgs({
+        command: '/bin/sh',
+        args: ['-c', 'codex exec "prompt containing private context"'],
+        dockerMode: false,
+      }),
+    );
+
+    const ctx = getSpawnCommandLogCtx();
+
+    expect(ctx.command).toBe('/bin/sh');
+    expect(ctx.args).toEqual(['-c', '<redacted>']);
   });
 
   it('redirects credential mounts under /tmp inside the container', () => {
