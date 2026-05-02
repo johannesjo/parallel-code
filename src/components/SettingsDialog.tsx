@@ -23,6 +23,7 @@ import {
   setInactiveColumnOpacity,
   setEditorCommand,
   setDockerImage,
+  setShareDockerAgentAuth,
   setAskCodeProvider,
   setMinimaxApiKey,
 } from '../store/store';
@@ -541,6 +542,34 @@ export function SettingsDialog(props: SettingsDialogProps) {
               will use a project-specific image instead.
             </div>
           </div>
+          <label
+            style={{
+              display: 'flex',
+              'align-items': 'center',
+              gap: '10px',
+              cursor: 'pointer',
+              padding: '8px 12px',
+              'border-radius': '8px',
+              background: theme.bgInput,
+              border: `1px solid ${theme.border}`,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={store.shareDockerAgentAuth}
+              onChange={(e) => setShareDockerAgentAuth(e.currentTarget.checked)}
+              style={{ 'accent-color': theme.accent, cursor: 'pointer' }}
+            />
+            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
+              <span style={{ 'font-size': '14px', color: theme.fg }}>
+                Share agent auth across Linux containers
+              </span>
+              <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
+                Persist agent credentials in a user-owned host directory so you only need to sign in
+                once per agent type. Auth on first run is saved automatically for future containers.
+              </span>
+            </div>
+          </label>
         </div>
       </Show>
 

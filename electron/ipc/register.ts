@@ -181,6 +181,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertInt(args.rows, 'rows');
     assertOptionalBoolean(args.dockerMode, 'dockerMode');
     assertOptionalString(args.dockerImage, 'dockerImage');
+    assertOptionalBoolean(args.shareDockerAgentAuth, 'shareDockerAgentAuth');
     assertOptionalBoolean(args.stepsEnabled, 'stepsEnabled');
     if (args.cwd) validatePath(args.cwd, 'cwd');
     if (!args.isShell && args.cwd) {

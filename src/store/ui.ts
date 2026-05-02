@@ -135,6 +135,10 @@ export function setDockerAvailable(available: boolean): void {
   setStore('dockerAvailable', available);
 }
 
+export function setShareDockerAgentAuth(enabled: boolean): void {
+  setStore('shareDockerAgentAuth', enabled);
+}
+
 export function toggleArena(show?: boolean): void {
   setStore('showArena', show ?? !store.showArena);
 }

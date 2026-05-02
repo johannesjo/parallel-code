@@ -532,6 +532,7 @@ export function TerminalView(props: TerminalViewProps) {
       stepsEnabled: props.stepsEnabled,
       dockerMode: props.dockerMode,
       dockerImage: props.dockerImage,
+      shareDockerAgentAuth: store.shareDockerAgentAuth,
       onOutput,
       // eslint-disable-next-line solid/reactivity -- promise catch handler reads current prop values intentionally
     }).catch((err) => {

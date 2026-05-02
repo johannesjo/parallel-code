@@ -148,6 +148,7 @@ export function spawnAgent(
     isShell?: boolean;
     dockerMode?: boolean;
     dockerImage?: string;
+    shareDockerAgentAuth?: boolean;
     onOutput: { __CHANNEL_ID__: string };
   },
 ): void {
@@ -264,7 +265,7 @@ export function spawnAgent(
       '-e',
       `HOME=${DOCKER_CONTAINER_HOME}`,
       // Mount SSH and git config read-only for git operations
-      ...buildDockerCredentialMounts(),
+      ...buildDockerCredentialMounts(args.command, args.shareDockerAgentAuth === true),
       image,
       command,
       ...args.args,
@@ -616,7 +617,16 @@ function buildDockerEnvFlags(env: Record<string, string>): string[] {
   return flags;
 }
 
-function buildDockerCredentialMounts(): string[] {
+// Config directories each agent CLI uses for auth/settings, relative to HOME.
+const AGENT_CONFIG_DIRS: Record<string, string[]> = {
+  claude: ['.claude'],
+  codex: ['.codex'],
+  gemini: ['.gemini'],
+  opencode: ['.config/opencode'],
+  copilot: ['.config/github-copilot'],
+};
+
+function buildDockerCredentialMounts(agentCommand: string, shareAgentAuth: boolean): string[] {
   const mounts: string[] = [];
   const home = process.env.HOME;
   if (!home) return mounts;
@@ -651,6 +661,20 @@ function buildDockerCredentialMounts(): string[] {
   const googleCredsFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   if (googleCredsFile) {
     mountIfExists(googleCredsFile, googleCredsFile);
+  }
+
+  // When "Share agent auth across Linux containers" is enabled, bind-mount a
+  // host directory (created here, owned by the current user) into the agent's
+  // config location inside the container. Using a host directory avoids the
+  // root-ownership problem of Docker named volumes: the directory is created
+  // by this process (running as the user), so the containerised agent can
+  // write credentials on first login and read them on subsequent runs.
+  if (shareAgentAuth) {
+    for (const relDir of AGENT_CONFIG_DIRS[agentCommand] ?? []) {
+      const hostDir = path.join(home, '.parallel-code', 'agent-auth', agentCommand);
+      fs.mkdirSync(hostDir, { recursive: true });
+      mounts.push('-v', `${hostDir}:${DOCKER_CONTAINER_HOME}/${relDir}`);
+    }
   }
 
   return mounts;

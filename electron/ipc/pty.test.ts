@@ -126,6 +126,7 @@ function buildSpawnArgs(
     rows: 40,
     dockerMode: true,
     dockerImage: 'parallel-code-agent:test',
+    shareDockerAgentAuth: false,
     onOutput: { __CHANNEL_ID__: 'channel-1' },
     ...overrides,
   };
@@ -309,6 +310,67 @@ describe('spawnAgent docker mode', () => {
     expect(volumeFlags).toContain(`${home}/.ssh:${DOCKER_CONTAINER_HOME}/.ssh:ro`);
     expect(volumeFlags).toContain(`${home}/.gitconfig:${DOCKER_CONTAINER_HOME}/.gitconfig:ro`);
     expect(volumeFlags).toContain(`${home}/.config/gh:${DOCKER_CONTAINER_HOME}/.config/gh:ro`);
+  });
+
+  describe('agent config dir mounts (shareDockerAgentAuth)', () => {
+    it.each([
+      ['claude', '.claude'],
+      ['codex', '.codex'],
+      ['gemini', '.gemini'],
+      ['opencode', '.config/opencode'],
+      ['copilot', '.config/github-copilot'],
+    ])(
+      '%s bind-mounts a user-owned host directory when shareDockerAgentAuth is enabled',
+      (command, relDir) => {
+        const home = makeTempHome([]);
+        vi.stubEnv('HOME', home);
+
+        spawnAgent(createMockWindow(), buildSpawnArgs({ command, shareDockerAgentAuth: true }));
+
+        const volumeFlags = getFlagValues(getLastSpawnCall().args, '-v');
+        const expectedHostDir = `${home}/.parallel-code/agent-auth/${command}`;
+        expect(volumeFlags).toContain(`${expectedHostDir}:${DOCKER_CONTAINER_HOME}/${relDir}`);
+      },
+    );
+
+    it('creates the host auth directory so it is user-owned before mounting', () => {
+      const home = makeTempHome([]);
+      vi.stubEnv('HOME', home);
+
+      spawnAgent(
+        createMockWindow(),
+        buildSpawnArgs({ command: 'claude', shareDockerAgentAuth: true }),
+      );
+
+      const hostDir = `${home}/.parallel-code/agent-auth/claude`;
+      expect(fs.existsSync(hostDir)).toBe(true);
+    });
+
+    it('does not mount agent auth directory when shareDockerAgentAuth is disabled', () => {
+      const home = makeTempHome([]);
+      vi.stubEnv('HOME', home);
+
+      spawnAgent(
+        createMockWindow(),
+        buildSpawnArgs({ command: 'claude', shareDockerAgentAuth: false }),
+      );
+
+      const volumeFlags = getFlagValues(getLastSpawnCall().args, '-v');
+      expect(volumeFlags.some((v) => v.includes('.parallel-code/agent-auth'))).toBe(false);
+    });
+
+    it('does not mount agent auth directory for an unknown agent command', () => {
+      const home = makeTempHome([]);
+      vi.stubEnv('HOME', home);
+
+      spawnAgent(
+        createMockWindow(),
+        buildSpawnArgs({ command: 'unknown-agent', shareDockerAgentAuth: true }),
+      );
+
+      const volumeFlags = getFlagValues(getLastSpawnCall().args, '-v');
+      expect(volumeFlags.some((v) => v.includes('.parallel-code/agent-auth'))).toBe(false);
+    });
   });
 });
 

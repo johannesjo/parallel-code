@@ -51,6 +51,7 @@ export const [store, setStore] = createStore<AppStore>({
   editorCommand: '',
   dockerImage: 'parallel-code-agent:latest',
   dockerAvailable: false,
+  shareDockerAgentAuth: false,
   askCodeProvider: 'claude',
   newTaskDropUrl: null,
   newTaskPrefillPrompt: null,
