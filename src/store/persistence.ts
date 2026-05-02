@@ -28,6 +28,9 @@ function enrichAgentDef(agentDef: AgentDef | null | undefined, availableAgents: 
     if (!agentDef.skip_permissions_args)
       agentDef.skip_permissions_args = fresh.skip_permissions_args;
   }
+  if (agentDef.id === 'codex' && agentDef.skip_permissions_args?.includes('--full-auto')) {
+    agentDef.skip_permissions_args = ['--dangerously-bypass-approvals-and-sandbox'];
+  }
 }
 
 export async function saveState(): Promise<void> {

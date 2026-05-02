@@ -24,7 +24,7 @@ import type { BattleCompetitor } from './types';
 /** Built-in tool presets — click to fill the next empty competitor slot */
 const TOOL_PRESETS: Array<{ name: string; command: string }> = [
   { name: 'Claude', command: 'claude -p "{prompt}" --dangerously-skip-permissions' },
-  { name: 'Codex', command: 'codex exec --full-auto "{prompt}"' },
+  { name: 'Codex', command: 'codex exec --dangerously-bypass-approvals-and-sandbox "{prompt}"' },
   { name: 'Gemini', command: 'gemini -p "{prompt}" --yolo' },
   { name: 'Copilot', command: 'copilot -p "{prompt}" --yolo' },
   { name: 'Aider', command: 'aider -m "{prompt}" --yes' },

@@ -31,7 +31,7 @@ const DEFAULT_AGENTS: AgentDef[] = [
     command: 'codex',
     args: [],
     resume_args: ['resume', '--last'],
-    skip_permissions_args: ['--full-auto'],
+    skip_permissions_args: ['--dangerously-bypass-approvals-and-sandbox'],
     description: "OpenAI's Codex CLI agent",
   },
   {

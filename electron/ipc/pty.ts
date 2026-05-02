@@ -64,6 +64,50 @@ const BATCH_INTERVAL = 8; // ms
 const TAIL_CAP = 8 * 1024;
 const MAX_LINES = 50;
 
+function redactedSpawnArgs(command: string, args: string[]): string[] {
+  if ((command === '/bin/sh' || command.endsWith('/sh')) && args[0] === '-c') {
+    return ['-c', '<redacted>'];
+  }
+  if (command === 'docker') {
+    return redactDockerArgs(args);
+  }
+  return args;
+}
+
+function redactDockerArgs(args: string[]): string[] {
+  const redacted: string[] = [];
+  let redactNextEnv = false;
+
+  for (const arg of args) {
+    if (redactNextEnv) {
+      redacted.push(redactEnvAssignment(arg));
+      redactNextEnv = false;
+      continue;
+    }
+
+    if (arg === '-e' || arg === '--env') {
+      redacted.push(arg);
+      redactNextEnv = true;
+      continue;
+    }
+
+    if (arg.startsWith('--env=')) {
+      redacted.push(`--env=${redactEnvAssignment(arg.slice('--env='.length))}`);
+      continue;
+    }
+
+    redacted.push(arg);
+  }
+
+  return redacted;
+}
+
+function redactEnvAssignment(value: string): string {
+  const eqIdx = value.indexOf('=');
+  if (eqIdx <= 0) return '<redacted>';
+  return `${value.slice(0, eqIdx)}=<redacted>`;
+}
+
 /** Verify that a command exists in PATH. Throws a descriptive error if not found. */
 export function validateCommand(command: string): void {
   if (!command || !command.trim()) {
@@ -229,6 +273,14 @@ export function spawnAgent(
     spawnCommand = command;
     spawnArgs = args.args;
   }
+
+  logDebug('pty', `spawn command ${args.agentId}`, {
+    taskId: args.taskId,
+    command: spawnCommand,
+    args: redactedSpawnArgs(spawnCommand, spawnArgs),
+    cwd,
+    dockerMode: args.dockerMode === true,
+  });
 
   const proc = pty.spawn(spawnCommand, spawnArgs, {
     name: 'xterm-256color',
