@@ -244,15 +244,16 @@ export function MergeDialog(props: MergeDialogProps) {
                     }
                     style={{
                       padding: '6px 14px',
-                      background: theme.bgInput,
-                      border: `1px solid ${theme.border}`,
+                      background: hasConflicts() ? theme.bgInput : theme.accent,
+                      border: hasConflicts() ? `1px solid ${theme.border}` : 'none',
                       'border-radius': '8px',
-                      color: theme.fg,
+                      color: hasConflicts() ? theme.fg : theme.accentText,
                       cursor:
                         rebasing() || worktreeStatus()?.has_uncommitted_changes
                           ? 'not-allowed'
                           : 'pointer',
                       'font-size': '13px',
+                      'font-weight': hasConflicts() ? 'normal' : '600',
                       opacity:
                         rebasing() || worktreeStatus()?.has_uncommitted_changes ? '0.5' : '1',
                     }}
@@ -280,13 +281,13 @@ export function MergeDialog(props: MergeDialogProps) {
                       title="Close dialog and ask the AI agent to rebase"
                       style={{
                         padding: '6px 14px',
-                        background: theme.accent,
-                        border: 'none',
+                        background: hasConflicts() ? theme.accent : theme.bgInput,
+                        border: hasConflicts() ? 'none' : `1px solid ${theme.border}`,
                         'border-radius': '8px',
-                        color: theme.accentText,
+                        color: hasConflicts() ? theme.accentText : theme.fg,
                         cursor: 'pointer',
                         'font-size': '13px',
-                        'font-weight': '600',
+                        'font-weight': hasConflicts() ? '600' : 'normal',
                       }}
                     >
                       Rebase with AI
