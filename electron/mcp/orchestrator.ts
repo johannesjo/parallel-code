@@ -347,7 +347,12 @@ export class Orchestrator {
     const root = this.projectRoot;
     if (root) {
       try {
-        await deleteTask([task.agentId], task.branchName, true, root);
+        await deleteTask({
+          agentIds: [task.agentId],
+          branchName: task.branchName,
+          deleteBranch: true,
+          projectRoot: root,
+        });
       } catch (err) {
         console.warn('Failed to delete orchestrated task worktree:', err);
       }
