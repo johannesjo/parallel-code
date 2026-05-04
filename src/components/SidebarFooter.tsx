@@ -1,10 +1,13 @@
-import { createMemo, Show } from 'solid-js';
+import { createMemo, createEffect, onCleanup, Show } from 'solid-js';
 import {
+  store,
   getCompletedTasksTodayCount,
   getMergedLineTotals,
   toggleHelpDialog,
   toggleArena,
-  store,
+  hasAnyCoordinatorTask,
+  startMCPStatusPolling,
+  stopMCPStatusPolling,
 } from '../store/store';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
@@ -13,9 +16,53 @@ import { alt, mod } from '../lib/platform';
 export function SidebarFooter() {
   const completedTasksToday = createMemo(() => getCompletedTasksTodayCount());
   const mergedLines = createMemo(() => getMergedLineTotals());
+  const hasCoordinator = createMemo(() => hasAnyCoordinatorTask());
+
+  createEffect(() => {
+    if (hasCoordinator()) {
+      startMCPStatusPolling();
+    } else {
+      stopMCPStatusPolling();
+    }
+  });
+
+  onCleanup(() => stopMCPStatusPolling());
+
+  const mcpOk = () => store.mcpStatus.remoteRunning;
 
   return (
     <>
+      <Show when={hasCoordinator()}>
+        <div
+          style={{
+            'border-top': `1px solid ${theme.border}`,
+            'padding-top': '12px',
+            display: 'flex',
+            'align-items': 'center',
+            gap: '8px',
+            'flex-shrink': '0',
+          }}
+        >
+          <div
+            style={{
+              width: '8px',
+              height: '8px',
+              'border-radius': '50%',
+              background: mcpOk() ? theme.success : theme.error,
+              'flex-shrink': '0',
+            }}
+          />
+          <span
+            style={{
+              'font-size': sf(11),
+              color: theme.fgMuted,
+            }}
+          >
+            MCP {mcpOk() ? 'Connected' : 'Disconnected'}
+          </span>
+        </div>
+      </Show>
+
       <div
         style={{
           'border-top': `1px solid ${theme.border}`,

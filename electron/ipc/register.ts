@@ -28,7 +28,7 @@ import {
 import { startStepsWatcher, stopStepsWatcher, readStepsForWorktree } from './steps.js';
 import { initPrChecks, startPrChecksWatcher, stopPrChecksWatcher, isPrUrl } from './pr-checks.js';
 import { readCoverageSummary } from './coverage.js';
-import { startRemoteServer } from '../remote/server.js';
+import { startRemoteServer, getMCPLogs } from '../remote/server.js';
 import { Orchestrator } from '../mcp/orchestrator.js';
 import {
   getGitIgnoredDirs,
@@ -170,7 +170,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // --- MCP orchestrator ---
   const orchestrator = new Orchestrator();
   orchestrator.setWindow(win);
-  let mcpProcess: ReturnType<typeof spawn> | null = null;
 
   // --- PTY commands ---
   ipcMain.handle(IPC.SpawnAgent, (_e, args) => {
@@ -866,10 +865,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
         coordinatorTaskId: string;
         projectId: string;
         projectRoot: string;
+        worktreePath?: string;
       },
     ) => {
-      // Set orchestrator's default project
-      orchestrator.setDefaultProject(args.projectId, args.projectRoot);
+      // Set orchestrator's default project + coordinator task ID
+      orchestrator.setDefaultProject(args.projectId, args.projectRoot, args.coordinatorTaskId);
 
       // Start remote server if not running
       if (!remoteServer) {
@@ -891,25 +891,78 @@ export function registerAllHandlers(win: BrowserWindow): void {
         });
       }
 
-      // Write temp MCP config file
+      // Write temp MCP config file — use the bundled single-file MCP server
+      // (built by esbuild, no external deps needed at runtime)
       const thisDir = path.dirname(fileURLToPath(import.meta.url));
-      const mcpServerPath = path.join(thisDir, '..', 'mcp', 'server.js');
+      let mcpServerPath = path.join(thisDir, '..', 'mcp-server.cjs');
+
+      // In packaged builds, asar-unpacked files live in app.asar.unpacked/
+      if (mcpServerPath.includes('/app.asar/')) {
+        mcpServerPath = mcpServerPath.replace('/app.asar/', '/app.asar.unpacked/');
+      }
       const serverUrl = `http://127.0.0.1:${remoteServer.port}`;
 
       const mcpConfig = {
         mcpServers: {
           'parallel-code': {
+            type: 'stdio' as const,
             command: 'node',
             args: [mcpServerPath, '--url', serverUrl, '--token', remoteServer.token],
           },
         },
       };
 
+      const configJson = JSON.stringify(mcpConfig, null, 2);
+
+      // Write temp config for --mcp-config flag
       const configPath = path.join(
         app.getPath('temp'),
         `parallel-code-mcp-${args.coordinatorTaskId}.json`,
       );
-      fs.writeFileSync(configPath, JSON.stringify(mcpConfig, null, 2));
+      fs.writeFileSync(configPath, configJson);
+
+      // Also write .mcp.json into the worktree so Claude Code auto-discovers it.
+      // Immediately git-exclude it so the token never gets committed.
+      if (args.worktreePath) {
+        const worktreeMcpPath = path.join(args.worktreePath, '.mcp.json');
+        fs.writeFileSync(worktreeMcpPath, configJson);
+
+        // Append to .git/info/exclude (local-only gitignore, not committed)
+        try {
+          const gitDir = path.join(args.worktreePath, '.git');
+          // Worktrees use a .git file pointing to the real gitdir
+          let infoDir: string;
+          if (fs.statSync(gitDir).isFile()) {
+            const gitFileContent = fs.readFileSync(gitDir, 'utf-8').trim();
+            const realGitDir = gitFileContent.replace(/^gitdir:\s*/, '');
+            infoDir = path.join(
+              path.isAbsolute(realGitDir)
+                ? realGitDir
+                : path.resolve(args.worktreePath, realGitDir),
+              'info',
+            );
+          } else {
+            infoDir = path.join(gitDir, 'info');
+          }
+          fs.mkdirSync(infoDir, { recursive: true });
+          const excludePath = path.join(infoDir, 'exclude');
+          const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'utf-8') : '';
+          if (!existing.includes('.mcp.json')) {
+            fs.appendFileSync(
+              excludePath,
+              '\n# Parallel Code MCP config (contains ephemeral token)\n.mcp.json\n',
+            );
+          }
+        } catch (err) {
+          console.warn('[MCP] Could not git-exclude .mcp.json:', err);
+        }
+
+        console.warn('[MCP] Worktree .mcp.json written to:', worktreeMcpPath);
+      }
+
+      console.warn('[MCP] Config written to:', configPath);
+      console.warn('[MCP] Server path:', mcpServerPath);
+      console.warn('[MCP] Remote URL:', serverUrl);
 
       return {
         configPath,
@@ -921,18 +974,21 @@ export function registerAllHandlers(win: BrowserWindow): void {
   );
 
   ipcMain.handle(IPC.StopMCPServer, async () => {
-    if (mcpProcess) {
-      mcpProcess.kill();
-      mcpProcess = null;
-    }
+    // The MCP server process is spawned by Claude Code (via --mcp-config),
+    // not by us. This handler is a no-op but kept for API completeness.
   });
 
   ipcMain.handle(IPC.GetMCPStatus, () => {
+    // The MCP server process is spawned by Claude Code (via --mcp-config),
+    // not by us. We report whether the remote HTTP server that the MCP
+    // server connects to is running — if it's up, MCP tools should work.
     return {
-      mcpRunning: mcpProcess !== null && mcpProcess.exitCode === null,
+      mcpRunning: remoteServer !== null,
       remoteRunning: remoteServer !== null,
     };
   });
+
+  ipcMain.handle(IPC.GetMCPLogs, () => getMCPLogs());
 
   // --- Forward window events to renderer ---
   win.on('focus', () => {

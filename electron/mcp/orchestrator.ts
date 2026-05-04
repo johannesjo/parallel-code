@@ -12,10 +12,12 @@ import {
   subscribeToAgent,
   unsubscribeFromAgent,
   getAgentScrollback,
+  onPtyEvent,
 } from '../ipc/pty.js';
 import { getChangedFiles, getAllFileDiffs, mergeTask as gitMergeTask } from '../ipc/git.js';
 import { stripAnsi, chunkContainsAgentPrompt } from './prompt-detect.js';
 import type { OrchestratedTask, ApiTaskSummary, ApiTaskDetail, ApiDiffResult } from './types.js';
+import { IPC } from '../ipc/channels.js';
 
 const DEFAULT_WAIT_TIMEOUT_MS = 300_000; // 5 minutes
 const PROMPT_WRITE_DELAY_MS = 50;
@@ -29,14 +31,37 @@ export class Orchestrator {
   private win: BrowserWindow | null = null;
   private projectRoot: string | null = null;
   private projectId: string | null = null;
+  private defaultCoordinatorTaskId: string | null = null;
+  constructor() {
+    // Listen for PTY exits to update task status when agents are killed externally
+    // (e.g., user closes a child task from the UI).
+    // No cleanup needed — orchestrator lives for the entire app lifetime.
+    onPtyEvent('exit', (agentId, data) => {
+      for (const task of this.tasks.values()) {
+        if (task.agentId === agentId) {
+          const { exitCode } = (data ?? {}) as { exitCode?: number };
+          task.status = 'exited';
+          task.exitCode = exitCode ?? null;
+          // Resolve any idle waiters so they don't hang
+          const resolvers = this.idleResolvers.get(task.id);
+          if (resolvers?.length) {
+            for (const resolve of resolvers) resolve();
+            this.idleResolvers.delete(task.id);
+          }
+          break;
+        }
+      }
+    });
+  }
 
   setWindow(win: BrowserWindow): void {
     this.win = win;
   }
 
-  setDefaultProject(projectId: string, projectRoot: string): void {
+  setDefaultProject(projectId: string, projectRoot: string, coordinatorTaskId?: string): void {
     this.projectId = projectId;
     this.projectRoot = projectRoot;
+    if (coordinatorTaskId) this.defaultCoordinatorTaskId = coordinatorTaskId;
   }
 
   async createTask(opts: {
@@ -55,6 +80,11 @@ export class Orchestrator {
     // Create worktree + branch via existing backend
     const result = await createBackendTask(opts.name, root, ['.claude', 'node_modules'], 'task');
 
+    const coordinatorId =
+      opts.coordinatorTaskId !== 'api'
+        ? opts.coordinatorTaskId
+        : (this.defaultCoordinatorTaskId ?? opts.coordinatorTaskId);
+
     const agentId = randomUUID();
     const task: OrchestratedTask = {
       id: result.id,
@@ -63,7 +93,7 @@ export class Orchestrator {
       branchName: result.branch_name,
       worktreePath: result.worktree_path,
       agentId,
-      coordinatorTaskId: opts.coordinatorTaskId,
+      coordinatorTaskId: coordinatorId,
       status: 'creating',
       exitCode: null,
     };
@@ -132,8 +162,24 @@ export class Orchestrator {
     subscribeToAgent(agentId, outputCb);
     task.status = 'running';
 
-    // Notify renderer
-    this.notifyRenderer('MCP_TaskCreated', {
+    // Check scrollback in case the prompt was emitted before we subscribed
+    const scrollback = getAgentScrollback(agentId);
+    if (scrollback) {
+      const decoded = Buffer.from(scrollback, 'base64').toString('utf8');
+      const stripped = stripAnsi(decoded)
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\x00-\x1f\x7f]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (chunkContainsAgentPrompt(stripped)) {
+        task.status = 'idle';
+      }
+    }
+
+    // Notify renderer with the prompt — the renderer sets it as initialPrompt
+    // on the task, and PromptInput auto-delivers it using the same code path
+    // as manually created tasks (stability checks, quiescence detection, etc.)
+    this.notifyRenderer(IPC.MCP_TaskCreated, {
       taskId: task.id,
       name: task.name,
       projectId: task.projectId,
@@ -141,14 +187,8 @@ export class Orchestrator {
       worktreePath: task.worktreePath,
       agentId: task.agentId,
       coordinatorTaskId: task.coordinatorTaskId,
+      prompt: opts.prompt,
     });
-
-    // Send initial prompt if provided
-    if (opts.prompt) {
-      // Wait a bit for the agent to initialize
-      await this.waitForIdleInternal(task.id, 60_000).catch(() => {});
-      await this.sendPrompt(task.id, opts.prompt);
-    }
 
     return task;
   }
@@ -176,6 +216,7 @@ export class Orchestrator {
       status: task.status,
       coordinatorTaskId: task.coordinatorTaskId,
       exitCode: task.exitCode,
+      pendingPrompt: task.pendingPrompt,
     };
   }
 
@@ -188,6 +229,7 @@ export class Orchestrator {
     await new Promise((r) => setTimeout(r, PROMPT_WRITE_DELAY_MS));
     writeToAgent(task.agentId, '\r');
     task.status = 'running';
+    task.pendingPrompt = undefined;
   }
 
   waitForIdle(taskId: string, timeoutMs?: number): Promise<void> {
@@ -318,7 +360,7 @@ export class Orchestrator {
     this.tasks.delete(taskId);
 
     // Notify renderer
-    this.notifyRenderer('MCP_TaskClosed', { taskId });
+    this.notifyRenderer(IPC.MCP_TaskClosed, { taskId });
   }
 
   getTask(taskId: string): OrchestratedTask | undefined {
