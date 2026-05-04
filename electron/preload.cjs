@@ -126,6 +126,7 @@ const ALLOWED_CHANNELS = new Set([
   'mcp_task_created',
   'mcp_task_closed',
   'mcp_task_state_sync',
+  'mcp_control_changed',
 ]);
 
 function isAllowedChannel(channel) {

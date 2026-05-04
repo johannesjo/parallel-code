@@ -221,6 +221,9 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                       ...(props.task.skipPermissions && a().def.skip_permissions_args?.length
                         ? (a().def.skip_permissions_args ?? [])
                         : []),
+                      ...(props.task.mcpConfigPath
+                        ? ['--mcp-config', props.task.mcpConfigPath]
+                        : []),
                     ]}
                     cwd={props.task.worktreePath}
                     stepsEnabled={props.task.stepsEnabled}
