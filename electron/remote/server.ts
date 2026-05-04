@@ -226,11 +226,18 @@ export function startRemoteServer(opts: {
         if (url.pathname === '/api/tasks' && req.method === 'POST') {
           readBody()
             .then(async (body) => {
-              mcpLog('info', `create_task name=${body.name as string}`);
+              if (typeof body.name !== 'string' || !body.name)
+                return jsonReply(400, { error: 'name must be a non-empty string' });
+              if (body.prompt !== undefined && typeof body.prompt !== 'string')
+                return jsonReply(400, { error: 'prompt must be a string' });
+              if (body.projectId !== undefined && typeof body.projectId !== 'string')
+                return jsonReply(400, { error: 'projectId must be a string' });
+              mcpLog('info', `create_task name=${body.name}`);
               const result = await orch.createTask({
-                name: body.name as string,
+                name: body.name,
                 prompt: body.prompt as string | undefined,
-                coordinatorTaskId: (body.coordinatorTaskId as string) ?? 'api',
+                coordinatorTaskId:
+                  typeof body.coordinatorTaskId === 'string' ? body.coordinatorTaskId : 'api',
                 projectId: body.projectId as string | undefined,
               });
               mcpLog('info', `create_task OK id=${result.id}`);
@@ -265,8 +272,10 @@ export function startRemoteServer(opts: {
           readBody()
             .then(async (body) => {
               const taskId = decodeURIComponent(taskIdMatch[1]);
+              if (typeof body.prompt !== 'string' || !body.prompt)
+                return jsonReply(400, { error: 'prompt must be a non-empty string' });
               mcpLog('info', `send_prompt id=${taskId}`);
-              await orch.sendPrompt(taskId, body.prompt as string);
+              await orch.sendPrompt(taskId, body.prompt);
               jsonReply(200, { ok: true });
             })
             .catch((err) => {
@@ -280,6 +289,11 @@ export function startRemoteServer(opts: {
           readBody()
             .then(async (body) => {
               const taskId = decodeURIComponent(taskIdMatch[1]);
+              if (
+                body.timeoutMs !== undefined &&
+                (typeof body.timeoutMs !== 'number' || !Number.isFinite(body.timeoutMs))
+              )
+                return jsonReply(400, { error: 'timeoutMs must be a finite number' });
               mcpLog('info', `wait_for_idle id=${taskId}`);
               await orch.waitForIdle(taskId, body.timeoutMs as number | undefined);
               const status = orch.getTaskStatus(taskId);
@@ -323,6 +337,12 @@ export function startRemoteServer(opts: {
           readBody()
             .then(async (body) => {
               const taskId = decodeURIComponent(taskIdMatch[1]);
+              if (body.squash !== undefined && typeof body.squash !== 'boolean')
+                return jsonReply(400, { error: 'squash must be a boolean' });
+              if (body.message !== undefined && typeof body.message !== 'string')
+                return jsonReply(400, { error: 'message must be a string' });
+              if (body.cleanup !== undefined && typeof body.cleanup !== 'boolean')
+                return jsonReply(400, { error: 'cleanup must be a boolean' });
               mcpLog('info', `merge_task id=${taskId} squash=${body.squash ?? false}`);
               const result = await orch.mergeTask(taskId, {
                 squash: body.squash as boolean | undefined,

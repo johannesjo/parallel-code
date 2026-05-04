@@ -1,5 +1,6 @@
 import { ipcMain, dialog, shell, app, clipboard, BrowserWindow, Notification } from 'electron';
 import fs from 'fs';
+import net from 'net';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { IPC } from './channels.js';
@@ -76,6 +77,28 @@ import {
   assertOptionalBoolean,
 } from './validate.js';
 import { warn as logWarn } from '../log.js';
+
+function findFreePort(start: number, end: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    let port = start;
+    const tryNext = () => {
+      if (port > end) {
+        reject(new Error(`No free port found in range ${start}–${end}`));
+        return;
+      }
+      const s = net.createServer();
+      s.listen(port, '127.0.0.1', () => {
+        const found = port;
+        s.close(() => resolve(found));
+      });
+      s.on('error', () => {
+        port++;
+        tryNext();
+      });
+    };
+    tryNext();
+  });
+}
 
 function errMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -875,8 +898,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
       if (!remoteServer) {
         const thisDir = path.dirname(fileURLToPath(import.meta.url));
         const distRemote = path.join(thisDir, '..', '..', 'dist-remote');
+        const port = await findFreePort(7777, 7800);
         remoteServer = startRemoteServer({
-          port: 7777,
+          port,
           staticDir: distRemote,
           getTaskName: (taskId: string) => taskNames.get(taskId) ?? taskId,
           getAgentStatus: (agentId: string) => {
