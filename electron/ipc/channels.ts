@@ -141,4 +141,5 @@ export enum IPC {
   MCP_TaskCreated = 'mcp_task_created',
   MCP_TaskClosed = 'mcp_task_closed',
   MCP_TaskStateSync = 'mcp_task_state_sync',
+  MCP_ControlChanged = 'mcp_control_changed',
 }

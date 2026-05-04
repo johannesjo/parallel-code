@@ -75,6 +75,7 @@ export interface Task {
   lastInputAt?: string;
   coordinatorMode?: boolean;
   coordinatedBy?: string; // taskId of the coordinator that created this task
+  controlledBy?: 'orchestrator' | 'human'; // only set on tasks with coordinatedBy
   mcpConfigPath?: string; // path to MCP config file (for coordinator tasks)
 }
 

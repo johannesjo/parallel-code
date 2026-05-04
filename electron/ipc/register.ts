@@ -998,6 +998,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
     },
   );
 
+  ipcMain.handle(
+    IPC.MCP_ControlChanged,
+    (_e, args: { taskId: string; controlledBy: 'orchestrator' | 'human' }) => {
+      orchestrator.setTaskControl(args.taskId, args.controlledBy);
+    },
+  );
+
   ipcMain.handle(IPC.StopMCPServer, async () => {
     // The MCP server process is spawned by Claude Code (via --mcp-config),
     // not by us. This handler is a no-op but kept for API completeness.
