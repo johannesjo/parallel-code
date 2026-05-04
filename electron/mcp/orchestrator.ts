@@ -28,6 +28,7 @@ export class Orchestrator {
   private idleResolvers = new Map<string, Array<() => void>>();
   private subscribers = new Map<string, (encoded: string) => void>();
   private decoders = new Map<string, TextDecoder>();
+  private controlMap = new Map<string, 'orchestrator' | 'human'>();
   private win: BrowserWindow | null = null;
   private projectRoot: string | null = null;
   private projectId: string | null = null;
@@ -52,6 +53,18 @@ export class Orchestrator {
         }
       }
     });
+  }
+
+  setTaskControl(taskId: string, who: 'orchestrator' | 'human'): void {
+    this.controlMap.set(taskId, who);
+    // If returning to orchestrator and there are idle resolvers queued, fire them
+    if (who === 'orchestrator') {
+      const resolvers = this.idleResolvers.get(taskId);
+      if (resolvers?.length) {
+        for (const resolve of resolvers) resolve();
+        this.idleResolvers.delete(taskId);
+      }
+    }
   }
 
   setWindow(win: BrowserWindow): void {
@@ -223,6 +236,11 @@ export class Orchestrator {
   async sendPrompt(taskId: string, prompt: string): Promise<void> {
     const task = this.tasks.get(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
+    if (this.controlMap.get(taskId) === 'human') {
+      throw new Error(
+        'Task is under human control. Return control to orchestrator before sending prompts.',
+      );
+    }
 
     // Send text then Enter separately (like the frontend does)
     writeToAgent(task.agentId, prompt);
@@ -239,6 +257,9 @@ export class Orchestrator {
   private waitForIdleInternal(taskId: string, timeoutMs: number): Promise<void> {
     const task = this.tasks.get(taskId);
     if (!task) return Promise.reject(new Error(`Task not found: ${taskId}`));
+    if (this.controlMap.get(taskId) === 'human') {
+      return Promise.resolve(); // resolve immediately — caller gets control-change event instead
+    }
     if (task.status === 'idle' || task.status === 'exited') return Promise.resolve();
 
     return new Promise((resolve, reject) => {

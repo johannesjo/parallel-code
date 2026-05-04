@@ -11,6 +11,7 @@ import {
   clearPendingAction,
   showNotification,
   setTaskSplitMode,
+  setTaskControl,
 } from '../store/store';
 import { useFocusRegistration } from '../lib/focus-registration';
 import { ResizablePanel, type PanelChild } from './ResizablePanel';
@@ -368,6 +369,65 @@ export function TaskPanel(props: TaskPanelProps) {
         closingError={props.task.closingError}
         onRetry={() => retryCloseTask(props.task.id)}
       />
+      <Show when={!!props.task.coordinatedBy}>
+        <Show
+          when={props.task.controlledBy === 'human'}
+          fallback={
+            <div
+              style={{
+                background: theme.bgElevated,
+                'border-bottom': `1px solid ${theme.border}`,
+                padding: '6px 12px',
+                'font-size': '12px',
+                display: 'flex',
+                'align-items': 'center',
+                'justify-content': 'space-between',
+                color: theme.fgMuted,
+              }}
+            >
+              <span>Orchestrator driving</span>
+              <button
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  'font-size': '12px',
+                  color: theme.accent,
+                }}
+                onClick={() => setTaskControl(props.task.id, 'human')}
+              >
+                Take Control
+              </button>
+            </div>
+          }
+        >
+          <div
+            style={{
+              background: theme.warning,
+              padding: '6px 12px',
+              'font-size': '12px',
+              display: 'flex',
+              'align-items': 'center',
+              'justify-content': 'space-between',
+              color: theme.fg,
+            }}
+          >
+            <span>You have control — orchestrator is paused</span>
+            <button
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                'font-size': '12px',
+                color: theme.fg,
+              }}
+              onClick={() => setTaskControl(props.task.id, 'orchestrator')}
+            >
+              Return to Orchestrator
+            </button>
+          </div>
+        </Show>
+      </Show>
       <Show when={props.task.coordinatorMode}>
         <SubTaskStrip coordinatorTaskId={props.task.id} />
       </Show>

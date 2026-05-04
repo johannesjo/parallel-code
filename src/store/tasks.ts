@@ -877,6 +877,11 @@ export function initMCPListeners(): () => void {
   };
 }
 
+export function setTaskControl(taskId: string, who: 'orchestrator' | 'human'): void {
+  setStore('tasks', taskId, 'controlledBy', who);
+  invoke(IPC.MCP_ControlChanged, { taskId, controlledBy: who }).catch(() => {});
+}
+
 export function setPlanContent(
   taskId: string,
   content: string | null,

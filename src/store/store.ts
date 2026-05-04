@@ -56,6 +56,7 @@ export {
   setTaskLastInputAt,
   initMCPListeners,
   getCoordinatorCloseWarning,
+  setTaskControl,
 } from './tasks';
 export {
   setActiveTask,
