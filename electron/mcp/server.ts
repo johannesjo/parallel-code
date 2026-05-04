@@ -39,14 +39,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'create_task',
       description:
-        'Create a new task with its own git worktree and AI agent. The agent starts automatically.',
+        'Create a new task with its own git worktree and AI agent. The agent starts automatically and the prompt is delivered once the agent is ready.',
       inputSchema: {
         type: 'object' as const,
         properties: {
           name: { type: 'string', description: 'Task name (used for branch name)' },
           prompt: {
             type: 'string',
-            description: 'Initial prompt to send to the agent after it starts',
+            description: 'Initial prompt to send to the agent once it finishes starting up.',
           },
           projectId: {
             type: 'string',

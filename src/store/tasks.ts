@@ -26,6 +26,8 @@ import type {
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
 import type { Agent, Task, GitIsolationMode } from './types';
 import type { DockerSource } from '../lib/docker';
+import { COORDINATOR_PREAMBLE } from './coordinator-preamble';
+import { getCoordinatorChildren } from './sidebar-order';
 
 function initTaskInStore(
   taskId: string,
@@ -164,6 +166,25 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     worktreePath = projectRoot;
   }
 
+  // Start MCP server BEFORE adding task to store — the store update triggers
+  // a reactive render of TerminalView which spawns the PTY immediately.
+  // If mcpConfigPath isn't set yet, the --mcp-config arg is missing.
+  let mcpConfigPath: string | undefined;
+  if (opts.coordinatorMode) {
+    try {
+      const mcpResult = await invoke<{ configPath: string }>(IPC.StartMCPServer, {
+        coordinatorTaskId: taskId,
+        projectId,
+        projectRoot,
+        worktreePath: gitIsolation === 'worktree' ? worktreePath : undefined,
+      });
+      mcpConfigPath = mcpResult.configPath;
+      console.warn('[MCP] Coordinator config path:', mcpConfigPath);
+    } catch (err) {
+      console.warn('[MCP] Failed to start MCP server for coordinator:', err);
+    }
+  }
+
   const agentId = crypto.randomUUID();
 
   // Per-task steps tracking — explicit opt-in from dialog, or fall back to last-used preference
@@ -190,7 +211,10 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     shellAgentIds: [],
     notes: '',
     lastPrompt: '',
-    initialPrompt: effectivePrompt ?? undefined,
+    initialPrompt:
+      opts.coordinatorMode && effectivePrompt
+        ? COORDINATOR_PREAMBLE + effectivePrompt
+        : (effectivePrompt ?? undefined),
     savedInitialPrompt: initialPrompt ?? undefined,
     stepsEnabled: stepsEnabled || undefined,
     skipPermissions: skipPermissions ?? undefined,
@@ -199,6 +223,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     dockerImage: dockerImage ?? undefined,
     githubUrl,
     coordinatorMode: opts.coordinatorMode || undefined,
+    mcpConfigPath,
   };
 
   const agent: Agent = {
@@ -214,20 +239,6 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   };
 
   initTaskInStore(taskId, task, agent, projectId, agentDef);
-
-  // Start MCP server for coordinator tasks
-  if (opts.coordinatorMode) {
-    try {
-      const mcpResult = await invoke<{ configPath: string }>(IPC.StartMCPServer, {
-        coordinatorTaskId: taskId,
-        projectId,
-        projectRoot,
-      });
-      setStore('tasks', taskId, 'mcpConfigPath', mcpResult.configPath);
-    } catch (err) {
-      console.warn('Failed to start MCP server for coordinator:', err);
-    }
-  }
 
   saveState(); // fire-and-forget — errors handled internally
   return taskId;
@@ -297,9 +308,39 @@ export async function createImportedTask(opts: CreateImportedTaskOptions): Promi
   return id;
 }
 
+/**
+ * Check if closing a coordinator would leave orphaned children.
+ * Returns a warning message if so, or null if safe to close.
+ */
+export function getCoordinatorCloseWarning(taskId: string): string | null {
+  const task = store.tasks[taskId];
+  if (!task?.coordinatorMode) return null;
+  const children = getCoordinatorChildren(taskId);
+  const count = children.active.length + children.collapsed.length;
+  if (count === 0) return null;
+  return `This coordinator has ${count} active sub-task(s). Closing it will detach them — they will become standalone tasks and continue running independently.`;
+}
+
 export async function closeTask(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
   if (!task || task.closingStatus === 'closing' || task.closingStatus === 'removing') return;
+
+  // If this is a coordinator, unparent all children first
+  if (task.coordinatorMode) {
+    const children = getCoordinatorChildren(taskId);
+    const allChildIds = [...children.active, ...children.collapsed];
+    if (allChildIds.length > 0) {
+      setStore(
+        produce((s) => {
+          for (const childId of allChildIds) {
+            if (s.tasks[childId]) {
+              s.tasks[childId].coordinatedBy = undefined;
+            }
+          }
+        }),
+      );
+    }
+  }
 
   const agentIds = [...task.agentIds];
   const shellAgentIds = [...task.shellAgentIds];
@@ -739,6 +780,7 @@ interface MCPTaskCreatedEvent {
   worktreePath: string;
   agentId: string;
   coordinatorTaskId: string;
+  prompt?: string;
 }
 
 /** Call once during app initialization to listen for orchestrator events. */
@@ -760,6 +802,9 @@ export function initMCPListeners(): () => void {
         lastPrompt: '',
         gitIsolation: 'worktree',
         coordinatedBy: evt.coordinatorTaskId,
+        // Use the same initialPrompt path as manually created tasks —
+        // PromptInput auto-delivers it with stability checks + quiescence.
+        initialPrompt: evt.prompt,
       };
 
       const agent: Agent = {

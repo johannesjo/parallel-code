@@ -118,6 +118,14 @@ const ALLOWED_CHANNELS = new Set([
   'pr_checks_update',
   // Logging
   'log_from_renderer',
+  // MCP orchestration
+  'start_mcp_server',
+  'stop_mcp_server',
+  'get_mcp_status',
+  'get_mcp_logs',
+  'mcp_task_created',
+  'mcp_task_closed',
+  'mcp_task_state_sync',
 ]);
 
 function isAllowedChannel(channel) {

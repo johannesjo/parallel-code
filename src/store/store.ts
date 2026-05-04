@@ -55,6 +55,7 @@ export {
   setTaskStepsEnabled,
   setTaskLastInputAt,
   initMCPListeners,
+  getCoordinatorCloseWarning,
 } from './tasks';
 export {
   setActiveTask,
@@ -162,3 +163,9 @@ export {
   checkConflict,
   dismissMigrationBanner,
 } from './keybindings';
+export {
+  hasAnyCoordinatorTask,
+  refreshMCPStatus,
+  startMCPStatusPolling,
+  stopMCPStatusPolling,
+} from './mcpStatus';

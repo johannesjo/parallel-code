@@ -1,7 +1,7 @@
 import { Show, createResource } from 'solid-js';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
-import { closeTask, getProject } from '../store/store';
+import { closeTask, getProject, getCoordinatorCloseWarning } from '../store/store';
 import { ConfirmDialog } from './ConfirmDialog';
 import { theme, bannerStyle } from '../lib/theme';
 import type { Task } from '../store/types';
@@ -28,6 +28,24 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
       title="Close Task"
       message={
         <div>
+          <Show when={getCoordinatorCloseWarning(props.task.id)}>
+            {(warning) => (
+              <div
+                style={{
+                  'margin-bottom': '12px',
+                  'font-size': '12px',
+                  color: theme.warning,
+                  background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
+                  padding: '8px 12px',
+                  'border-radius': '8px',
+                  border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
+                  'font-weight': '600',
+                }}
+              >
+                {warning()}
+              </div>
+            )}
+          </Show>
           <Show when={props.task.gitIsolation !== 'worktree'}>
             <p style={{ margin: '0' }}>
               This will stop all running agents and shells for this task. No git operations will be
