@@ -1,4 +1,4 @@
-import { createSignal, onMount } from 'solid-js';
+import { createSignal, onCleanup, onMount } from 'solid-js';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import type { DiffInteractionMode } from './review-types';
@@ -15,6 +15,15 @@ export function InlineInput(props: InlineInputProps) {
 
   onMount(() => {
     requestAnimationFrame(() => inputRef?.focus());
+    const onGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        props.onDismiss();
+      }
+    };
+    document.addEventListener('keydown', onGlobalKeyDown, true);
+    onCleanup(() => document.removeEventListener('keydown', onGlobalKeyDown, true));
   });
 
   const borderColor = () => (mode() === 'review' ? theme.warning : theme.accent);
@@ -127,6 +136,26 @@ export function InlineInput(props: InlineInputProps) {
         }}
       >
         {mode() === 'review' ? 'Comment' : 'Ask'}
+      </button>
+
+      {/* Cancel button */}
+      <button
+        onClick={() => props.onDismiss()}
+        title="Cancel (Esc)"
+        aria-label="Cancel"
+        style={{
+          background: 'transparent',
+          border: `1px solid ${theme.borderSubtle}`,
+          color: theme.fgMuted,
+          cursor: 'pointer',
+          padding: '4px 8px',
+          'border-radius': '4px',
+          'font-size': sf(14),
+          'line-height': '1',
+          'align-self': 'center',
+        }}
+      >
+        &times;
       </button>
     </div>
   );
