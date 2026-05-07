@@ -891,7 +891,28 @@ export function ScrollingDiffView(props: ScrollingDiffViewProps) {
   });
 
   onMount(() => {
-    function onMouseUp() {
+    function onMouseDown(e: MouseEvent) {
+      // For double-clicks (detail >= 2) outside a diff line, prevent the
+      // browser from creating its "snap to nearest text" selection at all,
+      // so the user doesn't see a brief blue flash on the last diff line.
+      if (e.detail >= 2) {
+        const target = e.target as HTMLElement | null;
+        if (!target?.closest('[data-new-line]')) {
+          e.preventDefault();
+        }
+      }
+    }
+
+    function onMouseUp(e: MouseEvent) {
+      // Ignore clicks that didn't land on a diff line. Without this, a
+      // double-click in the blank area below the last file collapses the
+      // browser's "snap to nearest text" selection onto the previous line
+      // and incorrectly opens the inline input.
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest('[data-new-line]')) {
+        if (!pendingInput()) setHighlightedRange(null);
+        return;
+      }
       requestAnimationFrame(() => {
         const sel = getDiffSelection();
         if (!sel) {
@@ -911,8 +932,12 @@ export function ScrollingDiffView(props: ScrollingDiffViewProps) {
       });
     }
 
+    containerRef?.addEventListener('mousedown', onMouseDown);
     containerRef?.addEventListener('mouseup', onMouseUp);
-    onCleanup(() => containerRef?.removeEventListener('mouseup', onMouseUp));
+    onCleanup(() => {
+      containerRef?.removeEventListener('mousedown', onMouseDown);
+      containerRef?.removeEventListener('mouseup', onMouseUp);
+    });
   });
 
   function handleSubmit(text: string, mode: 'review' | 'ask') {
