@@ -895,24 +895,17 @@ export function ScrollingDiffView(props: ScrollingDiffViewProps) {
       // For double-clicks (detail >= 2) outside a diff line, prevent the
       // browser from creating its "snap to nearest text" selection at all,
       // so the user doesn't see a brief blue flash on the last diff line.
+      // Note: this fires on the second mousedown of the sequence — the
+      // first mousedown of a double-click has detail === 1.
       if (e.detail >= 2) {
         const target = e.target as HTMLElement | null;
-        if (!target?.closest('[data-new-line]')) {
+        if (!target?.closest('[data-line-type]')) {
           e.preventDefault();
         }
       }
     }
 
-    function onMouseUp(e: MouseEvent) {
-      // Ignore clicks that didn't land on a diff line. Without this, a
-      // double-click in the blank area below the last file collapses the
-      // browser's "snap to nearest text" selection onto the previous line
-      // and incorrectly opens the inline input.
-      const target = e.target as HTMLElement | null;
-      if (!target?.closest('[data-new-line]')) {
-        if (!pendingInput()) setHighlightedRange(null);
-        return;
-      }
+    function onMouseUp() {
       requestAnimationFrame(() => {
         const sel = getDiffSelection();
         if (!sel) {
