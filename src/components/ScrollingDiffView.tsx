@@ -897,12 +897,15 @@ export function ScrollingDiffView(props: ScrollingDiffViewProps) {
       // so the user doesn't see a brief blue flash on the last diff line.
       // Note: this fires on the second mousedown of the sequence — the
       // first mousedown of a double-click has detail === 1.
-      if (e.detail >= 2) {
-        const target = e.target as HTMLElement | null;
-        if (!target?.closest('[data-line-type]')) {
-          e.preventDefault();
-        }
-      }
+      if (e.button !== 0 || e.detail < 2) return;
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      )
+        return;
+      if (!target.closest('[data-line-type]')) e.preventDefault();
     }
 
     function onMouseUp() {
