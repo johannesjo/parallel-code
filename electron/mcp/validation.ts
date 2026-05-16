@@ -1,7 +1,7 @@
 // Shared branch-name validator used by MCP, REST, and IPC paths.
 // Conservative subset of git check-ref-format rules — no process spawn.
 
-export function validateBranchName(value: unknown, field = 'baseBranch'): string {
+export function validateBranchName(value: unknown, field = 'branch'): string {
   if (typeof value !== 'string') throw new Error(`${field} must be a string`);
   if (!value.trim()) throw new Error(`${field} must be a non-empty string`);
   // git check-ref-format --branch rejects HEAD specifically; FETCH_HEAD etc. are accepted.

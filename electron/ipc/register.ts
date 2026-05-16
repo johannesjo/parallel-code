@@ -77,6 +77,7 @@ import {
   assertOptionalString,
   assertOptionalBoolean,
 } from './validate.js';
+import { validateBranchName } from '../mcp/validation.js';
 import { warn as logWarn } from '../log.js';
 
 function errMessage(err: unknown): string {
@@ -101,12 +102,6 @@ function validateRelativePath(p: unknown, label: string): void {
   if (typeof p !== 'string') throw new Error(`${label} must be a string`);
   if (path.isAbsolute(p)) throw new Error(`${label} must not be absolute`);
   if (p.includes('..')) throw new Error(`${label} must not contain ".."`);
-}
-
-/** Reject branch names that could be misinterpreted as git flags. */
-function validateBranchName(name: unknown, label: string): void {
-  if (typeof name !== 'string' || !name) throw new Error(`${label} must be a non-empty string`);
-  if (name.startsWith('-')) throw new Error(`${label} must not start with "-"`);
 }
 
 /** Reject commit hashes that are not valid hex strings. */

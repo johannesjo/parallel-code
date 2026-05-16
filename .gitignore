@@ -4,6 +4,7 @@ dist-electron
 dist-remote
 release
 coverage
+# Runtime data dir written by the app (MCP coordinator state, etc.)
 .parallel-code/
 .worktrees
 .idea

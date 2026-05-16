@@ -51,7 +51,6 @@ module.exports = {
           '^electron/mcp/server\\.ts$',
           // New subsystem files have no importers until coordinator PRs land
           '^electron/mcp/atomic\\.ts$',
-          '^electron/mcp/validation\\.ts$',
           // Vite ambient env declarations
           '^src/vite-env\\.d\\.ts$',
         ],
