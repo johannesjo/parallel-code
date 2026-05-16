@@ -4,6 +4,7 @@ dist-electron
 dist-remote
 release
 coverage
+.parallel-code/
 .worktrees
 .idea
 .claude

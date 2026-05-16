@@ -1,0 +1,26 @@
+rules:
+  - id: direct-writefile-in-mcp-coordinator
+    pattern-either:
+      - pattern: writeFileSync($PATH, $DATA, ...)
+      - pattern: fs.writeFileSync($PATH, $DATA, ...)
+    message: |
+      Direct writeFileSync in coordinator code risks torn writes on crash.
+      Use atomicWriteFileSync() from electron/mcp/atomic.ts instead.
+    languages: [typescript]
+    severity: WARNING
+    paths:
+      include:
+        - '**/electron/mcp/**'
+        - '**/electron/ipc/register.ts'
+
+  - id: copyfilesync-side-effect
+    pattern: fs.copyFileSync($SRC, $DST)
+    message: |
+      fs.copyFileSync is a filesystem side effect. In StartMCPServer,
+      ensure all pure computation (mcpConfig, mergedMcpJson) precedes
+      any copyFileSync calls so validation failures don't leave residue.
+    languages: [typescript]
+    severity: INFO
+    paths:
+      include:
+        - '**/electron/ipc/register.ts'

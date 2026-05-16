@@ -1,0 +1,52 @@
+rules:
+  - id: no-inner-html-without-sanitize
+    pattern: $EL.innerHTML = $VAL
+    pattern-not: $EL.innerHTML = DOMPurify.sanitize(...)
+    message: |
+      Direct innerHTML assignment without DOMPurify.sanitize() risks XSS.
+      Use the sanitizeHtml() helper or DOMPurify.sanitize() explicitly.
+    languages: [typescript]
+    severity: ERROR
+    paths:
+      include:
+        - '**/electron/**'
+
+  - id: no-eval
+    pattern: eval($X)
+    message: |
+      eval() executes arbitrary code. Not allowed in Electron renderer or main process.
+    languages: [typescript]
+    severity: ERROR
+
+  - id: no-new-function
+    pattern: new Function($X)
+    message: |
+      new Function() executes arbitrary code. Not allowed in Electron renderer or main process.
+    languages: [typescript]
+    severity: ERROR
+
+  - id: no-shell-true-in-spawn
+    pattern-either:
+      - pattern: |
+          child_process.spawn($CMD, $ARGS, {shell: true, ...})
+      - pattern: |
+          spawn($CMD, $ARGS, {shell: true, ...})
+    message: |
+      spawn() with shell:true enables shell injection. Use shell:false and
+      pass arguments as an array.
+    languages: [typescript]
+    severity: ERROR
+    paths:
+      include:
+        - '**/electron/**'
+
+  - id: pkill-dash-f-broad-kill
+    pattern: $EXEC("pkill", ["-f", ...], ...)
+    message: |
+      pkill -f matches any process whose full command line contains the pattern,
+      which can accidentally kill unrelated processes. Use kill by PID or docker stop.
+    languages: [typescript]
+    severity: WARNING
+    paths:
+      include:
+        - '**/electron/**'

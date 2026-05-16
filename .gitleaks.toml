@@ -1,0 +1,43 @@
+title = "Gitleaks config for Parallel Code"
+
+[extend]
+# Use the default Gitleaks ruleset as the base
+useDefault = true
+
+[[rules]]
+id = "parallel-code-mcp-token"
+description = "Parallel Code MCP bearer token"
+regex = '''PARALLEL_CODE_MCP_TOKEN\s*[=:]\s*['"]?[A-Za-z0-9+/_-]{20,}['"]?'''
+tags = ["token", "parallel-code"]
+
+[[rules]]
+id = "bearer-token-in-url"
+description = "Bearer token embedded in a URL query parameter"
+regex = '''[?&]token=[A-Za-z0-9+/\-_]{20,}'''
+tags = ["token", "url"]
+[rules.allowlist]
+# Test fixture URLs and documentation are expected to have placeholder tokens
+regexes = [
+  '''token=<[A-Za-z0-9_-]+>''',   # placeholder like ?token=<your-token>
+  '''token=test''',                 # obvious test value
+  '''token=abc''',                  # obvious test value
+  '''token=tok''',                  # obvious test value
+]
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key"
+regex = '''sk-ant-[A-Za-z0-9\-_]{40,}'''
+tags = ["api-key", "anthropic"]
+
+[allowlist]
+description = "Global allowlist"
+paths = [
+  # Lock files contain package hashes, not secrets
+  '''package-lock\.json''',
+  # Test fixture files with obviously fake values
+  '''\.test\.(ts|tsx)$''',
+  # The gitleaks config itself documents patterns
+  '''\.gitleaks\.toml''',
+]
+commits = []

@@ -1,0 +1,30 @@
+rules:
+  - id: token-embedded-in-url-template
+    pattern: |
+      `$PREFIX?token=${$TOKEN}$SUFFIX`
+    message: |
+      Token embedded directly in URL template literal. Mobile/shared URLs must use
+      the mobile token, not the coordinator token. The coordinator token must never
+      appear in any URL that reaches the renderer or network.
+    languages: [typescript]
+    severity: ERROR
+    paths:
+      include:
+        - '**/electron/**'
+      exclude:
+        - '**/electron/remote/server.ts'
+
+  - id: console-log-token-variable
+    pattern-either:
+      - pattern: console.log($A, token, $B)
+      - pattern: console.warn($A, token, $B)
+      - pattern: console.log(token)
+      - pattern: console.warn(token)
+    message: |
+      Logging a variable named 'token' directly. Use redactServerUrl() or
+      ensure this is not a bearer token value.
+    languages: [typescript]
+    severity: WARNING
+    paths:
+      include:
+        - '**/electron/**'
