@@ -31,3 +31,24 @@ commit a branch that exists in the repository.
 
 - **WHEN** the branch picker has focus and no filter text has been entered
 - **THEN** the picker lists every available branch
+
+### Requirement: Task creation waits for a resolved base branch
+
+The New Task dialog SHALL NOT allow a task to be created for a git project
+until its base branch list has loaded and a base branch is resolved, so a task
+can never be created with a stale or empty base branch.
+
+#### Scenario: Submit is blocked while branches load
+
+- **WHEN** the branch list for the selected git project is still loading
+- **THEN** the New Task dialog prevents the task from being submitted
+
+#### Scenario: Failed branch load offers a retry
+
+- **WHEN** loading the branch list fails
+- **THEN** the dialog shows that branches could not be loaded and offers a
+  Retry action
+- **AND** the task cannot be submitted until the branch list loads and a base
+  branch is resolved
+- **WHEN** the user triggers Retry
+- **THEN** the dialog fetches the branch list again

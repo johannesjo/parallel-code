@@ -9,7 +9,7 @@ import {
   Show,
 } from 'solid-js';
 import { theme } from '../lib/theme';
-import { filterBranches, matchExactBranch } from '../lib/branch-filter';
+import { clampHighlight, filterBranches, resolveOnBlur } from '../lib/branch-filter';
 
 interface BranchComboboxProps {
   /** All selectable branches. */
@@ -60,8 +60,8 @@ export function BranchCombobox(props: BranchComboboxProps) {
 
   // Keep the highlighted index inside the current match list.
   createEffect(() => {
-    const max = matches().length - 1;
-    if (highlight() > max) setHighlight(Math.max(0, max));
+    const count = matches().length;
+    setHighlight((h) => clampHighlight(h, count));
   });
 
   // Scroll the highlighted option into view for keyboard navigation only,
@@ -94,20 +94,34 @@ export function BranchCombobox(props: BranchComboboxProps) {
 
   function closeAndResolve(): void {
     setOpen(false);
-    if (!dirty()) return;
     // Commit a fully-typed branch name; otherwise discard the partial text.
-    const exact = matchExactBranch(props.branches, query());
-    if (exact) commit(exact);
+    // When the resolved branch equals the committed value there is nothing
+    // to commit, so just revert the typed text — same end state, no onChange.
+    const resolved = resolveOnBlur(props.branches, query(), dirty(), props.value);
+    if (resolved !== props.value) commit(resolved);
     else revertToValue();
   }
 
-  function onFocus(): void {
+  // Open the list with an empty query so the first keystroke starts a fresh
+  // filter instead of appending to the committed branch name (typing "feature"
+  // must not turn "main" into "mainfeature"). Seeding empty — rather than
+  // selecting the seeded text — avoids relying on input.select() inside a
+  // focus handler, which a mouse click's caret placement on mouseup overrides.
+  // `dirty` stays false so the list shows every branch until the user types.
+  function openList(): void {
     keyboardNav = true;
-    setQuery(props.value);
+    setQuery('');
     setDirty(false);
     setOpen(true);
     const idx = props.branches.indexOf(props.value);
     setHighlight(idx >= 0 ? idx : 0);
+  }
+
+  // Mouse commits keep focus on the input (the option uses mousedown +
+  // preventDefault), so a later focus event never fires. Reopen on click.
+  function onClick(): void {
+    if (open()) return;
+    openList();
   }
 
   function onInput(value: string): void {
@@ -126,19 +140,21 @@ export function BranchCombobox(props: BranchComboboxProps) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         keyboardNav = true;
+        // Opening via arrow key seeds query/highlight the same way focus and
+        // click do, so the list always opens on the committed branch.
         if (!open()) {
-          setOpen(true);
+          openList();
           return;
         }
-        setHighlight((h) => Math.min(matches().length - 1, h + 1));
+        setHighlight((h) => clampHighlight(h + 1, matches().length));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         keyboardNav = true;
         if (!open()) {
-          setOpen(true);
+          openList();
           return;
         }
-        setHighlight((h) => Math.max(0, h - 1));
+        setHighlight((h) => clampHighlight(h - 1, matches().length));
       } else if (e.key === 'Enter') {
         // Always swallow Enter: a branch field must never submit the form.
         e.preventDefault();
@@ -166,7 +182,7 @@ export function BranchCombobox(props: BranchComboboxProps) {
         spellcheck={false}
         maxlength={MAX_QUERY_LENGTH}
         aria-expanded={open()}
-        aria-controls={listId}
+        aria-controls={open() ? listId : undefined}
         aria-autocomplete="list"
         aria-activedescendant={
           open() && matches().length > 0 ? `${listId}-opt-${highlight()}` : undefined
@@ -176,7 +192,8 @@ export function BranchCombobox(props: BranchComboboxProps) {
         placeholder={isLoading() ? 'Loading branches…' : 'Search branches…'}
         disabled={isLoading()}
         onInput={(e) => onInput(e.currentTarget.value)}
-        onFocus={onFocus}
+        onFocus={openList}
+        onClick={onClick}
         onBlur={closeAndResolve}
         style={{
           background: theme.bgInput,
@@ -197,6 +214,7 @@ export function BranchCombobox(props: BranchComboboxProps) {
           ref={listRef}
           id={listId}
           role="listbox"
+          aria-label="Branches"
           // Keep clicks on padding/scrollbar from blurring the input.
           onMouseDown={(e) => e.preventDefault()}
           style={{

@@ -17,7 +17,6 @@ import {
   setPrefillPrompt,
   setDockerAvailable,
   setDockerImage,
-  showNotification,
 } from '../store/store';
 import type { GitIsolationMode } from '../store/types';
 import { toBranchName, sanitizeBranchPrefix } from '../lib/branch-name';
@@ -51,6 +50,9 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   const [baseBranch, setBaseBranch] = createSignal('');
   const [branches, setBranches] = createSignal<string[]>([]);
   const [branchesLoading, setBranchesLoading] = createSignal(false);
+  const [branchesError, setBranchesError] = createSignal(false);
+  // Bumped by the Retry button to re-run the branch-fetch effect.
+  const [branchRetryToken, setBranchRetryToken] = createSignal(0);
   const [stepsEnabled, setStepsEnabled] = createSignal(store.showSteps);
   const [skipPermissions, setSkipPermissions] = createSignal(false);
   const [dockerMode, setDockerMode] = createSignal(false);
@@ -236,6 +238,8 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     const open = props.open;
     const pid = selectedProjectId();
     const projectPath = pid ? getProjectPath(pid) : undefined;
+    // Read the retry token so the Retry button can re-run this effect.
+    branchRetryToken();
     let cancelled = false;
 
     const isGit = pid ? projectIsGitRepo(pid) : true;
@@ -244,6 +248,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
       setBranches([]);
       setBaseBranch('');
       setBranchesLoading(false);
+      setBranchesError(false);
       // D-03: onCleanup registered synchronously even on early return
       onCleanup(() => {
         cancelled = true;
@@ -251,9 +256,13 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
       return;
     }
 
-    // D-01: Clear list and show spinner immediately on every open
+    // D-01: Clear list and show spinner immediately on every open. Also clear
+    // the committed branch so the combobox does not display the previous
+    // project's branch as the current value during the fetch window.
     setBranches([]);
+    setBaseBranch('');
     setBranchesLoading(true);
+    setBranchesError(false);
 
     const doFetch = async () => {
       const [branchList, mainBranch] = await Promise.all([
@@ -276,7 +285,10 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
       } catch (err) {
         if (cancelled) return;
         setBranchesLoading(false);
-        showNotification(`Failed to load branches: ${String(err)}`);
+        // Inline error + Retry surfaces this in the dialog; no toast needed.
+        // Keep the detail in the console for diagnostics.
+        setBranchesError(true);
+        console.error('Failed to load branches:', err);
       }
     });
 
@@ -452,7 +464,11 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
 
   const canSubmit = () => {
     const hasContent = !!effectiveName();
-    return hasContent && !!selectedProjectId() && !loading();
+    // Block submit while branches load — and require a resolved base branch
+    // for git projects — so a task can't be created with a stale or empty
+    // base branch (e.g. after a failed branch fetch).
+    const branchOk = isNonGitProject() || (!!baseBranch() && !branchesError());
+    return hasContent && !!selectedProjectId() && !loading() && !branchesLoading() && branchOk;
   };
 
   async function handleSubmit(e: Event) {
@@ -760,7 +776,9 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
               data-nav-field="base-branch"
               style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
             >
-              <label for={branchInputId} style={sectionLabelStyle}>
+              {/* On a load failure the combobox is unmounted, so only point
+                  the label at it while it is actually rendered. */}
+              <label for={branchesError() ? undefined : branchInputId} style={sectionLabelStyle}>
                 {gitIsolation() === 'worktree' ? 'Base branch' : 'Branch'}
                 <Show when={branchesLoading()}>
                   {' '}
@@ -771,13 +789,49 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
                   />
                 </Show>
               </label>
-              <BranchCombobox
-                id={branchInputId}
-                branches={branches()}
-                value={baseBranch()}
-                onChange={setBaseBranch}
-                loading={branchesLoading()}
-              />
+              {/* On a load failure, swap the empty picker for the error +
+                  Retry — an empty combobox reading "No matching branches"
+                  would misrepresent a fetch failure as an empty repo. */}
+              <Show
+                when={!branchesError()}
+                fallback={
+                  <div
+                    role="alert"
+                    style={{
+                      display: 'flex',
+                      'align-items': 'center',
+                      gap: '8px',
+                      'font-size': '12px',
+                      color: theme.error,
+                    }}
+                  >
+                    <span>Couldn't load branches.</span>
+                    <button
+                      type="button"
+                      onClick={() => setBranchRetryToken((n) => n + 1)}
+                      style={{
+                        background: 'transparent',
+                        border: `1px solid ${theme.border}`,
+                        'border-radius': '6px',
+                        padding: '3px 10px',
+                        color: theme.fg,
+                        'font-size': '12px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                }
+              >
+                <BranchCombobox
+                  id={branchInputId}
+                  branches={branches()}
+                  value={baseBranch()}
+                  onChange={setBaseBranch}
+                  loading={branchesLoading()}
+                />
+              </Show>
             </div>
           </Show>
 

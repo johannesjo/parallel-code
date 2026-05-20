@@ -14,6 +14,10 @@ base branch on every task.
   the user types, plus a dropdown of matches selectable by mouse or keyboard.
 - Keep the committed branch as the source of truth; the picker only ever
   commits a branch that exists in the repository.
+- Block task submission for git projects until the branch list has loaded
+  and a base branch is resolved; on a failed branch fetch, show an error
+  with a Retry action so a task can never be created with a stale or empty
+  base branch.
 
 ## Impact
 

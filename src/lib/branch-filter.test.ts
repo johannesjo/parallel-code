@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterBranches, matchExactBranch } from './branch-filter';
+import { clampHighlight, filterBranches, matchExactBranch, resolveOnBlur } from './branch-filter';
 
 describe('filterBranches', () => {
   const branches = ['main', 'develop', 'feature/login', 'feature/logout', 'fix/main-crash'];
@@ -59,5 +59,46 @@ describe('matchExactBranch', () => {
 
   it('returns null when the branch does not exist', () => {
     expect(matchExactBranch(branches, 'release')).toBeNull();
+  });
+});
+
+describe('clampHighlight', () => {
+  it('leaves an in-range index unchanged', () => {
+    expect(clampHighlight(2, 5)).toBe(2);
+  });
+
+  it('clamps an index past the end down to the last option', () => {
+    expect(clampHighlight(9, 5)).toBe(4);
+  });
+
+  it('clamps a negative index up to the first option', () => {
+    expect(clampHighlight(-3, 5)).toBe(0);
+  });
+
+  it('pins the index at 0 for an empty list', () => {
+    // Guards the ArrowDown bug: count - 1 would be -1 and index matches()[-1].
+    expect(clampHighlight(0, 0)).toBe(0);
+    expect(clampHighlight(1, 0)).toBe(0);
+    expect(clampHighlight(-1, 0)).toBe(0);
+  });
+});
+
+describe('resolveOnBlur', () => {
+  const branches = ['main', 'develop', 'feature/login'];
+
+  it('keeps the committed value when untouched', () => {
+    // Even text that names a branch is ignored while dirty is false.
+    expect(resolveOnBlur(branches, 'develop', false, 'main')).toBe('main');
+  });
+
+  it('resolves to a fully-typed branch name when dirty', () => {
+    expect(resolveOnBlur(branches, 'develop', true, 'main')).toBe('develop');
+    expect(resolveOnBlur(branches, '  DEVELOP  ', true, 'main')).toBe('develop');
+  });
+
+  it('discards partial or unmatched text and keeps the committed value', () => {
+    expect(resolveOnBlur(branches, 'feat', true, 'main')).toBe('main');
+    expect(resolveOnBlur(branches, 'nope', true, 'main')).toBe('main');
+    expect(resolveOnBlur(branches, '', true, 'main')).toBe('main');
   });
 });
