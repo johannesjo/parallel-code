@@ -3,9 +3,10 @@ import {
   createMemo,
   createEffect,
   createUniqueId,
+  onMount,
+  onCleanup,
   For,
   Show,
-  onCleanup,
 } from 'solid-js';
 import { theme } from '../lib/theme';
 import { filterBranches, matchExactBranch } from '../lib/branch-filter';
@@ -17,11 +18,14 @@ interface BranchComboboxProps {
   value: string;
   /** Called when the user commits a branch from the list. */
   onChange: (branch: string) => void;
-  /** Disables the input while the branch list is loading. */
-  loading: boolean;
+  /** Disables the input while the branch list is loading. Defaults to false. */
+  loading?: boolean;
   /** Optional id, used to associate an external <label>. */
   id?: string;
 }
+
+/** Longest git ref names in practice; bounds per-keystroke work on paste. */
+const MAX_QUERY_LENGTH = 255;
 
 /**
  * A type-to-filter branch picker. Replaces a native <select> so users with
@@ -29,7 +33,8 @@ interface BranchComboboxProps {
  * picker only ever commits a branch that exists in `branches`.
  */
 export function BranchCombobox(props: BranchComboboxProps) {
-  // Seeded from `props.value` by the sync effect below once mounted.
+  // Typed text. Only consulted for display while the dropdown is open;
+  // `display` falls back to the committed value when closed.
   const [query, setQuery] = createSignal('');
   const [open, setOpen] = createSignal(false);
   const [dirty, setDirty] = createSignal(false);
@@ -37,16 +42,16 @@ export function BranchCombobox(props: BranchComboboxProps) {
   const listId = createUniqueId();
   let inputRef!: HTMLInputElement;
   let listRef: HTMLUListElement | undefined;
+  // True when the highlight last moved by keyboard — gates auto-scroll so a
+  // hovering mouse does not yank the list (or the dialog) under the cursor.
+  let keyboardNav = false;
 
-  // While the dropdown is closed, mirror the committed value into the input
-  // (covers the branch list loading in and setting a default base branch).
-  createEffect(() => {
-    const v = props.value;
-    if (!open()) {
-      setQuery(v);
-      setDirty(false);
-    }
-  });
+  const isLoading = () => props.loading ?? false;
+
+  // Shown text is derived, never written back: closed → the committed value,
+  // open/dirty → the user's typed text. Avoids a stale signal when `value`
+  // changes externally (e.g. a branch-list refetch on project switch).
+  const display = createMemo(() => (open() || dirty() ? query() : props.value));
 
   // Once the user starts typing, filter; otherwise show every branch.
   const matches = createMemo(() =>
@@ -59,11 +64,20 @@ export function BranchCombobox(props: BranchComboboxProps) {
     if (highlight() > max) setHighlight(Math.max(0, max));
   });
 
-  // Scroll the highlighted option into view as the user arrows through.
+  // Scroll the highlighted option into view for keyboard navigation only,
+  // moving the listbox's own scrollTop so the outer dialog never scrolls.
   createEffect(() => {
-    if (!open()) return;
-    const node = listRef?.children[highlight()] as HTMLElement | undefined;
-    node?.scrollIntoView({ block: 'nearest' });
+    const idx = highlight();
+    if (!open() || !keyboardNav) return;
+    const list = listRef;
+    const node = list?.children[idx] as HTMLElement | undefined;
+    if (!list || !node || matches().length === 0) return;
+    const top = node.offsetTop;
+    const bottom = top + node.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (bottom > list.scrollTop + list.clientHeight) {
+      list.scrollTop = bottom - list.clientHeight;
+    }
   });
 
   function commit(branch: string): void {
@@ -88,12 +102,16 @@ export function BranchCombobox(props: BranchComboboxProps) {
   }
 
   function onFocus(): void {
+    keyboardNav = true;
+    setQuery(props.value);
+    setDirty(false);
     setOpen(true);
     const idx = props.branches.indexOf(props.value);
     setHighlight(idx >= 0 ? idx : 0);
   }
 
   function onInput(value: string): void {
+    keyboardNav = true;
     setQuery(value);
     setDirty(true);
     setOpen(true);
@@ -102,11 +120,12 @@ export function BranchCombobox(props: BranchComboboxProps) {
 
   // Native keydown listener so Escape can stopPropagation and close only the
   // dropdown, not the parent dialog (whose Escape handler is on `document`).
-  createEffect(() => {
+  onMount(() => {
     const el = inputRef;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
+        keyboardNav = true;
         if (!open()) {
           setOpen(true);
           return;
@@ -114,17 +133,17 @@ export function BranchCombobox(props: BranchComboboxProps) {
         setHighlight((h) => Math.min(matches().length - 1, h + 1));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
+        keyboardNav = true;
         if (!open()) {
           setOpen(true);
           return;
         }
         setHighlight((h) => Math.max(0, h - 1));
       } else if (e.key === 'Enter') {
-        if (open() && matches().length > 0) {
-          // Stop the form from submitting on selection.
-          e.preventDefault();
-          commit(matches()[highlight()]);
-        }
+        // Always swallow Enter: a branch field must never submit the form.
+        e.preventDefault();
+        if (open() && matches().length > 0) commit(matches()[highlight()]);
+        else closeAndResolve();
       } else if (e.key === 'Escape' && open()) {
         e.preventDefault();
         e.stopPropagation();
@@ -145,6 +164,7 @@ export function BranchCombobox(props: BranchComboboxProps) {
         role="combobox"
         autocomplete="off"
         spellcheck={false}
+        maxlength={MAX_QUERY_LENGTH}
         aria-expanded={open()}
         aria-controls={listId}
         aria-autocomplete="list"
@@ -152,9 +172,9 @@ export function BranchCombobox(props: BranchComboboxProps) {
           open() && matches().length > 0 ? `${listId}-opt-${highlight()}` : undefined
         }
         class="input-field"
-        value={query()}
-        placeholder={props.loading ? 'Loading branches…' : 'Search branches…'}
-        disabled={props.loading}
+        value={display()}
+        placeholder={isLoading() ? 'Loading branches…' : 'Search branches…'}
+        disabled={isLoading()}
         onInput={(e) => onInput(e.currentTarget.value)}
         onFocus={onFocus}
         onBlur={closeAndResolve}
@@ -169,14 +189,16 @@ export function BranchCombobox(props: BranchComboboxProps) {
           outline: 'none',
           width: '100%',
           'box-sizing': 'border-box',
-          opacity: props.loading ? '0.5' : '1',
+          opacity: isLoading() ? '0.5' : '1',
         }}
       />
-      <Show when={open() && !props.loading}>
+      <Show when={open() && !isLoading()}>
         <ul
           ref={listRef}
           id={listId}
           role="listbox"
+          // Keep clicks on padding/scrollbar from blurring the input.
+          onMouseDown={(e) => e.preventDefault()}
           style={{
             position: 'absolute',
             top: 'calc(100% + 4px)',
@@ -214,7 +236,10 @@ export function BranchCombobox(props: BranchComboboxProps) {
                     e.preventDefault();
                     commit(branch);
                   }}
-                  onMouseEnter={() => setHighlight(i())}
+                  onMouseEnter={() => {
+                    keyboardNav = false;
+                    setHighlight(i());
+                  }}
                   style={{
                     padding: '8px 12px',
                     'border-radius': '6px',

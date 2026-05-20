@@ -1,4 +1,4 @@
-# Task Creation Specification
+# Branch Picker Specification
 
 ## ADDED Requirements
 

@@ -21,6 +21,14 @@ describe('filterBranches', () => {
     expect(filterBranches(branches, 'main')).toEqual(['main', 'fix/main-crash']);
   });
 
+  it('keeps original order among multiple prefix matches', () => {
+    expect(filterBranches(branches, 'feature/log')).toEqual(['feature/login', 'feature/logout']);
+  });
+
+  it('ranks a case-insensitive prefix match above a substring match', () => {
+    expect(filterBranches(['x-fea', 'Feature/b'], 'fea')).toEqual(['Feature/b', 'x-fea']);
+  });
+
   it('returns an empty list when nothing matches', () => {
     expect(filterBranches(branches, 'nope')).toEqual([]);
   });

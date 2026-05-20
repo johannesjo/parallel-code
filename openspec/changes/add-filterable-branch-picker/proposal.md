@@ -17,7 +17,7 @@ base branch on every task.
 
 ## Impact
 
-- New capability `task-creation`.
+- New capability `branch-picker`.
 - Updates `src/components/NewTaskDialog.tsx`; adds the `BranchCombobox`
   component and the `branch-filter` helpers.
 - No backend or IPC change — branch data still comes from the existing

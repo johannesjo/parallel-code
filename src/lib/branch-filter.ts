@@ -15,14 +15,15 @@ export function filterBranches(branches: string[], query: string): string[] {
   const q = query.trim().toLowerCase();
   if (q === '') return [...branches];
 
-  const prefix: string[] = [];
-  const substring: string[] = [];
-  for (const branch of branches) {
-    const lower = branch.toLowerCase();
-    if (lower.startsWith(q)) prefix.push(branch);
-    else if (lower.includes(q)) substring.push(branch);
-  }
-  return [...prefix, ...substring];
+  return branches
+    .filter((b) => b.toLowerCase().includes(q))
+    .sort((a, b) => {
+      // Prefix matches rank above plain substring matches. Array.sort is
+      // stable, so branches keep their original order within each group.
+      const aPrefix = a.toLowerCase().startsWith(q);
+      const bPrefix = b.toLowerCase().startsWith(q);
+      return aPrefix === bPrefix ? 0 : aPrefix ? -1 : 1;
+    });
 }
 
 /**
