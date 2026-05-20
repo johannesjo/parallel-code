@@ -1,0 +1,24 @@
+# Add Filterable Branch Picker
+
+## Why
+
+The New Task dialog picks the base branch from a native `<select>`. With many
+branches the list can only be navigated by scrolling — there is no way to type
+to narrow it. Users with large branch counts spend time hunting for the right
+base branch on every task.
+
+## What changes
+
+- Replace the native `<select>` branch picker with a type-to-filter combobox:
+  a text input that filters the branch list by case-insensitive substring as
+  the user types, plus a dropdown of matches selectable by mouse or keyboard.
+- Keep the committed branch as the source of truth; the picker only ever
+  commits a branch that exists in the repository.
+
+## Impact
+
+- New capability `task-creation`.
+- Updates `src/components/NewTaskDialog.tsx`; adds the `BranchCombobox`
+  component and the `branch-filter` helpers.
+- No backend or IPC change — branch data still comes from the existing
+  `GetBranches` channel.
