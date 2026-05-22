@@ -72,6 +72,13 @@ import {
   deleteCustomThemeFile,
 } from './persistence.js';
 import { loadKeybindings, saveKeybindings } from './keybindings.js';
+import {
+  initAutoUpdater,
+  getUpdateStatus,
+  checkForUpdates,
+  downloadUpdate,
+  quitAndInstallUpdate,
+} from './updater.js';
 import { spawn } from 'child_process';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
 import { setMinimaxApiKey } from './ask-code-minimax.js';
@@ -86,7 +93,7 @@ import {
   assertOptionalBoolean,
 } from './validate.js';
 import { validateBranchName as sharedValidateBranchName, validateUUID } from '../mcp/validation.js';
-import { warn as logWarn } from '../log.js';
+import { warn as logWarn, errMessage } from '../log.js';
 import { getMCPRemoteServerUrl, detectStaleDockerMCPUrl } from '../mcp/config.js';
 import { redactServerUrl } from '../remote/server.js';
 
@@ -155,16 +162,6 @@ async function startRemoteServerOnFreePort(
     }
   }
   throw new Error(`No free port found in range ${start}–${end}`);
-}
-
-function errMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === 'string') return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
 }
 
 /** Reject paths that are non-absolute or attempt directory traversal. */
@@ -905,6 +902,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   // --- System ---
   ipcMain.handle(IPC.GetSystemFonts, () => getSystemMonospaceFonts());
+
+  // --- Auto-update ---
+  initAutoUpdater(win);
+  ipcMain.handle(IPC.GetUpdateStatus, () => getUpdateStatus());
+  ipcMain.handle(IPC.CheckForUpdates, () => checkForUpdates());
+  ipcMain.handle(IPC.DownloadUpdate, () => downloadUpdate());
+  ipcMain.handle(IPC.QuitAndInstallUpdate, () => quitAndInstallUpdate());
 
   // --- Notifications (fire-and-forget via ipcMain.on) ---
   const activeNotifications = new Set<Notification>();

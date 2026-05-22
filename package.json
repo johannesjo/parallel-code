@@ -43,6 +43,7 @@
     "@xterm/xterm": "^6.1.0-beta.195",
     "colord": "^2.9.3",
     "dompurify": "^3.4.3",
+    "electron-updater": "^6.8.3",
     "marked": "^17.0.3",
     "mermaid": "^11.15.0",
     "monaco-editor": "^0.55.1",
@@ -93,6 +94,13 @@
       "buildResources": "build",
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "johannesjo",
+        "repo": "parallel-code"
+      }
+    ],
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
@@ -127,7 +135,10 @@
       }
     },
     "mac": {
-      "target": "dmg",
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
       "extendInfo": {

@@ -5,7 +5,7 @@
 // their args; all others omit them by default (default-deny).
 
 import type { IpcMain, IpcMainInvokeEvent } from 'electron';
-import { debug, getMinLevel, warn } from '../log.js';
+import { debug, getMinLevel, warn, errMessage } from '../log.js';
 import { IPC } from './channels.js';
 
 /**
@@ -49,16 +49,6 @@ const NEVER_SAFE: ReadonlySet<string> = new Set<string>([
 for (const ch of NEVER_SAFE) {
   if (SAFE_FOR_TRACE.has(ch)) {
     throw new Error(`SAFE_FOR_TRACE contains a never-safe channel: ${ch}`);
-  }
-}
-
-function errMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === 'string') return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
   }
 }
 

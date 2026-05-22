@@ -141,6 +141,13 @@ export enum IPC {
   // Logging
   LogFromRenderer = 'log_from_renderer',
 
+  // Auto-update
+  CheckForUpdates = 'check_for_updates',
+  DownloadUpdate = 'download_update',
+  QuitAndInstallUpdate = 'quit_and_install_update',
+  GetUpdateStatus = 'get_update_status',
+  UpdateStatusChanged = 'update_status_changed',
+
   // MCP / Coordinating agent
   SetCoordinatorModeEnabled = 'set_coordinator_mode_enabled',
   StartMCPServer = 'start_mcp_server',

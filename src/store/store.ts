@@ -176,6 +176,13 @@ export {
 } from './terminals';
 export { startRemoteAccess, stopRemoteAccess, refreshRemoteStatus } from './remote';
 export {
+  updateStatus,
+  startUpdateSubscription,
+  checkForUpdates,
+  downloadUpdate,
+  installUpdate,
+} from './updates';
+export {
   resolvedBindings,
   allBindings,
   loadKeybindings,

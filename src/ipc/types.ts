@@ -135,6 +135,10 @@ export interface StopPrChecksWatcherArgs {
   taskId: string;
 }
 
+// The main-process updater owns these types; re-exported so the renderer
+// shares one source of truth and cannot drift from it.
+export type { UpdatePhase, UpdateStatus } from '../../electron/ipc/updater';
+
 export interface StepEntry {
   summary: string;
   detail?: string;

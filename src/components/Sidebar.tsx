@@ -38,6 +38,7 @@ import { EditProjectDialog } from './EditProjectDialog';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { SidebarFooter } from './SidebarFooter';
 import { IconButton } from './IconButton';
+import { UpdateButton } from './UpdateButton';
 import { StatusDot } from './StatusDot';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
@@ -401,6 +402,7 @@ export function Sidebar() {
             </span>
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
+            <UpdateButton />
             <IconButton
               icon={
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">

@@ -72,6 +72,17 @@ export function error(category: string, msg: string, err: unknown, ctx?: LogCont
   emit('error', category, msg, ctx, err);
 }
 
+/** Reduce an unknown thrown value to a human-readable string. */
+export function errMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 function emit(
   level: LogLevel,
   category: string,

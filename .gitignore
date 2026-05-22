@@ -4,6 +4,8 @@ dist-electron
 dist-remote
 release
 coverage
+# Local auto-update test server payload (build artifacts, not source).
+update-test/
 # Runtime data dir written by the app (MCP coordinator state, etc.)
 .parallel-code/
 .worktrees

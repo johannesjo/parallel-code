@@ -1,4 +1,4 @@
-import { For, Show, createSignal, createEffect, createUniqueId, on } from 'solid-js';
+import { For, Show, Switch, Match, createSignal, createEffect, createUniqueId, on } from 'solid-js';
 import { Dialog } from './Dialog';
 import { CustomThemeDialog } from './CustomThemeDialog';
 import {
@@ -33,6 +33,8 @@ import {
   setDarkTheme,
   setCoordinatorModeEnabled,
   setCoordinatorNotificationDelayMs,
+  updateStatus,
+  checkForUpdates,
 } from '../store/store';
 import { CustomAgentEditor } from './CustomAgentEditor';
 import { mod } from '../lib/platform';
@@ -65,6 +67,30 @@ export function SettingsDialog(props: SettingsDialogProps) {
     setEditingThemeId(null);
     setCustomThemeDialogOpen(true);
   }
+
+  // Styles shared across the Updates section's rows, buttons and messages.
+  const updateRowStyle = {
+    display: 'flex',
+    'align-items': 'center',
+    'justify-content': 'space-between',
+    gap: '12px',
+  };
+  const updateSecondaryButtonStyle = (disabled: boolean) => ({
+    padding: '6px 12px',
+    'border-radius': '6px',
+    border: `1px solid ${theme.border}`,
+    background: theme.bgElevated,
+    color: theme.fg,
+    'font-size': '13px',
+    cursor: disabled ? 'default' : 'pointer',
+    opacity: disabled ? '0.6' : '1',
+  });
+  const updateMessageStyle = (color: string) => ({ 'font-size': '12px', color });
+
+  // Phases that permit a manual check. An allow-list keeps a future phase
+  // from defaulting to "shown" the way excluding non-checkable phases would.
+  const canCheckForUpdates = () =>
+    ['idle', 'checking', 'up-to-date', 'available', 'error'].includes(updateStatus().phase);
 
   // Fetch system fonts when the dialog opens
   createEffect(
@@ -774,6 +800,101 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 </span>
               </div>
             </label>
+          </div>
+
+          <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
+            <div style={{ ...sectionLabelStyle, 'font-weight': '600' }}>Updates</div>
+            <div
+              style={{
+                display: 'flex',
+                'flex-direction': 'column',
+                gap: '10px',
+                padding: '12px',
+                'border-radius': '8px',
+                background: theme.bgInput,
+                border: `1px solid ${theme.border}`,
+              }}
+            >
+              <div style={updateRowStyle}>
+                <span style={{ 'font-size': '14px', color: theme.fg }}>
+                  Current version
+                  <Show when={updateStatus().currentVersion}>
+                    {' '}
+                    <span style={{ color: theme.fgMuted }}>v{updateStatus().currentVersion}</span>
+                  </Show>
+                </span>
+                <Show when={canCheckForUpdates()}>
+                  <button
+                    type="button"
+                    disabled={updateStatus().phase === 'checking'}
+                    onClick={() => void checkForUpdates()}
+                    style={updateSecondaryButtonStyle(updateStatus().phase === 'checking')}
+                  >
+                    {updateStatus().phase === 'checking' ? 'Checking…' : 'Check for updates'}
+                  </button>
+                </Show>
+              </div>
+
+              <Switch>
+                <Match when={updateStatus().phase === 'unsupported'}>
+                  <span style={updateMessageStyle(theme.fgSubtle)}>
+                    Automatic updates are not available for this build. Download the latest release
+                    from GitHub to update.
+                  </span>
+                </Match>
+
+                <Match when={updateStatus().phase === 'up-to-date'}>
+                  <span style={updateMessageStyle(theme.fgSubtle)}>
+                    You are on the latest version.
+                  </span>
+                </Match>
+
+                <Match when={updateStatus().phase === 'available'}>
+                  <span style={updateMessageStyle(theme.fg)}>
+                    Version {updateStatus().latestVersion} is available. Use the update button in
+                    the sidebar to install.
+                  </span>
+                </Match>
+
+                <Match when={updateStatus().phase === 'downloading'}>
+                  <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
+                    <span style={updateMessageStyle(theme.fgSubtle)}>
+                      Downloading update… {updateStatus().downloadPercent}%
+                    </span>
+                    <div
+                      style={{
+                        height: '6px',
+                        'border-radius': '3px',
+                        background: theme.bgElevated,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: '100%',
+                          width: `${updateStatus().downloadPercent}%`,
+                          background: theme.accent,
+                          transition: 'width 0.2s',
+                        }}
+                      />
+                    </div>
+                  </div>
+                </Match>
+
+                <Match when={updateStatus().phase === 'downloaded'}>
+                  <span style={updateMessageStyle(theme.fg)}>
+                    Version {updateStatus().latestVersion} is downloaded. Use the update button in
+                    the sidebar to restart &amp; install.
+                  </span>
+                </Match>
+
+                <Match when={updateStatus().phase === 'error'}>
+                  <span style={updateMessageStyle(theme.error)}>
+                    Update check failed: {updateStatus().error}
+                  </span>
+                </Match>
+              </Switch>
+            </div>
           </div>
         </div>
       </Show>
