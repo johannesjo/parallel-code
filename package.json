@@ -42,7 +42,7 @@
     "@xterm/addon-webgl": "^0.20.0-beta.194",
     "@xterm/xterm": "^6.1.0-beta.195",
     "colord": "^2.9.3",
-    "dompurify": "^3.4.3",
+    "dompurify": "^3.4.5",
     "electron-updater": "^6.8.3",
     "marked": "^17.0.3",
     "mermaid": "^11.15.0",
