@@ -281,7 +281,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     propagateSkipPermissions: opts.coordinatorMode
       ? (opts.propagateSkipPermissions ?? false)
       : undefined,
-    controlledBy: opts.coordinatorMode ? 'coordinator' : undefined,
+    controlledBy: opts.coordinatorMode ? 'human' : undefined,
     mcpConfigPath,
     mcpLaunchArgs,
     // Coordinator tasks call StartMCPServer before entering the store, so MCP is ready immediately.

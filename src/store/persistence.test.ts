@@ -369,6 +369,48 @@ describe('coordinator control hint persistence', () => {
   });
 });
 
+describe('coordinator control defaults', () => {
+  it('restores coordinator tasks to human control when persisted state omits controlledBy', async () => {
+    mockInvoke.mockResolvedValueOnce(
+      basePayload({
+        taskOrder: ['coord-1'],
+        tasks: {
+          'coord-1': {
+            ...persistedTask(agentDef()),
+            id: 'coord-1',
+            coordinatorMode: true,
+          },
+        },
+        activeTaskId: 'coord-1',
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['coord-1']?.controlledBy).toBe('human');
+  });
+
+  it('restores coordinated child tasks to coordinator control when persisted state omits controlledBy', async () => {
+    mockInvoke.mockResolvedValueOnce(
+      basePayload({
+        taskOrder: ['child-1'],
+        tasks: {
+          'child-1': {
+            ...persistedTask(agentDef()),
+            id: 'child-1',
+            coordinatedBy: 'coord-1',
+          },
+        },
+        activeTaskId: 'child-1',
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['child-1']?.controlledBy).toBe('coordinator');
+  });
+});
+
 describe('projects section collapsed persistence', () => {
   it('defaults to expanded when not in saved state', async () => {
     setStore('projectsCollapsed', true);

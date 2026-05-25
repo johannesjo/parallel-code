@@ -676,7 +676,8 @@ export async function loadState(): Promise<void> {
           propagateSkipPermissions: pt.propagateSkipPermissions,
           coordinatedBy: pt.coordinatedBy,
           controlledBy:
-            pt.controlledBy ?? (pt.coordinatorMode || pt.coordinatedBy ? 'coordinator' : undefined),
+            pt.controlledBy ??
+            (pt.coordinatedBy ? 'coordinator' : pt.coordinatorMode ? 'human' : undefined),
           // Defer TerminalView spawn until StartMCPServer/hydrateTask complete —
           // the config file has a stale token from the previous session until then.
           mcpStartupStatus:
@@ -777,7 +778,8 @@ export async function loadState(): Promise<void> {
           propagateSkipPermissions: pt.propagateSkipPermissions,
           coordinatedBy: pt.coordinatedBy,
           controlledBy:
-            pt.controlledBy ?? (pt.coordinatorMode || pt.coordinatedBy ? 'coordinator' : undefined),
+            pt.controlledBy ??
+            (pt.coordinatedBy ? 'coordinator' : pt.coordinatorMode ? 'human' : undefined),
           mcpStartupStatus:
             pt.coordinatorMode || pt.coordinatedBy ? ('pending' as const) : undefined,
           mcpConfigPath: pt.mcpConfigPath,
