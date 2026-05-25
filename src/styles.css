@@ -1366,6 +1366,14 @@ textarea::placeholder {
   animation: slideUp 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
+.new-task-dialog-form {
+  user-select: none;
+}
+
+.new-task-dialog-form :is(input, textarea) {
+  user-select: text;
+}
+
 .file-row:hover {
   background: color-mix(in srgb, var(--accent) 8%, var(--bg-hover));
 }

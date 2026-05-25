@@ -605,6 +605,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     >
       <form
         ref={formRef}
+        class="new-task-dialog-form"
         onSubmit={handleSubmit}
         style={{
           display: 'flex',
