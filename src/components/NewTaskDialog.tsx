@@ -815,7 +815,10 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
             >
               {/* On a load failure the combobox is unmounted, so only point
                   the label at it while it is actually rendered. */}
-              <label for={branchesError() ? undefined : branchInputId} style={sectionLabelStyle}>
+              <label
+                for={branchesError() ? undefined : branchInputId}
+                style={{ ...sectionLabelStyle, 'align-self': 'flex-start' }}
+              >
                 {gitIsolation() === 'worktree' ? 'Base branch' : 'Branch'}
                 <Show when={branchesLoading()}>
                   {' '}
