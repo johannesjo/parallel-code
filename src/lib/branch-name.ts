@@ -14,3 +14,17 @@ export function sanitizeBranchPrefix(prefix: string): string {
     .filter((segment) => segment.length > 0);
   return parts.join('/') || 'task';
 }
+
+export function findBranchPrefixConflict(
+  branchPrefix: string,
+  existingBranches: string[],
+): string | null {
+  const prefix = sanitizeBranchPrefix(branchPrefix);
+  return (
+    existingBranches.find((branch) => branch === prefix || prefix.startsWith(`${branch}/`)) ?? null
+  );
+}
+
+export function branchPrefixConflictError(conflict: string): string {
+  return `Branch prefix conflicts with existing branch "${conflict}". Choose a prefix other than "${conflict}" or "${conflict}/...".`;
+}

@@ -218,6 +218,18 @@ async function localBranchExists(repoRoot: string, branch: string): Promise<bool
   }
 }
 
+async function findLocalBranchPrefixConflict(
+  repoRoot: string,
+  branchName: string,
+): Promise<string | null> {
+  const parts = branchName.split('/');
+  for (let i = 1; i < parts.length; i++) {
+    const prefix = parts.slice(0, i).join('/');
+    if (await localBranchExists(repoRoot, prefix)) return prefix;
+  }
+  return null;
+}
+
 async function detectMainBranchUncached(repoRoot: string): Promise<string> {
   // Try remote HEAD reference first
   const branch = await resolveOriginHead(repoRoot);
@@ -722,6 +734,14 @@ export async function createWorktree(
   }
 
   // Create fresh worktree with new branch
+  const conflictingBranch = await findLocalBranchPrefixConflict(repoRoot, branchName);
+  if (conflictingBranch) {
+    throw new Error(
+      `Cannot create branch "${branchName}" because local branch "${conflictingBranch}" already exists. ` +
+        `Choose a branch prefix other than "${conflictingBranch}" or "${conflictingBranch}/...".`,
+    );
+  }
+
   const worktreeArgs = ['worktree', 'add', '-b', branchName, worktreePath];
   if (baseBranch) worktreeArgs.push(baseBranch);
   await exec('git', worktreeArgs, { cwd: repoRoot });

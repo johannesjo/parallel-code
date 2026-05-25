@@ -1,4 +1,4 @@
-import { createSignal, createEffect, createUniqueId, Show, onCleanup } from 'solid-js';
+import { createSignal, createEffect, createMemo, createUniqueId, Show, onCleanup } from 'solid-js';
 import { Dialog } from './Dialog';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
@@ -19,7 +19,12 @@ import {
   setDockerImage,
 } from '../store/store';
 import type { GitIsolationMode } from '../store/types';
-import { toBranchName, sanitizeBranchPrefix } from '../lib/branch-name';
+import {
+  toBranchName,
+  sanitizeBranchPrefix,
+  findBranchPrefixConflict,
+  branchPrefixConflictError,
+} from '../lib/branch-name';
 import { SegmentedButtons } from './SegmentedButtons';
 import { autoTaskNameFromPrompt } from '../lib/clean-task-name';
 import { extractGitHubUrl } from '../lib/github-url';
@@ -466,6 +471,16 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     return n ? `${prefix}/${toBranchName(n)}` : '';
   };
 
+  const branchPrefixConflict = createMemo(() => {
+    if (gitIsolation() !== 'worktree') return null;
+    return findBranchPrefixConflict(branchPrefix(), branches());
+  });
+
+  const branchPrefixError = createMemo(() => {
+    const c = branchPrefixConflict();
+    return c ? branchPrefixConflictError(c) : '';
+  });
+
   const selectedProjectPath = () => {
     const pid = selectedProjectId();
     return pid ? getProjectPath(pid) : undefined;
@@ -492,7 +507,14 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     // for git projects — so a task can't be created with a stale or empty
     // base branch (e.g. after a failed branch fetch).
     const branchOk = isNonGitProject() || (!!baseBranch() && !branchesError());
-    return hasContent && !!selectedProjectId() && !loading() && !branchesLoading() && branchOk;
+    return (
+      hasContent &&
+      !!selectedProjectId() &&
+      !loading() &&
+      !branchesLoading() &&
+      branchOk &&
+      !branchPrefixConflict()
+    );
   };
 
   async function handleSubmit(e: Event) {
@@ -517,13 +539,19 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
       return;
     }
 
-    setLoading(true);
-    setError('');
-
     const p = prompt().trim() || undefined;
     const isFromDrop = !!store.newTaskDropUrl;
     const prefix = sanitizeBranchPrefix(branchPrefix());
+    const prefixConflict = branchPrefixConflict();
+    if (prefixConflict) {
+      setError(branchPrefixConflictError(prefixConflict));
+      return;
+    }
     const ghUrl = (p ? extractGitHubUrl(p) : null) ?? store.newTaskDropUrl ?? undefined;
+
+    setLoading(true);
+    setError('');
+
     try {
       // Persist the branch prefix to the project for next time
       updateProject(projectId, { branchPrefix: prefix });
@@ -757,6 +785,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
             <BranchPrefixField
               branchPrefix={branchPrefix()}
               branchPreview={branchPreview()}
+              error={branchPrefixError()}
               projectPath={selectedProjectPath()}
               onPrefixChange={setBranchPrefix}
             />

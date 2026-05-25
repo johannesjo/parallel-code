@@ -4,6 +4,7 @@ import { theme } from '../lib/theme';
 interface BranchPrefixFieldProps {
   branchPrefix: string;
   branchPreview: string;
+  error?: string;
   projectPath: string | undefined;
   onPrefixChange: (prefix: string) => void;
 }
@@ -26,7 +27,7 @@ export function BranchPrefixField(props: BranchPrefixFieldProps) {
           placeholder="task"
           style={{
             background: theme.bgInput,
-            border: `1px solid ${theme.border}`,
+            border: `1px solid ${props.error ? theme.error : theme.border}`,
             'border-radius': '6px',
             padding: '4px 8px',
             color: theme.fg,
@@ -37,6 +38,9 @@ export function BranchPrefixField(props: BranchPrefixFieldProps) {
           }}
         />
       </div>
+      <Show when={props.error}>
+        <div style={{ 'font-size': '12px', color: theme.error }}>{props.error}</div>
+      </Show>
       <Show when={props.branchPreview && props.projectPath}>
         <div
           style={{
