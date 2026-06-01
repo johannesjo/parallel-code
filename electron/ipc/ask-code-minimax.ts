@@ -11,7 +11,7 @@ const MAX_PROMPT_LENGTH = 50_000;
 const MAX_CONCURRENT = 5;
 const TIMEOUT_MS = 120_000;
 const MINIMAX_API_URL = 'https://api.minimax.io/v1/chat/completions';
-export const MINIMAX_MODEL = 'MiniMax-M2.7';
+export const MINIMAX_MODEL = 'MiniMax-M3';
 
 const activeRequests = new Map<string, AbortController>();
 const activeTimers = new Map<string, ReturnType<typeof setTimeout>>();
