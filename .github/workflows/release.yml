@@ -35,16 +35,11 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm run build -- --publish never
 
-      - name: Upload artifacts
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          files: |
-            release/*.AppImage
-            release/*.deb
-          draft: true
+      - name: Build and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build -- --publish always
 
   build-macos:
     needs: create-release
@@ -89,20 +84,14 @@ jobs:
 
       - run: npm ci
 
-      - name: Build and sign
+      - name: Build, sign, and publish
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
           APPLE_API_KEY: ${{ runner.temp }}/private_keys/AuthKey.p8
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: npm run build -- --universal --publish never
-
-      - name: Upload artifacts
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          files: release/*.dmg
-          draft: true
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build -- --universal --publish always
 
       - name: Cleanup signing artifacts
         if: always()
