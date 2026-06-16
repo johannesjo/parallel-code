@@ -9,6 +9,18 @@ function isAntigravityCommand(command: string): boolean {
   return command.split('/').pop() === 'agy';
 }
 
+const RESUME_FAILURE_PATTERNS: Record<string, string[]> = {
+  claude: ['No conversation found to continue'],
+};
+
+export function isResumeArgsFailure(command: string, lastOutput: string[]): boolean {
+  const base = command.split('/').pop() ?? command;
+  const patterns = RESUME_FAILURE_PATTERNS[base];
+  if (!patterns || lastOutput.length === 0) return false;
+  const text = lastOutput.join('\n');
+  return patterns.some((pattern) => text.includes(pattern));
+}
+
 function legacyMcpConfigArgs(command: string, mcpConfigPath: string | undefined): string[] {
   // Codex and Antigravity have no `--mcp-config` flag; passing it would break launch.
   if (!mcpConfigPath || isCodexCommand(command) || isAntigravityCommand(command)) return [];

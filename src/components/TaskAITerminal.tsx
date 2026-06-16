@@ -30,7 +30,7 @@ import { createHighlightedMarkdown } from '../lib/marked-shiki';
 import type { Task } from '../store/types';
 import type { AgentDef } from '../ipc/types';
 import type { PromptInputHandle } from './PromptInput';
-import { buildTaskAgentArgs } from '../lib/agent-args';
+import { buildTaskAgentArgs, isResumeArgsFailure } from '../lib/agent-args';
 
 function aiTerminalPanelId(agentId: string): string {
   return `ai-terminal:${agentId}`;
@@ -614,7 +614,19 @@ function AgentTerminalPane(props: {
                 }
                 attachExisting={a().attachExisting}
                 preserveSessionOnCleanup
-                onExit={(code) => markAgentExited(a().id, code)}
+                onExit={(code) => {
+                  if (
+                    a().resumed &&
+                    code.exit_code !== 0 &&
+                    isResumeArgsFailure(a().def.command, code.last_output)
+                  ) {
+                    // Resume args failed (e.g. Claude's "No conversation to continue");
+                    // fall back to a fresh start with normal args.
+                    restartAgent(a().id, false);
+                    return;
+                  }
+                  markAgentExited(a().id, code);
+                }}
                 onData={(data) => markAgentOutput(a().id, data, props.task.id)}
                 onFileLink={props.onFileLink}
                 onPromptDetected={(text) => setLastPrompt(props.task.id, text)}
