@@ -57,7 +57,7 @@
     "qrcode": "^1.5.4",
     "shiki": "^4.0.2",
     "solid-js": "^1.9.11",
-    "ws": "^8.20.1"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
