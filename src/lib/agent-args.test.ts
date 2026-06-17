@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTaskAgentArgs } from './agent-args';
+import { buildTaskAgentArgs, isResumeArgsFailure } from './agent-args';
 
 const codexAgent = {
   id: 'codex',
@@ -134,5 +134,53 @@ describe('buildTaskAgentArgs', () => {
         true,
       ),
     ).toEqual(['-c']);
+  });
+});
+
+describe('isResumeArgsFailure', () => {
+  describe('Claude resume failure patterns', () => {
+    it('returns true when Claude reports no conversation to continue', () => {
+      expect(isResumeArgsFailure('claude', ['No conversation found to continue'])).toBe(true);
+    });
+
+    it('returns true for a Claude command with a full path', () => {
+      expect(
+        isResumeArgsFailure('/usr/local/bin/claude', ['No conversation found to continue']),
+      ).toBe(true);
+    });
+
+    it('returns false when Claude output does not match a resume failure', () => {
+      expect(isResumeArgsFailure('claude', ['Resuming conversation...'])).toBe(false);
+    });
+
+    it('matches Claude resume failures across multiple output lines', () => {
+      expect(
+        isResumeArgsFailure('claude', [
+          '\x1b[1mClaude Code\x1b[22m',
+          '────────────────────────────────',
+          'No conversation found to continue',
+          'Run claude without --continue to start a new conversation',
+          '❯ ',
+        ]),
+      ).toBe(true);
+    });
+  });
+
+  describe('unsupported commands', () => {
+    it('returns false for commands without configured resume failure patterns', () => {
+      expect(isResumeArgsFailure('unknown-agent', ['No conversation found to continue'])).toBe(
+        false,
+      );
+    });
+
+    it('returns false for full-path commands without configured resume failure patterns', () => {
+      expect(
+        isResumeArgsFailure('/usr/local/bin/unknown-agent', ['No conversation found to continue']),
+      ).toBe(false);
+    });
+  });
+
+  it('returns false for empty last output', () => {
+    expect(isResumeArgsFailure('claude', [])).toBe(false);
   });
 });
