@@ -85,9 +85,38 @@ export function setTaskFocusedPanel(taskId: string, panel: string): void {
   scrollTaskIntoView(taskId);
 }
 
+function findHorizontalScroller(el: HTMLElement): HTMLElement | null {
+  // Use a marker so we never pick nested panel scrollers (e.g. sub-task strips).
+  return el.closest<HTMLElement>('[data-tiling-strip]');
+}
+
+/** Scroll the tiling strip to the absolute start/end when the task is the
+ *  first/last in order, so overflow affordances disappear. Returns true if an
+ *  edge scroll was performed. */
+export function scrollTaskToEdge(scroller: HTMLElement, taskId: string): boolean {
+  const activeIndex = store.taskOrder.indexOf(taskId);
+  if (activeIndex === -1) return false;
+  if (activeIndex === 0) {
+    scroller.scrollTo({ left: 0, behavior: 'instant' });
+    return true;
+  }
+  if (activeIndex === store.taskOrder.length - 1) {
+    scroller.scrollTo({
+      left: scroller.scrollWidth - scroller.clientWidth,
+      behavior: 'instant',
+    });
+    return true;
+  }
+  return false;
+}
+
 function scrollTaskIntoView(taskId: string): void {
   requestAnimationFrame(() => {
     const el = document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(taskId)}"]`);
-    el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    if (!el) return;
+    const scroller = findHorizontalScroller(el);
+    if (!scroller || !scrollTaskToEdge(scroller, taskId)) {
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    }
   });
 }

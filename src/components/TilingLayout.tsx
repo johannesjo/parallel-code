@@ -19,6 +19,7 @@ import {
   getPanelUserSize,
   setPanelUserSize,
   deletePanelUserSize,
+  scrollTaskToEdge,
 } from '../store/store';
 import { closeTask } from '../store/tasks';
 import { TaskPanel } from './TaskPanel';
@@ -195,8 +196,12 @@ export function TilingLayout() {
       return;
     }
 
-    const el = containerRef.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(activeId)}"]`);
-    el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    if (!scrollTaskToEdge(containerRef, activeId)) {
+      const el = containerRef.querySelector<HTMLElement>(
+        `[data-task-id="${CSS.escape(activeId)}"]`,
+      );
+      el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    }
     requestAnimationFrame(() => updateViewportState());
   });
 
@@ -392,7 +397,7 @@ export function TilingLayout() {
 
   return (
     <div class="tiling-layout-shell">
-      <div ref={containerRef} class="tiling-layout-strip">
+      <div ref={containerRef} class="tiling-layout-strip" data-tiling-strip>
         <Show
           when={store.taskOrder.length > 0}
           fallback={

@@ -82,7 +82,7 @@ vi.mock('./tasks', () => ({
   }),
 }));
 
-import { navigateColumn, navigateRow } from './focus';
+import { navigateColumn, navigateRow, scrollTaskToEdge } from './focus';
 
 function setTask(id: string, overrides: Record<string, unknown> = {}): void {
   mockStore.tasks[id] = {
@@ -221,5 +221,55 @@ describe('focus navigation neighbor map', () => {
     navigateRow('down');
 
     expect(mockStore.focusedPanel['task-1']).toBe('shell:0');
+  });
+});
+
+describe('scrollTaskToEdge', () => {
+  function createScroller(): HTMLElement {
+    return {
+      clientWidth: 300,
+      scrollWidth: 1_000,
+      scrollTo: vi.fn(),
+    } as unknown as HTMLElement;
+  }
+
+  it('scrolls to absolute start for the first task', () => {
+    mockStore.taskOrder = ['task-1', 'task-2'];
+    const scroller = createScroller();
+
+    const didScroll = scrollTaskToEdge(scroller, 'task-1');
+
+    expect(didScroll).toBe(true);
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'instant' });
+  });
+
+  it('scrolls to absolute end for the last task', () => {
+    mockStore.taskOrder = ['task-1', 'task-2'];
+    const scroller = createScroller();
+
+    const didScroll = scrollTaskToEdge(scroller, 'task-2');
+
+    expect(didScroll).toBe(true);
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 700, behavior: 'instant' });
+  });
+
+  it('does not edge-scroll a middle task', () => {
+    mockStore.taskOrder = ['task-1', 'task-2', 'task-3'];
+    const scroller = createScroller();
+
+    const didScroll = scrollTaskToEdge(scroller, 'task-2');
+
+    expect(didScroll).toBe(false);
+    expect(scroller.scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('does not edge-scroll when the task is missing from the order', () => {
+    mockStore.taskOrder = ['task-1', 'task-2'];
+    const scroller = createScroller();
+
+    const didScroll = scrollTaskToEdge(scroller, 'task-x');
+
+    expect(didScroll).toBe(false);
+    expect(scroller.scrollTo).not.toHaveBeenCalled();
   });
 });
