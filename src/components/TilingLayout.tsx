@@ -197,7 +197,7 @@ export function TilingLayout() {
     }
 
     const el = containerRef.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(activeId)}"]`);
-    if (el) scrollTaskElementIntoView(containerRef, activeId, el);
+    if (el) scrollTaskElementIntoView(containerRef, activeId, el, 'smooth');
     requestAnimationFrame(() => updateViewportState());
   });
 

@@ -86,7 +86,9 @@ import {
   computeClickablePreviewScrollLeft,
   navigateColumn,
   navigateRow,
+  scrollTaskElementIntoView,
   scrollTaskToEdge,
+  setTaskFocusedPanel,
 } from './focus';
 
 function setTask(id: string, overrides: Record<string, unknown> = {}): void {
@@ -256,6 +258,33 @@ describe('scrollTaskToEdge', () => {
 
     expect(didScroll).toBe(true);
     expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 700, behavior: 'instant' });
+  });
+
+  it('can smooth-scroll to an edge task when requested', () => {
+    mockStore.taskOrder = ['task-1', 'task-2'];
+    const scroller = createScroller();
+    const el = {} as HTMLElement;
+
+    scrollTaskElementIntoView(scroller, 'task-2', el, 'smooth');
+
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 700, behavior: 'smooth' });
+  });
+
+  it('smooth-scrolls when focusing a panel inside an edge task', () => {
+    setTask('task-1');
+    setTask('task-2');
+    mockStore.taskOrder = ['task-1', 'task-2'];
+    const scroller = createScroller();
+    const el = {
+      closest: vi.fn(() => scroller),
+    } as unknown as HTMLElement;
+    vi.stubGlobal('document', {
+      querySelector: vi.fn(() => el),
+    });
+
+    setTaskFocusedPanel('task-2', 'ai-terminal');
+
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 700, behavior: 'smooth' });
   });
 
   it('does not edge-scroll a middle task', () => {
