@@ -99,8 +99,6 @@ export {
   toggleSettingsDialog,
   sendActivePrompt,
   scrollTaskElementIntoView,
-  scrollTaskWithClickablePreview,
-  scrollTaskToEdge,
 } from './focus';
 export type { PanelId, PendingAction, TaskViewportVisibility } from './types';
 export { saveState, loadState, loadCustomThemes } from './persistence';

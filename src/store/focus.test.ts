@@ -83,11 +83,9 @@ vi.mock('./tasks', () => ({
 }));
 
 import {
-  computeClickablePreviewScrollLeft,
   navigateColumn,
   navigateRow,
   scrollTaskElementIntoView,
-  scrollTaskToEdge,
   setTaskFocusedPanel,
 } from './focus';
 
@@ -231,11 +229,15 @@ describe('focus navigation neighbor map', () => {
   });
 });
 
-describe('scrollTaskToEdge', () => {
+describe('scrollTaskElementIntoView', () => {
   function createScroller(): HTMLElement {
     return {
+      scrollLeft: 200,
       clientWidth: 300,
       scrollWidth: 1_000,
+      getBoundingClientRect: vi.fn(function (this: HTMLElement) {
+        return { left: 0, right: this.clientWidth };
+      }),
       scrollTo: vi.fn(),
     } as unknown as HTMLElement;
   }
@@ -243,20 +245,20 @@ describe('scrollTaskToEdge', () => {
   it('scrolls to absolute start for the first task', () => {
     mockStore.taskOrder = ['task-1', 'task-2'];
     const scroller = createScroller();
+    const el = {} as HTMLElement;
 
-    const didScroll = scrollTaskToEdge(scroller, 'task-1');
+    scrollTaskElementIntoView(scroller, 'task-1', el);
 
-    expect(didScroll).toBe(true);
     expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'instant' });
   });
 
   it('scrolls to absolute end for the last task', () => {
     mockStore.taskOrder = ['task-1', 'task-2'];
     const scroller = createScroller();
+    const el = {} as HTMLElement;
 
-    const didScroll = scrollTaskToEdge(scroller, 'task-2');
+    scrollTaskElementIntoView(scroller, 'task-2', el);
 
-    expect(didScroll).toBe(true);
     expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 700, behavior: 'instant' });
   });
 
@@ -290,72 +292,76 @@ describe('scrollTaskToEdge', () => {
   it('does not edge-scroll a middle task', () => {
     mockStore.taskOrder = ['task-1', 'task-2', 'task-3'];
     const scroller = createScroller();
+    const el = {
+      getBoundingClientRect: vi.fn(() => ({ left: 80, right: 220 })),
+    } as unknown as HTMLElement;
 
-    const didScroll = scrollTaskToEdge(scroller, 'task-2');
+    scrollTaskElementIntoView(scroller, 'task-2', el);
 
-    expect(didScroll).toBe(false);
     expect(scroller.scrollTo).not.toHaveBeenCalled();
   });
 
   it('does not edge-scroll when the task is missing from the order', () => {
     mockStore.taskOrder = ['task-1', 'task-2'];
     const scroller = createScroller();
+    const el = {
+      getBoundingClientRect: vi.fn(() => ({ left: 80, right: 220 })),
+    } as unknown as HTMLElement;
 
-    const didScroll = scrollTaskToEdge(scroller, 'task-x');
+    scrollTaskElementIntoView(scroller, 'task-x', el);
 
-    expect(didScroll).toBe(false);
     expect(scroller.scrollTo).not.toHaveBeenCalled();
   });
-});
-
-describe('computeClickablePreviewScrollLeft', () => {
-  const base = {
-    scrollLeft: 200,
-    scrollWidth: 1_500,
-    clientWidth: 500,
-    scrollerLeft: 0,
-    scrollerRight: 500,
-    previewPx: 64,
-  };
 
   it('leaves a clickable preview to the left when the task is clipped there', () => {
-    expect(
-      computeClickablePreviewScrollLeft({
-        ...base,
-        itemLeft: 0,
-        itemRight: 520,
-      }),
-    ).toBe(136);
+    mockStore.taskOrder = ['task-1', 'task-2', 'task-3'];
+    const scroller = createScroller();
+    Object.assign(scroller, { clientWidth: 500, scrollWidth: 1_500 });
+    const el = {
+      getBoundingClientRect: vi.fn(() => ({ left: 0, right: 520 })),
+    } as unknown as HTMLElement;
+
+    scrollTaskElementIntoView(scroller, 'task-2', el);
+
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 136, behavior: 'instant' });
   });
 
   it('leaves a clickable preview to the right when the task is clipped there', () => {
-    expect(
-      computeClickablePreviewScrollLeft({
-        ...base,
-        itemLeft: 20,
-        itemRight: 500,
-      }),
-    ).toBe(264);
+    mockStore.taskOrder = ['task-1', 'task-2', 'task-3'];
+    const scroller = createScroller();
+    Object.assign(scroller, { clientWidth: 500, scrollWidth: 1_500 });
+    const el = {
+      getBoundingClientRect: vi.fn(() => ({ left: 20, right: 500 })),
+    } as unknown as HTMLElement;
+
+    scrollTaskElementIntoView(scroller, 'task-2', el);
+
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 264, behavior: 'instant' });
   });
 
   it('does not scroll when the task already has clickable previews on both sides', () => {
-    expect(
-      computeClickablePreviewScrollLeft({
-        ...base,
-        itemLeft: 80,
-        itemRight: 420,
-      }),
-    ).toBeNull();
+    mockStore.taskOrder = ['task-1', 'task-2', 'task-3'];
+    const scroller = createScroller();
+    Object.assign(scroller, { clientWidth: 500, scrollWidth: 1_500 });
+    const el = {
+      getBoundingClientRect: vi.fn(() => ({ left: 80, right: 420 })),
+    } as unknown as HTMLElement;
+
+    scrollTaskElementIntoView(scroller, 'task-2', el);
+
+    expect(scroller.scrollTo).not.toHaveBeenCalled();
   });
 
   it('clamps the preview scroll target to the available scroll range', () => {
-    expect(
-      computeClickablePreviewScrollLeft({
-        ...base,
-        scrollLeft: 980,
-        itemLeft: 420,
-        itemRight: 560,
-      }),
-    ).toBe(1_000);
+    mockStore.taskOrder = ['task-1', 'task-2', 'task-3'];
+    const scroller = createScroller();
+    Object.assign(scroller, { scrollLeft: 980, clientWidth: 500, scrollWidth: 1_500 });
+    const el = {
+      getBoundingClientRect: vi.fn(() => ({ left: 420, right: 560 })),
+    } as unknown as HTMLElement;
+
+    scrollTaskElementIntoView(scroller, 'task-2', el);
+
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 1_000, behavior: 'instant' });
   });
 });

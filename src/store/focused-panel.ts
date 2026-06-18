@@ -92,54 +92,36 @@ function findHorizontalScroller(el: HTMLElement): HTMLElement | null {
   return el.closest<HTMLElement>('[data-tiling-strip]');
 }
 
-/** Scroll the tiling strip to the absolute start/end when the task is the
- *  first/last in order, so overflow affordances disappear. Returns true if an
- *  edge scroll was performed. */
-export function scrollTaskToEdge(
+function computeTaskStripScrollLeft(
   scroller: HTMLElement,
   taskId: string,
-  behavior: ScrollBehavior = 'instant',
-): boolean {
+  el: HTMLElement,
+): number | null {
+  // First/last tasks snap to the strip edges so overflow affordances disappear.
   const activeIndex = store.taskOrder.indexOf(taskId);
-  if (activeIndex === -1) return false;
-  if (activeIndex === 0) {
-    scroller.scrollTo({ left: 0, behavior });
-    return true;
-  }
+  if (activeIndex === -1) return null;
+  if (activeIndex === 0) return 0;
   if (activeIndex === store.taskOrder.length - 1) {
-    scroller.scrollTo({
-      left: scroller.scrollWidth - scroller.clientWidth,
-      behavior,
-    });
-    return true;
+    return scroller.scrollWidth - scroller.clientWidth;
   }
-  return false;
-}
 
-export function computeClickablePreviewScrollLeft(args: {
-  scrollLeft: number;
-  scrollWidth: number;
-  clientWidth: number;
-  scrollerLeft: number;
-  scrollerRight: number;
-  itemLeft: number;
-  itemRight: number;
-  previewPx?: number;
-}): number | null {
-  const {
-    scrollLeft,
-    scrollWidth,
-    clientWidth,
-    scrollerLeft,
-    scrollerRight,
-    itemLeft,
-    itemRight,
-    previewPx: previewPxArg,
-  } = args;
-  const previewPx = previewPxArg ?? TASK_CLICKABLE_PREVIEW_PX;
+  // Measure the scroller and the active task relative to the viewport so we can
+  // tell whether the task is fully visible, including the clickable preview
+  // margins on each side.
+  const scrollerRect = scroller.getBoundingClientRect();
+  const itemRect = el.getBoundingClientRect();
+  const { scrollLeft, scrollWidth, clientWidth } = scroller;
+  const scrollerLeft = scrollerRect.left;
+  const scrollerRight = scrollerRect.right;
+  const itemLeft = itemRect.left;
+  const itemRight = itemRect.right;
   const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
-  const leftPreviewShortage = Math.max(0, scrollerLeft + previewPx - itemLeft);
-  const rightPreviewShortage = Math.max(0, itemRight - (scrollerRight - previewPx));
+
+  // Positive when the task overflows the corresponding scroller edge.
+  const leftPreviewShortage = Math.max(0, scrollerLeft + TASK_CLICKABLE_PREVIEW_PX - itemLeft);
+  const rightPreviewShortage = Math.max(0, itemRight - (scrollerRight - TASK_CLICKABLE_PREVIEW_PX));
+
+  // Already fully visible with both preview margins intact: nothing to do.
   if (leftPreviewShortage === 0 && rightPreviewShortage === 0) return null;
 
   let target: number;
@@ -148,32 +130,12 @@ export function computeClickablePreviewScrollLeft(args: {
     (rightPreviewShortage === 0 ||
       Math.abs(itemLeft - scrollerLeft) <= Math.abs(scrollerRight - itemRight))
   ) {
-    target = scrollLeft + (itemLeft - scrollerLeft) - previewPx;
+    target = scrollLeft + (itemLeft - scrollerLeft) - TASK_CLICKABLE_PREVIEW_PX;
   } else {
-    target = scrollLeft + (itemRight - scrollerRight) + previewPx;
+    target = scrollLeft + (itemRight - scrollerRight) + TASK_CLICKABLE_PREVIEW_PX;
   }
 
   return Math.min(maxScrollLeft, Math.max(0, target));
-}
-
-export function scrollTaskWithClickablePreview(
-  scroller: HTMLElement,
-  el: HTMLElement,
-  behavior: ScrollBehavior = 'instant',
-): void {
-  const scrollerRect = scroller.getBoundingClientRect();
-  const itemRect = el.getBoundingClientRect();
-  const target = computeClickablePreviewScrollLeft({
-    scrollLeft: scroller.scrollLeft,
-    scrollWidth: scroller.scrollWidth,
-    clientWidth: scroller.clientWidth,
-    scrollerLeft: scrollerRect.left,
-    scrollerRight: scrollerRect.right,
-    itemLeft: itemRect.left,
-    itemRight: itemRect.right,
-  });
-  if (target === null) return;
-  scroller.scrollTo({ left: target, behavior });
 }
 
 export function scrollTaskElementIntoView(
@@ -186,9 +148,9 @@ export function scrollTaskElementIntoView(
     el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior });
     return;
   }
-  if (!scrollTaskToEdge(scroller, taskId, behavior)) {
-    scrollTaskWithClickablePreview(scroller, el, behavior);
-  }
+
+  const target = computeTaskStripScrollLeft(scroller, taskId, el);
+  if (target !== null) scroller.scrollTo({ left: target, behavior });
 }
 
 function scrollTaskIntoView(taskId: string): void {
