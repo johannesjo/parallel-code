@@ -82,7 +82,12 @@ vi.mock('./tasks', () => ({
   }),
 }));
 
-import { navigateColumn, navigateRow, scrollTaskToEdge } from './focus';
+import {
+  computeClickablePreviewScrollLeft,
+  navigateColumn,
+  navigateRow,
+  scrollTaskToEdge,
+} from './focus';
 
 function setTask(id: string, overrides: Record<string, unknown> = {}): void {
   mockStore.tasks[id] = {
@@ -271,5 +276,57 @@ describe('scrollTaskToEdge', () => {
 
     expect(didScroll).toBe(false);
     expect(scroller.scrollTo).not.toHaveBeenCalled();
+  });
+});
+
+describe('computeClickablePreviewScrollLeft', () => {
+  const base = {
+    scrollLeft: 200,
+    scrollWidth: 1_500,
+    clientWidth: 500,
+    scrollerLeft: 0,
+    scrollerRight: 500,
+    previewPx: 64,
+  };
+
+  it('leaves a clickable preview to the left when the task is clipped there', () => {
+    expect(
+      computeClickablePreviewScrollLeft({
+        ...base,
+        itemLeft: 0,
+        itemRight: 520,
+      }),
+    ).toBe(136);
+  });
+
+  it('leaves a clickable preview to the right when the task is clipped there', () => {
+    expect(
+      computeClickablePreviewScrollLeft({
+        ...base,
+        itemLeft: 20,
+        itemRight: 500,
+      }),
+    ).toBe(264);
+  });
+
+  it('does not scroll when the task already has clickable previews on both sides', () => {
+    expect(
+      computeClickablePreviewScrollLeft({
+        ...base,
+        itemLeft: 80,
+        itemRight: 420,
+      }),
+    ).toBeNull();
+  });
+
+  it('clamps the preview scroll target to the available scroll range', () => {
+    expect(
+      computeClickablePreviewScrollLeft({
+        ...base,
+        scrollLeft: 980,
+        itemLeft: 420,
+        itemRight: 560,
+      }),
+    ).toBe(1_000);
   });
 });

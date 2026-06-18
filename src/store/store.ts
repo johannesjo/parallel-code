@@ -98,6 +98,8 @@ export {
   toggleHelpDialog,
   toggleSettingsDialog,
   sendActivePrompt,
+  scrollTaskElementIntoView,
+  scrollTaskWithClickablePreview,
   scrollTaskToEdge,
 } from './focus';
 export type { PanelId, PendingAction, TaskViewportVisibility } from './types';

@@ -1,5 +1,7 @@
 import { store, setStore } from './core';
 
+const TASK_CLICKABLE_PREVIEW_PX = 64;
+
 // Imperative focus registry: components register focus callbacks on mount.
 const focusRegistry = new Map<string, () => void>();
 
@@ -110,13 +112,80 @@ export function scrollTaskToEdge(scroller: HTMLElement, taskId: string): boolean
   return false;
 }
 
+export function computeClickablePreviewScrollLeft(args: {
+  scrollLeft: number;
+  scrollWidth: number;
+  clientWidth: number;
+  scrollerLeft: number;
+  scrollerRight: number;
+  itemLeft: number;
+  itemRight: number;
+  previewPx?: number;
+}): number | null {
+  const {
+    scrollLeft,
+    scrollWidth,
+    clientWidth,
+    scrollerLeft,
+    scrollerRight,
+    itemLeft,
+    itemRight,
+    previewPx: previewPxArg,
+  } = args;
+  const previewPx = previewPxArg ?? TASK_CLICKABLE_PREVIEW_PX;
+  const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
+  const leftPreviewShortage = Math.max(0, scrollerLeft + previewPx - itemLeft);
+  const rightPreviewShortage = Math.max(0, itemRight - (scrollerRight - previewPx));
+  if (leftPreviewShortage === 0 && rightPreviewShortage === 0) return null;
+
+  let target: number;
+  if (
+    leftPreviewShortage > 0 &&
+    (rightPreviewShortage === 0 ||
+      Math.abs(itemLeft - scrollerLeft) <= Math.abs(scrollerRight - itemRight))
+  ) {
+    target = scrollLeft + (itemLeft - scrollerLeft) - previewPx;
+  } else {
+    target = scrollLeft + (itemRight - scrollerRight) + previewPx;
+  }
+
+  return Math.min(maxScrollLeft, Math.max(0, target));
+}
+
+export function scrollTaskWithClickablePreview(scroller: HTMLElement, el: HTMLElement): void {
+  const scrollerRect = scroller.getBoundingClientRect();
+  const itemRect = el.getBoundingClientRect();
+  const target = computeClickablePreviewScrollLeft({
+    scrollLeft: scroller.scrollLeft,
+    scrollWidth: scroller.scrollWidth,
+    clientWidth: scroller.clientWidth,
+    scrollerLeft: scrollerRect.left,
+    scrollerRight: scrollerRect.right,
+    itemLeft: itemRect.left,
+    itemRight: itemRect.right,
+  });
+  if (target === null) return;
+  scroller.scrollTo({ left: target, behavior: 'instant' });
+}
+
+export function scrollTaskElementIntoView(
+  scroller: HTMLElement | null,
+  taskId: string,
+  el: HTMLElement,
+): void {
+  if (!scroller) {
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    return;
+  }
+  if (!scrollTaskToEdge(scroller, taskId)) {
+    scrollTaskWithClickablePreview(scroller, el);
+  }
+}
+
 function scrollTaskIntoView(taskId: string): void {
   requestAnimationFrame(() => {
     const el = document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(taskId)}"]`);
     if (!el) return;
-    const scroller = findHorizontalScroller(el);
-    if (!scroller || !scrollTaskToEdge(scroller, taskId)) {
-      el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
-    }
+    scrollTaskElementIntoView(findHorizontalScroller(el), taskId, el);
   });
 }
