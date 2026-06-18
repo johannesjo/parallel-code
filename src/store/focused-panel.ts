@@ -153,6 +153,15 @@ export function scrollTaskElementIntoView(
   if (target !== null) scroller.scrollTo({ left: target, behavior });
 }
 
+export function createInitialTaskScrollBehavior(): () => ScrollBehavior {
+  let initialScrollPending = true;
+  return () => {
+    if (!initialScrollPending) return 'smooth';
+    initialScrollPending = false;
+    return 'instant';
+  };
+}
+
 function scrollTaskIntoView(taskId: string): void {
   requestAnimationFrame(() => {
     const el = document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(taskId)}"]`);

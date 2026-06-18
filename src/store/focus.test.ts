@@ -83,6 +83,7 @@ vi.mock('./tasks', () => ({
 }));
 
 import {
+  createInitialTaskScrollBehavior,
   navigateColumn,
   navigateRow,
   scrollTaskElementIntoView,
@@ -363,5 +364,15 @@ describe('scrollTaskElementIntoView', () => {
     scrollTaskElementIntoView(scroller, 'task-2', el);
 
     expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 1_000, behavior: 'instant' });
+  });
+});
+
+describe('createInitialTaskScrollBehavior', () => {
+  it('uses instant scrolling for the first active task alignment, then smooth scrolling', () => {
+    const nextBehavior = createInitialTaskScrollBehavior();
+
+    expect(nextBehavior()).toBe('instant');
+    expect(nextBehavior()).toBe('smooth');
+    expect(nextBehavior()).toBe('smooth');
   });
 });

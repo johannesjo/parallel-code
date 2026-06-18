@@ -18,6 +18,7 @@ import {
 export {
   AI_TERMINAL_PANEL,
   aiTerminalPanels,
+  createInitialTaskScrollBehavior,
   defaultPanelFor,
   getTaskFocusedPanel,
   isAiTerminalPanel,
