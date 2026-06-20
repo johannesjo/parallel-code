@@ -499,6 +499,10 @@ html[data-look^='islands-'] .tiling-layout-strip > .resize-handle-h {
   z-index: 3;
 }
 
+html[data-look^='islands-'] .tiling-layout-strip > .group-between-handle {
+  margin: 0;
+}
+
 html[data-look^='islands-'] .tiling-layout-strip > .resize-handle-h::before {
   display: none;
 }
@@ -1310,11 +1314,18 @@ textarea::placeholder {
   box-shadow: var(--shadow-soft);
   border-color: color-mix(in srgb, var(--border) 85%, transparent) !important;
   margin: 0 2px;
-  opacity: var(--inactive-column-opacity, 0.6);
+}
+
+.task-column:not(.active)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(128, 128, 128, 0.18);
+  pointer-events: none;
+  z-index: 20;
 }
 
 .task-column.active {
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 50%, transparent);
   border-color: color-mix(in srgb, var(--border) 85%, transparent) !important;
   opacity: 1;
 }
@@ -1490,6 +1501,21 @@ textarea::placeholder {
 .resize-handle-v {
   height: 6px;
   cursor: row-resize;
+}
+
+.resize-handle-h.group-inner-handle {
+  margin: 0;
+  position: relative;
+  z-index: 3;
+  background: inherit;
+}
+
+.resize-handle-h.group-inner-handle:hover {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.resize-handle-h.group-inner-handle.dragging {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .new-task-placeholder {
@@ -2264,4 +2290,90 @@ body.dragging-task * {
   50% {
     opacity: 0.3;
   }
+}
+
+.panel-group-wrapper {
+  /* Group background wrapper — sits behind all panels in the group.
+     Background and border-radius are set inline in TilingLayout. */
+  position: relative;
+  flex-shrink: 0;
+  margin-right: 0;
+}
+
+/* Group-between handle: occupies the dark gap between a grouped set of panels
+   and the next task panel, so the hover fill never paints over the panel. */
+.group-between-handle {
+  width: 10px;
+  margin: 0;
+  position: relative;
+  z-index: 3;
+}
+
+html[data-look^='islands-'] .group-between-handle::before {
+  display: none;
+}
+
+/* Panel group collapse / expand buttons — vertical bar beside the panel */
+.panel-group-collapse-btn {
+  flex-shrink: 0;
+  width: 18px;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg-subtle);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    filter 0.15s ease,
+    color 0.15s ease;
+}
+
+.panel-group-collapse-btn:hover {
+  filter: brightness(1.2);
+  color: var(--fg);
+}
+
+.panel-group-collapse-btn svg {
+  width: 16px;
+  height: 16px;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+  opacity: 0.95;
+}
+
+.panel-group-expand-btn svg {
+  width: 16px;
+  height: 16px;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+  opacity: 0.95;
+}
+
+.panel-group-collapse-btn:active {
+  filter: brightness(0.9);
+}
+
+/* Expand button beside the visible panel in a collapsed group. */
+.panel-group-expand-btn {
+  position: relative;
+  flex-shrink: 0;
+  width: 18px;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg-subtle);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    filter 0.15s ease,
+    color 0.15s ease;
+}
+
+.panel-group-expand-btn:hover {
+  filter: brightness(1.2);
+  color: var(--fg);
 }

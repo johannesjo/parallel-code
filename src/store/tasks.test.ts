@@ -26,6 +26,7 @@ let mockAgents: Record<string, unknown> = {};
 let mockTaskOrder: string[] = [];
 let mockCollapsedTaskOrder: string[] = [];
 let mockProjects: { id: string; path: string }[] = [];
+let mockPanelGroupCollapsed: Record<string, boolean> = {};
 const ipcHandlers = new Map<string, (data: unknown) => void>();
 
 function applySetStore(...args: unknown[]): void {
@@ -36,12 +37,14 @@ function applySetStore(...args: unknown[]): void {
         agents: Record<string, unknown>;
         taskOrder: string[];
         collapsedTaskOrder: string[];
+        panelGroupCollapsed: Record<string, boolean>;
       }) => void
     )({
       tasks: mockTasks,
       agents: mockAgents,
       taskOrder: mockTaskOrder,
       collapsedTaskOrder: mockCollapsedTaskOrder,
+      panelGroupCollapsed: mockPanelGroupCollapsed,
     });
     return;
   }
@@ -77,6 +80,7 @@ vi.mock('./core', () => ({
       if (prop === 'agents') return mockAgents;
       if (prop === 'taskOrder') return mockTaskOrder;
       if (prop === 'collapsedTaskOrder') return mockCollapsedTaskOrder;
+      if (prop === 'panelGroupCollapsed') return mockPanelGroupCollapsed;
       if (prop === 'availableAgents') return [];
       if (prop === 'projects') return mockProjects;
       if (prop === 'defaultStepsEnabled') return mockDefaultStepsEnabled;
@@ -173,6 +177,7 @@ beforeEach(() => {
   mockTaskOrder = [];
   mockCollapsedTaskOrder = [];
   mockProjects = [];
+  mockPanelGroupCollapsed = {};
   mockDefaultStepsEnabled = false;
   mockInvoke.mockResolvedValue(undefined);
   mockSaveState.mockResolvedValue(undefined);
@@ -821,6 +826,7 @@ describe('createTask does not mutate defaultStepsEnabled', () => {
     mockTasks = {};
     mockAgents = {};
     mockTaskOrder = [];
+    mockPanelGroupCollapsed = {};
     mockDefaultStepsEnabled = false;
     vi.mocked(getProjectPath).mockReturnValue('/repo');
     vi.mocked(getProjectBranchPrefix).mockReturnValue('task');
@@ -851,6 +857,22 @@ describe('createTask does not mutate defaultStepsEnabled', () => {
       (args) => args[0] === 'defaultStepsEnabled',
     );
     expect(defaultsMutated).toBe(false);
+  });
+
+  it('expands a collapsed project group so a newly active task panel is visible', async () => {
+    mockPanelGroupCollapsed['proj-1:independent'] = true;
+
+    await createTask({
+      name: 'My Task',
+      agentDef,
+      projectId: 'proj-1',
+      gitIsolation: 'worktree',
+      baseBranch: 'main',
+    });
+
+    expect(mockTaskOrder).toEqual(['task-1']);
+    expect(mockTasks['task-1']).toMatchObject({ projectId: 'proj-1' });
+    expect(mockPanelGroupCollapsed['proj-1:independent']).toBe(false);
   });
 });
 

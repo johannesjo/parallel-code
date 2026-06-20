@@ -37,6 +37,11 @@ import {
 import { getCoordinatorChildren, isCoordinatedChild } from './sidebar-order';
 import { isLandedTaskState } from './landing';
 
+function panelGroupKeyForTask(task: Pick<Task, 'projectId' | 'coordinatorMode' | 'coordinatedBy'>) {
+  const groupType = task.coordinatorMode || task.coordinatedBy ? 'coordinator' : 'independent';
+  return `${task.projectId}:${groupType}`;
+}
+
 function initTaskInStore(
   taskId: string,
   task: Task,
@@ -53,6 +58,7 @@ function initTaskInStore(
       s.activeAgentId = agent.id;
       s.lastProjectId = projectId;
       if (agentDef) s.lastAgentId = agentDef.id;
+      s.panelGroupCollapsed[panelGroupKeyForTask(task)] = false;
     }),
   );
   markAgentSpawned(agent.id);
@@ -987,6 +993,7 @@ export function uncollapseTask(taskId: string): void {
       t.savedSelectedAgentIndex = undefined;
       t.savedPromptedAgentIndexes = undefined;
       s.activeAgentId = t.selectedAgentId ?? null;
+      s.panelGroupCollapsed[panelGroupKeyForTask(t)] = false;
     }),
   );
 
@@ -1115,6 +1122,7 @@ export function initMCPListeners(): () => void {
           s.tasks[evt.taskId] = task;
           s.agents[evt.agentId] = agent;
           s.taskOrder.push(evt.taskId);
+          s.panelGroupCollapsed[panelGroupKeyForTask(task)] = false;
           created = true;
         }),
       );

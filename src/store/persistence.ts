@@ -216,6 +216,8 @@ export async function saveState(): Promise<void> {
     defaultStepsEnabled: store.defaultStepsEnabled || undefined,
     defaultSkipPermissions: store.defaultSkipPermissions || undefined,
     defaultPropagateSkipPermissions: store.defaultPropagateSkipPermissions || undefined,
+    panelGroupCollapsed:
+      Object.keys(store.panelGroupCollapsed).length > 0 ? { ...store.panelGroupCollapsed } : undefined,
   };
 
   for (const taskId of store.taskOrder) {
@@ -383,6 +385,7 @@ interface LegacyPersistedState {
   defaultStepsEnabled?: unknown;
   defaultSkipPermissions?: unknown;
   defaultPropagateSkipPermissions?: unknown;
+  panelGroupCollapsed?: unknown;
 }
 
 export async function loadState(): Promise<void> {
@@ -585,6 +588,21 @@ export async function loadState(): Promise<void> {
             : raw.showSteps === true;
       s.defaultSkipPermissions = raw.defaultSkipPermissions === true;
       s.defaultPropagateSkipPermissions = raw.defaultPropagateSkipPermissions === true;
+
+      // Restore panel group collapsed state
+      const restoredGroupCollapsed: Record<string, boolean> = {};
+      if (raw.panelGroupCollapsed && typeof raw.panelGroupCollapsed === 'object') {
+        const projectIds = new Set(s.projects.map((p) => p.id));
+        for (const [key, value] of Object.entries(raw.panelGroupCollapsed as Record<string, unknown>)) {
+          if (typeof value === 'boolean' && value) {
+            const projectId = key.split(':')[0];
+            if (projectId && projectIds.has(projectId)) {
+              restoredGroupCollapsed[key] = true;
+            }
+          }
+        }
+      }
+      s.panelGroupCollapsed = restoredGroupCollapsed;
 
       const rawDockerImage = raw.dockerImage;
       s.dockerImage =

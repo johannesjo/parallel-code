@@ -239,6 +239,8 @@ export interface PersistedState {
    *  values. Absent = pre-v2 data, wipe task:* entries on load. */
   panelUserSizeMigratedV2?: boolean;
   globalScale?: number;
+  /** Collapsed panel groups keyed by `${projectId}:${groupType}`. */
+  panelGroupCollapsed?: Record<string, boolean>;
   completedTaskDate?: string;
   completedTaskCount?: number;
   mergedLinesAdded?: number;
@@ -383,4 +385,7 @@ export interface AppStore {
   defaultSkipPermissions: boolean;
   defaultPropagateSkipPermissions: boolean;
   mcpStatus: MCPStatus;
+  /** Collapsed panel groups keyed by `${projectId}:${groupType}`.
+   *  `groupType` is 'independent' or 'coordinator'. */
+  panelGroupCollapsed: Record<string, boolean>;
 }

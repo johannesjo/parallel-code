@@ -42,6 +42,7 @@ function flush() {
   for (const [, entry] of entries) {
     if (!entry.dirty) continue;
     entry.dirty = false;
+    if (entry.container.offsetWidth <= 0 || entry.container.offsetHeight <= 0) continue;
 
     // xterm.js scroll position workaround (xtermjs/xterm.js#5096):
     // fit() → resize() → Viewport._sync() can reset scrollTop to 0 when

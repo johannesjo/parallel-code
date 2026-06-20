@@ -284,3 +284,29 @@ export function setWindowState(windowState: PersistedWindowState): void {
   }
   setStore('windowState', windowState);
 }
+
+// --- Panel Group Collapse ---
+
+export type PanelGroupType = 'independent' | 'coordinator';
+
+function groupKey(projectId: string, groupType: PanelGroupType): string {
+  return `${projectId}:${groupType}`;
+}
+
+export function setPanelGroupCollapsed(
+  projectId: string,
+  groupType: PanelGroupType,
+  collapsed: boolean,
+): void {
+  const key = groupKey(projectId, groupType);
+  setStore('panelGroupCollapsed', key, collapsed);
+}
+
+export function isPanelGroupCollapsed(projectId: string, groupType: PanelGroupType): boolean {
+  return store.panelGroupCollapsed[groupKey(projectId, groupType)] ?? false;
+}
+
+export function togglePanelGroupCollapsed(projectId: string, groupType: PanelGroupType): void {
+  const key = groupKey(projectId, groupType);
+  setStore('panelGroupCollapsed', key, !store.panelGroupCollapsed[key]);
+}

@@ -144,6 +144,10 @@ export {
   setDefaultStepsEnabled,
   setDefaultSkipPermissions,
   setDefaultPropagateSkipPermissions,
+  setPanelGroupCollapsed,
+  isPanelGroupCollapsed,
+  togglePanelGroupCollapsed,
+  type PanelGroupType,
 } from './ui';
 export {
   getTaskDotStatus,
