@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import type { BrowserWindow } from 'electron';
 import { IPC } from './channels.js';
+import { info as logInfo, warn as logWarn, errMessage } from '../log.js';
 
 interface StepsWatcher {
   fsWatcher: fs.FSWatcher | null;
@@ -29,7 +30,7 @@ const processedCount = new Map<string, number>();
 function sendStepsContent(win: BrowserWindow, taskId: string, stepsFile: string): void {
   if (win.isDestroyed()) return;
   const steps = readStepsFile(stepsFile);
-  console.warn('[steps.send]', taskId, 'len=', steps?.length ?? 'null');
+  logInfo('steps', 'send', { taskId, len: steps?.length ?? null });
   if (steps) applyTimestamps(steps, stepsFile, taskId);
   win.webContents.send(IPC.StepsContent, { taskId, steps });
 }
@@ -64,7 +65,7 @@ function applyTimestamps(steps: unknown[], stepsFile: string, taskId: string): v
   try {
     fs.writeFileSync(stepsFile, JSON.stringify(steps, null, 2), 'utf-8');
   } catch (err) {
-    console.warn('[steps] Failed to write back timestamps:', err);
+    logWarn('steps', 'failed to write back timestamps', { err: errMessage(err) });
   }
 }
 
@@ -124,7 +125,7 @@ function ensureStepsIgnored(worktreePath: string): void {
     const prefix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
     fs.appendFileSync(excludePath, `${prefix}${entry}\n`, 'utf-8');
   } catch (err) {
-    console.warn('Failed to update git exclude for steps:', err);
+    logWarn('steps', 'failed to update git exclude', { err: errMessage(err) });
   }
 }
 
@@ -157,7 +158,7 @@ export function startStepsWatcher(win: BrowserWindow, taskId: string, worktreePa
 
   // filename may be null on some platforms; if present, filter to steps.json only
   const onChange = (event: string, filename: string | Buffer | null) => {
-    console.warn('[steps.watch]', taskId, event, String(filename));
+    logInfo('steps', 'watch event', { taskId, event, filename: String(filename) });
     if (filename !== null && filename !== 'steps.json') return;
     const current = watchers.get(taskId);
     if (!current) return;
@@ -187,11 +188,11 @@ export function startStepsWatcher(win: BrowserWindow, taskId: string, worktreePa
         }
       });
       parentWatcher.on('error', (err) => {
-        console.warn(`Steps parent watcher error for ${worktreePath}:`, err);
+        logWarn('steps', 'parent watcher error', { worktreePath, err: errMessage(err) });
       });
       entry.fsWatcher = parentWatcher;
     } catch (err) {
-      console.warn(`Failed to watch worktree root ${worktreePath}:`, err);
+      logWarn('steps', 'failed to watch worktree root', { worktreePath, err: errMessage(err) });
     }
   }
 
@@ -212,12 +213,15 @@ function attachStepsDirWatcher(
   try {
     const watcher = fs.watch(entry.stepsDir, onChange);
     watcher.on('error', (err) => {
-      console.warn(`Steps watcher error for ${entry.stepsDir}:`, err);
+      logWarn('steps', 'watcher error', { stepsDir: entry.stepsDir, err: errMessage(err) });
     });
     entry.fsWatcher = watcher;
     watchers.set(taskId, entry);
   } catch (err) {
-    console.warn(`Failed to watch steps directory ${entry.stepsDir}:`, err);
+    logWarn('steps', 'failed to watch steps dir', {
+      stepsDir: entry.stepsDir,
+      err: errMessage(err),
+    });
   }
 }
 
