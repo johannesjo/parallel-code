@@ -121,6 +121,7 @@ const ALLOWED_CHANNELS = new Set([
   // Notifications
   'show_notification',
   'notification_clicked',
+  'notification_failed',
   // PR CI status
   'start_pr_checks_watcher',
   'stop_pr_checks_watcher',

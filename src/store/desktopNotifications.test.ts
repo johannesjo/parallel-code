@@ -191,9 +191,16 @@ describe('desktop notification dedupe', () => {
 
 describe('startDesktopNotificationWatcher', () => {
   it('replaces an existing watcher instead of stacking duplicate listeners', () => {
-    const offFirst = vi.fn();
-    const offSecond = vi.fn();
-    const on = vi.fn().mockReturnValueOnce(offFirst).mockReturnValueOnce(offSecond);
+    const offClickFirst = vi.fn();
+    const offClickSecond = vi.fn();
+    const offFailFirst = vi.fn();
+    const offFailSecond = vi.fn();
+    const on = vi
+      .fn()
+      .mockReturnValueOnce(offClickFirst) // first watcher: NotificationClicked
+      .mockReturnValueOnce(offFailFirst) // first watcher: NotificationFailed
+      .mockReturnValueOnce(offClickSecond) // second watcher: NotificationClicked
+      .mockReturnValueOnce(offFailSecond); // second watcher: NotificationFailed
     vi.stubGlobal('window', {
       electron: {
         ipcRenderer: {
@@ -204,17 +211,24 @@ describe('startDesktopNotificationWatcher', () => {
 
     createRoot((dispose) => {
       const stopFirst = startDesktopNotificationWatcher(() => false);
-      expect(offFirst).not.toHaveBeenCalled();
+      // First watcher's listeners should not be cleaned up yet
+      expect(offClickFirst).not.toHaveBeenCalled();
+      expect(offFailFirst).not.toHaveBeenCalled();
 
       const stopSecond = startDesktopNotificationWatcher(() => false);
-      expect(offFirst).toHaveBeenCalledTimes(1);
-      expect(offSecond).not.toHaveBeenCalled();
+      // Starting a second watcher should clean up the first watcher's listeners
+      expect(offClickFirst).toHaveBeenCalledTimes(1);
+      expect(offFailFirst).toHaveBeenCalledTimes(1);
+      expect(offClickSecond).not.toHaveBeenCalled();
+      expect(offFailSecond).not.toHaveBeenCalled();
 
       stopFirst();
-      expect(offFirst).toHaveBeenCalledTimes(1);
+      expect(offClickFirst).toHaveBeenCalledTimes(1);
+      expect(offFailFirst).toHaveBeenCalledTimes(1);
 
       stopSecond();
-      expect(offSecond).toHaveBeenCalledTimes(1);
+      expect(offClickSecond).toHaveBeenCalledTimes(1);
+      expect(offFailSecond).toHaveBeenCalledTimes(1);
 
       dispose();
     });

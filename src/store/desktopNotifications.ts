@@ -230,12 +230,32 @@ export function startDesktopNotificationWatcher(windowFocused: Accessor<boolean>
     },
   );
 
+  // Surface notification failures so the UI can inform the user.
+  // On macOS, unsigned development builds silently drop notifications
+  // because UNNotification requires code-signing.  Without this listener,
+  // the user toggles the setting on and nothing ever appears.
+  const offNotificationFailed = window.electron.ipcRenderer.on(
+    IPC.NotificationFailed,
+    (data: unknown) => {
+      const msg = data as Record<string, unknown>;
+      if (msg?.platform === 'darwin') {
+        console.warn(
+          '[notifications] macOS notification delivery failed. If running an unsigned dev build, ' +
+            'notifications require ad-hoc code-signing (codesign --force --deep -s - <app>). ' +
+            'Error:',
+          msg?.error,
+        );
+      }
+    },
+  );
+
   let cleanedUp = false;
   const cleanup = (): void => {
     if (cleanedUp) return;
     cleanedUp = true;
     if (debounceTimer !== undefined) clearTimeout(debounceTimer);
     offNotificationClicked();
+    offNotificationFailed();
     if (activeDesktopNotificationWatcherCleanup === cleanup) {
       activeDesktopNotificationWatcherCleanup = undefined;
     }

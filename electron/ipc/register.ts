@@ -1039,6 +1039,16 @@ export function registerAllHandlers(win: BrowserWindow): void {
       notification.on('failed', (_event, error) => {
         release();
         logWarn('notification', 'show failed', { ...warnCtx, err: error });
+        // Surface the failure to the renderer so the UI can inform the user.
+        // On macOS, unsigned development builds fail silently because
+        // UNNotification requires code-signing. This lets the user know.
+        if (!win.isDestroyed()) {
+          win.webContents.send(IPC.NotificationFailed, {
+            taskIds: args.taskIds,
+            error: typeof error === 'string' ? error : String(error),
+            platform: process.platform,
+          });
+        }
       });
       notification.on('click', () => {
         release();
