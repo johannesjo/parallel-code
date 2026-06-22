@@ -2216,6 +2216,7 @@ export class Coordinator {
     }
 
     this.coordinators.delete(coordinatorTaskId);
+    this.landedOrderCounters.delete(coordinatorTaskId);
 
     // Resolve any pending wait_for_signal_done calls so they don't hang until
     // the 5-minute timeout fires after the coordinator closes.
