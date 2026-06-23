@@ -1040,11 +1040,12 @@ export function registerAllHandlers(win: BrowserWindow): void {
         release();
         logWarn('notification', 'show failed', { ...warnCtx, err: error });
         // Surface the failure to the renderer so the UI can inform the user.
-        // On macOS, unsigned development builds fail silently because
-        // UNNotification requires code-signing. This lets the user know.
+        // NOTE: The `failed` event only fires on macOS starting in Electron 42
+        // (UNNotification migration). On Electron 40 (current), this code path
+        // is macOS-inert — it still fires on Windows. Once the project upgrades
+        // past Electron 42, this will activate for unsigned macOS builds too.
         if (!win.isDestroyed()) {
           win.webContents.send(IPC.NotificationFailed, {
-            taskIds: args.taskIds,
             error: typeof error === 'string' ? error : String(error),
             platform: process.platform,
           });
