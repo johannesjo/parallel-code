@@ -2,7 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import type { BrowserWindow } from 'electron';
 import { IPC } from './channels.js';
-import { info as logInfo, warn as logWarn, errMessage } from '../log.js';
+import {
+  debug as logDebug,
+  info as logInfo,
+  warn as logWarn,
+  error as logError,
+  errMessage,
+} from '../log.js';
 
 interface StepsWatcher {
   fsWatcher: fs.FSWatcher | null;
@@ -78,7 +84,9 @@ function readStepsFile(stepsFile: string): unknown[] | null {
     return parsed as unknown[];
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.error('[steps] Failed to read steps file:', e);
+      // Non-ENOENT read failures (corrupt file, permissions, etc.)
+      // capture the full stack via the structured logger.
+      logError('steps', 'failed to read steps file', e);
     }
     return null;
   }
@@ -158,7 +166,7 @@ export function startStepsWatcher(win: BrowserWindow, taskId: string, worktreePa
 
   // filename may be null on some platforms; if present, filter to steps.json only
   const onChange = (event: string, filename: string | Buffer | null) => {
-    logInfo('steps', 'watch event', { taskId, event, filename: String(filename) });
+    logDebug('steps', 'watch event', { taskId, event, filename: String(filename) });
     if (filename !== null && filename !== 'steps.json') return;
     const current = watchers.get(taskId);
     if (!current) return;
@@ -188,11 +196,11 @@ export function startStepsWatcher(win: BrowserWindow, taskId: string, worktreePa
         }
       });
       parentWatcher.on('error', (err) => {
-        logWarn('steps', 'parent watcher error', { worktreePath, err: errMessage(err) });
+        logError('steps', 'parent watcher error', err, { worktreePath });
       });
       entry.fsWatcher = parentWatcher;
     } catch (err) {
-      logWarn('steps', 'failed to watch worktree root', { worktreePath, err: errMessage(err) });
+      logError('steps', 'failed to watch worktree root', err, { worktreePath });
     }
   }
 
@@ -213,15 +221,12 @@ function attachStepsDirWatcher(
   try {
     const watcher = fs.watch(entry.stepsDir, onChange);
     watcher.on('error', (err) => {
-      logWarn('steps', 'watcher error', { stepsDir: entry.stepsDir, err: errMessage(err) });
+      logError('steps', 'watcher error', err, { stepsDir: entry.stepsDir });
     });
     entry.fsWatcher = watcher;
     watchers.set(taskId, entry);
   } catch (err) {
-    logWarn('steps', 'failed to watch steps dir', {
-      stepsDir: entry.stepsDir,
-      err: errMessage(err),
-    });
+    logError('steps', 'failed to watch steps dir', err, { stepsDir: entry.stepsDir });
   }
 }
 
