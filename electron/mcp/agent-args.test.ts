@@ -5,6 +5,7 @@ import {
   buildMcpLaunchArgs,
   isAntigravityCommand,
   isCodexCommand,
+  isCopilotCommand,
 } from './agent-args.js';
 
 const config = {
@@ -64,5 +65,22 @@ describe('MCP agent launch args', () => {
 
   it('emits no --mcp-config for Antigravity', () => {
     expect(buildMcpLaunchArgs('agy', '/tmp/config.json', config)).toEqual([]);
+  });
+
+  it('detects copilot commands by executable name', () => {
+    expect(isCopilotCommand('copilot')).toBe(true);
+    expect(isCopilotCommand('/opt/homebrew/bin/copilot')).toBe(true);
+    expect(isCopilotCommand('claude')).toBe(false);
+  });
+
+  it('uses --additional-mcp-config for Copilot instead of the unsupported --mcp-config', () => {
+    expect(buildMcpLaunchArgs('copilot', '/tmp/config.json', config)).toEqual([
+      '--additional-mcp-config',
+      '@/tmp/config.json',
+    ]);
+  });
+
+  it('emits no MCP args for Copilot when no config path is available', () => {
+    expect(buildMcpLaunchArgs('copilot', undefined, config)).toEqual([]);
   });
 });

@@ -58,7 +58,7 @@ const DEFAULT_AGENTS: AgentDef[] = [
     name: 'Copilot CLI',
     command: 'copilot',
     args: [],
-    resume_args: [],
+    resume_args: ['--continue'],
     skip_permissions_args: ['--yolo'],
     description: "GitHub's Copilot CLI agent",
     // Copilot CLI shows up to two init dialogs (folder trust + instructions init)

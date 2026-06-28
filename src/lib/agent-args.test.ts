@@ -32,6 +32,16 @@ const antigravityAgent = {
   skip_permissions_args: ['--dangerously-skip-permissions'],
 };
 
+const copilotAgent = {
+  id: 'copilot',
+  name: 'Copilot CLI',
+  description: 'Copilot agent',
+  command: 'copilot',
+  args: [],
+  resume_args: ['--continue'],
+  skip_permissions_args: ['--yolo'],
+};
+
 describe('buildTaskAgentArgs', () => {
   it('uses explicit MCP launch args when provided (new task)', () => {
     expect(
@@ -134,6 +144,32 @@ describe('buildTaskAgentArgs', () => {
         true,
       ),
     ).toEqual(['-c']);
+  });
+
+  it('uses Copilot --additional-mcp-config fallback instead of the unsupported --mcp-config', () => {
+    expect(
+      buildTaskAgentArgs(
+        copilotAgent,
+        {
+          skipPermissions: false,
+          mcpConfigPath: '/tmp/mcp.json',
+        },
+        false,
+      ),
+    ).toEqual(['--additional-mcp-config', '@/tmp/mcp.json']);
+  });
+
+  it('passes the Copilot resume flag alongside the --additional-mcp-config fallback', () => {
+    expect(
+      buildTaskAgentArgs(
+        copilotAgent,
+        {
+          skipPermissions: false,
+          mcpConfigPath: '/tmp/mcp.json',
+        },
+        true,
+      ),
+    ).toEqual(['--continue', '--additional-mcp-config', '@/tmp/mcp.json']);
   });
 });
 
