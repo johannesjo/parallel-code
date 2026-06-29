@@ -1,6 +1,8 @@
 import { store, setStore } from './core';
 
 // Keep in sync with `scroll-padding-inline` on `.tiling-layout-strip` in styles.css.
+// This is intentionally larger than the 26px `.tiling-layout-scroll-affordance`
+// width so the peeked neighbor remains clickable beyond the visual affordance.
 const TASK_CLICKABLE_PREVIEW_PX = 64;
 
 // Imperative focus registry: components register focus callbacks on mount.
@@ -119,6 +121,11 @@ export function scrollTaskElementIntoView(
   el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior });
 }
 
+// TODO: Move this DOM side effect out of the store layer. The scroll should be
+// owned by the view layer (TilingLayout.tsx) reacting to state changes, similar
+// to the existing createEffect that watches store.activeTaskId. Special case:
+// moveActiveTask reorders taskOrder without changing activeTaskId, so any
+// reactive move needs to handle that explicitly.
 function scrollTaskIntoView(taskId: string): void {
   requestAnimationFrame(() => {
     const el = document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(taskId)}"]`);
