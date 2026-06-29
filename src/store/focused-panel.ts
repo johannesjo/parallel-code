@@ -1,5 +1,6 @@
 import { store, setStore } from './core';
 
+// Keep in sync with `scroll-padding-inline` on `.tiling-layout-strip` in styles.css.
 const TASK_CLICKABLE_PREVIEW_PX = 64;
 
 // Imperative focus registry: components register focus callbacks on mount.
@@ -92,80 +93,36 @@ function findHorizontalScroller(el: HTMLElement): HTMLElement | null {
   return el.closest<HTMLElement>('[data-tiling-strip]');
 }
 
-function computeTaskStripScrollLeft(
-  scroller: HTMLElement,
-  taskId: string,
-  el: HTMLElement,
-): number | null {
-  // First/last tasks snap to the strip edges so overflow affordances disappear.
-  const activeIndex = store.taskOrder.indexOf(taskId);
-  if (activeIndex === -1) return null;
-  if (activeIndex === 0) return 0;
-  if (activeIndex === store.taskOrder.length - 1) {
-    return scroller.scrollWidth - scroller.clientWidth;
-  }
-
-  // Measure the scroller and the active task relative to the viewport so we can
-  // tell whether the task is fully visible, including the clickable preview
-  // margins on each side.
-  const scrollerRect = scroller.getBoundingClientRect();
-  const itemRect = el.getBoundingClientRect();
-  const { scrollLeft, scrollWidth, clientWidth } = scroller;
-  const scrollerLeft = scrollerRect.left;
-  const scrollerRight = scrollerRect.right;
-  const itemLeft = itemRect.left;
-  const itemRight = itemRect.right;
-  const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
-
-  // Positive when the task overflows the corresponding scroller edge.
-  const leftPreviewShortage = Math.max(0, scrollerLeft + TASK_CLICKABLE_PREVIEW_PX - itemLeft);
-  const rightPreviewShortage = Math.max(0, itemRight - (scrollerRight - TASK_CLICKABLE_PREVIEW_PX));
-
-  // Already fully visible with both preview margins intact: nothing to do.
-  if (leftPreviewShortage === 0 && rightPreviewShortage === 0) return null;
-
-  let target: number;
-  if (
-    leftPreviewShortage > 0 &&
-    (rightPreviewShortage === 0 ||
-      Math.abs(itemLeft - scrollerLeft) <= Math.abs(scrollerRight - itemRight))
-  ) {
-    target = scrollLeft + (itemLeft - scrollerLeft) - TASK_CLICKABLE_PREVIEW_PX;
-  } else {
-    target = scrollLeft + (itemRight - scrollerRight) + TASK_CLICKABLE_PREVIEW_PX;
-  }
-
-  return Math.min(maxScrollLeft, Math.max(0, target));
-}
-
 export function scrollTaskElementIntoView(
   scroller: HTMLElement | null,
-  taskId: string,
   el: HTMLElement,
   behavior: ScrollBehavior = 'instant',
 ): void {
-  if (!scroller) {
-    el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior });
-    return;
+  // Very wide tasks: `inline: 'nearest'` would jump unpredictably between edges,
+  // so pin the left side to the preview margin ourselves.
+  if (scroller) {
+    const available = scroller.clientWidth - 2 * TASK_CLICKABLE_PREVIEW_PX;
+    if (el.offsetWidth > available) {
+      const maxScrollLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+      const itemOffset = el.getBoundingClientRect().left - scroller.getBoundingClientRect().left;
+      const target = Math.min(
+        maxScrollLeft,
+        Math.max(0, scroller.scrollLeft + itemOffset - TASK_CLICKABLE_PREVIEW_PX),
+      );
+      scroller.scrollTo({ left: target, behavior });
+      return;
+    }
   }
 
-  const target = computeTaskStripScrollLeft(scroller, taskId, el);
-  if (target !== null) scroller.scrollTo({ left: target, behavior });
-}
-
-export function createInitialTaskScrollBehavior(): () => ScrollBehavior {
-  let initialScrollPending = true;
-  return () => {
-    if (!initialScrollPending) return 'smooth';
-    initialScrollPending = false;
-    return 'instant';
-  };
+  // Normal tasks: let the browser align. `scroll-padding-inline` provides the
+  // preview margins and edge clamping handles first/last tasks for free.
+  el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior });
 }
 
 function scrollTaskIntoView(taskId: string): void {
   requestAnimationFrame(() => {
     const el = document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(taskId)}"]`);
     if (!el) return;
-    scrollTaskElementIntoView(findHorizontalScroller(el), taskId, el, 'smooth');
+    scrollTaskElementIntoView(findHorizontalScroller(el), el, 'smooth');
   });
 }

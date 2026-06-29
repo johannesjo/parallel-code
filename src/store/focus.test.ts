@@ -83,7 +83,6 @@ vi.mock('./tasks', () => ({
 }));
 
 import {
-  createInitialTaskScrollBehavior,
   navigateColumn,
   navigateRow,
   scrollTaskElementIntoView,
@@ -243,136 +242,95 @@ describe('scrollTaskElementIntoView', () => {
     } as unknown as HTMLElement;
   }
 
-  it('scrolls to absolute start for the first task', () => {
-    mockStore.taskOrder = ['task-1', 'task-2'];
+  function createItem(overrides: Partial<HTMLElement> & { left?: number } = {}): HTMLElement {
+    const { left = 0, ...rest } = overrides;
+    return {
+      offsetWidth: 100,
+      getBoundingClientRect: vi.fn(function (this: HTMLElement) {
+        return { left, right: left + this.offsetWidth };
+      }),
+      scrollIntoView: vi.fn(),
+      ...rest,
+    } as unknown as HTMLElement;
+  }
+
+  it('delegates normal tasks to native scrollIntoView, scrolling only the strip', () => {
     const scroller = createScroller();
-    const el = {} as HTMLElement;
+    const el = createItem();
 
-    scrollTaskElementIntoView(scroller, 'task-1', el);
+    scrollTaskElementIntoView(scroller, el);
 
-    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'instant' });
+    expect(el.scrollIntoView).toHaveBeenCalledWith({
+      block: 'nearest',
+      inline: 'nearest',
+      behavior: 'instant',
+    });
+    expect(scroller.scrollTo).not.toHaveBeenCalled();
   });
 
-  it('scrolls to absolute end for the last task', () => {
-    mockStore.taskOrder = ['task-1', 'task-2'];
+  it('passes the requested behavior through to scrollIntoView', () => {
     const scroller = createScroller();
-    const el = {} as HTMLElement;
+    const el = createItem();
 
-    scrollTaskElementIntoView(scroller, 'task-2', el);
+    scrollTaskElementIntoView(scroller, el, 'smooth');
 
+    expect(el.scrollIntoView).toHaveBeenCalledWith({
+      block: 'nearest',
+      inline: 'nearest',
+      behavior: 'smooth',
+    });
+  });
+
+  it('falls back to native scrollIntoView when there is no strip scroller', () => {
+    const el = createItem();
+
+    scrollTaskElementIntoView(null, el, 'smooth');
+
+    expect(el.scrollIntoView).toHaveBeenCalledWith({
+      block: 'nearest',
+      inline: 'nearest',
+      behavior: 'smooth',
+    });
+  });
+
+  it('pins a very wide task to the left preview boundary instead of native nearest', () => {
+    const scroller = createScroller();
+    // clientWidth 300 - 2*64 = 172 available; a 400px-wide task overflows it.
+    const el = createItem({ offsetWidth: 400, left: 250 });
+
+    scrollTaskElementIntoView(scroller, el);
+
+    // scrollLeft 200 + (itemLeft 250 - scrollerLeft 0) - 64 preview = 386.
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 386, behavior: 'instant' });
+    expect(el.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('clamps the very-wide-task target to the available scroll range', () => {
+    const scroller = createScroller();
+    const el = createItem({ offsetWidth: 400, left: 900 });
+
+    scrollTaskElementIntoView(scroller, el);
+
+    // 200 + 900 - 64 = 1036, clamped to scrollWidth - clientWidth = 700.
     expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 700, behavior: 'instant' });
   });
 
-  it('can smooth-scroll to an edge task when requested', () => {
-    mockStore.taskOrder = ['task-1', 'task-2'];
-    const scroller = createScroller();
-    const el = {} as HTMLElement;
-
-    scrollTaskElementIntoView(scroller, 'task-2', el, 'smooth');
-
-    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 700, behavior: 'smooth' });
-  });
-
-  it('smooth-scrolls when focusing a panel inside an edge task', () => {
+  it('smooth-scrolls via native scrollIntoView when focusing a panel in a task', () => {
     setTask('task-1');
     setTask('task-2');
     mockStore.taskOrder = ['task-1', 'task-2'];
     const scroller = createScroller();
-    const el = {
-      closest: vi.fn(() => scroller),
-    } as unknown as HTMLElement;
+    const el = createItem({ closest: vi.fn(() => scroller) } as Partial<HTMLElement>);
     vi.stubGlobal('document', {
       querySelector: vi.fn(() => el),
     });
 
     setTaskFocusedPanel('task-2', 'ai-terminal');
 
-    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 700, behavior: 'smooth' });
-  });
-
-  it('does not edge-scroll a middle task', () => {
-    mockStore.taskOrder = ['task-1', 'task-2', 'task-3'];
-    const scroller = createScroller();
-    const el = {
-      getBoundingClientRect: vi.fn(() => ({ left: 80, right: 220 })),
-    } as unknown as HTMLElement;
-
-    scrollTaskElementIntoView(scroller, 'task-2', el);
-
-    expect(scroller.scrollTo).not.toHaveBeenCalled();
-  });
-
-  it('does not edge-scroll when the task is missing from the order', () => {
-    mockStore.taskOrder = ['task-1', 'task-2'];
-    const scroller = createScroller();
-    const el = {
-      getBoundingClientRect: vi.fn(() => ({ left: 80, right: 220 })),
-    } as unknown as HTMLElement;
-
-    scrollTaskElementIntoView(scroller, 'task-x', el);
-
-    expect(scroller.scrollTo).not.toHaveBeenCalled();
-  });
-
-  it('leaves a clickable preview to the left when the task is clipped there', () => {
-    mockStore.taskOrder = ['task-1', 'task-2', 'task-3'];
-    const scroller = createScroller();
-    Object.assign(scroller, { clientWidth: 500, scrollWidth: 1_500 });
-    const el = {
-      getBoundingClientRect: vi.fn(() => ({ left: 0, right: 520 })),
-    } as unknown as HTMLElement;
-
-    scrollTaskElementIntoView(scroller, 'task-2', el);
-
-    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 136, behavior: 'instant' });
-  });
-
-  it('leaves a clickable preview to the right when the task is clipped there', () => {
-    mockStore.taskOrder = ['task-1', 'task-2', 'task-3'];
-    const scroller = createScroller();
-    Object.assign(scroller, { clientWidth: 500, scrollWidth: 1_500 });
-    const el = {
-      getBoundingClientRect: vi.fn(() => ({ left: 20, right: 500 })),
-    } as unknown as HTMLElement;
-
-    scrollTaskElementIntoView(scroller, 'task-2', el);
-
-    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 264, behavior: 'instant' });
-  });
-
-  it('does not scroll when the task already has clickable previews on both sides', () => {
-    mockStore.taskOrder = ['task-1', 'task-2', 'task-3'];
-    const scroller = createScroller();
-    Object.assign(scroller, { clientWidth: 500, scrollWidth: 1_500 });
-    const el = {
-      getBoundingClientRect: vi.fn(() => ({ left: 80, right: 420 })),
-    } as unknown as HTMLElement;
-
-    scrollTaskElementIntoView(scroller, 'task-2', el);
-
-    expect(scroller.scrollTo).not.toHaveBeenCalled();
-  });
-
-  it('clamps the preview scroll target to the available scroll range', () => {
-    mockStore.taskOrder = ['task-1', 'task-2', 'task-3'];
-    const scroller = createScroller();
-    Object.assign(scroller, { scrollLeft: 980, clientWidth: 500, scrollWidth: 1_500 });
-    const el = {
-      getBoundingClientRect: vi.fn(() => ({ left: 420, right: 560 })),
-    } as unknown as HTMLElement;
-
-    scrollTaskElementIntoView(scroller, 'task-2', el);
-
-    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 1_000, behavior: 'instant' });
-  });
-});
-
-describe('createInitialTaskScrollBehavior', () => {
-  it('uses instant scrolling for the first active task alignment, then smooth scrolling', () => {
-    const nextBehavior = createInitialTaskScrollBehavior();
-
-    expect(nextBehavior()).toBe('instant');
-    expect(nextBehavior()).toBe('smooth');
-    expect(nextBehavior()).toBe('smooth');
+    expect(el.scrollIntoView).toHaveBeenCalledWith({
+      block: 'nearest',
+      inline: 'nearest',
+      behavior: 'smooth',
+    });
   });
 });
