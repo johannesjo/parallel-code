@@ -95,23 +95,46 @@ function findHorizontalScroller(el: HTMLElement): HTMLElement | null {
   return el.closest<HTMLElement>('[data-tiling-strip]');
 }
 
+function isLastTaskInScroller(scroller: HTMLElement, el: HTMLElement): boolean {
+  const taskEls = scroller.querySelectorAll<HTMLElement>('[data-task-id]');
+  return taskEls.length > 0 && taskEls[taskEls.length - 1] === el;
+}
+
+function maxScrollLeft(scroller: HTMLElement): number {
+  return Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+}
+
 export function scrollTaskElementIntoView(
   scroller: HTMLElement | null,
   el: HTMLElement,
   behavior: ScrollBehavior = 'instant',
 ): void {
+  if (!scroller) {
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior });
+    return;
+  }
+
   // Very wide tasks: `inline: 'nearest'` would jump unpredictably between edges,
   // so pin the left side to the preview margin ourselves.
-  if (scroller) {
-    const available = scroller.clientWidth - 2 * TASK_CLICKABLE_PREVIEW_PX;
-    if (el.offsetWidth > available) {
-      const maxScrollLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-      const itemOffset = el.getBoundingClientRect().left - scroller.getBoundingClientRect().left;
-      const target = Math.min(
-        maxScrollLeft,
-        Math.max(0, scroller.scrollLeft + itemOffset - TASK_CLICKABLE_PREVIEW_PX),
-      );
-      scroller.scrollTo({ left: target, behavior });
+  const available = scroller.clientWidth - 2 * TASK_CLICKABLE_PREVIEW_PX;
+  if (el.offsetWidth > available) {
+    const itemOffset = el.getBoundingClientRect().left - scroller.getBoundingClientRect().left;
+    const target = Math.min(
+      maxScrollLeft(scroller),
+      Math.max(0, scroller.scrollLeft + itemOffset - TASK_CLICKABLE_PREVIEW_PX),
+    );
+    scroller.scrollTo({ left: target, behavior });
+    return;
+  }
+
+  // The last panel in the strip should snap flush to the right edge. Native
+  // `scrollIntoView` with `scroll-padding-inline` leaves a small sliver of
+  // overflow (and the right scroll affordance) visible when the trailing
+  // content after the panel is narrower than the preview margin.
+  if (isLastTaskInScroller(scroller, el)) {
+    const limit = maxScrollLeft(scroller);
+    if (scroller.scrollLeft < limit) {
+      scroller.scrollTo({ left: limit, behavior });
       return;
     }
   }

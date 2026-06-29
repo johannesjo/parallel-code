@@ -230,7 +230,10 @@ describe('focus navigation neighbor map', () => {
 });
 
 describe('scrollTaskElementIntoView', () => {
-  function createScroller(): HTMLElement {
+  function createScroller(
+    overrides: Partial<HTMLElement> & { taskEls?: HTMLElement[] } = {},
+  ): HTMLElement {
+    const { taskEls = [], ...rest } = overrides;
     return {
       scrollLeft: 200,
       clientWidth: 300,
@@ -239,6 +242,8 @@ describe('scrollTaskElementIntoView', () => {
         return { left: 0, right: this.clientWidth };
       }),
       scrollTo: vi.fn(),
+      querySelectorAll: vi.fn(() => taskEls),
+      ...rest,
     } as unknown as HTMLElement;
   }
 
@@ -313,6 +318,31 @@ describe('scrollTaskElementIntoView', () => {
 
     // 200 + 900 - 64 = 1036, clamped to scrollWidth - clientWidth = 700.
     expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 700, behavior: 'instant' });
+  });
+
+  it('snaps the last task flush to the right edge of the strip', () => {
+    const el = createItem();
+    const scroller = createScroller({ taskEls: [el] });
+
+    scrollTaskElementIntoView(scroller, el);
+
+    expect(scroller.scrollTo).toHaveBeenCalledWith({
+      left: scroller.scrollWidth - scroller.clientWidth,
+      behavior: 'instant',
+    });
+    expect(el.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('passes the requested behavior through when snapping the last task', () => {
+    const el = createItem();
+    const scroller = createScroller({ taskEls: [el] });
+
+    scrollTaskElementIntoView(scroller, el, 'smooth');
+
+    expect(scroller.scrollTo).toHaveBeenCalledWith({
+      left: scroller.scrollWidth - scroller.clientWidth,
+      behavior: 'smooth',
+    });
   });
 
   it('smooth-scrolls via native scrollIntoView when focusing a panel in a task', () => {
