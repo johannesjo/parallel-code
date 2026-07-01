@@ -36,6 +36,25 @@ export function removePreambleBlock(content: string): string {
   return `${before}\n\n${after}`;
 }
 
+export function normalizePreambleFileContent(
+  filename: string,
+  content: string,
+  removePreamble: (value: string) => string = removePreambleBlock,
+): string | null {
+  if (filename !== '.claude/settings.local.json') return removePreamble(content);
+  try {
+    const settings = JSON.parse(content) as Record<string, unknown>;
+    if (typeof settings.systemPrompt === 'string') {
+      const stripped = removePreamble(settings.systemPrompt);
+      if (stripped.trim()) settings.systemPrompt = stripped;
+      else delete settings.systemPrompt;
+    }
+    return Object.keys(settings).length === 0 ? '' : JSON.stringify(settings, null, 2);
+  } catch {
+    return null;
+  }
+}
+
 /** Return the set of filenames (relative to worktreePath) that contain a preamble block. */
 export async function detectPreambleFiles(worktreePath: string): Promise<Set<string>> {
   const result = new Set<string>();
@@ -91,43 +110,28 @@ export async function buildNormalizedPreambleFileDiff(
     return '';
   }
 
-  let normalizedContent: string;
-  if (filename === '.claude/settings.local.json') {
-    try {
-      const s = JSON.parse(worktreeContent) as Record<string, unknown>;
-      if (typeof s.systemPrompt === 'string') {
-        const stripped = removePreamble(s.systemPrompt);
-        if (stripped.trim()) {
-          s.systemPrompt = stripped;
-        } else {
-          delete s.systemPrompt;
-        }
-      }
-      normalizedContent = Object.keys(s).length === 0 ? '' : JSON.stringify(s, null, 2);
-    } catch {
-      return '';
-    }
-  } else {
-    normalizedContent = removePreamble(worktreeContent);
-  }
+  const normalizedContent = normalizePreambleFileContent(filename, worktreeContent, removePreamble);
+  if (normalizedContent === null) return '';
 
   let baseContent = '';
   try {
-    const { stdout } = await execAsync('git', ['show', `${baseSha}:${filename}`], {
+    const result = await execAsync('git', ['show', `${baseSha}:${filename}`], {
       cwd: worktreePath,
     });
-    baseContent = stdout;
+    const stdout = typeof result === 'string' ? result : result.stdout;
+    baseContent = typeof stdout === 'string' ? stdout : '';
   } catch {
     baseContent = '';
   }
 
-  if (normalizedContent === baseContent) return '';
+  const normalizedBaseContent = normalizePreambleFileContent(filename, baseContent, removePreamble);
+  if (normalizedBaseContent === null || normalizedContent === normalizedBaseContent) return '';
 
   const id = randomUUID();
   const tmpBase = join(os.tmpdir(), `parallel-code-base-${id}`);
   const tmpNorm = join(os.tmpdir(), `parallel-code-norm-${id}`);
   try {
-    writeFileSync(tmpBase, baseContent);
+    writeFileSync(tmpBase, normalizedBaseContent);
     writeFileSync(tmpNorm, normalizedContent);
     let diffOut = '';
     try {

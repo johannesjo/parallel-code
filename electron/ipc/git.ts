@@ -775,7 +775,10 @@ export async function createWorktree(
 
   ensureClaudeSandboxFiles(worktreePath, repoRoot);
   ensureSandboxExcludes(worktreePath);
-  ensureSymlinkExcludes(worktreePath, createdSymlinks);
+  // `.claude` is a real directory, but missing entries are copied from the
+  // main worktree and required sandbox placeholders are created locally. Ignore
+  // only untracked contents; tracked `.claude` changes remain visible to Git.
+  ensureSymlinkExcludes(worktreePath, [...createdSymlinks, '.claude']);
 
   return { path: worktreePath, branch: branchName };
 }

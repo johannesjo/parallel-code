@@ -181,7 +181,7 @@ vi.mock('../log.js', () => ({
 
 // Import after mocks
 const { Coordinator } = await import('./coordinator.js');
-const { removePreambleBlock } = await import('./preamble.js');
+const { normalizePreambleFileContent, removePreambleBlock } = await import('./preamble.js');
 
 // --- helpers ---
 function getExitHandler(): (agentId: string, data: unknown) => void {
@@ -5637,6 +5637,24 @@ describe('Coordinator removePreambleBlock', () => {
   it('returns content unchanged when no preamble marker present', () => {
     const content = 'just a normal file\nno preamble here';
     expect(strip(content)).toBe(content);
+  });
+});
+
+describe('normalizePreambleFileContent', () => {
+  const BLOCK = '<sub-task-mode>\nrules\n</sub-task-mode>';
+
+  it('normalizes a committed AGENTS.md preamble on both sides of landing comparisons', () => {
+    expect(normalizePreambleFileContent('AGENTS.md', BLOCK)).toBe('');
+    expect(normalizePreambleFileContent('AGENTS.md', `${BLOCK}\n\n# User change`)).toBe(
+      '# User change',
+    );
+  });
+
+  it('normalizes injected Claude settings while preserving user settings', () => {
+    const content = JSON.stringify({ model: 'opus', systemPrompt: BLOCK });
+    expect(normalizePreambleFileContent('.claude/settings.local.json', content)).toBe(
+      JSON.stringify({ model: 'opus' }, null, 2),
+    );
   });
 });
 
