@@ -1,6 +1,6 @@
 import { For, Show, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import type { JSX } from 'solid-js';
-import { theme, bannerStyle } from '../lib/theme';
+import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { getStatusColor } from '../lib/status-colors';
 import { openFileInEditor } from '../lib/shell';
@@ -684,21 +684,7 @@ function FileSection(props: {
           </div>
         </Show>
 
-        <Show when={!props.file.binary && props.file.status === 'D'}>
-          <div
-            style={{
-              ...bannerStyle(theme.error),
-              margin: '12px',
-              'font-size': sf(13),
-              'text-align': 'center',
-              'font-weight': '600',
-            }}
-          >
-            This file was deleted
-          </div>
-        </Show>
-
-        <Show when={!props.file.binary && props.file.status !== 'D'}>
+        <Show when={!props.file.binary}>
           <div
             style={{
               'padding-bottom': '8px',
