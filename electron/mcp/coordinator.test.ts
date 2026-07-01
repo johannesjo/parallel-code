@@ -106,7 +106,7 @@ vi.mock('./prompt-detect.js', () => ({
       .slice(-1000)
       .split(/\r\n?|\n/)
       .some((line) =>
-        /(?:^|\s)[❯›]\s*$|^\s*--\s*INSERT\s*--\s*$|^\s*>\s*(?:Type your message|$)/i.test(
+        /(?:^|\s)[❯›]\s*$|^\s*❯\s*Try\s+["“]|(?:^|\s|q)›[^\r\n›]*?gpt-[\w.-]+\s+\w+\s+·\s+~?\/|^\s*--\s*INSERT\s*--\s*$|^\s*>\s*(?:Type your message|$)/i.test(
           line.trim(),
         ),
       );
@@ -131,7 +131,7 @@ vi.mock('./prompt-detect.js', () => ({
     return tail
       .split(/\r\n?|\n/)
       .some((line) =>
-        /(?:^|\s)[❯›]\s*$|^\s*--\s*INSERT\s*--\s*$|^\s*>\s*(?:Type your message|$)/i.test(
+        /(?:^|\s)[❯›]\s*$|^\s*❯\s*Try\s+["“]|(?:^|\s|q)›[^\r\n›]*?gpt-[\w.-]+\s+\w+\s+·\s+~?\/|^\s*--\s*INSERT\s*--\s*$|^\s*>\s*(?:Type your message|$)/i.test(
           line.trim(),
         ),
       );
