@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   resolveAutoSendVerifyOutcome,
+  shouldAcceptMissingInitialPromptEcho,
   shouldAckInitialPromptDelivery,
   shouldHandoffCoordinatorQuestion,
   shouldRendererAutoSendInitialPrompt,
@@ -143,6 +144,10 @@ describe('resolveAutoSendVerifyOutcome', () => {
     expect(resolveAutoSendVerifyOutcome({ ...base, appeared: true })).toBe('deliver');
   });
 
+  it('delivers an accepted compacted prompt when its textual echo is missing', () => {
+    expect(resolveAutoSendVerifyOutcome({ ...base, acceptMissingEcho: true })).toBe('deliver');
+  });
+
   it('retries when the echo is missing and retries remain', () => {
     expect(resolveAutoSendVerifyOutcome({ ...base, retryCount: 0 })).toBe('retry');
     expect(resolveAutoSendVerifyOutcome({ ...base, retryCount: 1 })).toBe('retry');
@@ -162,5 +167,37 @@ describe('resolveAutoSendVerifyOutcome', () => {
     expect(resolveAutoSendVerifyOutcome({ ...base, appeared: true, aborted: true })).toBe(
       'aborted',
     );
+  });
+
+  it('lets abort win over accepted missing echoes', () => {
+    expect(resolveAutoSendVerifyOutcome({ ...base, aborted: true, acceptMissingEcho: true })).toBe(
+      'aborted',
+    );
+  });
+});
+
+describe('shouldAcceptMissingInitialPromptEcho', () => {
+  it('accepts a coordinator prompt whose large paste was compacted by the agent TUI', () => {
+    expect(
+      shouldAcceptMissingInitialPromptEcho({
+        coordinatorMode: true,
+        initialPrompt: '[COORDINATOR MODE] coordinate these tasks',
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps echo verification for ordinary initial prompts', () => {
+    expect(
+      shouldAcceptMissingInitialPromptEcho({
+        coordinatorMode: false,
+        initialPrompt: 'implement the feature',
+      }),
+    ).toBe(false);
+    expect(
+      shouldAcceptMissingInitialPromptEcho({
+        coordinatorMode: true,
+        initialPrompt: 'implement the feature',
+      }),
+    ).toBe(false);
   });
 });

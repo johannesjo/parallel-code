@@ -37,6 +37,13 @@ export function shouldRendererAutoSendInitialPrompt(params: {
 
 export type AutoSendVerifyOutcome = 'deliver' | 'retry' | 'giveup' | 'aborted';
 
+export function shouldAcceptMissingInitialPromptEcho(params: {
+  coordinatorMode: boolean | undefined;
+  initialPrompt: string | undefined;
+}): boolean {
+  return Boolean(params.coordinatorMode && params.initialPrompt?.startsWith('[COORDINATOR MODE]'));
+}
+
 /**
  * Decides what to do after an auto-sent prompt's echo-verification finishes.
  *
@@ -53,8 +60,9 @@ export function resolveAutoSendVerifyOutcome(params: {
   aborted: boolean;
   retryCount: number;
   maxRetries: number;
+  acceptMissingEcho?: boolean;
 }): AutoSendVerifyOutcome {
   if (params.aborted) return 'aborted';
-  if (params.appeared) return 'deliver';
+  if (params.appeared || params.acceptMissingEcho) return 'deliver';
   return params.retryCount < params.maxRetries ? 'retry' : 'giveup';
 }
