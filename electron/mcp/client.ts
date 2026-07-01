@@ -52,6 +52,7 @@ export class MCPClient {
     coordinatorTaskId?: string;
     skipPermissions?: boolean;
     baseBranch?: string;
+    backend?: string;
   }): Promise<ApiTaskDetail> {
     return this.request<ApiTaskDetail>('POST', '/api/tasks', opts);
   }

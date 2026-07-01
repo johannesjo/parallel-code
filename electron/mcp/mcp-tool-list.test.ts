@@ -71,6 +71,18 @@ describe('selectTools — role-based tool list', () => {
     expect(properties?.prompt?.type).toBe('string');
   });
 
+  it('create_task exposes the supported agent backends', () => {
+    const createTask = COORDINATOR_TOOLS.find((tool) => tool.name === 'create_task');
+    const properties = createTask?.inputSchema.properties as
+      | Record<string, { type?: string; enum?: string[] }>
+      | undefined;
+    expect(properties?.backend).toEqual({
+      type: 'string',
+      enum: ['claude', 'codex', 'gemini', 'opencode', 'copilot', 'antigravity'],
+      description: expect.stringContaining('Defaults to the coordinator backend'),
+    });
+  });
+
   it('send_prompt requires a prompt', () => {
     const sendPrompt = COORDINATOR_TOOLS.find((tool) => tool.name === 'send_prompt');
     expect(sendPrompt?.inputSchema.required).toContain('prompt');

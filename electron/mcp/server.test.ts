@@ -101,6 +101,35 @@ describe('MCP server tool handling', () => {
     );
   });
 
+  it('passes a valid create_task backend through to the backend', async () => {
+    const client = makeClient();
+
+    const result = await handleMCPToolCall(
+      { client, taskId: '', coordinatorId: 'coord-1' },
+      'create_task',
+      { name: 'child', prompt: 'do the work', backend: 'codex' },
+    );
+
+    expect(result).not.toHaveProperty('isError');
+    expect(client.createTask).toHaveBeenCalledWith(expect.objectContaining({ backend: 'codex' }));
+  });
+
+  it('rejects an unsupported create_task backend', async () => {
+    const client = makeClient();
+
+    const result = await handleMCPToolCall(
+      { client, taskId: '', coordinatorId: 'coord-1' },
+      'create_task',
+      { name: 'child', prompt: 'do the work', backend: 'unknown' },
+    );
+
+    expect(result).toMatchObject({
+      isError: true,
+      content: [{ text: expect.stringContaining('backend must be one of') }],
+    });
+    expect(client.createTask).not.toHaveBeenCalled();
+  });
+
   it('rejects an invalid create_task baseBranch before calling the backend', async () => {
     const client = makeClient();
 

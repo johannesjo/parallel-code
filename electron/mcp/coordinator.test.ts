@@ -1987,6 +1987,45 @@ describe('Coordinator sub-agent spawn settings', () => {
     );
   });
 
+  it('uses the requested backend instead of the coordinator command', async () => {
+    coordinator.setCoordinatorSpawnDefaults('coord-1', 'claude', ['--model', 'opus']);
+    await coordinator.createTask({
+      name: 'test',
+      prompt: 'do',
+      coordinatorTaskId: 'coord-1',
+      backend: 'codex',
+    });
+    expect(mockSpawnAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ command: 'codex', args: expect.not.arrayContaining(['opus']) }),
+    );
+  });
+
+  it('maps the antigravity backend to the agy command', async () => {
+    await coordinator.createTask({
+      name: 'test',
+      prompt: 'do',
+      coordinatorTaskId: 'coord-1',
+      backend: 'antigravity',
+    });
+    expect(mockSpawnAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ command: 'agy' }),
+    );
+  });
+
+  it('rejects unsupported backends before creating a worktree', async () => {
+    await expect(
+      coordinator.createTask({
+        name: 'test',
+        prompt: 'do',
+        coordinatorTaskId: 'coord-1',
+        backend: 'unknown',
+      }),
+    ).rejects.toThrow('Unsupported agent backend');
+    expect(mockCreateBackendTask).not.toHaveBeenCalled();
+  });
+
   it('inherits coordinator base args (e.g. --model)', async () => {
     coordinator.setCoordinatorSpawnDefaults('coord-1', 'claude', ['--model', 'claude-opus-4-7']);
     await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });

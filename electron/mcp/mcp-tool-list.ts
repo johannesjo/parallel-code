@@ -68,6 +68,12 @@ export const COORDINATOR_TOOLS: ToolDef[] = [
           description:
             'Git branch to base the worktree on. Defaults to the coordinator task branch. Only set this when deliberately overriding that default.',
         },
+        backend: {
+          type: 'string',
+          enum: ['claude', 'codex', 'gemini', 'opencode', 'copilot', 'antigravity'],
+          description:
+            'AI agent backend for this task. Defaults to the coordinator backend when omitted.',
+        },
       },
       required: ['name', 'prompt'],
     },

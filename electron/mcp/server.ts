@@ -9,6 +9,7 @@ import { MCPClient } from './client.js';
 import { selectTools } from './mcp-tool-list.js';
 import { validateBranchName } from './validation.js';
 import type { LandSelfInput } from './types.js';
+import { AGENT_BACKENDS, isAgentBackend } from './agent-backends.js';
 
 export interface MCPToolHandlerContext {
   client: MCPClient;
@@ -47,11 +48,24 @@ export async function handleMCPToolCall(
         const rawBranch = p.baseBranch;
         const baseBranch =
           rawBranch !== undefined ? validateBranchName(rawBranch, 'baseBranch') : undefined;
+        const backend = p.backend;
+        if (backend !== undefined && !isAgentBackend(backend)) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Error: backend must be one of: ${AGENT_BACKENDS.join(', ')}`,
+              },
+            ],
+            isError: true,
+          };
+        }
         const result = await client.createTask({
           name: p.name as string,
           prompt: p.prompt,
           coordinatorTaskId: coordinatorId || undefined,
           baseBranch,
+          backend,
         });
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
