@@ -588,6 +588,34 @@ describe('coordinator scoping', () => {
       expect(mockCoord.createTask).toHaveBeenLastCalledWith(expect.objectContaining({ prompt }));
     });
 
+    it('passes a supported create_task backend to the coordinator', async () => {
+      const res = await post(
+        '/api/tasks',
+        { name: 'new task', prompt: 'do the work', backend: 'antigravity' },
+        COORD_A,
+      );
+
+      expect(res.status).toBe(201);
+      expect(mockCoord.createTask).toHaveBeenLastCalledWith(
+        expect.objectContaining({ backend: 'antigravity' }),
+      );
+    });
+
+    it('rejects an unsupported create_task backend before calling the coordinator', async () => {
+      const beforeCalls = vi.mocked(mockCoord.createTask).mock.calls.length;
+      const res = await post(
+        '/api/tasks',
+        { name: 'new task', prompt: 'do the work', backend: 'unknown' },
+        COORD_A,
+      );
+
+      expect(res.status).toBe(400);
+      await expect(res.json()).resolves.toEqual({
+        error: expect.stringContaining('backend must be one of'),
+      });
+      expect(vi.mocked(mockCoord.createTask).mock.calls).toHaveLength(beforeCalls);
+    });
+
     it('rejects oversized multi-byte create_task prompts before calling the coordinator', async () => {
       const beforeCalls = vi.mocked(mockCoord.createTask).mock.calls.length;
 

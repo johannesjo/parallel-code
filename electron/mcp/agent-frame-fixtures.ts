@@ -18,6 +18,15 @@ export const READY_AGENT_FRAME_FIXTURES: AgentFrameFixture[] = [
     ].join('\n'),
   },
   {
+    name: 'Claude empty prompt with rotating suggestion',
+    frame: [
+      '─'.repeat(80),
+      '❯ Try "how does <filepath> work?"',
+      '─'.repeat(80),
+      '⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents',
+    ].join('\r'),
+  },
+  {
     name: 'Claude empty insert mode at fresh prompt',
     frame: [
       '│ >',
@@ -43,6 +52,11 @@ export const READY_AGENT_FRAME_FIXTURES: AgentFrameFixture[] = [
       '',
       'gpt-5.5 default · /Users/brooksc/git/parallel-code/.worktrees/task-028-unit-tests',
     ].join('\n'),
+  },
+  {
+    name: 'Codex prompt with redraw-damaged escape sequences',
+    frame:
+      '13;15H s qg se q MCP server q q›Summarize recent commitsgpt-5.5 medium · ~/repo/.worktrees/task/example q',
   },
   {
     name: 'Gemini typed-message prompt',

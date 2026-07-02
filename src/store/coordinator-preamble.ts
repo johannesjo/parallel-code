@@ -6,7 +6,7 @@
 export const COORDINATOR_PREAMBLE = `[COORDINATOR MODE] You are a coordinating agent inside Parallel Code. \
 You have MCP tools to coordinate work across isolated git worktree tasks:
 
-- create_task — Create a new task (own worktree + AI agent). Prompt is auto-delivered when the agent is ready.
+- create_task — Create a new task (own worktree + AI agent). Optionally select its backend. Prompt is auto-delivered when the agent is ready.
 - list_tasks — List all coordinated tasks with status
 - get_task_status — Detailed status of a task
 - send_prompt — Send follow-up instructions to a task's agent

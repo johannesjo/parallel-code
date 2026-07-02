@@ -31,8 +31,13 @@ export const PROMPT_PATTERNS: RegExp[] = [
  */
 export const AGENT_READY_TAIL_PATTERNS: RegExp[] = [
   /^\s*❯\s*$/, // Claude Code
+  /^\s*❯\s*Try\s+["“]/i, // Claude Code empty prompt with rotating suggestion
   /^\s*--\s*INSERT\s*--(?:$|\s|[^\w].*$)/i, // Claude Code vim-style input mode
   /^\s*›\s*$/, // Codex CLI
+  // Codex redraws can lose CSI escape introducers when output chunks split an
+  // escape sequence. stripAnsi then leaves `q` separators and cursor-position
+  // fragments, collapsing the input placeholder and footer onto one line.
+  /(?:^|\s|q)›[^\r\n›]*?gpt-[\w.-]+\s+\w+\s+·\s+~?\//i,
   /^\s*>\s*(?:Type your message|$)/i, // Gemini CLI
 ];
 

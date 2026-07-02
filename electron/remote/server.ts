@@ -22,6 +22,7 @@ import { parseClientMessage, type ServerMessage, type RemoteAgent } from './prot
 import type { Coordinator } from '../mcp/coordinator.js';
 import { validateBranchName } from '../mcp/validation.js';
 import type { LandSelfInput, SubtaskVerification } from '../mcp/types.js';
+import { AGENT_BACKENDS, isAgentBackend } from '../mcp/agent-backends.js';
 
 // --- MCP log ring buffer ---
 export interface MCPLogEntry {
@@ -659,6 +660,15 @@ export function startRemoteServer(opts: {
                   return jsonReply(400, { error: String(e) });
                 }
               }
+              let backend: string | undefined;
+              if (body.backend !== undefined) {
+                if (!isAgentBackend(body.backend)) {
+                  return jsonReply(400, {
+                    error: `backend must be one of: ${AGENT_BACKENDS.join(', ')}`,
+                  });
+                }
+                backend = body.backend;
+              }
               // For coordinator-token callers, the authoritative coordinator ID is
               // the verified X-Coordinator-Id header (callerCoordinatorId). Reject
               // any body value that tries to create a task under a different coordinator,
@@ -683,6 +693,7 @@ export function startRemoteServer(opts: {
                 coordinatorTaskId,
                 projectId: body.projectId as string | undefined,
                 baseBranch,
+                backend,
               });
               mcpLog('info', `create_task OK id=${result.id}`);
               jsonReply(201, orch.getTaskStatus(result.id));

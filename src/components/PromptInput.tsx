@@ -33,6 +33,7 @@ import { isLandedTaskState } from '../store/landing';
 import { processAutoFireTick } from './autofire-tick';
 import {
   resolveAutoSendVerifyOutcome,
+  shouldAcceptMissingInitialPromptEcho,
   shouldAckInitialPromptDelivery,
   shouldHandoffCoordinatorQuestion,
   shouldRendererAutoSendInitialPrompt,
@@ -772,6 +773,14 @@ export function PromptInput(props: PromptInputProps) {
           aborted: signal.aborted,
           retryCount: untrack(autoSendRetry),
           maxRetries: AUTO_SEND_MAX_RETRIES,
+          // Coordinator prompts include a large injected preamble. Claude Code
+          // compacts bracketed multi-line pastes instead of echoing the opening
+          // snippet, so a successful write cannot be verified textually. Do not
+          // restore that prompt and repopulate the input after it was submitted.
+          acceptMissingEcho: shouldAcceptMissingInitialPromptEcho({
+            coordinatorMode: props.coordinatorMode,
+            initialPrompt: initialPromptSnapshot,
+          }),
         });
         if (outcome !== 'deliver') {
           // The echo was never confirmed — Codex likely received the prompt

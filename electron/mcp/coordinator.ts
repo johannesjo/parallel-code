@@ -30,7 +30,8 @@ import {
 const execAsync = promisify(execFile);
 import type { BrowserWindow } from 'electron';
 import { createTask as createBackendTask, deleteTask } from '../ipc/tasks.js';
-import { getSkipPermissionsArgs } from '../ipc/agents.js';
+import { getAgentByBackend, getSkipPermissionsArgs } from '../ipc/agents.js';
+import { isAgentBackend } from './agent-backends.js';
 import {
   spawnAgent,
   writeToAgent,
@@ -792,6 +793,7 @@ export class Coordinator {
     agentArgs?: string[];
     skipPermissions?: boolean;
     baseBranch?: string;
+    backend?: string;
   }): Promise<CoordinatedTask> {
     const coordinatorId =
       opts.coordinatorTaskId !== REST_COORDINATOR_SENTINEL
@@ -820,6 +822,16 @@ export class Coordinator {
     if (baseBranch !== undefined) {
       validateBranchName(baseBranch, 'baseBranch');
     }
+    const backend = opts.backend;
+    if (backend && !isAgentBackend(backend)) {
+      throw new Error(`Unsupported agent backend: ${backend}`);
+    }
+    const requestedAgent =
+      backend && isAgentBackend(backend) ? getAgentByBackend(backend) : undefined;
+    const selectedAgentCommand =
+      requestedAgent?.command ?? opts.agentCommand ?? coordinatorState.spawnDefaults.command;
+    const selectedAgentArgs =
+      requestedAgent?.args ?? opts.agentArgs ?? coordinatorState.spawnDefaults.args;
 
     // Create worktree + branch via existing backend
     const result = await createBackendTask(
@@ -878,7 +890,7 @@ export class Coordinator {
     // Spawn the agent process
     if (!this.win) throw new Error('No window set on coordinator');
 
-    const agentCmd = (opts.agentCommand ?? coordinatorState.spawnDefaults.command).toLowerCase();
+    const agentCmd = selectedAgentCommand.toLowerCase();
     const preamble = `<sub-task-mode>\nThese rules override all skills and hooks:\n- When your work is complete, commit your changes and call the \`land_self\` MCP tool with the verification checks you ran. A successful \`land_self\` call is the finish line — do NOT call \`signal_done\` afterward, use finishing-a-development-branch, or offer merge/PR options.\n- Use \`signal_done\` only if the coordinator explicitly asks for manual review instead of self-landing.\n- Asking questions is fine when requirements are unclear or an action is risky.\n</sub-task-mode>`;
     // Declared here so the catch block can restore preamble files on failure.
     let preambleFilePath: string | undefined;
@@ -986,8 +998,8 @@ export class Coordinator {
         task.mcpConfigPath = configPath;
       }
 
-      const agentCommand = opts.agentCommand ?? coordinatorState.spawnDefaults.command;
-      const agentArgs = opts.agentArgs ?? coordinatorState.spawnDefaults.args;
+      const agentCommand = selectedAgentCommand;
+      const agentArgs = selectedAgentArgs;
       const baseArgs = [
         ...agentArgs,
         ...(coordinatorState.propagateSkipPermissions ? getSkipPermissionsArgs(agentCommand) : []),

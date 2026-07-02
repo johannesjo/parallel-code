@@ -106,7 +106,7 @@ vi.mock('./prompt-detect.js', () => ({
       .slice(-1000)
       .split(/\r\n?|\n/)
       .some((line) =>
-        /(?:^|\s)[❯›]\s*$|^\s*--\s*INSERT\s*--\s*$|^\s*>\s*(?:Type your message|$)/i.test(
+        /(?:^|\s)[❯›]\s*$|^\s*❯\s*Try\s+["“]|(?:^|\s|q)›[^\r\n›]*?gpt-[\w.-]+\s+\w+\s+·\s+~?\/|^\s*--\s*INSERT\s*--\s*$|^\s*>\s*(?:Type your message|$)/i.test(
           line.trim(),
         ),
       );
@@ -131,7 +131,7 @@ vi.mock('./prompt-detect.js', () => ({
     return tail
       .split(/\r\n?|\n/)
       .some((line) =>
-        /(?:^|\s)[❯›]\s*$|^\s*--\s*INSERT\s*--\s*$|^\s*>\s*(?:Type your message|$)/i.test(
+        /(?:^|\s)[❯›]\s*$|^\s*❯\s*Try\s+["“]|(?:^|\s|q)›[^\r\n›]*?gpt-[\w.-]+\s+\w+\s+·\s+~?\/|^\s*--\s*INSERT\s*--\s*$|^\s*>\s*(?:Type your message|$)/i.test(
           line.trim(),
         ),
       );
@@ -181,7 +181,7 @@ vi.mock('../log.js', () => ({
 
 // Import after mocks
 const { Coordinator } = await import('./coordinator.js');
-const { removePreambleBlock } = await import('./preamble.js');
+const { normalizePreambleFileContent, removePreambleBlock } = await import('./preamble.js');
 
 // --- helpers ---
 function getExitHandler(): (agentId: string, data: unknown) => void {
@@ -1985,6 +1985,45 @@ describe('Coordinator sub-agent spawn settings', () => {
       expect.anything(),
       expect.objectContaining({ command: '/usr/local/bin/claude' }),
     );
+  });
+
+  it('uses the requested backend instead of the coordinator command', async () => {
+    coordinator.setCoordinatorSpawnDefaults('coord-1', 'claude', ['--model', 'opus']);
+    await coordinator.createTask({
+      name: 'test',
+      prompt: 'do',
+      coordinatorTaskId: 'coord-1',
+      backend: 'codex',
+    });
+    expect(mockSpawnAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ command: 'codex', args: expect.not.arrayContaining(['opus']) }),
+    );
+  });
+
+  it('maps the antigravity backend to the agy command', async () => {
+    await coordinator.createTask({
+      name: 'test',
+      prompt: 'do',
+      coordinatorTaskId: 'coord-1',
+      backend: 'antigravity',
+    });
+    expect(mockSpawnAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ command: 'agy' }),
+    );
+  });
+
+  it('rejects unsupported backends before creating a worktree', async () => {
+    await expect(
+      coordinator.createTask({
+        name: 'test',
+        prompt: 'do',
+        coordinatorTaskId: 'coord-1',
+        backend: 'unknown',
+      }),
+    ).rejects.toThrow('Unsupported agent backend');
+    expect(mockCreateBackendTask).not.toHaveBeenCalled();
   });
 
   it('inherits coordinator base args (e.g. --model)', async () => {
@@ -5598,6 +5637,24 @@ describe('Coordinator removePreambleBlock', () => {
   it('returns content unchanged when no preamble marker present', () => {
     const content = 'just a normal file\nno preamble here';
     expect(strip(content)).toBe(content);
+  });
+});
+
+describe('normalizePreambleFileContent', () => {
+  const BLOCK = '<sub-task-mode>\nrules\n</sub-task-mode>';
+
+  it('normalizes a committed AGENTS.md preamble on both sides of landing comparisons', () => {
+    expect(normalizePreambleFileContent('AGENTS.md', BLOCK)).toBe('');
+    expect(normalizePreambleFileContent('AGENTS.md', `${BLOCK}\n\n# User change`)).toBe(
+      '# User change',
+    );
+  });
+
+  it('normalizes injected Claude settings while preserving user settings', () => {
+    const content = JSON.stringify({ model: 'opus', systemPrompt: BLOCK });
+    expect(normalizePreambleFileContent('.claude/settings.local.json', content)).toBe(
+      JSON.stringify({ model: 'opus' }, null, 2),
+    );
   });
 });
 

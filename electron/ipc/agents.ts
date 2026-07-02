@@ -1,10 +1,11 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
+import type { AgentBackend } from '../mcp/agent-backends.js';
 
 const execFileAsync = promisify(execFile);
 
-interface AgentDef {
+export interface AgentDef {
   id: string;
   name: string;
   command: string;
@@ -97,6 +98,13 @@ export function getSkipPermissionsArgs(command: string): string[] {
   const base = path.basename(command);
   const agent = DEFAULT_AGENTS.find((a) => a.command === base || a.command === command);
   return agent ? [...agent.skip_permissions_args] : [];
+}
+
+export function getAgentByBackend(backend: AgentBackend): AgentDef {
+  const id = backend === 'claude' ? 'claude-code' : backend;
+  const agent = DEFAULT_AGENTS.find((candidate) => candidate.id === id);
+  if (!agent) throw new Error(`Missing built-in agent definition for backend: ${backend}`);
+  return { ...agent, args: [...agent.args] };
 }
 
 export async function listAgents(): Promise<AgentDef[]> {
