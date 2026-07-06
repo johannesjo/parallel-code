@@ -64,3 +64,39 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run build -- --universal -c.mac.notarize=false --publish always
+
+  # Attach the agent image as a per-arch tarball to the release, so the app can fetch
+  # it host-side and `docker load` it when the Docker daemon can't reach a registry
+  # (e.g. it runs in a VM with no egress). Built on native runners — no QEMU.
+  agent-image:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Build agent image (${{ matrix.arch }})
+        run: docker build -t thunderockforge/forge-agent:latest ./docker
+
+      - name: Save + compress + checksum
+        run: |
+          set -euo pipefail
+          asset="forge-agent-${{ matrix.arch }}.tar.gz"
+          docker save thunderockforge/forge-agent:latest | gzip > "$asset"
+          sha256sum "$asset" > "$asset.sha256"
+          ls -lh "$asset" "$asset.sha256"
+
+      - name: Upload image asset to the release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          draft: true
+          files: |
+            forge-agent-${{ matrix.arch }}.tar.gz
+            forge-agent-${{ matrix.arch }}.tar.gz.sha256

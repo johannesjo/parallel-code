@@ -9,11 +9,13 @@ import { RingBuffer } from '../remote/ring-buffer.js';
 import { resolveUserShell } from '../user-shell.js';
 import { ensureClaudeSandboxFiles, ensureSandboxExcludes } from './git.js';
 import {
-  ensureDockerImageAvailable,
+  acquireAgentImage,
   dockerImagePresentByTag,
   dockerImagePresentSync,
   pullDockerImage,
   delay as abortableDelay,
+  downloadAndLoadReleaseImage,
+  hostImageArch,
   PROJECT_IMAGE_PREFIX,
 } from './docker-pull.js';
 import { debug as logDebug } from '../log.js';
@@ -552,12 +554,22 @@ export function spawnAgent(
       });
     void (async () => {
       try {
-        const res = await ensureDockerImageAvailable(resolvedImage, {
+        const isDefaultImage = resolvedImage === DOCKER_DEFAULT_IMAGE;
+        const res = await acquireAgentImage(resolvedImage, {
           imagePresent: dockerImagePresentByTag,
           pull: (img, signal) => pullDockerImage(img, sendData, signal),
           delay: abortableDelay,
           onStatus: (line) => sendData(`\x1b[2m[docker] ${line}\x1b[0m\r\n`),
           signal: ac.signal,
+          // Default image only: when a registry is unreachable (e.g. the daemon's VM
+          // has no egress), fetch the image host-side from the GitHub release and
+          // `docker load` it; local build is the final rung.
+          downloadRelease: isDefaultImage
+            ? (signal) => fetchDefaultImageFromRelease(sendData, signal)
+            : undefined,
+          localBuild: isDefaultImage
+            ? (signal) => runDefaultImageBuild(sendData, signal)
+            : undefined,
         });
         // Killed or superseded by a reattach — another path owns the lifecycle.
         if (ac.signal.aborted || (!res.ok && res.reason === 'cancelled')) {
@@ -566,9 +578,15 @@ export function spawnAgent(
         }
         if (!res.ok) {
           cleanup();
+          const tried = isDefaultImage
+            ? 'registry pull, GitHub release download, and local build'
+            : 'registry pull';
           sendData(
-            `\r\n\x1b[31m[docker] Could not pull ${resolvedImage} after several attempts.\x1b[0m\r\n` +
-              `\x1b[2m[docker] Check your network / Docker Hub reachability, then retry the task.\x1b[0m\r\n`,
+            `\r\n\x1b[31m[docker] Could not obtain ${resolvedImage}.\x1b[0m\r\n` +
+              `\x1b[2m[docker] Tried: ${tried}.\r\n` +
+              `[docker] If Docker runs in a VM (Colima/Lima/Docker Desktop), a VPN can leave the VM\r\n` +
+              `[docker] unable to reach the internet even when the host can. Try restarting the Docker\r\n` +
+              `[docker] VM (e.g. \`colima restart\`) or reconnecting the network, then retry.\x1b[0m\r\n`,
           );
           sendToChannel(win, channelId, {
             type: 'Exit',
@@ -1158,4 +1176,67 @@ export function buildDockerImage(
   }
 
   return buildPromise;
+}
+
+/**
+ * Fetch the default agent image host-side from the GitHub release and `docker load`
+ * it into the daemon. Used when a registry pull fails because the daemon (often a
+ * Colima/Lima VM) has no internet egress but the host does. Streams to the terminal.
+ */
+async function fetchDefaultImageFromRelease(
+  sendData: (text: string) => void,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const arch = hostImageArch();
+  if (!arch) {
+    sendData(
+      `\x1b[2m[docker] No prebuilt agent image for this architecture (${process.arch}).\x1b[0m\r\n`,
+    );
+    return false;
+  }
+  let version = '';
+  try {
+    const { app } = await import('electron');
+    version = app.getVersion();
+  } catch {
+    // Dev/test without an Electron runtime — fall back to the repo's latest release.
+  }
+  return downloadAndLoadReleaseImage(
+    { owner: 'thunderock', repo: 'forge', version, arch },
+    (line) => sendData(`\x1b[2m[docker] ${line}\x1b[0m\r\n`),
+    signal,
+  );
+}
+
+/** Build the bundled Dockerfile into the default image, streaming to the terminal. */
+function runDefaultImageBuild(
+  sendData: (text: string) => void,
+  signal: AbortSignal,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const dockerfile = resolveDockerfilePath();
+    if (!dockerfile) {
+      sendData(`\x1b[2m[docker] Bundled Dockerfile not found; cannot build locally.\x1b[0m\r\n`);
+      return resolve(false);
+    }
+    const hash = hashDockerfile(dockerfile) ?? 'unknown';
+    const proc = cpSpawn(
+      'docker',
+      [
+        'build',
+        '-t',
+        DOCKER_DEFAULT_IMAGE,
+        '--label',
+        `${DOCKERFILE_HASH_LABEL}=${hash}`,
+        '-f',
+        dockerfile,
+        path.dirname(dockerfile),
+      ],
+      { signal },
+    );
+    proc.stdout?.on('data', (d: Buffer) => sendData(d.toString('utf8')));
+    proc.stderr?.on('data', (d: Buffer) => sendData(d.toString('utf8')));
+    proc.on('error', () => resolve(false));
+    proc.on('close', (code) => resolve(code === 0));
+  });
 }
