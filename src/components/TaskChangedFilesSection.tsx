@@ -1,5 +1,5 @@
 import { Show, onMount } from 'solid-js';
-import { getProject, setTaskFocusedPanel, isPanelFocused } from '../store/store';
+import { getProject, setActiveTask, setTaskFocusedPanel, isPanelFocused } from '../store/store';
 import { ChangedFilesList } from './ChangedFilesList';
 import { CommitTreeOverlay } from './CommitTreeOverlay';
 import {
@@ -36,6 +36,10 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
       : undefined;
   const showUncommittedBanner = () =>
     isUncommittedSelection(props.selectedCommit) && hasCommitNav();
+  const focusChangedFilesPanel = () => {
+    setActiveTask(props.task.id);
+    setTaskFocusedPanel(props.task.id, 'changed-files');
+  };
 
   let changedFilesRef: HTMLDivElement | undefined;
 
@@ -65,7 +69,7 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
         display: 'flex',
         'flex-direction': 'column',
       }}
-      onClick={() => setTaskFocusedPanel(props.task.id, 'changed-files')}
+      onClick={focusChangedFilesPanel}
     >
       <div
         style={{
@@ -153,6 +157,7 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
           coverageReportPath={coverageReportPath()}
           selectedCommit={props.selectedCommit}
           onFileClick={(file) => props.onDiffFileClick(file.path)}
+          onOpenInEditorClick={focusChangedFilesPanel}
           ref={(el) => (changedFilesRef = el)}
         />
       </div>

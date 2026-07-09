@@ -20,6 +20,7 @@ interface ChangedFilesListProps {
   onFileClick?: (file: ChangedFile) => void;
   /** Optional path to visually mark as the active/open diff target. */
   activeFilePath?: string | null;
+  onOpenInEditorClick?: () => void;
   ref?: (el: HTMLDivElement) => void;
   /** Optional coverage artifact path relative to the repo root. */
   coverageReportPath?: string;
@@ -148,12 +149,17 @@ function FileCoverageBadge(props: {
   );
 }
 
-function OpenInEditorButton(props: { worktreePath: string; filePath: string }) {
+function OpenInEditorButton(props: {
+  worktreePath: string;
+  filePath: string;
+  onOpenInEditorClick?: () => void;
+}) {
   return (
     <button
       class="changed-files-open-editor-btn"
       onClick={(e) => {
         e.stopPropagation();
+        props.onOpenInEditorClick?.();
         void openFileInEditor(props.worktreePath, props.filePath);
       }}
       onKeyDown={(e) => e.stopPropagation()}
@@ -625,6 +631,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                     <OpenInEditorButton
                       worktreePath={props.worktreePath}
                       filePath={row().node.file?.path ?? row().node.path}
+                      onOpenInEditorClick={props.onOpenInEditorClick}
                     />
                   </Show>
                 </>
