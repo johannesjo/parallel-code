@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { TERMINAL_SCROLLBACK_LINES, base64ToUint8Array } from '../lib/terminalConstants';
 import { createTerminalHttpLinkHandler } from '../lib/terminalLinks';
+import { fetchNotes, saveNotes } from './api';
 import {
   subscribeAgent,
   unsubscribeAgent,
@@ -20,6 +21,22 @@ const KEYS: Record<number, string> = {};
 });
 function key(c: number): string {
   return KEYS[c];
+}
+
+const TERM_FONT_FAMILY = "'JetBrains Mono', 'Courier New', monospace";
+
+// Measure the average monospace advance width per 1px of font-size. Used to pick
+// a font size that makes the desktop's column count exactly fill the phone's
+// width, so the terminal uses all available horizontal space instead of leaving
+// a gap (desktop narrower than phone) or overflowing (desktop wider).
+let measureCanvas: HTMLCanvasElement | undefined;
+function charWidthPerPx(): number {
+  if (!measureCanvas) measureCanvas = document.createElement('canvas');
+  const ctx = measureCanvas.getContext('2d');
+  if (!ctx) return 0.6;
+  ctx.font = `100px ${TERM_FONT_FAMILY}`;
+  // Average over a run of glyphs to smooth out sub-pixel rounding.
+  return ctx.measureText('MMMMMMMMMM').width / 10 / 100;
 }
 
 interface AgentDetailProps {
@@ -43,11 +60,105 @@ export function AgentDetail(props: AgentDetailProps) {
   const [inputText, setInputText] = createSignal('');
   const [atBottom, setAtBottom] = createSignal(true);
   const [termFontSize, setTermFontSize] = createSignal(10);
+  // Desktop PTY column count (from scrollback). The mobile client can't resize
+  // the PTY, so the terminal must adapt its font to this width, not vice versa.
+  const [serverCols, setServerCols] = createSignal(0);
+  // Once the user picks a font with A-/A+, stop auto-fitting so their choice sticks.
+  const [manualFont, setManualFont] = createSignal(false);
+
+  // Notes editing
+  const [view, setView] = createSignal<'terminal' | 'notes'>('terminal');
+  const [notesText, setNotesText] = createSignal('');
+  const [notesLoading, setNotesLoading] = createSignal(false);
+  const [notesSaving, setNotesSaving] = createSignal(false);
+  const [notesError, setNotesError] = createSignal<string | null>(null);
+  const [notesDirty, setNotesDirty] = createSignal(false);
+  const [notesSaved, setNotesSaved] = createSignal(false);
 
   const MIN_FONT = 6;
   const MAX_FONT = 24;
 
   const agentInfo = () => agents().find((a) => a.agentId === props.agentId);
+  const taskId = () => agentInfo()?.taskId;
+
+  // Pick the largest font (within bounds) that fits `serverCols` columns into the
+  // available width, then render exactly that many columns — filling the width.
+  function autoFitFont(): void {
+    if (!term || !termContainer || manualFont()) return;
+    const cols = serverCols();
+    if (cols <= 0) return;
+    const cs = getComputedStyle(termContainer);
+    const padX = parseFloat(cs.paddingLeft || '0') + parseFloat(cs.paddingRight || '0');
+    // Small safety margin so metric rounding never overflows into a wrapped line.
+    const avail = termContainer.clientWidth - padX - 4;
+    const perChar = charWidthPerPx();
+    if (avail <= 0 || perChar <= 0) return;
+    let fs = Math.floor(avail / (cols * perChar));
+    fs = Math.max(MIN_FONT, Math.min(MAX_FONT, fs));
+    if (term.options.fontSize !== fs) {
+      term.options.fontSize = fs;
+      setTermFontSize(fs);
+    }
+  }
+
+  // Re-fit the terminal to the container. In auto mode the font tracks the
+  // desktop column count; in manual mode the columns track the chosen font.
+  function refit(): void {
+    if (!term) return;
+    if (manualFont()) {
+      fitAddon?.fit();
+      return;
+    }
+    autoFitFont();
+    fitAddon?.fit();
+    const cols = serverCols();
+    if (cols > 0) term.resize(cols, term.rows);
+  }
+
+  function changeFont(delta: number): void {
+    const next = Math.max(MIN_FONT, Math.min(MAX_FONT, termFontSize() + delta));
+    if (next === termFontSize()) return;
+    setManualFont(true);
+    setTermFontSize(next);
+    if (term) {
+      term.options.fontSize = next;
+      fitAddon?.fit();
+    }
+  }
+
+  async function openNotes(): Promise<void> {
+    setView('notes');
+    const id = taskId();
+    if (!id) return;
+    setNotesLoading(true);
+    setNotesError(null);
+    try {
+      const n = await fetchNotes(id);
+      // Don't clobber unsaved local edits if the user reopens the tab.
+      if (!notesDirty()) setNotesText(n);
+    } catch (e) {
+      setNotesError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setNotesLoading(false);
+    }
+  }
+
+  async function handleSaveNotes(): Promise<void> {
+    const id = taskId();
+    if (!id || notesSaving()) return;
+    setNotesSaving(true);
+    setNotesError(null);
+    try {
+      await saveNotes(id, notesText());
+      setNotesDirty(false);
+      setNotesSaved(true);
+      setTimeout(() => setNotesSaved(false), 1500);
+    } catch (e) {
+      setNotesError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setNotesSaving(false);
+    }
+  }
 
   onMount(() => {
     if (!termContainer) return;
@@ -101,10 +212,12 @@ export function AgentDetail(props: AgentDetailProps) {
       setAtBottom(isBottom);
     });
 
+    // eslint-disable-next-line solid/reactivity -- output subscription is not a reactive context; refit reads current signal values intentionally
     const cleanupScrollback = onScrollback(props.agentId, (data, cols) => {
-      if (term && cols > 0) {
-        term.resize(cols, term.rows);
-      }
+      if (cols > 0) setServerCols(cols);
+      // Fit the font/geometry to the desktop's column count so the terminal
+      // fills the available width.
+      refit();
       // Clear before writing — on reconnect the server re-sends the full
       // scrollback buffer, so we must avoid duplicate content.
       term?.clear();
@@ -122,13 +235,13 @@ export function AgentDetail(props: AgentDetailProps) {
     let resizeRaf = 0;
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(resizeRaf);
-      resizeRaf = requestAnimationFrame(() => fitAddon?.fit());
+      resizeRaf = requestAnimationFrame(() => refit());
     });
     observer.observe(termContainer);
 
     // Refit terminal when soft keyboard opens/closes on mobile
     if (window.visualViewport) {
-      const onViewportResize = () => fitAddon?.fit();
+      const onViewportResize = () => refit();
       window.visualViewport.addEventListener('resize', onViewportResize);
       onCleanup(() => window.visualViewport?.removeEventListener('resize', onViewportResize));
     }
@@ -262,6 +375,54 @@ export function AgentDetail(props: AgentDetailProps) {
         />
       </div>
 
+      {/* Terminal / Notes tabs */}
+      <div
+        style={{
+          display: 'flex',
+          'flex-shrink': '0',
+          'border-bottom': '1px solid #223040',
+          background: '#12181f',
+          position: 'relative',
+          'z-index': '10',
+        }}
+      >
+        <For
+          each={[
+            { id: 'terminal' as const, label: 'Terminal' },
+            { id: 'notes' as const, label: 'Notes' },
+          ]}
+        >
+          {(tab) => (
+            <button
+              onClick={() => {
+                if (tab.id === 'notes') {
+                  void openNotes();
+                } else {
+                  setView('terminal');
+                  // The terminal was display:none while Notes was open; re-fit
+                  // once it's laid out again so it fills the width.
+                  requestAnimationFrame(() => refit());
+                }
+              }}
+              style={{
+                flex: '1',
+                padding: '10px 0',
+                background: 'none',
+                border: 'none',
+                'border-bottom': view() === tab.id ? '2px solid #2ec8ff' : '2px solid transparent',
+                color: view() === tab.id ? '#d7e4f0' : '#678197',
+                'font-size': '14px',
+                'font-weight': '500',
+                cursor: 'pointer',
+                'touch-action': 'manipulation',
+              }}
+            >
+              {tab.label}
+            </button>
+          )}
+        </For>
+      </div>
+
       {/* Connection status banner */}
       <Show when={status() !== 'connected'}>
         <div
@@ -279,7 +440,8 @@ export function AgentDetail(props: AgentDetailProps) {
       </Show>
 
       {/* Terminal — overflow:hidden clips xterm.js overlays so they don't
-           capture touch events over the header/input areas */}
+           capture touch events over the header/input areas. Kept mounted (hidden,
+           not unmounted) when the Notes tab is active so output keeps streaming. */}
       <div
         ref={termContainer}
         style={{
@@ -288,11 +450,103 @@ export function AgentDetail(props: AgentDetailProps) {
           padding: '4px',
           position: 'relative',
           overflow: 'hidden',
+          display: view() === 'terminal' ? 'block' : 'none',
         }}
       />
 
+      {/* Notes editor */}
+      <Show when={view() === 'notes'}>
+        <div
+          style={{
+            flex: '1',
+            'min-height': '0',
+            display: 'flex',
+            'flex-direction': 'column',
+            background: '#0b0f14',
+          }}
+        >
+          <Show when={notesError()}>
+            <div
+              style={{
+                padding: '8px 14px',
+                background: '#7f1d1d',
+                color: '#fca5a5',
+                'font-size': '13px',
+                'flex-shrink': '0',
+              }}
+            >
+              {notesError()}
+            </div>
+          </Show>
+          <textarea
+            value={notesText()}
+            disabled={notesLoading()}
+            onInput={(e) => {
+              setNotesText(e.currentTarget.value);
+              setNotesDirty(true);
+            }}
+            placeholder={notesLoading() ? 'Loading notes…' : 'Notes for this task…'}
+            style={{
+              flex: '1',
+              'min-height': '0',
+              width: '100%',
+              background: '#0b0f14',
+              border: 'none',
+              padding: '12px 14px',
+              color: '#d7e4f0',
+              'font-size': '15px',
+              'font-family': "'JetBrains Mono', 'Courier New', monospace",
+              'line-height': '1.5',
+              resize: 'none',
+              outline: 'none',
+              'box-sizing': 'border-box',
+            }}
+          />
+          <div
+            style={{
+              display: 'flex',
+              'align-items': 'center',
+              gap: '10px',
+              padding: '10px 14px max(10px, env(safe-area-inset-bottom)) 14px',
+              'border-top': '1px solid #223040',
+              background: '#12181f',
+              'flex-shrink': '0',
+            }}
+          >
+            <span style={{ 'font-size': '13px', color: '#678197' }}>
+              {notesSaving()
+                ? 'Saving…'
+                : notesSaved()
+                  ? 'Saved'
+                  : notesDirty()
+                    ? 'Unsaved changes'
+                    : ''}
+            </span>
+            <button
+              type="button"
+              disabled={notesSaving() || notesLoading() || !taskId()}
+              onClick={() => void handleSaveNotes()}
+              style={{
+                'margin-left': 'auto',
+                background: notesSaving() || notesLoading() || !taskId() ? '#1a2430' : '#2ec8ff',
+                color: notesSaving() || notesLoading() || !taskId() ? '#678197' : '#031018',
+                border: 'none',
+                'border-radius': '10px',
+                padding: '10px 22px',
+                'font-size': '15px',
+                'font-weight': '600',
+                cursor: notesSaving() || notesLoading() || !taskId() ? 'default' : 'pointer',
+                'touch-action': 'manipulation',
+              }}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </Show>
+
       {/* Scroll to bottom FAB */}
-      <Show when={!atBottom()}>
+      <Show when={view() === 'terminal' && !atBottom()}>
         <button
           onClick={scrollToBottom}
           style={{
@@ -323,7 +577,7 @@ export function AgentDetail(props: AgentDetailProps) {
         style={{
           'border-top': '1px solid #223040',
           padding: '8px 10px max(8px, env(safe-area-inset-bottom)) 10px',
-          display: 'flex',
+          display: view() === 'terminal' ? 'flex' : 'none',
           'flex-direction': 'column',
           gap: '6px',
           'flex-shrink': '0',
@@ -439,14 +693,7 @@ export function AgentDetail(props: AgentDetailProps) {
           </For>
           <div style={{ 'margin-left': 'auto', display: 'flex', gap: '6px' }}>
             <button
-              onClick={() => {
-                const next = Math.max(MIN_FONT, termFontSize() - 1);
-                setTermFontSize(next);
-                if (term) {
-                  term.options.fontSize = next;
-                  fitAddon?.fit();
-                }
-              }}
+              onClick={() => changeFont(-1)}
               disabled={termFontSize() <= MIN_FONT}
               style={{
                 background: '#1a2430',
@@ -466,14 +713,7 @@ export function AgentDetail(props: AgentDetailProps) {
               A-
             </button>
             <button
-              onClick={() => {
-                const next = Math.min(MAX_FONT, termFontSize() + 1);
-                setTermFontSize(next);
-                if (term) {
-                  term.options.fontSize = next;
-                  fitAddon?.fit();
-                }
-              }}
+              onClick={() => changeFont(1)}
               disabled={termFontSize() >= MAX_FONT}
               style={{
                 background: '#1a2430',

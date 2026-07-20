@@ -81,6 +81,8 @@
   "GeneratePairingPin": "generate_pairing_pin",
   "Remote_GetProjectsRequest": "remote_get_projects_request",
   "Remote_CreateTaskRequest": "remote_create_task_request",
+  "Remote_GetNotesRequest": "remote_get_notes_request",
+  "Remote_SetNotesRequest": "remote_set_notes_request",
   "Remote_RendererReply": "remote_renderer_reply",
   "PlanContent": "plan_content",
   "ReadPlanContent": "read_plan_content",

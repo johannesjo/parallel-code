@@ -85,6 +85,8 @@ const ALLOWED_CHANNELS = new Set([
   'generate_pairing_pin',
   'remote_get_projects_request',
   'remote_create_task_request',
+  'remote_get_notes_request',
+  'remote_set_notes_request',
   'remote_renderer_reply',
   'plan_content',
   'read_plan_content',

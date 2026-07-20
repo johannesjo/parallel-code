@@ -1211,6 +1211,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
     getProjects: () => callRenderer<RemoteProject[]>(IPC.Remote_GetProjectsRequest, {}),
     createTaskFromMobile: (req: { projectId: string; name: string; prompt: string }) =>
       callRenderer<{ taskId: string }>(IPC.Remote_CreateTaskRequest, req),
+    getTaskNotes: (taskId: string) =>
+      callRenderer<{ notes: string }>(IPC.Remote_GetNotesRequest, { taskId }).then((r) => r.notes),
+    setTaskNotes: (taskId: string, notes: string) =>
+      callRenderer<{ ok: boolean }>(IPC.Remote_SetNotesRequest, { taskId, notes }).then(() => {}),
   };
 
   ipcMain.handle(IPC.GeneratePairingPin, () => {

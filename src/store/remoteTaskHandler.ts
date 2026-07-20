@@ -5,7 +5,7 @@
 // main-side bridge.
 
 import { store } from './core';
-import { createTask } from './tasks';
+import { createTask, updateTaskNotes } from './tasks';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 
@@ -17,6 +17,15 @@ interface CreateTaskRequest extends RendererRequest {
   projectId: string;
   name: string;
   prompt: string;
+}
+
+interface GetNotesRequest extends RendererRequest {
+  taskId: string;
+}
+
+interface SetNotesRequest extends RendererRequest {
+  taskId: string;
+  notes: string;
 }
 
 function reply(reqId: string, ok: boolean, data?: unknown, error?: string): void {
@@ -72,6 +81,25 @@ async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
   }
 }
 
+function handleGetNotes(req: GetNotesRequest): void {
+  const task = store.tasks[req.taskId];
+  if (!task) {
+    reply(req.reqId, false, undefined, 'Task not found');
+    return;
+  }
+  reply(req.reqId, true, { notes: task.notes ?? '' });
+}
+
+function handleSetNotes(req: SetNotesRequest): void {
+  const task = store.tasks[req.taskId];
+  if (!task) {
+    reply(req.reqId, false, undefined, 'Task not found');
+    return;
+  }
+  updateTaskNotes(req.taskId, req.notes);
+  reply(req.reqId, true, { ok: true });
+}
+
 /** Subscribe to mobile task-creation requests. Returns an unsubscribe fn. */
 export function startRemoteTaskHandlers(): () => void {
   const offProjects = window.electron.ipcRenderer.on(
@@ -86,8 +114,22 @@ export function startRemoteTaskHandlers(): () => void {
       if (data && typeof data === 'object') void handleCreateTask(data as CreateTaskRequest);
     },
   );
+  const offGetNotes = window.electron.ipcRenderer.on(
+    IPC.Remote_GetNotesRequest,
+    (data: unknown) => {
+      if (data && typeof data === 'object') handleGetNotes(data as GetNotesRequest);
+    },
+  );
+  const offSetNotes = window.electron.ipcRenderer.on(
+    IPC.Remote_SetNotesRequest,
+    (data: unknown) => {
+      if (data && typeof data === 'object') handleSetNotes(data as SetNotesRequest);
+    },
+  );
   return () => {
     offProjects();
     offCreate();
+    offGetNotes();
+    offSetNotes();
   };
 }

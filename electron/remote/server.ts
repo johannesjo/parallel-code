@@ -33,6 +33,7 @@ export interface MCPLogEntry {
 const MAX_LOG_ENTRIES = 200;
 const REST_COORDINATOR_SENTINEL = 'api';
 const MAX_REST_PROMPT_BYTES = 16 * 1024;
+const MAX_NOTES_BYTES = 100 * 1024;
 // Device pairing: a mobile client proves it can see the desktop by entering a
 // short-lived PIN, which elevates it to a "paired" token allowed to create tasks.
 const PAIRING_PIN_TTL_MS = 5 * 60_000;
@@ -661,6 +662,10 @@ export function startRemoteServer(opts: {
     name: string;
     prompt: string;
   }) => Promise<{ taskId: string }>;
+  /** Read a task's notes (renderer-backed). */
+  getTaskNotes?: (taskId: string) => Promise<string>;
+  /** Persist a task's notes (renderer-backed). */
+  setTaskNotes?: (taskId: string, notes: string) => Promise<void>;
 }): Promise<RemoteServer> {
   const token = randomBytes(24).toString('base64url');
   const subtaskToken = randomBytes(24).toString('base64url');
@@ -813,6 +818,45 @@ export function startRemoteServer(opts: {
                 return jsonEnd(400, { error: 'projectId must be a non-empty string' });
               createTask({ projectId, name, prompt })
                 .then((r) => jsonEnd(201, { taskId: r.taskId }))
+                .catch((err) => jsonEnd(500, { error: String(err) }));
+            })
+            .catch(() => jsonEnd(400, { error: 'bad request' }));
+          return;
+        }
+
+        return jsonEnd(405, { error: 'method not allowed' });
+      }
+
+      // --- Task notes (mobile + paired) ---
+      // Read/write the notes textarea shown on the desktop task panel. Available
+      // to the read-only mobile token too: editing notes is low-risk and mirrors
+      // the "interact with your terminals" capability the mobile token already has.
+      const notesMatch = url.pathname.match(/^\/api\/mobile\/notes\/([^/]+)$/);
+      if (notesMatch) {
+        if (tokenClass !== 'mobile' && tokenClass !== 'paired')
+          return jsonEnd(403, { error: 'forbidden' });
+        const taskId = decodeURIComponent(notesMatch[1]);
+
+        if (req.method === 'GET') {
+          if (!opts.getTaskNotes) return jsonEnd(503, { error: 'notes unavailable' });
+          opts
+            .getTaskNotes(taskId)
+            .then((notes) => jsonEnd(200, { notes }))
+            .catch((err) => jsonEnd(500, { error: String(err) }));
+          return;
+        }
+
+        if (req.method === 'PUT') {
+          const setTaskNotes = opts.setTaskNotes;
+          if (!setTaskNotes) return jsonEnd(503, { error: 'notes unavailable' });
+          readJsonBody(req)
+            .then((body) => {
+              if (typeof body.notes !== 'string')
+                return jsonEnd(400, { error: 'notes must be a string' });
+              if (Buffer.byteLength(body.notes, 'utf8') > MAX_NOTES_BYTES)
+                return jsonEnd(400, { error: `notes must be ${MAX_NOTES_BYTES} bytes or fewer` });
+              setTaskNotes(taskId, body.notes)
+                .then(() => jsonEnd(200, { ok: true }))
                 .catch((err) => jsonEnd(500, { error: String(err) }));
             })
             .catch(() => jsonEnd(400, { error: 'bad request' }));
