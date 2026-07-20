@@ -102,15 +102,15 @@ export function AgentDetail(props: AgentDetailProps) {
     }
   }
 
-  // Re-fit the terminal to the container. In auto mode the font tracks the
-  // desktop column count; in manual mode the columns track the chosen font.
+  // Re-fit the terminal to the container. The rendered column count always
+  // stays pinned to the desktop PTY width (`serverCols`) since the mobile
+  // client can't resize the PTY and the output is formatted for that width;
+  // only the font size changes. In auto mode autoFitFont picks the font that
+  // makes serverCols fill the width; in manual mode it no-ops and keeps the
+  // user's chosen font (so a larger font simply shows fewer visible columns).
   function refit(): void {
     if (!term) return;
-    if (manualFont()) {
-      fitAddon?.fit();
-      return;
-    }
-    autoFitFont();
+    autoFitFont(); // no-op while manualFont() is true
     fitAddon?.fit();
     const cols = serverCols();
     if (cols > 0) term.resize(cols, term.rows);
@@ -123,7 +123,7 @@ export function AgentDetail(props: AgentDetailProps) {
     setTermFontSize(next);
     if (term) {
       term.options.fontSize = next;
-      fitAddon?.fit();
+      refit();
     }
   }
 
@@ -279,10 +279,15 @@ export function AgentDetail(props: AgentDetailProps) {
       termContainer.removeEventListener('touchmove', onTouchMove);
       termContainer.removeEventListener('touchend', onTouchEnd);
       observer.disconnect();
+      // Cancel any queued refit so it can't run against the disposed terminal.
+      cancelAnimationFrame(resizeRaf);
       unsubscribeAgent(props.agentId);
       cleanupScrollback();
       cleanupOutput();
       term?.dispose();
+      // Null it so a stray rAF (e.g. the tab-switch refit) short-circuits in
+      // refit()/handlers instead of touching a disposed xterm instance.
+      term = undefined;
     });
   });
 

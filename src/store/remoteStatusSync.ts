@@ -8,7 +8,7 @@
 // main-side cache, and electron/remote/server.ts buildAgentList for how the
 // cached attention is attached to each RemoteAgent.
 
-import { createEffect, onCleanup } from 'solid-js';
+import { createEffect, createRoot } from 'solid-js';
 import { store } from './store';
 import { getTaskAttentionState } from './taskStatus';
 import { fireAndForget } from '../lib/ipc';
@@ -19,27 +19,31 @@ export function startRemoteStatusSync(): () => void {
   // Serialized snapshot of the last push, so we only send on actual change.
   let lastSerialized = '';
 
-  createEffect(() => {
-    // Only sync while the remote (Connect Phone) server is running — otherwise
-    // no phone is listening and the push is wasted. Reading `enabled` here also
-    // makes the effect re-run (and resume syncing) when the server starts.
-    if (!store.remoteAccess.enabled) {
-      lastSerialized = '';
-      return;
-    }
+  // createRoot gives the effect an explicit owner whose disposer we return, so
+  // the sync actually stops when the caller invokes it. Called from an async
+  // onMount past the first await, the ambient owner is already gone, so relying
+  // on onCleanup/owner-disposal alone would leave the effect running forever.
+  return createRoot((dispose) => {
+    createEffect(() => {
+      // Only sync while the remote (Connect Phone) server is running — otherwise
+      // no phone is listening and the push is wasted. Reading `enabled` here also
+      // makes the effect re-run (and resume syncing) when the server starts.
+      if (!store.remoteAccess.enabled) {
+        lastSerialized = '';
+        return;
+      }
 
-    const statuses: Record<string, RemoteAttentionState> = {};
-    for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
-      statuses[taskId] = getTaskAttentionState(taskId);
-    }
+      const statuses: Record<string, RemoteAttentionState> = {};
+      for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
+        statuses[taskId] = getTaskAttentionState(taskId);
+      }
 
-    const serialized = JSON.stringify(statuses);
-    if (serialized === lastSerialized) return;
-    lastSerialized = serialized;
-    fireAndForget(IPC.Remote_UpdateTaskStatus, { statuses });
+      const serialized = JSON.stringify(statuses);
+      if (serialized === lastSerialized) return;
+      lastSerialized = serialized;
+      fireAndForget(IPC.Remote_UpdateTaskStatus, { statuses });
+    });
+
+    return dispose;
   });
-
-  const cleanup = (): void => {};
-  onCleanup(cleanup);
-  return cleanup;
 }

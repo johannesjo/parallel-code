@@ -847,7 +847,15 @@ export function startRemoteServer(opts: {
       if (notesMatch) {
         if (tokenClass !== 'mobile' && tokenClass !== 'paired')
           return jsonEnd(403, { error: 'forbidden' });
-        const taskId = decodeURIComponent(notesMatch[1]);
+        // decodeURIComponent throws URIError on a malformed escape (e.g. "%").
+        // This handler has no outer try/catch, so an unguarded throw here would
+        // take down the main process — reject with 400 instead.
+        let taskId: string;
+        try {
+          taskId = decodeURIComponent(notesMatch[1]);
+        } catch {
+          return jsonEnd(400, { error: 'invalid task id' });
+        }
 
         if (req.method === 'GET') {
           if (!opts.getTaskNotes) return jsonEnd(503, { error: 'notes unavailable' });
@@ -861,7 +869,10 @@ export function startRemoteServer(opts: {
         if (req.method === 'PUT') {
           const setTaskNotes = opts.setTaskNotes;
           if (!setTaskNotes) return jsonEnd(503, { error: 'notes unavailable' });
-          readJsonBody(req)
+          // Cap the body above MAX_NOTES_BYTES so the byte check below is the
+          // effective limit (readJsonBody's 64 KB default would otherwise reject
+          // valid large notes first with a generic "Body too large").
+          readJsonBody(req, MAX_NOTES_BYTES + 4096)
             .then((body) => {
               if (typeof body.notes !== 'string')
                 return jsonEnd(400, { error: 'notes must be a string' });
