@@ -8,6 +8,7 @@ import { store } from './core';
 import { createTask } from './tasks';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
+import type { GitIgnoredEntry } from '../ipc/types';
 
 interface RendererRequest {
   reqId: string;
@@ -52,9 +53,12 @@ async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
       baseBranch =
         project.defaultBaseBranch ??
         (await invoke<string>(IPC.GetMainBranch, { projectRoot: project.path }));
-      // Match the desktop New Task default: symlink all gitignored dirs (e.g.
-      // node_modules) into the worktree so the agent has a working environment.
-      symlinkDirs = await invoke<string[]>(IPC.GetGitignoredDirs, { projectRoot: project.path });
+      // Match the desktop New Task default without opting remote users into
+      // newly discovered entries that have no confirmation UI.
+      const ignoredEntries = await invoke<GitIgnoredEntry[]>(IPC.GetGitignoredDirs, {
+        projectRoot: project.path,
+      });
+      symlinkDirs = ignoredEntries.filter((entry) => entry.isDefault).map((entry) => entry.name);
     }
 
     const taskId = await createTask({

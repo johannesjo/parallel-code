@@ -5,9 +5,9 @@ import path from 'path';
 import type { BrowserWindow } from 'electron';
 import { debug as logDebug } from '../log.js';
 import { appendGitInfoExcludeBlockAtPath, resolveGitInfoExcludePath } from './git-exclude.js';
-import type { ChangedFile, CommitInfo, FileDiffResult } from './shared-types.js';
+import type { ChangedFile, CommitInfo, FileDiffResult, GitIgnoredEntry } from './shared-types.js';
 
-export type { ChangedFile, CommitInfo, FileDiffResult } from './shared-types.js';
+export type { ChangedFile, CommitInfo, FileDiffResult, GitIgnoredEntry } from './shared-types.js';
 
 const _exec = promisify(execFile);
 
@@ -122,6 +122,7 @@ const SYMLINK_CANDIDATES = [
   '.env',
   'node_modules',
 ];
+const DEFAULT_SYMLINK_CANDIDATES = new Set(SYMLINK_CANDIDATES);
 
 /**
  * Entries inside `.claude/` that must NOT be seeded from the main repo's
@@ -155,6 +156,11 @@ const SANDBOX_EXCLUDE_PATTERNS = [
   '/.zprofile',
   '/.zshrc',
 ];
+const INTERNAL_SYMLINK_EXCLUSIONS = new Set([
+  '.claude',
+  '.worktrees',
+  ...SANDBOX_EXCLUDE_PATTERNS.map((pattern) => pattern.slice(1)),
+]);
 const SANDBOX_EXCLUDE_HEADER = '# parallel-code: sandbox bind-mount artifacts';
 const seededSandboxExcludes = new Set<string>();
 
@@ -1032,23 +1038,18 @@ export async function removeWorktree(
 
 // --- IPC command functions ---
 
-export async function getGitIgnoredDirs(projectRoot: string): Promise<string[]> {
-  const results: string[] = [];
-  for (const name of SYMLINK_CANDIDATES) {
-    const dirPath = path.join(projectRoot, name);
-    try {
-      await fs.promises.stat(dirPath); // throws if entry doesn't exist
-    } catch {
-      continue;
-    }
-    try {
-      await exec('git', ['check-ignore', '-q', name], { cwd: projectRoot });
-      results.push(name);
-    } catch {
-      /* not ignored */
-    }
-  }
-  return results;
+export async function getGitIgnoredDirs(projectRoot: string): Promise<GitIgnoredEntry[]> {
+  const { stdout } = await exec(
+    'git',
+    ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory'],
+    { cwd: projectRoot },
+  );
+  return stdout
+    .split('\n')
+    .filter(Boolean)
+    .map((entry) => (entry.endsWith('/') ? entry.slice(0, -1) : entry))
+    .filter((name) => !name.includes('/') && !INTERNAL_SYMLINK_EXCLUSIONS.has(name))
+    .map((name) => ({ name, isDefault: DEFAULT_SYMLINK_CANDIDATES.has(name) }));
 }
 
 export async function getMainBranch(projectRoot: string): Promise<string> {

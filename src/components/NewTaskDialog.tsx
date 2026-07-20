@@ -49,7 +49,7 @@ import { BranchCombobox } from './BranchCombobox';
 import { ProjectSelect } from './ProjectSelect';
 import { SymlinkDirPicker } from './SymlinkDirPicker';
 import { scrollCoordinatorIntoView } from './scrollCoordinatorIntoView';
-import type { AgentDef } from '../ipc/types';
+import type { AgentDef, GitIgnoredEntry } from '../ipc/types';
 import { DEFAULT_DOCKER_IMAGE, PROJECT_DOCKERFILE_RELATIVE_PATH } from '../lib/docker';
 import {
   clampCoordinatorConcurrentTasks,
@@ -608,10 +608,14 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
 
     void (async () => {
       try {
-        const dirs = await invoke<string[]>(IPC.GetGitignoredDirs, { projectRoot: path });
+        const entries = await invoke<GitIgnoredEntry[]>(IPC.GetGitignoredDirs, {
+          projectRoot: path,
+        });
         if (cancelled) return;
-        setIgnoredDirs(dirs);
-        setSelectedDirs(new Set(dirs)); // all checked by default
+        setIgnoredDirs(entries.map((entry) => entry.name));
+        setSelectedDirs(
+          new Set(entries.filter((entry) => entry.isDefault).map((entry) => entry.name)),
+        );
       } catch {
         if (cancelled) return;
         setIgnoredDirs([]);

@@ -8,6 +8,7 @@ export type {
   CoverageSummary,
   CreateTaskResult,
   FileDiffResult,
+  GitIgnoredEntry,
   ImportableWorktree,
   MergeResult,
   MergeStatus,

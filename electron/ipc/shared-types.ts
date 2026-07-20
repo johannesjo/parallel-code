@@ -27,6 +27,11 @@ export interface CreateTaskResult {
   worktree_path: string;
 }
 
+export interface GitIgnoredEntry {
+  name: string;
+  isDefault: boolean;
+}
+
 export interface ChangedFile {
   path: string;
   lines_added: number;
