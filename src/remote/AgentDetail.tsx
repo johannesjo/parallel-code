@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { TERMINAL_SCROLLBACK_LINES, base64ToUint8Array } from '../lib/terminalConstants';
 import { createTerminalHttpLinkHandler } from '../lib/terminalLinks';
 import { fetchNotes, saveNotes } from './api';
+import { agentStatusDisplay } from './attention';
 import {
   subscribeAgent,
   unsubscribeAgent,
@@ -365,14 +366,35 @@ export function AgentDetail(props: AgentDetailProps) {
         >
           {props.taskName}
         </span>
-        <div
-          style={{
-            width: '8px',
-            height: '8px',
-            'border-radius': '50%',
-            background: agentInfo()?.status === 'running' ? '#2fd198' : '#678197',
+        <Show when={agentInfo()} fallback={<div style={{ width: '8px' }} />}>
+          {(info) => {
+            const display = () => agentStatusDisplay(info());
+            return (
+              <div
+                style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'flex-shrink': '0' }}
+              >
+                <span
+                  style={{
+                    'font-size': '12px',
+                    'font-weight': display().glow ? '600' : '400',
+                    color: display().color,
+                  }}
+                >
+                  {display().label}
+                </span>
+                <div
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    'border-radius': '50%',
+                    background: display().color,
+                    'box-shadow': display().glow ? `0 0 0 3px ${display().color}33` : 'none',
+                  }}
+                />
+              </div>
+            );
           }}
-        />
+        </Show>
       </div>
 
       {/* Terminal / Notes tabs */}

@@ -1,3 +1,11 @@
+/**
+ * Task attention state, mirrored from the desktop's TaskAttentionState so the
+ * mobile overview can show the same richer status ("needs input", "working",
+ * etc.) rather than just running/exited. Kept as a string union at this shared
+ * boundary; the renderer maps its TaskAttentionState onto these values.
+ */
+export type RemoteAttentionState = 'idle' | 'active' | 'needs_input' | 'error' | 'ready' | 'review';
+
 /** Agent summary sent in the agents list. */
 export interface RemoteAgent {
   agentId: string;
@@ -6,6 +14,8 @@ export interface RemoteAgent {
   status: 'running' | 'exited';
   exitCode: number | null;
   lastLine: string;
+  /** Richer, renderer-derived task status. Defaults to 'idle' when unknown. */
+  attention: RemoteAttentionState;
 }
 
 // --- Server -> Client messages ---

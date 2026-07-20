@@ -1,5 +1,6 @@
 import { For, Show, createMemo } from 'solid-js';
 import { agents, status } from './ws';
+import { agentStatusDisplay } from './attention';
 import type { RemoteAgent } from '../../electron/remote/protocol';
 
 interface AgentListProps {
@@ -10,6 +11,28 @@ interface AgentListProps {
 export function AgentList(props: AgentListProps) {
   const running = createMemo(() => agents().filter((a) => a.status === 'running').length);
   const total = createMemo(() => agents().length);
+  const needsInput = createMemo(() => agents().filter((a) => a.attention === 'needs_input').length);
+
+  // Surface tasks that want attention at the top; keep original order within a
+  // rank so the list doesn't jump around on unrelated status changes.
+  const ATTENTION_RANK: Record<string, number> = {
+    needs_input: 0,
+    error: 1,
+    review: 2,
+    active: 3,
+    ready: 4,
+    idle: 5,
+  };
+  const sortedAgents = createMemo(() =>
+    agents()
+      .map((a, i) => ({ a, i }))
+      .sort((x, y) => {
+        const rx = ATTENTION_RANK[x.a.attention] ?? 5;
+        const ry = ATTENTION_RANK[y.a.attention] ?? 5;
+        return rx - ry || x.i - y.i;
+      })
+      .map((e) => e.a),
+  );
 
   return (
     <div
@@ -34,7 +57,32 @@ export function AgentList(props: AgentListProps) {
         <span style={{ 'font-size': '18px', 'font-weight': '600', color: '#d7e4f0' }}>
           Parallel Code
         </span>
-        <div style={{ display: 'flex', 'align-items': 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}>
+          <Show when={needsInput() > 0}>
+            <span
+              style={{
+                display: 'inline-flex',
+                'align-items': 'center',
+                gap: '5px',
+                padding: '3px 9px',
+                'border-radius': '999px',
+                background: '#3a2a0d',
+                color: '#ffc569',
+                'font-size': '12px',
+                'font-weight': '600',
+              }}
+            >
+              <span
+                style={{
+                  width: '7px',
+                  height: '7px',
+                  'border-radius': '50%',
+                  background: '#ffc569',
+                }}
+              />
+              {needsInput()} needs input
+            </span>
+          </Show>
           <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
             <div
               style={{
@@ -144,86 +192,92 @@ export function AgentList(props: AgentListProps) {
           </a>
         </div>
 
-        <For each={agents()}>
-          {(agent: RemoteAgent) => (
-            <div
-              onClick={() => props.onSelect(agent.agentId, agent.taskName)}
-              style={{
-                background: '#0f141b',
-                border: '1px solid #223040',
-                'border-radius': '12px',
-                padding: '14px 16px',
-                cursor: 'pointer',
-                display: 'flex',
-                'flex-direction': 'column',
-                gap: '6px',
-                'touch-action': 'manipulation',
-                transition: 'background 0.16s ease',
-              }}
-            >
+        <For each={sortedAgents()}>
+          {(agent: RemoteAgent) => {
+            const display = () => agentStatusDisplay(agent);
+            return (
               <div
+                onClick={() => props.onSelect(agent.agentId, agent.taskName)}
                 style={{
+                  background: '#0f141b',
+                  border: display().glow ? `1px solid ${display().color}66` : '1px solid #223040',
+                  'border-radius': '12px',
+                  padding: '14px 16px',
+                  cursor: 'pointer',
                   display: 'flex',
-                  'align-items': 'center',
-                  'justify-content': 'space-between',
+                  'flex-direction': 'column',
+                  gap: '6px',
+                  'touch-action': 'manipulation',
+                  transition: 'background 0.16s ease',
                 }}
               >
                 <div
                   style={{
                     display: 'flex',
                     'align-items': 'center',
+                    'justify-content': 'space-between',
                     gap: '8px',
-                    'min-width': '0',
-                    flex: '1',
                   }}
                 >
                   <div
                     style={{
-                      width: '8px',
-                      height: '8px',
-                      'border-radius': '50%',
-                      background: agent.status === 'running' ? '#2fd198' : '#678197',
-                      'flex-shrink': '0',
-                    }}
-                  />
-                  <span
-                    style={{
-                      'font-size': '15px',
-                      'font-weight': '500',
-                      color: '#d7e4f0',
-                      overflow: 'hidden',
-                      'text-overflow': 'ellipsis',
-                      'white-space': 'nowrap',
+                      display: 'flex',
+                      'align-items': 'center',
+                      gap: '8px',
+                      'min-width': '0',
+                      flex: '1',
                     }}
                   >
-                    {agent.taskName}
+                    <div
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        'border-radius': '50%',
+                        background: display().color,
+                        'box-shadow': display().glow ? `0 0 0 3px ${display().color}33` : 'none',
+                        'flex-shrink': '0',
+                      }}
+                    />
+                    <span
+                      style={{
+                        'font-size': '15px',
+                        'font-weight': '500',
+                        color: '#d7e4f0',
+                        overflow: 'hidden',
+                        'text-overflow': 'ellipsis',
+                        'white-space': 'nowrap',
+                      }}
+                    >
+                      {agent.taskName}
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      'font-size': '13px',
+                      'font-weight': display().glow ? '600' : '400',
+                      color: display().color,
+                      'flex-shrink': '0',
+                    }}
+                  >
+                    {display().label}
                   </span>
                 </div>
-                <span
+
+                <div
                   style={{
-                    'font-size': '13px',
-                    color: agent.status === 'running' ? '#2fd198' : '#678197',
-                    'flex-shrink': '0',
+                    'font-size': '12px',
+                    'font-family': "'JetBrains Mono', 'Courier New', monospace",
+                    color: '#678197',
+                    'white-space': 'nowrap',
+                    overflow: 'hidden',
+                    'text-overflow': 'ellipsis',
                   }}
                 >
-                  {agent.status}
-                </span>
+                  {agent.agentId}
+                </div>
               </div>
-
-              <div
-                style={{
-                  'font-size': '12px',
-                  'font-family': "'JetBrains Mono', 'Courier New', monospace",
-                  color: '#678197',
-                  'white-space': 'nowrap',
-                  overflow: 'hidden',
-                  'text-overflow': 'ellipsis',
-                }}
-              >
-                {agent.agentId}
-              </div>
-            </div>
-          )}
+            );
+          }}
         </For>
       </div>
     </div>

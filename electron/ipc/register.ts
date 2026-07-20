@@ -15,6 +15,7 @@ import {
   countRunningAgents,
   killAllAgents,
   getAgentMeta,
+  notifyAgentListChanged,
   isDockerAvailable,
   dockerImageExists,
   buildDockerImage,
@@ -38,6 +39,7 @@ import {
 } from './pr-checks.js';
 import { readCoverageSummary } from './coverage.js';
 import { startRemoteServer, getMCPLogs, type RemoteProject } from '../remote/server.js';
+import type { RemoteAttentionState } from '../remote/protocol.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
 import { buildMcpLaunchArgs } from '../mcp/agent-args.js';
 import {
@@ -403,6 +405,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // --- Remote access state ---
   let remoteServer: Awaited<ReturnType<typeof startRemoteServer>> | null = null;
   const taskNames = new Map<string, string>();
+  // Renderer-derived per-task attention (needs input, working, ready, …), pushed
+  // from the renderer via Remote_UpdateTaskStatus so the mobile overview can show
+  // the same richer status as the desktop. The renderer owns this computation
+  // (it depends on reactive terminal/git/steps state), so main just caches it.
+  const taskAttention = new Map<string, RemoteAttentionState>();
 
   // --- MCP coordinator (lazy — only loaded when coordinator mode is enabled) ---
   type CoordinatorType = import('../mcp/coordinator.js').Coordinator;
@@ -1215,7 +1222,33 @@ export function registerAllHandlers(win: BrowserWindow): void {
       callRenderer<{ notes: string }>(IPC.Remote_GetNotesRequest, { taskId }).then((r) => r.notes),
     setTaskNotes: (taskId: string, notes: string) =>
       callRenderer<{ ok: boolean }>(IPC.Remote_SetNotesRequest, { taskId, notes }).then(() => {}),
+    getTaskAttention: (taskId: string): RemoteAttentionState => taskAttention.get(taskId) ?? 'idle',
   };
+
+  const VALID_ATTENTION: ReadonlySet<RemoteAttentionState> = new Set([
+    'idle',
+    'active',
+    'needs_input',
+    'error',
+    'ready',
+    'review',
+  ]);
+
+  // Renderer pushes the full per-task attention snapshot whenever it changes.
+  // We replace the cache and re-broadcast the agent list so connected phones
+  // update immediately (attention changes don't fire PTY spawn/exit events).
+  ipcMain.handle(IPC.Remote_UpdateTaskStatus, (_e, args: { statuses?: Record<string, string> }) => {
+    const statuses = args?.statuses;
+    if (!statuses || typeof statuses !== 'object') return;
+    taskAttention.clear();
+    for (const [taskId, value] of Object.entries(statuses)) {
+      if (typeof taskId === 'string' && VALID_ATTENTION.has(value as RemoteAttentionState)) {
+        taskAttention.set(taskId, value as RemoteAttentionState);
+      }
+    }
+    // Only bother rebroadcasting when a phone could be listening.
+    if (remoteServer) notifyAgentListChanged();
+  });
 
   ipcMain.handle(IPC.GeneratePairingPin, () => {
     if (!remoteServer) throw new Error('Remote server is not running');

@@ -18,7 +18,12 @@ import {
   getAgentCols,
   onPtyEvent,
 } from '../ipc/pty.js';
-import { parseClientMessage, type ServerMessage, type RemoteAgent } from './protocol.js';
+import {
+  parseClientMessage,
+  type ServerMessage,
+  type RemoteAgent,
+  type RemoteAttentionState,
+} from './protocol.js';
 import type { Coordinator } from '../mcp/coordinator.js';
 import { validateBranchName } from '../mcp/validation.js';
 import type { ApiTaskDetail, LandSelfInput, SubtaskVerification } from '../mcp/types.js';
@@ -211,6 +216,7 @@ function buildAgentList(
     exitCode: number | null;
     lastLine: string;
   },
+  getTaskAttention: (taskId: string) => RemoteAttentionState,
 ): RemoteAgent[] {
   const byTask = new Map<string, RemoteAgent>();
   for (const agentId of getActiveAgentIds()) {
@@ -226,6 +232,7 @@ function buildAgentList(
       status: info.status,
       exitCode: info.exitCode,
       lastLine: info.lastLine,
+      attention: getTaskAttention(meta.taskId),
     };
     // Prefer running agents over exited ones for the same task
     const existing = byTask.get(meta.taskId);
@@ -666,7 +673,12 @@ export function startRemoteServer(opts: {
   getTaskNotes?: (taskId: string) => Promise<string>;
   /** Persist a task's notes (renderer-backed). */
   setTaskNotes?: (taskId: string, notes: string) => Promise<void>;
+  /** Renderer-derived task attention state (needs input, working, ready, …). */
+  getTaskAttention?: (taskId: string) => RemoteAttentionState;
 }): Promise<RemoteServer> {
+  // Fall back to 'idle' when the caller doesn't wire attention (e.g. MCP-only start).
+  const getTaskAttention: (taskId: string) => RemoteAttentionState =
+    opts.getTaskAttention ?? (() => 'idle');
   const token = randomBytes(24).toString('base64url');
   const subtaskToken = randomBytes(24).toString('base64url');
   const mobileToken = randomBytes(24).toString('base64url');
@@ -894,7 +906,7 @@ export function startRemoteServer(opts: {
       }
 
       if (url.pathname === '/api/agents' && req.method === 'GET') {
-        const list = buildAgentList(opts.getTaskName, opts.getAgentStatus);
+        const list = buildAgentList(opts.getTaskName, opts.getAgentStatus, getTaskAttention);
         res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'application/json' });
         res.end(JSON.stringify(list));
         return;
@@ -1088,12 +1100,12 @@ export function startRemoteServer(opts: {
   }
 
   const unsubSpawn = onPtyEvent('spawn', () => {
-    const list = buildAgentList(opts.getTaskName, opts.getAgentStatus);
+    const list = buildAgentList(opts.getTaskName, opts.getAgentStatus, getTaskAttention);
     broadcast({ type: 'agents', list });
   });
 
   const unsubListChanged = onPtyEvent('list-changed', () => {
-    const list = buildAgentList(opts.getTaskName, opts.getAgentStatus);
+    const list = buildAgentList(opts.getTaskName, opts.getAgentStatus, getTaskAttention);
     broadcast({ type: 'agents', list });
   });
 
@@ -1105,7 +1117,7 @@ export function startRemoteServer(opts: {
       clientSubs.get(client)?.delete(agentId);
     }
     setTimeout(() => {
-      const list = buildAgentList(opts.getTaskName, opts.getAgentStatus);
+      const list = buildAgentList(opts.getTaskName, opts.getAgentStatus, getTaskAttention);
       broadcast({ type: 'agents', list });
     }, 100);
   });
@@ -1118,7 +1130,7 @@ export function startRemoteServer(opts: {
     if (classifyToken(req) === 'coordinator') {
       authenticatedClients.add(ws);
       clientTokenTypes.set(ws, 'coordinator');
-      const list = buildAgentList(opts.getTaskName, opts.getAgentStatus);
+      const list = buildAgentList(opts.getTaskName, opts.getAgentStatus, getTaskAttention);
       ws.send(JSON.stringify({ type: 'agents', list } satisfies ServerMessage));
     } else {
       // Close unauthenticated connections after 5 seconds
@@ -1143,7 +1155,7 @@ export function startRemoteServer(opts: {
           clientTokenTypes.set(ws, tokenType);
           const timer = authTimers.get(ws);
           if (timer) clearTimeout(timer);
-          const list = buildAgentList(opts.getTaskName, opts.getAgentStatus);
+          const list = buildAgentList(opts.getTaskName, opts.getAgentStatus, getTaskAttention);
           ws.send(JSON.stringify({ type: 'agents', list } satisfies ServerMessage));
         } else {
           ws.close(4001, 'Unauthorized');
