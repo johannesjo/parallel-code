@@ -81,17 +81,22 @@ async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
   }
 }
 
-// Use Object.hasOwn, not truthiness: taskId comes from a mobile HTTP request,
-// and Solid's store proxy passes `__proto__`/`constructor` through to
-// Object.prototype, so `store.tasks['__proto__']` is a truthy non-task object.
-// A truthiness guard would let setStore('tasks','__proto__','notes',…) pollute
-// Object.prototype. hasOwn only matches real, own task entries.
-function hasTask(taskId: string): boolean {
-  return Object.hasOwn(store.tasks, taskId);
+/**
+ * True only when `taskId` is a real, own entry of the tasks record.
+ *
+ * Uses Object.hasOwn, NOT truthiness: `taskId` arrives from a mobile HTTP
+ * request, and Solid's store proxy resolves inherited keys (`__proto__`,
+ * `constructor`, `toString`, …) to prototype objects, which are truthy but are
+ * not tasks. A truthiness guard would let updateTaskNotes → setStore('tasks',
+ * '__proto__', 'notes', …) pollute Object.prototype. hasOwn reports only own
+ * properties, so it rejects every inherited/dangerous/missing key.
+ */
+export function isKnownTask(tasks: Record<string, unknown>, taskId: string): boolean {
+  return Object.hasOwn(tasks, taskId);
 }
 
 function handleGetNotes(req: GetNotesRequest): void {
-  if (!hasTask(req.taskId)) {
+  if (!isKnownTask(store.tasks, req.taskId)) {
     reply(req.reqId, false, undefined, 'Task not found');
     return;
   }
@@ -99,7 +104,7 @@ function handleGetNotes(req: GetNotesRequest): void {
 }
 
 function handleSetNotes(req: SetNotesRequest): void {
-  if (!hasTask(req.taskId)) {
+  if (!isKnownTask(store.tasks, req.taskId)) {
     reply(req.reqId, false, undefined, 'Task not found');
     return;
   }

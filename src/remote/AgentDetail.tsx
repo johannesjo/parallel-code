@@ -1,4 +1,4 @@
-import { onMount, onCleanup, createSignal, createEffect, Show, For } from 'solid-js';
+import { onMount, onCleanup, createSignal, createEffect, untrack, Show, For } from 'solid-js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { TERMINAL_SCROLLBACK_LINES, base64ToUint8Array } from '../lib/terminalConstants';
@@ -148,13 +148,16 @@ export function AgentDetail(props: AgentDetailProps) {
     }
   }
 
-  // Load notes when the Notes tab is showing and a task id is available. Guarded
-  // by notesDirty so reopening the tab never discards unsaved local edits, and
-  // it retries automatically if taskId resolves after the tab was opened.
+  // Load notes when the Notes tab is shown (or the task id resolves after the
+  // tab was opened). Depends only on view() and taskId(); notesDirty is read
+  // untracked as a guard — reopening the tab never discards unsaved edits, and,
+  // crucially, saving (which flips notesDirty false) does NOT retrigger a
+  // redundant reload.
   createEffect(() => {
     if (view() !== 'notes') return;
     const id = taskId();
-    if (!id || notesDirty()) return;
+    if (!id) return;
+    if (untrack(notesDirty)) return;
     void loadNotes(id);
   });
 
@@ -204,7 +207,7 @@ export function AgentDetail(props: AgentDetailProps) {
 
     term = new Terminal({
       fontSize: 10,
-      fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+      fontFamily: TERM_FONT_FAMILY,
       theme: { background: '#0b0f14' },
       scrollback: TERMINAL_SCROLLBACK_LINES,
       cursorBlink: false,
@@ -260,6 +263,11 @@ export function AgentDetail(props: AgentDetailProps) {
       window.visualViewport.addEventListener('resize', onViewportResize);
       onCleanup(() => window.visualViewport?.removeEventListener('resize', onViewportResize));
     }
+
+    // The initial auto-fit may measure the fallback font if JetBrains Mono
+    // hasn't loaded yet; re-fit once it's ready so the font size is correct.
+    // eslint-disable-next-line solid/reactivity -- promise callback is not a reactive context; refit reads current signal values intentionally
+    document.fonts?.ready.then(() => refit()).catch(() => {});
 
     // Manual touch scrolling for mobile — xterm.js doesn't handle this well
     let touchStartY = 0;
@@ -525,6 +533,9 @@ export function AgentDetail(props: AgentDetailProps) {
             onInput={(e) => {
               setNotesText(e.currentTarget.value);
               setNotesDirty(true);
+              // Clear a lingering "Saved" so editing right after a save doesn't
+              // keep showing "Saved" over genuine unsaved changes.
+              setNotesSaved(false);
             }}
             placeholder={notesLoading() ? 'Loading notes…' : 'Notes for this task…'}
             style={{
