@@ -1,5 +1,6 @@
 // REST helpers for the mobile SPA. Data flows over the WebSocket (see ws.ts);
-// these cover the request/response actions: pairing and task creation.
+// these cover the request/response actions: pairing, task creation, and
+// reading/saving task notes.
 
 import { getToken, getPairedToken } from './auth';
 

@@ -1,4 +1,4 @@
-import { onMount, onCleanup, createSignal, Show, For } from 'solid-js';
+import { onMount, onCleanup, createSignal, createEffect, Show, For } from 'solid-js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { TERMINAL_SCROLLBACK_LINES, base64ToUint8Array } from '../lib/terminalConstants';
@@ -127,10 +127,14 @@ export function AgentDetail(props: AgentDetailProps) {
     }
   }
 
-  async function openNotes(): Promise<void> {
+  function openNotes(): void {
+    // Just switch tabs; the effect below loads the notes. This also covers the
+    // case where taskId() is momentarily undefined (e.g. right after a WS
+    // reconnect) — the effect re-runs and loads once the agent reappears.
     setView('notes');
-    const id = taskId();
-    if (!id) return;
+  }
+
+  async function loadNotes(id: string): Promise<void> {
     setNotesLoading(true);
     setNotesError(null);
     try {
@@ -143,6 +147,16 @@ export function AgentDetail(props: AgentDetailProps) {
       setNotesLoading(false);
     }
   }
+
+  // Load notes when the Notes tab is showing and a task id is available. Guarded
+  // by notesDirty so reopening the tab never discards unsaved local edits, and
+  // it retries automatically if taskId resolves after the tab was opened.
+  createEffect(() => {
+    if (view() !== 'notes') return;
+    const id = taskId();
+    if (!id || notesDirty()) return;
+    void loadNotes(id);
+  });
 
   async function handleSaveNotes(): Promise<void> {
     const id = taskId();

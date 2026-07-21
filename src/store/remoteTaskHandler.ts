@@ -81,18 +81,25 @@ async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
   }
 }
 
+// Use Object.hasOwn, not truthiness: taskId comes from a mobile HTTP request,
+// and Solid's store proxy passes `__proto__`/`constructor` through to
+// Object.prototype, so `store.tasks['__proto__']` is a truthy non-task object.
+// A truthiness guard would let setStore('tasks','__proto__','notes',…) pollute
+// Object.prototype. hasOwn only matches real, own task entries.
+function hasTask(taskId: string): boolean {
+  return Object.hasOwn(store.tasks, taskId);
+}
+
 function handleGetNotes(req: GetNotesRequest): void {
-  const task = store.tasks[req.taskId];
-  if (!task) {
+  if (!hasTask(req.taskId)) {
     reply(req.reqId, false, undefined, 'Task not found');
     return;
   }
-  reply(req.reqId, true, { notes: task.notes ?? '' });
+  reply(req.reqId, true, { notes: store.tasks[req.taskId].notes ?? '' });
 }
 
 function handleSetNotes(req: SetNotesRequest): void {
-  const task = store.tasks[req.taskId];
-  if (!task) {
+  if (!hasTask(req.taskId)) {
     reply(req.reqId, false, undefined, 'Task not found');
     return;
   }

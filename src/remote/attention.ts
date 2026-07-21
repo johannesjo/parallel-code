@@ -1,9 +1,10 @@
 // Maps a RemoteAgent's status onto a mobile-friendly label + colour, mirroring
 // the desktop's StatusDot palette so the overview reads the same on both.
 //
-// `attention` (renderer-derived) is the primary signal; the running/exited
-// process state only matters to distinguish an idle-but-alive agent ("Idle")
-// from one whose process has ended ("Exited").
+// `attention` (renderer-derived) is the primary signal. The status==='exited'
+// arm is a defensive fallback: the agent list is currently built only from live
+// PTY sessions, so exited agents drop out rather than reaching here — but the
+// branch keeps the label correct if that wiring ever changes.
 
 import type { RemoteAgent, RemoteAttentionState } from '../../electron/remote/protocol';
 

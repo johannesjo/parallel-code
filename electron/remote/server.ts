@@ -676,7 +676,9 @@ export function startRemoteServer(opts: {
   /** Renderer-derived task attention state (needs input, working, ready, …). */
   getTaskAttention?: (taskId: string) => RemoteAttentionState;
 }): Promise<RemoteServer> {
-  // Fall back to 'idle' when the caller doesn't wire attention (e.g. MCP-only start).
+  // Defensive default for the optional signature: every real caller wires
+  // attention via mobileTaskBridge, so 'idle' is only used if a future caller
+  // omits it.
   const getTaskAttention: (taskId: string) => RemoteAttentionState =
     opts.getTaskAttention ?? (() => 'idle');
   const token = randomBytes(24).toString('base64url');
@@ -856,6 +858,12 @@ export function startRemoteServer(opts: {
         } catch {
           return jsonEnd(400, { error: 'invalid task id' });
         }
+        // Reject prototype-chain keys at the boundary. The renderer also guards
+        // with Object.hasOwn, but blocking here keeps a mobile-token request
+        // from ever reaching a setStore path with a dangerous key.
+        if (taskId === '__proto__' || taskId === 'constructor' || taskId === 'prototype') {
+          return jsonEnd(400, { error: 'invalid task id' });
+        }
 
         if (req.method === 'GET') {
           if (!opts.getTaskNotes) return jsonEnd(503, { error: 'notes unavailable' });
@@ -869,10 +877,12 @@ export function startRemoteServer(opts: {
         if (req.method === 'PUT') {
           const setTaskNotes = opts.setTaskNotes;
           if (!setTaskNotes) return jsonEnd(503, { error: 'notes unavailable' });
-          // Cap the body above MAX_NOTES_BYTES so the byte check below is the
-          // effective limit (readJsonBody's 64 KB default would otherwise reject
-          // valid large notes first with a generic "Body too large").
-          readJsonBody(req, MAX_NOTES_BYTES + 4096)
+          // Cap the body generously above MAX_NOTES_BYTES so the precise byte
+          // check below is the effective limit (readJsonBody's 64 KB default
+          // would otherwise reject valid large notes with a generic "Body too
+          // large"). The 2x headroom covers JSON escaping of quotes/newlines in
+          // a full-size note; the exact limit is enforced on the decoded string.
+          readJsonBody(req, MAX_NOTES_BYTES * 2 + 4096)
             .then((body) => {
               if (typeof body.notes !== 'string')
                 return jsonEnd(400, { error: 'notes must be a string' });
