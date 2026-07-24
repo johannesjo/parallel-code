@@ -41,7 +41,7 @@ import { startRemoteServer, getMCPLogs, type RemoteProject } from '../remote/ser
 import { atomicWriteFileSync } from '../mcp/atomic.js';
 import { buildMcpLaunchArgs } from '../mcp/agent-args.js';
 import {
-  getGitIgnoredDirs,
+  getSymlinkCandidates,
   getMainBranch,
   getCurrentBranch,
   getChangedFiles,
@@ -591,7 +591,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return getFileDiffFromBranch(projectRoot, branchName, args.filePath, optionalBaseBranch(args));
   });
   ipcMain.handle(IPC.GetGitignoredDirs, (_e, args) => {
-    return getGitIgnoredDirs(projectRootArg(args));
+    return getSymlinkCandidates(projectRootArg(args));
   });
   ipcMain.handle(IPC.ListImportableWorktrees, (_e, args) => {
     return listImportableWorktrees(projectRootArg(args));

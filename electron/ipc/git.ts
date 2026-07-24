@@ -1038,17 +1038,31 @@ export async function removeWorktree(
 
 // --- IPC command functions ---
 
-export async function getGitIgnoredDirs(projectRoot: string): Promise<GitIgnoredEntry[]> {
+export async function getSymlinkCandidates(projectRoot: string): Promise<GitIgnoredEntry[]> {
   const { stdout } = await exec(
     'git',
-    ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory'],
+    ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'],
     { cwd: projectRoot },
   );
-  return stdout
-    .split('\n')
+  const candidates = stdout
+    .split('\0')
     .filter(Boolean)
     .map((entry) => (entry.endsWith('/') ? entry.slice(0, -1) : entry))
-    .filter((name) => !name.includes('/') && !INTERNAL_SYMLINK_EXCLUSIONS.has(name))
+    .filter((name) => !name.includes('/') && !INTERNAL_SYMLINK_EXCLUSIONS.has(name));
+
+  const checked = await Promise.all(
+    candidates.map(async (name) => {
+      try {
+        await exec('git', ['check-ignore', '-q', name], { cwd: projectRoot });
+        return name;
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  return checked
+    .filter((name): name is string => name !== null)
     .map((name) => ({ name, isDefault: DEFAULT_SYMLINK_CANDIDATES.has(name) }));
 }
 

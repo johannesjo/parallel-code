@@ -5,7 +5,7 @@ import path from 'path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createWorktree, getGitIgnoredDirs } from './git.js';
+import { createWorktree, getSymlinkCandidates } from './git.js';
 
 const tempDirs: string[] = [];
 const localGitEnvVars = execFileSync('git', ['rev-parse', '--local-env-vars'], {
@@ -56,14 +56,14 @@ afterEach(() => {
   }
 });
 
-describe('getGitIgnoredDirs', () => {
+describe('getSymlinkCandidates', () => {
   it('includes a fully ignored default directory marked as default', async () => {
     const root = initRepository();
     fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n', 'utf8');
     fs.mkdirSync(path.join(root, 'node_modules'));
     fs.writeFileSync(path.join(root, 'node_modules', 'package.json'), '{}\n', 'utf8');
 
-    await expect(getGitIgnoredDirs(root)).resolves.toEqual([
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([
       { name: 'node_modules', isDefault: true },
     ]);
   });
@@ -74,7 +74,7 @@ describe('getGitIgnoredDirs', () => {
     fs.mkdirSync(path.join(root, 'dist'));
     fs.writeFileSync(path.join(root, 'dist', 'app.js'), 'built\n', 'utf8');
 
-    await expect(getGitIgnoredDirs(root)).resolves.toEqual([{ name: 'dist', isDefault: false }]);
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([{ name: 'dist', isDefault: false }]);
   });
 
   it('includes an ignored top-level file', async () => {
@@ -82,7 +82,7 @@ describe('getGitIgnoredDirs', () => {
     fs.writeFileSync(path.join(root, '.gitignore'), '.env\n', 'utf8');
     fs.writeFileSync(path.join(root, '.env'), 'TOKEN=test\n', 'utf8');
 
-    await expect(getGitIgnoredDirs(root)).resolves.toEqual([{ name: '.env', isDefault: true }]);
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([{ name: '.env', isDefault: true }]);
   });
 
   it('does not expose a tracked directory that only contains ignored files', async () => {
@@ -102,7 +102,7 @@ describe('getGitIgnoredDirs', () => {
     fs.writeFileSync(path.join(root, '.gitignore'), '*.log\n', 'utf8');
     fs.writeFileSync(path.join(root, 'src', 'foo.log'), 'ignored\n', 'utf8');
 
-    await expect(getGitIgnoredDirs(root)).resolves.toEqual([]);
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([]);
   });
 
   it('does not include a default candidate that is not ignored', async () => {
@@ -110,7 +110,7 @@ describe('getGitIgnoredDirs', () => {
     fs.mkdirSync(path.join(root, 'node_modules'));
     fs.writeFileSync(path.join(root, 'node_modules', 'package.json'), '{}\n', 'utf8');
 
-    await expect(getGitIgnoredDirs(root)).resolves.toEqual([]);
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([]);
   });
 
   it('filters entries managed internally by Parallel Code', async () => {
@@ -139,7 +139,7 @@ describe('getGitIgnoredDirs', () => {
       fs.writeFileSync(path.join(root, name), 'sandbox artifact\n', 'utf8');
     }
 
-    await expect(getGitIgnoredDirs(root)).resolves.toEqual([{ name: 'dist', isDefault: false }]);
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([{ name: 'dist', isDefault: false }]);
   });
 
   it('filters the Parallel Code worktree container without hiding a singular name', async () => {
@@ -152,10 +152,76 @@ describe('getGitIgnoredDirs', () => {
     fs.mkdirSync(path.join(root, 'dist'));
     fs.writeFileSync(path.join(root, 'dist', 'app.js'), 'built\n', 'utf8');
 
-    await expect(getGitIgnoredDirs(root)).resolves.toEqual([
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([
       { name: '.worktree', isDefault: false },
       { name: 'dist', isDefault: false },
     ]);
+  });
+
+  it('does not show a directory whose contents are ignored by *.log', async () => {
+    const root = initRepository();
+    fs.writeFileSync(path.join(root, '.gitignore'), '*.log\n', 'utf8');
+    fs.mkdirSync(path.join(root, 'logs'));
+    fs.writeFileSync(path.join(root, 'logs', 'app.log'), 'ignored\n', 'utf8');
+
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([]);
+
+    await createWorktree(root, 'task-logs', []);
+    const exclude = fs.readFileSync(path.join(root, '.git', 'info', 'exclude'), 'utf8');
+    expect(exclude).not.toContain('/logs');
+  });
+
+  it('does not show a directory whose contents are ignored by coverage/*', async () => {
+    const root = initRepository();
+    fs.writeFileSync(path.join(root, '.gitignore'), 'coverage/*\n', 'utf8');
+    fs.mkdirSync(path.join(root, 'coverage'));
+    fs.writeFileSync(path.join(root, 'coverage', 'lcov.info'), 'ignored\n', 'utf8');
+
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([]);
+
+    await createWorktree(root, 'task-coverage', []);
+    const exclude = fs.readFileSync(path.join(root, '.git', 'info', 'exclude'), 'utf8');
+    expect(exclude).not.toContain('/coverage');
+  });
+
+  it('does not show a directory whose contents are ignored by *.tmp', async () => {
+    const root = initRepository();
+    fs.writeFileSync(path.join(root, '.gitignore'), '*.tmp\n', 'utf8');
+    fs.mkdirSync(path.join(root, 'tmp'));
+    fs.writeFileSync(path.join(root, 'tmp', 'foo.tmp'), 'ignored\n', 'utf8');
+
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([]);
+
+    await createWorktree(root, 'task-tmp', []);
+    const exclude = fs.readFileSync(path.join(root, '.git', 'info', 'exclude'), 'utf8');
+    expect(exclude).not.toContain('/tmp');
+  });
+
+  it('handles non-ASCII directory names', async () => {
+    const root = initRepository();
+    fs.writeFileSync(path.join(root, '.gitignore'), 'dàta/\n', 'utf8');
+    fs.mkdirSync(path.join(root, 'dàta'));
+    fs.writeFileSync(path.join(root, 'dàta', 'file.txt'), 'data\n', 'utf8');
+
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([{ name: 'dàta', isDefault: false }]);
+
+    const result = await createWorktree(root, 'task-data', ['dàta']);
+    const target = path.join(result.path, 'dàta');
+    expect(fs.lstatSync(target).isSymbolicLink()).toBe(true);
+    expect(fs.realpathSync(target)).toBe(fs.realpathSync(path.join(root, 'dàta')));
+    const exclude = fs.readFileSync(path.join(root, '.git', 'info', 'exclude'), 'utf8');
+    expect(exclude).toContain('/dàta');
+  });
+
+  it('handles non-ASCII file names', async () => {
+    const root = initRepository();
+    fs.writeFileSync(path.join(root, '.gitignore'), 'nöte.txt\n', 'utf8');
+    fs.writeFileSync(path.join(root, 'nöte.txt'), 'notes\n', 'utf8');
+
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([
+      { name: 'nöte.txt', isDefault: false },
+    ]);
+    expect(fs.existsSync(path.join(root, 'nöte.txt'))).toBe(true);
   });
 });
 

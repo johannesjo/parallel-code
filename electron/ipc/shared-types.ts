@@ -27,10 +27,13 @@ export interface CreateTaskResult {
   worktree_path: string;
 }
 
-export interface GitIgnoredEntry {
+export interface SymlinkCandidate {
   name: string;
   isDefault: boolean;
 }
+
+/** Legacy name used by renderer IPC consumers. */
+export type GitIgnoredEntry = SymlinkCandidate;
 
 export interface ChangedFile {
   path: string;
