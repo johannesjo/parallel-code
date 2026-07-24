@@ -1039,31 +1039,38 @@ export async function removeWorktree(
 // --- IPC command functions ---
 
 export async function getSymlinkCandidates(projectRoot: string): Promise<GitIgnoredEntry[]> {
-  const { stdout } = await exec(
-    'git',
-    ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'],
-    { cwd: projectRoot },
-  );
-  const candidates = stdout
-    .split('\0')
-    .filter(Boolean)
-    .map((entry) => (entry.endsWith('/') ? entry.slice(0, -1) : entry))
-    .filter((name) => !name.includes('/') && !INTERNAL_SYMLINK_EXCLUSIONS.has(name));
+  try {
+    const { stdout } = await exec(
+      'git',
+      ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'],
+      { cwd: projectRoot },
+    );
+    const candidates = stdout
+      .split('\0')
+      .filter(Boolean)
+      .map((entry) => (entry.endsWith('/') ? entry.slice(0, -1) : entry))
+      .filter((name) => !name.includes('/') && !INTERNAL_SYMLINK_EXCLUSIONS.has(name));
 
-  const checked = await Promise.all(
-    candidates.map(async (name) => {
-      try {
-        await exec('git', ['check-ignore', '-q', name], { cwd: projectRoot });
-        return name;
-      } catch {
-        return null;
-      }
-    }),
-  );
+    const checked = await Promise.all(
+      candidates.map(async (name) => {
+        try {
+          await exec('git', ['check-ignore', '-q', name], { cwd: projectRoot });
+          return name;
+        } catch {
+          return null;
+        }
+      }),
+    );
 
-  return checked
-    .filter((name): name is string => name !== null)
-    .map((name) => ({ name, isDefault: DEFAULT_SYMLINK_CANDIDATES.has(name) }));
+    return checked
+      .filter((name): name is string => name !== null)
+      .map((name) => ({ name, isDefault: DEFAULT_SYMLINK_CANDIDATES.has(name) }));
+  } catch (err) {
+    // Degrade, never fail: a missing git binary or broken repo must not block
+    // task creation — the worktree is simply created without symlinks.
+    console.warn(`Failed to probe symlink candidates in ${projectRoot}:`, err);
+    return [];
+  }
 }
 
 export async function getMainBranch(projectRoot: string): Promise<string> {

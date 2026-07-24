@@ -23,6 +23,9 @@ export function SymlinkDirPicker(props: SymlinkDirPickerProps) {
       >
         Symlink into worktree
       </label>
+      <span style={{ 'font-size': '12px', color: theme.fgMuted }}>
+        Checked entries are written to .git/info/exclude and apply to all worktrees.
+      </span>
       <div
         style={{
           display: 'flex',
@@ -32,6 +35,8 @@ export function SymlinkDirPicker(props: SymlinkDirPickerProps) {
           background: theme.bgElevated,
           'border-radius': '6px',
           border: `1px solid ${theme.border}`,
+          'max-height': '160px',
+          'overflow-y': 'auto',
         }}
       >
         <For each={props.dirs}>

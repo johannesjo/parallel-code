@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createWorktree, getSymlinkCandidates } from './git.js';
 
@@ -211,6 +211,16 @@ describe('getSymlinkCandidates', () => {
     expect(fs.realpathSync(target)).toBe(fs.realpathSync(path.join(root, 'dàta')));
     const exclude = fs.readFileSync(path.join(root, '.git', 'info', 'exclude'), 'utf8');
     expect(exclude).toContain('/dàta');
+  });
+
+  it('returns an empty list and warns when the git probe fails', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-not-a-repo-'));
+    tempDirs.push(root);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([]);
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
   });
 
   it('handles non-ASCII file names', async () => {
