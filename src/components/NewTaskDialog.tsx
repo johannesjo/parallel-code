@@ -41,6 +41,7 @@ import {
 import { SegmentedButtons } from './SegmentedButtons';
 import { autoTaskNameFromPrompt, nextDefaultTaskName } from '../lib/clean-task-name';
 import { extractGitHubUrl } from '../lib/github-url';
+import { createSymlinkCandidateState } from '../lib/symlink-candidates';
 import { theme, sectionLabelStyle, bannerStyle } from '../lib/theme';
 import { isMac } from '../lib/platform';
 import { AgentSelector } from './AgentSelector';
@@ -385,8 +386,9 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   const [selectedProjectId, setSelectedProjectId] = createSignal<string | null>(null);
   const [error, setError] = createSignal('');
   const [loading, setLoading] = createSignal(false);
-  const [ignoredDirs, setIgnoredDirs] = createSignal<string[]>([]);
-  const [selectedDirs, setSelectedDirs] = createSignal<Set<string>>(new Set());
+  const symlinkCandidates = createSymlinkCandidateState((projectRoot) =>
+    invoke<GitIgnoredEntry[]>(IPC.GetGitignoredDirs, { projectRoot }),
+  );
   const [gitIsolation, setGitIsolation] = createSignal<GitIsolationMode>('worktree');
   const [baseBranch, setBaseBranch] = createSignal('');
   const [branches, setBranches] = createSignal<string[]>([]);
@@ -593,38 +595,22 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
     ),
   );
 
-  // Fetch gitignored dirs when project changes
+  // Fetch gitignored dirs whenever the dialog opens or the project changes.
+  // Reading props.open makes the list reload on every open, so cancelling and
+  // reopening always starts from the default selection — each task's symlink
+  // choices are an explicit opt-in. The candidate state clears itself before
+  // fetching and drops stale responses, so a previous project's checkmarks
+  // can never leak into the next one.
   createEffect(() => {
+    const open = props.open;
     const pid = selectedProjectId();
-    const path = pid ? getProjectPath(pid) : undefined;
+    const path = open && pid ? getProjectPath(pid) : undefined;
     const isGit = pid ? projectIsGitRepo(pid) : true;
-    let cancelled = false;
 
-    if (!path || !isGit) {
-      setIgnoredDirs([]);
-      setSelectedDirs(new Set<string>());
-      return;
-    }
-
-    void (async () => {
-      try {
-        const entries = await invoke<GitIgnoredEntry[]>(IPC.GetGitignoredDirs, {
-          projectRoot: path,
-        });
-        if (cancelled) return;
-        setIgnoredDirs(entries.map((entry) => entry.name));
-        setSelectedDirs(
-          new Set(entries.filter((entry) => entry.isDefault).map((entry) => entry.name)),
-        );
-      } catch {
-        if (cancelled) return;
-        setIgnoredDirs([]);
-        setSelectedDirs(new Set<string>());
-      }
-    })();
+    void symlinkCandidates.load(path, isGit);
 
     onCleanup(() => {
-      cancelled = true;
+      symlinkCandidates.invalidate();
     });
   });
 
@@ -904,6 +890,10 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
       !!selectedProjectId() &&
       !loading() &&
       !branchesLoading() &&
+      // Block submit until the symlink candidate list for THIS project has
+      // resolved — otherwise stale checkmarks could be submitted against a
+      // project whose candidates haven't loaded yet.
+      !symlinkCandidates.loading() &&
       branchOk &&
       !branchPrefixConflict()
     );
@@ -977,7 +967,7 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
         projectId,
         gitIsolation: gitIsolation(),
         baseBranch: baseBranch(),
-        symlinkDirs: gitIsolation() === 'worktree' ? [...selectedDirs()] : undefined,
+        symlinkDirs: gitIsolation() === 'worktree' ? [...symlinkCandidates.selected()] : undefined,
         branchPrefixOverride: gitIsolation() === 'worktree' ? prefix : undefined,
         initialPrompt: isFromDrop ? undefined : p,
         githubUrl: ghUrl,
@@ -1366,16 +1356,11 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
             setMaxConcurrentTasks={setMaxConcurrentTasks}
           />
 
-          <Show when={ignoredDirs().length > 0 && gitIsolation() === 'worktree'}>
+          <Show when={symlinkCandidates.dirs().length > 0 && gitIsolation() === 'worktree'}>
             <SymlinkDirPicker
-              dirs={ignoredDirs()}
-              selectedDirs={selectedDirs()}
-              onToggle={(dir) => {
-                const next = new Set(selectedDirs());
-                if (next.has(dir)) next.delete(dir);
-                else next.add(dir);
-                setSelectedDirs(next);
-              }}
+              dirs={symlinkCandidates.dirs()}
+              selectedDirs={symlinkCandidates.selected()}
+              onToggle={symlinkCandidates.toggle}
             />
           </Show>
 

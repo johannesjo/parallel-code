@@ -3,7 +3,7 @@ import { theme } from '../lib/theme';
 
 interface SymlinkDirPickerProps {
   dirs: string[];
-  selectedDirs: Set<string>;
+  selectedDirs: ReadonlySet<string>;
   onToggle: (dir: string) => void;
 }
 

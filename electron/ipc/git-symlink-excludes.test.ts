@@ -196,4 +196,64 @@ describe('ensureSymlinkExcludes', () => {
     expect(appended).toContain('/.env');
     expect(appended).toContain('/.cursor');
   });
+
+  it('writes /foo even when /foobar is already present', () => {
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('/foobar\n');
+
+    ensureSymlinkExcludes('/worktree', ['foo']);
+
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/foo\n');
+  });
+
+  it('escapes gitignore metacharacters so names match literally', () => {
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('');
+
+    ensureSymlinkExcludes('/worktree', ['star*file', 'que?stion', 'br[ack]et', '!bang', '#hash']);
+
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/star\\*file\n');
+    expect(appended).toContain('/que\\?stion\n');
+    expect(appended).toContain('/br\\[ack\\]et\n');
+    expect(appended).toContain('/\\!bang\n');
+    expect(appended).toContain('/\\#hash\n');
+  });
+
+  it('treats an already-present escaped entry as a duplicate', () => {
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('/star\\*file\n');
+
+    ensureSymlinkExcludes('/worktree', ['star*file']);
+
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
+
+  it('rejects names containing newlines and warns instead of writing', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('');
+
+    ensureSymlinkExcludes('/worktree', ['good', 'bad\nname']);
+
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/good');
+    expect(appended).not.toContain('bad');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Refusing to exclude invalid symlink name'),
+    );
+    warn.mockRestore();
+  });
+
+  it('does nothing at all when every name is invalid', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    ensureSymlinkExcludes('/worktree', ['bad\r\nname']);
+
+    expect(mockExecFileSync).not.toHaveBeenCalled();
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
 });
