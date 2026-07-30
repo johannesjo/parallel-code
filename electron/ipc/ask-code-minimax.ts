@@ -8,6 +8,11 @@ import {
   assertCanStart,
   assertPromptWithinLimit,
 } from './request-registry.js';
+import {
+  DEFAULT_MINIMAX_MODEL_ID,
+  DEFAULT_MINIMAX_REGION,
+  minimaxChatCompletionsUrl,
+} from './minimax-catalog.js';
 
 interface MinimaxAskCodeRequest {
   requestId: string;
@@ -15,8 +20,8 @@ interface MinimaxAskCodeRequest {
   prompt: string;
 }
 
-const MINIMAX_API_URL = 'https://api.minimax.io/v1/chat/completions';
-export const MINIMAX_MODEL = 'MiniMax-M2.7';
+const MINIMAX_API_URL = minimaxChatCompletionsUrl(DEFAULT_MINIMAX_REGION);
+export const MINIMAX_MODEL = DEFAULT_MINIMAX_MODEL_ID;
 
 const activeRequests = new RequestRegistry<AbortController>({
   maxConcurrent: ASK_CODE_MAX_CONCURRENT,

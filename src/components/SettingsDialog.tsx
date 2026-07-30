@@ -590,7 +590,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   }}
                 >
                   <option value="claude">Claude Code (claude CLI)</option>
-                  <option value="minimax">MiniMax (M2.7)</option>
+                  <option value="minimax">MiniMax (M3)</option>
                 </select>
               </label>
               <Show when={store.askCodeProvider === 'minimax'}>
@@ -625,7 +625,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </Show>
               <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
                 {store.askCodeProvider === 'minimax'
-                  ? 'Uses MiniMax M2.7 (204K context) via the OpenAI-compatible API — no Claude Code CLI required.'
+                  ? 'Uses MiniMax M3 (1M context; text, image and video input), with M2.7 also supported — no local CLI required.'
                   : 'Uses the claude CLI to answer questions about selected code. Requires Claude Code to be installed.'}
               </span>
             </div>
