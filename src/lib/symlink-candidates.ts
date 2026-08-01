@@ -1,7 +1,24 @@
 import { createSignal } from 'solid-js';
 import type { GitIgnoredEntry } from '../ipc/types';
+import type { GitIsolationMode } from '../store/types';
 
 export type SymlinkCandidatesFetcher = (projectRoot: string) => Promise<GitIgnoredEntry[]>;
+
+/**
+ * Symlink candidates only matter for worktree tasks — direct-mode submits
+ * never send symlinkDirs, so probing there would be a wasted IPC.
+ */
+export function shouldProbeSymlinkCandidates(
+  isGitRepo: boolean,
+  isolation: GitIsolationMode,
+): boolean {
+  return isGitRepo && isolation === 'worktree';
+}
+
+/** A pending probe only blocks submit when its result would actually be used. */
+export function symlinkProbeBlocksSubmit(isolation: GitIsolationMode, loading: boolean): boolean {
+  return isolation === 'worktree' && loading;
+}
 
 /**
  * Checkbox state for the New Task dialog's symlink-dir picker.

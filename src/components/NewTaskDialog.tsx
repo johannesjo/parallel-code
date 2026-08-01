@@ -41,7 +41,11 @@ import {
 import { SegmentedButtons } from './SegmentedButtons';
 import { autoTaskNameFromPrompt, nextDefaultTaskName } from '../lib/clean-task-name';
 import { extractGitHubUrl } from '../lib/github-url';
-import { createSymlinkCandidateState } from '../lib/symlink-candidates';
+import {
+  createSymlinkCandidateState,
+  shouldProbeSymlinkCandidates,
+  symlinkProbeBlocksSubmit,
+} from '../lib/symlink-candidates';
 import { theme, sectionLabelStyle, bannerStyle } from '../lib/theme';
 import { isMac } from '../lib/platform';
 import { AgentSelector } from './AgentSelector';
@@ -600,14 +604,17 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
   // reopening always starts from the default selection — each task's symlink
   // choices are an explicit opt-in. The candidate state clears itself before
   // fetching and drops stale responses, so a previous project's checkmarks
-  // can never leak into the next one.
+  // can never leak into the next one. Reading gitIsolation makes the probe
+  // re-run when the mode changes; direct-mode tasks never send symlinkDirs,
+  // so no probe is issued for them at all.
   createEffect(() => {
     const open = props.open;
     const pid = selectedProjectId();
     const path = open && pid ? getProjectPath(pid) : undefined;
     const isGit = pid ? projectIsGitRepo(pid) : true;
+    const shouldProbe = shouldProbeSymlinkCandidates(isGit, gitIsolation());
 
-    void symlinkCandidates.load(path, isGit);
+    void symlinkCandidates.load(path, shouldProbe);
 
     onCleanup(() => {
       symlinkCandidates.invalidate();
@@ -892,8 +899,9 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
       !branchesLoading() &&
       // Block submit until the symlink candidate list for THIS project has
       // resolved — otherwise stale checkmarks could be submitted against a
-      // project whose candidates haven't loaded yet.
-      !symlinkCandidates.loading() &&
+      // project whose candidates haven't loaded yet. Direct-mode submits
+      // never send symlinkDirs, so a pending probe doesn't block them.
+      !symlinkProbeBlocksSubmit(gitIsolation(), symlinkCandidates.loading()) &&
       branchOk &&
       !branchPrefixConflict()
     );

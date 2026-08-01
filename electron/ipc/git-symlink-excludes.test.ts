@@ -208,6 +208,20 @@ describe('ensureSymlinkExcludes', () => {
     expect(appended).toContain('/foo\n');
   });
 
+  it('appends entries when an existing line only matches after trimming leading whitespace', () => {
+    // Gitignore semantics strip trailing whitespace only — a hand-written
+    // line with a leading space is a different pattern, not a duplicate.
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce(' /foo\n');
+
+    ensureSymlinkExcludes('/worktree', ['foo', 'bar']);
+
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/foo');
+    expect(appended).toContain('/bar');
+  });
+
   it('escapes gitignore metacharacters so names match literally', () => {
     mockExecFileSync.mockReturnValueOnce('.git\n');
     mockReadFileSync.mockReturnValueOnce('');
@@ -220,6 +234,18 @@ describe('ensureSymlinkExcludes', () => {
     expect(appended).toContain('/br\\[ack\\]et\n');
     expect(appended).toContain('/\\!bang\n');
     expect(appended).toContain('/\\#hash\n');
+  });
+
+  it('escapes trailing spaces so the pattern matches the exact name', () => {
+    // Gitignore strips unescaped trailing spaces — `foo ` must be written as
+    // `foo\ ` or the pattern would match `foo` instead.
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('');
+
+    ensureSymlinkExcludes('/worktree', ['foo ']);
+
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/foo\\ \n');
   });
 
   it('treats an already-present escaped entry as a duplicate', () => {

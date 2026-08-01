@@ -189,16 +189,21 @@ export function isValidSymlinkName(name: string): boolean {
 /** Escape a filename so it matches literally as a gitignore pattern. */
 function escapeGitignoreLiteral(name: string): string {
   const escaped = name.replace(/[\\*?[\]]/g, '\\$&');
-  return escaped.startsWith('!') || escaped.startsWith('#') ? `\\${escaped}` : escaped;
+  const anchored = escaped.startsWith('!') || escaped.startsWith('#') ? `\\${escaped}` : escaped;
+  // Gitignore strips unescaped trailing spaces — escape each so a name like
+  // `foo ` matches itself instead of `foo`.
+  return anchored.replace(/ +$/, (spaces) => '\\ '.repeat(spaces.length));
 }
 
 /** Whether the repo treats paths case-insensitively (macOS default). */
 async function getCoreIgnoreCase(repoRoot: string): Promise<boolean> {
   try {
-    const { stdout } = await exec('git', ['config', '--get', 'core.ignorecase'], {
+    // --bool normalizes yes/on/1 and case variants to true/false; an invalid
+    // value exits non-zero and lands in the catch below.
+    const { stdout } = await exec('git', ['config', '--bool', '--get', 'core.ignorecase'], {
       cwd: repoRoot,
     });
-    return stdout.trim().toLowerCase() === 'true';
+    return stdout.trim() === 'true';
   } catch {
     return false;
   }

@@ -213,6 +213,28 @@ describe('getSymlinkCandidates', () => {
     expect(exclude).toContain('/dàta');
   });
 
+  it('writes an exclude entry that matches a trailing-space name exactly', async () => {
+    const root = initRepository();
+    // Directory-only ignore rule for a directory whose name ends in a space.
+    fs.writeFileSync(path.join(root, '.gitignore'), 'foo\\ /\n', 'utf8');
+    fs.mkdirSync(path.join(root, 'foo '));
+    fs.writeFileSync(path.join(root, 'foo ', 'f.txt'), 'x\n', 'utf8');
+    // Same name without the trailing space: not ignored, never a candidate.
+    fs.mkdirSync(path.join(root, 'foo'));
+    fs.writeFileSync(path.join(root, 'foo', 'f.txt'), 'x\n', 'utf8');
+
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([{ name: 'foo ', isDefault: false }]);
+
+    await createWorktree(root, 'task-trailing-space', ['foo ']);
+
+    // Raw execFileSync — the shared git() helper trims stdout and would eat
+    // the trailing space this test is about.
+    expect(execFileSync('git', ['check-ignore', 'foo '], { cwd: root, encoding: 'utf8' })).toBe(
+      'foo \n',
+    );
+    expect(() => git(root, ['check-ignore', 'foo'])).toThrow();
+  });
+
   it('returns an empty list and warns when the git probe fails', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-not-a-repo-'));
     tempDirs.push(root);
@@ -249,10 +271,13 @@ describe('getSymlinkCandidates', () => {
       'track source directory',
     ]);
     fs.writeFileSync(path.join(root, '.gitignore'), '*.log\nnode_modules/\n', 'utf8');
-    // 15000 nested ignored files: unbounded enumeration of these used to blow
-    // the exec buffer and lose every candidate, node_modules included.
-    for (let i = 0; i < 15000; i++) {
-      fs.writeFileSync(path.join(root, 'src', `f${i}.log`), 'ignored\n', 'utf8');
+    // 5000 nested ignored files with 240-char names (just under the 255 fs
+    // limit): ≈1.2 MB of output, ~17% above the old 1 MiB execFile default —
+    // unbounded enumeration of these used to blow the exec buffer and lose
+    // every candidate, node_modules included.
+    for (let i = 0; i < 5000; i++) {
+      const name = `f${i}-`.padEnd(236, 'x') + '.log';
+      fs.writeFileSync(path.join(root, 'src', name), 'ignored\n', 'utf8');
     }
     fs.mkdirSync(path.join(root, 'node_modules'));
     fs.writeFileSync(path.join(root, 'node_modules', 'package.json'), '{}\n', 'utf8');
@@ -284,28 +309,32 @@ describe('getSymlinkCandidates', () => {
     await expect(getSymlinkCandidates(root)).resolves.toEqual([]);
   });
 
-  it('filters case variants of reserved names when core.ignorecase is true', async () => {
-    const root = initRepository();
-    git(root, ['config', 'core.ignorecase', 'true']);
-    fs.writeFileSync(
-      path.join(root, '.gitignore'),
-      '.worktrees/\nnode_modules/\n.claude/\n',
-      'utf8',
-    );
-    fs.mkdirSync(path.join(root, '.WORKTREES'));
-    fs.writeFileSync(path.join(root, '.WORKTREES', 'task.txt'), 'managed worktree\n', 'utf8');
-    fs.mkdirSync(path.join(root, '.CLAUDE'));
-    fs.writeFileSync(path.join(root, '.CLAUDE', 'settings.json'), '{}\n', 'utf8');
-    fs.mkdirSync(path.join(root, 'Node_Modules'));
-    fs.writeFileSync(path.join(root, 'Node_Modules', 'package.json'), '{}\n', 'utf8');
+  // Git accepts yes/on/1 and case variants as boolean true — every synonym
+  // must enable case folding, not just the literal string "true".
+  for (const ignoreCaseValue of ['true', 'yes', 'on', '1', 'TRUE']) {
+    it(`filters case variants of reserved names when core.ignorecase=${ignoreCaseValue}`, async () => {
+      const root = initRepository();
+      git(root, ['config', 'core.ignorecase', ignoreCaseValue]);
+      fs.writeFileSync(
+        path.join(root, '.gitignore'),
+        '.worktrees/\nnode_modules/\n.claude/\n',
+        'utf8',
+      );
+      fs.mkdirSync(path.join(root, '.WORKTREES'));
+      fs.writeFileSync(path.join(root, '.WORKTREES', 'task.txt'), 'managed worktree\n', 'utf8');
+      fs.mkdirSync(path.join(root, '.CLAUDE'));
+      fs.writeFileSync(path.join(root, '.CLAUDE', 'settings.json'), '{}\n', 'utf8');
+      fs.mkdirSync(path.join(root, 'Node_Modules'));
+      fs.writeFileSync(path.join(root, 'Node_Modules', 'package.json'), '{}\n', 'utf8');
 
-    // .WORKTREES / .CLAUDE must never be offered (self-referential symlink
-    // loop / bwrap breakage); Node_Modules is a legitimate candidate and is
-    // recognized as a default despite the case difference.
-    await expect(getSymlinkCandidates(root)).resolves.toEqual([
-      { name: 'Node_Modules', isDefault: true },
-    ]);
-  });
+      // .WORKTREES / .CLAUDE must never be offered (self-referential symlink
+      // loop / bwrap breakage); Node_Modules is a legitimate candidate and is
+      // recognized as a default despite the case difference.
+      await expect(getSymlinkCandidates(root)).resolves.toEqual([
+        { name: 'Node_Modules', isDefault: true },
+      ]);
+    });
+  }
 });
 
 describe('createWorktree', () => {
@@ -356,18 +385,20 @@ describe('createWorktree', () => {
     expect(fs.realpathSync(target)).toBe(fs.realpathSync(path.join(root, 'foo..bar')));
   });
 
-  it('refuses a case variant of the worktree container when core.ignorecase is true', async () => {
-    const root = initRepository();
-    git(root, ['config', 'core.ignorecase', 'true']);
-    fs.mkdirSync(path.join(root, '.WORKTREES'));
-    fs.writeFileSync(path.join(root, '.WORKTREES', 'task.txt'), 'managed worktree\n', 'utf8');
+  for (const ignoreCaseValue of ['true', 'yes', 'on', '1', 'TRUE']) {
+    it(`refuses a case variant of the worktree container when core.ignorecase=${ignoreCaseValue}`, async () => {
+      const root = initRepository();
+      git(root, ['config', 'core.ignorecase', ignoreCaseValue]);
+      fs.mkdirSync(path.join(root, '.WORKTREES'));
+      fs.writeFileSync(path.join(root, '.WORKTREES', 'task.txt'), 'managed worktree\n', 'utf8');
 
-    // Even if the UI (or a bug above it) passes a reserved name through, the
-    // backend must not link the worktree container into its own child.
-    const result = await createWorktree(root, 'task-reserved', ['.WORKTREES']);
+      // Even if the UI (or a bug above it) passes a reserved name through, the
+      // backend must not link the worktree container into its own child.
+      const result = await createWorktree(root, 'task-reserved', ['.WORKTREES']);
 
-    expect(fs.existsSync(path.join(result.path, '.WORKTREES'))).toBe(false);
-  });
+      expect(fs.existsSync(path.join(result.path, '.WORKTREES'))).toBe(false);
+    });
+  }
 });
 
 describe('ensureSymlinkExcludes', () => {

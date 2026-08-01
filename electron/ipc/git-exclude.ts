@@ -41,7 +41,9 @@ export function appendGitInfoExcludeBlockAtPath(
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
       }
     }
-    if (existing.split('\n').some((line) => line.trim() === marker)) return 'present';
+    // Gitignore strips trailing whitespace only — a hand-written line with
+    // leading spaces is a different pattern, not the marker.
+    if (existing.split('\n').some((line) => line.replace(/\s+$/, '') === marker)) return 'present';
     const normalizedBlock = block.replace(/^\n+/, '').endsWith('\n')
       ? block.replace(/^\n+/, '')
       : `${block.replace(/^\n+/, '')}\n`;

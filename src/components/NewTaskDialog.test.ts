@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { scrollCoordinatorIntoView } from './scrollCoordinatorIntoView';
-import { createSymlinkCandidateState } from '../lib/symlink-candidates';
+import {
+  createSymlinkCandidateState,
+  shouldProbeSymlinkCandidates,
+  symlinkProbeBlocksSubmit,
+} from '../lib/symlink-candidates';
 import type { GitIgnoredEntry } from '../ipc/types';
 
 interface FakeScrollContainer {
@@ -152,5 +156,37 @@ describe('createSymlinkCandidateState', () => {
     await loadPromise;
 
     expect(state.dirs()).toEqual([]);
+  });
+});
+
+describe('symlink probe gating by git isolation mode', () => {
+  // Direct-mode tasks never send symlinkDirs, so probing candidates there
+  // would be a wasted IPC whose pending state must not block submit either.
+  it('probes only for git projects in worktree mode', () => {
+    expect(shouldProbeSymlinkCandidates(true, 'worktree')).toBe(true);
+    expect(shouldProbeSymlinkCandidates(true, 'direct')).toBe(false);
+    expect(shouldProbeSymlinkCandidates(false, 'worktree')).toBe(false);
+    expect(shouldProbeSymlinkCandidates(false, 'direct')).toBe(false);
+  });
+
+  it('blocks submit on a pending probe only in worktree mode', () => {
+    expect(symlinkProbeBlocksSubmit('worktree', true)).toBe(true);
+    expect(symlinkProbeBlocksSubmit('worktree', false)).toBe(false);
+    expect(symlinkProbeBlocksSubmit('direct', true)).toBe(false);
+    expect(symlinkProbeBlocksSubmit('direct', false)).toBe(false);
+  });
+
+  it('a skipped probe never fetches and never enters the loading state', async () => {
+    let fetched = 0;
+    const state = createSymlinkCandidateState(async () => {
+      fetched += 1;
+      return PROJECT_A_ENTRIES;
+    });
+
+    await state.load('/project-a', shouldProbeSymlinkCandidates(true, 'direct'));
+
+    expect(fetched).toBe(0);
+    expect(state.loading()).toBe(false);
+    expect(symlinkProbeBlocksSubmit('direct', state.loading())).toBe(false);
   });
 });
