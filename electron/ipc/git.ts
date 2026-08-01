@@ -4,7 +4,11 @@ import fs from 'fs';
 import path from 'path';
 import type { BrowserWindow } from 'electron';
 import { debug as logDebug } from '../log.js';
-import { appendGitInfoExcludeBlockAtPath, resolveGitInfoExcludePath } from './git-exclude.js';
+import {
+  appendGitInfoExcludeBlockAtPath,
+  normalizeExcludeLine,
+  resolveGitInfoExcludePath,
+} from './git-exclude.js';
 import type { ChangedFile, CommitInfo, FileDiffResult, GitIgnoredEntry } from './shared-types.js';
 
 export type { ChangedFile, CommitInfo, FileDiffResult, GitIgnoredEntry } from './shared-types.js';
@@ -1014,9 +1018,11 @@ export function ensureSymlinkExcludes(worktreePath: string, symlinkNames: string
   // Root-anchored, no trailing slash — matches the symlink file itself, not
   // just directories, so `node_modules/` gitignore entries can't sneak through.
   // Names are escaped to gitignore literals so `*`/`?` in a filename can't act
-  // as wildcards against unrelated files. Dedup is per-line exact match —
-  // substring matching would let an existing `/foobar` swallow a needed `/foo`.
-  const existingLines = new Set(splitContentLines(existing));
+  // as wildcards against unrelated files. Dedup compares Git-normalized lines
+  // (CRLF and unescaped trailing ASCII spaces stripped) — exact match would
+  // rewrite a hand-written `/foo ` line, and substring matching would let an
+  // existing `/foobar` swallow a needed `/foo`.
+  const existingLines = new Set(splitContentLines(existing).map(normalizeExcludeLine));
   const toAdd = validNames
     .map((name) => `/${escapeGitignoreLiteral(name)}`)
     .filter((pattern) => !existingLines.has(pattern));
@@ -1031,6 +1037,9 @@ export function ensureSymlinkExcludes(worktreePath: string, symlinkNames: string
     `${header}${toAdd.join('\n')}\n`,
     (err) => console.warn(`Failed to append to ${excludePath}:`, err),
     existing,
+    // `toAdd` already holds exactly the missing lines — the helper's
+    // single-marker recheck must not gate this multi-line block.
+    true,
   );
 }
 

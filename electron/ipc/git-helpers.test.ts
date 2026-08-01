@@ -5,7 +5,7 @@ import path from 'path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { changedFilesFromMaps, countReadableTextLines } from './git.js';
+import { changedFilesFromMaps, countReadableTextLines, ensureSymlinkExcludes } from './git.js';
 import { appendGitInfoExcludeBlock, resolveGitInfoExcludePath } from './git-exclude.js';
 
 const tempDirs: string[] = [];
@@ -148,5 +148,32 @@ describe('git exclude helpers', () => {
       appendGitInfoExcludeBlock(root, '# marker', '# marker\nignored\n');
 
       expect(fs.readFileSync(excludePath, 'utf8')).toBe('existing\n# marker\nignored\n');
+    }));
+
+  it('symlink excludes cover missing entries beside a hand-written trailing-space line', () =>
+    withoutInheritedGitContext(() => {
+      const root = initRepository();
+      const excludePath = path.join(root, '.git', 'info', 'exclude');
+      // Git strips the unescaped trailing space, so `/foo ` already covers
+      // `foo` — but a marker match on it must not swallow the missing `/bar`.
+      fs.writeFileSync(excludePath, '/foo \n', 'utf8');
+
+      ensureSymlinkExcludes(root, ['foo', 'bar']);
+
+      expect(() => git(root, ['check-ignore', '-q', 'foo'])).not.toThrow();
+      expect(() => git(root, ['check-ignore', '-q', 'bar'])).not.toThrow();
+    }));
+
+  it('symlink excludes treat a tab-suffixed line as a distinct pattern', () =>
+    withoutInheritedGitContext(() => {
+      const root = initRepository();
+      const excludePath = path.join(root, '.git', 'info', 'exclude');
+      // Git does not strip trailing tabs — `/foo\t` ignores `foo\t`, so `foo`
+      // still needs its own entry.
+      fs.writeFileSync(excludePath, '/foo\t\n', 'utf8');
+
+      ensureSymlinkExcludes(root, ['foo']);
+
+      expect(() => git(root, ['check-ignore', '-q', 'foo'])).not.toThrow();
     }));
 });

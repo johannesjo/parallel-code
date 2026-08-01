@@ -282,4 +282,53 @@ describe('ensureSymlinkExcludes', () => {
     expect(mockAppendFileSync).not.toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it('treats a hand-written trailing-space line as covering the same pattern', () => {
+    // Git strips unescaped trailing ASCII spaces, so `/foo ` already ignores
+    // `foo` — only the genuinely missing `/bar` may be appended. A marker
+    // match on `/foo` must not suppress the rest of the block.
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('/foo \n');
+
+    ensureSymlinkExcludes('/worktree', ['foo', 'bar']);
+
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).not.toContain('/foo');
+    expect(appended).toContain('/bar\n');
+  });
+
+  it('treats a tab-suffixed line as a distinct pattern and still appends', () => {
+    // Git strips trailing spaces only — `/foo\t` ignores a file named `foo\t`,
+    // not `foo`, so the real entry must still be written.
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('/foo\t\n');
+
+    ensureSymlinkExcludes('/worktree', ['foo']);
+
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/foo\n');
+  });
+
+  it('treats a CRLF line as covering the same pattern', () => {
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('/foo\r\n');
+
+    ensureSymlinkExcludes('/worktree', ['foo']);
+
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
+
+  it('treats an escaped trailing-space line as a distinct pattern and still appends', () => {
+    // `/foo\ ` ignores the file named `foo `, not `foo`.
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('/foo\\ \n');
+
+    ensureSymlinkExcludes('/worktree', ['foo']);
+
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/foo\n');
+  });
 });
