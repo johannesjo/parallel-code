@@ -1421,15 +1421,15 @@ textarea::placeholder {
   animation: taskAppear 0.24s ease;
 }
 
+/* No max-height here: rows whose name wraps to two lines are taller than any
+   fixed cap, and a cap clips the second line for the length of the animation. */
 @keyframes taskItemAppear {
   from {
     opacity: 0;
-    max-height: 0;
     transform: translateX(-6px);
   }
   to {
     opacity: 1;
-    max-height: 40px;
     transform: translateX(0);
   }
 }

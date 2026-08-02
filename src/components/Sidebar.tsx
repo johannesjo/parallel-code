@@ -215,6 +215,7 @@ function NeedsInputRow(props: { taskId: string; since: number | null; nowMs: num
           style={{
             display: 'flex',
             'flex-direction': 'column',
+            'flex-shrink': '0',
             gap: '2px',
             padding: '6px 8px',
             'border-radius': '6px',
@@ -231,54 +232,53 @@ function NeedsInputRow(props: { taskId: string; since: number | null; nowMs: num
           <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
             <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" attention="needs_input" />
             <TaskName name={t().name} />
+          </div>
+          {/* Project and elapsed time share the second line so the name gets
+              the full row width on the first. */}
+          <div
+            style={{
+              display: 'flex',
+              'align-items': 'center',
+              gap: '5px',
+              'padding-left': '12px',
+              'font-size': sf(10),
+              color: theme.fgSubtle,
+              'min-width': '0',
+            }}
+          >
+            <Show when={project()}>
+              {(p) => (
+                <>
+                  <span
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      'border-radius': '50%',
+                      background: p().color,
+                      'flex-shrink': '0',
+                    }}
+                  />
+                  <span
+                    style={{
+                      overflow: 'hidden',
+                      'text-overflow': 'ellipsis',
+                      'white-space': 'nowrap',
+                    }}
+                  >
+                    {p().name}
+                  </span>
+                </>
+              )}
+            </Show>
             <Show when={waited()}>
               {(label) => (
-                <span
-                  style={{
-                    'font-size': sf(10),
-                    color: theme.warning,
-                    'flex-shrink': '0',
-                  }}
-                >
+                <span style={{ color: theme.warning, 'flex-shrink': '0' }}>
+                  {project() ? '· ' : ''}
                   {label()}
                 </span>
               )}
             </Show>
           </div>
-          <Show when={project()}>
-            {(p) => (
-              <div
-                style={{
-                  display: 'flex',
-                  'align-items': 'center',
-                  gap: '5px',
-                  'padding-left': '12px',
-                  'font-size': sf(10),
-                  color: theme.fgSubtle,
-                  'min-width': '0',
-                }}
-              >
-                <span
-                  style={{
-                    width: '6px',
-                    height: '6px',
-                    'border-radius': '50%',
-                    background: p().color,
-                    'flex-shrink': '0',
-                  }}
-                />
-                <span
-                  style={{
-                    overflow: 'hidden',
-                    'text-overflow': 'ellipsis',
-                    'white-space': 'nowrap',
-                  }}
-                >
-                  {p().name}
-                </span>
-              </div>
-            )}
-          </Show>
         </div>
       )}
     </Show>
@@ -373,6 +373,9 @@ export function TaskRowShell(props: {
         opacity: props.opacity,
         display: 'flex',
         'flex-direction': 'column',
+        // The list is a scrolling flex column; without this, rows whose name
+        // wraps to two lines get shrunk and the second line is clipped.
+        'flex-shrink': '0',
         gap: '1px',
         ...props.style,
       }}
