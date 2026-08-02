@@ -50,6 +50,7 @@ export const [store, setStore] = createStore<AppStore>({
   showPlans: true,
   showSidebarTips: true,
   showSidebarProgress: true,
+  sidebarNeedsInputFirst: true,
   projectsCollapsed: false,
   desktopNotificationsEnabled: false,
   inactiveColumnOpacity: 0.6,

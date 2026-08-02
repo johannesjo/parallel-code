@@ -1,4 +1,4 @@
-import { createSignal } from 'solid-js';
+import { createSignal, untrack } from 'solid-js';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
@@ -446,14 +446,41 @@ export function isAgentBracketedPasteEnabled(agentId: string): boolean {
   return agentStates.get(agentId)?.bracketedPasteEnabled === true;
 }
 
+// When each agent's current question first appeared (epoch ms). Cleared as soon
+// as the question goes away, so an entry only ever describes the open question.
+const questionSinceByAgent = new Map<string, number>();
+
 function updateQuestionState(agentId: string, hasQuestion: boolean): void {
-  setQuestionAgents((prev) => {
-    if (hasQuestion === prev.has(agentId)) return prev;
-    const next = new Set(prev);
-    if (hasQuestion) next.add(agentId);
-    else next.delete(agentId);
-    return next;
-  });
+  const asking = untrack(questionAgents);
+  if (hasQuestion === asking.has(agentId)) return;
+
+  const next = new Set(asking);
+  if (hasQuestion) {
+    next.add(agentId);
+    questionSinceByAgent.set(agentId, Date.now());
+  } else {
+    next.delete(agentId);
+    questionSinceByAgent.delete(agentId);
+  }
+  setQuestionAgents(next);
+}
+
+/** When this task's newest open question appeared (epoch ms), or null when
+ *  nothing in the task is asking. Mirrors the agent set `getTaskAttentionState`
+ *  reads, so a `needs_input` task always has a timestamp. */
+export function getTaskQuestionSince(taskId: string): number | null {
+  const asking = questionAgents(); // reactive read
+  const task = store.tasks[taskId];
+  if (!task) return null;
+
+  let newest: number | null = null;
+  const runningAgentIds = task.agentIds.filter((id) => store.agents[id]?.status === 'running');
+  for (const agentId of [...runningAgentIds, ...task.shellAgentIds]) {
+    if (!asking.has(agentId)) continue;
+    const since = questionSinceByAgent.get(agentId);
+    if (since !== undefined && (newest === null || since > newest)) newest = since;
+  }
+  return newest;
 }
 
 // --- Agent activity tracking ---

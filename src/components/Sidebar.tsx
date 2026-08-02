@@ -21,6 +21,7 @@ import {
   setPanelUserSize,
   toggleSettingsDialog,
   setProjectsCollapsed,
+  setSidebarNeedsInputFirst,
   uncollapseTask,
   isProjectMissing,
   showNotification,
@@ -32,6 +33,7 @@ import {
   getCoordinatorChildren,
   isCoordinatedChild,
 } from '../store/sidebar-order';
+import { computeNeedsInputTasks } from '../store/sidebar-attention';
 import { ConnectPhoneModal } from './ConnectPhoneModal';
 import { RemoveProjectConfirm } from './RemoveProjectConfirm';
 import { EditProjectDialog } from './EditProjectDialog';
@@ -119,6 +121,7 @@ function CoordinatorIcon() {
 function DirectBranchBadge(props: { branchName: string }) {
   return (
     <span
+      title={`Works directly on ${props.branchName}`}
       style={{
         'font-size': sf(10),
         'font-weight': '600',
@@ -127,12 +130,37 @@ function DirectBranchBadge(props: { branchName: string }) {
         background: `color-mix(in srgb, ${theme.warning} 12%, transparent)`,
         color: theme.warning,
         'flex-shrink': '0',
+        'max-width': '45%',
+        overflow: 'hidden',
+        'text-overflow': 'ellipsis',
+        'white-space': 'nowrap',
         'line-height': '1.5',
       }}
     >
       {props.branchName}
     </span>
   );
+}
+
+/** Task name, wrapping to at most two lines so long names stay readable in a
+ *  narrow sidebar. Full name always available as a tooltip. */
+function TaskName(props: { name: string }) {
+  return (
+    <span class="task-item-name" title={props.name}>
+      {props.name}
+    </span>
+  );
+}
+
+function waitingLabel(since: number | null, nowMs: number): string | null {
+  if (since === null) return null;
+  const seconds = Math.max(0, Math.floor((nowMs - since) / 1_000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 function taskAttentionStyles(
@@ -153,6 +181,149 @@ function taskAttentionStyles(
           ? `1.5px solid color-mix(in srgb, ${offscreenAttention.color()} 38%, transparent)`
           : '1.5px solid transparent',
   };
+}
+
+/** Open the task and land on the panel the user last worked in, so a pinned
+ *  question can be answered without a second click. */
+function jumpToWaitingTask(taskId: string): void {
+  if (store.tasks[taskId]?.collapsed) uncollapseTask(taskId);
+  setActiveTask(taskId);
+  unfocusSidebar();
+  setTaskFocusedPanel(taskId, getTaskFocusedPanel(taskId));
+}
+
+/** One pinned row in the "waiting for you" tray. */
+function NeedsInputRow(props: { taskId: string; since: number | null; nowMs: number }) {
+  const task = () => store.tasks[props.taskId];
+  const project = () => store.projects.find((p) => p.id === task()?.projectId) ?? null;
+  const waited = () => waitingLabel(props.since, props.nowMs);
+
+  return (
+    <Show when={task()}>
+      {(t) => (
+        <div
+          class="task-item sidebar-attention-row"
+          role="button"
+          tabIndex={0}
+          title={`${t().name} — waiting for your input`}
+          onClick={() => jumpToWaitingTask(props.taskId)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            jumpToWaitingTask(props.taskId);
+          }}
+          style={{
+            display: 'flex',
+            'flex-direction': 'column',
+            gap: '2px',
+            padding: '6px 8px',
+            'border-radius': '6px',
+            'font-size': sf(12),
+            color: theme.fg,
+            'font-weight': '500',
+            cursor: 'pointer',
+            background:
+              store.activeTaskId === props.taskId
+                ? `color-mix(in srgb, ${theme.warning} 16%, transparent)`
+                : 'transparent',
+          }}
+        >
+          <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+            <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" attention="needs_input" />
+            <TaskName name={t().name} />
+            <Show when={waited()}>
+              {(label) => (
+                <span
+                  style={{
+                    'font-size': sf(10),
+                    color: theme.warning,
+                    'flex-shrink': '0',
+                  }}
+                >
+                  {label()}
+                </span>
+              )}
+            </Show>
+          </div>
+          <Show when={project()}>
+            {(p) => (
+              <div
+                style={{
+                  display: 'flex',
+                  'align-items': 'center',
+                  gap: '5px',
+                  'padding-left': '12px',
+                  'font-size': sf(10),
+                  color: theme.fgSubtle,
+                  'min-width': '0',
+                }}
+              >
+                <span
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    'border-radius': '50%',
+                    background: p().color,
+                    'flex-shrink': '0',
+                  }}
+                />
+                <span
+                  style={{
+                    overflow: 'hidden',
+                    'text-overflow': 'ellipsis',
+                    'white-space': 'nowrap',
+                  }}
+                >
+                  {p().name}
+                </span>
+              </div>
+            )}
+          </Show>
+        </div>
+      )}
+    </Show>
+  );
+}
+
+/** Tasks blocked on an answer, pinned directly under the New Task button with
+ *  the most recent question first. */
+function NeedsInputTray(props: { nowMs: number }) {
+  const entries = createMemo(() => computeNeedsInputTasks());
+
+  return (
+    <Show when={store.sidebarNeedsInputFirst && entries().length > 0}>
+      <div class="sidebar-attention-tray">
+        <div class="sidebar-attention-tray-header">
+          <span
+            style={{
+              'font-size': sf(11),
+              'text-transform': 'uppercase',
+              'letter-spacing': '0.05em',
+              color: theme.warning,
+              'font-weight': '600',
+            }}
+          >
+            Waiting for you ({entries().length})
+          </span>
+          <IconButton
+            icon={
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+              </svg>
+            }
+            onClick={() => setSidebarNeedsInputFirst(false)}
+            title="Stop pinning tasks that need input (re-enable in Settings)"
+            size="sm"
+          />
+        </div>
+        <For each={entries()}>
+          {(entry) => (
+            <NeedsInputRow taskId={entry.taskId} since={entry.since} nowMs={props.nowMs} />
+          )}
+        </For>
+      </div>
+    </Show>
+  );
 }
 
 export function TaskRowShell(props: {
@@ -766,6 +937,9 @@ export function Sidebar() {
           </button>
         </Show>
 
+        {/* Tasks waiting on an answer — pinned here so they never scroll away */}
+        <NeedsInputTray nowMs={nowMs()} />
+
         {/* Tasks grouped by project */}
         <div
           ref={taskListRef}
@@ -795,7 +969,7 @@ export function Sidebar() {
           style={{
             display: 'flex',
             'flex-direction': 'column',
-            gap: '1px',
+            gap: '3px',
             flex: '1',
             'min-height': TASKS_LIST_MIN_HEIGHT,
             overflow: 'auto',
@@ -833,7 +1007,18 @@ export function Sidebar() {
                         'flex-shrink': '0',
                       }}
                     />
-                    {project.name} ({totalCount()})
+                    <span
+                      title={project.name}
+                      style={{
+                        overflow: 'hidden',
+                        'text-overflow': 'ellipsis',
+                        'white-space': 'nowrap',
+                        'min-width': '0',
+                      }}
+                    >
+                      {project.name}
+                    </span>
+                    <span style={{ 'flex-shrink': '0' }}>({totalCount()})</span>
                   </span>
                   <For each={activeTasks()}>
                     {(taskId) => (
@@ -1029,10 +1214,10 @@ function CoordinatorFolder(props: TaskEntryProps) {
             taskId={props.taskId}
             class={`task-item${t().closingStatus === 'removing' ? ' task-item-removing' : ' task-item-appearing'}`}
             taskIndex={idx()}
-            title={getDotTooltip(
+            title={`${t().name} — ${getDotTooltip(
               getTaskDotStatus(props.taskId),
               getTaskAttentionState(props.taskId),
-            )}
+            )}`}
             onClick={() => {
               setActiveTask(props.taskId);
               focusSidebar();
@@ -1049,9 +1234,7 @@ function CoordinatorFolder(props: TaskEntryProps) {
                 size="sm"
                 attention={getTaskAttentionState(props.taskId)}
               />
-              <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', flex: '1' }}>
-                {t().name}
-              </span>
+              <TaskName name={t().name} />
               <Show when={childCount() > 0}>
                 <span
                   style={{
@@ -1160,10 +1343,10 @@ function CollapsedTaskEntry(props: {
                 size="sm"
                 attention={getTaskAttentionState(props.taskId)}
               />
+              <TaskName name={t().name} />
               <Show when={t().gitIsolation === 'direct'}>
                 <DirectBranchBadge branchName={t().branchName} />
               </Show>
-              <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis' }}>{t().name}</span>
               <Show when={isCoordinator() && childCount() > 0}>
                 <span
                   style={{
@@ -1234,10 +1417,10 @@ function TaskRow(props: TaskRowProps) {
             taskId={props.taskId}
             class={`task-item${t().closingStatus === 'removing' ? ' task-item-removing' : ' task-item-appearing'}`}
             taskIndex={props.indented ? undefined : idx()}
-            title={getDotTooltip(
+            title={`${t().name} — ${getDotTooltip(
               getTaskDotStatus(props.taskId),
               getTaskAttentionState(props.taskId),
-            )}
+            )}`}
             onClick={() => {
               setActiveTask(props.taskId);
               focusSidebar();
@@ -1256,10 +1439,10 @@ function TaskRow(props: TaskRowProps) {
                 size="sm"
                 attention={getTaskAttentionState(props.taskId)}
               />
+              <TaskName name={t().name} />
               <Show when={t().gitIsolation === 'direct'}>
                 <DirectBranchBadge branchName={t().branchName} />
               </Show>
-              <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis' }}>{t().name}</span>
               <Show when={offscreenAttention.label()}>
                 {(label) => (
                   <span

@@ -166,6 +166,10 @@ export function setShowSidebarProgress(show: boolean): void {
   setStore('showSidebarProgress', show);
 }
 
+export function setSidebarNeedsInputFirst(enabled: boolean): void {
+  setStore('sidebarNeedsInputFirst', enabled);
+}
+
 export function setProjectsCollapsed(collapsed: boolean): void {
   batch(() => {
     setStore('projectsCollapsed', collapsed);

@@ -257,6 +257,7 @@ export interface PersistedState {
   showPlans?: boolean;
   showSidebarTips?: boolean;
   showSidebarProgress?: boolean;
+  sidebarNeedsInputFirst?: boolean;
   projectsCollapsed?: boolean;
   desktopNotificationsEnabled?: boolean;
   inactiveColumnOpacity?: number;
@@ -354,6 +355,9 @@ export interface AppStore {
   showPlans: boolean;
   showSidebarTips: boolean;
   showSidebarProgress: boolean;
+  /** Pin tasks that are waiting on an answer to the top of the sidebar task
+   *  list, newest question first. */
+  sidebarNeedsInputFirst: boolean;
   projectsCollapsed: boolean;
   desktopNotificationsEnabled: boolean;
   inactiveColumnOpacity: number;

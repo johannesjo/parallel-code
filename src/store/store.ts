@@ -129,6 +129,7 @@ export {
   setShowPromptInput,
   setShowSidebarTips,
   setShowSidebarProgress,
+  setSidebarNeedsInputFirst,
   setProjectsCollapsed,
   setFontSmoothing,
   setDesktopNotificationsEnabled,

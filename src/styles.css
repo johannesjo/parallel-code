@@ -1033,6 +1033,46 @@ textarea::placeholder {
   color: var(--fg) !important;
 }
 
+/* Task names wrap to two lines rather than being cut mid-word — at sidebar
+   widths, similar names are otherwise indistinguishable. */
+.task-item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.sidebar-attention-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+  max-height: 32vh;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+}
+
+.sidebar-attention-tray-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 2px 2px;
+}
+
+.sidebar-attention-row + .sidebar-attention-row {
+  border-top: 1px solid color-mix(in srgb, var(--warning) 16%, transparent);
+}
+
 .sidebar-offscreen-attention-badge {
   display: inline-flex;
   align-items: center;

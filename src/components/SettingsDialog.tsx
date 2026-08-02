@@ -20,6 +20,7 @@ import {
   setShowPromptInput,
   setShowSidebarTips,
   setShowSidebarProgress,
+  setSidebarNeedsInputFirst,
   setFontSmoothing,
   setDesktopNotificationsEnabled,
   setVerboseLogging,
@@ -443,6 +444,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
               checked={store.showPromptInput}
               onChange={setShowPromptInput}
               description="When hidden, the terminal occupies the full panel and auto-focuses on activation"
+            />
+            <SettingsCheckboxRow
+              label="Pin tasks that need input to the top of the sidebar"
+              checked={store.sidebarNeedsInputFirst}
+              onChange={setSidebarNeedsInputFirst}
+              description="Tasks waiting on an answer appear directly under New Task, most recent question first"
             />
             <SettingsCheckboxRow
               label="Show progress section in sidebar"
