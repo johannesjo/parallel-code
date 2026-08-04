@@ -33,7 +33,7 @@ import {
   getCoordinatorChildren,
   isCoordinatedChild,
 } from '../store/sidebar-order';
-import { computeNeedsInputTasks } from '../store/sidebar-attention';
+import { computeNeedsInputTasks, jumpToWaitingTask } from '../store/sidebar-attention';
 import { ConnectPhoneModal } from './ConnectPhoneModal';
 import { RemoveProjectConfirm } from './RemoveProjectConfirm';
 import { EditProjectDialog } from './EditProjectDialog';
@@ -152,8 +152,7 @@ function TaskName(props: { name: string }) {
   );
 }
 
-function waitingLabel(since: number | null, nowMs: number): string | null {
-  if (since === null) return null;
+function waitingLabel(since: number, nowMs: number): string {
   const seconds = Math.max(0, Math.floor((nowMs - since) / 1_000));
   if (seconds < 60) return 'just now';
   const minutes = Math.floor(seconds / 60);
@@ -183,17 +182,13 @@ function taskAttentionStyles(
   };
 }
 
-/** Open the task and land on the panel the user last worked in, so a pinned
- *  question can be answered without a second click. */
-function jumpToWaitingTask(taskId: string): void {
-  if (store.tasks[taskId]?.collapsed) uncollapseTask(taskId);
-  setActiveTask(taskId);
-  unfocusSidebar();
-  setTaskFocusedPanel(taskId, getTaskFocusedPanel(taskId));
-}
-
 /** One pinned row in the "waiting for you" tray. */
-function NeedsInputRow(props: { taskId: string; since: number | null; nowMs: number }) {
+function NeedsInputRow(props: {
+  taskId: string;
+  since: number;
+  panel: string | null;
+  nowMs: number;
+}) {
   const task = () => store.tasks[props.taskId];
   const project = () => store.projects.find((p) => p.id === task()?.projectId) ?? null;
   const waited = () => waitingLabel(props.since, props.nowMs);
@@ -206,11 +201,11 @@ function NeedsInputRow(props: { taskId: string; since: number | null; nowMs: num
           role="button"
           tabIndex={0}
           title={`${t().name} — waiting for your input`}
-          onClick={() => jumpToWaitingTask(props.taskId)}
+          onClick={() => jumpToWaitingTask(props.taskId, props.panel)}
           onKeyDown={(e) => {
             if (e.key !== 'Enter' && e.key !== ' ') return;
             e.preventDefault();
-            jumpToWaitingTask(props.taskId);
+            jumpToWaitingTask(props.taskId, props.panel);
           }}
           style={{
             display: 'flex',
@@ -230,7 +225,16 @@ function NeedsInputRow(props: { taskId: string; since: number | null; nowMs: num
           }}
         >
           <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
-            <StatusDot status={getTaskDotStatus(props.taskId)} size="sm" attention="needs_input" />
+            {/* The task's real attention state, not a hardcoded `needs_input`:
+                since membership is question-driven, a row here can also be
+                errored or awaiting review, and the dot must not contradict the
+                same task's dot in the list below. The tray header carries the
+                "waiting for you" message on its own. */}
+            <StatusDot
+              status={getTaskDotStatus(props.taskId)}
+              size="sm"
+              attention={getTaskAttentionState(props.taskId)}
+            />
             <TaskName name={t().name} />
           </div>
           {/* Project and elapsed time share the second line so the name gets
@@ -270,14 +274,10 @@ function NeedsInputRow(props: { taskId: string; since: number | null; nowMs: num
                 </>
               )}
             </Show>
-            <Show when={waited()}>
-              {(label) => (
-                <span style={{ color: theme.warning, 'flex-shrink': '0' }}>
-                  {project() ? '· ' : ''}
-                  {label()}
-                </span>
-              )}
-            </Show>
+            <span style={{ color: theme.warning, 'flex-shrink': '0' }}>
+              {project() ? '· ' : ''}
+              {waited()}
+            </span>
           </div>
         </div>
       )}
@@ -318,7 +318,12 @@ function NeedsInputTray(props: { nowMs: number }) {
         </div>
         <For each={entries()}>
           {(entry) => (
-            <NeedsInputRow taskId={entry.taskId} since={entry.since} nowMs={props.nowMs} />
+            <NeedsInputRow
+              taskId={entry.taskId}
+              since={entry.since}
+              panel={entry.panel}
+              nowMs={props.nowMs}
+            />
           )}
         </For>
       </div>

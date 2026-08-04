@@ -15,6 +15,12 @@ describe('getDotTooltip', () => {
   it('uses attention state before dot status', () => {
     expect(getDotTooltip('ready', 'needs_input')).toBe('Waiting for input');
   });
+
+  // A review-flagged task whose agent is still active is dot status 'busy' with
+  // attention 'review' — the purple dot must not read "Busy".
+  it('describes review attention over a busy dot status', () => {
+    expect(getDotTooltip('busy', 'review')).toBe('Ready for review');
+  });
 });
 
 describe('StatusDot', () => {

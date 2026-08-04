@@ -31,6 +31,9 @@ export function getDotTooltip(status: TaskDotStatus, attention?: TaskAttentionSt
   if (attention === 'active') return 'Active — agent is working';
   if (attention === 'needs_input') return 'Waiting for input';
   if (attention === 'error') return 'Error — agent exited with an error';
+  // Without this, a review-flagged task whose agent is still active falls
+  // through to the dot-status map and reads "Busy" under a purple dot.
+  if (attention === 'review') return 'Ready for review';
   if (attention === 'ready') return 'Ready to merge';
   return {
     busy: 'Busy — agent recently active',

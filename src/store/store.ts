@@ -86,6 +86,8 @@ export {
   triggerAction,
   getTaskFocusedPanel,
   setTaskFocusedPanel,
+  aiTerminalPanelId,
+  shellPanelId,
   isPanelFocused,
   isPanelFocusedPrefix,
   focusSidebar,

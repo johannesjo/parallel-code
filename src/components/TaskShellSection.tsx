@@ -13,6 +13,7 @@ import {
   unregisterFocusFn,
   setActiveTask,
   setTaskFocusedPanel,
+  shellPanelId,
   isPanelFocused,
   isPanelFocusedPrefix,
 } from '../store/store';
@@ -209,7 +210,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
               let registeredKey: string | undefined;
 
               createEffect(() => {
-                const key = `${props.task.id}:shell:${i()}`;
+                const key = `${props.task.id}:${shellPanelId(i())}`;
                 if (registeredKey && registeredKey !== key) unregisterFocusFn(registeredKey);
                 if (shellFocusFn) registerFocusFn(key, shellFocusFn);
                 registeredKey = key;
@@ -218,7 +219,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                 if (registeredKey) unregisterFocusFn(registeredKey);
               });
 
-              const isShellPanelFocused = () => isPanelFocused(props.task.id, `shell:${i()}`);
+              const isShellPanelFocused = () => isPanelFocused(props.task.id, shellPanelId(i()));
 
               return (
                 <div
@@ -230,7 +231,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                     position: 'relative',
                     background: theme.taskPanelBg,
                   }}
-                  onClick={() => setTaskFocusedPanel(props.task.id, `shell:${i()}`)}
+                  onClick={() => setTaskFocusedPanel(props.task.id, shellPanelId(i()))}
                 >
                   <button
                     class="shell-terminal-close"

@@ -26,11 +26,30 @@ export function aiTerminalPanelId(agentId: string): string {
   return `${AI_TERMINAL_PANEL}:${agentId}`;
 }
 
+/** Shell terminals are addressed by position in the task's `shellAgentIds`. */
+const SHELL_PANEL_PREFIX = 'shell:';
+
+export function shellPanelId(index: number): string {
+  return `${SHELL_PANEL_PREFIX}${index}`;
+}
+
+export function isShellPanel(panel: string): boolean {
+  return panel.startsWith(SHELL_PANEL_PREFIX);
+}
+
+export function shellPanelIndex(panel: string): number | null {
+  if (!panel.startsWith(SHELL_PANEL_PREFIX)) return null;
+  // Digits only — `Number('')` is 0 and `Number('1e2')` is 100, so a bare
+  // `shell:` or an exponent would otherwise parse as a real panel index.
+  const rest = panel.slice(SHELL_PANEL_PREFIX.length);
+  return /^\d+$/.test(rest) ? Number(rest) : null;
+}
+
 export function isAiTerminalPanel(panel: string): boolean {
   return panel === AI_TERMINAL_PANEL || panel.startsWith(`${AI_TERMINAL_PANEL}:`);
 }
 
-function agentIdFromAiTerminalPanel(panel: string): string | null {
+export function agentIdFromAiTerminalPanel(panel: string): string | null {
   return panel.startsWith(`${AI_TERMINAL_PANEL}:`)
     ? panel.slice(AI_TERMINAL_PANEL.length + 1)
     : null;

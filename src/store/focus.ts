@@ -10,7 +10,9 @@ import {
   defaultPanelFor,
   getTaskFocusedPanel,
   isAiTerminalPanel,
+  isShellPanel,
   setTaskFocusedPanel,
+  shellPanelId,
   triggerFocus,
 } from './focused-panel';
 
@@ -18,6 +20,7 @@ import {
 // importers of './focus' keep working without a cycle through focused-panel.
 export {
   AI_TERMINAL_PANEL,
+  aiTerminalPanelId,
   aiTerminalPanels,
   defaultPanelFor,
   getTaskFocusedPanel,
@@ -25,6 +28,7 @@ export {
   registerFocusFn,
   scrollTaskElementIntoView,
   setTaskFocusedPanel,
+  shellPanelId,
   triggerFocus,
   unregisterFocusFn,
 } from './focused-panel';
@@ -50,17 +54,12 @@ export function triggerAction(key: string): void {
 //    left, changed-files/notes/steps/shell anchor the right, and AI panes are
 //    repeated down the left columns so left/right crossings stay consistent.
 
-const SHELL_PANEL_PREFIX = 'shell:';
 const SHELL_TOOLBAR_PANEL_PREFIX = 'shell-toolbar:';
 
 function shellToolbarPanels(task: { projectId: string }): string[] {
   const bookmarkCount =
     store.projects.find((p) => p.id === task.projectId)?.terminalBookmarks?.length ?? 0;
   return Array.from({ length: 1 + bookmarkCount }, (_, i) => `${SHELL_TOOLBAR_PANEL_PREFIX}${i}`);
-}
-
-function isShellPanel(panel: string): boolean {
-  return panel.startsWith(SHELL_PANEL_PREFIX);
 }
 
 function isShellToolbarPanel(panel: string): boolean {
@@ -80,7 +79,7 @@ function pickTargetTerminalFamilyPanel(
 
   if (isShellPanel(current)) {
     if (targetTask.shellAgentIds.length > 0) {
-      return `${SHELL_PANEL_PREFIX}${edgeIndex(targetTask.shellAgentIds.length, entryEdge)}`;
+      return shellPanelId(edgeIndex(targetTask.shellAgentIds.length, entryEdge));
     }
 
     const toolbarPanels = shellToolbarPanels(targetTask);
@@ -123,7 +122,7 @@ function buildGrid(panelId: string): string[][] {
       const leftBottom = store.showPromptInput ? 'prompt' : aiCols[0];
       if (hasShells) {
         grid.push([...aiCols, ...toolbarCols]);
-        grid.push([leftBottom, ...task.shellAgentIds.map((_, i) => `shell:${i}`)]);
+        grid.push([leftBottom, ...task.shellAgentIds.map((_, i) => shellPanelId(i))]);
       } else {
         grid.push([leftBottom, ...toolbarCols]);
       }
@@ -134,7 +133,7 @@ function buildGrid(panelId: string): string[][] {
     grid.push(['notes', 'changed-files']);
     grid.push(toolbarCols);
     if (task.shellAgentIds.length > 0) {
-      grid.push(task.shellAgentIds.map((_, i) => `shell:${i}`));
+      grid.push(task.shellAgentIds.map((_, i) => shellPanelId(i)));
     }
     grid.push(aiCols);
     if (task.stepsEnabled && task.stepsContent?.length) {

@@ -10,6 +10,7 @@ import {
   registerFocusFn,
   unregisterFocusFn,
   setTaskFocusedPanel,
+  aiTerminalPanelId,
   isPanelFocused,
   setActiveAgent,
   setActiveTask,
@@ -35,10 +36,6 @@ import type { Task } from '../store/types';
 import type { AgentDef } from '../ipc/types';
 import type { PromptInputHandle } from './PromptInput';
 import { buildTaskAgentArgs, isResumeArgsFailure } from '../lib/agent-args';
-
-function aiTerminalPanelId(agentId: string): string {
-  return `ai-terminal:${agentId}`;
-}
 
 type StepNavApi = { mark: (i: number) => void; jump: (i: number) => boolean };
 

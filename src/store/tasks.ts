@@ -4,7 +4,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { store, setStore, cleanupPanelEntries } from './core';
 import { effectiveAgentId } from './agent-select';
 import { saveState } from './persistence';
-import { setTaskFocusedPanel } from './focused-panel';
+import { setTaskFocusedPanel, shellPanelId } from './focused-panel';
 import { getProject, getProjectPath, getProjectBranchPrefix, isProjectMissing } from './projects';
 import { setPendingShellCommand } from '../lib/bookmarks';
 import {
@@ -872,7 +872,7 @@ export function runBookmarkInTask(taskId: string, command: string): void {
     if (isAgentIdle(shellId)) {
       // Mark busy immediately so rapid clicks don't reuse the same shell.
       markAgentBusy(shellId);
-      setTaskFocusedPanel(taskId, `shell:${i}`);
+      setTaskFocusedPanel(taskId, shellPanelId(i));
       invoke(IPC.WriteToAgent, { agentId: shellId, data: command + '\r' }).catch((err) => {
         logWarn('tasks.shell', 'WriteToAgent failed; falling back to spawnShell', { err });
         spawnShellForTask(taskId, command);
@@ -906,7 +906,7 @@ export async function closeShell(taskId: string, shellId: string): Promise<void>
       setTaskFocusedPanel(taskId, 'shell-toolbar:0');
     } else {
       const focusIndex = Math.min(closedIndex, remaining - 1);
-      setTaskFocusedPanel(taskId, `shell:${focusIndex}`);
+      setTaskFocusedPanel(taskId, shellPanelId(focusIndex));
     }
   }
 }

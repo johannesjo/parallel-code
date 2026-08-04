@@ -465,20 +465,38 @@ function updateQuestionState(agentId: string, hasQuestion: boolean): void {
   setQuestionAgents(next);
 }
 
-/** When this task's newest open question appeared (epoch ms), or null when
- *  nothing in the task is asking. Mirrors the agent set `getTaskAttentionState`
- *  reads, so a `needs_input` task always has a timestamp. */
-export function getTaskQuestionSince(taskId: string): number | null {
+export interface TaskOpenQuestion {
+  /** The agent whose terminal is showing the question. */
+  agentId: string;
+  /** When the question appeared (epoch ms). */
+  since: number;
+}
+
+/** This task's newest open question — who is asking and since when — or null
+ *  when nothing in the task is asking.
+ *
+ *  Deliberately independent of `getTaskAttentionState`: that function reports a
+ *  single prioritized status, so an exited-non-zero agent (`error`) or a review
+ *  flag hides a question another agent is still blocked on. The sidebar tray
+ *  reads this instead. The desktop-notification watcher and `remoteStatusSync`
+ *  still classify `needs_input` from the attention state and so inherit that
+ *  masking — knowingly unconverted, since changing when a notification fires is
+ *  a product decision, not a mechanical follow-through. */
+export function getTaskOpenQuestion(taskId: string): TaskOpenQuestion | null {
   const asking = questionAgents(); // reactive read
   const task = store.tasks[taskId];
   if (!task) return null;
 
-  let newest: number | null = null;
+  let newest: TaskOpenQuestion | null = null;
   const runningAgentIds = task.agentIds.filter((id) => store.agents[id]?.status === 'running');
   for (const agentId of [...runningAgentIds, ...task.shellAgentIds]) {
     if (!asking.has(agentId)) continue;
+    // The asking set and the onset map are separate structures kept in step by
+    // `updateQuestionState`, their sole writer. This is the one place they meet,
+    // so it is the one place that has to tolerate them drifting apart.
     const since = questionSinceByAgent.get(agentId);
-    if (since !== undefined && (newest === null || since > newest)) newest = since;
+    if (since === undefined) continue;
+    if (newest === null || since > newest.since) newest = { agentId, since };
   }
   return newest;
 }

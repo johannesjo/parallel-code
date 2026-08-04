@@ -92,6 +92,7 @@ import {
   isAgentAskingQuestion,
   isAgentBracketedPasteEnabled,
   getTaskAttentionState,
+  getTaskOpenQuestion,
   getTaskDotStatus,
   taskNeedsAttention,
   markAgentSpawned,
@@ -899,6 +900,76 @@ describe('task attention state', () => {
     markAgentOutput('agent-1', new TextEncoder().encode('\r❯\ropus · /x · ctx:1k/200k'), 'task-1');
 
     expect(isAgentAskingQuestion('agent-1')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// open questions (independent of the prioritized attention state)
+// ---------------------------------------------------------------------------
+describe('getTaskOpenQuestion', () => {
+  it('returns null when nothing in the task is asking', () => {
+    setMockTask('task-1', { agentIds: ['agent-1'] });
+    setMockAgent('agent-1', { status: 'running' });
+
+    expect(getTaskOpenQuestion('task-1')).toBeNull();
+  });
+
+  it('reports the question even when another agent in the task exited non-zero', () => {
+    setMockTask('task-1', { agentIds: ['agent-1', 'agent-2'] });
+    setMockAgent('agent-1', { status: 'exited', exitCode: 1, signal: null });
+    setMockAgent('agent-2', { status: 'running' });
+
+    markAgentOutput('agent-2', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+
+    // The prioritized display status hides the question behind the failure...
+    expect(getTaskAttentionState('task-1')).toBe('error');
+    // ...but a human answer is still owed, so callers must be able to see it.
+    expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-2');
+  });
+
+  it('reports the question even when the task is flagged for review', () => {
+    setMockTask('task-1', { agentIds: ['agent-1'], needsReview: true });
+    setMockAgent('agent-1', { status: 'running' });
+
+    markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+
+    expect(getTaskAttentionState('task-1')).toBe('review');
+    expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-1');
+  });
+
+  it('returns the newest question when several agents are asking', () => {
+    setMockTask('task-1', { agentIds: ['agent-1', 'agent-2'] });
+    setMockAgent('agent-1', { status: 'running' });
+    setMockAgent('agent-2', { status: 'running' });
+
+    markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+    const first = expectDefined(getTaskOpenQuestion('task-1')).since;
+    vi.advanceTimersByTime(5_000);
+    markAgentOutput('agent-2', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+
+    const newest = expectDefined(getTaskOpenQuestion('task-1'));
+    expect(newest.agentId).toBe('agent-2');
+    expect(newest.since).toBe(first + 5_000);
+  });
+
+  it('reports a question coming from a task shell', () => {
+    setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
+
+    markAgentOutput('shell-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+
+    expect(getTaskOpenQuestion('task-1')?.agentId).toBe('shell-1');
+  });
+
+  it('ignores a question left behind by an agent that is no longer running', () => {
+    setMockTask('task-1', { agentIds: ['agent-1'] });
+    setMockAgent('agent-1', { status: 'running' });
+
+    markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+    expect(getTaskOpenQuestion('task-1')).not.toBeNull();
+
+    setMockAgent('agent-1', { status: 'exited', exitCode: 0, signal: null });
+
+    expect(getTaskOpenQuestion('task-1')).toBeNull();
   });
 });
 
