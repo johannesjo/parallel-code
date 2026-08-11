@@ -7,7 +7,6 @@ vi.stubGlobal('fetch', mockFetch);
 import {
   askAboutCodeMinimax,
   cancelAskAboutCodeMinimax,
-  MINIMAX_MODEL,
   setMinimaxApiKey,
 } from './ask-code-minimax.js';
 
@@ -164,7 +163,7 @@ describe('askAboutCodeMinimax', () => {
     );
   });
 
-  it('uses MiniMax-M2.7 model', async () => {
+  it('uses MiniMax-M3 by default', async () => {
     const { win, messages } = makeMockWin();
 
     mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
@@ -180,7 +179,27 @@ describe('askAboutCodeMinimax', () => {
     const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string) as {
       model: string;
     };
-    expect(body.model).toBe(MINIMAX_MODEL);
+    expect(body.model).toBe('MiniMax-M3');
+  });
+
+  it('uses the selected MiniMax model', async () => {
+    const { win, messages } = makeMockWin();
+
+    mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
+
+    askAboutCodeMinimax(win, {
+      requestId: 'r6-model',
+      channelId: 'ch6-model',
+      prompt: 'Test',
+      modelId: 'MiniMax-M2.7',
+    });
+
+    await waitForDone(messages);
+
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string) as {
+      model: string;
+    };
+    expect(body.model).toBe('MiniMax-M2.7');
   });
 
   it('uses temperature in MiniMax allowed range (0, 1]', async () => {

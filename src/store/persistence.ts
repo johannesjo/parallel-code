@@ -198,6 +198,7 @@ export async function saveState(): Promise<void> {
     editorCommand: store.editorCommand || undefined,
     dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
     askCodeProvider: store.askCodeProvider !== 'claude' ? store.askCodeProvider : undefined,
+    minimaxModel: store.minimaxModel !== 'MiniMax-M3' ? store.minimaxModel : undefined,
     customAgents: store.customAgents.length > 0 ? [...store.customAgents] : undefined,
     keybindingMigrationDismissed: store.keybindingMigrationDismissed || undefined,
     focusMode: store.focusMode || undefined,
@@ -368,6 +369,7 @@ interface LegacyPersistedState {
   editorCommand?: unknown;
   dockerImage?: unknown;
   askCodeProvider?: unknown;
+  minimaxModel?: unknown;
   minimaxApiKey?: unknown;
   customAgents?: unknown;
   terminals?: unknown;
@@ -603,6 +605,7 @@ export async function loadState(): Promise<void> {
           : 'parallel-code-agent:latest';
 
       s.askCodeProvider = raw.askCodeProvider === 'minimax' ? 'minimax' : 'claude';
+      s.minimaxModel = raw.minimaxModel === 'MiniMax-M2.7' ? 'MiniMax-M2.7' : 'MiniMax-M3';
 
       // Restore custom agents
       if (Array.isArray(raw.customAgents)) {

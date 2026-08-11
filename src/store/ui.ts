@@ -7,7 +7,7 @@ import type { LookPreset, AppearanceMode } from '../lib/look';
 import { osIsDark } from '../lib/os-appearance';
 import type { CustomTheme } from '../lib/custom-theme';
 import { themeToCss } from '../lib/custom-theme';
-import type { PersistedWindowState, TaskViewportVisibility } from './types';
+import type { MinimaxModelId, PersistedWindowState, TaskViewportVisibility } from './types';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 
@@ -235,6 +235,10 @@ export function setDockerImage(image: string): void {
 
 export function setAskCodeProvider(provider: 'claude' | 'minimax'): void {
   setStore('askCodeProvider', provider);
+}
+
+export function setMinimaxModel(model: MinimaxModelId): void {
+  setStore('minimaxModel', model);
 }
 
 export function setMinimaxApiKey(key: string): void {

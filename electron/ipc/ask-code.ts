@@ -23,6 +23,7 @@ interface AskCodeRequest {
   prompt: string;
   cwd: string;
   provider?: AskCodeProvider;
+  model?: string;
 }
 
 const activeRequests = new RequestRegistry<ChildProcess>({
@@ -31,12 +32,12 @@ const activeRequests = new RequestRegistry<ChildProcess>({
 });
 
 export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
-  const { requestId, channelId, prompt, cwd, provider } = args;
+  const { requestId, channelId, prompt, cwd, provider, model } = args;
 
   // Route to MiniMax backend when configured
   if (provider === 'minimax') {
     activeRequests.cancel(requestId);
-    askAboutCodeMinimax(win, { requestId, channelId, prompt });
+    askAboutCodeMinimax(win, { requestId, channelId, prompt, modelId: model });
     return;
   }
 

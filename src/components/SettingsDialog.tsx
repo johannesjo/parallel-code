@@ -29,6 +29,7 @@ import {
   setDockerImage,
   setShareDockerAgentAuth,
   setAskCodeProvider,
+  setMinimaxModel,
   setMinimaxApiKey,
   setAppearanceMode,
   setLightTheme,
@@ -597,10 +598,42 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   }}
                 >
                   <option value="claude">Claude Code (claude CLI)</option>
-                  <option value="minimax">MiniMax (M2.7)</option>
+                  <option value="minimax">MiniMax</option>
                 </select>
               </label>
               <Show when={store.askCodeProvider === 'minimax'}>
+                <label
+                  style={{
+                    display: 'flex',
+                    'align-items': 'center',
+                    gap: '10px',
+                    'margin-top': '4px',
+                  }}
+                >
+                  <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
+                    MiniMax model
+                  </span>
+                  <select
+                    value={store.minimaxModel}
+                    onChange={(e) =>
+                      setMinimaxModel(e.currentTarget.value as 'MiniMax-M3' | 'MiniMax-M2.7')
+                    }
+                    style={{
+                      flex: '1',
+                      background: theme.taskPanelBg,
+                      border: `1px solid ${theme.border}`,
+                      'border-radius': '6px',
+                      padding: '6px 10px',
+                      color: theme.fg,
+                      'font-size': '13px',
+                      outline: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="MiniMax-M3">MiniMax M3 (default)</option>
+                    <option value="MiniMax-M2.7">MiniMax M2.7</option>
+                  </select>
+                </label>
                 <label
                   style={{
                     display: 'flex',
@@ -632,7 +665,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </Show>
               <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>
                 {store.askCodeProvider === 'minimax'
-                  ? 'Uses MiniMax M2.7 (204K context) via the OpenAI-compatible API — no Claude Code CLI required.'
+                  ? 'Uses the selected MiniMax model for text-only code Q&A through the global OpenAI-compatible endpoint. Prompts are limited to 50,000 characters.'
                   : 'Uses the claude CLI to answer questions about selected code. Requires Claude Code to be installed.'}
               </span>
             </div>

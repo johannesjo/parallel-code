@@ -143,6 +143,7 @@ export {
   setDockerAvailable,
   setShareDockerAgentAuth,
   setAskCodeProvider,
+  setMinimaxModel,
   setMinimaxApiKey,
   setWindowState,
   setCoordinatorModeEnabled,

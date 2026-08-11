@@ -9,6 +9,8 @@ export type KeybindingOverride = Partial<Pick<KeyBinding, 'key' | 'modifiers'>> 
 
 export type GitIsolationMode = 'worktree' | 'direct' | 'none';
 
+export type MinimaxModelId = 'MiniMax-M3' | 'MiniMax-M2.7';
+
 export interface StagedNotification {
   batchId: string;
   notificationIds: string[];
@@ -265,6 +267,7 @@ export interface PersistedState {
   dockerImage?: string;
   shareDockerAgentAuth?: boolean;
   askCodeProvider?: 'claude' | 'minimax';
+  minimaxModel?: MinimaxModelId;
   customAgents?: AgentDef[];
   keybindingMigrationDismissed?: boolean;
   focusMode?: boolean;
@@ -366,6 +369,7 @@ export interface AppStore {
   dockerAvailable: boolean;
   shareDockerAgentAuth: boolean;
   askCodeProvider: 'claude' | 'minimax';
+  minimaxModel: MinimaxModelId;
   newTaskDropUrl: string | null;
   newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
   missingProjectIds: Record<string, true>;
