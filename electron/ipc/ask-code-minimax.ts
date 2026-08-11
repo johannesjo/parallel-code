@@ -11,6 +11,7 @@ import {
 import {
   DEFAULT_MINIMAX_MODEL_ID,
   DEFAULT_MINIMAX_REGION,
+  getMinimaxModel,
   minimaxChatCompletionsUrl,
 } from './minimax-catalog.js';
 
@@ -18,6 +19,7 @@ interface MinimaxAskCodeRequest {
   requestId: string;
   channelId: string;
   prompt: string;
+  modelId?: string;
 }
 
 const MINIMAX_API_URL = minimaxChatCompletionsUrl(DEFAULT_MINIMAX_REGION);
@@ -36,8 +38,10 @@ export function setMinimaxApiKey(key: string): void {
 }
 
 export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequest): void {
-  const { requestId, channelId, prompt } = args;
+  const { requestId, channelId, prompt, modelId } = args;
   const apiKey = storedApiKey;
+  const model =
+    getMinimaxModel(modelId ?? DEFAULT_MINIMAX_MODEL_ID)?.id ?? DEFAULT_MINIMAX_MODEL_ID;
 
   if (!apiKey) {
     throw new Error('MiniMax API key is not set. Please configure it in Settings.');
@@ -67,7 +71,7 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: MINIMAX_MODEL,
+      model,
       messages: [
         {
           role: 'system',

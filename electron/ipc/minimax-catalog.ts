@@ -2,10 +2,8 @@
  * Catalog of the MiniMax models and regional API endpoints used by the inline
  * "Ask about Code" provider.
  *
- * Centralizing this metadata keeps the provider from being pinned to a single
- * model or a single endpoint: each model carries its own context window, input
- * modalities and thinking modes, and each region exposes both of its
- * supported protocol base URLs.
+ * Each model carries its context window, pricing, input modalities and
+ * thinking modes, and each region exposes both supported protocol base URLs.
  */
 
 /** Regions where the MiniMax platform is reachable. */
@@ -20,11 +18,22 @@ export type MinimaxInputModality = 'text' | 'image' | 'video';
 /** Thinking modes a MiniMax model supports. */
 export type MinimaxThinkingMode = 'adaptive' | 'disabled' | 'always_on';
 
+export type MinimaxModelId = 'MiniMax-M3' | 'MiniMax-M2.7';
+
+export interface MinimaxPricing {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number | null;
+}
+
 export interface MinimaxModel {
   /** Model identifier sent as the `model` field on the wire. */
-  id: string;
+  id: MinimaxModelId;
   /** Maximum number of tokens the model accepts in a single request. */
   contextWindow: number;
+  /** USD per million tokens. */
+  pricingUsdPerMillionTokens: MinimaxPricing;
   /** Input modalities the model understands. */
   inputModalities: MinimaxInputModality[];
   /** Thinking modes the model exposes. */
@@ -50,12 +59,24 @@ export const MINIMAX_MODELS: MinimaxModel[] = [
   {
     id: 'MiniMax-M3',
     contextWindow: 1_000_000,
+    pricingUsdPerMillionTokens: {
+      input: 0.6,
+      output: 2.4,
+      cacheRead: 0.12,
+      cacheWrite: null,
+    },
     inputModalities: ['text', 'image', 'video'],
     thinking: ['adaptive', 'disabled'],
   },
   {
     id: 'MiniMax-M2.7',
     contextWindow: 204_800,
+    pricingUsdPerMillionTokens: {
+      input: 0.3,
+      output: 1.2,
+      cacheRead: 0.06,
+      cacheWrite: 0.375,
+    },
     inputModalities: ['text'],
     thinking: ['always_on'],
   },
@@ -77,6 +98,10 @@ export const MINIMAX_ENDPOINTS: MinimaxEndpoint[] = [
   },
 ];
 
+const MINIMAX_ENDPOINT_BY_REGION: Record<MinimaxRegion, MinimaxEndpoint> = Object.fromEntries(
+  MINIMAX_ENDPOINTS.map((endpoint) => [endpoint.region, endpoint]),
+) as Record<MinimaxRegion, MinimaxEndpoint>;
+
 /** Default model used by the inline code Q&A provider. */
 export const DEFAULT_MINIMAX_MODEL_ID = 'MiniMax-M3';
 
@@ -93,9 +118,9 @@ export function getMinimaxModel(id: string): MinimaxModel | undefined {
   return MINIMAX_MODELS.find((model) => model.id === id);
 }
 
-/** Returns the endpoint for a region, falling back to the first (global) one. */
+/** Returns the endpoint for a supported region. */
 export function getMinimaxEndpoint(region: MinimaxRegion): MinimaxEndpoint {
-  return MINIMAX_ENDPOINTS.find((endpoint) => endpoint.region === region) ?? MINIMAX_ENDPOINTS[0];
+  return MINIMAX_ENDPOINT_BY_REGION[region];
 }
 
 /** Returns the base URL a region exposes for the given protocol. */

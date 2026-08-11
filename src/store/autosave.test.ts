@@ -33,4 +33,13 @@ describe('autosave snapshot includes new-task-default fields', () => {
   it('showSteps is not tracked separately (migrated to defaultStepsEnabled)', () => {
     expect('showSteps' in store).toBe(false);
   });
+
+  it('MiniMax model changes the snapshot', () => {
+    setStore('minimaxModel', 'MiniMax-M3');
+    const before = persistedSnapshot();
+    setStore('minimaxModel', 'MiniMax-M2.7');
+    const after = persistedSnapshot();
+    expect(before).not.toBe(after);
+    setStore('minimaxModel', 'MiniMax-M3');
+  });
 });

@@ -893,12 +893,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.cwd, 'cwd');
     const provider: string | undefined =
       typeof args.provider === 'string' ? args.provider : undefined;
+    const model: string | undefined = typeof args.model === 'string' ? args.model : undefined;
     askAboutCode(win, {
       requestId: args.requestId,
       channelId: args.onOutput.__CHANNEL_ID__,
       prompt: args.prompt,
       cwd: args.cwd,
       provider: provider === 'minimax' ? 'minimax' : 'claude',
+      model,
     });
   });
 

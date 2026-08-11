@@ -58,6 +58,7 @@ export const [store, setStore] = createStore<AppStore>({
   dockerAvailable: false,
   shareDockerAgentAuth: false,
   askCodeProvider: 'claude',
+  minimaxModel: 'MiniMax-M3',
   newTaskDropUrl: null,
   newTaskPrefillPrompt: null,
   missingProjectIds: {},

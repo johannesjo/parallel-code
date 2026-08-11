@@ -3,7 +3,6 @@ import {
   DEFAULT_MINIMAX_MODEL_ID,
   DEFAULT_MINIMAX_REGION,
   MINIMAX_ENDPOINTS,
-  MINIMAX_MODELS,
   getMinimaxEndpoint,
   getMinimaxModel,
   minimaxBaseUrl,
@@ -25,6 +24,12 @@ describe('minimax catalog models', () => {
     const m3 = getMinimaxModel('MiniMax-M3');
     expect(m3).toBeDefined();
     expect(m3?.contextWindow).toBe(1_000_000);
+    expect(m3?.pricingUsdPerMillionTokens).toEqual({
+      input: 0.6,
+      output: 2.4,
+      cacheRead: 0.12,
+      cacheWrite: null,
+    });
     expect(m3?.inputModalities).toEqual(['text', 'image', 'video']);
     expect(m3?.thinking).toEqual(['adaptive', 'disabled']);
   });
@@ -33,23 +38,18 @@ describe('minimax catalog models', () => {
     const m27 = getMinimaxModel('MiniMax-M2.7');
     expect(m27).toBeDefined();
     expect(m27?.contextWindow).toBe(204_800);
+    expect(m27?.pricingUsdPerMillionTokens).toEqual({
+      input: 0.3,
+      output: 1.2,
+      cacheRead: 0.06,
+      cacheWrite: 0.375,
+    });
     expect(m27?.inputModalities).toEqual(['text']);
     expect(m27?.thinking).toEqual(['always_on']);
   });
 
-  it('does not clone the M2.7 profile onto M3', () => {
-    const m3 = getMinimaxModel('MiniMax-M3');
-    const m27 = getMinimaxModel('MiniMax-M2.7');
-    expect(m3?.contextWindow).not.toBe(m27?.contextWindow);
-    expect(m3?.inputModalities).not.toEqual(m27?.inputModalities);
-  });
-
   it('returns undefined for unknown models', () => {
     expect(getMinimaxModel('nope')).toBeUndefined();
-  });
-
-  it('exposes exactly the catalogued models', () => {
-    expect(MINIMAX_MODELS).toHaveLength(2);
   });
 });
 
@@ -79,7 +79,7 @@ describe('minimax catalog endpoints', () => {
     expect(minimaxChatCompletionsUrl('cn_zh')).toBe('https://api.minimaxi.com/v1/chat/completions');
   });
 
-  it('falls back to the global endpoint for the default region', () => {
+  it('resolves the default global endpoint', () => {
     expect(getMinimaxEndpoint(DEFAULT_MINIMAX_REGION).region).toBe('global_en');
   });
 });

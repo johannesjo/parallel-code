@@ -34,6 +34,8 @@ export function persistedSnapshot(): string {
     desktopNotificationsEnabled: store.desktopNotificationsEnabled,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand,
+    askCodeProvider: store.askCodeProvider,
+    minimaxModel: store.minimaxModel,
     customAgents: store.customAgents,
     focusMode: store.focusMode,
     coordinatorNotificationDelayMs: store.coordinatorNotificationDelayMs,

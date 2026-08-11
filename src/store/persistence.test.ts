@@ -80,6 +80,38 @@ beforeEach(() => {
   setStore('customAgents', []);
   setStore('coordinatorControlHintDismissed', false);
   setStore('autoStartRemoteAccess', false);
+  setStore('minimaxModel', 'MiniMax-M3');
+});
+
+describe('MiniMax model persistence', () => {
+  it('persists a non-default model selection', async () => {
+    setStore('minimaxModel', 'MiniMax-M2.7');
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    await saveState();
+
+    const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
+    expect(saved.minimaxModel).toBe('MiniMax-M2.7');
+  });
+
+  it('restores supported selections and defaults unknown values to M3', async () => {
+    const payload = {
+      projects: [],
+      taskOrder: [],
+      collapsedTaskOrder: [],
+      tasks: {},
+      activeTaskId: null,
+      sidebarVisible: true,
+    };
+
+    mockInvoke.mockResolvedValueOnce(JSON.stringify({ ...payload, minimaxModel: 'MiniMax-M2.7' }));
+    await loadState();
+    expect(store.minimaxModel).toBe('MiniMax-M2.7');
+
+    mockInvoke.mockResolvedValueOnce(JSON.stringify({ ...payload, minimaxModel: 'unknown' }));
+    await loadState();
+    expect(store.minimaxModel).toBe('MiniMax-M3');
+  });
 });
 
 describe('resolveIncomingPanelUserSize', () => {
