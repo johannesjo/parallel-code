@@ -1166,10 +1166,21 @@ textarea::placeholder {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 2px 6px 2px 4px;
+  scrollbar-width: auto;
+  scrollbar-color: auto;
   /* Native clickable-preview margins: scrollIntoView keeps 64px of each
      neighbor visible, and edge clamping snaps the first/last task flush.
      Keep in sync with TASK_CLICKABLE_PREVIEW_PX in src/store/focused-panel.ts. */
   scroll-padding-inline: 64px;
+}
+
+.tiling-layout-strip::-webkit-scrollbar {
+  height: 10px;
+}
+
+.tiling-layout-strip::-webkit-scrollbar-thumb {
+  border-block: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 .tiling-layout-scroll-affordance {
