@@ -182,9 +182,13 @@ function PlanViewerContent(props: PlanViewerContentProps) {
     });
   }
 
-  function handleSubmitWithPosition(text: string, mode: Parameters<typeof review.handleSubmit>[1]) {
+  function handleSubmitWithPosition(
+    text: string,
+    mode: Parameters<typeof review.handleSubmit>[1],
+    imagePaths?: string[],
+  ) {
     const y = selectionY();
-    const id = review.handleSubmit(text, mode);
+    const id = review.handleSubmit(text, mode, imagePaths);
     if (id) setCardOffsets((prev) => ({ ...prev, [id]: y }));
     setHighlightRects([]);
   }
@@ -359,6 +363,7 @@ function PlanViewerContent(props: PlanViewerContentProps) {
                     endLine={q.endLine}
                     selectedText={q.selectedText}
                     worktreePath={props.worktreePath ?? ''}
+                    imagePaths={q.imagePaths}
                     onDismiss={() => review.dismissQuestion(q.id)}
                   />
                 </div>
