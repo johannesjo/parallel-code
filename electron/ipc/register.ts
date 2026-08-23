@@ -910,6 +910,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const provider: string | undefined =
       typeof args.provider === 'string' ? args.provider : undefined;
     assertOptionalString(args.envFile, 'envFile');
+    const rawImagePaths: unknown = args.imagePaths;
+    let imagePaths: string[] | undefined;
+    if (rawImagePaths !== undefined) {
+      assertStringArray(rawImagePaths, 'imagePaths');
+      for (const imagePath of rawImagePaths) validatePath(imagePath, 'imagePath');
+      imagePaths = rawImagePaths;
+    }
     askAboutCode(win, {
       requestId: args.requestId,
       channelId: args.onOutput.__CHANNEL_ID__,
@@ -917,6 +924,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       cwd: args.cwd,
       provider: provider === 'minimax' ? 'minimax' : 'claude',
       envFile: args.envFile,
+      imagePaths,
     });
   });
 

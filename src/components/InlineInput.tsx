@@ -1,17 +1,31 @@
-import { createSignal, onCleanup, onMount } from 'solid-js';
+import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
+import { invoke } from '../lib/ipc';
+import { IPC } from '../../electron/ipc/channels';
+import { store } from '../store/store';
+import { warn as logWarn } from '../lib/log';
 import type { DiffInteractionMode } from './review-types';
 
 interface InlineInputProps {
-  onSubmit: (text: string, mode: DiffInteractionMode) => void;
+  onSubmit: (text: string, mode: DiffInteractionMode, imagePaths?: string[]) => void;
   onDismiss: () => void;
+}
+
+/** Shape of the resolved clipboard content returned by the main process. */
+interface ResolvedPaste {
+  kind: string;
+  path?: string;
 }
 
 export function InlineInput(props: InlineInputProps) {
   const [text, setText] = createSignal('');
   const [mode, setMode] = createSignal<DiffInteractionMode>('review');
+  const [imagePaths, setImagePaths] = createSignal<string[]>([]);
   let inputRef: HTMLInputElement | undefined;
+
+  /** Images are only sent to a provider whose model accepts image input. */
+  const imageInputEnabled = () => mode() === 'ask' && store.askCodeProvider === 'minimax';
 
   onMount(() => {
     requestAnimationFrame(() => inputRef?.focus());
@@ -32,7 +46,32 @@ export function InlineInput(props: InlineInputProps) {
 
   function submit() {
     const t = text().trim();
-    if (t) props.onSubmit(t, mode());
+    if (!t) return;
+    props.onSubmit(t, mode(), imageInputEnabled() ? imagePaths() : undefined);
+  }
+
+  /**
+   * Attaches a pasted image to the question. The main process already turns
+   * clipboard images into temp files, so the same path is reused here.
+   */
+  function handlePaste(e: ClipboardEvent) {
+    if (!imageInputEnabled()) return;
+    const hasImage = Array.from(e.clipboardData?.items ?? []).some((item) =>
+      item.type.startsWith('image/'),
+    );
+    if (!hasImage) return;
+
+    e.preventDefault();
+    invoke<ResolvedPaste>(IPC.ResolveClipboardPaste)
+      .then((paste) => {
+        if (paste.kind === 'image' && paste.path) {
+          const attached = paste.path;
+          setImagePaths((prev) => (prev.includes(attached) ? prev : [...prev, attached]));
+        }
+      })
+      .catch((err: unknown) => {
+        logWarn('askCode.paste', 'ResolveClipboardPaste failed', { err });
+      });
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -107,6 +146,7 @@ export function InlineInput(props: InlineInputProps) {
         value={text()}
         onInput={(e) => setText(e.currentTarget.value)}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         style={{
           flex: '1',
           background: theme.bgInput,
@@ -119,6 +159,27 @@ export function InlineInput(props: InlineInputProps) {
           outline: 'none',
         }}
       />
+
+      {/* Attached images */}
+      <Show when={imageInputEnabled() && imagePaths().length > 0}>
+        <button
+          onClick={() => setImagePaths([])}
+          title="Remove attached images"
+          style={{
+            background: 'transparent',
+            border: `1px solid ${theme.borderSubtle}`,
+            color: theme.fgMuted,
+            cursor: 'pointer',
+            padding: '4px 8px',
+            'border-radius': '4px',
+            'font-size': sf(11),
+            'white-space': 'nowrap',
+            'align-self': 'center',
+          }}
+        >
+          {imagePaths().length === 1 ? '1 image ×' : `${imagePaths().length} images ×`}
+        </button>
+      </Show>
 
       {/* Submit button */}
       <button

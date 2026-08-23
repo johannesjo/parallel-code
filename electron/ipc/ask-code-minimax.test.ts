@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -7,7 +10,9 @@ vi.stubGlobal('fetch', mockFetch);
 import {
   askAboutCodeMinimax,
   cancelAskAboutCodeMinimax,
+  MINIMAX_IMAGE_INPUT_MODEL,
   MINIMAX_MODEL,
+  minimaxModelAcceptsImages,
   setMinimaxApiKey,
 } from './ask-code-minimax.js';
 
@@ -258,6 +263,135 @@ describe('askAboutCodeMinimax', () => {
     const systemMsg = body.messages.find((m) => m.role === 'system');
     expect(systemMsg).toBeDefined();
     expect(systemMsg?.content).toMatch(/markdown/i);
+  });
+});
+
+describe('minimax image input', () => {
+  const pngPath = path.join(os.tmpdir(), 'parallel-code-ask-code-test.png');
+  const pngBytes = Buffer.from('89504e470d0a1a0a', 'hex');
+
+  beforeAll(() => {
+    fs.writeFileSync(pngPath, pngBytes);
+  });
+
+  afterAll(() => {
+    fs.rmSync(pngPath, { force: true });
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setMinimaxApiKey('test-key');
+  });
+
+  function requestBody() {
+    return JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string) as {
+      model: string;
+      messages: Array<{
+        role: string;
+        content: string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
+      }>;
+    };
+  }
+
+  it('reports which models accept image input', () => {
+    expect(minimaxModelAcceptsImages(MINIMAX_IMAGE_INPUT_MODEL)).toBe(true);
+    expect(minimaxModelAcceptsImages(MINIMAX_MODEL)).toBe(false);
+    expect(minimaxModelAcceptsImages('nope')).toBe(false);
+  });
+
+  it('keeps the user content a plain string when no image is attached', async () => {
+    const { win, messages } = makeMockWin();
+
+    mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
+
+    askAboutCodeMinimax(win, {
+      requestId: 'img-none',
+      channelId: 'ch-img-none',
+      prompt: 'Explain this',
+    });
+
+    await waitForDone(messages);
+
+    const body = requestBody();
+    expect(body.model).toBe(MINIMAX_MODEL);
+    expect(body.messages.find((m) => m.role === 'user')?.content).toBe('Explain this');
+  });
+
+  it('sends attached images as content parts to an image-capable model', async () => {
+    const { win, messages } = makeMockWin();
+
+    mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
+
+    askAboutCodeMinimax(win, {
+      requestId: 'img-one',
+      channelId: 'ch-img-one',
+      prompt: 'What does this screenshot show?',
+      imagePaths: [pngPath],
+    });
+
+    await waitForDone(messages);
+
+    const body = requestBody();
+    expect(body.model).toBe(MINIMAX_IMAGE_INPUT_MODEL);
+
+    const userContent = body.messages.find((m) => m.role === 'user')?.content;
+    expect(Array.isArray(userContent)).toBe(true);
+    const parts = userContent as Array<{
+      type: string;
+      text?: string;
+      image_url?: { url: string };
+    }>;
+    expect(parts[0]).toEqual({ type: 'text', text: 'What does this screenshot show?' });
+    expect(parts[1].type).toBe('image_url');
+    expect(parts[1].image_url?.url).toBe(`data:image/png;base64,${pngBytes.toString('base64')}`);
+
+    // The system message stays a plain string
+    expect(typeof body.messages.find((m) => m.role === 'system')?.content).toBe('string');
+  });
+
+  it('rejects image types the chat API cannot accept', () => {
+    const { win } = makeMockWin();
+
+    expect(() =>
+      askAboutCodeMinimax(win, {
+        requestId: 'img-bad-type',
+        channelId: 'ch-img-bad-type',
+        prompt: 'Test',
+        imagePaths: [path.join(os.tmpdir(), 'notes.txt')],
+      }),
+    ).toThrow(/Unsupported image type/);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects more images than a single question allows', () => {
+    const { win } = makeMockWin();
+
+    expect(() =>
+      askAboutCodeMinimax(win, {
+        requestId: 'img-too-many',
+        channelId: 'ch-img-too-many',
+        prompt: 'Test',
+        imagePaths: [pngPath, pngPath, pngPath, pngPath, pngPath],
+      }),
+    ).toThrow(/Too many images/);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('reports an unreadable image as an error instead of sending a request', async () => {
+    const { win, messages } = makeMockWin();
+
+    askAboutCodeMinimax(win, {
+      requestId: 'img-missing',
+      channelId: 'ch-img-missing',
+      prompt: 'Test',
+      imagePaths: [path.join(os.tmpdir(), 'parallel-code-does-not-exist.png')],
+    });
+
+    await waitForDone(messages);
+
+    const errors = messages.filter((m) => (m as Record<string, unknown>).type === 'error');
+    expect(errors).toHaveLength(1);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });
 
