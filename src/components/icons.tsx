@@ -102,3 +102,11 @@ export function GitGraphIcon(props: IconProps): JSX.Element {
     </SvgIcon>
   );
 }
+
+export function BookmarkIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M4 2.5A1.5 1.5 0 0 1 5.5 1h5A1.5 1.5 0 0 1 12 2.5V14l-4-2.5L4 14V2.5Z" />
+    </SvgIcon>
+  );
+}
