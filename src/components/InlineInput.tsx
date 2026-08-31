@@ -6,6 +6,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { store } from '../store/store';
 import { warn as logWarn } from '../lib/log';
 import type { DiffInteractionMode } from './review-types';
+import { isSupportedAskCodeImagePath } from './ask-code-image';
 
 interface InlineInputProps {
   onSubmit: (text: string, mode: DiffInteractionMode, imagePaths?: string[]) => void;
@@ -64,7 +65,11 @@ export function InlineInput(props: InlineInputProps) {
     e.preventDefault();
     invoke<ResolvedPaste>(IPC.ResolveClipboardPaste)
       .then((paste) => {
-        if (paste.kind === 'image' && paste.path) {
+        if (
+          paste.path &&
+          (paste.kind === 'image' ||
+            (paste.kind === 'file' && isSupportedAskCodeImagePath(paste.path)))
+        ) {
           const attached = paste.path;
           setImagePaths((prev) => (prev.includes(attached) ? prev : [...prev, attached]));
         }

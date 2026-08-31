@@ -367,6 +367,11 @@ function sanitizeDroppedName(name: string): string {
   return `parallel-code-drop-${stamp}.png`;
 }
 
+/** Unique path for a raster image copied from the clipboard. */
+export function createClipboardImagePath(): string {
+  return path.join(os.tmpdir(), sanitizeDroppedName('clipboard.png'));
+}
+
 /**
  * Create a leading+trailing throttled event forwarder.
  * Fires immediately, suppresses for `intervalMs`, then fires once more
@@ -947,8 +952,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   // --- Clipboard ---
-  const clipboardImagePath = path.join(os.tmpdir(), 'parallel-code-clipboard.png');
-
   // Resolve the most useful representation of the current clipboard contents
   // for pasting into a terminal. Order of preference:
   //   1. file references (Finder copy, Nautilus copy, etc.) → return absolute path
@@ -970,6 +973,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       const img = clipboard.readImage();
       if (!img.isEmpty()) {
         const buf = img.toPNG();
+        const clipboardImagePath = createClipboardImagePath();
         await fs.promises.writeFile(clipboardImagePath, buf);
         return { kind: 'image', path: clipboardImagePath };
       }
