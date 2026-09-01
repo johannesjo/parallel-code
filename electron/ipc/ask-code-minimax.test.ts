@@ -164,7 +164,7 @@ describe('askAboutCodeMinimax', () => {
     );
   });
 
-  it('uses MiniMax-M2.7 model', async () => {
+  it('uses MiniMax-M3 model', async () => {
     const { win, messages } = makeMockWin();
 
     mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));

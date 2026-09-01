@@ -16,7 +16,7 @@ interface MinimaxAskCodeRequest {
 }
 
 const MINIMAX_API_URL = 'https://api.minimax.io/v1/chat/completions';
-export const MINIMAX_MODEL = 'MiniMax-M2.7';
+export const MINIMAX_MODEL = 'MiniMax-M3';
 
 const activeRequests = new RequestRegistry<AbortController>({
   maxConcurrent: ASK_CODE_MAX_CONCURRENT,
