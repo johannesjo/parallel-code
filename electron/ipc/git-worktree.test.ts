@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createWorktree,
+  ensureClaudeSandboxFiles,
   ensureSymlinkExcludes,
   getSymlinkCandidates,
   refreshWorktreeNodeModules,
@@ -489,5 +490,51 @@ describe('ensureSymlinkExcludes', () => {
     const status = git(root, ['status', '--porcelain']);
     expect(status).not.toContain('star*file');
     expect(status).toContain('starZZfile');
+  });
+});
+
+describe('ensureClaudeSandboxFiles', () => {
+  function makeWorktreeDir(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-claude-worktree-'));
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  it('does not seed .claude/worktrees/ into a new worktree', () => {
+    const root = initRepository();
+    const sourceWorktrees = path.join(root, '.claude', 'worktrees', 'some-agent-id');
+    fs.mkdirSync(sourceWorktrees, { recursive: true });
+    fs.writeFileSync(path.join(sourceWorktrees, 'marker.txt'), 'a nested worktree checkout\n');
+
+    const worktreePath = makeWorktreeDir();
+    ensureClaudeSandboxFiles(worktreePath, root);
+
+    expect(fs.existsSync(path.join(worktreePath, '.claude', 'worktrees'))).toBe(false);
+  });
+
+  it('still excludes plans/ and steps.json (pre-existing behavior)', () => {
+    const root = initRepository();
+    fs.mkdirSync(path.join(root, '.claude', 'plans'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.claude', 'steps.json'), '{}\n');
+
+    const worktreePath = makeWorktreeDir();
+    ensureClaudeSandboxFiles(worktreePath, root);
+
+    expect(fs.existsSync(path.join(worktreePath, '.claude', 'plans'))).toBe(false);
+    expect(fs.existsSync(path.join(worktreePath, '.claude', 'steps.json'))).toBe(false);
+  });
+
+  it('still seeds ordinary .claude/ entries (e.g. skills/) from the source', () => {
+    const root = initRepository();
+    const sourceSkills = path.join(root, '.claude', 'skills');
+    fs.mkdirSync(sourceSkills, { recursive: true });
+    fs.writeFileSync(path.join(sourceSkills, 'example.md'), '# example skill\n');
+
+    const worktreePath = makeWorktreeDir();
+    ensureClaudeSandboxFiles(worktreePath, root);
+
+    expect(
+      fs.readFileSync(path.join(worktreePath, '.claude', 'skills', 'example.md'), 'utf8'),
+    ).toBe('# example skill\n');
   });
 });
