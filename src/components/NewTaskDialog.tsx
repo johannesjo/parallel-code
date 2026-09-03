@@ -551,7 +551,11 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
 
             // Pre-fill from drop data if present
             const dropUrl = store.newTaskDropUrl;
-            const fallbackProjectId = store.lastProjectId ?? store.projects[0]?.id ?? null;
+            const codeProjects = store.projects.filter((p) => p.kind !== 'document');
+            const fallbackProjectId =
+              codeProjects.find((p) => p.id === store.lastProjectId)?.id ??
+              codeProjects[0]?.id ??
+              null;
             const defaults = dropUrl ? getGitHubDropDefaults(dropUrl) : null;
 
             if (dropUrl) setPrompt(`review ${dropUrl}`);

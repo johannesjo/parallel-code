@@ -72,15 +72,22 @@ export function buildDocumentPrompt(input: DocumentPromptInput): string {
   return parts.join('\n\n');
 }
 
+/** Rationale entries end up in commit bodies: one line each, no stray newlines. */
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+  return value
+    .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    .map(oneLine);
 }
 
 function rationaleFromObject(value: unknown): DocumentRationale | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const obj = value as Record<string, unknown>;
-  const summary = typeof obj.summary === 'string' ? obj.summary.trim() : '';
+  const summary = typeof obj.summary === 'string' ? oneLine(obj.summary) : '';
   const changes = stringList(obj.changes);
   if (!summary && changes.length === 0) return null;
   return {

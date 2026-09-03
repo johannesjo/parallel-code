@@ -90,8 +90,12 @@ export function DocumentViewer(props: DocumentViewerProps) {
       const start = blockIndexOf(range.startContainer, containerRef);
       const end = blockIndexOf(range.endContainer, containerRef);
       if (start === null && end === null) return;
-      native.removeAllRanges();
-      emitRange({ start: start ?? end ?? 0, end: end ?? start ?? 0 });
+      // A drag across several blocks scopes them; a selection inside one block
+      // stays a plain text selection so copying keeps working. Click the block
+      // to scope it. The native range is left alone for the same reason.
+      const from = start ?? end ?? 0;
+      const to = end ?? start ?? 0;
+      if (from !== to) emitRange({ start: from, end: to });
       return;
     }
     const index = blockIndexOf(target, containerRef);

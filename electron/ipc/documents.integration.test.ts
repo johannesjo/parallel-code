@@ -6,7 +6,9 @@ import path from 'path';
 import type { BrowserWindow } from 'electron';
 import {
   acceptDocumentCandidate,
+  commitPendingEdits,
   dispatchDocumentRun,
+  revertDocumentCommit,
   getDocumentAtCommit,
   getDocumentDiff,
   getDocumentHistory,
@@ -87,7 +89,8 @@ beforeAll(() => {
     [
       '#!/bin/sh',
       'sed -i.bak "s/Old goals text./New goals text, sharper./" docs/spec.md && rm -f docs/spec.md.bak',
-      'echo "stray" > STRAY.txt',
+      'echo "stray" > STRAY.txt && git add STRAY.txt',
+      'echo "scratch" > notes.tmp',
       'printf \'%s\\n\' \'{"type":"system","subtype":"init","session_id":"sess-1"}\'',
       'printf \'%s\\n\' \'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"docs/spec.md"}}]}}\'',
       'printf \'%s\\n\' \'{"type":"result","subtype":"success","session_id":"sess-1","result":"Done.\\n```json\\n{\\"summary\\":\\"Sharpened the goals\\",\\"changes\\":[\\"rewrote goals\\"],\\"questions\\":[\\"ok?\\"]}\\n```"}\'',
@@ -114,8 +117,9 @@ describe('document workspace lifecycle', () => {
   });
 
   it('commits pending edits, runs a candidate in a worktree, strips out-of-scope files and commits a proposal', async () => {
-    // A pending manual edit must become the base.
+    // A pending manual edit must become the base; an untracked scratch file must not.
     fs.appendFileSync(path.join(root, 'README.md'), 'manual\n');
+    fs.writeFileSync(path.join(root, 'scratch.txt'), 'not for history\n');
     const run = await dispatchDocumentRun(win, {
       projectRoot: root,
       documentPath: 'docs/spec.md',
@@ -140,6 +144,9 @@ describe('document workspace lifecycle', () => {
     });
     expect(run.status).toBe('running');
     expect(git(root, 'log', '--format=%s', '-n', '1').trim()).toBe('Manual edits');
+    expect(git(root, 'show', '--format=', '--name-only', 'HEAD').trim()).toBe('README.md');
+    expect(git(root, 'status', '--porcelain', 'scratch.txt').trim()).toMatch(/^\?\? scratch.txt/);
+    fs.rmSync(path.join(root, 'scratch.txt'));
     expect(run.baseSha).toBe(git(root, 'rev-parse', 'HEAD').trim());
 
     const finished = await waitForRunFinish(run.id);
@@ -149,7 +156,7 @@ describe('document workspace lifecycle', () => {
     expect(c.sessionId).toBe('sess-1');
     expect(c.rationale?.summary).toBe('Sharpened the goals');
     expect(c.rationale?.questions).toEqual(['ok?']);
-    expect(c.outOfScopeFiles).toEqual(['STRAY.txt']);
+    expect(c.outOfScopeFiles?.sort()).toEqual(['STRAY.txt', 'notes.tmp']);
     expect(c.outOfScopeHunks).toBeUndefined();
     expect(c.commitSha).toMatch(/^[0-9a-f]{40}$/);
     expect(c.worktreePath).toBe(path.join(root, '.worktrees', 'parallel-doc-main'));
@@ -198,6 +205,248 @@ describe('document workspace lifecycle', () => {
     expect(history[0].body).not.toContain('Parallel-');
     const whole = await getDocumentHistory(root, 'docs/spec.md', true);
     expect(whole).toHaveLength(3);
+
+    // Reverting the acceptance restores the document but keeps the run record.
+    const reverted = await revertDocumentCommit(root, sha);
+    expect(reverted).toBe(git(root, 'rev-parse', 'HEAD').trim());
+    expect(fs.readFileSync(path.join(root, 'docs', 'spec.md'), 'utf8')).toBe(DOC);
+    expect(fs.existsSync(path.join(root, '.parallel', 'runs', `${run.id}.json`))).toBe(true);
+    expect(git(root, 'show', '--format=', '--name-only', 'HEAD').trim()).toBe('docs/spec.md');
+    expect(git(root, 'show', '-s', '--format=%B', 'HEAD')).toContain(`Parallel-Revert: ${sha}`);
+    expect(listDocumentRuns(root).map((r) => r.id)).toEqual([run.id]);
+  });
+
+  it('refuses to reuse the main worktree while its candidate is still running', async () => {
+    const binDir = path.dirname(fakeAgent);
+    const slow = path.join(binDir, 'slow.sh');
+    fs.writeFileSync(slow, '#!/bin/sh\nsleep 3\n', { mode: 0o755 });
+    const base = {
+      projectRoot: root,
+      documentPath: 'docs/spec.md',
+      instruction: 'Slow.',
+      scope: { wholeDocument: true, startLine: 1, endLine: 1, quote: '' },
+    };
+    const running = await dispatchDocumentRun(win, {
+      ...base,
+      candidates: [
+        {
+          id: 'c1',
+          label: 'A',
+          agentId: 'claude-code',
+          agentName: 'Slow',
+          command: slow,
+          isMain: true,
+        },
+      ],
+    });
+    await expect(
+      dispatchDocumentRun(win, {
+        ...base,
+        candidates: [
+          {
+            id: 'c1',
+            label: 'A',
+            agentId: 'claude-code',
+            agentName: 'Slow',
+            command: slow,
+            isMain: true,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/main session is still working/);
+    // An alternate-only run is fine meanwhile.
+    const alt = await dispatchDocumentRun(win, {
+      ...base,
+      candidates: [
+        {
+          id: 'c1',
+          label: 'B',
+          agentId: 'claude-code',
+          agentName: 'Slow',
+          command: slow,
+          isMain: false,
+        },
+      ],
+    });
+    // Rejecting a running run kills it and waits for it to settle before cleanup.
+    const rejected = await rejectDocumentRun(root, running.id);
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.candidates[0].status).toBe('cancelled');
+    expect(listDocumentRuns(root).find((r) => r.id === running.id)?.status).toBe('rejected');
+    await waitForRunFinish(alt.id);
+    await rejectDocumentRun(root, alt.id);
+  });
+
+  it('rejects candidate specs that would smuggle flags into git or the CLI', async () => {
+    const base = {
+      projectRoot: root,
+      documentPath: 'docs/spec.md',
+      instruction: 'x',
+      scope: { wholeDocument: true, startLine: 1, endLine: 1, quote: '' },
+    };
+    const spec = {
+      id: 'c1',
+      label: 'A',
+      agentId: 'claude-code',
+      agentName: 'F',
+      command: fakeAgent,
+      isMain: true,
+    };
+    await expect(
+      dispatchDocumentRun(win, {
+        ...base,
+        candidates: [{ ...spec, sessionLastSha: '--output=/tmp/x' }],
+      }),
+    ).rejects.toThrow(/sessionLastSha/);
+    await expect(
+      dispatchDocumentRun(win, {
+        ...base,
+        candidates: [{ ...spec, sessionId: '--dangerously-skip-permissions' }],
+      }),
+    ).rejects.toThrow(/sessionId/);
+    await expect(
+      dispatchDocumentRun(win, { ...base, candidates: [{ ...spec, agentId: 'opencode' }] }),
+    ).rejects.toThrow(/no headless mode/);
+    await expect(commitPendingEdits(root)).resolves.toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('marks a proposal stale when the base moved and it conflicts, and rejects cleanly', async () => {
+    // The revert above restored the original text, so the fake edit applies again.
+    const run = await dispatchDocumentRun(win, {
+      projectRoot: root,
+      documentPath: 'docs/spec.md',
+      instruction: 'Again.',
+      scope: { wholeDocument: true, startLine: 1, endLine: 1, quote: '' },
+      candidates: [
+        {
+          id: 'c1',
+          label: 'A',
+          agentId: 'claude-code',
+          agentName: 'Fake Claude',
+          command: fakeAgent,
+          isMain: false,
+        },
+      ],
+    });
+    const finished = await waitForRunFinish(run.id);
+    const c = finished.candidates[0];
+    expect(c.commitSha).toBeTruthy();
+    // Alternates get seeded sandbox files; those must not count as strays.
+    expect(c.outOfScopeFiles?.some((f) => f.startsWith('.claude/'))).toBe(false);
+
+    // Meanwhile the user rewrites the same line by hand and commits it.
+    fs.writeFileSync(
+      path.join(root, 'docs', 'spec.md'),
+      DOC.replace('Old goals text.', 'Hand-written goals.'),
+    );
+    git(root, 'commit', '-q', '-am', 'hand edit');
+    await expect(acceptDocumentCandidate(root, run.id, 'c1')).rejects.toThrow(/no longer applies/);
+    expect(listDocumentRuns(root).find((r) => r.id === run.id)?.status).toBe('stale');
+    expect(git(root, 'status', '--porcelain', '--', 'docs').trim()).toBe('');
+    expect(fs.readFileSync(path.join(root, 'docs', 'spec.md'), 'utf8')).toContain('Hand-written');
+
+    const rejected = await rejectDocumentRun(root, run.id);
+    expect(rejected.status).toBe('rejected');
+    expect(fs.existsSync(c.worktreePath)).toBe(false);
+    expect(git(root, 'branch', '--list', c.branch).trim()).toBe('');
+    // The rejection is a metadata-only commit, invisible in the document history.
+    expect(git(root, 'log', '--format=%s', '-n', '1').trim()).toBe('Reject proposals');
+    const history = await getDocumentHistory(root, 'docs/spec.md', true);
+    expect(history.map((h) => h.subject)).not.toContain('Reject proposals');
+  });
+
+  it('refuses to reuse the main worktree while its candidate is still running', async () => {
+    const binDir = path.dirname(fakeAgent);
+    const slow = path.join(binDir, 'slow.sh');
+    fs.writeFileSync(slow, '#!/bin/sh\nsleep 3\n', { mode: 0o755 });
+    const base = {
+      projectRoot: root,
+      documentPath: 'docs/spec.md',
+      instruction: 'Slow.',
+      scope: { wholeDocument: true, startLine: 1, endLine: 1, quote: '' },
+    };
+    const running = await dispatchDocumentRun(win, {
+      ...base,
+      candidates: [
+        {
+          id: 'c1',
+          label: 'A',
+          agentId: 'claude-code',
+          agentName: 'Slow',
+          command: slow,
+          isMain: true,
+        },
+      ],
+    });
+    await expect(
+      dispatchDocumentRun(win, {
+        ...base,
+        candidates: [
+          {
+            id: 'c1',
+            label: 'A',
+            agentId: 'claude-code',
+            agentName: 'Slow',
+            command: slow,
+            isMain: true,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/main session is still working/);
+    // An alternate-only run is fine meanwhile.
+    const alt = await dispatchDocumentRun(win, {
+      ...base,
+      candidates: [
+        {
+          id: 'c1',
+          label: 'B',
+          agentId: 'claude-code',
+          agentName: 'Slow',
+          command: slow,
+          isMain: false,
+        },
+      ],
+    });
+    // Rejecting a running run kills it and waits for it to settle before cleanup.
+    const rejected = await rejectDocumentRun(root, running.id);
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.candidates[0].status).toBe('cancelled');
+    expect(listDocumentRuns(root).find((r) => r.id === running.id)?.status).toBe('rejected');
+    await waitForRunFinish(alt.id);
+    await rejectDocumentRun(root, alt.id);
+  });
+
+  it('rejects candidate specs that would smuggle flags into git or the CLI', async () => {
+    const base = {
+      projectRoot: root,
+      documentPath: 'docs/spec.md',
+      instruction: 'x',
+      scope: { wholeDocument: true, startLine: 1, endLine: 1, quote: '' },
+    };
+    const spec = {
+      id: 'c1',
+      label: 'A',
+      agentId: 'claude-code',
+      agentName: 'F',
+      command: fakeAgent,
+      isMain: true,
+    };
+    await expect(
+      dispatchDocumentRun(win, {
+        ...base,
+        candidates: [{ ...spec, sessionLastSha: '--output=/tmp/x' }],
+      }),
+    ).rejects.toThrow(/sessionLastSha/);
+    await expect(
+      dispatchDocumentRun(win, {
+        ...base,
+        candidates: [{ ...spec, sessionId: '--dangerously-skip-permissions' }],
+      }),
+    ).rejects.toThrow(/sessionId/);
+    await expect(
+      dispatchDocumentRun(win, { ...base, candidates: [{ ...spec, agentId: 'opencode' }] }),
+    ).rejects.toThrow(/no headless mode/);
+    await expect(commitPendingEdits(root)).resolves.toMatch(/^[0-9a-f]{40}$/);
   });
 
   it('marks a proposal stale when the base moved and it conflicts, and rejects cleanly otherwise', async () => {

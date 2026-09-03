@@ -1,7 +1,15 @@
-import { For, Show, createMemo, createResource, createSignal, untrack } from 'solid-js';
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  untrack,
+} from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
-import { diffBlocks, type DocumentBlock } from '../lib/markdown-blocks';
+import { diffBlocks, type BlockChange, type DocumentBlock } from '../lib/markdown-blocks';
 import {
   acceptDocumentCandidate,
   documentStore,
@@ -119,6 +127,8 @@ function CandidateColumn(props: {
   baseBlocks: DocumentBlock[];
   revealAgents: boolean;
   showSource: boolean;
+  /** Reports which base blocks this candidate changed or removed. */
+  onBaseChanges: (candidateId: string, changes: BlockChange[]) => void;
 }) {
   let bodyRef: HTMLDivElement | undefined;
   const [content] = createResource(
@@ -129,8 +139,12 @@ function CandidateColumn(props: {
     ({ sha, path }) => fetchDocumentAt(sha, path),
   );
   const rendered = createRenderedBlocks(() => content() ?? null);
-  const changes = createMemo(() => diffBlocks(props.baseBlocks, rendered.blocks()).candidate);
+  const blockDiff = createMemo(() => diffBlocks(props.baseBlocks, rendered.blocks()));
+  const changes = () => blockDiff().candidate;
   const changedCount = () => changes().filter((c) => c !== 'same').length;
+  createEffect(() => {
+    if (rendered.blocks().length > 0) props.onBaseChanges(props.candidate.id, blockDiff().base);
+  });
   const [diff] = createResource(
     () =>
       props.showSource && props.candidate.commitSha
@@ -146,9 +160,7 @@ function CandidateColumn(props: {
   const [note, setNote] = createSignal(untrack(() => props.candidate.note ?? ''));
   const [accepting, setAccepting] = createSignal(false);
   const canAccept = () =>
-    !!props.candidate.commitSha &&
-    (props.run.status === 'finished' || props.run.status === 'stale') &&
-    !accepting();
+    !!props.candidate.commitSha && props.run.status === 'finished' && !accepting();
   const title = () =>
     props.revealAgents
       ? `${props.candidate.agentName}${props.candidate.isMain ? ' · main session' : ''}`
@@ -191,7 +203,7 @@ function CandidateColumn(props: {
             disabled={!canAccept()}
             title={
               props.run.status === 'stale'
-                ? 'The document moved since this run; accepting rebases the proposal'
+                ? 'The document moved since this run and the proposal no longer applies. Re-run it.'
                 : 'Accept this candidate as one commit on the canonical branch'
             }
             onClick={() => void accept()}
@@ -205,7 +217,14 @@ function CandidateColumn(props: {
           when={props.candidate.commitSha}
           fallback={<div class="docws-empty">No change proposed.</div>}
         >
-          <Show when={!props.showSource} fallback={<SourceDiff raw={diff() ?? ''} />}>
+          <Show
+            when={!props.showSource}
+            fallback={
+              <Show when={!diff.loading} fallback={<div class="docws-empty">Loading diff…</div>}>
+                <SourceDiff raw={diff() ?? ''} />
+              </Show>
+            }
+          >
             <Show
               when={!rendered.rendering() || rendered.blocks().length > 0}
               fallback={<div class="docws-empty">Rendering…</div>}
@@ -234,6 +253,17 @@ export function CompareView(props: { run: DocumentRunRecord }) {
   const base = createRenderedBlocks(() => baseContent() ?? null);
   const scope = createMemo(() => scopeRange(base.blocks(), props.run));
   const candidates = createMemo(() => props.run.candidates.filter((c) => c.commitSha));
+  // Base blocks touched by any candidate, so a deleted paragraph is visible somewhere.
+  const [baseChanges, setBaseChanges] = createSignal<Record<string, BlockChange[]>>({});
+  const baseMarks = createMemo<BlockChange[]>(() => {
+    const perCandidate = Object.values(baseChanges());
+    return base.blocks().map((_, i) => {
+      const marks = perCandidate.map((m) => m[i]).filter((m): m is BlockChange => !!m);
+      if (marks.includes('removed')) return 'removed';
+      if (marks.includes('changed')) return 'changed';
+      return 'same';
+    });
+  });
   const scopeText = () => {
     const s = props.run.scope;
     if (s.wholeDocument) return 'whole document';
@@ -281,11 +311,19 @@ export function CompareView(props: { run: DocumentRunRecord }) {
           <div class="docws-column-head">
             <div class="docws-column-title">Base · {props.run.baseSha.slice(0, 7)}</div>
             <div class="docws-rationale">
-              <div>The document as every candidate saw it. The scoped passage is marked.</div>
+              <div>
+                The document as every candidate saw it. The scoped passage is outlined; blocks a
+                candidate rewrote or removed are marked.
+              </div>
             </div>
           </div>
           <div class="docws-column-body">
-            <DocumentViewer blocks={base.blocks()} scope={scope()} renderKey="base" />
+            <DocumentViewer
+              blocks={base.blocks()}
+              scope={scope()}
+              changes={baseMarks()}
+              renderKey="base"
+            />
           </div>
         </section>
         <For each={candidates()}>
@@ -296,6 +334,7 @@ export function CompareView(props: { run: DocumentRunRecord }) {
               baseBlocks={base.blocks()}
               revealAgents={revealAgents()}
               showSource={showSource()}
+              onBaseChanges={(id, marks) => setBaseChanges((prev) => ({ ...prev, [id]: marks }))}
             />
           )}
         </For>

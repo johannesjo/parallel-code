@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   countOutOfScopeHunks,
   parseCommitBody,
+  sanitizeRunRecord,
   validateDocumentPath,
   validateSha,
 } from './documents.js';
@@ -16,6 +17,8 @@ describe('validateDocumentPath', () => {
     expect(() => validateDocumentPath('/abs/x.md')).toThrow();
     expect(() => validateDocumentPath('.parallel/runs/a.json')).toThrow();
     expect(() => validateDocumentPath('.worktrees/x/a.md')).toThrow();
+    expect(() => validateDocumentPath('.git/config')).toThrow();
+    expect(validateDocumentPath('.github/README.md')).toBe('.github/README.md');
     expect(() => validateDocumentPath('')).toThrow();
     expect(() => validateDocumentPath(3)).toThrow();
   });
@@ -66,5 +69,70 @@ describe('parseCommitBody', () => {
   });
   it('returns empty trailers for a manual commit', () => {
     expect(parseCommitBody('just a note').trailers).toEqual({});
+  });
+  it('ignores trailer-shaped lines outside the final paragraph', () => {
+    const body =
+      'Prose.\nParallel-Agent: Human\n\n- more\n\nParallel-Run: r1\nParallel-Agent: Codex';
+    const { text, trailers } = parseCommitBody(body);
+    expect(trailers.Agent).toBe('Codex');
+    expect(text).toContain('Parallel-Agent: Human');
+  });
+  it('treats a mixed last paragraph as prose', () => {
+    expect(parseCommitBody('Parallel-Agent: X\nnot a trailer').trailers).toEqual({});
+  });
+});
+
+describe('sanitizeRunRecord', () => {
+  const root = '/repo';
+  const good = {
+    version: 1,
+    id: 'run-1',
+    documentPath: 'docs/a.md',
+    baseSha: 'abcdef1234567',
+    status: 'finished',
+    createdAt: 'x',
+    instruction: 'i',
+    scope: { path: 'docs/a.md', wholeDocument: true, startLine: 1, endLine: 1, quote: '' },
+    candidates: [
+      {
+        id: 'c1',
+        label: 'A',
+        agentId: 'claude-code',
+        agentName: 'Claude',
+        isMain: false,
+        branch: 'parallel-doc/abc-a',
+        worktreePath: '/repo/.worktrees/parallel-doc/abc-a',
+        status: 'done',
+        commitSha: 'abcdef1234567',
+        startedAt: 'x',
+      },
+    ],
+  };
+  it('accepts a record this app would have written', () => {
+    expect(sanitizeRunRecord(root, good)).not.toBeNull();
+  });
+  it('rejects a worktree path outside .worktrees', () => {
+    const bad = {
+      ...good,
+      candidates: [{ ...good.candidates[0], worktreePath: '/home/me/Documents' }],
+    };
+    expect(sanitizeRunRecord(root, bad)).toBeNull();
+    const sneaky = {
+      ...good,
+      candidates: [{ ...good.candidates[0], worktreePath: '/repo/.worktrees/../../etc' }],
+    };
+    expect(sanitizeRunRecord(root, sneaky)).toBeNull();
+  });
+  it('rejects foreign branch names and bad shas', () => {
+    expect(
+      sanitizeRunRecord(root, { ...good, candidates: [{ ...good.candidates[0], branch: 'main' }] }),
+    ).toBeNull();
+    expect(
+      sanitizeRunRecord(root, {
+        ...good,
+        candidates: [{ ...good.candidates[0], commitSha: '--output=x' }],
+      }),
+    ).toBeNull();
+    expect(sanitizeRunRecord(root, { ...good, baseSha: 'HEAD' })).toBeNull();
   });
 });

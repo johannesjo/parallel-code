@@ -162,7 +162,7 @@ describe('gemini and plain parsers', () => {
   });
 
   it('keeps everything for plain-text agents', () => {
-    const parser = createHeadlessParser('opencode');
+    const parser = createHeadlessParser('custom-agent');
     const log = parser.feed('one\ntwo\n');
     expect(log).toEqual(['one', 'two']);
     expect(parser.finish().resultText).toBe('one\ntwo\n');

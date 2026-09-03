@@ -312,9 +312,9 @@ export interface DocumentRunRecord {
 
 /** Streamed from the main process while a run is in flight. */
 export type DocumentRunEvent =
-  | { type: 'log'; runId: string; candidateId: string; text: string }
-  | { type: 'candidate'; runId: string; candidate: DocumentCandidateRecord }
-  | { type: 'run'; run: DocumentRunRecord };
+  | { type: 'log'; projectRoot: string; runId: string; candidateId: string; text: string }
+  | { type: 'candidate'; projectRoot: string; runId: string; candidate: DocumentCandidateRecord }
+  | { type: 'run'; projectRoot: string; run: DocumentRunRecord };
 
 export interface DocumentCandidateSpec {
   id: string;

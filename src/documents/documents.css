@@ -3,7 +3,9 @@
 .docws-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1900;
+  /* Below every Dialog (1000+) so the project editor, settings and confirms
+     opened from inside the workspace render on top of it. */
+  z-index: 950;
   background: var(--bg);
   display: flex;
   flex-direction: column;

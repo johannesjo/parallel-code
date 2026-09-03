@@ -1,6 +1,7 @@
-import { For, Show, createMemo } from 'solid-js';
+import { For, Show, createMemo, createSignal, onCleanup } from 'solid-js';
 import {
   cancelDocumentRun,
+  candidateLogKey,
   documentStore,
   openDocumentCompare,
   rejectDocumentRun,
@@ -23,8 +24,12 @@ function candidateState(c: DocumentCandidateRecord): string {
   return 'interrupted';
 }
 
-function CandidateRow(props: { candidate: DocumentCandidateRecord; showLog: boolean }) {
-  const lines = () => documentStore.logs[props.candidate.id] ?? [];
+function CandidateRow(props: {
+  runId: string;
+  candidate: DocumentCandidateRecord;
+  showLog: boolean;
+}) {
+  const lines = () => documentStore.logs[candidateLogKey(props.runId, props.candidate.id)] ?? [];
   const tail = () => lines().slice(-6);
   return (
     <div class="docws-candidate">
@@ -54,7 +59,9 @@ export function RunsRail() {
   const runs = createMemo(() =>
     documentStore.runOrder.map((id) => documentStore.runs[id]).filter(Boolean),
   );
-  const nowMs = () => Date.now();
+  const [nowMs, setNowMs] = createSignal(Date.now());
+  const clock = setInterval(() => setNowMs(Date.now()), 30_000);
+  onCleanup(() => clearInterval(clock));
 
   return (
     <aside class="docws-rail" aria-label="Runs">
@@ -86,7 +93,11 @@ export function RunsRail() {
               </div>
               <For each={run.candidates}>
                 {(candidate) => (
-                  <CandidateRow candidate={candidate} showLog={run.status === 'running'} />
+                  <CandidateRow
+                    runId={run.id}
+                    candidate={candidate}
+                    showLog={run.status === 'running'}
+                  />
                 )}
               </For>
               <div class="docws-run-actions">

@@ -42,21 +42,27 @@ the document.
 - **Editing happens in your editor.** The app watches the file and re-renders; an external
   change drops any active selection.
 - **Dispatch commits pending edits first** as a plain `Manual edits` commit so every run
-  has a real base. Files under `.parallel/` are left out of that commit.
+  has a real base. Only tracked files count as pending edits: untracked scratch files
+  and everything under `.parallel/` stay out of that commit.
 - **Headless agents.** Each candidate runs the official CLI in print mode inside its own
   worktree under `.worktrees/parallel-doc/`: `claude -p --output-format stream-json`
   with tools limited to Read/Edit/Write/Glob/Grep, `codex exec --json --sandbox
-workspace-write`, `gemini -p --output-format json --approval-mode auto_edit`.
-  Process exit means the proposal is ready.
+workspace-write` (the sandbox blocks writes outside the worktree),
+  `gemini -p --output-format json --approval-mode auto_edit`. Process exit means the
+  proposal is ready. Cancelling kills the CLI's whole process group. OpenCode and Copilot
+  expose an unrestricted shell in print mode and are not offered until they can be
+  restricted.
 - **The main session stays warm.** One agent owns the project's main session (choose it in
   the composer). Its worktree is persistent (`.worktrees/parallel-doc-main`) so the working
   directory, and with it the provider's prompt cache, never changes; each run resumes the
   session by id (`claude --resume`, `codex exec resume`). After the canonical document
   moves, the next prompt to that session carries the diff since it last saw the file.
-  Other agents, and extra candidates from the main agent, are one-shot alternates.
-- **Scope is enforced, not trusted.** Files the agent touched outside the document are
-  reverted before the proposal commit and listed on the candidate. Hunks inside the
-  document but outside the selected passage are counted and flagged.
+  Other agents, and extra candidates from the main agent, are one-shot alternates. While
+  the main session is working, a new run can only use alternates.
+- **Scope is enforced, not trusted.** Files the agent touched or staged outside the
+  document are reverted before the proposal commit and listed on the candidate; the
+  proposal commit is verified to contain the document alone. Hunks inside the document
+  but outside the selected passage are counted and flagged.
 - **Structured rationale.** Every prompt asks the agent to end with a JSON block:
   summary, changes, assumptions, questions, warnings. It opens each candidate in the
   compare view and becomes the commit message.
@@ -67,7 +73,12 @@ workspace-write`, `gemini -p --output-format json --approval-mode auto_edit`.
   the document and the run record `.parallel/runs/<id>.json`. A proposal whose base is
   behind HEAD is merged three-way on acceptance and marked stale if it no longer applies.
   Rejection commits the run record alone, so the history view (which excludes `.parallel/`)
-  never shows it.
+  never shows it. Reverting from the history view undoes a commit's content and keeps the
+  run records, with a `Parallel-Revert` trailer.
+- **Run records are checked on load.** They travel with the repository, so a clone can
+  carry records written elsewhere. Worktree paths, branch names and commit hashes are
+  validated against what this app would have produced before they reach git or the
+  filesystem; a record that fails is ignored.
 - **Compare view** renders base and candidates with the same renderer, marks changed,
   added and removed blocks at block granularity, navigates by changed block, and hides
   agent identity until you toggle _Show agents_. _Source diff_ swaps the rendering for the
@@ -77,8 +88,8 @@ workspace-write`, `gemini -p --output-format json --approval-mode auto_edit`.
 ### Not in this slice
 
 Annotations, HTML documents, partial acceptance, evaluator agents, refinement rounds,
-durable anchors across versions, in-app editing. Custom agents without a known headless
-mode cannot be picked. Agents other than Claude Code and Codex run one-shot only.
+durable anchors across versions, in-app editing. Custom agents, OpenCode and Copilot
+cannot be picked. Gemini runs one-shot only.
 
 ---
 

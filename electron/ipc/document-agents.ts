@@ -73,10 +73,6 @@ export function buildHeadlessLaunch(opts: HeadlessLaunchOptions): HeadlessLaunch
         command: opts.command,
         args: ['-p', opts.prompt, '--output-format', 'json', '--approval-mode', 'auto_edit'],
       };
-    case 'opencode':
-      return { command: opts.command, args: ['run', opts.prompt] };
-    case 'copilot':
-      return { command: opts.command, args: ['-p', opts.prompt, '--allow-all-tools'] };
     default:
       throw new Error(`Agent "${opts.agentId}" has no headless mode for document runs.`);
   }

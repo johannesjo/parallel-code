@@ -88,7 +88,12 @@ import { createCtrlWheelZoomHandler } from './lib/wheelZoom';
 import { redrawAllTerminals } from './lib/terminalFitManager';
 import { ArenaOverlay } from './arena/ArenaOverlay';
 import { DocumentWorkspaceOverlay } from './documents/DocumentWorkspaceOverlay';
-import { closeDocumentWorkspace, initDocumentListeners } from './store/documents';
+import {
+  closeDocumentWorkspace,
+  documentStore,
+  initDocumentListeners,
+  setDocumentSelection,
+} from './store/documents';
 import { resetForNewMatch } from './arena/store';
 import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 import { startPrChecksSubscription } from './store/pr-checks';
@@ -701,7 +706,8 @@ function App() {
           return;
         }
         if (store.activeDocumentProjectId) {
-          closeDocumentWorkspace();
+          if (documentStore.selection) setDocumentSelection(null);
+          else closeDocumentWorkspace();
           return;
         }
         if (store.showHelpDialog) {

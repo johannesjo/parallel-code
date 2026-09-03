@@ -42,10 +42,10 @@ export function addDocumentProject(name: string, path: string, documentPath: str
     kind: 'document',
     documentPath,
   };
+  // Not the default for new tasks: a document project has no task flow.
   setStore(
     produce((s) => {
       s.projects.push(project);
-      s.lastProjectId = id;
     }),
   );
   return id;

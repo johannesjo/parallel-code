@@ -120,10 +120,10 @@ function DocumentPane() {
             onSelect={setDocumentSelection}
             renderKey="main"
           >
-            <Show when={selection()} keyed>
+            <Show when={selection()}>
               {(s) => (
                 <RunComposer
-                  selection={s}
+                  selection={s()}
                   anchorTop={anchorTop()}
                   onClose={() => setDocumentSelection(null)}
                 />
@@ -244,7 +244,7 @@ export function DocumentWorkspaceOverlay() {
               </div>
             </Show>
             <Show
-              when={compareRun()}
+              when={documentStore.compareRunId && compareRun() ? documentStore.compareRunId : null}
               keyed
               fallback={
                 <div class="docws-empty" style={{ padding: '24px' }}>
@@ -252,7 +252,7 @@ export function DocumentWorkspaceOverlay() {
                 </div>
               }
             >
-              {(run) => <CompareView run={run} />}
+              {(runId) => <CompareView run={documentStore.runs[runId]} />}
             </Show>
           </div>
         </Show>

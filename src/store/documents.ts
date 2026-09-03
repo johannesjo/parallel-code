@@ -87,6 +87,11 @@ function watcherKey(projectId: string): string {
   return `doc:${projectId}`;
 }
 
+/** True while the workspace still shows the project a request was made for. */
+function stillOpen(projectId: string): boolean {
+  return docStore.projectId === projectId;
+}
+
 export async function refreshDocumentSnapshot(): Promise<void> {
   const project = activeProject();
   if (!project?.documentPath) return;
@@ -95,9 +100,9 @@ export async function refreshDocumentSnapshot(): Promise<void> {
       projectRoot: project.path,
       documentPath: project.documentPath,
     });
-    setDocStore({ snapshot, error: null });
+    if (stillOpen(project.id)) setDocStore({ snapshot, error: null });
   } catch (err) {
-    setDocStore('error', errMessage(err));
+    if (stillOpen(project.id)) setDocStore('error', errMessage(err));
   }
 }
 
@@ -116,6 +121,7 @@ export async function loadDocumentRuns(): Promise<void> {
     });
     const byId: Record<string, DocumentRunRecord> = {};
     for (const run of runs) byId[run.id] = run;
+    if (!stillOpen(project.id)) return;
     setDocStore(
       produce((s) => {
         s.runs = byId;
@@ -123,7 +129,7 @@ export async function loadDocumentRuns(): Promise<void> {
       }),
     );
   } catch (err) {
-    setDocStore('error', errMessage(err));
+    if (stillOpen(project.id)) setDocStore('error', errMessage(err));
   }
 }
 
@@ -147,13 +153,18 @@ export async function openDocumentWorkspace(projectId: string): Promise<void> {
     selection: null,
   });
   setStore('activeDocumentProjectId', projectId);
-  await Promise.all([refreshDocumentSnapshot(), loadDocumentRuns()]);
-  setDocStore('loading', false);
+  // Start watching before the first await so a quick close can stop it.
   void invoke(IPC.StartDocumentWatcher, {
     key: watcherKey(projectId),
     projectRoot: project.path,
     documentPath: project.documentPath,
-  }).catch((err) => setDocStore('error', errMessage(err)));
+  }).catch((err) => {
+    untrack(() => {
+      if (stillOpen(projectId)) setDocStore('error', errMessage(err));
+    });
+  });
+  await Promise.all([refreshDocumentSnapshot(), loadDocumentRuns()]);
+  if (stillOpen(projectId)) setDocStore('loading', false);
 }
 
 export function closeDocumentWorkspace(): void {
@@ -177,10 +188,18 @@ export function openDocumentCompare(runId: string): void {
   setDocStore({ compareRunId: runId, view: 'compare' });
 }
 
+/** Runs with at least one proposal to look at. */
 export function reviewableRuns(): DocumentRunRecord[] {
   return docStore.runOrder
     .map((id) => docStore.runs[id])
-    .filter((r) => r.status === 'finished' || r.status === 'stale');
+    .filter(
+      (r) =>
+        (r.status === 'finished' || r.status === 'stale') && r.candidates.some((c) => c.commitSha),
+    );
+}
+
+export function candidateLogKey(runId: string, candidateId: string): string {
+  return `${runId}/${candidateId}`;
 }
 
 /** Agent that owns the main session; falls back to the first resumable one installed. */
@@ -288,10 +307,16 @@ function upsertRun(run: DocumentRunRecord): void {
   );
 }
 
-/** Remember the main session so the next dispatch resumes it. */
-function recordMainSession(run: DocumentRunRecord, candidate: DocumentCandidateRecord): void {
+/** Remember the main session so the next dispatch resumes it. The event names
+ *  the project root because the run may finish after its workspace was closed
+ *  or another project was opened. */
+function recordMainSession(
+  projectRoot: string,
+  run: DocumentRunRecord,
+  candidate: DocumentCandidateRecord,
+): void {
   if (!candidate.isMain || !candidate.sessionId) return;
-  const project = activeProject();
+  const project = store.projects.find((p) => p.path === projectRoot && p.kind === 'document');
   if (!project) return;
   updateProject(project.id, {
     documentSessions: {
@@ -302,20 +327,24 @@ function recordMainSession(run: DocumentRunRecord, candidate: DocumentCandidateR
 }
 
 export function applyDocumentRunEvent(event: DocumentRunEvent): void {
+  const forOpenProject = activeProject()?.path === event.projectRoot;
   switch (event.type) {
     case 'log':
+      if (!forOpenProject) return;
       setDocStore(
         produce((s) => {
-          const lines = s.logs[event.candidateId] ?? [];
+          const key = candidateLogKey(event.runId, event.candidateId);
+          const lines = s.logs[key] ?? [];
           lines.push(event.text);
           if (lines.length > MAX_LOG_LINES) lines.splice(0, lines.length - MAX_LOG_LINES);
-          s.logs[event.candidateId] = lines;
+          s.logs[key] = lines;
         }),
       );
       return;
     case 'candidate': {
       const run = docStore.runs[event.runId];
-      if (!run) return;
+      if (run) recordMainSession(event.projectRoot, run, event.candidate);
+      if (!forOpenProject || !run) return;
       setDocStore(
         produce((s) => {
           const target = s.runs[event.runId];
@@ -324,13 +353,22 @@ export function applyDocumentRunEvent(event: DocumentRunEvent): void {
           else target.candidates.push(event.candidate);
         }),
       );
-      recordMainSession(run, event.candidate);
       return;
     }
-    case 'run':
+    case 'run': {
+      if (event.run.status === 'finished') {
+        for (const c of event.run.candidates) recordMainSession(event.projectRoot, event.run, c);
+      }
+      if (!forOpenProject) return;
       upsertRun(event.run);
       if (event.run.status === 'finished') {
-        for (const c of event.run.candidates) recordMainSession(event.run, c);
+        setDocStore(
+          produce((s) => {
+            s.logs = Object.fromEntries(
+              Object.entries(s.logs).filter(([key]) => !key.startsWith(`${event.run.id}/`)),
+            );
+          }),
+        );
         const proposals = event.run.candidates.filter((c) => c.commitSha).length;
         showNotification(
           proposals > 0
@@ -339,6 +377,7 @@ export function applyDocumentRunEvent(event: DocumentRunEvent): void {
         );
       }
       return;
+    }
   }
 }
 
@@ -415,7 +454,9 @@ interface DocumentChangedPayload {
 }
 
 function isRunEvent(v: unknown): v is DocumentRunEvent {
-  return !!v && typeof v === 'object' && typeof (v as { type?: unknown }).type === 'string';
+  if (!v || typeof v !== 'object') return false;
+  const e = v as { type?: unknown; projectRoot?: unknown };
+  return typeof e.type === 'string' && typeof e.projectRoot === 'string';
 }
 
 /** Subscribes to main-process pushes; call once at startup. Returns a disposer. */

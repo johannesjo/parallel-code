@@ -1,4 +1,4 @@
-import { For, Show, createResource, createSignal } from 'solid-js';
+import { For, Show, createResource, createSignal, onCleanup } from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { confirm } from '../lib/dialog';
@@ -121,7 +121,9 @@ function EntryDetail(props: {
             <DocumentViewer blocks={rendered.blocks()} renderKey={`hist-${props.entry.shortSha}`} />
           }
         >
-          <SourceDiff raw={diff() ?? ''} />
+          <Show when={!diff.loading} fallback={<div class="docws-empty">Loading diff…</div>}>
+            <SourceDiff raw={diff() ?? ''} />
+          </Show>
         </Show>
       </div>
     </div>
@@ -152,7 +154,9 @@ export function HistoryView() {
     },
   );
   const selected = () => entries()?.find((e) => e.sha === selectedSha()) ?? entries()?.[0] ?? null;
-  const nowMs = () => Date.now();
+  const [nowMs, setNowMs] = createSignal(Date.now());
+  const clock = setInterval(() => setNowMs(Date.now()), 30_000);
+  onCleanup(() => clearInterval(clock));
 
   return (
     <div class="docws-history">
