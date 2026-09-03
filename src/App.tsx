@@ -87,6 +87,8 @@ import { isMac, mod } from './lib/platform';
 import { createCtrlWheelZoomHandler } from './lib/wheelZoom';
 import { redrawAllTerminals } from './lib/terminalFitManager';
 import { ArenaOverlay } from './arena/ArenaOverlay';
+import { DocumentWorkspaceOverlay } from './documents/DocumentWorkspaceOverlay';
+import { closeDocumentWorkspace, initDocumentListeners } from './store/documents';
 import { resetForNewMatch } from './arena/store';
 import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 import { startPrChecksSubscription } from './store/pr-checks';
@@ -336,6 +338,7 @@ function App() {
     // Before the first await: restored agents start firing hooks as soon as
     // loadState spawns them, and IPC does not replay what nobody listened to.
     const stopAgentHookStatusListener = startAgentHookStatusListener();
+    const stopDocumentListeners = initDocumentListeners();
     void syncWindowFocused();
     void syncWindowMaximized();
 
@@ -697,6 +700,10 @@ function App() {
           closeArena();
           return;
         }
+        if (store.activeDocumentProjectId) {
+          closeDocumentWorkspace();
+          return;
+        }
         if (store.showHelpDialog) {
           toggleHelpDialog(false);
           return;
@@ -742,6 +749,7 @@ function App() {
       stopRemoteTaskHandlers();
       stopRemoteStatusSync();
       stopAgentHookStatusListener();
+      stopDocumentListeners();
       offPlanContent();
       offStepsContent();
       unlistenFocusChanged?.();
@@ -918,6 +926,9 @@ function App() {
         />
         <Show when={store.showArena}>
           <ArenaOverlay onClose={closeArena} />
+        </Show>
+        <Show when={store.activeDocumentProjectId}>
+          <DocumentWorkspaceOverlay />
         </Show>
         <Show when={showDropOverlay()}>
           <DropOverlay />

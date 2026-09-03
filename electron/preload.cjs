@@ -152,6 +152,22 @@ const ALLOWED_CHANNELS = new Set([
   'mcp_stale_url_warning',
   'mcp_coordinated_task_closed',
   'mcp_task_cleanup_failed',
+  'read_document',
+  'start_document_watcher',
+  'stop_document_watcher',
+  'dispatch_document_run',
+  'cancel_document_run',
+  'list_document_runs',
+  'accept_document_candidate',
+  'reject_document_run',
+  'set_document_candidate_note',
+  'get_document_history',
+  'get_document_at_commit',
+  'get_document_diff',
+  'revert_document_commit',
+  'list_document_files',
+  'document_changed',
+  'document_run_event',
 ]);
 
 function isAllowedChannel(channel) {

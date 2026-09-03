@@ -30,6 +30,31 @@ export function addProject(name: string, path: string, isGitRepo?: boolean): str
   return id;
 }
 
+/** A document project: a git repo plus one document inside it. */
+export function addDocumentProject(name: string, path: string, documentPath: string): string {
+  const id = crypto.randomUUID();
+  const project: Project = {
+    id,
+    name,
+    path,
+    color: randomPastelColor(),
+    isGitRepo: true,
+    kind: 'document',
+    documentPath,
+  };
+  setStore(
+    produce((s) => {
+      s.projects.push(project);
+      s.lastProjectId = id;
+    }),
+  );
+  return id;
+}
+
+export function isDocumentProject(project: Project | undefined): boolean {
+  return project?.kind === 'document' && typeof project.documentPath === 'string';
+}
+
 export function removeProject(projectId: string): void {
   // Guard: skip removal if any tasks still reference this project
   const allTaskIds = [...store.taskOrder, ...store.collapsedTaskOrder];
@@ -67,6 +92,8 @@ export function updateProject(
       | 'verifyCommand'
       | 'terminalBookmarks'
       | 'isGitRepo'
+      | 'documentMainAgentId'
+      | 'documentSessions'
     >
   >,
 ): void {
@@ -92,6 +119,10 @@ export function updateProject(
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
       if (updates.isGitRepo !== undefined) s.projects[idx].isGitRepo = updates.isGitRepo;
+      if (updates.documentMainAgentId !== undefined)
+        s.projects[idx].documentMainAgentId = updates.documentMainAgentId;
+      if (updates.documentSessions !== undefined)
+        s.projects[idx].documentSessions = updates.documentSessions;
     }),
   );
   if (

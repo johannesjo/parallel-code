@@ -147,5 +147,21 @@
   "MCP_TaskHydrated": "mcp_task_hydrated",
   "MCP_StaleUrlWarning": "mcp_stale_url_warning",
   "MCP_CoordinatedTaskClosed": "mcp_coordinated_task_closed",
-  "MCP_TaskCleanupFailed": "mcp_task_cleanup_failed"
+  "MCP_TaskCleanupFailed": "mcp_task_cleanup_failed",
+  "ReadDocument": "read_document",
+  "StartDocumentWatcher": "start_document_watcher",
+  "StopDocumentWatcher": "stop_document_watcher",
+  "DispatchDocumentRun": "dispatch_document_run",
+  "CancelDocumentRun": "cancel_document_run",
+  "ListDocumentRuns": "list_document_runs",
+  "AcceptDocumentCandidate": "accept_document_candidate",
+  "RejectDocumentRun": "reject_document_run",
+  "SetDocumentCandidateNote": "set_document_candidate_note",
+  "GetDocumentHistory": "get_document_history",
+  "GetDocumentAtCommit": "get_document_at_commit",
+  "GetDocumentDiff": "get_document_diff",
+  "RevertDocumentCommit": "revert_document_commit",
+  "ListDocumentFiles": "list_document_files",
+  "DocumentChanged": "document_changed",
+  "DocumentRunEvent": "document_run_event"
 }

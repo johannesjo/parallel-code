@@ -40,6 +40,10 @@ import { computeNeedsInputTasks, jumpToWaitingTask } from '../store/sidebar-atte
 import { ConnectPhoneModal } from './ConnectPhoneModal';
 import { RemoveProjectConfirm } from './RemoveProjectConfirm';
 import { EditProjectDialog } from './EditProjectDialog';
+import { NewDocumentProjectDialog } from '../documents/NewDocumentProjectDialog';
+import { openDocumentWorkspace } from '../store/documents';
+import { isDocumentProject } from '../store/projects';
+import { choice } from '../lib/dialog';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { SidebarFooter } from './SidebarFooter';
 import { IconButton } from './IconButton';
@@ -595,7 +599,21 @@ export function Sidebar() {
     });
   });
 
+  const [showNewDocumentProject, setShowNewDocumentProject] = createSignal(false);
+
   async function handleAddProject() {
+    if (store.documentWorkspacesEnabled) {
+      const picked = await choice('What kind of project?', {
+        buttons: ['Code project', 'Document project', 'Cancel'],
+        defaultId: 0,
+        cancelId: 2,
+      });
+      if (picked === 2) return;
+      if (picked === 1) {
+        setShowNewDocumentProject(true);
+        return;
+      }
+    }
     const projectId = await pickAndAddProject();
     if (!projectId) return;
 
@@ -862,14 +880,23 @@ export function Sidebar() {
                       tabIndex={0}
                       class="project-row"
                       data-project-id={project.id}
-                      onClick={() => setEditingProject(project)}
+                      onClick={() => {
+                        if (isDocumentProject(project) && !isProjectMissing(project.id))
+                          void openDocumentWorkspace(project.id);
+                        else setEditingProject(project);
+                      }}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') setEditingProject(project);
+                        if (e.key !== 'Enter') return;
+                        if (isDocumentProject(project) && !isProjectMissing(project.id))
+                          void openDocumentWorkspace(project.id);
+                        else setEditingProject(project);
                       }}
                       title={
                         isProjectMissing(project.id)
                           ? `Folder not found: ${abbreviateHomePath(project.path)}`
-                          : abbreviateHomePath(project.path)
+                          : isDocumentProject(project)
+                            ? `Document workspace: ${project.documentPath} (${abbreviateHomePath(project.path)})`
+                            : abbreviateHomePath(project.path)
                       }
                       style={{
                         display: 'flex',
@@ -1148,6 +1175,10 @@ export function Sidebar() {
         <ConnectPhoneModal open={showConnectPhone()} onClose={() => setShowConnectPhone(false)} />
 
         <EditProjectDialog project={editingProject()} onClose={() => setEditingProject(null)} />
+        <NewDocumentProjectDialog
+          open={showNewDocumentProject()}
+          onClose={() => setShowNewDocumentProject(false)}
+        />
         <ImportWorktreesDialog
           open={importProject() !== null}
           project={importProject()}

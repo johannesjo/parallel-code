@@ -94,6 +94,24 @@ import {
 } from './updater.js';
 import { spawn } from 'child_process';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
+import {
+  acceptDocumentCandidate,
+  cancelDocumentRun,
+  dispatchDocumentRun,
+  getDocumentAtCommit,
+  getDocumentDiff,
+  getDocumentHistory,
+  listDocumentFiles,
+  listDocumentRuns,
+  readDocumentSnapshot,
+  rejectDocumentRun,
+  revertDocumentCommit,
+  setDocumentCandidateNote,
+  startDocumentWatcher,
+  stopDocumentWatcher,
+  validateDocumentPath,
+  validateSha,
+} from './documents.js';
 import { setMinimaxApiKey } from './ask-code-minimax.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
 import { fetchClaudeUsage } from './claude-usage.js';
@@ -960,6 +978,98 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.CancelAskAboutCode, (_e, args) => {
     assertString(args.requestId, 'requestId');
     cancelAskAboutCode(args.requestId);
+  });
+
+  // --- Document workspaces ---
+  // Every handler takes the project root from the renderer and validates it;
+  // the document path is repo-relative and checked against traversal.
+  ipcMain.handle(IPC.ReadDocument, (_e, args) => {
+    const projectRoot = projectRootArg(args);
+    return readDocumentSnapshot(projectRoot, validateDocumentPath(args.documentPath));
+  });
+
+  ipcMain.handle(IPC.StartDocumentWatcher, (_e, args) => {
+    assertString(args.key, 'key');
+    const projectRoot = projectRootArg(args);
+    startDocumentWatcher(win, args.key, projectRoot, validateDocumentPath(args.documentPath));
+  });
+
+  ipcMain.handle(IPC.StopDocumentWatcher, (_e, args) => {
+    assertString(args.key, 'key');
+    stopDocumentWatcher(args.key);
+  });
+
+  ipcMain.handle(IPC.ListDocumentFiles, (_e, args) => {
+    return listDocumentFiles(projectRootArg(args));
+  });
+
+  ipcMain.handle(IPC.ListDocumentRuns, (_e, args) => {
+    return listDocumentRuns(projectRootArg(args));
+  });
+
+  ipcMain.handle(IPC.DispatchDocumentRun, (_e, args) => {
+    const projectRoot = projectRootArg(args);
+    return dispatchDocumentRun(win, {
+      projectRoot,
+      documentPath: args.documentPath,
+      instruction: args.instruction,
+      scope: args.scope,
+      candidates: args.candidates,
+    });
+  });
+
+  ipcMain.handle(IPC.CancelDocumentRun, (_e, args) => {
+    cancelDocumentRun(args.runId);
+  });
+
+  ipcMain.handle(IPC.AcceptDocumentCandidate, (_e, args) => {
+    const projectRoot = projectRootArg(args);
+    return acceptDocumentCandidate(projectRoot, args.runId, args.candidateId);
+  });
+
+  ipcMain.handle(IPC.RejectDocumentRun, (_e, args) => {
+    const projectRoot = projectRootArg(args);
+    return rejectDocumentRun(projectRoot, args.runId);
+  });
+
+  ipcMain.handle(IPC.SetDocumentCandidateNote, (_e, args) => {
+    const projectRoot = projectRootArg(args);
+    return setDocumentCandidateNote(projectRoot, args.runId, args.candidateId, args.note);
+  });
+
+  ipcMain.handle(IPC.GetDocumentHistory, (_e, args) => {
+    const projectRoot = projectRootArg(args);
+    assertOptionalBoolean(args.wholeProject, 'wholeProject');
+    return getDocumentHistory(
+      projectRoot,
+      validateDocumentPath(args.documentPath),
+      args.wholeProject === true,
+    );
+  });
+
+  ipcMain.handle(IPC.GetDocumentAtCommit, (_e, args) => {
+    const projectRoot = projectRootArg(args);
+    return getDocumentAtCommit(
+      projectRoot,
+      validateSha(args.sha),
+      validateDocumentPath(args.documentPath),
+    );
+  });
+
+  ipcMain.handle(IPC.GetDocumentDiff, (_e, args) => {
+    const projectRoot = projectRootArg(args);
+    const to = validateSha(args.to, 'to');
+    // `from` is a commit hash, or that hash's parent for history entries.
+    assertString(args.from, 'from');
+    const from = args.from.endsWith('^')
+      ? `${validateSha(args.from.slice(0, -1), 'from')}^`
+      : validateSha(args.from, 'from');
+    return getDocumentDiff(projectRoot, from, to, validateDocumentPath(args.documentPath));
+  });
+
+  ipcMain.handle(IPC.RevertDocumentCommit, (_e, args) => {
+    const projectRoot = projectRootArg(args);
+    return revertDocumentCommit(projectRoot, validateSha(args.sha));
   });
 
   // --- File links ---

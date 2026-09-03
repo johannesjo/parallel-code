@@ -221,3 +221,126 @@ export type UsageResult =
   | { status: 'unavailable'; reason: string }
   /** Transient failure — the renderer keeps its last good snapshot. */
   | { status: 'error'; message: string };
+
+// --- Document workspaces ---
+
+/** Current state of the canonical document in the project checkout. */
+export interface DocumentSnapshot {
+  content: string;
+  /** HEAD sha of the canonical branch; null in an empty repository. */
+  headSha: string | null;
+  /** Checked-out branch name; null when HEAD is detached. */
+  branch: string | null;
+  /** True when the working tree has uncommitted changes (outside `.worktrees/`). */
+  dirty: boolean;
+  /** True when the document file is missing from the checkout. */
+  missing: boolean;
+}
+
+/** What part of the document a run is allowed to change. Lines are 1-based and
+ *  inclusive at the base commit; a whole-document scope has `wholeDocument`. */
+export interface DocumentScope {
+  path: string;
+  wholeDocument: boolean;
+  startLine: number;
+  endLine: number;
+  /** Exact quoted text of the selected passage (block-aligned). */
+  quote: string;
+  /** Nearest heading above the selection, when any. */
+  heading?: string;
+}
+
+export interface DocumentRationale {
+  summary: string;
+  changes: string[];
+  assumptions: string[];
+  questions: string[];
+  warnings: string[];
+}
+
+export type DocumentCandidateStatus = 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted';
+
+export interface DocumentCandidateRecord {
+  id: string;
+  /** Neutral label used when the comparison hides agent identity ("A", "B", …). */
+  label: string;
+  agentId: string;
+  agentName: string;
+  /** The project's warm main session rather than a throwaway alternate. */
+  isMain: boolean;
+  branch: string;
+  worktreePath: string;
+  status: DocumentCandidateStatus;
+  /** Proposal commit on `branch`; null while running or when nothing changed. */
+  commitSha: string | null;
+  /** Provider session id, when the CLI reported one (used to resume the main session). */
+  sessionId?: string;
+  exitCode?: number | null;
+  startedAt: string;
+  finishedAt?: string;
+  rationale?: DocumentRationale;
+  /** Final assistant text, kept when it does not parse as a rationale. */
+  resultText?: string;
+  /** Files the agent touched outside the scoped document. They are reverted
+   *  before the proposal commit and listed here so the reviewer sees it. */
+  outOfScopeFiles?: string[];
+  /** Hunks inside the document that fall outside the selected passage. */
+  outOfScopeHunks?: number;
+  noChanges?: boolean;
+  error?: string;
+  /** Reviewer's note on this candidate from the compare view. */
+  note?: string;
+}
+
+export type DocumentRunStatus = 'running' | 'finished' | 'accepted' | 'rejected' | 'stale';
+
+/** Persisted under `.parallel/runs/<id>.json` inside the document project. */
+export interface DocumentRunRecord {
+  /** Format version of this record. */
+  version: 1;
+  id: string;
+  documentPath: string;
+  createdAt: string;
+  instruction: string;
+  scope: DocumentScope;
+  baseSha: string;
+  status: DocumentRunStatus;
+  candidates: DocumentCandidateRecord[];
+  acceptedCandidateId?: string;
+  finishedAt?: string;
+}
+
+/** Streamed from the main process while a run is in flight. */
+export type DocumentRunEvent =
+  | { type: 'log'; runId: string; candidateId: string; text: string }
+  | { type: 'candidate'; runId: string; candidate: DocumentCandidateRecord }
+  | { type: 'run'; run: DocumentRunRecord };
+
+export interface DocumentCandidateSpec {
+  id: string;
+  label: string;
+  agentId: string;
+  agentName: string;
+  command: string;
+  isMain: boolean;
+  /** Provider session to resume for the main candidate. */
+  sessionId?: string;
+  /** Sha the resumed session last saw; the prompt carries the diff since then. */
+  sessionLastSha?: string;
+  /** Per-agent env file, when configured. */
+  envFile?: string;
+}
+
+export interface DocumentHistoryEntry {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  body: string;
+  author: string;
+  /** Unix seconds. */
+  timestamp: number;
+  /** `Parallel-*` trailers, keys without the prefix (e.g. `Agent`, `Run`). */
+  trailers: Record<string, string>;
+  /** True when no agent trailer is present: a manual commit. */
+  manual: boolean;
+}

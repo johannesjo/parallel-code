@@ -1,0 +1,441 @@
+/**
+ * Document workspace state: the rendered canonical document, the runs made
+ * against it, and the comparison/history views. Kept apart from the task
+ * store because none of it is a task: proposals live in Git, not in panels.
+ */
+import { untrack } from 'solid-js';
+import { createStore, produce } from 'solid-js/store';
+import { IPC } from '../../electron/ipc/channels';
+import { invoke } from '../lib/ipc';
+import { errMessage } from '../lib/log';
+import type {
+  AgentDef,
+  DocumentCandidateRecord,
+  DocumentCandidateSpec,
+  DocumentRunEvent,
+  DocumentRunRecord,
+  DocumentScope,
+  DocumentSnapshot,
+} from '../ipc/types';
+import {
+  DEFAULT_DOCUMENT_MAIN_AGENT,
+  MAX_DOCUMENT_CANDIDATES,
+  documentAgentSupport,
+} from '../../electron/shared/document-agents';
+import { store, setStore } from './core';
+import { getProject, updateProject } from './projects';
+import { showNotification } from './notification';
+import type { Project } from './types';
+
+export type DocumentView = 'document' | 'compare' | 'history';
+
+/** A block-aligned selection in the rendered document. */
+export interface DocumentSelection {
+  startBlock: number;
+  endBlock: number;
+  startLine: number;
+  endLine: number;
+  quote: string;
+  heading?: string;
+  wholeDocument: boolean;
+}
+
+interface DocumentWorkspaceState {
+  projectId: string | null;
+  snapshot: DocumentSnapshot | null;
+  loading: boolean;
+  error: string | null;
+  runs: Record<string, DocumentRunRecord>;
+  runOrder: string[];
+  /** Streamed log lines per candidate id, bounded. */
+  logs: Record<string, string[]>;
+  view: DocumentView;
+  compareRunId: string | null;
+  selection: DocumentSelection | null;
+  dispatching: boolean;
+}
+
+const MAX_LOG_LINES = 400;
+
+const [docStore, setDocStore] = createStore<DocumentWorkspaceState>({
+  projectId: null,
+  snapshot: null,
+  loading: false,
+  error: null,
+  runs: {},
+  runOrder: [],
+  logs: {},
+  view: 'document',
+  compareRunId: null,
+  selection: null,
+  dispatching: false,
+});
+
+export { docStore as documentStore };
+
+function activeProject(): Project | undefined {
+  return docStore.projectId ? getProject(docStore.projectId) : undefined;
+}
+
+function requireProject(): Project & { documentPath: string } {
+  const project = activeProject();
+  if (!project || !project.documentPath) throw new Error('No document project is open.');
+  return project as Project & { documentPath: string };
+}
+
+function watcherKey(projectId: string): string {
+  return `doc:${projectId}`;
+}
+
+export async function refreshDocumentSnapshot(): Promise<void> {
+  const project = activeProject();
+  if (!project?.documentPath) return;
+  try {
+    const snapshot = await invoke<DocumentSnapshot>(IPC.ReadDocument, {
+      projectRoot: project.path,
+      documentPath: project.documentPath,
+    });
+    setDocStore({ snapshot, error: null });
+  } catch (err) {
+    setDocStore('error', errMessage(err));
+  }
+}
+
+function sortRunIds(runs: Record<string, DocumentRunRecord>): string[] {
+  return Object.values(runs)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((r) => r.id);
+}
+
+export async function loadDocumentRuns(): Promise<void> {
+  const project = activeProject();
+  if (!project) return;
+  try {
+    const runs = await invoke<DocumentRunRecord[]>(IPC.ListDocumentRuns, {
+      projectRoot: project.path,
+    });
+    const byId: Record<string, DocumentRunRecord> = {};
+    for (const run of runs) byId[run.id] = run;
+    setDocStore(
+      produce((s) => {
+        s.runs = byId;
+        s.runOrder = sortRunIds(byId);
+      }),
+    );
+  } catch (err) {
+    setDocStore('error', errMessage(err));
+  }
+}
+
+export async function openDocumentWorkspace(projectId: string): Promise<void> {
+  const project = getProject(projectId);
+  if (!project?.documentPath) return;
+  const previous = docStore.projectId;
+  if (previous && previous !== projectId) {
+    void invoke(IPC.StopDocumentWatcher, { key: watcherKey(previous) }).catch(() => undefined);
+  }
+  setDocStore({
+    projectId,
+    snapshot: null,
+    loading: true,
+    error: null,
+    runs: {},
+    runOrder: [],
+    logs: {},
+    view: 'document',
+    compareRunId: null,
+    selection: null,
+  });
+  setStore('activeDocumentProjectId', projectId);
+  await Promise.all([refreshDocumentSnapshot(), loadDocumentRuns()]);
+  setDocStore('loading', false);
+  void invoke(IPC.StartDocumentWatcher, {
+    key: watcherKey(projectId),
+    projectRoot: project.path,
+    documentPath: project.documentPath,
+  }).catch((err) => setDocStore('error', errMessage(err)));
+}
+
+export function closeDocumentWorkspace(): void {
+  const projectId = docStore.projectId;
+  if (projectId) {
+    void invoke(IPC.StopDocumentWatcher, { key: watcherKey(projectId) }).catch(() => undefined);
+  }
+  setDocStore({ projectId: null, selection: null, view: 'document', compareRunId: null });
+  setStore('activeDocumentProjectId', null);
+}
+
+export function setDocumentView(view: DocumentView): void {
+  setDocStore('view', view);
+}
+
+export function setDocumentSelection(selection: DocumentSelection | null): void {
+  setDocStore('selection', selection);
+}
+
+export function openDocumentCompare(runId: string): void {
+  setDocStore({ compareRunId: runId, view: 'compare' });
+}
+
+export function reviewableRuns(): DocumentRunRecord[] {
+  return docStore.runOrder
+    .map((id) => docStore.runs[id])
+    .filter((r) => r.status === 'finished' || r.status === 'stale');
+}
+
+/** Agent that owns the main session; falls back to the first resumable one installed. */
+export function documentMainAgentId(project: Project | undefined): string {
+  if (project?.documentMainAgentId) return project.documentMainAgentId;
+  const installed = store.availableAgents.filter((a) => a.available !== false);
+  const preferred = installed.find((a) => a.id === DEFAULT_DOCUMENT_MAIN_AGENT);
+  if (preferred) return preferred.id;
+  return (
+    installed.find((a) => documentAgentSupport(a.id).resume)?.id ?? DEFAULT_DOCUMENT_MAIN_AGENT
+  );
+}
+
+export function setDocumentMainAgent(agentId: string): void {
+  const project = activeProject();
+  if (project) updateProject(project.id, { documentMainAgentId: agentId });
+}
+
+export interface DispatchSelection {
+  agent: AgentDef;
+  count: number;
+}
+
+function buildScope(selection: DocumentSelection, documentPath: string): DocumentScope {
+  return {
+    path: documentPath,
+    wholeDocument: selection.wholeDocument,
+    startLine: selection.startLine,
+    endLine: selection.endLine,
+    quote: selection.quote,
+    heading: selection.heading,
+  };
+}
+
+function candidateLabel(index: number): string {
+  return String.fromCharCode('A'.charCodeAt(0) + index);
+}
+
+/** Turns the composer's choices into candidate specs: one main, the rest alternates. */
+export function buildCandidateSpecs(
+  project: Project,
+  picks: readonly DispatchSelection[],
+  envFiles: Record<string, string>,
+): DocumentCandidateSpec[] {
+  const mainAgentId = documentMainAgentId(project);
+  const specs: DocumentCandidateSpec[] = [];
+  let index = 0;
+  for (const pick of picks) {
+    const support = documentAgentSupport(pick.agent.id);
+    if (!support.headless) continue;
+    for (let i = 0; i < pick.count; i++) {
+      if (specs.length >= MAX_DOCUMENT_CANDIDATES) break;
+      const isMain = pick.agent.id === mainAgentId && i === 0 && support.resume;
+      const session = isMain ? project.documentSessions?.[pick.agent.id] : undefined;
+      specs.push({
+        id: `c${index + 1}`,
+        label: candidateLabel(index),
+        agentId: pick.agent.id,
+        agentName: pick.agent.name,
+        command: pick.agent.command,
+        isMain,
+        sessionId: session?.sessionId,
+        sessionLastSha: session?.lastSha,
+        envFile: envFiles[pick.agent.id],
+      });
+      index++;
+    }
+  }
+  return specs;
+}
+
+export async function dispatchDocumentRun(
+  instruction: string,
+  picks: readonly DispatchSelection[],
+): Promise<DocumentRunRecord | null> {
+  const project = requireProject();
+  const selection = docStore.selection;
+  if (!selection) throw new Error('Select a passage first.');
+  const candidates = buildCandidateSpecs(project, picks, store.agentEnvFiles);
+  if (candidates.length === 0) throw new Error('Pick at least one agent with a headless mode.');
+  setDocStore('dispatching', true);
+  try {
+    const run = await invoke<DocumentRunRecord>(IPC.DispatchDocumentRun, {
+      projectRoot: project.path,
+      documentPath: project.documentPath,
+      instruction,
+      scope: buildScope(selection, project.documentPath),
+      candidates,
+    });
+    upsertRun(run);
+    setDocStore('selection', null);
+    void refreshDocumentSnapshot();
+    return run;
+  } finally {
+    setDocStore('dispatching', false);
+  }
+}
+
+function upsertRun(run: DocumentRunRecord): void {
+  setDocStore(
+    produce((s) => {
+      s.runs[run.id] = run;
+      s.runOrder = sortRunIds(s.runs);
+    }),
+  );
+}
+
+/** Remember the main session so the next dispatch resumes it. */
+function recordMainSession(run: DocumentRunRecord, candidate: DocumentCandidateRecord): void {
+  if (!candidate.isMain || !candidate.sessionId) return;
+  const project = activeProject();
+  if (!project) return;
+  updateProject(project.id, {
+    documentSessions: {
+      ...(project.documentSessions ?? {}),
+      [candidate.agentId]: { sessionId: candidate.sessionId, lastSha: run.baseSha },
+    },
+  });
+}
+
+export function applyDocumentRunEvent(event: DocumentRunEvent): void {
+  switch (event.type) {
+    case 'log':
+      setDocStore(
+        produce((s) => {
+          const lines = s.logs[event.candidateId] ?? [];
+          lines.push(event.text);
+          if (lines.length > MAX_LOG_LINES) lines.splice(0, lines.length - MAX_LOG_LINES);
+          s.logs[event.candidateId] = lines;
+        }),
+      );
+      return;
+    case 'candidate': {
+      const run = docStore.runs[event.runId];
+      if (!run) return;
+      setDocStore(
+        produce((s) => {
+          const target = s.runs[event.runId];
+          const idx = target.candidates.findIndex((c) => c.id === event.candidate.id);
+          if (idx >= 0) target.candidates[idx] = event.candidate;
+          else target.candidates.push(event.candidate);
+        }),
+      );
+      recordMainSession(run, event.candidate);
+      return;
+    }
+    case 'run':
+      upsertRun(event.run);
+      if (event.run.status === 'finished') {
+        for (const c of event.run.candidates) recordMainSession(event.run, c);
+        const proposals = event.run.candidates.filter((c) => c.commitSha).length;
+        showNotification(
+          proposals > 0
+            ? `${proposals} proposal${proposals === 1 ? '' : 's'} ready to compare`
+            : 'Run finished without changes',
+        );
+      }
+      return;
+  }
+}
+
+export async function acceptDocumentCandidate(runId: string, candidateId: string): Promise<void> {
+  const project = requireProject();
+  try {
+    await invoke<{ sha: string }>(IPC.AcceptDocumentCandidate, {
+      projectRoot: project.path,
+      runId,
+      candidateId,
+    });
+    showNotification('Proposal accepted');
+    setDocStore({ view: 'document', compareRunId: null });
+  } catch (err) {
+    showNotification(errMessage(err));
+  }
+  await Promise.all([loadDocumentRuns(), refreshDocumentSnapshot()]);
+}
+
+export async function rejectDocumentRun(runId: string): Promise<void> {
+  const project = requireProject();
+  try {
+    const run = await invoke<DocumentRunRecord>(IPC.RejectDocumentRun, {
+      projectRoot: project.path,
+      runId,
+    });
+    upsertRun(run);
+    if (docStore.compareRunId === runId) setDocStore({ view: 'document', compareRunId: null });
+  } catch (err) {
+    showNotification(errMessage(err));
+  }
+  void refreshDocumentSnapshot();
+}
+
+export async function cancelDocumentRun(runId: string): Promise<void> {
+  await invoke(IPC.CancelDocumentRun, { runId }).catch((err) => showNotification(errMessage(err)));
+}
+
+export async function setDocumentCandidateNote(
+  runId: string,
+  candidateId: string,
+  note: string,
+): Promise<void> {
+  const project = requireProject();
+  try {
+    const run = await invoke<DocumentRunRecord>(IPC.SetDocumentCandidateNote, {
+      projectRoot: project.path,
+      runId,
+      candidateId,
+      note,
+    });
+    upsertRun(run);
+  } catch (err) {
+    showNotification(errMessage(err));
+  }
+}
+
+export async function revertDocumentCommit(sha: string): Promise<boolean> {
+  const project = requireProject();
+  try {
+    await invoke(IPC.RevertDocumentCommit, { projectRoot: project.path, sha });
+    showNotification('Reverted');
+    void refreshDocumentSnapshot();
+    return true;
+  } catch (err) {
+    showNotification(errMessage(err));
+    return false;
+  }
+}
+
+interface DocumentChangedPayload {
+  key: string;
+  snapshot: DocumentSnapshot;
+}
+
+function isRunEvent(v: unknown): v is DocumentRunEvent {
+  return !!v && typeof v === 'object' && typeof (v as { type?: unknown }).type === 'string';
+}
+
+/** Subscribes to main-process pushes; call once at startup. Returns a disposer. */
+export function initDocumentListeners(): () => void {
+  const offRun = window.electron.ipcRenderer.on(IPC.DocumentRunEvent, (payload: unknown) => {
+    if (isRunEvent(payload)) untrack(() => applyDocumentRunEvent(payload));
+  });
+  const offChanged = window.electron.ipcRenderer.on(IPC.DocumentChanged, (payload: unknown) => {
+    const p = payload as DocumentChangedPayload | undefined;
+    if (!p) return;
+    untrack(() => {
+      if (!docStore.projectId || p.key !== watcherKey(docStore.projectId)) return;
+      const previous = docStore.snapshot;
+      setDocStore('snapshot', p.snapshot);
+      // The passage under a selection may be gone after an external edit.
+      if (previous && previous.content !== p.snapshot.content) setDocStore('selection', null);
+    });
+  });
+  return () => {
+    offRun();
+    offChanged();
+  };
+}
