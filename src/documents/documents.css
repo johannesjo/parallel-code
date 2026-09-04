@@ -207,6 +207,22 @@
   padding: 28px 44px 200px;
 }
 
+/* Kept mounted while previewing so blocks, annotations and scroll position
+   survive the toggle; re-rendering them on every switch is wasted work. */
+.docws-doc.is-hidden {
+  display: none;
+}
+
+/* White canvas is what a browser gives a page by default; a page that sets its
+   own background paints over it. */
+.docws-html-preview {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
 .docws-content .doc-block {
   position: relative;
   border-radius: var(--radius-sm);

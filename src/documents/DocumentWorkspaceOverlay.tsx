@@ -16,6 +16,7 @@ import {
   type DocumentView,
 } from './store';
 import { relocateAnchor } from './annotation-anchor';
+import { isHtmlDocument } from './html-document';
 import type { DocumentAnnotation } from './types';
 import { AnnotationBubble } from './AnnotationBubble';
 import { EditProjectDialog } from '../components/EditProjectDialog';
@@ -119,7 +120,15 @@ function DocumentPane() {
     }),
   );
 
+  // A whole HTML page cannot survive the markdown path: marked splits it at
+  // blank lines and the sanitizer drops <style>, so it renders as debris. Show
+  // it as the page it is, and keep the block view one click away for scoping.
+  const isHtml = createMemo(() => isHtmlDocument(documentStore.snapshot?.content));
+  const [htmlView, setHtmlView] = createSignal<'preview' | 'blocks'>('preview');
+  const showsPreview = () => isHtml() && htmlView() === 'preview';
+
   const toolbarLabel = () => {
+    if (showsPreview()) return 'Preview of the HTML document — switch to Blocks to scope a task';
     const s = selection();
     if (!s) return 'Select text, click a block, or use § on a heading to scope a task';
     return s.wholeDocument
@@ -145,6 +154,26 @@ function DocumentPane() {
     <>
       <div class="docws-main">
         <div class="docws-toolbar">
+          <Show when={isHtml()}>
+            <span class="docws-tabs">
+              <button
+                type="button"
+                class="docws-tab"
+                aria-selected={htmlView() === 'preview'}
+                onClick={() => setHtmlView('preview')}
+              >
+                Preview
+              </button>
+              <button
+                type="button"
+                class="docws-tab"
+                aria-selected={htmlView() === 'blocks'}
+                onClick={() => setHtmlView('blocks')}
+              >
+                Blocks
+              </button>
+            </span>
+          </Show>
           <span>{toolbarLabel()}</span>
           <Show when={documentStore.lastDeleted}>
             <span class="docws-undo">
@@ -169,10 +198,12 @@ function DocumentPane() {
               {resolvedCount()} resolved
             </label>
           </Show>
-          <button type="button" class="docws-btn docws-btn-sm" onClick={selectWholeDocument}>
-            Whole document
-          </button>
-          <Show when={selection()}>
+          <Show when={!showsPreview()}>
+            <button type="button" class="docws-btn docws-btn-sm" onClick={selectWholeDocument}>
+              Whole document
+            </button>
+          </Show>
+          <Show when={selection() && !showsPreview()}>
             <button
               type="button"
               class="docws-btn docws-btn-sm"
@@ -185,7 +216,17 @@ function DocumentPane() {
         <Show when={documentStore.snapshot?.missing}>
           <div class="docws-older-banner">The document file is missing from the checkout.</div>
         </Show>
-        <div class="docws-doc" ref={docRef}>
+        <Show when={showsPreview()}>
+          {/* Fully sandboxed: the page renders with its own CSS but gets no
+              scripts, no forms and no same-origin access to the app. */}
+          <iframe
+            class="docws-html-preview"
+            sandbox=""
+            srcdoc={documentStore.snapshot?.content ?? ''}
+            title="HTML document preview"
+          />
+        </Show>
+        <div class="docws-doc" ref={docRef} classList={{ 'is-hidden': showsPreview() }}>
           <Show when={placed().detached.length > 0}>
             <div class="docws-detached-section">
               <div class="docws-rail-title">Detached notes</div>
