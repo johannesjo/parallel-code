@@ -1059,6 +1059,23 @@ textarea::placeholder {
   color: var(--fg) !important;
 }
 
+/* Title line of a task row: glyph, name, badges. A wrapped two-line name must
+   not drag the glyph to the middle of the block, so everything beside the name
+   is pinned to the first line. */
+.task-item-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* One-line-tall boxes (matching .task-item-name's line-height) so the dot,
+   spinner and coordinator icon centre on the first line instead of hugging its
+   top edge. The SVG scales inside its taller box, staying visually centred. */
+.task-item-head > .status-glyph,
+.task-item-head > svg {
+  height: 1.35em;
+}
+
 /* Task names wrap to two lines rather than being cut mid-word — at sidebar
    widths, similar names are otherwise indistinguishable. */
 .task-item-name {
@@ -1654,6 +1671,17 @@ textarea::placeholder {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Fixed lane so task names line up whatever glyph sits in front of them; hosts
+   override the height via the --glyph-lane box when a row needs a taller one. */
+.status-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--glyph-lane);
+  height: var(--glyph-lane);
 }
 
 /* Sidebar "working" glyph: a rotating ring reads as activity at a glance, and

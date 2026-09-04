@@ -299,7 +299,7 @@ function NeedsInputRow(props: {
                 : 'transparent',
           }}
         >
-          <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+          <div class="task-item-head">
             {/* The task's real attention state, not a hardcoded `needs_input`:
                 since membership is question-driven, a row here can also be
                 errored or awaiting review, and the dot must not contradict the
@@ -1249,7 +1249,7 @@ function CoordinatorFolder(props: TaskEntryProps) {
             opacity={props.dragFromIndex() === idx() ? '0.4' : '1'}
             style={taskAttentionStyles(props.taskId, offscreenAttention)}
           >
-            <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+            <div class="task-item-head">
               <CoordinatorIcon />
               <StatusDot
                 status={getTaskDotStatus(props.taskId)}
@@ -1360,7 +1360,7 @@ function CollapsedTaskEntry(props: {
                   : '1.5px solid transparent',
             }}
           >
-            <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+            <div class="task-item-head">
               <Show when={isCoordinator()}>
                 <CoordinatorIcon />
               </Show>
@@ -1459,7 +1459,7 @@ function TaskRow(props: TaskRowProps) {
             opacity={!props.indented && props.dragFromIndex() === idx() ? '0.4' : '1'}
             style={taskAttentionStyles(props.taskId, offscreenAttention)}
           >
-            <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+            <div class="task-item-head">
               <StatusDot
                 status={getTaskDotStatus(props.taskId)}
                 size="sm"
