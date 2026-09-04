@@ -15,10 +15,10 @@
 // Losses are therefore grouped into "waves" (losses close together share one
 // underlying event) counted in a single app-wide window: the first waves
 // retry, later waves inside the window mean churn — give up and let affected
-// panes settle onto the DOM renderer.
-// shortcut: after giving up, a pane stays on the DOM renderer until remount —
-// attaching/detaching on visibility edges would make this recoverable and
-// keep live contexts ≈ visible panes.
+// panes settle onto the DOM renderer. A pane that gave up recovers the next
+// time it leaves and re-enters the screen: TerminalView detaches WebGL from
+// off-screen panes and reattaches on the visible edge (see
+// terminalPaneVisibility.ts), which also keeps live contexts ≈ visible panes.
 //
 // Known conflation: unrelated one-off losses on different panes inside one
 // window also advance the wave count, so a third such pane is denied even

@@ -1,4 +1,12 @@
-import { onMount, onCleanup, createEffect, createMemo, createSignal, Show } from 'solid-js';
+import {
+  onMount,
+  onCleanup,
+  createEffect,
+  createMemo,
+  createSignal,
+  untrack,
+  Show,
+} from 'solid-js';
 import { Terminal, type IMarker } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -41,6 +49,7 @@ import { cleanCopiedTerminalText } from '../lib/copy-text';
 import { hasTerminalUserActivity, nextTerminalInputPending } from '../lib/terminalInputPending';
 import { computeWrappedPathLinks, createTerminalHttpLinkHandler } from '../lib/terminalLinks';
 import { recordSharedWebglContextLoss, WEBGL_REATTACH_DELAY_MS } from '../lib/webglContextLoss';
+import { isTerminalPaneOnScreen, WEBGL_DETACH_DELAY_MS } from '../lib/terminalPaneVisibility';
 import type { PtyOutput } from '../ipc/types';
 
 let windowUnloading = false;
@@ -116,6 +125,9 @@ const CONTROL_CHARS = /[\x00-\x1f\x7f-\x9f]/g;
 interface TerminalViewProps {
   taskId: string;
   agentId: string;
+  /** False while this pane is hidden inside its task (an unselected tab).
+   *  Task-level visibility (focus mode, tiling scroll) is read from the store. */
+  visible?: boolean;
   command: string;
   args: string[];
   cwd: string;
@@ -971,33 +983,36 @@ export function TerminalView(props: TerminalViewProps) {
       term.options.cursorBlink = props.isFocused === true;
     });
 
-    // Force a clean repaint when this pane returns to the foreground. In focus
-    // mode inactive panes are hidden with visibility:hidden (so the
-    // IntersectionObserver in terminalFitManager never fires), and a WebGL
-    // terminal whose GPU surface was throttled while backgrounded can come
-    // back with a corrupt glyph atlas. Redraw on the hidden→visible edge so
-    // foregrounding reliably clears the corruption rather than "sometimes".
-    // macOS-only (issue #121): never reported on Linux, so Linux skips the
-    // reactive subscription and the repaints entirely.
-    if (isMac) {
-      let prevVisible: boolean | undefined;
-      createEffect(() => {
-        const visible = !store.focusMode || store.activeTaskId === taskId;
-        if (prevVisible === false && visible) redrawTerminal(agentId);
-        prevVisible = visible;
-      });
-    }
+    // Whether this pane is on screen: the active task in focus mode, a task
+    // not scrolled fully out of view in tiling mode, and the selected tab
+    // within the task. Hidden panes stay mounted (visibility:hidden keeps
+    // their layout so fit() never resizes the pty) but do not keep a WebGL
+    // context — see terminalPaneVisibility.ts.
+    const paneOnScreen = createMemo(() =>
+      isTerminalPaneOnScreen({
+        focusMode: store.focusMode,
+        activeTaskId: store.activeTaskId,
+        taskId,
+        viewportVisibility: store.taskViewportVisibility[taskId],
+        paneVisible: props.visible,
+      }),
+    );
 
-    // Load WebGL addon for all terminals. On context loss (GPU process crash,
-    // sleep/wake, or context-cap eviction — see max-active-webgl-contexts in
-    // electron/main.ts) reattach after a short delay instead of permanently
-    // falling back to the much slower DOM renderer. The loss window is shared
-    // app-wide so an eviction rotation (each reattach evicting another pane)
-    // trips the brake even though every hop lands on a different pane.
+    // Load the WebGL addon while the pane is on screen. On context loss (GPU
+    // process crash, sleep/wake, or context-cap eviction — see
+    // max-active-webgl-contexts in electron/main.ts) reattach after a short
+    // delay instead of permanently falling back to the much slower DOM
+    // renderer. The loss window is shared app-wide so an eviction rotation
+    // (each reattach evicting another pane) trips the brake even though every
+    // hop lands on a different pane.
     let webglReattachTimer: number | undefined;
+    let webglDetachTimer: number | undefined;
 
     function attachWebgl() {
-      if (!term) return;
+      if (!term || webglAddon) return;
+      // A pane that went off screen while a reattach was pending stays on the
+      // DOM renderer; the visibility effect below attaches when it returns.
+      if (!untrack(paneOnScreen)) return;
       try {
         const addon = new WebglAddon();
         addon.onContextLoss(() => {
@@ -1021,7 +1036,47 @@ export function TerminalView(props: TerminalViewProps) {
         // WebGL2 not supported — DOM renderer used automatically
       }
     }
-    attachWebgl();
+
+    function detachWebgl() {
+      if (webglReattachTimer !== undefined) {
+        clearTimeout(webglReattachTimer);
+        webglReattachTimer = undefined;
+      }
+      // Dropping the addon returns this pane to the DOM renderer and releases
+      // its GL context. The glyph atlas is shared and ref-counted by xterm, so
+      // other panes keep theirs.
+      webglAddon?.dispose();
+      webglAddon = undefined;
+    }
+
+    // Attach on the hidden→visible edge, detach a little after visible→hidden.
+    // A pane that returns before the detach delay elapses keeps its context;
+    // on macOS it is repainted instead (issue #121): a WebGL surface throttled
+    // while backgrounded can come back with a corrupt glyph atlas, and a
+    // hidden pane never fires terminalFitManager's IntersectionObserver.
+    // Linux never showed the corruption, so it skips that repaint.
+    let prevOnScreen: boolean | undefined;
+    createEffect(() => {
+      const onScreen = paneOnScreen();
+      if (onScreen) {
+        if (webglDetachTimer !== undefined) {
+          clearTimeout(webglDetachTimer);
+          webglDetachTimer = undefined;
+        }
+        if (!webglAddon && webglReattachTimer === undefined) {
+          // loadAddon → setRenderer already repaints this pane in full.
+          attachWebgl();
+        } else if (isMac && prevOnScreen === false) {
+          redrawTerminal(agentId);
+        }
+      } else if (webglDetachTimer === undefined) {
+        webglDetachTimer = window.setTimeout(() => {
+          webglDetachTimer = undefined;
+          detachWebgl();
+        }, WEBGL_DETACH_DELAY_MS);
+      }
+      prevOnScreen = onScreen;
+    });
 
     let spawnTimer: number | undefined;
     let spawnStarted = false;
@@ -1105,6 +1160,7 @@ export function TerminalView(props: TerminalViewProps) {
       if (inputFlushTimer !== undefined) clearTimeout(inputFlushTimer);
       if (resizeFlushTimer !== undefined) clearTimeout(resizeFlushTimer);
       if (webglReattachTimer !== undefined) clearTimeout(webglReattachTimer);
+      if (webglDetachTimer !== undefined) clearTimeout(webglDetachTimer);
       if (outputRaf !== undefined) cancelAnimationFrame(outputRaf);
       onOutput.cleanup?.();
       webglAddon?.dispose();
