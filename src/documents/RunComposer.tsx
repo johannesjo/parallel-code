@@ -1,6 +1,7 @@
-import { For, Show, createMemo, createSignal, onMount } from 'solid-js';
+import { For, Show, createMemo, createSignal, onMount, untrack } from 'solid-js';
 import { store } from '../store/core';
 import {
+  addDocumentAnnotation,
   dispatchDocumentRun,
   documentMainAgentId,
   documentStore,
@@ -8,6 +9,8 @@ import {
   type DispatchSelection,
   type DocumentSelection,
 } from '../store/documents';
+import { createAnchor } from '../lib/annotation-anchor';
+import type { DocumentBlock } from '../lib/markdown-blocks';
 import { getProject } from '../store/projects';
 import { showNotification } from '../store/notification';
 import { errMessage } from '../lib/log';
@@ -19,10 +22,14 @@ import type { AgentDef } from '../ipc/types';
 
 interface RunComposerProps {
   selection: DocumentSelection;
+  /** Current blocks, for anchoring an annotation to the selection. */
+  blocks: DocumentBlock[];
   /** Offset inside the document container where the composer sits. */
   anchorTop: number;
   onClose: () => void;
 }
+
+type ComposerMode = 'task' | 'note' | 'question';
 
 const MAX_PER_AGENT = 3;
 
@@ -33,10 +40,14 @@ const MAX_PER_AGENT = 3;
  */
 export function RunComposer(props: RunComposerProps) {
   let textareaRef: HTMLTextAreaElement | undefined;
-  const [instruction, setInstruction] = createSignal('');
+  const draft = untrack(() => documentStore.composerDraft);
+  const [instruction, setInstruction] = createSignal(draft?.text ?? '');
+  const [mode, setMode] = createSignal<ComposerMode>('task');
+  const [saving, setSaving] = createSignal(false);
   const project = () => (documentStore.projectId ? getProject(documentStore.projectId) : undefined);
   const mainAgentId = () => documentMainAgentId(project());
   const [counts, setCounts] = createSignal<Record<string, number>>({ [mainAgentId()]: 1 });
+  const [askAgentId, setAskAgentId] = createSignal(mainAgentId());
 
   const agents = createMemo(() => store.availableAgents);
   const resumable = createMemo(() =>
@@ -54,6 +65,38 @@ export function RunComposer(props: RunComposerProps) {
     total() > 0 &&
     total() <= MAX_DOCUMENT_CANDIDATES &&
     !documentStore.dispatching;
+  const canAnnotate = () =>
+    instruction().trim().length > 0 && !props.selection.wholeDocument && !saving();
+  const askAgent = () => agents().find((a) => a.id === askAgentId()) ?? resumable()[0];
+
+  /** Notes and questions never touch the document: they are saved beside it. */
+  async function annotate() {
+    if (!canAnnotate()) return;
+    setSaving(true);
+    try {
+      const anchor = createAnchor(
+        props.blocks,
+        props.selection.startBlock,
+        props.selection.endBlock,
+        project()?.documentPath ?? '',
+        documentStore.snapshot?.headSha ?? null,
+      );
+      const saved = await addDocumentAnnotation(
+        mode() === 'question' ? 'question' : 'note',
+        instruction().trim(),
+        anchor,
+        mode() === 'question' ? askAgent() : undefined,
+      );
+      if (saved) props.onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function submit() {
+    if (mode() === 'task') void run();
+    else void annotate();
+  }
 
   onMount(() => {
     requestAnimationFrame(() => textareaRef?.focus());
@@ -91,7 +134,7 @@ export function RunComposer(props: RunComposerProps) {
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      void run();
+      submit();
     }
   }
 
@@ -113,9 +156,50 @@ export function RunComposer(props: RunComposerProps) {
       onMouseUp={(e) => e.stopPropagation()}
     >
       <div class="docws-composer-footer">
+        <span class="docws-mode-tabs" role="tablist" aria-label="What to do with the passage">
+          <button
+            type="button"
+            class="docws-tab"
+            role="tab"
+            aria-selected={mode() === 'task'}
+            onClick={() => setMode('task')}
+          >
+            Task
+          </button>
+          <button
+            type="button"
+            class="docws-tab"
+            role="tab"
+            aria-selected={mode() === 'note'}
+            disabled={props.selection.wholeDocument}
+            title={
+              props.selection.wholeDocument
+                ? 'Notes attach to a passage, not the whole document'
+                : 'Write a note beside this passage'
+            }
+            onClick={() => setMode('note')}
+          >
+            Note
+          </button>
+          <button
+            type="button"
+            class="docws-tab"
+            role="tab"
+            aria-selected={mode() === 'question'}
+            disabled={props.selection.wholeDocument}
+            title={
+              props.selection.wholeDocument
+                ? 'Questions attach to a passage, not the whole document'
+                : 'Ask an agent about this passage; the answer goes into a bubble'
+            }
+            onClick={() => setMode('question')}
+          >
+            Ask
+          </button>
+        </span>
         <span>{scopeLabel()}</span>
         <span class="docws-spacer" />
-        <label>
+        <label style={{ display: mode() === 'task' ? undefined : 'none' }}>
           Main session{' '}
           <select
             class="docws-select"
@@ -140,11 +224,44 @@ export function RunComposer(props: RunComposerProps) {
       </Show>
       <textarea
         ref={textareaRef}
-        placeholder="What should change here? e.g. find a simpler architecture, challenge these assumptions…"
+        placeholder={
+          mode() === 'task'
+            ? 'What should change here? e.g. find a simpler architecture, challenge these assumptions…'
+            : mode() === 'note'
+              ? 'A note to yourself about this passage. It never changes the document.'
+              : 'A question about this passage. The answer lands in a bubble, not in the document.'
+        }
         value={instruction()}
         onInput={(e) => setInstruction(e.currentTarget.value)}
       />
-      <div class="docws-agent-row" role="group" aria-label="Agents">
+      <Show when={mode() === 'question'}>
+        <div class="docws-agent-row" role="radiogroup" aria-label="Agent to ask">
+          <For each={agents().filter((a) => documentAgentSupport(a.id).headless)}>
+            {(agent) => (
+              <button
+                type="button"
+                class="docws-agent-chip"
+                role="radio"
+                aria-checked={askAgent()?.id === agent.id}
+                aria-pressed={askAgent()?.id === agent.id}
+                disabled={agent.available === false}
+                title={
+                  agent.available === false ? 'Not installed' : 'Reads the document, cannot edit it'
+                }
+                onClick={() => setAskAgentId(agent.id)}
+              >
+                {agent.name}
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
+      <div
+        class="docws-agent-row"
+        role="group"
+        aria-label="Agents"
+        style={{ display: mode() === 'task' ? undefined : 'none' }}
+      >
         <For each={agents()}>
           {(agent) => {
             const support = documentAgentSupport(agent.id);
@@ -187,24 +304,45 @@ export function RunComposer(props: RunComposerProps) {
         </For>
       </div>
       <div class="docws-composer-footer">
-        <span>
-          {total()} candidate{total() === 1 ? '' : 's'}
-          {total() > 1 ? ' · opens the compare view' : ''}
-          {total() > MAX_DOCUMENT_CANDIDATES ? ` · max ${MAX_DOCUMENT_CANDIDATES}` : ''}
-        </span>
+        <Show
+          when={mode() === 'task'}
+          fallback={<span>Saved beside the document, never into it</span>}
+        >
+          <span>
+            {total()} candidate{total() === 1 ? '' : 's'}
+            {total() > 1 ? ' · opens the compare view' : ''}
+            {total() > MAX_DOCUMENT_CANDIDATES ? ` · max ${MAX_DOCUMENT_CANDIDATES}` : ''}
+          </span>
+        </Show>
         <span class="docws-spacer" />
-        <span>Enter to run · Esc to close</span>
+        <span>
+          Enter to {mode() === 'task' ? 'run' : mode() === 'note' ? 'save' : 'ask'} · Esc to close
+        </span>
         <button type="button" class="docws-btn docws-btn-sm" onClick={() => props.onClose()}>
           Cancel
         </button>
-        <button
-          type="button"
-          class="docws-btn docws-btn-sm docws-btn-primary"
-          disabled={!canRun()}
-          onClick={() => void run()}
+        <Show
+          when={mode() === 'task'}
+          fallback={
+            <button
+              type="button"
+              class="docws-btn docws-btn-sm docws-btn-primary"
+              disabled={!canAnnotate()}
+              onClick={() => void annotate()}
+            >
+              {saving() ? 'Saving…' : mode() === 'note' ? 'Save note' : 'Ask'}
+            </button>
+          }
         >
-          {documentStore.dispatching ? 'Starting…' : 'Run'}
-        </button>
+          <button
+            type="button"
+            class="docws-btn docws-btn-sm docws-btn-primary"
+            disabled={!canRun()}
+            onClick={() => void run()}
+          >
+            {documentStore.dispatching ? 'Starting…' : 'Run'}
+          </button>
+        </Show>
       </div>
     </div>
   );

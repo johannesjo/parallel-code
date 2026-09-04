@@ -3,7 +3,7 @@
 **A project type in Parallel Code for exploring problems in prose**
 
 Status: experimental, behind the _Document workspaces_ switch in Settings → Experimental.
-Slices 1 and 2 of the plan below are built; annotations and HTML are not.
+Slices 1 to 3 of the plan below are built (the loop, comparison, annotations); HTML is not.
 
 Parallel Code already runs several agents against the same codebase and keeps the results
 isolated, attributable, and comparable. Document Workspaces applies the same machine to
@@ -36,6 +36,12 @@ the document.
 6. **History** is `git log` for the document with the `Parallel-*` trailers parsed:
    what changed, which agent, which instruction, which base. Show the diff or render the
    older version. Revert any entry.
+7. **Annotations.** The same composer offers **Note** and **Ask** beside **Task**. A note
+   is a bubble under the passage. A question is a bubble an agent answers into, running
+   read-only in the checkout; question and answer stay visible together. Resolve (`r`)
+   collapses a bubble to one line, Delete removes it with an Undo in the toolbar, and
+   **Make task** reopens the composer on the passage with the bubble's text (and answer)
+   as the instruction; the bubble then collapses as `task`.
 
 ### How it works
 
@@ -83,12 +89,18 @@ workspace-write` (the sandbox blocks writes outside the worktree),
   added and removed blocks at block granularity, navigates by changed block, and hides
   agent identity until you toggle _Show agents_. _Source diff_ swaps the rendering for the
   unified diff. Each candidate has a free-text note stored in the run record.
+- **Anchors stay out of the prose.** An annotation records path, base commit, lines, the
+  exact quote, the neighbouring text and the nearest heading in
+  `.parallel/annotations.json` (`version: 1`). On every version the app relocates it by
+  quote, using neighbours and heading when the same passage appears twice, and shows it
+  as **detached** rather than attaching it to the wrong place. Annotations are committed
+  along with the next content or metadata commit, never on their own.
 - **Run records are versioned** (`version: 1`) so a format change is a migration.
 
 ### Not in this slice
 
-Annotations, HTML documents, partial acceptance, evaluator agents, refinement rounds,
-durable anchors across versions, in-app editing. Custom agents, OpenCode and Copilot
+HTML documents, partial acceptance, evaluator agents, refinement rounds, threaded
+annotations, in-app editing. Custom agents, OpenCode and Copilot
 cannot be picked. Gemini runs one-shot only.
 
 ---

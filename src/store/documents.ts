@@ -10,6 +10,10 @@ import { invoke } from '../lib/ipc';
 import { errMessage } from '../lib/log';
 import type {
   AgentDef,
+  DocumentAnchor,
+  DocumentAnnotation,
+  DocumentAnnotationEvent,
+  DocumentAnnotationKind,
   DocumentCandidateRecord,
   DocumentCandidateSpec,
   DocumentRunEvent,
@@ -40,8 +44,19 @@ export interface DocumentSelection {
   wholeDocument: boolean;
 }
 
+/** What the composer opens with when a bubble is turned into a task. */
+export interface ComposerDraft {
+  text: string;
+  annotationId?: string;
+}
+
 interface DocumentWorkspaceState {
   projectId: string | null;
+  annotations: DocumentAnnotation[];
+  /** Last deleted bubble, kept for a single-step undo. */
+  lastDeleted: DocumentAnnotation | null;
+  showResolved: boolean;
+  composerDraft: ComposerDraft | null;
   snapshot: DocumentSnapshot | null;
   loading: boolean;
   error: string | null;
@@ -59,6 +74,10 @@ const MAX_LOG_LINES = 400;
 
 const [docStore, setDocStore] = createStore<DocumentWorkspaceState>({
   projectId: null,
+  annotations: [],
+  lastDeleted: null,
+  showResolved: false,
+  composerDraft: null,
   snapshot: null,
   loading: false,
   error: null,
@@ -151,6 +170,9 @@ export async function openDocumentWorkspace(projectId: string): Promise<void> {
     view: 'document',
     compareRunId: null,
     selection: null,
+    annotations: [],
+    lastDeleted: null,
+    composerDraft: null,
   });
   setStore('activeDocumentProjectId', projectId);
   // Start watching before the first await so a quick close can stop it.
@@ -163,7 +185,7 @@ export async function openDocumentWorkspace(projectId: string): Promise<void> {
       if (stillOpen(projectId)) setDocStore('error', errMessage(err));
     });
   });
-  await Promise.all([refreshDocumentSnapshot(), loadDocumentRuns()]);
+  await Promise.all([refreshDocumentSnapshot(), loadDocumentRuns(), loadDocumentAnnotations()]);
   if (stillOpen(projectId)) setDocStore('loading', false);
 }
 
@@ -172,8 +194,18 @@ export function closeDocumentWorkspace(): void {
   if (projectId) {
     void invoke(IPC.StopDocumentWatcher, { key: watcherKey(projectId) }).catch(() => undefined);
   }
-  setDocStore({ projectId: null, selection: null, view: 'document', compareRunId: null });
+  setDocStore({
+    projectId: null,
+    selection: null,
+    view: 'document',
+    compareRunId: null,
+    composerDraft: null,
+  });
   setStore('activeDocumentProjectId', null);
+}
+
+export function setDocumentComposerDraft(draft: ComposerDraft | null): void {
+  setDocStore('composerDraft', draft);
 }
 
 export function setDocumentView(view: DocumentView): void {
@@ -290,7 +322,9 @@ export async function dispatchDocumentRun(
       candidates,
     });
     upsertRun(run);
-    setDocStore('selection', null);
+    const draft = docStore.composerDraft;
+    setDocStore({ selection: null, composerDraft: null });
+    if (draft?.annotationId) void linkAnnotationToRun(draft.annotationId, run.id);
     void refreshDocumentSnapshot();
     return run;
   } finally {
@@ -448,6 +482,161 @@ export async function revertDocumentCommit(sha: string): Promise<boolean> {
   }
 }
 
+// --- Annotations ----------------------------------------------------------
+
+export async function loadDocumentAnnotations(): Promise<void> {
+  const project = activeProject();
+  if (!project) return;
+  try {
+    const annotations = await invoke<DocumentAnnotation[]>(IPC.ListDocumentAnnotations, {
+      projectRoot: project.path,
+    });
+    if (stillOpen(project.id)) setDocStore('annotations', annotations);
+  } catch (err) {
+    if (stillOpen(project.id)) setDocStore('error', errMessage(err));
+  }
+}
+
+function putAnnotation(annotation: DocumentAnnotation): void {
+  setDocStore(
+    produce((s) => {
+      const idx = s.annotations.findIndex((a) => a.id === annotation.id);
+      if (idx >= 0) s.annotations[idx] = annotation;
+      else s.annotations.push(annotation);
+    }),
+  );
+}
+
+async function persistAnnotation(annotation: DocumentAnnotation): Promise<DocumentAnnotation> {
+  const project = requireProject();
+  const saved = await invoke<DocumentAnnotation>(IPC.SaveDocumentAnnotation, {
+    projectRoot: project.path,
+    annotation,
+  });
+  putAnnotation(saved);
+  return saved;
+}
+
+/** Creates a note or a question on the anchored passage. Questions are asked right away. */
+export async function addDocumentAnnotation(
+  kind: DocumentAnnotationKind,
+  text: string,
+  anchor: DocumentAnchor,
+  askWith?: AgentDef,
+): Promise<DocumentAnnotation | null> {
+  const now = new Date().toISOString();
+  try {
+    const saved = await persistAnnotation({
+      id: crypto.randomUUID(),
+      kind,
+      anchor,
+      text,
+      createdAt: now,
+      updatedAt: now,
+      resolved: false,
+    });
+    if (kind === 'question' && askWith) await askDocumentAnnotation(saved.id, askWith);
+    return saved;
+  } catch (err) {
+    showNotification(errMessage(err));
+    return null;
+  }
+}
+
+export async function askDocumentAnnotation(annotationId: string, agent: AgentDef): Promise<void> {
+  const project = requireProject();
+  try {
+    const pending = await invoke<DocumentAnnotation>(IPC.AskDocumentAnnotation, {
+      projectRoot: project.path,
+      documentPath: project.documentPath,
+      annotationId,
+      agentId: agent.id,
+      agentName: agent.name,
+      command: agent.command,
+      envFile: store.agentEnvFiles[agent.id],
+    });
+    putAnnotation(pending);
+  } catch (err) {
+    showNotification(errMessage(err));
+  }
+}
+
+export async function setDocumentAnnotationResolved(id: string, resolved: boolean): Promise<void> {
+  const current = docStore.annotations.find((a) => a.id === id);
+  if (!current) return;
+  try {
+    await persistAnnotation({ ...current, resolved });
+  } catch (err) {
+    showNotification(errMessage(err));
+  }
+}
+
+export async function updateDocumentAnnotationText(id: string, text: string): Promise<void> {
+  const current = docStore.annotations.find((a) => a.id === id);
+  if (!current || current.text === text) return;
+  try {
+    await persistAnnotation({ ...current, text });
+  } catch (err) {
+    showNotification(errMessage(err));
+  }
+}
+
+/** One click removes a bubble; the last one removed can be brought back. */
+export async function deleteDocumentAnnotation(id: string): Promise<void> {
+  const project = requireProject();
+  const current = docStore.annotations.find((a) => a.id === id);
+  if (!current) return;
+  setDocStore(
+    produce((s) => {
+      s.annotations = s.annotations.filter((a) => a.id !== id);
+      s.lastDeleted = current;
+    }),
+  );
+  try {
+    await invoke(IPC.DeleteDocumentAnnotation, { projectRoot: project.path, id });
+  } catch (err) {
+    showNotification(errMessage(err));
+    putAnnotation(current);
+    setDocStore('lastDeleted', null);
+  }
+}
+
+export async function undoDeleteDocumentAnnotation(): Promise<void> {
+  const last = docStore.lastDeleted;
+  if (!last) return;
+  setDocStore('lastDeleted', null);
+  try {
+    await persistAnnotation(last);
+  } catch (err) {
+    showNotification(errMessage(err));
+  }
+}
+
+export function dismissUndo(): void {
+  setDocStore('lastDeleted', null);
+}
+
+export function setShowResolvedAnnotations(show: boolean): void {
+  setDocStore('showResolved', show);
+}
+
+/** Marks a bubble as turned into a run; the bubble collapses but stays. */
+export async function linkAnnotationToRun(annotationId: string, runId: string): Promise<void> {
+  const current = docStore.annotations.find((a) => a.id === annotationId);
+  if (!current) return;
+  try {
+    await persistAnnotation({ ...current, runId, resolved: true });
+  } catch (err) {
+    showNotification(errMessage(err));
+  }
+}
+
+function isAnnotationEvent(v: unknown): v is DocumentAnnotationEvent {
+  if (!v || typeof v !== 'object') return false;
+  const e = v as { projectRoot?: unknown; annotation?: unknown };
+  return typeof e.projectRoot === 'string' && !!e.annotation && typeof e.annotation === 'object';
+}
+
 interface DocumentChangedPayload {
   key: string;
   snapshot: DocumentSnapshot;
@@ -464,6 +653,15 @@ export function initDocumentListeners(): () => void {
   const offRun = window.electron.ipcRenderer.on(IPC.DocumentRunEvent, (payload: unknown) => {
     if (isRunEvent(payload)) untrack(() => applyDocumentRunEvent(payload));
   });
+  const offAnnotation = window.electron.ipcRenderer.on(
+    IPC.DocumentAnnotationEvent,
+    (payload: unknown) => {
+      if (!isAnnotationEvent(payload)) return;
+      untrack(() => {
+        if (activeProject()?.path === payload.projectRoot) putAnnotation(payload.annotation);
+      });
+    },
+  );
   const offChanged = window.electron.ipcRenderer.on(IPC.DocumentChanged, (payload: unknown) => {
     const p = payload as DocumentChangedPayload | undefined;
     if (!p) return;
@@ -471,12 +669,15 @@ export function initDocumentListeners(): () => void {
       if (!docStore.projectId || p.key !== watcherKey(docStore.projectId)) return;
       const previous = docStore.snapshot;
       setDocStore('snapshot', p.snapshot);
-      // The passage under a selection may be gone after an external edit.
+      // The passage under a selection may be gone after an external edit, and a
+      // commit or pull may have brought annotations along.
       if (previous && previous.content !== p.snapshot.content) setDocStore('selection', null);
+      if (previous && previous.headSha !== p.snapshot.headSha) void loadDocumentAnnotations();
     });
   });
   return () => {
     offRun();
+    offAnnotation();
     offChanged();
   };
 }

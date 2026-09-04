@@ -344,3 +344,63 @@ export interface DocumentHistoryEntry {
   /** True when no agent trailer is present: a manual commit. */
   manual: boolean;
 }
+
+// --- Document annotations ---
+
+/**
+ * Where an annotation sits. Offsets alone go stale as soon as anything above
+ * them changes, so the anchor also carries the exact quote, its neighbours
+ * and the nearest heading; the renderer relocates it on the current version
+ * and shows it detached when it cannot.
+ */
+export interface DocumentAnchor {
+  path: string;
+  /** Commit the offsets were taken against. */
+  baseSha: string | null;
+  startLine: number;
+  endLine: number;
+  /** Exact source text of the anchored blocks. */
+  quote: string;
+  /** Tail of the preceding block and head of the following one. */
+  prefix: string;
+  suffix: string;
+  heading?: string;
+}
+
+export type DocumentAnnotationKind = 'note' | 'question';
+
+export interface DocumentAnnotationAnswer {
+  text: string;
+  agentId: string;
+  agentName: string;
+  answeredAt: string;
+}
+
+export type DocumentAnswerStatus = 'pending' | 'answered' | 'failed';
+
+/** A bubble beside the document: a note, or a question an agent answers into it. */
+export interface DocumentAnnotation {
+  id: string;
+  kind: DocumentAnnotationKind;
+  anchor: DocumentAnchor;
+  text: string;
+  createdAt: string;
+  updatedAt: string;
+  resolved: boolean;
+  answer?: DocumentAnnotationAnswer;
+  answerStatus?: DocumentAnswerStatus;
+  answerError?: string;
+  /** Run this annotation was turned into, if any. */
+  runId?: string;
+}
+
+/** Persisted as `.parallel/annotations.json` inside the document project. */
+export interface DocumentAnnotationsFile {
+  version: 1;
+  annotations: DocumentAnnotation[];
+}
+
+export interface DocumentAnnotationEvent {
+  projectRoot: string;
+  annotation: DocumentAnnotation;
+}

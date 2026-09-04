@@ -11,6 +11,7 @@ import { startAgentHookRuntime, stopAgentHookRuntime } from './agent-hooks/runti
 import { killAllAgents } from './ipc/pty.js';
 import { stopAllPlanWatchers } from './ipc/plans.js';
 import { stopAllDocumentRuns, stopAllDocumentWatchers } from './ipc/documents.js';
+import { stopAllAsks } from './ipc/document-annotations.js';
 import { stopAllStepsWatchers } from './ipc/steps.js';
 import { verificationRunner } from './ipc/verify.js';
 import { IPC } from './ipc/channels.js';
@@ -291,6 +292,7 @@ app.on('will-quit', () => {
   stopAllPlanWatchers();
   stopAllDocumentWatchers();
   stopAllDocumentRuns();
+  stopAllAsks();
   stopAllStepsWatchers();
 });
 

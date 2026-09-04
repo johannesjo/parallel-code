@@ -37,6 +37,8 @@ const CANDIDATE_TIMEOUT_MS = 30 * 60_000;
 /** Longest instruction accepted from the renderer. */
 const MAX_INSTRUCTION_CHARS = 20_000;
 const RUNS_DIR = path.join('.parallel', 'runs');
+/** Annotations ride along with content commits; kept in sync with document-annotations.ts. */
+const ANNOTATIONS_FILE = path.posix.join('.parallel', 'annotations.json');
 const MAIN_WORKTREE_DIR = path.join('.worktrees', 'parallel-doc-main');
 const BRANCH_PREFIX = 'parallel-doc';
 const WATCH_DEBOUNCE_MS = 200;
@@ -506,13 +508,20 @@ function runOwningBranch(projectRoot: string, branch: string): DocumentRunRecord
  */
 export async function commitPendingEdits(projectRoot: string): Promise<string> {
   ensureWorktreeContainerExclude(projectRoot);
-  if (await isDirty(projectRoot)) {
-    await git(projectRoot, ['add', '-u', ...CONTENT_PATHSPEC]);
+  await git(projectRoot, ['add', '-u', ...CONTENT_PATHSPEC]);
+  await stageAnnotations(projectRoot);
+  if (!(await gitOk(projectRoot, ['diff', '--cached', '--quiet']))) {
     await git(projectRoot, ['commit', '-q', '-m', 'Manual edits']);
   }
   const sha = await headSha(projectRoot);
   if (!sha) throw new Error('The project repository has no commits yet.');
   return sha;
+}
+
+/** Annotations are committed alongside content and metadata, never on their own. */
+async function stageAnnotations(projectRoot: string): Promise<void> {
+  if (!fs.existsSync(path.join(projectRoot, ANNOTATIONS_FILE))) return;
+  await gitOk(projectRoot, ['add', '-f', '--', ANNOTATIONS_FILE]);
 }
 
 // --- Worktrees ------------------------------------------------------------
@@ -1072,6 +1081,7 @@ export async function acceptDocumentCandidate(
     writeRunRecord(projectRoot, run);
     try {
       await git(projectRoot, ['add', '-f', '--', runRecordRelPath(runId)]);
+      await stageAnnotations(projectRoot);
       await git(projectRoot, ['commit', '-q', '-m', integrationMessage(run, candidate)]);
     } catch (err) {
       await gitOk(projectRoot, ['reset', '--hard', '-q', 'HEAD']);
@@ -1112,13 +1122,12 @@ export async function rejectDocumentRun(
     // touching content: a metadata-only commit the history view filters out.
     try {
       await git(projectRoot, ['add', '-f', '--', runRecordRelPath(runId)]);
+      await stageAnnotations(projectRoot);
       await git(projectRoot, [
         'commit',
         '-q',
         '-m',
         `Reject proposals\n\nParallel-Run: ${runId}\nParallel-Metadata: true`,
-        '--',
-        runRecordRelPath(runId),
       ]);
     } catch (err) {
       console.warn('[documents] could not commit rejected run record:', err);

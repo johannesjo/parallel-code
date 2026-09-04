@@ -22,6 +22,8 @@ interface DocumentViewerProps {
   /** Unique key for mermaid ids. */
   renderKey: string;
   onContainer?: (el: HTMLDivElement) => void;
+  /** Rendered after the block with this index (annotation bubbles). */
+  afterBlock?: (index: number) => JSX.Element;
   children?: JSX.Element;
 }
 
@@ -158,6 +160,7 @@ export function DocumentViewer(props: DocumentViewerProps) {
               </Show>
               {/* eslint-disable-next-line solid/no-innerhtml -- block HTML is DOMPurify-sanitized markdown from a local file */}
               <div innerHTML={block.html} />
+              {props.afterBlock?.(i())}
             </div>
           );
         }}

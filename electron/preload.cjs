@@ -168,6 +168,11 @@ const ALLOWED_CHANNELS = new Set([
   'list_document_files',
   'document_changed',
   'document_run_event',
+  'list_document_annotations',
+  'save_document_annotation',
+  'delete_document_annotation',
+  'ask_document_annotation',
+  'document_annotation_event',
 ]);
 
 function isAllowedChannel(channel) {

@@ -5,7 +5,13 @@ import os from 'os';
 import path from 'path';
 import type { BrowserWindow } from 'electron';
 import { acceptDocumentCandidate, dispatchDocumentRun } from './documents.js';
-import type { DocumentRunEvent, DocumentRunRecord } from './shared-types.js';
+import { askAnnotation, readAnnotations, saveAnnotation } from './document-annotations.js';
+import type {
+  DocumentAnnotation,
+  DocumentAnnotationEvent,
+  DocumentRunEvent,
+  DocumentRunRecord,
+} from './shared-types.js';
 
 /**
  * Drives the real `claude` CLI through one proposal and one resumed follow-up.
@@ -36,9 +42,16 @@ const DOC = [
 describe.skipIf(!RUN)('document workspace with the real claude CLI', () => {
   let root: string;
   const events: DocumentRunEvent[] = [];
+  const annotationEvents: DocumentAnnotationEvent[] = [];
   const win = {
     isDestroyed: () => false,
-    webContents: { send: (_ch: string, payload: DocumentRunEvent) => events.push(payload) },
+    webContents: {
+      send: (ch: string, payload: DocumentRunEvent | DocumentAnnotationEvent) => {
+        if (ch === 'document_annotation_event')
+          annotationEvents.push(payload as DocumentAnnotationEvent);
+        else events.push(payload as DocumentRunEvent);
+      },
+    },
   } as unknown as BrowserWindow;
 
   function waitForRun(runId: string): Promise<DocumentRunRecord> {
@@ -146,5 +159,53 @@ describe.skipIf(!RUN)('document workspace with the real claude CLI', () => {
     const proposed2 = git(root, 'show', `${c2.commitSha}:notes.md`);
     expect(proposed2).toContain('The weather is stormy today.');
     expect(proposed2.match(/stormy/g)?.length).toBeGreaterThanOrEqual(2);
+  }, 300_000);
+
+  it('answers a question about a passage without touching the document', async () => {
+    const before = fs.readFileSync(path.join(root, 'notes.md'), 'utf8');
+    const head = git(root, 'rev-parse', 'HEAD').trim();
+    await saveAnnotation(root, {
+      id: 'q-real-1',
+      kind: 'question',
+      text: 'In one short sentence: what is the weather in this passage? Do not edit anything.',
+      anchor: {
+        path: 'notes.md',
+        baseSha: head,
+        startLine: 5,
+        endLine: 7,
+        quote: '## Weather\n\nThe weather is stormy today.',
+        prefix: 'Intro stays as it is.',
+        suffix: '## Closing',
+        heading: 'Weather',
+      },
+      createdAt: new Date().toISOString(),
+    });
+    await askAnnotation(win, {
+      projectRoot: root,
+      documentPath: 'notes.md',
+      annotationId: 'q-real-1',
+      agentId: 'claude-code',
+      agentName: 'Claude Code',
+      command: 'claude',
+    });
+    const answered = await new Promise<DocumentAnnotation>((resolve, reject) => {
+      const started = Date.now();
+      const tick = () => {
+        const done = annotationEvents.find(
+          (e) => e.annotation.id === 'q-real-1' && e.annotation.answerStatus !== 'pending',
+        );
+        if (done) return resolve(done.annotation);
+        if (Date.now() - started > 240_000) return reject(new Error('no answer'));
+        setTimeout(tick, 250);
+      };
+      tick();
+    });
+    expect(answered.answerStatus, answered.answerError).toBe('answered');
+    expect(answered.answer?.text.toLowerCase()).toContain('storm');
+    expect(readAnnotations(root).find((a) => a.id === 'q-real-1')?.answer?.text).toBeTruthy();
+    // Read-only: no file changed, no commit made.
+    expect(fs.readFileSync(path.join(root, 'notes.md'), 'utf8')).toBe(before);
+    expect(git(root, 'rev-parse', 'HEAD').trim()).toBe(head);
+    expect(git(root, 'status', '--porcelain', '--', 'notes.md').trim()).toBe('');
   }, 300_000);
 });

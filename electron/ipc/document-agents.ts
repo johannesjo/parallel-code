@@ -18,6 +18,8 @@ export interface HeadlessLaunchOptions {
   sessionId?: string;
   /** Session id to assign to a fresh Claude run so it can be resumed later. */
   newSessionId: string;
+  /** Answering a question: the agent may read but never write. */
+  readOnly?: boolean;
 }
 
 export interface HeadlessOutcome {
@@ -37,6 +39,8 @@ export interface HeadlessOutputParser {
 
 /** Tools a document proposal may use: read and edit files, nothing that runs code. */
 export const CLAUDE_DOCUMENT_TOOLS = 'Read,Edit,Write,Glob,Grep';
+/** Tools for answering a question about a document: reading only. */
+export const CLAUDE_READ_ONLY_TOOLS = 'Read,Glob,Grep';
 
 export function buildHeadlessLaunch(opts: HeadlessLaunchOptions): HeadlessLaunch {
   const support = documentAgentSupport(opts.agentId);
@@ -54,16 +58,22 @@ export function buildHeadlessLaunch(opts: HeadlessLaunchOptions): HeadlessLaunch
         'stream-json',
         '--verbose',
         '--permission-mode',
-        'acceptEdits',
+        opts.readOnly ? 'default' : 'acceptEdits',
         '--tools',
-        CLAUDE_DOCUMENT_TOOLS,
+        opts.readOnly ? CLAUDE_READ_ONLY_TOOLS : CLAUDE_DOCUMENT_TOOLS,
       ];
       if (resume) args.push('--resume', resume);
       else args.push('--session-id', opts.newSessionId);
       return { command: opts.command, args };
     }
     case 'codex': {
-      const args = ['exec', '--json', '--sandbox', 'workspace-write', '--skip-git-repo-check'];
+      const args = [
+        'exec',
+        '--json',
+        '--sandbox',
+        opts.readOnly ? 'read-only' : 'workspace-write',
+        '--skip-git-repo-check',
+      ];
       if (resume) args.push('resume', resume, opts.prompt);
       else args.push(opts.prompt);
       return { command: opts.command, args };
@@ -71,7 +81,14 @@ export function buildHeadlessLaunch(opts: HeadlessLaunchOptions): HeadlessLaunch
     case 'gemini':
       return {
         command: opts.command,
-        args: ['-p', opts.prompt, '--output-format', 'json', '--approval-mode', 'auto_edit'],
+        args: [
+          '-p',
+          opts.prompt,
+          '--output-format',
+          'json',
+          '--approval-mode',
+          opts.readOnly ? 'default' : 'auto_edit',
+        ],
       };
     default:
       throw new Error(`Agent "${opts.agentId}" has no headless mode for document runs.`);

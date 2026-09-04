@@ -163,5 +163,10 @@
   "RevertDocumentCommit": "revert_document_commit",
   "ListDocumentFiles": "list_document_files",
   "DocumentChanged": "document_changed",
-  "DocumentRunEvent": "document_run_event"
+  "DocumentRunEvent": "document_run_event",
+  "ListDocumentAnnotations": "list_document_annotations",
+  "SaveDocumentAnnotation": "save_document_annotation",
+  "DeleteDocumentAnnotation": "delete_document_annotation",
+  "AskDocumentAnnotation": "ask_document_annotation",
+  "DocumentAnnotationEvent": "document_annotation_event"
 }

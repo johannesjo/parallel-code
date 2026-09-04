@@ -4,13 +4,20 @@ import { store } from '../store/core';
 import { getProject } from '../store/projects';
 import {
   closeDocumentWorkspace,
+  dismissUndo,
   documentStore,
   reviewableRuns,
+  setDocumentComposerDraft,
   setDocumentSelection,
   setDocumentView,
+  setShowResolvedAnnotations,
   openDocumentCompare,
+  undoDeleteDocumentAnnotation,
   type DocumentView,
 } from '../store/documents';
+import { relocateAnchor } from '../lib/annotation-anchor';
+import type { DocumentAnnotation } from '../ipc/types';
+import { AnnotationBubble } from './AnnotationBubble';
 import { EditProjectDialog } from '../components/EditProjectDialog';
 import type { Project } from '../store/types';
 import { CompareView } from './CompareView';
@@ -48,6 +55,65 @@ function DocumentPane() {
     const s = selection();
     return s && !s.wholeDocument ? { start: s.startBlock, end: s.endBlock } : null;
   });
+
+  // Relocate every bubble on the current version; the ones that cannot be
+  // placed are shown as detached rather than attached to the wrong passage.
+  const placed = createMemo(() => {
+    const all = blocks.blocks();
+    const byBlock = new Map<number, DocumentAnnotation[]>();
+    const detached: DocumentAnnotation[] = [];
+    const located = new Map<string, { startBlock: number; endBlock: number }>();
+    for (const a of documentStore.annotations) {
+      if (a.resolved && !documentStore.showResolved) continue;
+      const loc = relocateAnchor(a.anchor, all);
+      if (!loc) {
+        detached.push(a);
+        continue;
+      }
+      located.set(a.id, loc);
+      const list = byBlock.get(loc.endBlock) ?? [];
+      list.push(a);
+      byBlock.set(loc.endBlock, list);
+    }
+    return { byBlock, detached, located };
+  });
+  const openCount = () => documentStore.annotations.filter((a) => !a.resolved).length;
+  const resolvedCount = () => documentStore.annotations.filter((a) => a.resolved).length;
+
+  /** A bubble becomes a task: select its passage and open the composer with its text. */
+  function makeTask(annotation: DocumentAnnotation) {
+    const all = blocks.blocks();
+    const loc = placed().located.get(annotation.id) ?? relocateAnchor(annotation.anchor, all);
+    if (!loc) return;
+    const text = annotation.answer
+      ? `${annotation.text}\n\nEarlier answer from ${annotation.answer.agentName}:\n${annotation.answer.text}`
+      : annotation.text;
+    setDocumentComposerDraft({ text, annotationId: annotation.id });
+    setDocumentSelection({
+      startBlock: loc.startBlock,
+      endBlock: loc.endBlock,
+      startLine: all[loc.startBlock].startLine,
+      endLine: all[loc.endBlock].endLine,
+      quote: all
+        .slice(loc.startBlock, loc.endBlock + 1)
+        .map((b) => b.raw.replace(/\n+$/, ''))
+        .join('\n\n'),
+      heading: annotation.anchor.heading,
+      wholeDocument: false,
+    });
+  }
+
+  // The undo offer expires on its own.
+  createEffect(
+    on(
+      () => documentStore.lastDeleted,
+      (deleted) => {
+        if (!deleted) return;
+        const timer = setTimeout(() => dismissUndo(), 10_000);
+        onCleanup(() => clearTimeout(timer));
+      },
+    ),
+  );
 
   // Park the composer right under the last selected block.
   createEffect(
@@ -95,7 +161,29 @@ function DocumentPane() {
       <div class="docws-main">
         <div class="docws-toolbar">
           <span>{toolbarLabel()}</span>
+          <Show when={documentStore.lastDeleted}>
+            <span class="docws-undo">
+              Deleted a {documentStore.lastDeleted?.kind}.
+              <button
+                type="button"
+                class="docws-btn docws-btn-sm"
+                onClick={() => void undoDeleteDocumentAnnotation()}
+              >
+                Undo
+              </button>
+            </span>
+          </Show>
           <span style={{ 'margin-left': 'auto' }} />
+          <Show when={openCount() + resolvedCount() > 0}>
+            <label class="docws-toggle" title="Resolved bubbles collapse to one line">
+              <input
+                type="checkbox"
+                checked={documentStore.showResolved}
+                onChange={(e) => setShowResolvedAnnotations(e.currentTarget.checked)}
+              />
+              {resolvedCount()} resolved
+            </label>
+          </Show>
           <button type="button" class="docws-btn docws-btn-sm" onClick={selectWholeDocument}>
             Whole document
           </button>
@@ -113,19 +201,40 @@ function DocumentPane() {
           <div class="docws-older-banner">The document file is missing from the checkout.</div>
         </Show>
         <div class="docws-doc" ref={docRef}>
+          <Show when={placed().detached.length > 0}>
+            <div class="docws-detached-section">
+              <div class="docws-rail-title">Detached notes</div>
+              <div class="docws-empty" style={{ padding: '2px 0 6px' }}>
+                Their passages are no longer in the document. Resolve or delete them, or turn them
+                into a task on a new selection.
+              </div>
+              <For each={placed().detached}>
+                {(a) => <AnnotationBubble annotation={a} detached onMakeTask={makeTask} />}
+              </For>
+            </div>
+          </Show>
           <DocumentViewer
             blocks={blocks.blocks()}
             selectable
             selection={range()}
             onSelect={setDocumentSelection}
             renderKey="main"
+            afterBlock={(index) => (
+              <For each={placed().byBlock.get(index) ?? []}>
+                {(a) => <AnnotationBubble annotation={a} onMakeTask={makeTask} />}
+              </For>
+            )}
           >
             <Show when={selection()}>
               {(s) => (
                 <RunComposer
                   selection={s()}
+                  blocks={blocks.blocks()}
                   anchorTop={anchorTop()}
-                  onClose={() => setDocumentSelection(null)}
+                  onClose={() => {
+                    setDocumentSelection(null);
+                    setDocumentComposerDraft(null);
+                  }}
                 />
               )}
             </Show>

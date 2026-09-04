@@ -112,6 +112,12 @@ import {
   validateDocumentPath,
   validateSha,
 } from './documents.js';
+import {
+  askAnnotation,
+  deleteAnnotation,
+  readAnnotations,
+  saveAnnotation,
+} from './document-annotations.js';
 import { setMinimaxApiKey } from './ask-code-minimax.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
 import { fetchClaudeUsage } from './claude-usage.js';
@@ -1070,6 +1076,33 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.RevertDocumentCommit, (_e, args) => {
     const projectRoot = projectRootArg(args);
     return revertDocumentCommit(projectRoot, validateSha(args.sha));
+  });
+
+  // --- Document annotations ---
+  ipcMain.handle(IPC.ListDocumentAnnotations, (_e, args) => {
+    return readAnnotations(projectRootArg(args));
+  });
+
+  ipcMain.handle(IPC.SaveDocumentAnnotation, (_e, args) => {
+    return saveAnnotation(projectRootArg(args), args.annotation);
+  });
+
+  ipcMain.handle(IPC.DeleteDocumentAnnotation, (_e, args) => {
+    return deleteAnnotation(projectRootArg(args), args.id);
+  });
+
+  ipcMain.handle(IPC.AskDocumentAnnotation, (_e, args) => {
+    const projectRoot = projectRootArg(args);
+    assertOptionalString(args.envFile, 'envFile');
+    return askAnnotation(win, {
+      projectRoot,
+      documentPath: args.documentPath,
+      annotationId: args.annotationId,
+      agentId: args.agentId,
+      agentName: args.agentName,
+      command: args.command,
+      envFile: args.envFile,
+    });
   });
 
   // --- File links ---
