@@ -23,6 +23,18 @@
   min-width: 0;
 }
 
+/* The overlay is fixed at inset:0, so it sits on top of the window titlebar and
+   its [data-tauri-drag-region] — a sibling, not an ancestor, so main.ts's
+   injected `[data-tauri-drag-region] button { no-drag }` rule cannot reach
+   these. Without the carve-out the OS drag region swallows every click in the
+   top ~34px, which is exactly where the header's tabs and buttons sit. The rest
+   of the header stays draggable on purpose: while the workspace is open it is
+   the only handle left for moving the window. */
+.docws-header .docws-tab,
+.docws-header .docws-btn {
+  -webkit-app-region: no-drag;
+}
+
 .docws-title {
   display: flex;
   align-items: center;
