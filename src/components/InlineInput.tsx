@@ -23,6 +23,7 @@ export function InlineInput(props: InlineInputProps) {
   const [text, setText] = createSignal('');
   const [mode, setMode] = createSignal<DiffInteractionMode>('review');
   const [imagePaths, setImagePaths] = createSignal<string[]>([]);
+  const [imagePasteHint, setImagePasteHint] = createSignal('');
   let inputRef: HTMLInputElement | undefined;
 
   /** Images are only sent to a provider whose model accepts image input. */
@@ -56,13 +57,14 @@ export function InlineInput(props: InlineInputProps) {
    * clipboard images into temp files, so the same path is reused here.
    */
   function handlePaste(e: ClipboardEvent) {
-    if (!imageInputEnabled()) return;
+    if (store.askCodeProvider !== 'minimax') return;
     const hasImage = Array.from(e.clipboardData?.items ?? []).some((item) =>
       item.type.startsWith('image/'),
     );
     if (!hasImage) return;
 
     e.preventDefault();
+    setImagePasteHint('');
     invoke<ResolvedPaste>(IPC.ResolveClipboardPaste)
       .then((paste) => {
         if (
@@ -72,10 +74,13 @@ export function InlineInput(props: InlineInputProps) {
         ) {
           const attached = paste.path;
           setImagePaths((prev) => (prev.includes(attached) ? prev : [...prev, attached]));
+        } else {
+          setImagePasteHint('Only PNG, JPEG, WEBP, and GIF images can be attached.');
         }
       })
       .catch((err: unknown) => {
         logWarn('askCode.paste', 'ResolveClipboardPaste failed', { err });
+        setImagePasteHint('Could not attach the clipboard image.');
       });
   }
 
@@ -166,7 +171,7 @@ export function InlineInput(props: InlineInputProps) {
       />
 
       {/* Attached images */}
-      <Show when={imageInputEnabled() && imagePaths().length > 0}>
+      <Show when={store.askCodeProvider === 'minimax' && imagePaths().length > 0}>
         <button
           onClick={() => setImagePaths([])}
           title="Remove attached images"
@@ -184,6 +189,17 @@ export function InlineInput(props: InlineInputProps) {
         >
           {imagePaths().length === 1 ? '1 image ×' : `${imagePaths().length} images ×`}
         </button>
+      </Show>
+
+      <Show when={imagePasteHint()}>
+        {(hint) => (
+          <span
+            aria-live="polite"
+            style={{ color: theme.warning, 'font-size': sf(11), 'align-self': 'center' }}
+          >
+            {hint()}
+          </span>
+        )}
       </Show>
 
       {/* Submit button */}

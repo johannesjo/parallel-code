@@ -10,6 +10,7 @@ import {
   assertCanStart,
   assertPromptWithinLimit,
 } from './request-registry.js';
+import { askCodeImageMimeTypeForPath } from './ask-code-image.js';
 
 interface MinimaxAskCodeRequest {
   requestId: string;
@@ -29,46 +30,16 @@ export const MINIMAX_MODEL = 'MiniMax-M2.7';
 /** Model used when a request carries image input. */
 export const MINIMAX_IMAGE_INPUT_MODEL = 'MiniMax-M3';
 
-/** Input modalities a MiniMax model accepts. */
-export type MinimaxInputModality = 'text' | 'image' | 'video';
-
-/** Input modalities per model, as published in the provider model catalog. */
-const MINIMAX_INPUT_MODALITIES: Readonly<Record<string, readonly MinimaxInputModality[]>> = {
-  [MINIMAX_IMAGE_INPUT_MODEL]: ['text', 'image', 'video'],
-  [MINIMAX_MODEL]: ['text'],
-};
-
-/** Whether a model accepts image input according to the catalog. */
-export function minimaxModelAcceptsImages(modelId: string): boolean {
-  return MINIMAX_INPUT_MODALITIES[modelId]?.includes('image') ?? false;
-}
-
 /** Image input is capped separately from the prompt: the bytes never count against it. */
 const MAX_IMAGES_PER_REQUEST = 4;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-
-const IMAGE_MIME_TYPES: Readonly<Record<string, string>> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-};
+// Keep base64 data plus JSON framing below the provider's 64 MB body limit.
+const MAX_TOTAL_IMAGE_BYTES = 46 * 1024 * 1024;
 
 /** A chat message content part in the chat completions request schema. */
 type MinimaxContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } };
-
-/**
- * Picks the model for a request. Image input requires a model whose catalog
- * modalities include images, so image requests fall back to the image-capable
- * model whenever the text default cannot accept them.
- */
-function resolveModel(hasImages: boolean): string {
-  if (!hasImages || minimaxModelAcceptsImages(MINIMAX_MODEL)) return MINIMAX_MODEL;
-  return MINIMAX_IMAGE_INPUT_MODEL;
-}
 
 /** Rejects unsupported or oversized image input before a request is started. */
 function assertImagesSupported(imagePaths: string[]): void {
@@ -78,18 +49,46 @@ function assertImagesSupported(imagePaths: string[]): void {
     );
   }
   for (const imagePath of imagePaths) {
-    if (!IMAGE_MIME_TYPES[path.extname(imagePath).toLowerCase()]) {
+    if (!askCodeImageMimeTypeForPath(imagePath)) {
       throw new Error(`Unsupported image type: ${path.basename(imagePath)}`);
     }
   }
 }
 
+/** Identify supported image bytes without trusting the file extension. */
+function detectImageMimeType(bytes: Buffer): string | undefined {
+  if (bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  const header = bytes.subarray(0, 12).toString('ascii');
+  if (header.startsWith('GIF87a') || header.startsWith('GIF89a')) return 'image/gif';
+  if (header.startsWith('RIFF') && header.slice(8, 12) === 'WEBP') return 'image/webp';
+  return undefined;
+}
+
+/** Check individual and aggregate sizes before buffering image data. */
+async function assertImageSizes(imagePaths: string[]): Promise<void> {
+  let totalBytes = 0;
+  for (const imagePath of imagePaths) {
+    const { size } = await fs.promises.stat(imagePath);
+    if (size > MAX_IMAGE_BYTES) {
+      throw new Error(
+        `Image too large: ${path.basename(imagePath)} (${size} bytes, max ${MAX_IMAGE_BYTES})`,
+      );
+    }
+    totalBytes += size;
+  }
+  if (totalBytes > MAX_TOTAL_IMAGE_BYTES) {
+    throw new Error(`Attached images are too large (${totalBytes} bytes total)`);
+  }
+}
+
 /** Reads an image from disk into the data URL form the chat API expects. */
 async function imageDataUrl(imagePath: string): Promise<string> {
-  const mimeType = IMAGE_MIME_TYPES[path.extname(imagePath).toLowerCase()];
-  if (!mimeType) throw new Error(`Unsupported image type: ${path.basename(imagePath)}`);
-
   const bytes = await fs.promises.readFile(imagePath);
+  const mimeType = detectImageMimeType(bytes);
+  if (!mimeType) throw new Error(`Unsupported image data: ${path.basename(imagePath)}`);
   if (bytes.byteLength > MAX_IMAGE_BYTES) {
     throw new Error(
       `Image too large: ${path.basename(imagePath)} (${bytes.byteLength} bytes, max ${MAX_IMAGE_BYTES})`,
@@ -107,6 +106,7 @@ async function buildUserContent(
   imagePaths: string[],
 ): Promise<string | MinimaxContentPart[]> {
   if (imagePaths.length === 0) return prompt;
+  await assertImageSizes(imagePaths);
 
   const parts: MinimaxContentPart[] = [{ type: 'text', text: prompt }];
   for (const imagePath of imagePaths) {
@@ -142,7 +142,7 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
 
   cancelAskAboutCodeMinimax(requestId);
 
-  const model = resolveModel(imagePaths.length > 0);
+  const model = imagePaths.length > 0 ? MINIMAX_IMAGE_INPUT_MODEL : MINIMAX_MODEL;
 
   const controller = new AbortController();
 

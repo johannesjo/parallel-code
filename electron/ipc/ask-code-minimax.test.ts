@@ -10,9 +10,6 @@ vi.stubGlobal('fetch', mockFetch);
 import {
   askAboutCodeMinimax,
   cancelAskAboutCodeMinimax,
-  MINIMAX_IMAGE_INPUT_MODEL,
-  MINIMAX_MODEL,
-  minimaxModelAcceptsImages,
   setMinimaxApiKey,
 } from './ask-code-minimax.js';
 
@@ -185,7 +182,7 @@ describe('askAboutCodeMinimax', () => {
     const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string) as {
       model: string;
     };
-    expect(body.model).toBe(MINIMAX_MODEL);
+    expect(body.model).toBe('MiniMax-M2.7');
   });
 
   it('uses temperature in MiniMax allowed range (0, 1]', async () => {
@@ -268,14 +265,22 @@ describe('askAboutCodeMinimax', () => {
 
 describe('minimax image input', () => {
   const pngPath = path.join(os.tmpdir(), 'parallel-code-ask-code-test.png');
+  const jpegWithPngExtensionPath = path.join(os.tmpdir(), 'parallel-code-ask-code-jpeg-test.png');
+  const oversizedPath = path.join(os.tmpdir(), 'parallel-code-ask-code-oversized.png');
   const pngBytes = Buffer.from('89504e470d0a1a0a', 'hex');
+  const jpegBytes = Buffer.from('ffd8ffe000104a464946', 'hex');
 
   beforeAll(() => {
     fs.writeFileSync(pngPath, pngBytes);
+    fs.writeFileSync(jpegWithPngExtensionPath, jpegBytes);
+    fs.writeFileSync(oversizedPath, pngBytes);
+    fs.truncateSync(oversizedPath, 10 * 1024 * 1024 + 1);
   });
 
   afterAll(() => {
     fs.rmSync(pngPath, { force: true });
+    fs.rmSync(jpegWithPngExtensionPath, { force: true });
+    fs.rmSync(oversizedPath, { force: true });
   });
 
   beforeEach(() => {
@@ -293,12 +298,6 @@ describe('minimax image input', () => {
     };
   }
 
-  it('reports which models accept image input', () => {
-    expect(minimaxModelAcceptsImages(MINIMAX_IMAGE_INPUT_MODEL)).toBe(true);
-    expect(minimaxModelAcceptsImages(MINIMAX_MODEL)).toBe(false);
-    expect(minimaxModelAcceptsImages('nope')).toBe(false);
-  });
-
   it('keeps the user content a plain string when no image is attached', async () => {
     const { win, messages } = makeMockWin();
 
@@ -313,7 +312,7 @@ describe('minimax image input', () => {
     await waitForDone(messages);
 
     const body = requestBody();
-    expect(body.model).toBe(MINIMAX_MODEL);
+    expect(body.model).toBe('MiniMax-M2.7');
     expect(body.messages.find((m) => m.role === 'user')?.content).toBe('Explain this');
   });
 
@@ -332,7 +331,7 @@ describe('minimax image input', () => {
     await waitForDone(messages);
 
     const body = requestBody();
-    expect(body.model).toBe(MINIMAX_IMAGE_INPUT_MODEL);
+    expect(body.model).toBe('MiniMax-M3');
 
     const userContent = body.messages.find((m) => m.role === 'user')?.content;
     expect(Array.isArray(userContent)).toBe(true);
@@ -347,6 +346,25 @@ describe('minimax image input', () => {
 
     // The system message stays a plain string
     expect(typeof body.messages.find((m) => m.role === 'system')?.content).toBe('string');
+  });
+
+  it('uses the file signature for the image MIME type', async () => {
+    const { win, messages } = makeMockWin();
+
+    mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
+
+    askAboutCodeMinimax(win, {
+      requestId: 'img-signature',
+      channelId: 'ch-img-signature',
+      prompt: 'Inspect this image',
+      imagePaths: [jpegWithPngExtensionPath],
+    });
+
+    await waitForDone(messages);
+
+    const content = requestBody().messages.find((message) => message.role === 'user')?.content;
+    const parts = content as Array<{ image_url?: { url: string } }>;
+    expect(parts[1].image_url?.url).toBe(`data:image/jpeg;base64,${jpegBytes.toString('base64')}`);
   });
 
   it('rejects image types the chat API cannot accept', () => {
@@ -391,6 +409,26 @@ describe('minimax image input', () => {
 
     const errors = messages.filter((m) => (m as Record<string, unknown>).type === 'error');
     expect(errors).toHaveLength(1);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects an oversized image before reading it', async () => {
+    const { win, messages } = makeMockWin();
+
+    askAboutCodeMinimax(win, {
+      requestId: 'img-oversized',
+      channelId: 'ch-img-oversized',
+      prompt: 'Test',
+      imagePaths: [oversizedPath],
+    });
+
+    await waitForDone(messages);
+
+    const errors = messages.filter(
+      (message) => (message as Record<string, unknown>).type === 'error',
+    );
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as Record<string, unknown>).text).toMatch(/Image too large/);
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });

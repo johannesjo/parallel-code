@@ -12,8 +12,13 @@ module.exports = {
         path: '^electron/',
         // Allow importing pure shared modules with no Node/Electron deps:
         //   - electron/ipc/channels.ts — IPC channel enum
+        //   - electron/ipc/ask-code-image.ts — Ask Code image extension and MIME map
         //   - electron/mcp/prompt-detect.ts — regex-only prompt detector reused by the renderer task-status pipeline
-        pathNot: ['^electron/ipc/channels\\.ts', '^electron/mcp/prompt-detect\\.ts'],
+        pathNot: [
+          '^electron/ipc/channels\\.ts',
+          '^electron/ipc/ask-code-image\\.ts',
+          '^electron/mcp/prompt-detect\\.ts',
+        ],
       },
     },
     {
