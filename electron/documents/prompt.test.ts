@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDocumentPrompt, parseDocumentRationale } from './document-prompt.js';
+import { buildDocumentPrompt, parseDocumentRationale } from './prompt.js';
 
 const scope = {
   path: 'docs/spec.md',

@@ -5,7 +5,7 @@ import {
   sanitizeRunRecord,
   validateDocumentPath,
   validateSha,
-} from './documents.js';
+} from './runs.js';
 
 describe('validateDocumentPath', () => {
   it('accepts a relative markdown path and normalizes ./', () => {

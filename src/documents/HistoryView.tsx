@@ -3,7 +3,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { confirm } from '../lib/dialog';
 import { formatRelativeAge } from '../lib/relativeAge';
-import { documentStore, revertDocumentCommit } from '../store/documents';
+import { documentStore, revertDocumentCommit } from './store';
 import { getProject } from '../store/projects';
 import type { DocumentHistoryEntry } from '../ipc/types';
 import { DocumentViewer } from './DocumentViewer';

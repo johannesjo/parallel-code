@@ -101,7 +101,6 @@ import {
   getDocumentAtCommit,
   getDocumentDiff,
   getDocumentHistory,
-  listDocumentFiles,
   listDocumentRuns,
   readDocumentSnapshot,
   rejectDocumentRun,
@@ -111,13 +110,14 @@ import {
   stopDocumentWatcher,
   validateDocumentPath,
   validateSha,
-} from './documents.js';
+} from '../documents/runs.js';
+import { inspectDocumentFolder, prepareDocumentProject } from '../documents/setup.js';
 import {
   askAnnotation,
   deleteAnnotation,
   readAnnotations,
   saveAnnotation,
-} from './document-annotations.js';
+} from '../documents/annotations.js';
 import { setMinimaxApiKey } from './ask-code-minimax.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
 import { fetchClaudeUsage } from './claude-usage.js';
@@ -1005,8 +1005,12 @@ export function registerAllHandlers(win: BrowserWindow): void {
     stopDocumentWatcher(args.key);
   });
 
-  ipcMain.handle(IPC.ListDocumentFiles, (_e, args) => {
-    return listDocumentFiles(projectRootArg(args));
+  ipcMain.handle(IPC.InspectDocumentFolder, (_e, args) => {
+    return inspectDocumentFolder(projectRootArg(args));
+  });
+
+  ipcMain.handle(IPC.PrepareDocumentProject, (_e, args) => {
+    return prepareDocumentProject(projectRootArg(args), args.documentPath);
   });
 
   ipcMain.handle(IPC.ListDocumentRuns, (_e, args) => {

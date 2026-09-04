@@ -3,7 +3,7 @@
  * started in print mode, and how its output is turned into a readable log,
  * a final message and a session id.
  */
-import { documentAgentSupport } from '../shared/document-agents.js';
+import { documentAgentSupport } from './shared.js';
 
 export interface HeadlessLaunch {
   command: string;
@@ -87,7 +87,9 @@ export function buildHeadlessLaunch(opts: HeadlessLaunchOptions): HeadlessLaunch
           '--output-format',
           'json',
           '--approval-mode',
-          opts.readOnly ? 'default' : 'auto_edit',
+          // `plan` is Gemini's read-only mode; `default` would only withhold
+          // approval, which is a prompt nobody is there to decline.
+          opts.readOnly ? 'plan' : 'auto_edit',
         ],
       };
     default:

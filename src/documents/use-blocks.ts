@@ -1,5 +1,5 @@
 import { createEffect, createSignal, onCleanup } from 'solid-js';
-import { renderDocumentBlocks, type DocumentBlock } from '../lib/markdown-blocks';
+import { renderDocumentBlocks, type DocumentBlock } from './markdown-blocks';
 
 /**
  * Reactively renders a markdown source into blocks. Stale renders are dropped

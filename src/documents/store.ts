@@ -25,11 +25,11 @@ import {
   DEFAULT_DOCUMENT_MAIN_AGENT,
   MAX_DOCUMENT_CANDIDATES,
   documentAgentSupport,
-} from '../../electron/shared/document-agents';
-import { store, setStore } from './core';
-import { getProject, updateProject } from './projects';
-import { showNotification } from './notification';
-import type { Project } from './types';
+} from '../../electron/documents/shared';
+import { store, setStore } from '../store/core';
+import { getProject, updateProject } from '../store/projects';
+import { showNotification } from '../store/notification';
+import type { Project } from '../store/types';
 
 export type DocumentView = 'document' | 'compare' | 'history';
 

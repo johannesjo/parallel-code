@@ -1,6 +1,6 @@
 import DOMPurify from 'dompurify';
 import { Marked, type Token, type Tokens } from 'marked';
-import { highlightLines } from './shiki-highlighter';
+import { highlightLines } from '../lib/shiki-highlighter';
 
 /**
  * A top-level markdown block with its source line range. Blocks are the unit

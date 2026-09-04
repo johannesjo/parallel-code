@@ -93,7 +93,7 @@ import {
   documentStore,
   initDocumentListeners,
   setDocumentSelection,
-} from './store/documents';
+} from './documents/store';
 import { resetForNewMatch } from './arena/store';
 import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 import { startPrChecksSubscription } from './store/pr-checks';

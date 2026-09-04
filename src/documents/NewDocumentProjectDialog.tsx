@@ -6,32 +6,64 @@ import { openDialog } from '../lib/dialog';
 import { errMessage } from '../lib/log';
 import { theme, sectionLabelStyle } from '../lib/theme';
 import { addDocumentProject } from '../store/projects';
-import { openDocumentWorkspace } from '../store/documents';
+import { showNotification } from '../store/notification';
+import type { DocumentFolderInfo, DocumentProjectSetup } from '../ipc/types';
+import { openDocumentWorkspace } from './store';
 
 interface NewDocumentProjectDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
-/** Picks a Git repository and one Markdown document inside it. */
+const DEFAULT_DOCUMENT = 'notes.md';
+
+/** Mirrors the extension the backend appends, so the plan below names the real file. */
+function withMarkdownExtension(value: string): string {
+  return /\.(md|markdown)$/i.test(value) ? value : `${value}.md`;
+}
+
+/** The document a folder most likely wants opened: a committed file, else any file. */
+function preferredDocument(info: DocumentFolderInfo): string {
+  return info.files.find((f) => f.committed)?.path ?? info.files[0]?.path ?? DEFAULT_DOCUMENT;
+}
+
+/**
+ * Picks a folder and one Markdown document inside it. Neither has to exist
+ * yet: the backend initialises the repository, creates the document and makes
+ * the first commit, so the only thing asked of the user is where and what.
+ */
 export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
   const [folder, setFolder] = createSignal('');
+  const [info, setInfo] = createSignal<DocumentFolderInfo | null>(null);
   const [name, setName] = createSignal('');
-  const [files, setFiles] = createSignal<string[]>([]);
   const [filter, setFilter] = createSignal('');
   const [documentPath, setDocumentPath] = createSignal('');
   const [error, setError] = createSignal('');
   const [busy, setBusy] = createSignal(false);
 
+  const files = () => info()?.files ?? [];
   const visibleFiles = createMemo(() => {
     const q = filter().trim().toLowerCase();
-    return q ? files().filter((f) => f.toLowerCase().includes(q)) : files();
+    return q ? files().filter((f) => f.path.toLowerCase().includes(q)) : files();
+  });
+
+  /** What creating the project will do to the folder, so nothing is a surprise. */
+  const plan = createMemo(() => {
+    const current = info();
+    const wanted = withMarkdownExtension(documentPath().trim());
+    if (!current || !documentPath().trim()) return [];
+    const steps: string[] = [];
+    if (!current.isRepo) steps.push('run `git init`');
+    const match = files().find((f) => f.path === wanted);
+    if (!match) steps.push(`create ${wanted}`);
+    if (!match?.committed) steps.push('make a commit');
+    return steps;
   });
 
   function reset() {
     setFolder('');
+    setInfo(null);
     setName('');
-    setFiles([]);
     setFilter('');
     setDocumentPath('');
     setError('');
@@ -49,17 +81,20 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
     setBusy(true);
     setError('');
     try {
-      const isGit = await invoke<boolean>(IPC.CheckIsGitRepo, { path });
-      if (!isGit) {
-        setError('Document projects need a Git repository. Run `git init` in the folder first.');
+      const found = await invoke<DocumentFolderInfo>(IPC.InspectDocumentFolder, {
+        projectRoot: path,
+      });
+      if (found.enclosingRepo) {
+        setError(
+          `That folder is inside the Git repository at ${found.enclosingRepo}. ` +
+            'Pick that repository instead, so proposals and history stay in one place.',
+        );
         return;
       }
-      const list = await invoke<string[]>(IPC.ListDocumentFiles, { projectRoot: path });
       setFolder(path);
+      setInfo(found);
       setName(path.split('/').pop() || path);
-      setFiles(list);
-      setDocumentPath(list.length === 1 ? list[0] : '');
-      if (list.length === 0) setError('No tracked Markdown files found. Commit a .md file first.');
+      setDocumentPath(preferredDocument(found));
     } catch (err) {
       setError(errMessage(err));
     } finally {
@@ -67,13 +102,26 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
     }
   }
 
-  const canCreate = () => folder() && documentPath() && name().trim() && !busy();
+  const canCreate = () => folder() && documentPath().trim() && name().trim() && !busy();
 
   async function create() {
     if (!canCreate()) return;
-    const id = addDocumentProject(name().trim(), folder(), documentPath());
-    close();
-    await openDocumentWorkspace(id);
+    setBusy(true);
+    setError('');
+    try {
+      const setup = await invoke<DocumentProjectSetup>(IPC.PrepareDocumentProject, {
+        projectRoot: folder(),
+        documentPath: documentPath().trim(),
+      });
+      const id = addDocumentProject(name().trim(), folder(), setup.documentPath);
+      if (setup.actions.length > 0) showNotification(setup.actions.join(' · '));
+      close();
+      await openDocumentWorkspace(id);
+    } catch (err) {
+      setError(errMessage(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
   const inputStyle = {
@@ -93,11 +141,11 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '14px' }}>
         <h2 style={{ margin: 0, 'font-size': '16px' }}>New document project</h2>
         <p style={{ margin: 0, 'font-size': '13px', color: theme.fgMuted }}>
-          A Git repository with a Markdown document. Agents propose changes in isolated worktrees;
-          you decide what enters the document.
+          A folder with a Markdown document. Agents propose changes in isolated worktrees; you
+          decide what enters the document.
         </p>
         <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
-          <span style={sectionLabelStyle}>Repository</span>
+          <span style={sectionLabelStyle}>Folder</span>
           <div style={{ display: 'flex', gap: '8px', 'align-items': 'center' }}>
             <button
               type="button"
@@ -132,6 +180,13 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
           </div>
           <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
             <span style={sectionLabelStyle}>Document</span>
+            <input
+              style={inputStyle}
+              aria-label="Document path"
+              placeholder={DEFAULT_DOCUMENT}
+              value={documentPath()}
+              onInput={(e) => setDocumentPath(e.currentTarget.value)}
+            />
             <Show when={files().length > 8}>
               <input
                 style={inputStyle}
@@ -140,21 +195,31 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
                 onInput={(e) => setFilter(e.currentTarget.value)}
               />
             </Show>
-            <div class="docws-picker-list" role="listbox" aria-label="Markdown files">
-              <For each={visibleFiles()}>
-                {(file) => (
-                  <button
-                    type="button"
-                    role="option"
-                    class="docws-picker-item"
-                    aria-selected={documentPath() === file}
-                    onClick={() => setDocumentPath(file)}
-                  >
-                    {file}
-                  </button>
-                )}
-              </For>
-            </div>
+            <Show when={files().length > 0}>
+              <div class="docws-picker-list" role="listbox" aria-label="Markdown files">
+                <For each={visibleFiles()}>
+                  {(file) => (
+                    <button
+                      type="button"
+                      role="option"
+                      class="docws-picker-item"
+                      aria-selected={documentPath() === file.path}
+                      onClick={() => setDocumentPath(file.path)}
+                    >
+                      {file.path}
+                      <Show when={!file.committed}>
+                        <span class="docws-badge">not committed</span>
+                      </Show>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+            <Show when={plan().length > 0}>
+              <span style={{ 'font-size': '12px', color: theme.fgMuted }}>
+                Parallel will {plan().join(', ')}.
+              </span>
+            </Show>
           </div>
         </Show>
         <Show when={error()}>
@@ -172,7 +237,7 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
             disabled={!canCreate()}
             onClick={() => void create()}
           >
-            Open workspace
+            {busy() ? 'Setting up…' : 'Open workspace'}
           </button>
         </div>
       </div>

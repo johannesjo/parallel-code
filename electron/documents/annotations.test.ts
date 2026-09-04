@@ -10,8 +10,8 @@ import {
   readAnnotations,
   saveAnnotation,
   validateAnnotationInput,
-} from './document-annotations.js';
-import type { DocumentAnnotation, DocumentAnnotationEvent } from './shared-types.js';
+} from './annotations.js';
+import type { DocumentAnnotation, DocumentAnnotationEvent } from '../ipc/shared-types.js';
 
 const anchor = {
   path: 'docs/spec.md',

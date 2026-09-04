@@ -224,6 +224,28 @@ export type UsageResult =
 
 // --- Document workspaces ---
 
+/** A Markdown file a folder offers as the document to work on. */
+export interface DocumentFileInfo {
+  path: string;
+  /** False for files setup still has to commit before runs can branch from them. */
+  committed: boolean;
+}
+
+/** What a candidate folder already has, so the picker can offer to fill the gaps. */
+export interface DocumentFolderInfo {
+  isRepo: boolean;
+  /** Set when the folder is inside someone else's repository, which setup refuses to nest in. */
+  enclosingRepo: string | null;
+  hasCommits: boolean;
+  files: DocumentFileInfo[];
+}
+
+/** What `prepareDocumentProject` did, in order, so the app can say so. */
+export interface DocumentProjectSetup {
+  documentPath: string;
+  actions: string[];
+}
+
 /** Current state of the canonical document in the project checkout. */
 export interface DocumentSnapshot {
   content: string;

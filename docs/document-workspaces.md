@@ -24,8 +24,9 @@ the document.
 ### Using it
 
 1. Enable _Document workspaces_ under Settings → Experimental.
-2. Click **+** next to Projects and choose **Document project**. Pick a Git repository and
-   one tracked Markdown file in it.
+2. Click **+** next to Projects and choose **Document project**. Pick any folder and name
+   the document. Neither has to exist yet: the dialog says what it will do — `git init`,
+   create the file, make the first commit — and does it when you confirm.
 3. The workspace opens full-window with three tabs: **Document**, **Compare**, **History**.
 4. In the document, select text, click a block, or press **§** next to a heading to select
    the section. A composer opens under the selection: type an instruction, pick agents and
@@ -54,7 +55,8 @@ the document.
   worktree under `.worktrees/parallel-doc/`: `claude -p --output-format stream-json`
   with tools limited to Read/Edit/Write/Glob/Grep, `codex exec --json --sandbox
 workspace-write` (the sandbox blocks writes outside the worktree),
-  `gemini -p --output-format json --approval-mode auto_edit`. Process exit means the
+  `gemini -p --output-format json --approval-mode auto_edit` (`plan`, Gemini's read-only
+  mode, for annotation questions). Process exit means the
   proposal is ready. Cancelling kills the CLI's whole process group. OpenCode and Copilot
   expose an unrestricted shell in print mode and are not offered until they can be
   restricted.
@@ -96,6 +98,13 @@ workspace-write` (the sandbox blocks writes outside the worktree),
   as **detached** rather than attaching it to the wrong place. Annotations are committed
   along with the next content or metadata commit, never on their own.
 - **Run records are versioned** (`version: 1`) so a format change is a migration.
+- **Setup is part of the feature.** Creating a project runs whatever is missing —
+  `git init`, the starter document, the first commit — so the workspace never opens on a
+  folder its own dispatch would reject. Every step is skipped when it is already true, and
+  the commit takes the document alone, leaving anything you had staged staged.
+- **It lives in two folders.** `electron/documents/` (runs, agents, prompts, annotations,
+  setup) and `src/documents/` (the workspace UI with its store and markdown helpers). The
+  one file the renderer imports across that boundary is `electron/documents/shared.ts`.
 
 ### Not in this slice
 

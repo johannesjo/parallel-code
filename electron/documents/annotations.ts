@@ -8,20 +8,20 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import type { BrowserWindow } from 'electron';
-import { IPC } from './channels.js';
+import { IPC } from '../ipc/channels.js';
 import { errMessage } from '../log.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
-import { buildPtySpawnEnv, validateCommand } from './pty.js';
-import { loadEnvFile } from './env-file.js';
-import { buildHeadlessLaunch, createHeadlessParser } from './document-agents.js';
-import { documentAgentSupport } from '../shared/document-agents.js';
-import { validateDocumentPath, validateSha } from './documents.js';
+import { buildPtySpawnEnv, validateCommand } from '../ipc/pty.js';
+import { loadEnvFile } from '../ipc/env-file.js';
+import { buildHeadlessLaunch, createHeadlessParser } from './agents.js';
+import { documentAgentSupport } from './shared.js';
+import { validateDocumentPath, validateSha } from './runs.js';
 import type {
   DocumentAnchor,
   DocumentAnnotation,
   DocumentAnnotationEvent,
   DocumentAnnotationsFile,
-} from './shared-types.js';
+} from '../ipc/shared-types.js';
 
 export const ANNOTATIONS_REL_PATH = path.posix.join('.parallel', 'annotations.json');
 const MAX_TEXT_CHARS = 20_000;

@@ -9,13 +9,13 @@ import {
 } from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
-import { diffBlocks, type BlockChange, type DocumentBlock } from '../lib/markdown-blocks';
+import { diffBlocks, type BlockChange, type DocumentBlock } from './markdown-blocks';
 import {
   acceptDocumentCandidate,
   documentStore,
   rejectDocumentRun,
   setDocumentCandidateNote,
-} from '../store/documents';
+} from './store';
 import { getProject } from '../store/projects';
 import type { DocumentCandidateRecord, DocumentRunRecord } from '../ipc/types';
 import { DocumentViewer, type BlockRange } from './DocumentViewer';

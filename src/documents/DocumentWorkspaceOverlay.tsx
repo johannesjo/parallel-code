@@ -14,8 +14,8 @@ import {
   openDocumentCompare,
   undoDeleteDocumentAnnotation,
   type DocumentView,
-} from '../store/documents';
-import { relocateAnchor } from '../lib/annotation-anchor';
+} from './store';
+import { relocateAnchor } from './annotation-anchor';
 import type { DocumentAnnotation } from '../ipc/types';
 import { AnnotationBubble } from './AnnotationBubble';
 import { EditProjectDialog } from '../components/EditProjectDialog';

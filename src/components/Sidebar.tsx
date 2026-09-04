@@ -41,7 +41,7 @@ import { ConnectPhoneModal } from './ConnectPhoneModal';
 import { RemoveProjectConfirm } from './RemoveProjectConfirm';
 import { EditProjectDialog } from './EditProjectDialog';
 import { NewDocumentProjectDialog } from '../documents/NewDocumentProjectDialog';
-import { openDocumentWorkspace } from '../store/documents';
+import { openDocumentWorkspace } from '../documents/store';
 import { isDocumentProject } from '../store/projects';
 import { choice } from '../lib/dialog';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';

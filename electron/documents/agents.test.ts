@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildHeadlessLaunch,
-  createHeadlessParser,
-  CLAUDE_DOCUMENT_TOOLS,
-} from './document-agents.js';
+import { buildHeadlessLaunch, createHeadlessParser, CLAUDE_DOCUMENT_TOOLS } from './agents.js';
 
 describe('buildHeadlessLaunch', () => {
   it('starts a fresh claude session with a fixed id and no shell tools', () => {

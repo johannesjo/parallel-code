@@ -4,19 +4,19 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { BrowserWindow } from 'electron';
-import { acceptDocumentCandidate, dispatchDocumentRun } from './documents.js';
-import { askAnnotation, readAnnotations, saveAnnotation } from './document-annotations.js';
+import { acceptDocumentCandidate, dispatchDocumentRun } from './runs.js';
+import { askAnnotation, readAnnotations, saveAnnotation } from './annotations.js';
 import type {
   DocumentAnnotation,
   DocumentAnnotationEvent,
   DocumentRunEvent,
   DocumentRunRecord,
-} from './shared-types.js';
+} from '../ipc/shared-types.js';
 
 /**
  * Drives the real `claude` CLI through one proposal and one resumed follow-up.
  * Costs a few API calls, so it only runs when explicitly asked for:
- *   RUN_REAL_CLAUDE_DOC_TEST=1 npx vitest run electron/ipc/documents.real-claude.integration.test.ts
+ *   RUN_REAL_CLAUDE_DOC_TEST=1 npx vitest run electron/documents/runs.real-claude.integration.test.ts
  */
 const RUN = process.env.RUN_REAL_CLAUDE_DOC_TEST === '1';
 

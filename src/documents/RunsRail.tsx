@@ -5,7 +5,7 @@ import {
   documentStore,
   openDocumentCompare,
   rejectDocumentRun,
-} from '../store/documents';
+} from './store';
 import { formatRelativeAge } from '../lib/relativeAge';
 import type { DocumentCandidateRecord, DocumentRunRecord } from '../ipc/types';
 

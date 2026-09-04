@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, on, type JSX } from 'solid-js';
-import type { BlockChange, DocumentBlock } from '../lib/markdown-blocks';
-import { blockRangeText, nearestHeading, sectionRange } from '../lib/markdown-blocks';
-import type { DocumentSelection } from '../store/documents';
+import type { BlockChange, DocumentBlock } from './markdown-blocks';
+import { blockRangeText, nearestHeading, sectionRange } from './markdown-blocks';
+import type { DocumentSelection } from './store';
 import { renderMermaidIn } from './use-blocks';
 
 export interface BlockRange {

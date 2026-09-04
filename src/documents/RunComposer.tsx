@@ -8,16 +8,13 @@ import {
   setDocumentMainAgent,
   type DispatchSelection,
   type DocumentSelection,
-} from '../store/documents';
-import { createAnchor } from '../lib/annotation-anchor';
-import type { DocumentBlock } from '../lib/markdown-blocks';
+} from './store';
+import { createAnchor } from './annotation-anchor';
+import type { DocumentBlock } from './markdown-blocks';
 import { getProject } from '../store/projects';
 import { showNotification } from '../store/notification';
 import { errMessage } from '../lib/log';
-import {
-  MAX_DOCUMENT_CANDIDATES,
-  documentAgentSupport,
-} from '../../electron/shared/document-agents';
+import { MAX_DOCUMENT_CANDIDATES, documentAgentSupport } from '../../electron/documents/shared';
 import type { AgentDef } from '../ipc/types';
 
 interface RunComposerProps {
@@ -46,7 +43,14 @@ export function RunComposer(props: RunComposerProps) {
   const [saving, setSaving] = createSignal(false);
   const project = () => (documentStore.projectId ? getProject(documentStore.projectId) : undefined);
   const mainAgentId = () => documentMainAgentId(project());
-  const [counts, setCounts] = createSignal<Record<string, number>>({ [mainAgentId()]: 1 });
+  // Preselecting an agent that is not installed would only fail on dispatch.
+  const [counts, setCounts] = createSignal<Record<string, number>>(
+    untrack(() => {
+      const id = mainAgentId();
+      const main = store.availableAgents.find((a) => a.id === id);
+      return main && main.available !== false ? { [id]: 1 } : {};
+    }),
+  );
   const [askAgentId, setAskAgentId] = createSignal(mainAgentId());
 
   const agents = createMemo(() => store.availableAgents);

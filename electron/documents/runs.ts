@@ -5,21 +5,21 @@
  * Git holds the content; `.parallel/runs/` holds the run records. Nothing in
  * here changes the canonical document except `acceptDocumentCandidate`.
  */
-import { execFile, spawn, type ChildProcess } from 'child_process';
-import { promisify } from 'util';
+import { spawn, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import type { BrowserWindow } from 'electron';
-import { IPC } from './channels.js';
-import { debug as logDebug, errMessage } from '../log.js';
+import { IPC } from '../ipc/channels.js';
+import { errMessage } from '../log.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
-import { buildPtySpawnEnv, validateCommand } from './pty.js';
-import { loadEnvFile } from './env-file.js';
-import { createWorktree, ensureWorktreeContainerExclude, removeWorktree } from './git.js';
-import { buildHeadlessLaunch, createHeadlessParser } from './document-agents.js';
-import { buildDocumentPrompt, parseDocumentRationale } from './document-prompt.js';
-import { MAX_DOCUMENT_CANDIDATES, documentAgentSupport } from '../shared/document-agents.js';
+import { buildPtySpawnEnv, validateCommand } from '../ipc/pty.js';
+import { loadEnvFile } from '../ipc/env-file.js';
+import { createWorktree, ensureWorktreeContainerExclude, removeWorktree } from '../ipc/git.js';
+import { git, gitOk } from './git.js';
+import { buildHeadlessLaunch, createHeadlessParser } from './agents.js';
+import { buildDocumentPrompt, parseDocumentRationale } from './prompt.js';
+import { MAX_DOCUMENT_CANDIDATES, documentAgentSupport } from './shared.js';
 import type {
   DocumentCandidateRecord,
   DocumentCandidateSpec,
@@ -28,10 +28,8 @@ import type {
   DocumentRunRecord,
   DocumentScope,
   DocumentSnapshot,
-} from './shared-types.js';
+} from '../ipc/shared-types.js';
 
-const execFileAsync = promisify(execFile);
-const MAX_BUFFER = 20 * 1024 * 1024;
 /** A proposal that runs longer than this is killed and marked failed. */
 const CANDIDATE_TIMEOUT_MS = 30 * 60_000;
 /** Longest instruction accepted from the renderer. */
@@ -51,21 +49,6 @@ const KILL_GRACE_MS = 5_000;
 const SETTLE_WAIT_MS = 8_000;
 /** Files the app seeds into a worktree; never the agent's doing. */
 const SEEDED_PREFIXES = ['.claude/'];
-
-async function git(cwd: string, args: string[]): Promise<string> {
-  logDebug('git', args.join(' '));
-  const { stdout } = await execFileAsync('git', args, { cwd, maxBuffer: MAX_BUFFER });
-  return stdout;
-}
-
-async function gitOk(cwd: string, args: string[]): Promise<boolean> {
-  try {
-    await git(cwd, args);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // --- Validation -----------------------------------------------------------
 
@@ -503,25 +486,54 @@ function runOwningBranch(projectRoot: string, branch: string): DocumentRunRecord
 // --- Pending manual edits -------------------------------------------------
 
 /**
+ * Tracked content that differs from HEAD: what the user has been editing.
+ * `--diff-filter=MDT` leaves out additions, so a new file the user staged by
+ * hand is not swept into a commit this app writes.
+ */
+async function pendingContentPaths(projectRoot: string): Promise<string[]> {
+  const out = await git(projectRoot, [
+    'diff',
+    '--name-only',
+    '-z',
+    '--diff-filter=MDT',
+    'HEAD',
+    ...CONTENT_PATHSPEC,
+  ]).catch(() => '');
+  return out.split('\0').filter(Boolean);
+}
+
+/**
  * Commits the user's edits to tracked files as a plain commit, so the run
  * has a real base. Returns HEAD afterwards. Throws in an empty repository.
  */
 export async function commitPendingEdits(projectRoot: string): Promise<string> {
   ensureWorktreeContainerExclude(projectRoot);
+  const paths = await pendingContentPaths(projectRoot);
   await git(projectRoot, ['add', '-u', ...CONTENT_PATHSPEC]);
-  await stageAnnotations(projectRoot);
-  if (!(await gitOk(projectRoot, ['diff', '--cached', '--quiet']))) {
-    await git(projectRoot, ['commit', '-q', '-m', 'Manual edits']);
-  }
+  if (await stageAnnotations(projectRoot)) paths.push(ANNOTATIONS_FILE);
+  if (paths.length > 0) await commitPaths(projectRoot, 'Manual edits', paths);
   const sha = await headSha(projectRoot);
   if (!sha) throw new Error('The project repository has no commits yet.');
   return sha;
 }
 
-/** Annotations are committed alongside content and metadata, never on their own. */
-async function stageAnnotations(projectRoot: string): Promise<void> {
-  if (!fs.existsSync(path.join(projectRoot, ANNOTATIONS_FILE))) return;
-  await gitOk(projectRoot, ['add', '-f', '--', ANNOTATIONS_FILE]);
+/**
+ * Commits exactly `paths`. `--only` takes them from the working tree and
+ * leaves the rest of the index alone, so whatever the user had staged stays
+ * staged instead of riding along in a commit this app attributes to itself.
+ */
+async function commitPaths(projectRoot: string, message: string, paths: string[]): Promise<void> {
+  await git(projectRoot, ['commit', '-q', '--only', '-m', message, '--', ...paths]);
+}
+
+/**
+ * Annotations are committed alongside content and metadata, never on their
+ * own. Returns true when the file exists and differs from HEAD.
+ */
+async function stageAnnotations(projectRoot: string): Promise<boolean> {
+  if (!fs.existsSync(path.join(projectRoot, ANNOTATIONS_FILE))) return false;
+  if (!(await gitOk(projectRoot, ['add', '-f', '--', ANNOTATIONS_FILE]))) return false;
+  return !(await gitOk(projectRoot, ['diff', '--cached', '--quiet', '--', ANNOTATIONS_FILE]));
 }
 
 // --- Worktrees ------------------------------------------------------------
@@ -630,8 +642,9 @@ function parseChangedPaths(porcelainZ: string): string[] {
   const out: string[] = [];
   for (const entry of porcelainZ.split('\0')) {
     if (!entry.trim()) continue;
-    // "XY path" (renames use a second NUL entry; the first path after the
-    // status is what we act on).
+    // "XY path". Renames would add a second, status-less NUL entry that this
+    // would mangle — callers reset the index first, so status never reports
+    // one here.
     const p = entry.slice(3);
     if (p) out.push(p);
   }
@@ -982,15 +995,24 @@ export async function dispatchDocumentRun(
       }
     }
 
-    const active = activeRuns.get(runId);
-    if (active && active.candidates.size === 0) {
-      activeRuns.delete(runId);
-      run.status = 'finished';
-      run.finishedAt = nowIso();
+    // A candidate can settle while this loop awaits a catch-up diff, and its
+    // settle path writes the authoritative record. Merge the candidates only
+    // this function knows about — the ones whose spawn threw — instead of
+    // writing the in-memory copy over it, which would resurrect `running`.
+    if (activeRuns.get(runId)?.candidates.size === 0) activeRuns.delete(runId);
+    const stored = readRunRecord(projectRoot, runId) ?? run;
+    for (const { candidate } of prepared) {
+      if (candidate.status !== 'failed') continue;
+      const idx = stored.candidates.findIndex((c) => c.id === candidate.id);
+      if (idx >= 0) stored.candidates[idx] = candidate;
     }
-    writeRunRecord(projectRoot, run);
-    sendEvent(win, { type: 'run', projectRoot, run });
-    return run;
+    if (stored.status === 'running' && !activeRuns.has(runId)) {
+      stored.status = 'finished';
+      stored.finishedAt = stored.finishedAt ?? nowIso();
+    }
+    writeRunRecord(projectRoot, stored);
+    sendEvent(win, { type: 'run', projectRoot, run: stored });
+    return stored;
   });
 }
 
@@ -1081,8 +1103,11 @@ export async function acceptDocumentCandidate(
     writeRunRecord(projectRoot, run);
     try {
       await git(projectRoot, ['add', '-f', '--', runRecordRelPath(runId)]);
-      await stageAnnotations(projectRoot);
-      await git(projectRoot, ['commit', '-q', '-m', integrationMessage(run, candidate)]);
+      // The proposal commit was verified to hold the document alone, so the
+      // squash brought in exactly that path.
+      const paths = [run.documentPath, runRecordRelPath(runId)];
+      if (await stageAnnotations(projectRoot)) paths.push(ANNOTATIONS_FILE);
+      await commitPaths(projectRoot, integrationMessage(run, candidate), paths);
     } catch (err) {
       await gitOk(projectRoot, ['reset', '--hard', '-q', 'HEAD']);
       run.status = 'finished';
@@ -1122,13 +1147,13 @@ export async function rejectDocumentRun(
     // touching content: a metadata-only commit the history view filters out.
     try {
       await git(projectRoot, ['add', '-f', '--', runRecordRelPath(runId)]);
-      await stageAnnotations(projectRoot);
-      await git(projectRoot, [
-        'commit',
-        '-q',
-        '-m',
+      const paths = [runRecordRelPath(runId)];
+      if (await stageAnnotations(projectRoot)) paths.push(ANNOTATIONS_FILE);
+      await commitPaths(
+        projectRoot,
         `Reject proposals\n\nParallel-Run: ${runId}\nParallel-Metadata: true`,
-      ]);
+        paths,
+      );
     } catch (err) {
       console.warn('[documents] could not commit rejected run record:', err);
     }
@@ -1256,19 +1281,18 @@ export async function revertDocumentCommit(projectRoot: string, sha: string): Pr
   return withProjectLock(projectRoot, async () => {
     await commitPendingEdits(projectRoot);
     const subject = (await git(projectRoot, ['log', '-1', '--format=%s', sha])).trim();
+    // The paths the commit touched are the ones the revert may undo; run
+    // records are not among them.
+    const paths = (await git(projectRoot, ['show', '--format=', '--name-only', '-z', sha]))
+      .split('\0')
+      .filter((p) => p && !p.startsWith('.parallel/'));
     try {
       await git(projectRoot, ['revert', '--no-commit', sha]);
       // Restore run records the reverted commit may have added or changed.
       await gitOk(projectRoot, ['checkout', '-q', 'HEAD', '--', '.parallel']);
       await gitOk(projectRoot, ['reset', '-q', '--', '.parallel']);
-      const staged = !(await gitOk(projectRoot, ['diff', '--cached', '--quiet']));
-      if (!staged) throw new Error('Nothing to revert outside run metadata.');
-      await git(projectRoot, [
-        'commit',
-        '-q',
-        '-m',
-        `Revert "${subject}"\n\nParallel-Revert: ${sha}`,
-      ]);
+      if (paths.length === 0) throw new Error('Nothing to revert outside run metadata.');
+      await commitPaths(projectRoot, `Revert "${subject}"\n\nParallel-Revert: ${sha}`, paths);
     } catch (err) {
       await gitOk(projectRoot, ['reset', '--hard', '-q', 'HEAD']);
       await gitOk(projectRoot, ['clean', '-fdq', '--', '.parallel']);
@@ -1276,19 +1300,6 @@ export async function revertDocumentCommit(projectRoot: string, sha: string): Pr
     }
     return (await git(projectRoot, ['rev-parse', 'HEAD'])).trim();
   });
-}
-
-/** Markdown files tracked in the repository, for the document picker. */
-export async function listDocumentFiles(projectRoot: string): Promise<string[]> {
-  try {
-    const out = await git(projectRoot, ['ls-files', '-z', '--', '*.md', '*.markdown']);
-    return out
-      .split('\0')
-      .filter((p) => p && !p.startsWith('.parallel/') && !p.startsWith('.worktrees/'))
-      .slice(0, 1000);
-  } catch {
-    return [];
-  }
 }
 
 /** Kill every running proposal process; used on app quit. */

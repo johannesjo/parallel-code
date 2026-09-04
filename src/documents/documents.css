@@ -871,6 +871,9 @@
 }
 
 .docws-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   text-align: left;
   background: transparent;
   border: none;
@@ -880,6 +883,10 @@
   font-family: var(--font-mono);
   font-size: 12px;
   cursor: pointer;
+}
+
+.docws-picker-item .docws-badge {
+  margin-left: auto;
 }
 
 .docws-picker-item:hover {

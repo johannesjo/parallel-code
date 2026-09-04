@@ -9,8 +9,8 @@ import {
   documentStore,
   setDocumentAnnotationResolved,
   updateDocumentAnnotationText,
-} from '../store/documents';
-import { documentAgentSupport } from '../../electron/shared/document-agents';
+} from './store';
+import { documentAgentSupport } from '../../electron/documents/shared';
 import type { DocumentAnnotation } from '../ipc/types';
 
 interface AnnotationBubbleProps {
