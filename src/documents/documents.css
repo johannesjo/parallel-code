@@ -65,6 +65,44 @@
   min-width: 0;
 }
 
+/* Branch, head and working-tree state ride in the header instead of taking a
+   strip of their own. */
+.docws-head-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-subtle);
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.docws-head-chip svg {
+  flex-shrink: 0;
+}
+
+.docws-head-chip.is-warning {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+}
+
+.docws-banner {
+  padding: 6px 18px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.docws-banner-error {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
+}
+
 .docws-tabs {
   display: flex;
   gap: 2px;
@@ -183,19 +221,28 @@
   padding: 8px 0;
 }
 
-.docws-status-line {
+.docws-empty-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 6px 18px;
-  font-size: 12px;
+  padding: 72px 24px;
+  text-align: center;
   color: var(--fg-muted);
-  border-bottom: 1px solid var(--border-subtle);
-  font-family: var(--font-mono);
+  font-size: 13px;
+  max-width: 420px;
+  margin: 0 auto;
 }
 
-.docws-status-line .docws-dirty {
-  color: var(--warning);
+.docws-empty-state-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.docws-empty-state .docws-btn {
+  margin-top: 8px;
 }
 
 /* ── Rendered document ── */
@@ -360,11 +407,10 @@
 
 /* ── Composer ── */
 
+/* Sits in the flow under the selected passage; the prose after it moves down
+   instead of disappearing behind it. */
 .docws-composer {
-  position: absolute;
-  left: 0;
-  right: 0;
-  z-index: 5;
+  margin: 10px 0 18px;
   background: var(--island-bg);
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
   border-radius: var(--radius-lg);
@@ -571,6 +617,20 @@
   font-weight: 600;
 }
 
+.docws-candidate-state {
+  margin-left: auto;
+  color: var(--fg-subtle);
+}
+
+.docws-candidate-state.is-accepted {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.docws-candidate.is-passed-over {
+  opacity: 0.55;
+}
+
 .docws-dot {
   width: 8px;
   height: 8px;
@@ -695,12 +755,15 @@
   font-size: 13px;
 }
 
+/* Capped so a talkative agent cannot push its own document out of view. */
 .docws-rationale {
   font-size: 12px;
   line-height: 1.5;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-height: 30vh;
+  overflow-y: auto;
 }
 
 .docws-rationale-summary {

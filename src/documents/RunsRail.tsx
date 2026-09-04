@@ -16,7 +16,21 @@ function scopeLabel(run: DocumentRunRecord): string {
   return s.heading ? `${lines} · ${s.heading}` : lines;
 }
 
-function candidateState(c: DocumentCandidateRecord): string {
+/** What the run's outcome means for one candidate. */
+type CandidateVerdict = 'accepted' | 'passed-over' | 'rejected' | null;
+
+function candidateVerdict(run: DocumentRunRecord, c: DocumentCandidateRecord): CandidateVerdict {
+  if (run.acceptedCandidateId === c.id) return 'accepted';
+  if (!c.commitSha) return null;
+  if (run.status === 'accepted') return 'passed-over';
+  if (run.status === 'rejected') return 'rejected';
+  return null;
+}
+
+function candidateState(c: DocumentCandidateRecord, verdict: CandidateVerdict): string {
+  if (verdict === 'accepted') return 'accepted';
+  if (verdict === 'passed-over') return 'not chosen';
+  if (verdict === 'rejected') return 'rejected';
   if (c.status === 'running') return 'working…';
   if (c.status === 'done') return c.commitSha ? 'proposal ready' : 'no changes';
   if (c.status === 'failed') return 'failed';
@@ -25,14 +39,18 @@ function candidateState(c: DocumentCandidateRecord): string {
 }
 
 function CandidateRow(props: {
-  runId: string;
+  run: DocumentRunRecord;
   candidate: DocumentCandidateRecord;
   showLog: boolean;
 }) {
-  const lines = () => documentStore.logs[candidateLogKey(props.runId, props.candidate.id)] ?? [];
+  const lines = () => documentStore.logs[candidateLogKey(props.run.id, props.candidate.id)] ?? [];
   const tail = () => lines().slice(-6);
+  const verdict = () => candidateVerdict(props.run, props.candidate);
   return (
-    <div class="docws-candidate">
+    <div
+      class="docws-candidate"
+      classList={{ 'is-passed-over': verdict() === 'passed-over' || verdict() === 'rejected' }}
+    >
       <div class="docws-candidate-head">
         <span class={`docws-dot docws-dot-${props.candidate.status}`} />
         <span class="docws-candidate-label">{props.candidate.label}</span>
@@ -40,8 +58,8 @@ function CandidateRow(props: {
         <Show when={props.candidate.isMain}>
           <span class="docws-badge">main</span>
         </Show>
-        <span style={{ 'margin-left': 'auto', color: 'var(--fg-subtle)' }}>
-          {candidateState(props.candidate)}
+        <span class="docws-candidate-state" classList={{ 'is-accepted': verdict() === 'accepted' }}>
+          {candidateState(props.candidate, verdict())}
         </span>
       </div>
       <Show when={props.candidate.error && props.candidate.status !== 'running'}>
@@ -94,7 +112,7 @@ export function RunsRail() {
               <For each={run.candidates}>
                 {(candidate) => (
                   <CandidateRow
-                    runId={run.id}
+                    run={run}
                     candidate={candidate}
                     showLog={run.status === 'running'}
                   />

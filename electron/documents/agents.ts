@@ -177,7 +177,19 @@ class ClaudeStreamParser implements HeadlessOutputParser {
         const text = asString(event.result);
         if (text) this.result = text;
         if (event.is_error === true) {
-          this.error = text ?? asString(event.error) ?? 'agent reported an error';
+          // Newer CLIs put the detail in `errors` and only name the failure
+          // class in `subtype` (error_max_turns, error_during_execution).
+          const errors = Array.isArray(event.errors) ? event.errors.map(asString) : [];
+          const subtype =
+            asString(event.subtype)
+              ?.replace(/^error_?/, '')
+              .replace(/_/g, ' ') || undefined;
+          this.error =
+            text ??
+            asString(event.error) ??
+            errors.find(Boolean) ??
+            subtype ??
+            'agent reported an error';
         }
         return [];
       }

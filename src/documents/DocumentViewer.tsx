@@ -22,9 +22,8 @@ interface DocumentViewerProps {
   /** Unique key for mermaid ids. */
   renderKey: string;
   onContainer?: (el: HTMLDivElement) => void;
-  /** Rendered after the block with this index (annotation bubbles). */
+  /** Rendered after the block with this index (annotation bubbles, the composer). */
   afterBlock?: (index: number) => JSX.Element;
-  children?: JSX.Element;
 }
 
 export function selectionFromRange(
@@ -135,37 +134,41 @@ export function DocumentViewer(props: DocumentViewerProps) {
             return !!s && i() >= s.start && i() <= s.end;
           };
           return (
-            <div
-              class="doc-block"
-              data-block-index={i()}
-              data-change={change()}
-              classList={{
-                'is-selected': isSelected(),
-                'is-changed': change() === 'changed',
-                'is-added': change() === 'added',
-                'is-removed': change() === 'removed',
-                'is-scope': inScope() && change() === 'same',
-              }}
-            >
-              <Show when={props.selectable && block.headingLevel !== undefined}>
-                <button
-                  type="button"
-                  class="docws-section-btn"
-                  title="Select this section"
-                  aria-label={`Select section ${block.headingText ?? ''}`}
-                  onClick={(e) => selectSection(i(), e)}
-                >
-                  §
-                </button>
-              </Show>
-              {/* eslint-disable-next-line solid/no-innerhtml -- block HTML is DOMPurify-sanitized markdown from a local file */}
-              <div innerHTML={block.html} />
+            <>
+              <div
+                class="doc-block"
+                data-block-index={i()}
+                data-change={change()}
+                classList={{
+                  'is-selected': isSelected(),
+                  'is-changed': change() === 'changed',
+                  'is-added': change() === 'added',
+                  'is-removed': change() === 'removed',
+                  'is-scope': inScope() && change() === 'same',
+                }}
+              >
+                <Show when={props.selectable && block.headingLevel !== undefined}>
+                  <button
+                    type="button"
+                    class="docws-section-btn"
+                    title="Select this section"
+                    aria-label={`Select section ${block.headingText ?? ''}`}
+                    onClick={(e) => selectSection(i(), e)}
+                  >
+                    §
+                  </button>
+                </Show>
+                {/* eslint-disable-next-line solid/no-innerhtml -- block HTML is DOMPurify-sanitized markdown from a local file */}
+                <div innerHTML={block.html} />
+              </div>
+              {/* Bubbles and the composer follow the block instead of sitting inside
+                it: they are not part of the passage, so clicking them must not
+                toggle its selection and the highlight stops at the prose. */}
               {props.afterBlock?.(i())}
-            </div>
+            </>
           );
         }}
       </For>
-      {props.children}
     </div>
   );
 }

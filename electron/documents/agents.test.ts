@@ -105,6 +105,29 @@ describe('claude stream-json parser', () => {
     expect(parser.finish().error).toBe('boom');
   });
 
+  it('names the failure from errors or the subtype when the result is empty', () => {
+    const detailed = createHeadlessParser('claude-code');
+    detailed.feed(
+      JSON.stringify({
+        type: 'result',
+        subtype: 'error_during_execution',
+        is_error: true,
+        errors: ['rate limited'],
+      }) + '\n',
+    );
+    expect(detailed.finish().error).toBe('rate limited');
+
+    const bare = createHeadlessParser('claude-code');
+    bare.feed(
+      JSON.stringify({ type: 'result', subtype: 'error_max_turns', is_error: true }) + '\n',
+    );
+    expect(bare.finish().error).toBe('max turns');
+
+    const blank = createHeadlessParser('claude-code');
+    blank.feed(JSON.stringify({ type: 'result', subtype: 'error', is_error: true }) + '\n');
+    expect(blank.finish().error).toBe('agent reported an error');
+  });
+
   it('passes non-json lines through and falls back to assistant text', () => {
     const parser = createHeadlessParser('claude-code');
     const log = parser.feed('warning: something\n');

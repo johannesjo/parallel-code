@@ -21,8 +21,6 @@ interface RunComposerProps {
   selection: DocumentSelection;
   /** Current blocks, for anchoring an annotation to the selection. */
   blocks: DocumentBlock[];
-  /** Offset inside the document container where the composer sits. */
-  anchorTop: number;
   onClose: () => void;
 }
 
@@ -103,7 +101,9 @@ export function RunComposer(props: RunComposerProps) {
   }
 
   onMount(() => {
-    requestAnimationFrame(() => textareaRef?.focus());
+    // The pane scrolls the composer into view itself; a focus scroll would cut
+    // that short and leave the composer half hidden.
+    requestAnimationFrame(() => textareaRef?.focus({ preventScroll: true }));
   });
 
   function without(counts: Record<string, number>, id: string): Record<string, number> {
@@ -155,7 +155,6 @@ export function RunComposer(props: RunComposerProps) {
       class="docws-composer"
       role="dialog"
       aria-label="Run a task on the selected passage"
-      style={{ top: `${props.anchorTop}px` }}
       onKeyDown={handleKeyDown}
       onMouseUp={(e) => e.stopPropagation()}
     >

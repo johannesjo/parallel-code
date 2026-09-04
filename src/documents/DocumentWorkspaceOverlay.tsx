@@ -35,7 +35,6 @@ import { showNotification } from '../store/notification';
 function DocumentPane() {
   let docRef: HTMLDivElement | undefined;
   const blocks = createRenderedBlocks(() => documentStore.snapshot?.content ?? null);
-  const [anchorTop, setAnchorTop] = createSignal(0);
   const selection = () => documentStore.selection;
   const range = createMemo(() => {
     const s = selection();
@@ -63,7 +62,6 @@ function DocumentPane() {
     }
     return { byBlock, detached, located };
   });
-  const openCount = () => documentStore.annotations.filter((a) => !a.resolved).length;
   const resolvedCount = () => documentStore.annotations.filter((a) => a.resolved).length;
 
   /** A bubble becomes a task: select its passage and open the composer with its text. */
@@ -101,21 +99,48 @@ function DocumentPane() {
     ),
   );
 
-  // Park the composer right under the last selected block.
+  // One composer instance, moved under whichever block ends the selection (or
+  // above the document for a whole-document task), so the typed instruction
+  // and agent picks survive a change of passage. It sits in the flow: the
+  // prose after it moves down instead of disappearing behind it.
+  const composerHost = (
+    <div class="docws-composer-host">
+      <Show when={selection()}>
+        {(s) => (
+          <RunComposer
+            selection={s()}
+            blocks={blocks.blocks()}
+            onClose={() => {
+              setDocumentSelection(null);
+              setDocumentComposerDraft(null);
+            }}
+          />
+        )}
+      </Show>
+    </div>
+  ) as HTMLDivElement;
+  const composerAfterBlock = () => {
+    const s = selection();
+    return s && !s.wholeDocument ? s.endBlock : -1;
+  };
+  const claimComposer = (slot: HTMLDivElement) => slot.appendChild(composerHost);
+
+  // Bring the composer into view when it opens under a new passage. The store
+  // merges a new selection into the old object, so track the range itself.
+  const selectedRange = () => {
+    const s = selection();
+    return s ? `${s.startBlock}-${s.endBlock}-${s.wholeDocument ? 'all' : ''}` : null;
+  };
   createEffect(
-    on([selection, blocks.blocks], () => {
-      const s = selection();
-      if (!s || !docRef) return;
+    on([selectedRange, blocks.blocks], () => {
+      if (!selection()) return;
       requestAnimationFrame(() => {
-        if (!docRef) return;
-        const index = s.wholeDocument ? 0 : s.endBlock;
-        const el = docRef.querySelector<HTMLElement>(`.doc-block[data-block-index="${index}"]`);
-        const top = s.wholeDocument ? 0 : el ? el.offsetTop + el.offsetHeight + 8 : 0;
-        setAnchorTop(top);
-        if (!s.wholeDocument && el) {
-          const composer = docRef.querySelector<HTMLElement>('.docws-composer');
-          composer?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        }
+        docRef
+          ?.querySelector<HTMLElement>('.docws-composer')
+          ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        // Moving the composer between slots blurred it, and the passage was
+        // picked to write about.
+        composerHost.querySelector('textarea')?.focus({ preventScroll: true });
       });
     }),
   );
@@ -131,8 +156,9 @@ function DocumentPane() {
     if (showsPreview()) return 'Preview of the HTML document — switch to Blocks to scope a task';
     const s = selection();
     if (!s) return 'Select text, click a block, or use § on a heading to scope a task';
-    return s.wholeDocument
-      ? 'Whole document selected'
+    if (s.wholeDocument) return 'Whole document selected';
+    return s.startLine === s.endLine
+      ? `Selected line ${s.startLine}`
       : `Selected lines ${s.startLine}–${s.endLine}`;
   };
 
@@ -188,7 +214,7 @@ function DocumentPane() {
             </span>
           </Show>
           <span style={{ 'margin-left': 'auto' }} />
-          <Show when={openCount() + resolvedCount() > 0}>
+          <Show when={resolvedCount() > 0}>
             <label class="docws-toggle" title="Resolved bubbles collapse to one line">
               <input
                 type="checkbox"
@@ -239,6 +265,9 @@ function DocumentPane() {
               </For>
             </div>
           </Show>
+          <Show when={selection()?.wholeDocument}>
+            <div class="docws-composer-slot" ref={claimComposer} />
+          </Show>
           <DocumentViewer
             blocks={blocks.blocks()}
             selectable
@@ -246,25 +275,16 @@ function DocumentPane() {
             onSelect={setDocumentSelection}
             renderKey="main"
             afterBlock={(index) => (
-              <For each={placed().byBlock.get(index) ?? []}>
-                {(a) => <AnnotationBubble annotation={a} onMakeTask={makeTask} />}
-              </For>
+              <>
+                <For each={placed().byBlock.get(index) ?? []}>
+                  {(a) => <AnnotationBubble annotation={a} onMakeTask={makeTask} />}
+                </For>
+                <Show when={composerAfterBlock() === index}>
+                  <div class="docws-composer-slot" ref={claimComposer} />
+                </Show>
+              </>
             )}
-          >
-            <Show when={selection()}>
-              {(s) => (
-                <RunComposer
-                  selection={s()}
-                  blocks={blocks.blocks()}
-                  anchorTop={anchorTop()}
-                  onClose={() => {
-                    setDocumentSelection(null);
-                    setDocumentComposerDraft(null);
-                  }}
-                />
-              )}
-            </Show>
-          </DocumentViewer>
+          />
           <Show
             when={
               blocks.blocks().length === 0 &&
@@ -362,6 +382,23 @@ export function DocumentWorkspaceOverlay() {
         <span class="docws-subtitle" title={project()?.documentPath}>
           {project()?.documentPath}
         </span>
+        <span class="docws-head-chip" title="Checked-out branch and head commit">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
+          </svg>
+          {snapshot()?.branch ?? 'detached'} · {snapshot()?.headSha?.slice(0, 7) ?? 'no commits'}
+        </span>
+        <Show when={snapshot()?.dirty}>
+          <span
+            class="docws-head-chip is-warning"
+            title="Committed as “Manual edits” before the next run"
+          >
+            uncommitted edits
+          </span>
+        </Show>
+        <Show when={documentStore.loading}>
+          <span class="docws-head-chip">loading…</span>
+        </Show>
         <div class="docws-tabs" role="tablist">
           {tab('document', 'Document')}
           {tab('compare', 'Compare', reviewable().length)}
@@ -370,23 +407,20 @@ export function DocumentWorkspaceOverlay() {
         <button type="button" class="docws-btn" onClick={() => setEditing(project() ?? null)}>
           Project
         </button>
-        <button type="button" class="docws-btn" onClick={() => closeDocumentWorkspace()}>
+        <button
+          type="button"
+          class="docws-btn"
+          title="Close (Esc)"
+          onClick={() => closeDocumentWorkspace()}
+        >
           Close
         </button>
       </div>
-      <div class="docws-status-line">
-        <span>{snapshot()?.branch ?? 'detached'}</span>
-        <span>@ {snapshot()?.headSha?.slice(0, 7) ?? 'no commits'}</span>
-        <Show when={snapshot()?.dirty}>
-          <span class="docws-dirty">uncommitted edits (committed on the next run)</span>
-        </Show>
-        <Show when={documentStore.error}>
-          <span class="docws-error">{documentStore.error}</span>
-        </Show>
-        <Show when={documentStore.loading}>
-          <span>loading…</span>
-        </Show>
-      </div>
+      <Show when={documentStore.error}>
+        <div class="docws-banner docws-banner-error" role="alert">
+          {documentStore.error}
+        </div>
+      </Show>
       <div class="docws-body">
         <Show when={documentStore.view === 'document'}>
           <DocumentPane />
@@ -411,8 +445,19 @@ export function DocumentWorkspaceOverlay() {
               when={documentStore.compareRunId && compareRun() ? documentStore.compareRunId : null}
               keyed
               fallback={
-                <div class="docws-empty" style={{ padding: '24px' }}>
-                  Nothing to compare yet. Finished runs with proposals appear here.
+                <div class="docws-empty-state">
+                  <div class="docws-empty-state-title">Nothing to compare yet</div>
+                  <div>
+                    Select a passage on the Document tab and run a task. Finished runs with
+                    proposals appear here.
+                  </div>
+                  <button
+                    type="button"
+                    class="docws-btn"
+                    onClick={() => setDocumentView('document')}
+                  >
+                    Go to the document
+                  </button>
                 </div>
               }
             >

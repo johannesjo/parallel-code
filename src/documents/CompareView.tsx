@@ -5,6 +5,7 @@ import {
   createMemo,
   createResource,
   createSignal,
+  on,
   untrack,
 } from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
@@ -47,6 +48,14 @@ function scopeRange(blocks: readonly DocumentBlock[], run: DocumentRunRecord): B
     }
   });
   return start === -1 ? null : { start, end };
+}
+
+/** Scroll a column so its first block matching `selector` sits in the upper third. */
+function revealFirst(body: HTMLElement | undefined, selector: string): void {
+  const target = body?.querySelector<HTMLElement>(selector);
+  if (!body || !target) return;
+  const offset = target.getBoundingClientRect().top - body.getBoundingClientRect().top;
+  body.scrollTop += offset - body.clientHeight / 3;
 }
 
 function ChangeNav(props: { body: () => HTMLDivElement | undefined; count: number }) {
@@ -145,6 +154,13 @@ function CandidateColumn(props: {
   createEffect(() => {
     if (rendered.blocks().length > 0) props.onBaseChanges(props.candidate.id, blockDiff().base);
   });
+  // Open on the first changed block: the decision is there, not at the title.
+  createEffect(
+    on(changedCount, (count) => {
+      if (count === 0) return;
+      requestAnimationFrame(() => revealFirst(bodyRef, '.doc-block:not([data-change="same"])'));
+    }),
+  );
   const [diff] = createResource(
     () =>
       props.showSource && props.candidate.commitSha
@@ -244,6 +260,7 @@ function CandidateColumn(props: {
 
 /** Base on the left, candidates to the right, each opening with its rationale. */
 export function CompareView(props: { run: DocumentRunRecord }) {
+  let baseBodyRef: HTMLDivElement | undefined;
   const [revealAgents, setRevealAgents] = createSignal(false);
   const [showSource, setShowSource] = createSignal(false);
   const [baseContent] = createResource(
@@ -264,6 +281,14 @@ export function CompareView(props: { run: DocumentRunRecord }) {
       return 'same';
     });
   });
+  // The base opens on the passage the run was scoped to, level with the candidates.
+  createEffect(
+    on([scope, () => base.blocks().length], () => {
+      requestAnimationFrame(() =>
+        revealFirst(baseBodyRef, '.doc-block.is-scope, .doc-block:not([data-change="same"])'),
+      );
+    }),
+  );
   const scopeText = () => {
     const s = props.run.scope;
     if (s.wholeDocument) return 'whole document';
@@ -317,7 +342,7 @@ export function CompareView(props: { run: DocumentRunRecord }) {
               </div>
             </div>
           </div>
-          <div class="docws-column-body">
+          <div class="docws-column-body" ref={baseBodyRef}>
             <DocumentViewer
               blocks={base.blocks()}
               scope={scope()}

@@ -1257,6 +1257,9 @@ export async function getDocumentAtCommit(
   }
 }
 
+/** Git's well-known empty tree, what a root commit is diffed against. */
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
 /** Unified diff of one document between two commits (`from` may be `<sha>^`). */
 export async function getDocumentDiff(
   projectRoot: string,
@@ -1267,8 +1270,11 @@ export async function getDocumentDiff(
   try {
     return await git(projectRoot, ['diff', '-U3', `${from}..${to}`, '--', documentPath]);
   } catch {
-    // Root commit: nothing to diff against.
-    return '';
+    // `<sha>^` does not exist for a root commit; the whole file is its change.
+    if (!from.endsWith('^')) return '';
+    return git(projectRoot, ['diff', '-U3', `${EMPTY_TREE}..${to}`, '--', documentPath]).catch(
+      () => '',
+    );
   }
 }
 

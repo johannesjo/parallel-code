@@ -115,6 +115,12 @@ describe('document workspace lifecycle', () => {
     });
   });
 
+  it('diffs the root commit against the empty tree', async () => {
+    const rootSha = git(root, 'rev-list', '--max-parents=0', 'HEAD').trim();
+    const diff = await getDocumentDiff(root, `${rootSha}^`, rootSha, 'docs/spec.md');
+    expect(diff).toContain('+# Spec');
+  });
+
   it('reads a snapshot', async () => {
     const snap = await readDocumentSnapshot(root, 'docs/spec.md');
     expect(snap.content).toBe(DOC);

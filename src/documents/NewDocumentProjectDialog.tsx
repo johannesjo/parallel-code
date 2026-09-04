@@ -41,6 +41,12 @@ function folderName(folder: string): string {
   return folder.replace(/\/+$/, '').split('/').pop() ?? folder;
 }
 
+/** "a, b and c" */
+function joinSteps(steps: string[]): string {
+  if (steps.length < 2) return steps.join('');
+  return `${steps.slice(0, -1).join(', ')} and ${steps[steps.length - 1]}`;
+}
+
 /**
  * Picks a folder and one Markdown document inside it. Neither has to exist
  * yet: the folder path is editable, so a new project is a name typed onto a
@@ -94,11 +100,12 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
     const wanted = documentPath().trim();
     if (!current || !wanted) return [];
     const steps: string[] = [];
+    const file = withMarkdownExtension(wanted);
     if (!current.exists) steps.push('create the folder');
-    if (!current.isRepo) steps.push('run `git init`');
-    const match = files().find((f) => f.path === withMarkdownExtension(wanted));
-    if (!match) steps.push(`create ${withMarkdownExtension(wanted)}`);
-    if (!match?.committed) steps.push('make a commit');
+    if (!current.isRepo) steps.push('initialise a Git repository');
+    const match = files().find((f) => f.path === file);
+    if (!match) steps.push(`create and commit ${file}`);
+    else if (!match.committed) steps.push(`commit ${file}`);
     return steps;
   });
 
@@ -255,7 +262,7 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
             </Show>
             <Show when={plan().length > 0}>
               <span style={{ 'font-size': '12px', color: theme.fgMuted }}>
-                Parallel will {plan().join(', ')}.
+                Parallel will {joinSteps(plan())}.
               </span>
             </Show>
           </div>
