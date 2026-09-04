@@ -55,7 +55,6 @@ export function TaskAgentStatusLine(props: TaskAgentStatusLineProps) {
               'align-items': 'center',
               gap: '5px',
               'min-width': '0',
-              padding: '0 0 0 12px',
               color: theme.fgMuted,
               'font-size': sf(11),
               'line-height': '1.4',

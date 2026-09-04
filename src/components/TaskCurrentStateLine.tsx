@@ -37,7 +37,9 @@ export function TaskCurrentStateLine(props: TaskCurrentStateLineProps) {
             gap: props.variant === 'card' ? '6px' : '5px',
             'min-width': '0',
             height: props.variant === 'card' ? '24px' : undefined,
-            padding: props.variant === 'card' ? '0 12px' : '0 0 0 12px',
+            // The sidebar variant is indented by the row itself, which knows
+            // how many glyphs sit in front of the title.
+            padding: props.variant === 'card' ? '0 12px' : undefined,
             background: props.variant === 'card' ? theme.bgSelectedSubtle : 'transparent',
             'border-bottom': props.variant === 'card' ? `1px solid ${theme.border}` : undefined,
             color: theme.fgMuted,

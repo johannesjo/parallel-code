@@ -1048,6 +1048,9 @@ textarea::placeholder {
 }
 
 .task-item {
+  /* Detail lines indent past the row's leading glyphs — a 12px glyph lane plus
+     the 6px head gap each — so they start under the title text, not the dot. */
+  --task-row-indent: 18px;
   transition:
     background 0.13s ease,
     color 0.13s ease,
@@ -1076,6 +1079,11 @@ textarea::placeholder {
   height: 1.35em;
 }
 
+/* Coordinator rows carry a bot icon in front of the status glyph. */
+.task-item-coordinator {
+  --task-row-indent: 36px;
+}
+
 /* Task names wrap to two lines rather than being cut mid-word — at sidebar
    widths, similar names are otherwise indistinguishable. */
 .task-item-name {
@@ -1097,6 +1105,7 @@ textarea::placeholder {
 .task-item .task-agent-status,
 .task-item .task-current-state-sidebar {
   margin-top: 4px;
+  padding-left: var(--task-row-indent);
   opacity: 0.45;
   transition: opacity 0.13s ease;
 }

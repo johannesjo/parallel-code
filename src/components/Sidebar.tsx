@@ -319,7 +319,7 @@ function NeedsInputRow(props: {
               display: 'flex',
               'align-items': 'center',
               gap: '5px',
-              'padding-left': '12px',
+              'padding-left': 'var(--task-row-indent)',
               'font-size': sf(11),
               color: theme.fgSubtle,
               'min-width': '0',
@@ -1234,7 +1234,7 @@ function CoordinatorFolder(props: TaskEntryProps) {
           {/* Coordinator row */}
           <TaskRowShell
             taskId={props.taskId}
-            class={`task-item${t().closingStatus === 'removing' ? ' task-item-removing' : ' task-item-appearing'}`}
+            class={`task-item task-item-coordinator${t().closingStatus === 'removing' ? ' task-item-removing' : ' task-item-appearing'}`}
             taskIndex={idx()}
             title={`${t().name} — ${getDotTooltip(
               getTaskDotStatus(props.taskId),
@@ -1322,7 +1322,7 @@ function CollapsedTaskEntry(props: {
         <>
           <TaskRowShell
             taskId={props.taskId}
-            class="task-item task-item-appearing"
+            class={`task-item${isCoordinator() ? ' task-item-coordinator' : ''} task-item-appearing`}
             role="button"
             tabIndex={0}
             sidebarTaskId={props.taskId}
