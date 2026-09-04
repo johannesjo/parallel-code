@@ -28,6 +28,8 @@ import { isLookPreset } from '../lib/look';
 import { validateCustomTheme, parseThemeCss, themeToCss } from '../lib/custom-theme';
 import type { CustomTheme } from '../lib/custom-theme';
 import { syncTerminalCounter } from './terminals';
+import { showNotification, NOTIFICATION_ERROR_MS } from './notification';
+import { errMessage } from '../lib/log';
 
 const RESTORED_AGENT_SPAWN_STAGGER_MS = 1_000;
 
@@ -285,9 +287,25 @@ export async function saveState(): Promise<void> {
     persisted.terminals[id] = { id: terminal.id, name: terminal.name };
   }
 
-  await invoke(IPC.SaveAppState, { json: JSON.stringify(persisted) }).catch((e) =>
-    console.warn('Failed to save state:', e),
-  );
+  await invoke(IPC.SaveAppState, { json: JSON.stringify(persisted) }).catch((e: unknown) => {
+    console.warn('Failed to save state:', e);
+    notifySaveFailure(e);
+  });
+}
+
+/** Don't nag on every autosave tick while the cause (full disk, permissions) persists. */
+const SAVE_FAILURE_NOTIFY_INTERVAL_MS = 60_000;
+let lastSaveFailureNotifiedAt = 0;
+
+/** A failed state write means tasks, projects, and settings are silently no
+ *  longer persisting — the user needs to know before they quit. */
+function notifySaveFailure(err: unknown): void {
+  const now = Date.now();
+  if (now - lastSaveFailureNotifiedAt < SAVE_FAILURE_NOTIFY_INTERVAL_MS) return;
+  lastSaveFailureNotifiedAt = now;
+  showNotification(`Couldn't save app state: ${errMessage(err)}`, {
+    durationMs: NOTIFICATION_ERROR_MS,
+  });
 }
 
 /** 20_000 px is ~10× the largest plausible monitor axis and big enough to let
