@@ -24,7 +24,7 @@ the document.
 ### Using it
 
 1. Enable _Document workspaces_ under Settings → Experimental.
-2. Click **+** next to Projects and choose **Document project**. Type or browse to a
+2. Click **+** next to Projects and choose **Document project…**. Type or browse to a
    folder and name the document. Neither has to exist: type a new name onto the end of the
    path and that folder is the project. The dialog says what it will do — create the
    folder, `git init`, create the file, make the first commit — and does it on confirm.
@@ -106,9 +106,10 @@ workspace-write` (the sandbox blocks writes outside the worktree),
 - **It lives in two folders.** `electron/documents/` holds the runs, agents, prompts,
   annotations, setup, IPC shapes and the registrar for every channel it owns;
   `src/documents/` holds the UI with its store, types and markdown helpers. The seams are
-  three lines: `registerDocumentHandlers(win)` and `stopAllDocumentWork()` in main,
-  `<DocumentWorkspaceOverlay />` in `App.tsx`. The one runtime module the renderer imports
-  across the process boundary is `electron/documents/shared.ts`.
+  `registerDocumentHandlers(win)` and `stopAllDocumentWork()` in main,
+  `<DocumentWorkspaceOverlay />` in `App.tsx`, and the sidebar's project row and `+` menu.
+  The one runtime module the renderer imports across the process boundary is
+  `electron/documents/shared.ts`.
 
 ### Not in this slice
 

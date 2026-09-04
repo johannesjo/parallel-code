@@ -3,7 +3,7 @@ import { theme } from '../lib/theme';
 
 interface IconButtonProps {
   icon: string | JSX.Element;
-  onClick: (e: MouseEvent) => void;
+  onClick: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
   title?: string;
   size?: 'sm' | 'md';
 }

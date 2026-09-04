@@ -261,10 +261,30 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
           </div>
         </Show>
         <Show when={enclosingRepo()}>
-          <div class="docws-error" style={{ 'font-size': '13px' }}>
-            That folder is inside the Git repository at {enclosingRepo()}. Pick that repository
-            instead, so proposals and history stay in one place.
-          </div>
+          {(repo) => (
+            <div
+              class="docws-error"
+              style={{
+                'font-size': '13px',
+                display: 'flex',
+                'align-items': 'center',
+                gap: '10px',
+                'flex-wrap': 'wrap',
+              }}
+            >
+              <span style={{ flex: '1', 'min-width': '0' }}>
+                That folder is inside the Git repository at {repo()}. Proposals and history belong
+                to the repository, so the project has to be the repository itself.
+              </span>
+              <button
+                type="button"
+                class="docws-btn docws-btn-sm"
+                onClick={() => setFolder(repo())}
+              >
+                Use the repository
+              </button>
+            </div>
+          )}
         </Show>
         <Show when={error()}>
           <div class="docws-error" style={{ 'font-size': '13px' }}>

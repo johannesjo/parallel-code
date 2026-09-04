@@ -154,7 +154,7 @@ export async function loadDocumentRuns(): Promise<void> {
 
 export async function openDocumentWorkspace(projectId: string): Promise<void> {
   const project = getProject(projectId);
-  if (!project?.documentPath) return;
+  if (!project?.documentPath || !store.documentWorkspacesEnabled) return;
   const previous = docStore.projectId;
   if (previous && previous !== projectId) {
     void invoke(IPC.StopDocumentWatcher, { key: watcherKey(previous) }).catch(() => undefined);

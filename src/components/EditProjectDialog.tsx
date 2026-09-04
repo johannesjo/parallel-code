@@ -8,6 +8,7 @@ import { SegmentedButtons } from './SegmentedButtons';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { CloseIcon } from './icons';
 import { RemoveProjectConfirm } from './RemoveProjectConfirm';
+import { isDocumentProject } from '../store/projects';
 
 interface EditProjectDialogProps {
   project: Project | null;
@@ -32,6 +33,9 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [newCommand, setNewCommand] = createSignal('');
   const [showImportDialog, setShowImportDialog] = createSignal(false);
   const [confirmRemove, setConfirmRemove] = createSignal(false);
+  /** Branch and worktree settings only mean something where tasks run. */
+  const showsTaskSettings = () =>
+    props.project?.isGitRepo !== false && !isDocumentProject(props.project ?? undefined);
   let nameRef!: HTMLInputElement;
 
   // Sync signals when project prop changes
@@ -242,7 +246,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
             </div>
 
             {/* Branch prefix — git projects only */}
-            <Show when={props.project?.isGitRepo !== false}>
+            <Show when={showsTaskSettings()}>
               <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
                 <label style={sectionLabelStyle}>Branch prefix</label>
                 <input
@@ -325,7 +329,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
             </div>
 
             {/* Git-specific settings — hidden for non-git projects */}
-            <Show when={props.project?.isGitRepo !== false}>
+            <Show when={showsTaskSettings()}>
               {/* Close cleanup preference */}
               <label
                 style={{
