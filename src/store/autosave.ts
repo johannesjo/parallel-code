@@ -95,9 +95,25 @@ export function persistedSnapshot(): string {
   });
 }
 
+/** Quiet period after the last change before a save is written. */
+export const AUTOSAVE_DEBOUNCE_MS = 1000;
+/** Upper bound on how long a save may be postponed by a continuous stream of
+ *  changes (typing in the notes panel, for example). Without this the trailing
+ *  debounce never fires while the user keeps typing, and a crash or force-quit
+ *  loses the whole session. */
+export const AUTOSAVE_MAX_WAIT_MS = 5000;
+
 export function setupAutosave(): void {
-  let timer: number | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   let lastSnapshot: string | undefined;
+  // When the first unsaved change of the current burst happened.
+  let pendingSince: number | undefined;
+
+  const flush = () => {
+    timer = undefined;
+    pendingSince = undefined;
+    void saveState();
+  };
 
   createEffect(() => {
     const snapshot = persistedSnapshot();
@@ -106,9 +122,22 @@ export function setupAutosave(): void {
     if (snapshot === lastSnapshot) return;
     lastSnapshot = snapshot;
 
-    clearTimeout(timer);
-    timer = window.setTimeout(() => saveState(), 1000);
+    const now = Date.now();
+    pendingSince ??= now;
+    if (timer !== undefined) clearTimeout(timer);
+    // Trailing debounce, but never later than MAX_WAIT after the burst began.
+    const delay = Math.max(
+      0,
+      Math.min(AUTOSAVE_DEBOUNCE_MS, pendingSince + AUTOSAVE_MAX_WAIT_MS - now),
+    );
+    timer = setTimeout(flush, delay);
+  });
 
-    onCleanup(() => clearTimeout(timer));
+  // Owner disposal (app teardown): write what is pending rather than drop it.
+  onCleanup(() => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      flush();
+    }
   });
 }

@@ -621,12 +621,15 @@ export async function mergeTask(
   taskId: string,
   options?: { squash?: boolean; message?: string; cleanup?: boolean },
 ): Promise<void> {
+  // Precondition failures throw so the merge dialog can say why nothing
+  // happened; a silent return here reads as "Merge did nothing" to the user.
   const task = store.tasks[taskId];
-  if (!task || task.closingStatus === 'removing') return;
-  if (task.gitIsolation !== 'worktree') return;
+  if (!task) throw new Error('Task no longer exists');
+  if (task.closingStatus === 'removing') throw new Error('Task is being closed');
+  if (task.gitIsolation !== 'worktree') throw new Error('Only worktree tasks can be merged');
 
   const projectRoot = getProjectPath(task.projectId);
-  if (!projectRoot) return;
+  if (!projectRoot) throw new Error('Project folder not found — relink the project first');
 
   const agentIds = [...task.agentIds];
   const shellAgentIds = [...task.shellAgentIds];
@@ -669,10 +672,11 @@ export async function mergeTask(
 
 export async function pushTask(taskId: string, onOutput: Channel<string>): Promise<void> {
   const task = store.tasks[taskId];
-  if (!task || task.gitIsolation !== 'worktree') return;
+  if (!task) throw new Error('Task no longer exists');
+  if (task.gitIsolation !== 'worktree') throw new Error('Only worktree tasks can be pushed');
 
   const projectRoot = getProjectPath(task.projectId);
-  if (!projectRoot) return;
+  if (!projectRoot) throw new Error('Project folder not found — relink the project first');
 
   await invoke(IPC.PushTask, {
     projectRoot,

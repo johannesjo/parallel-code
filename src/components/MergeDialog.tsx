@@ -20,6 +20,7 @@ import { theme, bannerStyle } from '../lib/theme';
 import type { CoverageComparison } from '../lib/coverage-comparison';
 import type { Task } from '../store/types';
 import type { ChangedFile, MergeStatus, WorktreeStatus } from '../ipc/types';
+import { errMessage } from '../lib/log';
 
 interface MergeDialogProps {
   open: boolean;
@@ -584,8 +585,8 @@ export function MergeDialog(props: MergeDialogProps) {
           .then(() => {
             onDone();
           })
-          .catch((err) => {
-            setMergeError(String(err));
+          .catch((err: unknown) => {
+            setMergeError(errMessage(err));
           })
           .finally(() => {
             setMerging(false);
