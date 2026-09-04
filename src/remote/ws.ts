@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js';
-import { getToken, clearToken } from './auth';
+import { getToken, clearToken, getPairedToken, clearPairedToken } from './auth';
 import type { ServerMessage, RemoteAgent } from '../../electron/remote/protocol';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
@@ -14,6 +14,18 @@ const scrollbackListeners = new Map<string, Set<ScrollbackListener>>();
 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+// Which credential the open socket authenticated with. The paired token
+// (minted by entering the desktop PIN) is preferred because it is the one
+// that may type into terminals; the QR-code token only watches.
+let authTokenKind: 'paired' | 'mobile' = 'mobile';
+
+/** Pick the credential for the next socket: paired if this phone has one. */
+function selectAuthToken(): { token: string; kind: 'paired' | 'mobile' } | null {
+  const paired = getPairedToken();
+  if (paired) return { token: paired, kind: 'paired' };
+  const mobile = getToken();
+  return mobile ? { token: mobile, kind: 'mobile' } : null;
+}
 
 export { agents, status };
 
@@ -26,8 +38,9 @@ export function connect(): void {
     ws = null;
   }
 
-  const token = getToken();
-  if (!token) return;
+  const auth = selectAuthToken();
+  if (!auth) return;
+  authTokenKind = auth.kind;
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const url = `${protocol}//${window.location.host}/ws`;
@@ -38,7 +51,7 @@ export function connect(): void {
   ws.onopen = () => {
     // Authenticate via first message instead of URL query to avoid
     // token leaking in proxy logs or browser history.
-    send({ type: 'auth', token });
+    send({ type: 'auth', token: auth.token });
     setStatus('connected');
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
@@ -89,8 +102,17 @@ export function connect(): void {
   ws.onclose = (event) => {
     ws = null;
     setStatus('disconnected');
-    // 4001 = server rejected auth — token is stale, reload to re-auth
+    // 4001 = server rejected auth — the token is stale (the desktop restarted
+    // Remote Access, which rotates every token). A stale paired token falls
+    // back to the QR-code token so the phone keeps watching and only loses
+    // typing rights until it pairs again; a stale QR-code token means
+    // reconnecting from scratch.
     if (event.code === 4001) {
+      if (authTokenKind === 'paired') {
+        clearPairedToken();
+        reconnectTimer = setTimeout(connect, 0);
+        return;
+      }
       clearToken();
       window.location.reload();
       return;
@@ -102,6 +124,24 @@ export function connect(): void {
   ws.onerror = () => {
     ws?.close();
   };
+}
+
+/** Drop the current socket and connect again with the best available token. */
+export function reconnect(): void {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (ws) {
+    // Detach the handlers first: a manual close must not trigger the
+    // auto-reconnect path (that would race the connect below).
+    ws.onclose = null;
+    ws.onerror = null;
+    ws.close();
+    ws = null;
+  }
+  setStatus('disconnected');
+  connect();
 }
 
 export function send(msg: Record<string, unknown>): void {

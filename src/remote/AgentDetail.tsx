@@ -3,7 +3,8 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { TERMINAL_SCROLL_OPTIONS, base64ToUint8Array } from '../lib/terminalConstants';
 import { createTerminalHttpLinkHandler } from '../lib/terminalLinks';
-import { fetchNotes, saveNotes } from './api';
+import { fetchNotes, saveNotes, ApiError } from './api';
+import { getPairedToken, clearPairedToken } from './auth';
 import { agentStatusDisplay } from './attention';
 import {
   subscribeAgent,
@@ -44,6 +45,8 @@ interface AgentDetailProps {
   agentId: string;
   taskName: string;
   onBack: () => void;
+  /** Typing and saving notes need the paired token; ask the user to pair. */
+  onNeedsPairing: () => void;
 }
 
 const openRemoteHttpLink = createTerminalHttpLinkHandler({
@@ -172,6 +175,13 @@ export function AgentDetail(props: AgentDetailProps) {
       setNotesSaved(true);
       setTimeout(() => setNotesSaved(false), 1500);
     } catch (e) {
+      // 401/403: no paired token, or a stale one (desktop restarted). Pairing
+      // again is the fix, so send the user there instead of showing an error.
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        clearPairedToken();
+        props.onNeedsPairing();
+        return;
+      }
       setNotesError(e instanceof Error ? e.message : String(e));
     } finally {
       setNotesSaving(false);
@@ -335,9 +345,17 @@ export function AgentDetail(props: AgentDetailProps) {
   // the latest invocation sends the delayed \r.
   let lastSendId = 0;
 
+  /** Typing needs the paired token; without one, detour to the pairing screen. */
+  function ensurePairedForInput(): boolean {
+    if (getPairedToken()) return true;
+    props.onNeedsPairing();
+    return false;
+  }
+
   function handleSend() {
     const text = inputText();
     if (!text) return;
+    if (!ensurePairedForInput()) return;
     // Keep the typed text while disconnected — send() silently drops
     // messages on a non-open socket, so clearing here would lose input.
     if (status() !== 'connected') return;
@@ -352,6 +370,7 @@ export function AgentDetail(props: AgentDetailProps) {
   }
 
   function handleQuickAction(data: string) {
+    if (!ensurePairedForInput()) return;
     sendInput(props.agentId, data);
   }
 
