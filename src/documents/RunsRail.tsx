@@ -1,0 +1,156 @@
+import { For, Show, createMemo, createSignal, onCleanup } from 'solid-js';
+import {
+  cancelDocumentRun,
+  candidateLogKey,
+  documentStore,
+  openDocumentCompare,
+  rejectDocumentRun,
+} from './store';
+import { formatRelativeAge } from '../lib/relativeAge';
+import type { DocumentCandidateRecord, DocumentRunRecord } from './types';
+
+function scopeLabel(run: DocumentRunRecord): string {
+  const s = run.scope;
+  if (s.wholeDocument) return 'whole document';
+  const lines = s.startLine === s.endLine ? `L${s.startLine}` : `L${s.startLine}–${s.endLine}`;
+  return s.heading ? `${lines} · ${s.heading}` : lines;
+}
+
+/** What the run's outcome means for one candidate. */
+type CandidateVerdict = 'accepted' | 'passed-over' | 'rejected' | null;
+
+function candidateVerdict(run: DocumentRunRecord, c: DocumentCandidateRecord): CandidateVerdict {
+  if (run.acceptedCandidateId === c.id) return 'accepted';
+  if (!c.commitSha) return null;
+  if (run.status === 'accepted') return 'passed-over';
+  if (run.status === 'rejected') return 'rejected';
+  return null;
+}
+
+function candidateState(c: DocumentCandidateRecord, verdict: CandidateVerdict): string {
+  if (verdict === 'accepted') return 'accepted';
+  if (verdict === 'passed-over') return 'not chosen';
+  if (verdict === 'rejected') return 'rejected';
+  if (c.status === 'running') return 'working…';
+  if (c.status === 'done') return c.commitSha ? 'proposal ready' : 'no changes';
+  if (c.status === 'failed') return 'failed';
+  if (c.status === 'cancelled') return 'cancelled';
+  return 'interrupted';
+}
+
+function CandidateRow(props: {
+  run: DocumentRunRecord;
+  candidate: DocumentCandidateRecord;
+  showLog: boolean;
+}) {
+  const lines = () => documentStore.logs[candidateLogKey(props.run.id, props.candidate.id)] ?? [];
+  const tail = () => lines().slice(-6);
+  const verdict = () => candidateVerdict(props.run, props.candidate);
+  return (
+    <div
+      class="docws-candidate"
+      classList={{ 'is-passed-over': verdict() === 'passed-over' || verdict() === 'rejected' }}
+    >
+      <div class="docws-candidate-head">
+        <span class={`docws-dot docws-dot-${props.candidate.status}`} />
+        <span class="docws-candidate-label">{props.candidate.label}</span>
+        <span>{props.candidate.agentName}</span>
+        <Show when={props.candidate.isMain}>
+          <span class="docws-badge">main</span>
+        </Show>
+        <span class="docws-candidate-state" classList={{ 'is-accepted': verdict() === 'accepted' }}>
+          {candidateState(props.candidate, verdict())}
+        </span>
+      </div>
+      <Show when={props.candidate.error && props.candidate.status !== 'running'}>
+        <div class="docws-error">{props.candidate.error}</div>
+      </Show>
+      <Show when={props.showLog && tail().length > 0}>
+        <div class="docws-log">{tail().join('\n')}</div>
+      </Show>
+    </div>
+  );
+}
+
+/** Right-hand list of runs against the open document, newest first. */
+export function RunsRail() {
+  const runs = createMemo(() =>
+    documentStore.runOrder.map((id) => documentStore.runs[id]).filter(Boolean),
+  );
+  const [nowMs, setNowMs] = createSignal(Date.now());
+  const clock = setInterval(() => setNowMs(Date.now()), 30_000);
+  onCleanup(() => clearInterval(clock));
+
+  return (
+    <aside class="docws-rail" aria-label="Runs">
+      <div class="docws-rail-title">Runs</div>
+      <Show when={runs().length === 0}>
+        <div class="docws-empty">
+          Select a passage in the document, describe what should change, and pick one or more
+          agents. Proposals show up here.
+        </div>
+      </Show>
+      <For each={runs()}>
+        {(run) => {
+          const proposals = () => run.candidates.filter((c) => c.commitSha).length;
+          const canCompare = () =>
+            (run.status === 'finished' || run.status === 'stale') && proposals() > 0;
+          return (
+            <div class="docws-run" data-run-id={run.id}>
+              <div class="docws-run-head">
+                <span class={`docws-badge docws-badge-${run.status}`}>{run.status}</span>
+                <span class="docws-run-meta" title={new Date(run.createdAt).toLocaleString()}>
+                  {formatRelativeAge(new Date(run.createdAt).getTime(), nowMs())}
+                </span>
+              </div>
+              <div class="docws-run-instruction" title={run.instruction}>
+                {run.instruction}
+              </div>
+              <div class="docws-run-meta" title={scopeLabel(run)}>
+                {scopeLabel(run)} · base {run.baseSha.slice(0, 7)}
+              </div>
+              <For each={run.candidates}>
+                {(candidate) => (
+                  <CandidateRow
+                    run={run}
+                    candidate={candidate}
+                    showLog={run.status === 'running'}
+                  />
+                )}
+              </For>
+              <div class="docws-run-actions">
+                <Show when={run.status === 'running'}>
+                  <button
+                    type="button"
+                    class="docws-btn docws-btn-sm"
+                    onClick={() => void cancelDocumentRun(run.id)}
+                  >
+                    Cancel
+                  </button>
+                </Show>
+                <Show when={canCompare()}>
+                  <button
+                    type="button"
+                    class="docws-btn docws-btn-sm docws-btn-primary"
+                    onClick={() => openDocumentCompare(run.id)}
+                  >
+                    {proposals() > 1 ? `Compare ${proposals()}` : 'Review'}
+                  </button>
+                </Show>
+                <Show when={run.status === 'finished' || run.status === 'stale'}>
+                  <button
+                    type="button"
+                    class="docws-btn docws-btn-sm docws-btn-danger"
+                    onClick={() => void rejectDocumentRun(run.id)}
+                  >
+                    {proposals() > 0 ? 'Reject all' : 'Dismiss'}
+                  </button>
+                </Show>
+              </div>
+            </div>
+          );
+        }}
+      </For>
+    </aside>
+  );
+}

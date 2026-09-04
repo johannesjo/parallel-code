@@ -1,0 +1,1162 @@
+/* Document workspace overlay — uses the app's design tokens. */
+
+.docws-overlay {
+  position: fixed;
+  inset: 0;
+  /* Below every Dialog (1000+) so the project editor, settings and confirms
+     opened from inside the workspace render on top of it. */
+  z-index: 950;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-ui);
+  color: var(--fg);
+}
+
+.docws-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+  min-width: 0;
+  user-select: none;
+}
+
+/* The header itself is the window drag region. Carve out every possible
+   control so the entire remaining background behaves consistently. These
+   declarations also protect controls that overlap the native title strip. */
+.docws-header button,
+.docws-header input,
+.docws-header select,
+.docws-header textarea,
+.docws-header a {
+  -webkit-app-region: no-drag;
+}
+
+.docws-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 15px;
+  min-width: 0;
+}
+
+.docws-title svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.docws-open-editor {
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.docws-subtitle {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Branch, head and working-tree state ride in the header instead of taking a
+   strip of their own. */
+.docws-head-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-subtle);
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.docws-head-chip svg {
+  flex-shrink: 0;
+}
+
+.docws-head-chip.is-warning {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+}
+
+.docws-banner {
+  padding: 6px 18px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.docws-banner-error {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
+}
+
+.docws-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  margin-left: auto;
+}
+
+.docws-tab {
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  color: var(--fg-muted);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.docws-tab[aria-selected='true'] {
+  background: var(--bg-selected);
+  color: var(--fg);
+}
+
+.docws-tab .docws-count {
+  margin-left: 6px;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.docws-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.docws-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.docws-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.docws-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.docws-btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.docws-btn-danger {
+  color: var(--error);
+}
+
+.docws-btn-sm {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.docws-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.docws-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  position: relative;
+}
+
+.docws-rail {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-elevated);
+}
+
+.docws-rail-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.docws-empty {
+  color: var(--fg-subtle);
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.docws-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 72px 24px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 13px;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.docws-empty-state-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.docws-empty-state .docws-btn {
+  margin-top: 8px;
+}
+
+/* ── Rendered document ── */
+
+.docws-doc {
+  position: relative;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 28px 44px 200px;
+}
+
+/* Kept mounted while previewing so blocks, annotations and scroll position
+   survive the toggle; re-rendering them on every switch is wasted work. */
+.docws-doc.is-hidden {
+  display: none;
+}
+
+/* White canvas is what a browser gives a page by default; a page that sets its
+   own background paints over it. */
+.docws-html-preview {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
+.docws-content .doc-block {
+  position: relative;
+  border-radius: var(--radius-sm);
+  margin: 0 -10px;
+  padding: 2px 10px;
+  transition: background 0.1s ease;
+}
+
+.docws-content.docws-selectable .doc-block:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.docws-content .doc-block.is-selected {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.docws-content .doc-block.is-changed {
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+
+.docws-content .doc-block.is-added {
+  background: var(--diff-add-bg);
+  box-shadow: inset 3px 0 0 var(--success);
+}
+
+.docws-content .doc-block.is-removed {
+  background: var(--diff-remove-bg);
+  box-shadow: inset 3px 0 0 var(--error);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--error) 60%, transparent);
+}
+
+.docws-content .doc-block.is-scope {
+  box-shadow: inset 3px 0 0 var(--border-focus);
+}
+
+.docws-content .doc-block > :first-child {
+  margin-top: 0.2em;
+}
+
+.docws-content .doc-block > :last-child {
+  margin-bottom: 0.2em;
+}
+
+.docws-section-btn {
+  position: absolute;
+  left: -30px;
+  top: 0.55em;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-subtle);
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.doc-block:hover .docws-section-btn,
+.docws-section-btn:focus-visible {
+  opacity: 1;
+}
+
+.docws-section-btn:hover {
+  color: var(--fg);
+  border-color: var(--border);
+  background: var(--bg-elevated);
+}
+
+.docws-content table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 0.92em;
+}
+
+.docws-content th,
+.docws-content td {
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.docws-content th {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+
+.docws-content blockquote {
+  margin: 0.6em 0;
+  padding: 0.2em 0 0.2em 1em;
+  border-left: 3px solid var(--border);
+  color: var(--fg-muted);
+}
+
+.docws-content img {
+  max-width: 100%;
+}
+
+.docws-content .mermaid-block {
+  padding: 8px;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  white-space: pre;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.docws-content .mermaid-block.mermaid-rendered {
+  white-space: normal;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.docws-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 18px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* ── Composer ── */
+
+/* Sits in the flow under the selected passage; the prose after it moves down
+   instead of disappearing behind it. */
+.docws-composer {
+  margin: 10px 0 18px;
+  background: var(--island-bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.docws-composer-quote {
+  font-size: 12px;
+  color: var(--fg-muted);
+  border-left: 3px solid var(--accent);
+  padding-left: 8px;
+  max-height: 64px;
+  overflow: hidden;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+}
+
+.docws-composer textarea {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.docws-composer textarea:focus {
+  border-color: var(--border-focus);
+}
+
+.docws-agent-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.docws-agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 6px 4px 10px;
+  color: var(--fg-muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.docws-agent-chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.docws-agent-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.docws-agent-chip .docws-main-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.docws-count-btn {
+  min-width: 22px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  padding: 0 5px;
+}
+
+.docws-composer-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--fg-subtle);
+}
+
+.docws-composer-footer .docws-spacer {
+  flex: 1;
+}
+
+.docws-select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 3px 6px;
+}
+
+/* ── Runs rail ── */
+
+.docws-run {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--task-panel-bg);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.docws-run-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.docws-run-instruction {
+  font-size: 13px;
+  color: var(--fg);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.docws-run-meta {
+  color: var(--fg-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.docws-badge {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.docws-badge-running {
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 50%, transparent);
+}
+.docws-badge-finished {
+  color: var(--review);
+  border-color: color-mix(in srgb, var(--review) 50%, transparent);
+}
+.docws-badge-accepted {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 50%, transparent);
+}
+.docws-badge-rejected,
+.docws-badge-failed,
+.docws-badge-stale {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 50%, transparent);
+}
+
+.docws-candidate {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+
+.docws-candidate-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.docws-candidate-label {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.docws-candidate-state {
+  margin-left: auto;
+  color: var(--fg-subtle);
+}
+
+.docws-candidate-state.is-accepted {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.docws-candidate.is-passed-over {
+  opacity: 0.55;
+}
+
+.docws-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fg-subtle);
+  flex-shrink: 0;
+}
+.docws-dot-running {
+  background: var(--info);
+  animation: docws-pulse 1.2s ease-in-out infinite;
+}
+.docws-dot-done {
+  background: var(--success);
+}
+.docws-dot-failed,
+.docws-dot-interrupted,
+.docws-dot-cancelled {
+  background: var(--error);
+}
+
+@keyframes docws-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.docws-log {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-muted);
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.docws-run-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ── Compare ── */
+
+.docws-compare {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.docws-compare-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--fg-muted);
+  flex-wrap: wrap;
+}
+
+.docws-compare-bar .docws-instruction {
+  color: var(--fg);
+  font-size: 13px;
+  max-width: 520px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.docws-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.docws-columns {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow-x: auto;
+  gap: 0;
+}
+
+.docws-column {
+  flex: 1 0 460px;
+  min-width: 380px;
+  max-width: 760px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.docws-column-base {
+  flex-basis: 420px;
+  background: color-mix(in srgb, var(--bg-elevated) 60%, transparent);
+}
+
+.docws-column-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.docws-column-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+/* Capped so a talkative agent cannot push its own document out of view. */
+.docws-rationale {
+  font-size: 12px;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.docws-rationale-summary {
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.docws-rationale ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--fg-muted);
+}
+
+.docws-rationale .docws-rationale-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-subtle);
+  margin-top: 4px;
+}
+
+.docws-warning {
+  color: var(--warning);
+}
+
+.docws-error {
+  color: var(--error);
+}
+
+.docws-note {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 5px 8px;
+  resize: vertical;
+  min-height: 30px;
+}
+
+.docws-column-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 18px 120px;
+}
+
+.docws-column-body .docws-content {
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.docws-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* ── Source diff ── */
+
+.docws-diff {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.docws-diff-line {
+  padding: 0 6px;
+}
+
+.docws-diff-add {
+  background: var(--diff-add-bg);
+}
+
+.docws-diff-remove {
+  background: var(--diff-remove-bg);
+}
+
+.docws-diff-hunk {
+  color: var(--info);
+  margin-top: 8px;
+}
+
+/* ── History ── */
+
+.docws-history {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.docws-history-list {
+  width: 360px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.docws-history-entry {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 10px 14px;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.docws-history-entry:hover {
+  background: var(--bg-hover);
+}
+
+.docws-history-entry[aria-selected='true'] {
+  background: var(--bg-selected-subtle);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.docws-history-subject {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.docws-history-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--fg-subtle);
+  font-family: var(--font-mono);
+}
+
+.docws-history-detail {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.docws-history-detail-head {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.docws-history-body {
+  white-space: pre-wrap;
+  font-size: 13px;
+  color: var(--fg-muted);
+  line-height: 1.5;
+}
+
+.docws-trailers {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.docws-trailers dt {
+  color: var(--fg-subtle);
+}
+
+.docws-trailers dd {
+  margin: 0;
+  color: var(--fg);
+  word-break: break-all;
+}
+
+.docws-older-banner {
+  padding: 6px 18px;
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--warning);
+  font-size: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+}
+
+.docws-picker-list {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  display: flex;
+  flex-direction: column;
+}
+
+.docws-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 7px 10px;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.docws-picker-item .docws-badge {
+  margin-left: auto;
+}
+
+.docws-picker-item:hover {
+  background: var(--bg-hover);
+}
+
+.docws-picker-item[aria-selected='true'] {
+  background: var(--bg-selected);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .docws-dot-running {
+    animation: none;
+  }
+}
+
+/* ── Annotations ── */
+
+.docws-bubble {
+  margin: 6px 0 10px 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--task-panel-bg);
+  font-size: 13px;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  outline: none;
+}
+
+.docws-bubble::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--review);
+}
+
+.docws-bubble.is-question::before {
+  background: var(--info);
+}
+
+.docws-bubble.is-detached {
+  border-style: dashed;
+}
+
+.docws-bubble:focus-visible {
+  border-color: var(--border-focus);
+}
+
+.docws-bubble.is-resolved {
+  padding: 0;
+  border-color: var(--border-subtle);
+  background: transparent;
+}
+
+.docws-bubble.is-resolved::before {
+  opacity: 0.4;
+}
+
+.docws-bubble-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--fg-subtle);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.docws-bubble-collapsed-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: line-through;
+}
+
+.docws-bubble-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg-subtle);
+}
+
+.docws-bubble-time {
+  font-family: var(--font-mono);
+}
+
+.docws-bubble-text {
+  white-space: pre-wrap;
+  color: var(--fg);
+  cursor: text;
+}
+
+.docws-bubble-quote {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-subtle);
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+  white-space: pre-wrap;
+  max-height: 80px;
+  overflow: hidden;
+}
+
+.docws-bubble-answer {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.docws-bubble-answer-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg-subtle);
+}
+
+.docws-bubble-answer-body {
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.docws-bubble-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.docws-undo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--fg);
+}
+
+.docws-detached-section {
+  margin: 0 0 18px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+
+.docws-mode-tabs {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.docws-mode-tabs .docws-tab {
+  padding: 3px 10px;
+  font-size: 12px;
+}

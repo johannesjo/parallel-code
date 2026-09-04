@@ -35,6 +35,7 @@ import {
   setLightTheme,
   setDarkTheme,
   setCoordinatorModeEnabled,
+  setDocumentWorkspacesEnabled,
   setCoordinatorNotificationDelayMs,
   setDefaultStepsEnabled,
   setDefaultSkipPermissions,
@@ -1075,6 +1076,14 @@ export function SettingsDialog(props: SettingsDialogProps) {
           aria-labelledby="settings-tabbutton-experimental"
           style={{ display: 'flex', 'flex-direction': 'column', gap: '18px' }}
         >
+          <SettingsSection title="Document workspaces">
+            <SettingsCheckboxRow
+              label="Document workspaces"
+              checked={store.documentWorkspacesEnabled}
+              onChange={setDocumentWorkspacesEnabled}
+              description="Add document projects: a folder with one Markdown document, set up for you if it is not a Git repository yet. Select a passage, send the same instruction to one or more agents running headlessly in isolated worktrees, compare the proposals side by side, and accept one as a single readable commit. Adds Document project to the + button next to Projects."
+            />
+          </SettingsSection>
           <SettingsSection title="Coordinator">
             <SettingsCheckboxRow
               label="Coordinator mode"

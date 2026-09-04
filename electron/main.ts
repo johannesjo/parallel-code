@@ -10,6 +10,7 @@ import { installIpcTracing } from './ipc/trace.js';
 import { startAgentHookRuntime, stopAgentHookRuntime } from './agent-hooks/runtime.js';
 import { killAllAgents } from './ipc/pty.js';
 import { stopAllPlanWatchers } from './ipc/plans.js';
+import { stopAllDocumentWork } from './documents/register.js';
 import { stopAllStepsWatchers } from './ipc/steps.js';
 import { verificationRunner } from './ipc/verify.js';
 import { IPC } from './ipc/channels.js';
@@ -288,6 +289,7 @@ app.on('will-quit', () => {
   verificationRunner.cancelAll();
   stopAgentHookRuntime();
   stopAllPlanWatchers();
+  stopAllDocumentWork();
   stopAllStepsWatchers();
 });
 

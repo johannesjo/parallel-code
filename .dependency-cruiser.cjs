@@ -16,12 +16,14 @@ module.exports = {
         //   - electron/mcp/validation.ts — string-only branch/UUID validators; the renderer
         //     shares them so it never offers a branch the IPC layer would reject
         //   - electron/shared/ — renderer-safe constants/pure helpers (no Node/Electron imports)
+        //   - electron/documents/shared.ts — agent ids/labels the document workspace shows
         pathNot: [
           '^electron/ipc/channels\\.ts',
           '^electron/mcp/prompt-detect\\.ts',
           '^electron/mcp/validation\\.ts',
           '^electron/agent-hooks/status\\.ts',
           '^electron/shared/',
+          '^electron/documents/shared\\.ts',
         ],
       },
     },

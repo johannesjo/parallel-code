@@ -90,6 +90,8 @@ export const [store, setStore] = createStore<AppStore>({
   taskSplitMode: {},
   verboseLogging: false,
   coordinatorModeEnabled: false,
+  documentWorkspacesEnabled: false,
+  activeDocumentProjectId: null,
   coordinatorNotificationDelayMs: 60_000,
   coordinatorControlHintDismissed: false,
   defaultStepsEnabled: false,

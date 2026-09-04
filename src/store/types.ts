@@ -87,6 +87,22 @@ export interface Project {
   terminalBookmarks?: TerminalBookmark[];
   isGitRepo?: boolean; // undefined treated as true for backward compat
   tasksCollapsed?: boolean; // sidebar task group, defaults to expanded
+  /** Document workspaces (experimental): a project whose surface is one
+   *  rendered document rather than task terminals. Undefined means 'code'. */
+  kind?: ProjectKind;
+  /** Repo-relative path of the document a document project opens. */
+  documentPath?: string;
+  /** Agent that owns the project's warm main session. */
+  documentMainAgentId?: string;
+  /** Resumable main sessions per agent id, with the base sha each last saw. */
+  documentSessions?: Record<string, DocumentSessionRef>;
+}
+
+export type ProjectKind = 'code' | 'document';
+
+export interface DocumentSessionRef {
+  sessionId: string;
+  lastSha: string;
 }
 
 export interface Agent {
@@ -308,6 +324,7 @@ export interface PersistedState {
   darkThemePreset?: LookPreset;
   darkThemeCustomId?: string | null;
   coordinatorModeEnabled?: boolean;
+  documentWorkspacesEnabled?: boolean;
   coordinatorNotificationDelayMs?: number;
   coordinatorControlHintDismissed?: boolean;
   defaultStepsEnabled?: boolean;
@@ -435,6 +452,9 @@ export interface AppStore {
   darkThemePreset: LookPreset;
   darkThemeCustomId: string | null;
   coordinatorModeEnabled: boolean;
+  documentWorkspacesEnabled: boolean;
+  /** Project whose document workspace overlay is open. */
+  activeDocumentProjectId: string | null;
   coordinatorNotificationDelayMs: number;
   coordinatorControlHintDismissed: boolean;
   defaultStepsEnabled: boolean;
