@@ -87,10 +87,10 @@ export async function fetchNotes(taskId: string): Promise<string> {
   return r.notes;
 }
 
-/** Save the notes for a task. Works with the base connection token. */
+/** Save the notes for a task. Requires a paired token (it is a write). */
 export async function saveNotes(taskId: string, notes: string): Promise<void> {
-  const token = getToken();
-  if (!token) throw new ApiError('Not connected', 401);
+  const token = getPairedToken();
+  if (!token) throw new ApiError('Not paired', 401);
   await request<{ ok: boolean }>(`/api/mobile/notes/${encodeURIComponent(taskId)}`, {
     method: 'PUT',
     body: { notes },

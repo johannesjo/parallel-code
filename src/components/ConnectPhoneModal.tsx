@@ -473,7 +473,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
                     'font-weight': '500',
                   }}
                 >
-                  Pair a device to create tasks
+                  Pair a device to type and create tasks
                 </button>
                 <Show when={pairingError()}>
                   <span style={{ 'font-size': '12px', color: theme.error }}>{pairingError()}</span>
@@ -560,16 +560,16 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               }}
             >
               <li>
-                Anyone on your network with the link can view your agent terminals and type into
-                running agents.
+                Anyone on your network with the link can watch your agent terminals. Typing into
+                agents, editing notes, and creating tasks require pairing with the code above.
               </li>
               <li>
                 The Wi-Fi connection is unencrypted. Prefer Tailscale, or only connect on a network
                 you trust.
               </li>
               <li>
-                A paired phone can create new tasks, which run code on this computer, until you
-                disconnect.
+                A paired phone can type into agents and create new tasks, which run code on this
+                computer, until you disconnect.
               </li>
               <li>Disconnecting stops the server and revokes every connected and paired device.</li>
             </ul>

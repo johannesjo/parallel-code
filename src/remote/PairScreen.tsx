@@ -8,8 +8,9 @@ interface PairScreenProps {
 }
 
 /**
- * Shown before a phone may create tasks. The user opens Connect Phone on the
- * desktop, taps "Pair a device", and types the 6-digit code shown there.
+ * Shown before a phone may type into a terminal, save notes, or create tasks.
+ * The user opens Connect Phone on the desktop, taps "Pair a device", and types
+ * the 6-digit code shown there.
  */
 export function PairScreen(props: PairScreenProps) {
   const [pin, setPin] = createSignal('');
@@ -56,8 +57,9 @@ export function PairScreen(props: PairScreenProps) {
           Pair this device
         </p>
         <p style={{ 'font-size': '14px', color: '#678197', 'line-height': '1.5' }}>
-          On your computer, open <strong>Connect Phone</strong> and tap{' '}
-          <strong>Pair a device to create tasks</strong>. Enter the 6-digit code below.
+          Typing into agents, saving notes, and creating tasks need a paired phone. On your
+          computer, open <strong>Connect Phone</strong> and tap <strong>Pair a device</strong>.
+          Enter the 6-digit code below.
         </p>
       </div>
 
