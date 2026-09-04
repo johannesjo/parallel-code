@@ -24,10 +24,15 @@ export interface PaneVisibilityInput {
   viewportVisibility: TaskViewportVisibility | undefined;
   /** Pane-level visibility within the task (tabs); undefined means visible. */
   paneVisible?: boolean;
+  /** The pane is not a task panel (e.g. an arena competitor rendered in an
+   *  overlay): task-level focus/tiling state says nothing about it, so only
+   *  `paneVisible` applies. */
+  standalone?: boolean;
 }
 
 export function isTerminalPaneOnScreen(input: PaneVisibilityInput): boolean {
   if (input.paneVisible === false) return false;
+  if (input.standalone) return true;
   if (input.focusMode) return input.activeTaskId === input.taskId;
   return (
     input.viewportVisibility !== 'offscreen-left' && input.viewportVisibility !== 'offscreen-right'

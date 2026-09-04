@@ -21,6 +21,16 @@ describe('isTerminalPaneOnScreen', () => {
     ).toBe(true);
   });
 
+  it('a standalone pane (arena overlay) ignores task-level focus and tiling state', () => {
+    expect(
+      isTerminalPaneOnScreen({ ...base, standalone: true, focusMode: true, activeTaskId: 'other' }),
+    ).toBe(true);
+    expect(
+      isTerminalPaneOnScreen({ ...base, standalone: true, viewportVisibility: 'offscreen-left' }),
+    ).toBe(true);
+    expect(isTerminalPaneOnScreen({ ...base, standalone: true, paneVisible: false })).toBe(false);
+  });
+
   it('a hidden tab pane is off screen even when its task is visible', () => {
     expect(isTerminalPaneOnScreen({ ...base, paneVisible: false })).toBe(false);
     expect(isTerminalPaneOnScreen({ ...base, paneVisible: true })).toBe(true);

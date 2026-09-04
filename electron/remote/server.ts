@@ -83,26 +83,26 @@ export function getMCPLogs(): MCPLogEntry[] {
 }
 
 interface OriginHeaders {
-  origin?: string | string[];
+  origin?: string;
   host?: string;
-  /** Sent instead of `origin` by very old (hybi-08) WebSocket clients. */
-  'sec-websocket-origin'?: string | string[];
 }
 
 /**
  * Browser clients send an `Origin` header on WebSocket upgrades and on
  * cross-site fetches; non-browser clients (the MCP coordinator client, curl)
  * send none. A page this server itself served has an Origin whose host equals
- * the request's `Host`, so anything else is some other site — a DNS-rebinding
- * page, or any tab on the LAN — borrowing the user's network position to reach
- * the server. WebSockets are exempt from the same-origin policy, so this check
- * is the only browser-side gate before the bearer token. No Origin is allowed:
- * the token still gates every API route and socket.
+ * the request's `Host`; any other Origin is some other site — a tab open on
+ * the LAN, a page that guessed the desktop's address — using the user's
+ * browser to reach the server. WebSockets are exempt from the same-origin
+ * policy, so without this a foreign page could at least open a socket and
+ * probe. (Auth still needs the token, which lives in the SPA's own
+ * localStorage and is unreadable cross-origin; that, not this check, is what
+ * defeats DNS rebinding.) No Origin is allowed: the token still gates every
+ * API route and socket.
  */
 export function isBrowserOriginAllowed(headers: OriginHeaders): boolean {
-  const origin = headers.origin ?? headers['sec-websocket-origin'];
+  const origin = headers.origin;
   if (origin === undefined) return true;
-  if (Array.isArray(origin)) return false;
   const host = headers.host;
   if (!host) return false;
   let parsed: URL;
@@ -760,7 +760,9 @@ export function startRemoteServer(opts: {
   // per paired phone.
   const pairedTokenBufs: Buffer[] = [];
   // Bound the credential set: pairing is a user action on the desktop, so a
-  // handful covers every phone a person owns; beyond that the oldest is dropped.
+  // handful covers every phone a person owns; beyond that the oldest is
+  // dropped. Eviction only stops future authentication with that token — a
+  // socket it already opened stays authenticated until it reconnects.
   const MAX_PAIRED_TOKENS = 8;
   // At most one pending PIN at a time — a fresh mint replaces any prior one.
   let pairing: { pinBuf: Buffer; expiresAt: number; attemptsLeft: number } | null = null;
@@ -1133,7 +1135,10 @@ export function startRemoteServer(opts: {
       const stream = createReadStream(path);
       res.writeHead(200, {
         ...SECURITY_HEADERS,
-        'Content-Security-Policy': buildRemoteCsp(req.headers.host),
+        // The policy governs documents; assets only need to be served by one.
+        ...(ct.startsWith('text/html')
+          ? { 'Content-Security-Policy': buildRemoteCsp(req.headers.host) }
+          : {}),
         'Content-Type': ct,
         'Cache-Control': cc,
       });
@@ -1241,10 +1246,12 @@ export function startRemoteServer(opts: {
       const list = buildAgentList(opts.getTaskName, opts.getAgentStatus, getTaskAttention);
       ws.send(JSON.stringify({ type: 'agents', list } satisfies ServerMessage));
     } else {
-      // Close unauthenticated connections after 5 seconds
+      // Close unauthenticated connections after 5 seconds. Distinct code from
+      // 4001: the phone treats 4001 as "my token is stale" and discards it,
+      // which a slow network must not trigger.
       const authTimer = setTimeout(() => {
         if (!authenticatedClients.has(ws)) {
-          ws.close(4001, 'Auth timeout');
+          ws.close(4002, 'Auth timeout');
         }
       }, 5_000);
       authTimers.set(ws, authTimer);

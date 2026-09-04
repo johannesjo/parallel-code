@@ -110,6 +110,7 @@ export function connect(): void {
     if (event.code === 4001) {
       if (authTokenKind === 'paired') {
         clearPairedToken();
+        if (reconnectTimer) clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(connect, 0);
         return;
       }
@@ -124,6 +125,13 @@ export function connect(): void {
   ws.onerror = () => {
     ws?.close();
   };
+}
+
+/** True when the open socket authenticated with the paired token, i.e. the
+ *  server will accept `input` from it. A paired token stored by another tab
+ *  does not count until this socket reconnects with it. */
+export function socketCanType(): boolean {
+  return status() === 'connected' && authTokenKind === 'paired';
 }
 
 /** Drop the current socket and connect again with the best available token. */

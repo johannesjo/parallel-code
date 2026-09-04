@@ -1,4 +1,4 @@
-import { createEffect, onCleanup } from 'solid-js';
+import { createEffect } from 'solid-js';
 import { store, saveState } from './store';
 
 /** Build a snapshot string of all persisted fields. Using JSON.stringify
@@ -131,13 +131,5 @@ export function setupAutosave(): void {
       Math.min(AUTOSAVE_DEBOUNCE_MS, pendingSince + AUTOSAVE_MAX_WAIT_MS - now),
     );
     timer = setTimeout(flush, delay);
-  });
-
-  // Owner disposal (app teardown): write what is pending rather than drop it.
-  onCleanup(() => {
-    if (timer !== undefined) {
-      clearTimeout(timer);
-      flush();
-    }
   });
 }

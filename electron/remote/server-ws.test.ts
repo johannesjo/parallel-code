@@ -268,9 +268,8 @@ describe('isBrowserOriginAllowed', () => {
     expect(isBrowserOriginAllowed({ host: 'a:1', origin: 'null' })).toBe(false);
     expect(isBrowserOriginAllowed({ host: 'a:1', origin: 'not a url' })).toBe(false);
     expect(isBrowserOriginAllowed({ host: 'a:1', origin: 'file://a:1' })).toBe(false);
-    expect(isBrowserOriginAllowed({ host: 'a:1', origin: ['http://a:1', 'http://b:1'] })).toBe(
-      false,
-    );
+    // Node joins duplicate Origin headers with ", " — not a URL, so refused.
+    expect(isBrowserOriginAllowed({ host: 'a:1', origin: 'http://a:1, http://b:1' })).toBe(false);
   });
 
   it('refuses an Origin when the request carries no Host', () => {

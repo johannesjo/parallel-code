@@ -5,6 +5,13 @@ import { TERMINAL_SCROLL_OPTIONS, base64ToUint8Array } from '../lib/terminalCons
 import { createTerminalHttpLinkHandler } from '../lib/terminalLinks';
 import { fetchNotes, saveNotes, ApiError } from './api';
 import { getPairedToken, clearPairedToken } from './auth';
+import { reconnect, socketCanType } from './ws';
+
+// Drafts survive the pairing detour: App unmounts this view while the user
+// enters the PIN, and text typed before that must still be there afterwards.
+// Keyed by agent so returning to a different agent starts clean.
+const inputDrafts = new Map<string, string>();
+const notesDrafts = new Map<string, string>();
 import { agentStatusDisplay } from './attention';
 import {
   subscribeAgent,
@@ -61,7 +68,13 @@ export function AgentDetail(props: AgentDetailProps) {
   let inputRef: HTMLInputElement | undefined;
   let term: Terminal | undefined;
   let fitAddon: FitAddon | undefined;
-  const [inputText, setInputText] = createSignal('');
+  // eslint-disable-next-line solid/reactivity -- initial value only; the draft map is re-read on each mount
+  const [inputText, setInputText] = createSignal(inputDrafts.get(props.agentId) ?? '');
+  createEffect(() => {
+    const text = inputText();
+    if (text) inputDrafts.set(props.agentId, text);
+    else inputDrafts.delete(props.agentId);
+  });
   const [atBottom, setAtBottom] = createSignal(true);
   const [termFontSize, setTermFontSize] = createSignal(10);
   // Desktop PTY column count (from scrollback). The mobile client can't resize
@@ -72,11 +85,19 @@ export function AgentDetail(props: AgentDetailProps) {
 
   // Notes editing
   const [view, setView] = createSignal<'terminal' | 'notes'>('terminal');
-  const [notesText, setNotesText] = createSignal('');
+  // eslint-disable-next-line solid/reactivity -- initial value only; the draft map is re-read on each mount
+  const notesDraft = notesDrafts.get(props.agentId);
+  const [notesText, setNotesText] = createSignal(notesDraft ?? '');
   const [notesLoading, setNotesLoading] = createSignal(false);
   const [notesSaving, setNotesSaving] = createSignal(false);
   const [notesError, setNotesError] = createSignal<string | null>(null);
-  const [notesDirty, setNotesDirty] = createSignal(false);
+  // A restored draft is by definition unsaved, which also keeps the load
+  // effect below from overwriting it with the server's copy.
+  const [notesDirty, setNotesDirty] = createSignal(notesDraft !== undefined);
+  createEffect(() => {
+    if (notesDirty()) notesDrafts.set(props.agentId, notesText());
+    else notesDrafts.delete(props.agentId);
+  });
   const [notesSaved, setNotesSaved] = createSignal(false);
 
   const MIN_FONT = 6;
@@ -347,9 +368,18 @@ export function AgentDetail(props: AgentDetailProps) {
 
   /** Typing needs the paired token; without one, detour to the pairing screen. */
   function ensurePairedForInput(): boolean {
-    if (getPairedToken()) return true;
-    props.onNeedsPairing();
-    return false;
+    if (!getPairedToken()) {
+      props.onNeedsPairing();
+      return false;
+    }
+    // Paired in another tab, or the socket predates pairing: the server only
+    // knows what this socket authenticated with. Reconnect with the paired
+    // token; the typed text stays in the box for the next send.
+    if (!socketCanType()) {
+      reconnect();
+      return false;
+    }
+    return true;
   }
 
   function handleSend() {
