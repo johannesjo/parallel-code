@@ -1573,6 +1573,13 @@ textarea::placeholder {
   position: relative;
 }
 
+/* The shell toolbar scrolls sideways once a project has many bookmarks, but a
+   scrollbar inside a 28px bar would clip the buttons. Wheel and the toolbar's
+   own arrow-key navigation still reach the overflow. */
+.shell-toolbar-panel::-webkit-scrollbar {
+  display: none;
+}
+
 .focusable-panel:focus-within::after,
 .focusable-panel[data-panel-focused='true']::after {
   content: '';
