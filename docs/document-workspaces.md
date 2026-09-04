@@ -24,9 +24,10 @@ the document.
 ### Using it
 
 1. Enable _Document workspaces_ under Settings → Experimental.
-2. Click **+** next to Projects and choose **Document project**. Pick any folder and name
-   the document. Neither has to exist yet: the dialog says what it will do — `git init`,
-   create the file, make the first commit — and does it when you confirm.
+2. Click **+** next to Projects and choose **Document project**. Type or browse to a
+   folder and name the document. Neither has to exist: type a new name onto the end of the
+   path and that folder is the project. The dialog says what it will do — create the
+   folder, `git init`, create the file, make the first commit — and does it on confirm.
 3. The workspace opens full-window with three tabs: **Document**, **Compare**, **History**.
 4. In the document, select text, click a block, or press **§** next to a heading to select
    the section. A composer opens under the selection: type an instruction, pick agents and
@@ -98,10 +99,10 @@ workspace-write` (the sandbox blocks writes outside the worktree),
   as **detached** rather than attaching it to the wrong place. Annotations are committed
   along with the next content or metadata commit, never on their own.
 - **Run records are versioned** (`version: 1`) so a format change is a migration.
-- **Setup is part of the feature.** Creating a project runs whatever is missing —
-  `git init`, the starter document, the first commit — so the workspace never opens on a
-  folder its own dispatch would reject. Every step is skipped when it is already true, and
-  the commit takes the document alone, leaving anything you had staged staged.
+- **Setup is part of the feature.** Creating a project runs whatever is missing — the
+  folder, `git init`, the starter document, the first commit — so the workspace never opens
+  on a folder its own dispatch would reject. Every step is skipped when it is already true,
+  and the commit takes the document alone, leaving anything you had staged staged.
 - **It lives in two folders.** `electron/documents/` holds the runs, agents, prompts,
   annotations, setup, IPC shapes and the registrar for every channel it owns;
   `src/documents/` holds the UI with its store, types and markdown helpers. The seams are

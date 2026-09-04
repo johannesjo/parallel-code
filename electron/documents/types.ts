@@ -12,6 +12,8 @@ export interface DocumentFileInfo {
 
 /** What a candidate folder already has, so the picker can offer to fill the gaps. */
 export interface DocumentFolderInfo {
+  /** False for a folder the user named but has not created; setup makes it. */
+  exists: boolean;
   isRepo: boolean;
   /** Set when the folder is inside someone else's repository, which setup refuses to nest in. */
   enclosingRepo: string | null;

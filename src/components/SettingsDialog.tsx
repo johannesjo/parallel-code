@@ -1081,7 +1081,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               label="Document workspaces"
               checked={store.documentWorkspacesEnabled}
               onChange={setDocumentWorkspacesEnabled}
-              description="Add document projects: a Git repository plus one Markdown document. Select a passage, send the same instruction to one or more agents running headlessly in isolated worktrees, compare the proposals side by side, and accept one as a single readable commit."
+              description="Add document projects: a folder with one Markdown document, set up for you if it is not a Git repository yet. Select a passage, send the same instruction to one or more agents running headlessly in isolated worktrees, compare the proposals side by side, and accept one as a single readable commit."
             />
           </SettingsSection>
           <SettingsSection title="Coordinator">

@@ -35,6 +35,7 @@ describe('inspectDocumentFolder', () => {
     fs.writeFileSync(path.join(dir, 'ignore.txt'), 'x');
 
     expect(await inspectDocumentFolder(dir)).toEqual({
+      exists: true,
       isRepo: false,
       enclosingRepo: null,
       hasCommits: false,
@@ -51,6 +52,7 @@ describe('inspectDocumentFolder', () => {
     fs.writeFileSync(path.join(dir, 'loose.md'), '# Two\n');
 
     expect(await inspectDocumentFolder(dir)).toEqual({
+      exists: true,
       isRepo: true,
       enclosingRepo: null,
       hasCommits: true,
@@ -58,6 +60,18 @@ describe('inspectDocumentFolder', () => {
         { path: 'committed.md', committed: true },
         { path: 'loose.md', committed: false },
       ],
+    });
+  });
+
+  it('reports a folder that does not exist yet as empty rather than failing', async () => {
+    const missing = path.join(tmpFolder(), 'not', 'made', 'yet');
+
+    expect(await inspectDocumentFolder(missing)).toEqual({
+      exists: false,
+      isRepo: false,
+      enclosingRepo: null,
+      hasCommits: false,
+      files: [],
     });
   });
 
@@ -82,6 +96,27 @@ describe('prepareDocumentProject', () => {
     expect(result.documentPath).toBe('plan.md');
     expect(result.actions).toEqual(['Initialised a Git repository', 'Committed plan.md']);
     expect(git(dir, 'show', '--format=', '--name-only', 'HEAD').trim()).toBe('plan.md');
+  });
+
+  it('creates the folder itself when the path does not exist yet', async () => {
+    const dir = path.join(tmpFolder(), 'design-notes');
+
+    const result = await prepareDocumentProject(dir, 'notes');
+
+    expect(result.actions).toEqual([
+      'Created the folder',
+      'Initialised a Git repository',
+      'Created notes.md',
+      'Committed notes.md',
+    ]);
+    expect(git(dir, 'show', '--format=', '--name-only', 'HEAD').trim()).toBe('notes.md');
+  });
+
+  it('refuses a path that is a file', async () => {
+    const file = path.join(tmpFolder(), 'a-file.txt');
+    fs.writeFileSync(file, 'x');
+
+    await expect(prepareDocumentProject(file, 'notes.md')).rejects.toThrow(/not a folder/);
   });
 
   it('creates a starter document when the name is new, adding the extension', async () => {

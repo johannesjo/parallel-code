@@ -67,13 +67,17 @@ async function listMarkdown(folder: string, lsFilesArgs: string[]): Promise<stri
  * commits whatever the user picks, so there is no reason to hide it.
  */
 export async function inspectDocumentFolder(folder: string): Promise<DocumentFolderInfo> {
+  // The folder is allowed not to exist: the picker inspects what the user is
+  // still typing, and setup creates whatever is missing.
+  if (!fs.existsSync(folder))
+    return { exists: false, isRepo: false, enclosingRepo: null, hasCommits: false, files: [] };
   const toplevel = await repoToplevel(folder);
   const isRepo = toplevel !== null && toplevel === fs.realpathSync(folder);
   if (!isRepo) {
     const files = scanMarkdown(folder).map(
       (p): DocumentFileInfo => ({ path: p, committed: false }),
     );
-    return { isRepo: false, enclosingRepo: toplevel, hasCommits: false, files };
+    return { exists: true, isRepo: false, enclosingRepo: toplevel, hasCommits: false, files };
   }
   const hasCommits = await gitOk(folder, ['rev-parse', '--verify', 'HEAD']);
   const tracked = new Set(await listMarkdown(folder, []));
@@ -82,7 +86,7 @@ export async function inspectDocumentFolder(folder: string): Promise<DocumentFol
     .sort()
     .slice(0, MAX_FILES)
     .map((p): DocumentFileInfo => ({ path: p, committed: hasCommits && tracked.has(p) }));
-  return { isRepo: true, enclosingRepo: null, hasCommits, files };
+  return { exists: true, isRepo: true, enclosingRepo: null, hasCommits, files };
 }
 
 /** `notes.md` → `Notes`; the heading a brand-new document opens with. */
@@ -96,18 +100,24 @@ function withMarkdownExtension(documentPath: string): string {
 }
 
 /**
- * Brings `folder` up to what the workspace assumes: a repository of its own,
- * with `requestedPath` committed. Every step is skipped when it is already
- * true, so re-running this on a ready project does nothing.
+ * Brings `folder` up to what the workspace assumes: a folder that exists, is a
+ * repository of its own, and holds `requestedPath` as a commit. Every step is
+ * skipped when it is already true, so re-running this on a ready project does
+ * nothing.
  */
 export async function prepareDocumentProject(
   folder: string,
   requestedPath: string,
 ): Promise<DocumentProjectSetup> {
-  if (!fs.existsSync(folder) || !fs.statSync(folder).isDirectory())
-    throw new Error('Pick a folder that exists.');
+  if (fs.existsSync(folder) && !fs.statSync(folder).isDirectory())
+    throw new Error(`${folder} is a file, not a folder.`);
   const documentPath = withMarkdownExtension(validateDocumentPath(requestedPath));
   const actions: string[] = [];
+
+  if (!fs.existsSync(folder)) {
+    fs.mkdirSync(folder, { recursive: true });
+    actions.push('Created the folder');
+  }
 
   const toplevel = await repoToplevel(folder);
   if (toplevel !== null && toplevel !== fs.realpathSync(folder))
