@@ -19,19 +19,20 @@
   gap: 14px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
   flex-shrink: 0;
   min-width: 0;
+  user-select: none;
 }
 
-/* The overlay is fixed at inset:0, so it sits on top of the window titlebar and
-   its [data-tauri-drag-region] — a sibling, not an ancestor, so main.ts's
-   injected `[data-tauri-drag-region] button { no-drag }` rule cannot reach
-   these. Without the carve-out the OS drag region swallows every click in the
-   top ~34px, which is exactly where the header's tabs and buttons sit. The rest
-   of the header stays draggable on purpose: while the workspace is open it is
-   the only handle left for moving the window. */
-.docws-header .docws-tab,
-.docws-header .docws-btn {
+/* The header itself is the window drag region. Carve out every possible
+   control so the entire remaining background behaves consistently. These
+   declarations also protect controls that overlap the native title strip. */
+.docws-header button,
+.docws-header input,
+.docws-header select,
+.docws-header textarea,
+.docws-header a {
   -webkit-app-region: no-drag;
 }
 
@@ -46,6 +47,11 @@
 
 .docws-title svg {
   color: var(--accent);
+  flex-shrink: 0;
+}
+
+.docws-open-editor {
+  padding: 4px;
   flex-shrink: 0;
 }
 

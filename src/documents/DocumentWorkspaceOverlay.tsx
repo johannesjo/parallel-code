@@ -27,6 +27,9 @@ import { RunComposer } from './RunComposer';
 import { RunsRail } from './RunsRail';
 import { createRenderedBlocks } from './use-blocks';
 import { DocumentIcon } from './DocumentIcon';
+import { openInEditor } from '../lib/shell';
+import { errMessage } from '../lib/log';
+import { showNotification } from '../store/notification';
 
 function DocumentPane() {
   let docRef: HTMLDivElement | undefined;
@@ -248,6 +251,13 @@ export function DocumentWorkspaceOverlay() {
   const compareRun = () =>
     documentStore.compareRunId ? documentStore.runs[documentStore.compareRunId] : undefined;
   const reviewable = createMemo(() => reviewableRuns());
+  const editorCommand = () => store.editorCommand.trim();
+  const editorButtonLabel = () => {
+    const documentPath = project()?.documentPath ?? 'document';
+    return editorCommand()
+      ? `Open ${documentPath} in ${editorCommand()}`
+      : `Configure an editor command in Settings to open ${documentPath}`;
+  };
 
   // Close when the project disappears (removed while open).
   createEffect(() => {
@@ -257,6 +267,16 @@ export function DocumentWorkspaceOverlay() {
   onCleanup(() => {
     if (documentStore.projectId) closeDocumentWorkspace();
   });
+
+  function openDocumentInEditor() {
+    const currentProject = project();
+    const command = editorCommand();
+    if (!currentProject?.documentPath || !command) return;
+    const documentPath = `${currentProject.path.replace(/\/$/, '')}/${currentProject.documentPath}`;
+    openInEditor(command, documentPath).catch((err) =>
+      showNotification(`Editor failed: ${errMessage(err)}`),
+    );
+  }
 
   function tab(view: DocumentView, label: string, count?: number) {
     return (
@@ -281,10 +301,22 @@ export function DocumentWorkspaceOverlay() {
 
   return (
     <div class="docws-overlay" role="dialog" aria-label="Document workspace">
-      <div class="docws-header">
+      <div class="docws-header" data-tauri-drag-region>
         <div class="docws-title">
           <DocumentIcon />
           <span>{project()?.name}</span>
+          <button
+            type="button"
+            class="docws-btn docws-open-editor"
+            aria-label={editorButtonLabel()}
+            title={editorButtonLabel()}
+            disabled={!editorCommand() || !project()?.documentPath}
+            onClick={() => void openDocumentInEditor()}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-3a.75.75 0 0 1 1.5 0v3A3 3 0 0 1 12.5 16h-9A3 3 0 0 1 0 12.5v-9A3 3 0 0 1 3.5 0h3a.75.75 0 0 1 0 1.5h-3ZM10 .75a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0V2.56L8.53 8.53a.75.75 0 0 1-1.06-1.06L13.44 1.5H10.75A.75.75 0 0 1 10 .75Z" />
+            </svg>
+          </button>
         </div>
         <span class="docws-subtitle" title={project()?.documentPath}>
           {project()?.documentPath}
