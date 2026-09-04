@@ -11,7 +11,7 @@ import {
   updateDocumentAnnotationText,
 } from './store';
 import { documentAgentSupport } from '../../electron/documents/shared';
-import type { DocumentAnnotation } from '../ipc/types';
+import type { DocumentAnnotation } from './types';
 
 interface AnnotationBubbleProps {
   annotation: DocumentAnnotation;

@@ -28,7 +28,7 @@ import type {
   DocumentRunRecord,
   DocumentScope,
   DocumentSnapshot,
-} from '../ipc/shared-types.js';
+} from './types.js';
 
 /** A proposal that runs longer than this is killed and marked failed. */
 const CANDIDATE_TIMEOUT_MS = 30 * 60_000;

@@ -7,7 +7,7 @@ import { errMessage } from '../lib/log';
 import { theme, sectionLabelStyle } from '../lib/theme';
 import { addDocumentProject } from '../store/projects';
 import { showNotification } from '../store/notification';
-import type { DocumentFolderInfo, DocumentProjectSetup } from '../ipc/types';
+import type { DocumentFolderInfo, DocumentProjectSetup } from './types';
 import { openDocumentWorkspace } from './store';
 
 interface NewDocumentProjectDialogProps {

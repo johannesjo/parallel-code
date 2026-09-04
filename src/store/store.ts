@@ -9,6 +9,7 @@ export {
   getProjectBranchPrefix,
   pickAndAddProject,
   addDocumentProject,
+  codeProjects,
   isDocumentProject,
   validateProjectPaths,
   relinkProject,

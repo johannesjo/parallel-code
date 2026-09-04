@@ -5,6 +5,7 @@
 // main-side bridge.
 
 import { store } from './core';
+import { codeProjects } from './projects';
 import { createTask, updateTaskNotes } from './tasks';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
@@ -38,8 +39,7 @@ function handleGetProjects(req: RendererRequest): void {
   reply(
     req.reqId,
     true,
-    // Document projects have no task flow, so they are not offered as targets.
-    store.projects.filter((p) => p.kind !== 'document').map((p) => ({ id: p.id, name: p.name })),
+    codeProjects().map((p) => ({ id: p.id, name: p.name })),
   );
 }
 

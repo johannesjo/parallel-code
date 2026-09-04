@@ -1,4 +1,4 @@
-import type { DocumentAnchor } from '../ipc/types';
+import type { DocumentAnchor } from './types';
 import { blockRangeText, nearestHeading, type DocumentBlock } from './markdown-blocks';
 
 /** Characters of neighbouring text kept on either side of an anchor. */

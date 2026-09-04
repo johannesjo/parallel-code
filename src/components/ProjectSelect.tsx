@@ -1,5 +1,5 @@
 import { For, Show } from 'solid-js';
-import { store } from '../store/store';
+import { codeProjects } from '../store/projects';
 
 interface ProjectSelectProps {
   value: string | null;
@@ -20,11 +20,7 @@ export function ProjectSelect(props: ProjectSelectProps) {
           {props.placeholder}
         </option>
       </Show>
-      <For
-        each={store.projects
-          .filter((p) => p.kind !== 'document')
-          .sort((a, b) => a.name.localeCompare(b.name))}
-      >
+      <For each={codeProjects().sort((a, b) => a.name.localeCompare(b.name))}>
         {(project) => (
           <option value={project.id}>
             {project.name} — {project.path}

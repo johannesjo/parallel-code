@@ -7,7 +7,7 @@ import {
   rejectDocumentRun,
 } from './store';
 import { formatRelativeAge } from '../lib/relativeAge';
-import type { DocumentCandidateRecord, DocumentRunRecord } from '../ipc/types';
+import type { DocumentCandidateRecord, DocumentRunRecord } from './types';
 
 function scopeLabel(run: DocumentRunRecord): string {
   const s = run.scope;

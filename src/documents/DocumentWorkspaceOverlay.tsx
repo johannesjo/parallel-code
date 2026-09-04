@@ -16,7 +16,7 @@ import {
   type DocumentView,
 } from './store';
 import { relocateAnchor } from './annotation-anchor';
-import type { DocumentAnnotation } from '../ipc/types';
+import type { DocumentAnnotation } from './types';
 import { AnnotationBubble } from './AnnotationBubble';
 import { EditProjectDialog } from '../components/EditProjectDialog';
 import type { Project } from '../store/types';

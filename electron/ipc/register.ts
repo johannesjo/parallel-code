@@ -94,30 +94,6 @@ import {
 } from './updater.js';
 import { spawn } from 'child_process';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
-import {
-  acceptDocumentCandidate,
-  cancelDocumentRun,
-  dispatchDocumentRun,
-  getDocumentAtCommit,
-  getDocumentDiff,
-  getDocumentHistory,
-  listDocumentRuns,
-  readDocumentSnapshot,
-  rejectDocumentRun,
-  revertDocumentCommit,
-  setDocumentCandidateNote,
-  startDocumentWatcher,
-  stopDocumentWatcher,
-  validateDocumentPath,
-  validateSha,
-} from '../documents/runs.js';
-import { inspectDocumentFolder, prepareDocumentProject } from '../documents/setup.js';
-import {
-  askAnnotation,
-  deleteAnnotation,
-  readAnnotations,
-  saveAnnotation,
-} from '../documents/annotations.js';
 import { setMinimaxApiKey } from './ask-code-minimax.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
 import { fetchClaudeUsage } from './claude-usage.js';
@@ -130,7 +106,9 @@ import {
   assertStringArray,
   assertOptionalString,
   assertOptionalBoolean,
+  validatePath,
 } from './validate.js';
+import { registerDocumentHandlers } from '../documents/register.js';
 import { validateBranchName as sharedValidateBranchName, validateUUID } from '../mcp/validation.js';
 import { debug as logDebug, warn as logWarn, errMessage } from '../log.js';
 import { getMCPRemoteServerUrl, detectStaleDockerMCPUrl } from '../mcp/config.js';
@@ -201,13 +179,6 @@ async function startRemoteServerOnFreePort(
     }
   }
   throw new Error(`No free port found in range ${start}–${end}`);
-}
-
-/** Reject paths that are non-absolute or attempt directory traversal. */
-function validatePath(p: unknown, label: string): void {
-  if (typeof p !== 'string') throw new Error(`${label} must be a string`);
-  if (!path.isAbsolute(p)) throw new Error(`${label} must be absolute`);
-  if (p.includes('..')) throw new Error(`${label} must not contain ".."`);
 }
 
 function isMissingCommandError(err: unknown, command: string): boolean {
@@ -986,128 +957,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     cancelAskAboutCode(args.requestId);
   });
 
-  // --- Document workspaces ---
-  // Every handler takes the project root from the renderer and validates it;
-  // the document path is repo-relative and checked against traversal.
-  ipcMain.handle(IPC.ReadDocument, (_e, args) => {
-    const projectRoot = projectRootArg(args);
-    return readDocumentSnapshot(projectRoot, validateDocumentPath(args.documentPath));
-  });
-
-  ipcMain.handle(IPC.StartDocumentWatcher, (_e, args) => {
-    assertString(args.key, 'key');
-    const projectRoot = projectRootArg(args);
-    startDocumentWatcher(win, args.key, projectRoot, validateDocumentPath(args.documentPath));
-  });
-
-  ipcMain.handle(IPC.StopDocumentWatcher, (_e, args) => {
-    assertString(args.key, 'key');
-    stopDocumentWatcher(args.key);
-  });
-
-  ipcMain.handle(IPC.InspectDocumentFolder, (_e, args) => {
-    return inspectDocumentFolder(projectRootArg(args));
-  });
-
-  ipcMain.handle(IPC.PrepareDocumentProject, (_e, args) => {
-    return prepareDocumentProject(projectRootArg(args), args.documentPath);
-  });
-
-  ipcMain.handle(IPC.ListDocumentRuns, (_e, args) => {
-    return listDocumentRuns(projectRootArg(args));
-  });
-
-  ipcMain.handle(IPC.DispatchDocumentRun, (_e, args) => {
-    const projectRoot = projectRootArg(args);
-    return dispatchDocumentRun(win, {
-      projectRoot,
-      documentPath: args.documentPath,
-      instruction: args.instruction,
-      scope: args.scope,
-      candidates: args.candidates,
-    });
-  });
-
-  ipcMain.handle(IPC.CancelDocumentRun, (_e, args) => {
-    cancelDocumentRun(args.runId);
-  });
-
-  ipcMain.handle(IPC.AcceptDocumentCandidate, (_e, args) => {
-    const projectRoot = projectRootArg(args);
-    return acceptDocumentCandidate(projectRoot, args.runId, args.candidateId);
-  });
-
-  ipcMain.handle(IPC.RejectDocumentRun, (_e, args) => {
-    const projectRoot = projectRootArg(args);
-    return rejectDocumentRun(projectRoot, args.runId);
-  });
-
-  ipcMain.handle(IPC.SetDocumentCandidateNote, (_e, args) => {
-    const projectRoot = projectRootArg(args);
-    return setDocumentCandidateNote(projectRoot, args.runId, args.candidateId, args.note);
-  });
-
-  ipcMain.handle(IPC.GetDocumentHistory, (_e, args) => {
-    const projectRoot = projectRootArg(args);
-    assertOptionalBoolean(args.wholeProject, 'wholeProject');
-    return getDocumentHistory(
-      projectRoot,
-      validateDocumentPath(args.documentPath),
-      args.wholeProject === true,
-    );
-  });
-
-  ipcMain.handle(IPC.GetDocumentAtCommit, (_e, args) => {
-    const projectRoot = projectRootArg(args);
-    return getDocumentAtCommit(
-      projectRoot,
-      validateSha(args.sha),
-      validateDocumentPath(args.documentPath),
-    );
-  });
-
-  ipcMain.handle(IPC.GetDocumentDiff, (_e, args) => {
-    const projectRoot = projectRootArg(args);
-    const to = validateSha(args.to, 'to');
-    // `from` is a commit hash, or that hash's parent for history entries.
-    assertString(args.from, 'from');
-    const from = args.from.endsWith('^')
-      ? `${validateSha(args.from.slice(0, -1), 'from')}^`
-      : validateSha(args.from, 'from');
-    return getDocumentDiff(projectRoot, from, to, validateDocumentPath(args.documentPath));
-  });
-
-  ipcMain.handle(IPC.RevertDocumentCommit, (_e, args) => {
-    const projectRoot = projectRootArg(args);
-    return revertDocumentCommit(projectRoot, validateSha(args.sha));
-  });
-
-  // --- Document annotations ---
-  ipcMain.handle(IPC.ListDocumentAnnotations, (_e, args) => {
-    return readAnnotations(projectRootArg(args));
-  });
-
-  ipcMain.handle(IPC.SaveDocumentAnnotation, (_e, args) => {
-    return saveAnnotation(projectRootArg(args), args.annotation);
-  });
-
-  ipcMain.handle(IPC.DeleteDocumentAnnotation, (_e, args) => {
-    return deleteAnnotation(projectRootArg(args), args.id);
-  });
-
-  ipcMain.handle(IPC.AskDocumentAnnotation, (_e, args) => {
-    const projectRoot = projectRootArg(args);
-    assertOptionalString(args.envFile, 'envFile');
-    return askAnnotation(win, {
-      projectRoot,
-      documentPath: args.documentPath,
-      annotationId: args.annotationId,
-      agentId: args.agentId,
-      agentName: args.agentName,
-      command: args.command,
-      envFile: args.envFile,
-    });
-  });
+  registerDocumentHandlers(win);
 
   // --- File links ---
   ipcMain.handle(IPC.OpenPath, (_e, args) => {

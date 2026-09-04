@@ -11,7 +11,7 @@ import type {
   DocumentAnnotationEvent,
   DocumentRunEvent,
   DocumentRunRecord,
-} from '../ipc/shared-types.js';
+} from './types.js';
 
 /**
  * Drives the real `claude` CLI through one proposal and one resumed follow-up.

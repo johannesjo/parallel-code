@@ -8,8 +8,8 @@ import { createStore, produce } from 'solid-js/store';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { errMessage } from '../lib/log';
+import type { AgentDef } from '../ipc/types';
 import type {
-  AgentDef,
   DocumentAnchor,
   DocumentAnnotation,
   DocumentAnnotationEvent,
@@ -20,7 +20,7 @@ import type {
   DocumentRunRecord,
   DocumentScope,
   DocumentSnapshot,
-} from '../ipc/types';
+} from './types';
 import {
   DEFAULT_DOCUMENT_MAIN_AGENT,
   MAX_DOCUMENT_CANDIDATES,

@@ -55,6 +55,11 @@ export function isDocumentProject(project: Project | undefined): boolean {
   return project?.kind === 'document' && typeof project.documentPath === 'string';
 }
 
+/** Projects that take tasks. Document projects have no task flow, so nothing offers them. */
+export function codeProjects(): Project[] {
+  return store.projects.filter((project) => !isDocumentProject(project));
+}
+
 export function removeProject(projectId: string): void {
   // Guard: skip removal if any tasks still reference this project
   const allTaskIds = [...store.taskOrder, ...store.collapsedTaskOrder];

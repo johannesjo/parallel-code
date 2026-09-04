@@ -21,7 +21,7 @@ import type {
   DocumentAnnotation,
   DocumentAnnotationEvent,
   DocumentAnnotationsFile,
-} from '../ipc/shared-types.js';
+} from './types.js';
 
 export const ANNOTATIONS_REL_PATH = path.posix.join('.parallel', 'annotations.json');
 const MAX_TEXT_CHARS = 20_000;

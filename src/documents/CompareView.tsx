@@ -17,7 +17,7 @@ import {
   setDocumentCandidateNote,
 } from './store';
 import { getProject } from '../store/projects';
-import type { DocumentCandidateRecord, DocumentRunRecord } from '../ipc/types';
+import type { DocumentCandidateRecord, DocumentRunRecord } from './types';
 import { DocumentViewer, type BlockRange } from './DocumentViewer';
 import { SourceDiff } from './SourceDiff';
 import { createRenderedBlocks } from './use-blocks';

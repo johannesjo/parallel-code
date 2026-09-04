@@ -8,11 +8,7 @@ import path from 'path';
 import { ensureWorktreeContainerExclude } from '../ipc/git.js';
 import { git, gitOk } from './git.js';
 import { validateDocumentPath } from './runs.js';
-import type {
-  DocumentFileInfo,
-  DocumentFolderInfo,
-  DocumentProjectSetup,
-} from '../ipc/shared-types.js';
+import type { DocumentFileInfo, DocumentFolderInfo, DocumentProjectSetup } from './types.js';
 
 const MAX_FILES = 1000;
 /** How far the pre-repository scan walks before it stops looking. */

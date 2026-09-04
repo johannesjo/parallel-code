@@ -1,4 +1,4 @@
-import type { DocumentRationale, DocumentScope } from '../ipc/shared-types.js';
+import type { DocumentRationale, DocumentScope } from './types.js';
 
 /** Largest diff (in characters) handed to a resumed main session. */
 const MAX_CATCH_UP_DIFF_CHARS = 20_000;

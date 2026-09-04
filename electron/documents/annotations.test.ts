@@ -11,7 +11,7 @@ import {
   saveAnnotation,
   validateAnnotationInput,
 } from './annotations.js';
-import type { DocumentAnnotation, DocumentAnnotationEvent } from '../ipc/shared-types.js';
+import type { DocumentAnnotation, DocumentAnnotationEvent } from './types.js';
 
 const anchor = {
   path: 'docs/spec.md',

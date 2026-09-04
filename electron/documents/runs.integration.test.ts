@@ -17,7 +17,7 @@ import {
   rejectDocumentRun,
 } from './runs.js';
 import { inspectDocumentFolder } from './setup.js';
-import type { DocumentRunEvent, DocumentRunRecord } from '../ipc/shared-types.js';
+import type { DocumentRunEvent, DocumentRunRecord } from './types.js';
 
 /**
  * Exercises the whole proposal lifecycle against a real temporary repository

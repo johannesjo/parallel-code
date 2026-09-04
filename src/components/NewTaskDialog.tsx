@@ -30,6 +30,7 @@ import {
   setPrefillPrompt,
   setDockerAvailable,
   setDockerImage,
+  codeProjects,
 } from '../store/store';
 import type { GitIsolationMode } from '../store/types';
 import {
@@ -551,11 +552,9 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
 
             // Pre-fill from drop data if present
             const dropUrl = store.newTaskDropUrl;
-            const codeProjects = store.projects.filter((p) => p.kind !== 'document');
+            const targets = codeProjects();
             const fallbackProjectId =
-              codeProjects.find((p) => p.id === store.lastProjectId)?.id ??
-              codeProjects[0]?.id ??
-              null;
+              targets.find((p) => p.id === store.lastProjectId)?.id ?? targets[0]?.id ?? null;
             const defaults = dropUrl ? getGitHubDropDefaults(dropUrl) : null;
 
             if (dropUrl) setPrompt(`review ${dropUrl}`);

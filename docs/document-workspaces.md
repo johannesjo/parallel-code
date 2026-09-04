@@ -102,9 +102,12 @@ workspace-write` (the sandbox blocks writes outside the worktree),
   `git init`, the starter document, the first commit — so the workspace never opens on a
   folder its own dispatch would reject. Every step is skipped when it is already true, and
   the commit takes the document alone, leaving anything you had staged staged.
-- **It lives in two folders.** `electron/documents/` (runs, agents, prompts, annotations,
-  setup) and `src/documents/` (the workspace UI with its store and markdown helpers). The
-  one file the renderer imports across that boundary is `electron/documents/shared.ts`.
+- **It lives in two folders.** `electron/documents/` holds the runs, agents, prompts,
+  annotations, setup, IPC shapes and the registrar for every channel it owns;
+  `src/documents/` holds the UI with its store, types and markdown helpers. The seams are
+  three lines: `registerDocumentHandlers(win)` and `stopAllDocumentWork()` in main,
+  `<DocumentWorkspaceOverlay />` in `App.tsx`. The one runtime module the renderer imports
+  across the process boundary is `electron/documents/shared.ts`.
 
 ### Not in this slice
 

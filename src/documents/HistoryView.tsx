@@ -5,7 +5,7 @@ import { confirm } from '../lib/dialog';
 import { formatRelativeAge } from '../lib/relativeAge';
 import { documentStore, revertDocumentCommit } from './store';
 import { getProject } from '../store/projects';
-import type { DocumentHistoryEntry } from '../ipc/types';
+import type { DocumentHistoryEntry } from './types';
 import { DocumentViewer } from './DocumentViewer';
 import { SourceDiff } from './SourceDiff';
 import { createRenderedBlocks } from './use-blocks';
