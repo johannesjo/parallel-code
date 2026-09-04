@@ -31,6 +31,7 @@
     "test:client": "vitest run --config vitest.client.config.ts",
     "test:coordinator-pty": "RUN_COORDINATOR_PTY_TEST=1 vitest run electron/mcp/coordinator-real-pty.integration.test.ts",
     "test:coverage": "vitest run --coverage",
+    "test:ci": "vitest run --coverage && npm run test:client",
     "check:coordinator-log": "node scripts/check-coordinator-run.mjs",
     "check": "npm run compile && npm run typecheck && npm run lint && npm run format:check",
     "check:static": "npm run typecheck && npm run lint && npm run lint:dead && npm run lint:arch",
