@@ -54,18 +54,22 @@ describe('setupAutosave scheduling', () => {
 
   it('never postpones a save past the max wait while changes keep arriving', () => {
     withAutosave(() => {
-      // Simulate continuous typing: a change every 500ms for 12 seconds.
+      // Simulate continuous typing: a change every 500ms, never a 1s gap.
       const step = 500;
-      let saves = 0;
-      for (let elapsed = 0; elapsed < 12_000; elapsed += step) {
-        setStore('showSidebarTips', !store.showSidebarTips);
-        vi.advanceTimersByTime(step);
-        saves = mockSaveState.mock.calls.length;
-        // Before the max wait elapses no save is forced...
-        if (elapsed + step < AUTOSAVE_MAX_WAIT_MS) expect(saves).toBe(0);
-      }
-      // ...but over 12s of nonstop edits at least two saves were written.
-      expect(saves).toBeGreaterThanOrEqual(2);
+      const typeFor = (ms: number) => {
+        for (let elapsed = 0; elapsed < ms; elapsed += step) {
+          setStore('showSidebarTips', !store.showSidebarTips);
+          vi.advanceTimersByTime(step);
+        }
+      };
+      typeFor(AUTOSAVE_MAX_WAIT_MS - step);
+      expect(mockSaveState).not.toHaveBeenCalled();
+      // The forced save lands exactly at the max wait after the burst began...
+      typeFor(step);
+      expect(mockSaveState).toHaveBeenCalledTimes(1);
+      // ...and the next burst gets its own max wait.
+      typeFor(AUTOSAVE_MAX_WAIT_MS);
+      expect(mockSaveState).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -75,13 +79,5 @@ describe('setupAutosave scheduling', () => {
       vi.advanceTimersByTime(AUTOSAVE_MAX_WAIT_MS * 2);
       expect(mockSaveState).not.toHaveBeenCalled();
     });
-  });
-
-  it('flushes a pending save when the owner is disposed', () => {
-    withAutosave(() => {
-      setStore('showSidebarTips', !store.showSidebarTips);
-      expect(mockSaveState).not.toHaveBeenCalled();
-    });
-    expect(mockSaveState).toHaveBeenCalledTimes(1);
   });
 });

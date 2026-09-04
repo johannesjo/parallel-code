@@ -302,7 +302,7 @@ export function MergeDialog(props: MergeDialogProps) {
                         refetchBranchLog();
                         refetchWorktreeStatus();
                       } catch (err) {
-                        setRebaseError(String(err));
+                        setRebaseError(errMessage(err));
                       } finally {
                         setRebasing(false);
                       }

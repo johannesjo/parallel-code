@@ -128,6 +128,8 @@ interface TerminalViewProps {
   /** False while this pane is hidden inside its task (an unselected tab).
    *  Task-level visibility (focus mode, tiling scroll) is read from the store. */
   visible?: boolean;
+  /** Not a task panel (arena overlay): ignore task-level visibility. */
+  standalone?: boolean;
   command: string;
   args: string[];
   cwd: string;
@@ -995,6 +997,7 @@ export function TerminalView(props: TerminalViewProps) {
         taskId,
         viewportVisibility: store.taskViewportVisibility[taskId],
         paneVisible: props.visible,
+        standalone: props.standalone,
       }),
     );
 
@@ -1016,6 +1019,9 @@ export function TerminalView(props: TerminalViewProps) {
       try {
         const addon = new WebglAddon();
         addon.onContextLoss(() => {
+          // A loss reported by an addon we already detached is our own
+          // loseContext() below, not a GPU event — don't count it.
+          if (webglAddon !== addon) return;
           addon.dispose();
           webglAddon = undefined;
           if (recordSharedWebglContextLoss()) {
@@ -1042,11 +1048,24 @@ export function TerminalView(props: TerminalViewProps) {
         clearTimeout(webglReattachTimer);
         webglReattachTimer = undefined;
       }
-      // Dropping the addon returns this pane to the DOM renderer and releases
-      // its GL context. The glyph atlas is shared and ref-counted by xterm, so
-      // other panes keep theirs.
-      webglAddon?.dispose();
+      const addon = webglAddon;
+      if (!addon) return;
       webglAddon = undefined;
+      // The renderer's canvas; dispose() removes it from the DOM.
+      const canvas = term?.element?.querySelector('canvas');
+      // Dropping the addon returns this pane to the DOM renderer. The glyph
+      // atlas is shared and ref-counted by xterm, so other panes keep theirs.
+      addon.dispose();
+      // dispose() drops the canvas but the GL context lingers in Chromium's
+      // active set until the canvas is garbage collected — and the point is
+      // to free that slot now, not at some later GC. Lose it explicitly. The
+      // addon's own loss listener went with dispose(), and the onContextLoss
+      // handler above ignores an addon that is no longer current.
+      try {
+        canvas?.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext();
+      } catch {
+        // context already gone
+      }
     }
 
     // Attach on the hidden→visible edge, detach a little after visible→hidden.

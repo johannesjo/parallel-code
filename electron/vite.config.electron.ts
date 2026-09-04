@@ -14,7 +14,7 @@ const parentDir = path.resolve(rootDir, '..');
  *   engine (WebAssembly instantiation is blocked without it).
  * - style-src 'unsafe-inline': Solid `style={{}}` attributes plus the style
  *   elements xterm, Monaco, and mermaid inject.
- * - img-src https:: images in rendered markdown (notes, plans).
+ * - img-src http(s): images linked from rendered markdown (notes, plans).
  * - worker-src blob:: Monaco language workers.
  *
  * Applied at build time only: the dev server injects its own client and HMR
@@ -24,7 +24,7 @@ export const RENDERER_CSP = [
   "default-src 'self'",
   "script-src 'self' 'wasm-unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
+  "img-src 'self' data: blob: http: https:",
   "font-src 'self' data:",
   "connect-src 'self'",
   "worker-src 'self' blob:",

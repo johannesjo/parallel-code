@@ -629,7 +629,8 @@ export async function mergeTask(
   if (task.gitIsolation !== 'worktree') throw new Error('Only worktree tasks can be merged');
 
   const projectRoot = getProjectPath(task.projectId);
-  if (!projectRoot) throw new Error('Project folder not found — relink the project first');
+  if (!projectRoot)
+    throw new Error('Project folder not found — use Relink in the project settings');
 
   const agentIds = [...task.agentIds];
   const shellAgentIds = [...task.shellAgentIds];
@@ -676,7 +677,8 @@ export async function pushTask(taskId: string, onOutput: Channel<string>): Promi
   if (task.gitIsolation !== 'worktree') throw new Error('Only worktree tasks can be pushed');
 
   const projectRoot = getProjectPath(task.projectId);
-  if (!projectRoot) throw new Error('Project folder not found — relink the project first');
+  if (!projectRoot)
+    throw new Error('Project folder not found — use Relink in the project settings');
 
   await invoke(IPC.PushTask, {
     projectRoot,
