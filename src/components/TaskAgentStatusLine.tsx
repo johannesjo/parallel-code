@@ -24,7 +24,7 @@ export function describeAgentStatus(status: TaskAgentHookStatus): AgentStatusDes
   }
   if (status.state === 'working') {
     const tool = status.toolName ? [status.toolName, status.detail].filter(Boolean).join(' ') : '';
-    return { label: 'Working', text: tool || 'thinking', color: theme.fg };
+    return { label: 'Working', text: tool || 'thinking', color: theme.fgMuted };
   }
   if (status.event === 'Interrupt') {
     return { label: 'Interrupted', text: '', color: theme.fgMuted };
@@ -55,8 +55,8 @@ export function TaskAgentStatusLine(props: TaskAgentStatusLineProps) {
               'align-items': 'center',
               gap: '5px',
               'min-width': '0',
-              color: theme.fgMuted,
-              'font-size': sf(11),
+              color: theme.fgSubtle,
+              'font-size': sf(10),
               'line-height': '1.4',
               overflow: 'hidden',
               'white-space': 'nowrap',
@@ -80,9 +80,7 @@ export function TaskAgentStatusLine(props: TaskAgentStatusLineProps) {
                 {described().text}
               </span>
             </Show>
-            <span style={{ 'font-size': sf(11), 'flex-shrink': '0', 'margin-left': 'auto' }}>
-              {age()}
-            </span>
+            <span style={{ 'flex-shrink': '0', 'margin-left': 'auto' }}>{age()}</span>
           </div>
         );
       }}

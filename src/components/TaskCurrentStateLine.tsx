@@ -42,8 +42,8 @@ export function TaskCurrentStateLine(props: TaskCurrentStateLineProps) {
             padding: props.variant === 'card' ? '0 12px' : undefined,
             background: props.variant === 'card' ? theme.bgSelectedSubtle : 'transparent',
             'border-bottom': props.variant === 'card' ? `1px solid ${theme.border}` : undefined,
-            color: theme.fgMuted,
-            'font-size': sf(11),
+            color: props.variant === 'card' ? theme.fgMuted : theme.fgSubtle,
+            'font-size': props.variant === 'card' ? sf(11) : sf(10),
             'line-height': '1.4',
             overflow: 'hidden',
             'white-space': 'nowrap',
@@ -51,7 +51,7 @@ export function TaskCurrentStateLine(props: TaskCurrentStateLineProps) {
         >
           <span
             style={{
-              color: theme.fg,
+              color: props.variant === 'card' ? theme.fg : theme.fgMuted,
               'font-weight': props.variant === 'card' ? '600' : '500',
               'flex-shrink': '0',
             }}
@@ -75,8 +75,9 @@ export function TaskCurrentStateLine(props: TaskCurrentStateLineProps) {
             {(freshness) => (
               <span
                 style={{
-                  color: current().stale ? theme.warning : theme.fgMuted,
-                  'font-size': sf(11),
+                  // Only a stale timestamp earns its own colour; otherwise it
+                  // rides the line's own, quieter than the summary beside it.
+                  color: current().stale ? theme.warning : undefined,
                   'flex-shrink': '0',
                 }}
               >

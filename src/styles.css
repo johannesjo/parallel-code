@@ -1101,12 +1101,14 @@ textarea::placeholder {
 
 /* Status lines under a task name are reference detail, not the row's identity:
    keep them quiet and give them air so the sidebar scans as a list of names.
-   Hovering a row is the signal that its detail is wanted. */
+   Hovering a row is the signal that its detail is wanted. A mono face sets them
+   apart from the name as machine-reported state rather than a second title. */
 .task-item .task-agent-status,
 .task-item .task-current-state-sidebar {
   margin-top: 4px;
   padding-left: var(--task-row-indent);
-  opacity: 0.45;
+  font-family: var(--font-mono);
+  opacity: 0.6;
   transition: opacity 0.13s ease;
 }
 
