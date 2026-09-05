@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  Works with Claude Code, Codex, and Gemini · Every change isolated in its own git worktree · Free, open source, no extra platform fee
+  Works with Claude Code, Codex, Gemini, and Docker-pinned Kimi Code · Every change isolated in its own git worktree · Free, open source, no extra platform fee
 </p>
 
 <p align="center">
@@ -45,7 +45,7 @@
 
 ## Why Parallel Code?
 
-- **Use the AI coding tools you already trust** — [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), and [Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli) — all from one interface.
+- **Use the AI coding tools you already trust** — [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), Docker-pinned [Kimi Code CLI](https://github.com/MoonshotAI/kimi-code), and [Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli) — all from one interface.
 - **Free and open source** — no extra subscription required. MIT licensed.
 - **Keep every change isolated and reviewable** — each task gets its own git branch and worktree automatically.
 - **Run agents in parallel, not in sequence** — five agents on five features at the same time, zero conflicts.
@@ -115,9 +115,22 @@ When you're happy with the result, merge the branch back to main from the sideba
    - **macOS** — `.dmg` (universal)
    - **Linux** — `.AppImage` or `.deb`
 
-2. **Install at least one AI coding CLI:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Antigravity CLI](https://antigravity.google/), or [Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli)
+2. **Install at least one AI coding CLI:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Antigravity CLI](https://antigravity.google/), or [Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli). Kimi Code is currently supported through the bundled Docker image instead of a native installation.
 
 3. **Open Parallel Code**, point it at a git repo, and start dispatching tasks.
+
+<details>
+<summary><strong>Kimi Code: use Docker mode</strong></summary>
+
+Parallel Code's Kimi integration writes an auto-discovered project MCP config into each fresh
+task worktree. Kimi Code 0.33 added a workspace-trust prompt, and 0.36 defaults to declining
+project MCP launch targets in that prompt. A current native Kimi installation can therefore
+pause on every new worktree instead of starting the task unattended.
+
+Use Docker-isolated Kimi tasks for now. The bundled image pins Kimi Code 0.32, before the
+workspace-trust gate. Native Kimi support is not currently claimed.
+
+</details>
 
 <details>
 <summary><strong>Antigravity CLI: run natively, not in Docker isolation</strong></summary>

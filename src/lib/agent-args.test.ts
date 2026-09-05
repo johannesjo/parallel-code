@@ -32,6 +32,16 @@ const antigravityAgent = {
   skip_permissions_args: ['--dangerously-skip-permissions'],
 };
 
+const kimiAgent = {
+  id: 'kimi',
+  name: 'Kimi Code CLI',
+  description: 'Kimi Code agent',
+  command: 'kimi',
+  args: [],
+  resume_args: ['--continue'],
+  skip_permissions_args: ['--yolo'],
+};
+
 const copilotAgent = {
   id: 'copilot',
   name: 'Copilot CLI',
@@ -144,6 +154,32 @@ describe('buildTaskAgentArgs', () => {
         true,
       ),
     ).toEqual(['-c']);
+  });
+
+  it('does not fall back to --mcp-config for Kimi Code', () => {
+    expect(
+      buildTaskAgentArgs(
+        kimiAgent,
+        {
+          skipPermissions: false,
+          mcpConfigPath: '/tmp/mcp.json',
+        },
+        false,
+      ),
+    ).toEqual([]);
+  });
+
+  it('passes Kimi Code resume and skip-permission flags without --mcp-config', () => {
+    expect(
+      buildTaskAgentArgs(
+        kimiAgent,
+        {
+          skipPermissions: true,
+          mcpConfigPath: '/tmp/mcp.json',
+        },
+        true,
+      ),
+    ).toEqual(['--continue', '--yolo']);
   });
 
   it('uses Copilot --additional-mcp-config fallback instead of the unsupported --mcp-config', () => {

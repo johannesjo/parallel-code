@@ -45,6 +45,15 @@ const DEFAULT_AGENTS: AgentDef[] = [
     description: "Google's Gemini CLI agent",
   },
   {
+    id: 'kimi',
+    name: 'Kimi Code CLI',
+    command: 'kimi',
+    args: [],
+    resume_args: ['--continue'],
+    skip_permissions_args: ['--yolo'],
+    description: "Moonshot AI's Kimi Code CLI agent",
+  },
+  {
     id: 'opencode',
     name: 'OpenCode',
     command: 'opencode',

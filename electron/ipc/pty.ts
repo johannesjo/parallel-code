@@ -835,6 +835,7 @@ const AGENT_CONFIG_DIRS: Record<string, string[]> = {
   opencode: ['.config/opencode'],
   copilot: ['.config/github-copilot'],
   agy: ['.gemini/antigravity-cli'],
+  kimi: ['.kimi-code'],
 };
 
 // Config files (not directories) each agent CLI uses for auth, relative to HOME.

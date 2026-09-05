@@ -9,6 +9,10 @@ function isAntigravityCommand(command: string): boolean {
   return command.split('/').pop() === 'agy';
 }
 
+function isKimiCommand(command: string): boolean {
+  return command.split('/').pop() === 'kimi';
+}
+
 function isCopilotCommand(command: string): boolean {
   return command.split('/').pop() === 'copilot';
 }
@@ -26,8 +30,14 @@ export function isResumeArgsFailure(command: string, lastOutput: string[]): bool
 }
 
 function legacyMcpConfigArgs(command: string, mcpConfigPath: string | undefined): string[] {
-  // Codex and Antigravity have no `--mcp-config` flag; passing it would break launch.
-  if (!mcpConfigPath || isCodexCommand(command) || isAntigravityCommand(command)) return [];
+  // Codex, Antigravity, and Kimi have no `--mcp-config` flag; passing it would break launch.
+  if (
+    !mcpConfigPath ||
+    isCodexCommand(command) ||
+    isAntigravityCommand(command) ||
+    isKimiCommand(command)
+  )
+    return [];
   // Copilot has no `--mcp-config` flag either — it exits with "unknown option" (#146).
   // Use its `--additional-mcp-config <@file>` flag, which takes the same config shape.
   if (isCopilotCommand(command)) return ['--additional-mcp-config', `@${mcpConfigPath}`];

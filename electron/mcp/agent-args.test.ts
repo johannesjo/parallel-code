@@ -6,6 +6,7 @@ import {
   isAntigravityCommand,
   isCodexCommand,
   isCopilotCommand,
+  isKimiCommand,
 } from './agent-args.js';
 
 const config = {
@@ -65,6 +66,16 @@ describe('MCP agent launch args', () => {
 
   it('emits no --mcp-config for Antigravity', () => {
     expect(buildMcpLaunchArgs('agy', '/tmp/config.json', config)).toEqual([]);
+  });
+
+  it('detects Kimi commands by executable name', () => {
+    expect(isKimiCommand('kimi')).toBe(true);
+    expect(isKimiCommand('/home/agent/.local/bin/kimi')).toBe(true);
+    expect(isKimiCommand('claude')).toBe(false);
+  });
+
+  it('emits no --mcp-config for Kimi Code', () => {
+    expect(buildMcpLaunchArgs('kimi', '/tmp/config.json', config)).toEqual([]);
   });
 
   it('detects copilot commands by executable name', () => {

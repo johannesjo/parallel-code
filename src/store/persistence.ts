@@ -171,6 +171,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     coordinatedBy: task.coordinatedBy,
     controlledBy: task.controlledBy,
     mcpConfigPath: task.mcpConfigPath,
+    autoDiscoveredMcpConfig: task.autoDiscoveredMcpConfig,
     signalDoneReceived: task.signalDoneReceived,
     signalDoneAt: task.signalDoneAt,
     signalDoneConsumed: task.signalDoneConsumed,
@@ -751,6 +752,7 @@ export async function loadState(): Promise<void> {
           mcpStartupStatus:
             pt.coordinatorMode || pt.coordinatedBy ? ('pending' as const) : undefined,
           mcpConfigPath: pt.mcpConfigPath,
+          autoDiscoveredMcpConfig: pt.autoDiscoveredMcpConfig,
           signalDoneReceived: pt.signalDoneReceived,
           signalDoneAt: pt.signalDoneAt,
           signalDoneConsumed: pt.signalDoneConsumed,
@@ -861,6 +863,7 @@ export async function loadState(): Promise<void> {
           mcpStartupStatus:
             pt.coordinatorMode || pt.coordinatedBy ? ('pending' as const) : undefined,
           mcpConfigPath: pt.mcpConfigPath,
+          autoDiscoveredMcpConfig: pt.autoDiscoveredMcpConfig,
           signalDoneReceived: pt.signalDoneReceived,
           signalDoneAt: pt.signalDoneAt,
           signalDoneConsumed: pt.signalDoneConsumed,

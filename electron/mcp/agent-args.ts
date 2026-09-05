@@ -18,6 +18,10 @@ export function isAntigravityCommand(command: string): boolean {
   return command.split('/').pop() === 'agy';
 }
 
+export function isKimiCommand(command: string): boolean {
+  return command.split('/').pop() === 'kimi';
+}
+
 export function isCopilotCommand(command: string): boolean {
   return command.split('/').pop() === 'copilot';
 }
@@ -51,6 +55,11 @@ export function buildMcpLaunchArgs(
   }
   // Antigravity (agy) has no `--mcp-config` flag; emit nothing so launch is not broken.
   if (isAntigravityCommand(command)) {
+    return [];
+  }
+  // Kimi Code auto-discovers user and project MCP config files and does not
+  // accept the generic `--mcp-config` flag.
+  if (isKimiCommand(command)) {
     return [];
   }
   // Copilot has no `--mcp-config` flag — passing it makes Copilot exit immediately

@@ -8,4 +8,8 @@ describe('getSkipPermissionsArgs', () => {
 
     expect(getSkipPermissionsArgs('claude')).toEqual(['--dangerously-skip-permissions']);
   });
+
+  it('returns Kimi Code skip-permission args', () => {
+    expect(getSkipPermissionsArgs('kimi')).toEqual(['--yolo']);
+  });
 });
