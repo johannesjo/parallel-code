@@ -10,6 +10,7 @@ import {
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { createHighlightedMarkdown } from '../lib/marked-shiki';
+import { renderMermaidIn } from '../lib/mermaid';
 import { useFocusRegistration } from '../lib/focus-registration';
 import type { Task } from '../store/types';
 
@@ -59,13 +60,21 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
   });
 
   let notesRef: HTMLTextAreaElement | undefined;
-  let planScrollRef: HTMLDivElement | undefined;
+  // A signal, not a plain ref: the plan pane is inside <Show>, so it is created
+  // anew on every tab switch and the mermaid effect has to run again for it.
+  const [planScrollRef, setPlanScrollRef] = createSignal<HTMLDivElement>();
+
+  // The markdown renderer only leaves placeholders for ```mermaid fences.
+  createEffect(() => {
+    void planHtml(); // track dependency
+    renderMermaidIn(planScrollRef(), `notes-${props.task.id}`);
+  });
 
   onMount(() => {
     const id = props.task.id;
     useFocusRegistration(`${id}:notes`, () => {
       if (notesTab() === 'plan') {
-        planScrollRef?.focus();
+        planScrollRef()?.focus();
       } else {
         notesRef?.focus();
       }
@@ -211,7 +220,7 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
           }}
         >
           <div
-            ref={(el) => (planScrollRef = el)}
+            ref={setPlanScrollRef}
             tabIndex={0}
             class="plan-markdown"
             style={{
@@ -230,33 +239,34 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
                 props.onPlanFullscreen();
                 return;
               }
-              if (!planScrollRef) return;
+              const pane = planScrollRef();
+              if (!pane) return;
               const step = 40;
-              const page = Math.max(100, planScrollRef.clientHeight - 40);
+              const page = Math.max(100, pane.clientHeight - 40);
               switch (e.key) {
                 case 'ArrowDown':
                   e.preventDefault();
-                  planScrollRef.scrollTop += step;
+                  pane.scrollTop += step;
                   break;
                 case 'ArrowUp':
                   e.preventDefault();
-                  planScrollRef.scrollTop -= step;
+                  pane.scrollTop -= step;
                   break;
                 case 'PageDown':
                   e.preventDefault();
-                  planScrollRef.scrollTop += page;
+                  pane.scrollTop += page;
                   break;
                 case 'PageUp':
                   e.preventDefault();
-                  planScrollRef.scrollTop -= page;
+                  pane.scrollTop -= page;
                   break;
                 case 'Home':
                   e.preventDefault();
-                  planScrollRef.scrollTop = 0;
+                  pane.scrollTop = 0;
                   break;
                 case 'End':
                   e.preventDefault();
-                  planScrollRef.scrollTop = planScrollRef.scrollHeight;
+                  pane.scrollTop = pane.scrollHeight;
                   break;
               }
             }}

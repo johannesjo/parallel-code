@@ -106,7 +106,9 @@ import {
   assertStringArray,
   assertOptionalString,
   assertOptionalBoolean,
+  validatePath,
 } from './validate.js';
+import { registerDocumentHandlers } from '../documents/register.js';
 import { validateBranchName as sharedValidateBranchName, validateUUID } from '../mcp/validation.js';
 import { debug as logDebug, warn as logWarn, errMessage } from '../log.js';
 import { getMCPRemoteServerUrl, detectStaleDockerMCPUrl } from '../mcp/config.js';
@@ -177,13 +179,6 @@ async function startRemoteServerOnFreePort(
     }
   }
   throw new Error(`No free port found in range ${start}–${end}`);
-}
-
-/** Reject paths that are non-absolute or attempt directory traversal. */
-function validatePath(p: unknown, label: string): void {
-  if (typeof p !== 'string') throw new Error(`${label} must be a string`);
-  if (!path.isAbsolute(p)) throw new Error(`${label} must be absolute`);
-  if (p.includes('..')) throw new Error(`${label} must not contain ".."`);
 }
 
 function isMissingCommandError(err: unknown, command: string): boolean {
@@ -961,6 +956,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertString(args.requestId, 'requestId');
     cancelAskAboutCode(args.requestId);
   });
+
+  registerDocumentHandlers(win);
 
   // --- File links ---
   ipcMain.handle(IPC.OpenPath, (_e, args) => {

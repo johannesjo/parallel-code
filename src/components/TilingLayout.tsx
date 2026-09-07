@@ -21,6 +21,7 @@ import {
   deletePanelUserSize,
   scrollTaskElementIntoView,
 } from '../store/store';
+import { codeProjects } from '../store/projects';
 import { closeTask } from '../store/tasks';
 import { TaskPanel } from './TaskPanel';
 import { TerminalPanel } from './TerminalPanel';
@@ -441,7 +442,7 @@ export function TilingLayout() {
                 }
               >
                 <Show
-                  when={store.projects.length > 0}
+                  when={codeProjects().length > 0}
                   fallback={
                     <>
                       <div

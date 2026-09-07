@@ -1550,6 +1550,9 @@ export function setStepsContent(taskId: string, steps: unknown[] | null): void {
 }
 
 export function setTaskLastInputAt(taskId: string): void {
+  // Terminals outside the task flow (the document workspace's agent) pass an
+  // id no task owns; writing through it would create a half-made task.
+  if (!store.tasks[taskId]) return;
   setStore('tasks', taskId, 'lastInputAt', new Date().toISOString());
 }
 

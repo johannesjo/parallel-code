@@ -244,6 +244,7 @@ export async function saveState(): Promise<void> {
     darkThemePreset: store.darkThemePreset !== 'islands-dark' ? store.darkThemePreset : undefined,
     darkThemeCustomId: store.darkThemeCustomId ?? undefined,
     coordinatorModeEnabled: store.coordinatorModeEnabled || undefined,
+    documentWorkspacesEnabled: store.documentWorkspacesEnabled || undefined,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed || undefined,
     defaultStepsEnabled: store.defaultStepsEnabled || undefined,
     defaultSkipPermissions: store.defaultSkipPermissions || undefined,
@@ -415,6 +416,7 @@ interface LegacyPersistedState {
   darkThemePreset?: unknown;
   darkThemeCustomId?: unknown;
   coordinatorModeEnabled?: unknown;
+  documentWorkspacesEnabled?: unknown;
   coordinatorControlHintDismissed?: unknown;
   defaultStepsEnabled?: unknown;
   defaultSkipPermissions?: unknown;
@@ -613,6 +615,7 @@ export async function loadState(): Promise<void> {
       }
 
       s.coordinatorModeEnabled = raw.coordinatorModeEnabled === true;
+      s.documentWorkspacesEnabled = raw.documentWorkspacesEnabled === true;
 
       s.coordinatorControlHintDismissed = raw.coordinatorControlHintDismissed === true;
 

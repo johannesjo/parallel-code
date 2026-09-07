@@ -71,7 +71,7 @@ const DIFF_BASE_TTL = 30_000; // 30s
 const MAX_BUFFER = 10 * 1024 * 1024; // 10MB
 const STDERR_CAP = 4096; // cap for stderr buffers in spawned git processes
 /** Git's well-known empty tree SHA — used to diff the initial commit against nothing. */
-const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf899d69f82cf7202';
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 // Sweep expired cache entries periodically so stale entries from repos that
 // are no longer queried don't accumulate (lazy deletion alone isn't enough).

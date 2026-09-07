@@ -1,0 +1,591 @@
+import './documents.css';
+import {
+  For,
+  Show,
+  batch,
+  createEffect,
+  createMemo,
+  createSignal,
+  on,
+  onCleanup,
+  onMount,
+} from 'solid-js';
+import { store } from '../store/core';
+import { getProject } from '../store/projects';
+import {
+  activeDocumentPath,
+  closeDocumentWorkspace,
+  dismissUndo,
+  documentStore,
+  openDocumentFile,
+  refreshDocumentSnapshot,
+  reviewableRuns,
+  setDocumentComposerDraft,
+  setDocumentSelection,
+  setDocumentView,
+  setShowResolvedAnnotations,
+  openDocumentCompare,
+  undoDeleteDocumentAnnotation,
+  type DocumentView,
+} from './store';
+import { resetWorkspaceUi } from './workspace-ui';
+import { findAnchorTarget } from './links';
+import { isMac } from '../lib/platform';
+import { relocateAnchor } from './annotation-anchor';
+import { isHtmlDocument } from './html-document';
+import type { DocumentAnnotation } from './types';
+import type { DocumentBlock } from './markdown-blocks';
+import { AnnotationBubble } from './AnnotationBubble';
+import { AnnotationMarker } from './AnnotationMarker';
+import { EditProjectDialog } from '../components/EditProjectDialog';
+import type { Project } from '../store/types';
+import { CompareDialog } from './CompareDialog';
+import { DocumentViewer, releasesSelection, selectionFromRange } from './DocumentViewer';
+import { HistoryView } from './HistoryView';
+import { RunComposer } from './RunComposer';
+import { RightPanel } from './RightPanel';
+import { CandidateOutputDialog } from './CandidateOutputDialog';
+import { BlockEditor, type BlockEditTarget } from './BlockEditor';
+import { ResizablePanel, type PanelChild } from '../components/ResizablePanel';
+import { createRenderedBlocks } from './use-blocks';
+import { DocumentIcon } from './DocumentIcon';
+import { openInEditor } from '../lib/shell';
+import { errMessage } from '../lib/log';
+import { showNotification } from '../store/notification';
+
+/** Space between the picked passage and the composer, and from the column's edges. */
+const COMPOSER_GAP = 8;
+
+function DocumentPane(props: { project: Project }) {
+  let docRef: HTMLDivElement | undefined;
+  let mainRef: HTMLDivElement | undefined;
+  let scrollRef: HTMLDivElement | undefined;
+  let layerRef: HTMLDivElement | undefined;
+  // Where the composer sits when a passage is picked; null puts it at the foot.
+  const [anchorTop, setAnchorTop] = createSignal<number | null>(null);
+  const blocks = createRenderedBlocks(() => documentStore.snapshot?.content ?? null);
+  const documentPath = () => activeDocumentPath() ?? props.project.documentPath ?? '';
+  const selection = () => documentStore.selection;
+  const [blockEdit, setBlockEdit] = createSignal<BlockEditTarget | null>(null);
+  const editableBlock = () => {
+    const s = selection();
+    if (!s || s.wholeDocument || s.startBlock !== s.endBlock || blocks.rendering()) return null;
+    const block = blocks.blocks()[s.startBlock];
+    return block?.startOffset !== undefined && block.endOffset !== undefined ? block : null;
+  };
+  const range = createMemo(() => {
+    const s = selection();
+    return s && !s.wholeDocument ? { start: s.startBlock, end: s.endBlock } : null;
+  });
+
+  /** Open the source editor on a block; only blocks that map back to the source qualify. */
+  function editBlock(block: DocumentBlock | null) {
+    const source = documentStore.snapshot?.content;
+    // Mid-render the blocks belong to an older read of the file than the source.
+    if (!block || source === undefined || blocks.rendering()) return;
+    if (block.startOffset === undefined || block.endOffset === undefined) return;
+    setBlockEdit({ projectRoot: props.project.path, documentPath: documentPath(), source, block });
+  }
+
+  // Relocate every bubble on the current version; the ones that cannot be
+  // placed are shown as detached rather than attached to the wrong passage.
+  const placed = createMemo(() => {
+    const all = blocks.blocks();
+    const byBlock = new Map<number, DocumentAnnotation[]>();
+    const detached: DocumentAnnotation[] = [];
+    const located = new Map<string, { startBlock: number; endBlock: number }>();
+    for (const a of documentStore.annotations) {
+      // Bubbles belong to one document each; the others' stay out of this one.
+      if (a.anchor.path !== documentPath()) continue;
+      if (a.resolved && !documentStore.showResolved) continue;
+      const loc = relocateAnchor(a.anchor, all);
+      if (!loc) {
+        detached.push(a);
+        continue;
+      }
+      located.set(a.id, loc);
+      const list = byBlock.get(loc.endBlock) ?? [];
+      list.push(a);
+      byBlock.set(loc.endBlock, list);
+    }
+    return { byBlock, detached, located };
+  });
+  const resolvedCount = () =>
+    documentStore.annotations.filter((a) => a.resolved && a.anchor.path === documentPath()).length;
+
+  /** A link to another file of the project: open it, then land on its anchor. */
+  async function navigate(path: string, anchor?: string) {
+    await openDocumentFile(path);
+    if (!anchor) return;
+    // The blocks render after the snapshot arrives; give them a frame.
+    requestAnimationFrame(() => {
+      if (docRef) findAnchorTarget(docRef, anchor)?.scrollIntoView({ block: 'start' });
+    });
+  }
+
+  /** A bubble becomes a task: select its passage and open the composer with its text. */
+  function makeTask(annotation: DocumentAnnotation) {
+    const all = blocks.blocks();
+    const loc = placed().located.get(annotation.id) ?? relocateAnchor(annotation.anchor, all);
+    if (!loc) return;
+    const text = annotation.answer
+      ? `${annotation.text}\n\nEarlier answer from ${annotation.answer.agentName}:\n${annotation.answer.text}`
+      : annotation.text;
+    setDocumentComposerDraft({ text, annotationId: annotation.id });
+    setDocumentSelection({
+      startBlock: loc.startBlock,
+      endBlock: loc.endBlock,
+      startLine: all[loc.startBlock].startLine,
+      endLine: all[loc.endBlock].endLine,
+      quote: all
+        .slice(loc.startBlock, loc.endBlock + 1)
+        .map((b) => b.raw.replace(/\n+$/, ''))
+        .join('\n\n'),
+      heading: annotation.anchor.heading,
+      wholeDocument: false,
+    });
+  }
+
+  // The undo offer expires on its own.
+  createEffect(
+    on(
+      () => documentStore.lastDeleted,
+      (deleted) => {
+        if (!deleted) return;
+        const timer = setTimeout(() => dismissUndo(), 10_000);
+        onCleanup(() => clearTimeout(timer));
+      },
+    ),
+  );
+
+  function blockElement(index: number): HTMLElement | null {
+    return docRef?.querySelector<HTMLElement>(`[data-block-index="${index}"]`) ?? null;
+  }
+
+  /**
+   * Puts the composer right under the picked passage, above it when the foot
+   * of the column is too close, and keeps it inside the column while the
+   * prose scrolls under it. With nothing picked it rests at the foot.
+   */
+  function placeComposer() {
+    const s = selection();
+    const last = s && !s.wholeDocument ? blockElement(s.endBlock) : null;
+    const first = s && !s.wholeDocument ? blockElement(s.startBlock) : null;
+    if (!last || !first || !mainRef || !layerRef) {
+      setAnchorTop(null);
+      return;
+    }
+    const column = mainRef.getBoundingClientRect();
+    const height = layerRef.offsetHeight;
+    const minTop = (scrollRef?.getBoundingClientRect().top ?? column.top) - column.top;
+    const maxTop = column.height - height - COMPOSER_GAP;
+    const below = last.getBoundingClientRect().bottom - column.top + COMPOSER_GAP;
+    const above = first.getBoundingClientRect().top - column.top - height - COMPOSER_GAP;
+    const top = below <= maxTop ? below : above >= minTop ? above : maxTop;
+    setAnchorTop(Math.max(minTop + COMPOSER_GAP, Math.min(top, maxTop)));
+  }
+
+  // Bring the picked passage into view and hang the composer off it. The store
+  // merges a new selection into the old object, so track the range itself.
+  const selectedRange = () => {
+    const s = selection();
+    return s ? `${s.startBlock}-${s.endBlock}-${s.wholeDocument ? 'all' : ''}` : null;
+  };
+  createEffect(
+    on([selectedRange, blocks.blocks], () => {
+      const s = selection();
+      requestAnimationFrame(() => {
+        if (s && !s.wholeDocument)
+          blockElement(s.endBlock)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        placeComposer();
+      });
+    }),
+  );
+
+  // The composer follows the passage as the prose scrolls and as its own
+  // height changes with the mode and the agents picked. The layer is created
+  // with the first snapshot, well after this mounts, so it is observed from
+  // its own ref rather than here.
+  const layerResize = new ResizeObserver(() => placeComposer());
+  onCleanup(() => layerResize.disconnect());
+  onMount(() => {
+    scrollRef?.addEventListener('scroll', placeComposer, { passive: true });
+    window.addEventListener('resize', placeComposer);
+    onCleanup(() => {
+      scrollRef?.removeEventListener('scroll', placeComposer);
+      window.removeEventListener('resize', placeComposer);
+    });
+  });
+
+  // A whole HTML page renders inline as element blocks in its own style, so it
+  // is worked on like any document. The sandboxed page render stays one click
+  // away for pages that lean on scripts or external stylesheets.
+  const isHtml = createMemo(() => isHtmlDocument(documentStore.snapshot?.content));
+  const [htmlView, setHtmlView] = createSignal<'inline' | 'page'>('inline');
+  const showsPreview = () => isHtml() && htmlView() === 'page';
+
+  const toolbarLabel = () => {
+    if (showsPreview()) return 'Sandboxed render of the page — switch to Inline to scope a task';
+    const s = selection();
+    if (!s || s.wholeDocument)
+      return 'Tasks act on the whole document; click a block, drag across blocks, or use § on a heading to narrow them';
+    return s.startLine === s.endLine
+      ? `Selected line ${s.startLine}`
+      : `Selected lines ${s.startLine}–${s.endLine}`;
+  };
+
+  return (
+    <div class="docws-main docws-doc-main" ref={mainRef}>
+      <div class="docws-toolbar">
+        <Show when={isHtml()}>
+          <span class="docws-tabs">
+            <button
+              type="button"
+              class="docws-tab"
+              aria-selected={htmlView() === 'inline'}
+              title="The page as blocks you can select and scope tasks to"
+              onClick={() => setHtmlView('inline')}
+            >
+              Inline
+            </button>
+            <button
+              type="button"
+              class="docws-tab"
+              aria-selected={htmlView() === 'page'}
+              title="The page in a sandboxed frame, exactly as a browser shows it"
+              onClick={() => setHtmlView('page')}
+            >
+              Page
+            </button>
+          </span>
+        </Show>
+        <span>{toolbarLabel()}</span>
+        <Show when={editableBlock() && !showsPreview()}>
+          <button
+            type="button"
+            class="docws-btn docws-btn-sm"
+            onClick={() => editBlock(editableBlock())}
+          >
+            Edit block
+          </button>
+        </Show>
+        <Show when={documentStore.lastDeleted}>
+          <span class="docws-undo">
+            Deleted a {documentStore.lastDeleted?.kind}.
+            <button
+              type="button"
+              class="docws-btn docws-btn-sm"
+              onClick={() => void undoDeleteDocumentAnnotation()}
+            >
+              Undo
+            </button>
+          </span>
+        </Show>
+        <span style={{ 'margin-left': 'auto' }} />
+        <Show when={resolvedCount() > 0}>
+          <label class="docws-toggle" title="Resolved bubbles collapse to one line">
+            <input
+              type="checkbox"
+              checked={documentStore.showResolved}
+              onChange={(e) => setShowResolvedAnnotations(e.currentTarget.checked)}
+            />
+            {resolvedCount()} resolved
+          </label>
+        </Show>
+      </div>
+      <Show when={documentStore.snapshot?.missing}>
+        <div class="docws-older-banner">The document file is missing from the checkout.</div>
+      </Show>
+      <Show when={showsPreview()}>
+        {/* Fully sandboxed: the page renders with its own CSS but gets no
+              scripts, no forms and no same-origin access to the app. */}
+        <iframe
+          class="docws-html-preview"
+          sandbox=""
+          srcdoc={documentStore.snapshot?.content ?? ''}
+          title="HTML document preview"
+        />
+      </Show>
+      {/* Kept mounted while previewing so blocks, annotations and scroll
+            position survive the toggle. */}
+      <div
+        class="docws-scroll"
+        ref={scrollRef}
+        classList={{ 'is-hidden': showsPreview() }}
+        onMouseUp={(e) => {
+          if (releasesSelection(e.target)) setDocumentSelection(null);
+        }}
+      >
+        <div class="docws-doc" ref={docRef} classList={{ 'is-page': isHtml() }}>
+          <Show when={placed().detached.length > 0}>
+            <div class="docws-detached-section">
+              <div class="docws-rail-title">Detached notes</div>
+              <div class="docws-empty" style={{ padding: '2px 0 6px' }}>
+                Their passages are no longer in the document. Resolve or delete them, or turn them
+                into a task on a new selection.
+              </div>
+              <For each={placed().detached}>
+                {(a) => <AnnotationBubble annotation={a} detached onMakeTask={makeTask} />}
+              </For>
+            </div>
+          </Show>
+          <DocumentViewer
+            blocks={blocks.blocks()}
+            selectable
+            selection={range()}
+            onSelect={setDocumentSelection}
+            renderKey="main"
+            page={blocks.page()}
+            documentPath={documentPath()}
+            onNavigate={(path, anchor) => void navigate(path, anchor)}
+            onAction={(action, index) => {
+              if (action === 'edit') {
+                editBlock(blocks.blocks()[index] ?? null);
+                return;
+              }
+              batch(() => {
+                setDocumentSelection(
+                  selectionFromRange(blocks.blocks(), { start: index, end: index }),
+                );
+                setDocumentComposerDraft({ text: '', mode: action });
+              });
+            }}
+            hasMarker={(index) => (placed().byBlock.get(index)?.length ?? 0) > 0}
+            blockMarker={(index) => {
+              const annotations = placed().byBlock.get(index);
+              return (
+                <Show when={annotations?.length}>
+                  <AnnotationMarker annotations={annotations ?? []} onMakeTask={makeTask} />
+                </Show>
+              );
+            }}
+          />
+          <Show
+            when={
+              blocks.blocks().length === 0 &&
+              !blocks.rendering() &&
+              documentStore.snapshot &&
+              !documentStore.snapshot.missing
+            }
+          >
+            <div class="docws-empty">The document is empty.</div>
+          </Show>
+        </div>
+      </div>
+      {/* The composer floats over the prose instead of opening inside it, so
+          the passage it is about stays where it was picked: right above the
+          popover. It is always there; with nothing picked it rests at the foot
+          of the column and takes the whole document. */}
+      <Show when={documentStore.snapshot && !documentStore.snapshot.missing}>
+        <div
+          class="docws-composer-layer"
+          ref={(el) => {
+            layerRef = el;
+            layerResize.observe(el);
+          }}
+          classList={{ 'is-hidden': showsPreview(), 'is-anchored': anchorTop() !== null }}
+          style={anchorTop() !== null ? { top: `${anchorTop()}px`, bottom: 'auto' } : undefined}
+        >
+          <RunComposer
+            selection={selection()}
+            blocks={blocks.blocks()}
+            onClose={() => {
+              setDocumentSelection(null);
+              setDocumentComposerDraft(null);
+            }}
+          />
+        </div>
+      </Show>
+      <Show keyed when={blockEdit()}>
+        {(target) => (
+          <BlockEditor
+            target={target}
+            onClose={() => setBlockEdit(null)}
+            onSaved={() => {
+              setDocumentSelection(null);
+              void refreshDocumentSnapshot();
+            }}
+          />
+        )}
+      </Show>
+    </div>
+  );
+}
+
+/** Full-window surface for a document project: document, compare, history. */
+export function DocumentWorkspaceOverlay() {
+  const project = createMemo<Project | undefined>(() =>
+    store.activeDocumentProjectId ? getProject(store.activeDocumentProjectId) : undefined,
+  );
+  const [editing, setEditing] = createSignal<Project | null>(null);
+  const snapshot = () => documentStore.snapshot;
+  const reviewable = createMemo(() => reviewableRuns());
+  const editorCommand = () => store.editorCommand.trim();
+  const openPath = () => activeDocumentPath() ?? project()?.documentPath;
+  const editorButtonLabel = () => {
+    const documentPath = openPath() ?? 'document';
+    return editorCommand()
+      ? `Open ${documentPath} in ${editorCommand()}`
+      : `Configure an editor command in Settings to open ${documentPath}`;
+  };
+
+  // Close when the project disappears (removed while open).
+  createEffect(() => {
+    if (store.activeDocumentProjectId && !project()) closeDocumentWorkspace();
+  });
+
+  // Panel state is per workspace: a new project starts from the defaults.
+  createEffect(
+    on(
+      () => project()?.id,
+      () => resetWorkspaceUi(),
+    ),
+  );
+
+  onCleanup(() => {
+    if (documentStore.projectId) closeDocumentWorkspace();
+  });
+
+  function openDocumentInEditor() {
+    const currentProject = project();
+    const command = editorCommand();
+    const path = openPath();
+    if (!currentProject || !path || !command) return;
+    const documentPath = `${currentProject.path.replace(/\/$/, '')}/${path}`;
+    openInEditor(command, documentPath).catch((err) =>
+      showNotification(`Editor failed: ${errMessage(err)}`),
+    );
+  }
+
+  function tab(view: DocumentView, label: string) {
+    return (
+      <button
+        type="button"
+        class="docws-tab"
+        role="tab"
+        aria-selected={documentStore.view === view}
+        onClick={() => setDocumentView(view)}
+      >
+        {label}
+      </button>
+    );
+  }
+
+  // The document column absorbs the window; the right panel keeps the width
+  // the user dragged it to, remembered across restarts. The panel sits
+  // outside the view switch so the agent's terminal stays attached while
+  // comparing or reading history.
+  const panes: PanelChild[] = [
+    {
+      id: 'main',
+      minSize: 360,
+      content: () => (
+        <>
+          <Show when={documentStore.view === 'document' && project()}>
+            {(p) => <DocumentPane project={p()} />}
+          </Show>
+          <Show when={documentStore.view === 'history'}>
+            <div class="docws-main" style={{ overflow: 'hidden' }}>
+              <HistoryView />
+            </div>
+          </Show>
+        </>
+      ),
+    },
+    {
+      id: 'rail',
+      minSize: 300,
+      defaultSize: 420,
+      content: () => <Show when={project()}>{(p) => <RightPanel project={p()} />}</Show>,
+    },
+  ];
+
+  return (
+    <div
+      class="docws-overlay"
+      classList={{ 'is-mac': isMac }}
+      role="dialog"
+      aria-label="Document workspace"
+    >
+      <div class="docws-header" data-tauri-drag-region>
+        <div class="docws-title">
+          <DocumentIcon />
+          <span>{project()?.name}</span>
+          <button
+            type="button"
+            class="docws-btn docws-open-editor"
+            aria-label={editorButtonLabel()}
+            title={editorButtonLabel()}
+            disabled={!editorCommand() || !openPath()}
+            onClick={() => void openDocumentInEditor()}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-3a.75.75 0 0 1 1.5 0v3A3 3 0 0 1 12.5 16h-9A3 3 0 0 1 0 12.5v-9A3 3 0 0 1 3.5 0h3a.75.75 0 0 1 0 1.5h-3ZM10 .75a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0V2.56L8.53 8.53a.75.75 0 0 1-1.06-1.06L13.44 1.5H10.75A.75.75 0 0 1 10 .75Z" />
+            </svg>
+          </button>
+        </div>
+        <span class="docws-subtitle" title={openPath()}>
+          {openPath()}
+        </span>
+        <span class="docws-head-chip" title="Checked-out branch and head commit">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
+          </svg>
+          {snapshot()?.branch ?? 'detached'} · {snapshot()?.headSha?.slice(0, 7) ?? 'no commits'}
+        </span>
+        <Show when={snapshot()?.dirty}>
+          <span
+            class="docws-head-chip is-warning"
+            title="Committed as “Manual edits” before the next run"
+          >
+            uncommitted edits
+          </span>
+        </Show>
+        <Show when={documentStore.loading}>
+          <span class="docws-head-chip">loading…</span>
+        </Show>
+        <Show when={reviewable().length > 0}>
+          <button
+            type="button"
+            class="docws-btn docws-btn-sm docws-btn-primary"
+            title="Open the compare view"
+            onClick={() => openDocumentCompare(reviewable()[0].id)}
+          >
+            {reviewable().length} to review
+          </button>
+        </Show>
+        <div class="docws-tabs" role="tablist">
+          {tab('document', 'Document')}
+          {tab('history', 'History')}
+        </div>
+        <button type="button" class="docws-btn" onClick={() => setEditing(project() ?? null)}>
+          Project
+        </button>
+        <button
+          type="button"
+          class="docws-btn"
+          title="Close (Esc)"
+          onClick={() => closeDocumentWorkspace()}
+        >
+          Close
+        </button>
+      </div>
+      <Show when={documentStore.error}>
+        <div class="docws-banner docws-banner-error" role="alert">
+          {documentStore.error}
+        </div>
+      </Show>
+      <div class="docws-body">
+        <ResizablePanel
+          direction="horizontal"
+          persistKey="docws"
+          absorberIds={['main']}
+          children={panes}
+        />
+      </div>
+      <EditProjectDialog project={editing()} onClose={() => setEditing(null)} />
+      <CandidateOutputDialog />
+      <CompareDialog />
+    </div>
+  );
+}
