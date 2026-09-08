@@ -2168,6 +2168,12 @@ export class Coordinator {
 
     const restoreMcpConfig = this.restoreTaskAutoDiscoveredMcpConfig(task);
     if (restoreMcpConfig.status === 'failed') {
+      // Re-arm before escalating. In the case that gets us here the managed
+      // entry is already gone from the worktree, so without this the child is
+      // left with no parallel-code server and cannot report the escalation
+      // back. The write refuses to touch an entry it does not own, so a
+      // fingerprint mismatch stays untouched; landing fails closed either way.
+      this.refreshTaskMcpConfigAfterLandingFailure(task);
       const reason =
         'Unable to restore managed Kimi MCP config before self-landing; refusing to validate or merge a worktree that may contain ephemeral MCP tokens.';
       this.escalateLanding(task, 'landing_escalated', reason);
@@ -2288,6 +2294,7 @@ export class Coordinator {
     this.assertTaskCanBeMerged(task);
     const restoreMcpConfig = this.restoreTaskAutoDiscoveredMcpConfig(task);
     if (restoreMcpConfig.status === 'failed') {
+      this.refreshTaskMcpConfigAfterLandingFailure(task);
       throw new Error(
         'Unable to restore managed Kimi MCP config before merge; refusing to stage or merge a worktree that may contain ephemeral MCP tokens.',
       );

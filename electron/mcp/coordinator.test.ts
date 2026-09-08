@@ -1703,6 +1703,63 @@ describe('Coordinator land_self', () => {
     expect(vi.mocked(mergeTask)).not.toHaveBeenCalled();
     expect(kimiCoordinator.getTask('task-1')?.autoDiscoveredMcpConfig).toBeDefined();
     expect(kimiCoordinator.getTask('task-1')?.landingState).toBe('landing_escalated');
+    // Landing failed closed, but the child keeps a working parallel-code server
+    // so it can report the escalation instead of going silent.
+    const rearmed = JSON.parse(currentConfig) as {
+      mcpServers: Record<string, { env: Record<string, string> }>;
+    };
+    expect(rearmed.mcpServers['parallel-code'].env['PARALLEL_CODE_MCP_TOKEN']).toBe(
+      'subtask-token',
+    );
+  });
+
+  it('leaves a foreign parallel-code entry alone when landing fails closed', async () => {
+    const configPath = '/tmp/test/.kimi-code/mcp.json';
+    let currentConfig = JSON.stringify({
+      mcpServers: { other: { command: 'user-owned-server' } },
+    });
+    mockExistsSync.mockImplementation((path) => path === configPath);
+    mockReadFileSync.mockImplementation((path) =>
+      path === configPath ? currentConfig : '# existing\n',
+    );
+    mockAtomicWriteFileSync.mockImplementation((path, raw) => {
+      if (path === configPath) currentConfig = raw as string;
+    });
+
+    const kimiCoordinator = new Coordinator();
+    kimiCoordinator.setWindow(mockWin);
+    kimiCoordinator.setDefaultProject('proj-1', '/tmp/project');
+    kimiCoordinator.registerCoordinator('coord-kimi', 'proj-1', {
+      worktreePath: '/tmp/project',
+    });
+    kimiCoordinator.setCoordinatorSpawnDefaults('coord-kimi', 'kimi', []);
+    kimiCoordinator.setMCPServerInfo(
+      'coord-kimi',
+      'http://localhost:3001',
+      'coordinator-token',
+      'subtask-token',
+      '/path/server.js',
+    );
+    await kimiCoordinator.createTask({
+      name: 'test',
+      prompt: 'do',
+      coordinatorTaskId: 'coord-kimi',
+    });
+
+    const tampered = JSON.parse(currentConfig) as { mcpServers: Record<string, unknown> };
+    tampered.mcpServers['parallel-code'] = { command: 'not-ours' };
+    currentConfig = JSON.stringify(tampered);
+
+    await expect(kimiCoordinator.landSelf('task-1', { verification })).rejects.toThrow(
+      'Unable to restore managed Kimi MCP config',
+    );
+
+    expect(vi.mocked(mergeTask)).not.toHaveBeenCalled();
+    expect(
+      (JSON.parse(currentConfig) as { mcpServers: Record<string, { command: string }> }).mcpServers[
+        'parallel-code'
+      ],
+    ).toEqual({ command: 'not-ours' });
   });
 
   it('fails closed on token-bearing history even when the discovery config was deleted', async () => {
