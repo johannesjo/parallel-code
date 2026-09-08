@@ -59,6 +59,10 @@ describe('InlineInput image attachment', () => {
     await pasteImage(input);
 
     expect(attachmentChip(container)).toBeUndefined();
+    // Hidden chip must not mean silence: the accepted paste says where it went.
+    expect(container.querySelector('[aria-live]')?.textContent).toBe(
+      'Image attached — switch to Ask to send it.',
+    );
 
     input.value = 'why is this here?';
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -76,6 +80,8 @@ describe('InlineInput image attachment', () => {
     modeButton(container, 'Ask')?.click();
 
     expect(attachmentChip(container)?.textContent).toBe('1 image ×');
+    // The chip now carries the state, so the notice stands down.
+    expect(container.querySelector('[aria-live]')).toBeNull();
 
     input.value = 'what does this show?';
     input.dispatchEvent(new Event('input', { bubbles: true }));

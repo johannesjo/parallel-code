@@ -29,6 +29,17 @@ export function InlineInput(props: InlineInputProps) {
   /** Images are only sent to a provider whose model accepts image input. */
   const imageInputEnabled = () => mode() === 'ask' && store.askCodeProvider === 'minimax';
 
+  /**
+   * A paste that can't be attached yet must say so. Attaching works in either
+   * mode so it can precede the switch to Ask, but only Ask sends — without this
+   * the chip is hidden and an accepted image looks like it went nowhere.
+   */
+  const pasteNotice = () =>
+    imagePasteHint() ||
+    (imagePaths().length > 0 && !imageInputEnabled()
+      ? 'Image attached — switch to Ask to send it.'
+      : '');
+
   onMount(() => {
     requestAnimationFrame(() => inputRef?.focus());
     const onGlobalKeyDown = (e: KeyboardEvent) => {
@@ -192,7 +203,7 @@ export function InlineInput(props: InlineInputProps) {
         </button>
       </Show>
 
-      <Show when={imagePasteHint()}>
+      <Show when={pasteNotice()}>
         {(hint) => (
           <span
             aria-live="polite"
