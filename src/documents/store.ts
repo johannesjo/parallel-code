@@ -60,6 +60,8 @@ interface DocumentWorkspaceState {
   /** Repo-relative path of the document on screen; the project's document
    *  until a link or the file tree opens another. */
   documentPath: string | null;
+  /** Documents left behind by links and file picks, oldest first; Back walks it. */
+  documentTrail: string[];
   annotations: DocumentAnnotation[];
   /** Last deleted bubble, kept for a single-step undo. */
   lastDeleted: DocumentAnnotation | null;
@@ -74,15 +76,19 @@ interface DocumentWorkspaceState {
   logs: Record<string, string[]>;
   view: DocumentView;
   compareRunId: string | null;
+  compareCandidateId: string | null;
   selection: DocumentSelection | null;
   dispatching: boolean;
 }
 
 const MAX_LOG_LINES = 400;
+/** Deeper than anyone follows links; keeps a long session from growing the trail forever. */
+const MAX_TRAIL = 20;
 
 const [docStore, setDocStore] = createStore<DocumentWorkspaceState>({
   projectId: null,
   documentPath: null,
+  documentTrail: [],
   annotations: [],
   lastDeleted: null,
   showResolved: false,
@@ -95,6 +101,7 @@ const [docStore, setDocStore] = createStore<DocumentWorkspaceState>({
   logs: {},
   view: 'document',
   compareRunId: null,
+  compareCandidateId: null,
   selection: null,
   dispatching: false,
 });
@@ -202,6 +209,7 @@ export async function openDocumentWorkspace(projectId: string): Promise<void> {
   setDocStore({
     projectId,
     documentPath: project.documentPath,
+    documentTrail: [],
     snapshot: null,
     loading: true,
     error: null,
@@ -210,6 +218,7 @@ export async function openDocumentWorkspace(projectId: string): Promise<void> {
     logs: {},
     view: 'document',
     compareRunId: null,
+    compareCandidateId: null,
     selection: null,
     annotations: [],
     lastDeleted: null,
@@ -224,14 +233,43 @@ export async function openDocumentWorkspace(projectId: string): Promise<void> {
 
 /**
  * Shows another file of the open project: the target of an internal link or a
- * pick in the file tree. The selection belongs to the old document and goes;
- * runs and annotations are per project and stay.
+ * pick in the file tree. The document left goes on the trail for Back.
  */
 export async function openDocumentFile(documentPath: string): Promise<void> {
+  const from = docStore.documentPath;
+  if (!from || from === documentPath) return;
+  await showDocument(documentPath, [...docStore.documentTrail, from].slice(-MAX_TRAIL));
+}
+
+/** The document Back returns to, or null at the start of the trail. */
+export function previousDocumentPath(): string | null {
+  const trail = docStore.documentTrail;
+  return trail.length > 0 ? trail[trail.length - 1] : null;
+}
+
+/** Returns to the document left last; nothing happens at the start of the trail. */
+export async function goBackDocument(): Promise<void> {
+  const previous = previousDocumentPath();
+  if (previous === null) return;
+  await showDocument(previous, docStore.documentTrail.slice(0, -1));
+}
+
+/**
+ * Switches the workspace to a file of the open project. The selection belongs
+ * to the old document and goes; runs and annotations are per project and stay.
+ */
+async function showDocument(documentPath: string, documentTrail: string[]): Promise<void> {
   const project = activeProject();
-  if (!project || docStore.documentPath === documentPath) return;
+  if (!project) return;
   stopCurrentWatcher();
-  setDocStore({ documentPath, selection: null, composerDraft: null, snapshot: null, error: null });
+  setDocStore({
+    documentPath,
+    documentTrail,
+    selection: null,
+    composerDraft: null,
+    snapshot: null,
+    error: null,
+  });
   startWatcher(project.id, project.path, documentPath);
   await refreshDocumentSnapshot();
 }
@@ -241,9 +279,11 @@ export function closeDocumentWorkspace(): void {
   setDocStore({
     projectId: null,
     documentPath: null,
+    documentTrail: [],
     selection: null,
     view: 'document',
     compareRunId: null,
+    compareCandidateId: null,
     composerDraft: null,
   });
   setStore('activeDocumentProjectId', null);
@@ -262,12 +302,12 @@ export function setDocumentSelection(selection: DocumentSelection | null): void 
 }
 
 /** Opens the compare view, a modal over whatever tab is up. */
-export function openDocumentCompare(runId: string): void {
-  setDocStore('compareRunId', runId);
+export function openDocumentCompare(runId: string, candidateId?: string): void {
+  setDocStore({ compareRunId: runId, compareCandidateId: candidateId ?? null });
 }
 
 export function closeDocumentCompare(): void {
-  setDocStore('compareRunId', null);
+  setDocStore({ compareRunId: null, compareCandidateId: null });
 }
 
 /** Runs with at least one proposal to look at. */
@@ -533,11 +573,28 @@ export async function acceptDocumentCandidate(
     showNotification(
       partial ? `Accepted ${partial.accepted} of ${partial.total} changes` : 'Proposal accepted',
     );
-    setDocStore('compareRunId', null);
+    setDocStore({ compareRunId: null, compareCandidateId: null });
   } catch (err) {
     showNotification(errMessage(err));
   }
   await Promise.all([loadDocumentRuns(), refreshDocumentSnapshot()]);
+}
+
+/**
+ * One throwaway candidate for a run that starts from proposals rather than
+ * the canonical document: the warm main session must not be moved onto
+ * unaccepted content, so it is never resumed here.
+ */
+function oneShotSpecs(
+  project: Project,
+  agent: AgentDef,
+  choice: DocumentModelChoice,
+): DocumentCandidateSpec[] {
+  return buildCandidateSpecs(
+    project,
+    [{ agent, count: 1, choices: [choice] }],
+    store.agentEnvFiles,
+  ).map((spec) => ({ ...spec, isMain: false, sessionId: undefined, sessionLastSha: undefined }));
 }
 
 export async function refineDocumentCandidate(
@@ -550,32 +607,41 @@ export async function refineDocumentCandidate(
     (a) => a.id === candidate.agentId && a.available !== false,
   );
   if (!agent) throw new Error('Install or enable this candidate’s agent to refine it.');
-  const candidates = buildCandidateSpecs(
-    project,
-    [
-      {
-        agent,
-        count: 1,
-        choices: [{ model: candidate.model, effort: candidate.effort }],
-      },
-    ],
-    store.agentEnvFiles,
-  ).map((spec) => ({
-    ...spec,
-    isMain: false,
-    sessionId: undefined,
-    sessionLastSha: undefined,
-  }));
   const revision = await invoke<DocumentRunRecord>(IPC.DispatchDocumentRun, {
     projectRoot: project.path,
     documentPath: run.documentPath,
     instruction,
     scope: { wholeDocument: true },
-    candidates,
+    candidates: oneShotSpecs(project, agent, { model: candidate.model, effort: candidate.effort }),
     refinement: { runId: run.id, candidateId: candidate.id },
   });
   if (stillOpen(project.id)) upsertRun(revision);
   showNotification('Refinement started. The new proposal will appear in Runs.');
+}
+
+export interface MergeRequest {
+  run: DocumentRunRecord;
+  candidateIds: readonly string[];
+  /** Guidance for the merging agent, on top of the built-in merge instructions. */
+  instruction: string;
+  agent: AgentDef;
+  choice: DocumentModelChoice;
+}
+
+/** Asks one agent to fold several proposals of `run` into a single new proposal. */
+export async function mergeDocumentCandidates(request: MergeRequest): Promise<void> {
+  const { project } = requireProject();
+  const { run, candidateIds, instruction, agent, choice } = request;
+  const merged = await invoke<DocumentRunRecord>(IPC.DispatchDocumentRun, {
+    projectRoot: project.path,
+    documentPath: run.documentPath,
+    instruction,
+    scope: { wholeDocument: true },
+    candidates: oneShotSpecs(project, agent, choice),
+    merge: { runId: run.id, candidateIds: [...candidateIds] },
+  });
+  if (stillOpen(project.id)) upsertRun(merged);
+  showNotification('Merge started. The merged proposal will appear in Runs.');
 }
 
 export async function rejectDocumentRun(runId: string): Promise<void> {
@@ -586,7 +652,8 @@ export async function rejectDocumentRun(runId: string): Promise<void> {
       runId,
     });
     upsertRun(run);
-    if (docStore.compareRunId === runId) setDocStore('compareRunId', null);
+    if (docStore.compareRunId === runId)
+      setDocStore({ compareRunId: null, compareCandidateId: null });
   } catch (err) {
     showNotification(errMessage(err));
   }
@@ -621,6 +688,20 @@ export async function revertDocumentCommit(sha: string): Promise<boolean> {
   try {
     await invoke(IPC.RevertDocumentCommit, { projectRoot: project.path, sha });
     showNotification('Reverted');
+    void refreshDocumentSnapshot();
+    return true;
+  } catch (err) {
+    showNotification(errMessage(err));
+    return false;
+  }
+}
+
+/** Drops the uncommitted edits to tracked files; the document goes back to HEAD. */
+export async function discardDocumentEdits(): Promise<boolean> {
+  const { project } = requireProject();
+  try {
+    await invoke(IPC.DiscardDocumentEdits, { projectRoot: project.path });
+    showNotification('Uncommitted edits discarded');
     void refreshDocumentSnapshot();
     return true;
   } catch (err) {
@@ -664,12 +745,19 @@ async function persistAnnotation(annotation: DocumentAnnotation): Promise<Docume
   return saved;
 }
 
+export interface AddAnnotationOptions {
+  /** Agent that answers a question right away; a question without one waits. */
+  askWith?: AgentDef;
+  /** Answered question this one continues; its exchange goes into the prompt. */
+  followUpOf?: string;
+}
+
 /** Creates a note or a question on the anchored passage. Questions are asked right away. */
 export async function addDocumentAnnotation(
   kind: DocumentAnnotationKind,
   text: string,
   anchor: DocumentAnchor,
-  askWith?: AgentDef,
+  options: AddAnnotationOptions = {},
 ): Promise<DocumentAnnotation | null> {
   const now = new Date().toISOString();
   try {
@@ -681,13 +769,27 @@ export async function addDocumentAnnotation(
       createdAt: now,
       updatedAt: now,
       resolved: false,
+      followUpOf: options.followUpOf,
     });
-    if (kind === 'question' && askWith) await askDocumentAnnotation(saved.id, askWith);
+    if (kind === 'question' && options.askWith)
+      await askDocumentAnnotation(saved.id, options.askWith);
     return saved;
   } catch (err) {
     showNotification(errMessage(err));
     return null;
   }
+}
+
+/** Continues an answered question on the same passage; the agent sees the earlier exchange. */
+export async function askFollowUpQuestion(
+  parent: DocumentAnnotation,
+  text: string,
+  agent: AgentDef,
+): Promise<DocumentAnnotation | null> {
+  return addDocumentAnnotation('question', text, parent.anchor, {
+    askWith: agent,
+    followUpOf: parent.id,
+  });
 }
 
 export async function askDocumentAnnotation(annotationId: string, agent: AgentDef): Promise<void> {

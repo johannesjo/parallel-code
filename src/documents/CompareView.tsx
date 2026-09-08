@@ -6,23 +6,31 @@ import {
   createMemo,
   createResource,
   createSignal,
+  createUniqueId,
   on,
   onCleanup,
   untrack,
   type JSX,
 } from 'solid-js';
 import { CandidateRefinement } from './CandidateRefinement';
+import { MergeWithAgent } from './MergeWithAgent';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { diffBlocks, type BlockChange, type DocumentBlock } from './markdown-blocks';
-import { blockHunks, composeVerifiedDocument, hunkLabel, hunkLeadBlocks } from './block-merge';
+import {
+  type BlockHunk,
+  blockHunks,
+  composeVerifiedDocument,
+  hunkLabel,
+  hunkLeadBlocks,
+} from './block-merge';
 import {
   acceptDocumentCandidate,
   documentStore,
   modelLabel,
-  rejectDocumentRun,
   setDocumentCandidateNote,
 } from './store';
+import { RejectRunButton } from './RejectRunConfirm';
 import { getProject } from '../store/projects';
 import { deletePanelUserSize, getPanelUserSize, setPanelUserSize } from '../store/store';
 import { showNotification } from '../store/notification';
@@ -59,43 +67,84 @@ function scopeRange(blocks: readonly DocumentBlock[], run: DocumentRunRecord): B
   return start === -1 ? null : { start, end };
 }
 
-/** Scroll a column so its first block matching `selector` sits in the upper third. */
-function revealFirst(body: HTMLElement | undefined, selector: string): void {
+/**
+ * Scroll a column so its first block matching `selector` sits in the upper
+ * third. False when there is no such block yet.
+ */
+function revealFirst(body: HTMLElement | undefined, selector: string): boolean {
   const target = body?.querySelector<HTMLElement>(selector);
-  if (!body || !target) return;
+  if (!body || !target) return false;
   const offset = target.getBoundingClientRect().top - body.getBoundingClientRect().top;
   body.scrollTop += offset - body.clientHeight / 3;
+  return true;
 }
 
-function ChangeNav(props: { body: () => HTMLDivElement | undefined; count: number }) {
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
+function reviewBlocks(
+  hunks: readonly BlockHunk[],
+  side: 'base' | 'cand',
+  count: number,
+): Set<number> {
+  const visible = new Set<number>();
+  for (const hunk of hunks) {
+    const start = hunk[side === 'base' ? 'baseStart' : 'candStart'];
+    const end = hunk[side === 'base' ? 'baseEnd' : 'candEnd'];
+    for (let i = start; i < end; i++) visible.add(i);
+    if (start === end && count > 0) visible.add(Math.min(start, count - 1));
+  }
+  return visible;
+}
+
+function ChangeNav(props: {
+  body: () => HTMLDivElement | undefined;
+  baseBody: () => HTMLDivElement | undefined;
+  hunks: BlockHunk[];
+  baseCount: number;
+  candidateCount: number;
+}) {
   const [cursor, setCursor] = createSignal(-1);
   function go(delta: number) {
-    const body = props.body();
-    if (!body) return;
-    const targets = body.querySelectorAll<HTMLElement>('.doc-block:not([data-change="same"])');
-    if (targets.length === 0) return;
-    const next = (cursor() + delta + targets.length) % targets.length;
+    const count = props.hunks.length;
+    if (!count) return;
+    const next = cursor() < 0 ? (delta > 0 ? 0 : count - 1) : (cursor() + delta + count) % count;
     setCursor(next);
-    targets[next].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const hunk = props.hunks[next];
+    const reveal = (body: HTMLElement | undefined, index: number) =>
+      body?.querySelector<HTMLElement>(`[data-block-index="${index}"]`)?.scrollIntoView({
+        block: 'center',
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          ? 'instant'
+          : 'smooth',
+      });
+    reveal(props.baseBody(), Math.min(hunk.baseStart, props.baseCount - 1));
+    reveal(props.body(), Math.min(hunk.candStart, props.candidateCount - 1));
   }
   return (
     <span class="docws-nav">
       <button
         type="button"
         class="docws-btn docws-btn-sm"
+        disabled={!props.hunks.length}
         onClick={() => go(-1)}
         title="Previous change"
+        aria-label="Previous change"
       >
         ‹
       </button>
       <span>
-        {props.count} changed block{props.count === 1 ? '' : 's'}
+        {cursor() < 0 ? '' : `${cursor() + 1} of `}
+        {plural(props.hunks.length, 'change')}
       </span>
       <button
         type="button"
         class="docws-btn docws-btn-sm"
+        disabled={!props.hunks.length}
         onClick={() => go(1)}
         title="Next change"
+        aria-label="Next change"
       >
         ›
       </button>
@@ -103,7 +152,7 @@ function ChangeNav(props: { body: () => HTMLDivElement | undefined; count: numbe
   );
 }
 
-function Rationale(props: { candidate: DocumentCandidateRecord }) {
+function Rationale(props: { candidate: DocumentCandidateRecord; children: JSX.Element }) {
   const r = () => props.candidate.rationale;
   const list = (label: string, items: string[] | undefined, cls?: string) => (
     <Show when={items && items.length > 0}>
@@ -115,10 +164,19 @@ function Rationale(props: { candidate: DocumentCandidateRecord }) {
   );
   return (
     <div class="docws-rationale">
-      <div class="docws-rationale-summary">{r()?.summary ?? 'No rationale returned.'}</div>
-      {list('Changes', r()?.changes)}
-      {list('Assumptions', r()?.assumptions)}
-      {list('Open questions', r()?.questions)}
+      <div class="docws-rationale-summary" title={r()?.summary}>
+        {r()?.summary ?? 'No rationale returned.'}
+      </div>
+      <details class="docws-review-details">
+        <summary>Reasoning and notes</summary>
+        <div class="docws-review-details-body">
+          <p>{r()?.summary ?? 'No rationale returned.'}</p>
+          {list('Changes', r()?.changes)}
+          {list('Assumptions', r()?.assumptions)}
+          {list('Open questions', r()?.questions)}
+          {props.children}
+        </div>
+      </details>
       {list('Warnings', r()?.warnings, 'docws-warning')}
       <Show when={props.candidate.outOfScopeFiles?.length}>
         <div class="docws-warning">
@@ -214,8 +272,13 @@ function CandidateColumn(props: {
   partialCapable: boolean;
   revealAgents: boolean;
   showSource: boolean;
+  changesOnly: boolean;
+  baseBody: () => HTMLDivElement | undefined;
+  hidden: boolean;
+  panelId: string;
+  tabId?: string;
   /** Reports which base blocks this candidate changed or removed. */
-  onBaseChanges: (candidateId: string, changes: BlockChange[]) => void;
+  onBaseChanges: (candidateId: string, changes: BlockChange[], hunks: BlockHunk[]) => void;
   /** Width the reader dragged this column to, if any. */
   style?: JSX.CSSProperties;
 }) {
@@ -232,13 +295,20 @@ function CandidateColumn(props: {
   const changes = () => blockDiff().candidate;
   const changedCount = () => changes().filter((c) => c !== 'same').length;
   createEffect(() => {
-    if (rendered.blocks().length > 0) props.onBaseChanges(props.candidate.id, blockDiff().base);
+    if (rendered.blocks().length > 0)
+      props.onBaseChanges(props.candidate.id, blockDiff().base, blockHunks(blockDiff()));
   });
-  // Open on the first changed block: the decision is there, not at the title.
+  // Hidden tabs have no layout. Reveal the first change once the proposal is
+  // visible, then preserve the reader's position when switching tabs.
+  let revealed = false;
   createEffect(
-    on(changedCount, (count) => {
-      if (count === 0) return;
-      requestAnimationFrame(() => revealFirst(bodyRef, '.doc-block:not([data-change="same"])'));
+    on([changedCount, () => props.hidden], ([count, hidden]) => {
+      if (count === 0 || hidden || revealed) return;
+      const frame = requestAnimationFrame(() => {
+        revealFirst(bodyRef, '.doc-block:not([data-change="same"])');
+        revealed = true;
+      });
+      onCleanup(() => cancelAnimationFrame(frame));
     }),
   );
   const [diff] = createResource(
@@ -256,6 +326,7 @@ function CandidateColumn(props: {
   // Partial acceptance: every change is kept until the reader declines it, so
   // the default is exactly the whole-candidate acceptance it replaces.
   const hunks = createMemo(() => blockHunks(blockDiff()));
+  const visible = createMemo(() => reviewBlocks(hunks(), 'cand', rendered.blocks().length));
   const leads = createMemo(() => hunkLeadBlocks(hunks(), rendered.blocks().length));
   const partial = createMemo(
     () => props.partialCapable && !rendered.page() && hunks().length > 1 && !!leads(),
@@ -292,7 +363,9 @@ function CandidateColumn(props: {
     return out;
   });
   const hunkLeads = (index: number) => {
-    if (!partial()) return [];
+    // Gone while the acceptance runs: a toggle that no longer acts would still
+    // flip on screen, and come back out of step with what was sent.
+    if (!partial() || accepting()) return [];
     return (leads()?.get(index) ?? []).map((hunk) => ({
       id: hunk.id,
       accepted: !declined().has(hunk.id),
@@ -377,64 +450,44 @@ function CandidateColumn(props: {
   }
 
   return (
-    <section class="docws-column" style={props.style} aria-label={title()}>
+    <section
+      class="docws-column"
+      style={props.style}
+      aria-label={title()}
+      hidden={props.hidden}
+      id={props.panelId}
+      role={props.tabId ? 'tabpanel' : undefined}
+      aria-labelledby={props.tabId}
+      tabIndex={props.tabId ? 0 : undefined}
+    >
       <div class="docws-column-head">
         <div class="docws-column-title">
           <span class="docws-candidate-label">{props.candidate.label}</span>
           <span>{title()}</span>
           <span style={{ 'margin-left': 'auto' }}>
-            <Show when={!previewing()}>
-              <ChangeNav body={() => bodyRef} count={changedCount()} />
+            <Show when={!previewing() && !props.showSource}>
+              <ChangeNav
+                body={() => bodyRef}
+                baseBody={props.baseBody}
+                hunks={hunks()}
+                baseCount={props.baseBlocks.length}
+                candidateCount={rendered.blocks().length}
+              />
             </Show>
           </span>
         </div>
-        <Rationale candidate={props.candidate} />
-        <textarea
-          class="docws-note"
-          placeholder="Your note on this candidate…"
-          value={note()}
-          onInput={(e) => setNote(e.currentTarget.value)}
-          onBlur={() => {
-            if (note() !== (props.candidate.note ?? ''))
-              void setDocumentCandidateNote(props.run.id, props.candidate.id, note());
-          }}
-        />
-        <div class="docws-run-actions">
-          <Show when={partial() && declined().size > 0}>
-            <button
-              type="button"
-              class="docws-btn docws-btn-sm"
-              aria-pressed={previewing()}
-              onClick={() => setShowPreview((value) => !value)}
-            >
-              {previewing() ? 'Back to changes' : 'Preview result'}
-            </button>
-          </Show>
-          <button
-            type="button"
-            class="docws-btn docws-btn-sm docws-btn-primary"
-            disabled={!canAccept()}
-            title={
-              props.run.status === 'stale'
-                ? 'The document moved since this run and the proposal no longer applies. Re-run it.'
-                : declined().size === 0
-                  ? 'Accept this candidate as one commit on the canonical branch'
-                  : 'Accept the changes you kept as one commit on the canonical branch'
-            }
-            onClick={() => void accept()}
-          >
-            {accepting()
-              ? 'Accepting…'
-              : declined().size === 0
-                ? 'Accept this candidate'
-                : `Accept ${keptCount()} of ${hunks().length} changes`}
-          </button>
-        </div>
-        <Show when={declined().size > 0 && !composed.loading && composed() === null}>
-          <div class="docws-error" role="alert">
-            These changes cannot be combined cleanly. Adjust your choices or refine the candidate.
-          </div>
-        </Show>
+        <Rationale candidate={props.candidate}>
+          <textarea
+            class="docws-note"
+            placeholder="Your note on this candidate…"
+            value={note()}
+            onInput={(e) => setNote(e.currentTarget.value)}
+            onBlur={() => {
+              if (note() !== (props.candidate.note ?? ''))
+                void setDocumentCandidateNote(props.run.id, props.candidate.id, note());
+            }}
+          />
+        </Rationale>
         <CandidateRefinement run={props.run} candidate={props.candidate} />
       </div>
       <div class="docws-column-body" ref={bodyRef}>
@@ -463,6 +516,9 @@ function CandidateColumn(props: {
                   <DocumentViewer
                     blocks={rendered.blocks()}
                     changes={changes()}
+                    visibleBlock={
+                      props.changesOnly && !rendered.page() ? (i) => visible().has(i) : undefined
+                    }
                     hunkLeads={hunkLeads}
                     onToggleHunk={toggleHunk}
                     declined={(i) => declinedBlocks().has(i)}
@@ -503,15 +559,65 @@ function CandidateColumn(props: {
           </section>
         </Show>
       </div>
+      <div class="docws-column-actions">
+        <div class="docws-run-actions">
+          <Show when={partial() && declined().size > 0}>
+            <button
+              type="button"
+              class="docws-btn docws-btn-sm"
+              aria-pressed={previewing()}
+              onClick={() => setShowPreview((value) => !value)}
+            >
+              {previewing() ? 'Back to changes' : 'Preview result'}
+            </button>
+          </Show>
+          <button
+            type="button"
+            class="docws-btn docws-btn-sm docws-btn-primary"
+            disabled={!canAccept()}
+            title={
+              props.run.status === 'stale'
+                ? 'The document moved since this run and the proposal no longer applies. Re-run it.'
+                : declined().size === 0
+                  ? 'Apply this proposal to your document'
+                  : 'Apply the selected changes to your document'
+            }
+            onClick={() => void accept()}
+          >
+            {accepting()
+              ? 'Applying…'
+              : declined().size === 0
+                ? 'Apply proposal'
+                : `Apply ${keptCount()} of ${hunks().length} changes`}
+          </button>
+        </div>
+        <Show when={declined().size > 0 && !composed.loading && composed() === null}>
+          <div class="docws-error" role="alert">
+            These changes cannot be combined cleanly. Adjust your choices or refine the candidate.
+          </div>
+        </Show>
+      </div>
     </section>
   );
 }
 
 /** Base on the left, candidates to the right, each opening with its rationale. */
-export function CompareView(props: { run: DocumentRunRecord }) {
+export function CompareView(props: { run: DocumentRunRecord; candidateId?: string }) {
+  const id = createUniqueId();
+  const [showAll, setShowAll] = createSignal(false);
+  const [selectedId, setSelectedId] = createSignal<string>();
+  createEffect(
+    on(
+      () => props.candidateId,
+      (value) => setSelectedId(value),
+    ),
+  );
   let baseBodyRef: HTMLDivElement | undefined;
+  let mergeButton: HTMLButtonElement | undefined;
   const [revealAgents, setRevealAgents] = createSignal(false);
   const [showSource, setShowSource] = createSignal(false);
+  const [changesOnly, setChangesOnly] = createSignal(false);
+  const [merging, setMerging] = createSignal(false);
   const [baseContent] = createResource(
     () => ({ sha: props.run.baseSha, path: props.run.documentPath }),
     ({ sha, path }) => fetchDocumentAt(sha, path),
@@ -519,8 +625,34 @@ export function CompareView(props: { run: DocumentRunRecord }) {
   const base = createRenderedBlocks(() => baseContent() ?? null);
   const scope = createMemo(() => scopeRange(base.blocks(), props.run));
   const candidates = createMemo(() => props.run.candidates.filter((c) => c.commitSha));
+  const selected = createMemo(
+    () => candidates().find((c) => c.id === selectedId()) ?? candidates()[0],
+  );
+  function navigateProposal(e: KeyboardEvent, index: number) {
+    let next: number;
+    if (e.key === 'ArrowRight') next = (index + 1) % candidates().length;
+    else if (e.key === 'ArrowLeft') next = (index - 1 + candidates().length) % candidates().length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = candidates().length - 1;
+    else return;
+    e.preventDefault();
+    setSelectedId(candidates()[next].id);
+    document.getElementById(`${id}-tab-${next}`)?.focus();
+  }
+  const canMerge = () =>
+    (props.run.status === 'finished' || props.run.status === 'stale') &&
+    candidates().filter((c) => c.status === 'done').length >= 2;
   // Base blocks touched by any candidate, so a deleted paragraph is visible somewhere.
   const [baseChanges, setBaseChanges] = createSignal<Record<string, BlockChange[]>>({});
+  const [baseHunks, setBaseHunks] = createSignal<Record<string, BlockHunk[]>>({});
+  const baseVisible = createMemo(() =>
+    reviewBlocks(
+      showAll() ? Object.values(baseHunks()).flat() : (baseHunks()[selected()?.id ?? ''] ?? []),
+      'base',
+      base.blocks().length,
+    ),
+  );
+  const filtering = () => changesOnly() && !base.page() && !showSource();
   // The width under the pointer while a seam is dragged. It is kept out of the
   // store on purpose: panel sizes are part of the persisted snapshot, so
   // writing one per mouse event would serialise the whole app state per frame.
@@ -528,6 +660,7 @@ export function CompareView(props: { run: DocumentRunRecord }) {
 
   /** A column the reader sized keeps that width over the layout's. */
   function columnStyle(column: string): JSX.CSSProperties | undefined {
+    if (!showAll()) return undefined;
     const live = drag();
     const width = live?.column === column ? live.width : getPanelUserSize(columnKey(column));
     if (!width) return undefined;
@@ -548,7 +681,9 @@ export function CompareView(props: { run: DocumentRunRecord }) {
     />
   );
   const baseMarks = createMemo<BlockChange[]>(() => {
-    const perCandidate = Object.values(baseChanges());
+    const perCandidate = showAll()
+      ? Object.values(baseChanges())
+      : [baseChanges()[selected()?.id ?? ''] ?? []];
     return base.blocks().map((_, i) => {
       const marks = perCandidate.map((m) => m[i]).filter((m): m is BlockChange => !!m);
       if (marks.includes('removed')) return 'removed';
@@ -556,12 +691,21 @@ export function CompareView(props: { run: DocumentRunRecord }) {
       return 'same';
     });
   });
-  // The base opens on the passage the run was scoped to, level with the candidates.
+  // The base opens on the passage the run was scoped to, level with the
+  // candidates. A whole-document run has no scope, so its base waits for the
+  // first candidate to report the blocks it touched — and then holds still,
+  // rather than jumping each time the reader switches proposals.
+  let baseRevealed = false;
   createEffect(
-    on([scope, () => base.blocks().length], () => {
-      requestAnimationFrame(() =>
-        revealFirst(baseBodyRef, '.doc-block.is-scope, .doc-block:not([data-change="same"])'),
-      );
+    on([scope, () => base.blocks().length, baseMarks], () => {
+      if (baseRevealed) return;
+      const frame = requestAnimationFrame(() => {
+        baseRevealed = revealFirst(
+          baseBodyRef,
+          '.doc-block.is-scope, .doc-block:not([data-change="same"])',
+        );
+      });
+      onCleanup(() => cancelAnimationFrame(frame));
     }),
   );
   const scopeText = () => {
@@ -598,26 +742,92 @@ export function CompareView(props: { run: DocumentRunRecord }) {
           />
           Source diff
         </label>
-        <button
-          type="button"
-          class="docws-btn docws-btn-sm docws-btn-danger"
-          onClick={() => void rejectDocumentRun(props.run.id)}
+        <label
+          class="docws-toggle"
+          title={
+            base.page() || showSource()
+              ? 'Available for rendered Markdown'
+              : 'Hide unchanged passages'
+          }
         >
-          Reject all
-        </button>
+          <input
+            type="checkbox"
+            aria-label="Changes only"
+            checked={filtering()}
+            disabled={!!base.page() || showSource()}
+            onChange={(e) => setChangesOnly(e.currentTarget.checked)}
+          />
+          Changes only
+        </label>
+        <Show when={canMerge()}>
+          <button
+            ref={mergeButton}
+            type="button"
+            class="docws-btn docws-btn-sm"
+            aria-expanded={merging()}
+            title="Let an agent read the proposals and draft one merged version"
+            onClick={() => setMerging((value) => !value)}
+          >
+            Merge with agent
+          </button>
+        </Show>
+        <RejectRunButton run={props.run} label="Reject all" />
       </div>
-      <div class="docws-columns">
+      <Show when={merging() && canMerge()}>
+        <MergeWithAgent
+          run={props.run}
+          revealAgents={revealAgents()}
+          onClose={() => {
+            setMerging(false);
+            mergeButton?.focus();
+          }}
+        />
+      </Show>
+      <Show when={candidates().length > 1}>
+        <div class="docws-proposal-switcher">
+          <Show when={!showAll()}>
+            <div class="docws-tabs" role="tablist" aria-label="Proposals">
+              <Index each={candidates()}>
+                {(candidate, i) => (
+                  <button
+                    type="button"
+                    class="docws-tab"
+                    role="tab"
+                    id={`${id}-tab-${i}`}
+                    aria-controls={`${id}-panel-${i}`}
+                    aria-selected={selected()?.id === candidate().id}
+                    tabIndex={selected()?.id === candidate().id ? 0 : -1}
+                    onClick={() => setSelectedId(candidate().id)}
+                    onKeyDown={(e) => navigateProposal(e, i)}
+                  >
+                    Proposal {candidate().label}
+                  </button>
+                )}
+              </Index>
+            </div>
+          </Show>
+          <button
+            type="button"
+            class="docws-btn docws-btn-sm"
+            aria-pressed={showAll()}
+            onClick={() => setShowAll((value) => !value)}
+          >
+            {showAll() ? 'Show one proposal' : 'Show all proposals'}
+          </button>
+        </div>
+      </Show>
+      <div class="docws-columns" classList={{ 'is-focused': !showAll() }}>
         <section
           class="docws-column docws-column-base"
           style={columnStyle('base')}
           aria-label="Base version"
         >
           <div class="docws-column-head">
-            <div class="docws-column-title">Base · {props.run.baseSha.slice(0, 7)}</div>
+            <div class="docws-column-title">Original</div>
             <div class="docws-rationale">
               <div>
                 The document as every candidate saw it. The scoped passage is outlined; blocks a
-                candidate rewrote or removed are marked.
+                proposal rewrote or removed are marked.
               </div>
             </div>
           </div>
@@ -626,27 +836,36 @@ export function CompareView(props: { run: DocumentRunRecord }) {
               blocks={base.blocks()}
               scope={scope()}
               changes={baseMarks()}
+              visibleBlock={filtering() ? (i) => baseVisible().has(i) : undefined}
               renderKey="base"
               page={base.page()}
             />
           </div>
         </section>
-        {seam('base')}
+        <Show when={showAll()}>{seam('base')}</Show>
         <Index each={candidates()}>
           {(candidate, i) => (
             <>
               <CandidateColumn
                 run={props.run}
                 candidate={candidate()}
+                hidden={!showAll() && selected()?.id !== candidate().id}
+                panelId={`${id}-panel-${i}`}
+                tabId={!showAll() && candidates().length > 1 ? `${id}-tab-${i}` : undefined}
                 baseBlocks={base.blocks()}
                 baseSource={baseContent() ?? ''}
                 partialCapable={!base.page()}
                 revealAgents={revealAgents()}
                 showSource={showSource()}
-                onBaseChanges={(id, marks) => setBaseChanges((prev) => ({ ...prev, [id]: marks }))}
+                changesOnly={filtering()}
+                baseBody={() => baseBodyRef}
+                onBaseChanges={(id, marks, hunks) => {
+                  setBaseChanges((prev) => ({ ...prev, [id]: marks }));
+                  setBaseHunks((prev) => ({ ...prev, [id]: hunks }));
+                }}
                 style={columnStyle(`candidate-${i}`)}
               />
-              {seam(`candidate-${i}`)}
+              <Show when={showAll()}>{seam(`candidate-${i}`)}</Show>
             </>
           )}
         </Index>

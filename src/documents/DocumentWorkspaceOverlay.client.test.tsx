@@ -1,20 +1,21 @@
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { setStore } from '../store/core';
+import { setStore, store } from '../store/core';
 import { DocumentWorkspaceOverlay } from './DocumentWorkspaceOverlay';
+import { documentStore, setDocumentComposerDraft } from './store';
 
-const { openInEditor, platform } = vi.hoisted(() => ({
+const { openInEditor, revealItemInDir, platform } = vi.hoisted(() => ({
   openInEditor: vi.fn(() => Promise.resolve()),
+  revealItemInDir: vi.fn(() => Promise.resolve()),
   platform: { isMac: false },
 }));
 
-vi.mock('../lib/shell', () => ({ openInEditor }));
+vi.mock('../lib/shell', () => ({ openInEditor, revealItemInDir }));
 vi.mock('../lib/platform', () => ({
   get isMac() {
     return platform.isMac;
   },
-  isLinux: false,
-  windowChromeTopInset: 0,
+  windowChromeTopInset: 34,
   mod: 'Ctrl',
   alt: 'Alt',
 }));
@@ -24,9 +25,41 @@ const disposers: Array<() => void> = [];
 afterEach(() => {
   while (disposers.length > 0) disposers.pop()?.();
   document.body.replaceChildren();
-  setStore({ projects: [], activeDocumentProjectId: null, editorCommand: '' });
+  setStore({
+    projects: [],
+    activeDocumentProjectId: null,
+    editorCommand: '',
+    documentFullWidth: false,
+  });
+  setDocumentComposerDraft(null);
   vi.clearAllMocks();
 });
+
+function openWorkspace(): HTMLElement {
+  setStore({
+    projects: [
+      {
+        id: 'docs',
+        name: 'Release notes',
+        path: '/projects/release',
+        color: '',
+        kind: 'document',
+        documentPath: 'notes.md',
+      },
+    ],
+    activeDocumentProjectId: 'docs',
+  });
+  const host = document.createElement('div');
+  document.body.append(host);
+  disposers.push(render(() => <DocumentWorkspaceOverlay />, host));
+  return host;
+}
+
+function button(host: HTMLElement, label: string): HTMLButtonElement | null {
+  return (
+    Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.trim() === label) ?? null
+  );
+}
 
 describe('DocumentWorkspaceOverlay', () => {
   it('uses the entire title-bar background as the window drag region', () => {
@@ -73,6 +106,50 @@ describe('DocumentWorkspaceOverlay', () => {
 
     expect(host.querySelector('.docws-overlay')?.classList.contains('is-mac')).toBe(true);
     platform.isMac = false;
+  });
+
+  it('starts below the custom title bar so its window controls stay clickable', () => {
+    const host = openWorkspace();
+    expect(host.querySelector<HTMLElement>('.docws-overlay')?.style.top).toBe('34px');
+  });
+
+  it('lays the overlay over the whole window on mac, where the title bar is the content', () => {
+    platform.isMac = true;
+    const host = openWorkspace();
+    expect(host.querySelector<HTMLElement>('.docws-overlay')?.style.top).toBe('');
+    platform.isMac = false;
+  });
+
+  it('opens the project folder in the file manager from the title', () => {
+    const host = openWorkspace();
+    const open = host.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open the folder /projects/release in the file manager"]',
+    );
+    open?.click();
+    expect(revealItemInDir).toHaveBeenCalledWith('/projects/release');
+  });
+
+  it('keeps the composer away until there is something to compose', () => {
+    const host = openWorkspace();
+    expect(host.querySelector('.docws-composer')).toBeNull();
+
+    button(host, 'Revise document')?.click();
+
+    expect(documentStore.composerDraft).toEqual({ text: '', mode: 'proposals' });
+    expect(button(host, 'Revise document')).toBeNull();
+  });
+
+  it('lets the document take the full width of the pane', () => {
+    const host = openWorkspace();
+    const toggle = button(host, 'Full width');
+    expect(toggle?.getAttribute('aria-pressed')).toBe('false');
+    expect(host.querySelector('.docws-doc')?.classList.contains('is-full-width')).toBe(false);
+
+    toggle?.click();
+
+    expect(store.documentFullWidth).toBe(true);
+    expect(toggle?.getAttribute('aria-pressed')).toBe('true');
+    expect(host.querySelector('.docws-doc')?.classList.contains('is-full-width')).toBe(true);
   });
 
   it('keeps the project files on a tab of the resizable right panel', () => {

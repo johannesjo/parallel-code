@@ -15,22 +15,34 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
+function folderInput(): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>('[aria-label="Project folder"]');
+  if (!input) throw new Error('Project folder input did not render');
+  return input;
+}
+
+async function typeFolder(path: string) {
+  const input = folderInput();
+  input.value = path;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  await vi.waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith(IPC.InspectDocumentFolder, { projectRoot: path }),
+  );
+}
+
 async function open(files: Array<{ path: string; committed: boolean }>) {
-  vi.mocked(invoke).mockImplementation(async (channel) =>
+  vi.mocked(invoke).mockImplementation(async (channel, args) =>
     channel === IPC.InspectDocumentFolder
-      ? { exists: true, isRepo: true, files }
+      ? // Only the first folder holds the files; any other path is empty.
+        {
+          exists: true,
+          isRepo: true,
+          files: (args as { projectRoot: string }).projectRoot === '/tmp/design-notes' ? files : [],
+        }
       : { documentPath: files[0]?.path ?? 'design-notes.md', actions: [] },
   );
   dispose = render(() => <NewDocumentProjectDialog open onClose={() => {}} />, document.body);
-  const input = document.querySelector<HTMLInputElement>('[aria-label="Project folder"]');
-  if (!input) throw new Error('Project folder input did not render');
-  input.value = '/tmp/design-notes';
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  await vi.waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith(IPC.InspectDocumentFolder, {
-      projectRoot: '/tmp/design-notes',
-    }),
-  );
+  await typeFolder('/tmp/design-notes');
 }
 
 function submit() {
@@ -48,6 +60,37 @@ it('creates Markdown without asking first-time users to choose a format', async 
       projectRoot: '/tmp/design-notes',
       documentPath: 'design-notes.md',
       title: 'design-notes',
+    }),
+  );
+});
+
+it('focuses the folder path on open and opens the workspace on Enter', async () => {
+  await open([]);
+  await vi.waitFor(() => expect(document.activeElement).toBe(folderInput()));
+  folderInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await vi.waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith(IPC.PrepareDocumentProject, {
+      projectRoot: '/tmp/design-notes',
+      documentPath: 'design-notes.md',
+      title: 'design-notes',
+    }),
+  );
+});
+
+it('lets a picked document go when the folder changes', async () => {
+  await open([{ path: 'page.html', committed: true }]);
+  await vi.waitFor(() => expect(document.querySelector('[role="option"]')).not.toBeNull());
+  Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]'))
+    .find((b) => b.textContent?.includes('page.html'))
+    ?.click();
+  await typeFolder('/tmp/other');
+  await vi.waitFor(() => expect(document.body.textContent).not.toContain('page.html'));
+  submit();
+  await vi.waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith(IPC.PrepareDocumentProject, {
+      projectRoot: '/tmp/other',
+      documentPath: 'other.md',
+      title: 'other',
     }),
   );
 });

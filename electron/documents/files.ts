@@ -7,8 +7,9 @@ import { git } from './git.js';
 
 /** A tree beyond this is a code project, not a document project. */
 const MAX_FILES = 5_000;
-/** Folders the workspace owns or must never offer to open. */
-const HIDDEN_PREFIXES = ['.parallel/', '.worktrees/', '.git/'];
+/** Folders the workspace owns or must never offer to open; `.claude/` holds
+ *  the settings the app writes for the project's agent session. */
+const HIDDEN_PREFIXES = ['.parallel/', '.worktrees/', '.git/', '.claude/'];
 
 export async function listProjectFiles(projectRoot: string): Promise<string[]> {
   const out = await git(projectRoot, [

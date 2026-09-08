@@ -5,8 +5,7 @@ import { RunComposer } from './RunComposer';
 import type { DocumentBlock } from './markdown-blocks';
 import type { DocumentSelection } from './store';
 
-vi.mock('./agent-terminal', () => ({
-  documentAgentPtyId: (id: string) => `doc-agent-${id}`,
+vi.mock('./agent-task', () => ({
   sendToDocumentAgent: vi.fn(() => Promise.resolve()),
 }));
 
@@ -67,28 +66,79 @@ function tab(host: HTMLElement, label: string): HTMLButtonElement | null {
 }
 
 describe('RunComposer', () => {
-  it('runs a task in the session and puts proposals on their own tab', () => {
+  it('keeps "Send to agent" off while no agent is installed', () => {
+    const host = mount(passage);
+    tab(host, 'Edit with agent')?.click();
+    const box = host.querySelector('textarea');
+    if (box) {
+      box.value = 'Tighten this.';
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    const send = Array.from(host.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Send to agent',
+    );
+
+    expect(send?.disabled).toBe(true);
+    expect(send?.title).toBe('No agent is installed.');
+
+    // No workspace is open here, so the button stays off; the reason goes away.
+    setStore('availableAgents', [
+      {
+        id: 'codex',
+        name: 'Codex',
+        command: 'codex',
+        args: [],
+        resume_args: [],
+        skip_permissions_args: [],
+        description: '',
+      },
+    ]);
+    expect(send?.title).toBe('');
+  });
+
+  it('defaults to proposals and makes direct editing an explicit choice', () => {
     const host = mount(passage);
 
-    const task = tab(host, 'Task');
+    const task = tab(host, 'Edit with agent');
     const proposals = tab(host, 'Proposals');
-    expect(task?.getAttribute('aria-selected')).toBe('true');
-    expect(proposals?.getAttribute('aria-selected')).toBe('false');
-    expect(host.textContent).toContain('The agent edits your document directly.');
-    expect(host.querySelector<HTMLElement>('[aria-label="Agents"]')?.style.display).toBe('none');
-
-    proposals?.click();
-
-    expect(task?.getAttribute('aria-selected')).toBe('false');
     expect(proposals?.getAttribute('aria-selected')).toBe('true');
-    expect(host.querySelector<HTMLElement>('[aria-label="Agents"]')?.style.display).toBe('');
+    expect(task?.getAttribute('aria-selected')).toBe('false');
+    // Who drafts is the decision, so the agents sit in plain view; tuning is folded away.
+    const agents = host.querySelector('[aria-label="Agents"]');
+    expect(agents).not.toBeNull();
     const options = host.querySelector('details');
     expect(options).not.toBeNull();
     expect(options?.open).toBe(false);
-    expect(options?.contains(host.querySelector('[aria-label="Agents"]'))).toBe(true);
+    expect(options?.contains(agents)).toBe(false);
+    expect(options?.textContent).toContain('Models and main session');
+    expect(host.querySelector('.docws-proposal-count')?.textContent).toMatch(
+      /^\d+ of \d+ candidates?$/,
+    );
     expect(host.textContent).toContain('Your document changes only when you accept a proposal.');
     // No second toggle: the run target is one of the modes now.
     expect(host.querySelectorAll('[role="radio"]')).toHaveLength(0);
+
+    task?.click();
+    expect(task?.getAttribute('aria-selected')).toBe('true');
+    expect(proposals?.getAttribute('aria-selected')).toBe('false');
+    expect(host.textContent).toContain('The agent edits your document directly.');
+    expect(host.querySelector('[aria-label="Agents"]')).toBeNull();
+  });
+
+  it('counts candidates against the maximum in the plural', () => {
+    setStore('availableAgents', [
+      {
+        id: 'claude-code',
+        name: 'Claude Code',
+        command: 'claude',
+        args: [],
+        resume_args: [],
+        skip_permissions_args: [],
+        description: '',
+      },
+    ]);
+    const host = mount(passage);
+    expect(host.querySelector('.docws-proposal-count')?.textContent).toBe('1 of 6 candidates');
   });
 
   it('keeps proposals reachable with nothing picked, unlike notes and questions', () => {

@@ -14,6 +14,7 @@ import {
 import {
   acceptDocumentCandidate,
   cancelDocumentRun,
+  discardDocumentEdits,
   dispatchDocumentRun,
   getDocumentAtCommit,
   getDocumentDiff,
@@ -100,6 +101,7 @@ export function registerDocumentHandlers(win: BrowserWindow): void {
       scope: args.scope,
       candidates: args.candidates,
       refinement: args.refinement,
+      merge: args.merge,
     });
   });
 
@@ -155,6 +157,10 @@ export function registerDocumentHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(IPC.RevertDocumentCommit, (_e, args) => {
     return revertDocumentCommit(projectRootArg(args), validateSha(args.sha));
+  });
+
+  ipcMain.handle(IPC.DiscardDocumentEdits, (_e, args) => {
+    return discardDocumentEdits(projectRootArg(args));
   });
 
   // --- Annotations ---

@@ -9,8 +9,7 @@ const { addDocumentAnnotation } = vi.hoisted(() => ({
   addDocumentAnnotation: vi.fn(async () => ({ id: 'saved-1' })),
 }));
 
-vi.mock('./agent-terminal', () => ({
-  documentAgentPtyId: (id: string) => `doc-agent-${id}`,
+vi.mock('./agent-task', () => ({
   sendToDocumentAgent: vi.fn(() => Promise.resolve()),
 }));
 
@@ -66,6 +65,27 @@ function pressEnter(textarea: HTMLTextAreaElement): void {
   textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
 
+describe('RunComposer while an input method is composing', () => {
+  it('leaves Enter to the IME instead of saving a half-typed note', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    disposers.push(
+      render(() => <RunComposer selection={passage} blocks={blocks} onClose={() => {}} />, host),
+    );
+    tab(host, 'Note')?.click();
+    const textarea = type(host, '注意');
+
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true }),
+    );
+    await Promise.resolve();
+    expect(addDocumentAnnotation).not.toHaveBeenCalled();
+
+    pressEnter(textarea);
+    await vi.waitFor(() => expect(addDocumentAnnotation).toHaveBeenCalledOnce());
+  });
+});
+
 describe('RunComposer after a note or question is saved', () => {
   it('empties the instruction so the next passage opens on a blank composer', async () => {
     const onClose = vi.fn();
@@ -84,7 +104,7 @@ describe('RunComposer after a note or question is saved', () => {
       'question',
       'Why is this here?',
       expect.anything(),
-      undefined,
+      { askWith: undefined },
     );
     expect(textarea.value).toBe('');
   });

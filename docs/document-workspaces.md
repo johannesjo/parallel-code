@@ -38,42 +38,62 @@ the document.
    it, and click a relative link inside a document to follow it to the file (and heading)
    it points at. Web links open in the browser. The history, the composer and the runs
    follow the open document.
-4. The composer is a popover over the prose, never inside it, and is always there: with
-   nothing picked it rests at the foot of the column, acts on the whole document, and fades
-   back while you read. Select text, click a block, or press **§** next to a heading to
-   narrow it to a passage: it moves right under the passage (above it when the foot is
-   close), at full strength and with the cursor in it, and follows the passage as you
-   scroll. It steps back once you leave it. Type an instruction and press Enter. Hovering a
+4. The composer is a popover over the prose, never inside it, and stays out of the way
+   until there is something to compose: select text, click a block, or press **§** next
+   to a heading to open it on a passage, or choose **Revise document** in the toolbar to
+   open it on the whole document. On a passage it sits right under it (above it when the
+   foot is close), at full strength and with the cursor in it, and follows the passage as
+   you scroll. It steps back once you leave it. Type an instruction and press Enter. Hovering a
    block shows five icons in the gap just above it, clear of the prose so a click meant
    for the passage cannot land on one, each named as you point at it: task, proposals,
    note and ask pick the block and open the composer on that mode (its tabs carry the same
    icons), and the pencil, set apart, opens the block's source for editing. The picked
    block's icons step aside while the composer is up on it; the other blocks keep theirs,
    so one click moves the composer to another block. The **×** in the composer's corner,
-   or Esc, lets go of the passage and returns it to the foot.
-   The composer's four tabs are the four things one does with a passage; **Task** and
+   or Esc, lets go of the passage and closes the composer.
+   The composer's four tabs are the four things one does with a passage; **Edit with agent** and
    **Proposals** are the same instruction sent two ways:
-   - **Task** types it into the long-running agent session on the right, which
+   - **Edit with agent** types it into the long-running agent session on the right, which
      works in the checkout as you watch. Its edits show up in the viewer as they land and
      are committed as `Manual edits` before the next one-shot run.
-   - **Proposals** runs headless candidates in their own worktrees. Expand
-     **Agents and models** to choose agents and candidate counts. Each candidate gets a
-     **Model** field and, where the CLI has one, a **Reasoning** level, so one agent can run
-     its main session on one model and an
-     alternate on another; both are the CLI's defaults until you choose, and the choice is
-     remembered per project, agent and candidate.
+   - **Proposals**, the default for a new composer, runs headless candidates in their own worktrees. The agents sit in
+     plain view: click one to add or drop it, and its count to have it draft more than
+     once; a counter says how many of the allowed candidates are in play. **Models and
+     main session** folds away the tuning: each candidate gets a **Model** field and, where
+     the CLI has one, a **Reasoning** level, so one agent can run its main session on one
+     model and an alternate on another; both are the CLI's defaults until you choose, and
+     the choice is remembered per project, agent and candidate.
+     The toolbar's **Full width** lets the document use the whole pane instead of a reading
+     column; the choice is remembered. Mermaid diagrams, here and in every other Markdown
+     surface of the app, carry an enlarge button that opens them at the size of the window.
 5. The right-hand panel has three tabs and a draggable seam (double-click it to reset the
-   width; the width is remembered). **Agent** is the interactive session in the app's
-   terminal, with a status chip that says _needs you_ while it waits for an answer; its
-   process survives closing the workspace, and **Restart**, or picking another agent,
-   starts it afresh. **Runs** lists the one-shot runs as they finish; click any candidate to
-   read everything it printed.
+   width; the width is remembered). **Agent** is the terminal a task has: the bar above it
+   shows the last prompt sent, the chips switch between agents, **+** adds another one
+   (as tabs by default, or side by side), and the prompt box below sends to the first
+   agent. A session that exits offers **Restart**, **Resume** and a switch to another
+   agent; one that has exited starts afresh the next time the tab is shown. The processes
+   survive closing the workspace, and the agent last used comes back after the app
+   restarts. A Markdown path the agent prints opens in the viewer when it lies inside the
+   project. The tab stays mounted behind the other two, so switching tabs keeps the
+   scrollback and scroll position. The tab flags _!_ while an agent waits for an answer. **Runs** lists the one-shot runs as they finish,
+   each revision or merge saying which proposals it came from. Click a ready candidate in a
+   finished run to review that proposal; **View output** opens its log. Running, failed and
+   already-decided candidates still open their output.
    Runs that wait for a decision also appear as a strip over the agent, so nothing sits
    unnoticed behind another tab. **Review** (one candidate) or **Compare** (several), or the
-   _n to review_ button in the header, opens the compare view as a large modal over the
-   workspace, with **Fullscreen** to fill the window: base on the left, candidates to the
-   right, each starting with its rationale. Accept one, reject all, or choose **Refine this candidate** and describe
-   what should change. A candidate with more than one change carries a checkbox beside each
+   _n to review_ button in the header, opens the compare view over the whole window: the original
+   on the left and one proposal on the right. Proposal tabs support arrow keys, Home and End,
+   and preserve notes, selected changes and reading position when switching. **Show all proposals**
+   restores the resizable multi-column layout. Each proposal starts with a one-line summary;
+   **Reasoning and notes** expands the full rationale and your review note. Warnings remain
+   visible. The original and proposal start at the same height, even with details expanded.
+   **Apply proposal** (or **Apply n of m changes**) stays below the scrolling document. Apply one,
+   reject all, or choose **Refine this candidate** and describe what should change. With
+   two or more proposals, **Merge with agent** hands the comparing to an agent: pick the
+   proposals and the agent, adjust the guidance, and it drafts one merged proposal from
+   the diffs and your notes on each candidate, saying which parts came from where. The
+   merged version lands in Runs like any other proposal and still needs acceptance.
+   A candidate with more than one change carries a checkbox beside each
    of them: every change is kept until you clear its box, the passages you dropped recede
    in place so you can still read what you turned down, and the button then says
    **Accept n of m changes** and takes only those. **Preview result** shows the complete
@@ -85,11 +105,14 @@ the document.
 6. **History** is `git log` for the document with the `Parallel-*` trailers parsed:
    what changed, which agent, which instruction, which base. Show the diff or render the
    older version. Revert any entry.
-7. **Annotations.** The same composer offers **Note** and **Ask** beside **Task**. A note
+7. **Annotations.** The same composer offers **Note** and **Ask** beside **Edit with agent**. A note
    attaches to the passage as a symbol in its margin; hover it, tab to it, or click it to
    pin it open, and the bubble opens over the document. A question is a bubble an agent
    answers into, running read-only in the checkout; question and answer stay visible
-   together. Resolve (`r`) collapses a bubble to one line, Delete removes it with an Undo
+   together. **Ask follow-up** under an answer continues the conversation with the agent
+   that answered: the follow-up is a new question on the same passage, and the agent is
+   handed the earlier exchange along with it. Resolve (`r`) collapses a bubble to one
+   line, Delete removes it with an Undo
    in the toolbar, and **Make task** reopens the composer on the passage with the bubble's
    text (and answer) as the instruction; the bubble then collapses as `task`.
 
@@ -97,19 +120,28 @@ the document.
    **Edit block** in the toolbar. Edit its
    Markdown or HTML source, then **Save block** to update the document directly. Surrounding
    content and line endings are preserved. If the file changed meanwhile, saving refuses
-   to overwrite it and keeps your text available to copy.
+   to overwrite it and keeps your text available to copy. Edits made this way, or in an
+   outside editor, show as an _uncommitted edits_ chip in the header; click it to discard
+   them and return to the committed version. Next to the editor button, a folder button
+   opens the project in the file manager.
 
 ### How it works
 
 - **Editing happens in the block editor, your editor, or the interactive session.** The app
-  watches the open file and re-renders; an external change drops any active selection. The session
-  on the Agent tab is an ordinary terminal (`TerminalView`) running the chosen agent's
-  CLI in the checkout, one per project, keyed `doc-agent-<project>`; a scoped instruction
-  is pasted into it as _Document, Scope, the passage verbatim, your words_. Because it
-  edits the checkout directly, its work is committed as `Manual edits` by the next
-  one-shot dispatch rather than as a proposal to compare. A restart, or a switch to another
-  agent, spawns fresh instead of attaching: the spawn replaces the live session in one
-  step, so the new terminal never inherits the exit of the one it replaced.
+  watches the open file and re-renders; an external change drops any active selection. The Agent
+  tab is a task's AI terminal and prompt box (`TaskAITerminal`, `PromptInput`) over a hidden
+  task per project, id `doc-agent-<project>`, kept out of the task order so it is neither
+  listed nor persisted; its first agent's pty carries the same id, so reopening the workspace
+  re-attaches, and the agent it ran is remembered on the project. Each time the tab is
+  shown, the agents are re-armed to attach (a restart clears that for its one spawn) and
+  one that exited is reset, since the terminal spawns it afresh. Removing the project
+  kills the sessions. A scoped instruction, _your words, then Document, Scope and the
+  passage verbatim_, goes to the selected agent as a prompt: typed straight in when the agent looks
+  idle (quiet output, no open question, and for Claude no hook turn in flight), else
+  queued as the task's initial prompt, which the prompt box sends once the agent is
+  ready; a second instruction is refused while one waits. Because the agent edits the
+  checkout directly, its work is committed as `Manual edits` by the next one-shot
+  dispatch rather than as a proposal to compare.
 - **Every file of the project is one click away.** The file tree is `git ls-files`
   (tracked and untracked, ignores respected) minus `.parallel/`, `.worktrees/` and `.git/`,
   capped at 5,000 entries, refreshed on every new head. Opening a file swaps the watcher
@@ -158,6 +190,16 @@ workspace-write` (the sandbox blocks writes outside the worktree),
   accepting it uses the existing three-way integration. The run records its source run
   and candidate in `refinement`. Refinement covers the whole proposal because passage
   line numbers may have changed. Dispatch does not commit pending canonical edits.
+- **Merging is a run like any other.** One fresh candidate starts at the source run's
+  base, the same content every proposal saw, and its prompt carries each chosen proposal
+  as a diff against that base, with the candidate's own summary and the reviewer's note.
+  The run records `merge` (source run and candidate ids), covers the whole document, and
+  never resumes the main session, so a warm session is not moved onto unaccepted content.
+  Refining and merging are mutually exclusive on one run.
+- **Follow-up questions form a thread.** A follow-up is a new annotation with
+  `followUpOf` pointing at the answered question. Asking it walks that chain (bounded,
+  and safe against a loop in a hand-edited file) and puts the earlier questions and
+  answers into the read-only prompt ahead of the new one.
 - **Acceptance is one squashed integration commit** on the checked-out branch, containing
   the document and the run record `.parallel/runs/<id>.json`. A proposal whose base is
   behind HEAD is merged three-way on acceptance and marked stale if it no longer applies.
@@ -217,7 +259,11 @@ workspace-write` (the sandbox blocks writes outside the worktree),
   list, a table; not the `<main>` or `<div>` around them) are marked as the blocks. The
   page's stylesheet comes along, scoped to the viewer with `@scope`, `html`/`body` rules
   pointed at the page root, the app's annotation markers kept out of it, scripts and
-  `@import` dropped. Every block carries its source lines, so selection, the composer,
+  `@import` dropped. The block toolbar and an open note are not inside the page at all:
+  they float over the window, placed from the block's on-screen position and moved with
+  it on scroll, so a page element that clips its overflow cannot trap them and nothing
+  in the workspace, the composer included, paints over them. The markdown viewer uses
+  the same two overlays. Every block carries its source lines, so selection, the composer,
   annotations, compare marking and history work on the rendered page exactly as on
   Markdown; marks are outlines and markers hang out of the page's flow, so nothing the
   app adds moves the page's own elements. A **Page** toggle

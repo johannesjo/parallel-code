@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import type { BrowserWindow } from 'electron';
 import {
+  annotationThread,
   askAnnotation,
   buildAnnotationPrompt,
   deleteAnnotation,
@@ -61,6 +62,56 @@ describe('validateAnnotationInput', () => {
     expect(a.answerStatus).toBeUndefined();
     expect(a.runId).toBeUndefined();
   });
+
+  it('keeps a follow-up link but never one to itself', () => {
+    expect(validateAnnotationInput({ ...note('q-2'), followUpOf: 'q-1' }).followUpOf).toBe('q-1');
+    expect(
+      validateAnnotationInput({ ...note('q-2'), followUpOf: 'q-2' }).followUpOf,
+    ).toBeUndefined();
+    expect(
+      validateAnnotationInput({ ...note('q-2'), followUpOf: 'no way' }).followUpOf,
+    ).toBeUndefined();
+  });
+});
+
+function answered(
+  id: string,
+  text: string,
+  answer: string,
+  followUpOf?: string,
+): DocumentAnnotation {
+  return validateAnnotationInput({
+    ...note(id),
+    kind: 'question',
+    text,
+    followUpOf,
+    answerStatus: 'answered',
+    answer: { text: answer, agentId: 'claude-code', agentName: 'Claude', answeredAt: 'x' },
+  });
+}
+
+describe('annotationThread', () => {
+  it('walks the follow-up chain oldest first and survives a loop', () => {
+    const first = answered('q-1', 'Why?', 'Because.');
+    const second = answered('q-2', 'Why that?', 'Tradition.', 'q-1');
+    const third = answered('q-3', 'Since when?', '', 'q-2');
+    expect(annotationThread([third, first, second], third).map((a) => a.id)).toEqual([
+      'q-1',
+      'q-2',
+    ]);
+    const loopA = answered('l-a', 'a', 'a', 'l-b');
+    const loopB = answered('l-b', 'b', 'b', 'l-a');
+    expect(annotationThread([loopA, loopB], loopA).map((a) => a.id)).toEqual(['l-b']);
+    expect(annotationThread([first], answered('q-9', 'x', 'y', 'gone'))).toEqual([]);
+  });
+
+  it('stops after eight exchanges, keeping the nearest ones', () => {
+    const chain = Array.from({ length: 10 }, (_, i) =>
+      answered(`q-${i}`, `q${i}`, `a${i}`, i > 0 ? `q-${i - 1}` : undefined),
+    );
+    const thread = annotationThread(chain, chain[9]);
+    expect(thread.map((a) => a.id)).toEqual(chain.slice(1, 9).map((a) => a.id));
+  });
 });
 
 describe('buildAnnotationPrompt', () => {
@@ -73,6 +124,39 @@ describe('buildAnnotationPrompt', () => {
     expect(prompt).toContain('> Old goals text.');
     expect(prompt).toContain('Question:\nWhy?');
     expect(prompt).toContain('Do not edit');
+    expect(prompt).not.toContain('follow-up');
+  });
+
+  it('carries the earlier exchange into a follow-up', () => {
+    const first = answered('q-1', 'Why is this here?', 'It anchors the section.');
+    const followUp = answered('q-2', 'Could it move up?', '', 'q-1');
+    const prompt = buildAnnotationPrompt(followUp, annotationThread([first, followUp], followUp));
+    expect(prompt).toContain('This is a follow-up');
+    expect(prompt).toContain('Question:\nWhy is this here?');
+    expect(prompt).toContain('Answer (Claude):\nIt anchors the section.');
+    expect(prompt).toContain('Follow-up question:\nCould it move up?');
+    expect(prompt.indexOf('Why is this here?')).toBeLessThan(prompt.indexOf('Could it move up?'));
+  });
+
+  it('says so when an earlier question got no answer', () => {
+    const unanswered = validateAnnotationInput({ ...note('q-1'), kind: 'question', text: 'Why?' });
+    const followUp = answered('q-2', 'Still, why?', '', 'q-1');
+    expect(buildAnnotationPrompt(followUp, [unanswered])).toContain(
+      'Question:\nWhy?\n\nAnswer: none was given.',
+    );
+  });
+
+  it('keeps a long thread under the Linux argument limit, cutting old answers not the question', () => {
+    const chain = Array.from({ length: 9 }, (_, i) =>
+      answered(`q-${i}`, 'q'.repeat(20_000), 'a'.repeat(50_000), i > 0 ? `q-${i - 1}` : undefined),
+    );
+    const earlier = annotationThread(chain, chain[8]);
+    const prompt = buildAnnotationPrompt(chain[8], earlier);
+    expect(earlier).toHaveLength(8);
+    expect(Buffer.byteLength(prompt)).toBeLessThan(128 * 1024);
+    // Eight answers share 40 000 bytes: 5 000 each, then the marker.
+    expect(prompt.match(/a{5000}\n… \(truncated\)/g)).toHaveLength(8);
+    expect(prompt).toContain('Follow-up question:\n' + 'q'.repeat(20_000));
   });
 });
 

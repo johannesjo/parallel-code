@@ -3,7 +3,9 @@ import type { DocumentSelection } from './store';
 /**
  * The message typed into the interactive session for a scoped instruction.
  * That session runs in the checkout with the user watching, so it is asked to
- * edit directly and told where; the rest is the user's own words.
+ * edit directly and told where. The user's own words come first: the bar over
+ * the terminal shows the start of the last prompt, and it should read them,
+ * not the scaffolding.
  */
 export function buildInteractivePrompt(
   documentPath: string,
@@ -15,7 +17,7 @@ export function buildInteractivePrompt(
     : selection.heading
       ? `lines ${selection.startLine}-${selection.endLine} (under "${selection.heading}")`
       : `lines ${selection.startLine}-${selection.endLine}`;
-  const parts = [`Document: ${documentPath}`, `Scope: ${where}.`];
+  const parts = [instruction.trim(), `Document: ${documentPath}`, `Scope: ${where}.`];
   if (!selection.wholeDocument && selection.quote.trim()) {
     const quote = selection.quote
       .split('\n')
@@ -23,7 +25,6 @@ export function buildInteractivePrompt(
       .join('\n');
     parts.push(`The passage, verbatim:\n${quote}`);
   }
-  parts.push(instruction.trim());
   return plainText(parts.join('\n\n'));
 }
 

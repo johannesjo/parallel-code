@@ -31,44 +31,65 @@ const blocks: DocumentBlock[] = [
   },
 ];
 
-describe('block hover actions', () => {
-  it('offers every composer mode and edit on each block, and reports the block picked', () => {
-    const onAction = vi.fn();
-    const onSelect = vi.fn();
-    const host = document.createElement('div');
-    document.body.append(host);
-    disposers.push(
-      render(
-        () => (
-          <DocumentViewer
-            blocks={blocks}
-            renderKey="t"
-            selectable
-            onSelect={onSelect}
-            onAction={onAction}
-          />
-        ),
-        host,
+function mount(extra: { selectable?: boolean; selection?: { start: number; end: number } } = {}) {
+  const onAction = vi.fn();
+  const onSelect = vi.fn();
+  const host = document.createElement('div');
+  document.body.append(host);
+  disposers.push(
+    render(
+      () => (
+        <DocumentViewer
+          blocks={blocks}
+          renderKey="t"
+          selectable={extra.selectable ?? true}
+          selection={extra.selection}
+          onSelect={onSelect}
+          onAction={onAction}
+        />
       ),
-    );
+      host,
+    ),
+  );
+  return { host, onAction, onSelect };
+}
 
-    const toolbars = host.querySelectorAll('[data-block-index] .docws-block-actions');
-    expect(toolbars).toHaveLength(2);
-    const second = host.querySelector<HTMLElement>('[data-block-index="1"]');
-    const labels = Array.from(second?.querySelectorAll('button') ?? []).map((b) =>
+/** The pointer arrives on the prose of block `index`. */
+function hover(host: HTMLElement, index: number) {
+  host
+    .querySelector(`[data-block-index="${index}"] > div > *`)
+    ?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+}
+
+const toolbar = () => document.querySelector<HTMLElement>('.docws-block-actions');
+const isOpen = () => toolbar()?.classList.contains('is-open') === true;
+
+describe('block hover actions', () => {
+  it('floats one toolbar over the hovered block and reports the block picked', () => {
+    const { host, onAction, onSelect } = mount();
+    // Not in the block: a page element clipping its overflow could hide it there.
+    expect(host.querySelector('.docws-block-actions')).toBeNull();
+    expect(document.body.contains(toolbar())).toBe(true);
+    expect(isOpen()).toBe(false);
+
+    hover(host, 1);
+
+    expect(isOpen()).toBe(true);
+    expect(toolbar()?.style.top).toMatch(/px$/);
+    const labels = Array.from(toolbar()?.querySelectorAll('button') ?? []).map((b) =>
       b.getAttribute('aria-label'),
     );
     expect(labels).toEqual([
-      'Task on this block',
+      'Edit this block with agent',
       'Proposals for this block',
       'Note beside this block',
       'Ask an agent about this block',
       'Edit this block',
     ]);
 
-    second?.querySelector<HTMLButtonElement>('[aria-label="Note beside this block"]')?.click();
-    second?.querySelector<HTMLButtonElement>('[aria-label="Proposals for this block"]')?.click();
-    second?.querySelector<HTMLButtonElement>('[aria-label="Edit this block"]')?.click();
+    toolbar()?.querySelector<HTMLButtonElement>('[aria-label="Note beside this block"]')?.click();
+    toolbar()?.querySelector<HTMLButtonElement>('[aria-label="Proposals for this block"]')?.click();
+    toolbar()?.querySelector<HTMLButtonElement>('[aria-label="Edit this block"]')?.click();
 
     expect(onAction).toHaveBeenNthCalledWith(1, 'note', 1);
     expect(onAction).toHaveBeenNthCalledWith(2, 'proposals', 1);
@@ -76,53 +97,42 @@ describe('block hover actions', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('gives the task and edit actions different icons', () => {
-    const host = document.createElement('div');
-    document.body.append(host);
-    disposers.push(
-      render(
-        () => <DocumentViewer blocks={blocks} renderKey="t" selectable onAction={() => {}} />,
-        host,
-      ),
-    );
+  it('stays while the pointer climbs onto it, and goes once it leaves', async () => {
+    const { host } = mount();
+    hover(host, 0);
+    host.querySelector('.docws-content')?.dispatchEvent(new MouseEvent('mouseleave'));
+    toolbar()?.dispatchEvent(new MouseEvent('mouseenter'));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(isOpen()).toBe(true);
 
-    const icon = (label: string) =>
-      host.querySelector(`[aria-label="${label}"] path`)?.getAttribute('d');
-    expect(icon('Task on this block')).not.toEqual(icon('Edit this block'));
+    toolbar()?.dispatchEvent(new MouseEvent('mouseleave'));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(isOpen()).toBe(false);
   });
 
-  it('keeps the toolbars on the other blocks while a passage is picked', () => {
-    const host = document.createElement('div');
-    document.body.append(host);
-    disposers.push(
-      render(
-        () => (
-          <DocumentViewer
-            blocks={blocks}
-            renderKey="t"
-            selectable
-            selection={{ start: 1, end: 1 }}
-            onAction={() => {}}
-          />
-        ),
-        host,
-      ),
-    );
+  it('gives the task and edit actions different icons', () => {
+    mount();
+    const icon = (label: string) =>
+      toolbar()?.querySelector(`[aria-label="${label}"] path`)?.getAttribute('d');
+    expect(icon('Edit this block with agent')).not.toEqual(icon('Edit this block'));
+  });
 
-    // The picked block's toolbar is hidden by style; the rest stay in reach.
+  it('keeps the toolbar for the other blocks while a passage is picked', () => {
+    const { host } = mount({ selection: { start: 1, end: 1 } });
     expect(host.querySelector('[data-block-index="1"]')?.classList.contains('is-selected')).toBe(
       true,
     );
-    expect(host.querySelectorAll('[data-block-index="0"] .docws-block-actions')).toHaveLength(1);
+
+    // The picked block has the composer up on it; the bar would only repeat it.
+    hover(host, 1);
+    expect(isOpen()).toBe(false);
+
+    hover(host, 0);
+    expect(isOpen()).toBe(true);
   });
 
   it('shows no toolbar when the viewer is not selectable', () => {
-    const host = document.createElement('div');
-    document.body.append(host);
-    disposers.push(
-      render(() => <DocumentViewer blocks={blocks} renderKey="t" onAction={() => {}} />, host),
-    );
-
-    expect(host.querySelector('.docws-block-actions')).toBeNull();
+    mount({ selectable: false });
+    expect(toolbar()).toBeNull();
   });
 });

@@ -123,6 +123,18 @@ describe('sanitizeRunRecord', () => {
     };
     expect(sanitizeRunRecord(root, sneaky)).toBeNull();
   });
+  it('keeps a well-formed merge lineage and rejects a malformed one', () => {
+    const merge = { runId: 'run-0', candidateIds: ['c1', 'c2'] };
+    expect(sanitizeRunRecord(root, { ...good, merge })?.merge).toEqual(merge);
+    expect(
+      sanitizeRunRecord(root, { ...good, merge: { ...merge, candidateIds: ['c1'] } }),
+    ).toBeNull();
+    expect(
+      sanitizeRunRecord(root, { ...good, merge: { ...merge, candidateIds: ['c1', 'c1'] } }),
+    ).toBeNull();
+    expect(sanitizeRunRecord(root, { ...good, merge: { ...merge, runId: '../x' } })).toBeNull();
+  });
+
   it('rejects foreign branch names and bad shas', () => {
     expect(
       sanitizeRunRecord(root, { ...good, candidates: [{ ...good.candidates[0], branch: 'main' }] }),

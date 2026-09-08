@@ -6,8 +6,7 @@ import { RunComposer } from './RunComposer';
 import { setDocumentComposerDraft, type DocumentSelection } from './store';
 import type { DocumentBlock } from './markdown-blocks';
 
-vi.mock('./agent-terminal', () => ({
-  documentAgentPtyId: (id: string) => `doc-agent-${id}`,
+vi.mock('./agent-task', () => ({
   sendToDocumentAgent: vi.fn(() => Promise.resolve()),
 }));
 

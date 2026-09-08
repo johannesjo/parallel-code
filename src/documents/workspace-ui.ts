@@ -1,8 +1,7 @@
 /**
  * Panel state of the open workspace: the project's files, which rail tab is
- * up, the one-shot output being read, and whether the interactive agent is
- * live. Kept apart from the document store because none of it is about the
- * document.
+ * up and the one-shot output being read. Kept apart from the document store
+ * because none of it is about the document.
  */
 import { createStore } from 'solid-js/store';
 import { IPC } from '../../electron/ipc/channels';
@@ -22,8 +21,6 @@ interface WorkspaceUiState {
   filesError: string | null;
   railTab: RailTab;
   output: OutputTarget | null;
-  /** Set once the interactive agent's terminal has a live process behind it. */
-  agentRunning: boolean;
 }
 
 const [ui, setUi] = createStore<WorkspaceUiState>({
@@ -31,7 +28,6 @@ const [ui, setUi] = createStore<WorkspaceUiState>({
   filesError: null,
   railTab: 'agent',
   output: null,
-  agentRunning: false,
 });
 
 export { ui as workspaceUi };
@@ -53,11 +49,52 @@ export function openCandidateOutput(target: OutputTarget | null): void {
   setUi('output', target);
 }
 
-export function setAgentRunning(running: boolean): void {
-  setUi('agentRunning', running);
-}
-
 /** Back to the defaults when a workspace opens; files are per project. */
 export function resetWorkspaceUi(): void {
-  setUi({ files: [], filesError: null, railTab: 'agent', output: null, agentRunning: false });
+  setUi({ files: [], filesError: null, railTab: 'agent', output: null });
+}
+
+/**
+ * The note bubbles pinned open right now, by what closes them. A pinned
+ * bubble covers the prose, so Escape shuts it before anything else in the
+ * workspace — even with the focus nowhere near it, where the bubble's own
+ * key handler cannot see the key.
+ */
+const pinnedBubbles = new Set<() => void>();
+
+export function registerPinnedBubble(dismiss: () => void): () => void {
+  pinnedBubbles.add(dismiss);
+  return () => {
+    pinnedBubbles.delete(dismiss);
+  };
+}
+
+/** Closes every pinned bubble; false when there was none to close. */
+export function dismissPinnedBubbles(): boolean {
+  if (pinnedBubbles.size === 0) return false;
+  for (const dismiss of [...pinnedBubbles]) dismiss();
+  return true;
+}
+
+/**
+ * The forms open over the compare view (refine, merge), by what closes them.
+ * Escape shuts the one opened last before the dialog itself, even with the
+ * focus outside the form, where its own key handler cannot see the key.
+ */
+const compareForms: (() => void)[] = [];
+
+export function registerCompareForm(close: () => void): () => void {
+  compareForms.push(close);
+  return () => {
+    const at = compareForms.indexOf(close);
+    if (at >= 0) compareForms.splice(at, 1);
+  };
+}
+
+/** Closes the form opened last; false when none is open. */
+export function closeTopCompareForm(): boolean {
+  const close = compareForms.pop();
+  if (!close) return false;
+  close();
+  return true;
 }

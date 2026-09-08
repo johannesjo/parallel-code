@@ -64,6 +64,21 @@ describe('CandidateRefinement', () => {
     );
   });
 
+  it('closes on Escape without letting the key out, and puts focus back on its button', () => {
+    const host = mount();
+    const escaped = vi.fn();
+    document.addEventListener('keydown', escaped);
+    host
+      .querySelector('textarea')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    // The compare dialog listens on the document and would close over the form.
+    expect(escaped).not.toHaveBeenCalled();
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(document.activeElement).toBe(host.querySelector('button'));
+    document.removeEventListener('keydown', escaped);
+  });
+
   it('keeps feedback available when dispatch fails', async () => {
     vi.mocked(refineDocumentCandidate).mockRejectedValue(new Error('Agent is unavailable'));
     const host = mount();

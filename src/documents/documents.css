@@ -1,5 +1,12 @@
 /* Document workspace overlay — uses the app's design tokens. */
 
+:root {
+  /* Overlays that float over the window from an anchor in the document (the
+     block toolbar, an open note): above the workspace (950) and the compare
+     dialog (1000), below the app's menus (1200) and the lightbox (3000). */
+  --docws-floating-z: 1100;
+}
+
 .docws-overlay {
   position: fixed;
   inset: 0;
@@ -37,7 +44,9 @@
 }
 
 /* The mac traffic lights are drawn over the top-left corner of the window;
-   the title moves right so they never sit on it. */
+   the title moves right so they never sit on it. Elsewhere the app draws its
+   own title bar with the window controls, and the overlay starts below it
+   (the pane sets `top`). */
 .docws-overlay.is-mac .docws-header {
   padding-left: 86px;
 }
@@ -48,12 +57,30 @@
   gap: 8px;
   font-weight: 600;
   font-size: 15px;
+}
+
+/* The name gives way first, on one line; the buttons after it keep their
+   place instead of being painted over by the path that follows. */
+.docws-title > span {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .docws-title svg {
   color: var(--accent);
   flex-shrink: 0;
+}
+
+/* In a narrow window the header would push Close out of view: the path and
+   the branch chip go first, since the file tree and the History tab carry
+   the same facts. The overlay spans the window, so its width is the window's. */
+@media (max-width: 960px) {
+  .docws-header .docws-subtitle,
+  .docws-header .docws-head-chip:not(.is-action) {
+    display: none;
+  }
 }
 
 .docws-open-editor {
@@ -96,6 +123,16 @@
   border-color: color-mix(in srgb, var(--warning) 45%, transparent);
 }
 
+/* A chip that does something on a click keeps the chip's look and adds the hand. */
+.docws-head-chip.is-action {
+  background: transparent;
+  cursor: pointer;
+}
+
+.docws-head-chip.is-action:hover {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+
 .docws-banner {
   padding: 6px 18px;
   font-size: 12px;
@@ -128,6 +165,7 @@
   font-family: var(--font-ui);
   font-size: 13px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 /* Tabs select, the composer's target toggle checks; both read the same way. */
@@ -188,6 +226,13 @@
   background: var(--accent-hover);
 }
 
+/* Dimming the accent alone still reads as a live button; take the colour away. */
+.docws-btn-primary:disabled {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--fg-muted);
+}
+
 .docws-btn-danger {
   color: var(--error);
 }
@@ -242,10 +287,25 @@
 
 .docws-count.is-attention {
   background: var(--warning);
-  color: var(--bg);
+  /* Not `--bg`: it is a gradient in the default look, so the colour would
+     be dropped and the mark inherit the muted grey around it. */
+  color: var(--bg-elevated);
 }
 
 /* ── Interactive agent ── */
+
+/* Kept mounted behind the other tabs: a remount replays the whole scrollback
+   from the pty and loses the scroll position. */
+.docws-agent-tab {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.docws-agent-tab.is-hidden {
+  display: none;
+}
 
 .docws-agent-pane {
   flex: 1;
@@ -254,32 +314,18 @@
   flex-direction: column;
 }
 
-.docws-agent-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--fg-muted);
-}
-
-.docws-agent-status {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--fg-subtle);
-}
-
-.docws-agent-status.is-waiting {
-  color: var(--warning);
-  font-weight: 600;
-}
-
 .docws-agent-term {
   flex: 1;
   min-height: 0;
   position: relative;
   background: var(--bg);
+}
+
+.docws-agent-prompt {
+  flex: none;
+  height: 96px;
+  padding: 6px 8px 8px;
+  border-top: 1px solid var(--border);
 }
 
 .docws-decisions {
@@ -408,6 +454,19 @@
   max-width: 800px;
   margin: 0 auto;
   padding: 28px 44px 280px;
+}
+
+/* Full width is a choice, remembered across workspaces: wide tables and
+   diagrams get the whole column instead of a reading measure. */
+.docws-doc.is-full-width {
+  max-width: none;
+}
+
+/* The shared dialog prose style caps itself at 720px, which is hidden inside
+   the reading measure but would hold the prose there under full width. The
+   column above sets the width; the prose fills it. */
+.docws-doc .docws-content {
+  max-width: none;
 }
 
 /* A page gets the whole column, top to bottom, the way a browser gives it the viewport. */
@@ -620,15 +679,16 @@
 
 /* ── Block hover toolbar ── */
 
-/* Clear of the block, not on its top edge: the bar used to cover the first
-   line, so a click meant for the passage hit an icon instead. It rests in the
-   gap above, which the column's top padding leaves room for on the first
-   block too. */
+/* One bar for the whole viewer, floating over the window: the viewer places
+   it so its bottom edge meets the hovered block's top edge, clear of the
+   prose (a bar on the first line made clicks meant for the passage hit an
+   icon) and outside any page element that clips its overflow. Hidden, it is
+   also unfocusable and intangible, so it never swallows a click meant for
+   whatever is under it. */
 .docws-block-actions {
-  position: absolute;
-  bottom: 100%;
-  right: 6px;
-  z-index: 5;
+  position: fixed;
+  z-index: var(--docws-floating-z);
+  transform: translateY(-100%);
   display: inline-flex;
   gap: 2px;
   padding: 2px;
@@ -636,35 +696,22 @@
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   box-shadow: var(--shadow-pop);
+  font-family: var(--font-ui);
+  visibility: hidden;
   opacity: 0;
-  transition: opacity 0.1s ease;
-  /* Invisible, so it must also be intangible: it hangs over the block above,
-     where a transparent icon would otherwise swallow that block's clicks. */
-  pointer-events: none;
+  transition:
+    opacity 0.1s ease,
+    visibility 0s linear 0.1s;
 }
 
 /* A beat after the pointer arrives, so sweeping down the prose does not flash
-   a toolbar on every block; gone at once when it leaves. The bar sits directly
-   on the block's top edge, so the pointer reaches it without crossing a gap. */
-.doc-block:hover .docws-block-actions,
-.docws-block-actions:focus-within {
+   the bar on every block; gone at once when it leaves. */
+.docws-block-actions.is-open {
+  visibility: visible;
   opacity: 1;
-  pointer-events: auto;
-  transition-delay: 0.12s;
-}
-
-/* The picked blocks have the composer up on them; their toolbars would only
-   repeat what it offers. The other blocks keep theirs, so one click moves
-   the composer to a different block. */
-.doc-block.is-selected .docws-block-actions {
-  display: none;
-}
-
-/* A page's § button and markers sit on the right; the toolbar takes the left. */
-.docws-page .docws-block-actions {
-  right: auto;
-  left: 0;
-  font-family: var(--font-ui);
+  transition:
+    opacity 0.1s ease 0.12s,
+    visibility 0s;
 }
 
 .docws-block-action {
@@ -799,6 +846,21 @@
   color: var(--fg-muted);
 }
 
+/* The view tabs lead the toolbar and must not drift with what shows on the
+   right; Full width goes away in the page view. */
+.docws-toolbar .docws-tabs {
+  margin-left: 0;
+}
+
+/* The hint is the one thing in the toolbar that can give way: on one line,
+   cut short, so the buttons keep their row in a narrow column. */
+.docws-toolbar-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Composer ── */
 
 /* The composer floats over the foot of the column. Only the panel itself takes
@@ -847,7 +909,7 @@
 /* Always present, so it steps back while the reader is in the prose and
    comes forward as soon as the pointer or the cursor reaches it. */
 .docws-composer:not(:focus-within):not(:hover):not(.is-fresh) {
-  opacity: 0.55;
+  opacity: 0.8;
   border-color: var(--border);
 }
 
@@ -925,6 +987,49 @@
 
 .docws-composer textarea:focus {
   border-color: var(--border-focus);
+}
+
+.docws-composer textarea:focus-visible {
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--border-focus) 38%, transparent);
+}
+
+/* The proposals panel: the agents up front, tuning folded away below. */
+.docws-proposal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-input) 60%, transparent);
+}
+
+.docws-proposal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--fg-subtle);
+}
+
+.docws-proposal-count {
+  flex: none;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.docws-proposal-count.is-over {
+  color: var(--warning);
+}
+
+.docws-agent-pick.is-on .docws-count-btn {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+
+.docws-toolbar-task {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .docws-proposal-options {
@@ -1054,8 +1159,9 @@
 
 .docws-composer-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 6px 10px;
   font-size: 12px;
   color: var(--fg-subtle);
 }
@@ -1097,6 +1203,10 @@
 .docws-model-input:focus {
   outline: none;
   border-color: var(--border-focus);
+}
+
+.docws-model-input:focus-visible {
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--border-focus) 38%, transparent);
 }
 
 /* Pushes what follows to the far end of its row. Every use is inside a flex
@@ -1341,8 +1451,8 @@
   min-height: 0;
 }
 
-/* The compare modal: a head with the run picker and the size toggle, and the
-   compare view filling the rest. */
+/* The compare modal: a head with the run picker, and the compare view
+   filling the rest of the window. */
 .docws-compare-dialog {
   flex: 1;
   min-height: 0;
@@ -1356,6 +1466,14 @@
   gap: 10px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+/* The head is the window drag region while the view fills the window; on
+   macOS the traffic lights sit in its top-left corner, so it starts to their
+   right, as the workspace header does. */
+.docws-compare-dialog.is-mac .docws-compare-dialog-head {
+  padding-left: 86px;
 }
 
 .docws-compare-dialog-body {
@@ -1483,6 +1601,12 @@
   min-height: 30px;
 }
 
+.docws-note:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--border-focus) 38%, transparent);
+}
+
 .docws-column-body {
   flex: 1;
   min-height: 0;
@@ -1539,8 +1663,8 @@
 }
 
 .docws-history-list {
-  width: 360px;
-  flex-shrink: 0;
+  flex: 0 1 360px;
+  min-width: 220px;
   border-right: 1px solid var(--border);
   overflow-y: auto;
   display: flex;
@@ -1714,6 +1838,8 @@
 
 .docws-bubble:focus-visible {
   border-color: var(--border-focus);
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
 .docws-bubble.is-resolved {
@@ -1828,8 +1954,8 @@
 }
 
 .docws-content:not(.docws-page) .docws-marker {
-  top: 0.2em;
-  right: -28px;
+  top: 0.1em;
+  right: -34px;
 }
 
 /* On a page the marker sits inside the block, like the § button: the page's
@@ -1859,7 +1985,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 2px 4px;
+  padding: 3px 5px;
   border: 1px solid var(--border);
   border-radius: var(--radius-xs);
   background: var(--bg-elevated);
@@ -1868,16 +1994,15 @@
   cursor: pointer;
 }
 
-/* An open marker paints over its neighbours, so the bubble is never covered by
-   the symbol of a passage further down. */
-.docws-marker:hover,
-.docws-marker:focus-within,
-.docws-marker.is-pinned {
-  z-index: 20;
-}
-
 .docws-marker.is-question .docws-marker-btn {
   color: var(--info);
+}
+
+/* The wait for an answer is read from the margin, so the spinner is the
+   glyph's size rather than the inline default. */
+.docws-marker-btn .inline-spinner {
+  width: 16px;
+  height: 16px;
 }
 
 .docws-marker-btn:hover,
@@ -1891,13 +2016,14 @@
   color: var(--fg-muted);
 }
 
-/* Flush under the symbol, and held for a beat once the pointer leaves: a gap
-   below the symbol drops the hover on the way down, and an instant close does
-   the same to a pointer that cuts the corner on its way in. */
+/* The marker places it flush under the symbol and keeps it inside the window;
+   it floats over everything in the workspace, out of the block, so a page's
+   own CSS cannot clip it and the composer cannot cover it. Held for a beat
+   once the pointer leaves, so a pointer that cuts the corner on its way in
+   does not lose it. It lives in the body, so it carries its own type. */
 .docws-marker-pop {
-  position: absolute;
-  top: 100%;
-  right: 0;
+  position: fixed;
+  z-index: var(--docws-floating-z);
   width: min(440px, calc(100vw - 64px));
   max-height: 60vh;
   overflow-y: auto;
@@ -1906,6 +2032,10 @@
   border-radius: var(--radius-md);
   background: var(--island-bg);
   box-shadow: var(--shadow-pop);
+  font-family: var(--font-ui);
+  color: var(--fg);
+  line-height: 1.5;
+  text-align: left;
   visibility: hidden;
   opacity: 0;
   transition:
@@ -1913,9 +2043,7 @@
     visibility 0s linear 0.15s;
 }
 
-.docws-marker:hover > .docws-marker-pop,
-.docws-marker:focus-within > .docws-marker-pop,
-.docws-marker.is-pinned > .docws-marker-pop {
+.docws-marker-pop.is-open {
   visibility: visible;
   opacity: 1;
   transition:
@@ -1961,10 +2089,16 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 2px;
+  /* A narrow column scrolls the strip rather than wrapping a label onto
+     three lines; the scope text beside it has already given way. */
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .docws-mode-tabs .docws-tab {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 5px;
   padding: 3px 10px;
@@ -2014,4 +2148,152 @@
 .docws-page .doc-block.is-declined {
   outline-color: var(--border);
   opacity: 0.5;
+}
+
+.docws-run-lineage {
+  font-style: italic;
+}
+
+.docws-merge-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.docws-merge-panel p {
+  margin: 0;
+  color: var(--fg-muted);
+  line-height: 1.5;
+}
+
+.docws-merge-panel textarea {
+  min-height: 64px;
+}
+
+.docws-merge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+}
+
+.docws-bubble-followup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.docws-bubble-followup textarea {
+  min-height: 56px;
+}
+
+/* Keep the original and the selected proposal readable without horizontal
+   scrolling. Explicit widths belong to the optional all-proposals layout. */
+.docws-columns.is-focused {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.docws-columns.is-focused > .docws-column {
+  display: grid;
+  grid-row: 1 / -1;
+  grid-template-rows: subgrid;
+  min-width: 0;
+  max-width: none;
+}
+
+.docws-columns > .docws-column[hidden] {
+  display: none;
+}
+
+.docws-proposal-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.docws-proposal-switcher .docws-tabs {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.docws-proposal-switcher button {
+  flex-shrink: 0;
+}
+
+.docws-column-head {
+  min-height: 0;
+  max-height: 35vh;
+  overflow-y: auto;
+}
+
+.docws-column-actions {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.docws-column-actions .docws-run-actions {
+  justify-content: flex-end;
+}
+
+.docws-column-head .docws-rationale {
+  flex-shrink: 0;
+  max-height: none;
+  overflow: visible;
+}
+
+.docws-column-head .docws-rationale-summary {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.docws-review-details > summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+
+.docws-review-details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+}
+
+.docws-review-details-body p {
+  margin: 0;
+}
+
+.docws-candidate-main {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.docws-candidate-main:hover {
+  color: var(--accent);
+}
+
+.docws-candidate > .docws-btn {
+  margin-top: 6px;
+}
+
+.doc-block[hidden] {
+  display: none;
 }

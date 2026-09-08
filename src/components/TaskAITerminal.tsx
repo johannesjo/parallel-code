@@ -20,6 +20,7 @@ import {
   toggleAITerminalLayout,
 } from '../store/store';
 import { markDirty, redrawTerminal } from '../lib/terminalFitManager';
+import { isAgentAskingQuestion } from '../store/taskStatus';
 import { isMac } from '../lib/platform';
 import { warn as logWarn } from '../lib/log';
 import { InfoBar } from './InfoBar';
@@ -53,7 +54,9 @@ interface TaskAITerminalProps {
     jump: ((stepIndex: number) => boolean) | undefined,
     firstJumpableIndex: number,
   ) => void;
-  onFileLink?: (filePath: string) => void;
+  /** First look at a Markdown path the agent printed; returns true when it
+   *  took the link. Otherwise the file opens in the Markdown viewer. */
+  onFileLink?: (filePath: string) => boolean;
 }
 
 export function TaskAITerminal(props: TaskAITerminalProps) {
@@ -137,6 +140,15 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
       return {
         title: 'Agent exited before prompt was sent',
         text: 'Agent exited before prompt was sent',
+      };
+    }
+
+    // Common on a fresh session: a trust or permission prompt comes up before
+    // the first instruction can go in, and "waiting" would look stuck.
+    if (props.task.initialPrompt && isAgentAskingQuestion(props.task.agentIds[0] ?? '')) {
+      return {
+        title: 'Answer the agent to send the queued prompt',
+        text: 'Answer the agent to send the queued prompt',
       };
     }
 
@@ -276,6 +288,7 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                       <button
                         type="button"
                         title={agent()?.def.description ?? agent()?.def.name}
+                        aria-pressed={selected()}
                         onClick={(e) => {
                           e.stopPropagation();
                           selectAgent(agentId);
@@ -419,7 +432,9 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                 tabsMode={tabsMode()}
                 visible={!tabsMode() || visibleAgentId() === agentId}
                 onSelect={() => selectAgent(agentId)}
-                onFileLink={handleFileLink}
+                onFileLink={(filePath) => {
+                  if (!props.onFileLink?.(filePath)) handleFileLink(filePath);
+                }}
                 onReady={registerAgentFocus}
                 onUnmount={unregisterAgentFocus}
                 onStepNavReady={(api) => handleStepNavReady(agentId, api)}
@@ -873,6 +888,8 @@ function AgentRestartMenu(props: { agentId: string; agentDefId: string }) {
         Restart
       </button>
       <button
+        aria-label="More ways to restart"
+        aria-expanded={showAgentMenu()}
         onClick={(e) => {
           e.stopPropagation();
           setShowAgentMenu(!showAgentMenu());

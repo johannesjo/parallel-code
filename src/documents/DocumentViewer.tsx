@@ -9,6 +9,10 @@ import { findAnchorTarget, resolveDocumentLink } from './links';
 import { BlockActions, type BlockActionKind } from './BlockActions';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
+import { createHeldSignal } from '../lib/floating';
+
+/** How long the hover toolbar waits for the pointer to reach it from the block. */
+const TOOLBAR_HOLD_MS = 100;
 
 export interface BlockRange {
   start: number;
@@ -23,6 +27,8 @@ interface DocumentViewerProps {
   onSelect?: (selection: DocumentSelection | null) => void;
   /** Per-block change marks for the compare view. */
   changes?: BlockChange[];
+  /** Review-only filter; indices stay tied to the complete document. */
+  visibleBlock?: (index: number) => boolean;
   /** Blocks inside the run's scope (compare view context). */
   scope?: BlockRange | null;
   /**
@@ -71,8 +77,12 @@ export function selectionFromRange(
   };
 }
 
-/** The document's own controls: a click on one is never a click on the prose. */
-const CONTROLS = 'a, button, input, textarea, .docws-marker';
+/**
+ * The document's own controls: a click on one is never a click on the prose.
+ * An open note is one of them even though it floats over the window: reading
+ * or editing it must not let go of the passage being worked on.
+ */
+const CONTROLS = 'a, button, input, textarea, .docws-marker, .docws-marker-pop, .docws-bubble';
 
 /**
  * True for a mouse-up on the backdrop: the margins and the space below the
@@ -105,6 +115,25 @@ export function DocumentViewer(props: DocumentViewerProps) {
     if (!s) return null;
     return { start: Math.min(s.start, s.end), end: Math.max(s.start, s.end) };
   });
+
+  // The block under the pointer, held for a beat so the pointer can climb
+  // onto the toolbar above it. Picked blocks have the composer up on them;
+  // their toolbar would only repeat what it offers.
+  const hovered = createHeldSignal<number>(TOOLBAR_HOLD_MS);
+  const toolbarBlock = (): HTMLElement | null => {
+    const index = hovered.value();
+    const s = selected();
+    if (index === null || (s && index >= s.start && index <= s.end)) return null;
+    return containerRef?.querySelector<HTMLElement>(`[data-block-index="${index}"]`) ?? null;
+  };
+  function trackHover(e: MouseEvent) {
+    // Solid delivers delegated events from the portalled toolbar and popover
+    // here too; they are in the body, not the document, and not a block.
+    if (!containerRef?.contains(e.target as Node)) return;
+    const index = blockIndexOf(e.target as Node, containerRef);
+    if (index === null) hovered.clear();
+    else hovered.set(index);
+  }
 
   const isPage = () => !!props.page;
   const pageKey = () => props.renderKey.replace(/["\\]/g, '');
@@ -205,7 +234,20 @@ export function DocumentViewer(props: DocumentViewerProps) {
       }}
       onMouseUp={handleMouseUp}
       onClick={handleClick}
+      onMouseOver={trackHover}
+      onMouseLeave={() => hovered.clear()}
     >
+      <Show when={props.selectable && props.onAction}>
+        <BlockActions
+          anchor={toolbarBlock}
+          alignLeft={isPage()}
+          onAction={(kind) => {
+            const index = hovered.value();
+            if (index !== null) props.onAction?.(kind, index);
+          }}
+          onPointer={(inside) => (inside ? hovered.hold() : hovered.clear())}
+        />
+      </Show>
       <Show when={props.page}>
         {(page) => (
           <>
@@ -221,7 +263,6 @@ export function DocumentViewer(props: DocumentViewerProps) {
               blockMarker={props.blockMarker}
               hasMarker={props.hasMarker}
               onSelectSection={selectSection}
-              onAction={props.onAction}
             />
           </>
         )}
@@ -242,6 +283,7 @@ export function DocumentViewer(props: DocumentViewerProps) {
               <div
                 class="doc-block"
                 data-block-index={i()}
+                hidden={props.visibleBlock?.(i()) === false}
                 data-change={change()}
                 classList={{
                   'is-declined': props.declined?.(i()) === true,
@@ -283,9 +325,6 @@ export function DocumentViewer(props: DocumentViewerProps) {
                   it is not part of the passage, so clicking it must not toggle
                   the selection and the highlight stops at the text. */}
                 {props.blockMarker?.(i())}
-                <Show when={props.selectable && props.onAction}>
-                  <BlockActions onAction={(kind) => props.onAction?.(kind, i())} />
-                </Show>
                 {/* eslint-disable-next-line solid/no-innerhtml -- block HTML is DOMPurify-sanitized markdown from a local file */}
                 <div innerHTML={block.html} />
               </div>

@@ -4,6 +4,7 @@ import { store } from '../store/core';
 import { getProject } from '../store/projects';
 import {
   askDocumentAnnotation,
+  askFollowUpQuestion,
   deleteDocumentAnnotation,
   documentMainAgentId,
   documentStore,
@@ -11,7 +12,90 @@ import {
   updateDocumentAnnotationText,
 } from './store';
 import { documentAgentSupport } from '../../electron/documents/shared';
+import type { AgentDef } from '../ipc/types';
 import type { DocumentAnnotation } from './types';
+
+/**
+ * A follow-up continues an answered question as a new question on the same
+ * passage, asked of the agent that answered so it can pick up its own thread.
+ */
+function FollowUp(props: { annotation: DocumentAnnotation; agent: AgentDef }) {
+  const [open, setOpen] = createSignal(false);
+  const [text, setText] = createSignal('');
+  const [asking, setAsking] = createSignal(false);
+
+  async function ask() {
+    if (!text().trim() || asking()) return;
+    setAsking(true);
+    try {
+      const saved = await askFollowUpQuestion(props.annotation, text().trim(), props.agent);
+      if (saved) {
+        setOpen(false);
+        setText('');
+      }
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  return (
+    <Show
+      when={open()}
+      fallback={
+        <div class="docws-run-actions">
+          <button
+            type="button"
+            class="docws-btn docws-btn-sm"
+            title={`Ask ${props.agent.name} a follow-up question; it sees this exchange`}
+            onClick={() => setOpen(true)}
+          >
+            Ask follow-up
+          </button>
+        </div>
+      }
+    >
+      <div class="docws-bubble-followup">
+        <textarea
+          class="docws-note"
+          aria-label="Follow-up question"
+          placeholder={`Follow-up for ${props.agent.name}…`}
+          value={text()}
+          disabled={asking()}
+          ref={(el) => requestAnimationFrame(() => el.focus())}
+          onInput={(e) => setText(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.stopPropagation();
+              setOpen(false);
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              void ask();
+            }
+          }}
+        />
+        <div class="docws-run-actions">
+          <button
+            type="button"
+            class="docws-btn docws-btn-sm docws-btn-primary"
+            disabled={!text().trim() || asking()}
+            onClick={() => void ask()}
+          >
+            {asking() ? 'Asking…' : `Ask ${props.agent.name}`}
+          </button>
+          <button
+            type="button"
+            class="docws-btn docws-btn-sm"
+            disabled={asking()}
+            onClick={() => setOpen(false)}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </Show>
+  );
+}
 
 interface AnnotationBubbleProps {
   annotation: DocumentAnnotation;
@@ -44,6 +128,12 @@ export function AnnotationBubble(props: AnnotationBubbleProps) {
     askAgents().find((a) => a.id === documentMainAgentId(project())) ?? askAgents()[0];
   const isQuestion = () => props.annotation.kind === 'question';
   const status = () => props.annotation.answerStatus;
+  // A follow-up goes to whoever answered; the default agent stands in when that one is gone.
+  const followUpAgent = () =>
+    askAgents().find((a) => a.id === props.annotation.answer?.agentId) ?? defaultAgent();
+  // "Ask again" is for a question that has no usable answer; an answered one gets a follow-up.
+  const needsAnswer = () =>
+    status() !== 'pending' && (status() === 'failed' || !props.annotation.answer);
 
   function handleKeyDown(e: KeyboardEvent) {
     if (editing()) return;
@@ -98,6 +188,11 @@ export function AnnotationBubble(props: AnnotationBubbleProps) {
       >
         <div class="docws-bubble-head">
           <span class="docws-badge">{kindLabel()}</span>
+          <Show when={props.annotation.followUpOf}>
+            <span class="docws-badge" title="Continues an earlier question on this passage">
+              follow-up
+            </span>
+          </Show>
           <Show when={props.detached}>
             <span
               class="docws-badge docws-badge-stale"
@@ -197,7 +292,10 @@ export function AnnotationBubble(props: AnnotationBubbleProps) {
                 </>
               )}
             </Show>
-            <Show when={status() !== 'pending' && askAgents().length > 0}>
+            <Show when={status() === 'answered' && props.annotation.answer && followUpAgent()}>
+              {(agent) => <FollowUp annotation={props.annotation} agent={agent()} />}
+            </Show>
+            <Show when={needsAnswer() && askAgents().length > 0}>
               <div class="docws-run-actions">
                 <For each={askAgents()}>
                   {(agent) => (

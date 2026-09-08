@@ -69,16 +69,31 @@ function snippet(text: string): string {
   return text.length > 48 ? `${text.slice(0, 47)}…` : text;
 }
 
+/** "line 4" or "lines 4–9". */
+function lineSpan(from: number, to: number): string {
+  return from === to ? `line ${from}` : `lines ${from}–${to}`;
+}
+
 /**
- * What a toggle does, for its tooltip and screen readers. A deletion names the
- * passage it drops: its checkbox sits on a block that follows it, so without
- * the quote there is nothing on screen tying the two together.
+ * What a toggle does, for its tooltip and screen readers. Each names where it
+ * lands in the base: several toggles share a screen and would otherwise read
+ * alike. A deletion quotes the passage it drops instead, since its checkbox
+ * sits on a block that follows it and nothing on screen ties the two together.
  */
 export function hunkLabel(hunk: BlockHunk, baseBlocks?: readonly DocumentBlock[]): string {
   const kind = hunkKind(hunk);
-  if (kind === 'insertion') return 'Include this new passage';
-  if (kind === 'rewrite') return 'Include this rewrite';
-  const removed = baseBlocks?.[hunk.baseStart] ? key(baseBlocks[hunk.baseStart]) : '';
+  const first = baseBlocks?.[hunk.baseStart];
+  if (kind === 'insertion') {
+    if (first) return `Include this new passage before line ${first.startLine}`;
+    return baseBlocks?.length ? 'Include this new passage at the end' : 'Include this new passage';
+  }
+  if (kind === 'rewrite') {
+    const last = baseBlocks?.[hunk.baseEnd - 1];
+    return first && last
+      ? `Include this rewrite of ${lineSpan(first.startLine, last.endLine)}`
+      : 'Include this rewrite';
+  }
+  const removed = first ? key(first) : '';
   return removed ? `Include this removal: “${snippet(removed)}”` : 'Include this removal';
 }
 

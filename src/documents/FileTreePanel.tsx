@@ -5,6 +5,8 @@ import { buildPathTree, type PathTreeNode } from './path-tree';
 import { DocumentIcon } from './DocumentIcon';
 
 const DOCUMENT_RE = /\.(md|markdown|html?)$/i;
+/** Mirrors MAX_FILES in electron/documents/files.ts: a list this long was cut. */
+const FILE_CAP = 5_000;
 
 interface FileTreePanelProps {
   projectRoot: string;
@@ -32,13 +34,15 @@ function Chevron(props: { open: boolean }) {
  */
 export function FileTreePanel(props: FileTreePanelProps) {
   const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set());
+  // Until the first list arrives an empty tree means nothing yet, not "no files".
+  const [listed, setListed] = createSignal(false);
   const tree = createMemo(() => buildPathTree(workspaceUi.files));
 
   // Commits and external edits add files; re-list on every new head and on open.
   createEffect(
     on(
       () => [props.projectRoot, documentStore.snapshot?.headSha] as const,
-      ([root]) => void loadDocumentFiles(root),
+      ([root]) => void loadDocumentFiles(root).then(() => setListed(true)),
     ),
   );
 
@@ -110,9 +114,14 @@ export function FileTreePanel(props: FileTreePanelProps) {
       </Show>
       <div class="docws-tree" role="tree">
         <For each={tree()}>{(node) => <Node node={node} depth={0} />}</For>
-        <Show when={tree().length === 0 && !workspaceUi.filesError}>
+        <Show when={listed() && tree().length === 0 && !workspaceUi.filesError}>
           <div class="docws-empty" style={{ padding: '8px 10px' }}>
             No files yet.
+          </div>
+        </Show>
+        <Show when={workspaceUi.files.length >= FILE_CAP}>
+          <div class="docws-empty" style={{ padding: '8px 10px' }}>
+            Showing the first {FILE_CAP.toLocaleString()} files.
           </div>
         </Show>
       </div>

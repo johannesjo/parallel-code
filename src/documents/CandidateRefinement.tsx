@@ -1,12 +1,14 @@
-import { Show, createSignal } from 'solid-js';
+import { Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import type { DocumentCandidateRecord, DocumentRunRecord } from './types';
 import { refineDocumentCandidate } from './store';
 import { errMessage } from '../lib/log';
+import { registerCompareForm } from './workspace-ui';
 
 export function CandidateRefinement(props: {
   run: DocumentRunRecord;
   candidate: DocumentCandidateRecord;
 }) {
+  let toggle: HTMLButtonElement | undefined;
   const [open, setOpen] = createSignal(false);
   const [feedback, setFeedback] = createSignal('');
   const [starting, setStarting] = createSignal(false);
@@ -31,9 +33,29 @@ export function CandidateRefinement(props: {
     }
   }
 
+  function close() {
+    setOpen(false);
+    toggle?.focus();
+  }
+
+  // Registered while open, so Escape reaches the form from anywhere in the dialog.
+  createEffect(() => {
+    if (!open()) return;
+    onCleanup(registerCompareForm(close));
+  });
+
+  // Bound natively so the key stops here: the compare dialog listens on the
+  // document and would take the same Escape as its own and close over the form.
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    close();
+  }
+
   return (
     <Show when={available()}>
       <button
+        ref={toggle}
         type="button"
         class="docws-btn docws-btn-sm"
         aria-expanded={open()}
@@ -43,7 +65,7 @@ export function CandidateRefinement(props: {
         Refine this candidate
       </button>
       <Show when={open()}>
-        <div class="docws-refinement">
+        <div class="docws-refinement" on:keydown={onKeyDown}>
           <p>
             Revise this whole proposal with the same agent and model. Your document stays unchanged.
           </p>

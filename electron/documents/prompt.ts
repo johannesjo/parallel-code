@@ -2,6 +2,31 @@ import type { DocumentRationale, DocumentScope } from './types.js';
 
 /** Largest diff (in characters) handed to a resumed main session. */
 const MAX_CATCH_UP_DIFF_CHARS = 20_000;
+/*
+ * The prompt travels as one argv element, which Linux caps at 128 KiB, so
+ * the parts that grow with the proposals are budgeted in bytes: the diffs
+ * share one budget across candidates, and everything else is capped so the
+ * whole prompt stays under the limit even with six candidates.
+ */
+/** Bytes of proposal diffs a merging agent sees in total. */
+const MERGE_DIFF_BUDGET_BYTES = 60_000;
+/** Largest single diff, when few candidates leave room for it. */
+const MAX_MERGE_DIFF_BYTES = 30_000;
+const MAX_MERGE_NOTE_BYTES = 2_000;
+const MAX_MERGE_SUMMARY_BYTES = 500;
+const MAX_MERGE_INSTRUCTION_BYTES = 8_000;
+
+/** One proposal a merging agent is asked to fold into its version. */
+export interface MergeCandidateInput {
+  label: string;
+  agentName: string;
+  /** The proposal as a diff against the base the agent finds on disk. */
+  diff: string;
+  /** What the candidate said it did, when it said. */
+  summary?: string;
+  /** What the reviewer wrote on this candidate in the compare view. */
+  note?: string;
+}
 
 export interface DocumentPromptInput {
   documentPath: string;
@@ -11,6 +36,10 @@ export interface DocumentPromptInput {
   catchUpDiff?: string;
   /** Original task for the proposal already seeded into the worktree. */
   refinementInstruction?: string;
+  /** Proposals to combine; the file on disk is their common base. */
+  mergeCandidates?: MergeCandidateInput[];
+  /** The task those proposals answered. */
+  mergeInstruction?: string;
 }
 
 function quoteBlock(text: string): string {
@@ -18,6 +47,26 @@ function quoteBlock(text: string): string {
     .split('\n')
     .map((line) => `> ${line}`)
     .join('\n');
+}
+
+/** Cuts `text` to at most `maxBytes` of UTF-8 on a character boundary, marking the cut. */
+export function truncateBytes(text: string, maxBytes: number, marker = '… (truncated)'): string {
+  const bytes = new TextEncoder().encode(text);
+  if (bytes.length <= maxBytes) return text;
+  // A cut inside a multi-byte character decodes to U+FFFD at the end; drop it.
+  const head = new TextDecoder().decode(bytes.subarray(0, maxBytes)).replace(/\uFFFD+$/, '');
+  return `${head}\n${marker}`;
+}
+
+/** One proposal, as the merging agent reads it; `diffBytes` is its share of the budget. */
+function describeMergeCandidate(c: MergeCandidateInput, diffBytes: number): string {
+  const lines = [`### Candidate ${c.label} (${c.agentName})`];
+  if (c.summary?.trim())
+    lines.push(`Its own summary: ${truncateBytes(c.summary.trim(), MAX_MERGE_SUMMARY_BYTES)}`);
+  if (c.note?.trim())
+    lines.push(`The reviewer's note on it: ${truncateBytes(c.note.trim(), MAX_MERGE_NOTE_BYTES)}`);
+  lines.push('```diff', truncateBytes(c.diff, diffBytes, '… (diff truncated)'), '```');
+  return lines.join('\n');
 }
 
 /** Builds the instruction a headless agent receives for one proposal. */
@@ -49,6 +98,26 @@ export function buildDocumentPrompt(input: DocumentPromptInput): string {
       'The file contains an unaccepted candidate, not the canonical document. ' +
         'Refine this candidate using the feedback below, preserving its other improvements. ' +
         `The earlier instruction was:\n${input.refinementInstruction.slice(0, 20_000)}`,
+    );
+  }
+
+  if (input.mergeCandidates && input.mergeCandidates.length > 0) {
+    const n = input.mergeCandidates.length;
+    const diffBytes = Math.min(MAX_MERGE_DIFF_BYTES, Math.floor(MERGE_DIFF_BUDGET_BYTES / n));
+    parts.push(
+      [
+        `The file on disk is the base version. ${n} candidates proposed changes to it` +
+          (input.mergeInstruction !== undefined
+            ? `, answering this task:\n${quoteBlock(truncateBytes(input.mergeInstruction, MAX_MERGE_INSTRUCTION_BYTES))}`
+            : '.'),
+        '',
+        'Each candidate is shown below as a diff against that base. Produce one merged version: ' +
+          'keep every improvement worth keeping, resolve conflicts by choosing the stronger wording, ' +
+          'and drop what none of them would miss. Where the reviewer left a note on a candidate, follow it. ' +
+          'Say in the rationale which parts came from which candidate and what you left out.',
+        '',
+        ...input.mergeCandidates.map((c) => describeMergeCandidate(c, diffBytes)),
+      ].join('\n'),
     );
   }
 

@@ -5,6 +5,7 @@ import {
   createMemo,
   createResource,
   createSignal,
+  on,
   onCleanup,
 } from 'solid-js';
 import { Dialog } from '../components/Dialog';
@@ -69,25 +70,36 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
   const [choice, setChoice] = createSignal<DocumentChoice>('default');
   const [error, setError] = createSignal('');
   const [busy, setBusy] = createSignal(false);
+  let folderInput: HTMLInputElement | undefined;
+
+  // The path is what the dialog is about; typing starts there.
+  createEffect(() => {
+    if (!props.open) return;
+    requestAnimationFrame(() => folderInput?.focus());
+  });
 
   // Re-inspected as the path is edited; a folder that does not exist yet comes
   // back empty rather than as an error.
   const [settledFolder, setSettledFolder] = createSignal('');
-  let settleTimer: ReturnType<typeof setTimeout> | undefined;
-  createEffect(() => {
-    const value = folder().trim();
-    clearTimeout(settleTimer);
-    settleTimer = setTimeout(() => setSettledFolder(value), INSPECT_DEBOUNCE_MS);
-  });
-  onCleanup(() => clearTimeout(settleTimer));
-
-  const [info] = createResource(
+  const [info, { mutate: setInfo }] = createResource(
     () => settledFolder() || null,
     // A path that is still half-typed, or one the app may not read, is simply
     // "nothing known about it yet"; creating the project reports the real error.
     (projectRoot) =>
       invoke<DocumentFolderInfo>(IPC.InspectDocumentFolder, { projectRoot }).catch(() => null),
   );
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(
+    on(folder, (value) => {
+      // What was known about the last folder, and a file picked from its
+      // list, must not carry over to the next one.
+      setChoice('default');
+      setInfo(undefined);
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => setSettledFolder(value.trim()), INSPECT_DEBOUNCE_MS);
+    }),
+  );
+  onCleanup(() => clearTimeout(settleTimer));
 
   const files = () => info()?.files ?? [];
   const visibleFiles = createMemo(() => {
@@ -123,6 +135,11 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
     setFilter('');
     setChoice('default');
     setError('');
+    // The resource keeps its last value while its source is empty, so the
+    // next open would show the old folder's files and plan until it settles.
+    clearTimeout(settleTimer);
+    setSettledFolder('');
+    setInfo(undefined);
   }
 
   function close() {
@@ -164,6 +181,11 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
     }
   }
 
+  /** Enter in a field is the primary button, when it is enabled. */
+  function submitOnEnter(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !e.isComposing) void create();
+  }
+
   const inputStyle = {
     background: theme.bgInput,
     border: `1px solid ${theme.border}`,
@@ -189,10 +211,12 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
           <div style={{ display: 'flex', gap: '8px', 'align-items': 'center' }}>
             <input
               style={{ ...inputStyle, 'font-family': 'var(--font-mono)', 'font-size': '12px' }}
+              ref={folderInput}
               aria-label="Project folder"
               placeholder="/path/to/folder"
               value={folder()}
               onInput={(e) => setFolder(e.currentTarget.value)}
+              onKeyDown={submitOnEnter}
             />
             <button
               type="button"
@@ -223,6 +247,7 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
                 setNameEdited(true);
                 setName(e.currentTarget.value);
               }}
+              onKeyDown={submitOnEnter}
             />
           </div>
           <Show when={files().length > 0}>

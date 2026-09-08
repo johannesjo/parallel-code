@@ -18,7 +18,7 @@ import { loadEnvFile } from '../ipc/env-file.js';
 import { createWorktree, ensureWorktreeContainerExclude, removeWorktree } from '../ipc/git.js';
 import { git, gitOk } from './git.js';
 import { buildHeadlessLaunch, createHeadlessParser } from './agents.js';
-import { buildDocumentPrompt, parseDocumentRationale } from './prompt.js';
+import { buildDocumentPrompt, parseDocumentRationale, type MergeCandidateInput } from './prompt.js';
 import { appendCandidateLog, ensureDocumentLogsExclude } from './logs.js';
 import { MAX_DOCUMENT_CANDIDATES, documentAgentSupport } from './shared.js';
 import type {
@@ -394,6 +394,7 @@ export function sanitizeRunRecord(projectRoot: string, raw: unknown): DocumentRu
       validateRunId(run.refinement.runId);
       validateCandidateId(run.refinement.candidateId);
     }
+    if (run.merge) validateMerge(run.merge);
   } catch {
     return null;
   }
@@ -699,6 +700,48 @@ export interface DispatchDocumentRunArgs {
   scope: unknown;
   candidates: unknown;
   refinement?: unknown;
+  merge?: unknown;
+}
+
+/** `{ runId, candidateIds }` as sent by the renderer: two or more proposals of one run. */
+function validateMerge(value: unknown): NonNullable<DocumentRunRecord['merge']> {
+  if (!value || typeof value !== 'object') throw new Error('merge must name the proposals');
+  const source = value as Record<string, unknown>;
+  const ids = source.candidateIds;
+  if (!Array.isArray(ids) || ids.length < 2) throw new Error('merge needs at least two proposals');
+  if (ids.length > MAX_DOCUMENT_CANDIDATES) throw new Error('merge names too many proposals');
+  const candidateIds = ids.map(validateCandidateId);
+  if (new Set(candidateIds).size !== candidateIds.length)
+    throw new Error('merge names a proposal twice');
+  return { runId: validateRunId(source.runId), candidateIds };
+}
+
+/** The proposals of `sourceRun` a merge folds together, each as a diff against the base. */
+async function mergeInputs(
+  projectRoot: string,
+  sourceRun: DocumentRunRecord,
+  candidateIds: readonly string[],
+): Promise<MergeCandidateInput[]> {
+  const inputs: MergeCandidateInput[] = [];
+  for (const id of candidateIds) {
+    const candidate = sourceRun.candidates.find((c) => c.id === id);
+    if (candidate?.status !== 'done' || !candidate.commitSha)
+      throw new Error(`Candidate ${id} has no completed proposal to merge.`);
+    const diff = await git(projectRoot, [
+      'diff',
+      `${sourceRun.baseSha}..${candidate.commitSha}`,
+      '--',
+      sourceRun.documentPath,
+    ]);
+    inputs.push({
+      label: candidate.label,
+      agentName: candidate.agentName,
+      diff,
+      summary: candidate.rationale?.summary,
+      note: candidate.note,
+    });
+  }
+  return inputs;
 }
 
 function parseChangedPaths(porcelainZ: string): string[] {
@@ -999,8 +1042,17 @@ export async function dispatchDocumentRun(
     // A rewritten candidate has different lines. Review the entire revision.
     scope = validateScope({ wholeDocument: true }, documentPath);
   }
+  let merge: DocumentRunRecord['merge'];
+  if (args.merge !== undefined) {
+    if (refinement) throw new Error('A run refines a proposal or merges proposals, not both.');
+    merge = validateMerge(args.merge);
+    // The merged version is judged as a whole, not against the original passage.
+    scope = validateScope({ wholeDocument: true }, documentPath);
+  }
   const specs = validateCandidateSpecs(args.candidates);
-  if (refinement) {
+  if (refinement || merge) {
+    // A revision or a merge is a fresh one-shot: the warm main session is
+    // neither resumed nor moved on to an unaccepted proposal.
     for (const spec of specs) {
       spec.isMain = false;
       spec.sessionId = undefined;
@@ -1013,20 +1065,29 @@ export async function dispatchDocumentRun(
   return withProjectLock(projectRoot, async () => {
     let sourceRun: DocumentRunRecord | undefined;
     let sourceContent: string | undefined;
-    if (refinement) {
-      sourceRun = requireRunRecord(projectRoot, refinement.runId);
+    let mergeCandidates: MergeCandidateInput[] | undefined;
+    const sourceRunId = refinement?.runId ?? merge?.runId;
+    if (sourceRunId) {
+      sourceRun = requireRunRecord(projectRoot, sourceRunId);
       if (typeof sourceRun.instruction !== 'string')
         throw new Error('The original proposal has an invalid instruction.');
       if (sourceRun.documentPath !== documentPath)
         throw new Error('The candidate belongs to another document.');
       if (sourceRun.status !== 'finished' && sourceRun.status !== 'stale')
-        throw new Error('Only proposals awaiting review can be refined.');
+        throw new Error(
+          `Only proposals awaiting review can be ${refinement ? 'refined' : 'merged'}.`,
+        );
+    }
+    if (refinement && sourceRun) {
       const source = sourceRun.candidates.find((c) => c.id === refinement.candidateId);
       if (source?.status !== 'done' || !source.commitSha)
         throw new Error('The candidate has no completed proposal to refine.');
       const content = await getDocumentAtCommit(projectRoot, source.commitSha, documentPath);
       if (content === null) throw new Error('The proposal document no longer exists.');
       sourceContent = content;
+    }
+    if (merge && sourceRun) {
+      mergeCandidates = await mergeInputs(projectRoot, sourceRun, merge.candidateIds);
     }
     if (!fs.existsSync(path.join(projectRoot, documentPath)))
       throw new Error(`Document not found: ${documentPath}`);
@@ -1057,6 +1118,7 @@ export async function dispatchDocumentRun(
       status: 'running',
       candidates: [],
       refinement,
+      merge,
     };
 
     const prepared: { spec: DocumentCandidateSpec; candidate: DocumentCandidateRecord }[] = [];
@@ -1114,7 +1176,9 @@ export async function dispatchDocumentRun(
           scope,
           instruction,
           catchUpDiff,
-          refinementInstruction: sourceRun?.instruction,
+          refinementInstruction: refinement ? sourceRun?.instruction : undefined,
+          mergeCandidates,
+          mergeInstruction: merge ? sourceRun?.instruction : undefined,
         });
         try {
           spawnCandidate(win, projectRoot, run, spec, candidate, prompt);
@@ -1541,6 +1605,19 @@ export async function revertDocumentCommit(projectRoot: string, sha: string): Pr
       throw new Error(`Revert failed: ${errMessage(err)}`);
     }
     return (await git(projectRoot, ['rev-parse', 'HEAD'])).trim();
+  });
+}
+
+/**
+ * Throws away the uncommitted edits to tracked content files: what the
+ * "uncommitted edits" chip counts, and what the next run would otherwise
+ * commit as `Manual edits`. Untracked files and everything under `.parallel/`
+ * (run records, annotations) stay.
+ */
+export async function discardDocumentEdits(projectRoot: string): Promise<void> {
+  await withProjectLock(projectRoot, async () => {
+    await git(projectRoot, ['reset', '-q', ...CONTENT_PATHSPEC]);
+    await git(projectRoot, ['checkout', '-q', ...CONTENT_PATHSPEC]);
   });
 }
 

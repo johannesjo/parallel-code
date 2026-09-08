@@ -6,6 +6,8 @@
  * @param key unique per rendering surface, so ids stay distinct when the same
  *   document is on screen twice (inline plan tab and plan dialog, for example)
  */
+import { createEnlargeButton } from './mermaid-lightbox';
+
 export function renderMermaidIn(container: HTMLElement | undefined, key: string): void {
   if (!container) return;
   const nodes = container.querySelectorAll<HTMLElement>('.mermaid-block:not(.mermaid-rendered)');
@@ -25,6 +27,9 @@ export function renderMermaidIn(container: HTMLElement | undefined, key: string)
           .then(({ svg }) => {
             el.innerHTML = svg; // nosemgrep: semgrep.no-inner-html-without-sanitize -- mermaid renders its own sanitized SVG from local markdown
             el.classList.add('mermaid-rendered');
+            // Diagrams outgrow a prose column; the corner button shows them at
+            // the size of the window.
+            el.append(createEnlargeButton(el));
           })
           .catch((err) => console.warn('[mermaid] render failed:', err));
       });

@@ -1,12 +1,15 @@
 import { For, Show, createMemo } from 'solid-js';
+import { store } from '../store/core';
 import type { Project } from '../store/types';
 import { getAgentHookStatus } from '../store/agentHookStatus';
-import { documentStore, openDocumentCompare, rejectDocumentRun, reviewableRuns } from './store';
+import { isAgentAskingQuestion } from '../store/taskStatus';
+import { documentStore, openDocumentCompare, reviewableRuns } from './store';
 import { setRailTab, workspaceUi } from './workspace-ui';
-import { documentAgentPtyId } from './agent-terminal';
+import { documentAgentTaskId } from './agent-task';
 import { AgentTerminal } from './AgentTerminal';
 import { RunsRail } from './RunsRail';
 import { FileTreePanel } from './FileTreePanel';
+import { RejectRunButton } from './RejectRunConfirm';
 
 interface RightPanelProps {
   project: Project;
@@ -33,13 +36,7 @@ function DecisionStrip() {
                 >
                   {proposals() > 1 ? `Compare ${proposals()}` : 'Review'}
                 </button>
-                <button
-                  type="button"
-                  class="docws-btn docws-btn-sm docws-btn-danger"
-                  onClick={() => void rejectDocumentRun(run.id)}
-                >
-                  Reject
-                </button>
+                <RejectRunButton run={run} label="Reject" />
               </div>
             );
           }}
@@ -58,22 +55,36 @@ export function RightPanel(props: RightPanelProps) {
   const decisions = () => reviewableRuns().length;
   const running = () =>
     documentStore.runOrder.filter((id) => documentStore.runs[id]?.status === 'running').length;
+  const agentIds = () => store.tasks[documentAgentTaskId(props.project.id)]?.agentIds ?? [];
+  // Claude says so through its hooks; for the rest the terminal output has to tell.
   const agentWaiting = () =>
-    getAgentHookStatus(documentAgentPtyId(props.project.id))?.state === 'waiting';
+    agentIds().some(
+      (id) => getAgentHookStatus(id)?.state === 'waiting' || isAgentAskingQuestion(id),
+    );
+  const runsLabel = () => {
+    if (decisions() > 0) return `Runs, ${decisions()} awaiting a decision`;
+    if (running() > 0) return `Runs, ${running()} running`;
+    return 'Runs';
+  };
 
   return (
-    <aside class="docws-rail" aria-label="Agent and runs">
+    <aside class="docws-rail" aria-label="Agent, runs and files">
       <div class="docws-rail-tabs docws-tabs" role="tablist">
         <button
           type="button"
           class="docws-tab"
           role="tab"
           aria-selected={workspaceUi.railTab === 'agent'}
+          aria-label={agentWaiting() ? 'Agent, waiting for you' : 'Agent'}
           onClick={() => setRailTab('agent')}
         >
           Agent
           <Show when={agentWaiting()}>
-            <span class="docws-count is-attention" title="The agent is waiting for you">
+            <span
+              class="docws-count is-attention"
+              title="The agent is waiting for you"
+              aria-hidden="true"
+            >
               !
             </span>
           </Show>
@@ -83,11 +94,16 @@ export function RightPanel(props: RightPanelProps) {
           class="docws-tab"
           role="tab"
           aria-selected={workspaceUi.railTab === 'runs'}
+          aria-label={runsLabel()}
           onClick={() => setRailTab('runs')}
         >
           Runs
           <Show when={decisions() + running() > 0}>
-            <span class="docws-count" classList={{ 'is-attention': decisions() > 0 }}>
+            <span
+              class="docws-count"
+              classList={{ 'is-attention': decisions() > 0 }}
+              aria-hidden="true"
+            >
               {decisions() > 0 ? decisions() : running()}
             </span>
           </Show>
@@ -102,10 +118,10 @@ export function RightPanel(props: RightPanelProps) {
           Files
         </button>
       </div>
-      <Show when={workspaceUi.railTab === 'agent'}>
+      <div class="docws-agent-tab" classList={{ 'is-hidden': workspaceUi.railTab !== 'agent' }}>
         <DecisionStrip />
         <AgentTerminal project={props.project} />
-      </Show>
+      </div>
       <Show when={workspaceUi.railTab === 'runs'}>
         <div class="docws-rail-list">
           <RunsRail />

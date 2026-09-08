@@ -1,4 +1,12 @@
-import { Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
+import {
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  on,
+  onCleanup,
+} from 'solid-js';
 import { Dialog } from '../components/Dialog';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
@@ -19,6 +27,8 @@ export function CandidateOutputDialog() {
   const [text, setText] = createSignal('');
   const [error, setError] = createSignal<string | null>(null);
   let bodyRef: HTMLPreElement | undefined;
+  let closeRef: HTMLButtonElement | undefined;
+  const id = createUniqueId();
   const target = () => workspaceUi.output;
   const run = () => {
     const t = target();
@@ -51,6 +61,8 @@ export function CandidateOutputDialog() {
       setError(null);
       if (!t) return;
       void load();
+      // Focus moves into the dialog as it opens, as in the app's other dialogs.
+      requestAnimationFrame(() => closeRef?.focus());
     }),
   );
 
@@ -61,19 +73,28 @@ export function CandidateOutputDialog() {
   });
 
   return (
-    <Dialog open={!!target()} onClose={() => openCandidateOutput(null)} width="min(900px, 92vw)">
+    <Dialog
+      open={!!target()}
+      onClose={() => openCandidateOutput(null)}
+      width="min(900px, 92vw)"
+      labelledBy={`${id}-label ${id}-agent`}
+      describedBy={`${id}-instruction`}
+    >
       <Show when={candidate()}>
         {(c) => (
           <div class="docws-output">
             <div class="docws-output-head">
-              <span class="docws-candidate-label">{c().label}</span>
-              <span>{c().agentName}</span>
+              <span class="docws-candidate-label" id={`${id}-label`}>
+                {c().label}
+              </span>
+              <span id={`${id}-agent`}>{c().agentName}</span>
               <Show when={c().model || c().effort}>
                 <span class="docws-candidate-model">{modelLabel(c())}</span>
               </Show>
               <span class={`docws-badge docws-badge-${c().status}`}>{c().status}</span>
               <span class="docws-spacer" />
               <button
+                ref={closeRef}
                 type="button"
                 class="docws-btn docws-btn-sm"
                 onClick={() => openCandidateOutput(null)}
@@ -81,7 +102,7 @@ export function CandidateOutputDialog() {
                 Close
               </button>
             </div>
-            <div class="docws-run-instruction" title={run()?.instruction}>
+            <div class="docws-run-instruction" id={`${id}-instruction`} title={run()?.instruction}>
               {run()?.instruction}
             </div>
             <Show when={c().error}>

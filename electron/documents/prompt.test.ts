@@ -48,6 +48,69 @@ describe('buildDocumentPrompt', () => {
     expect(prompt).toContain('Instruction:\nClarify the assumptions.');
   });
 
+  it('shows a merging agent each proposal as a diff with the reviewer notes', () => {
+    const prompt = buildDocumentPrompt({
+      documentPath: 'docs/spec.md',
+      scope: { ...scope, wholeDocument: true },
+      instruction: 'Prefer the clearer wording.',
+      mergeInstruction: 'Tighten the overview.',
+      mergeCandidates: [
+        { label: 'A', agentName: 'Claude', diff: '-old\n+new A', summary: 'Shortened it.' },
+        { label: 'B', agentName: 'Codex', diff: '-old\n+new B', note: 'Keep the second bullet.' },
+      ],
+    });
+    expect(prompt).toContain('2 candidates proposed changes');
+    expect(prompt).toContain('> Tighten the overview.');
+    expect(prompt).toContain(
+      '### Candidate A (Claude)\nIts own summary: Shortened it.\n```diff\n-old\n+new A\n```',
+    );
+    expect(prompt).toContain("The reviewer's note on it: Keep the second bullet.");
+    expect(prompt).toContain('which parts came from which candidate');
+    expect(prompt).toContain('Instruction:\nPrefer the clearer wording.');
+    expect(prompt).not.toContain('unaccepted candidate');
+  });
+
+  it('keeps a worst-case merge prompt under the Linux argument limit', () => {
+    const candidates = Array.from({ length: 6 }, (_, i) => ({
+      label: 'ABCDEF'[i],
+      agentName: 'Agent',
+      diff: `-old\n+${'x'.repeat(40_000)}`,
+      summary: 's'.repeat(5_000),
+      note: 'n'.repeat(5_000),
+    }));
+    const prompt = buildDocumentPrompt({
+      documentPath: 'docs/spec.md',
+      scope: { ...scope, wholeDocument: true },
+      instruction: 'i'.repeat(20_000),
+      mergeInstruction: 'm'.repeat(20_000),
+      mergeCandidates: candidates,
+    });
+    expect(Buffer.byteLength(prompt)).toBeLessThan(128 * 1024);
+    // The diff budget is shared: six candidates get 10 000 bytes each, of
+    // which the diff header takes six.
+    const runs = (prompt.match(/x{100,}/g) ?? []).map((run) => run.length);
+    expect(runs).toEqual(Array<number>(6).fill(10_000 - '-old\n+'.length));
+    expect(prompt.match(/… \(diff truncated\)/g)).toHaveLength(6);
+    expect(prompt).toContain('Instruction:\n' + 'i'.repeat(20_000));
+  });
+
+  it('gives two candidates the full single-diff cap and cuts on a character boundary', () => {
+    const diff = `-old\n+${'é'.repeat(20_000)}`; // 2 bytes per character
+    const prompt = buildDocumentPrompt({
+      documentPath: 'docs/spec.md',
+      scope: { ...scope, wholeDocument: true },
+      instruction: 'Merge.',
+      mergeCandidates: [
+        { label: 'A', agentName: 'Agent', diff },
+        { label: 'B', agentName: 'Agent', diff: '-old\n+short' },
+      ],
+    });
+    // 30 000 bytes of "é" is 15 000 characters: whole ones, no replacement glyph.
+    expect(prompt).toMatch(/\+é{14990,}\n… \(diff truncated\)/);
+    expect(prompt).not.toContain('\uFFFD');
+    expect(prompt).toContain('+short\n```');
+  });
+
   it('hands a resumed session the diff since it last saw the document', () => {
     const prompt = buildDocumentPrompt({
       documentPath: 'docs/spec.md',

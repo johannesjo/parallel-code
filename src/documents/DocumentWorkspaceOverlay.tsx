@@ -15,9 +15,12 @@ import { getProject } from '../store/projects';
 import {
   activeDocumentPath,
   closeDocumentWorkspace,
+  discardDocumentEdits,
   dismissUndo,
   documentStore,
+  goBackDocument,
   openDocumentFile,
+  previousDocumentPath,
   refreshDocumentSnapshot,
   reviewableRuns,
   setDocumentComposerDraft,
@@ -29,8 +32,9 @@ import {
   type DocumentView,
 } from './store';
 import { resetWorkspaceUi } from './workspace-ui';
+import { activateDocumentAgentTask, releaseDocumentAgentTask } from './agent-task';
 import { findAnchorTarget } from './links';
-import { isMac } from '../lib/platform';
+import { isMac, windowChromeTopInset } from '../lib/platform';
 import { relocateAnchor } from './annotation-anchor';
 import { isHtmlDocument } from './html-document';
 import type { DocumentAnnotation } from './types';
@@ -49,7 +53,10 @@ import { BlockEditor, type BlockEditTarget } from './BlockEditor';
 import { ResizablePanel, type PanelChild } from '../components/ResizablePanel';
 import { createRenderedBlocks } from './use-blocks';
 import { DocumentIcon } from './DocumentIcon';
-import { openInEditor } from '../lib/shell';
+import { ActionIcon } from './BlockActions';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { openInEditor, revealItemInDir } from '../lib/shell';
+import { setDocumentFullWidth } from '../store/ui';
 import { errMessage } from '../lib/log';
 import { showNotification } from '../store/notification';
 
@@ -61,6 +68,7 @@ function DocumentPane(props: { project: Project }) {
   let mainRef: HTMLDivElement | undefined;
   let scrollRef: HTMLDivElement | undefined;
   let layerRef: HTMLDivElement | undefined;
+  let reviseRef: HTMLButtonElement | undefined;
   // Where the composer sits when a passage is picked; null puts it at the foot.
   const [anchorTop, setAnchorTop] = createSignal<number | null>(null);
   const blocks = createRenderedBlocks(() => documentStore.snapshot?.content ?? null);
@@ -77,6 +85,9 @@ function DocumentPane(props: { project: Project }) {
     const s = selection();
     return s && !s.wholeDocument ? { start: s.startBlock, end: s.endBlock } : null;
   });
+  // The composer is up while there is something for it to do: a picked
+  // passage, or a task asked for on the whole document.
+  const composerOpen = () => !!selection() || !!documentStore.composerDraft;
 
   /** Open the source editor on a block; only blocks that map back to the source qualify. */
   function editBlock(block: DocumentBlock | null) {
@@ -202,12 +213,13 @@ function DocumentPane(props: { project: Project }) {
     }),
   );
 
-  // The composer follows the passage as the prose scrolls and as its own
-  // height changes with the mode and the agents picked. The layer is created
-  // with the first snapshot, well after this mounts, so it is observed from
-  // its own ref rather than here.
-  const layerResize = new ResizeObserver(() => placeComposer());
-  onCleanup(() => layerResize.disconnect());
+  // The composer follows the passage as the prose scrolls, as its own height
+  // changes with the mode and the agents picked, and as the prose reflows
+  // under it (a theme or width change moves the passage without a scroll).
+  // The layer is created with the first snapshot, well after this mounts, so
+  // both are observed from their own refs rather than here.
+  const reflow = new ResizeObserver(() => placeComposer());
+  onCleanup(() => reflow.disconnect());
   onMount(() => {
     scrollRef?.addEventListener('scroll', placeComposer, { passive: true });
     window.addEventListener('resize', placeComposer);
@@ -228,7 +240,7 @@ function DocumentPane(props: { project: Project }) {
     if (showsPreview()) return 'Sandboxed render of the page — switch to Inline to scope a task';
     const s = selection();
     if (!s || s.wholeDocument)
-      return 'Tasks act on the whole document; click a block, drag across blocks, or use § on a heading to narrow them';
+      return 'Click a block, drag across blocks, or use § on a heading to work on a passage';
     return s.startLine === s.endLine
       ? `Selected line ${s.startLine}`
       : `Selected lines ${s.startLine}–${s.endLine}`;
@@ -259,7 +271,19 @@ function DocumentPane(props: { project: Project }) {
             </button>
           </span>
         </Show>
-        <span>{toolbarLabel()}</span>
+        <Show when={!showsPreview() && !composerOpen()}>
+          <button
+            type="button"
+            ref={reviseRef}
+            class="docws-btn docws-btn-sm docws-toolbar-task"
+            title="Open the composer on the whole document"
+            onClick={() => setDocumentComposerDraft({ text: '', mode: 'proposals' })}
+          >
+            <ActionIcon kind="proposals" />
+            Revise document
+          </button>
+        </Show>
+        <span class="docws-toolbar-label">{toolbarLabel()}</span>
         <Show when={editableBlock() && !showsPreview()}>
           <button
             type="button"
@@ -282,6 +306,21 @@ function DocumentPane(props: { project: Project }) {
           </span>
         </Show>
         <span style={{ 'margin-left': 'auto' }} />
+        <Show when={!showsPreview()}>
+          <button
+            type="button"
+            class="docws-btn docws-btn-sm"
+            aria-pressed={store.documentFullWidth}
+            title={
+              store.documentFullWidth
+                ? 'Back to a reading width'
+                : 'Let the document take the whole column'
+            }
+            onClick={() => setDocumentFullWidth(!store.documentFullWidth)}
+          >
+            Full width
+          </button>
+        </Show>
         <Show when={resolvedCount() > 0}>
           <label class="docws-toggle" title="Resolved bubbles collapse to one line">
             <input
@@ -316,7 +355,14 @@ function DocumentPane(props: { project: Project }) {
           if (releasesSelection(e.target)) setDocumentSelection(null);
         }}
       >
-        <div class="docws-doc" ref={docRef} classList={{ 'is-page': isHtml() }}>
+        <div
+          class="docws-doc"
+          ref={(el) => {
+            docRef = el;
+            reflow.observe(el);
+          }}
+          classList={{ 'is-page': isHtml(), 'is-full-width': store.documentFullWidth }}
+        >
           <Show when={placed().detached.length > 0}>
             <div class="docws-detached-section">
               <div class="docws-rail-title">Detached notes</div>
@@ -374,14 +420,18 @@ function DocumentPane(props: { project: Project }) {
       </div>
       {/* The composer floats over the prose instead of opening inside it, so
           the passage it is about stays where it was picked: right above the
-          popover. It is always there; with nothing picked it rests at the foot
-          of the column and takes the whole document. */}
-      <Show when={documentStore.snapshot && !documentStore.snapshot.missing}>
+          popover. It is only up while it has work to do: a task on the whole
+          document rests at the foot of the column. */}
+      <Show when={documentStore.snapshot && !documentStore.snapshot.missing && composerOpen()}>
         <div
           class="docws-composer-layer"
           ref={(el) => {
             layerRef = el;
-            layerResize.observe(el);
+            reflow.observe(el);
+            onCleanup(() => {
+              reflow.unobserve(el);
+              if (layerRef === el) layerRef = undefined;
+            });
           }}
           classList={{ 'is-hidden': showsPreview(), 'is-anchored': anchorTop() !== null }}
           style={anchorTop() !== null ? { top: `${anchorTop()}px`, bottom: 'auto' } : undefined}
@@ -392,6 +442,9 @@ function DocumentPane(props: { project: Project }) {
             onClose={() => {
               setDocumentSelection(null);
               setDocumentComposerDraft(null);
+              // The composer takes the focused textarea with it; the toolbar
+              // button that reopens it is the nearest place for focus to land.
+              requestAnimationFrame(() => reviseRef?.focus({ preventScroll: true }));
             }}
           />
         </div>
@@ -418,6 +471,8 @@ export function DocumentWorkspaceOverlay() {
     store.activeDocumentProjectId ? getProject(store.activeDocumentProjectId) : undefined,
   );
   const [editing, setEditing] = createSignal<Project | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = createSignal(false);
+  const [discarding, setDiscarding] = createSignal(false);
   const snapshot = () => documentStore.snapshot;
   const reviewable = createMemo(() => reviewableRuns());
   const editorCommand = () => store.editorCommand.trim();
@@ -442,8 +497,23 @@ export function DocumentWorkspaceOverlay() {
     ),
   );
 
+  // The agent runs in a task of its own. It is the active task while the
+  // workspace is up, so its terminal and prompt box take focus; the task that
+  // was active before gets focus back on close. Created once the installed
+  // agents are known, which may be after the workspace opened.
+  const previousActiveTask = store.activeTaskId;
+  createEffect(
+    on(
+      () => [project(), store.availableAgents] as const,
+      ([p]) => {
+        if (p) activateDocumentAgentTask(p);
+      },
+    ),
+  );
+
   onCleanup(() => {
     if (documentStore.projectId) closeDocumentWorkspace();
+    releaseDocumentAgentTask(previousActiveTask);
   });
 
   function openDocumentInEditor() {
@@ -454,6 +524,15 @@ export function DocumentWorkspaceOverlay() {
     const documentPath = `${currentProject.path.replace(/\/$/, '')}/${path}`;
     openInEditor(command, documentPath).catch((err) =>
       showNotification(`Editor failed: ${errMessage(err)}`),
+    );
+  }
+
+  /** The project folder in the system file manager. */
+  function openProjectFolder() {
+    const currentProject = project();
+    if (!currentProject) return;
+    revealItemInDir(currentProject.path).catch((err) =>
+      showNotification(`Could not open folder: ${errMessage(err)}`),
     );
   }
 
@@ -496,7 +575,13 @@ export function DocumentWorkspaceOverlay() {
       id: 'rail',
       minSize: 300,
       defaultSize: 420,
-      content: () => <Show when={project()}>{(p) => <RightPanel project={p()} />}</Show>,
+      // Keyed: the panel's children read the project from cleanups, which
+      // must not go through an accessor while the workspace is closing.
+      content: () => (
+        <Show when={project()} keyed>
+          {(p) => <RightPanel project={p} />}
+        </Show>
+      ),
     },
   ];
 
@@ -504,7 +589,11 @@ export function DocumentWorkspaceOverlay() {
     <div
       class="docws-overlay"
       classList={{ 'is-mac': isMac }}
+      // The app's own title bar carries the window controls on every
+      // platform but macOS; the workspace starts below it instead of over it.
+      style={isMac ? undefined : { top: `${windowChromeTopInset}px` }}
       role="dialog"
+      aria-modal="true"
       aria-label="Document workspace"
     >
       <div class="docws-header" data-tauri-drag-region>
@@ -523,7 +612,31 @@ export function DocumentWorkspaceOverlay() {
               <path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-3a.75.75 0 0 1 1.5 0v3A3 3 0 0 1 12.5 16h-9A3 3 0 0 1 0 12.5v-9A3 3 0 0 1 3.5 0h3a.75.75 0 0 1 0 1.5h-3ZM10 .75a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0V2.56L8.53 8.53a.75.75 0 0 1-1.06-1.06L13.44 1.5H10.75A.75.75 0 0 1 10 .75Z" />
             </svg>
           </button>
+          <button
+            type="button"
+            class="docws-btn docws-open-editor"
+            aria-label={`Open the folder ${project()?.path ?? ''} in the file manager`}
+            title={`Open the folder ${project()?.path ?? ''} in the file manager`}
+            disabled={!project()}
+            onClick={() => openProjectFolder()}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Zm0 1.5H5c.08 0 .15.04.2.1l.9 1.2c.33.44.85.7 1.4.7h6.75a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25H1.75a.25.25 0 0 1-.25-.25V2.75a.25.25 0 0 1 .25-.25Z" />
+            </svg>
+          </button>
         </div>
+        <Show when={previousDocumentPath()}>
+          {(previous) => (
+            <button
+              type="button"
+              class="docws-btn docws-btn-sm"
+              title={`Back to ${previous()}`}
+              onClick={() => void goBackDocument()}
+            >
+              ← Back
+            </button>
+          )}
+        </Show>
         <span class="docws-subtitle" title={openPath()}>
           {openPath()}
         </span>
@@ -534,12 +647,14 @@ export function DocumentWorkspaceOverlay() {
           {snapshot()?.branch ?? 'detached'} · {snapshot()?.headSha?.slice(0, 7) ?? 'no commits'}
         </span>
         <Show when={snapshot()?.dirty}>
-          <span
-            class="docws-head-chip is-warning"
-            title="Committed as “Manual edits” before the next run"
+          <button
+            type="button"
+            class="docws-head-chip is-warning is-action"
+            title="Committed as “Manual edits” before the next run · click to discard them"
+            onClick={() => setConfirmDiscard(true)}
           >
             uncommitted edits
-          </span>
+          </button>
         </Show>
         <Show when={documentStore.loading}>
           <span class="docws-head-chip">loading…</span>
@@ -584,6 +699,23 @@ export function DocumentWorkspaceOverlay() {
         />
       </div>
       <EditProjectDialog project={editing()} onClose={() => setEditing(null)} />
+      <ConfirmDialog
+        open={confirmDiscard()}
+        title="Discard uncommitted edits?"
+        message="Every uncommitted change to tracked files in this project goes back to the last commit. This cannot be undone."
+        confirmLabel="Discard edits"
+        confirmLoading={discarding()}
+        confirmDisabled={discarding()}
+        danger
+        onConfirm={() => {
+          setDiscarding(true);
+          void discardDocumentEdits().finally(() => {
+            setDiscarding(false);
+            setConfirmDiscard(false);
+          });
+        }}
+        onCancel={() => setConfirmDiscard(false)}
+      />
       <CandidateOutputDialog />
       <CompareDialog />
     </div>

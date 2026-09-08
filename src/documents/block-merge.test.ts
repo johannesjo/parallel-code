@@ -260,4 +260,25 @@ describe('hunkLabel', () => {
     expect(hunkLabel(parts.hunks[0], parts.baseBlocks)).toBe('Include this removal: “Two.”');
     expect(hunkLabel(parts.hunks[0])).toBe('Include this removal');
   });
+
+  it('tells rewrites and insertions apart by the base lines they land on', async () => {
+    const rewrite = await pair(
+      BASE,
+      ['# Title', '', 'One!', '', 'Two!', '', 'Three.', ''].join('\n'),
+    );
+    expect(hunkLabel(rewrite.hunks[0], rewrite.baseBlocks)).toBe(
+      'Include this rewrite of lines 3–5',
+    );
+    expect(hunkLabel(rewrite.hunks[0])).toBe('Include this rewrite');
+
+    const inserted = await pair(
+      BASE,
+      ['# Title', '', 'Zero.', '', 'One.', '', 'Two.', '', 'Three.', '', 'Four.', ''].join('\n'),
+    );
+    expect(inserted.hunks.map((h) => hunkLabel(h, inserted.baseBlocks))).toEqual([
+      'Include this new passage before line 3',
+      'Include this new passage at the end',
+    ]);
+    expect(hunkLabel(inserted.hunks[0])).toBe('Include this new passage');
+  });
 });

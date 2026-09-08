@@ -335,6 +335,7 @@ export interface PersistedState {
   darkThemeCustomId?: string | null;
   coordinatorModeEnabled?: boolean;
   documentWorkspacesEnabled?: boolean;
+  documentFullWidth?: boolean;
   coordinatorNotificationDelayMs?: number;
   coordinatorControlHintDismissed?: boolean;
   defaultStepsEnabled?: boolean;
@@ -463,6 +464,8 @@ export interface AppStore {
   darkThemeCustomId: string | null;
   coordinatorModeEnabled: boolean;
   documentWorkspacesEnabled: boolean;
+  /** Let the rendered document take the whole column instead of a reading width. */
+  documentFullWidth: boolean;
   /** Project whose document workspace overlay is open. */
   activeDocumentProjectId: string | null;
   coordinatorNotificationDelayMs: number;

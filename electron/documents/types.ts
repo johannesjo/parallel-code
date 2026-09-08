@@ -114,6 +114,8 @@ export interface DocumentRunRecord {
   candidates: DocumentCandidateRecord[];
   /** Proposal used as the starting content of this revision; never accepted implicitly. */
   refinement?: { runId: string; candidateId: string };
+  /** Proposals of an earlier run this one was asked to combine into a single version. */
+  merge?: { runId: string; candidateIds: string[] };
   acceptedCandidateId?: string;
   /** Set when the reader kept only some of the accepted candidate's changes. */
   partialAcceptance?: { accepted: number; total: number };
@@ -205,6 +207,8 @@ export interface DocumentAnnotation {
   answerError?: string;
   /** Run this annotation was turned into, if any. */
   runId?: string;
+  /** The answered question this one follows up on; the agent sees that exchange too. */
+  followUpOf?: string;
 }
 
 /** Persisted as `.parallel/annotations.json` inside the document project. */

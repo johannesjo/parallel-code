@@ -6,11 +6,21 @@ import {
   documentStore,
   modelLabel,
   openDocumentCompare,
-  rejectDocumentRun,
 } from './store';
 import { openCandidateOutput } from './workspace-ui';
+import { RejectRunButton } from './RejectRunConfirm';
 import { formatRelativeAge } from '../lib/relativeAge';
 import type { DocumentCandidateRecord, DocumentRunRecord } from './types';
+
+/** Where a run's starting content came from, when not the canonical document. */
+function lineageLabel(run: DocumentRunRecord): string | null {
+  const source = run.refinement ?? run.merge;
+  if (!source) return null;
+  const labels = documentStore.runs[source.runId]?.candidates ?? [];
+  const label = (id: string) => labels.find((c) => c.id === id)?.label ?? id;
+  if (run.merge) return `merges ${run.merge.candidateIds.map(label).join(' + ')}`;
+  return run.refinement ? `refines candidate ${label(run.refinement.candidateId)}` : null;
+}
 
 function scopeLabel(run: DocumentRunRecord): string {
   const s = run.scope;
@@ -49,34 +59,54 @@ function CandidateRow(props: {
   const lines = () => documentStore.logs[candidateLogKey(props.run.id, props.candidate.id)] ?? [];
   const tail = () => lines().slice(-6);
   const verdict = () => candidateVerdict(props.run, props.candidate);
+  const canReview = () =>
+    (props.run.status === 'finished' || props.run.status === 'stale') &&
+    props.candidate.status === 'done' &&
+    !!props.candidate.commitSha;
+  const output = () =>
+    openCandidateOutput({ runId: props.run.id, candidateId: props.candidate.id });
+
   return (
     <div
       class="docws-candidate"
       classList={{ 'is-passed-over': verdict() === 'passed-over' || verdict() === 'rejected' }}
-      role="button"
-      tabIndex={0}
-      title="Show what this candidate printed"
-      onClick={() => openCandidateOutput({ runId: props.run.id, candidateId: props.candidate.id })}
-      onKeyDown={(e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        e.preventDefault();
-        openCandidateOutput({ runId: props.run.id, candidateId: props.candidate.id });
-      }}
     >
-      <div class="docws-candidate-head">
-        <span class={`docws-dot docws-dot-${props.candidate.status}`} />
-        <span class="docws-candidate-label">{props.candidate.label}</span>
-        <span>{props.candidate.agentName}</span>
-        <Show when={props.candidate.model || props.candidate.effort}>
-          <span class="docws-candidate-model">{modelLabel(props.candidate)}</span>
-        </Show>
-        <Show when={props.candidate.isMain}>
-          <span class="docws-badge">main</span>
-        </Show>
-        <span class="docws-candidate-state" classList={{ 'is-accepted': verdict() === 'accepted' }}>
-          {candidateState(props.candidate, verdict())}
+      <button
+        type="button"
+        class="docws-candidate-main"
+        aria-label={`${canReview() ? 'Review' : 'View output for'} proposal ${props.candidate.label}`}
+        onClick={() =>
+          canReview() ? openDocumentCompare(props.run.id, props.candidate.id) : output()
+        }
+      >
+        <span class="docws-candidate-head">
+          <span class={`docws-dot docws-dot-${props.candidate.status}`} />
+          <span class="docws-candidate-label">{props.candidate.label}</span>
+          <span>{props.candidate.agentName}</span>
+          <Show when={props.candidate.model || props.candidate.effort}>
+            <span class="docws-candidate-model">{modelLabel(props.candidate)}</span>
+          </Show>
+          <Show when={props.candidate.isMain}>
+            <span class="docws-badge">main</span>
+          </Show>
+          <span
+            class="docws-candidate-state"
+            classList={{ 'is-accepted': verdict() === 'accepted' }}
+          >
+            {candidateState(props.candidate, verdict())}
+          </span>
         </span>
-      </div>
+      </button>
+      <Show when={canReview()}>
+        <button
+          type="button"
+          class="docws-btn docws-btn-sm"
+          aria-label={`View output for proposal ${props.candidate.label}`}
+          onClick={output}
+        >
+          View output
+        </button>
+      </Show>
       <Show when={props.candidate.error && props.candidate.status !== 'running'}>
         <div class="docws-error">{props.candidate.error}</div>
       </Show>
@@ -120,6 +150,9 @@ export function RunsRail() {
               <div class="docws-run-instruction" title={run.instruction}>
                 {run.instruction}
               </div>
+              <Show when={lineageLabel(run)}>
+                {(lineage) => <div class="docws-run-meta docws-run-lineage">{lineage()}</div>}
+              </Show>
               <div class="docws-run-meta" title={scopeLabel(run)}>
                 <Show when={run.documentPath !== activeDocumentPath()}>
                   <span class="docws-run-doc">{run.documentPath} · </span>
@@ -155,13 +188,7 @@ export function RunsRail() {
                   </button>
                 </Show>
                 <Show when={run.status === 'finished' || run.status === 'stale'}>
-                  <button
-                    type="button"
-                    class="docws-btn docws-btn-sm docws-btn-danger"
-                    onClick={() => void rejectDocumentRun(run.id)}
-                  >
-                    {proposals() > 0 ? 'Reject all' : 'Dismiss'}
-                  </button>
+                  <RejectRunButton run={run} label={proposals() > 0 ? 'Reject all' : 'Dismiss'} />
                 </Show>
               </div>
             </div>

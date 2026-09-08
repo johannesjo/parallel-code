@@ -1,4 +1,6 @@
-import { For } from 'solid-js';
+import { For, createSignal, type Accessor, type JSX } from 'solid-js';
+import { Portal } from 'solid-js/web';
+import { createAnchorEffect } from '../lib/floating';
 import type { ComposerMode } from './store';
 
 /** A composer mode, or editing the block's source in place. */
@@ -15,7 +17,7 @@ interface BlockAction {
 export const BLOCK_ACTIONS: readonly BlockAction[] = [
   {
     kind: 'task',
-    title: 'Task on this block',
+    title: 'Edit this block with agent',
     path: 'M9.504.43a1.516 1.516 0 0 1 2.437 1.713L10.415 5.5h2.123c1.57 0 2.346 1.909 1.22 3.004l-7.34 7.142a1.249 1.249 0 0 1-.871.354h-.302a1.25 1.25 0 0 1-1.157-1.723L5.633 10.5H3.462c-1.57 0-2.346-1.909-1.22-3.004L9.503.429Zm1.047 1.074L3.286 8.571A.25.25 0 0 0 3.462 9H6.75a.75.75 0 0 1 .694 1.034l-1.713 4.188 6.982-6.793A.25.25 0 0 0 12.538 7H9.25a.75.75 0 0 1-.683-1.06l2.008-4.418.003-.006a.036.036 0 0 0-.004-.009l-.006-.006-.008-.001c-.003 0-.006.002-.009.004Z',
   },
   {
@@ -44,10 +46,6 @@ function iconPath(kind: BlockActionKind): string {
   return BLOCK_ACTIONS.find((a) => a.kind === kind)?.path ?? '';
 }
 
-function iconSvg(path: string): string {
-  return `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="${path}"/></svg>`;
-}
-
 /** One action's glyph, the same in the block toolbar and on the composer's tabs. */
 export function ActionIcon(props: { kind: BlockActionKind }) {
   return (
@@ -57,55 +55,68 @@ export function ActionIcon(props: { kind: BlockActionKind }) {
   );
 }
 
-/**
- * A block's hover toolbar: task, note, ask, edit. One click picks the block
- * and opens the composer on that mode (or the source editor), instead of pick
- * first and choose after.
- */
-export function BlockActions(props: { onAction: (kind: BlockActionKind) => void }) {
-  return (
-    <span class="docws-block-actions" role="toolbar" aria-label="Block actions">
-      <For each={BLOCK_ACTIONS}>
-        {(action) => (
-          <button
-            type="button"
-            class="docws-block-action"
-            data-kind={action.kind}
-            aria-label={action.title}
-            onClick={(e) => {
-              e.stopPropagation();
-              props.onAction(action.kind);
-            }}
-          >
-            <ActionIcon kind={action.kind} />
-          </button>
-        )}
-      </For>
-    </span>
-  );
+/** Just inside the block's right edge, level with the markdown column's own inset. */
+const RIGHT_INSET = 6;
+
+interface BlockActionsProps {
+  /** The block the toolbar belongs to, on screen; null keeps the bar away. */
+  anchor: Accessor<HTMLElement | null>;
+  /** A page's § button and markers sit on the right; its toolbar takes the left. */
+  alignLeft?: boolean;
+  onAction: (kind: BlockActionKind) => void;
+  /** The pointer moved onto (true) or off (false) the bar itself. */
+  onPointer: (inside: boolean) => void;
 }
 
-/** The same toolbar as plain DOM, for pages whose markup is rendered whole. */
-export function createBlockActionsElement(
-  onAction: (kind: BlockActionKind, e: MouseEvent) => void,
-): HTMLSpanElement {
-  const bar = document.createElement('span');
-  bar.className = 'docws-block-actions';
-  bar.setAttribute('role', 'toolbar');
-  bar.setAttribute('aria-label', 'Block actions');
-  for (const action of BLOCK_ACTIONS) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'docws-block-action';
-    button.dataset.kind = action.kind;
-    button.setAttribute('aria-label', action.title);
-    // A constant icon of our own, not page content.
-    button.innerHTML = iconSvg(action.path);
-    button.onclick = (e) => {
-      e.stopPropagation();
-      onAction(action.kind, e);
-    };
-    bar.append(button);
-  }
-  return bar;
+/**
+ * The hover toolbar of whichever block the pointer is on: task, proposals,
+ * note, ask, edit. One click picks the block and opens the composer on that
+ * mode (or the source editor), instead of pick first and choose after. One
+ * bar serves every block, floating over the window with its bottom edge on
+ * the block's top edge: in the gap above the prose, where a click meant for
+ * the passage cannot land on an icon, and out of reach of a page whose own
+ * CSS clips what its elements contain.
+ */
+export function BlockActions(props: BlockActionsProps) {
+  const [style, setStyle] = createSignal<JSX.CSSProperties | null>(null);
+  const open = () => props.anchor() !== null;
+  createAnchorEffect(open, () => {
+    const rect = props.anchor()?.getBoundingClientRect();
+    if (!rect) return setStyle(null);
+    setStyle(
+      props.alignLeft
+        ? { top: `${rect.top}px`, left: `${rect.left}px` }
+        : { top: `${rect.top}px`, right: `${window.innerWidth - rect.right + RIGHT_INSET}px` },
+    );
+  });
+  return (
+    <Portal>
+      <span
+        class="docws-block-actions"
+        classList={{ 'is-open': open() && style() !== null }}
+        role="toolbar"
+        aria-label="Block actions"
+        style={style() ?? undefined}
+        onMouseEnter={() => props.onPointer(true)}
+        onMouseLeave={() => props.onPointer(false)}
+      >
+        <For each={BLOCK_ACTIONS}>
+          {(action) => (
+            <button
+              type="button"
+              class="docws-block-action"
+              data-kind={action.kind}
+              aria-label={action.title}
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onAction(action.kind);
+              }}
+            >
+              <ActionIcon kind={action.kind} />
+            </button>
+          )}
+        </For>
+      </span>
+    </Portal>
+  );
 }

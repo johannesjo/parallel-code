@@ -2,6 +2,7 @@ import { For, Show, createResource, createSignal, onCleanup } from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { confirm } from '../lib/dialog';
+import { errMessage } from '../lib/log';
 import { formatRelativeAge } from '../lib/relativeAge';
 import { activeDocumentPath, documentStore, revertDocumentCommit } from './store';
 import { getProject } from '../store/projects';
@@ -37,7 +38,8 @@ function EntryDetail(props: {
         : null,
     (args) => invoke<string | null>(IPC.GetDocumentAtCommit, args),
   );
-  const rendered = createRenderedBlocks(() => content() ?? null);
+  // Reading a resource that failed throws; the error line below reports it.
+  const rendered = createRenderedBlocks(() => (content.error ? null : (content() ?? null)));
   const trailerEntries = () => Object.entries(props.entry.trailers);
 
   async function revert() {
@@ -118,15 +120,25 @@ function EntryDetail(props: {
         <Show
           when={mode() === 'diff'}
           fallback={
-            <DocumentViewer
-              blocks={rendered.blocks()}
-              renderKey={`hist-${props.entry.shortSha}`}
-              page={rendered.page()}
-            />
+            <>
+              <Show when={content.error}>
+                <div class="docws-error">{errMessage(content.error)}</div>
+              </Show>
+              <DocumentViewer
+                blocks={rendered.blocks()}
+                renderKey={`hist-${props.entry.shortSha}`}
+                page={rendered.page()}
+              />
+            </>
           }
         >
           <Show when={!diff.loading} fallback={<div class="docws-empty">Loading diff…</div>}>
-            <SourceDiff raw={diff() ?? ''} />
+            <Show
+              when={!diff.error}
+              fallback={<div class="docws-error">{errMessage(diff.error)}</div>}
+            >
+              <SourceDiff raw={diff() ?? ''} />
+            </Show>
           </Show>
         </Show>
       </div>
@@ -157,7 +169,10 @@ export function HistoryView() {
       });
     },
   );
-  const selected = () => entries()?.find((e) => e.sha === selectedSha()) ?? entries()?.[0] ?? null;
+  // Reading a resource that failed throws; the error line in the list reports it.
+  const list = () => (entries.error ? [] : (entries() ?? []));
+  const selected = () => list().find((e) => e.sha === selectedSha()) ?? list()[0] ?? null;
+  const count = () => list().length;
   const [nowMs, setNowMs] = createSignal(Date.now());
   const clock = setInterval(() => setNowMs(Date.now()), 30_000);
   onCleanup(() => clearInterval(clock));
@@ -174,14 +189,21 @@ export function HistoryView() {
             />
             Whole project
           </label>
-          <span style={{ 'margin-left': 'auto' }}>{entries()?.length ?? 0} commits</span>
+          <span style={{ 'margin-left': 'auto' }}>
+            {count()} {count() === 1 ? 'commit' : 'commits'}
+          </span>
         </div>
-        <Show when={entries()?.length === 0}>
+        <Show when={entries.error}>
+          <div class="docws-error" style={{ padding: '12px 14px', 'font-size': '12px' }}>
+            {errMessage(entries.error)}
+          </div>
+        </Show>
+        <Show when={!entries.error && entries()?.length === 0}>
           <div class="docws-empty" style={{ padding: '12px 14px' }}>
             No commits touch this document yet.
           </div>
         </Show>
-        <For each={entries() ?? []}>
+        <For each={list()}>
           {(entry) => (
             <button
               type="button"

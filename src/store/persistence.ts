@@ -245,6 +245,7 @@ export async function saveState(): Promise<void> {
     darkThemeCustomId: store.darkThemeCustomId ?? undefined,
     coordinatorModeEnabled: store.coordinatorModeEnabled || undefined,
     documentWorkspacesEnabled: store.documentWorkspacesEnabled || undefined,
+    documentFullWidth: store.documentFullWidth || undefined,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed || undefined,
     defaultStepsEnabled: store.defaultStepsEnabled || undefined,
     defaultSkipPermissions: store.defaultSkipPermissions || undefined,
@@ -417,6 +418,7 @@ interface LegacyPersistedState {
   darkThemeCustomId?: unknown;
   coordinatorModeEnabled?: unknown;
   documentWorkspacesEnabled?: unknown;
+  documentFullWidth?: unknown;
   coordinatorControlHintDismissed?: unknown;
   defaultStepsEnabled?: unknown;
   defaultSkipPermissions?: unknown;
@@ -616,6 +618,7 @@ export async function loadState(): Promise<void> {
 
       s.coordinatorModeEnabled = raw.coordinatorModeEnabled === true;
       s.documentWorkspacesEnabled = raw.documentWorkspacesEnabled === true;
+      s.documentFullWidth = raw.documentFullWidth === true;
 
       s.coordinatorControlHintDismissed = raw.coordinatorControlHintDismissed === true;
 
@@ -866,16 +869,17 @@ export async function loadState(): Promise<void> {
       const activeSet = new Set(s.taskOrder);
       s.collapsedTaskOrder = s.collapsedTaskOrder.filter((id) => !activeSet.has(id));
 
-      // Focus mode requires a valid active panel; without one, every panel is
-      // hidden and the strip reads blank. Repair or drop focus mode.
-      if (s.focusMode) {
-        const activeValid =
-          s.activeTaskId !== null &&
-          (s.tasks[s.activeTaskId] !== undefined || s.terminals[s.activeTaskId] !== undefined);
-        if (!activeValid) {
-          s.activeTaskId = s.taskOrder[0] ?? null;
-          if (s.activeTaskId === null) s.focusMode = false;
-        }
+      // The active id can name nothing: a document workspace's hidden agent
+      // task is never saved, so an app that quit with one open points at it.
+      // Focus mode needs a valid active panel on top of that; without one,
+      // every panel is hidden and the strip reads blank. Repair or drop it.
+      const activeValid =
+        s.activeTaskId !== null &&
+        (s.tasks[s.activeTaskId] !== undefined || s.terminals[s.activeTaskId] !== undefined);
+      if (!activeValid) s.activeTaskId = null;
+      if (s.focusMode && s.activeTaskId === null) {
+        s.activeTaskId = s.taskOrder[0] ?? null;
+        if (s.activeTaskId === null) s.focusMode = false;
       }
 
       // Set activeAgentId from the active task

@@ -31,6 +31,7 @@ describe('listProjectFiles', () => {
     write(dir, 'build/out.txt');
     write(dir, '.gitignore', 'build/\n');
     write(dir, '.parallel/runs/r.json', '{}');
+    write(dir, '.claude/settings.json', '{}');
     write(dir, '.worktrees/x/notes.md');
     execFileSync('git', ['add', 'notes.md'], { cwd: dir });
 

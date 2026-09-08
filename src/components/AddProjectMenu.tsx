@@ -22,20 +22,38 @@ const MENU_WIDTH = 232;
  * backing out of the question.
  */
 export function AddProjectMenu(props: AddProjectMenuProps) {
+  let menu: HTMLDivElement | undefined;
+  const items = () =>
+    Array.from(menu?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []);
+
   onMount(() => {
+    // Whatever opened the menu (the "+" button) gets the focus back when it goes.
+    const opener = document.activeElement;
+    requestAnimationFrame(() => items()[0]?.focus());
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
         props.onClose();
+        return;
       }
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      e.preventDefault();
+      const list = items();
+      const at = list.indexOf(document.activeElement as HTMLButtonElement);
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      list[(at + step + list.length) % list.length]?.focus();
     };
     window.addEventListener('keydown', onKey, true);
-    onCleanup(() => window.removeEventListener('keydown', onKey, true));
+    onCleanup(() => {
+      window.removeEventListener('keydown', onKey, true);
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    });
   });
 
   const row = (kind: ProjectKindChoice, icon: () => unknown, label: string, hint: string) => (
     <button
       type="button"
+      role="menuitem"
       onClick={() => props.onPick(kind)}
       style={{
         display: 'flex',
@@ -71,6 +89,7 @@ export function AddProjectMenu(props: AddProjectMenuProps) {
         style={{ position: 'fixed', inset: '0', 'z-index': '1200' }}
       >
         <div
+          ref={menu}
           role="menu"
           aria-label="Add project"
           onClick={(e) => e.stopPropagation()}

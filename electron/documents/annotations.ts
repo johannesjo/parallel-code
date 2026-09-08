@@ -13,6 +13,7 @@ import { errMessage } from '../log.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
 import { buildPtySpawnEnv, validateCommand } from '../ipc/pty.js';
 import { loadEnvFile } from '../ipc/env-file.js';
+import { truncateBytes } from './prompt.js';
 import { buildHeadlessLaunch, createHeadlessParser } from './agents.js';
 import { documentAgentSupport } from './shared.js';
 import { validateDocumentPath, validateSha } from './runs.js';
@@ -29,6 +30,16 @@ const MAX_ANSWER_CHARS = 50_000;
 const MAX_ANNOTATIONS = 2_000;
 const ANSWER_TIMEOUT_MS = 10 * 60_000;
 const KILL_GRACE_MS = 5_000;
+/** Earlier exchanges a follow-up carries into its prompt, at most. */
+const MAX_THREAD_LENGTH = 8;
+/*
+ * The prompt is one argv element, capped at 128 KiB on Linux, so the thread
+ * is budgeted in bytes: earlier answers share one budget and earlier
+ * questions are cut short. The follow-up itself keeps its full text.
+ */
+const THREAD_ANSWER_BUDGET_BYTES = 40_000;
+const MAX_THREAD_ANSWER_BYTES = 8_000;
+const MAX_THREAD_QUESTION_BYTES = 2_000;
 
 function annotationsPath(projectRoot: string): string {
   return path.join(projectRoot, ANNOTATIONS_REL_PATH);
@@ -102,6 +113,12 @@ export function validateAnnotationInput(value: unknown): DocumentAnnotation {
   const status = v.answerStatus;
   const runId =
     typeof v.runId === 'string' && /^[a-z0-9-]{1,64}$/i.test(v.runId) ? v.runId : undefined;
+  const followUpOf =
+    typeof v.followUpOf === 'string' &&
+    /^[a-z0-9-]{1,64}$/i.test(v.followUpOf) &&
+    v.followUpOf !== id
+      ? v.followUpOf
+      : undefined;
   return {
     id,
     kind,
@@ -115,7 +132,29 @@ export function validateAnnotationInput(value: unknown): DocumentAnnotation {
       status === 'pending' || status === 'answered' || status === 'failed' ? status : undefined,
     answerError: typeof v.answerError === 'string' ? v.answerError.slice(0, 2_000) : undefined,
     runId,
+    followUpOf,
   };
+}
+
+/**
+ * The questions `annotation` follows up on, oldest first. Bounded, and a
+ * loop in a hand-edited file ends the walk rather than the process.
+ */
+export function annotationThread(
+  all: readonly DocumentAnnotation[],
+  annotation: DocumentAnnotation,
+): DocumentAnnotation[] {
+  const chain: DocumentAnnotation[] = [];
+  const seen = new Set<string>([annotation.id]);
+  let parentId = annotation.followUpOf;
+  while (parentId && !seen.has(parentId) && chain.length < MAX_THREAD_LENGTH) {
+    const parent = all.find((a) => a.id === parentId);
+    if (!parent) break;
+    seen.add(parent.id);
+    chain.unshift(parent);
+    parentId = parent.followUpOf;
+  }
+  return chain;
 }
 
 // --- File -----------------------------------------------------------------
@@ -238,8 +277,27 @@ interface ActiveAsk {
 
 const activeAsks = new Map<string, ActiveAsk>();
 
-/** Builds the read-only question prompt. Exported for tests. */
-export function buildAnnotationPrompt(annotation: DocumentAnnotation): string {
+/** One earlier question and its answer, as the agent reads them. */
+function describeExchange(a: DocumentAnnotation, answerBytes: number): string {
+  const answer = a.answer
+    ? `Answer (${a.answer.agentName}):\n${truncateBytes(a.answer.text.trim(), answerBytes)}`
+    : 'Answer: none was given.';
+  return `Question:\n${truncateBytes(a.text.trim(), MAX_THREAD_QUESTION_BYTES)}\n\n${answer}`;
+}
+
+/** Each earlier answer's share of the thread budget. */
+function answerBytesFor(exchanges: number): number {
+  return Math.min(MAX_THREAD_ANSWER_BYTES, Math.floor(THREAD_ANSWER_BUDGET_BYTES / exchanges));
+}
+
+/**
+ * Builds the read-only question prompt. `earlier` holds the exchanges a
+ * follow-up continues, oldest first. Exported for tests.
+ */
+export function buildAnnotationPrompt(
+  annotation: DocumentAnnotation,
+  earlier: readonly DocumentAnnotation[] = [],
+): string {
   const a = annotation.anchor;
   const where = a.heading
     ? `lines ${a.startLine}-${a.endLine} (under "${a.heading}")`
@@ -253,7 +311,15 @@ export function buildAnnotationPrompt(annotation: DocumentAnnotation): string {
       'Read the document (and anything else in the project you need) but do not modify any file.',
     `Document: ${a.path}`,
     `Passage: ${where}\n${quote}`,
-    `Question:\n${annotation.text.trim()}`,
+    ...(earlier.length > 0
+      ? [
+          'This is a follow-up. The earlier exchange on this passage, oldest first:\n\n' +
+            earlier
+              .map((a) => describeExchange(a, answerBytesFor(earlier.length)))
+              .join('\n\n---\n\n'),
+        ]
+      : []),
+    `${earlier.length > 0 ? 'Follow-up question' : 'Question'}:\n${annotation.text.trim()}`,
     [
       'Rules:',
       '- Answer the question about this passage directly and concisely, in Markdown.',
@@ -319,10 +385,11 @@ export async function askAnnotation(
   });
   if (!annotation) throw new Error('Annotation not found');
 
+  const earlier = annotationThread(readAnnotations(projectRoot), annotation);
   const launch = buildHeadlessLaunch({
     agentId,
     command,
-    prompt: buildAnnotationPrompt(annotation),
+    prompt: buildAnnotationPrompt(annotation, earlier),
     newSessionId: randomUUID(),
     readOnly: true,
   });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildInteractivePrompt } from './interactive-prompt';
 
 describe('buildInteractivePrompt', () => {
-  it('names the document, the lines and the passage before the instruction', () => {
+  it('puts the instruction first, then the document, the lines and the passage', () => {
     const prompt = buildInteractivePrompt(
       'notes.md',
       {
@@ -17,8 +17,8 @@ describe('buildInteractivePrompt', () => {
       '  Tighten this.  ',
     );
     expect(prompt).toBe(
-      'Document: notes.md\n\nScope: lines 4-6 (under "Plan").\n\n' +
-        'The passage, verbatim:\n> One.\n> Two.\n\nTighten this.',
+      'Tighten this.\n\nDocument: notes.md\n\nScope: lines 4-6 (under "Plan").\n\n' +
+        'The passage, verbatim:\n> One.\n> Two.',
     );
   });
 
@@ -35,7 +35,7 @@ describe('buildInteractivePrompt', () => {
       },
       'Rewrite the intro.',
     );
-    expect(prompt).toBe('Document: notes.md\n\nScope: the whole document.\n\nRewrite the intro.');
+    expect(prompt).toBe('Rewrite the intro.\n\nDocument: notes.md\n\nScope: the whole document.');
   });
 
   it('drops the control characters a pasted passage would turn into keystrokes', () => {

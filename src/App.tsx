@@ -88,12 +88,15 @@ import { createCtrlWheelZoomHandler } from './lib/wheelZoom';
 import { redrawAllTerminals } from './lib/terminalFitManager';
 import { ArenaOverlay } from './arena/ArenaOverlay';
 import { DocumentWorkspaceOverlay } from './documents/DocumentWorkspaceOverlay';
+import { isDocumentAgentTaskId } from './documents/agent-task';
 import {
   closeDocumentWorkspace,
   documentStore,
   initDocumentListeners,
+  setDocumentComposerDraft,
   setDocumentSelection,
 } from './documents/store';
+import { dismissPinnedBubbles } from './documents/workspace-ui';
 import { resetForNewMatch } from './arena/store';
 import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 import { startPrChecksSubscription } from './store/pr-checks';
@@ -649,6 +652,10 @@ function App() {
     });
     setCloseHandlerReady(true);
 
+    // A document workspace's hidden agent task can be the active one; it has
+    // no worktree to close, merge or push and no panel a shell could show in.
+    const listedTask = (id: string) => store.tasks[id] !== undefined && !isDocumentAgentTaskId(id);
+
     const actionHandlers: Record<string, (e: KeyboardEvent) => void> = {
       'navigateRow:up': () => navigateRow('up'),
       'navigateRow:down': () => navigateRow('down'),
@@ -677,19 +684,19 @@ function App() {
           closeTerminal(id);
           return;
         }
-        if (store.tasks[id]) setPendingAction({ type: 'close', taskId: id });
+        if (listedTask(id)) setPendingAction({ type: 'close', taskId: id });
       },
       mergeTask: () => {
         const id = store.activeTaskId;
-        if (id && store.tasks[id]) setPendingAction({ type: 'merge', taskId: id });
+        if (id && listedTask(id)) setPendingAction({ type: 'merge', taskId: id });
       },
       pushTask: () => {
         const id = store.activeTaskId;
-        if (id && store.tasks[id]) setPendingAction({ type: 'push', taskId: id });
+        if (id && listedTask(id)) setPendingAction({ type: 'push', taskId: id });
       },
       spawnShell: () => {
         const id = store.activeTaskId;
-        if (id && store.tasks[id]) spawnShellForTask(id);
+        if (id && listedTask(id)) spawnShellForTask(id);
       },
       sendPrompt: () => sendActivePrompt(),
       createTerminal: (e) => {
@@ -706,8 +713,16 @@ function App() {
           return;
         }
         if (store.activeDocumentProjectId) {
-          if (documentStore.selection) setDocumentSelection(null);
-          else closeDocumentWorkspace();
+          // A pinned note covers the prose and goes first. Then the composer,
+          // up with a passage or with a draft opened from the toolbar or a
+          // note; either way Escape closes it before the workspace.
+          if (dismissPinnedBubbles()) return;
+          if (documentStore.selection || documentStore.composerDraft) {
+            setDocumentSelection(null);
+            setDocumentComposerDraft(null);
+          } else {
+            closeDocumentWorkspace();
+          }
           return;
         }
         if (store.showHelpDialog) {

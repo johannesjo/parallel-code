@@ -2540,9 +2540,82 @@ body.dragging-task * {
   color: var(--fg-muted);
 }
 .mermaid-block.mermaid-rendered {
+  position: relative;
   white-space: normal;
   text-align: center;
   background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+
+/* The enlarge button waits in the diagram's corner until the pointer is on it. */
+.mermaid-enlarge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--fg-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.mermaid-block:hover .mermaid-enlarge,
+.mermaid-enlarge:focus-visible {
+  opacity: 1;
+}
+
+.mermaid-enlarge:hover {
+  color: var(--fg);
+  border-color: var(--border-focus);
+}
+
+/* The diagram at the size of the window, over everything else. */
+.mermaid-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+
+.mermaid-lightbox-body {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mermaid-lightbox-body svg {
+  cursor: default;
+}
+
+.mermaid-lightbox-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  cursor: pointer;
 }
 
 /* AskCodeCard loading animation */

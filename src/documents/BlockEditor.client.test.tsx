@@ -75,6 +75,31 @@ describe('BlockEditor', () => {
     });
   });
 
+  it('asks before an edit in progress is thrown away', async () => {
+    const { onClose } = mount();
+    const cancel = document.querySelector('.docws-run-actions .docws-btn') as HTMLButtonElement;
+    const find = (label: string) =>
+      Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.trim() === label);
+    cancel.click();
+    expect(onClose).toHaveBeenCalledOnce();
+
+    const input = document.querySelector('textarea') as HTMLTextAreaElement;
+    input.value = 'Half done';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    cancel.click();
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(document.body.textContent).toContain('Discard edits?');
+
+    find('Keep editing')?.click();
+    await vi.waitFor(() => expect(document.body.textContent).not.toContain('Discard edits?'));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(input.value).toBe('Half done');
+
+    cancel.click();
+    find('Discard')?.click();
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
   it('preserves the edit and stays open when the file has changed', async () => {
     vi.mocked(invoke).mockRejectedValue(new Error('The document changed.'));
     const { onClose, onSaved } = mount();

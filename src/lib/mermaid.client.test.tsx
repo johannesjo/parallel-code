@@ -55,6 +55,31 @@ describe('renderMermaidIn', () => {
     expect(rendered).toEqual(['graph TD; A---B']);
   });
 
+  it('offers to enlarge a rendered diagram into a lightbox that Escape closes', async () => {
+    rendered.length = 0;
+    const container = host('<div class="mermaid-block" data-mermaid="graph TD; A---B">x</div>');
+
+    renderMermaidIn(container, 'k');
+
+    const block = await waitFor(() => container.querySelector('.mermaid-block.mermaid-rendered'));
+    const enlarge = block.querySelector<HTMLButtonElement>('button.mermaid-enlarge');
+    expect(enlarge?.getAttribute('aria-label')).toBe('Enlarge diagram');
+
+    enlarge?.click();
+
+    const lightbox = document.getElementById('mermaid-lightbox');
+    expect(lightbox?.getAttribute('role')).toBe('dialog');
+    expect(lightbox?.querySelector('.mermaid-lightbox-body svg')).not.toBeNull();
+    expect(lightbox?.querySelector<SVGElement>('.mermaid-lightbox-body svg')?.style.width).toBe(
+      '100%',
+    );
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+
+    expect(document.getElementById('mermaid-lightbox')).toBeNull();
+    expect(document.activeElement).toBe(enlarge);
+  });
+
   it('leaves an empty placeholder alone', async () => {
     rendered.length = 0;
     const container = host('<div class="mermaid-block">   </div>');

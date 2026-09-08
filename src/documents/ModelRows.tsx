@@ -49,6 +49,13 @@ export function ModelRows(props: ModelRowsProps) {
                   value={props.choice(slot).model ?? ''}
                   onInput={(e) => props.onChoice(slot, { model: e.currentTarget.value }, false)}
                   onChange={(e) => props.onChoice(slot, { model: e.currentTarget.value }, true)}
+                  onKeyDown={(e) => {
+                    // Escape leaves the field; let through, it would close the
+                    // composer and drop the instruction with it.
+                    if (e.key !== 'Escape') return;
+                    e.stopPropagation();
+                    e.currentTarget.blur();
+                  }}
                 />
                 <datalist id={listId}>
                   <For each={support.models}>{(m) => <option value={m} />}</For>

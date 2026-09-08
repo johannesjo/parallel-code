@@ -1,5 +1,6 @@
 import { Show, createSignal, createUniqueId, untrack } from 'solid-js';
 import { Dialog } from '../components/Dialog';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { errMessage } from '../lib/log';
@@ -38,9 +39,15 @@ export function BlockEditor(props: {
   const [text, setText] = createSignal(initial);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal('');
+  const [confirmDiscard, setConfirmDiscard] = createSignal(false);
   const titleId = createUniqueId();
+  const dirty = () => text() !== initial;
+  // Cancel, Escape and a click beside the dialog all land here; an edit in
+  // progress is asked about first rather than lost.
   const close = () => {
-    if (!saving()) props.onClose();
+    if (saving()) return;
+    if (dirty()) setConfirmDiscard(true);
+    else props.onClose();
   };
 
   async function save() {
@@ -107,6 +114,19 @@ export function BlockEditor(props: {
           </Show>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmDiscard()}
+        title="Discard edits?"
+        message="The changes to this block have not been saved."
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        danger
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          props.onClose();
+        }}
+        onCancel={() => setConfirmDiscard(false)}
+      />
     </Dialog>
   );
 }

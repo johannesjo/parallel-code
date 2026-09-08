@@ -1,5 +1,4 @@
-import { For, createEffect, createSignal, on, onCleanup, type JSX } from 'solid-js';
-import { createBlockActionsElement, type BlockActionKind } from './BlockActions';
+import { For, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import type { BlockRange } from './DocumentViewer';
 import type { BlockChange, DocumentBlock } from './markdown-blocks';
@@ -23,7 +22,6 @@ interface PageBlocksProps {
   /** Which blocks have a marker; only those get an anchor. */
   hasMarker?: (index: number) => boolean;
   onSelectSection: (index: number, e: MouseEvent) => void;
-  onAction?: (action: BlockActionKind, index: number) => void;
 }
 
 /** Where a block's marker is rendered: a hook appended inside the block. */
@@ -41,7 +39,9 @@ function inRange(range: BlockRange | null | undefined, index: number): boolean {
  * and works on the blocks marked inside it by hand: marks are classes on the
  * page's elements, § buttons are appended to headings, and annotation markers
  * go into anchors appended inside their block. Every one of those is out of
- * the page's flow, so nothing the app adds moves the page's own elements.
+ * the page's flow, so nothing the app adds moves the page's own elements. The
+ * hover toolbar is the viewer's, floating over the window, since a page's
+ * elements may clip their overflow.
  */
 export function PageBlocks(props: PageBlocksProps) {
   const [body, setBody] = createSignal<HTMLDivElement>();
@@ -68,17 +68,6 @@ export function PageBlocks(props: PageBlocksProps) {
     }),
   );
 
-  // Every block gets the hover toolbar, appended like the § button.
-  createEffect(() => {
-    const onAction = props.onAction;
-    if (!props.html || !props.selectable || !onAction) return;
-    for (const block of props.blocks) {
-      const el = blockElement(block.index);
-      if (!el || el.querySelector(':scope > .docws-block-actions')) continue;
-      el.append(createBlockActionsElement((kind) => onAction(kind, block.index)));
-    }
-  });
-
   createEffect(() => {
     if (!props.html || !props.selectable) return;
     for (const block of props.blocks) {
@@ -96,21 +85,33 @@ export function PageBlocks(props: PageBlocksProps) {
     }
   });
 
+  // Which blocks carry a marker. The notes themselves change far more often
+  // than this set, and rebuilding the anchors on every edit would tear down
+  // the popover being edited; the markers inside the anchors update on their own.
+  const marked = createMemo(
+    () => {
+      const wants = props.hasMarker;
+      if (!wants) return [];
+      return props.blocks.filter((block) => wants(block.index)).map((block) => block.index);
+    },
+    [] as number[],
+    { equals: (a, b) => a.length === b.length && a.every((index, i) => index === b[i]) },
+  );
+
   createEffect(() => {
-    const wants = props.hasMarker;
-    if (!props.html || !body() || !wants) {
+    const indices = marked();
+    if (!props.html || !body() || indices.length === 0) {
       setAnchors([]);
       return;
     }
     const created: MarkerAnchor[] = [];
-    for (const block of props.blocks) {
-      if (!wants(block.index)) continue;
-      const el = blockElement(block.index);
+    for (const index of indices) {
+      const el = blockElement(index);
       if (!el) continue;
       const anchor = document.createElement('div');
       anchor.className = 'docws-marker-anchor';
       el.append(anchor);
-      created.push({ index: block.index, el: anchor });
+      created.push({ index, el: anchor });
     }
     setAnchors(created);
     onCleanup(() => created.forEach((a) => a.el.remove()));

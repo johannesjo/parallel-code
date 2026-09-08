@@ -275,6 +275,10 @@ export function setDocumentWorkspacesEnabled(enabled: boolean): void {
   if (!enabled) setStore('activeDocumentProjectId', null);
 }
 
+export function setDocumentFullWidth(fullWidth: boolean): void {
+  setStore('documentFullWidth', fullWidth);
+}
+
 export function toggleArena(show?: boolean): void {
   setStore('showArena', show ?? !store.showArena);
 }
