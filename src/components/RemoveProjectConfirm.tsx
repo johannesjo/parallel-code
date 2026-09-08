@@ -1,6 +1,7 @@
 import { ConfirmDialog } from './ConfirmDialog';
 import { store, removeProject, removeProjectWithTasks } from '../store/store';
 import { getProjectTaskCount } from './project-remove-confirmation';
+import { disposeDocumentAgentTask } from '../documents/agent-task';
 
 interface RemoveProjectConfirmProps {
   /** Project to remove; null keeps the dialog closed. */
@@ -32,6 +33,8 @@ export function RemoveProjectConfirm(props: RemoveProjectConfirmProps) {
       onConfirm={() => {
         const id = props.projectId;
         if (id) {
+          // A document project's agent sessions live outside the task lists.
+          void disposeDocumentAgentTask(id);
           if (taskCount() > 0) {
             removeProjectWithTasks(id);
           } else {

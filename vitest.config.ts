@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [solidPlugin({ ssr: true })],
   test: {
     environment: 'node',
+    setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/*.test.ts', 'electron/**/*.test.ts', 'scripts/**/*.test.mjs'],
     coverage: {
       provider: 'v8',

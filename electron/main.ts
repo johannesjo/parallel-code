@@ -2,7 +2,7 @@ import { app, autoUpdater, BrowserWindow, Menu, ipcMain, session, shell } from '
 import { buildMenuTemplate } from './menu-template.js';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { execFileSync } from 'child_process';
 import { registerAllHandlers } from './ipc/register.js';
 import { registerLogHandler } from './log.js';
@@ -10,6 +10,7 @@ import { installIpcTracing } from './ipc/trace.js';
 import { startAgentHookRuntime, stopAgentHookRuntime } from './agent-hooks/runtime.js';
 import { killAllAgents } from './ipc/pty.js';
 import { stopAllPlanWatchers } from './ipc/plans.js';
+import { stopAllDocumentWork } from './documents/register.js';
 import { stopAllStepsWatchers } from './ipc/steps.js';
 import { verificationRunner } from './ipc/verify.js';
 import { IPC } from './ipc/channels.js';
@@ -192,9 +193,13 @@ function createWindow() {
     // Malformed dev URL — skip origin allowlist
   }
 
+  // The app's own page, and nothing else on the disk: a document's markup is
+  // rendered in this window, and a navigation away from index.html would hand
+  // the preload's IPC surface to whatever it landed on.
+  const appPage = pathToFileURL(path.join(__dirname, '../dist/index.html')).href;
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (allowedOrigin && url.startsWith(allowedOrigin)) return;
-    if (url.startsWith('file://')) return;
+    if (url.split(/[?#]/)[0] === appPage) return;
     event.preventDefault();
     if (url.startsWith('http:') || url.startsWith('https:')) {
       shell
@@ -288,6 +293,7 @@ app.on('will-quit', () => {
   verificationRunner.cancelAll();
   stopAgentHookRuntime();
   stopAllPlanWatchers();
+  stopAllDocumentWork();
   stopAllStepsWatchers();
 });
 

@@ -1045,6 +1045,59 @@ describe('showSteps → defaultStepsEnabled migration', () => {
   });
 });
 
+describe('document full width persistence', () => {
+  function stateJson(extra: Record<string, unknown>): string {
+    return JSON.stringify({
+      projects: [],
+      lastProjectId: null,
+      lastAgentId: null,
+      taskOrder: [],
+      collapsedTaskOrder: [],
+      tasks: {},
+      activeTaskId: null,
+      sidebarVisible: true,
+      ...extra,
+    });
+  }
+
+  async function lastSaved(): Promise<Record<string, unknown>> {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    return JSON.parse(lastCall[1].json) as Record<string, unknown>;
+  }
+
+  it('round-trips the preference and leaves the default out of the file', async () => {
+    mockInvoke.mockResolvedValueOnce(stateJson({ documentFullWidth: true }));
+    await loadState();
+    expect(store.documentFullWidth).toBe(true);
+    expect((await lastSaved()).documentFullWidth).toBe(true);
+
+    mockInvoke.mockResolvedValueOnce(stateJson({ documentFullWidth: 'yes' }));
+    await loadState();
+    expect(store.documentFullWidth).toBe(false);
+    expect((await lastSaved()).documentFullWidth).toBeUndefined();
+  });
+});
+
+describe('active task repair', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setStore('tasks', {});
+    setStore('taskOrder', []);
+    setStore('activeTaskId', 'stale');
+    setStore('focusMode', false);
+  });
+
+  it('drops an active id that names nothing, such as a workspace agent task', async () => {
+    mockInvoke.mockResolvedValueOnce(basePayload({ activeTaskId: 'doc-agent-docs' }));
+
+    await loadState();
+
+    expect(store.activeTaskId).toBeNull();
+  });
+});
+
 describe('saveState failure reporting', () => {
   it('tells the user when the state file could not be written', async () => {
     vi.useFakeTimers();

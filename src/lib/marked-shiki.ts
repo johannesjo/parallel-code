@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify';
+import { SANITIZE_UNTRUSTED } from './sanitize';
 import { Marked, type Tokens } from 'marked';
 import { createSignal, createEffect } from 'solid-js';
 import { highlightLines } from './shiki-highlighter';
@@ -44,7 +45,7 @@ export async function renderMarkdownWithHighlighting(markdown: string): Promise<
 
   marked.use({ renderer });
   const raw = marked.parser(tokens);
-  return DOMPurify.sanitize(raw, { ADD_ATTR: ['data-lang'] });
+  return DOMPurify.sanitize(raw, SANITIZE_UNTRUSTED);
 }
 
 interface TokenLike {
@@ -113,9 +114,10 @@ export function createHighlightedMarkdown(source: () => string | undefined): () 
       .catch(() => {
         if (thisGen === generation) {
           setHtml(
-            DOMPurify.sanitize(new Marked().parse(content, { async: false }) as string, {
-              ADD_ATTR: ['data-lang'],
-            }),
+            DOMPurify.sanitize(
+              new Marked().parse(content, { async: false }) as string,
+              SANITIZE_UNTRUSTED,
+            ),
           );
         }
       });

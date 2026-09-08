@@ -58,6 +58,7 @@
     "mermaid": "^11.15.0",
     "monaco-editor": "^0.55.1",
     "node-pty": "^1.1.0",
+    "parse5": "^7.3.0",
     "qrcode": "^1.5.4",
     "shiki": "^4.0.2",
     "solid-js": "^1.9.11",

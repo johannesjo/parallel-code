@@ -8,6 +8,7 @@ import { SegmentedButtons } from './SegmentedButtons';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { CloseIcon } from './icons';
 import { RemoveProjectConfirm } from './RemoveProjectConfirm';
+import { isDocumentProject } from '../store/projects';
 
 interface EditProjectDialogProps {
   project: Project | null;
@@ -32,6 +33,9 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [newCommand, setNewCommand] = createSignal('');
   const [showImportDialog, setShowImportDialog] = createSignal(false);
   const [confirmRemove, setConfirmRemove] = createSignal(false);
+  /** Branch and worktree settings only mean something where tasks run. */
+  const isDocument = () => isDocumentProject(props.project ?? undefined);
+  const showsTaskSettings = () => props.project?.isGitRepo !== false && !isDocument();
   let nameRef!: HTMLInputElement;
 
   // Sync signals when project prop changes
@@ -130,22 +134,24 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               >
                 {project().path}
               </div>
-              <button
-                type="button"
-                onClick={() => setShowImportDialog(true)}
-                style={{
-                  padding: '3px 10px',
-                  background: theme.bgInput,
-                  border: `1px solid ${theme.border}`,
-                  'border-radius': 'var(--radius-sm)',
-                  color: theme.fgMuted,
-                  cursor: 'pointer',
-                  'font-size': '11px',
-                  'flex-shrink': '0',
-                }}
-              >
-                Import Worktrees
-              </button>
+              <Show when={!isDocument()}>
+                <button
+                  type="button"
+                  onClick={() => setShowImportDialog(true)}
+                  style={{
+                    padding: '3px 10px',
+                    background: theme.bgInput,
+                    border: `1px solid ${theme.border}`,
+                    'border-radius': 'var(--radius-sm)',
+                    color: theme.fgMuted,
+                    cursor: 'pointer',
+                    'font-size': '11px',
+                    'flex-shrink': '0',
+                  }}
+                >
+                  Import Worktrees
+                </button>
+              </Show>
               <button
                 type="button"
                 onClick={() => relinkProject(project().id)}
@@ -242,7 +248,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
             </div>
 
             {/* Branch prefix — git projects only */}
-            <Show when={props.project?.isGitRepo !== false}>
+            <Show when={showsTaskSettings()}>
               <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
                 <label style={sectionLabelStyle}>Branch prefix</label>
                 <input
@@ -325,7 +331,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
             </div>
 
             {/* Git-specific settings — hidden for non-git projects */}
-            <Show when={props.project?.isGitRepo !== false}>
+            <Show when={showsTaskSettings()}>
               {/* Close cleanup preference */}
               <label
                 style={{
@@ -386,177 +392,181 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               </div>
             </Show>
 
-            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label style={sectionLabelStyle}>
-                Verify command{' '}
-                <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
-                  (runs in the task worktree)
-                </span>
-              </label>
-              <input
-                class="input-field"
-                type="text"
-                value={verifyCommand()}
-                onInput={(e) => setVerifyCommand(e.currentTarget.value)}
-                placeholder="npm run typecheck && npm test"
-                style={{
-                  background: theme.bgInput,
-                  border: `1px solid ${theme.border}`,
-                  'border-radius': '8px',
-                  padding: '10px 14px',
-                  color: theme.fg,
-                  'font-size': '14px',
-                  'font-family': "'JetBrains Mono', monospace",
-                  outline: 'none',
-                }}
-              />
-              <div
-                style={{
-                  'font-size': '12px',
-                  color: theme.fgSubtle,
-                  padding: '2px 2px 0',
-                }}
-              >
-                Runs from the merge dialog, when an agent calls <code>land_self</code>, and before
-                the coordinator merges. A failure is advisory in the merge dialog, but{' '}
-                <code>land_self</code> and <code>merge_task</code> refuse to merge until it passes.{' '}
-                <code>PARALLEL_CODE_TASK_ID</code> and <code>PARALLEL_CODE_BRANCH</code> are set for
-                namespacing shared resources.
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label style={sectionLabelStyle}>
-                Coverage report path{' '}
-                <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
-                  (relative to repo root)
-                </span>
-              </label>
-              <input
-                class="input-field"
-                type="text"
-                value={coverageReportPath()}
-                onInput={(e) => setCoverageReportPath(e.currentTarget.value)}
-                placeholder="coverage/coverage-summary.json or coverage/lcov.info"
-                style={{
-                  background: theme.bgInput,
-                  border: `1px solid ${theme.border}`,
-                  'border-radius': 'var(--radius-md)',
-                  padding: '10px 14px',
-                  color: theme.fg,
-                  'font-size': '14px',
-                  'font-family': "'JetBrains Mono', monospace",
-                  outline: 'none',
-                }}
-              />
-              <div
-                style={{
-                  'font-size': '12px',
-                  color: theme.fgSubtle,
-                  padding: '2px 2px 0',
-                }}
-              >
-                Leave blank to try <code>coverage/coverage-summary.json</code>, then{' '}
-                <code>coverage/lcov.info</code>.
-              </div>
-            </div>
-
-            {/* Command Bookmarks */}
-            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label style={sectionLabelStyle}>Command Bookmarks</label>
-              <Show when={bookmarks().length > 0}>
-                <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
-                  <For each={bookmarks()}>
-                    {(bookmark) => (
-                      <div
-                        style={{
-                          display: 'flex',
-                          'align-items': 'center',
-                          gap: '8px',
-                          padding: '4px 8px',
-                          background: theme.bgInput,
-                          'border-radius': 'var(--radius-sm)',
-                          border: `1px solid ${theme.border}`,
-                        }}
-                      >
-                        <span
-                          style={{
-                            flex: '1',
-                            'font-size': '12px',
-                            'font-family': "'JetBrains Mono', monospace",
-                            color: theme.fgSubtle,
-                            overflow: 'hidden',
-                            'text-overflow': 'ellipsis',
-                            'white-space': 'nowrap',
-                          }}
-                        >
-                          {bookmark.command}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeBookmark(bookmark.id)}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: theme.fgSubtle,
-                            cursor: 'pointer',
-                            padding: '2px',
-                            'line-height': '1',
-                            'flex-shrink': '0',
-                          }}
-                          title="Remove bookmark"
-                        >
-                          <CloseIcon size={12} />
-                        </button>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </Show>
-              <div style={{ display: 'flex', gap: '6px' }}>
+            {/* Worktrees, verification, coverage and terminal bookmarks belong to
+                code tasks; a document project runs none of them. */}
+            <Show when={!isDocument()}>
+              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+                <label style={sectionLabelStyle}>
+                  Verify command{' '}
+                  <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
+                    (runs in the task worktree)
+                  </span>
+                </label>
                 <input
                   class="input-field"
                   type="text"
-                  value={newCommand()}
-                  onInput={(e) => setNewCommand(e.currentTarget.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addBookmark();
-                    }
-                  }}
-                  placeholder="e.g. npm run dev"
+                  value={verifyCommand()}
+                  onInput={(e) => setVerifyCommand(e.currentTarget.value)}
+                  placeholder="npm run typecheck && npm test"
                   style={{
-                    flex: '1',
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
-                    'border-radius': 'var(--radius-md)',
-                    padding: '8px 12px',
+                    'border-radius': '8px',
+                    padding: '10px 14px',
                     color: theme.fg,
-                    'font-size': '13px',
+                    'font-size': '14px',
                     'font-family': "'JetBrains Mono', monospace",
                     outline: 'none',
                   }}
                 />
-                <button
-                  type="button"
-                  onClick={addBookmark}
-                  disabled={!newCommand().trim()}
+                <div
                   style={{
-                    padding: '8px 14px',
+                    'font-size': '12px',
+                    color: theme.fgSubtle,
+                    padding: '2px 2px 0',
+                  }}
+                >
+                  Runs from the merge dialog, when an agent calls <code>land_self</code>, and before
+                  the coordinator merges. A failure is advisory in the merge dialog, but{' '}
+                  <code>land_self</code> and <code>merge_task</code> refuse to merge until it
+                  passes. <code>PARALLEL_CODE_TASK_ID</code> and <code>PARALLEL_CODE_BRANCH</code>{' '}
+                  are set for namespacing shared resources.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+                <label style={sectionLabelStyle}>
+                  Coverage report path{' '}
+                  <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
+                    (relative to repo root)
+                  </span>
+                </label>
+                <input
+                  class="input-field"
+                  type="text"
+                  value={coverageReportPath()}
+                  onInput={(e) => setCoverageReportPath(e.currentTarget.value)}
+                  placeholder="coverage/coverage-summary.json or coverage/lcov.info"
+                  style={{
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
                     'border-radius': 'var(--radius-md)',
-                    color: newCommand().trim() ? theme.fg : theme.fgSubtle,
-                    cursor: newCommand().trim() ? 'pointer' : 'not-allowed',
-                    'font-size': '13px',
-                    'flex-shrink': '0',
+                    padding: '10px 14px',
+                    color: theme.fg,
+                    'font-size': '14px',
+                    'font-family': "'JetBrains Mono', monospace",
+                    outline: 'none',
+                  }}
+                />
+                <div
+                  style={{
+                    'font-size': '12px',
+                    color: theme.fgSubtle,
+                    padding: '2px 2px 0',
                   }}
                 >
-                  Add
-                </button>
+                  Leave blank to try <code>coverage/coverage-summary.json</code>, then{' '}
+                  <code>coverage/lcov.info</code>.
+                </div>
               </div>
-            </div>
+
+              {/* Command Bookmarks */}
+              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+                <label style={sectionLabelStyle}>Command Bookmarks</label>
+                <Show when={bookmarks().length > 0}>
+                  <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
+                    <For each={bookmarks()}>
+                      {(bookmark) => (
+                        <div
+                          style={{
+                            display: 'flex',
+                            'align-items': 'center',
+                            gap: '8px',
+                            padding: '4px 8px',
+                            background: theme.bgInput,
+                            'border-radius': 'var(--radius-sm)',
+                            border: `1px solid ${theme.border}`,
+                          }}
+                        >
+                          <span
+                            style={{
+                              flex: '1',
+                              'font-size': '12px',
+                              'font-family': "'JetBrains Mono', monospace",
+                              color: theme.fgSubtle,
+                              overflow: 'hidden',
+                              'text-overflow': 'ellipsis',
+                              'white-space': 'nowrap',
+                            }}
+                          >
+                            {bookmark.command}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeBookmark(bookmark.id)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: theme.fgSubtle,
+                              cursor: 'pointer',
+                              padding: '2px',
+                              'line-height': '1',
+                              'flex-shrink': '0',
+                            }}
+                            title="Remove bookmark"
+                          >
+                            <CloseIcon size={12} />
+                          </button>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    class="input-field"
+                    type="text"
+                    value={newCommand()}
+                    onInput={(e) => setNewCommand(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addBookmark();
+                      }
+                    }}
+                    placeholder="e.g. npm run dev"
+                    style={{
+                      flex: '1',
+                      background: theme.bgInput,
+                      border: `1px solid ${theme.border}`,
+                      'border-radius': 'var(--radius-md)',
+                      padding: '8px 12px',
+                      color: theme.fg,
+                      'font-size': '13px',
+                      'font-family': "'JetBrains Mono', monospace",
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={addBookmark}
+                    disabled={!newCommand().trim()}
+                    style={{
+                      padding: '8px 14px',
+                      background: theme.bgInput,
+                      border: `1px solid ${theme.border}`,
+                      'border-radius': 'var(--radius-md)',
+                      color: newCommand().trim() ? theme.fg : theme.fgSubtle,
+                      cursor: newCommand().trim() ? 'pointer' : 'not-allowed',
+                      'font-size': '13px',
+                      'flex-shrink': '0',
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </Show>
 
             {/* Buttons */}
             <div

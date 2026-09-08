@@ -617,6 +617,19 @@ function removeTaskFromStore(taskId: string, agentIds: string[]): void {
   }, REMOVE_ANIMATION_MS);
 }
 
+/** Drops a task and its agents from the store at once, with no closing
+ *  animation: for a task that was never listed, such as a document
+ *  workspace's agent task. The caller has killed the agents already. */
+export function forgetTask(taskId: string, agentIds: readonly string[]): void {
+  for (const agentId of agentIds) clearAgentActivity(agentId);
+  clearTaskGitStatusTracking(taskId);
+  setStore(
+    produce((s) => {
+      removeTaskDraftEntries(s, taskId, agentIds, effectiveAgentId);
+    }),
+  );
+}
+
 export async function mergeTask(
   taskId: string,
   options?: { squash?: boolean; message?: string; cleanup?: boolean },
@@ -1556,6 +1569,9 @@ export function setStepsContent(taskId: string, steps: unknown[] | null): void {
 }
 
 export function setTaskLastInputAt(taskId: string): void {
+  // Terminals outside the task flow (the document workspace's agent) pass an
+  // id no task owns; writing through it would create a half-made task.
+  if (!store.tasks[taskId]) return;
   setStore('tasks', taskId, 'lastInputAt', new Date().toISOString());
 }
 

@@ -11,6 +11,8 @@ interface DialogProps {
   width?: string;
   zIndex?: number;
   panelStyle?: JSX.CSSProperties;
+  /** Overrides on the backdrop, e.g. a top inset that keeps the window chrome reachable. */
+  overlayStyle?: JSX.CSSProperties;
   /** Element id whose text labels this dialog (sets aria-labelledby). */
   labelledBy?: string;
   /** Element id (or space-separated list) describing this dialog (aria-describedby). */
@@ -93,6 +95,7 @@ export function Dialog(props: DialogProps) {
             'justify-content': 'center',
             background: 'rgba(0,0,0,0.55)',
             'z-index': String(props.zIndex ?? 1000),
+            ...props.overlayStyle,
           }}
           onClick={(e) => {
             if (e.target === e.currentTarget) props.onClose();
