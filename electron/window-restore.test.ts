@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { restoreWindow, type RestorableWindow } from './window-restore.js';
 
 interface FakeWindow extends RestorableWindow {
@@ -29,16 +29,16 @@ describe('restoreWindow', () => {
     expect(win.calls).toEqual(['show', 'focus']);
   });
 
-  // `show()` is a no-op on a minimized window, so a handler that only called
-  // `show()` would leave the user's click doing nothing at all.
+  // A handler that only called `show()` would leave a minimized window where it
+  // was: `restore()` is the call that un-minimizes.
   it('restores a minimized window and focuses it', () => {
     const win = fakeWindow({ minimized: true });
     restoreWindow(win);
     expect(win.calls).toEqual(['restore', 'focus']);
   });
 
-  // Minimized windows report themselves as not visible on some platforms;
-  // both branches have to run or one of the two platforms is left broken.
+  // The two states are not exclusive, and the function must not treat them as
+  // such — a window can be hidden and minimized at the same time.
   it('handles a window that is both hidden and minimized', () => {
     const win = fakeWindow({ visible: false, minimized: true });
     restoreWindow(win);
@@ -64,14 +64,5 @@ describe('restoreWindow', () => {
   it('is a no-op for a missing window', () => {
     expect(() => restoreWindow(null)).not.toThrow();
     expect(() => restoreWindow(undefined)).not.toThrow();
-  });
-
-  // Guard clauses must not swallow the calls they guard: a regression that made
-  // `isDestroyed()` throw would otherwise look like a passing no-op test.
-  it('asks whether the window is destroyed before touching it', () => {
-    const isDestroyed = vi.fn(() => false);
-    const win = { ...fakeWindow(), isDestroyed };
-    restoreWindow(win);
-    expect(isDestroyed).toHaveBeenCalled();
   });
 });

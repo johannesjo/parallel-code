@@ -2,12 +2,16 @@
 //
 // "Keep them alive in the background" hides the window rather than closing it,
 // which is the whole point — the agents keep running. But a hidden window is
-// only useful if there is a way back to it, and `show()` alone is not that way:
-// a window the user minimized is still "visible" to Electron, so `show()` is a
-// no-op on it, and a window that is visible but buried behind other apps needs
-// `focus()` to come forward. Each entry point (dock click, second launch, tray)
-// can hit any of those three states, so they all route through one function
-// that handles all three rather than each guessing.
+// only useful if there is a way back to it, and the entry points that ask for
+// it (a dock click, a second launch) can arrive with the window hidden,
+// minimized, or merely behind another app. Each of those needs a different call,
+// so they all route through one function that makes all three rather than each
+// caller guessing which one applies.
+//
+// Wayland caveat: a client generally cannot raise itself there, and Electron's
+// own docs say `focus()` on Wayland "may show a notification or flash the app
+// icon" instead. So the visible-but-buried case can end at an icon flash rather
+// than a raise, depending on the compositor. Hidden and minimized are unaffected.
 //
 // Typed structurally instead of against `BrowserWindow` so the behaviour can be
 // tested without an Electron runtime. `BrowserWindow` satisfies this shape.
@@ -30,8 +34,9 @@ export interface RestorableWindow {
  */
 export function restoreWindow(win: RestorableWindow | null | undefined): void {
   if (!win || win.isDestroyed()) return;
-  // Order matters: a minimized window reports `isVisible() === false` on some
-  // platforms and `true` on others, so ask both questions and act on each.
+  // Both questions get asked, and each answer gets acted on independently: the
+  // two states are not exclusive, and how a minimized window reports its
+  // visibility is not something to depend on.
   if (!win.isVisible()) win.show();
   if (win.isMinimized()) win.restore();
   win.focus();

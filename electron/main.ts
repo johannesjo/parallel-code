@@ -82,7 +82,24 @@ function fixEnv(): void {
   }
 }
 
-fixEnv();
+// One running copy per profile, and the lock is taken here rather than beside the
+// window wiring because Electron's guidance is to take it as early as possible and
+// this file gives that guidance teeth: fixEnv() above spawns an interactive login
+// shell, which on a normal rc file (nvm, conda, compinit) costs on the order of half
+// a second. A second launch is going to quit — spending that first would put the
+// delay squarely on the icon-relaunch path the lock exists to make instant.
+//
+// Dev runs skip the lock deliberately, so `npm run dev` still starts while an
+// installed build is running.
+const isPrimaryInstance = !app.isPackaged || app.requestSingleInstanceLock();
+
+if (!isPrimaryInstance) {
+  app.quit();
+} else {
+  // Only the primary instance ever spawns a PTY, so it is the only one that needs
+  // the resolved login-shell environment.
+  fixEnv();
+}
 
 // Blink evicts the oldest WebGL context past 16 per renderer process, and every
 // mounted terminal pane holds one — hidden task/tab terminals included. Past 16
@@ -232,21 +249,14 @@ function createWindow() {
   });
 }
 
-// One running copy per profile. "Keep them alive in the background" hides the
-// window instead of closing it, so a user who launches the app again is asking
-// for the window they already have — but without the lock a second process
-// starts, restores every persisted session from the same state file, and spawns
-// a duplicate agent for each one on top of the PTYs the hidden instance is still
-// holding. The hidden window has no way back either: nothing is listening for
-// the launch. Taking the lock turns a second launch into "show the window".
-//
-// Dev runs skip the lock deliberately, so `npm run dev` still starts while an
-// installed build is running.
-const isPrimaryInstance = !app.isPackaged || app.requestSingleInstanceLock();
-
-if (!isPrimaryInstance) {
-  app.quit();
-} else {
+// Why the lock matters here: "Keep them alive in the background" hides the window
+// instead of closing it, so a user who launches the app again is asking for the
+// window they already have. Without the lock a second process starts, restores
+// every persisted session from the same state file, and spawns a duplicate agent
+// for each one — on top of the PTYs the hidden instance is still holding. The
+// hidden window has no way back either, because nothing is listening for the
+// launch. With the lock, a second launch becomes "show the window".
+if (isPrimaryInstance) {
   // A second launch (icon, CLI, file manager) reaches the instance that owns
   // the lock as this event instead of starting a process of its own.
   app.on('second-instance', () => restoreWindow(mainWindow));
