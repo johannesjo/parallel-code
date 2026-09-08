@@ -155,6 +155,7 @@ import {
   collapseTask,
   closeTask,
   mergeTask,
+  pushTask,
   sendPrompt,
   pasteDelayMs,
   markTaskUserActivity,
@@ -1462,5 +1463,77 @@ describe('pasteDelayMs', () => {
   it('caps at 500ms for a very large prompt', () => {
     const text = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join('\n');
     expect(pasteDelayMs(text)).toBe(500);
+  });
+});
+
+describe('mergeTask / pushTask preconditions', () => {
+  beforeEach(() => {
+    const harness = expectDefined(core.harness, 'mock store harness');
+    harness.reset(harness.state());
+    mockInvoke.mockReset();
+    vi.mocked(getProjectPath).mockReset();
+  });
+
+  it('mergeTask throws instead of silently returning for a missing task', async () => {
+    await expect(mergeTask('nope')).rejects.toThrow('Task no longer exists');
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('mergeTask refuses a task that is being closed', async () => {
+    mockTasks['task-1'] = {
+      agentIds: [],
+      shellAgentIds: [],
+      gitIsolation: 'worktree',
+      closingStatus: 'removing',
+      projectId: 'proj-1',
+    };
+    await expect(mergeTask('task-1')).rejects.toThrow('being closed');
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('mergeTask refuses direct-mode tasks with a reason', async () => {
+    mockTasks['task-1'] = {
+      agentIds: [],
+      shellAgentIds: [],
+      gitIsolation: 'direct',
+      projectId: 'proj-1',
+    };
+    await expect(mergeTask('task-1')).rejects.toThrow('worktree');
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('mergeTask reports a missing project folder', async () => {
+    mockTasks['task-1'] = {
+      agentIds: [],
+      shellAgentIds: [],
+      gitIsolation: 'worktree',
+      projectId: 'proj-gone',
+    };
+    vi.mocked(getProjectPath).mockReturnValue(undefined);
+    await expect(mergeTask('task-1')).rejects.toThrow('Project folder not found');
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('pushTask throws for a missing task, a direct-mode task, and a missing project', async () => {
+    const channel = { onmessage: undefined } as unknown as Parameters<typeof pushTask>[1];
+    await expect(pushTask('nope', channel)).rejects.toThrow('Task no longer exists');
+
+    mockTasks['task-1'] = {
+      agentIds: [],
+      shellAgentIds: [],
+      gitIsolation: 'direct',
+      projectId: 'p',
+    };
+    await expect(pushTask('task-1', channel)).rejects.toThrow('worktree');
+
+    mockTasks['task-2'] = {
+      agentIds: [],
+      shellAgentIds: [],
+      gitIsolation: 'worktree',
+      projectId: 'p',
+    };
+    vi.mocked(getProjectPath).mockReturnValue(undefined);
+    await expect(pushTask('task-2', channel)).rejects.toThrow('Project folder not found');
+    expect(mockInvoke).not.toHaveBeenCalled();
   });
 });

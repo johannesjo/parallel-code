@@ -122,17 +122,14 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
 
   // In tabs mode only the selected pane is shown; the others stay mounted but
   // hidden (visibility:hidden) so their pty sessions and scrollback survive the
-  // switch. As a pane becomes the visible tab, re-fit it (its container may have
-  // resized while hidden) and, on macOS, force a repaint: a backgrounded WebGL
-  // pane can return with a corrupt glyph atlas, and TerminalView's issue-#121
-  // redraw keys off focus mode — which never toggles for a within-task tab
-  // switch — so it wouldn't fire here.
+  // switch. As a pane becomes the visible tab, re-fit it (its container may
+  // have resized while hidden). The repaint / WebGL reattach on that edge is
+  // TerminalView's job, driven by the `visible` prop passed below.
   createEffect(() => {
     if (!tabsMode()) return;
     const id = visibleAgentId();
     if (!id) return;
     markDirty(id);
-    if (isMac) redrawTerminal(id);
   });
 
   const infoBarStatus = () => {
@@ -696,6 +693,7 @@ function AgentTerminalPane(props: {
               <TerminalView
                 taskId={props.task.id}
                 agentId={a().id}
+                visible={props.tabsMode ? props.visible : true}
                 isFocused={isPanelFocused(props.task.id, aiTerminalPanelId(props.agentId))}
                 command={a().def.command}
                 args={buildTaskAgentArgs(a().def, props.task, a().resumed)}

@@ -21,14 +21,16 @@ function UsageMeter(props: { label: string; window: UsageWindow; width?: number 
   const warn = () => props.window.usedPercent >= USAGE_WARN_PERCENT;
   const color = () => (warn() ? theme.warning : theme.accent);
   const reset = () => formatReset(props.window.resetsAt);
+  // The bar drains: filled means budget still available, matching the "% left" readout.
+  const left = () => remainingPercent(props.window);
 
   return (
     <span style={{ display: 'inline-flex', 'align-items': 'center', gap: '6px' }}>
       <span style={{ color: theme.fgSubtle }}>{props.label}</span>
       <span
         role="progressbar"
-        aria-label={`${props.label} window used`}
-        aria-valuenow={Math.round(props.window.usedPercent)}
+        aria-label={`${props.label} window remaining`}
+        aria-valuenow={left()}
         aria-valuemin={0}
         aria-valuemax={100}
         style={{
@@ -44,13 +46,13 @@ function UsageMeter(props: { label: string; window: UsageWindow; width?: number 
           style={{
             display: 'block',
             height: '100%',
-            width: `${Math.min(100, props.window.usedPercent)}%`,
+            width: `${left()}%`,
             background: color(),
           }}
         />
       </span>
       <span style={{ color: warn() ? theme.warning : theme.fg, 'font-weight': '500' }}>
-        {remainingPercent(props.window)}% left
+        {left()}% left
       </span>
       <Show when={reset()}>
         <span style={{ color: theme.fgSubtle }}>{reset()}</span>

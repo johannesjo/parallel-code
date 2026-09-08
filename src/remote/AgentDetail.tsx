@@ -3,7 +3,15 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { TERMINAL_SCROLL_OPTIONS, base64ToUint8Array } from '../lib/terminalConstants';
 import { createTerminalHttpLinkHandler } from '../lib/terminalLinks';
-import { fetchNotes, saveNotes } from './api';
+import { fetchNotes, saveNotes, ApiError } from './api';
+import { getPairedToken, clearPairedToken } from './auth';
+import { reconnect, socketCanType } from './ws';
+
+// Drafts survive the pairing detour: App unmounts this view while the user
+// enters the PIN, and text typed before that must still be there afterwards.
+// Keyed by agent so returning to a different agent starts clean.
+const inputDrafts = new Map<string, string>();
+const notesDrafts = new Map<string, string>();
 import { agentStatusDisplay } from './attention';
 import {
   subscribeAgent,
@@ -44,6 +52,8 @@ interface AgentDetailProps {
   agentId: string;
   taskName: string;
   onBack: () => void;
+  /** Typing and saving notes need the paired token; ask the user to pair. */
+  onNeedsPairing: () => void;
 }
 
 const openRemoteHttpLink = createTerminalHttpLinkHandler({
@@ -58,7 +68,13 @@ export function AgentDetail(props: AgentDetailProps) {
   let inputRef: HTMLInputElement | undefined;
   let term: Terminal | undefined;
   let fitAddon: FitAddon | undefined;
-  const [inputText, setInputText] = createSignal('');
+  // eslint-disable-next-line solid/reactivity -- initial value only; the draft map is re-read on each mount
+  const [inputText, setInputText] = createSignal(inputDrafts.get(props.agentId) ?? '');
+  createEffect(() => {
+    const text = inputText();
+    if (text) inputDrafts.set(props.agentId, text);
+    else inputDrafts.delete(props.agentId);
+  });
   const [atBottom, setAtBottom] = createSignal(true);
   const [termFontSize, setTermFontSize] = createSignal(10);
   // Desktop PTY column count (from scrollback). The mobile client can't resize
@@ -69,11 +85,19 @@ export function AgentDetail(props: AgentDetailProps) {
 
   // Notes editing
   const [view, setView] = createSignal<'terminal' | 'notes'>('terminal');
-  const [notesText, setNotesText] = createSignal('');
+  // eslint-disable-next-line solid/reactivity -- initial value only; the draft map is re-read on each mount
+  const notesDraft = notesDrafts.get(props.agentId);
+  const [notesText, setNotesText] = createSignal(notesDraft ?? '');
   const [notesLoading, setNotesLoading] = createSignal(false);
   const [notesSaving, setNotesSaving] = createSignal(false);
   const [notesError, setNotesError] = createSignal<string | null>(null);
-  const [notesDirty, setNotesDirty] = createSignal(false);
+  // A restored draft is by definition unsaved, which also keeps the load
+  // effect below from overwriting it with the server's copy.
+  const [notesDirty, setNotesDirty] = createSignal(notesDraft !== undefined);
+  createEffect(() => {
+    if (notesDirty()) notesDrafts.set(props.agentId, notesText());
+    else notesDrafts.delete(props.agentId);
+  });
   const [notesSaved, setNotesSaved] = createSignal(false);
 
   const MIN_FONT = 6;
@@ -172,6 +196,13 @@ export function AgentDetail(props: AgentDetailProps) {
       setNotesSaved(true);
       setTimeout(() => setNotesSaved(false), 1500);
     } catch (e) {
+      // 401/403: no paired token, or a stale one (desktop restarted). Pairing
+      // again is the fix, so send the user there instead of showing an error.
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        clearPairedToken();
+        props.onNeedsPairing();
+        return;
+      }
       setNotesError(e instanceof Error ? e.message : String(e));
     } finally {
       setNotesSaving(false);
@@ -335,9 +366,26 @@ export function AgentDetail(props: AgentDetailProps) {
   // the latest invocation sends the delayed \r.
   let lastSendId = 0;
 
+  /** Typing needs the paired token; without one, detour to the pairing screen. */
+  function ensurePairedForInput(): boolean {
+    if (!getPairedToken()) {
+      props.onNeedsPairing();
+      return false;
+    }
+    // Paired in another tab, or the socket predates pairing: the server only
+    // knows what this socket authenticated with. Reconnect with the paired
+    // token; the typed text stays in the box for the next send.
+    if (!socketCanType()) {
+      reconnect();
+      return false;
+    }
+    return true;
+  }
+
   function handleSend() {
     const text = inputText();
     if (!text) return;
+    if (!ensurePairedForInput()) return;
     // Keep the typed text while disconnected — send() silently drops
     // messages on a non-open socket, so clearing here would lose input.
     if (status() !== 'connected') return;
@@ -352,6 +400,7 @@ export function AgentDetail(props: AgentDetailProps) {
   }
 
   function handleQuickAction(data: string) {
+    if (!ensurePairedForInput()) return;
     sendInput(props.agentId, data);
   }
 

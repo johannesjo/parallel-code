@@ -1097,3 +1097,30 @@ describe('active task repair', () => {
     expect(store.activeTaskId).toBeNull();
   });
 });
+
+describe('saveState failure reporting', () => {
+  it('tells the user when the state file could not be written', async () => {
+    vi.useFakeTimers();
+    try {
+      setStore('notification', null);
+      mockInvoke.mockImplementation((channel: string) =>
+        channel === IPC.SaveAppState
+          ? Promise.reject(new Error('ENOSPC: no space left on device'))
+          : Promise.resolve(undefined),
+      );
+      await saveState();
+      expect(store.notification).toContain("Couldn't save app state");
+      expect(store.notification).toContain('ENOSPC');
+      // Rate-limited: a second failure right away does not re-toast...
+      setStore('notification', null);
+      await saveState();
+      expect(store.notification).toBeNull();
+      // ...but the reminder returns once the interval has passed.
+      vi.advanceTimersByTime(60_000);
+      await saveState();
+      expect(store.notification).toContain("Couldn't save app state");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

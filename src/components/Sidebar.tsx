@@ -304,7 +304,7 @@ function NeedsInputRow(props: {
                 : 'transparent',
           }}
         >
-          <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+          <div class="task-item-head">
             {/* The task's real attention state, not a hardcoded `needs_input`:
                 since membership is question-driven, a row here can also be
                 errored or awaiting review, and the dot must not contradict the
@@ -324,7 +324,7 @@ function NeedsInputRow(props: {
               display: 'flex',
               'align-items': 'center',
               gap: '5px',
-              'padding-left': '12px',
+              'padding-left': 'var(--task-row-indent)',
               'font-size': sf(11),
               color: theme.fgSubtle,
               'min-width': '0',
@@ -1288,7 +1288,7 @@ function CoordinatorFolder(props: TaskEntryProps) {
           {/* Coordinator row */}
           <TaskRowShell
             taskId={props.taskId}
-            class={`task-item${t().closingStatus === 'removing' ? ' task-item-removing' : ' task-item-appearing'}`}
+            class={`task-item task-item-coordinator${t().closingStatus === 'removing' ? ' task-item-removing' : ' task-item-appearing'}`}
             taskIndex={idx()}
             title={`${t().name} — ${getDotTooltip(
               getTaskDotStatus(props.taskId),
@@ -1303,7 +1303,7 @@ function CoordinatorFolder(props: TaskEntryProps) {
             opacity={props.dragFromIndex() === idx() ? '0.4' : '1'}
             style={taskAttentionStyles(props.taskId, offscreenAttention)}
           >
-            <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+            <div class="task-item-head">
               <CoordinatorIcon />
               <StatusDot
                 status={getTaskDotStatus(props.taskId)}
@@ -1376,7 +1376,7 @@ function CollapsedTaskEntry(props: {
         <>
           <TaskRowShell
             taskId={props.taskId}
-            class="task-item task-item-appearing"
+            class={`task-item${isCoordinator() ? ' task-item-coordinator' : ''} task-item-appearing`}
             role="button"
             tabIndex={0}
             sidebarTaskId={props.taskId}
@@ -1414,7 +1414,7 @@ function CollapsedTaskEntry(props: {
                   : '1.5px solid transparent',
             }}
           >
-            <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+            <div class="task-item-head">
               <Show when={isCoordinator()}>
                 <CoordinatorIcon />
               </Show>
@@ -1513,7 +1513,7 @@ function TaskRow(props: TaskRowProps) {
             opacity={!props.indented && props.dragFromIndex() === idx() ? '0.4' : '1'}
             style={taskAttentionStyles(props.taskId, offscreenAttention)}
           >
-            <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+            <div class="task-item-head">
               <StatusDot
                 status={getTaskDotStatus(props.taskId)}
                 size="sm"
