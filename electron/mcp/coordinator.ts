@@ -1912,11 +1912,15 @@ export class Coordinator {
     const relativeDir = relativePath.includes('/')
       ? relativePath.slice(0, relativePath.lastIndexOf('/') + 1)
       : '';
-    const atomicTmpPattern = `${relativeDir}.parallel-code-atomic-*.tmp`;
+    // Leading slash anchors both patterns to the worktree root. Without it a
+    // slashless pattern such as `.mcp.json` matches at any depth and would hide
+    // a user's nested config from git status.
+    const configPattern = `/${relativePath}`;
+    const atomicTmpPattern = `/${relativeDir}.parallel-code-atomic-*.tmp`;
     const excludePatterns = [
       {
-        marker: relativePath,
-        block: `# Parallel Code Kimi MCP config (contains ephemeral token)\n${relativePath}\n`,
+        marker: configPattern,
+        block: `# Parallel Code Kimi MCP config (contains ephemeral token)\n${configPattern}\n`,
       },
       {
         marker: atomicTmpPattern,

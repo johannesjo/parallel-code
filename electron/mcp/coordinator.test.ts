@@ -3718,14 +3718,14 @@ describe('Coordinator sub-task MCP config isolation', () => {
     ).not.toBe(childConfigs[1].mcpServers['parallel-code'].env['PARALLEL_CODE_MCP_DONE_TOKEN']);
     expect(mockAppendGitInfoExcludeBlock).toHaveBeenCalledWith(
       '/tmp/a',
-      '.kimi-code/mcp.json',
-      expect.stringContaining('.kimi-code/mcp.json'),
+      '/.kimi-code/mcp.json',
+      expect.stringContaining('/.kimi-code/mcp.json'),
       expect.any(Function),
     );
     expect(mockAppendGitInfoExcludeBlock).toHaveBeenCalledWith(
       '/tmp/a',
-      '.kimi-code/.parallel-code-atomic-*.tmp',
-      expect.stringContaining('.kimi-code/.parallel-code-atomic-*.tmp'),
+      '/.kimi-code/.parallel-code-atomic-*.tmp',
+      expect.stringContaining('/.kimi-code/.parallel-code-atomic-*.tmp'),
       expect.any(Function),
     );
     for (const [, spawnOpts] of mockSpawnAgent.mock.calls) {
@@ -3764,6 +3764,20 @@ describe('Coordinator sub-task MCP config isolation', () => {
       '/tmp/test/.mcp.json',
       expect.stringContaining('subtask-tok'),
       { mode: 0o600 },
+    );
+    // Root-level patterns carry no slash of their own, so they must be anchored
+    // explicitly or git would also match a user's nested `.mcp.json`.
+    expect(mockAppendGitInfoExcludeBlock).toHaveBeenCalledWith(
+      '/tmp/test',
+      '/.mcp.json',
+      expect.stringContaining('/.mcp.json'),
+      expect.any(Function),
+    );
+    expect(mockAppendGitInfoExcludeBlock).toHaveBeenCalledWith(
+      '/tmp/test',
+      '/.parallel-code-atomic-*.tmp',
+      expect.stringContaining('/.parallel-code-atomic-*.tmp'),
+      expect.any(Function),
     );
   });
 
