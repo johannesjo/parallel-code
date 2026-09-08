@@ -1,13 +1,18 @@
-export const ASK_CODE_IMAGE_MIME_TYPES: Readonly<Record<string, string>> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-};
+/**
+ * Extensions the Ask Code image input accepts. This is only a cheap pre-filter
+ * so the renderer can reject a paste without touching disk — the MIME type
+ * actually sent to the provider is derived from the file's signature bytes.
+ */
+const ASK_CODE_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.gif',
+]);
 
-/** Return the supported image MIME type for a file path, if any. */
-export function askCodeImageMimeTypeForPath(filePath: string): string | undefined {
+/** Whether a file path carries an extension the Ask Code image input accepts. */
+export function isSupportedAskCodeImageExtension(filePath: string): boolean {
   const match = /\.[^./\\]+$/.exec(filePath);
-  return match ? ASK_CODE_IMAGE_MIME_TYPES[match[0].toLowerCase()] : undefined;
+  return match !== null && ASK_CODE_IMAGE_EXTENSIONS.has(match[0].toLowerCase());
 }

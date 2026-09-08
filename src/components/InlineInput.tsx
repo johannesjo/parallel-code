@@ -6,7 +6,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { store } from '../store/store';
 import { warn as logWarn } from '../lib/log';
 import type { DiffInteractionMode } from './review-types';
-import { isSupportedAskCodeImagePath } from './ask-code-image';
+import { isSupportedAskCodeImageExtension } from './ask-code-image';
 
 interface InlineInputProps {
   onSubmit: (text: string, mode: DiffInteractionMode, imagePaths?: string[]) => void;
@@ -70,7 +70,7 @@ export function InlineInput(props: InlineInputProps) {
         if (
           paste.path &&
           (paste.kind === 'image' ||
-            (paste.kind === 'file' && isSupportedAskCodeImagePath(paste.path)))
+            (paste.kind === 'file' && isSupportedAskCodeImageExtension(paste.path)))
         ) {
           const attached = paste.path;
           setImagePaths((prev) => (prev.includes(attached) ? prev : [...prev, attached]));
@@ -171,7 +171,8 @@ export function InlineInput(props: InlineInputProps) {
       />
 
       {/* Attached images */}
-      <Show when={store.askCodeProvider === 'minimax' && imagePaths().length > 0}>
+      {/* Only shown when submit would actually send them — see imageInputEnabled. */}
+      <Show when={imageInputEnabled() && imagePaths().length > 0}>
         <button
           onClick={() => setImagePaths([])}
           title="Remove attached images"

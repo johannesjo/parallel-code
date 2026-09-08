@@ -1,6 +1,3 @@
-import { askCodeImageMimeTypeForPath } from '../../electron/shared/ask-code-image';
-
-/** Whether a clipboard file can be attached to an Ask Code image request. */
-export function isSupportedAskCodeImagePath(filePath: string): boolean {
-  return askCodeImageMimeTypeForPath(filePath) !== undefined;
-}
+// Implementation lives in electron/shared so the main process rejects exactly
+// the extensions the renderer refuses to attach.
+export { isSupportedAskCodeImageExtension } from '../../electron/shared/ask-code-image';

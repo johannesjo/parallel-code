@@ -10,7 +10,7 @@ import {
   assertCanStart,
   assertPromptWithinLimit,
 } from './request-registry.js';
-import { askCodeImageMimeTypeForPath } from '../shared/ask-code-image.js';
+import { isSupportedAskCodeImageExtension } from '../shared/ask-code-image.js';
 
 interface MinimaxAskCodeRequest {
   requestId: string;
@@ -34,6 +34,8 @@ export const MINIMAX_IMAGE_INPUT_MODEL = 'MiniMax-M3';
 const MAX_IMAGES_PER_REQUEST = 4;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 // Keep base64 data plus JSON framing below the provider's 64 MB body limit.
+// Unreachable at the constants above (4 × 10 MB = 40 MB) — this is a tripwire
+// so raising either one fails here rather than at the provider.
 const MAX_TOTAL_IMAGE_BYTES = 46 * 1024 * 1024;
 
 /** A chat message content part in the chat completions request schema. */
@@ -49,7 +51,7 @@ function assertImagesSupported(imagePaths: string[]): void {
     );
   }
   for (const imagePath of imagePaths) {
-    if (!askCodeImageMimeTypeForPath(imagePath)) {
+    if (!isSupportedAskCodeImageExtension(imagePath)) {
       throw new Error(`Unsupported image type: ${path.basename(imagePath)}`);
     }
   }
@@ -71,7 +73,14 @@ function detectImageMimeType(bytes: Buffer): string | undefined {
 async function assertImageSizes(imagePaths: string[]): Promise<void> {
   let totalBytes = 0;
   for (const imagePath of imagePaths) {
-    const { size } = await fs.promises.stat(imagePath);
+    const stats = await fs.promises.stat(imagePath);
+    // A FIFO or device stats as size 0 and would slip past the caps below, but
+    // readFile has no abort signal — it would block past the request timeout
+    // and leak the descriptor, since only fetch sees the AbortController.
+    if (!stats.isFile()) {
+      throw new Error(`Not a regular file: ${path.basename(imagePath)}`);
+    }
+    const { size } = stats;
     if (size > MAX_IMAGE_BYTES) {
       throw new Error(
         `Image too large: ${path.basename(imagePath)} (${size} bytes, max ${MAX_IMAGE_BYTES})`,

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vites
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -267,6 +268,7 @@ describe('minimax image input', () => {
   const pngPath = path.join(os.tmpdir(), 'parallel-code-ask-code-test.png');
   const jpegWithPngExtensionPath = path.join(os.tmpdir(), 'parallel-code-ask-code-jpeg-test.png');
   const oversizedPath = path.join(os.tmpdir(), 'parallel-code-ask-code-oversized.png');
+  const fifoPath = path.join(os.tmpdir(), 'parallel-code-ask-code-fifo.png');
   const pngBytes = Buffer.from('89504e470d0a1a0a', 'hex');
   const jpegBytes = Buffer.from('ffd8ffe000104a464946', 'hex');
 
@@ -275,12 +277,17 @@ describe('minimax image input', () => {
     fs.writeFileSync(jpegWithPngExtensionPath, jpegBytes);
     fs.writeFileSync(oversizedPath, pngBytes);
     fs.truncateSync(oversizedPath, 10 * 1024 * 1024 + 1);
+    // A FIFO stats as size 0, so it slips past the size caps; opening it for
+    // read blocks until a writer appears, which nothing here provides.
+    fs.rmSync(fifoPath, { force: true });
+    execFileSync('mkfifo', [fifoPath]);
   });
 
   afterAll(() => {
     fs.rmSync(pngPath, { force: true });
     fs.rmSync(jpegWithPngExtensionPath, { force: true });
     fs.rmSync(oversizedPath, { force: true });
+    fs.rmSync(fifoPath, { force: true });
   });
 
   beforeEach(() => {
@@ -429,6 +436,26 @@ describe('minimax image input', () => {
     );
     expect(errors).toHaveLength(1);
     expect((errors[0] as Record<string, unknown>).text).toMatch(/Image too large/);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a path that is not a regular file instead of blocking on it', async () => {
+    const { win, messages } = makeMockWin();
+
+    askAboutCodeMinimax(win, {
+      requestId: 'img-fifo',
+      channelId: 'ch-img-fifo',
+      prompt: 'Test',
+      imagePaths: [fifoPath],
+    });
+
+    await waitForDone(messages);
+
+    const errors = messages.filter(
+      (message) => (message as Record<string, unknown>).type === 'error',
+    );
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as Record<string, unknown>).text).toMatch(/Not a regular file/);
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });
