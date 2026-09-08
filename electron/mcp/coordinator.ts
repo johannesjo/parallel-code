@@ -1976,14 +1976,6 @@ export class Coordinator {
     if (!state) return { status: 'none' };
 
     try {
-      if (!existsSync(state.path)) {
-        const managedEntry = this.readManagedMcpEntryFromTaskConfig(task, state);
-        if (managedEntry === undefined) return { status: 'failed' };
-        task.autoDiscoveredMcpConfig = undefined;
-        this.syncAutoDiscoveredMcpConfig(task);
-        return { status: 'restored', managedEntry };
-      }
-
       const content = readMcpJsonContent(state.path);
       const servers = content.mcpServers ?? {};
       const managedEntry = servers['parallel-code'];

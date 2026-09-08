@@ -1594,15 +1594,16 @@ describe('Coordinator land_self', () => {
     expect(vi.mocked(mergeTask)).toHaveBeenCalled();
   });
 
-  it('lands when the managed Kimi child MCP entry is already absent', async () => {
+  it.each(['file', 'entry'])('recovers missing Kimi %s', async (missing) => {
     const configPath = '/tmp/test/.kimi-code/mcp.json';
+    let configExists = true;
     let taskConfig = '';
     let currentConfig = JSON.stringify({
       mcpServers: { other: { command: 'user-owned-server' } },
     });
     mockExistsSync.mockImplementation(
       (path) =>
-        path === configPath ||
+        (path === configPath && configExists) ||
         (typeof path === 'string' && path.includes('parallel-code-subtask-')),
     );
     mockReadFileSync.mockImplementation((path) => {
@@ -1644,6 +1645,7 @@ describe('Coordinator land_self', () => {
     };
     delete withoutManagedEntry.mcpServers['parallel-code'];
     currentConfig = JSON.stringify(withoutManagedEntry);
+    if (missing === 'file') configExists = false;
 
     await kimiCoordinator.landSelf('task-1', { verification });
 
@@ -1653,12 +1655,13 @@ describe('Coordinator land_self', () => {
     expect(vi.mocked(mergeTask)).toHaveBeenCalled();
   });
 
-  it('fails closed when the managed Kimi child MCP entry cannot be recovered', async () => {
+  it.each(['file', 'entry'])('rejects unrecoverable Kimi %s', async (missing) => {
     const configPath = '/tmp/test/.kimi-code/mcp.json';
+    let configExists = true;
     let currentConfig = JSON.stringify({
       mcpServers: { other: { command: 'user-owned-server' } },
     });
-    mockExistsSync.mockImplementation((path) => path === configPath);
+    mockExistsSync.mockImplementation((path) => path === configPath && configExists);
     mockReadFileSync.mockImplementation((path) =>
       path === configPath ? currentConfig : '# existing\n',
     );
@@ -1691,6 +1694,7 @@ describe('Coordinator land_self', () => {
     };
     delete withoutManagedEntry.mcpServers['parallel-code'];
     currentConfig = JSON.stringify(withoutManagedEntry);
+    if (missing === 'file') configExists = false;
 
     await expect(kimiCoordinator.landSelf('task-1', { verification })).rejects.toThrow(
       'Unable to restore managed Kimi MCP config',
