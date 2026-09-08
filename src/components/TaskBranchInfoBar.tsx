@@ -1,6 +1,14 @@
-import { Match, Show, Switch, type JSX } from 'solid-js';
+import { Match, Show, Switch, createMemo, type JSX } from 'solid-js';
 import { errMessage } from '../lib/log';
-import { store, getProject, showNotification, getPrChecks } from '../store/store';
+import {
+  store,
+  getProject,
+  showNotification,
+  getPrChecks,
+  getBranchDivergence,
+} from '../store/store';
+import { sameDivergence } from '../lib/branch-divergence';
+import { badgeStyle } from '../lib/badgeStyle';
 import { revealItemInDir, openInEditor } from '../lib/shell';
 import { InfoBar } from './InfoBar';
 import { theme } from '../lib/theme';
@@ -19,6 +27,12 @@ const infoBarBtnStyle: JSX.CSSProperties = {
   cursor: 'pointer',
   'font-family': 'inherit',
   'font-size': 'inherit',
+};
+
+const warningChipStyle: JSX.CSSProperties = {
+  ...badgeStyle(theme.warning),
+  'font-size': '11px',
+  padding: '1px 6px',
 };
 
 type ReviewStatusKind = 'approved' | 'changes-requested' | 'review-needed' | 'draft';
@@ -84,6 +98,23 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
       ? `Click to open in ${store.editorCommand} · ${mod}+Click to reveal in file manager · ${mod}+Shift+Click to open the project root in ${store.editorCommand}`
       : `Click to reveal in file manager · ${mod}+Shift+Click to reveal the project root`;
   const worktreeTitle = () => `${props.task.worktreePath}\n${editorTitle()}`;
+
+  // Confirmed divergence between the branch the task tracks and the branch
+  // the agent actually put the worktree on (tracked store-side from the
+  // git-status poll). The equals guard stops per-poll re-renders while a
+  // divergence chip is visible.
+  const confirmedDivergence = createMemo(() => getBranchDivergence(props.task.id), null, {
+    equals: sameDivergence,
+  });
+  // Adoptable divergence never renders here: the store auto-adopts it as soon
+  // as it is confirmed, and the task banner takes over. Only the non-adoptable
+  // cases (worktree on the base branch, or on a name the IPC layer rejects)
+  // warn.
+  const nonAdoptableDivergence = () => {
+    const d = confirmedDivergence();
+    return d?.kind === 'switched' && !d.adoptable ? d : null;
+  };
+  const isDetached = () => confirmedDivergence()?.kind === 'detached';
 
   const handleOpenInEditor = (e: MouseEvent) => {
     const modKey = e.ctrlKey || e.metaKey;
@@ -311,22 +342,35 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
             <span class="task-branch-name-label">{props.task.branchName}</span>
           </Show>
           <Show when={props.task.gitIsolation === 'direct'}>
-            <span
-              class="task-branch-name-label"
-              style={{
-                'font-size': '11px',
-                'font-weight': '600',
-                padding: '1px 6px',
-                'border-radius': '4px',
-                background: `color-mix(in srgb, ${theme.warning} 15%, transparent)`,
-                color: theme.warning,
-                border: `1px solid color-mix(in srgb, ${theme.warning} 25%, transparent)`,
-              }}
-            >
+            <span class="task-branch-name-label" style={warningChipStyle}>
               {props.task.branchName}
             </span>
           </Show>
         </button>
+      </Show>
+      <Show when={isDetached()}>
+        <span
+          class="task-branch-divergence"
+          title={`The worktree is not on any branch (detached HEAD). Merging is blocked until it is back on '${props.task.branchName}'.`}
+          style={{ ...warningChipStyle, 'margin-right': '12px' }}
+        >
+          detached HEAD
+        </span>
+      </Show>
+      <Show when={nonAdoptableDivergence()}>
+        {(d) => (
+          <span
+            class="task-branch-divergence"
+            title={
+              d().branch === props.task.baseBranch
+                ? `The worktree is on the base branch '${d().branch}' but this task tracks '${props.task.branchName}'. Ask the agent to switch back.`
+                : `The worktree is on '${d().branch}', which this task cannot adopt, but it tracks '${props.task.branchName}'. Ask the agent to switch back.`
+            }
+            style={{ ...warningChipStyle, 'margin-right': '12px' }}
+          >
+            → {d().branch}
+          </span>
+        )}
       </Show>
       <button
         type="button"

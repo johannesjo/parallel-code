@@ -21,6 +21,9 @@ interface TaskChangedFilesSectionProps {
   selectedCommit: CommitSelection;
   onCommitNavigate: (selection: CommitSelection) => void;
   onDiffFileClick: (path: string) => void;
+  /** Shrink to a header strip: the column uses this while the list is empty. */
+  compact?: boolean;
+  onFileCountChange?: (count: number) => void;
 }
 
 export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
@@ -62,7 +65,7 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
         // changed-file list is long. The ResizablePanel wrapper applies the
         // fixed 300 px cap for unpinned auto-growth.
         height: '100%',
-        'min-height': '140px',
+        'min-height': props.compact ? '56px' : '140px',
         'max-height': '40vh',
         'min-width': '200px',
         background: theme.taskPanelBg,
@@ -159,6 +162,7 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
           coverageReportPath={coverageReportPath()}
           selectedCommit={props.selectedCommit}
           onFileClick={(file) => props.onDiffFileClick(file.path)}
+          onFileCountChange={props.onFileCountChange}
           onOpenInEditorClick={focusChangedFilesPanel}
           ref={(el) => (changedFilesRef = el)}
         />

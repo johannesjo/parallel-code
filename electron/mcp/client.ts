@@ -98,7 +98,7 @@ export class MCPClient {
 
   async mergeTask(
     taskId: string,
-    opts?: { squash?: boolean; message?: string; cleanup?: boolean },
+    opts?: { squash?: boolean; message?: string; cleanup?: boolean; skipVerification?: boolean },
   ): Promise<ApiMergeResult> {
     return this.request<ApiMergeResult>(
       'POST',

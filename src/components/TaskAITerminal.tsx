@@ -19,8 +19,7 @@ import {
   showNotification,
   toggleAITerminalLayout,
 } from '../store/store';
-import { markDirty, redrawTerminal } from '../lib/terminalFitManager';
-import { isMac } from '../lib/platform';
+import { markDirty } from '../lib/terminalFitManager';
 import { warn as logWarn } from '../lib/log';
 import { InfoBar } from './InfoBar';
 import { TerminalView } from './TerminalView';
@@ -119,17 +118,14 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
 
   // In tabs mode only the selected pane is shown; the others stay mounted but
   // hidden (visibility:hidden) so their pty sessions and scrollback survive the
-  // switch. As a pane becomes the visible tab, re-fit it (its container may have
-  // resized while hidden) and, on macOS, force a repaint: a backgrounded WebGL
-  // pane can return with a corrupt glyph atlas, and TerminalView's issue-#121
-  // redraw keys off focus mode — which never toggles for a within-task tab
-  // switch — so it wouldn't fire here.
+  // switch. As a pane becomes the visible tab, re-fit it (its container may
+  // have resized while hidden). The repaint / WebGL reattach on that edge is
+  // TerminalView's job, driven by the `visible` prop passed below.
   createEffect(() => {
     if (!tabsMode()) return;
     const id = visibleAgentId();
     if (!id) return;
     markDirty(id);
-    if (isMac) redrawTerminal(id);
   });
 
   const infoBarStatus = () => {
@@ -358,7 +354,7 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
                     color: theme.fgMuted,
-                    'border-radius': '5px',
+                    'border-radius': 'var(--radius-sm)',
                     cursor: 'pointer',
                     padding: '0',
                   }}
@@ -489,7 +485,7 @@ function AddAgentMenu(props: { taskId: string }) {
           background: theme.bgInput,
           border: `1px solid ${theme.border}`,
           color: theme.fgMuted,
-          'border-radius': '5px',
+          'border-radius': 'var(--radius-sm)',
           cursor: 'pointer',
           padding: '0',
         }}
@@ -507,14 +503,14 @@ function AddAgentMenu(props: { taskId: string }) {
             'margin-top': '4px',
             background: theme.bgElevated,
             border: `1px solid ${theme.border}`,
-            'border-radius': '6px',
+            'border-radius': 'var(--radius-sm)',
             padding: '4px 0',
             'z-index': '30',
             'min-width': '180px',
             'box-shadow': '0 4px 12px rgba(0,0,0,0.3)',
           }}
         >
-          <div style={{ padding: '4px 10px', 'font-size': sf(10), color: theme.fgMuted }}>
+          <div style={{ padding: '4px 10px', 'font-size': sf(11), color: theme.fgMuted }}>
             Add agent
           </div>
           <For each={availableAgents()}>
@@ -620,7 +616,7 @@ function AgentTerminalPane(props: {
             color: theme.fgMuted,
             background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
             padding: '2px 8px',
-            'border-radius': '6px',
+            'border-radius': 'var(--radius-sm)',
             border: `1px solid ${theme.border}`,
           }}
         >
@@ -643,7 +639,7 @@ function AgentTerminalPane(props: {
                   color: a().exitCode === 0 ? theme.success : theme.error,
                   background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
                   padding: '4px 12px',
-                  'border-radius': '8px',
+                  'border-radius': 'var(--radius-md)',
                   border: `1px solid ${theme.border}`,
                   display: 'flex',
                   'align-items': 'center',
@@ -667,7 +663,7 @@ function AgentTerminalPane(props: {
                       border: `1px solid ${theme.border}`,
                       color: theme.fg,
                       padding: '2px 8px',
-                      'border-radius': '4px',
+                      'border-radius': 'var(--radius-xs)',
                       cursor: 'pointer',
                       'font-size': sf(11),
                     }}
@@ -681,6 +677,7 @@ function AgentTerminalPane(props: {
               <TerminalView
                 taskId={props.task.id}
                 agentId={a().id}
+                visible={props.tabsMode ? props.visible : true}
                 isFocused={isPanelFocused(props.task.id, aiTerminalPanelId(props.agentId))}
                 command={a().def.command}
                 args={buildTaskAgentArgs(a().def, props.task, a().resumed)}
@@ -794,7 +791,7 @@ function MarkdownViewerDialog(props: {
               padding: '4px',
               display: 'flex',
               'align-items': 'center',
-              'border-radius': '4px',
+              'border-radius': 'var(--radius-xs)',
             }}
             title="Open in editor"
           >
@@ -813,7 +810,7 @@ function MarkdownViewerDialog(props: {
             padding: '4px',
             display: 'flex',
             'align-items': 'center',
-            'border-radius': '4px',
+            'border-radius': 'var(--radius-xs)',
           }}
           title="Close"
         >
@@ -898,7 +895,7 @@ function AgentRestartMenu(props: { agentId: string; agentDefId: string }) {
             'margin-top': '4px',
             background: theme.bgElevated,
             border: `1px solid ${theme.border}`,
-            'border-radius': '6px',
+            'border-radius': 'var(--radius-sm)',
             padding: '4px 0',
             'z-index': '20',
             'min-width': '160px',
@@ -908,7 +905,7 @@ function AgentRestartMenu(props: { agentId: string; agentDefId: string }) {
           <div
             style={{
               padding: '4px 10px',
-              'font-size': sf(10),
+              'font-size': sf(11),
               color: theme.fgMuted,
             }}
           >

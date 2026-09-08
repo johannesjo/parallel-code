@@ -53,7 +53,7 @@ export function QualityFindingCard(props: QualityFindingCardProps) {
             color: theme.fgMuted,
             cursor: 'pointer',
             padding: '2px',
-            'border-radius': '3px',
+            'border-radius': 'var(--radius-xs)',
           }}
         >
           <CloseIcon size={13} />

@@ -4,6 +4,7 @@ import { Channel } from '../lib/ipc';
 import { Dialog } from './Dialog';
 import { theme, bannerStyle } from '../lib/theme';
 import type { Task } from '../store/types';
+import { errMessage } from '../lib/log';
 
 interface PushDialogProps {
   open: boolean;
@@ -57,8 +58,8 @@ export function PushDialog(props: PushDialogProps) {
       .then(() => {
         onDone(true);
       })
-      .catch((err) => {
-        setPushError(String(err));
+      .catch((err: unknown) => {
+        setPushError(errMessage(err));
         onDone(false);
       })
       .finally(() => {
@@ -107,7 +108,7 @@ export function PushDialog(props: PushDialogProps) {
               'max-height': '200px',
               'overflow-y': 'auto',
               background: theme.bgInput,
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               border: `1px solid ${theme.border}`,
               color: theme.fgMuted,
             }}
@@ -152,7 +153,7 @@ export function PushDialog(props: PushDialogProps) {
             padding: '9px 18px',
             background: theme.bgInput,
             border: `1px solid ${theme.border}`,
-            'border-radius': '8px',
+            'border-radius': 'var(--radius-md)',
             color: theme.fgMuted,
             cursor: 'pointer',
             'font-size': '14px',
@@ -169,7 +170,7 @@ export function PushDialog(props: PushDialogProps) {
               padding: '9px 20px',
               background: theme.accent,
               border: 'none',
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               color: theme.accentText,
               cursor: 'pointer',
               'font-size': '14px',

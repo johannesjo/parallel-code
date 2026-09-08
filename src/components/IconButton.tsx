@@ -24,7 +24,7 @@ export function IconButton(props: IconButtonProps) {
         border: `1px solid ${theme.border}`,
         color: theme.fgMuted,
         cursor: 'pointer',
-        'border-radius': '6px',
+        'border-radius': 'var(--radius-sm)',
         padding: isSm() ? '2px' : '4px',
         'font-size': isSm() ? '11px' : '13px',
         'line-height': '1',

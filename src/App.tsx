@@ -25,6 +25,7 @@ import { HelpDialog } from './components/HelpDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { WindowTitleBar } from './components/WindowTitleBar';
 import { FocusModeTaskIndicators } from './components/FocusModeTaskIndicators';
+import { UsageStatusBar } from './components/UsageStatusBar';
 import { theme } from './lib/theme';
 import * as log from './lib/log';
 import {
@@ -41,6 +42,8 @@ import {
   resetGlobalScale,
   startTaskStatusPolling,
   stopTaskStatusPolling,
+  startUsagePolling,
+  stopUsagePolling,
   navigateRow,
   navigateColumn,
   navigateTask,
@@ -64,6 +67,7 @@ import {
   markTaskMcpPending,
   applyTaskMcpLaunchResult,
   markTaskMcpError,
+  getProject,
 } from './store/store';
 import { isGitHubUrl } from './lib/github-url';
 import { HoldToQuit } from './components/HoldToQuit';
@@ -89,6 +93,7 @@ import { startPrChecksSubscription } from './store/pr-checks';
 import { startUpdateSubscription } from './store/updates';
 import { startRemoteTaskHandlers } from './store/remoteTaskHandler';
 import { startRemoteStatusSync } from './store/remoteStatusSync';
+import { startAgentHookStatusListener } from './store/agentHookStatus';
 
 const MIN_WINDOW_DIMENSION = 100;
 
@@ -328,6 +333,9 @@ function App() {
   });
 
   onMount(async () => {
+    // Before the first await: restored agents start firing hooks as soon as
+    // loadState spawns them, and IPC does not replay what nobody listened to.
+    const stopAgentHookStatusListener = startAgentHookStatusListener();
     void syncWindowFocused();
     void syncWindowMaximized();
 
@@ -417,6 +425,8 @@ function App() {
           worktreePath: task.gitIsolation === 'worktree' ? task.worktreePath : undefined,
           skipPermissions: task.skipPermissions ?? false,
           propagateSkipPermissions: task.propagateSkipPermissions ?? false,
+          maxConcurrentTasks: task.maxConcurrentTasks,
+          verifyCommand: getProject(task.projectId)?.verifyCommand,
           agentCommand: agentDef?.command ?? 'claude',
           agentArgs: agentDef?.args ?? [],
           agentEnvFile: agentDef ? store.agentEnvFiles[agentDef.id] : undefined,
@@ -525,6 +535,7 @@ function App() {
     await captureWindowState();
     setupAutosave();
     startTaskStatusPolling();
+    startUsagePolling();
     const stopMCPListeners = initMCPListeners();
     const stopNotificationWatcher = startDesktopNotificationWatcher(windowFocused);
     const stopPrChecksSubscription = startPrChecksSubscription();
@@ -723,12 +734,14 @@ function App() {
       unlistenCloseRequested();
       cleanupShortcuts();
       stopTaskStatusPolling();
+      stopUsagePolling();
       stopMCPListeners();
       stopNotificationWatcher();
       stopPrChecksSubscription();
       stopUpdateSubscription();
       stopRemoteTaskHandlers();
       stopRemoteStatusSync();
+      stopAgentHookStatusListener();
       offPlanContent();
       offStepsContent();
       unlistenFocusChanged?.();
@@ -776,7 +789,7 @@ function App() {
               border: `1px solid ${theme.border}`,
               color: theme.fg,
               padding: '8px 24px',
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               cursor: 'pointer',
               'font-size': '15px',
             }}
@@ -897,6 +910,7 @@ function App() {
             onClose={() => toggleNewTaskDialog(false)}
           />
         </main>
+        <UsageStatusBar />
         <HelpDialog open={store.showHelpDialog} onClose={() => toggleHelpDialog(false)} />
         <SettingsDialog
           open={store.showSettingsDialog}
@@ -924,7 +938,7 @@ function App() {
               transform: 'translateX(-50%)',
               background: theme.islandBg,
               border: `1px solid ${theme.border}`,
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               padding: '10px 20px',
               color: theme.fg,
               'font-size': '14px',

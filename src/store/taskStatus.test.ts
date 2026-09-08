@@ -73,9 +73,12 @@ vi.mock('solid-js', () => {
   return {
     createSignal,
     createEffect: vi.fn(),
+    createRoot: vi.fn(),
     onMount: vi.fn(),
     onCleanup: vi.fn(),
     untrack: (fn: () => unknown) => fn(),
+    // task-branch.ts (imported transitively via taskStatus.ts) calls batch.
+    batch: (fn: () => unknown) => fn(),
   };
 });
 
@@ -99,6 +102,7 @@ import {
   markAgentOutput,
   clearAgentActivity,
 } from './taskStatus';
+import { applyAgentHookEvent, getAgentHookStatus } from './agentHookStatus';
 
 function setMockTask(taskId: string, overrides: Record<string, unknown> = {}): void {
   mockTasks[taskId] = {
@@ -1112,5 +1116,84 @@ describe('coordinator auto-trust', () => {
       taskId: 'task-1',
       controlledBy: 'coordinator',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hook-reported status (authoritative over PTY heuristics when present)
+// ---------------------------------------------------------------------------
+
+describe('hook-reported agent status', () => {
+  function hook(
+    agentId: string,
+    state: 'working' | 'waiting' | 'done',
+    event = 'UserPromptSubmit',
+  ): void {
+    applyAgentHookEvent({ agentId, taskId: 'task-1', state, event, at: Date.now() });
+  }
+
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-05-10T10:00:00Z'));
+    setMockTask('task-1', { agentIds: ['agent-1'] });
+    setMockAgent('agent-1', { status: 'running' });
+  });
+
+  it('reports needs_input from a waiting hook with the hook onset as since', () => {
+    vi.setSystemTime(new Date('2026-05-10T10:05:00Z'));
+    hook('agent-1', 'waiting', 'PermissionRequest');
+
+    expect(getTaskAttentionState('task-1')).toBe('needs_input');
+    expect(getTaskDotStatus('task-1')).toBe('waiting');
+    expect(getTaskOpenQuestion('task-1')).toEqual({
+      agentId: 'agent-1',
+      since: new Date('2026-05-10T10:05:00Z').getTime(),
+    });
+  });
+
+  it('reports active from a working hook even when the terminal is silent', () => {
+    hook('agent-1', 'working');
+    vi.advanceTimersByTime(60_000);
+
+    expect(getTaskAttentionState('task-1')).toBe('active');
+    expect(getTaskDotStatus('task-1')).toBe('busy');
+  });
+
+  it('lets a working hook veto a question the heuristics see on screen', () => {
+    hook('agent-1', 'working', 'PreToolUse');
+    markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+
+    expect(isAgentAskingQuestion('agent-1')).toBe(true);
+    expect(getTaskAttentionState('task-1')).toBe('active');
+    expect(getTaskOpenQuestion('task-1')).toBeNull();
+  });
+
+  it('drops to idle on Stop while the prompt is still being redrawn', () => {
+    markAgentOutput('agent-1', new TextEncoder().encode('Building project...'), 'task-1');
+    expect(getTaskAttentionState('task-1')).toBe('active');
+
+    hook('agent-1', 'done', 'Stop');
+    markAgentOutput('agent-1', new TextEncoder().encode('> '), 'task-1');
+
+    expect(getTaskAttentionState('task-1')).toBe('idle');
+    expect(getTaskDotStatus('task-1')).toBe('waiting');
+  });
+
+  it('still trusts the heuristics for prompts that fire no hook once the turn is over', () => {
+    hook('agent-1', 'done', 'Stop');
+    markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+
+    expect(getTaskAttentionState('task-1')).toBe('needs_input');
+    expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-1');
+  });
+
+  it('forgets hook state when the agent is respawned or torn down', () => {
+    hook('agent-1', 'waiting', 'PermissionRequest');
+    markAgentSpawned('agent-1');
+    expect(getAgentHookStatus('agent-1')).toBeNull();
+    expect(getTaskAttentionState('task-1')).toBe('active');
+
+    hook('agent-1', 'working');
+    clearAgentActivity('agent-1');
+    expect(getAgentHookStatus('agent-1')).toBeNull();
   });
 });

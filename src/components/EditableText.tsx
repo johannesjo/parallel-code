@@ -72,7 +72,7 @@ export function EditableText(props: EditableTextProps) {
         style={{
           background: theme.bgInput,
           border: `1px solid ${theme.borderFocus}`,
-          'border-radius': '4px',
+          'border-radius': 'var(--radius-xs)',
           padding: '2px 6px',
           color: theme.fg,
           'font-size': 'inherit',

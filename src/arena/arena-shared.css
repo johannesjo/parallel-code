@@ -5,10 +5,10 @@
   --arena-color: var(--accent);
 }
 [data-arena='1'] {
-  --arena-color: #f5a623;
+  --arena-color: var(--warning);
 }
 [data-arena='2'] {
-  --arena-color: #a855f7;
+  --arena-color: var(--review);
 }
 [data-arena='3'] {
   --arena-color: var(--error);
@@ -105,7 +105,7 @@
   gap: 6px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 6px 16px;
   color: var(--fg);
   font-family: var(--font-ui);
@@ -158,7 +158,7 @@
 .arena-fight-btn {
   background: var(--accent);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 16px 40px;
   color: var(--accent-text);
   font-family: var(--font-display);
@@ -220,7 +220,7 @@
 .arena-merge-error {
   background: var(--error-bg, rgba(239, 68, 68, 0.1));
   border: 1px solid var(--error, #ef4444);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--error, #ef4444);
   font-size: 13px;
   padding: 8px 12px;

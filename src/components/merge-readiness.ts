@@ -1,4 +1,4 @@
-import type { MergeStatus, PrChecksOverall, WorktreeStatus } from '../ipc/types';
+import type { MergeStatus, PrChecksOverall, VerificationRun, WorktreeStatus } from '../ipc/types';
 import {
   formatCoverageDelta,
   isBaselineInformational,
@@ -6,6 +6,11 @@ import {
   type CoverageComparison,
 } from '../lib/coverage-comparison';
 import type { SubtaskVerification } from '../store/types';
+import {
+  summarizeVerificationRun,
+  usesVerificationRun,
+  type VerificationSummaryKind,
+} from '../lib/verification-run';
 
 export type MergeReadinessCheckStatus = 'pass' | 'warning' | 'blocked' | 'checking' | 'neutral';
 
@@ -33,7 +38,11 @@ export interface MergeReadinessInput {
   mergeStatusLoading: boolean;
   worktreeStatus?: WorktreeStatus;
   worktreeStatusLoading: boolean;
+  /** Agent self-report from land_self; only consulted without a verify command. */
   verification?: SubtaskVerification;
+  /** Result of the app running the project's verify command in the worktree. */
+  verificationRun?: VerificationRun;
+  verifyCommandConfigured?: boolean;
   prChecks?: PrReadinessState;
   coverage?: CoverageComparison | null;
 }
@@ -101,7 +110,36 @@ function mergeSafetyCheck(input: MergeReadinessInput): MergeReadinessCheck {
   return { label: 'Merge safety', status: 'pass', detail: 'Branch is mergeable.' };
 }
 
-function verificationCheck(verification?: SubtaskVerification): MergeReadinessCheck {
+const RUN_KIND_STATUS: Record<VerificationSummaryKind, MergeReadinessCheckStatus> = {
+  none: 'warning',
+  running: 'checking',
+  passed: 'pass',
+  stale: 'warning',
+  dirty: 'warning',
+  failed: 'warning',
+  unavailable: 'warning',
+};
+
+function verificationRunCheck(
+  run: VerificationRun | undefined,
+  headSha: string | null | undefined,
+): MergeReadinessCheck {
+  const summary = summarizeVerificationRun(run, headSha);
+  return {
+    label: 'Verification',
+    status: RUN_KIND_STATUS[summary.kind],
+    detail: summary.kind === 'running' ? summary.detail : `${summary.label}. ${summary.detail}`,
+  };
+}
+
+function verificationCheck(input: MergeReadinessInput): MergeReadinessCheck {
+  if (usesVerificationRun(input.verificationRun, Boolean(input.verifyCommandConfigured))) {
+    return verificationRunCheck(input.verificationRun, input.worktreeStatus?.head_sha);
+  }
+  return reportedVerificationCheck(input.verification);
+}
+
+function reportedVerificationCheck(verification?: SubtaskVerification): MergeReadinessCheck {
   if (!verification?.checks.length) {
     return {
       label: 'Verification',
@@ -242,7 +280,7 @@ function coverageCheck(
 export function buildMergeReadiness(input: MergeReadinessInput): MergeReadiness {
   const checks = [
     mergeSafetyCheck(input),
-    verificationCheck(input.verification),
+    verificationCheck(input),
     coverageCheck(input.coverage, input.mergeStatus),
     prCheck(input.prChecks),
   ];

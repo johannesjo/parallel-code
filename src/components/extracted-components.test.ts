@@ -92,6 +92,7 @@ describe('extracted component helpers', () => {
     expect(html).toContain('role="button"');
     expect(html).toContain('data-task-index="2"');
     expect(html).toContain('data-sidebar-task-id="task-1"');
+    expect(html).toContain('padding:0 10px');
     expect(html).toContain('Task Alpha');
   });
 });

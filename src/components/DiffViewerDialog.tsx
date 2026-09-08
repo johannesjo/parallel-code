@@ -12,6 +12,7 @@ import {
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { parseUnifiedDiff } from '../lib/unified-diff-parser';
+import { countSearchMatches } from '../lib/diff-collapse';
 import { type QualityFindingProvider } from '../lib/quality-findings';
 import { windowChromeTopInset } from '../lib/platform';
 import { ScrollingDiffView } from './ScrollingDiffView';
@@ -21,7 +22,11 @@ import {
   isCommitHashSelection,
   isUncommittedSelection,
 } from './CommitNavBar';
-import { ReviewCommentsButton, ReviewSidebarPanel } from './ReviewSidebarPanel';
+import {
+  ReviewCommentsButton,
+  ReviewFindingsRefreshButton,
+  ReviewSidebarPanel,
+} from './ReviewSidebarPanel';
 import { ReviewProvider, useReview } from './ReviewProvider';
 import { ChangedFilesList } from './ChangedFilesList';
 import { CloseIcon } from './icons';
@@ -127,6 +132,7 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
             selectedCommit={props.selectedCommit}
             onCommitNavigate={props.onCommitNavigate}
             gitIsolation={props.gitIsolation}
+            findingProvider={props.findingProvider}
           />
         </Show>
       </Dialog>
@@ -264,24 +270,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
       0,
     );
 
-  const countMatches = () => {
-    const q = searchQuery().toLowerCase();
-    if (!q) return 0;
-    let count = 0;
-    for (const file of parsedFiles()) {
-      for (const hunk of file.hunks) {
-        for (const line of hunk.lines) {
-          let idx = 0;
-          const lower = line.content.toLowerCase();
-          while ((idx = lower.indexOf(q, idx)) !== -1) {
-            count++;
-            idx += q.length;
-          }
-        }
-      }
-    }
-    return count;
-  };
+  const countMatches = () => countSearchMatches(parsedFiles(), searchQuery());
 
   return (
     <div ref={containerRef} style={{ display: 'flex', 'flex-direction': 'column', height: '100%' }}>
@@ -386,6 +375,9 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
         </span>
 
         <ReviewCommentsButton />
+        <Show when={props.findingProvider}>
+          <ReviewFindingsRefreshButton />
+        </Show>
 
         <span style={{ flex: '1' }} />
 
@@ -398,7 +390,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
           style={{
             background: 'color-mix(in srgb, var(--fg) 6%, transparent)',
             border: `1px solid ${theme.borderSubtle}`,
-            'border-radius': '4px',
+            'border-radius': 'var(--radius-xs)',
             color: theme.fg,
             'font-size': sf(13),
             'font-family': "'JetBrains Mono', monospace",
@@ -423,7 +415,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
             padding: '4px',
             display: 'flex',
             'align-items': 'center',
-            'border-radius': '4px',
+            'border-radius': 'var(--radius-xs)',
           }}
           title="Close"
         >

@@ -1,6 +1,6 @@
 import { renderToString } from 'solid-js/web';
 import { describe, expect, it } from 'vitest';
-import type { MergeStatus, WorktreeStatus } from '../ipc/types';
+import type { MergeStatus, VerificationRun, WorktreeStatus } from '../ipc/types';
 import type { SubtaskVerification } from '../store/types';
 import { MergeReadinessPanel } from './MergeReadinessPanel';
 import { buildMergeReadiness, type MergeReadinessInput } from './merge-readiness';
@@ -15,6 +15,7 @@ const cleanWorktreeStatus: WorktreeStatus = {
   has_committed_changes: true,
   has_uncommitted_changes: false,
   current_branch: 'task/readiness',
+  base_branch: 'main',
 };
 
 const passedVerification: SubtaskVerification = {
@@ -472,14 +473,97 @@ describe('MergeReadinessPanel', () => {
     expect(html).toContain(
       'title="Checks the task branch for conflicts with its base branch, branch mismatch, committed changes, and local uncommitted changes."',
     );
-    expect(html).toContain(
-      'title="Uses structured verification reported by land_self, such as tests or typechecking. Without a report this needs attention; opening the dialog never runs commands."',
-    );
+    expect(html).toContain('title="Runs the project\'s verify command in the task worktree');
     expect(html).toContain(
       'title="Uses checks reported for a detected GitHub pull request. Pull requests are optional, and unavailable check data is neutral."',
     );
     expect(html).toContain(
       'title="Compares existing task and base-branch coverage reports. Opening the dialog never runs tests or modifies either worktree."',
+    );
+  });
+});
+
+describe('buildMergeReadiness verify command runs', () => {
+  const run = (overrides: Partial<VerificationRun> = {}): VerificationRun => ({
+    command: 'npm test',
+    status: 'passed',
+    exitCode: 0,
+    headSha: 'head-1',
+    dirty: false,
+    startedAt: '2026-09-03T10:00:00.000Z',
+    finishedAt: '2026-09-03T10:01:00.000Z',
+    outputTail: '12 passed\n',
+    ...overrides,
+  });
+  const atHead = (head_sha: string | null): WorktreeStatus => ({
+    ...cleanWorktreeStatus,
+    head_sha,
+  });
+  const verificationOf = (overrides: Partial<MergeReadinessInput>) =>
+    buildMergeReadiness(input({ verifyCommandConfigured: true, ...overrides })).checks[1];
+
+  it('asks for a run when a command is configured but nothing ran, ignoring the self-report', () => {
+    expect(verificationOf({ verification: passedVerification })).toEqual(
+      expect.objectContaining({
+        status: 'warning',
+        detail: expect.stringContaining('Not verified'),
+      }),
+    );
+  });
+
+  it('passes when the run passed at the current HEAD on a clean tree', () => {
+    expect(verificationOf({ verificationRun: run(), worktreeStatus: atHead('head-1') })).toEqual(
+      expect.objectContaining({ status: 'pass', detail: 'Passed. `npm test` exited 0.' }),
+    );
+  });
+
+  it('warns when HEAD moved since the run', () => {
+    expect(verificationOf({ verificationRun: run(), worktreeStatus: atHead('head-2') })).toEqual(
+      expect.objectContaining({
+        status: 'warning',
+        detail: expect.stringContaining('older commit'),
+      }),
+    );
+  });
+
+  it('warns when the run saw uncommitted changes', () => {
+    expect(
+      verificationOf({ verificationRun: run({ dirty: true }), worktreeStatus: atHead('head-1') }),
+    ).toEqual(
+      expect.objectContaining({
+        status: 'warning',
+        detail: expect.stringContaining('uncommitted changes'),
+      }),
+    );
+  });
+
+  it('reports checking while a run is in flight', () => {
+    expect(
+      verificationOf({ verificationRun: run({ status: 'running', finishedAt: null }) }),
+    ).toEqual(expect.objectContaining({ status: 'checking', detail: 'Running `npm test`…' }));
+  });
+
+  it('warns with the last output line when the run failed', () => {
+    expect(
+      verificationOf({
+        verificationRun: run({
+          status: 'failed',
+          exitCode: 1,
+          outputTail: '11 passed\n1 failed\n',
+        }),
+      }),
+    ).toEqual(expect.objectContaining({ status: 'warning', detail: 'Failed (exit 1). 1 failed' }));
+  });
+
+  it('uses a run even when the command was since removed from the project', () => {
+    expect(
+      buildMergeReadiness(input({ verification: undefined, verificationRun: run() })).checks[1],
+    ).toEqual(expect.objectContaining({ status: 'pass' }));
+  });
+
+  it('keeps the self-report fallback when nothing is configured and nothing ran', () => {
+    expect(buildMergeReadiness(input()).checks[1]).toEqual(
+      expect.objectContaining({ status: 'pass', detail: '2 checks passed.' }),
     );
   });
 });

@@ -31,6 +31,11 @@
   --success: #2fd198;
   --error: #ff5f73;
   --warning: #ffc569;
+  /* Secondary semantic hues: "ready for review" and neutral-informational
+     (steps, sub-task states). Kept off the accent so they stay distinguishable
+     from "active". */
+  --review: #c084fc;
+  --info: #60a5fa;
   --diff-add-bg: rgba(47, 209, 152, 0.1);
   --diff-remove-bg: rgba(255, 95, 115, 0.1);
   --search-match: #ffd54f;
@@ -46,6 +51,13 @@
   --shadow-pop:
     0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent),
     0 14px 36px color-mix(in srgb, var(--accent) 16%, transparent);
+
+  /* Corner radius scale. Every rounded control picks one of these four so
+     badges, buttons, cards and panels read as one family. */
+  --radius-xs: 4px; /* badges, chips, kbd, inline markers */
+  --radius-sm: 6px; /* icon buttons, small controls, list rows */
+  --radius-md: 8px; /* buttons, inputs, cards */
+  --radius-lg: 12px; /* panels, columns, dialogs */
 }
 
 html,
@@ -114,6 +126,8 @@ body.font-smoothing {
   container-name: task-branch-info;
   container-type: inline-size;
   min-width: 0;
+  /* The header's single divider: title bar and branch bar read as one block. */
+  border-bottom: 1px solid var(--border);
 }
 
 .task-branch-info-button {
@@ -596,6 +610,8 @@ html[data-look='islands-light'] {
   --success: #369650;
   --error: #d62b40;
   --warning: #a98708;
+  --review: #7c3aed;
+  --info: #1d6fd6;
   --diff-add-bg: rgba(54, 150, 80, 0.14);
   --diff-remove-bg: rgba(214, 43, 64, 0.12);
   --search-match: #d39e00;
@@ -715,7 +731,7 @@ html[data-look^='islands-'] .task-column.focus-mode .task-header-stack {
   margin-bottom: 5px;
   background: var(--task-panel-bg);
   border: 1px solid var(--island-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
 }
 
@@ -739,7 +755,7 @@ html[data-look^='islands-'] .task-column.focus-mode .focusable-panel {
    onto the cell for the same reason — drawn inside the panel it would also
    get clipped at the bottom. */
 html[data-look^='islands-'] .task-column.focus-mode .rp-cell:has(> .focusable-panel) {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   position: relative;
 }
 
@@ -752,7 +768,7 @@ html[data-look^='islands-']
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: 2px solid var(--border-focus);
   pointer-events: none;
   z-index: 10;
@@ -1032,6 +1048,9 @@ textarea::placeholder {
 }
 
 .task-item {
+  /* Detail lines indent past the row's leading glyphs — a 12px glyph lane plus
+     the 6px head gap each — so they start under the title text, not the dot. */
+  --task-row-indent: 18px;
   transition:
     background 0.13s ease,
     color 0.13s ease,
@@ -1041,6 +1060,28 @@ textarea::placeholder {
 .task-item:hover {
   background: color-mix(in srgb, var(--accent) 10%, var(--bg-hover)) !important;
   color: var(--fg) !important;
+}
+
+/* Title line of a task row: glyph, name, badges. A wrapped two-line name must
+   not drag the glyph to the middle of the block, so everything beside the name
+   is pinned to the first line. */
+.task-item-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* One-line-tall boxes (matching .task-item-name's line-height) so the dot,
+   spinner and coordinator icon centre on the first line instead of hugging its
+   top edge. The SVG scales inside its taller box, staying visually centred. */
+.task-item-head > .status-glyph,
+.task-item-head > svg {
+  height: 1.35em;
+}
+
+/* Coordinator rows carry a bot icon in front of the status glyph. */
+.task-item-coordinator {
+  --task-row-indent: 36px;
 }
 
 /* Task names wrap to two lines rather than being cut mid-word — at sidebar
@@ -1058,6 +1099,29 @@ textarea::placeholder {
   line-height: 1.35;
 }
 
+/* Status lines under a task name are reference detail, not the row's identity:
+   keep them quiet and give them air so the sidebar scans as a list of names.
+   Hovering a row is the signal that its detail is wanted. A mono face sets them
+   apart from the name as machine-reported state rather than a second title. */
+.task-item .task-agent-status,
+.task-item .task-current-state-sidebar {
+  margin-top: 4px;
+  padding-left: var(--task-row-indent);
+  font-family: var(--font-mono);
+  opacity: 0.6;
+  transition: opacity 0.13s ease;
+}
+
+/* The two status lines belong together — only the pair is offset from the title. */
+.task-item .task-agent-status + .task-current-state-sidebar {
+  margin-top: 1px;
+}
+
+.task-item:hover .task-agent-status,
+.task-item:hover .task-current-state-sidebar {
+  opacity: 1;
+}
+
 .sidebar-attention-tray {
   display: flex;
   flex-direction: column;
@@ -1067,7 +1131,7 @@ textarea::placeholder {
   overflow-y: auto;
   padding: 6px;
   border: 1px solid color-mix(in srgb, var(--warning) 32%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--warning) 7%, transparent);
 }
 
@@ -1090,7 +1154,7 @@ textarea::placeholder {
   min-width: 0;
   padding: 1px 5px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1.4;
   white-space: nowrap;
@@ -1115,7 +1179,7 @@ textarea::placeholder {
    whole row reads as clickable, plus a focus ring matching other sidebar
    controls. */
 .projects-toggle {
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   transition:
     background-color 0.12s ease,
     color 0.12s ease;
@@ -1129,6 +1193,14 @@ textarea::placeholder {
 .projects-toggle:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 1px;
+}
+
+.project-row {
+  transition: background-color 0.12s ease;
+}
+
+.project-row:hover {
+  background: var(--bg-hover);
 }
 
 /* CSS-only collapse animation. The grid-rows trick lets the row collapse from
@@ -1326,7 +1398,7 @@ textarea::placeholder {
 .project-select {
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 10px 12px;
   color: var(--fg);
   font-size: 14px;
@@ -1349,7 +1421,7 @@ textarea::placeholder {
 .project-select::picker(select) {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
   padding: 4px;
 }
@@ -1358,7 +1430,7 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   gap: 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
   font-size: 13px;
   color: var(--fg);
@@ -1488,7 +1560,7 @@ textarea::placeholder {
   box-shadow: var(--shadow-soft);
   border-color: color-mix(in srgb, var(--border) 85%, transparent) !important;
   margin: 0 2px;
-  opacity: var(--inactive-column-opacity, 0.6);
+  opacity: var(--inactive-column-opacity, 0.9);
 }
 
 .task-column.active {
@@ -1499,6 +1571,13 @@ textarea::placeholder {
 
 .focusable-panel {
   position: relative;
+}
+
+/* The shell toolbar scrolls sideways once a project has many bookmarks, but a
+   scrollbar inside a 28px bar would clip the buttons. Wheel and the toolbar's
+   own arrow-key navigation still reach the overflow. */
+.shell-toolbar-panel::-webkit-scrollbar {
+  display: none;
 }
 
 .focusable-panel:focus-within::after,
@@ -1610,6 +1689,36 @@ textarea::placeholder {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Fixed lane so task names line up whatever glyph sits in front of them; hosts
+   override the height via the --glyph-lane box when a row needs a taller one. */
+.status-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--glyph-lane);
+  height: var(--glyph-lane);
+}
+
+/* Sidebar "working" glyph: a rotating ring reads as activity at a glance, and
+   under reduced motion the hollow ring still separates it from resting dots. */
+.status-glyph-spinner {
+  display: inline-block;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  animation: spinnerSpin 0.9s linear infinite;
+}
+
+.status-glyph-question {
+  display: inline-block;
+  box-sizing: border-box;
+  border-radius: 999px;
+  font-weight: 700;
+  text-align: center;
 }
 
 .inline-spinner {
@@ -1813,7 +1922,7 @@ body.dragging-task * {
   text-align: left;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-input) 72%, transparent);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 12px;
   cursor: pointer;
   display: flex;
@@ -1864,7 +1973,7 @@ body.dragging-task * {
   text-align: left;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-input) 72%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 10px 12px;
   cursor: pointer;
   display: flex;
@@ -1994,9 +2103,10 @@ body.dragging-task * {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 4px;
   padding: 0 12px;
   pointer-events: none;
+  overflow: hidden;
   z-index: 1;
 }
 
@@ -2004,58 +2114,60 @@ body.dragging-task * {
   padding: 0 140px 0 44px;
 }
 
+/* Keep clear of the macOS traffic lights. */
+.mac-titlebar-spacer > .focus-mode-task-indicators {
+  padding: 0 24px 0 90px;
+}
+
 .focus-mode-task-indicator {
-  display: inline-grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  min-width: 0;
+  max-width: 180px;
+  flex: 0 1 auto;
+  padding: 0 8px;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.8;
   pointer-events: auto;
-  /* Carve the dots out of the OS window-drag region. On Linux the titlebar's
-     [data-tauri-drag-region] is a sibling the dots overlay (not an ancestor),
+  /* Carve the pills out of the OS window-drag region. On Linux the titlebar's
+     [data-tauri-drag-region] is a sibling the pills overlay (not an ancestor),
      so main.ts's injected `[data-tauri-drag-region] button { no-drag }` rule
      can't reach them and the drag region swallows the click. */
   -webkit-app-region: no-drag;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    opacity 0.15s ease;
 }
 
-.focus-mode-task-indicator::before {
-  content: '';
-  width: 10px;
-  height: 10px;
-  border: 1px solid color-mix(in srgb, var(--fg-muted) 60%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--fg-muted) 28%, transparent);
-  transition:
-    transform 0.15s ease,
-    opacity 0.15s ease,
-    background 0.15s ease,
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+.focus-mode-task-indicator-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .focus-mode-task-indicator:hover {
   opacity: 1;
-}
-
-.focus-mode-task-indicator:hover::before {
-  border-color: color-mix(in srgb, var(--fg) 70%, transparent);
-  background: color-mix(in srgb, var(--fg) 38%, transparent);
+  color: var(--fg);
+  background: var(--bg-hover);
 }
 
 .focus-mode-task-indicator.active {
   opacity: 1;
-}
-
-.focus-mode-task-indicator.active::before {
-  transform: scale(1.15);
-  border-color: color-mix(in srgb, var(--accent) 82%, white 18%);
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .focus-mode-task-indicator:focus-visible {
@@ -2090,7 +2202,7 @@ body.dragging-task * {
   padding: 12px 14px;
   transform: translateX(-50%);
   border: 1px solid var(--island-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--island-bg);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
   color: var(--fg);
@@ -2143,7 +2255,7 @@ body.dragging-task * {
   padding: 10px 20px;
   transform: translateX(-50%);
   border: 1px solid var(--island-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--island-bg);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
   color: var(--fg);
@@ -2157,7 +2269,7 @@ body.dragging-task * {
 .hold-to-quit kbd {
   padding: 2px 6px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--bg-elevated);
   font-family: var(--font-mono);
   font-size: 12px;
@@ -2202,7 +2314,7 @@ body.dragging-task * {
   line-height: 28px;
   font-size: 13px;
   font-family: var(--font-ui);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   transition: filter 0.15s ease;
 }
 
@@ -2258,13 +2370,13 @@ body.dragging-task * {
 .plan-markdown code {
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   padding: 0.1em 0.3em;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   font-size: 0.9em;
 }
 .plan-markdown pre {
   background: color-mix(in srgb, var(--fg) 5%, transparent);
   padding: 0.5em;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   overflow-x: auto;
   margin: 0.3em 0;
 }
@@ -2275,7 +2387,7 @@ body.dragging-task * {
 .plan-markdown pre.shiki-block {
   background: var(--bg-input);
   padding: 0.6em 0.8em;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow-x: auto;
   margin: 0.4em 0;
   line-height: 1.5;
@@ -2345,6 +2457,14 @@ body.dragging-task * {
   margin: 0.6em 0;
 }
 
+/* Inline plan-review controls occupy real layout space after the selected block. */
+.plan-review-flow-slot {
+  display: flow-root;
+  width: 100%;
+  min-width: 0;
+  font-style: normal;
+}
+
 /* Lists — better spacing */
 .plan-markdown-dialog ul,
 .plan-markdown-dialog ol {
@@ -2366,7 +2486,7 @@ body.dragging-task * {
   font-size: 0.85em;
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   padding: 0.15em 0.4em;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   border: 1px solid var(--border-subtle);
 }
 
@@ -2383,7 +2503,7 @@ body.dragging-task * {
 }
 .plan-markdown-dialog pre.shiki-block {
   padding: 0.8em 1em;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   margin: 0.8em 0;
   border: 1px solid var(--border-subtle);
   background: var(--bg-input);
@@ -2456,7 +2576,7 @@ body.dragging-task * {
 /* Mermaid diagram blocks */
 .mermaid-block {
   background: color-mix(in srgb, var(--fg) 4%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 1em;
   margin: 0.8em 0;
   overflow-x: auto;
@@ -2496,10 +2616,9 @@ body.dragging-task * {
     animation: none;
   }
 
-  /* Preserve a static busy-state distinction after removing the pulse. */
-  .status-dot-ring {
-    outline: 1px solid var(--fg-muted);
-    outline-offset: 2px;
+  /* The hollow ring alone still says "working"; only the rotation goes. */
+  .status-glyph-spinner {
+    animation: none;
   }
 
   /* These animations are declared inline and require an important override. */

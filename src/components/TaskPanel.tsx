@@ -1,4 +1,4 @@
-import { Show, createSignal, createEffect, onMount, onCleanup, batch } from 'solid-js';
+import { Show, createSignal, createEffect, createMemo, onMount, onCleanup, batch } from 'solid-js';
 import {
   store,
   retryCloseTask,
@@ -25,6 +25,7 @@ import { PlanViewerDialog } from './PlanViewerDialog';
 import { EditProjectDialog } from './EditProjectDialog';
 import { TaskTitleBar } from './TaskTitleBar';
 import { TaskBranchInfoBar } from './TaskBranchInfoBar';
+import { TaskBranchAdoptionBanner } from './TaskBranchAdoptionBanner';
 import { TaskNotesBody } from './TaskNotesBody';
 import { TaskChangedFilesSection } from './TaskChangedFilesSection';
 import { isCommitHashSelection, type CommitSelection } from './CommitNavBar';
@@ -43,6 +44,7 @@ import type { CommitInfo } from '../ipc/types';
 import { isLandedTaskState } from '../store/landing';
 import { shouldPollTaskCommits } from './task-commit-polling';
 import { devQualityFindingProvider } from './dev-quality-finding-fixture';
+import { createEslintQualityFindingProvider } from '../lib/eslint-quality-findings';
 
 interface TaskPanelProps {
   task: Task;
@@ -57,6 +59,9 @@ const CHANGED_FILES_PANEL_AUTO_MAX = 'min(300px, 33vh)';
 const NOTES_PANEL_AUTO_MAX = 'min(400px, 33vh)';
 
 export function TaskPanel(props: TaskPanelProps) {
+  const eslintQualityFindingProvider = createEslintQualityFindingProvider(
+    () => props.task.worktreePath,
+  );
   const [showCloseConfirm, setShowCloseConfirm] = createSignal(false);
   const [planFullscreen, setPlanFullscreen] = createSignal(false);
 
@@ -259,6 +264,18 @@ export function TaskPanel(props: TaskPanelProps) {
     return props.task.agentIds[0] ?? '';
   };
 
+  const isGitUnavailable = () => props.task.gitIsolation === 'none' || isLandedTask();
+  const [changedFileCount, setChangedFileCount] = createSignal(0);
+  // An empty notes box next to an empty file list still claimed half the
+  // column. Until either has content the strip stays thin and the AI terminal
+  // takes the space; a user drag on the divider pins a size as usual.
+  const topStripEmpty = createMemo(
+    () =>
+      !props.task.notes?.trim() &&
+      !(store.showPlans && props.task.planContent) &&
+      (isGitUnavailable() || changedFileCount() === 0),
+  );
+
   // Heavy components are created once and reused in both stack and split
   // layouts. Solid owns their reactive scope under TaskPanel (not under the
   // <Show> branch), so when the user crosses the split threshold the DOM is
@@ -294,6 +311,8 @@ export function TaskPanel(props: TaskPanelProps) {
       selectedCommit={selectedCommit()}
       onCommitNavigate={setSelectedCommit}
       onDiffFileClick={(path) => setDiffScrollTarget(path)}
+      compact={topStripEmpty()}
+      onFileCountChange={setChangedFileCount}
     />
   );
   const stepsSectionEl = (
@@ -377,8 +396,6 @@ export function TaskPanel(props: TaskPanelProps) {
     content: () => promptInputEl,
   };
 
-  const isGitUnavailable = () => props.task.gitIsolation === 'none' || isLandedTask();
-
   // Notes and changed-files children reused across stack and split trees.
   // In the stack-mode inner horizontal split, both children absorb (50/50 default).
   // In the split-right vertical tree, both are content-sized and shell absorbs.
@@ -397,14 +414,15 @@ export function TaskPanel(props: TaskPanelProps) {
   };
 
   // Stack-mode row containing notes (absorbs horizontally) and changed files.
-  // The inline 200 px floor prevents the nested horizontal panel from collapsing
-  // when the outer flex-first tree asks for content-size.
+  // The inline floor prevents the nested horizontal panel from collapsing when
+  // the outer flex-first tree asks for content-size; while both halves are
+  // empty it is also the strip's whole height.
   const notesAndFilesChild: PanelChild = {
     id: 'notes-files',
     minSize: 60,
     absorberWeight: 0.5,
     content: () => (
-      <div style={{ height: '100%', 'min-height': '200px' }}>
+      <div style={{ height: '100%', 'min-height': topStripEmpty() ? '64px' : '200px' }}>
         {isGitUnavailable() ? (
           notesBodyEl
         ) : (
@@ -428,7 +446,7 @@ export function TaskPanel(props: TaskPanelProps) {
         'flex-direction': 'column',
         height: '100%',
         background: theme.taskContainerBg,
-        'border-radius': '12px',
+        'border-radius': 'var(--radius-lg)',
         border: `1px solid ${theme.border}`,
         overflow: 'clip',
         position: 'relative',
@@ -510,17 +528,18 @@ export function TaskPanel(props: TaskPanelProps) {
       <Show when={props.task.coordinatorMode}>
         <SubTaskStrip coordinatorTaskId={props.task.id} />
       </Show>
+      <TaskBranchAdoptionBanner task={props.task} />
       <div
         class="task-header-stack"
         style={{
-          flex: `0 0 ${props.task.stepsEnabled ? 102 : 78}px`,
+          flex: `0 0 ${props.task.stepsEnabled ? 88 : 64}px`,
           display: 'flex',
           'flex-direction': 'column',
           overflow: 'hidden',
         }}
       >
         {/* Title + branch bars live outside <Show> so they don't remount on layout flips. */}
-        <div style={{ flex: '0 0 50px', overflow: 'hidden' }}>
+        <div style={{ flex: '0 0 36px', overflow: 'hidden' }}>
           <TaskTitleBar
             task={props.task}
             isActive={props.isActive}
@@ -546,7 +565,7 @@ export function TaskPanel(props: TaskPanelProps) {
             <ResizablePanel
               direction="vertical"
               persistKey={`task:${props.task.id}`}
-              absorberIds={['notes-files', 'ai-terminal']}
+              absorberIds={topStripEmpty() ? ['ai-terminal'] : ['notes-files', 'ai-terminal']}
               children={[
                 notesAndFilesChild,
                 shellSectionChild,
@@ -657,7 +676,7 @@ export function TaskPanel(props: TaskPanelProps) {
           selectedCommit={selectedCommit()}
           onCommitNavigate={setSelectedCommit}
           gitIsolation={props.task.gitIsolation}
-          findingProvider={devQualityFindingProvider}
+          findingProvider={devQualityFindingProvider ?? eslintQualityFindingProvider}
         />
       </Show>
       <EditProjectDialog project={editingProject()} onClose={() => setEditingProjectId(null)} />

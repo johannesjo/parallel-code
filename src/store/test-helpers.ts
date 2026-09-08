@@ -25,6 +25,28 @@ function isObject(value: unknown): value is Record<PropertyKey, unknown> {
   return (typeof value === 'object' && value !== null) || typeof value === 'function';
 }
 
+/** Mirrors solid's isWrappable (minus store proxies): plain objects and arrays.
+ *  Class instances, functions, Maps etc. are replaced, never merged. */
+function isWrappable(value: unknown): value is Record<PropertyKey, unknown> {
+  if (value === null || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return true;
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === null || proto === Object.prototype;
+}
+
+/** Mirrors solid's mergeStoreNode: keys are set one by one on the existing
+ *  object (identity preserved); an explicit `undefined` deletes the key. */
+function mergeInto(
+  target: Record<PropertyKey, unknown>,
+  source: Record<PropertyKey, unknown>,
+): void {
+  for (const key of Object.keys(source)) {
+    const value = source[key];
+    if (value === undefined) delete target[key];
+    else target[key] = value;
+  }
+}
+
 function getContainer(target: unknown, key: PropertyKey): Record<PropertyKey, unknown> | undefined {
   if (!isObject(target)) return undefined;
   const next = target[key];
@@ -40,7 +62,19 @@ function setPath(target: unknown, path: unknown[], value: unknown): void {
     parent = next;
   }
   if (!isObject(parent)) return;
-  parent[path[path.length - 1] as PropertyKey] = value;
+  const key = path[path.length - 1] as PropertyKey;
+  const prev = parent[key];
+  // Faithful to solid's updatePath: when both the existing value and the new
+  // value are wrappable and the new value is not an array, setStore MERGES
+  // instead of replacing — keys omitted from the new object survive the write.
+  // A harness that replaced here hid exactly that class of production bug.
+  if (isWrappable(prev) && isWrappable(value) && !Array.isArray(value)) {
+    mergeInto(prev, value);
+  } else if (value === undefined) {
+    delete parent[key];
+  } else {
+    parent[key] = value;
+  }
 }
 
 function readPath(target: unknown, path: unknown[]): unknown {

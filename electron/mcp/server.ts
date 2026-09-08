@@ -126,6 +126,7 @@ export async function handleMCPToolCall(
           squash: p.squash as boolean | undefined,
           message: p.message as string | undefined,
           cleanup: p.cleanup as boolean | undefined,
+          skipVerification: p.skipVerification as boolean | undefined,
         });
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }

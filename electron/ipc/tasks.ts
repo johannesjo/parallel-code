@@ -54,6 +54,9 @@ interface DeleteTaskOpts {
   branchName: string;
   deleteBranch: boolean;
   projectRoot: string;
+  /** Real worktree location; the folder keeps its original branch-derived
+   *  name even after the task adopts a branch the agent switched to. */
+  worktreePath?: string;
 }
 
 export async function deleteTask(opts: DeleteTaskOpts): Promise<void> {
@@ -66,6 +69,6 @@ export async function deleteTask(opts: DeleteTaskOpts): Promise<void> {
       /* already dead */
     }
   }
-  await removeWorktree(opts.projectRoot, opts.branchName, opts.deleteBranch);
+  await removeWorktree(opts.projectRoot, opts.branchName, opts.deleteBranch, opts.worktreePath);
   notifyAgentListChanged();
 }

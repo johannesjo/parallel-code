@@ -20,7 +20,7 @@ export function ProjectSelect(props: ProjectSelectProps) {
           {props.placeholder}
         </option>
       </Show>
-      <For each={store.projects}>
+      <For each={[...store.projects].sort((a, b) => a.name.localeCompare(b.name))}>
         {(project) => (
           <option value={project.id}>
             {project.name} — {project.path}

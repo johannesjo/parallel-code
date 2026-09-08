@@ -36,3 +36,22 @@ describe('StatusDot', () => {
     expect(html).toContain('title="Waiting for input"');
   });
 });
+
+describe('status glyph shapes', () => {
+  it('spins while an agent is working and asks with a question mark when blocked', () => {
+    expect(renderToString(() => StatusDot({ status: 'busy', attention: 'active' }))).toContain(
+      'status-glyph-spinner',
+    );
+    const asking = renderToString(() => StatusDot({ status: 'busy', attention: 'needs_input' }));
+    expect(asking).toContain('status-glyph-question');
+    expect(asking).not.toContain('status-glyph-spinner');
+  });
+
+  it('rests as a plain dot when idle, errored, or under review', () => {
+    for (const attention of ['idle', 'error', 'review', 'ready'] as const) {
+      const html = renderToString(() => StatusDot({ status: 'busy', attention }));
+      expect(html, attention).not.toContain('status-glyph-spinner');
+      expect(html, attention).not.toContain('status-glyph-question');
+    }
+  });
+});

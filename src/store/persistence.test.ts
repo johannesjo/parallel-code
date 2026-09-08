@@ -242,6 +242,93 @@ describe('landing state persistence', () => {
     expect(store.tasks['task-1'].landedMetadata?.landedCommit).toBe('abc123');
     expect(store.tasks['task-1'].verification?.checks[0].result).toBe('passed');
   });
+
+  it('keeps finished verification runs but drops one that was still running', async () => {
+    const def = agentDef();
+    const finished = {
+      command: 'npm test',
+      status: 'failed',
+      exitCode: 1,
+      headSha: 'abc123',
+      dirty: false,
+      startedAt: '2026-09-03T10:00:00Z',
+      finishedAt: '2026-09-03T10:01:00Z',
+      outputTail: '1 failed\n',
+    };
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: ['task-1', 'task-2'],
+        collapsedTaskOrder: [],
+        tasks: {
+          'task-1': { ...persistedTask(def), verificationRun: finished },
+          'task-2': {
+            ...persistedTask(def),
+            id: 'task-2',
+            verificationRun: { ...finished, status: 'running', exitCode: null, finishedAt: null },
+          },
+        },
+        activeTaskId: 'task-1',
+        sidebarVisible: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['task-1'].verificationRun).toEqual(finished);
+    expect(store.tasks['task-2'].verificationRun).toBeUndefined();
+  });
+});
+
+describe('coordinator concurrency limit persistence', () => {
+  function stateWithTasks(tasks: Record<string, unknown>): string {
+    return JSON.stringify({
+      projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+      lastProjectId: 'project-1',
+      lastAgentId: null,
+      taskOrder: Object.keys(tasks),
+      collapsedTaskOrder: [],
+      tasks,
+      activeTaskId: 'task-1',
+      sidebarVisible: true,
+    });
+  }
+
+  it('round-trips maxConcurrentTasks through load and save', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      stateWithTasks({ 'task-1': { ...persistedTask(def), maxConcurrentTasks: 5 } }),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].maxConcurrentTasks).toBe(5);
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    const saved = JSON.parse(lastCall[1].json);
+    expect(saved.tasks['task-1'].maxConcurrentTasks).toBe(5);
+  });
+
+  it('clamps out-of-range values and drops non-numbers from hand-edited state', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      stateWithTasks({
+        'task-1': { ...persistedTask(def), maxConcurrentTasks: 99 },
+        'task-2': {
+          ...persistedTask(def),
+          id: 'task-2',
+          branchName: 'task/task-2',
+          worktreePath: '/repo/.worktrees/task-2',
+          maxConcurrentTasks: 'lots',
+        },
+      }),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].maxConcurrentTasks).toBe(20);
+    expect(store.tasks['task-2'].maxConcurrentTasks).toBeUndefined();
+  });
 });
 
 describe('PR URL persistence', () => {
@@ -702,6 +789,36 @@ describe('projects section collapsed persistence', () => {
   });
 });
 
+describe('project task group collapsed persistence', () => {
+  it('restores boolean state and rejects malformed values', async () => {
+    mockInvoke.mockResolvedValueOnce(
+      basePayload({
+        projects: [
+          { id: 'p1', name: 'Repo', path: '/repo', color: '#abc', tasksCollapsed: true },
+          { id: 'p2', name: 'Other', path: '/other', color: '#def', tasksCollapsed: 'yes' },
+        ],
+      }),
+    );
+
+    await loadState();
+
+    expect(store.projects[0].tasksCollapsed).toBe(true);
+    expect(store.projects[1].tasksCollapsed).toBeUndefined();
+  });
+
+  it('persists collapsed task groups with their projects', async () => {
+    setStore('projects', [
+      { id: 'p1', name: 'Repo', path: '/repo', color: '#abc', tasksCollapsed: true },
+    ]);
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    await saveState();
+
+    const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
+    expect(saved.projects[0].tasksCollapsed).toBe(true);
+  });
+});
+
 describe('new task defaults persistence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -925,5 +1042,32 @@ describe('showSteps → defaultStepsEnabled migration', () => {
     const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
     expect(saved.showSteps).toBeUndefined();
     expect(saved.defaultStepsEnabled).toBe(true);
+  });
+});
+
+describe('saveState failure reporting', () => {
+  it('tells the user when the state file could not be written', async () => {
+    vi.useFakeTimers();
+    try {
+      setStore('notification', null);
+      mockInvoke.mockImplementation((channel: string) =>
+        channel === IPC.SaveAppState
+          ? Promise.reject(new Error('ENOSPC: no space left on device'))
+          : Promise.resolve(undefined),
+      );
+      await saveState();
+      expect(store.notification).toContain("Couldn't save app state");
+      expect(store.notification).toContain('ENOSPC');
+      // Rate-limited: a second failure right away does not re-toast...
+      setStore('notification', null);
+      await saveState();
+      expect(store.notification).toBeNull();
+      // ...but the reminder returns once the interval has passed.
+      vi.advanceTimersByTime(60_000);
+      await saveState();
+      expect(store.notification).toContain("Couldn't save app state");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

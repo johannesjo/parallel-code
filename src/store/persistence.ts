@@ -6,6 +6,12 @@ import { startRemoteAccess } from './remote';
 import { effectiveAgentId } from './agent-select';
 import { randomPastelColor } from './projects';
 import { markAgentSpawned } from './taskStatus';
+import { clampCoordinatorConcurrentTasks } from '../lib/coordinator-limits';
+
+// Hand-edited state files may hold anything; the IPC layer rejects non-integers.
+function restoredMaxConcurrentTasks(value: unknown): number | undefined {
+  return typeof value === 'number' ? clampCoordinatorConcurrentTasks(value) : undefined;
+}
 import { getLocalDateKey } from '../lib/date';
 import type {
   Agent,
@@ -22,6 +28,8 @@ import { isLookPreset } from '../lib/look';
 import { validateCustomTheme, parseThemeCss, themeToCss } from '../lib/custom-theme';
 import type { CustomTheme } from '../lib/custom-theme';
 import { syncTerminalCounter } from './terminals';
+import { showNotification, NOTIFICATION_ERROR_MS } from './notification';
+import { errMessage } from '../lib/log';
 
 const RESTORED_AGENT_SPAWN_STAGGER_MS = 1_000;
 
@@ -110,6 +118,13 @@ function validAgentIndex(value: unknown): number | undefined {
     : undefined;
 }
 
+/** Branch names restored from JSON: only non-empty strings. `exclude` drops a
+ *  value that would be nonsensical (e.g. an adopted-from equal to the branch
+ *  itself, which would render an "adopted 'X' (was 'X')" banner). */
+function validBranch(value: unknown, exclude?: string): string | undefined {
+  return typeof value === 'string' && value.length > 0 && value !== exclude ? value : undefined;
+}
+
 /**
  * Serialize a Task to its persisted shape. The caller supplies agentDefs
  * because active and collapsed tasks source them differently (live store
@@ -147,9 +162,12 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     savedPromptedAgentIndexes: task.savedPromptedAgentIndexes,
     planFileName: task.planFileName,
     stepsEnabled: task.stepsEnabled,
+    branchAdoptedFrom: task.branchAdoptedFrom,
+    branchOfferDismissed: task.branchOfferDismissed,
     ...(collapsed ? { collapsed: true } : {}),
     coordinatorMode: task.coordinatorMode,
     propagateSkipPermissions: task.propagateSkipPermissions,
+    maxConcurrentTasks: task.maxConcurrentTasks,
     coordinatedBy: task.coordinatedBy,
     controlledBy: task.controlledBy,
     mcpConfigPath: task.mcpConfigPath,
@@ -158,11 +176,21 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     signalDoneConsumed: task.signalDoneConsumed,
     needsReview: task.needsReview,
     verification: task.verification,
+    verificationRun: task.verificationRun,
     landingState: task.landingState,
     landingReason: task.landingReason,
     landingSummary: task.landingSummary,
     landedMetadata: task.landedMetadata,
   };
+}
+
+/** A run that was still in flight when the app quit has no process behind it
+ *  anymore, so it must not be restored as `running`. */
+function restoredVerificationRun(
+  run: PersistedTask['verificationRun'],
+): PersistedTask['verificationRun'] {
+  if (!run || run.status === 'running') return undefined;
+  return run;
 }
 
 export async function saveState(): Promise<void> {
@@ -259,9 +287,25 @@ export async function saveState(): Promise<void> {
     persisted.terminals[id] = { id: terminal.id, name: terminal.name };
   }
 
-  await invoke(IPC.SaveAppState, { json: JSON.stringify(persisted) }).catch((e) =>
-    console.warn('Failed to save state:', e),
-  );
+  await invoke(IPC.SaveAppState, { json: JSON.stringify(persisted) }).catch((e: unknown) => {
+    console.warn('Failed to save state:', e);
+    notifySaveFailure(e);
+  });
+}
+
+/** Don't nag on every autosave tick while the cause (full disk, permissions) persists. */
+const SAVE_FAILURE_NOTIFY_INTERVAL_MS = 60_000;
+let lastSaveFailureNotifiedAt = 0;
+
+/** A failed state write means tasks, projects, and settings are silently no
+ *  longer persisting — the user needs to know before they quit. */
+function notifySaveFailure(err: unknown): void {
+  const now = Date.now();
+  if (now - lastSaveFailureNotifiedAt < SAVE_FAILURE_NOTIFY_INTERVAL_MS) return;
+  lastSaveFailureNotifiedAt = now;
+  showNotification(`Couldn't save app state: ${errMessage(err)}`, {
+    durationMs: NOTIFICATION_ERROR_MS,
+  });
 }
 
 /** 20_000 px is ~10× the largest plausible monitor axis and big enough to let
@@ -434,6 +478,7 @@ export async function loadState(): Promise<void> {
     } else {
       p.coverageReportPath = undefined;
     }
+    p.tasksCollapsed = typeof p.tasksCollapsed === 'boolean' ? p.tasksCollapsed : undefined;
     // Migrate defaultDirectMode -> defaultGitIsolation
     const legacy = p as Project & { defaultDirectMode?: boolean };
     if (legacy.defaultDirectMode !== undefined && p.defaultGitIsolation === undefined) {
@@ -693,8 +738,11 @@ export async function loadState(): Promise<void> {
           savedPromptedAgentIndexes: validPromptedAgentIndexes(pt.savedPromptedAgentIndexes),
           planFileName: pt.planFileName,
           stepsEnabled: pt.stepsEnabled,
+          branchAdoptedFrom: validBranch(pt.branchAdoptedFrom, pt.branchName),
+          branchOfferDismissed: validBranch(pt.branchOfferDismissed),
           coordinatorMode: pt.coordinatorMode,
           propagateSkipPermissions: pt.propagateSkipPermissions,
+          maxConcurrentTasks: restoredMaxConcurrentTasks(pt.maxConcurrentTasks),
           coordinatedBy: pt.coordinatedBy,
           controlledBy:
             pt.controlledBy ?? (pt.coordinatorMode || pt.coordinatedBy ? 'coordinator' : undefined),
@@ -708,6 +756,7 @@ export async function loadState(): Promise<void> {
           signalDoneConsumed: pt.signalDoneConsumed,
           needsReview: pt.needsReview,
           verification: pt.verification,
+          verificationRun: restoredVerificationRun(pt.verificationRun),
           landingState: pt.landingState,
           landingReason: pt.landingReason,
           landingSummary: pt.landingSummary,
@@ -798,11 +847,14 @@ export async function loadState(): Promise<void> {
           savedPromptedAgentIndexes: validPromptedAgentIndexes(pt.savedPromptedAgentIndexes),
           planFileName: pt.planFileName,
           stepsEnabled: pt.stepsEnabled,
+          branchAdoptedFrom: validBranch(pt.branchAdoptedFrom, pt.branchName),
+          branchOfferDismissed: validBranch(pt.branchOfferDismissed),
           collapsed: true,
           savedAgentDef: agentDefs[0],
           savedAgentDefs: agentDefs.length > 0 ? agentDefs : undefined,
           coordinatorMode: pt.coordinatorMode,
           propagateSkipPermissions: pt.propagateSkipPermissions,
+          maxConcurrentTasks: restoredMaxConcurrentTasks(pt.maxConcurrentTasks),
           coordinatedBy: pt.coordinatedBy,
           controlledBy:
             pt.controlledBy ?? (pt.coordinatorMode || pt.coordinatedBy ? 'coordinator' : undefined),
@@ -814,6 +866,7 @@ export async function loadState(): Promise<void> {
           signalDoneConsumed: pt.signalDoneConsumed,
           needsReview: pt.needsReview,
           verification: pt.verification,
+          verificationRun: restoredVerificationRun(pt.verificationRun),
           landingState: pt.landingState,
           landingReason: pt.landingReason,
           landingSummary: pt.landingSummary,

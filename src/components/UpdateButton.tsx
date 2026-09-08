@@ -81,7 +81,7 @@ export function UpdateButton() {
           border: `1px solid ${theme.accent}`,
           color: phase() === 'downloading' ? theme.accent : theme.accentText,
           cursor: phase() === 'downloading' ? 'default' : 'pointer',
-          'border-radius': '6px',
+          'border-radius': 'var(--radius-sm)',
           padding: '4px',
           'font-size': '13px',
           'line-height': '1',
@@ -96,7 +96,7 @@ export function UpdateButton() {
           when={phase() === 'downloading'}
           fallback={phase() === 'downloaded' ? <RestartIcon /> : <DownloadIcon />}
         >
-          <span style={{ 'font-size': '10px', 'font-weight': '600' }}>
+          <span style={{ 'font-size': '11px', 'font-weight': '600' }}>
             {updateStatus().downloadPercent}%
           </span>
         </Show>

@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from 'solid-js';
 import { theme } from '../lib/theme';
+import { BookmarkIcon } from './icons';
 
 /** Minimal bookmark shape the gutter needs to draw. Position is supplied
  *  separately via `topOf` so it can track live xterm state without re-creating
@@ -31,8 +32,6 @@ export interface TerminalBookmarkGutterProps {
   createTop: number;
   onCreate: () => void;
 }
-
-const BOOKMARK_ICON_PATH = 'M4 2.5A1.5 1.5 0 0 1 5.5 1h5A1.5 1.5 0 0 1 12 2.5V14l-4-2.5L4 14V2.5Z';
 
 /** Left-edge gutter for one terminal pane. Purely presentational — the owning
  *  TerminalView registers xterm markers and feeds positions back in. A bookmark
@@ -89,9 +88,7 @@ export function TerminalBookmarkGutter(props: TerminalBookmarkGutterProps): JSX.
                 filter: 'drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.55))',
               }}
             >
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
-                <path d={BOOKMARK_ICON_PATH} />
-              </svg>
+              <BookmarkIcon size={15} />
             </button>
           </Show>
         )}
@@ -134,7 +131,7 @@ export function TerminalBookmarkGutter(props: TerminalBookmarkGutterProps): JSX.
             width: '22px',
             height: '22px',
             padding: '0',
-            'border-radius': '5px',
+            'border-radius': 'var(--radius-sm)',
             background: theme.bgElevated,
             border: `1px solid ${theme.border}`,
             color: theme.fgMuted,
@@ -143,9 +140,7 @@ export function TerminalBookmarkGutter(props: TerminalBookmarkGutterProps): JSX.
             'pointer-events': 'auto',
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-            <path d={BOOKMARK_ICON_PATH} />
-          </svg>
+          <BookmarkIcon size={14} />
         </button>
       </Show>
     </div>
@@ -177,12 +172,12 @@ function OverflowBadge(props: {
         'justify-content': 'center',
         height: '12px',
         padding: '0 3px',
-        'border-radius': '6px',
+        'border-radius': 'var(--radius-sm)',
         background: theme.bgElevated,
         border: `1px solid ${theme.border}`,
         color: theme.accent,
         'font-family': 'var(--font-ui)',
-        'font-size': '9px',
+        'font-size': '11px',
         'font-weight': '600',
         'line-height': '1',
         cursor: 'pointer',

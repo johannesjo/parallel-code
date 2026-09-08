@@ -72,6 +72,37 @@ export interface WorktreeStatus {
   has_committed_changes: boolean;
   has_uncommitted_changes: boolean;
   current_branch: string | null;
+  /** Resolved base branch (explicit or detected main); null when the worktree
+   *  is unreadable. */
+  base_branch: string | null;
+  /** HEAD commit sha; lets consumers tell whether a verification run still
+   *  describes the current tree. Absent from older senders, null when unreadable. */
+  head_sha?: string | null;
+}
+
+export type VerificationRunStatus =
+  | 'running'
+  | 'passed'
+  | 'failed'
+  | 'cancelled'
+  | 'timed_out'
+  | 'error';
+
+/** One execution of a project's verify command inside a task worktree. */
+export interface VerificationRun {
+  command: string;
+  status: VerificationRunStatus;
+  exitCode: number | null;
+  /** HEAD sha when the run started; null outside a git checkout. */
+  headSha: string | null;
+  /** True when the worktree had uncommitted changes when the run started. */
+  dirty: boolean;
+  startedAt: string;
+  finishedAt: string | null;
+  /** Bounded tail of combined stdout and stderr, ANSI stripped. */
+  outputTail: string;
+  /** Human-readable reason for `error`, `timed_out` and `cancelled`. */
+  message?: string;
 }
 
 export interface ImportableWorktree {
@@ -136,6 +167,27 @@ export interface BranchPrDetectionResult {
   unavailable?: 'missing' | 'auth';
 }
 
+export interface EslintQualityFinding {
+  id: string;
+  source: 'eslint';
+  ruleId: string;
+  category: 'maintainability';
+  severity: 'error' | 'warning';
+  location: {
+    filePath: string;
+    startLine: number;
+    startColumn?: number;
+    endLine?: number;
+    endColumn?: number;
+  };
+  explanation: string;
+}
+
+export type EslintQualityResult =
+  | { status: 'available'; findings: EslintQualityFinding[] }
+  | { status: 'not-applicable' }
+  | { status: 'unavailable'; message: string };
+
 export interface StepEntry {
   summary: string;
   detail?: string;
@@ -147,3 +199,25 @@ export interface StepEntry {
   agent_id?: string;
   timestamp: string;
 }
+
+/** Agents whose subscription rate limits the app can read. */
+export type UsageProvider = 'claude' | 'codex';
+
+export interface UsageWindow {
+  /** Percent of the window consumed, 0–100. */
+  usedPercent: number;
+  /** Unix ms when the window resets, null when the API omits it. */
+  resetsAt: number | null;
+}
+
+export type UsageResult =
+  | {
+      status: 'ok';
+      fiveHour: UsageWindow | null;
+      sevenDay: UsageWindow | null;
+      fetchedAt: number;
+    }
+  /** No subscription login to read — the status bar hides itself. */
+  | { status: 'unavailable'; reason: string }
+  /** Transient failure — the renderer keeps its last good snapshot. */
+  | { status: 'error'; message: string };

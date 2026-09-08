@@ -186,7 +186,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
                 color: theme.fgMuted,
                 background: theme.bgInput,
                 border: `1px solid ${theme.border}`,
-                'border-radius': '8px',
+                'border-radius': 'var(--radius-md)',
               }}
             >
               Scanning for existing worktrees...
@@ -201,7 +201,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
                 color: theme.fgMuted,
                 background: theme.bgInput,
                 border: `1px solid ${theme.border}`,
-                'border-radius': '8px',
+                'border-radius': 'var(--radius-md)',
               }}
             >
               No importable worktrees were found for this project.
@@ -231,7 +231,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
                         border: selected()
                           ? `1px solid ${theme.accent}`
                           : `1px solid ${theme.border}`,
-                        'border-radius': '10px',
+                        'border-radius': 'var(--radius-md)',
                         cursor: 'pointer',
                       }}
                     >
@@ -302,7 +302,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
               color: theme.error,
               background: `color-mix(in srgb, ${theme.error} 8%, transparent)`,
               padding: '8px 12px',
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               border: `1px solid color-mix(in srgb, ${theme.error} 20%, transparent)`,
             }}
           >
@@ -319,7 +319,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
               padding: '9px 18px',
               background: theme.bgInput,
               border: `1px solid ${theme.border}`,
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               color: theme.fgMuted,
               cursor: closeDisabled() ? 'not-allowed' : 'pointer',
               'font-size': '13px',
@@ -336,7 +336,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
               padding: '9px 18px',
               background: theme.accent,
               border: 'none',
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               color: theme.accentText,
               cursor: canImport() ? 'pointer' : 'not-allowed',
               'font-size': '13px',
@@ -362,7 +362,7 @@ function StatusBadge(props: { label: string; tone: 'accent' | 'warning' | 'muted
   return (
     <span
       style={{
-        'font-size': '10px',
+        'font-size': '11px',
         'font-weight': '600',
         padding: '2px 7px',
         'border-radius': '999px',

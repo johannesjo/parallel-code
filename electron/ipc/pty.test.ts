@@ -92,10 +92,12 @@ import {
   isDockerAvailable,
   killAgent,
   killAllAgents,
+  onPtyEvent,
   projectImageTag,
   resolveProjectDockerfile,
   spawnAgent,
   validateCommand,
+  writeToAgent,
 } from './pty.js';
 
 let tempPaths: string[] = [];
@@ -1295,5 +1297,37 @@ describe('buildDockerCredentialMounts — read-only auth dir', () => {
     // Must have warned about the failure (single string arg — the message itself)
     const warnMessages = warnSpy.mock.calls.map((c) => String(c[0]));
     expect(warnMessages.some((m) => /\[docker-auth\].*Could not/.test(m))).toBe(true);
+  });
+});
+
+describe('writeToAgent — interrupt keystrokes', () => {
+  it('emits an interrupt event for a bare Esc or Ctrl+C on agent sessions only', () => {
+    const interrupted: string[] = [];
+    const off = onPtyEvent('interrupt', (agentId) => interrupted.push(agentId));
+    const agent = buildSpawnArgs({
+      agentId: 'agent-interrupt',
+      command: 'claude',
+      args: [],
+      dockerMode: false,
+    });
+    const shell = buildSpawnArgs({
+      agentId: 'shell-interrupt',
+      command: '/bin/sh',
+      args: [],
+      dockerMode: false,
+      isShell: true,
+    });
+    spawnAgent(createMockWindow(), agent);
+    spawnAgent(createMockWindow(), shell);
+
+    writeToAgent(agent.agentId, 'hello');
+    writeToAgent(agent.agentId, '\x1b[A'); // arrow key: an escape sequence, not an interrupt
+    writeToAgent(shell.agentId, '\x03');
+    expect(interrupted).toEqual([]);
+
+    writeToAgent(agent.agentId, '\x1b');
+    writeToAgent(agent.agentId, '\x03');
+    expect(interrupted).toEqual([agent.agentId, agent.agentId]);
+    off();
   });
 });

@@ -6,6 +6,7 @@ import type { AgentDef } from '../ipc/types';
 import type { Agent } from './types';
 import { refreshTaskStatus, clearAgentActivity, markAgentSpawned } from './taskStatus';
 import { saveState } from './persistence';
+import { refreshUsage, usageProviderForAgent } from './usage';
 
 export async function loadAgents(): Promise<void> {
   const defaults = await invoke<AgentDef[]>(IPC.ListAgents);
@@ -100,6 +101,9 @@ export function markAgentExited(
   if (agent) {
     clearAgentActivity(agentId);
     refreshTaskStatus(agent.taskId);
+    // A finished session just moved its agent's meter; the slow poll would lag by minutes.
+    const provider = usageProviderForAgent(agent.def.id);
+    if (provider) void refreshUsage(provider);
   }
 }
 

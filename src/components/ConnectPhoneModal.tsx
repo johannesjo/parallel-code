@@ -199,7 +199,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
 
   const pillStyle = (active: boolean) => ({
     padding: '6px 14px',
-    'border-radius': '6px',
+    'border-radius': 'var(--radius-sm)',
     border: 'none',
     'font-size': '13px',
     cursor: 'pointer',
@@ -239,7 +239,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             display: 'flex',
             gap: '4px',
             background: theme.bgInput,
-            'border-radius': '8px',
+            'border-radius': 'var(--radius-md)',
             padding: '3px',
           }}
         >
@@ -262,7 +262,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               WiFi
             </button>
             <Show when={!store.remoteAccess.wifiUrl}>
-              <span style={{ 'font-size': '10px', color: theme.fgSubtle }}>Not detected</span>
+              <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>Not detected</span>
             </Show>
           </div>
           <div
@@ -284,7 +284,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               Tailscale
             </button>
             <Show when={!store.remoteAccess.tailscaleUrl}>
-              <span style={{ 'font-size': '10px', color: theme.fgSubtle }}>Not detected</span>
+              <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>Not detected</span>
             </Show>
           </div>
         </div>
@@ -294,7 +294,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
           style={{
             width: '200px',
             height: '200px',
-            'border-radius': '8px',
+            'border-radius': 'var(--radius-md)',
             background: '#ffffff',
             display: 'flex',
             'align-items': 'center',
@@ -334,7 +334,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             width: '100%',
             background: theme.bgInput,
             border: `1px solid ${theme.border}`,
-            'border-radius': '8px',
+            'border-radius': 'var(--radius-md)',
             padding: '10px 12px',
             'font-size': '13px',
             'font-family': "'JetBrains Mono', monospace",
@@ -466,14 +466,14 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
                     padding: '7px 16px',
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
-                    'border-radius': '8px',
+                    'border-radius': 'var(--radius-md)',
                     color: theme.fg,
                     cursor: 'pointer',
                     'font-size': '13px',
                     'font-weight': '500',
                   }}
                 >
-                  Pair a device to create tasks
+                  Pair a device to type and create tasks
                 </button>
                 <Show when={pairingError()}>
                   <span style={{ 'font-size': '12px', color: theme.error }}>{pairingError()}</span>
@@ -538,7 +538,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
                 display: 'inline-block',
                 transform: showRisks() ? 'rotate(90deg)' : 'none',
                 transition: 'transform 0.15s ease',
-                'font-size': '10px',
+                'font-size': '11px',
               }}
             >
               ▶
@@ -560,16 +560,16 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               }}
             >
               <li>
-                Anyone on your network with the link can view your agent terminals and type into
-                running agents.
+                Anyone on your network with the link can watch your agent terminals. Typing into
+                agents, editing notes, and creating tasks require pairing with the code above.
               </li>
               <li>
                 The Wi-Fi connection is unencrypted. Prefer Tailscale, or only connect on a network
                 you trust.
               </li>
               <li>
-                A paired phone can create new tasks, which run code on this computer, until you
-                disconnect.
+                A paired phone can type into agents and create new tasks, which run code on this
+                computer, until you disconnect.
               </li>
               <li>Disconnecting stops the server and revokes every connected and paired device.</li>
             </ul>
@@ -583,7 +583,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             padding: '7px 16px',
             background: 'transparent',
             border: 'none',
-            'border-radius': '8px',
+            'border-radius': 'var(--radius-md)',
             color: theme.fgSubtle,
             cursor: 'pointer',
             'font-size': '13px',

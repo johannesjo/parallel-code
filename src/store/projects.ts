@@ -64,11 +64,13 @@ export function updateProject(
       | 'defaultGitIsolation'
       | 'defaultBaseBranch'
       | 'coverageReportPath'
+      | 'verifyCommand'
       | 'terminalBookmarks'
       | 'isGitRepo'
     >
   >,
 ): void {
+  const previousVerifyCommand = getProject(projectId)?.verifyCommand;
   setStore(
     produce((s) => {
       const idx = s.projects.findIndex((p) => p.id === projectId);
@@ -85,11 +87,38 @@ export function updateProject(
         s.projects[idx].defaultBaseBranch = updates.defaultBaseBranch;
       if (Object.prototype.hasOwnProperty.call(updates, 'coverageReportPath'))
         s.projects[idx].coverageReportPath = updates.coverageReportPath;
+      if (Object.prototype.hasOwnProperty.call(updates, 'verifyCommand'))
+        s.projects[idx].verifyCommand = updates.verifyCommand;
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
       if (updates.isGitRepo !== undefined) s.projects[idx].isGitRepo = updates.isGitRepo;
     }),
   );
+  if (
+    Object.prototype.hasOwnProperty.call(updates, 'verifyCommand') &&
+    updates.verifyCommand !== previousVerifyCommand
+  ) {
+    syncCoordinatorVerifyCommand(projectId, updates.verifyCommand);
+  }
+}
+
+/** Coordinators cache the verify command in the main process when they
+ *  register, so a change here has to be pushed to the ones already running. */
+function syncCoordinatorVerifyCommand(projectId: string, verifyCommand: string | undefined): void {
+  for (const task of Object.values(store.tasks)) {
+    if (!task.coordinatorMode || task.projectId !== projectId) continue;
+    if (task.mcpStartupStatus !== 'ready') continue;
+    invoke(IPC.MCP_CoordinatorRegistered, {
+      coordinatorTaskId: task.id,
+      projectId,
+      coordinatorBranch: task.branchName || undefined,
+      worktreePath: task.worktreePath,
+      // An empty string clears the command; JSON serialization drops undefined keys.
+      verifyCommand: verifyCommand ?? '',
+    }).catch((err) => {
+      console.warn('[MCP] Failed to update coordinator verify command:', err);
+    });
+  }
 }
 
 export function getProjectBranchPrefix(projectId: string): string {

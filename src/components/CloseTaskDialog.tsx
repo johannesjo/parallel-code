@@ -46,7 +46,7 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
                   color: theme.warning,
                   background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
                   padding: '8px 12px',
-                  'border-radius': '8px',
+                  'border-radius': 'var(--radius-md)',
                   border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
                   'font-weight': '600',
                 }}

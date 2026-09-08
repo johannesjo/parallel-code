@@ -33,6 +33,8 @@ export const theme = {
   success: 'var(--success)',
   error: 'var(--error)',
   warning: 'var(--warning)',
+  review: 'var(--review)',
+  info: 'var(--info)',
 
   // Island containers (task columns, sidebar)
   islandBg: 'var(--island-bg)',
@@ -162,7 +164,7 @@ export function bannerStyle(color: string): Record<string, string> {
     color,
     background: `color-mix(in srgb, ${color} 8%, transparent)`,
     padding: '8px 12px',
-    'border-radius': '8px',
+    'border-radius': 'var(--radius-md)',
     border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`,
   };
 }

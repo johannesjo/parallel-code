@@ -135,7 +135,7 @@ function SidebarAnnotationItem(props: {
               width: '100%',
               background: theme.bgInput,
               border: `1px solid ${theme.borderSubtle}`,
-              'border-radius': '4px',
+              'border-radius': 'var(--radius-xs)',
               color: theme.fg,
               'font-size': sf(12),
               'font-family': "'JetBrains Mono', monospace",
@@ -210,7 +210,7 @@ export function ReviewSidebar(props: ReviewSidebarProps) {
           <div
             style={{
               color: theme.fgMuted,
-              'font-size': sf(10),
+              'font-size': sf(11),
               'font-weight': '700',
               'text-transform': 'uppercase',
               'margin-bottom': '6px',
@@ -234,7 +234,7 @@ export function ReviewSidebar(props: ReviewSidebarProps) {
           <div
             style={{
               color: theme.fgMuted,
-              'font-size': sf(10),
+              'font-size': sf(11),
               'font-weight': '700',
               'text-transform': 'uppercase',
               margin: props.findings.length > 0 ? '12px 0 6px' : '0 0 6px',
@@ -275,7 +275,7 @@ export function ReviewSidebar(props: ReviewSidebarProps) {
             'font-weight': '600',
             'font-size': sf(12),
             padding: '7px 12px',
-            'border-radius': '4px',
+            'border-radius': 'var(--radius-xs)',
             cursor: canSend() ? 'pointer' : 'default',
           }}
           title={sendTitle()}

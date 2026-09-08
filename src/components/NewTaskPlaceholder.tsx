@@ -1,8 +1,23 @@
-import { onMount, onCleanup } from 'solid-js';
+import { onMount, onCleanup, type JSX } from 'solid-js';
 import { toggleNewTaskDialog, createTerminal, unfocusPlaceholder } from '../store/store';
 import { registerFocusFn, unregisterFocusFn } from '../store/focus';
 import { theme } from '../lib/theme';
 import { mod } from '../lib/platform';
+
+/** Quiet ghost surface: a faint fill instead of a dashed wireframe border, so
+ *  the add column reads as part of the strip rather than a placeholder. The
+ *  hover/focus treatment lives in `.new-task-placeholder`. */
+const ghostStyle: JSX.CSSProperties = {
+  display: 'flex',
+  'align-items': 'center',
+  'justify-content': 'center',
+  cursor: 'pointer',
+  'border-radius': 'var(--radius-lg)',
+  border: `1px solid ${theme.borderSubtle}`,
+  background: `color-mix(in srgb, ${theme.fgSubtle} 6%, transparent)`,
+  color: theme.fgSubtle,
+  'user-select': 'none',
+};
 
 export function NewTaskPlaceholder() {
   let addTaskRef: HTMLDivElement | undefined;
@@ -44,21 +59,12 @@ export function NewTaskPlaceholder() {
             toggleNewTaskDialog(true);
           }
         }}
-        style={{
-          flex: '1',
-          display: 'flex',
-          'align-items': 'center',
-          'justify-content': 'center',
-          cursor: 'pointer',
-          'border-radius': '12px',
-          border: `2px dashed ${theme.border}`,
-          color: theme.fgSubtle,
-          'font-size': '21px',
-          'user-select': 'none',
-        }}
+        style={{ ...ghostStyle, flex: '1' }}
         title={`New task (${mod}+N)`}
       >
-        +
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
+        </svg>
       </div>
 
       {/* Terminal button — same width, fixed height */}
@@ -77,17 +83,10 @@ export function NewTaskPlaceholder() {
           }
         }}
         style={{
+          ...ghostStyle,
           height: '44px',
-          display: 'flex',
-          'align-items': 'center',
-          'justify-content': 'center',
-          cursor: 'pointer',
-          'border-radius': '10px',
-          border: `2px dashed ${theme.border}`,
-          color: theme.fgSubtle,
-          'font-size': '14px',
-          'font-family': 'monospace',
-          'user-select': 'none',
+          'font-size': '12px',
+          'font-family': 'var(--font-mono)',
           'flex-shrink': '0',
         }}
         title={`New terminal (${mod}+Shift+D)`}

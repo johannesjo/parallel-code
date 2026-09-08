@@ -109,7 +109,7 @@ export function Dialog(props: DialogProps) {
             style={{
               background: theme.islandBg,
               border: `1px solid ${theme.border}`,
-              'border-radius': '14px',
+              'border-radius': 'var(--radius-lg)',
               padding: '28px',
               width: props.width ?? '400px',
               'max-height': '80vh',

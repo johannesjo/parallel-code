@@ -8,12 +8,15 @@ import type { Task } from '../store/types';
 import type { StepEntry } from '../ipc/types';
 import { warn as logWarn } from '../lib/log';
 
+// Phase hues follow the app's semantic tokens so a step's colour means the
+// same thing as the sidebar dot: accent = agent working, review = the purple
+// "awaiting review" state, warning = verification in progress.
 const STATUS_COLORS: Record<string, string> = {
-  starting: '#fb923c',
-  investigating: '#60a5fa',
-  implementing: '#c084fc',
-  testing: '#e5a800',
-  awaiting_review: '#f87171',
+  starting: theme.fgMuted,
+  investigating: theme.info,
+  implementing: theme.accent,
+  testing: theme.warning,
+  awaiting_review: theme.review,
   done: theme.success,
 };
 
@@ -88,9 +91,9 @@ function FileBadge(props: { file: string; onFileClick?: (file: string) => void }
         e.currentTarget.style.background = `color-mix(in srgb, ${theme.fgMuted} 10%, transparent)`;
       }}
       style={{
-        'font-size': sf(10),
+        'font-size': sf(11),
         padding: '1px 6px',
-        'border-radius': '3px',
+        'border-radius': 'var(--radius-xs)',
         background: `color-mix(in srgb, ${theme.fgMuted} 10%, transparent)`,
         color: theme.fgMuted,
         border: `1px solid ${theme.border}`,
@@ -121,10 +124,10 @@ function AgentChip(props: { agentId: string }) {
       style={{
         width: '18px',
         height: '14px',
-        'border-radius': '3px',
+        'border-radius': 'var(--radius-xs)',
         background: `hsl(${hue()}, 45%, 30%)`,
         color: `hsl(${hue()}, 70%, 82%)`,
-        'font-size': sf(9),
+        'font-size': sf(11),
         'font-weight': '600',
         display: 'inline-flex',
         'align-items': 'center',
@@ -155,7 +158,7 @@ function AgentHeader(props: { agentId: string }) {
       <span
         title={`Sub-agent: ${props.agentId}`}
         style={{
-          'font-size': sf(10),
+          'font-size': sf(11),
           color: theme.fgMuted,
           'font-family': "'JetBrains Mono', monospace",
           overflow: 'hidden',
@@ -358,7 +361,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
         display: 'flex',
         'flex-direction': 'column',
         background: theme.taskPanelBg,
-        'border-radius': '6px',
+        'border-radius': 'var(--radius-sm)',
       }}
     >
       <Show when={steps().length === 0}>
@@ -460,7 +463,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                           display: 'flex',
                           'flex-direction': 'column',
                           cursor: 'pointer',
-                          'border-radius': '4px',
+                          'border-radius': 'var(--radius-xs)',
                           'user-select': 'none',
                           padding: indented() ? '4px 6px 3px 8px' : '0 6px 0 8px',
                           'margin-left': indented() ? `${SUB_AGENT_INDENT_PX}px` : '0',
@@ -510,7 +513,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                           <Show when={step.timestamp}>
                             <span
                               style={{
-                                'font-size': sf(9),
+                                'font-size': sf(11),
                                 color: theme.fgSubtle,
                                 'flex-shrink': '0',
                               }}
@@ -524,7 +527,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                           <Show when={(step.files_touched?.length ?? 0) > 0}>
                             <span
                               style={{
-                                'font-size': sf(9),
+                                'font-size': sf(11),
                                 color: theme.fgSubtle,
                                 'flex-shrink': '0',
                               }}
@@ -549,7 +552,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                           <Show when={step.timestamp}>
                             <div
                               style={{
-                                'font-size': sf(9),
+                                'font-size': sf(11),
                                 color: theme.fgSubtle,
                                 'margin-bottom': '4px',
                               }}
@@ -605,7 +608,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
               return (
                 <div
                   style={{
-                    'border-radius': '6px',
+                    'border-radius': 'var(--radius-sm)',
                     padding: '6px 10px 8px',
                     'margin-left': indented() ? `${SUB_AGENT_INDENT_PX}px` : '0',
                   }}
@@ -655,7 +658,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                     </Show>
                     <Show when={step().timestamp}>
                       <span
-                        style={{ 'font-size': sf(10), color: theme.fgSubtle, 'flex-shrink': '0' }}
+                        style={{ 'font-size': sf(11), color: theme.fgSubtle, 'flex-shrink': '0' }}
                       >
                         {relativeTime(step().timestamp)}
                       </span>
@@ -711,7 +714,7 @@ export function TaskStepsSection(props: TaskStepsSectionProps) {
                 padding: '4px 2px 2px',
               }}
             >
-              <WaitingIndicator fontSize={sf(10)} />
+              <WaitingIndicator fontSize={sf(11)} />
             </div>
           </Show>
         </div>

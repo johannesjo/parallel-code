@@ -7,6 +7,8 @@ export type {
   CoverageMetricSummary,
   CoverageSummary,
   CreateTaskResult,
+  EslintQualityFinding,
+  EslintQualityResult,
   FileDiffResult,
   GitIgnoredEntry,
   ImportableWorktree,
@@ -19,6 +21,11 @@ export type {
   PrReviewDecision,
   PtyOutput,
   StepEntry,
+  UsageProvider,
+  UsageResult,
+  UsageWindow,
+  VerificationRun,
+  VerificationRunStatus,
   WorktreeStatus,
 } from '../../electron/ipc/shared-types';
 

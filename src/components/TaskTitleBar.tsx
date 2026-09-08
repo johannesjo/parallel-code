@@ -10,6 +10,7 @@ import {
   toggleTaskFocusMode,
   clearTaskLandingReview,
   getPrChecks,
+  getVerifyCommand,
 } from '../store/store';
 import { EditableText, type EditableTextHandle } from './EditableText';
 import { IconButton } from './IconButton';
@@ -17,11 +18,26 @@ import { StatusDot } from './StatusDot';
 import { CheckIcon, CloseIcon } from './icons';
 import { theme } from '../lib/theme';
 import { badgeStyle } from '../lib/badgeStyle';
+import {
+  summarizeVerificationRun,
+  usesVerificationRun,
+  type VerificationSummaryKind,
+} from '../lib/verification-run';
 import { handleDragReorder } from '../lib/dragReorder';
 import { getTaskDockerBadgeLabel } from '../lib/docker';
 import { displayTaskNameFromPrompt, shouldUsePromptDerivedTaskName } from '../lib/clean-task-name';
 import type { Task } from '../store/types';
 import { isLandedTaskState } from '../store/landing';
+
+// Kinds without an entry stay silent: a configured-but-never-run command on
+// every task would be noise, and cancelled runs carry no signal.
+const RUN_BADGES: Partial<Record<VerificationSummaryKind, { label: string; color: string }>> = {
+  running: { label: 'Verifying…', color: theme.fgMuted },
+  passed: { label: 'Verified', color: theme.success },
+  stale: { label: 'Verify stale', color: theme.warning },
+  dirty: { label: 'Verified (dirty)', color: theme.warning },
+  failed: { label: 'Verify failed', color: theme.error },
+};
 
 interface TaskTitleBarProps {
   task: Task;
@@ -65,7 +81,20 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
         return null;
     }
   };
-  const verificationBadge = () => {
+  // Same precedence as the merge dialog so the badge and its readiness row agree.
+  const verificationBadge = () =>
+    usesVerificationRun(props.task.verificationRun, Boolean(getVerifyCommand(props.task.id)))
+      ? runVerificationBadge()
+      : reportedVerificationBadge();
+  const runVerificationBadge = () => {
+    const summary = summarizeVerificationRun(
+      props.task.verificationRun,
+      store.taskGitStatus[props.task.id]?.head_sha,
+    );
+    const badge = RUN_BADGES[summary.kind];
+    return badge ? { ...badge, title: `${summary.label}. ${summary.detail}` } : null;
+  };
+  const reportedVerificationBadge = () => {
     const checks = props.task.verification?.checks;
     if (!checks?.length) return null;
     if (checks.every((check) => check.result === 'passed')) {
@@ -129,7 +158,7 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
 
   return (
     <div
-      class={`task-title-bar${props.isActive ? ' island-header-active' : ''}`}
+      class="task-title-bar"
       style={{
         display: 'flex',
         'align-items': 'center',
@@ -137,7 +166,6 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
         padding: '0 10px',
         height: '100%',
         background: 'transparent',
-        'border-bottom': `1px solid ${theme.border}`,
         'user-select': 'none',
         cursor: 'grab',
       }}
@@ -240,7 +268,7 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
                     'justify-content': 'center',
                     padding: '4px',
                     border: `1px solid ${theme.border}`,
-                    'border-radius': '6px',
+                    'border-radius': 'var(--radius-sm)',
                   }}
                 >
                   <span class="inline-spinner" style={{ width: '14px', height: '14px' }} />

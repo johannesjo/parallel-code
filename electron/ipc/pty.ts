@@ -7,8 +7,16 @@ import { fileURLToPath } from 'url';
 import type { BrowserWindow } from 'electron';
 import { RingBuffer } from '../remote/ring-buffer.js';
 import { resolveUserShell } from '../user-shell.js';
-import { ensureClaudeSandboxFiles, ensureSandboxExcludes } from './git.js';
+import {
+  detectRepoRoot,
+  ensureClaudeSandboxFiles,
+  ensureSandboxExcludes,
+  ensureWorktreeContainerExclude,
+  refreshWorktreeNodeModules,
+} from './git.js';
 import { loadEnvFile } from './env-file.js';
+import { HOOK_PTY_ENV_KEYS } from '../agent-hooks/hook-script.js';
+import { isClaudeCommand, withClaudeHookSettings } from '../agent-hooks/launch-args.js';
 import { debug as logDebug } from '../log.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -35,9 +43,9 @@ function sendToChannel(win: BrowserWindow, channelId: string, msg: unknown): voi
   }
 }
 
-// --- PTY event bus for spawn/exit notifications ---
+// --- PTY event bus for spawn/exit/interrupt notifications ---
 
-type PtyEventType = 'spawn' | 'exit' | 'list-changed';
+type PtyEventType = 'spawn' | 'exit' | 'list-changed' | 'interrupt';
 type PtyEventListener = (agentId: string, data?: unknown) => void;
 const eventListeners = new Map<PtyEventType, Set<PtyEventListener>>();
 
@@ -75,6 +83,9 @@ const MAX_LINES = 50;
 // agent's traffic. Now that a file on disk is a first-class env source, anyone
 // who can write that file would otherwise inherit the agent's privileges.
 export const ENV_BLOCK_LIST = new Set([
+  // Hook status is attributed by these; a task env file must not be able to
+  // impersonate another agent or point the hook script at a foreign endpoint.
+  ...HOOK_PTY_ENV_KEYS,
   'PATH',
   'HOME',
   'USER',
@@ -474,6 +485,36 @@ function attachPtyOutputHandlers(
   });
 }
 
+/** What a Claude launch needs to self-report status; null until the hook server is up. */
+export interface AgentHookRuntime {
+  claudeSettingsPath: string;
+  buildPtyEnv(agentId: string, taskId: string): Record<string, string>;
+}
+
+let agentHookRuntime: AgentHookRuntime | null = null;
+
+export function setAgentHookRuntime(runtime: AgentHookRuntime | null): void {
+  agentHookRuntime = runtime;
+}
+
+/**
+ * Adds hook identity env and `--settings` so a Claude Code agent reports its
+ * own status. Shells get nothing (the user runs whatever they like there),
+ * Docker gets nothing because the loopback port is not reachable from inside,
+ * and other agents get nothing because they could only ever forge with it.
+ */
+export function applyAgentHookLaunch(
+  args: Pick<SpawnAgentArgs, 'agentId' | 'taskId' | 'args' | 'isShell' | 'dockerMode'>,
+  command: string,
+  spawnEnv: Record<string, string>,
+): string[] {
+  if (!agentHookRuntime || args.isShell || args.dockerMode || !isClaudeCommand(command)) {
+    return args.args;
+  }
+  Object.assign(spawnEnv, agentHookRuntime.buildPtyEnv(args.agentId, args.taskId));
+  return withClaudeHookSettings(command, args.args, agentHookRuntime.claudeSettingsPath);
+}
+
 export function spawnAgent(win: BrowserWindow, args: SpawnAgentArgs): void {
   const channelId = args.onOutput.__CHANNEL_ID__;
   const command = args.command || resolveUserShell();
@@ -520,15 +561,23 @@ export function spawnAgent(win: BrowserWindow, args: SpawnAgentArgs): void {
   cleanupExistingSession(args.agentId, existing);
 
   const spawnEnv = buildPtySpawnEnv(args.env, fileEnv);
+  const launchArgs = applyAgentHookLaunch(args, command, spawnEnv);
 
   // Backfill sandbox placeholders for pre-existing worktrees (and anywhere
   // Claude Code may launch). See ensureClaudeSandboxFiles for the why.
   if (!args.dockerMode && fs.existsSync(cwd)) {
-    ensureClaudeSandboxFiles(cwd);
+    // Resolve the repo root once — each helper would otherwise spawn its own
+    // `git rev-parse` subprocess.
+    const repoRoot = detectRepoRoot(cwd);
+    ensureClaudeSandboxFiles(cwd, repoRoot);
     ensureSandboxExcludes(cwd);
+    ensureWorktreeContainerExclude(cwd);
+    // Migrate legacy whole-dir node_modules symlinks and pick up packages
+    // installed in the main checkout since worktree creation.
+    refreshWorktreeNodeModules(cwd, repoRoot);
   }
 
-  const spawnSpec = buildPtySpawnSpec(args, command, cwd, spawnEnv);
+  const spawnSpec = buildPtySpawnSpec({ ...args, args: launchArgs }, command, cwd, spawnEnv);
 
   logDebug('pty', `spawn command ${args.agentId}`, {
     taskId: args.taskId,
@@ -563,10 +612,17 @@ export function spawnAgent(win: BrowserWindow, args: SpawnAgentArgs): void {
   emitPtyEvent('spawn', args.agentId);
 }
 
+// A bare Escape or Ctrl+C keystroke (xterm sends each as a single-byte chunk;
+// escape sequences like arrow keys arrive longer).
+const INTERRUPT_KEYSTROKES = new Set(['\x1b', '\x03']);
+
 export function writeToAgent(agentId: string, data: string): void {
   const session = sessions.get(agentId);
   if (!session) throw new Error(`Agent not found: ${agentId}`);
   session.proc.write(data);
+  // Claude Code fires no Stop hook for a user interrupt, so consumers that
+  // trust hook state (the coordinator) need to hear about the keystroke.
+  if (!session.isShell && INTERRUPT_KEYSTROKES.has(data)) emitPtyEvent('interrupt', agentId);
 }
 
 export function resizeAgent(agentId: string, cols: number, rows: number): void {

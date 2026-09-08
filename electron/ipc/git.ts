@@ -5,6 +5,7 @@ import path from 'path';
 import type { BrowserWindow } from 'electron';
 import { debug as logDebug } from '../log.js';
 import {
+  appendGitInfoExcludeBlock,
   appendGitInfoExcludeBlockAtPath,
   normalizeExcludeLine,
   resolveGitInfoExcludePath,
@@ -14,7 +15,18 @@ import {
   foreignOwnedRemovalError,
   reclaimOwnership,
 } from './worktree-cleanup.js';
-import type { ChangedFile, CommitInfo, FileDiffResult, GitIgnoredEntry } from './shared-types.js';
+import {
+  ensureNodeModulesEntryLinks,
+  isManagedNodeModules,
+  realpathOrNull,
+} from './worktree-node-modules.js';
+import type {
+  ChangedFile,
+  CommitInfo,
+  FileDiffResult,
+  GitIgnoredEntry,
+  WorktreeStatus,
+} from './shared-types.js';
 
 export type { ChangedFile, CommitInfo, FileDiffResult, GitIgnoredEntry } from './shared-types.js';
 
@@ -172,6 +184,9 @@ const INTERNAL_SYMLINK_EXCLUSIONS = new Set([
 ]);
 const SANDBOX_EXCLUDE_HEADER = '# parallel-code: sandbox bind-mount artifacts';
 const seededSandboxExcludes = new Set<string>();
+
+const WORKTREE_CONTAINER_EXCLUDE_HEADER = '# parallel-code: task worktree container';
+const WORKTREE_CONTAINER_EXCLUDE = '/.worktrees/';
 
 /**
  * Header written once per repo when symlink excludes are first added. Each
@@ -924,6 +939,9 @@ export async function createWorktree(
     );
   }
 
+  // Before `worktree add`: a `git status` racing creation must never see it.
+  ensureWorktreeContainerExclude(repoRoot);
+
   const worktreeArgs = ['worktree', 'add', '-b', branchName, worktreePath];
   if (baseBranch) worktreeArgs.push(baseBranch);
   await exec('git', worktreeArgs, { cwd: repoRoot });
@@ -947,7 +965,14 @@ export async function createWorktree(
     try {
       if (!fs.existsSync(source)) continue;
       if (fs.existsSync(target)) continue;
-      fs.symlinkSync(source, target);
+      if (name === 'node_modules') {
+        // Not a whole-dir symlink: per-entry links, so root-level cache writes
+        // (vite's `.vite-temp`/`.vite`, `.cache`) land inside the worktree —
+        // the only path agent sandboxes allow writes to.
+        if (!ensureNodeModulesEntryLinks(source, target)) continue;
+      } else {
+        fs.symlinkSync(source, target);
+      }
       createdSymlinks.push(name);
     } catch (err) {
       console.warn(`Failed to symlink directory '${name}' into worktree:`, err);
@@ -974,7 +999,7 @@ export async function createWorktree(
  * from the previous shallow-symlink behavior and seeds any newly-missing
  * entries from the source.
  */
-export function ensureClaudeSandboxFiles(worktreePath: string, repoRoot?: string): void {
+export function ensureClaudeSandboxFiles(worktreePath: string, repoRoot?: string | null): void {
   const claudeDir = path.join(worktreePath, '.claude');
   try {
     fs.mkdirSync(claudeDir, { recursive: true });
@@ -1003,7 +1028,7 @@ export function ensureClaudeSandboxFiles(worktreePath: string, repoRoot?: string
 
   // Seed missing entries from the main repo's .claude/. Dereferences any
   // symlinks in the source so the copy is pure real files (bwrap-safe).
-  const root = repoRoot ?? detectRepoRoot(worktreePath);
+  const root = repoRoot === undefined ? detectRepoRoot(worktreePath) : repoRoot;
   if (root && root !== worktreePath) {
     const source = path.join(root, '.claude');
     if (fs.existsSync(source)) {
@@ -1040,6 +1065,25 @@ export function ensureClaudeSandboxFiles(worktreePath: string, repoRoot?: string
       console.warn(`Failed to create placeholder ${p}:`, err);
     }
   }
+}
+
+/**
+ * Keep the worktree container out of the project's `git status`. `.worktrees/`
+ * sits inside the repo's own working tree, so in a project whose `.gitignore`
+ * doesn't list it every task leaves the root dirty — and merging then fails on
+ * the clean-tree guard with "Working tree has uncommitted changes". Writing to
+ * `.git/info/exclude` leaves a tracked `.gitignore` alone; the leading `/`
+ * keeps a nested `foo/.worktrees/` visible. Also runs as a backfill on agent
+ * spawn, for worktrees created before this rule existed. `pathInRepo` may be
+ * the repo root or any worktree — both resolve to the shared exclude file.
+ */
+export function ensureWorktreeContainerExclude(pathInRepo: string): void {
+  appendGitInfoExcludeBlock(
+    pathInRepo,
+    WORKTREE_CONTAINER_EXCLUDE,
+    `${WORKTREE_CONTAINER_EXCLUDE_HEADER}\n${WORKTREE_CONTAINER_EXCLUDE}\n`,
+    (err) => console.warn(`Failed to git-exclude ${WORKTREE_CONTAINER_EXCLUDE}:`, err),
+  );
 }
 
 /**
@@ -1125,7 +1169,7 @@ export function ensureSymlinkExcludes(worktreePath: string, symlinkNames: string
  * Find the main repository root for a worktree via `git rev-parse
  * --git-common-dir`. Returns null when the cwd isn't inside a git repo.
  */
-function detectRepoRoot(worktreePath: string): string | null {
+export function detectRepoRoot(worktreePath: string): string | null {
   try {
     const out = execFileSync('git', ['rev-parse', '--git-common-dir'], {
       cwd: worktreePath,
@@ -1139,12 +1183,43 @@ function detectRepoRoot(worktreePath: string): string | null {
   }
 }
 
+/**
+ * Spawn-time backfill for a worktree's `node_modules`: converts the legacy
+ * whole-dir symlink to per-entry links and tops up links for packages
+ * installed in the main checkout since the worktree was created. Only acts on
+ * a `node_modules` this app manages (`isManagedNodeModules`) — the main
+ * checkout's real install, a worktree-local `npm ci`, and a foreign symlink
+ * are all left untouched. The ownership check also backstops the main-repo
+ * path guard: a real install has no entry links into itself, so it can never
+ * be classified as managed.
+ *
+ * Pass `repoRoot` when the caller already resolved it (null meaning "not a
+ * repo") to avoid a redundant `git rev-parse` subprocess.
+ */
+export function refreshWorktreeNodeModules(worktreePath: string, repoRoot?: string | null): void {
+  const root = repoRoot === undefined ? detectRepoRoot(worktreePath) : repoRoot;
+  if (!root) return;
+  // Realpath comparison so a symlinked alias of the main checkout can't slip
+  // past the same-directory guard.
+  const rootReal = realpathOrNull(root) ?? path.resolve(root);
+  const worktreeReal = realpathOrNull(worktreePath) ?? path.resolve(worktreePath);
+  if (rootReal === worktreeReal) return;
+  const source = path.join(root, 'node_modules');
+  const target = path.join(worktreePath, 'node_modules');
+  if (!isManagedNodeModules(source, target)) return;
+  ensureNodeModulesEntryLinks(source, target);
+}
+
 export async function removeWorktree(
   repoRoot: string,
   branchName: string,
   deleteBranch: boolean,
+  explicitWorktreePath?: string,
 ): Promise<void> {
-  const worktreePath = `${repoRoot}/.worktrees/${branchName}`;
+  // After the user adopts a branch the agent switched the worktree to, the
+  // folder keeps its original branch-derived name — callers that know the real
+  // path must pass it, deriving from branchName is only a fallback.
+  const worktreePath = explicitWorktreePath ?? `${repoRoot}/.worktrees/${branchName}`;
 
   if (!fs.existsSync(repoRoot)) return;
 
@@ -1612,16 +1687,19 @@ export async function getFileDiff(
   return { diff, oldContent, newContent };
 }
 
+const UNREADABLE_WORKTREE_STATUS: WorktreeStatus = {
+  has_committed_changes: false,
+  has_uncommitted_changes: false,
+  current_branch: null,
+  base_branch: null,
+};
+
 export async function getWorktreeStatus(
   worktreePath: string,
   baseBranch?: string,
-): Promise<{
-  has_committed_changes: boolean;
-  has_uncommitted_changes: boolean;
-  current_branch: string | null;
-}> {
+): Promise<WorktreeStatus> {
   if (!fs.existsSync(worktreePath)) {
-    return { has_committed_changes: false, has_uncommitted_changes: false, current_branch: null };
+    return UNREADABLE_WORKTREE_STATUS;
   }
   let statusOut: string;
   try {
@@ -1631,13 +1709,21 @@ export async function getWorktreeStatus(
     }));
   } catch {
     // Worktree removed between existsSync and exec (race condition)
-    return { has_committed_changes: false, has_uncommitted_changes: false, current_branch: null };
+    return UNREADABLE_WORKTREE_STATUS;
   }
   const hasUncommittedChanges = statusOut.trim().length > 0;
 
-  const currentBranch = await getCurrentBranchName(worktreePath).catch(() => null);
+  // Resolved base branch name, so the frontend can tell "agent switched to a
+  // feature branch" (adoptable) apart from "agent is sitting on main" (not).
+  const [currentBranch, resolvedBaseBranch, headSha] = await Promise.all([
+    getCurrentBranchName(worktreePath).catch(() => null),
+    baseBranch ?? detectMainBranch(worktreePath).catch(() => null),
+    exec('git', ['rev-parse', 'HEAD'], { cwd: worktreePath })
+      .then(({ stdout }) => stdout.trim() || null)
+      .catch(() => null),
+  ]);
 
-  const mergeBase = await detectMergeBase(worktreePath, 'HEAD', baseBranch);
+  const mergeBase = await detectMergeBase(worktreePath, 'HEAD', resolvedBaseBranch ?? undefined);
   let hasCommittedChanges = false;
   try {
     const { stdout: logOut } = await exec('git', ['log', `${mergeBase}..HEAD`, '--oneline'], {
@@ -1652,6 +1738,8 @@ export async function getWorktreeStatus(
     has_committed_changes: hasCommittedChanges,
     has_uncommitted_changes: hasUncommittedChanges,
     current_branch: currentBranch,
+    base_branch: resolvedBaseBranch,
+    head_sha: headSha,
   };
 }
 
@@ -1913,7 +2001,7 @@ export async function mergeTask(
     invalidateDiffBaseCache();
 
     if (cleanup) {
-      await removeWorktree(projectRoot, branchName, true);
+      await removeWorktree(projectRoot, branchName, true, worktreePath);
     }
 
     await restoreBranch();

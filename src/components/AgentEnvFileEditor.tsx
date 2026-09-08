@@ -12,7 +12,7 @@ export function AgentEnvFileEditor() {
     padding: '6px 8px',
     background: theme.bgInput,
     border: `1px solid ${theme.border}`,
-    'border-radius': '6px',
+    'border-radius': 'var(--radius-sm)',
     color: theme.fg,
     'font-size': '12px',
     'font-family': "'JetBrains Mono', monospace",

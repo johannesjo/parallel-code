@@ -7,8 +7,6 @@ interface ReviewCommentCardProps {
   annotation: ReviewAnnotation;
   onDismiss: () => void;
   onUpdate?: (comment: string) => void;
-  /** Use a semi-transparent, brighter style (for overlaying plan content). */
-  overlay?: boolean;
 }
 
 export function ReviewCommentCard(props: ReviewCommentCardProps) {
@@ -51,10 +49,7 @@ export function ReviewCommentCard(props: ReviewCommentCardProps) {
         'max-width': '560px',
         'border-left': `3px solid ${theme.warning}`,
         'border-radius': '0 4px 4px 0',
-        background: props.overlay
-          ? `color-mix(in srgb, ${theme.bgElevated} 88%, ${theme.warning} 12%)`
-          : theme.bgElevated,
-        'backdrop-filter': props.overlay ? 'blur(8px)' : undefined,
+        background: theme.bgElevated,
         padding: '8px 12px',
         'font-family': "'JetBrains Mono', monospace",
       }}
@@ -70,7 +65,7 @@ export function ReviewCommentCard(props: ReviewCommentCardProps) {
         <span
           style={{
             'font-size': sf(12),
-            color: props.overlay ? theme.fg : theme.warning,
+            color: theme.warning,
           }}
         >
           Review &middot; {locationLabel()}
@@ -83,7 +78,7 @@ export function ReviewCommentCard(props: ReviewCommentCardProps) {
             color: theme.fgMuted,
             cursor: 'pointer',
             padding: '2px 4px',
-            'border-radius': '3px',
+            'border-radius': 'var(--radius-xs)',
             'font-size': sf(15),
             'line-height': '1',
           }}
@@ -114,7 +109,7 @@ export function ReviewCommentCard(props: ReviewCommentCardProps) {
               width: '100%',
               background: theme.bgInput,
               border: `1px solid ${theme.borderSubtle}`,
-              'border-radius': '4px',
+              'border-radius': 'var(--radius-xs)',
               color: theme.fg,
               'font-size': sf(13),
               'font-family': "'JetBrains Mono', monospace",

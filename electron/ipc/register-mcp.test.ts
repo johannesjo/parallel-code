@@ -321,6 +321,19 @@ describe('Layer 4 — StartMCPServer input validation', () => {
     expect(() => validateStartMCPServerArgs(VALID_ARGS)).not.toThrow();
   });
 
+  it('accepts an absent or empty verifyCommand and rejects oversized ones', () => {
+    expect(() => validateStartMCPServerArgs({ ...VALID_ARGS, verifyCommand: '' })).not.toThrow();
+    expect(() =>
+      validateStartMCPServerArgs({ ...VALID_ARGS, verifyCommand: 'npm test' }),
+    ).not.toThrow();
+    expect(() => validateStartMCPServerArgs({ ...VALID_ARGS, verifyCommand: 42 })).toThrow(
+      'verifyCommand',
+    );
+    expect(() =>
+      validateStartMCPServerArgs({ ...VALID_ARGS, verifyCommand: 'x'.repeat(5000) }),
+    ).toThrow('too long');
+  });
+
   it('rejects non-absolute projectRoot', () => {
     const writeFileSpy = vi.spyOn(fs, 'writeFileSync');
     const copyFileSpy = vi.spyOn(fs, 'copyFileSync');

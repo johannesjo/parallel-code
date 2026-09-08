@@ -147,6 +147,11 @@ export const COORDINATOR_TOOLS: ToolDef[] = [
           type: 'boolean',
           description: 'Clean up worktree and branch after merge (default: false)',
         },
+        skipVerification: {
+          type: 'boolean',
+          description:
+            "Merge without running the project's verify command. Only for a failure the task cannot fix, e.g. a suite already red on the base branch (default: false)",
+        },
       },
       required: ['taskId'],
     },

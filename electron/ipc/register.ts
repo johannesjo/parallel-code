@@ -38,6 +38,8 @@ import {
   isPrUrl,
 } from './pr-checks.js';
 import { readCoverageSummary } from './coverage.js';
+import { loadEslintQualityFindings } from './eslint-quality-findings.js';
+import { buildVerifyEnv, validateVerifyCommand, verificationRunner } from './verify.js';
 import { startRemoteServer, getMCPLogs, type RemoteProject } from '../remote/server.js';
 import type { RemoteAttentionState } from '../remote/protocol.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
@@ -94,6 +96,8 @@ import { spawn } from 'child_process';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
 import { setMinimaxApiKey } from './ask-code-minimax.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
+import { fetchClaudeUsage } from './claude-usage.js';
+import { fetchCodexUsage } from './codex-usage.js';
 import path from 'path';
 import {
   assertString,
@@ -189,6 +193,12 @@ function isMissingCommandError(err: unknown, command: string): boolean {
   );
 }
 
+/** An empty string is allowed: it clears the command on an already-registered coordinator. */
+function validateOptionalVerifyCommand(command: unknown): void {
+  assertOptionalString(command, 'verifyCommand');
+  if (command) validateVerifyCommand(command);
+}
+
 /** Validates renderer-supplied args for StartMCPServer before any file I/O. Exported for testing. */
 export function validateStartMCPServerArgs(args: Record<string, unknown>): void {
   validateUUID(args.coordinatorTaskId, 'coordinatorTaskId');
@@ -203,6 +213,9 @@ export function validateStartMCPServerArgs(args: Record<string, unknown>): void 
   assertOptionalString(args.agentEnvFile, 'agentEnvFile');
   assertOptionalBoolean(args.skipPermissions, 'skipPermissions');
   assertOptionalBoolean(args.propagateSkipPermissions, 'propagateSkipPermissions');
+  if (args.maxConcurrentTasks !== undefined)
+    assertInt(args.maxConcurrentTasks, 'maxConcurrentTasks');
+  validateOptionalVerifyCommand(args.verifyCommand);
   if (args.dockerContainerName !== undefined) {
     assertString(args.dockerContainerName, 'dockerContainerName');
     if (!/^[a-zA-Z0-9_.-]+$/.test(args.dockerContainerName as string)) {
@@ -563,12 +576,15 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validateBranchName(args.branchName, 'branchName');
     assertBoolean(args.deleteBranch, 'deleteBranch');
     assertOptionalString(args.taskId, 'taskId');
+    // A verify run still going would keep writing into the worktree being deleted.
+    if (args.taskId) verificationRunner.cancel(args.taskId);
     return deleteTask({
       taskId: args.taskId,
       agentIds: args.agentIds,
       branchName: args.branchName,
       deleteBranch: args.deleteBranch,
       projectRoot: args.projectRoot,
+      worktreePath: optionalWorktreePath(args),
     });
   });
 
@@ -883,6 +899,37 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.RefreshPrChecksWatcher, (_e, args) => {
     assertString(args.taskId, 'taskId');
     refreshPrChecksWatcher(args.taskId);
+  });
+
+  // --- Local ESLint quality findings ---
+  ipcMain.handle(IPC.GetEslintQualityFindings, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    assertStringArray(args.filePaths, 'filePaths');
+    for (const filePath of args.filePaths) validateRelativePath(filePath, 'filePath');
+    return loadEslintQualityFindings(args.worktreePath, args.filePaths);
+  });
+
+  // --- Project verify command ---
+  ipcMain.handle(IPC.RunTaskVerification, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    const worktreePath = worktreePathArg(args);
+    validateVerifyCommand(args.command);
+    assertOptionalString(args.branchName, 'branchName');
+    assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
+    const channel = `channel:${args.onOutput.__CHANNEL_ID__}`;
+    return verificationRunner.start({
+      key: args.taskId,
+      worktreePath,
+      command: args.command,
+      env: buildVerifyEnv({ taskId: args.taskId, branchName: args.branchName, worktreePath }),
+      onOutput: (chunk) => {
+        if (!win.isDestroyed()) win.webContents.send(channel, chunk);
+      },
+    });
+  });
+  ipcMain.handle(IPC.CancelTaskVerification, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    return verificationRunner.cancel(args.taskId);
   });
 
   // --- Steps content (one-shot read) ---
@@ -1407,6 +1454,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
           projectId: string;
           coordinatorBranch?: string;
           worktreePath?: string;
+          verifyCommand?: string;
         },
       ) => {
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
@@ -1414,9 +1462,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
         if (args.coordinatorBranch !== undefined) {
           validateBranchName(args.coordinatorBranch, 'coordinatorBranch');
         }
+        validateOptionalVerifyCommand(args.verifyCommand);
         coordinator?.registerCoordinator(args.coordinatorTaskId, args.projectId, {
           branchName: args.coordinatorBranch,
           worktreePath: args.worktreePath,
+          verifyCommand: args.verifyCommand,
         });
       },
     );
@@ -1624,6 +1674,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
         agentEnvFile?: string;
         dockerContainerName?: string;
         dockerImage?: string;
+        maxConcurrentTasks?: number;
+        verifyCommand?: string;
       },
     ) => {
       validateStartMCPServerArgs(args as unknown as Record<string, unknown>);
@@ -1664,6 +1716,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
         branchName: args.coordinatorBranch,
         worktreePath: args.worktreePath,
         skipPermissions: Boolean(args.skipPermissions && args.propagateSkipPermissions),
+        maxConcurrentTasks: args.maxConcurrentTasks,
+        verifyCommand: args.verifyCommand,
       });
 
       // Start remote server if not running
@@ -1865,6 +1919,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.GetMCPLogs, () => getMCPLogs());
+
+  ipcMain.handle(IPC.GetClaudeUsage, () => fetchClaudeUsage());
+  ipcMain.handle(IPC.GetCodexUsage, () => fetchCodexUsage());
 
   // --- Forward window events to renderer ---
   win.on('focus', () => {

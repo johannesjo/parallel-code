@@ -1,3 +1,5 @@
+import type { VerificationRun } from '../ipc/shared-types.js';
+
 // Shared types for the MCP coordinating-agent system.
 
 export interface CoordinatedTask {
@@ -21,6 +23,8 @@ export interface CoordinatedTask {
   signalDoneAt?: Date; // set when sub-task explicitly calls signal_done
   signalDoneConsumed?: boolean; // true after wait_for_signal_done returns this task's signal
   verification?: SubtaskVerification;
+  /** Result of the app running the project's verify command before landing. */
+  verificationRun?: VerificationRun;
   landingState?: LandingState;
   landingReason?: string;
   landingSummary?: string;
@@ -89,6 +93,10 @@ export interface CoordinatorState {
   restageTimer: ReturnType<typeof setTimeout> | null;
   /** Whether to pass skipPermissions to sub-tasks created by this coordinator. */
   propagateSkipPermissions: boolean;
+  /** Enforced ceiling on concurrently in-flight sub-tasks (clamped; default applies when unset). */
+  maxConcurrentSubTasks?: number;
+  /** Project verify command, run in a sub-task's worktree before it is merged. */
+  verifyCommand?: string;
   /** Path to the .mcp.json file written for this coordinator. */
   mcpJsonPath: string;
   /** True if Parallel Code created .mcp.json from scratch; false if it was pre-existing. */

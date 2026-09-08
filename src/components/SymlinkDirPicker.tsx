@@ -33,7 +33,7 @@ export function SymlinkDirPicker(props: SymlinkDirPickerProps) {
           gap: '4px',
           padding: '8px 10px',
           background: theme.bgElevated,
-          'border-radius': '6px',
+          'border-radius': 'var(--radius-sm)',
           border: `1px solid ${theme.border}`,
           'max-height': '160px',
           'overflow-y': 'auto',

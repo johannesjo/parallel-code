@@ -49,7 +49,7 @@ export function QualityFindingSidebarItem(props: QualityFindingSidebarItemProps)
         <span
           style={{
             color: isActionable() ? color() : theme.fgMuted,
-            'font-size': sf(10),
+            'font-size': sf(11),
             'font-weight': '700',
             'text-transform': 'uppercase',
           }}
@@ -62,7 +62,7 @@ export function QualityFindingSidebarItem(props: QualityFindingSidebarItemProps)
             <span
               style={{
                 color: theme.fgMuted,
-                'font-size': sf(10),
+                'font-size': sf(11),
                 'font-weight': '700',
                 'text-transform': 'uppercase',
               }}

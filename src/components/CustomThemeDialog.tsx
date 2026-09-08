@@ -197,7 +197,7 @@ export function CustomThemeDialog(props: CustomThemeDialogProps) {
                 cursor: 'pointer',
                 'font-size': '12px',
                 padding: '3px 10px',
-                'border-radius': '4px',
+                'border-radius': 'var(--radius-xs)',
               }}
             >
               {showPrompt() ? 'Hide' : 'Show'} prompt
@@ -212,7 +212,7 @@ export function CustomThemeDialog(props: CustomThemeDialogProps) {
                 cursor: 'pointer',
                 'font-size': '12px',
                 padding: '3px 10px',
-                'border-radius': '4px',
+                'border-radius': 'var(--radius-xs)',
                 transition: 'background 0.2s, border-color 0.2s',
               }}
             >
@@ -233,7 +233,7 @@ export function CustomThemeDialog(props: CustomThemeDialogProps) {
               'font-family': "'JetBrains Mono', monospace",
               'font-size': '11px',
               padding: '8px',
-              'border-radius': '6px',
+              'border-radius': 'var(--radius-sm)',
               resize: 'vertical',
               'box-sizing': 'border-box',
             }}
@@ -266,7 +266,7 @@ export function CustomThemeDialog(props: CustomThemeDialogProps) {
             'font-family': "'JetBrains Mono', monospace",
             'font-size': '12px',
             padding: '10px',
-            'border-radius': '6px',
+            'border-radius': 'var(--radius-sm)',
             resize: 'vertical',
             'box-sizing': 'border-box',
             outline: 'none',
@@ -301,7 +301,7 @@ export function CustomThemeDialog(props: CustomThemeDialogProps) {
               padding: '8px 10px',
               background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
               border: `1px solid color-mix(in srgb, ${theme.warning} 25%, transparent)`,
-              'border-radius': '6px',
+              'border-radius': 'var(--radius-sm)',
             }}
           >
             <span style={{ 'font-size': '11px', 'font-weight': '600', color: theme.warning }}>
@@ -375,7 +375,7 @@ export function CustomThemeDialog(props: CustomThemeDialogProps) {
               cursor: 'pointer',
               'font-size': '14px',
               padding: '7px 18px',
-              'border-radius': '6px',
+              'border-radius': 'var(--radius-sm)',
             }}
           >
             Cancel
@@ -392,7 +392,7 @@ export function CustomThemeDialog(props: CustomThemeDialogProps) {
               'font-size': '14px',
               'font-weight': '600',
               padding: '7px 18px',
-              'border-radius': '6px',
+              'border-radius': 'var(--radius-sm)',
               transition: 'background 0.15s, border-color 0.15s',
             }}
           >

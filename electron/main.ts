@@ -1,4 +1,5 @@
 import { app, autoUpdater, BrowserWindow, Menu, ipcMain, session, shell } from 'electron';
+import { buildMenuTemplate } from './menu-template.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -6,9 +7,11 @@ import { execFileSync } from 'child_process';
 import { registerAllHandlers } from './ipc/register.js';
 import { registerLogHandler } from './log.js';
 import { installIpcTracing } from './ipc/trace.js';
+import { startAgentHookRuntime, stopAgentHookRuntime } from './agent-hooks/runtime.js';
 import { killAllAgents } from './ipc/pty.js';
 import { stopAllPlanWatchers } from './ipc/plans.js';
 import { stopAllStepsWatchers } from './ipc/steps.js';
+import { verificationRunner } from './ipc/verify.js';
 import { IPC } from './ipc/channels.js';
 import { resolveUserShell } from './user-shell.js';
 
@@ -79,6 +82,17 @@ function fixEnv(): void {
 
 fixEnv();
 
+// Blink evicts the oldest WebGL context past 16 per renderer process, and every
+// mounted terminal pane holds one — hidden task/tab terminals included. Past 16
+// terminals the oldest panes silently lose their context and degrade to xterm's
+// slower DOM renderer (janky scrolling). 64 covers heavy layouts (~20 tasks ×
+// 3 panes — parallel tasks are the app's premise, so 32 was reachable) while
+// staying bounded: Chromium keeps its cap low because past it GPU drivers tend
+// to crash rather than report out-of-memory, so a huge value trades graceful
+// eviction for GPU-process crashes on weak GPUs. The switch also raises the
+// worker-context limit to the same value (unused — no WebGL in our workers).
+app.commandLine.appendSwitch('max-active-webgl-contexts', '64');
+
 // Verify that preload.cjs ALLOWED_CHANNELS stays in sync with the IPC enum.
 // Logs a warning in dev if they drift — catches mismatches before they hit users.
 //
@@ -126,61 +140,15 @@ function getIconPath(): string | undefined {
   return path.join(__dirname, '..', 'build', 'icon.png');
 }
 
-// Electron installs a default menu when none is set, and macOS dispatches native
-// menu key equivalents *before* the web contents sees the keydown — so every
-// accelerator that menu registers is a shortcut the renderer can never receive.
-// Three of its roles claim keys this app binds itself: `fileMenu` takes Cmd+W
-// (close the focused shell/terminal), `viewMenu` takes Cmd+0 / Cmd+± (the app
-// scales its whole UI through globalScale instead of Chromium's zoom), and
-// `appMenu` takes Cmd+Q (the renderer turns it into a hold, see below).
-// Spelling those submenus out keeps their items reachable by mouse while leaving
-// the keys to the renderer; Cmd+W stays unbound here on purpose, so it does
-// nothing when no pane is focused rather than closing the window out from under
-// a terminal. Linux keeps Electron's default: its File menu is Quit, and
-// unhandled keys reach the menu only after the renderer has had (and prevented)
-// them.
 function setupApplicationMenu(): void {
-  if (process.platform !== 'darwin') return;
   Menu.setApplicationMenu(
-    Menu.buildFromTemplate([
-      {
-        label: app.name,
-        submenu: [
-          { role: 'about' },
-          { type: 'separator' },
-          { role: 'services' },
-          { type: 'separator' },
-          { role: 'hide' },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
-          { type: 'separator' },
-          // Accelerator-free on purpose: the renderer turns Cmd+Q into a
-          // press-and-hold, so a stray tap can't tear down running terminals.
-          // (There is no way to show the key equivalent without also binding it:
-          // `registerAccelerator: false` is Linux/Windows-only. The hint the
-          // renderer shows on the first press is what teaches the gesture.)
-          // The mouse path skips only the hold — it still lands in `before-quit`
-          // below, so it still asks about running terminals.
-          { label: `Quit ${app.name}`, click: () => app.quit() },
-        ],
-      },
-      {
-        label: 'File',
-        submenu: [{ label: 'Close Window', click: (_item, window) => window?.close() }],
-      },
-      { role: 'editMenu' },
-      {
-        label: 'View',
-        submenu: [
-          { role: 'reload' },
-          { role: 'forceReload' },
-          { role: 'toggleDevTools' },
-          { type: 'separator' },
-          { role: 'togglefullscreen' },
-        ],
-      },
-      { role: 'windowMenu' },
-    ]),
+    Menu.buildFromTemplate(
+      buildMenuTemplate({
+        platform: process.platform,
+        appName: app.name,
+        onQuit: () => app.quit(),
+      }),
+    ),
   );
 }
 
@@ -258,7 +226,7 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Grant microphone and clipboard access (deny camera/video)
   session.defaultSession.setPermissionRequestHandler(
     (_webContents, permission, callback, details) => {
@@ -287,6 +255,9 @@ app.whenReady().then(() => {
     quittingForUpdate = true;
   });
 
+  // Listening before the window exists: a renderer cannot spawn a Claude
+  // agent that misses its hooks. Failure falls back to PTY heuristics.
+  await startAgentHookRuntime(() => mainWindow);
   setupApplicationMenu();
   createWindow();
 });
@@ -313,6 +284,9 @@ app.on('before-quit', (event) => {
 // anything the user still had a chance to cancel.
 app.on('will-quit', () => {
   killAllAgents();
+  // Detached process groups would outlive Electron otherwise.
+  verificationRunner.cancelAll();
+  stopAgentHookRuntime();
   stopAllPlanWatchers();
   stopAllStepsWatchers();
 });

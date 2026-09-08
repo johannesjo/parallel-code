@@ -52,7 +52,7 @@
   width: 100%;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
   color: var(--fg);
   font-family: var(--font-ui);
@@ -81,7 +81,7 @@
   color: var(--fg-subtle);
   cursor: pointer;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -132,7 +132,7 @@
   min-height: 100px;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 10px 12px;
   color: var(--fg);
   font-family: var(--font-ui);
@@ -161,7 +161,7 @@
 .arena-preset-btn {
   background: none;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 5px 12px;
   color: var(--fg-muted);
   font-family: var(--font-ui);
@@ -203,7 +203,7 @@
 .arena-tool-preset-btn {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 6px 14px;
   color: var(--fg-muted);
   font-family: var(--font-ui);

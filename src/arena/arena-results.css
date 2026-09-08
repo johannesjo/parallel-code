@@ -121,7 +121,7 @@
 .arena-result-column-files-list {
   height: 160px;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
@@ -152,7 +152,7 @@
   color: var(--border);
   cursor: pointer;
   padding: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   display: flex;
   align-items: center;
   transition:
@@ -190,7 +190,7 @@
   gap: 6px;
   background: var(--accent);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--accent-text);
   font-size: 14px;
   font-weight: 600;
@@ -214,12 +214,12 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: var(--success, #22c55e);
+  background: var(--success);
   color: #fff;
   font-size: 13px;
   font-weight: 600;
   padding: 4px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   animation: arena-merge-appear 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
@@ -269,7 +269,7 @@
 }
 
 .arena-output-toggle-icon {
-  font-size: 10px;
+  font-size: 11px;
   transition: transform 0.15s ease;
   display: inline-block;
 }
@@ -281,7 +281,7 @@
 .arena-output-pre {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
@@ -324,7 +324,7 @@
 .arena-commit-input {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--fg);
   font-size: 14px;
   padding: 6px 10px;

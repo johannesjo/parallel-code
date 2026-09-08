@@ -837,7 +837,12 @@ export function PromptInput(props: PromptInputProps) {
     <div
       class="focusable-panel prompt-input-panel"
       data-panel-focused={isPanelFocused(props.taskId, 'prompt') ? 'true' : 'false'}
-      style={{ display: 'flex', height: '100%', padding: '4px 6px', 'border-radius': '12px' }}
+      style={{
+        display: 'flex',
+        height: '100%',
+        padding: '4px 6px',
+        'border-radius': 'var(--radius-lg)',
+      }}
     >
       <div style={{ position: 'relative', flex: '1', display: 'flex' }}>
         <Show when={!!props.stagedNotification && !props.stagedNotification.userEdited}>
@@ -846,11 +851,11 @@ export function PromptInput(props: PromptInputProps) {
               position: 'absolute',
               top: '4px',
               left: '8px',
-              'font-size': '10px',
+              'font-size': '11px',
               color: theme.accent,
               background: `${theme.accent}22`,
               padding: '1px 6px',
-              'border-radius': '3px',
+              'border-radius': 'var(--radius-xs)',
               'pointer-events': 'none',
               'z-index': '1',
             }}
@@ -896,7 +901,7 @@ export function PromptInput(props: PromptInputProps) {
               props.stagedNotification && !props.stagedNotification.userEdited
                 ? `1px solid ${theme.accent}60`
                 : `1px solid ${theme.border}`,
-            'border-radius': '12px',
+            'border-radius': 'var(--radius-lg)',
             padding:
               props.stagedNotification && !props.stagedNotification.userEdited
                 ? '20px 36px 6px 10px'
@@ -958,7 +963,7 @@ export function PromptInput(props: PromptInputProps) {
               color: theme.fgSubtle,
               background: theme.bgHover,
               padding: '2px 6px',
-              'border-radius': '4px',
+              'border-radius': 'var(--radius-xs)',
             }}
           >
             + {props.stagedNotification?.hiddenCompletionCount} more task(s) completed

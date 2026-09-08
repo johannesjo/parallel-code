@@ -286,7 +286,7 @@ export function TilingLayout() {
                         gap: '12px',
                         padding: '24px',
                         background: theme.islandBg,
-                        'border-radius': '12px',
+                        'border-radius': 'var(--radius-lg)',
                         border: `1px solid ${theme.border}`,
                         color: theme.fgMuted,
                         'font-size': '14px',
@@ -310,7 +310,7 @@ export function TilingLayout() {
                             border: `1px solid ${theme.border}`,
                             color: theme.fg,
                             padding: '6px 16px',
-                            'border-radius': '6px',
+                            'border-radius': 'var(--radius-sm)',
                             cursor: 'pointer',
                           }}
                         >
@@ -334,7 +334,7 @@ export function TilingLayout() {
                             border: `1px solid ${theme.border}`,
                             color: theme.error,
                             padding: '6px 16px',
-                            'border-radius': '6px',
+                            'border-radius': 'var(--radius-sm)',
                             cursor: 'pointer',
                           }}
                         >
@@ -448,7 +448,7 @@ export function TilingLayout() {
                         style={{
                           width: '56px',
                           height: '56px',
-                          'border-radius': '16px',
+                          'border-radius': 'var(--radius-lg)',
                           background: theme.islandBg,
                           border: `1px solid ${theme.border}`,
                           display: 'flex',
@@ -487,7 +487,7 @@ export function TilingLayout() {
                         style={{
                           background: theme.bgElevated,
                           border: `1px solid ${theme.border}`,
-                          'border-radius': '8px',
+                          'border-radius': 'var(--radius-md)',
                           padding: '8px 20px',
                           color: theme.fg,
                           cursor: 'pointer',
@@ -516,7 +516,7 @@ export function TilingLayout() {
                     style={{
                       width: '56px',
                       height: '56px',
-                      'border-radius': '16px',
+                      'border-radius': 'var(--radius-lg)',
                       background: theme.islandBg,
                       border: `1px solid ${theme.border}`,
                       display: 'flex',
@@ -545,7 +545,7 @@ export function TilingLayout() {
                         style={{
                           background: theme.bgElevated,
                           border: `1px solid ${theme.border}`,
-                          'border-radius': '4px',
+                          'border-radius': 'var(--radius-xs)',
                           padding: '2px 6px',
                           'font-family': "'JetBrains Mono', monospace",
                           'font-size': '12px',

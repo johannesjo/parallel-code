@@ -40,6 +40,8 @@ interface ChangedFilesListProps {
   baseBranch?: string;
   /** Reports coverage changes when task or base coverage data refreshes. */
   onCoverageComparisonChange?: (comparison: CoverageComparison | null) => void;
+  /** Reports the number of listed files whenever the list refreshes. */
+  onFileCountChange?: (count: number) => void;
   /**
    * Selection mode for the file list:
    * - undefined/null: all changes (committed + uncommitted)
@@ -240,7 +242,7 @@ export function FileCoverageBadge(props: {
             }
             style={{
               color: coverageBadge.color,
-              'font-size': sf(10),
+              'font-size': sf(11),
               'flex-shrink': '0',
               padding: '1px 5px',
               'border-radius': '999px',
@@ -258,7 +260,7 @@ export function FileCoverageBadge(props: {
             title={coverageBadgeTitle(coverageSummary)}
             style={{
               color: coverageColor(coverageSummary.lines.pct),
-              'font-size': sf(10),
+              'font-size': sf(11),
               'flex-shrink': '0',
               padding: '1px 5px',
               'border-radius': '999px',
@@ -283,7 +285,7 @@ export function FileCoverageBadge(props: {
           title="No recent coverage data for this source file. Run npm run test:coverage to populate the radar."
           style={{
             color: theme.error,
-            'font-size': sf(10),
+            'font-size': sf(11),
             'flex-shrink': '0',
             padding: '1px 5px',
             'border-radius': '999px',
@@ -347,7 +349,7 @@ function OpenInEditorButton(props: {
         display: 'flex',
         'align-items': 'center',
         'justify-content': 'center',
-        'border-radius': '4px',
+        'border-radius': 'var(--radius-xs)',
       }}
       title="Open in editor"
       aria-label={`Open ${props.filePath} in editor`}
@@ -361,6 +363,7 @@ function OpenInEditorButton(props: {
 
 export function ChangedFilesList(props: ChangedFilesListProps) {
   const [files, setFiles] = createSignal<ChangedFile[]>([]);
+  createEffect(() => props.onFileCountChange?.(files().length));
   const [comparisonFiles, setComparisonFiles] = createSignal<ChangedFile[] | null>(null);
   const [coverage, setCoverage] = createSignal<CoverageSummary | null>(null);
   const [baseCoverage, setBaseCoverage] = createSignal<CoverageSummary | null>(null);
@@ -926,7 +929,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                 'padding-left': `${8 + row().depth * 8}px`,
                 'white-space': 'nowrap',
                 cursor: 'pointer',
-                'border-radius': '3px',
+                'border-radius': 'var(--radius-xs)',
                 opacity:
                   !isCommitHashSelection(props.selectedCommit) &&
                   (row().isDir || row().node.file?.committed)
@@ -957,7 +960,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                       width: '10px',
                       'text-align': 'center',
                       'flex-shrink': '0',
-                      'font-size': sf(10),
+                      'font-size': sf(11),
                     }}
                   >
                     {collapsed().has(row().node.path) ? '\u25B8' : '\u25BE'}

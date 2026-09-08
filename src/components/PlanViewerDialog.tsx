@@ -1,4 +1,5 @@
-import { Show, For, createSignal, createEffect } from 'solid-js';
+import { Show, For, batch, createSignal, createEffect, on, onCleanup } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { Dialog } from './Dialog';
 import { createDialogScroll } from '../lib/dialog-scroll';
 import { ReviewProvider, useReview } from './ReviewProvider';
@@ -8,7 +9,14 @@ import { InlineInput } from './InlineInput';
 import { AskCodeCard } from './AskCodeCard';
 import { CloseIcon } from './icons';
 import { createHighlightedMarkdown } from '../lib/marked-shiki';
-import { getPlanSelection } from '../lib/plan-selection';
+import {
+  getPlanSelection,
+  getPlanSelectionFlowAnchor,
+  getPlanSelectionTextRanges,
+  PLAN_REVIEW_FLOW_SLOT_SELECTOR,
+  trackPlanSelectionGeometry,
+  type PlanSelectionRect,
+} from '../lib/plan-selection';
 import { openFileInEditor } from '../lib/shell';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
@@ -52,21 +60,25 @@ export function PlanViewerDialog(props: PlanViewerDialogProps) {
         gap: '0',
       }}
     >
-      <Show when={props.open}>
-        <ReviewProvider
-          taskId={props.taskId}
-          agentId={props.agentId}
-          compilePrompt={compilePlanReview}
-          onSubmitted={props.onClose}
-        >
-          <PlanViewerContent
-            planContent={props.planContent}
-            planFileName={props.planFileName}
-            worktreePath={props.worktreePath}
-            onClose={props.onClose}
-          />
-        </ReviewProvider>
-      </Show>
+      {/* Review state lives and dies with this provider: Dialog renders children under
+          <Show when={open}>, so it is created on open and disposed on close, and that reset
+          subsumes what `open` and `reviewIdentity` would do — a mounted task panel's taskId
+          and worktreePath do not change under it. Lift the provider above Dialog (as
+          DiffViewerDialog does) if plan review should survive a close; both props become
+          load-bearing again at that point. */}
+      <ReviewProvider
+        taskId={props.taskId}
+        agentId={props.agentId}
+        compilePrompt={compilePlanReview}
+        onSubmitted={props.onClose}
+      >
+        <PlanViewerContent
+          planContent={props.planContent}
+          planFileName={props.planFileName}
+          worktreePath={props.worktreePath}
+          onClose={props.onClose}
+        />
+      </ReviewProvider>
     </Dialog>
   );
 }
@@ -79,11 +91,27 @@ interface PlanViewerContentProps {
 }
 
 /** Inner content rendered inside ReviewProvider so it can call useReview(). */
-interface HighlightRect {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
+function insertPlanReviewFlowSlot(anchor: HTMLElement): HTMLDivElement {
+  const slot = document.createElement('div');
+  slot.className = 'plan-review-flow-slot';
+  slot.setAttribute('data-plan-review-flow-slot', '');
+
+  if (anchor.tagName === 'LI') {
+    const nestedList = Array.from(anchor.children).find((child) => child.matches('ul, ol'));
+    if (nestedList) {
+      anchor.insertBefore(slot, nestedList);
+    } else {
+      anchor.append(slot);
+    }
+    return slot;
+  }
+
+  let insertionPoint: Element = anchor;
+  while (insertionPoint.nextElementSibling?.matches(PLAN_REVIEW_FLOW_SLOT_SELECTOR)) {
+    insertionPoint = insertionPoint.nextElementSibling;
+  }
+  insertionPoint.after(slot);
+  return slot;
 }
 
 function PlanViewerContent(props: PlanViewerContentProps) {
@@ -93,9 +121,10 @@ function PlanViewerContent(props: PlanViewerContentProps) {
   let contentRef: HTMLDivElement | undefined;
   let scrollRef: HTMLDivElement | undefined;
 
-  const [selectionY, setSelectionY] = createSignal(0);
-  const [cardOffsets, setCardOffsets] = createSignal<Record<string, number>>({});
-  const [highlightRects, setHighlightRects] = createSignal<HighlightRect[]>([]);
+  const [pendingFlowSlot, setPendingFlowSlot] = createSignal<HTMLDivElement>();
+  const [flowSlots, setFlowSlots] = createSignal<Record<string, HTMLDivElement>>({});
+  const [highlightRects, setHighlightRects] = createSignal<PlanSelectionRect[]>([]);
+  let stopHighlightTracking: (() => void) | undefined;
 
   createDialogScroll(
     () => scrollRef,
@@ -126,47 +155,84 @@ function PlanViewerContent(props: PlanViewerContentProps) {
   createEffect(() => {
     const target = review.scrollTarget();
     if (!target?.id) return;
-    const y = cardOffsets()[target.id];
-    if (y !== undefined && scrollRef) {
-      scrollRef.scrollTo({ top: Math.max(0, y - 100), behavior: 'smooth' });
+    const slot = flowSlots()[target.id];
+    if (slot && scrollRef) {
+      const scrollRect = scrollRef.getBoundingClientRect();
+      const slotRect = slot.getBoundingClientRect();
+      const top = scrollRef.scrollTop + slotRect.top - scrollRect.top;
+      scrollRef.scrollTo({ top: Math.max(0, top - 100), behavior: 'smooth' });
     }
   });
 
-  // Clear highlight overlays when pending selection is dismissed
+  // Remove flow slots when their annotation or question is removed elsewhere (for example,
+  // from the review sidebar).
   createEffect(() => {
-    if (!review.pendingSelection()) setHighlightRects([]);
+    const activeIds = new Set([
+      ...review.annotations().map((annotation) => annotation.id),
+      ...review.activeQuestions().map((question) => question.id),
+    ]);
+    const currentSlots = flowSlots();
+    const staleIds = Object.keys(currentSlots).filter((id) => !activeIds.has(id));
+    if (staleIds.length === 0) return;
+
+    for (const id of staleIds) {
+      currentSlots[id].remove();
+    }
+    setFlowSlots(
+      Object.fromEntries(Object.entries(currentSlots).filter(([id]) => activeIds.has(id))),
+    );
   });
 
-  /** Capture selection rects and Y offset relative to contentRef. */
-  function captureSelectionGeometry(): { y: number; rects: HighlightRect[] } {
-    const domSel = window.getSelection();
-    if (!domSel || domSel.rangeCount === 0 || !contentRef) return { y: 0, rects: [] };
-    const range = domSel.getRangeAt(0);
-    const containerRect = contentRef.getBoundingClientRect();
-    const rangeRect = range.getBoundingClientRect();
-    const y = rangeRect.bottom - containerRect.top;
-    const clientRects = range.getClientRects();
-    const rects: HighlightRect[] = [];
-    for (let i = 0; i < clientRects.length; i++) {
-      const r = clientRects[i];
-      rects.push({
-        top: r.top - containerRect.top,
-        left: r.left - containerRect.left,
-        width: r.width,
-        height: r.height,
-      });
-    }
-    return { y, rects };
+  // Clear inline selection UI when pending selection is dismissed elsewhere (sidebar,
+  // review reset). This infers "dismissed" from a signal the mouseup and submit paths also
+  // write, and Solid flushes user effects synchronously between writes inside a DOM handler.
+  // Both paths therefore batch() their writes so this only ever sees settled state — without
+  // that, it tears down the slot they just created. See PlanViewerDialog.client.test.tsx.
+  // dismissPendingSelection and the planHtml effect below write the same signals unbatched;
+  // they are safe only because they clear the slot before clearing pendingSelection.
+  createEffect(() => {
+    if (review.pendingSelection()) return;
+    pendingFlowSlot()?.remove();
+    setPendingFlowSlot(undefined);
+    clearHighlightGeometry();
+  });
+
+  createEffect(
+    on(
+      planHtml,
+      () => {
+        pendingFlowSlot()?.remove();
+        setPendingFlowSlot(undefined);
+        review.clearPendingSelection();
+        Object.values(flowSlots()).forEach((slot) => slot.remove());
+        setFlowSlots({});
+        clearHighlightGeometry();
+      },
+      { defer: true },
+    ),
+  );
+
+  function clearHighlightGeometry() {
+    stopHighlightTracking?.();
+    stopHighlightTracking = undefined;
+    setHighlightRects([]);
   }
 
-  function handleMouseUp() {
+  function handleMouseUp(event: MouseEvent) {
     if (!contentRef) return;
-    const sel = getPlanSelection(contentRef, props.planFileName);
-    if (!sel) return;
+    const eventTarget = event.target;
+    if (eventTarget instanceof Element && eventTarget.closest(PLAN_REVIEW_FLOW_SLOT_SELECTOR)) {
+      return;
+    }
 
-    const { y, rects } = captureSelectionGeometry();
-    setSelectionY(y);
-    setHighlightRects(rects);
+    const textRanges = getPlanSelectionTextRanges(contentRef);
+    const sel = getPlanSelection(contentRef, props.planFileName, textRanges);
+    const flowAnchor = getPlanSelectionFlowAnchor(contentRef, textRanges);
+    if (!sel || !flowAnchor) return;
+
+    stopHighlightTracking?.();
+    pendingFlowSlot()?.remove();
+    stopHighlightTracking = trackPlanSelectionGeometry(contentRef, textRanges, setHighlightRects);
     // Clear native selection — overlay rects provide the visual highlight from here
     window.getSelection()?.removeAllRanges();
 
@@ -174,24 +240,62 @@ function PlanViewerContent(props: PlanViewerContentProps) {
       ? `${props.planFileName} \u00A7 ${sel.nearestHeading}`
       : props.planFileName;
 
-    review.handleSelection({
-      source,
-      startLine: sel.startLine,
-      endLine: sel.endLine,
-      selectedText: sel.selectedText,
+    batch(() => {
+      setPendingFlowSlot(insertPlanReviewFlowSlot(flowAnchor));
+      review.handleSelection({
+        source,
+        startLine: sel.startLine,
+        endLine: sel.endLine,
+        selectedText: sel.selectedText,
+      });
     });
   }
 
-  function handleSubmitWithPosition(
+  function handleSubmitInFlow(
     text: string,
     mode: Parameters<typeof review.handleSubmit>[1],
     imagePaths?: string[],
   ) {
-    const y = selectionY();
-    const id = review.handleSubmit(text, mode, imagePaths);
-    if (id) setCardOffsets((prev) => ({ ...prev, [id]: y }));
-    setHighlightRects([]);
+    const slot = pendingFlowSlot();
+    batch(() => {
+      const id = review.handleSubmit(text, mode, imagePaths);
+      if (!id) return;
+      if (slot) setFlowSlots((prev) => ({ ...prev, [id]: slot }));
+      setPendingFlowSlot(undefined);
+    });
+    clearHighlightGeometry();
   }
+
+  function dismissPendingSelection() {
+    pendingFlowSlot()?.remove();
+    setPendingFlowSlot(undefined);
+    review.clearPendingSelection();
+  }
+
+  function dismissAnnotation(id: string) {
+    review.dismissAnnotation(id);
+    removeFlowSlot(id);
+  }
+
+  function dismissQuestion(id: string) {
+    review.dismissQuestion(id);
+    removeFlowSlot(id);
+  }
+
+  function removeFlowSlot(id: string) {
+    const slot = flowSlots()[id];
+    slot?.remove();
+    setFlowSlots((prev) => {
+      if (!(id in prev)) return prev;
+      return Object.fromEntries(Object.entries(prev).filter(([slotId]) => slotId !== id));
+    });
+  }
+
+  onCleanup(() => {
+    stopHighlightTracking?.();
+    pendingFlowSlot()?.remove();
+    Object.values(flowSlots()).forEach((slot) => slot.remove());
+  });
 
   return (
     <>
@@ -234,7 +338,7 @@ function PlanViewerContent(props: PlanViewerContentProps) {
               padding: '4px',
               display: 'flex',
               'align-items': 'center',
-              'border-radius': '4px',
+              'border-radius': 'var(--radius-xs)',
             }}
             title="Open in editor"
           >
@@ -254,7 +358,7 @@ function PlanViewerContent(props: PlanViewerContentProps) {
             padding: '4px',
             display: 'flex',
             'align-items': 'center',
-            'border-radius': '4px',
+            'border-radius': 'var(--radius-xs)',
           }}
           title="Close"
         >
@@ -303,70 +407,53 @@ function PlanViewerContent(props: PlanViewerContentProps) {
               )}
             </For>
 
-            {/* Inline input for pending selection — positioned near the selection */}
-            <Show when={review.pendingSelection()}>
-              <div
-                style={{
-                  position: 'absolute',
-                  top: `${selectionY()}px`,
-                  left: '0',
-                  right: '0',
-                  'z-index': '10',
-                }}
-              >
-                <InlineInput
-                  onSubmit={handleSubmitWithPosition}
-                  onDismiss={review.clearPendingSelection}
-                />
-              </div>
+            {/* Inline input for pending selection — mounted after the selected block */}
+            <Show keyed when={review.pendingSelection() ? pendingFlowSlot() : undefined}>
+              {(slot) => (
+                <Portal mount={slot}>
+                  <InlineInput onSubmit={handleSubmitInFlow} onDismiss={dismissPendingSelection} />
+                </Portal>
+              )}
             </Show>
 
-            {/* Annotation cards — positioned where the selection was made */}
+            {/* Annotation cards — mounted in document flow after the selected block */}
             <For each={review.annotations()}>
               {(annotation) => (
-                <div
-                  data-annotation-id={annotation.id}
-                  style={{
-                    position: 'absolute',
-                    top: `${cardOffsets()[annotation.id] ?? 0}px`,
-                    left: '0',
-                    right: '0',
-                    'z-index': '5',
-                  }}
-                >
-                  <ReviewCommentCard
-                    annotation={annotation}
-                    onDismiss={() => review.dismissAnnotation(annotation.id)}
-                    overlay
-                  />
-                </div>
+                <Show when={flowSlots()[annotation.id]}>
+                  {(slot) => (
+                    <Portal mount={slot()}>
+                      <div data-annotation-id={annotation.id}>
+                        <ReviewCommentCard
+                          annotation={annotation}
+                          onDismiss={() => dismissAnnotation(annotation.id)}
+                        />
+                      </div>
+                    </Portal>
+                  )}
+                </Show>
               )}
             </For>
 
-            {/* Active questions — positioned where the selection was made */}
+            {/* Active questions — mounted in document flow after the selected block */}
             <For each={review.activeQuestions()}>
               {(q) => (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: `${cardOffsets()[q.id] ?? 0}px`,
-                    left: '0',
-                    right: '0',
-                    'z-index': '5',
-                  }}
-                >
-                  <AskCodeCard
-                    requestId={q.id}
-                    question={q.question}
-                    filePath={q.source}
-                    startLine={q.startLine}
-                    endLine={q.endLine}
-                    selectedText={q.selectedText}
-                    worktreePath={props.worktreePath ?? ''}
-                    imagePaths={q.imagePaths}
-                    onDismiss={() => review.dismissQuestion(q.id)}
-                  />
-                </div>
+                <Show when={flowSlots()[q.id]}>
+                  {(slot) => (
+                    <Portal mount={slot()}>
+                      <AskCodeCard
+                        requestId={q.id}
+                        question={q.question}
+                        filePath={q.source}
+                        startLine={q.startLine}
+                        endLine={q.endLine}
+                        selectedText={q.selectedText}
+                        worktreePath={props.worktreePath ?? ''}
+                        imagePaths={q.imagePaths}
+                        onDismiss={() => dismissQuestion(q.id)}
+                      />
+                    </Portal>
+                  )}
+                </Show>
               )}
             </For>
           </div>

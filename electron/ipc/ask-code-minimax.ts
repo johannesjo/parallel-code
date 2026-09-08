@@ -10,7 +10,7 @@ import {
   assertCanStart,
   assertPromptWithinLimit,
 } from './request-registry.js';
-import { askCodeImageMimeTypeForPath } from './ask-code-image.js';
+import { askCodeImageMimeTypeForPath } from '../shared/ask-code-image.js';
 
 interface MinimaxAskCodeRequest {
   requestId: string;

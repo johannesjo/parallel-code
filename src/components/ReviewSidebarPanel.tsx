@@ -45,13 +45,39 @@ export function ReviewCommentsButton() {
           border: `1px solid ${theme.warning}`,
           'font-size': sf(12),
           padding: '2px 10px',
-          'border-radius': '4px',
+          'border-radius': 'var(--radius-xs)',
           cursor: 'pointer',
         }}
       >
         Review ({state().reviewCount})
       </button>
     </Show>
+  );
+}
+
+/** Explicitly rerun the configured quality-finding provider for the current diff. */
+export function ReviewFindingsRefreshButton() {
+  const review = useReview();
+  return (
+    <button
+      type="button"
+      onClick={review.refreshFindings}
+      disabled={review.findingsLoading()}
+      title="Rerun quality findings for this diff"
+      aria-label="Refresh quality findings"
+      style={{
+        background: 'transparent',
+        color: theme.fgMuted,
+        border: `1px solid ${theme.border}`,
+        'font-size': sf(12),
+        padding: '2px 10px',
+        'border-radius': 'var(--radius-xs)',
+        cursor: review.findingsLoading() ? 'wait' : 'pointer',
+        opacity: review.findingsLoading() ? '0.6' : '1',
+      }}
+    >
+      Refresh findings
+    </button>
   );
 }
 
@@ -89,7 +115,7 @@ export function ReviewSidebarPanel() {
                 color: theme.fgMuted,
                 cursor: 'pointer',
                 padding: '2px',
-                'border-radius': '3px',
+                'border-radius': 'var(--radius-xs)',
               }}
             >
               <CloseIcon size={13} />
@@ -135,7 +161,7 @@ export function ReviewSidebarPanel() {
                 color: theme.fgMuted,
                 cursor: 'pointer',
                 padding: '2px',
-                'border-radius': '3px',
+                'border-radius': 'var(--radius-xs)',
               }}
             >
               <CloseIcon size={13} />

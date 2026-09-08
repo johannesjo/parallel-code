@@ -1,5 +1,6 @@
 import { produce } from 'solid-js/store';
 import { invoke, Channel } from '../lib/ipc';
+import { asStoreVerificationRun } from '../lib/verification-run';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore, cleanupPanelEntries } from './core';
 import { effectiveAgentId } from './agent-select';
@@ -34,7 +35,7 @@ import {
   clampCoordinatorConcurrentTasks,
   DEFAULT_COORDINATOR_CONCURRENT_TASKS,
 } from '../lib/coordinator-limits';
-import { getCoordinatorChildren, isCoordinatedChild } from './sidebar-order';
+import { computeSidebarDraggableTaskOrder, getCoordinatorChildren } from './sidebar-order';
 import { isLandedTaskState } from './landing';
 
 export function createAgentRecord(args: {
@@ -286,6 +287,12 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   // Generate agentId early so we can derive the Docker container name before StartMCPServer.
   const agentId = crypto.randomUUID();
 
+  // Single clamped value shared by the preamble text and the backend's hard
+  // enforcement so the two can never drift apart.
+  const effectiveMaxConcurrentTasks = clampCoordinatorConcurrentTasks(
+    opts.maxConcurrentTasks ?? DEFAULT_COORDINATOR_CONCURRENT_TASKS,
+  );
+
   // Start MCP server BEFORE adding task to store — the store update triggers
   // a reactive render of TerminalView which spawns the PTY immediately.
   // If MCP launch args aren't set yet, the coordinator agent starts without MCP wiring.
@@ -306,6 +313,8 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
         worktreePath: gitIsolation === 'worktree' ? worktreePath : undefined,
         skipPermissions: skipPermissions ?? false,
         propagateSkipPermissions: opts.propagateSkipPermissions ?? false,
+        maxConcurrentTasks: effectiveMaxConcurrentTasks,
+        verifyCommand: getProject(projectId)?.verifyCommand,
         agentCommand: agentDef.command,
         agentArgs: agentDef.args,
         agentEnvFile: store.agentEnvFiles[agentDef.id],
@@ -320,6 +329,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
         projectId,
         coordinatorBranch: branchName || undefined,
         worktreePath,
+        verifyCommand: getProject(projectId)?.verifyCommand,
       });
     } catch (err) {
       console.warn('[MCP] Failed to start MCP server for coordinator:', err);
@@ -360,11 +370,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
       opts.coordinatorMode && effectivePrompt
         ? COORDINATOR_PREAMBLE.replace(
             /\{\{MAX_CONCURRENT\}\}/g,
-            String(
-              clampCoordinatorConcurrentTasks(
-                opts.maxConcurrentTasks ?? DEFAULT_COORDINATOR_CONCURRENT_TASKS,
-              ),
-            ),
+            String(effectiveMaxConcurrentTasks),
           ) +
           coordinatorBaseBranchInstruction +
           effectivePrompt
@@ -380,6 +386,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     propagateSkipPermissions: opts.coordinatorMode
       ? (opts.propagateSkipPermissions ?? false)
       : undefined,
+    maxConcurrentTasks: opts.coordinatorMode ? effectiveMaxConcurrentTasks : undefined,
     controlledBy: opts.coordinatorMode ? 'coordinator' : undefined,
     mcpConfigPath,
     mcpLaunchArgs,
@@ -512,6 +519,9 @@ export async function closeTask(taskId: string): Promise<void> {
         branchName,
         deleteBranch,
         projectRoot,
+        // The folder keeps its original branch-derived name even if the task
+        // later adopted the branch the agent switched to — pass the real path.
+        worktreePath: task.worktreePath,
       });
     }
 
@@ -611,12 +621,16 @@ export async function mergeTask(
   taskId: string,
   options?: { squash?: boolean; message?: string; cleanup?: boolean },
 ): Promise<void> {
+  // Precondition failures throw so the merge dialog can say why nothing
+  // happened; a silent return here reads as "Merge did nothing" to the user.
   const task = store.tasks[taskId];
-  if (!task || task.closingStatus === 'removing') return;
-  if (task.gitIsolation !== 'worktree') return;
+  if (!task) throw new Error('Task no longer exists');
+  if (task.closingStatus === 'removing') throw new Error('Task is being closed');
+  if (task.gitIsolation !== 'worktree') throw new Error('Only worktree tasks can be merged');
 
   const projectRoot = getProjectPath(task.projectId);
-  if (!projectRoot) return;
+  if (!projectRoot)
+    throw new Error('Project folder not found — use Relink in the project settings');
 
   const agentIds = [...task.agentIds];
   const shellAgentIds = [...task.shellAgentIds];
@@ -659,10 +673,12 @@ export async function mergeTask(
 
 export async function pushTask(taskId: string, onOutput: Channel<string>): Promise<void> {
   const task = store.tasks[taskId];
-  if (!task || task.gitIsolation !== 'worktree') return;
+  if (!task) throw new Error('Task no longer exists');
+  if (task.gitIsolation !== 'worktree') throw new Error('Only worktree tasks can be pushed');
 
   const projectRoot = getProjectPath(task.projectId);
-  if (!projectRoot) return;
+  if (!projectRoot)
+    throw new Error('Project folder not found — use Relink in the project settings');
 
   await invoke(IPC.PushTask, {
     projectRoot,
@@ -677,19 +693,6 @@ export async function pushTask(taskId: string, onOutput: Channel<string>): Promi
 export function updateTaskName(taskId: string, name: string): void {
   setStore('tasks', taskId, 'name', name);
   setStore('tasks', taskId, 'nameIsAutoGenerated', false);
-}
-
-export function updateTaskBranch(taskId: string, branchName: string): void {
-  const task = store.tasks[taskId];
-  if (!task) return;
-  const branchChanged = task.branchName !== branchName;
-  setStore('tasks', taskId, 'branchName', branchName);
-  // prUrl is only ever populated by branch-PR auto-detection, so dropping it
-  // on rename is safe — the next detection pass will repopulate from the new
-  // branch. If a user-editable PR URL is ever added, gate this on a flag.
-  if (branchChanged && task.prUrl) {
-    setStore('tasks', taskId, 'prUrl', undefined);
-  }
 }
 
 export function updateTaskNotes(taskId: string, notes: string): void {
@@ -815,7 +818,7 @@ export function reorderTask(fromIndex: number, toIndex: number): void {
  */
 export function reorderTaskVisually(movedId: string, targetVisibleIdx: number): void {
   // Visible draggable order: active tasks excluding coordinated children
-  const draggableOrder = store.taskOrder.filter((id) => !isCoordinatedChild(id));
+  const draggableOrder = computeSidebarDraggableTaskOrder();
 
   // After removing the moved item, find what task should come after it
   const remainingDraggable = draggableOrder.filter((id) => id !== movedId);
@@ -1291,6 +1294,7 @@ export function initMCPListeners(): () => void {
         signalDoneConsumed?: boolean;
         needsReview?: boolean;
         verification?: Task['verification'];
+        verificationRun?: Task['verificationRun'] | null;
         landingState?: Task['landingState'] | null;
         landingReason?: string | null;
         landingSummary?: string | null;
@@ -1320,6 +1324,13 @@ export function initMCPListeners(): () => void {
           setStore('tasks', evt.taskId, 'needsReview', evt.needsReview);
         if (evt.verification !== undefined)
           setStore('tasks', evt.taskId, 'verification', evt.verification);
+        if (evt.verificationRun !== undefined)
+          setStore(
+            'tasks',
+            evt.taskId,
+            'verificationRun',
+            evt.verificationRun ? asStoreVerificationRun(evt.verificationRun) : undefined,
+          );
         if (evt.landingState !== undefined)
           setStore('tasks', evt.taskId, 'landingState', evt.landingState ?? undefined);
         if (evt.landingReason !== undefined)
@@ -1444,6 +1455,7 @@ export function retryTaskMcpStartup(taskId: string): Promise<void> {
       worktreePath: task.gitIsolation === 'worktree' ? task.worktreePath : undefined,
       skipPermissions: task.skipPermissions ?? false,
       propagateSkipPermissions: task.propagateSkipPermissions ?? false,
+      verifyCommand: getProject(task.projectId)?.verifyCommand,
       agentCommand: agentDef?.command ?? 'claude',
       agentArgs: agentDef?.args ?? [],
       // Sub-tasks are spawned by the coordinator in the main process, which has

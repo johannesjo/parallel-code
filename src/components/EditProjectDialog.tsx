@@ -27,6 +27,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [defaultGitIsolation, setDefaultGitIsolation] = createSignal<GitIsolationMode>('worktree');
   const [defaultBaseBranch, setDefaultBaseBranch] = createSignal('');
   const [coverageReportPath, setCoverageReportPath] = createSignal('');
+  const [verifyCommand, setVerifyCommand] = createSignal('');
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
   const [newCommand, setNewCommand] = createSignal('');
   const [showImportDialog, setShowImportDialog] = createSignal(false);
@@ -44,6 +45,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
     setDefaultGitIsolation(p.defaultGitIsolation ?? 'worktree');
     setDefaultBaseBranch(p.defaultBaseBranch ?? '');
     setCoverageReportPath(p.coverageReportPath ?? '');
+    setVerifyCommand(p.verifyCommand ?? '');
     setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
     setNewCommand('');
     setConfirmRemove(false);
@@ -79,6 +81,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
       defaultGitIsolation: defaultGitIsolation(),
       defaultBaseBranch: defaultBaseBranch() || undefined,
       coverageReportPath: coverageReportPath().trim() || undefined,
+      verifyCommand: verifyCommand().trim() || undefined,
       terminalBookmarks: bookmarks(),
     });
     props.onClose();
@@ -134,7 +137,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   padding: '3px 10px',
                   background: theme.bgInput,
                   border: `1px solid ${theme.border}`,
-                  'border-radius': '6px',
+                  'border-radius': 'var(--radius-sm)',
                   color: theme.fgMuted,
                   cursor: 'pointer',
                   'font-size': '11px',
@@ -150,7 +153,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   padding: '3px 10px',
                   background: theme.bgInput,
                   border: `1px solid ${theme.border}`,
-                  'border-radius': '6px',
+                  'border-radius': 'var(--radius-sm)',
                   color: theme.fgMuted,
                   cursor: 'pointer',
                   'font-size': '12px',
@@ -168,7 +171,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   'align-items': 'center',
                   gap: '10px',
                   padding: '10px 14px',
-                  'border-radius': '8px',
+                  'border-radius': 'var(--radius-md)',
                   background: `color-mix(in srgb, ${theme.warning} 10%, transparent)`,
                   border: `1px solid color-mix(in srgb, ${theme.warning} 30%, transparent)`,
                   color: theme.warning,
@@ -186,7 +189,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                     padding: '5px 12px',
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
-                    'border-radius': '6px',
+                    'border-radius': 'var(--radius-sm)',
                     color: theme.fg,
                     cursor: 'pointer',
                     'font-size': '13px',
@@ -202,7 +205,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                     padding: '5px 12px',
                     background: 'transparent',
                     border: `1px solid color-mix(in srgb, ${theme.error} 40%, transparent)`,
-                    'border-radius': '6px',
+                    'border-radius': 'var(--radius-sm)',
                     color: theme.error,
                     cursor: 'pointer',
                     'font-size': '13px',
@@ -229,7 +232,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 style={{
                   background: theme.bgInput,
                   border: `1px solid ${theme.border}`,
-                  'border-radius': '8px',
+                  'border-radius': 'var(--radius-md)',
                   padding: '10px 14px',
                   color: theme.fg,
                   'font-size': '14px',
@@ -254,7 +257,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   style={{
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
-                    'border-radius': '8px',
+                    'border-radius': 'var(--radius-md)',
                     padding: '10px 14px',
                     color: theme.fg,
                     'font-size': '14px',
@@ -373,7 +376,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   style={{
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
-                    'border-radius': '8px',
+                    'border-radius': 'var(--radius-md)',
                     padding: '10px 14px',
                     color: theme.fg,
                     'font-size': '14px',
@@ -382,6 +385,45 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 />
               </div>
             </Show>
+
+            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+              <label style={sectionLabelStyle}>
+                Verify command{' '}
+                <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
+                  (runs in the task worktree)
+                </span>
+              </label>
+              <input
+                class="input-field"
+                type="text"
+                value={verifyCommand()}
+                onInput={(e) => setVerifyCommand(e.currentTarget.value)}
+                placeholder="npm run typecheck && npm test"
+                style={{
+                  background: theme.bgInput,
+                  border: `1px solid ${theme.border}`,
+                  'border-radius': '8px',
+                  padding: '10px 14px',
+                  color: theme.fg,
+                  'font-size': '14px',
+                  'font-family': "'JetBrains Mono', monospace",
+                  outline: 'none',
+                }}
+              />
+              <div
+                style={{
+                  'font-size': '12px',
+                  color: theme.fgSubtle,
+                  padding: '2px 2px 0',
+                }}
+              >
+                Runs from the merge dialog, when an agent calls <code>land_self</code>, and before
+                the coordinator merges. A failure is advisory in the merge dialog, but{' '}
+                <code>land_self</code> and <code>merge_task</code> refuse to merge until it passes.{' '}
+                <code>PARALLEL_CODE_TASK_ID</code> and <code>PARALLEL_CODE_BRANCH</code> are set for
+                namespacing shared resources.
+              </div>
+            </div>
 
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
               <label style={sectionLabelStyle}>
@@ -399,7 +441,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 style={{
                   background: theme.bgInput,
                   border: `1px solid ${theme.border}`,
-                  'border-radius': '8px',
+                  'border-radius': 'var(--radius-md)',
                   padding: '10px 14px',
                   color: theme.fg,
                   'font-size': '14px',
@@ -433,7 +475,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                           gap: '8px',
                           padding: '4px 8px',
                           background: theme.bgInput,
-                          'border-radius': '6px',
+                          'border-radius': 'var(--radius-sm)',
                           border: `1px solid ${theme.border}`,
                         }}
                       >
@@ -488,7 +530,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                     flex: '1',
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
-                    'border-radius': '8px',
+                    'border-radius': 'var(--radius-md)',
                     padding: '8px 12px',
                     color: theme.fg,
                     'font-size': '13px',
@@ -504,7 +546,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                     padding: '8px 14px',
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
-                    'border-radius': '8px',
+                    'border-radius': 'var(--radius-md)',
                     color: newCommand().trim() ? theme.fg : theme.fgSubtle,
                     cursor: newCommand().trim() ? 'pointer' : 'not-allowed',
                     'font-size': '13px',
@@ -533,7 +575,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   padding: '9px 18px',
                   background: theme.bgInput,
                   border: `1px solid ${theme.border}`,
-                  'border-radius': '8px',
+                  'border-radius': 'var(--radius-md)',
                   color: theme.fgMuted,
                   cursor: 'pointer',
                   'font-size': '14px',
@@ -550,7 +592,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   padding: '9px 20px',
                   background: theme.accent,
                   border: 'none',
-                  'border-radius': '8px',
+                  'border-radius': 'var(--radius-md)',
                   color: theme.accentText,
                   cursor: canSave() ? 'pointer' : 'not-allowed',
                   'font-size': '14px',

@@ -5,7 +5,12 @@ import path from 'path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createWorktree, ensureSymlinkExcludes, getSymlinkCandidates } from './git.js';
+import {
+  createWorktree,
+  ensureSymlinkExcludes,
+  getSymlinkCandidates,
+  refreshWorktreeNodeModules,
+} from './git.js';
 
 const tempDirs: string[] = [];
 const localGitEnvVars = execFileSync('git', ['rev-parse', '--local-env-vars'], {
@@ -338,18 +343,48 @@ describe('getSymlinkCandidates', () => {
 });
 
 describe('createWorktree', () => {
+  it('git-excludes the worktree container so the project root stays clean', async () => {
+    const root = initRepository();
+
+    await createWorktree(root, 'task-container', []);
+
+    const exclude = fs.readFileSync(path.join(root, '.git', 'info', 'exclude'), 'utf8');
+    expect(exclude).toContain('/.worktrees/');
+    expect(git(root, ['status', '--porcelain'])).toBe('');
+  });
+
   it('symlinks a selected ignored directory from the main checkout', async () => {
     const root = initRepository();
-    fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n', 'utf8');
-    const source = path.join(root, 'node_modules');
+    fs.writeFileSync(path.join(root, '.gitignore'), 'dist/\n', 'utf8');
+    const source = path.join(root, 'dist');
     fs.mkdirSync(source);
-    fs.writeFileSync(path.join(source, 'package.json'), '{}\n', 'utf8');
+    fs.writeFileSync(path.join(source, 'app.js'), 'built\n', 'utf8');
 
-    const result = await createWorktree(root, 'task-symlink', ['node_modules']);
-    const target = path.join(result.path, 'node_modules');
+    const result = await createWorktree(root, 'task-symlink', ['dist']);
+    const target = path.join(result.path, 'dist');
 
     expect(fs.lstatSync(target).isSymbolicLink()).toBe(true);
     expect(fs.realpathSync(target)).toBe(fs.realpathSync(source));
+  });
+
+  it('materializes node_modules as a real directory of per-entry links', async () => {
+    const root = initRepository();
+    fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n', 'utf8');
+    const source = path.join(root, 'node_modules');
+    fs.mkdirSync(path.join(source, 'left-pad'), { recursive: true });
+    fs.writeFileSync(path.join(source, 'left-pad', 'index.js'), 'module.exports = 1;\n', 'utf8');
+    fs.mkdirSync(path.join(source, '.vite'));
+
+    const result = await createWorktree(root, 'task-nm-entries', ['node_modules']);
+    const target = path.join(result.path, 'node_modules');
+
+    expect(fs.lstatSync(target).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(target).isDirectory()).toBe(true);
+    expect(fs.lstatSync(path.join(target, 'left-pad')).isSymbolicLink()).toBe(true);
+    // The source's cache dir is not linked — tools create a writable one.
+    expect(fs.existsSync(path.join(target, '.vite'))).toBe(false);
+    // The real directory is still invisible to git in the worktree.
+    expect(git(result.path, ['status', '--porcelain'])).not.toContain('node_modules');
   });
 
   it('silently rejects selected names nested below the repository root', async () => {
@@ -399,6 +434,48 @@ describe('createWorktree', () => {
       expect(fs.existsSync(path.join(result.path, '.WORKTREES'))).toBe(false);
     });
   }
+});
+
+describe('refreshWorktreeNodeModules', () => {
+  it('migrates a legacy whole-dir symlink and tops up new packages', async () => {
+    const root = initRepository();
+    const source = path.join(root, 'node_modules');
+    fs.mkdirSync(path.join(source, 'pkg-a'), { recursive: true });
+
+    const result = await createWorktree(root, 'task-nm-migrate', []);
+    const target = path.join(result.path, 'node_modules');
+    // Layout produced by createWorktree before per-entry links existed.
+    fs.symlinkSync(source, target);
+
+    fs.mkdirSync(path.join(source, 'pkg-b'));
+    // A caller-resolved "not a repo" must be trusted, not re-detected.
+    refreshWorktreeNodeModules(result.path, null);
+    expect(fs.lstatSync(target).isSymbolicLink()).toBe(true);
+
+    refreshWorktreeNodeModules(result.path, root);
+
+    expect(fs.lstatSync(target).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(path.join(target, 'pkg-a')).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(path.join(target, 'pkg-b')).isSymbolicLink()).toBe(true);
+  });
+
+  it('leaves the main checkout and unmanaged worktree installs untouched', async () => {
+    const root = initRepository();
+    const rootInstall = path.join(root, 'node_modules');
+    fs.mkdirSync(path.join(rootInstall, 'pkg'), { recursive: true });
+
+    const result = await createWorktree(root, 'task-nm-unmanaged', []);
+    // A real install the user ran inside the worktree.
+    const localInstall = path.join(result.path, 'node_modules');
+    fs.mkdirSync(path.join(localInstall, 'other-pkg'), { recursive: true });
+
+    refreshWorktreeNodeModules(root);
+    refreshWorktreeNodeModules(result.path);
+
+    expect(fs.lstatSync(path.join(rootInstall, 'pkg')).isDirectory()).toBe(true);
+    expect(fs.lstatSync(path.join(localInstall, 'other-pkg')).isDirectory()).toBe(true);
+    expect(fs.existsSync(path.join(localInstall, 'pkg'))).toBe(false);
+  });
 });
 
 describe('ensureSymlinkExcludes', () => {

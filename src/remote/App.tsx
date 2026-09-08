@@ -1,6 +1,6 @@
 import { createSignal, onMount, Show, Switch, Match } from 'solid-js';
 import { initAuth, getPairedToken } from './auth';
-import { connect } from './ws';
+import { connect, reconnect } from './ws';
 import { AgentList } from './AgentList';
 import { AgentDetail } from './AgentDetail';
 import { ConnectScreen } from './ConnectScreen';
@@ -17,6 +17,9 @@ export function App() {
   const [view, setView] = createSignal<View>('list');
   const [detailAgentId, setDetailAgentId] = createSignal('');
   const [detailTaskName, setDetailTaskName] = createSignal('');
+  // Where to land after pairing: the New Task form, or back to the agent the
+  // user was about to type into.
+  const [afterPairing, setAfterPairing] = createSignal<View>('newtask');
 
   function selectAgent(id: string, name: string) {
     setDetailAgentId(id);
@@ -27,7 +30,23 @@ export function App() {
   // Creating a task needs the elevated paired token; pair first if we don't
   // have one yet.
   function startNewTask() {
+    setAfterPairing('newtask');
     setView(getPairedToken() ? 'newtask' : 'pair');
+  }
+
+  // Typing into a terminal (or saving notes) needs the paired token too. The
+  // socket reconnects with it after pairing (see ws.ts), so returning to the
+  // detail view is enough.
+  function pairForDetail() {
+    setAfterPairing('detail');
+    setView('pair');
+  }
+
+  // A fresh paired token must also reach the socket, which authenticated with
+  // whichever token it had at connect time.
+  function onPaired() {
+    reconnect();
+    setView(afterPairing());
   }
 
   function onConnected() {
@@ -48,16 +67,23 @@ export function App() {
             agentId={detailAgentId()}
             taskName={detailTaskName()}
             onBack={() => setView('list')}
+            onNeedsPairing={pairForDetail}
           />
         </Match>
         <Match when={view() === 'pair'}>
-          <PairScreen onPaired={() => setView('newtask')} onCancel={() => setView('list')} />
+          <PairScreen
+            onPaired={onPaired}
+            onCancel={() => setView(afterPairing() === 'detail' ? 'detail' : 'list')}
+          />
         </Match>
         <Match when={view() === 'newtask'}>
           <NewTaskScreen
             onCreated={() => setView('list')}
             onCancel={() => setView('list')}
-            onNeedsPairing={() => setView('pair')}
+            onNeedsPairing={() => {
+              setAfterPairing('newtask');
+              setView('pair');
+            }}
           />
         </Match>
       </Switch>

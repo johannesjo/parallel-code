@@ -39,7 +39,7 @@ function MCPLogModal(props: { onClose: () => void }) {
       labelledBy={titleId}
       panelStyle={{
         background: theme.bgElevated,
-        'border-radius': '8px',
+        'border-radius': 'var(--radius-md)',
         padding: '16px',
         'max-height': '60vh',
         gap: '8px',
@@ -68,7 +68,7 @@ function MCPLogModal(props: { onClose: () => void }) {
           'font-family': "'JetBrains Mono', monospace",
           'font-size': sf(11),
           background: theme.bgInput,
-          'border-radius': '4px',
+          'border-radius': 'var(--radius-xs)',
           padding: '8px',
           flex: '1',
           'min-height': '0',
@@ -83,14 +83,14 @@ function MCPLogModal(props: { onClose: () => void }) {
               {(entry) => (
                 <div
                   style={{
-                    color: entry.level === 'error' ? '#f87171' : theme.fgMuted,
+                    color: entry.level === 'error' ? theme.error : theme.fgMuted,
                     'margin-bottom': '2px',
                   }}
                 >
                   <span style={{ color: theme.fgSubtle }}>
                     {new Date(entry.ts).toLocaleTimeString()}{' '}
                   </span>
-                  <span style={{ color: entry.level === 'error' ? '#f87171' : theme.fg }}>
+                  <span style={{ color: entry.level === 'error' ? theme.error : theme.fg }}>
                     [{entry.level}]{' '}
                   </span>
                   {entry.msg}
@@ -100,7 +100,7 @@ function MCPLogModal(props: { onClose: () => void }) {
           </Show>
         </Show>
       </div>
-      <div style={{ 'font-size': sf(10), color: theme.fgSubtle }}>
+      <div style={{ 'font-size': sf(11), color: theme.fgSubtle }}>
         Showing last 200 entries. Refresh to reload.
         <button
           style={{
@@ -109,8 +109,8 @@ function MCPLogModal(props: { onClose: () => void }) {
             border: `1px solid ${theme.border}`,
             cursor: 'pointer',
             color: theme.fgMuted,
-            'font-size': sf(10),
-            'border-radius': '3px',
+            'font-size': sf(11),
+            'border-radius': 'var(--radius-xs)',
             padding: '1px 6px',
           }}
           onClick={() => {
@@ -138,7 +138,7 @@ export function SubTaskStrip(props: SubTaskStripProps) {
 
   const taskTone = (task: (typeof store.tasks)[string]) => {
     if (task.landingState === 'landed_pending_review' || task.landingState === 'reviewed') {
-      return { color: '#22c55e', label: 'landed' };
+      return { color: theme.success, label: 'landed' };
     }
     if (
       task.landingState === 'landed_cleanup_failed' ||
@@ -149,7 +149,7 @@ export function SubTaskStrip(props: SubTaskStripProps) {
     if (task.landingState === 'landing_failed') {
       return { color: theme.error, label: 'landing failed' };
     }
-    if (task.signalDoneReceived) return { color: '#22c55e', label: 'signalled done' };
+    if (task.signalDoneReceived) return { color: theme.success, label: 'signalled done' };
     return null;
   };
 
@@ -173,7 +173,7 @@ export function SubTaskStrip(props: SubTaskStripProps) {
         >
           <span
             style={{
-              'font-size': sf(10),
+              'font-size': sf(11),
               color: theme.fgSubtle,
               'white-space': 'nowrap',
               'flex-shrink': '0',
@@ -197,7 +197,7 @@ export function SubTaskStrip(props: SubTaskStripProps) {
                   'align-items': 'center',
                   gap: '4px',
                   padding: '2px 8px',
-                  'border-radius': '10px',
+                  'border-radius': '999px',
                   background: taskTone(task)
                     ? `color-mix(in srgb, ${taskTone(task)?.color} 12%, transparent)`
                     : `color-mix(in srgb, ${theme.fgSubtle} 8%, transparent)`,
@@ -236,10 +236,10 @@ export function SubTaskStrip(props: SubTaskStripProps) {
                 'flex-shrink': '0',
                 background: 'none',
                 border: `1px solid ${theme.border}`,
-                'border-radius': '6px',
+                'border-radius': 'var(--radius-sm)',
                 cursor: 'pointer',
                 color: theme.fgSubtle,
-                'font-size': sf(10),
+                'font-size': sf(11),
                 padding: '1px 6px',
                 'white-space': 'nowrap',
               }}
@@ -266,10 +266,10 @@ export function SubTaskStrip(props: SubTaskStripProps) {
             style={{
               background: 'none',
               border: `1px solid ${theme.border}`,
-              'border-radius': '6px',
+              'border-radius': 'var(--radius-sm)',
               cursor: 'pointer',
               color: theme.fgSubtle,
-              'font-size': sf(10),
+              'font-size': sf(11),
               padding: '1px 6px',
               'white-space': 'nowrap',
             }}

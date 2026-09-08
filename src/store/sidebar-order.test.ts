@@ -11,7 +11,7 @@ type MockStore = {
   tasks: Record<string, MockTask>;
   taskOrder: string[];
   collapsedTaskOrder: string[];
-  projects: Array<{ id: string }>;
+  projects: Array<{ id: string; tasksCollapsed?: boolean }>;
 };
 
 const core = vi.hoisted(() => ({
@@ -31,6 +31,7 @@ vi.mock('./core', async () => {
 });
 
 import {
+  computeSidebarDraggableTaskOrder,
   computeGroupedTasks,
   computeSidebarTaskOrder,
   getCoordinatorChildren,
@@ -80,5 +81,18 @@ describe('sidebar coordinator ordering', () => {
     };
 
     expect(computeSidebarTaskOrder()).toEqual(['coord-1', 'child-1', 'child-2', 'task-1']);
+    expect(computeSidebarDraggableTaskOrder()).toEqual(['coord-1', 'task-1']);
+  });
+
+  it('omits tasks in collapsed project groups from keyboard navigation', () => {
+    mockStore.projects = [{ id: 'proj-1', tasksCollapsed: true }, { id: 'proj-2' }];
+    mockStore.taskOrder = ['task-1', 'task-2'];
+    mockStore.tasks = {
+      'task-1': { projectId: 'proj-1' },
+      'task-2': { projectId: 'proj-2' },
+    };
+
+    expect(computeSidebarTaskOrder()).toEqual(['task-2']);
+    expect(computeSidebarDraggableTaskOrder()).toEqual(['task-2']);
   });
 });

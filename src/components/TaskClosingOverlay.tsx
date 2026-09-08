@@ -21,7 +21,7 @@ export function TaskClosingOverlay(props: TaskClosingOverlayProps) {
           'align-items': 'center',
           'justify-content': 'center',
           gap: '12px',
-          'border-radius': '12px',
+          'border-radius': 'var(--radius-lg)',
           color: theme.fg,
         }}
       >
@@ -53,7 +53,7 @@ export function TaskClosingOverlay(props: TaskClosingOverlayProps) {
               border: `1px solid ${theme.border}`,
               color: theme.fg,
               padding: '6px 16px',
-              'border-radius': '6px',
+              'border-radius': 'var(--radius-sm)',
               cursor: 'pointer',
               'font-size': '13px',
             }}

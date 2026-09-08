@@ -254,7 +254,7 @@ export function HelpDialog(props: HelpDialogProps) {
             background: theme.bgInput,
             color: theme.fg,
             border: `1px solid ${theme.border}`,
-            'border-radius': '6px',
+            'border-radius': 'var(--radius-sm)',
             padding: '4px 8px',
             'font-size': '12px',
             cursor: 'pointer',
@@ -277,7 +277,7 @@ export function HelpDialog(props: HelpDialogProps) {
             background: 'transparent',
             border: `1px solid ${theme.border}`,
             color: theme.fgMuted,
-            'border-radius': '6px',
+            'border-radius': 'var(--radius-sm)',
             padding: '4px 10px',
             'font-size': '11px',
             cursor: 'pointer',
@@ -340,7 +340,7 @@ export function HelpDialog(props: HelpDialogProps) {
                           {binding.description}
                         </span>
                         <Show when={secondary}>
-                          <span style={{ color: theme.fgSubtle, 'font-size': '10px' }}>
+                          <span style={{ color: theme.fgSubtle, 'font-size': '11px' }}>
                             {secondary}
                           </span>
                         </Show>
@@ -399,7 +399,7 @@ export function HelpDialog(props: HelpDialogProps) {
                           style={{
                             background: recording() ? theme.accent : theme.bgInput,
                             border: `1px solid ${recording() ? theme.accent : overridden() ? theme.accent : theme.border}`,
-                            'border-radius': '4px',
+                            'border-radius': 'var(--radius-xs)',
                             padding: '2px 8px',
                             'font-size': '11px',
                             color: recording()
@@ -434,7 +434,7 @@ export function HelpDialog(props: HelpDialogProps) {
                           style={{
                             background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
                             border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
-                            'border-radius': '6px',
+                            'border-radius': 'var(--radius-sm)',
                             padding: '6px 10px',
                             'margin-top': '4px',
                             'margin-bottom': '4px',
@@ -456,7 +456,7 @@ export function HelpDialog(props: HelpDialogProps) {
                                 background: theme.bgInput,
                                 border: `1px solid ${theme.border}`,
                                 color: theme.fg,
-                                'border-radius': '4px',
+                                'border-radius': 'var(--radius-xs)',
                                 padding: '2px 8px',
                                 'font-size': '11px',
                                 cursor: 'pointer',
@@ -470,7 +470,7 @@ export function HelpDialog(props: HelpDialogProps) {
                                 background: theme.bgInput,
                                 border: `1px solid ${theme.border}`,
                                 color: theme.fg,
-                                'border-radius': '4px',
+                                'border-radius': 'var(--radius-xs)',
                                 padding: '2px 8px',
                                 'font-size': '11px',
                                 cursor: 'pointer',
@@ -484,7 +484,7 @@ export function HelpDialog(props: HelpDialogProps) {
                                 background: 'transparent',
                                 border: `1px solid ${theme.border}`,
                                 color: theme.fgMuted,
-                                'border-radius': '4px',
+                                'border-radius': 'var(--radius-xs)',
                                 padding: '2px 8px',
                                 'font-size': '11px',
                                 cursor: 'pointer',

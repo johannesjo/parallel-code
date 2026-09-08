@@ -72,7 +72,10 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
     });
   });
 
-  const intrinsicHeight = () => (store.focusMode ? '240px' : '140px');
+  // An empty notes box shouldn't claim a third of the column: stay a thin
+  // strip until there is text or a plan to show.
+  const isEmpty = () => !props.task.notes?.trim() && !(store.showPlans && props.task.planContent);
+  const intrinsicHeight = () => (isEmpty() ? '56px' : store.focusMode ? '240px' : '140px');
 
   return (
     <div
@@ -272,7 +275,7 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
               background: `color-mix(in srgb, ${theme.accent} 12%, ${theme.bgInput})`,
               color: theme.fg,
               border: `1px solid color-mix(in srgb, ${theme.accent} 25%, ${theme.border})`,
-              'border-radius': '6px',
+              'border-radius': 'var(--radius-sm)',
               cursor: 'pointer',
               'z-index': '1',
             }}

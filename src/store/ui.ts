@@ -185,6 +185,21 @@ export function setProjectsCollapsed(collapsed: boolean): void {
   });
 }
 
+export function setProjectTasksCollapsed(projectId: string, collapsed: boolean): void {
+  setStore(
+    produce((s) => {
+      const project = s.projects.find((entry) => entry.id === projectId);
+      if (!project) return;
+      project.tasksCollapsed = collapsed;
+
+      const focusedTaskId = s.sidebarFocusedTaskId;
+      if (collapsed && focusedTaskId && s.tasks[focusedTaskId]?.projectId === projectId) {
+        s.sidebarFocusedTaskId = null;
+      }
+    }),
+  );
+}
+
 export function setShowPromptInput(show: boolean): void {
   setStore('showPromptInput', show);
 }

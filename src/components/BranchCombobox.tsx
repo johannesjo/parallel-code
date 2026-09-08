@@ -198,7 +198,7 @@ export function BranchCombobox(props: BranchComboboxProps) {
         style={{
           background: theme.bgInput,
           border: `1px solid ${theme.border}`,
-          'border-radius': '8px',
+          'border-radius': 'var(--radius-md)',
           padding: '10px 14px',
           color: theme.fg,
           'font-size': '14px',
@@ -230,7 +230,7 @@ export function BranchCombobox(props: BranchComboboxProps) {
             'overflow-y': 'auto',
             background: theme.bgElevated,
             border: `1px solid ${theme.border}`,
-            'border-radius': '8px',
+            'border-radius': 'var(--radius-md)',
             'box-shadow': '0 8px 24px rgba(0,0,0,0.4)',
           }}
         >
@@ -260,7 +260,7 @@ export function BranchCombobox(props: BranchComboboxProps) {
                   }}
                   style={{
                     padding: '8px 12px',
-                    'border-radius': '6px',
+                    'border-radius': 'var(--radius-sm)',
                     cursor: 'pointer',
                     'font-size': '13px',
                     'font-family': "'JetBrains Mono', monospace",
