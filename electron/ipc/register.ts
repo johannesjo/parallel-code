@@ -780,7 +780,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.SaveArenaData, (_e, args) => {
     assertString(args.filename, 'filename');
     assertString(args.json, 'json');
-    const filePath = path.join(app.getPath('userData'), args.filename);
+    const filePath = path.join(getUserDataDir(), args.filename);
     const basename = path.basename(filePath);
     if (basename !== args.filename) throw new Error('Invalid filename');
     if (!basename.startsWith('arena-') || !basename.endsWith('.json'))
@@ -792,7 +792,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(IPC.LoadArenaData, (_e, args) => {
     assertString(args.filename, 'filename');
-    const filePath = path.join(app.getPath('userData'), args.filename);
+    const filePath = path.join(getUserDataDir(), args.filename);
     const basename = path.basename(filePath);
     if (basename !== args.filename) throw new Error('Invalid filename');
     if (!basename.startsWith('arena-') || !basename.endsWith('.json'))
