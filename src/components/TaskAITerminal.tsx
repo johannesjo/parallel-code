@@ -19,9 +19,8 @@ import {
   showNotification,
   toggleAITerminalLayout,
 } from '../store/store';
-import { markDirty, redrawTerminal } from '../lib/terminalFitManager';
+import { markDirty } from '../lib/terminalFitManager';
 import { isAgentAskingQuestion } from '../store/taskStatus';
-import { isMac } from '../lib/platform';
 import { warn as logWarn } from '../lib/log';
 import { InfoBar } from './InfoBar';
 import { TerminalView } from './TerminalView';
