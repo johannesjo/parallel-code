@@ -76,12 +76,9 @@ export function StatusDot(props: {
       class="status-glyph"
       title={getDotTooltip(props.status, props.attention)}
       style={{
-        display: 'inline-flex',
-        'align-items': 'center',
-        'justify-content': 'center',
-        width: `${LANES[size()]}px`,
-        height: `${LANES[size()]}px`,
-        'flex-shrink': '0',
+        // Lane size travels as a variable so a host row can restyle the box —
+        // the sidebar shrinks it to one text line to keep it off wrapped names.
+        '--glyph-lane': `${LANES[size()]}px`,
         color: color(),
       }}
     >

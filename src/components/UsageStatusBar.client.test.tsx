@@ -61,6 +61,13 @@ describe('UsageStatusBar', () => {
     expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(1);
   });
 
+  it('fills the meter with what is left, not what is used', () => {
+    const container = mount();
+    const meter = container.querySelector<HTMLElement>('[role="progressbar"]');
+    expect(meter?.getAttribute('aria-valuenow')).toBe('60');
+    expect(meter?.firstElementChild).toHaveProperty('style.width', '60%');
+  });
+
   it('opens a popover with both windows and the refresh time on hover', () => {
     const container = mount();
     const entry = container.querySelector<HTMLElement>('[role="status"]');

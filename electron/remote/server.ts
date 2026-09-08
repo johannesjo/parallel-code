@@ -82,6 +82,68 @@ export function getMCPLogs(): MCPLogEntry[] {
   return mcpLogs.slice();
 }
 
+interface OriginHeaders {
+  origin?: string;
+  host?: string;
+}
+
+/**
+ * Browser clients send an `Origin` header on WebSocket upgrades and on
+ * cross-site fetches; non-browser clients (the MCP coordinator client, curl)
+ * send none. A page this server itself served has an Origin whose host equals
+ * the request's `Host`; any other Origin is some other site — a tab open on
+ * the LAN, a page that guessed the desktop's address — using the user's
+ * browser to reach the server. WebSockets are exempt from the same-origin
+ * policy, so without this a foreign page could at least open a socket and
+ * probe. (Auth still needs the token, which lives in the SPA's own
+ * localStorage and is unreadable cross-origin; that, not this check, is what
+ * defeats DNS rebinding.) No Origin is allowed: the token still gates every
+ * API route and socket.
+ */
+export function isBrowserOriginAllowed(headers: OriginHeaders): boolean {
+  const origin = headers.origin;
+  if (origin === undefined) return true;
+  const host = headers.host;
+  if (!host) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false; // "null" (sandboxed/opaque origin) or garbage
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  return parsed.host.toLowerCase() === host.toLowerCase();
+}
+
+/**
+ * Content-Security-Policy for the mobile SPA. The SPA is a Solid bundle with
+ * inline `style` attributes, an xterm canvas, and one WebSocket back to this
+ * server; nothing loads from anywhere else. Scripts are restricted to the
+ * bundle so an injected string can never become code in the page that holds
+ * the terminal token. The socket target is derived from the request's Host so
+ * `connect-src` stays tight whichever IP the phone reached us on.
+ */
+export function buildRemoteCsp(host: string | undefined): string {
+  // Host lands inside a header value: only accept hostname/IP/port characters
+  // so a crafted Host cannot append directives.
+  const safeHost = host && /^[A-Za-z0-9.\-:[\]]{1,255}$/.test(host) ? host : null;
+  const socketSources = safeHost ? ` ws://${safeHost} wss://${safeHost}` : '';
+  return [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    `connect-src 'self'${socketSources}`,
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+  ].join('; ');
+}
+
 function parseLandSelfInput(body: Record<string, unknown>): LandSelfInput | string {
   const summary = body.summary;
   if (summary !== undefined && typeof summary !== 'string') return 'summary must be a string';
@@ -697,6 +759,11 @@ export function startRemoteServer(opts: {
   // the server, consistent with the mobile/coordinator tokens above. One entry
   // per paired phone.
   const pairedTokenBufs: Buffer[] = [];
+  // Bound the credential set: pairing is a user action on the desktop, so a
+  // handful covers every phone a person owns; beyond that the oldest is
+  // dropped. Eviction only stops future authentication with that token — a
+  // socket it already opened stays authenticated until it reconnects.
+  const MAX_PAIRED_TOKENS = 8;
   // At most one pending PIN at a time — a fresh mint replaces any prior one.
   let pairing: { pinBuf: Buffer; expiresAt: number; attemptsLeft: number } | null = null;
 
@@ -755,6 +822,9 @@ export function startRemoteServer(opts: {
     pairing = null; // single-use
     const pairedToken = randomBytes(24).toString('base64url');
     pairedTokenBufs.push(Buffer.from(pairedToken));
+    if (pairedTokenBufs.length > MAX_PAIRED_TOKENS) {
+      pairedTokenBufs.splice(0, pairedTokenBufs.length - MAX_PAIRED_TOKENS);
+    }
     return { ok: true, token: pairedToken };
   }
 
@@ -769,6 +839,11 @@ export function startRemoteServer(opts: {
 
     // --- API routes (require auth) ---
     if (url.pathname.startsWith('/api/')) {
+      if (!isBrowserOriginAllowed(req.headers)) {
+        res.writeHead(403, { ...SECURITY_HEADERS, 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'forbidden origin' }));
+        return;
+      }
       const tokenClass = classifyToken(req);
       if (tokenClass === null) {
         res.writeHead(401, { ...SECURITY_HEADERS, 'Content-Type': 'application/json' });
@@ -844,10 +919,11 @@ export function startRemoteServer(opts: {
         return jsonEnd(405, { error: 'method not allowed' });
       }
 
-      // --- Task notes (mobile + paired) ---
-      // Read/write the notes textarea shown on the desktop task panel. Available
-      // to the read-only mobile token too: editing notes is low-risk and mirrors
-      // the "interact with your terminals" capability the mobile token already has.
+      // --- Task notes (read: mobile + paired; write: paired) ---
+      // The notes textarea shown on the desktop task panel. The QR-code mobile
+      // token may read notes; writing them (text that lands in the desktop UI
+      // and can be sent to an agent as a prompt) needs the paired token, like
+      // every other write.
       const notesMatch = url.pathname.match(/^\/api\/mobile\/notes\/([^/]+)$/);
       if (notesMatch) {
         if (tokenClass !== 'mobile' && tokenClass !== 'paired')
@@ -878,6 +954,7 @@ export function startRemoteServer(opts: {
         }
 
         if (req.method === 'PUT') {
+          if (tokenClass !== 'paired') return jsonEnd(403, { error: 'pairing required' });
           const setTaskNotes = opts.setTaskNotes;
           if (!setTaskNotes) return jsonEnd(503, { error: 'notes unavailable' });
           // Cap the body generously above MAX_NOTES_BYTES so the precise byte
@@ -1056,7 +1133,15 @@ export function startRemoteServer(opts: {
 
     const serveFile = (path: string, ct: string, cc: string) => {
       const stream = createReadStream(path);
-      res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': ct, 'Cache-Control': cc });
+      res.writeHead(200, {
+        ...SECURITY_HEADERS,
+        // The policy governs documents; assets only need to be served by one.
+        ...(ct.startsWith('text/html')
+          ? { 'Content-Security-Policy': buildRemoteCsp(req.headers.host) }
+          : {}),
+        'Content-Type': ct,
+        'Cache-Control': cc,
+      });
       stream.pipe(res);
       stream.on('error', () => {
         if (!res.headersSent) {
@@ -1099,6 +1184,10 @@ export function startRemoteServer(opts: {
     server,
     maxPayload: 64 * 1024,
     verifyClient: (info, cb) => {
+      if (!isBrowserOriginAllowed(info.req.headers)) {
+        cb(false, 403, 'Forbidden origin');
+        return;
+      }
       if (wss.clients.size >= 10) {
         cb(false, 429, 'Too many connections');
         return;
@@ -1111,7 +1200,7 @@ export function startRemoteServer(opts: {
 
   const clientSubs = new WeakMap<WebSocket, Map<string, (data: string) => void>>();
   const authenticatedClients = new Set<WebSocket>();
-  const clientTokenTypes = new Map<WebSocket, 'coordinator' | 'mobile'>();
+  const clientTokenTypes = new Map<WebSocket, 'coordinator' | 'mobile' | 'paired'>();
   const authTimers = new WeakMap<WebSocket, ReturnType<typeof setTimeout>>();
 
   function broadcast(msg: ServerMessage): void {
@@ -1157,10 +1246,12 @@ export function startRemoteServer(opts: {
       const list = buildAgentList(opts.getTaskName, opts.getAgentStatus, getTaskAttention);
       ws.send(JSON.stringify({ type: 'agents', list } satisfies ServerMessage));
     } else {
-      // Close unauthenticated connections after 5 seconds
+      // Close unauthenticated connections after 5 seconds. Distinct code from
+      // 4001: the phone treats 4001 as "my token is stale" and discards it,
+      // which a slow network must not trigger.
       const authTimer = setTimeout(() => {
         if (!authenticatedClients.has(ws)) {
-          ws.close(4001, 'Auth timeout');
+          ws.close(4002, 'Auth timeout');
         }
       }, 5_000);
       authTimers.set(ws, authTimer);
@@ -1170,11 +1261,12 @@ export function startRemoteServer(opts: {
       const msg = parseClientMessage(String(raw));
       if (!msg) return;
 
-      // Handle first-message auth. Coordinator and mobile tokens grant WS
-      // access; subtask tokens are denied.
+      // Handle first-message auth. Coordinator, mobile, and paired tokens
+      // grant WS access (with different write rights, below); subtask tokens
+      // are denied.
       if (msg.type === 'auth') {
         const tokenType = classifyCandidate(msg.token);
-        if (tokenType === 'coordinator' || tokenType === 'mobile') {
+        if (tokenType === 'coordinator' || tokenType === 'mobile' || tokenType === 'paired') {
           authenticatedClients.add(ws);
           clientTokenTypes.set(ws, tokenType);
           const timer = authTimers.get(ws);
@@ -1193,14 +1285,20 @@ export function startRemoteServer(opts: {
         return;
       }
 
-      // Mobile clients may type into agent terminals (`input`) but cannot
-      // resize the PTY (desktop owns the geometry) or kill agents — the
-      // mobile token travels in a QR-code URL, so keep its blast radius small.
-      if (clientTokenTypes.get(ws) === 'mobile') {
-        if (msg.type === 'resize' || msg.type === 'kill') {
-          ws.close(4003, 'Forbidden');
-          return;
-        }
+      // Write rights by token class. The mobile token travels in a QR-code
+      // URL over plain HTTP, so it is view-only: anything that can capture
+      // that URL must not be able to type into a shell on this machine.
+      // Typing (`input`) needs the paired token — the phone proved it can
+      // read the pairing PIN off the desktop screen. Resize (desktop owns the
+      // geometry) and kill stay coordinator-only.
+      const tokenType = clientTokenTypes.get(ws);
+      if (msg.type === 'input' && tokenType !== 'coordinator' && tokenType !== 'paired') {
+        ws.close(4003, 'Pairing required');
+        return;
+      }
+      if ((msg.type === 'resize' || msg.type === 'kill') && tokenType !== 'coordinator') {
+        ws.close(4003, 'Forbidden');
+        return;
       }
 
       switch (msg.type) {
@@ -1294,7 +1392,9 @@ export function startRemoteServer(opts: {
   });
 
   const primaryIp = ips.wifi ?? ips.tailscale ?? '127.0.0.1';
-  // url embeds the mobileToken — safe to surface in UI. Coordinator token never leaves the main process.
+  // url embeds the mobileToken — a view-only credential (see the WS write
+  // gate above), so it is safe to surface in the UI and the QR code.
+  // Coordinator token never leaves the main process.
   const url = `http://${primaryIp}:${opts.port}?token=${mobileToken}`;
 
   const result: RemoteServer = {

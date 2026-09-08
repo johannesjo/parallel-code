@@ -4,6 +4,7 @@ import { Channel } from '../lib/ipc';
 import { Dialog } from './Dialog';
 import { theme, bannerStyle } from '../lib/theme';
 import type { Task } from '../store/types';
+import { errMessage } from '../lib/log';
 
 interface PushDialogProps {
   open: boolean;
@@ -57,8 +58,8 @@ export function PushDialog(props: PushDialogProps) {
       .then(() => {
         onDone(true);
       })
-      .catch((err) => {
-        setPushError(String(err));
+      .catch((err: unknown) => {
+        setPushError(errMessage(err));
         onDone(false);
       })
       .finally(() => {

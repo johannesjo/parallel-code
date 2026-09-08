@@ -34,7 +34,9 @@ const toolbarBtnStyle = (highlighted: boolean, bordered: boolean): JSX.CSSProper
   color: theme.fgMuted,
   cursor: 'pointer',
   'border-radius': 'var(--radius-sm)',
-  padding: '3px 8px',
+  // Chips fill most of the 28px bar: a 26px target is comfortable to hit, and
+  // the bar gives back the room by hugging its own edges.
+  padding: '6px 9px',
   'font-size': sf(12),
   'line-height': '1',
   display: 'flex',
@@ -110,8 +112,8 @@ export function TaskShellSection(props: TaskShellSectionProps) {
         display: 'flex',
         'flex-direction': 'column',
         background: 'transparent',
-        'padding-top': hasShell() ? '0' : '6px',
-        'padding-bottom': hasShell() ? '0' : '6px',
+        'padding-top': hasShell() ? '0' : '3px',
+        'padding-bottom': hasShell() ? '0' : '3px',
       }}
     >
       <div
@@ -155,7 +157,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
           'min-height': '28px',
           display: 'flex',
           'align-items': 'center',
-          padding: '0 8px',
+          padding: '0 5px',
           background: 'transparent',
           gap: '4px',
           'overflow-x': 'auto',

@@ -33,5 +33,10 @@ jobs:
       - name: Test security rules
         run: npm run test:security-rules
 
-      - name: Test
-        run: npm test
+      - name: Test (unit with coverage floor, client)
+        run: npm run test:ci
+
+      # The coordinator's prompt-delivery path against a real pty. Gated by
+      # env locally because it takes ~20s and needs a working shell.
+      - name: Test (coordinator against a real pty)
+        run: npm run test:coordinator-pty
