@@ -43,6 +43,7 @@ import { buildVerifyEnv, validateVerifyCommand, verificationRunner } from './ver
 import { startRemoteServer, getMCPLogs, type RemoteProject } from '../remote/server.js';
 import type { RemoteAttentionState } from '../remote/protocol.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
+import { getUserDataDir } from '../user-data-dir.js';
 import { buildMcpLaunchArgs } from '../mcp/agent-args.js';
 import {
   getSymlinkCandidates,
@@ -766,22 +767,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   // --- Keybindings ---
-  function getKeybindingsDir(): string {
-    let dir = app.getPath('userData');
-    if (!app.isPackaged) {
-      const base = path.basename(dir);
-      dir = path.join(path.dirname(dir), `${base}-dev`);
-    }
-    return dir;
-  }
-
   ipcMain.handle(IPC.LoadKeybindings, () => {
-    return loadKeybindings(getKeybindingsDir());
+    return loadKeybindings(getUserDataDir());
   });
 
   ipcMain.handle(IPC.SaveKeybindings, (_e, args) => {
     assertString(args?.json, 'json');
-    saveKeybindings(getKeybindingsDir(), args.json);
+    saveKeybindings(getUserDataDir(), args.json);
   });
 
   // --- Arena persistence ---

@@ -1,6 +1,7 @@
-import { app, type BrowserWindow } from 'electron';
+import { type BrowserWindow } from 'electron';
 import path from 'path';
 import { IPC } from '../ipc/channels.js';
+import { getUserDataDir } from '../user-data-dir.js';
 import { setAgentHookRuntime } from '../ipc/pty.js';
 import { error as logError, info as logInfo } from '../log.js';
 import { emitAgentHookEvent } from './events.js';
@@ -15,7 +16,11 @@ let server: AgentHookServer | null = null;
  * Failure is logged and otherwise ignored: the PTY heuristics keep working.
  */
 export async function startAgentHookRuntime(getWindow: () => BrowserWindow | null): Promise<void> {
-  const dir = path.join(app.getPath('userData'), 'agent-hooks');
+  // Per-instance, not raw userData: this directory holds endpoint.env (loopback
+  // port + bearer token), written only at startup, so sharing it between a dev
+  // run and an installed build hands every agent's hook events to whichever
+  // instance started last.
+  const dir = path.join(getUserDataDir(), 'agent-hooks');
   // Resolved per event: the server starts before the window exists so that no
   // Claude launch can race it, and the window may be recreated later.
   const forward = (event: AgentHookEventPayload): void => {
