@@ -71,7 +71,12 @@ function DocumentPane(props: { project: Project }) {
   let reviseRef: HTMLButtonElement | undefined;
   // Where the composer sits when a passage is picked; null puts it at the foot.
   const [anchorTop, setAnchorTop] = createSignal<number | null>(null);
-  const blocks = createRenderedBlocks(() => documentStore.snapshot?.content ?? null);
+  // The prose scrolls in `scrollRef`; the reading position is held there
+  // across a re-render, so an edit landing in the file leaves it alone.
+  const blocks = createRenderedBlocks(
+    () => documentStore.snapshot?.content ?? null,
+    () => scrollRef,
+  );
   const documentPath = () => activeDocumentPath() ?? props.project.documentPath ?? '';
   const selection = () => documentStore.selection;
   const [blockEdit, setBlockEdit] = createSignal<BlockEditTarget | null>(null);

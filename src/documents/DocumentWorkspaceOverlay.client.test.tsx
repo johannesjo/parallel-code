@@ -3,6 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setStore, store } from '../store/core';
 import { DocumentWorkspaceOverlay } from './DocumentWorkspaceOverlay';
 import { documentStore, setDocumentComposerDraft } from './store';
+import { createRenderedBlocks } from './use-blocks';
+
+vi.mock('./use-blocks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./use-blocks')>()),
+  createRenderedBlocks: vi.fn(
+    (await importOriginal<typeof import('./use-blocks')>()).createRenderedBlocks,
+  ),
+}));
 
 const { openInEditor, revealItemInDir, platform } = vi.hoisted(() => ({
   openInEditor: vi.fn(() => Promise.resolve()),
@@ -258,4 +266,16 @@ describe('DocumentWorkspaceOverlay', () => {
 
     expect(button?.disabled).toBe(true);
   });
+});
+
+it('hands the prose scroller to the renderer, which holds it steady on an edit', () => {
+  const host = openWorkspace();
+  const scroll = host.querySelector('.docws-scroll');
+
+  expect(scroll).not.toBeNull();
+  // The renderer anchors the reading position in whatever it is given; given
+  // nothing, every document silently jumps on every edit again.
+  expect(createRenderedBlocks).toHaveBeenCalled();
+  const scroller = vi.mocked(createRenderedBlocks).mock.calls[0][1];
+  expect(scroller?.()).toBe(scroll);
 });
