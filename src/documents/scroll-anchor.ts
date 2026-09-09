@@ -108,8 +108,11 @@ const HOLD_MS = 5000;
 
 /**
  * How far the prose may drift before the reader is taken to have moved it.
- * Native scroll anchoring nudges by fractions of a pixel while late content
- * grows, and those are not a reader.
+ * A hedge, not a measurement: a scroll offset settles on whole device pixels,
+ * which a zoomed window and a fractional restore do not land on. Kept because
+ * the two failures are not the same size — a couple of pixels of a reader's
+ * own scrolling overridden goes unnoticed, a hold dropped on a phantom nudge
+ * puts the passage they were reading back off the screen.
  */
 const READER_SLOP = 2;
 
