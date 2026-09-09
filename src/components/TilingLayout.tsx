@@ -65,6 +65,13 @@ export function TilingLayout() {
     return child.initialSize ?? 200;
   }
 
+  function renderedSizeFor(child: TileChild): number {
+    const panel = containerRef?.querySelector<HTMLElement>(
+      `[data-task-id="${CSS.escape(child.id)}"]`,
+    );
+    return panel?.parentElement?.getBoundingClientRect().width || sizeFor(child);
+  }
+
   const syncTaskViewportVisibility = (
     entries: Record<string, 'visible' | 'offscreen-left' | 'offscreen-right'>,
   ) => {
@@ -139,7 +146,7 @@ export function TilingLayout() {
       batch(() => {
         for (const child of panelChildren()) {
           if (child.fixed) continue;
-          const current = sizeFor(child);
+          const current = renderedSizeFor(child);
           const min = child.minSize ?? 30;
           const max = child.maxSize ?? Infinity;
           setPanelUserSize(`tiling:${child.id}`, Math.min(max, Math.max(min, current + deltaPx)));
@@ -381,7 +388,7 @@ export function TilingLayout() {
     if (!child || child.fixed) return;
     e.preventDefault();
     const startX = e.clientX;
-    const startSize = sizeFor(child);
+    const startSize = renderedSizeFor(child);
     const minSize = child.minSize ?? 30;
     const maxSize = child.maxSize ?? Infinity;
     const key = `tiling:${child.id}`;
@@ -595,6 +602,13 @@ export function TilingLayout() {
                   return {
                     width: `${s}px`,
                     'min-width': `${min}px`,
+                    // Unresized columns share spare space; explicit widths stay exact.
+                    'flex-grow':
+                      !child.fixed &&
+                      dragPreview()[child.id] === undefined &&
+                      getPanelUserSize(`tiling:${child.id}`) === undefined
+                        ? '1'
+                        : '0',
                     'flex-shrink': '0',
                     overflow: 'hidden',
                   };
