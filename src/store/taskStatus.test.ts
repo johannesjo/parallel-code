@@ -100,6 +100,7 @@ import {
   taskNeedsAttention,
   markAgentSpawned,
   markAgentOutput,
+  isAgentIdle,
   clearAgentActivity,
 } from './taskStatus';
 import { applyAgentHookEvent, getAgentHookStatus } from './agentHookStatus';
@@ -690,6 +691,143 @@ describe('isAgentBracketedPasteEnabled', () => {
 // ---------------------------------------------------------------------------
 // task attention
 // ---------------------------------------------------------------------------
+describe('terminal redraw activity', () => {
+  const encode = (text: string) => new TextEncoder().encode(text);
+  const codexPrompt = '\x1b[2K\r› \r\ngpt-5.5 default · /repo/.worktrees/task';
+
+  beforeEach(() => {
+    setMockTask('task-1', { agentIds: ['agent-1'] });
+    setMockAgent('agent-1');
+  });
+
+  it.each([
+    ['cursor and focus modes', '\x1b[?25h\x1b[?1004h\x1b[12;3H'],
+    ['window title', '\x1b]0;Codex\x07'],
+    ['synchronized redraw', '\x1b[?2026h\x1b[?2026l'],
+    ['whitespace', '\r\n'],
+  ])('keeps an idle agent idle on %s output', (_name, redraw) => {
+    markAgentOutput('agent-1', encode(codexPrompt), 'task-1');
+    vi.advanceTimersByTime(15_000);
+
+    markAgentOutput('agent-1', encode(redraw), 'task-1');
+
+    expect(isAgentIdle('agent-1')).toBe(true);
+    expect(getTaskDotStatus('task-1')).toBe('waiting');
+    expect(getTaskAttentionState('task-1')).toBe('idle');
+  });
+
+  it('recognizes a Codex prompt redraw above its status footer immediately', () => {
+    markAgentSpawned('agent-1');
+    markAgentOutput('agent-1', encode(codexPrompt), 'task-1');
+
+    expect(isAgentIdle('agent-1')).toBe(true);
+    expect(getTaskDotStatus('task-1')).toBe('waiting');
+
+    markAgentOutput('agent-1', encode('\r\n' + codexPrompt), 'task-1');
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it('does not hide a returned prompt behind a trailing cursor-only line', () => {
+    markAgentSpawned('agent-1');
+    markAgentOutput('agent-1', encode('Done\r\n› \r\n\x1b[?25h'), 'task-1');
+
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it('does not extend real activity when only terminal control output follows', () => {
+    markAgentOutput('agent-1', encode('Running tests...'), 'task-1');
+    vi.advanceTimersByTime(14_000);
+
+    markAgentOutput('agent-1', encode('\x1b[?25h'), 'task-1');
+    expect(isAgentIdle('agent-1')).toBe(false);
+
+    vi.advanceTimersByTime(1_000);
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it('marks new work busy even while an old prompt remains in the output tail', () => {
+    markAgentOutput('agent-1', encode(codexPrompt), 'task-1');
+    vi.advanceTimersByTime(15_000);
+
+    markAgentOutput('agent-1', encode('\r\nRunning tests...'), 'task-1');
+
+    expect(getTaskDotStatus('task-1')).toBe('busy');
+  });
+
+  it('keeps Codex busy when its working indicator accompanies a bare prompt', () => {
+    markAgentOutput('agent-1', encode('Working (2s • esc to interrupt)\r\n› '), 'task-1');
+
+    expect(getTaskDotStatus('task-1')).toBe('busy');
+  });
+
+  it('marks work after a prompt busy when both arrive in one payload', () => {
+    markAgentOutput('agent-1', encode(codexPrompt + '\r\nRunning tests...'), 'task-1');
+
+    expect(getTaskDotStatus('task-1')).toBe('busy');
+  });
+
+  it.each(['\x1b[H', '\x1b[1;1H', '\x1b[H\x1b[2J', '\x1b[?1049h'])(
+    'ignores a working indicator from before a redraw (%j) in the same payload',
+    (redraw) => {
+      markAgentOutput(
+        'agent-1',
+        encode('Working (2s • esc to interrupt)\r\n' + redraw + 'Done\r\n› '),
+        'task-1',
+      );
+
+      expect(getTaskDotStatus('task-1')).toBe('waiting');
+    },
+  );
+
+  it('keeps a prompt idle when the Codex footer arrives in a separate payload', () => {
+    markAgentOutput('agent-1', encode('› \r\n'), 'task-1');
+    markAgentOutput('agent-1', encode('gpt-5.5 default · /repo/.worktrees/task'), 'task-1');
+
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it.each([false, true])('keeps Codex working with a footer (split: %s)', (split) => {
+    const working = 'Working (2s • esc to interrupt)\r\n› \r\n';
+    const footer = 'gpt-5.5 default · /repo/.worktrees/task';
+    for (const chunk of split ? [working, footer] : [working + footer]) {
+      markAgentOutput('agent-1', encode(chunk), 'task-1');
+    }
+
+    expect(getTaskDotStatus('task-1')).toBe('busy');
+  });
+
+  it('does not extend activity when only a Codex footer redraw follows', () => {
+    markAgentOutput('agent-1', encode('Working (2s • esc to interrupt)\r\n› \r\n'), 'task-1');
+    vi.advanceTimersByTime(14_000);
+
+    markAgentOutput('agent-1', encode('gpt-5.5 default · /repo/.worktrees/task'), 'task-1');
+    expect(isAgentIdle('agent-1')).toBe(false);
+
+    vi.advanceTimersByTime(1_000);
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it('keeps completed work idle when a footer follows its returned prompt', () => {
+    markAgentOutput('agent-1', encode('Working (2s • esc to interrupt)'), 'task-1');
+    markAgentOutput('agent-1', encode('\r\nDone\r\n› \r\n'), 'task-1');
+    expect(isAgentIdle('agent-1')).toBe(true);
+
+    markAgentOutput('agent-1', encode('gpt-5.5 default · /repo/.worktrees/task'), 'task-1');
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it('counts work following a footer in the same payload as activity', () => {
+    markAgentOutput('agent-1', encode('› \r\n'), 'task-1');
+    markAgentOutput(
+      'agent-1',
+      encode('gpt-5.5 default · /repo/.worktrees/task\r\nRunning tests...'),
+      'task-1',
+    );
+
+    expect(getTaskDotStatus('task-1')).toBe('busy');
+  });
+});
+
 describe('task attention state', () => {
   it('returns ready for committed clean tasks without active attention', () => {
     setMockTask('task-1', { agentIds: ['agent-1'] });
