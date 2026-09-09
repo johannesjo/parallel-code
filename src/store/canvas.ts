@@ -2,7 +2,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { isAgentHookEventPayload } from '../../electron/agent-hooks/status';
 import { invoke } from '../lib/ipc';
 import { isPlanApprovalEvent, nextCanvasOpen } from '../lib/canvas-auto-open';
-import { canvasTabKey, withTab, withoutTab } from '../lib/canvas-tabs';
+import { canvasTabKey, isTaskCanvasVisible, withTab, withoutTab } from '../lib/canvas-tabs';
 import {
   CANVAS_MIN_WIDTH,
   TASK_TILE_DEFAULT_WIDTH,
@@ -15,10 +15,7 @@ import type { CanvasTab, Task } from './types';
 
 type CanvasState = Pick<Task, 'canvasOpen' | 'canvasTabs' | 'canvasActiveTab'>;
 
-/** The canvas column is on screen while a tab is open or the user asked for it. */
-export function isTaskCanvasVisible(task: Pick<Task, 'canvasOpen' | 'canvasTabs'>): boolean {
-  return !!task.canvasOpen || (task.canvasTabs?.length ?? 0) > 0;
-}
+export { isTaskCanvasVisible } from '../lib/canvas-tabs';
 
 /** The width the canvas column takes: the size the user dragged it to, else its minimum. */
 function canvasWidth(taskId: string): number {

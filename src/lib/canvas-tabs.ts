@@ -1,5 +1,10 @@
 /** Pure helpers for the canvas tab strip; the store applies their results. */
-import type { CanvasTab } from '../store/types';
+import type { CanvasTab, Task } from '../store/types';
+
+/** The canvas column is on screen while a tab is open or the user asked for it. */
+export function isTaskCanvasVisible(task: Pick<Task, 'canvasOpen' | 'canvasTabs'>): boolean {
+  return !!task.canvasOpen || (task.canvasTabs?.length ?? 0) > 0;
+}
 
 /** A tab is the thing it shows: the same file twice is one tab. */
 export const canvasTabKey = (tab: CanvasTab): string => `${tab.kind}:${tab.path}`;

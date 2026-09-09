@@ -4,6 +4,7 @@ import { setActiveTask } from './navigation';
 import { showNotification } from './notification';
 import { computeSidebarTaskOrder } from './sidebar-order';
 import { uncollapseTask } from './tasks';
+import { isTaskCanvasVisible } from '../lib/canvas-tabs';
 import {
   AI_TERMINAL_PANEL,
   aiTerminalPanels,
@@ -102,6 +103,15 @@ function isLeftColumnPanel(panel: string): boolean {
 }
 
 function buildGrid(panelId: string): string[][] {
+  const grid = buildMainGrid(panelId);
+  const task = store.tasks[panelId];
+  // The canvas spans the task body to the right of either main layout.
+  return task && isTaskCanvasVisible(task)
+    ? grid.map((row, index) => (index === 0 ? row : [...row, 'canvas']))
+    : grid;
+}
+
+function buildMainGrid(panelId: string): string[][] {
   const task = store.tasks[panelId];
   if (task) {
     const toolbarCols = shellToolbarPanels(task);
@@ -283,8 +293,14 @@ export function navigateRow(direction: 'up' | 'down'): void {
   const taskId = store.activeTaskId;
   if (!taskId) return;
 
-  const grid = buildGrid(taskId);
+  const grid = buildMainGrid(taskId);
   let current = getTaskFocusedPanel(taskId);
+  // The canvas is one full-height column, with only the title above it.
+  const task = store.tasks[taskId];
+  if (current === 'canvas' && task && isTaskCanvasVisible(task)) {
+    if (direction === 'up') setTaskFocusedPanel(taskId, 'title');
+    return;
+  }
   let pos = findInGrid(grid, current);
   // The previously focused cell can vanish (task.stepsEnabled off, shells killed,
   // width crossing threshold). Recover by falling back to the default instead of

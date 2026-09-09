@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal } from 'solid-js';
+import { For, Show, createEffect, createSignal, onMount } from 'solid-js';
 import {
   setTaskFocusedPanel,
   isPanelFocused,
@@ -10,6 +10,7 @@ import {
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { canvasTabKey, tabFromKey } from '../lib/canvas-tabs';
+import { useFocusRegistration } from '../lib/focus-registration';
 import type { Task } from '../store/types';
 import { ConfirmDialog } from './ConfirmDialog';
 import { CanvasFilePicker } from './CanvasFilePicker';
@@ -26,6 +27,12 @@ interface TaskCanvasPanelProps {
  * edits survive switching, with a picker for adding Markdown files.
  */
 export function TaskCanvasPanel(props: TaskCanvasPanelProps) {
+  let panelRef: HTMLDivElement | undefined;
+  onMount(() => {
+    useFocusRegistration(`${props.task.id}:canvas`, () => {
+      if (!panelRef?.contains(document.activeElement)) panelRef?.focus();
+    });
+  });
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const [dirtyTabs, setDirtyTabs] = createSignal<Record<string, boolean>>({});
   // The tab a close was asked for while it had unsaved edits; null for the column.
@@ -59,12 +66,42 @@ export function TaskCanvasPanel(props: TaskCanvasPanelProps) {
     else closeTaskCanvas(props.task.id);
   }
 
+  function handleEditorFocusKey(e: KeyboardEvent): void {
+    if (e.isComposing || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    // ProseMirror prevents the default for every Escape, including plain editor focus.
+    if (
+      e.key === 'Escape' &&
+      e.target instanceof HTMLElement &&
+      e.target.closest('.task-canvas-editor')
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      panelRef?.focus();
+      return;
+    }
+    if (e.defaultPrevented || e.target !== panelRef || e.key !== 'Enter') return;
+    const key = active();
+    const tab = key ? tabFromKey(key) : null;
+    if (!tab) return;
+    const editor = [...(panelRef?.querySelectorAll<HTMLElement>('[data-path]') ?? [])]
+      .find((document) => document.dataset.path === tab.path)
+      ?.querySelector<HTMLElement>('[contenteditable="true"]');
+    if (!editor) return;
+    e.preventDefault();
+    e.stopPropagation();
+    editor.focus();
+  }
+
   return (
     <div
+      ref={panelRef}
+      tabIndex={-1}
       class="focusable-panel"
       data-testid="task-canvas"
       data-panel-focused={isPanelFocused(props.task.id, 'canvas') ? 'true' : 'false'}
       onClick={() => setTaskFocusedPanel(props.task.id, 'canvas')}
+      on:focusin={() => setTaskFocusedPanel(props.task.id, 'canvas')}
+      on:keydown={handleEditorFocusKey}
       style={{
         height: '100%',
         display: 'flex',

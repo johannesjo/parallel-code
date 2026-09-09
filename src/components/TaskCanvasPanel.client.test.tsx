@@ -3,7 +3,16 @@ import { createStore } from 'solid-js/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
-import { sendPrompt, openCanvasDocument, closeCanvasTab, closeTaskCanvas } from '../store/store';
+import {
+  sendPrompt,
+  openCanvasDocument,
+  activateCanvasTab,
+  closeCanvasTab,
+  closeTaskCanvas,
+  registerFocusFn,
+  setTaskFocusedPanel,
+  unregisterFocusFn,
+} from '../store/store';
 import type { Task } from '../store/types';
 import { TaskCanvasPanel } from './TaskCanvasPanel';
 import { CANVAS_AUTOSAVE_IDLE_MS } from './TaskCanvasEditor';
@@ -16,6 +25,8 @@ vi.mock('../store/store', () => ({
   sendPrompt: vi.fn(async () => undefined),
   isAgentAskingQuestion: () => false,
   setTaskFocusedPanel: vi.fn(),
+  registerFocusFn: vi.fn(),
+  unregisterFocusFn: vi.fn(),
   isPanelFocused: () => false,
   openCanvasDocument: vi.fn(),
   activateCanvasTab: vi.fn(),
@@ -27,6 +38,12 @@ const disposers: Array<() => void> = [];
 let changedListeners: Array<(payload: unknown) => void> = [];
 
 beforeEach(() => {
+  vi.mocked(registerFocusFn).mockClear();
+  vi.mocked(unregisterFocusFn).mockClear();
+  vi.mocked(setTaskFocusedPanel).mockImplementation((taskId, panel) => {
+    vi.mocked(registerFocusFn).mock.calls.find(([key]) => key === `${taskId}:${panel}`)?.[1]();
+  });
+  vi.mocked(setTaskFocusedPanel).mockClear();
   changedListeners = [];
   Object.assign(window, {
     electron: {
@@ -46,6 +63,7 @@ afterEach(() => {
   vi.mocked(invoke).mockReset();
   vi.mocked(sendPrompt).mockClear();
   vi.mocked(openCanvasDocument).mockClear();
+  vi.mocked(activateCanvasTab).mockClear();
   vi.mocked(closeCanvasTab).mockClear();
   vi.mocked(closeTaskCanvas).mockClear();
 });
@@ -155,6 +173,88 @@ function pushFromDisk(content: string): void {
 }
 
 describe('TaskCanvasPanel', () => {
+  it('enters the active document editor with Enter from the canvas panel', async () => {
+    mockIpc();
+    const { container, setTask } = mount('docs/design.md');
+    await editorParagraph(container, 'Keep state in one store.');
+    const activePath = 'docs/notes "draft".md';
+    setTask({
+      canvasTabs: [md('docs/design.md'), md(activePath)],
+      canvasActiveTab: `markdown:${activePath}`,
+    });
+    const activeEditor = await waitFor(() =>
+      [...container.querySelectorAll<HTMLElement>('[data-testid="canvas-document"]')]
+        .find((document) => document.dataset.path === activePath)
+        ?.querySelector<HTMLElement>('.ProseMirror'),
+    );
+    const panel = container.querySelector<HTMLElement>('[data-testid="task-canvas"]');
+    panel?.focus();
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    panel?.dispatchEvent(enter);
+    expect(document.activeElement).toBe(activeEditor);
+    expect(enter.defaultPrevented).toBe(true);
+    expect(saveButton(container)).toBeNull();
+    expect(calls(IPC.WriteDocumentBlock)).toHaveLength(0);
+  });
+
+  it('leaves Enter on canvas tabs to their own activation handler', async () => {
+    mockIpc();
+    const { container } = mount('docs/design.md');
+    await editorParagraph(container, 'Keep state in one store.');
+    const tab = container.querySelector<HTMLElement>('[role="tab"]');
+    tab?.focus();
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    tab?.dispatchEvent(enter);
+    expect(activateCanvasTab).toHaveBeenCalledWith('task-1', 'markdown:docs/design.md');
+    expect(document.activeElement).toBe(tab);
+    expect(enter.defaultPrevented).toBe(false);
+  });
+
+  it('returns focus from the editor to the canvas with Escape without losing edits', async () => {
+    mockIpc();
+    const { container } = mount('docs/design.md');
+    const paragraph = await editorParagraph(container, 'Keep state in one store.');
+    const editor = container.querySelector<HTMLElement>('.ProseMirror');
+    editor?.focus();
+    typeInto(paragraph, 'Keep all state in one ');
+    await waitFor(() => saveButton(container));
+    const escape = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      keyCode: 27,
+      bubbles: true,
+      cancelable: true,
+    });
+    editor?.dispatchEvent(escape);
+    const panel = container.querySelector<HTMLElement>('[data-testid="task-canvas"]');
+    expect(document.activeElement).toBe(panel);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(paragraph.textContent).toBe('Keep all state in one store.');
+    expect(saveButton(container)).not.toBeNull();
+    panel?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(document.activeElement).toBe(editor);
+  });
+
+  it('receives keyboard focus without stealing focus from its editor', async () => {
+    mockIpc();
+    const { container } = mount('docs/design.md');
+    await editorParagraph(container, 'Keep state in one store.');
+    const focus = vi
+      .mocked(registerFocusFn)
+      .mock.calls.find(([key]) => key === 'task-1:canvas')?.[1];
+    expect(focus).toBeDefined();
+    focus?.();
+    expect(document.activeElement).toBe(container.querySelector('[data-testid="task-canvas"]'));
+
+    const editor = container.querySelector<HTMLElement>('.ProseMirror');
+    editor?.focus();
+    expect(setTaskFocusedPanel).toHaveBeenCalledWith('task-1', 'canvas');
+    focus?.();
+    expect(document.activeElement).toBe(editor);
+
+    disposers.pop()?.();
+    expect(unregisterFocusFn).toHaveBeenCalledWith('task-1:canvas');
+  });
+
   it('opens the picker by itself when the column has no file, changed files first', async () => {
     mockIpc();
     const { container } = mount();
@@ -169,6 +269,27 @@ describe('TaskCanvasPanel', () => {
     await waitFor(() => options(container).length === 1);
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     expect(openCanvasDocument).toHaveBeenCalledWith('task-1', 'docs/design.md');
+  });
+
+  it('keeps keyboard focus inside the discard confirmation dialog', async () => {
+    mockIpc();
+    const { container } = mount('docs/design.md');
+    const paragraph = await editorParagraph(container, 'Keep state in one store.');
+    typeInto(paragraph, 'Keep all state in one ');
+    await waitFor(() => saveButton(container));
+    container.querySelector<HTMLButtonElement>('[aria-label="Close design.md"]')?.click();
+    const dialog = await waitFor(() => document.querySelector<HTMLElement>('[role="dialog"]'));
+    const buttons = dialog.querySelectorAll<HTMLButtonElement>('button');
+    const cancel = [...buttons].find((button) => button.textContent === 'Cancel');
+    const discard = [...buttons].find((button) => button.textContent === 'Discard');
+    expect(cancel).toBeDefined();
+    expect(discard).toBeDefined();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(document.activeElement).toBe(cancel);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    expect(document.activeElement).toBe(discard);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    expect(document.activeElement).toBe(cancel);
   });
 
   it('shows the open file in the editor, watches it, and follows changes pushed from disk', async () => {
