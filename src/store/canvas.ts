@@ -95,21 +95,12 @@ export function closeTaskCanvas(taskId: string): void {
   void saveState();
 }
 
-/** Only Claude reports through hooks, so only its plan can wait for the
- *  approval moment; every other agent's plan opens when its file appears.
- *  With no agent yet (restore stagger) the hook may still come, so wait. */
-function reportsPlanApproval(task: Task): boolean {
-  const command = task.agentIds[0] ? store.agents[task.agentIds[0]]?.def.command : undefined;
-  return command === undefined || command.split('/').pop() === 'claude';
-}
-
-/** Called once the plan watcher has stored a plan: a plan file the task did
- *  not have before goes on the canvas, unless the agent will ask for approval. */
+/** A newly detected plan opens on the canvas for every agent. Repeated file
+ * events leave the user's choice of open or closed canvas alone. */
 export function openArrivedPlan(taskId: string, previousPlanPath: string | undefined): void {
   const task = store.tasks[taskId];
   const planPath = task?.planPath;
   if (!task || !planPath || planPath === previousPlanPath) return;
-  if (reportsPlanApproval(task)) return;
   openCanvasDocument(taskId, planPath);
 }
 

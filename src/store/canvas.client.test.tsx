@@ -163,12 +163,25 @@ describe('openArrivedPlan', () => {
     expect(activePath()).toBe('docs/plans/second.md');
   });
 
-  it("leaves a Claude task's plan to the approval hook, also before its agent is up", () => {
+  it.each(['claude', 'codex'])(
+    'opens a root plan written by %s without an approval hook',
+    (command) => {
+      setStore('agents', 'agent-1', agentFor(command));
+      planArrives('example-plan.md');
+      expect(activePath()).toBe('example-plan.md');
+
+      closeTaskCanvas('task-1');
+      planArrives('example-plan.md');
+      expect(openPaths()).toBeUndefined();
+    },
+  );
+
+  it('opens a Claude plan on arrival, even before its agent is restored', () => {
     planArrives('.claude/plans/early.md');
-    expect(openPaths()).toBeUndefined();
+    expect(activePath()).toBe('.claude/plans/early.md');
     setStore('agents', 'agent-1', agentFor('claude'));
     planArrives('.claude/plans/c.md');
-    expect(openPaths()).toBeUndefined();
+    expect(activePath()).toBe('.claude/plans/c.md');
   });
 });
 

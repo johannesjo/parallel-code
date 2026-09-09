@@ -1,3 +1,5 @@
+import { createStore } from 'solid-js/store';
+import { store } from '../store/store';
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Task } from '../store/types';
@@ -14,28 +16,13 @@ vi.mock('../store/store', () => ({
   unregisterFocusFn: vi.fn(),
 }));
 
-vi.mock('mermaid', () => ({
-  default: {
-    initialize: vi.fn(),
-    render: async (id: string) => ({ svg: `<svg id="${id}"></svg>` }),
-  },
-}));
-
 const disposers: Array<() => void> = [];
 
 afterEach(() => {
   while (disposers.length > 0) disposers.pop()?.();
   document.body.replaceChildren();
+  store.showPlans = true;
 });
-
-async function waitFor<T>(probe: () => T | null | undefined): Promise<T> {
-  for (let attempt = 0; attempt < 200; attempt++) {
-    const value = probe();
-    if (value) return value;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  throw new Error('Condition never became true');
-}
 
 const task: Task = {
   id: 'task-1',
@@ -52,45 +39,63 @@ const task: Task = {
   planFileName: 'plan.md',
 };
 
-describe('TaskNotesBody plan tab', () => {
-  it('renders mermaid fences as diagrams', async () => {
+describe('TaskNotesBody plan button', () => {
+  function renderPlan(notesTask: Task, onPlanFullscreen = vi.fn()) {
     const container = document.createElement('div');
     document.body.append(container);
     disposers.push(
       render(
-        () => <TaskNotesBody task={task} agentId="agent-1" onPlanFullscreen={() => undefined} />,
+        () => (
+          <TaskNotesBody task={notesTask} agentId="agent-1" onPlanFullscreen={onPlanFullscreen} />
+        ),
         container,
       ),
     );
+    return container;
+  }
 
-    const block = await waitFor(() => container.querySelector<HTMLElement>('.mermaid-block'));
-    expect(block.getAttribute('data-mermaid')).toContain('graph TD');
+  it('keeps notes visible and opens the plan viewer from a single button', () => {
+    const onPlanFullscreen = vi.fn();
+    const container = renderPlan({ ...task, notes: 'Keep this note.' }, onPlanFullscreen);
 
-    await waitFor(() => container.querySelector('.mermaid-block.mermaid-rendered'));
-    expect(block.innerHTML).toContain('<svg');
+    expect(container.querySelector('textarea')?.value).toBe('Keep this note.');
+    const buttons = Array.from(container.querySelectorAll('button'));
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual(['Review Plan', '']);
+    buttons[0].click();
+    expect(onPlanFullscreen).toHaveBeenCalledOnce();
+    expect(container.querySelector('.plan-markdown')).toBeNull();
   });
 
-  it('re-renders the diagram after switching away from the plan tab and back', async () => {
-    const container = document.createElement('div');
-    document.body.append(container);
-    disposers.push(
-      render(
-        () => <TaskNotesBody task={task} agentId="agent-1" onPlanFullscreen={() => undefined} />,
-        container,
-      ),
-    );
+  it('keeps the notes editor mounted when a plan arrives or disappears', () => {
+    const [notesTask, setNotesTask] = createStore<Task>({ ...task, planContent: undefined });
+    const container = renderPlan(notesTask);
+    const textarea = container.querySelector('textarea');
+    textarea?.focus();
 
-    const first = await waitFor(() => container.querySelector('.mermaid-block.mermaid-rendered'));
-    const [notesTab, planTab] = Array.from(container.querySelectorAll('button'));
-    notesTab.click();
-    planTab.click();
+    setNotesTask('planContent', '# New plan');
+    expect(container.querySelector('.review-plan-btn')).not.toBeNull();
+    expect(container.querySelector('textarea')).toBe(textarea);
+    expect(document.activeElement).toBe(textarea);
 
-    const second = await waitFor(() => container.querySelector('.mermaid-block.mermaid-rendered'));
-    expect(second).not.toBe(first);
+    setNotesTask('planContent', undefined);
+    expect(container.querySelector('.review-plan-btn')).toBeNull();
+    expect(container.querySelector('textarea')).toBe(textarea);
+  });
+
+  it('hides the plan button when plans are disabled', () => {
+    store.showPlans = false;
+    const container = renderPlan(task);
+    expect(container.querySelector('.review-plan-btn')).toBeNull();
+    expect(container.querySelector('textarea')).not.toBeNull();
+  });
+
+  it('keeps empty notes compact even when a plan is available', () => {
+    const container = renderPlan(task);
+    expect(container.querySelector('.task-notes-body')?.getAttribute('data-empty')).toBe('true');
   });
 });
 
-describe('TaskNotesBody notes tab', () => {
+describe('TaskNotesBody notes', () => {
   const plainTask: Task = { ...task, planContent: undefined, planFileName: undefined };
 
   function renderNotes(notesTask: Task) {

@@ -348,6 +348,22 @@ function App() {
     // loadState spawns them, and IPC does not replay what nobody listened to.
     const stopAgentHookStatusListener = startAgentHookStatusListener();
     const stopCanvasAutoOpen = startCanvasAutoOpen();
+    // Listen for plan content pushed from backend plan watcher
+    const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const msg = data as {
+        taskId: string;
+        content: string | null;
+        fileName: string | null;
+        relativePath?: string | null;
+      };
+      if (msg.taskId && store.tasks[msg.taskId]) {
+        const previousPlanPath = store.tasks[msg.taskId].planPath;
+        setPlanContent(msg.taskId, msg.content, msg.fileName, msg.relativePath ?? null);
+        openArrivedPlan(msg.taskId, previousPlanPath);
+      }
+    });
+
     const stopDocumentListeners = initDocumentListeners();
     void syncWindowFocused();
     void syncWindowMaximized();
@@ -555,22 +571,6 @@ function App() {
     const stopUpdateSubscription = startUpdateSubscription();
     const stopRemoteTaskHandlers = startRemoteTaskHandlers();
     const stopRemoteStatusSync = startRemoteStatusSync();
-
-    // Listen for plan content pushed from backend plan watcher
-    const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
-      if (!data || typeof data !== 'object') return;
-      const msg = data as {
-        taskId: string;
-        content: string | null;
-        fileName: string | null;
-        relativePath?: string | null;
-      };
-      if (msg.taskId && store.tasks[msg.taskId]) {
-        const previousPlanPath = store.tasks[msg.taskId].planPath;
-        setPlanContent(msg.taskId, msg.content, msg.fileName, msg.relativePath ?? null);
-        openArrivedPlan(msg.taskId, previousPlanPath);
-      }
-    });
 
     // Listen for steps content pushed from backend steps watcher
     const offStepsContent = window.electron.ipcRenderer.on(IPC.StepsContent, (data: unknown) => {

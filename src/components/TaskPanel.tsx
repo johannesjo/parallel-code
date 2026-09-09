@@ -275,10 +275,7 @@ export function TaskPanel(props: TaskPanelProps) {
   // column. Until either has content the strip stays thin and the AI terminal
   // takes the space; a user drag on the divider pins a size as usual.
   const topStripEmpty = createMemo(
-    () =>
-      !props.task.notes?.trim() &&
-      !(store.showPlans && props.task.planContent) &&
-      (isGitUnavailable() || changedFileCount() === 0),
+    () => !props.task.notes?.trim() && (isGitUnavailable() || changedFileCount() === 0),
   );
 
   // Heavy components are created once and reused in both stack and split

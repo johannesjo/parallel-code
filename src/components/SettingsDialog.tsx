@@ -434,7 +434,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               label="Show plans"
               checked={store.showPlans}
               onChange={setShowPlans}
-              description="Display Claude Code plan files in a tab next to Notes"
+              description="Show a Review Plan button in Notes when a plan file is available"
             />
             <SettingsCheckboxRow
               label="Desktop notifications"
