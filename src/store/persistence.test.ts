@@ -1238,6 +1238,84 @@ describe('active task repair', () => {
   });
 });
 
+describe('document terminal persistence', () => {
+  it('restores the terminal in the current project folder after a relink', async () => {
+    const id = 'doc-agent-docs';
+    mockInvoke.mockResolvedValueOnce(
+      basePayload({
+        projects: [
+          {
+            id: 'docs',
+            name: 'Docs',
+            path: '/new/docs',
+            color: '',
+            kind: 'document',
+            documentPath: 'notes.md',
+          },
+        ],
+        tasks: {
+          [id]: {
+            ...persistedTask(agentDef()),
+            id,
+            projectId: 'docs',
+            worktreePath: '/old/docs',
+            agentIds: [id],
+          },
+        },
+        taskOrder: [],
+      }),
+    );
+    await loadState();
+    expect(store.tasks[id]?.worktreePath).toBe('/new/docs');
+  });
+
+  it('restores document agents and drafts without adding them to the coding task list', async () => {
+    const id = 'doc-agent-docs';
+    const task = {
+      ...persistedTask(agentDef()),
+      id,
+      projectId: 'docs',
+      worktreePath: '/docs',
+      gitIsolation: 'none',
+      agentIds: [id],
+      promptDraft: 'Continue the introduction',
+      lastPrompt: 'Revise the introduction',
+    };
+    mockInvoke.mockResolvedValueOnce(
+      basePayload({
+        projects: [
+          {
+            id: 'docs',
+            name: 'Docs',
+            path: '/docs',
+            color: '',
+            kind: 'document',
+            documentPath: 'notes.md',
+          },
+        ],
+        tasks: { [id]: task },
+        taskOrder: [],
+        activeTaskId: id,
+        focusMode: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks[id]?.promptDraft).toBe(task.promptDraft);
+    expect(store.agents[id]?.resumed).toBe(true);
+    expect(store.agents[id]?.attachExisting).toBe(true);
+    expect(store.taskOrder).toEqual([]);
+    expect(store.activeTaskId).toBeNull();
+    expect(store.focusMode).toBe(false);
+
+    mockInvoke.mockResolvedValue(undefined);
+    await saveState();
+    const saved = mockInvoke.mock.calls.findLast(([channel]) => channel === IPC.SaveAppState);
+    expect(JSON.parse(saved?.[1].json).tasks[id]).toMatchObject(task);
+  });
+});
+
 describe('saveState failure reporting', () => {
   it('tells the user when the state file could not be written', async () => {
     vi.useFakeTimers();

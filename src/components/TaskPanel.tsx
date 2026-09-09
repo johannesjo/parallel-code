@@ -16,7 +16,7 @@ import {
 } from '../store/store';
 import { useFocusRegistration } from '../lib/focus-registration';
 import { ResizablePanel, type PanelChild } from './ResizablePanel';
-import { CANVAS_MIN_WIDTH } from '../lib/layout-sizes';
+import { CANVAS_DEFAULT_WIDTH, CANVAS_MIN_WIDTH } from '../lib/layout-sizes';
 import type { EditableTextHandle } from './EditableText';
 import { PromptInput, type PromptInputHandle } from './PromptInput';
 import { CloseTaskDialog } from './CloseTaskDialog';
@@ -511,7 +511,7 @@ export function TaskPanel(props: TaskPanelProps) {
   const canvasChild: PanelChild = {
     id: 'canvas',
     minSize: CANVAS_MIN_WIDTH,
-    defaultSize: CANVAS_MIN_WIDTH,
+    defaultSize: CANVAS_DEFAULT_WIDTH,
     content: () => canvasEl,
   };
 

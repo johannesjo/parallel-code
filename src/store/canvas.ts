@@ -4,7 +4,7 @@ import { invoke } from '../lib/ipc';
 import { isPlanApprovalEvent, nextCanvasOpen } from '../lib/canvas-auto-open';
 import { canvasTabKey, isTaskCanvasVisible, withTab, withoutTab } from '../lib/canvas-tabs';
 import {
-  CANVAS_MIN_WIDTH,
+  CANVAS_DEFAULT_WIDTH,
   TASK_TILE_DEFAULT_WIDTH,
   TASK_TILE_MIN_WIDTH,
 } from '../lib/layout-sizes';
@@ -19,7 +19,7 @@ export { isTaskCanvasVisible } from '../lib/canvas-tabs';
 
 /** The width the canvas column takes: the size the user dragged it to, else its minimum. */
 function canvasWidth(taskId: string): number {
-  return getPanelUserSize(`task:${taskId}:canvas-cols:canvas`) ?? CANVAS_MIN_WIDTH;
+  return getPanelUserSize(`task:${taskId}:canvas-cols:canvas`) ?? CANVAS_DEFAULT_WIDTH;
 }
 
 /** The task column grows by the canvas when it opens and gives the space back

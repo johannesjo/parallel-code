@@ -42,6 +42,8 @@ type StepNavApi = { mark: (i: number) => void; jump: (i: number) => boolean };
 interface TaskAITerminalProps {
   task: Task;
   isActive: boolean;
+  /** The entire terminal section can be hidden by its parent view. */
+  visible?: boolean;
   selectedAgentId: string;
   onSelectAgent?: (agentId: string) => void;
   promptHandle: PromptInputHandle | undefined;
@@ -125,10 +127,13 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
   // have resized while hidden). The repaint / WebGL reattach on that edge is
   // TerminalView's job, driven by the `visible` prop passed below.
   createEffect(() => {
-    if (!tabsMode()) return;
-    const id = visibleAgentId();
-    if (!id) return;
-    markDirty(id);
+    if (props.visible === false) return;
+    if (tabsMode()) {
+      const id = visibleAgentId();
+      if (id) markDirty(id);
+    } else if (props.visible === true) {
+      for (const id of props.task.agentIds) markDirty(id);
+    }
   });
 
   const infoBarStatus = () => {
@@ -426,7 +431,7 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                 agentId={agentId}
                 canClose={multipleAgents()}
                 tabsMode={tabsMode()}
-                visible={!tabsMode() || visibleAgentId() === agentId}
+                visible={props.visible !== false && (!tabsMode() || visibleAgentId() === agentId)}
                 onSelect={() => selectAgent(agentId)}
                 onFileLink={(filePath) => {
                   if (!props.onFileLink?.(filePath)) handleFileLink(filePath);
@@ -692,7 +697,7 @@ function AgentTerminalPane(props: {
               <TerminalView
                 taskId={props.task.id}
                 agentId={a().id}
-                visible={props.tabsMode ? props.visible : true}
+                visible={props.visible}
                 isFocused={isPanelFocused(props.task.id, aiTerminalPanelId(props.agentId))}
                 command={a().def.command}
                 args={buildTaskAgentArgs(a().def, props.task, a().resumed)}

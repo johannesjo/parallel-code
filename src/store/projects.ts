@@ -5,6 +5,8 @@ import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
 import type { Project } from './types';
 import { sanitizeBranchPrefix } from '../lib/branch-name';
+import { documentAgentTaskId } from '../documents/task-id';
+import { clearAgentActivity } from './taskStatus';
 
 export const PASTEL_HUES = [0, 30, 60, 120, 180, 210, 260, 300, 330];
 
@@ -101,6 +103,8 @@ export function updateProject(
       | 'documentSessions'
       | 'documentModels'
       | 'documentTerminalAgentId'
+      | 'documentOpenPath'
+      | 'documentZoom'
     >
   >,
 ): void {
@@ -134,6 +138,9 @@ export function updateProject(
         s.projects[idx].documentModels = updates.documentModels;
       if (updates.documentTerminalAgentId !== undefined)
         s.projects[idx].documentTerminalAgentId = updates.documentTerminalAgentId;
+      if (updates.documentOpenPath !== undefined)
+        s.projects[idx].documentOpenPath = updates.documentOpenPath;
+      if (updates.documentZoom !== undefined) s.projects[idx].documentZoom = updates.documentZoom;
     }),
   );
   if (
@@ -210,16 +217,46 @@ export async function relinkProject(projectId: string): Promise<boolean> {
 
   const isGitRepo = await invoke<boolean>(IPC.CheckIsGitRepo, { path: newPath });
 
+  const exists = await invoke<boolean>(IPC.CheckPathExists, { path: newPath });
+  if (!exists) return false;
+  const project = getProject(projectId);
+  if (!project) return false;
+  const task =
+    project.kind === 'document' ? store.tasks[documentAgentTaskId(projectId)] : undefined;
+  if (task && task.worktreePath !== newPath) {
+    // Unmount before stopping old PTYs; an attached process cannot change cwd.
+    if (store.activeDocumentProjectId === projectId) setStore('activeDocumentProjectId', null);
+    await Promise.all(
+      [...task.agentIds, ...task.shellAgentIds].map((agentId) =>
+        invoke(IPC.KillAgent, { agentId }),
+      ),
+    );
+    for (const id of task.agentIds) clearAgentActivity(id);
+  }
+
   setStore(
     produce((s) => {
       const idx = s.projects.findIndex((p) => p.id === projectId);
       if (idx === -1) return;
       s.projects[idx].path = newPath;
       s.projects[idx].isGitRepo = isGitRepo;
+      if (task && task.worktreePath !== newPath) {
+        s.tasks[task.id].worktreePath = newPath;
+        for (const id of task.agentIds) {
+          const agent = s.agents[id];
+          if (!agent) continue;
+          agent.resumed = false;
+          agent.attachExisting = false;
+          agent.status = 'running';
+          agent.exitCode = null;
+          agent.signal = null;
+          agent.lastOutput = [];
+          agent.generation++;
+        }
+      }
     }),
   );
 
-  const exists = await invoke<boolean>(IPC.CheckPathExists, { path: newPath });
   if (exists) {
     setStore('missingProjectIds', (prev: Record<string, true>) => {
       const next = { ...prev };

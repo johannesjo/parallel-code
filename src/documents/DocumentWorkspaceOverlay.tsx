@@ -11,7 +11,7 @@ import {
   onMount,
 } from 'solid-js';
 import { store } from '../store/core';
-import { getProject } from '../store/projects';
+import { getProject, updateProject } from '../store/projects';
 import {
   activeDocumentPath,
   closeDocumentWorkspace,
@@ -33,8 +33,8 @@ import {
 } from './store';
 import { resetWorkspaceUi } from './workspace-ui';
 import { activateDocumentAgentTask, releaseDocumentAgentTask } from './agent-task';
+import { isDocumentAgentTaskId } from './task-id';
 import { findAnchorTarget } from './links';
-import { isMac, windowChromeTopInset } from '../lib/platform';
 import { relocateAnchor } from './annotation-anchor';
 import { isHtmlDocument } from './html-document';
 import type { DocumentAnnotation } from './types';
@@ -64,6 +64,17 @@ import { showNotification } from '../store/notification';
 const COMPOSER_GAP = 8;
 
 function DocumentPane(props: { project: Project }) {
+  const zoom = () => {
+    const value = props.project.documentZoom;
+    return typeof value === 'number' && Number.isFinite(value)
+      ? Math.max(0.5, Math.min(2, value))
+      : 1;
+  };
+  function setZoom(value: number) {
+    updateProject(props.project.id, {
+      documentZoom: Math.max(0.5, Math.min(2, Math.round(value * 10) / 10)),
+    });
+  }
   let docRef: HTMLDivElement | undefined;
   let mainRef: HTMLDivElement | undefined;
   let scrollRef: HTMLDivElement | undefined;
@@ -71,6 +82,7 @@ function DocumentPane(props: { project: Project }) {
   let reviseRef: HTMLButtonElement | undefined;
   // Where the composer sits when a passage is picked; null puts it at the foot.
   const [anchorTop, setAnchorTop] = createSignal<number | null>(null);
+  const [composerSpace, setComposerSpace] = createSignal(560);
   // The prose scrolls in `scrollRef`; the reading position is held there
   // across a re-render, so an edit landing in the file leaves it alone.
   const blocks = createRenderedBlocks(
@@ -184,16 +196,18 @@ function DocumentPane(props: { project: Project }) {
    * prose scrolls under it. With nothing picked it rests at the foot.
    */
   function placeComposer() {
+    if (!mainRef || !layerRef) return;
+    const column = mainRef.getBoundingClientRect();
+    const minTop = (scrollRef?.getBoundingClientRect().top ?? column.top) - column.top;
+    setComposerSpace(Math.max(0, column.height - minTop - 2 * COMPOSER_GAP));
     const s = selection();
     const last = s && !s.wholeDocument ? blockElement(s.endBlock) : null;
     const first = s && !s.wholeDocument ? blockElement(s.startBlock) : null;
-    if (!last || !first || !mainRef || !layerRef) {
+    if (!last || !first) {
       setAnchorTop(null);
       return;
     }
-    const column = mainRef.getBoundingClientRect();
     const height = layerRef.offsetHeight;
-    const minTop = (scrollRef?.getBoundingClientRect().top ?? column.top) - column.top;
     const maxTop = column.height - height - COMPOSER_GAP;
     const below = last.getBoundingClientRect().bottom - column.top + COMPOSER_GAP;
     const above = first.getBoundingClientRect().top - column.top - height - COMPOSER_GAP;
@@ -226,6 +240,8 @@ function DocumentPane(props: { project: Project }) {
   const reflow = new ResizeObserver(() => placeComposer());
   onCleanup(() => reflow.disconnect());
   onMount(() => {
+    if (mainRef) reflow.observe(mainRef);
+    if (scrollRef) reflow.observe(scrollRef);
     scrollRef?.addEventListener('scroll', placeComposer, { passive: true });
     window.addEventListener('resize', placeComposer);
     onCleanup(() => {
@@ -311,6 +327,37 @@ function DocumentPane(props: { project: Project }) {
           </span>
         </Show>
         <span style={{ 'margin-left': 'auto' }} />
+        <div class="docws-zoom" role="group" aria-label="Document zoom">
+          <button
+            type="button"
+            class="docws-btn docws-btn-sm"
+            aria-label="Zoom out document"
+            title="Zoom out document"
+            disabled={zoom() <= 0.5}
+            onClick={() => setZoom(zoom() - 0.1)}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            class="docws-btn docws-btn-sm"
+            aria-label="Reset document zoom"
+            title="Reset document zoom"
+            onClick={() => setZoom(1)}
+          >
+            {Math.round(zoom() * 100)}%
+          </button>
+          <button
+            type="button"
+            class="docws-btn docws-btn-sm"
+            aria-label="Zoom in document"
+            title="Zoom in document"
+            disabled={zoom() >= 2}
+            onClick={() => setZoom(zoom() + 0.1)}
+          >
+            +
+          </button>
+        </div>
         <Show when={!showsPreview()}>
           <button
             type="button"
@@ -343,12 +390,19 @@ function DocumentPane(props: { project: Project }) {
       <Show when={showsPreview()}>
         {/* Fully sandboxed: the page renders with its own CSS but gets no
               scripts, no forms and no same-origin access to the app. */}
-        <iframe
-          class="docws-html-preview"
-          sandbox=""
-          srcdoc={documentStore.snapshot?.content ?? ''}
-          title="HTML document preview"
-        />
+        <div class="docws-html-viewport">
+          <iframe
+            class="docws-html-preview"
+            style={{
+              width: `${100 / zoom()}%`,
+              height: `${100 / zoom()}%`,
+              transform: `scale(${zoom()})`,
+            }}
+            sandbox=""
+            srcdoc={documentStore.snapshot?.content ?? ''}
+            title="HTML document preview"
+          />
+        </div>
       </Show>
       {/* Kept mounted while previewing so blocks, annotations and scroll
             position survive the toggle. */}
@@ -362,6 +416,7 @@ function DocumentPane(props: { project: Project }) {
       >
         <div
           class="docws-doc"
+          style={{ zoom: zoom() }}
           ref={(el) => {
             docRef = el;
             reflow.observe(el);
@@ -439,7 +494,10 @@ function DocumentPane(props: { project: Project }) {
             });
           }}
           classList={{ 'is-hidden': showsPreview(), 'is-anchored': anchorTop() !== null }}
-          style={anchorTop() !== null ? { top: `${anchorTop()}px`, bottom: 'auto' } : undefined}
+          style={{
+            '--docws-composer-space': `${composerSpace()}px`,
+            ...(anchorTop() !== null ? { top: `${anchorTop()}px`, bottom: 'auto' } : {}),
+          }}
         >
           <RunComposer
             selection={selection()}
@@ -470,7 +528,7 @@ function DocumentPane(props: { project: Project }) {
   );
 }
 
-/** Full-window surface for a document project: document, compare, history. */
+/** Document task surface in the main workspace, with its agent below the document. */
 export function DocumentWorkspaceOverlay() {
   const project = createMemo<Project | undefined>(() =>
     store.activeDocumentProjectId ? getProject(store.activeDocumentProjectId) : undefined,
@@ -521,6 +579,19 @@ export function DocumentWorkspaceOverlay() {
     releaseDocumentAgentTask(previousActiveTask);
   });
 
+  // Creation/restoration also activate tasks, without going through sidebar
+  // selection. Leave the workspace for every navigation path. Defer the first
+  // pass: a project with no installed agent may retain its previous active task.
+  createEffect(
+    on(
+      () => store.activeTaskId,
+      (id) => {
+        if (id && !isDocumentAgentTaskId(id)) closeDocumentWorkspace();
+      },
+      { defer: true },
+    ),
+  );
+
   function openDocumentInEditor() {
     const currentProject = project();
     const command = editorCommand();
@@ -555,14 +626,12 @@ export function DocumentWorkspaceOverlay() {
     );
   }
 
-  // The document column absorbs the window; the right panel keeps the width
-  // the user dragged it to, remembered across restarts. The panel sits
-  // outside the view switch so the agent's terminal stays attached while
-  // comparing or reading history.
+  // The document fills the left column; the agent keeps its resized width
+  // across restarts and stays attached while reading history.
   const panes: PanelChild[] = [
     {
       id: 'main',
-      minSize: 360,
+      minSize: 320,
       content: () => (
         <>
           <Show when={documentStore.view === 'document' && project()}>
@@ -578,7 +647,7 @@ export function DocumentWorkspaceOverlay() {
     },
     {
       id: 'rail',
-      minSize: 300,
+      minSize: 320,
       defaultSize: 420,
       // Keyed: the panel's children read the project from cleanups, which
       // must not go through an accessor while the workspace is closing.
@@ -591,16 +660,7 @@ export function DocumentWorkspaceOverlay() {
   ];
 
   return (
-    <div
-      class="docws-overlay"
-      classList={{ 'is-mac': isMac }}
-      // The app's own title bar carries the window controls on every
-      // platform but macOS; the workspace starts below it instead of over it.
-      style={isMac ? undefined : { top: `${windowChromeTopInset}px` }}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Document workspace"
-    >
+    <div class="docws-workspace" role="region" aria-label="Document workspace">
       <div class="docws-header" data-tauri-drag-region>
         <div class="docws-title">
           <DocumentIcon />
@@ -710,6 +770,7 @@ export function DocumentWorkspaceOverlay() {
         <ResizablePanel
           direction="horizontal"
           persistKey="docws"
+          style={{ overflow: 'visible' }}
           absorberIds={['main']}
           children={panes}
         />

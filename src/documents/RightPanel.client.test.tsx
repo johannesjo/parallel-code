@@ -9,7 +9,9 @@ import type { AgentDef } from '../ipc/types';
 import type { Project } from '../store/types';
 
 vi.mock('../components/TerminalView', () => ({
-  TerminalView: () => <div class="terminal-stub" />,
+  TerminalView: (props: { visible?: boolean }) => (
+    <div class="terminal-stub" data-visible={props.visible} />
+  ),
 }));
 vi.mock('../lib/ipc', () => ({
   invoke: vi.fn(() => Promise.resolve([])),
@@ -74,6 +76,18 @@ function tab(host: HTMLElement, label: string): HTMLButtonElement | null {
 }
 
 describe('RightPanel', () => {
+  it('tells the terminal when it returns to the screen without remounting it', () => {
+    const host = mount();
+    const terminal = host.querySelector('.terminal-stub');
+    expect(terminal?.getAttribute('data-visible')).toBe('true');
+
+    tab(host, 'Files')?.click();
+    expect(terminal?.getAttribute('data-visible')).toBe('false');
+
+    tab(host, 'Agent')?.click();
+    expect(host.querySelector('.terminal-stub')).toBe(terminal);
+    expect(terminal?.getAttribute('data-visible')).toBe('true');
+  });
   it('keeps the terminal mounted behind the other tabs', () => {
     const host = mount();
     const agentTab = host.querySelector('.docws-agent-tab');

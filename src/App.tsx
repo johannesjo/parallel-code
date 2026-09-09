@@ -943,7 +943,18 @@ function App() {
               </svg>
             </button>
           </Show>
-          <TilingLayout />
+          <div class="task-workspace">
+            <div
+              class="task-workspace-code"
+              classList={{ 'is-hidden': !!store.activeDocumentProjectId }}
+              inert={!!store.activeDocumentProjectId}
+            >
+              <TilingLayout />
+            </div>
+            <Show when={store.activeDocumentProjectId}>
+              <DocumentWorkspaceOverlay />
+            </Show>
+          </div>
           <NewTaskDialog
             open={store.showNewTaskDialog}
             onClose={() => toggleNewTaskDialog(false)}
@@ -957,9 +968,6 @@ function App() {
         />
         <Show when={store.showArena}>
           <ArenaOverlay onClose={closeArena} />
-        </Show>
-        <Show when={store.activeDocumentProjectId}>
-          <DocumentWorkspaceOverlay />
         </Show>
         <Show when={showDropOverlay()}>
           <DropOverlay />

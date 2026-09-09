@@ -1,5 +1,6 @@
 import type { AgentDef } from '../ipc/types';
 import type { Task } from '../store/types';
+import { isDocumentAgentTaskId } from '../documents/task-id';
 
 function isCodexCommand(command: string): boolean {
   return command.split('/').pop()?.includes('codex') === true;
@@ -36,11 +37,31 @@ function legacyMcpConfigArgs(command: string, mcpConfigPath: string | undefined)
 
 export function buildTaskAgentArgs(
   agentDef: AgentDef,
-  task: Pick<Task, 'skipPermissions' | 'mcpConfigPath' | 'mcpLaunchArgs'>,
+  task: Pick<Task, 'skipPermissions' | 'mcpConfigPath' | 'mcpLaunchArgs'> &
+    Partial<Pick<Task, 'id'>>,
   resumed: boolean,
 ): string[] {
+  let args = resumed && agentDef.resume_args?.length ? agentDef.resume_args : agentDef.args;
+  if (resumed && isDocumentAgentTaskId(task.id ?? null)) {
+    // Document terminals share a checkout. "Latest" may belong to another
+    // terminal: use a picker, without rewriting explicit IDs or custom flags.
+    const command = agentDef.command.split('/').pop();
+    const resume = args.join(' ');
+    if (command === 'codex' && resume === 'resume --last') args = ['resume'];
+    if ((command === 'claude' || command === 'copilot') && resume === '--continue') {
+      args = ['--resume'];
+    }
+    // These defaults have no verified CLI picker. A fresh session is safer
+    // than silently continuing a different conversation; manual resume remains.
+    if (
+      (command === 'gemini' && resume === '--resume latest') ||
+      (command === 'agy' && resume === '-c')
+    ) {
+      args = agentDef.args;
+    }
+  }
   return [
-    ...(resumed && agentDef.resume_args?.length ? (agentDef.resume_args ?? []) : agentDef.args),
+    ...args,
     ...(task.skipPermissions && agentDef.skip_permissions_args?.length
       ? (agentDef.skip_permissions_args ?? [])
       : []),

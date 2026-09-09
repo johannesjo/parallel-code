@@ -1,7 +1,7 @@
-import { Show, createEffect } from 'solid-js';
+import { Show, createEffect, onCleanup } from 'solid-js';
 import { TaskAITerminal } from '../components/TaskAITerminal';
 import { PromptInput } from '../components/PromptInput';
-import { store } from '../store/core';
+import { setStore, store } from '../store/core';
 import { effectiveAgentId } from '../store/agent-select';
 import { setActiveAgent } from '../store/navigation';
 import { setTaskFocusedPanel } from '../store/focused-panel';
@@ -13,6 +13,7 @@ import { openDocumentFile } from './store';
 
 interface AgentTerminalProps {
   project: Project;
+  visible?: boolean;
 }
 
 /**
@@ -26,8 +27,7 @@ export function AgentTerminal(props: AgentTerminalProps) {
   const task = () => store.tasks[documentAgentTaskId(props.project.id)];
   const firstAgentId = () => task()?.agentIds[0] ?? '';
 
-  // The task itself is not persisted; remember its first agent's CLI on the
-  // project so the same one comes back after the app restarts.
+  // Remember the preferred CLI even if the task is later recreated.
   createEffect(() => {
     const defId = store.agents[firstAgentId()]?.def.id;
     if (defId && defId !== props.project.documentTerminalAgentId) {
@@ -46,7 +46,14 @@ export function AgentTerminal(props: AgentTerminalProps) {
         {(t) => {
           // Before the terminals mount: they read the attach flag once, on mount.
           rearmDocumentAgents(t);
-          return <AgentTask task={t} />;
+          onCleanup(() => {
+            // Exit events are not delivered while the terminal is unmounted.
+            // Reattach first next time, but resume if its process has gone away.
+            for (const id of t.agentIds) {
+              if (store.agents[id]) setStore('agents', id, 'resumed', true);
+            }
+          });
+          return <AgentTask task={t} visible={props.visible !== false} />;
         }}
       </Show>
     </div>
@@ -63,13 +70,15 @@ function openInWorkspace(projectPath: string, filePath: string): boolean {
   return true;
 }
 
-function AgentTask(props: { task: Task }) {
+function AgentTask(props: { task: Task; visible: boolean }) {
+  const resumed = () => store.agents[props.task.agentIds[0]]?.resumed === true;
   return (
     <>
       <div class="docws-agent-term">
         <TaskAITerminal
           task={props.task}
           isActive
+          visible={props.visible}
           selectedAgentId={effectiveAgentId(props.task) ?? ''}
           onSelectAgent={setActiveAgent}
           onFileLink={(filePath) => openInWorkspace(props.task.worktreePath, filePath)}
@@ -77,12 +86,20 @@ function AgentTask(props: { task: Task }) {
         />
       </div>
       <div class="docws-agent-prompt" onClick={() => setTaskFocusedPanel(props.task.id, 'prompt')}>
+        <Show when={resumed() && props.task.initialPrompt}>
+          <div class="docws-muted">
+            Review the terminal session before sending this instruction.
+          </div>
+        </Show>
         <PromptInput
           taskId={props.task.id}
           taskName={props.task.name}
           agentId={props.task.agentIds[0] ?? ''}
-          initialPrompt={props.task.initialPrompt}
-          prefillPrompt={props.task.prefillPrompt}
+          initialPrompt={resumed() ? undefined : props.task.initialPrompt}
+          prefillPrompt={
+            props.task.prefillPrompt ??
+            (resumed() && !props.task.promptDraft?.trim() ? props.task.initialPrompt : undefined)
+          }
           onSend={(text) => {
             // A prompt typed while an instruction waits leaves the wait in place.
             if (props.task.initialPrompt?.trim() === text.trim()) {

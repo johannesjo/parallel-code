@@ -218,15 +218,15 @@ describe('task column width with the canvas', () => {
 
   it('grows the column by the canvas when it opens and gives it back on close', () => {
     openCanvasDocument('task-1', 'docs/a.md');
-    expect(columnWidth()).toBe(520 + 320);
+    expect(columnWidth()).toBe(520 + 400);
 
     // More tabs or re-opening must not grow it again.
     openCanvasDocument('task-1', 'docs/b.md');
     openTaskCanvas('task-1');
-    expect(columnWidth()).toBe(520 + 320);
+    expect(columnWidth()).toBe(520 + 400);
 
     closeCanvasTab('task-1', 'markdown:docs/a.md');
-    expect(columnWidth()).toBe(520 + 320);
+    expect(columnWidth()).toBe(520 + 400);
     closeCanvasTab('task-1', 'markdown:docs/b.md');
     expect(columnWidth()).toBe(520);
     closeTaskCanvas('task-1');

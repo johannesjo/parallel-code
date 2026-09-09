@@ -1,5 +1,6 @@
 import { createEffect } from 'solid-js';
 import { store, saveState } from './store';
+import { documentAgentTaskIds } from '../documents/task-id';
 
 /** Build a snapshot string of all persisted fields. Using JSON.stringify
  *  creates a single reactive dependency on the serialized form — the effect
@@ -51,7 +52,7 @@ export function persistedSnapshot(): string {
     darkThemePreset: store.darkThemePreset,
     darkThemeCustomId: store.darkThemeCustomId,
     tasks: Object.fromEntries(
-      [...store.taskOrder, ...store.collapsedTaskOrder]
+      [...store.taskOrder, ...store.collapsedTaskOrder, ...documentAgentTaskIds(store.projects)]
         .filter((id) => store.tasks[id])
         .map((id) => {
           const t = store.tasks[id];

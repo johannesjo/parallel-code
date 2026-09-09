@@ -1,19 +1,36 @@
-/* Document workspace overlay — uses the app's design tokens. */
+/* Document task workspace — uses the app's design tokens. */
 
 :root {
   /* Overlays that float over the window from an anchor in the document (the
-     block toolbar, an open note): above the workspace (950) and the compare
+     block toolbar, an open note): above the workspace and the compare
      dialog (1000), below the app's menus (1200) and the lightbox (3000). */
   --docws-floating-z: 1100;
 }
 
-.docws-overlay {
-  position: fixed;
+.task-workspace {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.task-workspace-code {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.task-workspace-code.is-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.docws-workspace {
+  position: absolute;
   inset: 0;
-  /* Below every Dialog (1000+) so the project editor, settings and confirms
-     opened from inside the workspace render on top of it. */
-  z-index: 950;
-  background: var(--bg);
+  overflow: hidden;
+  container-type: inline-size;
+  background: var(--task-container-bg);
   display: flex;
   flex-direction: column;
   font-family: var(--font-ui);
@@ -22,9 +39,10 @@
 
 .docws-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
-  padding: 10px 18px;
+  gap: 12px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-elevated);
   flex-shrink: 0;
@@ -43,20 +61,14 @@
   -webkit-app-region: no-drag;
 }
 
-/* The mac traffic lights are drawn over the top-left corner of the window;
-   the title moves right so they never sit on it. Elsewhere the app draws its
-   own title bar with the window controls, and the overlay starts below it
-   (the pane sets `top`). */
-.docws-overlay.is-mac .docws-header {
-  padding-left: 86px;
-}
-
 .docws-title {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   gap: 8px;
   font-weight: 600;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 /* The name gives way first, on one line; the buttons after it keep their
@@ -75,8 +87,8 @@
 
 /* In a narrow window the header would push Close out of view: the path and
    the branch chip go first, since the file tree and the History tab carry
-   the same facts. The overlay spans the window, so its width is the window's. */
-@media (max-width: 960px) {
+   the same facts. The sidebar leaves less space than the window width. */
+@container (max-width: 960px) {
   .docws-header .docws-subtitle,
   .docws-header .docws-head-chip:not(.is-action) {
     display: none;
@@ -246,6 +258,8 @@
   flex: 1;
   min-height: 0;
   display: flex;
+  padding: 12px;
+  overflow-x: auto;
 }
 
 .docws-main {
@@ -255,24 +269,30 @@
   position: relative;
 }
 
-/* Both columns fill the cells of the resizable split. */
+/* Both sections fill the cells of the resizable split. */
 .docws-body .docws-main,
 .docws-body .docws-rail {
   height: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
 }
 
 .docws-rail {
-  border-left: 1px solid var(--border);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg-elevated);
+  background: var(--task-panel-bg);
 }
 
 .docws-rail-tabs {
-  margin: 10px 12px 0;
-  align-self: flex-start;
+  margin: 0;
+  padding: 8px 12px;
+  min-height: 44px;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
 }
 
 .docws-rail-list {
@@ -318,14 +338,19 @@
   flex: 1;
   min-height: 0;
   position: relative;
-  background: var(--bg);
+  background: var(--task-panel-bg);
 }
 
 .docws-agent-prompt {
   flex: none;
-  height: 96px;
-  padding: 6px 8px 8px;
-  border-top: 1px solid var(--border);
+  height: 132px;
+  padding: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.docws-agent-prompt .prompt-textarea::placeholder {
+  color: var(--fg-muted);
+  opacity: 1;
 }
 
 .docws-decisions {
@@ -438,6 +463,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--island-bg);
 }
 
 .docws-scroll {
@@ -453,7 +479,7 @@
   position: relative;
   max-width: 800px;
   margin: 0 auto;
-  padding: 28px 44px 280px;
+  padding: 28px clamp(20px, 4cqi, 44px) 280px;
 }
 
 /* Full width is a choice, remembered across workspaces: wide tables and
@@ -467,6 +493,10 @@
    column above sets the width; the prose fills it. */
 .docws-doc .docws-content {
   max-width: none;
+}
+
+.docws-doc .docws-content:not(.docws-page) {
+  font-size: 16px;
 }
 
 /* A page gets the whole column, top to bottom, the way a browser gives it the viewport. */
@@ -492,12 +522,17 @@
 
 /* White canvas is what a browser gives a page by default; a page that sets its
    own background paints over it. */
-.docws-html-preview {
+.docws-html-viewport {
   flex: 1;
-  width: 100%;
   min-height: 0;
+  overflow: hidden;
+}
+
+.docws-html-preview {
+  display: block;
   border: 0;
   background: #fff;
+  transform-origin: top left;
 }
 
 .docws-content:not(.docws-page) .doc-block {
@@ -835,12 +870,12 @@
   top: 0;
   z-index: 3;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  padding: 8px 18px;
-  /* `--bg` is a gradient in the default theme, which color-mix cannot take. */
-  background: color-mix(in srgb, var(--bg-elevated) 85%, transparent);
-  backdrop-filter: blur(8px);
+  padding: 8px 12px;
+  min-height: 44px;
+  background: var(--island-bg);
   border-bottom: 1px solid var(--border-subtle);
   font-size: 12px;
   color: var(--fg-muted);
@@ -855,10 +890,42 @@
 /* The hint is the one thing in the toolbar that can give way: on one line,
    cut short, so the buttons keep their row in a narrow column. */
 .docws-toolbar-label {
+  flex: 1 1 100px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.docws-zoom {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.docws-zoom .docws-btn {
+  min-width: 28px;
+  height: 26px;
+  justify-content: center;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.docws-zoom .docws-btn + .docws-btn {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.docws-zoom .docws-btn:not(:disabled):hover {
+  background: var(--bg-hover);
+}
+
+.docws-zoom .docws-btn:focus-visible {
+  outline-offset: -2px;
 }
 
 /* ── Composer ── */
@@ -891,26 +958,28 @@
 .docws-composer {
   pointer-events: auto;
   width: min(760px, 100%);
-  max-height: min(60vh, 560px);
+  max-height: min(60vh, 560px, calc(var(--docws-composer-space, 100vh) - 18px));
   overflow-y: auto;
-  background: var(--island-bg);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-pop);
+  box-shadow: var(--shadow-soft);
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  transition:
-    opacity 160ms ease,
-    border-color 160ms ease;
+  transition: border-color 160ms ease;
 }
 
 /* Always present, so it steps back while the reader is in the prose and
    comes forward as soon as the pointer or the cursor reaches it. */
 .docws-composer:not(:focus-within):not(:hover):not(.is-fresh) {
-  opacity: 0.8;
-  border-color: var(--border);
+  border-color: var(--border-subtle);
+}
+
+/* In a short split pane, scroll the contents instead of squeezing controls. */
+.docws-composer > * {
+  flex-shrink: 0;
 }
 
 /* What to do, and where: the tabs, the passage, and a way out. Never wraps;

@@ -1,6 +1,6 @@
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { setStore } from '../store/core';
+import { setStore, store } from '../store/core';
 import { IPC } from '../../electron/ipc/channels';
 import { DocumentWorkspaceOverlay } from './DocumentWorkspaceOverlay';
 import {
@@ -61,6 +61,17 @@ function backButton(host: HTMLElement): HTMLButtonElement | null {
 }
 
 describe('document trail', () => {
+  it('reopens the last file without changing the project entry document', async () => {
+    await openWorkspace();
+    await openDocumentFile('notes/invoice.md');
+    closeDocumentWorkspace();
+
+    await openDocumentWorkspace('docs');
+
+    expect(documentStore.documentPath).toBe('notes/invoice.md');
+    expect(store.projects[0].documentPath).toBe('notes.md');
+    expect(previousDocumentPath()).toBeNull();
+  });
   it('remembers the document a link left and returns to it', async () => {
     await openWorkspace();
     expect(previousDocumentPath()).toBeNull();

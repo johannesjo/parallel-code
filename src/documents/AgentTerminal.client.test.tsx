@@ -100,7 +100,7 @@ describe('AgentTerminal', () => {
     expect(store.agents[id]?.attachExisting).toBe(true);
   });
 
-  it('spawns an agent that exited afresh when shown again', () => {
+  it('resumes an agent that exited when shown again', () => {
     mount([agent('codex', 'Codex')]);
     const id = documentAgentTaskId('docs');
     setStore('agents', id, { status: 'exited', exitCode: 1 });
@@ -110,7 +110,45 @@ describe('AgentTerminal', () => {
 
     expect(store.agents[id]?.status).toBe('running');
     expect(store.agents[id]?.exitCode).toBeNull();
+    expect(store.agents[id]?.resumed).toBe(true);
     expect(host.textContent).not.toContain('exited');
+  });
+
+  it('prepares resume if the process exits while the workspace is closed', () => {
+    mount([agent('codex', 'Codex')]);
+    const id = documentAgentTaskId('docs');
+    expect(store.agents[id]?.resumed).toBe(false);
+    disposers.pop()?.();
+    // No mounted terminal receives the background process's exit event.
+    mount([agent('codex', 'Codex')]);
+    expect(store.agents[id]?.attachExisting).toBe(true);
+    expect(store.agents[id]?.resumed).toBe(true);
+  });
+
+  it('keeps queued instructions manual when reopening may show a session picker', () => {
+    mount([agent('codex', 'Codex')]);
+    const id = documentAgentTaskId('docs');
+    setInitialPrompt(id, 'Keep this instruction');
+    disposers.pop()?.();
+    const host = mount([agent('codex', 'Codex')]);
+    expect(host.querySelector<HTMLTextAreaElement>('.prompt-textarea')?.value).toBe(
+      'Keep this instruction',
+    );
+    expect(host.textContent).toContain('Review the terminal session before sending');
+    expect(store.tasks[id]?.initialPrompt).toBe('Keep this instruction');
+  });
+
+  it('does not replace a typed draft with a queued instruction on resume', () => {
+    mount([agent('codex', 'Codex')]);
+    const id = documentAgentTaskId('docs');
+    setInitialPrompt(id, 'Queued instruction');
+    disposers.pop()?.();
+    setStore('tasks', id, 'promptDraft', 'My unsent draft');
+    const host = mount([agent('codex', 'Codex')]);
+    expect(host.querySelector<HTMLTextAreaElement>('.prompt-textarea')?.value).toBe(
+      'My unsent draft',
+    );
+    expect(store.tasks[id]?.initialPrompt).toBe('Queued instruction');
   });
 
   it('opens a Markdown path inside the project in the viewer, others elsewhere', () => {

@@ -47,7 +47,7 @@ function DecisionStrip() {
 }
 
 /**
- * The right-hand column: the interactive agent, the one-shot runs and the
+ * The right-hand task section: the interactive agent, the one-shot runs and the
  * project's files, one tab each. Runs that wait for a decision are shown over
  * the agent too, so nothing sits unnoticed behind a tab that is not up.
  */
@@ -120,7 +120,7 @@ export function RightPanel(props: RightPanelProps) {
       </div>
       <div class="docws-agent-tab" classList={{ 'is-hidden': workspaceUi.railTab !== 'agent' }}>
         <DecisionStrip />
-        <AgentTerminal project={props.project} />
+        <AgentTerminal project={props.project} visible={workspaceUi.railTab === 'agent'} />
       </div>
       <Show when={workspaceUi.railTab === 'runs'}>
         <div class="docws-rail-list">

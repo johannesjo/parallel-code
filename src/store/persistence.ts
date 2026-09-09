@@ -31,6 +31,7 @@ import { syncTerminalCounter } from './terminals';
 import { showNotification, NOTIFICATION_ERROR_MS } from './notification';
 import { errMessage } from '../lib/log';
 import { canvasTabKey } from '../lib/canvas-tabs';
+import { documentAgentTaskIds } from '../documents/task-id';
 
 const RESTORED_AGENT_SPAWN_STAGGER_MS = 1_000;
 
@@ -272,7 +273,8 @@ export async function saveState(): Promise<void> {
     autoStartRemoteAccess: store.autoStartRemoteAccess || undefined,
   };
 
-  for (const taskId of store.taskOrder) {
+  const documentTaskIds = documentAgentTaskIds(store.projects);
+  for (const taskId of new Set([...store.taskOrder, ...documentTaskIds])) {
     const task = store.tasks[taskId];
     if (!task) continue;
 
@@ -710,7 +712,8 @@ export async function loadState(): Promise<void> {
         }
       }
 
-      for (const taskId of raw.taskOrder) {
+      const documentTaskIds = documentAgentTaskIds(projects);
+      for (const taskId of new Set([...raw.taskOrder, ...documentTaskIds])) {
         const pt = raw.tasks[taskId];
         if (!pt) continue;
 
@@ -734,7 +737,9 @@ export async function loadState(): Promise<void> {
                 : undefined,
           projectId: pt.projectId ?? '',
           branchName: pt.branchName,
-          worktreePath: pt.worktreePath,
+          worktreePath: documentTaskIds.includes(taskId)
+            ? (projects.find((project) => project.id === pt.projectId)?.path ?? pt.worktreePath)
+            : pt.worktreePath,
           agentIds,
           selectedAgentId: validAgentId(pt.selectedAgentId, agentIds) ?? agentIds[0],
           aiTerminalLayout: pt.aiTerminalLayout === 'tabs' ? 'tabs' : undefined,
@@ -908,12 +913,11 @@ export async function loadState(): Promise<void> {
       const activeSet = new Set(s.taskOrder);
       s.collapsedTaskOrder = s.collapsedTaskOrder.filter((id) => !activeSet.has(id));
 
-      // The active id can name nothing: a document workspace's hidden agent
-      // task is never saved, so an app that quit with one open points at it.
-      // Focus mode needs a valid active panel on top of that; without one,
-      // every panel is hidden and the strip reads blank. Repair or drop it.
+      // Only listed panels can be active before a document workspace opens.
+      // Otherwise focus mode hides every coding task after a restart.
       const activeValid =
         s.activeTaskId !== null &&
+        s.taskOrder.includes(s.activeTaskId) &&
         (s.tasks[s.activeTaskId] !== undefined || s.terminals[s.activeTaskId] !== undefined);
       if (!activeValid) s.activeTaskId = null;
       if (s.focusMode && s.activeTaskId === null) {

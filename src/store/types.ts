@@ -92,6 +92,10 @@ export interface Project {
   kind?: ProjectKind;
   /** Repo-relative path of the document a document project opens. */
   documentPath?: string;
+  /** Last file read in the document workspace, relative to the project. */
+  documentOpenPath?: string;
+  /** Preview scale; independent of the app and terminal zoom. */
+  documentZoom?: number;
   /** Agent that owns the project's warm main session. */
   documentMainAgentId?: string;
   /** Resumable main sessions per agent id, with the base sha each last saw. */
@@ -493,7 +497,7 @@ export interface AppStore {
   documentWorkspacesEnabled: boolean;
   /** Let the rendered document take the whole column instead of a reading width. */
   documentFullWidth: boolean;
-  /** Project whose document workspace overlay is open. */
+  /** Project whose document workspace is open in the task area. */
   activeDocumentProjectId: string | null;
   coordinatorNotificationDelayMs: number;
   coordinatorControlHintDismissed: boolean;

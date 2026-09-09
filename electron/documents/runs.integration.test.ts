@@ -104,6 +104,80 @@ afterAll(() => {
 });
 
 describe('document workspace lifecycle', () => {
+  it('combines concurrent independent revisions and rejects an overlapping revision without losing work', async () => {
+    const parallelRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pc-docws-parallel-'));
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pc-docws-parallel-bin-'));
+    try {
+      git(parallelRoot, 'init', '-q', '-b', 'main');
+      fs.writeFileSync(path.join(parallelRoot, 'spec.md'), DOC);
+      git(parallelRoot, 'add', '.');
+      git(parallelRoot, 'commit', '-q', '-m', 'initial');
+      const revisions: [string, string][] = [
+        ['Intro paragraph.', 'Sharper introduction.'],
+        ['Old goals text.', 'Clearer goals.'],
+        ['Old goals text.', 'Incompatible goals.'],
+      ];
+      const commands = revisions.map(([before, after], index) => {
+        const command = path.join(binDir, `agent-${index}.sh`);
+        fs.writeFileSync(
+          command,
+          [
+            '#!/bin/sh',
+            // Keep candidates alive while the other runs are prepared.
+            'sleep 1',
+            `sed -i.bak 's/${before}/${after}/' spec.md`,
+            'rm spec.md.bak',
+            `printf '%s\\n' '{"type":"result","subtype":"success","result":"Revised the passage."}'`,
+          ].join('\n'),
+          { mode: 0o755 },
+        );
+        return command;
+      });
+      const runs = await Promise.all(
+        commands.map((command) =>
+          dispatchDocumentRun(win, {
+            projectRoot: parallelRoot,
+            documentPath: 'spec.md',
+            instruction: 'Revise the passage.',
+            scope: { wholeDocument: true },
+            candidates: [
+              {
+                id: 'candidate',
+                label: 'A',
+                agentId: 'claude-code',
+                agentName: 'Test agent',
+                command,
+                isMain: false,
+              },
+            ],
+          }),
+        ),
+      );
+      expect(new Set(runs.map((run) => run.baseSha)).size).toBe(1);
+      expect(new Set(runs.map((run) => run.candidates[0].worktreePath)).size).toBe(3);
+      await Promise.all(runs.map((run) => waitForRunFinish(run.id)));
+      expect(fs.readFileSync(path.join(parallelRoot, 'spec.md'), 'utf8')).toBe(DOC);
+
+      await Promise.all(
+        runs.slice(0, 2).map((run) => acceptDocumentCandidate(parallelRoot, run.id, 'candidate')),
+      );
+      const combined = DOC.replace(...revisions[0]).replace(...revisions[1]);
+      expect(fs.readFileSync(path.join(parallelRoot, 'spec.md'), 'utf8')).toBe(combined);
+
+      await expect(acceptDocumentCandidate(parallelRoot, runs[2].id, 'candidate')).rejects.toThrow(
+        /no longer applies/,
+      );
+      expect(fs.readFileSync(path.join(parallelRoot, 'spec.md'), 'utf8')).toBe(combined);
+      expect(git(parallelRoot, 'diff', '--name-only', '--diff-filter=U').trim()).toBe('');
+      expect(listDocumentRuns(parallelRoot).find((run) => run.id === runs[2].id)?.status).toBe(
+        'stale',
+      );
+    } finally {
+      fs.rmSync(parallelRoot, { recursive: true, force: true });
+      fs.rmSync(binDir, { recursive: true, force: true });
+    }
+  });
+
   it('lists the markdown a ready repository offers', async () => {
     expect(await inspectDocumentFolder(root)).toMatchObject({
       isRepo: true,

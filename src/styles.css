@@ -2841,10 +2841,13 @@ body.dragging-task * {
 }
 
 /* The canvas sits in a narrow column, so Crepe's page-like spacing is
-   pulled in: just enough gutter for the block handle (two 20px buttons,
-   4px off the text), and tighter indents for lists, quotes, code and tables. */
+   pulled in: the block controls share one vertical gutter, with tighter
+   indents for lists, quotes, code and tables. */
 .task-canvas-editor .milkdown .ProseMirror {
-  padding: 12px 12px 48px 48px;
+  padding: 12px 12px 48px 28px;
+}
+.task-canvas-editor .milkdown .milkdown-block-handle {
+  flex-direction: column;
 }
 .task-canvas-editor .milkdown .milkdown-block-handle .operation-item {
   width: 20px;

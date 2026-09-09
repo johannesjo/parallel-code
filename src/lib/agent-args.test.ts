@@ -43,6 +43,25 @@ const copilotAgent = {
 };
 
 describe('buildTaskAgentArgs', () => {
+  it.each([
+    [codexAgent, ['resume']],
+    [{ ...claudeAgent, resume_args: ['--continue'] }, ['--resume']],
+    [copilotAgent, ['--resume']],
+    [{ ...claudeAgent, command: 'gemini', resume_args: ['--resume', 'latest'] }, []],
+    [antigravityAgent, []],
+  ])(
+    'does not select a different document terminal’s latest session: $command',
+    (def, expected) => {
+      expect(buildTaskAgentArgs(def, { id: 'doc-agent-docs' }, true)).toEqual(expected);
+    },
+  );
+
+  it('preserves explicit document session IDs and fresh launches', () => {
+    const def = { ...codexAgent, resume_args: ['resume', 'specific-session'] };
+    expect(buildTaskAgentArgs(def, { id: 'doc-agent-docs' }, true)).toEqual(def.resume_args);
+    expect(buildTaskAgentArgs(codexAgent, { id: 'doc-agent-docs' }, false)).toEqual([]);
+  });
+
   it('uses explicit MCP launch args when provided (new task)', () => {
     expect(
       buildTaskAgentArgs(

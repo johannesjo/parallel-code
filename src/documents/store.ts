@@ -150,10 +150,14 @@ export async function refreshDocumentSnapshot(): Promise<void> {
       projectRoot: project.path,
       documentPath,
     });
-    if (stillOpen(project.id) && docStore.documentPath === documentPath)
+    if (stillOpen(project.id) && docStore.documentPath === documentPath) {
       setDocStore({ snapshot, error: null });
+      if (!snapshot.missing && project.documentOpenPath !== documentPath)
+        updateProject(project.id, { documentOpenPath: documentPath });
+    }
   } catch (err) {
-    if (stillOpen(project.id)) setDocStore('error', errMessage(err));
+    if (stillOpen(project.id) && docStore.documentPath === documentPath)
+      setDocStore('error', errMessage(err));
   }
 }
 
@@ -205,10 +209,15 @@ function startWatcher(projectId: string, projectRoot: string, documentPath: stri
 export async function openDocumentWorkspace(projectId: string): Promise<void> {
   const project = getProject(projectId);
   if (!project?.documentPath || !store.documentWorkspacesEnabled) return;
-  if (docStore.projectId && docStore.projectId !== projectId) stopCurrentWatcher();
+  if (docStore.projectId === projectId) return;
+  stopCurrentWatcher();
+  const documentPath =
+    typeof project.documentOpenPath === 'string' && project.documentOpenPath
+      ? project.documentOpenPath
+      : project.documentPath;
   setDocStore({
     projectId,
-    documentPath: project.documentPath,
+    documentPath,
     documentTrail: [],
     snapshot: null,
     loading: true,
@@ -226,7 +235,7 @@ export async function openDocumentWorkspace(projectId: string): Promise<void> {
   });
   setStore('activeDocumentProjectId', projectId);
   // Start watching before the first await so a quick close can stop it.
-  startWatcher(projectId, project.path, project.documentPath);
+  startWatcher(projectId, project.path, documentPath);
   await Promise.all([refreshDocumentSnapshot(), loadDocumentRuns(), loadDocumentAnnotations()]);
   if (stillOpen(projectId)) setDocStore('loading', false);
 }

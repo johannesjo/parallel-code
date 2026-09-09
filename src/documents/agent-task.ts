@@ -1,7 +1,7 @@
 /**
  * The workspace's interactive agent is an ordinary task agent. Each document
  * project gets a hidden task, kept out of the task order so it never shows in
- * the sidebar or in the persisted state, and the task terminal, its prompt
+ * the sidebar. It is persisted with its agents, and the task terminal, its prompt
  * box, the last-prompt bar and the agent chips are reused as they are.
  */
 import { produce } from 'solid-js/store';
@@ -12,25 +12,20 @@ import { effectiveAgentId } from '../store/agent-select';
 import { restartAgent } from '../store/agents';
 import { getAgentHookStatus } from '../store/agentHookStatus';
 import { setActiveTask } from '../store/navigation';
-import { createAgentRecord, forgetTask, sendPrompt, setInitialPrompt } from '../store/tasks';
+import {
+  createAgentRecord,
+  forgetTask,
+  sendPrompt,
+  setInitialPrompt,
+  setPrefillPrompt,
+} from '../store/tasks';
 import { isAgentAskingQuestion, isAgentIdle, markAgentSpawned } from '../store/taskStatus';
 import type { AgentDef } from '../ipc/types';
 import type { Project, Task } from '../store/types';
 import { documentMainAgentId } from './store';
 import { setRailTab } from './workspace-ui';
-
-const TASK_ID_PREFIX = 'doc-agent-';
-
-/** The hidden task's id, which is also the pty id of its first agent; stable
- *  so the session is re-attached after the workspace was closed and reopened. */
-export function documentAgentTaskId(projectId: string): string {
-  return `${TASK_ID_PREFIX}${projectId}`;
-}
-
-/** True for a workspace's hidden task: it has no worktree to merge, push or close. */
-export function isDocumentAgentTaskId(id: string | null): boolean {
-  return id?.startsWith(TASK_ID_PREFIX) === true;
-}
+import { documentAgentTaskId, isDocumentAgentTaskId } from './task-id';
+export { documentAgentTaskId, isDocumentAgentTaskId } from './task-id';
 
 function terminalAgentDef(project: Project): AgentDef | undefined {
   const installed = store.availableAgents.filter((a) => a.available !== false);
@@ -55,7 +50,7 @@ export function ensureDocumentAgentTask(project: Project): Task | null {
     worktreePath: project.path,
     agentIds: [id],
     selectedAgentId: id,
-    // The rail is narrow: two terminals side by side would each get half of it.
+    // Start with one visible agent, as in the simplified document task layout.
     aiTerminalLayout: 'tabs',
     shellAgentIds: [],
     notes: '',
@@ -75,14 +70,14 @@ export function ensureDocumentAgentTask(project: Project): Task | null {
  * Readies the task's agents for a terminal about to mount. A live session is
  * attached to again: restart and switch clear the flag for the one spawn that
  * replaces a session, and the next mount must not spawn a second time. A
- * session that exited is spawned afresh by the mount, so its record is reset
+ * session that exited is resumed by the mount, so its record is reset
  * the way a restart resets it, or the exit badge would sit over a live agent.
  */
 export function rearmDocumentAgents(task: Task): void {
   for (const id of task.agentIds) {
     const agent = store.agents[id];
     if (!agent) continue;
-    if (agent.status === 'exited') restartAgent(id, false);
+    if (agent.status === 'exited') restartAgent(id, true);
     else setStore('agents', id, 'attachExisting', true);
   }
 }
@@ -99,6 +94,18 @@ export async function sendToDocumentAgent(project: Project, text: string): Promi
   const agentId = task ? effectiveAgentId(task) : null;
   if (!task || !agentId) throw new Error('No agent is installed.');
   setRailTab('agent');
+  if (store.agents[agentId]?.resumed) {
+    // A missing PTY may have reopened at a session picker. Never send prose
+    // into that picker; keep it in the prompt box for an explicit send.
+    if (agentId !== task.agentIds[0]) {
+      throw new Error('Resume the selected session and send the instruction in its terminal.');
+    }
+    if (task.initialPrompt || task.prefillPrompt || task.promptDraft?.trim()) {
+      throw new Error('Send or clear the existing prompt before adding another instruction.');
+    }
+    setPrefillPrompt(task.id, text);
+    return;
+  }
   if (looksIdle(agentId) || agentId !== task.agentIds[0]) {
     await sendPrompt(task.id, agentId, text);
     return;

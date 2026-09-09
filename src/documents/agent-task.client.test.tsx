@@ -148,6 +148,20 @@ describe('rearmDocumentAgents', () => {
 });
 
 describe('sendToDocumentAgent', () => {
+  it('prefills resumed sessions without sending prose into a possible picker', async () => {
+    install('codex');
+    const task = ensureDocumentAgentTask(project);
+    if (!task) throw new Error('Document task was not created');
+    setStore('agents', task.agentIds[0], 'resumed', true);
+    await sendToDocumentAgent(project, 'Check this first');
+    expect(store.tasks[task.id].prefillPrompt).toBe('Check this first');
+    expect(store.tasks[task.id].initialPrompt).toBeUndefined();
+    expect(sendPrompt).not.toHaveBeenCalled();
+    await expect(sendToDocumentAgent(project, 'Another instruction')).rejects.toThrow(
+      'existing prompt',
+    );
+  });
+
   it('queues the prompt for a first agent that is still starting, on the agent tab', async () => {
     install('codex');
     setRailTab('runs');

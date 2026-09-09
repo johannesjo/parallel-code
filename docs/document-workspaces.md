@@ -32,18 +32,25 @@ the document.
    documents lists them, to open one of those instead. The dialog says what it will do —
    create the folder, `git init`, create the file, make the first commit — and does it on
    confirm.
-3. The workspace opens full-window with two tabs, **Document** and **History**; comparing
+3. The workspace opens in the task area, with the document on the left, the agent on the right, and the sidebar
+   available for switching projects or returning to coding tasks. It has two tabs,
+   **Document** and **History**; comparing
    proposals happens in a modal over either.
    A **Files** tab in the right panel lists every file of the project; click one to open
    it, and click a relative link inside a document to follow it to the file (and heading)
    it points at. Web links open in the browser. The history, the composer and the runs
-   follow the open document.
+   follow the open document. Each project remembers its last successfully opened file,
+   including across app restarts. **−**, the percentage reset button, and **+** scale
+   Markdown, inline HTML and the sandboxed page preview from 50% to 200%. The scale is
+   remembered per project and leaves the app controls and terminal unchanged.
 4. The composer is a popover over the prose, never inside it, and stays out of the way
    until there is something to compose: select text, click a block, or press **§** next
    to a heading to open it on a passage, or choose **Revise document** in the toolbar to
    open it on the whole document. On a passage it sits right under it (above it when the
    foot is close), at full strength and with the cursor in it, and follows the passage as
-   you scroll. It steps back once you leave it. Type an instruction and press Enter. Hovering a
+   you scroll. In a short document pane the composer scrolls internally, keeping its
+   controls reachable without covering the toolbar or terminal. It steps back once you
+   leave it. Type an instruction and press Enter. Hovering a
    block shows five icons in the gap just above it, clear of the prose so a click meant
    for the passage cannot land on one, each named as you point at it: task, proposals,
    note and ask pick the block and open the composer on that mode (its tabs carry the same
@@ -66,16 +73,25 @@ the document.
      The toolbar's **Full width** lets the document use the whole pane instead of a reading
      column; the choice is remembered. Mermaid diagrams, here and in every other Markdown
      surface of the app, carry an enlarge button that opens them at the size of the window.
-5. The right-hand panel has three tabs and a draggable seam (double-click it to reset the
-   width; the width is remembered). **Agent** is the terminal a task has: the bar above it
+5. The right panel has three tabs and a draggable seam (double-click it to reset the
+   width to 420px; the width is remembered). Narrow windows can scroll the workspace
+   horizontally without moving the agent below the document. **Agent** is the terminal a task has: the bar above it
    shows the last prompt sent, the chips switch between agents, **+** adds another one
    (as tabs by default, or side by side), and the prompt box below sends to the first
    agent. A session that exits offers **Restart**, **Resume** and a switch to another
-   agent; one that has exited starts afresh the next time the tab is shown. The processes
-   survive closing the workspace, and the agent last used comes back after the app
-   restarts. A Markdown path the agent prints opens in the viewer when it lies inside the
+   agent. Reopening attaches to a live process automatically. If the process has ended,
+   Codex, Claude Code and Copilot open their native session picker instead of resuming
+   whichever conversation in the shared folder happened to run last. Gemini and
+   Antigravity start fresh; use their manual resume controls if needed. Explicit session
+   IDs and custom resume arguments are preserved.
+   The processes survive closing the workspace. Agent definitions, stable agent IDs,
+   prompt drafts and the last prompt are saved with the task; reopening after an app
+   restart uses the same safe resume flow. Instructions queued for a reopened session
+   remain available for manual sending, so they cannot accidentally select a conversation
+   in a picker. A Markdown path the agent prints opens in the viewer when it lies inside the
    project. The tab stays mounted behind the other two, so switching tabs keeps the
-   scrollback and scroll position. The tab flags _!_ while an agent waits for an answer. **Runs** lists the one-shot runs as they finish,
+   scrollback and scroll position, and returning to it triggers the regular terminal
+   fit and renderer visibility handling. The tab flags _!_ while an agent waits for an answer. **Runs** lists the one-shot runs as they finish,
    each revision or merge saying which proposals it came from. Click a ready candidate in a
    finished run to review that proposal; **View output** opens its log. Running, failed and
    already-decided candidates still open their output.
@@ -130,16 +146,26 @@ the document.
 - **Editing happens in the block editor, your editor, or the interactive session.** The app
   watches the open file and re-renders; an external change drops any active selection. The Agent
   tab is a task's AI terminal and prompt box (`TaskAITerminal`, `PromptInput`) over a hidden
-  task per project, id `doc-agent-<project>`, kept out of the task order so it is neither
-  listed nor persisted; its first agent's pty carries the same id, so reopening the workspace
-  re-attaches, and the agent it ran is remembered on the project. Each time the tab is
-  shown, the agents are re-armed to attach (a restart clears that for its one spawn) and
-  one that exited is reset, since the terminal spawns it afresh. Removing the project
+  task per project, id `doc-agent-<project>`, kept out of the coding task list but saved
+  with the regular task state. Its first agent's pty carries the same id, so reopening the
+  workspace re-attaches; after an app restart it uses a session picker where supported.
+  See the provider references for [Codex](https://developers.openai.com/codex/cli/reference/),
+  [Claude Code](https://code.claude.com/docs/en/cli-reference), and
+  [Copilot](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference).
+  [Gemini's CLI resume flag selects the latest session](https://geminicli.com/docs/cli/tutorials/session-management/),
+  so document terminals leave resuming to its interactive `/resume` command instead.
+  Each time
+  the workspace mounts, the agents are re-armed to attach (a restart clears that for its
+  one spawn), and an exited agent is reset for resuming. Removing the project
   kills the sessions. A scoped instruction, _your words, then Document, Scope and the
   passage verbatim_, goes to the selected agent as a prompt: typed straight in when the agent looks
   idle (quiet output, no open question, and for Claude no hook turn in flight), else
   queued as the task's initial prompt, which the prompt box sends once the agent is
-  ready; a second instruction is refused while one waits. Because the agent edits the
+  ready; a second instruction is refused while one waits. Reopened sessions require an
+  explicit send from the prompt box; further instructions cannot replace an existing draft.
+  Hidden document-task drafts participate in debounced autosave. Relinking a document
+  project stops its old terminals before changing their working folder, keeping drafts;
+  restoration also derives the folder from the current project path. Because the agent edits the
   checkout directly, its work is committed as `Manual edits` by the next one-shot
   dispatch rather than as a proposal to compare.
 - **Every file of the project is one click away.** The file tree is `git ls-files`
@@ -276,6 +302,27 @@ workspace-write` (the sandbox blocks writes outside the worktree),
   `<DocumentWorkspaceOverlay />` in `App.tsx`, and the sidebar's project row and `+` menu.
   The one runtime module the renderer imports across the process boundary is
   `electron/documents/shared.ts`.
+
+### How well does parallel work function without conflicts?
+
+Proposal runs isolate their edits in separate worktrees. Dispatch, candidate completion,
+manual block saves and acceptance serialize app-managed Git changes per project. The warm
+main proposal session accepts one run at a time; alternates can run concurrently.
+
+The integration test starts three revisions from the same base. Two change different
+passages and are accepted concurrently: both edits survive. The third rewrites an already
+changed passage: acceptance refuses it, marks it stale and leaves the accepted document
+intact, with no unresolved Git conflicts. Existing tests also check that later manual edits
+survive a conflicting acceptance. This verifies the Git mechanics with local fake agents;
+it does not measure the quality or semantic compatibility of real agents' prose.
+
+Interactive terminals are different: all agents in the document workspace edit the same
+checkout, and their filesystem writes do not acquire the app's project lock. Two agents
+editing the same passage can overwrite each other, including while acceptance is underway.
+Use isolated proposals for concurrent revisions of the same document, or give interactive
+agents separate files and wait for their edits to finish before accepting proposals. A clean
+Git merge still needs review for contradictions and duplicated ideas. Partial acceptance
+requires the document itself to be unchanged since the proposal's base.
 
 ### Not in this slice
 
