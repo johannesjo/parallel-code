@@ -224,6 +224,7 @@ export async function saveState(): Promise<void> {
     sidebarNeedsInputFirst: store.sidebarNeedsInputFirst,
     projectsCollapsed: store.projectsCollapsed,
     desktopNotificationsEnabled: store.desktopNotificationsEnabled,
+    completionSoundEnabled: store.completionSoundEnabled,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand || undefined,
     dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
@@ -415,6 +416,7 @@ interface LegacyPersistedState {
   sidebarNeedsInputFirst?: unknown;
   projectsCollapsed?: unknown;
   desktopNotificationsEnabled?: unknown;
+  completionSoundEnabled?: unknown;
   inactiveColumnOpacity?: unknown;
   editorCommand?: unknown;
   dockerImage?: unknown;
@@ -573,6 +575,8 @@ export async function loadState(): Promise<void> {
         typeof raw.desktopNotificationsEnabled === 'boolean'
           ? raw.desktopNotificationsEnabled
           : false;
+      s.completionSoundEnabled =
+        typeof raw.completionSoundEnabled === 'boolean' ? raw.completionSoundEnabled : true;
       const rawOpacity = raw.inactiveColumnOpacity;
       s.inactiveColumnOpacity =
         typeof rawOpacity === 'number' &&

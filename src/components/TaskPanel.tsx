@@ -1,4 +1,13 @@
-import { Show, createSignal, createEffect, createMemo, onMount, onCleanup, batch } from 'solid-js';
+import {
+  Show,
+  createSignal,
+  createEffect,
+  createMemo,
+  onMount,
+  onCleanup,
+  batch,
+  untrack,
+} from 'solid-js';
 import {
   store,
   retryCloseTask,
@@ -39,6 +48,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { SubTaskStrip } from './SubTaskStrip';
 import { theme } from '../lib/theme';
 import { isMac } from '../lib/platform';
+import { taskGlow } from '../store/attentionCues';
 import type { Task } from '../store/types';
 import type { CommitInfo } from '../ipc/types';
 import { isLandedTaskState } from '../store/landing';
@@ -436,6 +446,24 @@ export function TaskPanel(props: TaskPanelProps) {
       </div>
     ),
   };
+
+  // Track only this task's pulse timestamp: the glow map is replaced on every
+  // pulse for any task, and re-running on those would re-flash this column.
+  const glowAt = createMemo(() => taskGlow(props.task.id)?.at);
+  // Restart the glow keyframes on every pulse: toggling the class off and back
+  // on in one tick would be coalesced, so force a reflow between the two.
+  createEffect(() => {
+    if (glowAt() === undefined) return;
+    const glow = untrack(() => taskGlow(props.task.id));
+    if (!glow) return;
+    const cls = `task-glow-${glow.type}`;
+    panelRef.classList.remove(cls);
+    void panelRef.offsetWidth;
+    panelRef.classList.add(cls);
+    const onEnd = () => panelRef.classList.remove(cls);
+    panelRef.addEventListener('animationend', onEnd, { once: true });
+    onCleanup(() => panelRef.removeEventListener('animationend', onEnd));
+  });
 
   return (
     <div

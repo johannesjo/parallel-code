@@ -12,7 +12,6 @@ import {
 } from 'solid-js';
 import {
   store,
-  pickAndAddProject,
   closeTerminal,
   setTaskViewportVisibility,
   taskNeedsAttention,
@@ -21,14 +20,13 @@ import {
   deletePanelUserSize,
   scrollTaskElementIntoView,
 } from '../store/store';
-import { codeProjects } from '../store/projects';
 import { closeTask } from '../store/tasks';
 import { TaskPanel } from './TaskPanel';
 import { TerminalPanel } from './TerminalPanel';
 import { NewTaskPlaceholder } from './NewTaskPlaceholder';
+import { FirstRunGuide } from './FirstRunGuide';
 import { markDirty } from '../lib/terminalFitManager';
 import { theme } from '../lib/theme';
-import { mod } from '../lib/platform';
 import { createCtrlShiftWheelResizeHandler } from '../lib/wheelZoom';
 import { shouldAnimateTaskAppearance } from '../lib/reducedMotion';
 
@@ -448,123 +446,7 @@ export function TilingLayout() {
                   </div>
                 }
               >
-                <Show
-                  when={codeProjects().length > 0}
-                  fallback={
-                    <>
-                      <div
-                        style={{
-                          width: '56px',
-                          height: '56px',
-                          'border-radius': 'var(--radius-lg)',
-                          background: theme.islandBg,
-                          border: `1px solid ${theme.border}`,
-                          display: 'flex',
-                          'align-items': 'center',
-                          'justify-content': 'center',
-                          color: theme.fgSubtle,
-                        }}
-                      >
-                        <svg
-                          width="24"
-                          height="24"
-                          viewBox="0 0 16 16"
-                          fill="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
-                        </svg>
-                      </div>
-                      <div style={{ 'text-align': 'center' }}>
-                        <div
-                          style={{
-                            'font-size': '16px',
-                            color: theme.fgMuted,
-                            'font-weight': '500',
-                            'margin-bottom': '6px',
-                          }}
-                        >
-                          Link your first project to get started
-                        </div>
-                        <div style={{ 'font-size': '13px', color: theme.fgSubtle }}>
-                          A project is a local folder with your code
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => pickAndAddProject()}
-                        style={{
-                          background: theme.bgElevated,
-                          border: `1px solid ${theme.border}`,
-                          'border-radius': 'var(--radius-md)',
-                          padding: '8px 20px',
-                          color: theme.fg,
-                          cursor: 'pointer',
-                          'font-size': '14px',
-                          'font-weight': '500',
-                          display: 'flex',
-                          'align-items': 'center',
-                          gap: '6px',
-                        }}
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 16 16"
-                          fill="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
-                        </svg>
-                        Link Project
-                      </button>
-                    </>
-                  }
-                >
-                  <div
-                    style={{
-                      width: '56px',
-                      height: '56px',
-                      'border-radius': 'var(--radius-lg)',
-                      background: theme.islandBg,
-                      border: `1px solid ${theme.border}`,
-                      display: 'flex',
-                      'align-items': 'center',
-                      'justify-content': 'center',
-                      'font-size': '25px',
-                      color: theme.fgSubtle,
-                    }}
-                  >
-                    +
-                  </div>
-                  <div style={{ 'text-align': 'center' }}>
-                    <div
-                      style={{
-                        'font-size': '16px',
-                        color: theme.fgMuted,
-                        'font-weight': '500',
-                        'margin-bottom': '6px',
-                      }}
-                    >
-                      No tasks yet
-                    </div>
-                    <div style={{ 'font-size': '13px', color: theme.fgSubtle }}>
-                      Press{' '}
-                      <kbd
-                        style={{
-                          background: theme.bgElevated,
-                          border: `1px solid ${theme.border}`,
-                          'border-radius': 'var(--radius-xs)',
-                          padding: '2px 6px',
-                          'font-family': "'JetBrains Mono', monospace",
-                          'font-size': '12px',
-                        }}
-                      >
-                        {mod}+N
-                      </kbd>{' '}
-                      to create a new task
-                    </div>
-                  </div>
-                </Show>
+                <FirstRunGuide />
               </Show>
             </div>
           }

@@ -212,6 +212,10 @@ export function setDesktopNotificationsEnabled(enabled: boolean): void {
   setStore('desktopNotificationsEnabled', enabled);
 }
 
+export function setCompletionSoundEnabled(enabled: boolean): void {
+  setStore('completionSoundEnabled', enabled);
+}
+
 export function setVerboseLogging(enabled: boolean): void {
   setStore('verboseLogging', enabled);
 }

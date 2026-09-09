@@ -85,6 +85,7 @@ When you're happy with the result, merge the branch back to main from the sideba
 - **Steps tracking panel** — engineering-manager-style timeline of agent progress (writes to `.claude/steps.json`)
 - **Notes panel per task** — jot ideas, then send the notes straight to the agent as a prompt
 - **PR CI status watcher** — desktop notification when GitHub checks settle
+- **Completion cues** — a task column glows green, amber, or red the moment an agent finishes, asks a question, or fails, with an optional short chime
 - Shell terminals per task, scoped to the worktree
 - **Direct mode** for working on the main branch without isolation, plus support for **folders without a git repo**
 - **Existing worktree import** — bring already-created worktrees into Parallel Code

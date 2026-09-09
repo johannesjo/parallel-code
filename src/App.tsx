@@ -99,6 +99,7 @@ import {
 import { dismissPinnedBubbles } from './documents/workspace-ui';
 import { resetForNewMatch } from './arena/store';
 import { startDesktopNotificationWatcher } from './store/desktopNotifications';
+import { startAttentionCueWatcher } from './store/attentionCues';
 import { startPrChecksSubscription } from './store/pr-checks';
 import { startUpdateSubscription } from './store/updates';
 import { startRemoteTaskHandlers } from './store/remoteTaskHandler';
@@ -549,6 +550,7 @@ function App() {
     startUsagePolling();
     const stopMCPListeners = initMCPListeners();
     const stopNotificationWatcher = startDesktopNotificationWatcher(windowFocused);
+    const stopAttentionCues = startAttentionCueWatcher();
     const stopPrChecksSubscription = startPrChecksSubscription();
     const stopUpdateSubscription = startUpdateSubscription();
     const stopRemoteTaskHandlers = startRemoteTaskHandlers();
@@ -765,6 +767,7 @@ function App() {
       stopUsagePolling();
       stopMCPListeners();
       stopNotificationWatcher();
+      stopAttentionCues();
       stopPrChecksSubscription();
       stopUpdateSubscription();
       stopRemoteTaskHandlers();

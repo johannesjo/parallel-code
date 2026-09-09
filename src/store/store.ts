@@ -143,6 +143,7 @@ export {
   setProjectsCollapsed,
   setFontSmoothing,
   setDesktopNotificationsEnabled,
+  setCompletionSoundEnabled,
   setVerboseLogging,
   setCoordinatorNotificationDelayMs,
   setInactiveColumnOpacity,

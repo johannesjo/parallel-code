@@ -1093,8 +1093,12 @@ export function setNewTaskDropUrl(url: string): void {
   setStore('newTaskDropUrl', url);
 }
 
-export function setNewTaskPrefillPrompt(prompt: string, projectId: string | null): void {
-  setStore('newTaskPrefillPrompt', { prompt, projectId });
+export function setNewTaskPrefillPrompt(
+  prompt: string,
+  projectId: string | null,
+  name?: string,
+): void {
+  setStore('newTaskPrefillPrompt', { prompt, projectId, name });
 }
 
 // --- MCP coordinator event listeners ---

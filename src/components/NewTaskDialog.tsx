@@ -561,11 +561,11 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
             if (defaults) setName(defaults.name);
             setSelectedProjectId(defaults?.projectId ?? fallbackProjectId);
 
-            // Pre-fill from arena comparison prompt
+            // Pre-fill from the arena comparison or a first-run suggestion
             const prefill = store.newTaskPrefillPrompt;
             if (prefill) {
               setPrompt(prefill.prompt);
-              setName('Compare arena results');
+              if (prefill.name) setName(prefill.name);
               if (prefill.projectId) setSelectedProjectId(prefill.projectId);
             }
             // Snapshot the post-prefill values as the close-guard baseline.

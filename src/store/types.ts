@@ -322,6 +322,7 @@ export interface PersistedState {
   sidebarNeedsInputFirst?: boolean;
   projectsCollapsed?: boolean;
   desktopNotificationsEnabled?: boolean;
+  completionSoundEnabled?: boolean;
   inactiveColumnOpacity?: number;
   editorCommand?: string;
   dockerImage?: string;
@@ -439,6 +440,7 @@ export interface AppStore {
   sidebarNeedsInputFirst: boolean;
   projectsCollapsed: boolean;
   desktopNotificationsEnabled: boolean;
+  completionSoundEnabled: boolean;
   inactiveColumnOpacity: number;
   editorCommand: string;
   dockerImage: string;
@@ -446,7 +448,7 @@ export interface AppStore {
   shareDockerAgentAuth: boolean;
   askCodeProvider: 'claude' | 'minimax';
   newTaskDropUrl: string | null;
-  newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
+  newTaskPrefillPrompt: { prompt: string; projectId: string | null; name?: string } | null;
   missingProjectIds: Record<string, true>;
   remoteAccess: RemoteAccess;
   /** Persisted: start the remote (Connect Phone) server automatically on launch. */
