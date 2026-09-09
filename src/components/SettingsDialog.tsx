@@ -24,7 +24,6 @@ import {
   setSidebarNeedsInputFirst,
   setFontSmoothing,
   setDesktopNotificationsEnabled,
-  setCompletionSoundEnabled,
   setVerboseLogging,
   setInactiveColumnOpacity,
   setEditorCommand,
@@ -442,12 +441,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
               checked={store.desktopNotificationsEnabled}
               onChange={setDesktopNotificationsEnabled}
               description="Show native notifications when tasks finish or need attention"
-            />
-            <SettingsCheckboxRow
-              label="Completion chime"
-              checked={store.completionSoundEnabled}
-              onChange={setCompletionSoundEnabled}
-              description="Play a short chime when a task finishes, asks a question, or errors. The task column glows either way."
             />
             <SettingsCheckboxRow
               label="Show prompt input box below terminal"

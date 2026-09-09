@@ -1,4 +1,5 @@
 import { Show, createSignal, createEffect, onMount } from 'solid-js';
+import type { JSX } from 'solid-js';
 import {
   store,
   updateTaskNotes,
@@ -6,6 +7,7 @@ import {
   sendPrompt,
   isAgentAskingQuestion,
   isPanelFocused,
+  openCanvasDocument,
 } from '../store/store';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
@@ -19,6 +21,17 @@ interface TaskNotesBodyProps {
   agentId: string;
   onPlanFullscreen: () => void;
 }
+
+const planButtonStyle: JSX.CSSProperties = {
+  padding: '4px 16px',
+  'font-size': sf(12),
+  'font-family': "'JetBrains Mono', monospace",
+  background: `color-mix(in srgb, ${theme.accent} 12%, ${theme.bgInput})`,
+  color: theme.fg,
+  border: `1px solid color-mix(in srgb, ${theme.accent} 25%, ${theme.border})`,
+  'border-radius': 'var(--radius-sm)',
+  cursor: 'pointer',
+};
 
 export function TaskNotesBody(props: TaskNotesBodyProps) {
   const [notesTab, setNotesTab] = createSignal<'notes' | 'plan'>('notes');
@@ -275,26 +288,36 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
             // eslint-disable-next-line solid/no-innerhtml -- plan files are local, written by Claude Code in the worktree
             innerHTML={planHtml()}
           />
-          <button
-            class="btn-secondary review-plan-btn"
+          <div
             style={{
               position: 'absolute',
               bottom: '8px',
               right: '8px',
-              padding: '4px 16px',
-              'font-size': sf(12),
-              'font-family': "'JetBrains Mono', monospace",
-              background: `color-mix(in srgb, ${theme.accent} 12%, ${theme.bgInput})`,
-              color: theme.fg,
-              border: `1px solid color-mix(in srgb, ${theme.accent} 25%, ${theme.border})`,
-              'border-radius': 'var(--radius-sm)',
-              cursor: 'pointer',
+              display: 'flex',
+              gap: '6px',
               'z-index': '1',
             }}
-            onClick={() => props.onPlanFullscreen()}
           >
-            Review Plan
-          </button>
+            <Show when={props.task.planPath}>
+              {(planPath) => (
+                <button
+                  class="btn-secondary"
+                  style={planButtonStyle}
+                  title="Edit the plan on the canvas"
+                  onClick={() => openCanvasDocument(props.task.id, planPath())}
+                >
+                  Open on canvas
+                </button>
+              )}
+            </Show>
+            <button
+              class="btn-secondary review-plan-btn"
+              style={planButtonStyle}
+              onClick={() => props.onPlanFullscreen()}
+            >
+              Review Plan
+            </button>
+          </div>
         </div>
       </Show>
     </div>

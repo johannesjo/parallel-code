@@ -63,7 +63,6 @@ export const [store, setStore] = createStore<AppStore>({
   sidebarNeedsInputFirst: true,
   projectsCollapsed: false,
   desktopNotificationsEnabled: false,
-  completionSoundEnabled: true,
   inactiveColumnOpacity: 0.9,
   editorCommand: '',
   dockerImage: 'parallel-code-agent:latest',

@@ -129,6 +129,16 @@ export interface Agent {
   attachExisting?: boolean;
 }
 
+/** What a canvas tab shows. Only Markdown for now; browser and code views are
+ *  meant to join, which is why the kind is stored. */
+export type CanvasTabKind = 'markdown';
+
+export interface CanvasTab {
+  kind: CanvasTabKind;
+  /** Worktree-relative path of the file. */
+  path: string;
+}
+
 export interface Task {
   id: string;
   name: string;
@@ -177,6 +187,14 @@ export interface Task {
   savedPromptedAgentIndexes?: number[];
   planContent?: string;
   planFileName?: string;
+  /** Worktree-relative path of the plan file, for opening it on the canvas. Not persisted. */
+  planPath?: string;
+  /** What is open in the task's canvas column, one tab each, in strip order. */
+  canvasTabs?: CanvasTab[];
+  /** Key (see canvasTabKey) of the tab in front. */
+  canvasActiveTab?: string;
+  /** Column shown without a tab (the user asked for it). Not persisted. */
+  canvasOpen?: boolean;
   stepsEnabled?: boolean;
   stepsContent?: StepEntry[];
   lastInputAt?: string;
@@ -254,6 +272,10 @@ export interface PersistedTask {
   savedSelectedAgentIndex?: number;
   savedPromptedAgentIndexes?: number[];
   planFileName?: string;
+  /** Before tabs the canvas held one file; read for migration, no longer written. */
+  canvasPath?: string;
+  canvasTabs?: CanvasTab[];
+  canvasActiveTab?: string;
   stepsEnabled?: boolean;
   branchAdoptedFrom?: string;
   branchOfferDismissed?: string;
@@ -322,7 +344,6 @@ export interface PersistedState {
   sidebarNeedsInputFirst?: boolean;
   projectsCollapsed?: boolean;
   desktopNotificationsEnabled?: boolean;
-  completionSoundEnabled?: boolean;
   inactiveColumnOpacity?: number;
   editorCommand?: string;
   dockerImage?: string;
@@ -440,7 +461,6 @@ export interface AppStore {
   sidebarNeedsInputFirst: boolean;
   projectsCollapsed: boolean;
   desktopNotificationsEnabled: boolean;
-  completionSoundEnabled: boolean;
   inactiveColumnOpacity: number;
   editorCommand: string;
   dockerImage: string;
@@ -448,7 +468,7 @@ export interface AppStore {
   shareDockerAgentAuth: boolean;
   askCodeProvider: 'claude' | 'minimax';
   newTaskDropUrl: string | null;
-  newTaskPrefillPrompt: { prompt: string; projectId: string | null; name?: string } | null;
+  newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
   missingProjectIds: Record<string, true>;
   remoteAccess: RemoteAccess;
   /** Persisted: start the remote (Connect Phone) server automatically on launch. */

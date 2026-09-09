@@ -30,6 +30,7 @@ import type { CustomTheme } from '../lib/custom-theme';
 import { syncTerminalCounter } from './terminals';
 import { showNotification, NOTIFICATION_ERROR_MS } from './notification';
 import { errMessage } from '../lib/log';
+import { canvasTabKey } from '../lib/canvas-tabs';
 
 const RESTORED_AGENT_SPAWN_STAGGER_MS = 1_000;
 
@@ -121,6 +122,19 @@ function validAgentIndex(value: unknown): number | undefined {
 /** Branch names restored from JSON: only non-empty strings. `exclude` drops a
  *  value that would be nonsensical (e.g. an adopted-from equal to the branch
  *  itself, which would render an "adopted 'X' (was 'X')" banner). */
+/** The canvas tabs of a persisted task; a pre-tabs `canvasPath` becomes one tab. */
+function restoredCanvas(pt: PersistedTask): Pick<Task, 'canvasTabs' | 'canvasActiveTab'> {
+  const tabs = Array.isArray(pt.canvasTabs)
+    ? pt.canvasTabs.filter((t) => t?.kind === 'markdown' && typeof t.path === 'string')
+    : typeof pt.canvasPath === 'string'
+      ? [{ kind: 'markdown' as const, path: pt.canvasPath }]
+      : [];
+  if (tabs.length === 0) return {};
+  const keys = tabs.map(canvasTabKey);
+  const active = keys.includes(pt.canvasActiveTab ?? '') ? pt.canvasActiveTab : keys[0];
+  return { canvasTabs: tabs, canvasActiveTab: active };
+}
+
 function validBranch(value: unknown, exclude?: string): string | undefined {
   return typeof value === 'string' && value.length > 0 && value !== exclude ? value : undefined;
 }
@@ -162,6 +176,8 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     savedSelectedAgentIndex: task.savedSelectedAgentIndex,
     savedPromptedAgentIndexes: task.savedPromptedAgentIndexes,
     planFileName: task.planFileName,
+    canvasTabs: task.canvasTabs,
+    canvasActiveTab: task.canvasActiveTab,
     stepsEnabled: task.stepsEnabled,
     branchAdoptedFrom: task.branchAdoptedFrom,
     branchOfferDismissed: task.branchOfferDismissed,
@@ -224,7 +240,6 @@ export async function saveState(): Promise<void> {
     sidebarNeedsInputFirst: store.sidebarNeedsInputFirst,
     projectsCollapsed: store.projectsCollapsed,
     desktopNotificationsEnabled: store.desktopNotificationsEnabled,
-    completionSoundEnabled: store.completionSoundEnabled,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand || undefined,
     dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
@@ -416,7 +431,6 @@ interface LegacyPersistedState {
   sidebarNeedsInputFirst?: unknown;
   projectsCollapsed?: unknown;
   desktopNotificationsEnabled?: unknown;
-  completionSoundEnabled?: unknown;
   inactiveColumnOpacity?: unknown;
   editorCommand?: unknown;
   dockerImage?: unknown;
@@ -575,8 +589,6 @@ export async function loadState(): Promise<void> {
         typeof raw.desktopNotificationsEnabled === 'boolean'
           ? raw.desktopNotificationsEnabled
           : false;
-      s.completionSoundEnabled =
-        typeof raw.completionSoundEnabled === 'boolean' ? raw.completionSoundEnabled : true;
       const rawOpacity = raw.inactiveColumnOpacity;
       s.inactiveColumnOpacity =
         typeof rawOpacity === 'number' &&
@@ -749,6 +761,7 @@ export async function loadState(): Promise<void> {
           savedSelectedAgentIndex: validAgentIndex(pt.savedSelectedAgentIndex),
           savedPromptedAgentIndexes: validPromptedAgentIndexes(pt.savedPromptedAgentIndexes),
           planFileName: pt.planFileName,
+          ...restoredCanvas(pt),
           stepsEnabled: pt.stepsEnabled,
           branchAdoptedFrom: validBranch(pt.branchAdoptedFrom, pt.branchName),
           branchOfferDismissed: validBranch(pt.branchOfferDismissed),
@@ -859,6 +872,7 @@ export async function loadState(): Promise<void> {
           savedSelectedAgentIndex: validAgentIndex(pt.savedSelectedAgentIndex),
           savedPromptedAgentIndexes: validPromptedAgentIndexes(pt.savedPromptedAgentIndexes),
           planFileName: pt.planFileName,
+          ...restoredCanvas(pt),
           stepsEnabled: pt.stepsEnabled,
           branchAdoptedFrom: validBranch(pt.branchAdoptedFrom, pt.branchName),
           branchOfferDismissed: validBranch(pt.branchOfferDismissed),

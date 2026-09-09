@@ -11,6 +11,9 @@ import {
   clearTaskLandingReview,
   getPrChecks,
   getVerifyCommand,
+  isTaskCanvasVisible,
+  openTaskCanvas,
+  closeTaskCanvas,
 } from '../store/store';
 import { EditableText, type EditableTextHandle } from './EditableText';
 import { IconButton } from './IconButton';
@@ -333,6 +336,28 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
             </Show>
           </div>
         </Show>
+        <IconButton
+          icon={
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              style={{ color: isTaskCanvasVisible(props.task) ? theme.accent : undefined }}
+            >
+              <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
+              <path d="M10 2.75v10.5" />
+            </svg>
+          }
+          onClick={() =>
+            isTaskCanvasVisible(props.task)
+              ? closeTaskCanvas(props.task.id)
+              : openTaskCanvas(props.task.id)
+          }
+          title={isTaskCanvasVisible(props.task) ? 'Close canvas' : 'Open canvas'}
+        />
         <IconButton
           icon={
             store.focusMode ? (

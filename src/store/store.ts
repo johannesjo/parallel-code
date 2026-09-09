@@ -30,6 +30,14 @@ export {
   setAgentEnvFile,
 } from './agents';
 export {
+  openCanvasDocument,
+  activateCanvasTab,
+  closeCanvasTab,
+  openTaskCanvas,
+  closeTaskCanvas,
+  isTaskCanvasVisible,
+} from './canvas';
+export {
   createTask,
   createImportedTask,
   closeTask,
@@ -143,7 +151,6 @@ export {
   setProjectsCollapsed,
   setFontSmoothing,
   setDesktopNotificationsEnabled,
-  setCompletionSoundEnabled,
   setVerboseLogging,
   setCoordinatorNotificationDelayMs,
   setInactiveColumnOpacity,

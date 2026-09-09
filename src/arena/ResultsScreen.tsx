@@ -112,7 +112,7 @@ export function ResultsScreen() {
       `Focus on correctness, code quality, and trade-offs between them.`;
 
     const projectId = store.projects.find((p) => p.path === arenaStore.cwd)?.id ?? null;
-    setNewTaskPrefillPrompt(fullPrompt, projectId, 'Compare arena results');
+    setNewTaskPrefillPrompt(fullPrompt, projectId);
     toggleArena(false);
     toggleNewTaskDialog(true);
   }

@@ -99,12 +99,12 @@ import {
 import { dismissPinnedBubbles } from './documents/workspace-ui';
 import { resetForNewMatch } from './arena/store';
 import { startDesktopNotificationWatcher } from './store/desktopNotifications';
-import { startAttentionCueWatcher } from './store/attentionCues';
 import { startPrChecksSubscription } from './store/pr-checks';
 import { startUpdateSubscription } from './store/updates';
 import { startRemoteTaskHandlers } from './store/remoteTaskHandler';
 import { startRemoteStatusSync } from './store/remoteStatusSync';
 import { startAgentHookStatusListener } from './store/agentHookStatus';
+import { openArrivedPlan, startCanvasAutoOpen } from './store/canvas';
 
 const MIN_WINDOW_DIMENSION = 100;
 
@@ -347,6 +347,7 @@ function App() {
     // Before the first await: restored agents start firing hooks as soon as
     // loadState spawns them, and IPC does not replay what nobody listened to.
     const stopAgentHookStatusListener = startAgentHookStatusListener();
+    const stopCanvasAutoOpen = startCanvasAutoOpen();
     const stopDocumentListeners = initDocumentListeners();
     void syncWindowFocused();
     void syncWindowMaximized();
@@ -515,12 +516,12 @@ function App() {
     for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
       const task = store.tasks[taskId];
       if (!task?.worktreePath || !task.planFileName) continue;
-      invoke<{ content: string; fileName: string } | null>(IPC.ReadPlanContent, {
-        worktreePath: task.worktreePath,
-        fileName: task.planFileName,
-      })
+      invoke<{ content: string; fileName: string; relativePath: string } | null>(
+        IPC.ReadPlanContent,
+        { worktreePath: task.worktreePath, fileName: task.planFileName },
+      )
         .then((result) => {
-          if (result) setPlanContent(taskId, result.content, result.fileName);
+          if (result) setPlanContent(taskId, result.content, result.fileName, result.relativePath);
         })
         .catch((err) => {
           console.warn(`Failed to restore plan for task ${taskId}:`, err);
@@ -550,7 +551,6 @@ function App() {
     startUsagePolling();
     const stopMCPListeners = initMCPListeners();
     const stopNotificationWatcher = startDesktopNotificationWatcher(windowFocused);
-    const stopAttentionCues = startAttentionCueWatcher();
     const stopPrChecksSubscription = startPrChecksSubscription();
     const stopUpdateSubscription = startUpdateSubscription();
     const stopRemoteTaskHandlers = startRemoteTaskHandlers();
@@ -559,9 +559,16 @@ function App() {
     // Listen for plan content pushed from backend plan watcher
     const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
       if (!data || typeof data !== 'object') return;
-      const msg = data as { taskId: string; content: string | null; fileName: string | null };
+      const msg = data as {
+        taskId: string;
+        content: string | null;
+        fileName: string | null;
+        relativePath?: string | null;
+      };
       if (msg.taskId && store.tasks[msg.taskId]) {
-        setPlanContent(msg.taskId, msg.content, msg.fileName);
+        const previousPlanPath = store.tasks[msg.taskId].planPath;
+        setPlanContent(msg.taskId, msg.content, msg.fileName, msg.relativePath ?? null);
+        openArrivedPlan(msg.taskId, previousPlanPath);
       }
     });
 
@@ -767,12 +774,12 @@ function App() {
       stopUsagePolling();
       stopMCPListeners();
       stopNotificationWatcher();
-      stopAttentionCues();
       stopPrChecksSubscription();
       stopUpdateSubscription();
       stopRemoteTaskHandlers();
       stopRemoteStatusSync();
       stopAgentHookStatusListener();
+      stopCanvasAutoOpen();
       stopDocumentListeners();
       offPlanContent();
       offStepsContent();

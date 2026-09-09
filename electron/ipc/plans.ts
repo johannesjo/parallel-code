@@ -7,6 +7,7 @@ interface PlanWatcher {
   fsWatchers: fs.FSWatcher[];
   timeout: ReturnType<typeof setTimeout> | null;
   pollTimer: ReturnType<typeof setInterval> | null;
+  worktreePath: string;
   plansDirs: string[];
   watchedDirs: Set<string>;
 }
@@ -53,10 +54,22 @@ export function ensurePlansDirectory(worktreePath: string): void {
   fs.mkdirSync(plansDir, { recursive: true });
 }
 
+/** A plan file: its text, its name, and where it sits under the worktree. */
+export interface PlanFile {
+  content: string;
+  fileName: string;
+  /** Worktree-relative, with forward slashes; what the canvas opens. */
+  relativePath: string;
+}
+
+function relativePlanPath(worktreePath: string, filePath: string): string {
+  return path.relative(worktreePath, filePath).split(path.sep).join('/');
+}
+
 /** Reads the newest `.md` file by mtime from a single plans directory. */
 function readNewestPlan(
   plansDir: string,
-): { content: string; fileName: string; mtime: number } | null {
+): { content: string; fileName: string; filePath: string; mtime: number } | null {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(plansDir, { withFileTypes: true });
@@ -82,9 +95,10 @@ function readNewestPlan(
 
   if (!newest) return null;
 
+  const filePath = path.join(plansDir, newest.name);
   try {
-    const content = fs.readFileSync(path.join(plansDir, newest.name), 'utf-8');
-    return { content, fileName: newest.name, mtime: newest.mtime };
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return { content, fileName: newest.name, filePath, mtime: newest.mtime };
   } catch (e) {
     console.warn('[plans] Failed to read plan file:', e);
     return null;
@@ -92,32 +106,35 @@ function readNewestPlan(
 }
 
 /** Reads the newest plan across multiple directories. */
-function readNewestPlanFromDirs(plansDirs: string[]): { content: string; fileName: string } | null {
-  let best: { content: string; fileName: string; mtime: number } | null = null;
+function readNewestPlanFromDirs(worktreePath: string, plansDirs: string[]): PlanFile | null {
+  let best: ReturnType<typeof readNewestPlan> = null;
   for (const dir of plansDirs) {
     const result = readNewestPlan(dir);
     if (result && (!best || result.mtime > best.mtime)) {
       best = result;
     }
   }
-  return best ? { content: best.content, fileName: best.fileName } : null;
+  return best
+    ? {
+        content: best.content,
+        fileName: best.fileName,
+        relativePath: relativePlanPath(worktreePath, best.filePath),
+      }
+    : null;
 }
 
 /** Sends plan content for a task to the renderer. */
-function sendPlanContent(win: BrowserWindow, taskId: string, plansDirs: string[]): void {
+function sendPlanContent(win: BrowserWindow, taskId: string, entry: PlanWatcher): void {
   if (win.isDestroyed()) return;
-  const result = readNewestPlanFromDirs(plansDirs);
+  const result = readNewestPlanFromDirs(entry.worktreePath, entry.plansDirs);
   if (result) {
-    win.webContents.send(IPC.PlanContent, {
-      taskId,
-      content: result.content,
-      fileName: result.fileName,
-    });
+    win.webContents.send(IPC.PlanContent, { taskId, ...result });
   } else {
     win.webContents.send(IPC.PlanContent, {
       taskId,
       content: null,
       fileName: null,
+      relativePath: null,
     });
   }
 }
@@ -190,6 +207,7 @@ export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePat
     fsWatchers: [],
     timeout: null,
     pollTimer: null,
+    worktreePath,
     plansDirs,
     watchedDirs: new Set(),
   };
@@ -200,7 +218,7 @@ export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePat
     if (current.timeout) clearTimeout(current.timeout);
     current.timeout = setTimeout(() => {
       current.timeout = null;
-      sendPlanContent(win, taskId, current.plansDirs);
+      sendPlanContent(win, taskId, current);
     }, 200);
   };
 
@@ -230,17 +248,15 @@ export function stopPlanWatcher(taskId: string): void {
 }
 
 /** Read a specific plan file from a worktree, or the newest if no name given. */
-export function readPlanForWorktree(
-  worktreePath: string,
-  fileName?: string,
-): { content: string; fileName: string } | null {
+export function readPlanForWorktree(worktreePath: string, fileName?: string): PlanFile | null {
   const plansDirs = PLAN_DIRS.map((rel) => path.join(worktreePath, rel));
 
   if (fileName) {
     for (const dir of plansDirs) {
+      const filePath = path.join(dir, fileName);
       try {
-        const content = fs.readFileSync(path.join(dir, fileName), 'utf-8');
-        return { content, fileName };
+        const content = fs.readFileSync(filePath, 'utf-8');
+        return { content, fileName, relativePath: relativePlanPath(worktreePath, filePath) };
       } catch {
         // Not in this directory
       }
@@ -248,7 +264,7 @@ export function readPlanForWorktree(
     return null;
   }
 
-  return readNewestPlanFromDirs(plansDirs);
+  return readNewestPlanFromDirs(worktreePath, plansDirs);
 }
 
 /** Stops all plan watchers. */

@@ -1455,25 +1455,6 @@ textarea::placeholder {
   border-right-color: color-mix(in srgb, var(--warning) 82%, white 18%);
 }
 
-/* First-run suggestion chips in the empty task strip. */
-.first-run-suggestion {
-  background: color-mix(in srgb, var(--fg-subtle) 8%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--fg);
-  cursor: pointer;
-  font-size: 13px;
-  padding: 7px 14px;
-  transition:
-    border-color 0.14s ease,
-    background-color 0.14s ease;
-}
-.first-run-suggestion:hover,
-.first-run-suggestion:focus-visible {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-}
-
 .btn-primary {
   position: relative;
   overflow: hidden;
@@ -1710,45 +1691,6 @@ textarea::placeholder {
   box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 50%, transparent);
   border-color: color-mix(in srgb, var(--border) 85%, transparent) !important;
   opacity: 1;
-}
-
-/* One-shot pulse when an agent finishes, asks, or fails; the color tells which
-   without reading the panel. Class is toggled from TaskPanel per transition. */
-@keyframes taskGlow {
-  0% {
-    box-shadow:
-      0 0 0 1px var(--glow-color),
-      0 0 0 0 color-mix(in srgb, var(--glow-color) 70%, transparent);
-  }
-  60% {
-    box-shadow:
-      0 0 0 1px var(--glow-color),
-      0 0 22px 4px color-mix(in srgb, var(--glow-color) 45%, transparent);
-  }
-  100% {
-    box-shadow: var(--shadow-soft);
-  }
-}
-
-/* Reduced-motion variant: a still ring that ends so the class still clears. */
-@keyframes taskGlowStill {
-  from,
-  to {
-    box-shadow: 0 0 0 1px var(--glow-color);
-  }
-}
-
-.task-column.task-glow-ready {
-  --glow-color: var(--success);
-  animation: taskGlow 1.4s ease-out;
-}
-.task-column.task-glow-needs_input {
-  --glow-color: var(--warning);
-  animation: taskGlow 1.4s ease-out;
-}
-.task-column.task-glow-error {
-  --glow-color: var(--error);
-  animation: taskGlow 1.4s ease-out;
 }
 
 .focusable-panel {
@@ -2857,6 +2799,83 @@ body.dragging-task * {
   }
 }
 
+/* ── Canvas editor (Milkdown Crepe): its theme variables follow the look ── */
+.task-canvas-editor .milkdown {
+  --crepe-color-background: var(--task-panel-bg);
+  --crepe-color-on-background: var(--fg);
+  --crepe-color-surface: var(--bg-elevated);
+  --crepe-color-surface-low: var(--bg-input);
+  --crepe-color-on-surface: var(--fg);
+  --crepe-color-on-surface-variant: var(--fg-muted);
+  --crepe-color-outline: var(--fg-muted);
+  --crepe-color-primary: var(--accent);
+  --crepe-color-secondary: var(--bg-selected);
+  --crepe-color-on-secondary: var(--fg);
+  --crepe-color-inverse: var(--fg);
+  --crepe-color-on-inverse: var(--bg-elevated);
+  --crepe-color-inline-code: var(--link);
+  --crepe-color-error: var(--error);
+  --crepe-color-hover: var(--bg-hover);
+  --crepe-color-selected: var(--bg-selected);
+  --crepe-color-inline-area: var(--bg-selected-subtle);
+
+  --crepe-base-font-size: 13px;
+  --crepe-font-title: var(--font-display);
+  --crepe-font-default: var(--font-ui);
+  --crepe-font-code: var(--font-mono);
+
+  --crepe-shadow-1: var(--shadow-soft);
+  --crepe-shadow-2: var(--shadow-soft);
+
+  caret-color: var(--fg);
+
+  min-height: 100%;
+  background: var(--task-panel-bg);
+  color: var(--fg);
+}
+.canvas-tab-strip {
+  scrollbar-width: none;
+}
+.canvas-kind-menu button:hover {
+  background: var(--bg-hover);
+}
+
+/* The canvas sits in a narrow column, so Crepe's page-like spacing is
+   pulled in: just enough gutter for the block handle (two 20px buttons,
+   4px off the text), and tighter indents for lists, quotes, code and tables. */
+.task-canvas-editor .milkdown .ProseMirror {
+  padding: 12px 12px 48px 48px;
+}
+.task-canvas-editor .milkdown .milkdown-block-handle .operation-item {
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+}
+.task-canvas-editor .milkdown .milkdown-block-handle .operation-item svg {
+  width: 16px;
+  height: 16px;
+}
+.task-canvas-editor .milkdown .milkdown-list-item-block li {
+  gap: 6px;
+}
+.task-canvas-editor .milkdown .milkdown-list-item-block li .label-wrapper,
+.task-canvas-editor .milkdown .milkdown-list-item-block li .label-wrapper .label {
+  width: 20px;
+}
+.task-canvas-editor .milkdown .ProseMirror blockquote {
+  padding-left: 14px;
+}
+.task-canvas-editor .milkdown .ProseMirror blockquote::before {
+  width: 3px;
+}
+.task-canvas-editor .milkdown .milkdown-code-block {
+  padding: 8px 8px 12px;
+}
+.task-canvas-editor .milkdown .milkdown-table-block th,
+.task-canvas-editor .milkdown .milkdown-table-block td {
+  padding: 4px 8px;
+}
+
 /* Keep reduced-motion overrides last so class-based rules win by source order. */
 @media (prefers-reduced-motion: reduce) {
   .projects-collapser {
@@ -2869,13 +2888,6 @@ body.dragging-task * {
   .task-item-removing,
   .status-dot-pulse {
     animation: none;
-  }
-
-  /* Keep the colored ring, drop the swelling halo. */
-  .task-column.task-glow-ready,
-  .task-column.task-glow-needs_input,
-  .task-column.task-glow-error {
-    animation: taskGlowStill 1.4s step-end;
   }
 
   /* The hollow ring alone still says "working"; only the rotation goes. */

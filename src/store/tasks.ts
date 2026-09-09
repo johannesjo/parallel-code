@@ -1093,12 +1093,8 @@ export function setNewTaskDropUrl(url: string): void {
   setStore('newTaskDropUrl', url);
 }
 
-export function setNewTaskPrefillPrompt(
-  prompt: string,
-  projectId: string | null,
-  name?: string,
-): void {
-  setStore('newTaskPrefillPrompt', { prompt, projectId, name });
+export function setNewTaskPrefillPrompt(prompt: string, projectId: string | null): void {
+  setStore('newTaskPrefillPrompt', { prompt, projectId });
 }
 
 // --- MCP coordinator event listeners ---
@@ -1560,9 +1556,11 @@ export function setPlanContent(
   taskId: string,
   content: string | null,
   fileName: string | null,
+  planPath: string | null = null,
 ): void {
   setStore('tasks', taskId, 'planContent', content ?? undefined);
   setStore('tasks', taskId, 'planFileName', fileName ?? undefined);
+  setStore('tasks', taskId, 'planPath', planPath ?? undefined);
 }
 
 export function setStepsContent(taskId: string, steps: unknown[] | null): void {

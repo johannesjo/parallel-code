@@ -45,6 +45,8 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/sora": "^5.2.8",
     "@fontsource/space-grotesk": "^5.2.10",
+    "@milkdown/crepe": "7.22.1",
+    "@milkdown/kit": "7.22.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@xterm/addon-fit": "^0.12.0-beta.195",
     "@xterm/addon-search": "^0.17.0-beta.195",
