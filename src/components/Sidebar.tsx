@@ -280,6 +280,8 @@ function NeedsInputRow(props: {
           class="task-item sidebar-attention-row"
           role="button"
           tabIndex={0}
+          aria-current={store.activeTaskId === props.taskId ? 'true' : undefined}
+          data-attention={getTaskAttentionState(props.taskId)}
           title={`${t().name} — waiting for your input`}
           onClick={() => jumpToWaitingTask(props.taskId, props.panel)}
           onKeyDown={(e) => {
@@ -298,10 +300,6 @@ function NeedsInputRow(props: {
             color: theme.fg,
             'font-weight': '500',
             cursor: 'pointer',
-            background:
-              store.activeTaskId === props.taskId
-                ? `color-mix(in srgb, ${theme.warning} 16%, transparent)`
-                : 'transparent',
           }}
         >
           <div class="task-item-head">
@@ -439,13 +437,18 @@ export function TaskRowShell(props: {
       class={className()}
       role={props.role}
       tabIndex={props.tabIndex}
+      aria-current={store.activeTaskId === props.taskId ? 'true' : undefined}
+      data-attention={getTaskAttentionState(props.taskId)}
+      data-kbd-focused={
+        store.sidebarFocused && store.sidebarFocusedTaskId === props.taskId ? 'true' : undefined
+      }
       data-task-index={props.taskIndex}
       data-sidebar-task-id={props.sidebarTaskId}
       title={props.title}
       onClick={() => props.onClick()}
       onKeyDown={(event) => props.onKeyDown?.(event)}
       style={{
-        padding: '0 10px',
+        padding: '2px 10px',
         'padding-left': props.paddingLeft ?? '10px',
         'border-radius': 'var(--radius-sm)',
         'font-size': props.fontSize,

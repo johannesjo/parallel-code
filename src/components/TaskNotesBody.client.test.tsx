@@ -89,3 +89,37 @@ describe('TaskNotesBody plan tab', () => {
     expect(second).not.toBe(first);
   });
 });
+
+describe('TaskNotesBody notes tab', () => {
+  const plainTask: Task = { ...task, planContent: undefined, planFileName: undefined };
+
+  function renderNotes(notesTask: Task) {
+    const container = document.createElement('div');
+    document.body.append(container);
+    disposers.push(
+      render(
+        () => (
+          <TaskNotesBody task={notesTask} agentId="agent-1" onPlanFullscreen={() => undefined} />
+        ),
+        container,
+      ),
+    );
+    return container;
+  }
+
+  it('labels the notes textarea and marks a task without notes or plan as empty', () => {
+    const container = renderNotes(plainTask);
+
+    const body = container.querySelector('.task-notes-body');
+    expect(body?.getAttribute('data-empty')).toBe('true');
+    const textarea = container.querySelector('textarea');
+    expect(textarea?.getAttribute('aria-label')).toBe('Task notes');
+    expect(textarea?.getAttribute('placeholder')).toBe('Add a note\u2026');
+  });
+
+  it('drops the empty marker once the task has notes', () => {
+    const container = renderNotes({ ...plainTask, notes: 'Keep the wording consistent.' });
+
+    expect(container.querySelector('.task-notes-body')?.getAttribute('data-empty')).toBe('false');
+  });
+});

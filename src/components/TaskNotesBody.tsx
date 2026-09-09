@@ -88,7 +88,8 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
 
   return (
     <div
-      class="focusable-panel"
+      class="task-notes-body focusable-panel"
+      data-empty={isEmpty()}
       data-panel-focused={isPanelFocused(props.task.id, 'notes') ? 'true' : 'false'}
       style={{
         width: '100%',
@@ -156,7 +157,8 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
             ref={(el) => (notesRef = el)}
             value={props.task.notes}
             onInput={(e) => updateTaskNotes(props.task.id, e.currentTarget.value)}
-            placeholder="Notes..."
+            aria-label="Task notes"
+            placeholder="Add a note…"
             style={{
               width: '100%',
               flex: '1',

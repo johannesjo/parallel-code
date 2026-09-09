@@ -31,3 +31,6 @@ docs/*
 
 # Local runtime state from memory/sidecar processes (not source)
 /data/
+
+# Local scratch space (UI preview harnesses, throwaway scripts)
+/.tmp/

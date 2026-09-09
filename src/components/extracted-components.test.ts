@@ -1,12 +1,32 @@
 import { renderToString } from 'solid-js/web';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { presetsForTone } from '../lib/look';
+import { setStore } from '../store/core';
 import { CheckboxOption, InlineBanner } from './NewTaskDialog';
 import { PresetThemeCard, SettingsCheckboxRow } from './SettingsDialog';
 import { TaskRowShell } from './Sidebar';
 
+function renderRowShell(taskId: string): string {
+  return renderToString(() =>
+    TaskRowShell({
+      taskId,
+      class: 'task-item',
+      onClick: vi.fn(),
+      fontSize: '13px',
+      cursor: 'pointer',
+      opacity: '1',
+      children: 'Task Alpha',
+    }),
+  );
+}
+
 describe('extracted component helpers', () => {
+  afterEach(() => {
+    setStore('activeTaskId', null);
+    setStore('tasks', {});
+  });
+
   it('renders settings checkbox rows with label, description, and checked state', () => {
     const html = renderToString(() =>
       SettingsCheckboxRow({
@@ -92,7 +112,32 @@ describe('extracted component helpers', () => {
     expect(html).toContain('role="button"');
     expect(html).toContain('data-task-index="2"');
     expect(html).toContain('data-sidebar-task-id="task-1"');
-    expect(html).toContain('padding:0 10px');
+    expect(html).toContain('data-attention="idle"');
+    expect(html).not.toContain('aria-current');
     expect(html).toContain('Task Alpha');
+  });
+
+  it('marks the task row shell of the active task as current', () => {
+    setStore('activeTaskId', 'task-1');
+
+    expect(renderRowShell('task-1')).toContain('aria-current="true"');
+  });
+
+  it('exposes the attention state that keeps a row\u2019s status detail visible', () => {
+    setStore('tasks', 'task-1', {
+      id: 'task-1',
+      name: 'Task Alpha',
+      projectId: 'project-1',
+      branchName: 'task/alpha',
+      worktreePath: '/tmp/alpha',
+      agentIds: [],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+      gitIsolation: 'worktree',
+      needsReview: true,
+    });
+
+    expect(renderRowShell('task-1')).toContain('data-attention="review"');
   });
 });

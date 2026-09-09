@@ -430,9 +430,9 @@ export function TaskPanel(props: TaskPanelProps) {
   const notesAndFilesChild: PanelChild = {
     id: 'notes-files',
     minSize: 60,
-    absorberWeight: 0.5,
+    absorberWeight: 0.25,
     content: () => (
-      <div style={{ height: '100%', 'min-height': topStripEmpty() ? '64px' : '200px' }}>
+      <div style={{ height: '100%', 'min-height': topStripEmpty() ? '64px' : '140px' }}>
         {isGitUnavailable() ? (
           notesBodyEl
         ) : (
@@ -560,14 +560,18 @@ export function TaskPanel(props: TaskPanelProps) {
       <div
         class="task-header-stack"
         style={{
-          flex: `0 0 ${props.task.stepsEnabled ? 88 : 64}px`,
+          flex: `0 0 ${props.task.stepsEnabled ? 120 : 96}px`,
           display: 'flex',
           'flex-direction': 'column',
           overflow: 'hidden',
         }}
       >
         {/* Title + branch bars live outside <Show> so they don't remount on layout flips. */}
-        <div style={{ flex: '0 0 36px', overflow: 'hidden' }}>
+        {/* 68px fits the title bar's two rows: a 30px icon-button row, the 2px
+            row gap, a ~21px badge row, and the bar's 12px vertical padding.
+            The stack totals above are this plus the 28px branch bar (and the
+            24px steps line when enabled). */}
+        <div style={{ flex: '0 0 68px', overflow: 'hidden' }}>
           <TaskTitleBar
             task={props.task}
             isActive={props.isActive}

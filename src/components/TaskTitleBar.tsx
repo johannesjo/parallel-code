@@ -14,7 +14,7 @@ import {
 } from '../store/store';
 import { EditableText, type EditableTextHandle } from './EditableText';
 import { IconButton } from './IconButton';
-import { StatusDot } from './StatusDot';
+import { StatusDot, getDotTooltip } from './StatusDot';
 import { CheckIcon, CloseIcon } from './icons';
 import { theme } from '../lib/theme';
 import { badgeStyle } from '../lib/badgeStyle';
@@ -157,35 +157,25 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
   }
 
   return (
-    <div
-      class="task-title-bar"
-      style={{
-        display: 'flex',
-        'align-items': 'center',
-        'justify-content': 'space-between',
-        padding: '0 10px',
-        height: '100%',
-        background: 'transparent',
-        'user-select': 'none',
-        cursor: 'grab',
-      }}
-      onMouseDown={handleTitleMouseDown}
-    >
-      <div
-        style={{
-          overflow: 'hidden',
-          flex: '1',
-          'min-width': '0',
-          display: 'flex',
-          'align-items': 'center',
-          gap: '8px',
-        }}
-      >
-        <StatusDot
-          status={getTaskDotStatus(props.task.id)}
-          size="md"
-          attention={getTaskAttentionState(props.task.id)}
-        />
+    <div class="task-title-bar" data-active={props.isActive} onMouseDown={handleTitleMouseDown}>
+      <EditableText
+        value={titleLabel()}
+        onCommit={(v) => updateTaskName(props.task.id, v)}
+        class="editable-text"
+        title={props.task.savedInitialPrompt}
+        ref={(h) => props.onTitleEditRef(h)}
+      />
+      <div class="task-title-details">
+        <span class="task-title-status">
+          <StatusDot
+            status={getTaskDotStatus(props.task.id)}
+            size="md"
+            attention={getTaskAttentionState(props.task.id)}
+          />
+          <span>
+            {getDotTooltip(getTaskDotStatus(props.task.id), getTaskAttentionState(props.task.id))}
+          </span>
+        </span>
         <Show when={props.task.gitIsolation === 'direct'}>
           <span style={badgeStyle(theme.warning)}>{props.task.branchName}</span>
         </Show>
@@ -238,15 +228,8 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
             </span>
           )}
         </Show>
-        <EditableText
-          value={titleLabel()}
-          onCommit={(v) => updateTaskName(props.task.id, v)}
-          class="editable-text"
-          title={props.task.savedInitialPrompt}
-          ref={(h) => props.onTitleEditRef(h)}
-        />
       </div>
-      <div style={{ display: 'flex', gap: '4px', 'margin-left': '8px', 'flex-shrink': '0' }}>
+      <div class="task-title-actions">
         <Show when={props.task.gitIsolation === 'worktree' && !isLandedTask()}>
           <IconButton
             icon={

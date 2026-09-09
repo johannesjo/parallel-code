@@ -122,6 +122,68 @@ body.font-smoothing {
   border: 0;
 }
 
+/* Task identity leads; operational details sit on a quieter second line. */
+.task-title-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  height: 100%;
+  padding: 6px 12px;
+  gap: 2px 12px;
+  font-size: 15px;
+  user-select: none;
+  cursor: grab;
+  box-sizing: border-box;
+}
+
+.task-title-bar > .editable-text {
+  letter-spacing: -0.015em;
+}
+
+.task-title-actions {
+  display: flex;
+  gap: 4px;
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.task-title-details {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.task-title-details > * {
+  flex-shrink: 0;
+}
+
+.task-title-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.task-title-bar .task-title-actions .icon-btn {
+  padding: 6px !important;
+}
+
+.task-title-bar .task-title-actions .icon-btn:not(:hover) {
+  border-color: transparent !important;
+}
+
+.task-title-bar[data-active='true'] {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
 .task-branch-info-bar {
   container-name: task-branch-info;
   container-type: inline-size;
@@ -1057,9 +1119,42 @@ textarea::placeholder {
     border-color 0.13s ease;
 }
 
-.task-item:hover {
+.task-item:hover:not([aria-current='true']) {
   background: color-mix(in srgb, var(--accent) 10%, var(--bg-hover)) !important;
   color: var(--fg) !important;
+}
+
+/* Selection stays distinct from status and keyboard focus: an inset bar and a
+   heavier name, so it still reads where --accent and --border-focus match.
+   !important is needed only because `taskAttentionStyles` sets background
+   inline on every row. */
+.task-item[aria-current='true'] {
+  background: var(--bg-selected-subtle) !important;
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+.task-item[aria-current='true']:hover {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-hover)) !important;
+}
+
+/* Selecting a task must not hide that it also needs you: keep the attention
+   tint that the inline style would otherwise have provided. */
+.task-item[aria-current='true']:is(
+    [data-attention='needs_input'],
+    [data-attention='error'],
+    [data-attention='review']
+  ) {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-selected-subtle)) !important;
+}
+
+.task-item:is(
+    [aria-current='true'],
+    [data-attention='needs_input'],
+    [data-attention='error'],
+    [data-attention='review']
+  )
+  .task-item-name {
+  font-weight: 600;
 }
 
 /* Title line of a task row: glyph, name, badges. A wrapped two-line name must
@@ -1117,8 +1212,15 @@ textarea::placeholder {
   margin-top: 1px;
 }
 
-.task-item:hover .task-agent-status,
-.task-item:hover .task-current-state-sidebar {
+.task-item:is(
+    :hover,
+    [data-kbd-focused='true'],
+    [aria-current='true'],
+    [data-attention='needs_input'],
+    [data-attention='error'],
+    [data-attention='review']
+  )
+  :is(.task-agent-status, .task-current-state-sidebar) {
   opacity: 1;
 }
 
@@ -1201,6 +1303,28 @@ textarea::placeholder {
 
 .project-row:hover {
   background: var(--bg-hover);
+}
+
+.project-row .icon-btn {
+  opacity: 0.5;
+  transition: opacity 0.12s ease;
+}
+
+.project-row:is(:hover, :focus-within) .icon-btn {
+  opacity: 1;
+}
+
+/* Empty notes remain directly editable, with less competing chrome. */
+.task-notes-body[data-empty='true'] textarea {
+  background: transparent !important;
+}
+
+.task-notes-body .send-notes-btn:disabled {
+  visibility: hidden;
+}
+
+.task-notes-body textarea::placeholder {
+  color: var(--fg-muted);
 }
 
 /* CSS-only collapse animation. The grid-rows trick lets the row collapse from
