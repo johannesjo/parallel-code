@@ -79,4 +79,30 @@ describe('autosave snapshot includes new-task-default fields', () => {
       setStore('tasks', taskId, undefined as unknown as Task);
     }
   });
+
+  it('an unsent prompt draft changes the snapshot', () => {
+    const taskId = 'autosave-draft-task';
+    const task: Task = {
+      id: taskId,
+      name: taskId,
+      projectId: 'p1',
+      branchName: 'feature/draft',
+      worktreePath: '/tmp/autosave-draft-task',
+      agentIds: [],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+      gitIsolation: 'worktree',
+    };
+    setStore('tasks', taskId, task);
+    setStore('taskOrder', (order) => [...order, taskId]);
+    try {
+      const before = persistedSnapshot();
+      setStore('tasks', taskId, 'promptDraft', 'half-written thought');
+      expect(persistedSnapshot()).not.toBe(before);
+    } finally {
+      setStore('taskOrder', (order) => order.filter((id) => id !== taskId));
+      setStore('tasks', taskId, undefined as unknown as Task);
+    }
+  });
 });

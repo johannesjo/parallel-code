@@ -61,6 +61,7 @@ export {
   toggleAITerminalLayout,
   setTaskLastInputAt,
   markTaskUserActivity,
+  setTaskPromptDraft,
   setTaskPromptDraftActive,
   setTaskTerminalInputPending,
   initMCPListeners,

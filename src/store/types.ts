@@ -183,6 +183,10 @@ export interface Task {
   stagedNotification?: StagedNotification;
   userActivityHoldUntil?: number;
   promptDraftActive?: boolean;
+  /** Unsent text sitting in the task's "Send a prompt" box. Persisted so a
+   *  restart (app or machine) doesn't discard what the user typed but never
+   *  sent. Cleared on send. */
+  promptDraft?: string;
   terminalInputPending?: boolean;
   terminalInputPendingFromQuestion?: boolean;
   // Coordinator fields
@@ -226,6 +230,7 @@ export interface PersistedTask {
   branchName: string;
   worktreePath: string;
   notes: string;
+  promptDraft?: string;
   lastPrompt: string;
   promptedAgentIds?: string[];
   initialPrompt?: string;
