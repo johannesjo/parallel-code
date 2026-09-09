@@ -383,6 +383,107 @@ describe('PR URL persistence', () => {
   });
 });
 
+describe('prompt draft persistence', () => {
+  it('persists an unsent prompt draft on an active task', async () => {
+    setStore('taskOrder', ['task-1']);
+    setStore('collapsedTaskOrder', []);
+    setStore('tasks', {
+      'task-1': {
+        id: 'task-1',
+        name: 'Task',
+        projectId: 'project-1',
+        branchName: 'task/task-1',
+        worktreePath: '/repo/.worktrees/task-1',
+        agentIds: [],
+        shellAgentIds: [],
+        notes: '',
+        lastPrompt: '',
+        gitIsolation: 'worktree',
+        promptDraft: 'remember to check the migration',
+      },
+    });
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    await saveState();
+
+    const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
+    expect(saved.tasks['task-1'].promptDraft).toBe('remember to check the migration');
+  });
+
+  it('restores an unsent prompt draft', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: ['task-1'],
+        collapsedTaskOrder: [],
+        tasks: {
+          'task-1': {
+            ...persistedTask(def),
+            promptDraft: 'remember to check the migration',
+          },
+        },
+        activeTaskId: 'task-1',
+        sidebarVisible: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['task-1'].promptDraft).toBe('remember to check the migration');
+  });
+
+  it('restores an unsent prompt draft on a collapsed task', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: [],
+        collapsedTaskOrder: ['task-1'],
+        tasks: {
+          'task-1': {
+            ...persistedTask(def),
+            collapsed: true,
+            promptDraft: 'draft on a collapsed task',
+          },
+        },
+        activeTaskId: null,
+        sidebarVisible: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['task-1'].promptDraft).toBe('draft on a collapsed task');
+  });
+
+  it('ignores a non-string promptDraft from a corrupt file', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: ['task-1'],
+        collapsedTaskOrder: [],
+        tasks: {
+          'task-1': { ...persistedTask(def), promptDraft: 42 },
+        },
+        activeTaskId: 'task-1',
+        sidebarVisible: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['task-1'].promptDraft).toBeUndefined();
+  });
+});
+
 describe('AI terminal layout persistence', () => {
   it('persists a task tabbed layout choice', async () => {
     setStore('taskOrder', ['task-1']);

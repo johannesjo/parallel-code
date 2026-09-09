@@ -1625,6 +1625,13 @@ export function markTaskUserActivity(taskId: string): void {
   scheduleTaskAutomationRelease(taskId);
 }
 
+/** Store the unsent contents of the task's prompt box so a restart restores it.
+ *  Empty text is stored as `undefined` to keep the persisted file free of noise. */
+export function setTaskPromptDraft(taskId: string, text: string): void {
+  if (!store.tasks[taskId]) return;
+  setStore('tasks', taskId, 'promptDraft', text || undefined);
+}
+
 export function setTaskPromptDraftActive(taskId: string, active: boolean): void {
   if (!store.tasks[taskId]) return;
   setStore('tasks', taskId, 'promptDraftActive', active || undefined);
