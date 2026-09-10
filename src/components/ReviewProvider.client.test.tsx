@@ -113,6 +113,35 @@ async function flushAsyncWork(): Promise<void> {
 }
 
 describe('ReviewProvider client lifecycle', () => {
+  it('copies attached image paths onto the question and drops an empty list', () => {
+    const { review } = mountReview({ loadFindings: vi.fn(async () => []) });
+    review.completeDiffLoad('diff-a', renderedDiff());
+
+    const attached = ['/tmp/shot.png'];
+    review.handleSelection({
+      source: 'src/app.ts',
+      startLine: 10,
+      endLine: 10,
+      selectedText: 'runAsync();',
+    });
+    review.handleSubmit('What does this show?', 'ask', attached);
+
+    const [question] = review.activeQuestions();
+    expect(question.imagePaths).toEqual(['/tmp/shot.png']);
+    // Copied, so a later mutation of the input array can't rewrite the question.
+    expect(question.imagePaths).not.toBe(attached);
+
+    review.handleSelection({
+      source: 'src/app.ts',
+      startLine: 11,
+      endLine: 11,
+      selectedText: 'after',
+    });
+    review.handleSubmit('And this?', 'ask', []);
+
+    expect(review.activeQuestions()[1].imagePaths).toBeUndefined();
+  });
+
   it('keeps durable comments on same-diff reopen and clears transient interaction state', async () => {
     const loadFindings = vi.fn(async () => [finding('finding-1')]);
     const { review, setOpen } = mountReview({ loadFindings });

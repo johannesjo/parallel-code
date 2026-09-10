@@ -26,6 +26,8 @@ interface AskCodeRequest {
   provider?: AskCodeProvider;
   /** Env file configured for the Claude Code agent, if any. */
   envFile?: string;
+  /** Absolute paths of images attached to the question. */
+  imagePaths?: string[];
 }
 
 const activeRequests = new RequestRegistry<ChildProcess>({
@@ -34,12 +36,13 @@ const activeRequests = new RequestRegistry<ChildProcess>({
 });
 
 export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
-  const { requestId, channelId, prompt, cwd, provider, envFile } = args;
+  const { requestId, channelId, prompt, cwd, provider, envFile, imagePaths } = args;
 
-  // Route to MiniMax backend when configured
+  // Route to MiniMax backend when configured. Image input is wired for this
+  // provider only; the CLI path below takes a text prompt.
   if (provider === 'minimax') {
     activeRequests.cancel(requestId);
-    askAboutCodeMinimax(win, { requestId, channelId, prompt });
+    askAboutCodeMinimax(win, { requestId, channelId, prompt, imagePaths });
     return;
   }
 

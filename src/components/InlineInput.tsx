@@ -1,17 +1,44 @@
-import { createSignal, onCleanup, onMount } from 'solid-js';
+import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
+import { invoke } from '../lib/ipc';
+import { IPC } from '../../electron/ipc/channels';
+import { store } from '../store/store';
+import { warn as logWarn } from '../lib/log';
 import type { DiffInteractionMode } from './review-types';
+import { isSupportedAskCodeImageExtension } from './ask-code-image';
 
 interface InlineInputProps {
-  onSubmit: (text: string, mode: DiffInteractionMode) => void;
+  onSubmit: (text: string, mode: DiffInteractionMode, imagePaths?: string[]) => void;
   onDismiss: () => void;
+}
+
+/** Shape of the resolved clipboard content returned by the main process. */
+interface ResolvedPaste {
+  kind: string;
+  path?: string;
 }
 
 export function InlineInput(props: InlineInputProps) {
   const [text, setText] = createSignal('');
   const [mode, setMode] = createSignal<DiffInteractionMode>('review');
+  const [imagePaths, setImagePaths] = createSignal<string[]>([]);
+  const [imagePasteHint, setImagePasteHint] = createSignal('');
   let inputRef: HTMLInputElement | undefined;
+
+  /** Images are only sent to a provider whose model accepts image input. */
+  const imageInputEnabled = () => mode() === 'ask' && store.askCodeProvider === 'minimax';
+
+  /**
+   * A paste that can't be attached yet must say so. Attaching works in either
+   * mode so it can precede the switch to Ask, but only Ask sends — without this
+   * the chip is hidden and an accepted image looks like it went nowhere.
+   */
+  const pasteNotice = () =>
+    imagePasteHint() ||
+    (imagePaths().length > 0 && !imageInputEnabled()
+      ? 'Image attached — switch to Ask to send it.'
+      : '');
 
   onMount(() => {
     requestAnimationFrame(() => inputRef?.focus());
@@ -32,7 +59,40 @@ export function InlineInput(props: InlineInputProps) {
 
   function submit() {
     const t = text().trim();
-    if (t) props.onSubmit(t, mode());
+    if (!t) return;
+    props.onSubmit(t, mode(), imageInputEnabled() ? imagePaths() : undefined);
+  }
+
+  /**
+   * Attaches a pasted image to the question. The main process already turns
+   * clipboard images into temp files, so the same path is reused here.
+   */
+  function handlePaste(e: ClipboardEvent) {
+    if (store.askCodeProvider !== 'minimax') return;
+    const hasImage = Array.from(e.clipboardData?.items ?? []).some((item) =>
+      item.type.startsWith('image/'),
+    );
+    if (!hasImage) return;
+
+    e.preventDefault();
+    setImagePasteHint('');
+    invoke<ResolvedPaste>(IPC.ResolveClipboardPaste)
+      .then((paste) => {
+        if (
+          paste.path &&
+          (paste.kind === 'image' ||
+            (paste.kind === 'file' && isSupportedAskCodeImageExtension(paste.path)))
+        ) {
+          const attached = paste.path;
+          setImagePaths((prev) => (prev.includes(attached) ? prev : [...prev, attached]));
+        } else {
+          setImagePasteHint('Only PNG, JPEG, WEBP, and GIF images can be attached.');
+        }
+      })
+      .catch((err: unknown) => {
+        logWarn('askCode.paste', 'ResolveClipboardPaste failed', { err });
+        setImagePasteHint('Could not attach the clipboard image.');
+      });
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -107,6 +167,7 @@ export function InlineInput(props: InlineInputProps) {
         value={text()}
         onInput={(e) => setText(e.currentTarget.value)}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         style={{
           flex: '1',
           background: theme.bgInput,
@@ -119,6 +180,39 @@ export function InlineInput(props: InlineInputProps) {
           outline: 'none',
         }}
       />
+
+      {/* Attached images */}
+      {/* Only shown when submit would actually send them — see imageInputEnabled. */}
+      <Show when={imageInputEnabled() && imagePaths().length > 0}>
+        <button
+          onClick={() => setImagePaths([])}
+          title="Remove attached images"
+          style={{
+            background: 'transparent',
+            border: `1px solid ${theme.borderSubtle}`,
+            color: theme.fgMuted,
+            cursor: 'pointer',
+            padding: '4px 8px',
+            'border-radius': '4px',
+            'font-size': sf(11),
+            'white-space': 'nowrap',
+            'align-self': 'center',
+          }}
+        >
+          {imagePaths().length === 1 ? '1 image ×' : `${imagePaths().length} images ×`}
+        </button>
+      </Show>
+
+      <Show when={pasteNotice()}>
+        {(hint) => (
+          <span
+            aria-live="polite"
+            style={{ color: theme.warning, 'font-size': sf(11), 'align-self': 'center' }}
+          >
+            {hint()}
+          </span>
+        )}
+      </Show>
 
       {/* Submit button */}
       <button
