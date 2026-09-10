@@ -18,6 +18,7 @@ import { loadEnvFile } from './env-file.js';
 import { HOOK_PTY_ENV_KEYS } from '../agent-hooks/hook-script.js';
 import { isClaudeCommand, withClaudeHookSettings } from '../agent-hooks/launch-args.js';
 import { debug as logDebug } from '../log.js';
+import { isAgentSupportedInMode } from '../shared/agent-support.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -548,6 +549,9 @@ export function spawnAgent(win: BrowserWindow, args: SpawnAgentArgs): void {
   }
 
   // In Docker mode, we validate `docker` exists rather than the inner command
+  if (!isAgentSupportedInMode(command, args.dockerMode)) {
+    throw new Error('Kimi Code requires Docker mode. Enable Docker isolation to start this agent.');
+  }
   if (!args.dockerMode) {
     validateCommand(command);
   } else {

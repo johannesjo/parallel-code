@@ -1,4 +1,5 @@
-import { For, Show } from 'solid-js';
+import { createEffect, For, Show } from 'solid-js';
+import { isAgentSupportedInMode } from '../../electron/shared/agent-support';
 import { store } from '../store/store';
 import { theme } from '../lib/theme';
 import type { AgentDef } from '../ipc/types';
@@ -8,6 +9,7 @@ interface AgentSelectorProps {
   selectedAgent: AgentDef | null;
   onSelect: (agent: AgentDef) => void;
   wrap?: boolean;
+  dockerMode?: boolean;
 }
 
 /**
@@ -15,11 +17,22 @@ interface AgentSelectorProps {
  * Only the selected agent is in the Tab order; Arrow keys move between agents.
  */
 export function AgentSelector(props: AgentSelectorProps) {
-  const btnRefs: HTMLButtonElement[] = [];
+  const btnRefs = new Map<string, HTMLButtonElement>();
   const allowWrap = () => props.wrap ?? true;
+  const supportedAgents = () =>
+    props.agents.filter((agent) => isAgentSupportedInMode(agent.command, props.dockerMode));
+
+  // Switching Docker off must not leave a hidden, unsupported agent selected.
+  createEffect(() => {
+    const selected = props.selectedAgent;
+    if (selected && !isAgentSupportedInMode(selected.command, props.dockerMode)) {
+      const fallback = supportedAgents()[0];
+      if (fallback) props.onSelect(fallback);
+    }
+  });
 
   function handleKeyDown(e: KeyboardEvent, idx: number) {
-    const agents = props.agents;
+    const agents = supportedAgents();
     let nextIdx: number | null = null;
 
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
@@ -32,7 +45,7 @@ export function AgentSelector(props: AgentSelectorProps) {
 
     if (nextIdx !== null) {
       props.onSelect(agents[nextIdx]);
-      btnRefs[nextIdx]?.focus();
+      btnRefs.get(agents[nextIdx].id)?.focus();
     }
   }
 
@@ -59,12 +72,12 @@ export function AgentSelector(props: AgentSelectorProps) {
           'padding-bottom': allowWrap() ? undefined : '2px',
         }}
       >
-        <For each={props.agents}>
+        <For each={supportedAgents()}>
           {(agent, i) => {
             const isSelected = () => props.selectedAgent?.id === agent.id;
             return (
               <button
-                ref={(el) => (btnRefs[i()] = el)}
+                ref={(el) => btnRefs.set(agent.id, el)}
                 type="button"
                 role="radio"
                 aria-checked={isSelected()}
@@ -110,6 +123,11 @@ export function AgentSelector(props: AgentSelectorProps) {
           }}
         </For>
       </div>
+      <Show when={supportedAgents().length < props.agents.length}>
+        <span style={{ 'font-size': '11px', color: theme.fgMuted }}>
+          Kimi Code is available in Docker mode only.
+        </span>
+      </Show>
     </div>
   );
 }

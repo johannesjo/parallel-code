@@ -863,6 +863,46 @@ describe('spawnAgent session reattach', () => {
   });
 });
 
+describe('Kimi Docker-only support', () => {
+  it.each(['kimi', '/opt/bin/kimi'])('rejects a native %s before spawning', (command) => {
+    expect(() =>
+      spawnAgent(createMockWindow(), buildSpawnArgs({ command, dockerMode: false })),
+    ).toThrow('Kimi Code requires Docker mode');
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+    expect(mockExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it('allows a Docker Kimi launch without a host Kimi installation', () => {
+    spawnAgent(createMockWindow(), buildSpawnArgs({ command: 'kimi' }));
+    expect(getLastSpawnCall().command).toBe('docker');
+    expect(getLastSpawnCall().args).toContain('kimi');
+    expect(mockExecFileSync).not.toHaveBeenCalledWith('which', ['kimi'], expect.anything());
+  });
+
+  it('does not kill an existing PTY when a native Kimi replacement is rejected', () => {
+    const win = createMockWindow();
+    const args = buildSpawnArgs();
+    spawnAgent(win, args);
+    const proc = mockPtySpawn.mock.results[0].value;
+    expect(() => spawnAgent(win, { ...args, command: 'kimi', dockerMode: false })).toThrow(
+      'Kimi Code requires Docker mode',
+    );
+    expect(proc.kill).not.toHaveBeenCalled();
+  });
+
+  it('reattaches before applying new-launch eligibility checks', () => {
+    const win = createMockWindow();
+    const args = buildSpawnArgs({ command: 'kimi' });
+    spawnAgent(win, args);
+    const proc = mockPtySpawn.mock.results[0].value;
+    expect(() =>
+      spawnAgent(win, { ...args, dockerMode: false, attachExisting: true }),
+    ).not.toThrow();
+    expect(mockPtySpawn).toHaveBeenCalledTimes(1);
+    expect(proc.resume).toHaveBeenCalled();
+  });
+});
+
 describe('validateCommand', () => {
   it('does not throw for a command found in PATH', () => {
     expect(() => validateCommand('/bin/sh')).not.toThrow();

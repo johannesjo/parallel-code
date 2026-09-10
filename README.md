@@ -129,6 +129,9 @@ pause on every new worktree instead of starting the task unattended.
 
 Use Docker-isolated Kimi tasks for now. The bundled image pins Kimi Code 0.32, before the
 workspace-trust gate. Native Kimi support is not currently claimed.
+Kimi is hidden from native task agent pickers, and native launches (including saved/custom
+`kimi` definitions) are rejected with an actionable Docker-mode error. Existing running
+terminals can still reattach after a renderer reload.
 
 </details>
 

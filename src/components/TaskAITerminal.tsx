@@ -1,4 +1,5 @@
 import { Show, For, createSignal, createEffect, onMount, onCleanup, untrack } from 'solid-js';
+import { isAgentSupportedInMode } from '../../electron/shared/agent-support';
 
 import {
   store,
@@ -440,7 +441,12 @@ function AddAgentMenu(props: { taskId: string }) {
   const [addingAgentId, setAddingAgentId] = createSignal<string | null>(null);
   let menuRef: HTMLSpanElement | undefined;
 
-  const availableAgents = () => store.availableAgents.filter((agent) => agent.available !== false);
+  const availableAgents = () =>
+    store.availableAgents.filter(
+      (agent) =>
+        agent.available !== false &&
+        isAgentSupportedInMode(agent.command, store.tasks[props.taskId]?.dockerMode),
+    );
 
   const handleClickOutside = (e: MouseEvent) => {
     if (menuRef && !menuRef.contains(e.target as Node)) setOpen(false);
@@ -839,6 +845,13 @@ function MarkdownViewerDialog(props: {
 function AgentRestartMenu(props: { agentId: string; agentDefId: string }) {
   const [showAgentMenu, setShowAgentMenu] = createSignal(false);
   let menuRef: HTMLSpanElement | undefined;
+  const availableAgents = () => {
+    const taskId = store.agents[props.agentId]?.taskId;
+    const dockerMode = taskId ? store.tasks[taskId]?.dockerMode : false;
+    return store.availableAgents.filter(
+      (agent) => agent.available !== false && isAgentSupportedInMode(agent.command, dockerMode),
+    );
+  };
 
   const handleClickOutside = (e: MouseEvent) => {
     if (menuRef && !menuRef.contains(e.target as Node)) {
@@ -911,7 +924,7 @@ function AgentRestartMenu(props: { agentId: string; agentDefId: string }) {
           >
             Restart with…
           </div>
-          <For each={store.availableAgents.filter((ag) => ag.available !== false)}>
+          <For each={availableAgents()}>
             {(agentDef) => (
               <button
                 title={agentDef.description}
