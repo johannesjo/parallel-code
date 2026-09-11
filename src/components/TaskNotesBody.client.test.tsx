@@ -59,9 +59,10 @@ describe('TaskNotesBody plan button', () => {
     const container = renderPlan({ ...task, notes: 'Keep this note.' }, onPlanFullscreen);
 
     expect(container.querySelector('textarea')?.value).toBe('Keep this note.');
+    // The overlay row reads left to right: send arrow, then the plan button.
     const buttons = Array.from(container.querySelectorAll('button'));
-    expect(buttons.map((button) => button.textContent?.trim())).toEqual(['Review Plan', '']);
-    buttons[0].click();
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual(['', 'Review Plan']);
+    container.querySelector<HTMLButtonElement>('.review-plan-btn')?.click();
     expect(onPlanFullscreen).toHaveBeenCalledOnce();
     expect(container.querySelector('.plan-markdown')).toBeNull();
   });

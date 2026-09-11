@@ -19,10 +19,25 @@ interface TaskNotesBodyProps {
   onPlanFullscreen: () => void;
 }
 
+/** Inset of the floating controls from the notes panel's bottom-right corner. */
+const OVERLAY_INSET = '6px';
+
+const overlayRowStyle: JSX.CSSProperties = {
+  position: 'absolute',
+  bottom: OVERLAY_INSET,
+  right: OVERLAY_INSET,
+  display: 'flex',
+  'align-items': 'center',
+  gap: '6px',
+  'z-index': '1',
+};
+
+// Opaque, so a long note runs behind the button rather than through it.
 const planButtonStyle: JSX.CSSProperties = {
-  padding: '4px 16px',
-  'font-size': sf(12),
+  padding: '4px 10px',
+  'font-size': sf(11),
   'font-family': "'JetBrains Mono', monospace",
+  'line-height': '1',
   background: `color-mix(in srgb, ${theme.accent} 12%, ${theme.bgInput})`,
   color: theme.fg,
   border: `1px solid color-mix(in srgb, ${theme.accent} 25%, ${theme.border})`,
@@ -77,21 +92,6 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
       }}
       onClick={() => setTaskFocusedPanel(props.task.id, 'notes')}
     >
-      <Show when={store.showPlans && props.task.planContent}>
-        <div style={{ padding: '4px 8px', 'flex-shrink': '0' }}>
-          <button
-            type="button"
-            class="btn-secondary review-plan-btn"
-            style={planButtonStyle}
-            title={props.task.planFileName ? `Review ${props.task.planFileName}` : 'Review plan'}
-            aria-haspopup="dialog"
-            onClick={() => props.onPlanFullscreen()}
-          >
-            Review Plan
-          </button>
-        </div>
-      </Show>
-
       <div
         style={{
           flex: '1',
@@ -120,42 +120,52 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
             outline: 'none',
           }}
         />
-        <button
-          class="send-notes-btn"
-          type="button"
-          disabled={!canSendNotes()}
-          onClick={() => void handleSendNotes()}
-          title="Send notes as a prompt to the agent"
-          aria-label="Send notes as a prompt to the agent"
-          style={{
-            position: 'absolute',
-            bottom: '6px',
-            right: '6px',
-            width: '22px',
-            height: '22px',
-            padding: '0',
-            display: 'flex',
-            'align-items': 'center',
-            'justify-content': 'center',
-            background: `color-mix(in srgb, ${theme.accent} 12%, ${theme.bgInput})`,
-            color: theme.fg,
-            border: `1px solid color-mix(in srgb, ${theme.accent} 25%, ${theme.border})`,
-            'border-radius': '50%',
-            cursor: canSendNotes() ? 'pointer' : 'default',
-            opacity: canSendNotes() ? '1' : '0.4',
-            'z-index': '1',
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-            <path
-              d="M7 2V12M7 12L3 8M7 12l4 -4"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
+        <div style={overlayRowStyle}>
+          <button
+            class="send-notes-btn"
+            type="button"
+            disabled={!canSendNotes()}
+            onClick={() => void handleSendNotes()}
+            title="Send notes as a prompt to the agent"
+            aria-label="Send notes as a prompt to the agent"
+            style={{
+              width: '22px',
+              height: '22px',
+              padding: '0',
+              display: 'flex',
+              'align-items': 'center',
+              'justify-content': 'center',
+              background: `color-mix(in srgb, ${theme.accent} 12%, ${theme.bgInput})`,
+              color: theme.fg,
+              border: `1px solid color-mix(in srgb, ${theme.accent} 25%, ${theme.border})`,
+              'border-radius': '50%',
+              cursor: canSendNotes() ? 'pointer' : 'default',
+              opacity: canSendNotes() ? '1' : '0.4',
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M7 2V12M7 12L3 8M7 12l4 -4"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <Show when={store.showPlans && props.task.planContent}>
+            <button
+              type="button"
+              class="btn-secondary review-plan-btn"
+              style={planButtonStyle}
+              title={props.task.planFileName ? `Review ${props.task.planFileName}` : 'Review plan'}
+              aria-haspopup="dialog"
+              onClick={() => props.onPlanFullscreen()}
+            >
+              Review Plan
+            </button>
+          </Show>
+        </div>
       </div>
     </div>
   );
