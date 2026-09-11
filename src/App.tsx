@@ -352,10 +352,7 @@ function App() {
     // Listen for plan content pushed from backend plan watcher
     const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
       if (!data || typeof data !== 'object') return;
-      const msg = data as Omit<PlanContentMessage, 'relativePath'> & {
-        relativePath?: string | null;
-      };
-      if (msg.taskId) applyPlanContent({ ...msg, relativePath: msg.relativePath ?? null });
+      applyPlanContent(data as PlanContentMessage);
     });
 
     const stopDocumentListeners = initDocumentListeners();

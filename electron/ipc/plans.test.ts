@@ -177,15 +177,32 @@ describe('root-level plan files', () => {
       () =>
         expect(send).toHaveBeenLastCalledWith(
           IPC.PlanContent,
-          expect.not.objectContaining({ recovered: true }),
+          expect.objectContaining({ relativePath: 'docs/plans/first.md' }),
         ),
       { timeout: 8_000 },
     );
     expect(send).toHaveBeenLastCalledWith(
       IPC.PlanContent,
-      expect.objectContaining({ relativePath: 'docs/plans/first.md' }),
+      expect.not.objectContaining({ recovered: true }),
     );
   });
+
+  // An agent that runs `mkdir -p docs/plans` a step before writing into it must
+  // not resurrect a leftover from `.claude/plans` in the meantime.
+  it('publishes nothing when a new plan directory only exposes an older plan', async () => {
+    writeFile('.gitignore', '.claude/\n');
+    writeFile('.claude/plans/leftover.md', '# Leftover');
+    const send = watchPlans();
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send).toHaveBeenLastCalledWith(
+      IPC.PlanContent,
+      expect.objectContaining({ relativePath: '.claude/plans/leftover.md', recovered: true }),
+    );
+
+    fs.mkdirSync(path.join(worktreePath, 'docs/plans'), { recursive: true });
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    expect(send).toHaveBeenCalledTimes(1);
+  }, 10_000);
 
   it.each(['.claude/plans/random-name.md', 'docs/plans/design.md'])(
     'still publishes changes in %s',

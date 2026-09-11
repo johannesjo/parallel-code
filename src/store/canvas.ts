@@ -1,3 +1,4 @@
+import { batch } from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
 import { isAgentHookEventPayload } from '../../electron/agent-hooks/status';
 import { isPlanApprovalEvent, nextCanvasOpen } from '../lib/canvas-auto-open';
@@ -92,45 +93,43 @@ export function closeTaskCanvas(taskId: string): void {
   void saveState();
 }
 
-/** A newly detected plan opens on the canvas for every agent. Repeated file
- * events leave the user's choice of open or closed canvas alone. */
-export function openArrivedPlan(taskId: string, previousPlanPath: string | undefined): void {
-  const task = store.tasks[taskId];
-  const planPath = task?.planPath;
-  if (!task || !planPath || planPath === previousPlanPath) return;
-  openCanvasDocument(taskId, planPath);
-}
-
 /** A plan publish from the backend watcher. */
 export interface PlanContentMessage {
   taskId: string;
   content: string | null;
   fileName: string | null;
-  relativePath: string | null;
-  /** The plan predates this watcher run: show it, but never open it by itself. */
+  relativePath?: string | null;
+  /** The plan was found already on disk rather than seen being written. */
   recovered?: boolean;
 }
 
-/** Applies a plan publish. The plan tab always follows the file on disk, but
- *  only a plan this run produced opens the canvas — a leftover from an earlier
- *  session would otherwise take the column on every agent spawn. */
+/**
+ * Applies a plan publish. The plan tab always follows the file on disk, but a
+ * plan only opens the canvas when this session was seen writing it, and then
+ * once per file so repeated edits leave the user's choice of tab alone.
+ *
+ * A recovered publish deliberately leaves `livePlanPath` untouched rather than
+ * clearing it: the watcher restarts on every agent spawn and republishes what
+ * it finds, which would otherwise demote the plan the agent just wrote.
+ */
 export function applyPlanContent(msg: PlanContentMessage): void {
   const task = store.tasks[msg.taskId];
   if (!task) return;
-  const previousPlanPath = task.planPath;
-  const live = Boolean(msg.relativePath) && !msg.recovered;
-  setPlanContent(msg.taskId, msg.content, msg.fileName, msg.relativePath);
-  setStore('tasks', msg.taskId, 'planLive', live || undefined);
-  if (live) openArrivedPlan(msg.taskId, previousPlanPath);
+  const path = msg.relativePath ?? null;
+  const opens = !msg.recovered && path !== null && path !== task.livePlanPath;
+  batch(() => {
+    setPlanContent(msg.taskId, msg.content, msg.fileName, path);
+    if (!msg.recovered) setStore('tasks', msg.taskId, 'livePlanPath', path ?? undefined);
+  });
+  if (opens && path) openCanvasDocument(msg.taskId, path);
 }
 
-/** Brings this run's plan back to the front when approval is asked for. A plan
- *  recovered from an earlier session is left alone: it is not what is being
- *  approved, and opening it is the wrong-file bug this guard exists to stop. */
+/** Brings this session's plan back to the front when approval is asked for. A
+ *  plan merely found on disk is left alone: it is not what is being approved,
+ *  and opening it is the wrong-file bug this guard exists to stop. */
 function openLivePlan(taskId: string): void {
-  const task = store.tasks[taskId];
-  if (!task?.planLive || !task.planPath) return;
-  openCanvasDocument(taskId, task.planPath);
+  const path = store.tasks[taskId]?.livePlanPath;
+  if (path) openCanvasDocument(taskId, path);
 }
 
 /**
