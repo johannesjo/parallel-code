@@ -1820,6 +1820,51 @@ describe('Coordinator land_self', () => {
     expect(coordinator.getTask('task-1')?.landingState).toBe('landing_escalated');
     const historyCall = mockExecFile.mock.calls.find(([, args]) => args[0] === 'log');
     expect(historyCall?.[1]).toEqual(expect.arrayContaining(['-m', '--text', '--no-textconv']));
+    expect(historyCall?.[1]).toContain(':(glob)**/.parallel-code-atomic-*.tmp');
+
+    // Exercise the production pathspec with real Git: a bare glob misses nested files.
+    const realFs = await vi.importActual<typeof import('fs')>('fs');
+    const realProcess = await vi.importActual<typeof import('child_process')>('child_process');
+    const repo = realFs.mkdtempSync(join(os.tmpdir(), 'kimi-token-history-'));
+    try {
+      realProcess.execFileSync('git', ['init', '-q', repo]);
+      realFs.mkdirSync(join(repo, '.kimi-code'));
+      realFs.writeFileSync(join(repo, '.parallel-code-atomic-root.tmp'), 'synthetic-root-token');
+      realFs.writeFileSync(
+        join(repo, '.kimi-code/.parallel-code-atomic-child.tmp'),
+        'synthetic-child-token',
+      );
+      realProcess.execFileSync('git', ['add', '-f', '.'], { cwd: repo });
+      realProcess.execFileSync(
+        'git',
+        [
+          '-c',
+          'user.name=Test',
+          '-c',
+          'user.email=test@example.com',
+          '-c',
+          'commit.gpgsign=false',
+          'commit',
+          '-qm',
+          'fixture',
+        ],
+        { cwd: repo },
+      );
+      if (!historyCall) throw new Error('Expected a production Git history query');
+      const args = [...historyCall[1]];
+      args[1] = 'HEAD';
+      const history = realProcess.execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
+      expect(history).toContain('synthetic-root-token');
+      expect(history).toContain('synthetic-child-token');
+      const oldHistory = realProcess.execFileSync(
+        'git',
+        args.filter((arg) => arg !== ':(glob)**/.parallel-code-atomic-*.tmp'),
+        { cwd: repo, encoding: 'utf8' },
+      );
+      expect(oldHistory).toBe('');
+    } finally {
+      realFs.rmSync(repo, { recursive: true, force: true });
+    }
   });
 
   it('fails closed before self-landing when Kimi MCP restoration fingerprint mismatches', async () => {

@@ -2052,6 +2052,7 @@ export class Coordinator {
         '--',
         '.mcp.json',
         '.kimi-code/mcp.json',
+        ':(glob)**/.parallel-code-atomic-*.tmp',
       ],
       { cwd: task.worktreePath, maxBuffer: 8 * 1024 * 1024 },
     );

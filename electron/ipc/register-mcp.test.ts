@@ -13,12 +13,15 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
+import * as atomic from '../mcp/atomic.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildCoordinatorMCPConfig,
   getDockerMcpServerDestPath,
   selectMcpJsonDir,
   validateStartMCPServerArgs,
+  writeCoordinatorMcpJson,
 } from './register.js';
 import { getMCPRemoteServerUrl } from '../mcp/config.js';
 import { startRemoteServer } from '../remote/server.js';
@@ -48,6 +51,42 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Layer 3: Spawn-path integration
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe('coordinator MCP Git exclusions', () => {
+  it('installs both exclusions before the atomic writer, including on an existing config', () => {
+    const dir = mkTemp();
+    execFileSync('git', ['init', '-q', dir]);
+    fs.writeFileSync(path.join(dir, '.git/info/exclude'), '.mcp.json\n');
+    const actualWrite = atomic.atomicWriteFileSync;
+    const write = vi.spyOn(atomic, 'atomicWriteFileSync').mockImplementation((file, data, opts) => {
+      for (const name of ['.mcp.json', '.parallel-code-atomic-probe.tmp']) {
+        expect(
+          execFileSync('git', ['check-ignore', name], { cwd: dir, encoding: 'utf8' }).trim(),
+        ).toBe(name);
+      }
+      actualWrite(file, data, opts);
+    });
+    const target = path.join(dir, '.mcp.json');
+    writeCoordinatorMcpJson(target, '{"mcpServers":{}}');
+    expect(write).toHaveBeenCalledOnce();
+    expect(fs.readFileSync(target, 'utf8')).toBe('{"mcpServers":{}}');
+    expect(fs.statSync(target).mode & 0o777).toBe(0o600);
+  });
+
+  it('keeps a crash-left temporary file ignored when the atomic write fails', () => {
+    const dir = mkTemp();
+    execFileSync('git', ['init', '-q', dir]);
+    vi.spyOn(atomic, 'atomicWriteFileSync').mockImplementation(() => {
+      fs.writeFileSync(path.join(dir, '.parallel-code-atomic-crash.tmp'), 'synthetic-token');
+      throw new Error('simulated crash before rename');
+    });
+    expect(() => writeCoordinatorMcpJson(path.join(dir, '.mcp.json'), '{}')).toThrow(
+      'simulated crash before rename',
+    );
+    expect(execFileSync('git', ['status', '--porcelain'], { cwd: dir, encoding: 'utf8' })).toBe('');
+    expect(fs.existsSync(path.join(dir, '.parallel-code-atomic-crash.tmp'))).toBe(true);
+  });
+});
 
 describe('Layer 3 — MCP startup pipeline (no Electron, real FS)', () => {
   it('generated .mcp.json in worktree matches production structure', () => {
