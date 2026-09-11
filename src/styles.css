@@ -247,7 +247,8 @@ body.font-smoothing {
   flex: 0 0 auto;
 }
 
-.task-branch-source-compact-label {
+.task-branch-source-compact-label,
+.task-branch-project-compact-label {
   display: none;
   flex: 0 0 auto;
 }
@@ -286,9 +287,15 @@ body.font-smoothing {
   }
 }
 
+/* The project never collapses away entirely: a task's branch name alone is
+   ambiguous across projects, so the name shrinks to its initials instead. */
 @container task-branch-info (max-width: 480px) {
-  .task-branch-project {
+  .task-branch-project-label {
     display: none;
+  }
+
+  .task-branch-project-compact-label {
+    display: inline;
   }
 }
 

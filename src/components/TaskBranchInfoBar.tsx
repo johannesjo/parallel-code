@@ -15,6 +15,7 @@ import { theme } from '../lib/theme';
 import { isMac } from '../lib/platform';
 import { parseGitHubUrl } from '../lib/github-url';
 import { abbreviateHomePath } from '../lib/path';
+import { projectInitials } from '../lib/project-initials';
 import type { Task } from '../store/types';
 import { AlertIcon, CheckIcon, PencilIcon, PersonIcon } from './icons';
 
@@ -149,7 +150,8 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
                 type="button"
                 class="task-branch-info-button task-branch-project"
                 onClick={() => props.onEditProject(p().id)}
-                title="Project settings"
+                title={`${p().name} · Project settings`}
+                aria-label={`Project: ${p().name} · Project settings`}
                 style={{ ...infoBarBtnStyle, margin: '0 8px 0 0' }}
               >
                 <div
@@ -162,6 +164,9 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
                   }}
                 />
                 <span class="task-branch-project-label">{p().name}</span>
+                <span class="task-branch-project-compact-label" aria-hidden="true">
+                  {projectInitials(p().name)}
+                </span>
               </button>
             )}
           </Show>
