@@ -132,18 +132,17 @@ describe('TaskBranchInfoBar source link', () => {
 
 describe('TaskBranchInfoBar project chip', () => {
   it('renders the full name and its initials so the narrow layout can swap them', () => {
-    vi.mocked(getProject).mockReturnValueOnce({
+    vi.mocked(getProject).mockReturnValue({
       id: 'project-1',
       name: 'parallel-code',
       path: '/repo',
       color: 'hsl(210, 70%, 75%)',
-    });
+    } as never);
 
     const html = renderToString(() => TaskBranchInfoBar({ task, onEditProject: vi.fn() }));
 
-    // The project mark is a square: the circle belongs to the status dot one
-    // line above it in the task header.
-    expect(html).toContain('class="project-swatch"');
+    expect(html).not.toContain('class="project-swatch"');
+    expect(html).toContain('border-left:3px solid hsl(210, 70%, 75%)');
     expect(html).toContain('class="task-branch-project-label">parallel-code</span>');
     expect(html).toContain('class="task-branch-project-compact-label"');
     expect(html).toContain('>PC</span>');

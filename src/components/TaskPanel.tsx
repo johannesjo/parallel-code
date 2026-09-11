@@ -526,6 +526,7 @@ export function TaskPanel(props: TaskPanelProps) {
         background: theme.taskContainerBg,
         'border-radius': 'var(--radius-lg)',
         border: `1px solid ${theme.border}`,
+        'border-left': `3px solid ${getProject(props.task.projectId)?.color ?? theme.border}`,
         overflow: 'clip',
         position: 'relative',
       }}
