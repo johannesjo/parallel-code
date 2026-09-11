@@ -193,6 +193,9 @@ export interface Task {
   planFileName?: string;
   /** Worktree-relative path of the plan file, for opening it on the canvas. Not persisted. */
   planPath?: string;
+  /** Path of the plan this session was seen writing, as opposed to one found
+   *  already on disk. Only this opens the canvas by itself. Not persisted. */
+  livePlanPath?: string;
   /** What is open in the task's canvas column, one tab each, in strip order. */
   canvasTabs?: CanvasTab[];
   /** Key (see canvasTabKey) of the tab in front. */

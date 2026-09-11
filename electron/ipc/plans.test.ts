@@ -144,6 +144,66 @@ describe('root-level plan files', () => {
     );
   });
 
+  it('marks a plan found at startup as recovered, and a later write as live', async () => {
+    writeFile('.gitignore', '.claude/\n');
+    writeFile('.claude/plans/leftover.md', '# Leftover');
+    const send = watchPlans();
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenLastCalledWith(
+        IPC.PlanContent,
+        expect.objectContaining({ relativePath: '.claude/plans/leftover.md', recovered: true }),
+      ),
+    );
+
+    writeFile('.claude/plans/fresh.md');
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenLastCalledWith(
+        IPC.PlanContent,
+        expect.not.objectContaining({ recovered: true }),
+      ),
+    );
+    expect(send).toHaveBeenLastCalledWith(
+      IPC.PlanContent,
+      expect.objectContaining({ relativePath: '.claude/plans/fresh.md' }),
+    );
+  });
+
+  // A plan directory the agent creates mid-run is how an agent without hooks
+  // (Codex) delivers its first plan, so the attach publish stays live.
+  it('publishes a plan in a directory that only appears later as live', async () => {
+    const send = watchPlans();
+    writeFile('docs/plans/first.md');
+    await vi.waitFor(
+      () =>
+        expect(send).toHaveBeenLastCalledWith(
+          IPC.PlanContent,
+          expect.objectContaining({ relativePath: 'docs/plans/first.md' }),
+        ),
+      { timeout: 8_000 },
+    );
+    expect(send).toHaveBeenLastCalledWith(
+      IPC.PlanContent,
+      expect.not.objectContaining({ recovered: true }),
+    );
+  });
+
+  // An agent that runs `mkdir -p docs/plans` a step before writing into it must
+  // not resurrect a leftover from `.claude/plans` in the meantime.
+  it('publishes nothing when a new plan directory only exposes an older plan', async () => {
+    writeFile('.gitignore', '.claude/\n');
+    writeFile('.claude/plans/leftover.md', '# Leftover');
+    const send = watchPlans();
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send).toHaveBeenLastCalledWith(
+      IPC.PlanContent,
+      expect.objectContaining({ relativePath: '.claude/plans/leftover.md', recovered: true }),
+    );
+
+    fs.mkdirSync(path.join(worktreePath, 'docs/plans'), { recursive: true });
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    expect(send).toHaveBeenCalledTimes(1);
+  }, 10_000);
+
   it.each(['.claude/plans/random-name.md', 'docs/plans/design.md'])(
     'still publishes changes in %s',
     async (relativePath) => {

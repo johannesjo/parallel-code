@@ -180,11 +180,24 @@ async function readUncommittedPlan(
   return readNewestPlanFromDirs(worktreePath, plansDirs, changedPaths);
 }
 
+/** One plan publish to the renderer. */
+interface PlanPublish {
+  win: BrowserWindow;
+  taskId: string;
+  plan: PlanFile | null;
+  /** The plan was found already on disk rather than seen being written. The
+   *  renderer shows it but must not open the canvas for it, or a leftover from
+   *  an earlier session hijacks the column. Never `false`: an absent key and an
+   *  undefined one both read as live, and only an explicit `false` would
+   *  disturb the exact-payload assertions in the tests. */
+  recovered?: true;
+}
+
 /** Sends plan content for a task to the renderer. */
-function sendPlanContent(win: BrowserWindow, taskId: string, result: PlanFile | null): void {
+function sendPlanContent({ win, taskId, plan, recovered }: PlanPublish): void {
   if (win.isDestroyed()) return;
-  if (result) {
-    win.webContents.send(IPC.PlanContent, { taskId, ...result });
+  if (plan) {
+    win.webContents.send(IPC.PlanContent, { taskId, ...plan, recovered });
   } else {
     win.webContents.send(IPC.PlanContent, {
       taskId,
@@ -193,6 +206,17 @@ function sendPlanContent(win: BrowserWindow, taskId: string, result: PlanFile | 
       relativePath: null,
     });
   }
+}
+
+/** Does this plan sit directly inside one of these directories? */
+function isPlanInDirs(
+  worktreePath: string,
+  dirs: readonly string[],
+  plan: PlanFile | null,
+): boolean {
+  if (!plan) return false;
+  const planDir = path.resolve(path.dirname(path.join(worktreePath, plan.relativePath)));
+  return dirs.some((dir) => path.resolve(dir) === planDir);
 }
 
 /** Start watching a single directory. Returns the watcher or null on failure. */
@@ -212,14 +236,18 @@ function watchDir(worktreePath: string, dir: string, onChange: () => void): fs.F
 }
 
 /** Poll for plan directories that don't exist yet; start watching them when they appear. */
-function startDirPolling(taskId: string, entry: PlanWatcher, onChange: () => void): void {
+function startDirPolling(
+  taskId: string,
+  entry: PlanWatcher,
+  onChange: (attached?: readonly string[]) => void,
+): void {
   if (entry.watchedDirs.size === entry.plansDirs.length) return;
 
   entry.pollTimer = setInterval(() => {
     const current = watchers.get(taskId);
     if (!current) return;
 
-    let added = false;
+    const attached: string[] = [];
     for (const dir of current.plansDirs) {
       if (current.watchedDirs.has(dir)) continue;
       if (!fs.existsSync(dir)) continue;
@@ -227,11 +255,11 @@ function startDirPolling(taskId: string, entry: PlanWatcher, onChange: () => voi
       if (watcher) {
         current.fsWatchers.push(watcher);
         current.watchedDirs.add(dir);
-        added = true;
+        attached.push(dir);
       }
     }
 
-    if (added) onChange();
+    if (attached.length > 0) onChange(attached);
 
     if (current.watchedDirs.size === current.plansDirs.length && current.pollTimer) {
       clearInterval(current.pollTimer);
@@ -247,6 +275,8 @@ function startDirPolling(taskId: string, entry: PlanWatcher, onChange: () => voi
  * as soon as they appear (e.g. when an agent creates `docs/plans/`).
  * On change (debounced 200ms), reads the newest `.md` file by mtime
  * across all directories and sends it to the renderer via IPC.PlanContent.
+ * The plan found on disk at startup is marked `recovered` so the renderer
+ * shows it without opening the canvas.
  */
 export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePath: string): void {
   stopPlanWatcher(taskId);
@@ -265,14 +295,27 @@ export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePat
   };
 
   let changedSinceStart = false;
-  const onChange = () => {
+  let sawWrite = false;
+  let attachedDirs: string[] = [];
+  const onChange = (attached?: readonly string[]) => {
     changedSinceStart = true;
+    if (attached) attachedDirs.push(...attached);
+    else sawWrite = true;
     const current = watchers.get(taskId);
     if (!current) return;
     if (current.timeout) clearTimeout(current.timeout);
     current.timeout = setTimeout(() => {
       current.timeout = null;
-      sendPlanContent(win, taskId, readNewestPlanFromDirs(current.worktreePath, current.plansDirs));
+      const plan = readNewestPlanFromDirs(current.worktreePath, current.plansDirs);
+      const fromAttachOnly = !sawWrite;
+      const dirs = attachedDirs;
+      sawWrite = false;
+      attachedDirs = [];
+      // A plan directory that only just appeared can hold plans from earlier
+      // sessions, and the agent may have created it a step before writing into
+      // it. Only a plan actually inside it is news; anything else is already out.
+      if (fromAttachOnly && !isPlanInDirs(current.worktreePath, dirs, plan)) return;
+      sendPlanContent({ win, taskId, plan });
     }, 200);
   };
 
@@ -291,7 +334,7 @@ export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePat
     .then((plan) => {
       // A live event or a replacement watcher takes precedence over this startup read.
       if (plan && watchers.get(taskId) === entry && !changedSinceStart)
-        sendPlanContent(win, taskId, plan);
+        sendPlanContent({ win, taskId, plan, recovered: true });
     })
     .catch((error: unknown) => console.warn('[plans] Failed to recover existing plan:', error));
 }

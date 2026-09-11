@@ -9,12 +9,11 @@ import {
   activateCanvasTab,
   closeCanvasTab,
   closeTaskCanvas,
-  openArrivedPlan,
+  applyPlanContent,
   openCanvasDocument,
   openTaskCanvas,
   startCanvasAutoOpen,
 } from './canvas';
-import { setPlanContent } from './tasks';
 import { deletePanelUserSize, getPanelUserSize, setPanelUserSize } from './ui';
 import type { Agent, Task } from './types';
 
@@ -87,6 +86,7 @@ afterEach(() => {
     canvasActiveTab: undefined,
     canvasOpen: undefined,
     planPath: undefined,
+    livePlanPath: undefined,
   });
   setStore(
     'agents',
@@ -106,33 +106,94 @@ function fire(payload: Record<string, unknown>): void {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-describe('startCanvasAutoOpen with plans', () => {
-  it('opens the newest plan on the canvas when Claude asks for approval', async () => {
-    vi.mocked(invoke).mockResolvedValue({
-      content: '# Plan',
-      fileName: 'p.md',
-      relativePath: '.claude/plans/p.md',
-    });
+const publish = (relativePath: string | null, recovered?: boolean) =>
+  applyPlanContent({
+    taskId: 'task-1',
+    content: relativePath && '# Plan',
+    fileName: relativePath?.split('/').at(-1) ?? null,
+    relativePath,
+    recovered,
+  });
+
+describe('applyPlanContent', () => {
+  it('opens a plan this session wrote', () => {
+    publish('.claude/plans/p.md');
+    expect(activePath()).toBe('.claude/plans/p.md');
+    expect(store.tasks['task-1'].planContent).toBe('# Plan');
+  });
+
+  it('shows a plan found on disk in the plan tab without taking the canvas', () => {
+    publish('.claude/plans/old.md', true);
+    expect(store.tasks['task-1'].planContent).toBe('# Plan');
+    expect(store.tasks['task-1'].planPath).toBe('.claude/plans/old.md');
+    expect(openPaths()).toBeUndefined();
+  });
+
+  // The watcher restarts on every agent spawn and republishes what it finds.
+  it('keeps a plan it already opened current when the watcher rediscovers it', () => {
+    publish('.claude/plans/p.md');
+    closeCanvasTab('task-1', 'markdown:.claude/plans/p.md');
+    publish('.claude/plans/p.md', true);
+
     fire({ event: 'PreToolUse', state: 'waiting', toolName: 'ExitPlanMode', prompt: 'permission' });
-    await flush();
-    expect(vi.mocked(invoke)).toHaveBeenCalledWith(IPC.ReadPlanContent, {
-      worktreePath: '/tmp/task',
-    });
     expect(activePath()).toBe('.claude/plans/p.md');
   });
 
-  it('adds the plan in front of a file the user had open, and does nothing without a plan', async () => {
-    openCanvasDocument('task-1', 'docs/a.md');
-    vi.mocked(invoke).mockResolvedValue(null);
-    fire({ event: 'PreToolUse', state: 'waiting', toolName: 'ExitPlanMode', prompt: 'permission' });
-    await flush();
-    expect(openPaths()).toEqual(['docs/a.md']);
+  // A resumed task already has the plan file on disk before the agent edits it.
+  it('opens a rediscovered plan once the agent writes to it', () => {
+    publish('docs/plans/resumed.md', true);
+    expect(openPaths()).toBeUndefined();
 
-    vi.mocked(invoke).mockResolvedValue({ relativePath: 'docs/plans/x.md' });
+    publish('docs/plans/resumed.md');
+    expect(activePath()).toBe('docs/plans/resumed.md');
+  });
+
+  it('opens each plan once, so later edits leave the open tab alone', () => {
+    publish('docs/plans/codex.md');
+    closeCanvasTab('task-1', 'markdown:docs/plans/codex.md');
+    publish('docs/plans/codex.md');
+    expect(openPaths()).toBeUndefined();
+
+    publish('docs/plans/second.md');
+    expect(activePath()).toBe('docs/plans/second.md');
+  });
+
+  it('clears the plan when its file is deleted, and opens nothing afterwards', () => {
+    publish('.claude/plans/p.md');
+    publish(null);
+    expect(store.tasks['task-1'].planContent).toBeUndefined();
+    expect(store.tasks['task-1'].livePlanPath).toBeUndefined();
+
+    fire({ event: 'PreToolUse', state: 'waiting', toolName: 'ExitPlanMode', prompt: 'permission' });
+    expect(openPaths()).toEqual(['.claude/plans/p.md']);
+  });
+});
+
+describe('startCanvasAutoOpen with plans', () => {
+  it('brings the current plan back to the front when Claude asks for approval', async () => {
+    publish('.claude/plans/p.md');
+    openCanvasDocument('task-1', 'docs/a.md');
+    expect(activePath()).toBe('docs/a.md');
+
     fire({ event: 'PreToolUse', state: 'waiting', toolName: 'ExitPlanMode', prompt: 'permission' });
     await flush();
-    expect(openPaths()).toEqual(['docs/a.md', 'docs/plans/x.md']);
-    expect(activePath()).toBe('docs/plans/x.md');
+    expect(openPaths()).toEqual(['.claude/plans/p.md', 'docs/a.md']);
+    expect(activePath()).toBe('.claude/plans/p.md');
+  });
+
+  it('never opens a plan only found on disk, and never looks one up itself', async () => {
+    publish('.claude/plans/leftover.md', true);
+    fire({ event: 'PreToolUse', state: 'waiting', toolName: 'ExitPlanMode', prompt: 'permission' });
+    await flush();
+    expect(openPaths()).toBeUndefined();
+    expect(vi.mocked(invoke)).not.toHaveBeenCalled();
+  });
+
+  it('does nothing on approval when no plan has arrived', async () => {
+    fire({ event: 'PreToolUse', state: 'waiting', toolName: 'ExitPlanMode', prompt: 'permission' });
+    await flush();
+    expect(openPaths()).toBeUndefined();
+    expect(vi.mocked(invoke)).not.toHaveBeenCalled();
   });
 
   it('leaves other tool prompts alone', async () => {
@@ -143,44 +204,31 @@ describe('startCanvasAutoOpen with plans', () => {
   });
 });
 
-describe('openArrivedPlan', () => {
-  function planArrives(relativePath: string) {
-    const previous = store.tasks['task-1'].planPath;
-    setPlanContent('task-1', '# Plan', relativePath.split('/').pop() ?? '', relativePath);
-    openArrivedPlan('task-1', previous);
-  }
-
-  it("opens a Codex task's plan when its file appears, once per file", () => {
+describe('plans arriving from the watcher', () => {
+  it("opens a Codex task's plan when its file appears", () => {
     setStore('agents', 'agent-1', agentFor('/usr/local/bin/codex'));
-    planArrives('docs/plans/codex.md');
+    publish('docs/plans/codex.md');
     expect(activePath()).toBe('docs/plans/codex.md');
-
-    closeCanvasTab('task-1', 'markdown:docs/plans/codex.md');
-    planArrives('docs/plans/codex.md');
-    expect(openPaths()).toBeUndefined();
-
-    planArrives('docs/plans/second.md');
-    expect(activePath()).toBe('docs/plans/second.md');
   });
 
   it.each(['claude', 'codex'])(
     'opens a root plan written by %s without an approval hook',
     (command) => {
       setStore('agents', 'agent-1', agentFor(command));
-      planArrives('example-plan.md');
+      publish('example-plan.md');
       expect(activePath()).toBe('example-plan.md');
 
       closeTaskCanvas('task-1');
-      planArrives('example-plan.md');
+      publish('example-plan.md');
       expect(openPaths()).toBeUndefined();
     },
   );
 
   it('opens a Claude plan on arrival, even before its agent is restored', () => {
-    planArrives('.claude/plans/early.md');
+    publish('.claude/plans/early.md');
     expect(activePath()).toBe('.claude/plans/early.md');
     setStore('agents', 'agent-1', agentFor('claude'));
-    planArrives('.claude/plans/c.md');
+    publish('.claude/plans/c.md');
     expect(activePath()).toBe('.claude/plans/c.md');
   });
 });

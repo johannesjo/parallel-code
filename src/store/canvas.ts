@@ -1,6 +1,6 @@
+import { batch } from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
 import { isAgentHookEventPayload } from '../../electron/agent-hooks/status';
-import { invoke } from '../lib/ipc';
 import { isPlanApprovalEvent, nextCanvasOpen } from '../lib/canvas-auto-open';
 import { canvasTabKey, isTaskCanvasVisible, withTab, withoutTab } from '../lib/canvas-tabs';
 import {
@@ -9,6 +9,7 @@ import {
   TASK_TILE_MIN_WIDTH,
 } from '../lib/layout-sizes';
 import { store, setStore } from './core';
+import { setPlanContent } from './tasks';
 import { saveState } from './persistence';
 import { getPanelUserSize, setPanelUserSize } from './ui';
 import type { CanvasTab, Task } from './types';
@@ -92,29 +93,50 @@ export function closeTaskCanvas(taskId: string): void {
   void saveState();
 }
 
-/** A newly detected plan opens on the canvas for every agent. Repeated file
- * events leave the user's choice of open or closed canvas alone. */
-export function openArrivedPlan(taskId: string, previousPlanPath: string | undefined): void {
-  const task = store.tasks[taskId];
-  const planPath = task?.planPath;
-  if (!task || !planPath || planPath === previousPlanPath) return;
-  openCanvasDocument(taskId, planPath);
+/** A plan publish from the backend watcher. */
+export interface PlanContentMessage {
+  taskId: string;
+  content: string | null;
+  fileName: string | null;
+  relativePath?: string | null;
+  /** The plan was found already on disk rather than seen being written. */
+  recovered?: boolean;
 }
 
-/** Puts the task's newest plan on the canvas; the plan watcher may not have
- *  reported it yet, so it is looked up rather than read from the store. */
-async function openNewestPlan(task: Task): Promise<void> {
-  const plan = await invoke<{ relativePath?: string } | null>(IPC.ReadPlanContent, {
-    worktreePath: task.worktreePath,
+/**
+ * Applies a plan publish. The plan tab always follows the file on disk, but a
+ * plan only opens the canvas when this session was seen writing it, and then
+ * once per file so repeated edits leave the user's choice of tab alone.
+ *
+ * A recovered publish deliberately leaves `livePlanPath` untouched rather than
+ * clearing it: the watcher restarts on every agent spawn and republishes what
+ * it finds, which would otherwise demote the plan the agent just wrote.
+ */
+export function applyPlanContent(msg: PlanContentMessage): void {
+  const task = store.tasks[msg.taskId];
+  if (!task) return;
+  const path = msg.relativePath ?? null;
+  const opens = !msg.recovered && path !== null && path !== task.livePlanPath;
+  batch(() => {
+    setPlanContent(msg.taskId, msg.content, msg.fileName, path);
+    if (!msg.recovered) setStore('tasks', msg.taskId, 'livePlanPath', path ?? undefined);
   });
-  if (plan?.relativePath && store.tasks[task.id]) openCanvasDocument(task.id, plan.relativePath);
+  if (opens && path) openCanvasDocument(msg.taskId, path);
+}
+
+/** Brings this session's plan back to the front when approval is asked for. A
+ *  plan merely found on disk is left alone: it is not what is being approved,
+ *  and opening it is the wrong-file bug this guard exists to stop. */
+function openLivePlan(taskId: string): void {
+  const path = store.tasks[taskId]?.livePlanPath;
+  if (path) openCanvasDocument(taskId, path);
 }
 
 /**
  * Puts the Markdown file an agent just wrote on its task's canvas, when
  * nothing is open there. Tabs the user has stay; they can switch by hand.
- * A plan waiting for approval always opens: that is what the canvas is for.
- * Returns the unsubscribe.
+ * A plan waiting for approval comes back to the front, provided this run is
+ * what produced it. Returns the unsubscribe.
  */
 export function startCanvasAutoOpen(): () => void {
   const pending = new Map<string, string>();
@@ -123,7 +145,7 @@ export function startCanvasAutoOpen(): () => void {
     const task = store.tasks[data.taskId];
     if (!task?.worktreePath) return;
     if (isPlanApprovalEvent(data)) {
-      void openNewestPlan(task).catch((e) => console.warn('[canvas] plan did not open:', e));
+      openLivePlan(data.taskId);
       return;
     }
     const opened = nextCanvasOpen(pending, data, task.worktreePath);
