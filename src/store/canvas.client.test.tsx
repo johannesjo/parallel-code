@@ -9,6 +9,7 @@ import {
   activateCanvasTab,
   closeCanvasTab,
   closeTaskCanvas,
+  applyPlanContent,
   openArrivedPlan,
   openCanvasDocument,
   openTaskCanvas,
@@ -87,6 +88,7 @@ afterEach(() => {
     canvasActiveTab: undefined,
     canvasOpen: undefined,
     planPath: undefined,
+    planLive: undefined,
   });
   setStore(
     'agents',
@@ -106,33 +108,61 @@ function fire(payload: Record<string, unknown>): void {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+const publish = (relativePath: string | null, recovered?: boolean) =>
+  applyPlanContent({
+    taskId: 'task-1',
+    content: relativePath && '# Plan',
+    fileName: relativePath?.split('/').at(-1) ?? null,
+    relativePath,
+    recovered,
+  });
+
+describe('applyPlanContent', () => {
+  it('opens a plan this run produced', () => {
+    publish('.claude/plans/p.md');
+    expect(activePath()).toBe('.claude/plans/p.md');
+    expect(store.tasks['task-1'].planContent).toBe('# Plan');
+  });
+
+  it('shows a recovered plan in the plan tab without taking the canvas', () => {
+    publish('.claude/plans/old.md', true);
+    expect(store.tasks['task-1'].planContent).toBe('# Plan');
+    expect(store.tasks['task-1'].planPath).toBe('.claude/plans/old.md');
+    expect(openPaths()).toBeUndefined();
+  });
+
+  it('stops treating a plan as current once it is republished as recovered', () => {
+    publish('.claude/plans/p.md');
+    publish('.claude/plans/p.md', true);
+    expect(store.tasks['task-1'].planLive).toBeUndefined();
+  });
+});
+
 describe('startCanvasAutoOpen with plans', () => {
-  it('opens the newest plan on the canvas when Claude asks for approval', async () => {
-    vi.mocked(invoke).mockResolvedValue({
-      content: '# Plan',
-      fileName: 'p.md',
-      relativePath: '.claude/plans/p.md',
-    });
+  it('brings the current plan back to the front when Claude asks for approval', async () => {
+    publish('.claude/plans/p.md');
+    openCanvasDocument('task-1', 'docs/a.md');
+    expect(activePath()).toBe('docs/a.md');
+
     fire({ event: 'PreToolUse', state: 'waiting', toolName: 'ExitPlanMode', prompt: 'permission' });
     await flush();
-    expect(vi.mocked(invoke)).toHaveBeenCalledWith(IPC.ReadPlanContent, {
-      worktreePath: '/tmp/task',
-    });
+    expect(openPaths()).toEqual(['.claude/plans/p.md', 'docs/a.md']);
     expect(activePath()).toBe('.claude/plans/p.md');
   });
 
-  it('adds the plan in front of a file the user had open, and does nothing without a plan', async () => {
-    openCanvasDocument('task-1', 'docs/a.md');
-    vi.mocked(invoke).mockResolvedValue(null);
+  it('never opens a recovered plan on approval, and never looks one up on disk', async () => {
+    publish('.claude/plans/leftover.md', true);
     fire({ event: 'PreToolUse', state: 'waiting', toolName: 'ExitPlanMode', prompt: 'permission' });
     await flush();
-    expect(openPaths()).toEqual(['docs/a.md']);
+    expect(openPaths()).toBeUndefined();
+    expect(vi.mocked(invoke)).not.toHaveBeenCalled();
+  });
 
-    vi.mocked(invoke).mockResolvedValue({ relativePath: 'docs/plans/x.md' });
+  it('does nothing on approval when no plan has arrived', async () => {
     fire({ event: 'PreToolUse', state: 'waiting', toolName: 'ExitPlanMode', prompt: 'permission' });
     await flush();
-    expect(openPaths()).toEqual(['docs/a.md', 'docs/plans/x.md']);
-    expect(activePath()).toBe('docs/plans/x.md');
+    expect(openPaths()).toBeUndefined();
+    expect(vi.mocked(invoke)).not.toHaveBeenCalled();
   });
 
   it('leaves other tool prompts alone', async () => {

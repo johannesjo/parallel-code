@@ -104,7 +104,8 @@ import { startUpdateSubscription } from './store/updates';
 import { startRemoteTaskHandlers } from './store/remoteTaskHandler';
 import { startRemoteStatusSync } from './store/remoteStatusSync';
 import { startAgentHookStatusListener } from './store/agentHookStatus';
-import { openArrivedPlan, startCanvasAutoOpen } from './store/canvas';
+import { applyPlanContent, startCanvasAutoOpen } from './store/canvas';
+import type { PlanContentMessage } from './store/canvas';
 
 const MIN_WINDOW_DIMENSION = 100;
 
@@ -351,17 +352,10 @@ function App() {
     // Listen for plan content pushed from backend plan watcher
     const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
       if (!data || typeof data !== 'object') return;
-      const msg = data as {
-        taskId: string;
-        content: string | null;
-        fileName: string | null;
+      const msg = data as Omit<PlanContentMessage, 'relativePath'> & {
         relativePath?: string | null;
       };
-      if (msg.taskId && store.tasks[msg.taskId]) {
-        const previousPlanPath = store.tasks[msg.taskId].planPath;
-        setPlanContent(msg.taskId, msg.content, msg.fileName, msg.relativePath ?? null);
-        openArrivedPlan(msg.taskId, previousPlanPath);
-      }
+      if (msg.taskId) applyPlanContent({ ...msg, relativePath: msg.relativePath ?? null });
     });
 
     const stopDocumentListeners = initDocumentListeners();

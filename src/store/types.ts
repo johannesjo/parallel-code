@@ -193,6 +193,9 @@ export interface Task {
   planFileName?: string;
   /** Worktree-relative path of the plan file, for opening it on the canvas. Not persisted. */
   planPath?: string;
+  /** The plan above was written while this watcher run was watching, so it is
+   *  this run's plan rather than a leftover recovered at startup. Not persisted. */
+  planLive?: boolean;
   /** What is open in the task's canvas column, one tab each, in strip order. */
   canvasTabs?: CanvasTab[];
   /** Key (see canvasTabKey) of the tab in front. */

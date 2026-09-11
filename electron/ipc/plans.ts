@@ -180,11 +180,23 @@ async function readUncommittedPlan(
   return readNewestPlanFromDirs(worktreePath, plansDirs, changedPaths);
 }
 
+/** One plan publish to the renderer. */
+interface PlanPublish {
+  win: BrowserWindow;
+  taskId: string;
+  plan: PlanFile | null;
+  /** The plan predates this watcher run, so it is not what the agent is
+   *  working on now. The renderer shows it but must not open the canvas for
+   *  it, or a leftover from an earlier session hijacks the column. */
+  recovered?: boolean;
+}
+
 /** Sends plan content for a task to the renderer. */
-function sendPlanContent(win: BrowserWindow, taskId: string, result: PlanFile | null): void {
+function sendPlanContent({ win, taskId, plan, recovered }: PlanPublish): void {
   if (win.isDestroyed()) return;
-  if (result) {
-    win.webContents.send(IPC.PlanContent, { taskId, ...result });
+  if (plan) {
+    // Absent rather than false on a live publish: the renderer reads missing as live.
+    win.webContents.send(IPC.PlanContent, { taskId, ...plan, ...(recovered ? { recovered } : {}) });
   } else {
     win.webContents.send(IPC.PlanContent, {
       taskId,
@@ -247,6 +259,8 @@ function startDirPolling(taskId: string, entry: PlanWatcher, onChange: () => voi
  * as soon as they appear (e.g. when an agent creates `docs/plans/`).
  * On change (debounced 200ms), reads the newest `.md` file by mtime
  * across all directories and sends it to the renderer via IPC.PlanContent.
+ * Publishes that this run did not observe being written are marked
+ * `recovered` so the renderer shows them without opening the canvas.
  */
 export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePath: string): void {
   stopPlanWatcher(taskId);
@@ -272,7 +286,11 @@ export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePat
     if (current.timeout) clearTimeout(current.timeout);
     current.timeout = setTimeout(() => {
       current.timeout = null;
-      sendPlanContent(win, taskId, readNewestPlanFromDirs(current.worktreePath, current.plansDirs));
+      sendPlanContent({
+        win,
+        taskId,
+        plan: readNewestPlanFromDirs(current.worktreePath, current.plansDirs),
+      });
     }, 200);
   };
 
@@ -291,7 +309,7 @@ export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePat
     .then((plan) => {
       // A live event or a replacement watcher takes precedence over this startup read.
       if (plan && watchers.get(taskId) === entry && !changedSinceStart)
-        sendPlanContent(win, taskId, plan);
+        sendPlanContent({ win, taskId, plan, recovered: true });
     })
     .catch((error: unknown) => console.warn('[plans] Failed to recover existing plan:', error));
 }

@@ -144,6 +144,49 @@ describe('root-level plan files', () => {
     );
   });
 
+  it('marks a plan found at startup as recovered, and a later write as live', async () => {
+    writeFile('.gitignore', '.claude/\n');
+    writeFile('.claude/plans/leftover.md', '# Leftover');
+    const send = watchPlans();
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenLastCalledWith(
+        IPC.PlanContent,
+        expect.objectContaining({ relativePath: '.claude/plans/leftover.md', recovered: true }),
+      ),
+    );
+
+    writeFile('.claude/plans/fresh.md');
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenLastCalledWith(
+        IPC.PlanContent,
+        expect.not.objectContaining({ recovered: true }),
+      ),
+    );
+    expect(send).toHaveBeenLastCalledWith(
+      IPC.PlanContent,
+      expect.objectContaining({ relativePath: '.claude/plans/fresh.md' }),
+    );
+  });
+
+  // A plan directory the agent creates mid-run is how an agent without hooks
+  // (Codex) delivers its first plan, so the attach publish stays live.
+  it('publishes a plan in a directory that only appears later as live', async () => {
+    const send = watchPlans();
+    writeFile('docs/plans/first.md');
+    await vi.waitFor(
+      () =>
+        expect(send).toHaveBeenLastCalledWith(
+          IPC.PlanContent,
+          expect.not.objectContaining({ recovered: true }),
+        ),
+      { timeout: 8_000 },
+    );
+    expect(send).toHaveBeenLastCalledWith(
+      IPC.PlanContent,
+      expect.objectContaining({ relativePath: 'docs/plans/first.md' }),
+    );
+  });
+
   it.each(['.claude/plans/random-name.md', 'docs/plans/design.md'])(
     'still publishes changes in %s',
     async (relativePath) => {

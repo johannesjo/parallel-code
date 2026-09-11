@@ -1,6 +1,5 @@
 import { IPC } from '../../electron/ipc/channels';
 import { isAgentHookEventPayload } from '../../electron/agent-hooks/status';
-import { invoke } from '../lib/ipc';
 import { isPlanApprovalEvent, nextCanvasOpen } from '../lib/canvas-auto-open';
 import { canvasTabKey, isTaskCanvasVisible, withTab, withoutTab } from '../lib/canvas-tabs';
 import {
@@ -9,6 +8,7 @@ import {
   TASK_TILE_MIN_WIDTH,
 } from '../lib/layout-sizes';
 import { store, setStore } from './core';
+import { setPlanContent } from './tasks';
 import { saveState } from './persistence';
 import { getPanelUserSize, setPanelUserSize } from './ui';
 import type { CanvasTab, Task } from './types';
@@ -101,20 +101,43 @@ export function openArrivedPlan(taskId: string, previousPlanPath: string | undef
   openCanvasDocument(taskId, planPath);
 }
 
-/** Puts the task's newest plan on the canvas; the plan watcher may not have
- *  reported it yet, so it is looked up rather than read from the store. */
-async function openNewestPlan(task: Task): Promise<void> {
-  const plan = await invoke<{ relativePath?: string } | null>(IPC.ReadPlanContent, {
-    worktreePath: task.worktreePath,
-  });
-  if (plan?.relativePath && store.tasks[task.id]) openCanvasDocument(task.id, plan.relativePath);
+/** A plan publish from the backend watcher. */
+export interface PlanContentMessage {
+  taskId: string;
+  content: string | null;
+  fileName: string | null;
+  relativePath: string | null;
+  /** The plan predates this watcher run: show it, but never open it by itself. */
+  recovered?: boolean;
+}
+
+/** Applies a plan publish. The plan tab always follows the file on disk, but
+ *  only a plan this run produced opens the canvas — a leftover from an earlier
+ *  session would otherwise take the column on every agent spawn. */
+export function applyPlanContent(msg: PlanContentMessage): void {
+  const task = store.tasks[msg.taskId];
+  if (!task) return;
+  const previousPlanPath = task.planPath;
+  const live = Boolean(msg.relativePath) && !msg.recovered;
+  setPlanContent(msg.taskId, msg.content, msg.fileName, msg.relativePath);
+  setStore('tasks', msg.taskId, 'planLive', live || undefined);
+  if (live) openArrivedPlan(msg.taskId, previousPlanPath);
+}
+
+/** Brings this run's plan back to the front when approval is asked for. A plan
+ *  recovered from an earlier session is left alone: it is not what is being
+ *  approved, and opening it is the wrong-file bug this guard exists to stop. */
+function openLivePlan(taskId: string): void {
+  const task = store.tasks[taskId];
+  if (!task?.planLive || !task.planPath) return;
+  openCanvasDocument(taskId, task.planPath);
 }
 
 /**
  * Puts the Markdown file an agent just wrote on its task's canvas, when
  * nothing is open there. Tabs the user has stay; they can switch by hand.
- * A plan waiting for approval always opens: that is what the canvas is for.
- * Returns the unsubscribe.
+ * A plan waiting for approval comes back to the front, provided this run is
+ * what produced it. Returns the unsubscribe.
  */
 export function startCanvasAutoOpen(): () => void {
   const pending = new Map<string, string>();
@@ -123,7 +146,7 @@ export function startCanvasAutoOpen(): () => void {
     const task = store.tasks[data.taskId];
     if (!task?.worktreePath) return;
     if (isPlanApprovalEvent(data)) {
-      void openNewestPlan(task).catch((e) => console.warn('[canvas] plan did not open:', e));
+      openLivePlan(data.taskId);
       return;
     }
     const opened = nextCanvasOpen(pending, data, task.worktreePath);
