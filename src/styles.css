@@ -721,8 +721,11 @@ html[data-look^='islands-'] .tiling-layout-strip > .resize-handle-h::before {
   display: none;
 }
 
+/* No top gap: unlike a task column, the nav island draws a visible 1px border
+   above its fill and curves away over 12px of radius, so at an equal box top it
+   reads as sitting lower. Starting flush lines it up with the columns. */
 html[data-look^='islands-'] .sidebar-shell {
-  padding: 6px 3px 6px 6px;
+  padding: 0 3px 6px 6px;
   box-sizing: border-box;
 }
 

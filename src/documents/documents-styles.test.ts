@@ -66,3 +66,15 @@ describe('rail and toolbar layout', () => {
     expect(rule('.docws-agent-tab.is-hidden')).toMatch(/display:\s*none/);
   });
 });
+
+/* The workspace replaces the task columns in the same slot, so it has to sit
+   on the same margins and carry the same rounded frame they do. */
+describe('workspace frame', () => {
+  it('insets the workspace by the task strip padding and rounds it like a column', () => {
+    const ws = rule('.docws-workspace');
+
+    expect(ws).toMatch(/inset:\s*2px 6px 2px 4px/);
+    expect(ws).toMatch(/border-radius:\s*var\(--radius-lg\)/);
+    expect(ws).toMatch(/border:\s*1px solid var\(--border\)/);
+  });
+});

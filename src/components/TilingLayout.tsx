@@ -260,11 +260,14 @@ export function TilingLayout() {
                 }
                 style={{
                   height: '100%',
+                  // No vertical padding: the strip's own 2px is the whole
+                  // top/bottom gap, so a column lines up with the document
+                  // workspace and the sidebar island beside it.
                   padding: store.themePreset.startsWith('islands-')
                     ? store.focusMode
-                      ? '6px 0'
-                      : '6px 1px'
-                    : '6px 3px',
+                      ? '0'
+                      : '0 1px'
+                    : '0 3px',
                   'box-sizing': 'border-box',
                 }}
                 onAnimationEnd={(e) => {

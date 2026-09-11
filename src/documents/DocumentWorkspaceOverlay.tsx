@@ -660,7 +660,7 @@ export function DocumentWorkspaceOverlay() {
   ];
 
   return (
-    <div class="docws-workspace" role="region" aria-label="Document workspace">
+    <div class="docws-workspace task-column active" role="region" aria-label="Document workspace">
       <div class="docws-header" data-tauri-drag-region>
         <div class="docws-title">
           <DocumentIcon />
