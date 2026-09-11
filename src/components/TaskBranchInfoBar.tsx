@@ -18,6 +18,7 @@ import { abbreviateHomePath } from '../lib/path';
 import { projectInitials } from '../lib/project-initials';
 import type { Task } from '../store/types';
 import { AlertIcon, CheckIcon, PencilIcon, PersonIcon } from './icons';
+import { ProjectSwatch } from './ProjectSwatch';
 
 const infoBarBtnStyle: JSX.CSSProperties = {
   'align-self': 'stretch',
@@ -154,15 +155,7 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
                 aria-label={`Project: ${p().name} · Project settings`}
                 style={{ ...infoBarBtnStyle, margin: '0 8px 0 0' }}
               >
-                <div
-                  style={{
-                    width: '7px',
-                    height: '7px',
-                    'border-radius': '50%',
-                    background: p().color,
-                    'flex-shrink': '0',
-                  }}
-                />
+                <ProjectSwatch color={p().color} size={7} />
                 <span class="task-branch-project-label">{p().name}</span>
                 <span class="task-branch-project-compact-label" aria-hidden="true">
                   {projectInitials(p().name)}

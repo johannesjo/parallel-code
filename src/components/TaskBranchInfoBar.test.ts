@@ -141,6 +141,9 @@ describe('TaskBranchInfoBar project chip', () => {
 
     const html = renderToString(() => TaskBranchInfoBar({ task, onEditProject: vi.fn() }));
 
+    // The project mark is a square: the circle belongs to the status dot one
+    // line above it in the task header.
+    expect(html).toContain('class="project-swatch"');
     expect(html).toContain('class="task-branch-project-label">parallel-code</span>');
     expect(html).toContain('class="task-branch-project-compact-label"');
     expect(html).toContain('>PC</span>');

@@ -50,6 +50,7 @@ import { SidebarFooter } from './SidebarFooter';
 import { IconButton } from './IconButton';
 import { UpdateButton } from './UpdateButton';
 import { StatusDot, getDotTooltip } from './StatusDot';
+import { ProjectSwatch } from './ProjectSwatch';
 import { TaskCurrentStateLine } from './TaskCurrentStateLine';
 import { TaskAgentStatusLine } from './TaskAgentStatusLine';
 import { theme } from '../lib/theme';
@@ -216,15 +217,7 @@ export function ProjectTaskGroupToggle(props: {
       >
         <path d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" />
       </svg>
-      <span
-        style={{
-          width: '6px',
-          height: '6px',
-          'border-radius': '50%',
-          background: props.project.color,
-          'flex-shrink': '0',
-        }}
-      />
+      <ProjectSwatch color={props.project.color} size={6} />
       <span
         style={{
           overflow: 'hidden',
@@ -331,15 +324,7 @@ function NeedsInputRow(props: {
             <Show when={project()}>
               {(p) => (
                 <>
-                  <span
-                    style={{
-                      width: '6px',
-                      height: '6px',
-                      'border-radius': '50%',
-                      background: p().color,
-                      'flex-shrink': '0',
-                    }}
-                  />
+                  <ProjectSwatch color={p().color} size={6} />
                   <span
                     style={{
                       overflow: 'hidden',
@@ -919,17 +904,7 @@ export function Sidebar() {
                     >
                       <Show
                         when={isDocumentProject(project)}
-                        fallback={
-                          <div
-                            style={{
-                              width: '8px',
-                              height: '8px',
-                              'border-radius': '50%',
-                              background: project.color,
-                              'flex-shrink': '0',
-                            }}
-                          />
-                        }
+                        fallback={<ProjectSwatch color={project.color} size={8} />}
                       >
                         <span style={{ color: project.color, display: 'flex', 'flex-shrink': '0' }}>
                           <DocumentIcon size={12} />

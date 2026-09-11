@@ -313,7 +313,9 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                         style={{
                           width: '28px',
                           height: '28px',
-                          'border-radius': '50%',
+                          // Matches ProjectSwatch: the picker previews the
+                          // square mark the project will actually show.
+                          'border-radius': 'var(--radius-sm)',
                           background: color,
                           border: isSelected() ? `2px solid ${theme.fg}` : '2px solid transparent',
                           outline: isSelected() ? `2px solid ${theme.accent}` : 'none',
