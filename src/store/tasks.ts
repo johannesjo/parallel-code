@@ -2,6 +2,7 @@ import { produce } from 'solid-js/store';
 import { invoke, Channel } from '../lib/ipc';
 import { asStoreVerificationRun } from '../lib/verification-run';
 import { IPC } from '../../electron/ipc/channels';
+import { getSkipPermissionsArgs } from '../../electron/shared/skip-permissions';
 import { store, setStore, cleanupPanelEntries } from './core';
 import { effectiveAgentId } from './agent-select';
 import { saveState } from './persistence';
@@ -1159,7 +1160,10 @@ export function initMCPListeners(): () => void {
         command: cmd,
         args: evt.agentArgs ?? [],
         resume_args: [],
-        skip_permissions_args: [],
+        // Resolved, not empty: this def is synthesised when availableAgents has
+        // no entry for the coordinator's command, and an empty list here strands
+        // a sub-task carrying skipPermissions: true on a bare launch.
+        skip_permissions_args: getSkipPermissionsArgs(cmd),
         description: '',
       };
 
