@@ -1,5 +1,6 @@
 import { app, autoUpdater, BrowserWindow, Menu, ipcMain, session, shell } from 'electron';
 import { buildMenuTemplate } from './menu-template.js';
+import { restoreWindow } from './window-restore.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -81,7 +82,28 @@ function fixEnv(): void {
   }
 }
 
-fixEnv();
+// One running copy per profile, and the lock is taken here rather than beside the
+// window wiring because Electron's guidance is to take it as early as possible and
+// this file gives that guidance teeth: fixEnv() above spawns an interactive login
+// shell, which on a normal rc file (nvm, conda, compinit) costs on the order of half
+// a second. A second launch is going to quit — spending that first would put the
+// delay squarely on the icon-relaunch path the lock exists to make instant.
+//
+// Dev runs skip the lock deliberately, so `npm run dev` still starts while an
+// installed build is running.
+const singleInstanceLockHeld = app.isPackaged && app.requestSingleInstanceLock();
+// Two questions, two names: whether this process holds the lock, and whether it
+// should boot at all. A dev run answers no to the first and yes to the second,
+// which is why one flag covering both would be wrong under either name.
+const shouldStartApp = !app.isPackaged || singleInstanceLockHeld;
+
+if (!shouldStartApp) {
+  app.quit();
+} else {
+  // Only the primary instance ever spawns a PTY, so it is the only one that needs
+  // the resolved login-shell environment.
+  fixEnv();
+}
 
 // Blink evicts the oldest WebGL context past 16 per renderer process, and every
 // mounted terminal pane holds one — hidden task/tab terminals included. Past 16
@@ -231,41 +253,54 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(async () => {
-  // Grant microphone and clipboard access (deny camera/video)
-  session.defaultSession.setPermissionRequestHandler(
-    (_webContents, permission, callback, details) => {
-      if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
-        return callback(true);
-      }
-      if (permission === 'media') {
-        const types = (details as { mediaTypes?: string[] }).mediaTypes ?? [];
-        return callback(types.every((t) => t === 'audio'));
-      }
-      callback(false);
-    },
-  );
+// Why the lock matters here: "Keep them alive in the background" hides the window
+// instead of closing it, so a user who launches the app again is asking for the
+// window they already have. Without the lock a second process starts, restores
+// every persisted session from the same state file, and spawns a duplicate agent
+// for each one — on top of the PTYs the hidden instance is still holding. The
+// hidden window has no way back either, because nothing is listening for the
+// launch. With the lock, a second launch becomes "show the window".
+if (shouldStartApp) {
+  // A second launch (icon, CLI, file manager) reaches the instance that owns
+  // the lock as this event instead of starting a process of its own.
+  app.on('second-instance', () => restoreWindow(mainWindow));
 
-  // electron-updater stages the install, then quits through `app.quit()`.
-  // Vetoing that quit below would leave the update staged with the app still
-  // running, so let it through — the window's own close prompt still asks about
-  // running terminals, and `autoInstallOnAppQuit` re-applies the update on the
-  // next quit if the user backs out. Both platform paths announce the relaunch
-  // on Electron's own updater immediately before quitting (the AppImage updater
-  // emits it by hand, Squirrel natively), so this is set only while a quit is
-  // genuinely in flight — unlike a flag set when the install is *requested*,
-  // which sticks for the whole session on the many paths where
-  // `quitAndInstall()` returns without quitting.
-  autoUpdater.on('before-quit-for-update', () => {
-    quittingForUpdate = true;
+  app.whenReady().then(async () => {
+    // Grant microphone and clipboard access (deny camera/video)
+    session.defaultSession.setPermissionRequestHandler(
+      (_webContents, permission, callback, details) => {
+        if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
+          return callback(true);
+        }
+        if (permission === 'media') {
+          const types = (details as { mediaTypes?: string[] }).mediaTypes ?? [];
+          return callback(types.every((t) => t === 'audio'));
+        }
+        callback(false);
+      },
+    );
+
+    // electron-updater stages the install, then quits through `app.quit()`.
+    // Vetoing that quit below would leave the update staged with the app still
+    // running, so let it through — the window's own close prompt still asks about
+    // running terminals, and `autoInstallOnAppQuit` re-applies the update on the
+    // next quit if the user backs out. Both platform paths announce the relaunch
+    // on Electron's own updater immediately before quitting (the AppImage updater
+    // emits it by hand, Squirrel natively), so this is set only while a quit is
+    // genuinely in flight — unlike a flag set when the install is *requested*,
+    // which sticks for the whole session on the many paths where
+    // `quitAndInstall()` returns without quitting.
+    autoUpdater.on('before-quit-for-update', () => {
+      quittingForUpdate = true;
+    });
+
+    // Listening before the window exists: a renderer cannot spawn a Claude
+    // agent that misses its hooks. Failure falls back to PTY heuristics.
+    await startAgentHookRuntime(() => mainWindow);
+    setupApplicationMenu();
+    createWindow();
   });
-
-  // Listening before the window exists: a renderer cannot spawn a Claude
-  // agent that misses its hooks. Failure falls back to PTY heuristics.
-  await startAgentHookRuntime(() => mainWindow);
-  setupApplicationMenu();
-  createWindow();
-});
+}
 
 // A quit reaches `before-quit` *before* any window `close` event, so tearing
 // down agents here destroyed the very terminals the close dialog was about to
@@ -279,15 +314,28 @@ app.whenReady().then(async () => {
 app.on('before-quit', (event) => {
   if (!mainWindow || mainWindow.isDestroyed() || quittingForUpdate) return;
   event.preventDefault();
-  // The confirmation is a sheet on this window, and show() also focuses — a
-  // quit from the menu while the app sits hidden must not prompt invisibly.
-  mainWindow.show();
+  // The confirmation is a sheet on this window — a quit from the menu while the
+  // app sits hidden or minimized must not prompt somewhere the user cannot see.
+  restoreWindow(mainWindow);
   mainWindow.close();
 });
 
 // Runs only on a quit that got through the check above, so it cannot destroy
 // anything the user still had a chance to cancel.
 app.on('will-quit', () => {
+  // Hand the lock over before the blocking teardown below, not at process exit.
+  // electron-updater's AppImage path spawns the replacement *before* quitting
+  // (`doInstall` → `spawnLog(destination)`, then `setImmediate(() =>
+  // app.quit())`), so the incoming process is already booting while this one is
+  // still killing agents — and `killAllAgents()` blocks on a `docker kill` per
+  // session. Holding the lock through that can make the replacement fail it and
+  // quit: update applied, app never reappears. Releasing here also covers the
+  // plain case, where someone relaunching during a slow shutdown would
+  // otherwise be handed a window that is already going away.
+  //
+  // `will-quit` only runs on a quit that got past the veto above, so a
+  // cancelled quit correctly keeps the lock. A no-op when none is held.
+  app.releaseSingleInstanceLock();
   killAllAgents();
   // Detached process groups would outlive Electron otherwise.
   verificationRunner.cancelAll();
@@ -298,10 +346,9 @@ app.on('will-quit', () => {
 });
 
 // "Keep them alive in the background" hides the window; without this the dock
-// icon is a dead end and the only way back is attempting to quit.
-app.on('activate', () => {
-  mainWindow?.show();
-});
+// icon is a dead end and the only way back is attempting to quit. `show()` alone
+// left a minimized or buried window where it was — see restoreWindow.
+app.on('activate', () => restoreWindow(mainWindow));
 
 app.on('window-all-closed', () => {
   app.quit();
