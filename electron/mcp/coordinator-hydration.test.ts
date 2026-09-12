@@ -9,7 +9,7 @@ import {
   mockExistsSync,
   mockUnlinkSync,
   mockAtomicWriteFileSync,
-  mockAppendGitInfoExcludeBlock,
+  mockAppendGitInfoExcludeBlocks,
   mockNotifyRenderer,
   mockWin,
 } from './coordinator-test-harness.js';
@@ -74,7 +74,7 @@ describe('existing Kimi task hydration failure', () => {
     resetCoordinatorMocks();
   });
 
-  it.each(['exclude', 'worktree write', 'per-task write'])(
+  it.each(['exclude', 'unresolved exclude', 'worktree write', 'per-task write'])(
     'preserves both configs and live state after a failed %s, then permits retry',
     (failure) => {
       const task = getHydratedTask();
@@ -85,8 +85,10 @@ describe('existing Kimi task hydration failure', () => {
       const originalConfig = fs.readFileSync(configPath, 'utf8');
       const originalWorktree = fs.readFileSync(worktreeConfig, 'utf8');
       mockNotifyRenderer.mockClear();
-      if (failure === 'exclude') {
-        mockAppendGitInfoExcludeBlock.mockReturnValueOnce('failed');
+      if (failure === 'exclude' || failure === 'unresolved exclude') {
+        mockAppendGitInfoExcludeBlocks.mockReturnValueOnce(
+          failure === 'exclude' ? 'failed' : 'missing',
+        );
       } else {
         const failingPath = failure === 'worktree write' ? worktreeConfig : configPath;
         mockAtomicWriteFileSync.mockImplementationOnce((file, data) => {
@@ -122,7 +124,7 @@ describe('existing Kimi task hydration failure', () => {
     const task = getHydratedTask();
     const before = { ...task };
     const originalWorktree = fs.readFileSync(worktreeConfig, 'utf8');
-    mockAppendGitInfoExcludeBlock.mockReturnValueOnce('failed');
+    mockAppendGitInfoExcludeBlocks.mockReturnValueOnce('failed');
 
     expect(() => coordinator.hydrateTask(args)).toThrow('Unable to git-exclude');
     expect(fs.existsSync(configPath)).toBe(false);
@@ -150,7 +152,7 @@ describe('existing Kimi task hydration failure', () => {
     delete task.doneToken;
     const before = { ...task };
     mockNotifyRenderer.mockClear();
-    mockAppendGitInfoExcludeBlock.mockReturnValueOnce('failed');
+    mockAppendGitInfoExcludeBlocks.mockReturnValueOnce('failed');
     mockAtomicWriteFileSync
       .mockImplementationOnce((file, data) => fs.writeFileSync(file, data, { mode: 0o600 }))
       .mockImplementationOnce(() => {

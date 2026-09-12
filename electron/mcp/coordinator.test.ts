@@ -18,7 +18,7 @@ import {
   mockFsAccess,
   mockAtomicWriteFileSync,
   mockAtomicWriteFile,
-  mockAppendGitInfoExcludeBlock,
+  mockAppendGitInfoExcludeBlocks,
   mockNotifyRenderer,
   mockLogInfo,
   mockLogWarn,
@@ -3818,16 +3818,15 @@ describe('Coordinator sub-task MCP config isolation', () => {
     expect(
       childConfigs[0].mcpServers['parallel-code'].env['PARALLEL_CODE_MCP_DONE_TOKEN'],
     ).not.toBe(childConfigs[1].mcpServers['parallel-code'].env['PARALLEL_CODE_MCP_DONE_TOKEN']);
-    expect(mockAppendGitInfoExcludeBlock).toHaveBeenCalledWith(
+    expect(mockAppendGitInfoExcludeBlocks).toHaveBeenCalledWith(
       '/tmp/a',
-      '/.kimi-code/mcp.json',
-      expect.stringContaining('/.kimi-code/mcp.json'),
-      expect.any(Function),
-    );
-    expect(mockAppendGitInfoExcludeBlock).toHaveBeenCalledWith(
-      '/tmp/a',
-      '/.kimi-code/.parallel-code-atomic-*.tmp',
-      expect.stringContaining('/.kimi-code/.parallel-code-atomic-*.tmp'),
+      [
+        { marker: '/.kimi-code/mcp.json', block: expect.stringContaining('/.kimi-code/mcp.json') },
+        {
+          marker: '/.kimi-code/.parallel-code-atomic-*.tmp',
+          block: expect.stringContaining('/.kimi-code/.parallel-code-atomic-*.tmp'),
+        },
+      ],
       expect.any(Function),
     );
     for (const [, spawnOpts] of mockSpawnAgent.mock.calls) {
@@ -3869,16 +3868,15 @@ describe('Coordinator sub-task MCP config isolation', () => {
     );
     // Root-level patterns carry no slash of their own, so they must be anchored
     // explicitly or git would also match a user's nested `.mcp.json`.
-    expect(mockAppendGitInfoExcludeBlock).toHaveBeenCalledWith(
+    expect(mockAppendGitInfoExcludeBlocks).toHaveBeenCalledWith(
       '/tmp/test',
-      '/.mcp.json',
-      expect.stringContaining('/.mcp.json'),
-      expect.any(Function),
-    );
-    expect(mockAppendGitInfoExcludeBlock).toHaveBeenCalledWith(
-      '/tmp/test',
-      '/.parallel-code-atomic-*.tmp',
-      expect.stringContaining('/.parallel-code-atomic-*.tmp'),
+      [
+        { marker: '/.mcp.json', block: expect.stringContaining('/.mcp.json') },
+        {
+          marker: '/.parallel-code-atomic-*.tmp',
+          block: expect.stringContaining('/.parallel-code-atomic-*.tmp'),
+        },
+      ],
       expect.any(Function),
     );
   });

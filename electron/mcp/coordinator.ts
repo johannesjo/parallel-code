@@ -18,7 +18,7 @@ import {
 import { buildMcpLaunchArgs, isKimiCommand } from './agent-args.js';
 import { validateBranchName } from './validation.js';
 import { atomicWriteFileSync } from './atomic.js';
-import { appendGitInfoExcludeBlock } from '../ipc/git-exclude.js';
+import { appendGitInfoExcludeBlocks } from '../ipc/git-exclude.js';
 import { ReplayCache } from './replay-cache.js';
 import {
   detectPreambleFiles,
@@ -1928,15 +1928,13 @@ export class Coordinator {
         block: `${atomicTmpPattern}\n`,
       },
     ];
-    for (const { marker, block } of excludePatterns) {
-      const result = appendGitInfoExcludeBlock(task.worktreePath, marker, block, (err) =>
-        console.warn('[MCP] Could not git-exclude child Kimi MCP config:', err),
+    const result = appendGitInfoExcludeBlocks(task.worktreePath, excludePatterns, (err, markers) =>
+      console.warn(`[MCP] Could not git-exclude child Kimi MCP paths ${markers.join(', ')}:`, err),
+    );
+    if (result !== 'appended' && result !== 'present') {
+      throw new Error(
+        `Unable to git-exclude Kimi child MCP credential paths ${configPattern}, ${atomicTmpPattern}; refusing to write them.`,
       );
-      if (result !== 'appended' && result !== 'present') {
-        throw new Error(
-          `Unable to git-exclude Kimi child MCP credential path ${marker}; refusing to write it.`,
-        );
-      }
     }
 
     content.mcpServers = { ...servers, 'parallel-code': writtenParallelCode };
