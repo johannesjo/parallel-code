@@ -32,7 +32,7 @@ import { truncateDiffForTool } from './diff-format.js';
 const execAsync = promisify(execFile);
 import type { BrowserWindow } from 'electron';
 import { createTask as createBackendTask, deleteTask } from '../ipc/tasks.js';
-import { getSkipPermissionsArgs } from '../ipc/agents.js';
+import { getSkipPermissionsArgs } from '../shared/skip-permissions.js';
 import {
   spawnAgent,
   writeToAgent,
