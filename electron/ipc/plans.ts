@@ -222,9 +222,38 @@ function isPlanInDirs(
 /** Start watching a single directory. Returns the watcher or null on failure. */
 function watchDir(worktreePath: string, dir: string, onChange: () => void): fs.FSWatcher | null {
   try {
+    // Filesystem notifications may arrive after watch registration for writes
+    // that already happened. Only a change from the registration snapshot is
+    // live; otherwise startup recovery must retain its recovered semantics.
+    const snapshot = () => {
+      const files = new Map<string, string>();
+      for (const name of planFileNames(worktreePath, dir)) {
+        try {
+          const stat = fs.statSync(path.join(dir, name));
+          files.set(name, `${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`);
+        } catch {
+          // A plan may disappear while the directory is being scanned.
+        }
+      }
+      return files;
+    };
+    let previous = snapshot();
+    const reconcile = () => {
+      const current = snapshot();
+      const changed =
+        current.size !== previous.size ||
+        [...current].some(([name, state]) => previous.get(name) !== state);
+      previous = current;
+      if (changed) onChange();
+    };
     const watcher = fs.watch(dir, (_event, fileName) => {
-      if (fileName === null || isPlanFile(worktreePath, dir, fileName.toString())) onChange();
+      if (fileName === null || isPlanFile(worktreePath, dir, fileName.toString())) reconcile();
     });
+    // Native watchers can miss a write immediately after a directory is created
+    // and registered (notably on macOS). Reconcile the same snapshot so a lost
+    // notification neither hides a new plan nor produces duplicate publishes.
+    const reconcileTimer = setInterval(reconcile, 250);
+    watcher.on('close', () => clearInterval(reconcileTimer));
     watcher.on('error', (err) => {
       console.warn(`Plan watcher error for ${dir}:`, err);
     });

@@ -74,6 +74,7 @@ export function persistedSnapshot(): string {
               coordinatedBy: t.coordinatedBy,
               coordinatorMode: t.coordinatorMode,
               mcpConfigPath: t.mcpConfigPath,
+              autoDiscoveredMcpConfig: t.autoDiscoveredMcpConfig,
               preambleFileExistedBefore: t.preambleFileExistedBefore,
               signalDoneReceived: t.signalDoneReceived,
               signalDoneAt: t.signalDoneAt,

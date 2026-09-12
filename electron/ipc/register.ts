@@ -119,6 +119,20 @@ export function selectMcpJsonDir(worktreePath: string | undefined, projectRoot: 
   return worktreePath ?? projectRoot;
 }
 
+/** Exclude both the final config and crash-left atomic files before either is written. */
+export function writeCoordinatorMcpJson(configPath: string, content: string): void {
+  const configDir = path.dirname(configPath);
+  for (const pattern of ['/.mcp.json', '/.parallel-code-atomic-*.tmp']) {
+    appendGitInfoExcludeBlock(
+      configDir,
+      pattern,
+      `# Parallel Code MCP config (contains ephemeral token)\n${pattern}\n`,
+      (err) => console.warn(`[MCP] Could not git-exclude ${pattern}:`, err),
+    );
+  }
+  atomicWriteFileSync(configPath, content, { mode: 0o600 });
+}
+
 /** Path where `mcp-server.cjs` is copied inside the Docker-mounted worktree. */
 export function getDockerMcpServerDestPath(
   worktreePath: string | undefined,
@@ -1550,6 +1564,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
           landingSummary?: string;
           landedMetadata?: import('../mcp/types.js').LandedMetadata;
           mcpConfigPath?: string;
+          autoDiscoveredMcpConfig?: import('../mcp/types.js').AutoDiscoveredMcpConfigState;
           agentCommand?: string;
           preambleFileExistedBefore?: boolean;
           initialPrompt?: string;
@@ -1588,6 +1603,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
           landingSummary: args.landingSummary,
           landedMetadata: args.landedMetadata,
           mcpConfigPath: args.mcpConfigPath,
+          autoDiscoveredMcpConfig: args.autoDiscoveredMcpConfig,
           agentCommand: args.agentCommand,
           preambleFileExistedBefore: args.preambleFileExistedBefore,
           initialPrompt: args.initialPrompt,
@@ -1827,7 +1843,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       // parallel-code key so we don't destroy user-defined entries. Track whether
       // we created the file so deregisterCoordinator can clean up correctly.
       if (mcpJsonDir && worktreeMcpPath && mergedMcpJson !== undefined) {
-        atomicWriteFileSync(worktreeMcpPath, mergedMcpJson, { mode: 0o600 });
+        writeCoordinatorMcpJson(worktreeMcpPath, mergedMcpJson);
         const writtenMcpParallelCode: unknown = mcpConfig.mcpServers['parallel-code'];
         coordinator.setMcpJsonInfo(
           args.coordinatorTaskId,
@@ -1835,14 +1851,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
           !mcpFileExistedBefore,
           previousMcpParallelCode,
           writtenMcpParallelCode,
-        );
-
-        // Append to .git/info/exclude (local-only gitignore, not committed)
-        appendGitInfoExcludeBlock(
-          mcpJsonDir,
-          '.mcp.json',
-          '# Parallel Code MCP config (contains ephemeral token)\n.mcp.json\n',
-          (err) => console.warn('[MCP] Could not git-exclude .mcp.json:', err),
         );
 
         console.warn('[MCP] .mcp.json written to:', worktreeMcpPath);

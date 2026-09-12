@@ -2,6 +2,11 @@ import type { VerificationRun } from '../ipc/shared-types.js';
 
 // Shared types for the MCP coordinating-agent system.
 
+export interface AutoDiscoveredMcpConfigState {
+  path: string;
+  writtenParallelCodeFingerprint: string;
+}
+
 export interface CoordinatedTask {
   id: string;
   name: string;
@@ -18,6 +23,8 @@ export interface CoordinatedTask {
   initialPrompt?: string;
   automationWriteInFlight?: boolean;
   mcpConfigPath?: string; // path to per-task tmp config, deleted on cleanup
+  autoDiscoveredMcpConfig?: AutoDiscoveredMcpConfigState;
+  agentCommand?: string;
   doneToken?: string; // per-task token; only the owning sub-task may call /done
   preambleFileExistedBefore?: boolean; // true if the preamble file existed before injection (even if empty)
   signalDoneAt?: Date; // set when sub-task explicitly calls signal_done

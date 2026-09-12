@@ -331,6 +331,65 @@ describe('coordinator concurrency limit persistence', () => {
   });
 });
 
+describe('Kimi auto-discovered MCP config persistence', () => {
+  const autoDiscoveredMcpConfig = {
+    path: '/repo/.worktrees/task-1/.kimi-code/mcp.json',
+    writtenParallelCodeFingerprint: 'a'.repeat(64),
+  };
+
+  it('saves the restoration snapshot with a coordinated task', async () => {
+    setStore('taskOrder', ['task-1']);
+    setStore('tasks', {
+      'task-1': {
+        id: 'task-1',
+        name: 'Task',
+        projectId: 'project-1',
+        branchName: 'task/task-1',
+        worktreePath: '/repo/.worktrees/task-1',
+        agentIds: [],
+        shellAgentIds: [],
+        notes: '',
+        lastPrompt: '',
+        gitIsolation: 'worktree',
+        coordinatedBy: 'coord-1',
+        autoDiscoveredMcpConfig,
+      },
+    });
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    await saveState();
+
+    const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
+    expect(saved.tasks['task-1'].autoDiscoveredMcpConfig).toEqual(autoDiscoveredMcpConfig);
+  });
+
+  it('restores the snapshot for restart hydration', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: ['task-1'],
+        collapsedTaskOrder: [],
+        tasks: {
+          'task-1': {
+            ...persistedTask(def),
+            coordinatedBy: 'coord-1',
+            autoDiscoveredMcpConfig,
+          },
+        },
+        activeTaskId: 'task-1',
+        sidebarVisible: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['task-1'].autoDiscoveredMcpConfig).toEqual(autoDiscoveredMcpConfig);
+  });
+});
+
 describe('PR URL persistence', () => {
   it('persists task PR URLs', async () => {
     setStore('taskOrder', ['task-1']);

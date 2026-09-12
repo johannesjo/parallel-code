@@ -16,6 +16,11 @@ export type KeybindingOverride = Partial<Pick<KeyBinding, 'key' | 'modifiers'>> 
 
 export type GitIsolationMode = 'worktree' | 'direct' | 'none';
 
+export interface AutoDiscoveredMcpConfigState {
+  path: string;
+  writtenParallelCodeFingerprint: string;
+}
+
 export interface StagedNotification {
   batchId: string;
   notificationIds: string[];
@@ -222,6 +227,7 @@ export interface Task {
   controlledBy?: 'coordinator' | 'human';
   automationWriteInFlight?: boolean;
   mcpConfigPath?: string;
+  autoDiscoveredMcpConfig?: AutoDiscoveredMcpConfigState;
   mcpLaunchArgs?: string[];
   preambleFileExistedBefore?: boolean;
   signalDoneReceived?: boolean;
@@ -293,6 +299,7 @@ export interface PersistedTask {
   coordinatedBy?: string;
   controlledBy?: 'coordinator' | 'human';
   mcpConfigPath?: string;
+  autoDiscoveredMcpConfig?: AutoDiscoveredMcpConfigState;
   preambleFileExistedBefore?: boolean;
   signalDoneReceived?: boolean;
   signalDoneAt?: string;

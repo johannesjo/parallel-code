@@ -19,6 +19,7 @@ const SKIP_PERMISSIONS_ARGS = new Map<string, readonly string[]>([
   ['claude', ['--dangerously-skip-permissions']],
   ['codex', ['--dangerously-bypass-approvals-and-sandbox']],
   ['gemini', ['--yolo']],
+  ['kimi', ['--yolo']],
   ['copilot', ['--yolo']],
   ['agy', ['--dangerously-skip-permissions']],
 ]);

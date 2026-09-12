@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
 import type { BrowserWindow } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC } from './channels.js';
@@ -16,6 +17,7 @@ beforeEach(() => {
 
 afterEach(() => {
   stopAllPlanWatchers();
+  vi.restoreAllMocks();
   fs.rmSync(worktreePath, { recursive: true, force: true });
 });
 
@@ -51,6 +53,60 @@ function watchPlans() {
 }
 
 describe('root-level plan files', () => {
+  it.each(['example-plan.md', null])(
+    'ignores delayed startup notifications for %s but publishes a real edit',
+    async (fileName) => {
+      writeFile('example-plan.md', '# Leftover');
+      let notify: ((event: string, name: string | null) => void) | undefined;
+      vi.spyOn(fs, 'watch').mockImplementation((dir, listener) => {
+        if (String(dir) === worktreePath) notify = listener as typeof notify;
+        const watcher = new EventEmitter();
+        return Object.assign(watcher, {
+          close: () => watcher.emit('close'),
+        }) as unknown as fs.FSWatcher;
+      });
+      const send = watchPlans();
+      if (!notify) throw new Error('Root watcher was not registered');
+      notify('rename', fileName);
+      await vi.waitFor(() =>
+        expect(send).toHaveBeenLastCalledWith(
+          IPC.PlanContent,
+          expect.objectContaining({ content: '# Leftover', recovered: true }),
+        ),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      expect(send).toHaveBeenCalledTimes(1);
+
+      writeFile('example-plan.md', '# New live content');
+      notify('change', fileName);
+      await vi.waitFor(() =>
+        expect(send).toHaveBeenLastCalledWith(
+          IPC.PlanContent,
+          expect.objectContaining({ content: '# New live content', recovered: undefined }),
+        ),
+      );
+    },
+  );
+
+  it('discovers a new plan even when the native watcher drops its notification', async () => {
+    vi.spyOn(fs, 'watch').mockImplementation(() => {
+      const watcher = new EventEmitter();
+      return Object.assign(watcher, {
+        close: () => watcher.emit('close'),
+      }) as unknown as fs.FSWatcher;
+    });
+    const send = watchPlans();
+    writeFile('example-plan.md', '# Missed notification');
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenLastCalledWith(
+        IPC.PlanContent,
+        expect.objectContaining({ content: '# Missed notification', recovered: undefined }),
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['example-plan.md', 'PLAN.md', 'implementation_plan.md', 'plan.v2.md'])(
     'reads %s for plan review and restores it by filename',
     (fileName) => {

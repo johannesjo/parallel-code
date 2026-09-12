@@ -85,7 +85,7 @@ export async function injectSubTaskPreamble(args: {
   queue: PreambleWriteQueue;
 }): Promise<InjectedSubTaskPreamble> {
   const agentCmd = args.agentCommand.toLowerCase();
-  if (agentCmd.includes('codex') || agentCmd.includes('opencode')) {
+  if (agentCmd.includes('codex') || agentCmd.includes('opencode') || agentCmd.includes('kimi')) {
     return injectMarkdownPreamble(args.queue, join(args.worktreePath, 'AGENTS.md'));
   }
   if (agentCmd.includes('gemini')) {
