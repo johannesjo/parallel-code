@@ -9,7 +9,8 @@ import { codeProjects } from './projects';
 import { createTask, updateTaskNotes } from './tasks';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
-import type { GitIgnoredEntry } from '../ipc/types';
+import { resolveSkipPermissionsArgs } from '../../electron/shared/skip-permissions';
+import type { AgentDef, GitIgnoredEntry } from '../ipc/types';
 
 interface RendererRequest {
   reqId: string;
@@ -41,6 +42,22 @@ function handleGetProjects(req: RendererRequest): void {
     true,
     codeProjects().map((p) => ({ id: p.id, name: p.name })),
   );
+}
+
+/**
+ * Whether a task created from a paired phone should launch with the agent's
+ * skip-permissions flag.
+ *
+ * Mirrors the New Task dialog, which pre-ticks its checkbox from
+ * `defaultSkipPermissions` and only offers it for an agent that takes such a
+ * flag. Resolved by command too, so an agent restored from an older profile is
+ * treated the same as a freshly probed one.
+ */
+export function remoteSkipPermissions(
+  defaultSkipPermissions: boolean,
+  agentDef: Pick<AgentDef, 'command'> & Partial<Pick<AgentDef, 'skip_permissions_args'>>,
+): boolean {
+  return defaultSkipPermissions && resolveSkipPermissionsArgs(agentDef).length > 0;
 }
 
 async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
@@ -79,6 +96,9 @@ async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
       baseBranch,
       symlinkDirs,
       initialPrompt: req.prompt,
+      // Without this the flag was simply never passed, so every task created
+      // from a phone launched bare regardless of the setting.
+      skipPermissions: remoteSkipPermissions(store.defaultSkipPermissions, agentDef),
     });
     reply(req.reqId, true, { taskId });
   } catch (err) {
