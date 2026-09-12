@@ -1843,6 +1843,7 @@ export class Coordinator {
   private writeKimiAutoDiscoveredMcpConfig(
     task: CoordinatedTask,
     mcpConfig: ReturnType<typeof buildSubTaskMcpConfig>,
+    syncState = true,
   ): void {
     if (!task.agentCommand || !isKimiCommand(task.agentCommand)) return;
 
@@ -1945,7 +1946,7 @@ export class Coordinator {
       path: configPath,
       writtenParallelCodeFingerprint: mcpEntryFingerprint(writtenParallelCode),
     };
-    this.syncAutoDiscoveredMcpConfig(task);
+    if (syncState) this.syncAutoDiscoveredMcpConfig(task);
   }
 
   private syncAutoDiscoveredMcpConfig(task: CoordinatedTask): void {
@@ -2548,15 +2549,17 @@ export class Coordinator {
 
     const existingTask = this.tasks.get(opts.id);
     if (existingTask) {
-      existingTask.agentCommand = opts.agentCommand ?? existingTask.agentCommand;
-      if (safeMcpConfigPath) existingTask.mcpConfigPath = safeMcpConfigPath;
+      // Publish restored fields only after both credential files have been written.
+      const stagedTask = { ...existingTask };
+      stagedTask.agentCommand = opts.agentCommand ?? stagedTask.agentCommand;
+      if (safeMcpConfigPath) stagedTask.mcpConfigPath = safeMcpConfigPath;
       if (opts.autoDiscoveredMcpConfig !== undefined) {
         const restoredState = validateAutoDiscoveredMcpConfigState(
           opts.autoDiscoveredMcpConfig,
           existingTask.worktreePath,
         );
         if (restoredState) {
-          existingTask.autoDiscoveredMcpConfig = restoredState;
+          stagedTask.autoDiscoveredMcpConfig = restoredState;
         } else if (existingTask.autoDiscoveredMcpConfig) {
           logWarn(
             'coordinator.kimi_mcp',
@@ -2566,11 +2569,17 @@ export class Coordinator {
         }
       }
       const mcpLaunchArgs = this.rewriteHydratedSubtaskMcpConfig(
-        existingTask,
+        stagedTask,
         opts.coordinatorTaskId,
-        safeMcpConfigPath ?? existingTask.mcpConfigPath,
+        stagedTask.mcpConfigPath,
         opts.agentCommand,
+        true,
       );
+      const configStateChanged =
+        stagedTask.autoDiscoveredMcpConfig !== existingTask.autoDiscoveredMcpConfig;
+      Object.assign(existingTask, stagedTask);
+      // Notification failures must not roll back just one of the committed files.
+      if (configStateChanged) this.syncAutoDiscoveredMcpConfig(existingTask);
       return {
         mcpLaunchArgs,
         autoDiscoveredMcpConfig: existingTask.autoDiscoveredMcpConfig ?? null,
@@ -2666,6 +2675,7 @@ export class Coordinator {
     coordinatorTaskId: string,
     mcpConfigPath: string | undefined,
     agentCommand: string | undefined,
+    preserveExistingConfig = false,
   ): string[] | undefined {
     const serverInfo = this.coordinators.get(coordinatorTaskId)?.mcpServerInfo;
     if (!serverInfo) return undefined;
@@ -2678,12 +2688,40 @@ export class Coordinator {
       taskId: task.id,
       doneToken: task.doneToken,
     });
-    if (mcpConfigPath) {
-      writeSubTaskMcpConfigSync(mcpConfigPath, mcpConfig);
-    }
     task.agentCommand = agentCommand ?? task.agentCommand ?? 'claude';
-    this.writeKimiAutoDiscoveredMcpConfig(task, mcpConfig);
-    return buildMcpLaunchArgs(task.agentCommand, mcpConfigPath, mcpConfig);
+    const launchArgs = buildMcpLaunchArgs(task.agentCommand, mcpConfigPath, mcpConfig);
+    let previousConfig: string | undefined;
+    if (preserveExistingConfig && mcpConfigPath) {
+      try {
+        previousConfig = readFileSync(mcpConfigPath, 'utf8');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
+    }
+    let configWritten = false;
+    try {
+      if (mcpConfigPath) {
+        writeSubTaskMcpConfigSync(mcpConfigPath, mcpConfig);
+        configWritten = true;
+      }
+      this.writeKimiAutoDiscoveredMcpConfig(task, mcpConfig, !preserveExistingConfig);
+    } catch (err) {
+      if (preserveExistingConfig && configWritten && mcpConfigPath) {
+        try {
+          if (previousConfig === undefined) unlinkSync(mcpConfigPath);
+          else atomicWriteFileSync(mcpConfigPath, previousConfig, { mode: 0o600 });
+        } catch (restoreError) {
+          throw Object.assign(
+            new Error(
+              'Task hydration failed and the previous per-task MCP config could not be restored.',
+            ),
+            { cause: err, restoreError },
+          );
+        }
+      }
+      throw err;
+    }
+    return launchArgs;
   }
 
   isRegisteredCoordinator(coordinatorTaskId: string): boolean {
