@@ -91,9 +91,13 @@ function fixEnv(): void {
 //
 // Dev runs skip the lock deliberately, so `npm run dev` still starts while an
 // installed build is running.
-const isPrimaryInstance = !app.isPackaged || app.requestSingleInstanceLock();
+const singleInstanceLockHeld = app.isPackaged && app.requestSingleInstanceLock();
+// Two questions, two names: whether this process holds the lock, and whether it
+// should boot at all. A dev run answers no to the first and yes to the second,
+// which is why one flag covering both would be wrong under either name.
+const shouldStartApp = !app.isPackaged || singleInstanceLockHeld;
 
-if (!isPrimaryInstance) {
+if (!shouldStartApp) {
   app.quit();
 } else {
   // Only the primary instance ever spawns a PTY, so it is the only one that needs
@@ -256,7 +260,7 @@ function createWindow() {
 // for each one — on top of the PTYs the hidden instance is still holding. The
 // hidden window has no way back either, because nothing is listening for the
 // launch. With the lock, a second launch becomes "show the window".
-if (isPrimaryInstance) {
+if (shouldStartApp) {
   // A second launch (icon, CLI, file manager) reaches the instance that owns
   // the lock as this event instead of starting a process of its own.
   app.on('second-instance', () => restoreWindow(mainWindow));
@@ -319,6 +323,19 @@ app.on('before-quit', (event) => {
 // Runs only on a quit that got through the check above, so it cannot destroy
 // anything the user still had a chance to cancel.
 app.on('will-quit', () => {
+  // Hand the lock over before the blocking teardown below, not at process exit.
+  // electron-updater's AppImage path spawns the replacement *before* quitting
+  // (`doInstall` → `spawnLog(destination)`, then `setImmediate(() =>
+  // app.quit())`), so the incoming process is already booting while this one is
+  // still killing agents — and `killAllAgents()` blocks on a `docker kill` per
+  // session. Holding the lock through that can make the replacement fail it and
+  // quit: update applied, app never reappears. Releasing here also covers the
+  // plain case, where someone relaunching during a slow shutdown would
+  // otherwise be handed a window that is already going away.
+  //
+  // `will-quit` only runs on a quit that got past the veto above, so a
+  // cancelled quit correctly keeps the lock. A no-op when none is held.
+  app.releaseSingleInstanceLock();
   killAllAgents();
   // Detached process groups would outlive Electron otherwise.
   verificationRunner.cancelAll();
