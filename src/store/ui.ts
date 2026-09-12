@@ -270,6 +270,15 @@ export function setShareDockerAgentAuth(enabled: boolean): void {
   setStore('shareDockerAgentAuth', enabled);
 }
 
+export function setDocumentWorkspacesEnabled(enabled: boolean): void {
+  setStore('documentWorkspacesEnabled', enabled);
+  if (!enabled) setStore('activeDocumentProjectId', null);
+}
+
+export function setDocumentFullWidth(fullWidth: boolean): void {
+  setStore('documentFullWidth', fullWidth);
+}
+
 export function toggleArena(show?: boolean): void {
   setStore('showArena', show ?? !store.showArena);
 }

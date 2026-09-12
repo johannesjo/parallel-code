@@ -1,19 +1,9 @@
-import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
-
-function getStateDir(): string {
-  let dir = app.getPath('userData');
-  // Use separate dir for dev mode
-  if (!app.isPackaged) {
-    const base = path.basename(dir);
-    dir = path.join(path.dirname(dir), `${base}-dev`);
-  }
-  return dir;
-}
+import { getUserDataDir } from '../user-data-dir.js';
 
 function getStatePath(): string {
-  return path.join(getStateDir(), 'state.json');
+  return path.join(getUserDataDir(), 'state.json');
 }
 
 export function saveAppState(json: string): void {
@@ -52,7 +42,7 @@ export function saveAppState(json: string): void {
 }
 
 function getThemesDir(): string {
-  return path.join(getStateDir(), 'themes');
+  return path.join(getUserDataDir(), 'themes');
 }
 
 const VALID_THEME_ID = /^[a-zA-Z0-9_-]+$/;

@@ -11,10 +11,13 @@ import {
   clearTaskLandingReview,
   getPrChecks,
   getVerifyCommand,
+  isTaskCanvasVisible,
+  openTaskCanvas,
+  closeTaskCanvas,
 } from '../store/store';
 import { EditableText, type EditableTextHandle } from './EditableText';
 import { IconButton } from './IconButton';
-import { StatusDot } from './StatusDot';
+import { StatusDot, getDotTooltip } from './StatusDot';
 import { CheckIcon, CloseIcon } from './icons';
 import { theme } from '../lib/theme';
 import { badgeStyle } from '../lib/badgeStyle';
@@ -157,35 +160,25 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
   }
 
   return (
-    <div
-      class="task-title-bar"
-      style={{
-        display: 'flex',
-        'align-items': 'center',
-        'justify-content': 'space-between',
-        padding: '0 10px',
-        height: '100%',
-        background: 'transparent',
-        'user-select': 'none',
-        cursor: 'grab',
-      }}
-      onMouseDown={handleTitleMouseDown}
-    >
-      <div
-        style={{
-          overflow: 'hidden',
-          flex: '1',
-          'min-width': '0',
-          display: 'flex',
-          'align-items': 'center',
-          gap: '8px',
-        }}
-      >
-        <StatusDot
-          status={getTaskDotStatus(props.task.id)}
-          size="md"
-          attention={getTaskAttentionState(props.task.id)}
-        />
+    <div class="task-title-bar" data-active={props.isActive} onMouseDown={handleTitleMouseDown}>
+      <EditableText
+        value={titleLabel()}
+        onCommit={(v) => updateTaskName(props.task.id, v)}
+        class="editable-text"
+        title={props.task.savedInitialPrompt}
+        ref={(h) => props.onTitleEditRef(h)}
+      />
+      <div class="task-title-details">
+        <span class="task-title-status">
+          <StatusDot
+            status={getTaskDotStatus(props.task.id)}
+            size="md"
+            attention={getTaskAttentionState(props.task.id)}
+          />
+          <span>
+            {getDotTooltip(getTaskDotStatus(props.task.id), getTaskAttentionState(props.task.id))}
+          </span>
+        </span>
         <Show when={props.task.gitIsolation === 'direct'}>
           <span style={badgeStyle(theme.warning)}>{props.task.branchName}</span>
         </Show>
@@ -238,15 +231,8 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
             </span>
           )}
         </Show>
-        <EditableText
-          value={titleLabel()}
-          onCommit={(v) => updateTaskName(props.task.id, v)}
-          class="editable-text"
-          title={props.task.savedInitialPrompt}
-          ref={(h) => props.onTitleEditRef(h)}
-        />
       </div>
-      <div style={{ display: 'flex', gap: '4px', 'margin-left': '8px', 'flex-shrink': '0' }}>
+      <div class="task-title-actions">
         <Show when={props.task.gitIsolation === 'worktree' && !isLandedTask()}>
           <IconButton
             icon={
@@ -350,6 +336,28 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
             </Show>
           </div>
         </Show>
+        <IconButton
+          icon={
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              style={{ color: isTaskCanvasVisible(props.task) ? theme.accent : undefined }}
+            >
+              <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
+              <path d="M10 2.75v10.5" />
+            </svg>
+          }
+          onClick={() =>
+            isTaskCanvasVisible(props.task)
+              ? closeTaskCanvas(props.task.id)
+              : openTaskCanvas(props.task.id)
+          }
+          title={isTaskCanvasVisible(props.task) ? 'Close canvas' : 'Open canvas'}
+        />
         <IconButton
           icon={
             store.focusMode ? (

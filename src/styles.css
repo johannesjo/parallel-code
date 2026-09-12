@@ -122,6 +122,68 @@ body.font-smoothing {
   border: 0;
 }
 
+/* Task identity leads; operational details sit on a quieter second line. */
+.task-title-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  height: 100%;
+  padding: 6px 12px;
+  gap: 2px 12px;
+  font-size: 15px;
+  user-select: none;
+  cursor: grab;
+  box-sizing: border-box;
+}
+
+.task-title-bar > .editable-text {
+  letter-spacing: -0.015em;
+}
+
+.task-title-actions {
+  display: flex;
+  gap: 4px;
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.task-title-details {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.task-title-details > * {
+  flex-shrink: 0;
+}
+
+.task-title-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.task-title-bar .task-title-actions .icon-btn {
+  padding: 6px !important;
+}
+
+.task-title-bar .task-title-actions .icon-btn:not(:hover) {
+  border-color: transparent !important;
+}
+
+.task-title-bar[data-active='true'] {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
 .task-branch-info-bar {
   container-name: task-branch-info;
   container-type: inline-size;
@@ -185,7 +247,8 @@ body.font-smoothing {
   flex: 0 0 auto;
 }
 
-.task-branch-source-compact-label {
+.task-branch-source-compact-label,
+.task-branch-project-compact-label {
   display: none;
   flex: 0 0 auto;
 }
@@ -224,9 +287,15 @@ body.font-smoothing {
   }
 }
 
+/* The project never collapses away entirely: a task's branch name alone is
+   ambiguous across projects, so the name shrinks to its initials instead. */
 @container task-branch-info (max-width: 480px) {
-  .task-branch-project {
+  .task-branch-project-label {
     display: none;
+  }
+
+  .task-branch-project-compact-label {
+    display: inline;
   }
 }
 
@@ -659,8 +728,11 @@ html[data-look^='islands-'] .tiling-layout-strip > .resize-handle-h::before {
   display: none;
 }
 
+/* No top gap: unlike a task column, the nav island draws a visible 1px border
+   above its fill and curves away over 12px of radius, so at an equal box top it
+   reads as sitting lower. Starting flush lines it up with the columns. */
 html[data-look^='islands-'] .sidebar-shell {
-  padding: 6px 3px 6px 6px;
+  padding: 0 3px 6px 6px;
   box-sizing: border-box;
 }
 
@@ -1057,9 +1129,42 @@ textarea::placeholder {
     border-color 0.13s ease;
 }
 
-.task-item:hover {
+.task-item:hover:not([aria-current='true']) {
   background: color-mix(in srgb, var(--accent) 10%, var(--bg-hover)) !important;
   color: var(--fg) !important;
+}
+
+/* Selection stays distinct from status and keyboard focus: an inset bar and a
+   heavier name, so it still reads where --accent and --border-focus match.
+   !important is needed only because `taskAttentionStyles` sets background
+   inline on every row. */
+.task-item[aria-current='true'] {
+  background: var(--bg-selected-subtle) !important;
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+.task-item[aria-current='true']:hover {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-hover)) !important;
+}
+
+/* Selecting a task must not hide that it also needs you: keep the attention
+   tint that the inline style would otherwise have provided. */
+.task-item[aria-current='true']:is(
+    [data-attention='needs_input'],
+    [data-attention='error'],
+    [data-attention='review']
+  ) {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-selected-subtle)) !important;
+}
+
+.task-item:is(
+    [aria-current='true'],
+    [data-attention='needs_input'],
+    [data-attention='error'],
+    [data-attention='review']
+  )
+  .task-item-name {
+  font-weight: 600;
 }
 
 /* Title line of a task row: glyph, name, badges. A wrapped two-line name must
@@ -1117,8 +1222,15 @@ textarea::placeholder {
   margin-top: 1px;
 }
 
-.task-item:hover .task-agent-status,
-.task-item:hover .task-current-state-sidebar {
+.task-item:is(
+    :hover,
+    [data-kbd-focused='true'],
+    [aria-current='true'],
+    [data-attention='needs_input'],
+    [data-attention='error'],
+    [data-attention='review']
+  )
+  :is(.task-agent-status, .task-current-state-sidebar) {
   opacity: 1;
 }
 
@@ -1201,6 +1313,28 @@ textarea::placeholder {
 
 .project-row:hover {
   background: var(--bg-hover);
+}
+
+.project-row .icon-btn {
+  opacity: 0.5;
+  transition: opacity 0.12s ease;
+}
+
+.project-row:is(:hover, :focus-within) .icon-btn {
+  opacity: 1;
+}
+
+/* Empty notes remain directly editable, with less competing chrome. */
+.task-notes-body[data-empty='true'] textarea {
+  background: transparent !important;
+}
+
+.task-notes-body .send-notes-btn:disabled {
+  visibility: hidden;
+}
+
+.task-notes-body textarea::placeholder {
+  color: var(--fg-muted);
 }
 
 /* CSS-only collapse animation. The grid-rows trick lets the row collapse from
@@ -2586,9 +2720,82 @@ body.dragging-task * {
   color: var(--fg-muted);
 }
 .mermaid-block.mermaid-rendered {
+  position: relative;
   white-space: normal;
   text-align: center;
   background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+
+/* The enlarge button waits in the diagram's corner until the pointer is on it. */
+.mermaid-enlarge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--fg-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.mermaid-block:hover .mermaid-enlarge,
+.mermaid-enlarge:focus-visible {
+  opacity: 1;
+}
+
+.mermaid-enlarge:hover {
+  color: var(--fg);
+  border-color: var(--border-focus);
+}
+
+/* The diagram at the size of the window, over everything else. */
+.mermaid-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+
+.mermaid-lightbox-body {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mermaid-lightbox-body svg {
+  cursor: default;
+}
+
+.mermaid-lightbox-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  cursor: pointer;
 }
 
 /* AskCodeCard loading animation */
@@ -2600,6 +2807,86 @@ body.dragging-task * {
   50% {
     opacity: 0.3;
   }
+}
+
+/* ── Canvas editor (Milkdown Crepe): its theme variables follow the look ── */
+.task-canvas-editor .milkdown {
+  --crepe-color-background: var(--task-panel-bg);
+  --crepe-color-on-background: var(--fg);
+  --crepe-color-surface: var(--bg-elevated);
+  --crepe-color-surface-low: var(--bg-input);
+  --crepe-color-on-surface: var(--fg);
+  --crepe-color-on-surface-variant: var(--fg-muted);
+  --crepe-color-outline: var(--fg-muted);
+  --crepe-color-primary: var(--accent);
+  --crepe-color-secondary: var(--bg-selected);
+  --crepe-color-on-secondary: var(--fg);
+  --crepe-color-inverse: var(--fg);
+  --crepe-color-on-inverse: var(--bg-elevated);
+  --crepe-color-inline-code: var(--link);
+  --crepe-color-error: var(--error);
+  --crepe-color-hover: var(--bg-hover);
+  --crepe-color-selected: var(--bg-selected);
+  --crepe-color-inline-area: var(--bg-selected-subtle);
+
+  --crepe-base-font-size: 13px;
+  --crepe-font-title: var(--font-display);
+  --crepe-font-default: var(--font-ui);
+  --crepe-font-code: var(--font-mono);
+
+  --crepe-shadow-1: var(--shadow-soft);
+  --crepe-shadow-2: var(--shadow-soft);
+
+  caret-color: var(--fg);
+
+  min-height: 100%;
+  background: var(--task-panel-bg);
+  color: var(--fg);
+}
+.canvas-tab-strip {
+  scrollbar-width: none;
+}
+.canvas-kind-menu button:hover {
+  background: var(--bg-hover);
+}
+
+/* The canvas sits in a narrow column, so Crepe's page-like spacing is
+   pulled in: the block controls share one vertical gutter, with tighter
+   indents for lists, quotes, code and tables. */
+.task-canvas-editor .milkdown .ProseMirror {
+  padding: 12px 12px 48px 28px;
+}
+.task-canvas-editor .milkdown .milkdown-block-handle {
+  flex-direction: column;
+}
+.task-canvas-editor .milkdown .milkdown-block-handle .operation-item {
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+}
+.task-canvas-editor .milkdown .milkdown-block-handle .operation-item svg {
+  width: 16px;
+  height: 16px;
+}
+.task-canvas-editor .milkdown .milkdown-list-item-block li {
+  gap: 6px;
+}
+.task-canvas-editor .milkdown .milkdown-list-item-block li .label-wrapper,
+.task-canvas-editor .milkdown .milkdown-list-item-block li .label-wrapper .label {
+  width: 20px;
+}
+.task-canvas-editor .milkdown .ProseMirror blockquote {
+  padding-left: 14px;
+}
+.task-canvas-editor .milkdown .ProseMirror blockquote::before {
+  width: 3px;
+}
+.task-canvas-editor .milkdown .milkdown-code-block {
+  padding: 8px 8px 12px;
+}
+.task-canvas-editor .milkdown .milkdown-table-block th,
+.task-canvas-editor .milkdown .milkdown-table-block td {
+  padding: 4px 8px;
 }
 
 /* Keep reduced-motion overrides last so class-based rules win by source order. */

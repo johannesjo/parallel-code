@@ -21,6 +21,7 @@ import {
   deletePanelUserSize,
   scrollTaskElementIntoView,
 } from '../store/store';
+import { codeProjects } from '../store/projects';
 import { closeTask } from '../store/tasks';
 import { TaskPanel } from './TaskPanel';
 import { TerminalPanel } from './TerminalPanel';
@@ -30,6 +31,7 @@ import { theme } from '../lib/theme';
 import { mod } from '../lib/platform';
 import { createCtrlShiftWheelResizeHandler } from '../lib/wheelZoom';
 import { shouldAnimateTaskAppearance } from '../lib/reducedMotion';
+import { TASK_TILE_DEFAULT_WIDTH, TASK_TILE_MIN_WIDTH } from '../lib/layout-sizes';
 
 const VIEWPORT_EPSILON_PX = 4;
 
@@ -240,8 +242,8 @@ export function TilingLayout() {
       if (!cached) {
         cached = {
           id: panelId,
-          initialSize: 520,
-          minSize: 300,
+          initialSize: TASK_TILE_DEFAULT_WIDTH,
+          minSize: TASK_TILE_MIN_WIDTH,
           content: () => {
             const task = store.tasks[panelId];
             const terminal = store.terminals[panelId];
@@ -258,11 +260,14 @@ export function TilingLayout() {
                 }
                 style={{
                   height: '100%',
+                  // No vertical padding: the strip's own 2px is the whole
+                  // top/bottom gap, so a column lines up with the document
+                  // workspace and the sidebar island beside it.
                   padding: store.themePreset.startsWith('islands-')
                     ? store.focusMode
-                      ? '6px 0'
-                      : '6px 1px'
-                    : '6px 3px',
+                      ? '0'
+                      : '0 1px'
+                    : '0 3px',
                   'box-sizing': 'border-box',
                 }}
                 onAnimationEnd={(e) => {
@@ -441,7 +446,7 @@ export function TilingLayout() {
                 }
               >
                 <Show
-                  when={store.projects.length > 0}
+                  when={codeProjects().length > 0}
                   fallback={
                     <>
                       <div

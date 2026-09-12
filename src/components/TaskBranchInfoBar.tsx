@@ -15,6 +15,7 @@ import { theme } from '../lib/theme';
 import { isMac } from '../lib/platform';
 import { parseGitHubUrl } from '../lib/github-url';
 import { abbreviateHomePath } from '../lib/path';
+import { projectInitials } from '../lib/project-initials';
 import type { Task } from '../store/types';
 import { AlertIcon, CheckIcon, PencilIcon, PersonIcon } from './icons';
 
@@ -70,6 +71,13 @@ interface TaskBranchInfoBarProps {
 }
 
 export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
+  const project = () => getProject(props.task.projectId);
+  // The project's colour rides the bar's left edge instead of an inline dot, so
+  // it reads on a different axis than the status circle stacked above it.
+  const projectStripe = () => {
+    const color = project()?.color;
+    return color ? { 'border-left': `3px solid ${color}` } : undefined;
+  };
   const mod = isMac ? 'Cmd' : 'Ctrl';
   const isPrUrl = (url: string | undefined): boolean => {
     const parsed = url ? parseGitHubUrl(url) : null;
@@ -139,34 +147,24 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
   };
 
   return (
-    <InfoBar class="task-branch-info-bar">
-      {(() => {
-        const project = getProject(props.task.projectId);
-        return (
-          <Show when={project}>
-            {(p) => (
-              <button
-                type="button"
-                class="task-branch-info-button task-branch-project"
-                onClick={() => props.onEditProject(p().id)}
-                title="Project settings"
-                style={{ ...infoBarBtnStyle, margin: '0 8px 0 0' }}
-              >
-                <div
-                  style={{
-                    width: '7px',
-                    height: '7px',
-                    'border-radius': '50%',
-                    background: p().color,
-                    'flex-shrink': '0',
-                  }}
-                />
-                <span class="task-branch-project-label">{p().name}</span>
-              </button>
-            )}
-          </Show>
-        );
-      })()}
+    <InfoBar class="task-branch-info-bar" style={projectStripe()}>
+      <Show when={project()}>
+        {(p) => (
+          <button
+            type="button"
+            class="task-branch-info-button task-branch-project"
+            onClick={() => props.onEditProject(p().id)}
+            title={`${p().name} · Project settings`}
+            aria-label={`Project: ${p().name} · Project settings`}
+            style={{ ...infoBarBtnStyle, margin: '0 8px 0 0' }}
+          >
+            <span class="task-branch-project-label">{p().name}</span>
+            <span class="task-branch-project-compact-label" aria-hidden="true">
+              {projectInitials(p().name)}
+            </span>
+          </button>
+        )}
+      </Show>
       <Show when={prLinkUrl()}>
         {(url) => {
           const pr = () => getPrChecks(props.task.id);

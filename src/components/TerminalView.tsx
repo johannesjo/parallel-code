@@ -50,6 +50,7 @@ import { hasTerminalUserActivity, nextTerminalInputPending } from '../lib/termin
 import { computeWrappedPathLinks, createTerminalHttpLinkHandler } from '../lib/terminalLinks';
 import { recordSharedWebglContextLoss, WEBGL_REATTACH_DELAY_MS } from '../lib/webglContextLoss';
 import { isTerminalPaneOnScreen, WEBGL_DETACH_DELAY_MS } from '../lib/terminalPaneVisibility';
+import { documentAgentTaskId } from '../documents/task-id';
 import type { PtyOutput } from '../ipc/types';
 
 let windowUnloading = false;
@@ -997,6 +998,9 @@ export function TerminalView(props: TerminalViewProps) {
         taskId,
         viewportVisibility: store.taskViewportVisibility[taskId],
         paneVisible: props.visible,
+        workspaceTaskId: store.activeDocumentProjectId
+          ? documentAgentTaskId(store.activeDocumentProjectId)
+          : null,
         standalone: props.standalone,
       }),
     );

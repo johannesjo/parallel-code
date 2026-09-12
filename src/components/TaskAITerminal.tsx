@@ -21,6 +21,7 @@ import {
   toggleAITerminalLayout,
 } from '../store/store';
 import { markDirty } from '../lib/terminalFitManager';
+import { isAgentAskingQuestion } from '../store/taskStatus';
 import { warn as logWarn } from '../lib/log';
 import { InfoBar } from './InfoBar';
 import { TerminalView } from './TerminalView';
@@ -42,6 +43,8 @@ type StepNavApi = { mark: (i: number) => void; jump: (i: number) => boolean };
 interface TaskAITerminalProps {
   task: Task;
   isActive: boolean;
+  /** The entire terminal section can be hidden by its parent view. */
+  visible?: boolean;
   selectedAgentId: string;
   onSelectAgent?: (agentId: string) => void;
   promptHandle: PromptInputHandle | undefined;
@@ -53,7 +56,9 @@ interface TaskAITerminalProps {
     jump: ((stepIndex: number) => boolean) | undefined,
     firstJumpableIndex: number,
   ) => void;
-  onFileLink?: (filePath: string) => void;
+  /** First look at a Markdown path the agent printed; returns true when it
+   *  took the link. Otherwise the file opens in the Markdown viewer. */
+  onFileLink?: (filePath: string) => boolean;
 }
 
 export function TaskAITerminal(props: TaskAITerminalProps) {
@@ -123,10 +128,13 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
   // have resized while hidden). The repaint / WebGL reattach on that edge is
   // TerminalView's job, driven by the `visible` prop passed below.
   createEffect(() => {
-    if (!tabsMode()) return;
-    const id = visibleAgentId();
-    if (!id) return;
-    markDirty(id);
+    if (props.visible === false) return;
+    if (tabsMode()) {
+      const id = visibleAgentId();
+      if (id) markDirty(id);
+    } else if (props.visible === true) {
+      for (const id of props.task.agentIds) markDirty(id);
+    }
   });
 
   const infoBarStatus = () => {
@@ -134,6 +142,15 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
       return {
         title: 'Agent exited before prompt was sent',
         text: 'Agent exited before prompt was sent',
+      };
+    }
+
+    // Common on a fresh session: a trust or permission prompt comes up before
+    // the first instruction can go in, and "waiting" would look stuck.
+    if (props.task.initialPrompt && isAgentAskingQuestion(props.task.agentIds[0] ?? '')) {
+      return {
+        title: 'Answer the agent to send the queued prompt',
+        text: 'Answer the agent to send the queued prompt',
       };
     }
 
@@ -273,6 +290,7 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                       <button
                         type="button"
                         title={agent()?.def.description ?? agent()?.def.name}
+                        aria-pressed={selected()}
                         onClick={(e) => {
                           e.stopPropagation();
                           selectAgent(agentId);
@@ -414,9 +432,11 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                 agentId={agentId}
                 canClose={multipleAgents()}
                 tabsMode={tabsMode()}
-                visible={!tabsMode() || visibleAgentId() === agentId}
+                visible={props.visible !== false && (!tabsMode() || visibleAgentId() === agentId)}
                 onSelect={() => selectAgent(agentId)}
-                onFileLink={handleFileLink}
+                onFileLink={(filePath) => {
+                  if (!props.onFileLink?.(filePath)) handleFileLink(filePath);
+                }}
                 onReady={registerAgentFocus}
                 onUnmount={unregisterAgentFocus}
                 onStepNavReady={(api) => handleStepNavReady(agentId, api)}
@@ -683,7 +703,7 @@ function AgentTerminalPane(props: {
               <TerminalView
                 taskId={props.task.id}
                 agentId={a().id}
-                visible={props.tabsMode ? props.visible : true}
+                visible={props.visible}
                 isFocused={isPanelFocused(props.task.id, aiTerminalPanelId(props.agentId))}
                 command={a().def.command}
                 args={buildTaskAgentArgs(a().def, props.task, a().resumed)}
@@ -883,6 +903,8 @@ function AgentRestartMenu(props: { agentId: string; agentDefId: string }) {
         Restart
       </button>
       <button
+        aria-label="More ways to restart"
+        aria-expanded={showAgentMenu()}
         onClick={(e) => {
           e.stopPropagation();
           setShowAgentMenu(!showAgentMenu());

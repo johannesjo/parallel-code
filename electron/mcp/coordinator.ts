@@ -34,7 +34,7 @@ import { truncateDiffForTool } from './diff-format.js';
 const execAsync = promisify(execFile);
 import type { BrowserWindow } from 'electron';
 import { createTask as createBackendTask, deleteTask } from '../ipc/tasks.js';
-import { getSkipPermissionsArgs } from '../ipc/agents.js';
+import { getSkipPermissionsArgs } from '../shared/skip-permissions.js';
 import {
   spawnAgent,
   writeToAgent,
@@ -2311,10 +2311,6 @@ export class Coordinator {
     const shouldRefreshMcpConfig = restoreMcpConfig.status === 'restored';
 
     try {
-      // skipVerification is the coordinator's way past a failure the task cannot
-      // fix, such as a suite that is already red on the base branch.
-      if (!opts?.skipVerification) await this.verifyBeforeLanding(task);
-
       // Strip injected preamble files before staging so they don't land in history,
       // then auto-commit any uncommitted changes in the task worktree before merging.
       if (task.worktreePath) {
@@ -2338,6 +2334,11 @@ export class Coordinator {
           // Nothing to commit — swallow silently
         }
       }
+
+      // Verify the cleaned, committed tree so the recorded HEAD/dirty state
+      // describes what will be merged, matching the upstream landing order.
+      // skipVerification remains the explicit escape hatch for base-branch failures.
+      if (!opts?.skipVerification) await this.verifyBeforeLanding(task);
 
       const result = await this.runGitMerge(task, opts);
 

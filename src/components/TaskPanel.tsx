@@ -12,9 +12,11 @@ import {
   clearPendingAction,
   showNotification,
   setTaskSplitMode,
+  isTaskCanvasVisible,
 } from '../store/store';
 import { useFocusRegistration } from '../lib/focus-registration';
 import { ResizablePanel, type PanelChild } from './ResizablePanel';
+import { CANVAS_DEFAULT_WIDTH, CANVAS_MIN_WIDTH } from '../lib/layout-sizes';
 import type { EditableTextHandle } from './EditableText';
 import { PromptInput, type PromptInputHandle } from './PromptInput';
 import { CloseTaskDialog } from './CloseTaskDialog';
@@ -30,6 +32,7 @@ import { TaskNotesBody } from './TaskNotesBody';
 import { TaskChangedFilesSection } from './TaskChangedFilesSection';
 import { isCommitHashSelection, type CommitSelection } from './CommitNavBar';
 import { TaskShellSection } from './TaskShellSection';
+import { TaskCanvasPanel } from './TaskCanvasPanel';
 import { TaskStepsSection } from './TaskStepsSection';
 import { TaskCurrentStateLine } from './TaskCurrentStateLine';
 import { TaskAITerminal } from './TaskAITerminal';
@@ -102,6 +105,8 @@ export function TaskPanel(props: TaskPanelProps) {
     { jump: (stepIndex: number) => boolean; firstIndex: number } | undefined
   >();
   let panelRef!: HTMLDivElement;
+  // The area left of the canvas column: what the split-mode threshold measures.
+  let mainRef!: HTMLDivElement;
   let promptRef: HTMLTextAreaElement | undefined;
   let titleEditHandle: EditableTextHandle | undefined;
   let promptHandle: PromptInputHandle | undefined;
@@ -145,8 +150,8 @@ export function TaskPanel(props: TaskPanelProps) {
       const w = entries[0]?.contentRect.width ?? 0;
       setPanelWidth(w);
     });
-    ro.observe(panelRef);
-    setPanelWidth(panelRef.clientWidth);
+    ro.observe(mainRef);
+    setPanelWidth(mainRef.clientWidth);
     onCleanup(() => ro.disconnect());
   });
 
@@ -270,10 +275,7 @@ export function TaskPanel(props: TaskPanelProps) {
   // column. Until either has content the strip stays thin and the AI terminal
   // takes the space; a user drag on the divider pins a size as usual.
   const topStripEmpty = createMemo(
-    () =>
-      !props.task.notes?.trim() &&
-      !(store.showPlans && props.task.planContent) &&
-      (isGitUnavailable() || changedFileCount() === 0),
+    () => !props.task.notes?.trim() && (isGitUnavailable() || changedFileCount() === 0),
   );
 
   // Heavy components are created once and reused in both stack and split
@@ -296,6 +298,7 @@ export function TaskPanel(props: TaskPanelProps) {
     </div>
   );
   const shellSectionEl = <TaskShellSection task={props.task} isActive={props.isActive} />;
+  const canvasEl = <TaskCanvasPanel task={props.task} agentId={firstAgentId()} />;
   const notesBodyEl = (
     <TaskNotesBody
       task={props.task}
@@ -420,9 +423,9 @@ export function TaskPanel(props: TaskPanelProps) {
   const notesAndFilesChild: PanelChild = {
     id: 'notes-files',
     minSize: 60,
-    absorberWeight: 0.5,
+    absorberWeight: 0.25,
     content: () => (
-      <div style={{ height: '100%', 'min-height': topStripEmpty() ? '64px' : '200px' }}>
+      <div style={{ height: '100%', 'min-height': topStripEmpty() ? '64px' : '140px' }}>
         {isGitUnavailable() ? (
           notesBodyEl
         ) : (
@@ -437,6 +440,81 @@ export function TaskPanel(props: TaskPanelProps) {
     ),
   };
 
+  // The task body left of the canvas. Created once so toggling the canvas
+  // column reparents it instead of remounting the terminal.
+  const mainEl = (
+    <div ref={mainRef} style={{ height: '100%', 'min-height': '0' }}>
+      <Show
+        when={useSplit()}
+        fallback={
+          <ResizablePanel
+            direction="vertical"
+            persistKey={`task:${props.task.id}`}
+            absorberIds={topStripEmpty() ? ['ai-terminal'] : ['notes-files', 'ai-terminal']}
+            children={[
+              notesAndFilesChild,
+              shellSectionChild,
+              aiTerminalChild,
+              ...(props.task.stepsEnabled ? [stepsSectionChild] : []),
+              ...(store.showPromptInput || props.task.coordinatorMode ? [promptInputChild] : []),
+            ]}
+          />
+        }
+      >
+        <ResizablePanel
+          direction="horizontal"
+          persistKey={`task:${props.task.id}:split-cols`}
+          absorberIds={['left-col']}
+          children={[
+            {
+              id: 'left-col',
+              minSize: 420,
+              content: () => (
+                <ResizablePanel
+                  direction="vertical"
+                  persistKey={`task:${props.task.id}:split-left`}
+                  absorberIds={['ai-terminal']}
+                  children={[
+                    aiTerminalChild,
+                    ...(store.showPromptInput || props.task.coordinatorMode
+                      ? [promptInputChild]
+                      : []),
+                  ]}
+                />
+              ),
+            },
+            {
+              id: 'right-col',
+              minSize: 360,
+              defaultSize: 420,
+              content: () => (
+                <ResizablePanel
+                  direction="vertical"
+                  persistKey={`task:${props.task.id}:split-right`}
+                  absorberIds={['shell-section']}
+                  children={[
+                    ...(isGitUnavailable() ? [] : [changedFilesChild]),
+                    notesChild,
+                    ...(props.task.stepsEnabled ? [stepsSectionChild] : []),
+                    shellSectionChild,
+                  ]}
+                />
+              ),
+            },
+          ]}
+        />
+      </Show>
+    </div>
+  );
+  const mainChild: PanelChild = { id: 'main', minSize: 360, content: () => mainEl };
+  const canvasVisible = () => isTaskCanvasVisible(props.task);
+  const canvasChild: PanelChild = {
+    id: 'canvas',
+    minSize: CANVAS_MIN_WIDTH,
+    defaultSize: CANVAS_DEFAULT_WIDTH,
+    content: () => canvasEl,
+  };
+
   return (
     <div
       ref={panelRef}
@@ -448,6 +526,7 @@ export function TaskPanel(props: TaskPanelProps) {
         background: theme.taskContainerBg,
         'border-radius': 'var(--radius-lg)',
         border: `1px solid ${theme.border}`,
+        'border-left': `3px solid ${getProject(props.task.projectId)?.color ?? theme.border}`,
         overflow: 'clip',
         position: 'relative',
       }}
@@ -532,14 +611,18 @@ export function TaskPanel(props: TaskPanelProps) {
       <div
         class="task-header-stack"
         style={{
-          flex: `0 0 ${props.task.stepsEnabled ? 88 : 64}px`,
+          flex: `0 0 ${props.task.stepsEnabled ? 120 : 96}px`,
           display: 'flex',
           'flex-direction': 'column',
           overflow: 'hidden',
         }}
       >
         {/* Title + branch bars live outside <Show> so they don't remount on layout flips. */}
-        <div style={{ flex: '0 0 36px', overflow: 'hidden' }}>
+        {/* 68px fits the title bar's two rows: a 30px icon-button row, the 2px
+            row gap, a ~21px badge row, and the bar's 12px vertical padding.
+            The stack totals above are this plus the 28px branch bar (and the
+            24px steps line when enabled). */}
+        <div style={{ flex: '0 0 68px', overflow: 'hidden' }}>
           <TaskTitleBar
             task={props.task}
             isActive={props.isActive}
@@ -559,66 +642,12 @@ export function TaskPanel(props: TaskPanelProps) {
         </div>
       </div>
       <div style={{ flex: '1', 'min-height': '0' }}>
-        <Show
-          when={useSplit()}
-          fallback={
-            <ResizablePanel
-              direction="vertical"
-              persistKey={`task:${props.task.id}`}
-              absorberIds={topStripEmpty() ? ['ai-terminal'] : ['notes-files', 'ai-terminal']}
-              children={[
-                notesAndFilesChild,
-                shellSectionChild,
-                aiTerminalChild,
-                ...(props.task.stepsEnabled ? [stepsSectionChild] : []),
-                ...(store.showPromptInput || props.task.coordinatorMode ? [promptInputChild] : []),
-              ]}
-            />
-          }
-        >
-          <ResizablePanel
-            direction="horizontal"
-            persistKey={`task:${props.task.id}:split-cols`}
-            absorberIds={['left-col']}
-            children={[
-              {
-                id: 'left-col',
-                minSize: 420,
-                content: () => (
-                  <ResizablePanel
-                    direction="vertical"
-                    persistKey={`task:${props.task.id}:split-left`}
-                    absorberIds={['ai-terminal']}
-                    children={[
-                      aiTerminalChild,
-                      ...(store.showPromptInput || props.task.coordinatorMode
-                        ? [promptInputChild]
-                        : []),
-                    ]}
-                  />
-                ),
-              },
-              {
-                id: 'right-col',
-                minSize: 360,
-                defaultSize: 420,
-                content: () => (
-                  <ResizablePanel
-                    direction="vertical"
-                    persistKey={`task:${props.task.id}:split-right`}
-                    absorberIds={['shell-section']}
-                    children={[
-                      ...(isGitUnavailable() ? [] : [changedFilesChild]),
-                      notesChild,
-                      ...(props.task.stepsEnabled ? [stepsSectionChild] : []),
-                      shellSectionChild,
-                    ]}
-                  />
-                ),
-              },
-            ]}
-          />
-        </Show>
+        <ResizablePanel
+          direction="horizontal"
+          persistKey={`task:${props.task.id}:canvas-cols`}
+          absorberIds={['main']}
+          children={canvasVisible() ? [mainChild, canvasChild] : [mainChild]}
+        />
       </div>
       <CloseTaskDialog
         open={showCloseConfirm()}

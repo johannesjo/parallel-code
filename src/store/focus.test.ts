@@ -131,6 +131,65 @@ afterEach(() => {
 });
 
 describe('focus navigation neighbor map', () => {
+  describe.each([false, true])('canvas navigation (split: %s)', (split) => {
+    beforeEach(() => {
+      setTask('task-1', { canvasOpen: true });
+      mockStore.taskSplitMode['task-1'] = split;
+    });
+
+    it('enters the visible canvas from the right edge and returns left', () => {
+      mockStore.focusedPanel['task-1'] = 'changed-files';
+      navigateColumn('right');
+      expect(mockStore.focusedPanel['task-1']).toBe('canvas');
+      expect(mockStore.placeholderFocused).toBe(false);
+      navigateColumn('left');
+      expect(mockStore.focusedPanel['task-1']).toBe('changed-files');
+    });
+
+    it('enters the canvas from a lower row before crossing to the next task', () => {
+      setTask('task-2');
+      mockStore.taskOrder.push('task-2');
+      mockStore.focusedPanel['task-1'] = split ? 'shell-toolbar:0' : 'prompt';
+      navigateColumn('right');
+      expect(mockStore.focusedPanel['task-1']).toBe('canvas');
+      expect(mockStore.activeTaskId).toBe('task-1');
+      navigateColumn('right');
+      expect(mockStore.activeTaskId).toBe('task-2');
+    });
+
+    it('keeps down in the full-height canvas and moves up to the title', () => {
+      mockStore.focusedPanel['task-1'] = 'canvas';
+      navigateRow('down');
+      expect(mockStore.focusedPanel['task-1']).toBe('canvas');
+      navigateRow('up');
+      expect(mockStore.focusedPanel['task-1']).toBe('title');
+    });
+
+    it('keeps vertical navigation in the main panels', () => {
+      mockStore.focusedPanel['task-1'] = 'changed-files';
+      navigateRow('down');
+      expect(mockStore.focusedPanel['task-1']).toBe(split ? 'notes' : 'shell-toolbar:0');
+    });
+
+    it('includes restored tabs even without the explicit open flag', () => {
+      setTask('task-1', { canvasTabs: [{ kind: 'markdown', path: 'README.md' }] });
+      mockStore.focusedPanel['task-1'] = 'changed-files';
+      navigateColumn('right');
+      expect(mockStore.focusedPanel['task-1']).toBe('canvas');
+    });
+
+    it('skips a closed canvas and recovers stale canvas focus', () => {
+      setTask('task-1');
+      mockStore.focusedPanel['task-1'] = 'changed-files';
+      navigateColumn('right');
+      expect(mockStore.placeholderFocused).toBe(true);
+      mockStore.placeholderFocused = false;
+      mockStore.focusedPanel['task-1'] = 'canvas';
+      navigateRow('up');
+      expect(mockStore.focusedPanel['task-1']).not.toBe('canvas');
+    });
+  });
+
   it('moves down through stacked layout using explicit neighbors', () => {
     setTask('task-1');
     mockStore.focusedPanel['task-1'] = 'notes';

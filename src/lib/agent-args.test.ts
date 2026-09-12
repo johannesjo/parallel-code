@@ -53,6 +53,25 @@ const copilotAgent = {
 };
 
 describe('buildTaskAgentArgs', () => {
+  it.each([
+    [codexAgent, ['resume']],
+    [{ ...claudeAgent, resume_args: ['--continue'] }, ['--resume']],
+    [copilotAgent, ['--resume']],
+    [{ ...claudeAgent, command: 'gemini', resume_args: ['--resume', 'latest'] }, []],
+    [antigravityAgent, []],
+  ])(
+    'does not select a different document terminal’s latest session: $command',
+    (def, expected) => {
+      expect(buildTaskAgentArgs(def, { id: 'doc-agent-docs' }, true)).toEqual(expected);
+    },
+  );
+
+  it('preserves explicit document session IDs and fresh launches', () => {
+    const def = { ...codexAgent, resume_args: ['resume', 'specific-session'] };
+    expect(buildTaskAgentArgs(def, { id: 'doc-agent-docs' }, true)).toEqual(def.resume_args);
+    expect(buildTaskAgentArgs(codexAgent, { id: 'doc-agent-docs' }, false)).toEqual([]);
+  });
+
   it('uses explicit MCP launch args when provided (new task)', () => {
     expect(
       buildTaskAgentArgs(
@@ -254,5 +273,51 @@ describe('isResumeArgsFailure', () => {
 
   it('returns false for empty last output', () => {
     expect(isResumeArgsFailure('claude', [])).toBe(false);
+  });
+});
+
+describe('buildTaskAgentArgs — skip-permissions on a degraded definition', () => {
+  // The failure this guards: a def can reach a launch path with no skip args at
+  // all — restored from a profile written before the field existed, or built
+  // from a bare command — and reading the field directly downgrades an explicit
+  // opt-in to a launch that prompts on every tool call, with nothing logged.
+  const degradedClaude = {
+    id: 'claude',
+    name: 'Claude',
+    description: '',
+    command: 'claude',
+    args: [],
+    resume_args: [],
+    skip_permissions_args: [],
+  };
+
+  const task = { skipPermissions: true, mcpConfigPath: undefined, mcpLaunchArgs: undefined };
+
+  it('resolves the flag by command when the definition carries none', () => {
+    expect(buildTaskAgentArgs(degradedClaude, task, false)).toContain(
+      '--dangerously-skip-permissions',
+    );
+  });
+
+  it('resolves it for a command given as an absolute path', () => {
+    expect(
+      buildTaskAgentArgs({ ...degradedClaude, command: '/opt/homebrew/bin/claude' }, task, false),
+    ).toContain('--dangerously-skip-permissions');
+  });
+
+  it('still honours flags the definition does carry, so a custom flag wins', () => {
+    expect(
+      buildTaskAgentArgs({ ...degradedClaude, skip_permissions_args: ['--custom'] }, task, false),
+    ).toEqual(['--custom']);
+  });
+
+  it('adds nothing when the task did not opt in', () => {
+    expect(buildTaskAgentArgs(degradedClaude, { ...task, skipPermissions: false }, false)).toEqual(
+      [],
+    );
+  });
+
+  it('adds nothing for an agent that takes no such flag', () => {
+    expect(buildTaskAgentArgs({ ...degradedClaude, command: 'opencode' }, task, false)).toEqual([]);
   });
 });

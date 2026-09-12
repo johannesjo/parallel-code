@@ -43,6 +43,7 @@ import { buildVerifyEnv, validateVerifyCommand, verificationRunner } from './ver
 import { startRemoteServer, getMCPLogs, type RemoteProject } from '../remote/server.js';
 import type { RemoteAttentionState } from '../remote/protocol.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
+import { getUserDataDir } from '../user-data-dir.js';
 import { buildMcpLaunchArgs } from '../mcp/agent-args.js';
 import {
   getSymlinkCandidates,
@@ -106,7 +107,9 @@ import {
   assertStringArray,
   assertOptionalString,
   assertOptionalBoolean,
+  validatePath,
 } from './validate.js';
+import { registerDocumentHandlers } from '../documents/register.js';
 import { validateBranchName as sharedValidateBranchName, validateUUID } from '../mcp/validation.js';
 import { debug as logDebug, warn as logWarn, errMessage } from '../log.js';
 import { getMCPRemoteServerUrl, detectStaleDockerMCPUrl } from '../mcp/config.js';
@@ -191,13 +194,6 @@ async function startRemoteServerOnFreePort(
     }
   }
   throw new Error(`No free port found in range ${start}–${end}`);
-}
-
-/** Reject paths that are non-absolute or attempt directory traversal. */
-function validatePath(p: unknown, label: string): void {
-  if (typeof p !== 'string') throw new Error(`${label} must be a string`);
-  if (!path.isAbsolute(p)) throw new Error(`${label} must be absolute`);
-  if (p.includes('..')) throw new Error(`${label} must not contain ".."`);
 }
 
 function isMissingCommandError(err: unknown, command: string): boolean {
@@ -780,29 +776,20 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   // --- Keybindings ---
-  function getKeybindingsDir(): string {
-    let dir = app.getPath('userData');
-    if (!app.isPackaged) {
-      const base = path.basename(dir);
-      dir = path.join(path.dirname(dir), `${base}-dev`);
-    }
-    return dir;
-  }
-
   ipcMain.handle(IPC.LoadKeybindings, () => {
-    return loadKeybindings(getKeybindingsDir());
+    return loadKeybindings(getUserDataDir());
   });
 
   ipcMain.handle(IPC.SaveKeybindings, (_e, args) => {
     assertString(args?.json, 'json');
-    saveKeybindings(getKeybindingsDir(), args.json);
+    saveKeybindings(getUserDataDir(), args.json);
   });
 
   // --- Arena persistence ---
   ipcMain.handle(IPC.SaveArenaData, (_e, args) => {
     assertString(args.filename, 'filename');
     assertString(args.json, 'json');
-    const filePath = path.join(app.getPath('userData'), args.filename);
+    const filePath = path.join(getUserDataDir(), args.filename);
     const basename = path.basename(filePath);
     if (basename !== args.filename) throw new Error('Invalid filename');
     if (!basename.startsWith('arena-') || !basename.endsWith('.json'))
@@ -814,7 +801,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(IPC.LoadArenaData, (_e, args) => {
     assertString(args.filename, 'filename');
-    const filePath = path.join(app.getPath('userData'), args.filename);
+    const filePath = path.join(getUserDataDir(), args.filename);
     const basename = path.basename(filePath);
     if (basename !== args.filename) throw new Error('Invalid filename');
     if (!basename.startsWith('arena-') || !basename.endsWith('.json'))
@@ -975,6 +962,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertString(args.requestId, 'requestId');
     cancelAskAboutCode(args.requestId);
   });
+
+  registerDocumentHandlers(win);
 
   // --- File links ---
   ipcMain.handle(IPC.OpenPath, (_e, args) => {

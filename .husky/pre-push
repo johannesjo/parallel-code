@@ -1,4 +1,5 @@
 #!/bin/sh
+unset $(git rev-parse --local-env-vars)
 npm run check
 
 echo "Running tests before push..."

@@ -24,6 +24,8 @@ export interface PaneVisibilityInput {
   viewportVisibility: TaskViewportVisibility | undefined;
   /** Pane-level visibility within the task (tabs); undefined means visible. */
   paneVisible?: boolean;
+  /** A document workspace occupies the task area while open. */
+  workspaceTaskId?: string | null;
   /** The pane is not a task panel (e.g. an arena competitor rendered in an
    *  overlay): task-level focus/tiling state says nothing about it, so only
    *  `paneVisible` applies. */
@@ -33,6 +35,7 @@ export interface PaneVisibilityInput {
 export function isTerminalPaneOnScreen(input: PaneVisibilityInput): boolean {
   if (input.paneVisible === false) return false;
   if (input.standalone) return true;
+  if (input.workspaceTaskId) return input.taskId === input.workspaceTaskId;
   if (input.focusMode) return input.activeTaskId === input.taskId;
   return (
     input.viewportVisibility !== 'offscreen-left' && input.viewportVisibility !== 'offscreen-right'

@@ -2,6 +2,7 @@ import { produce } from 'solid-js/store';
 import { invoke, Channel } from '../lib/ipc';
 import { asStoreVerificationRun } from '../lib/verification-run';
 import { IPC } from '../../electron/ipc/channels';
+import { getSkipPermissionsArgs } from '../../electron/shared/skip-permissions';
 import { store, setStore, cleanupPanelEntries } from './core';
 import { effectiveAgentId } from './agent-select';
 import { saveState } from './persistence';
@@ -623,6 +624,19 @@ function removeTaskFromStore(taskId: string, agentIds: string[]): void {
   }, REMOVE_ANIMATION_MS);
 }
 
+/** Drops a task and its agents from the store at once, with no closing
+ *  animation: for a task that was never listed, such as a document
+ *  workspace's agent task. The caller has killed the agents already. */
+export function forgetTask(taskId: string, agentIds: readonly string[]): void {
+  for (const agentId of agentIds) clearAgentActivity(agentId);
+  clearTaskGitStatusTracking(taskId);
+  setStore(
+    produce((s) => {
+      removeTaskDraftEntries(s, taskId, agentIds, effectiveAgentId);
+    }),
+  );
+}
+
 export async function mergeTask(
   taskId: string,
   options?: { squash?: boolean; message?: string; cleanup?: boolean },
@@ -1154,7 +1168,10 @@ export function initMCPListeners(): () => void {
         command: cmd,
         args: evt.agentArgs ?? [],
         resume_args: [],
-        skip_permissions_args: [],
+        // Resolved, not empty: this def is synthesised when availableAgents has
+        // no entry for the coordinator's command, and an empty list here strands
+        // a sub-task carrying skipPermissions: true on a bare launch.
+        skip_permissions_args: getSkipPermissionsArgs(cmd),
         description: '',
       };
 
@@ -1583,9 +1600,11 @@ export function setPlanContent(
   taskId: string,
   content: string | null,
   fileName: string | null,
+  planPath: string | null = null,
 ): void {
   setStore('tasks', taskId, 'planContent', content ?? undefined);
   setStore('tasks', taskId, 'planFileName', fileName ?? undefined);
+  setStore('tasks', taskId, 'planPath', planPath ?? undefined);
 }
 
 export function setStepsContent(taskId: string, steps: unknown[] | null): void {
@@ -1596,6 +1615,9 @@ export function setStepsContent(taskId: string, steps: unknown[] | null): void {
 }
 
 export function setTaskLastInputAt(taskId: string): void {
+  // Terminals outside the task flow (the document workspace's agent) pass an
+  // id no task owns; writing through it would create a half-made task.
+  if (!store.tasks[taskId]) return;
   setStore('tasks', taskId, 'lastInputAt', new Date().toISOString());
 }
 
@@ -1647,6 +1669,13 @@ export function markTaskUserActivity(taskId: string): void {
     setTaskControl(taskId, 'human');
   }
   scheduleTaskAutomationRelease(taskId);
+}
+
+/** Store the unsent contents of the task's prompt box so a restart restores it.
+ *  Empty text is stored as `undefined` to keep the persisted file free of noise. */
+export function setTaskPromptDraft(taskId: string, text: string): void {
+  if (!store.tasks[taskId]) return;
+  setStore('tasks', taskId, 'promptDraft', text || undefined);
 }
 
 export function setTaskPromptDraftActive(taskId: string, active: boolean): void {

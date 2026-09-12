@@ -30,6 +30,8 @@ import type { CustomTheme } from '../lib/custom-theme';
 import { syncTerminalCounter } from './terminals';
 import { showNotification, NOTIFICATION_ERROR_MS } from './notification';
 import { errMessage } from '../lib/log';
+import { canvasTabKey } from '../lib/canvas-tabs';
+import { documentAgentTaskIds } from '../documents/task-id';
 
 const RESTORED_AGENT_SPAWN_STAGGER_MS = 1_000;
 
@@ -121,6 +123,19 @@ function validAgentIndex(value: unknown): number | undefined {
 /** Branch names restored from JSON: only non-empty strings. `exclude` drops a
  *  value that would be nonsensical (e.g. an adopted-from equal to the branch
  *  itself, which would render an "adopted 'X' (was 'X')" banner). */
+/** The canvas tabs of a persisted task; a pre-tabs `canvasPath` becomes one tab. */
+function restoredCanvas(pt: PersistedTask): Pick<Task, 'canvasTabs' | 'canvasActiveTab'> {
+  const tabs = Array.isArray(pt.canvasTabs)
+    ? pt.canvasTabs.filter((t) => t?.kind === 'markdown' && typeof t.path === 'string')
+    : typeof pt.canvasPath === 'string'
+      ? [{ kind: 'markdown' as const, path: pt.canvasPath }]
+      : [];
+  if (tabs.length === 0) return {};
+  const keys = tabs.map(canvasTabKey);
+  const active = keys.includes(pt.canvasActiveTab ?? '') ? pt.canvasActiveTab : keys[0];
+  return { canvasTabs: tabs, canvasActiveTab: active };
+}
+
 function validBranch(value: unknown, exclude?: string): string | undefined {
   return typeof value === 'string' && value.length > 0 && value !== exclude ? value : undefined;
 }
@@ -139,6 +154,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     branchName: task.branchName,
     worktreePath: task.worktreePath,
     notes: task.notes,
+    promptDraft: task.promptDraft,
     lastPrompt: task.lastPrompt,
     promptedAgentIds: task.promptedAgentIds,
     initialPrompt: task.initialPrompt,
@@ -161,6 +177,8 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     savedSelectedAgentIndex: task.savedSelectedAgentIndex,
     savedPromptedAgentIndexes: task.savedPromptedAgentIndexes,
     planFileName: task.planFileName,
+    canvasTabs: task.canvasTabs,
+    canvasActiveTab: task.canvasActiveTab,
     stepsEnabled: task.stepsEnabled,
     branchAdoptedFrom: task.branchAdoptedFrom,
     branchOfferDismissed: task.branchOfferDismissed,
@@ -247,6 +265,8 @@ export async function saveState(): Promise<void> {
     darkThemePreset: store.darkThemePreset !== 'islands-dark' ? store.darkThemePreset : undefined,
     darkThemeCustomId: store.darkThemeCustomId ?? undefined,
     coordinatorModeEnabled: store.coordinatorModeEnabled || undefined,
+    documentWorkspacesEnabled: store.documentWorkspacesEnabled || undefined,
+    documentFullWidth: store.documentFullWidth || undefined,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed || undefined,
     defaultStepsEnabled: store.defaultStepsEnabled || undefined,
     defaultSkipPermissions: store.defaultSkipPermissions || undefined,
@@ -254,7 +274,8 @@ export async function saveState(): Promise<void> {
     autoStartRemoteAccess: store.autoStartRemoteAccess || undefined,
   };
 
-  for (const taskId of store.taskOrder) {
+  const documentTaskIds = documentAgentTaskIds(store.projects);
+  for (const taskId of new Set([...store.taskOrder, ...documentTaskIds])) {
     const task = store.tasks[taskId];
     if (!task) continue;
 
@@ -434,6 +455,8 @@ interface LegacyPersistedState {
   darkThemePreset?: unknown;
   darkThemeCustomId?: unknown;
   coordinatorModeEnabled?: unknown;
+  documentWorkspacesEnabled?: unknown;
+  documentFullWidth?: unknown;
   coordinatorControlHintDismissed?: unknown;
   defaultStepsEnabled?: unknown;
   defaultSkipPermissions?: unknown;
@@ -632,6 +655,8 @@ export async function loadState(): Promise<void> {
       }
 
       s.coordinatorModeEnabled = raw.coordinatorModeEnabled === true;
+      s.documentWorkspacesEnabled = raw.documentWorkspacesEnabled === true;
+      s.documentFullWidth = raw.documentFullWidth === true;
 
       s.coordinatorControlHintDismissed = raw.coordinatorControlHintDismissed === true;
 
@@ -688,7 +713,8 @@ export async function loadState(): Promise<void> {
         }
       }
 
-      for (const taskId of raw.taskOrder) {
+      const documentTaskIds = documentAgentTaskIds(projects);
+      for (const taskId of new Set([...raw.taskOrder, ...documentTaskIds])) {
         const pt = raw.tasks[taskId];
         if (!pt) continue;
 
@@ -712,12 +738,15 @@ export async function loadState(): Promise<void> {
                 : undefined,
           projectId: pt.projectId ?? '',
           branchName: pt.branchName,
-          worktreePath: pt.worktreePath,
+          worktreePath: documentTaskIds.includes(taskId)
+            ? (projects.find((project) => project.id === pt.projectId)?.path ?? pt.worktreePath)
+            : pt.worktreePath,
           agentIds,
           selectedAgentId: validAgentId(pt.selectedAgentId, agentIds) ?? agentIds[0],
           aiTerminalLayout: pt.aiTerminalLayout === 'tabs' ? 'tabs' : undefined,
           shellAgentIds,
           notes: pt.notes,
+          promptDraft: typeof pt.promptDraft === 'string' ? pt.promptDraft : undefined,
           lastPrompt: pt.lastPrompt,
           promptedAgentIds: restoredPromptedAgentIds(pt, agentIds),
           initialPrompt: typeof pt.initialPrompt === 'string' ? pt.initialPrompt : undefined,
@@ -738,6 +767,7 @@ export async function loadState(): Promise<void> {
           savedSelectedAgentIndex: validAgentIndex(pt.savedSelectedAgentIndex),
           savedPromptedAgentIndexes: validPromptedAgentIndexes(pt.savedPromptedAgentIndexes),
           planFileName: pt.planFileName,
+          ...restoredCanvas(pt),
           stepsEnabled: pt.stepsEnabled,
           branchAdoptedFrom: validBranch(pt.branchAdoptedFrom, pt.branchName),
           branchOfferDismissed: validBranch(pt.branchOfferDismissed),
@@ -827,6 +857,7 @@ export async function loadState(): Promise<void> {
           aiTerminalLayout: pt.aiTerminalLayout === 'tabs' ? 'tabs' : undefined,
           shellAgentIds: [],
           notes: pt.notes,
+          promptDraft: typeof pt.promptDraft === 'string' ? pt.promptDraft : undefined,
           lastPrompt: pt.lastPrompt,
           promptedAgentIds: restoredPromptedAgentIds(pt, []),
           initialPrompt: typeof pt.initialPrompt === 'string' ? pt.initialPrompt : undefined,
@@ -848,6 +879,7 @@ export async function loadState(): Promise<void> {
           savedSelectedAgentIndex: validAgentIndex(pt.savedSelectedAgentIndex),
           savedPromptedAgentIndexes: validPromptedAgentIndexes(pt.savedPromptedAgentIndexes),
           planFileName: pt.planFileName,
+          ...restoredCanvas(pt),
           stepsEnabled: pt.stepsEnabled,
           branchAdoptedFrom: validBranch(pt.branchAdoptedFrom, pt.branchName),
           branchOfferDismissed: validBranch(pt.branchOfferDismissed),
@@ -884,16 +916,16 @@ export async function loadState(): Promise<void> {
       const activeSet = new Set(s.taskOrder);
       s.collapsedTaskOrder = s.collapsedTaskOrder.filter((id) => !activeSet.has(id));
 
-      // Focus mode requires a valid active panel; without one, every panel is
-      // hidden and the strip reads blank. Repair or drop focus mode.
-      if (s.focusMode) {
-        const activeValid =
-          s.activeTaskId !== null &&
-          (s.tasks[s.activeTaskId] !== undefined || s.terminals[s.activeTaskId] !== undefined);
-        if (!activeValid) {
-          s.activeTaskId = s.taskOrder[0] ?? null;
-          if (s.activeTaskId === null) s.focusMode = false;
-        }
+      // Only listed panels can be active before a document workspace opens.
+      // Otherwise focus mode hides every coding task after a restart.
+      const activeValid =
+        s.activeTaskId !== null &&
+        s.taskOrder.includes(s.activeTaskId) &&
+        (s.tasks[s.activeTaskId] !== undefined || s.terminals[s.activeTaskId] !== undefined);
+      if (!activeValid) s.activeTaskId = null;
+      if (s.focusMode && s.activeTaskId === null) {
+        s.activeTaskId = s.taskOrder[0] ?? null;
+        if (s.activeTaskId === null) s.focusMode = false;
       }
 
       // Set activeAgentId from the active task

@@ -1988,6 +1988,35 @@ describe('Coordinator land_self', () => {
       outputTail: 'ok\n',
     };
 
+    it.each(['passed', 'failed'] as const)(
+      'auto-commits before merge verification even when verification is %s',
+      async (status) => {
+        coordinator.registerCoordinator('coord-1', 'proj-1', { verifyCommand: 'npm test' });
+        const task = coordinator.getTask('task-1');
+        if (!task) throw new Error('Expected the fixture task');
+        task.status = 'exited';
+        mockExecFile.mockClear();
+        mockVerifyStart.mockImplementationOnce(async () => {
+          expect(mockExecFile).toHaveBeenCalledWith(
+            'git',
+            ['commit', '-m', 'WIP: auto-commit before merge'],
+            expect.objectContaining({ cwd: '/tmp/test' }),
+            expect.any(Function),
+          );
+          expect(vi.mocked(mergeTask)).not.toHaveBeenCalled();
+          return { ...passedRun, status, exitCode: status === 'passed' ? 0 : 1 };
+        });
+        if (status === 'passed') {
+          await coordinator.mergeTask('task-1');
+          expect(vi.mocked(mergeTask)).toHaveBeenCalled();
+        } else {
+          await expect(coordinator.mergeTask('task-1')).rejects.toThrow('Verification failed');
+          expect(vi.mocked(mergeTask)).not.toHaveBeenCalled();
+        }
+        expect(mockVerifyStart).toHaveBeenCalledTimes(1);
+      },
+    );
+
     it('runs the command in the task worktree and lands when it passes', async () => {
       coordinator.registerCoordinator('coord-1', 'proj-1', { verifyCommand: 'npm test' });
       mockVerifyStart.mockResolvedValueOnce(passedRun);

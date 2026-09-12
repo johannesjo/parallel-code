@@ -1,6 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import path from 'path';
+import { getSkipPermissionsArgs } from '../shared/skip-permissions.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -23,7 +23,7 @@ const DEFAULT_AGENTS: AgentDef[] = [
     command: 'claude',
     args: [],
     resume_args: ['--continue'],
-    skip_permissions_args: ['--dangerously-skip-permissions'],
+    skip_permissions_args: getSkipPermissionsArgs('claude'),
     description: "Anthropic's Claude Code CLI agent",
   },
   {
@@ -32,7 +32,7 @@ const DEFAULT_AGENTS: AgentDef[] = [
     command: 'codex',
     args: [],
     resume_args: ['resume', '--last'],
-    skip_permissions_args: ['--dangerously-bypass-approvals-and-sandbox'],
+    skip_permissions_args: getSkipPermissionsArgs('codex'),
     description: "OpenAI's Codex CLI agent",
   },
   {
@@ -41,7 +41,7 @@ const DEFAULT_AGENTS: AgentDef[] = [
     command: 'gemini',
     args: [],
     resume_args: ['--resume', 'latest'],
-    skip_permissions_args: ['--yolo'],
+    skip_permissions_args: getSkipPermissionsArgs('gemini'),
     description: "Google's Gemini CLI agent",
   },
   {
@@ -50,7 +50,7 @@ const DEFAULT_AGENTS: AgentDef[] = [
     command: 'kimi',
     args: [],
     resume_args: ['--continue'],
-    skip_permissions_args: ['--yolo'],
+    skip_permissions_args: getSkipPermissionsArgs('kimi'),
     description: "Moonshot AI's Kimi Code CLI agent",
   },
   {
@@ -59,7 +59,7 @@ const DEFAULT_AGENTS: AgentDef[] = [
     command: 'opencode',
     args: [],
     resume_args: [],
-    skip_permissions_args: [],
+    skip_permissions_args: getSkipPermissionsArgs('opencode'),
     description: 'Open source AI coding agent (opencode.ai)',
   },
   {
@@ -68,7 +68,7 @@ const DEFAULT_AGENTS: AgentDef[] = [
     command: 'copilot',
     args: [],
     resume_args: ['--continue'],
-    skip_permissions_args: ['--yolo'],
+    skip_permissions_args: getSkipPermissionsArgs('copilot'),
     description: "GitHub's Copilot CLI agent",
     // Copilot CLI shows up to two init dialogs (folder trust + instructions init)
     // before reaching its real prompt.  A modest stability delay lets the prompt
@@ -81,7 +81,7 @@ const DEFAULT_AGENTS: AgentDef[] = [
     command: 'agy',
     args: [],
     resume_args: ['-c'],
-    skip_permissions_args: ['--dangerously-skip-permissions'],
+    skip_permissions_args: getSkipPermissionsArgs('agy'),
     description: "Google's Antigravity CLI agent (successor to Gemini CLI)",
     // Antigravity paints a TUI that needs a beat to settle before auto-send.
     prompt_ready_delay_ms: 1_000,
@@ -101,12 +101,6 @@ async function isCommandAvailable(command: string): Promise<boolean> {
 let cachedAgents: AgentDef[] | null = null;
 let cacheTime = 0;
 const AGENT_CACHE_TTL = 30_000;
-
-export function getSkipPermissionsArgs(command: string): string[] {
-  const base = path.basename(command);
-  const agent = DEFAULT_AGENTS.find((a) => a.command === base || a.command === command);
-  return agent ? [...agent.skip_permissions_args] : [];
-}
 
 export async function listAgents(): Promise<AgentDef[]> {
   const now = Date.now();

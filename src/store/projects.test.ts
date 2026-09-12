@@ -17,8 +17,112 @@ import { produce } from 'solid-js/store';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { setStore, store } from './core';
-import { updateProject } from './projects';
+import { relinkProject, updateProject } from './projects';
+import { openDialog } from '../lib/dialog';
 import type { Task } from './types';
+
+describe('relinkProject document terminals', () => {
+  afterEach(() => {
+    setStore({ projects: [], tasks: {}, agents: {}, activeDocumentProjectId: null });
+    vi.clearAllMocks();
+  });
+
+  it('stops old sessions and updates the hidden task without losing its draft', async () => {
+    setStore('projects', [
+      {
+        id: 'docs',
+        name: 'Docs',
+        path: '/old',
+        color: '',
+        kind: 'document',
+        documentPath: 'notes.md',
+      },
+    ]);
+    setStore('tasks', 'doc-agent-docs', {
+      id: 'doc-agent-docs',
+      projectId: 'docs',
+      name: 'Docs',
+      worktreePath: '/old',
+      branchName: '',
+      agentIds: ['a'],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+      promptDraft: 'Keep this draft',
+    });
+    setStore('agents', 'a', {
+      id: 'a',
+      taskId: 'doc-agent-docs',
+      def: {
+        id: 'codex',
+        name: 'Codex',
+        command: 'codex',
+        args: [],
+        resume_args: ['resume', '--last'],
+        skip_permissions_args: [],
+        description: '',
+      },
+      resumed: true,
+      attachExisting: true,
+      generation: 2,
+      status: 'exited',
+      exitCode: 1,
+      signal: null,
+      lastOutput: ['old output'],
+    });
+    vi.mocked(openDialog).mockResolvedValue('/new');
+    vi.mocked(invoke).mockImplementation(async (channel) => {
+      if (channel === IPC.KillAgent) expect(store.projects[0].path).toBe('/old');
+      return true;
+    });
+    expect(await relinkProject('docs')).toBe(true);
+    expect(invoke).toHaveBeenCalledWith(IPC.KillAgent, { agentId: 'a' });
+    expect(store.tasks['doc-agent-docs']).toMatchObject({
+      worktreePath: '/new',
+      promptDraft: 'Keep this draft',
+    });
+    expect(store.agents.a).toMatchObject({
+      resumed: false,
+      attachExisting: false,
+      generation: 3,
+      status: 'running',
+      exitCode: null,
+      lastOutput: [],
+    });
+  });
+
+  it('does not change folders when an old session cannot be stopped', async () => {
+    setStore('projects', [
+      {
+        id: 'docs',
+        name: 'Docs',
+        path: '/old',
+        color: '',
+        kind: 'document',
+        documentPath: 'notes.md',
+      },
+    ]);
+    setStore('tasks', 'doc-agent-docs', {
+      id: 'doc-agent-docs',
+      projectId: 'docs',
+      name: 'Docs',
+      worktreePath: '/old',
+      branchName: '',
+      agentIds: ['a'],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+    });
+    vi.mocked(openDialog).mockResolvedValue('/new');
+    vi.mocked(invoke).mockImplementation(async (channel) => {
+      if (channel === IPC.KillAgent) throw new Error('Cannot stop session');
+      return true;
+    });
+    await expect(relinkProject('docs')).rejects.toThrow('Cannot stop session');
+    expect(store.projects[0].path).toBe('/old');
+    expect(store.tasks['doc-agent-docs'].worktreePath).toBe('/old');
+  });
+});
 
 describe('updateProject', () => {
   afterEach(() => {

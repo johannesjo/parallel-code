@@ -92,6 +92,36 @@ export interface Project {
   terminalBookmarks?: TerminalBookmark[];
   isGitRepo?: boolean; // undefined treated as true for backward compat
   tasksCollapsed?: boolean; // sidebar task group, defaults to expanded
+  /** Document workspaces (experimental): a project whose surface is one
+   *  rendered document rather than task terminals. Undefined means 'code'. */
+  kind?: ProjectKind;
+  /** Repo-relative path of the document a document project opens. */
+  documentPath?: string;
+  /** Last file read in the document workspace, relative to the project. */
+  documentOpenPath?: string;
+  /** Preview scale; independent of the app and terminal zoom. */
+  documentZoom?: number;
+  /** Agent that owns the project's warm main session. */
+  documentMainAgentId?: string;
+  /** Resumable main sessions per agent id, with the base sha each last saw. */
+  documentSessions?: Record<string, DocumentSessionRef>;
+  /** Model and reasoning level last chosen in the run composer, per agent id
+   *  and candidate slot: the agent's first candidate, its second, and so on. */
+  documentModels?: Record<string, DocumentModelChoice[]>;
+  /** Agent running in the workspace's interactive terminal. */
+  documentTerminalAgentId?: string;
+}
+
+export interface DocumentModelChoice {
+  model?: string;
+  effort?: string;
+}
+
+export type ProjectKind = 'code' | 'document';
+
+export interface DocumentSessionRef {
+  sessionId: string;
+  lastSha: string;
 }
 
 export interface Agent {
@@ -106,6 +136,16 @@ export interface Agent {
   generation: number;
   spawnDelayMs?: number;
   attachExisting?: boolean;
+}
+
+/** What a canvas tab shows. Only Markdown for now; browser and code views are
+ *  meant to join, which is why the kind is stored. */
+export type CanvasTabKind = 'markdown';
+
+export interface CanvasTab {
+  kind: CanvasTabKind;
+  /** Worktree-relative path of the file. */
+  path: string;
 }
 
 export interface Task {
@@ -156,12 +196,27 @@ export interface Task {
   savedPromptedAgentIndexes?: number[];
   planContent?: string;
   planFileName?: string;
+  /** Worktree-relative path of the plan file, for opening it on the canvas. Not persisted. */
+  planPath?: string;
+  /** Path of the plan this session was seen writing, as opposed to one found
+   *  already on disk. Only this opens the canvas by itself. Not persisted. */
+  livePlanPath?: string;
+  /** What is open in the task's canvas column, one tab each, in strip order. */
+  canvasTabs?: CanvasTab[];
+  /** Key (see canvasTabKey) of the tab in front. */
+  canvasActiveTab?: string;
+  /** Column shown without a tab (the user asked for it). Not persisted. */
+  canvasOpen?: boolean;
   stepsEnabled?: boolean;
   stepsContent?: StepEntry[];
   lastInputAt?: string;
   stagedNotification?: StagedNotification;
   userActivityHoldUntil?: number;
   promptDraftActive?: boolean;
+  /** Unsent text sitting in the task's "Send a prompt" box. Persisted so a
+   *  restart (app or machine) doesn't discard what the user typed but never
+   *  sent. Cleared on send. */
+  promptDraft?: string;
   terminalInputPending?: boolean;
   terminalInputPendingFromQuestion?: boolean;
   // Coordinator fields
@@ -206,6 +261,7 @@ export interface PersistedTask {
   branchName: string;
   worktreePath: string;
   notes: string;
+  promptDraft?: string;
   lastPrompt: string;
   promptedAgentIds?: string[];
   initialPrompt?: string;
@@ -229,6 +285,10 @@ export interface PersistedTask {
   savedSelectedAgentIndex?: number;
   savedPromptedAgentIndexes?: number[];
   planFileName?: string;
+  /** Before tabs the canvas held one file; read for migration, no longer written. */
+  canvasPath?: string;
+  canvasTabs?: CanvasTab[];
+  canvasActiveTab?: string;
   stepsEnabled?: boolean;
   branchAdoptedFrom?: string;
   branchOfferDismissed?: string;
@@ -315,6 +375,8 @@ export interface PersistedState {
   darkThemePreset?: LookPreset;
   darkThemeCustomId?: string | null;
   coordinatorModeEnabled?: boolean;
+  documentWorkspacesEnabled?: boolean;
+  documentFullWidth?: boolean;
   coordinatorNotificationDelayMs?: number;
   coordinatorControlHintDismissed?: boolean;
   defaultStepsEnabled?: boolean;
@@ -442,6 +504,11 @@ export interface AppStore {
   darkThemePreset: LookPreset;
   darkThemeCustomId: string | null;
   coordinatorModeEnabled: boolean;
+  documentWorkspacesEnabled: boolean;
+  /** Let the rendered document take the whole column instead of a reading width. */
+  documentFullWidth: boolean;
+  /** Project whose document workspace is open in the task area. */
+  activeDocumentProjectId: string | null;
   coordinatorNotificationDelayMs: number;
   coordinatorControlHintDismissed: boolean;
   defaultStepsEnabled: boolean;

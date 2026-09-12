@@ -5,6 +5,8 @@ import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
 import type { Project } from './types';
 import { sanitizeBranchPrefix } from '../lib/branch-name';
+import { documentAgentTaskId } from '../documents/task-id';
+import { clearAgentActivity } from './taskStatus';
 
 export const PASTEL_HUES = [0, 30, 60, 120, 180, 210, 260, 300, 330];
 
@@ -28,6 +30,36 @@ export function addProject(name: string, path: string, isGitRepo?: boolean): str
     }),
   );
   return id;
+}
+
+/** A document project: a git repo plus one document inside it. */
+export function addDocumentProject(name: string, path: string, documentPath: string): string {
+  const id = crypto.randomUUID();
+  const project: Project = {
+    id,
+    name,
+    path,
+    color: randomPastelColor(),
+    isGitRepo: true,
+    kind: 'document',
+    documentPath,
+  };
+  // Not the default for new tasks: a document project has no task flow.
+  setStore(
+    produce((s) => {
+      s.projects.push(project);
+    }),
+  );
+  return id;
+}
+
+export function isDocumentProject(project: Project | undefined): boolean {
+  return project?.kind === 'document' && typeof project.documentPath === 'string';
+}
+
+/** Projects that take tasks. Document projects have no task flow, so nothing offers them. */
+export function codeProjects(): Project[] {
+  return store.projects.filter((project) => !isDocumentProject(project));
 }
 
 export function removeProject(projectId: string): void {
@@ -67,6 +99,12 @@ export function updateProject(
       | 'verifyCommand'
       | 'terminalBookmarks'
       | 'isGitRepo'
+      | 'documentMainAgentId'
+      | 'documentSessions'
+      | 'documentModels'
+      | 'documentTerminalAgentId'
+      | 'documentOpenPath'
+      | 'documentZoom'
     >
   >,
 ): void {
@@ -92,6 +130,17 @@ export function updateProject(
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
       if (updates.isGitRepo !== undefined) s.projects[idx].isGitRepo = updates.isGitRepo;
+      if (updates.documentMainAgentId !== undefined)
+        s.projects[idx].documentMainAgentId = updates.documentMainAgentId;
+      if (updates.documentSessions !== undefined)
+        s.projects[idx].documentSessions = updates.documentSessions;
+      if (updates.documentModels !== undefined)
+        s.projects[idx].documentModels = updates.documentModels;
+      if (updates.documentTerminalAgentId !== undefined)
+        s.projects[idx].documentTerminalAgentId = updates.documentTerminalAgentId;
+      if (updates.documentOpenPath !== undefined)
+        s.projects[idx].documentOpenPath = updates.documentOpenPath;
+      if (updates.documentZoom !== undefined) s.projects[idx].documentZoom = updates.documentZoom;
     }),
   );
   if (
@@ -168,16 +217,46 @@ export async function relinkProject(projectId: string): Promise<boolean> {
 
   const isGitRepo = await invoke<boolean>(IPC.CheckIsGitRepo, { path: newPath });
 
+  const exists = await invoke<boolean>(IPC.CheckPathExists, { path: newPath });
+  if (!exists) return false;
+  const project = getProject(projectId);
+  if (!project) return false;
+  const task =
+    project.kind === 'document' ? store.tasks[documentAgentTaskId(projectId)] : undefined;
+  if (task && task.worktreePath !== newPath) {
+    // Unmount before stopping old PTYs; an attached process cannot change cwd.
+    if (store.activeDocumentProjectId === projectId) setStore('activeDocumentProjectId', null);
+    await Promise.all(
+      [...task.agentIds, ...task.shellAgentIds].map((agentId) =>
+        invoke(IPC.KillAgent, { agentId }),
+      ),
+    );
+    for (const id of task.agentIds) clearAgentActivity(id);
+  }
+
   setStore(
     produce((s) => {
       const idx = s.projects.findIndex((p) => p.id === projectId);
       if (idx === -1) return;
       s.projects[idx].path = newPath;
       s.projects[idx].isGitRepo = isGitRepo;
+      if (task && task.worktreePath !== newPath) {
+        s.tasks[task.id].worktreePath = newPath;
+        for (const id of task.agentIds) {
+          const agent = s.agents[id];
+          if (!agent) continue;
+          agent.resumed = false;
+          agent.attachExisting = false;
+          agent.status = 'running';
+          agent.exitCode = null;
+          agent.signal = null;
+          agent.lastOutput = [];
+          agent.generation++;
+        }
+      }
     }),
   );
 
-  const exists = await invoke<boolean>(IPC.CheckPathExists, { path: newPath });
   if (exists) {
     setStore('missingProjectIds', (prev: Record<string, true>) => {
       const next = { ...prev };

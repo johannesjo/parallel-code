@@ -416,6 +416,45 @@ describe('PR URL persistence', () => {
     expect(saved.tasks['task-1'].prUrl).toBe('https://github.com/acme/app/pull/12');
   });
 
+  it('restores canvas tabs, turning a pre-tabs canvasPath into one tab', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: ['task-1', 'task-2'],
+        collapsedTaskOrder: [],
+        tasks: {
+          'task-1': { ...persistedTask(def), canvasPath: 'docs/old.md' },
+          'task-2': {
+            ...persistedTask(def),
+            id: 'task-2',
+            canvasTabs: [
+              { kind: 'markdown', path: 'a.md' },
+              { kind: 'browser', url: 'x' },
+            ],
+            canvasActiveTab: 'markdown:gone.md',
+          },
+        },
+        activeTaskId: 'task-1',
+        sidebarVisible: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['task-1']).toMatchObject({
+      canvasTabs: [{ kind: 'markdown', path: 'docs/old.md' }],
+      canvasActiveTab: 'markdown:docs/old.md',
+    });
+    // Unknown kinds are dropped and a stale active key falls back to the first tab.
+    expect(store.tasks['task-2']).toMatchObject({
+      canvasTabs: [{ kind: 'markdown', path: 'a.md' }],
+      canvasActiveTab: 'markdown:a.md',
+    });
+  });
+
   it('restores task PR URLs', async () => {
     const def = agentDef();
     mockInvoke.mockResolvedValueOnce(
@@ -439,6 +478,107 @@ describe('PR URL persistence', () => {
     await loadState();
 
     expect(store.tasks['task-1'].prUrl).toBe('https://github.com/acme/app/pull/12');
+  });
+});
+
+describe('prompt draft persistence', () => {
+  it('persists an unsent prompt draft on an active task', async () => {
+    setStore('taskOrder', ['task-1']);
+    setStore('collapsedTaskOrder', []);
+    setStore('tasks', {
+      'task-1': {
+        id: 'task-1',
+        name: 'Task',
+        projectId: 'project-1',
+        branchName: 'task/task-1',
+        worktreePath: '/repo/.worktrees/task-1',
+        agentIds: [],
+        shellAgentIds: [],
+        notes: '',
+        lastPrompt: '',
+        gitIsolation: 'worktree',
+        promptDraft: 'remember to check the migration',
+      },
+    });
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    await saveState();
+
+    const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
+    expect(saved.tasks['task-1'].promptDraft).toBe('remember to check the migration');
+  });
+
+  it('restores an unsent prompt draft', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: ['task-1'],
+        collapsedTaskOrder: [],
+        tasks: {
+          'task-1': {
+            ...persistedTask(def),
+            promptDraft: 'remember to check the migration',
+          },
+        },
+        activeTaskId: 'task-1',
+        sidebarVisible: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['task-1'].promptDraft).toBe('remember to check the migration');
+  });
+
+  it('restores an unsent prompt draft on a collapsed task', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: [],
+        collapsedTaskOrder: ['task-1'],
+        tasks: {
+          'task-1': {
+            ...persistedTask(def),
+            collapsed: true,
+            promptDraft: 'draft on a collapsed task',
+          },
+        },
+        activeTaskId: null,
+        sidebarVisible: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['task-1'].promptDraft).toBe('draft on a collapsed task');
+  });
+
+  it('ignores a non-string promptDraft from a corrupt file', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: ['task-1'],
+        collapsedTaskOrder: [],
+        tasks: {
+          'task-1': { ...persistedTask(def), promptDraft: 42 },
+        },
+        activeTaskId: 'task-1',
+        sidebarVisible: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['task-1'].promptDraft).toBeUndefined();
   });
 });
 
@@ -1101,6 +1241,137 @@ describe('showSteps → defaultStepsEnabled migration', () => {
     const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
     expect(saved.showSteps).toBeUndefined();
     expect(saved.defaultStepsEnabled).toBe(true);
+  });
+});
+
+describe('document full width persistence', () => {
+  function stateJson(extra: Record<string, unknown>): string {
+    return JSON.stringify({
+      projects: [],
+      lastProjectId: null,
+      lastAgentId: null,
+      taskOrder: [],
+      collapsedTaskOrder: [],
+      tasks: {},
+      activeTaskId: null,
+      sidebarVisible: true,
+      ...extra,
+    });
+  }
+
+  async function lastSaved(): Promise<Record<string, unknown>> {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    return JSON.parse(lastCall[1].json) as Record<string, unknown>;
+  }
+
+  it('round-trips the preference and leaves the default out of the file', async () => {
+    mockInvoke.mockResolvedValueOnce(stateJson({ documentFullWidth: true }));
+    await loadState();
+    expect(store.documentFullWidth).toBe(true);
+    expect((await lastSaved()).documentFullWidth).toBe(true);
+
+    mockInvoke.mockResolvedValueOnce(stateJson({ documentFullWidth: 'yes' }));
+    await loadState();
+    expect(store.documentFullWidth).toBe(false);
+    expect((await lastSaved()).documentFullWidth).toBeUndefined();
+  });
+});
+
+describe('active task repair', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setStore('tasks', {});
+    setStore('taskOrder', []);
+    setStore('activeTaskId', 'stale');
+    setStore('focusMode', false);
+  });
+
+  it('drops an active id that names nothing, such as a workspace agent task', async () => {
+    mockInvoke.mockResolvedValueOnce(basePayload({ activeTaskId: 'doc-agent-docs' }));
+
+    await loadState();
+
+    expect(store.activeTaskId).toBeNull();
+  });
+});
+
+describe('document terminal persistence', () => {
+  it('restores the terminal in the current project folder after a relink', async () => {
+    const id = 'doc-agent-docs';
+    mockInvoke.mockResolvedValueOnce(
+      basePayload({
+        projects: [
+          {
+            id: 'docs',
+            name: 'Docs',
+            path: '/new/docs',
+            color: '',
+            kind: 'document',
+            documentPath: 'notes.md',
+          },
+        ],
+        tasks: {
+          [id]: {
+            ...persistedTask(agentDef()),
+            id,
+            projectId: 'docs',
+            worktreePath: '/old/docs',
+            agentIds: [id],
+          },
+        },
+        taskOrder: [],
+      }),
+    );
+    await loadState();
+    expect(store.tasks[id]?.worktreePath).toBe('/new/docs');
+  });
+
+  it('restores document agents and drafts without adding them to the coding task list', async () => {
+    const id = 'doc-agent-docs';
+    const task = {
+      ...persistedTask(agentDef()),
+      id,
+      projectId: 'docs',
+      worktreePath: '/docs',
+      gitIsolation: 'none',
+      agentIds: [id],
+      promptDraft: 'Continue the introduction',
+      lastPrompt: 'Revise the introduction',
+    };
+    mockInvoke.mockResolvedValueOnce(
+      basePayload({
+        projects: [
+          {
+            id: 'docs',
+            name: 'Docs',
+            path: '/docs',
+            color: '',
+            kind: 'document',
+            documentPath: 'notes.md',
+          },
+        ],
+        tasks: { [id]: task },
+        taskOrder: [],
+        activeTaskId: id,
+        focusMode: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks[id]?.promptDraft).toBe(task.promptDraft);
+    expect(store.agents[id]?.resumed).toBe(true);
+    expect(store.agents[id]?.attachExisting).toBe(true);
+    expect(store.taskOrder).toEqual([]);
+    expect(store.activeTaskId).toBeNull();
+    expect(store.focusMode).toBe(false);
+
+    mockInvoke.mockResolvedValue(undefined);
+    await saveState();
+    const saved = mockInvoke.mock.calls.findLast(([channel]) => channel === IPC.SaveAppState);
+    expect(JSON.parse(saved?.[1].json).tasks[id]).toMatchObject(task);
   });
 });
 

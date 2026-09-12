@@ -9,6 +9,7 @@ import { InlineInput } from './InlineInput';
 import { AskCodeCard } from './AskCodeCard';
 import { CloseIcon } from './icons';
 import { createHighlightedMarkdown } from '../lib/marked-shiki';
+import { renderMermaidIn } from '../lib/mermaid';
 import {
   getPlanSelection,
   getPlanSelectionFlowAnchor,
@@ -134,21 +135,7 @@ function PlanViewerContent(props: PlanViewerContentProps) {
   // Render mermaid blocks after HTML is inserted
   createEffect(() => {
     void planHtml(); // track dependency
-    if (!contentRef) return;
-    const blocks = contentRef.querySelectorAll('.mermaid-block');
-    if (blocks.length === 0) return;
-    import('mermaid').then(({ default: mermaid }) => {
-      mermaid.initialize({ startOnLoad: false, theme: 'dark' });
-      blocks.forEach((el, i) => {
-        const source = el.getAttribute('data-mermaid');
-        if (!source) return;
-        const id = `mermaid-plan-${Date.now()}-${i}`;
-        mermaid.render(id, source).then(({ svg }) => {
-          el.innerHTML = svg; // nosemgrep: semgrep.no-inner-html-without-sanitize -- mermaid renders its own sanitized SVG; source is plan text not user HTML
-          el.classList.add('mermaid-rendered');
-        });
-      });
-    });
+    renderMermaidIn(contentRef, 'plan');
   });
 
   // Scroll to annotation when scrollTarget changes

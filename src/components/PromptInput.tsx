@@ -24,6 +24,7 @@ import {
   isPanelFocused,
   setTaskControl,
   markTaskUserActivity,
+  setTaskPromptDraft,
   setTaskPromptDraftActive,
   setTaskTerminalInputPending,
   showNotification,
@@ -108,7 +109,19 @@ const isQuestionBlockingAutoSend = (agentId: string, tail: string): boolean =>
   looksLikeQuestion(tail) && !isAgentTrustQuestionAutoHandled(agentId, tail);
 
 export function PromptInput(props: PromptInputProps) {
-  const [text, setText] = createSignal('');
+  // The draft lives in the store (persisted across restarts) as well as in this
+  // signal.  The signal stays the render source so the textarea keeps its
+  // synchronous local feel; `setText` mirrors every change into the store.
+  // untrack: a one-time hydration.  The task (and its restored draft) always
+  // exists in the store before this component mounts, so re-reading on later
+  // store writes would only risk clobbering what the user is typing.
+  const [text, setTextSignal] = createSignal(
+    untrack(() => store.tasks[props.taskId]?.promptDraft) ?? '',
+  );
+  const setText = (value: string): void => {
+    setTextSignal(value);
+    setTaskPromptDraft(props.taskId, value);
+  };
   const [sending, setSending] = createSignal(false);
   const [autoSentInitialPrompt, setAutoSentInitialPrompt] = createSignal<string | null>(null);
   // Incremented when promptAppearedInOutput fails so the auto-send createEffect

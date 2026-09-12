@@ -102,16 +102,6 @@ export function coverageFooterLabel(
   return `◔ ${touchedCoveragePct}%`;
 }
 
-export function filesFooterLabel(fileCount: number, uncommittedCount: number): string {
-  return uncommittedCount > 0 ? `▤ ${fileCount}·${uncommittedCount}u` : `▤ ${fileCount}`;
-}
-
-export function filesFooterTitle(fileCount: number, uncommittedCount: number): string {
-  return uncommittedCount > 0
-    ? `${fileCount} changed files, ${uncommittedCount} uncommitted.`
-    : `${fileCount} changed files.`;
-}
-
 export function coverageFooterTitle(
   coverageSummary: CoverageSummary | null,
   touchedCoveragePct: number | null,
@@ -894,7 +884,6 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
 
   const totalAdded = createMemo(() => files().reduce((s, f) => s + f.lines_added, 0));
   const totalRemoved = createMemo(() => files().reduce((s, f) => s + f.lines_removed, 0));
-  const uncommittedCount = createMemo(() => files().filter((f) => !f.committed).length);
 
   return (
     <div
@@ -1168,12 +1157,6 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
               </div>
             </Show>
             <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
-              <span
-                title={filesFooterTitle(files().length, uncommittedCount())}
-                style={{ color: uncommittedCount() > 0 ? theme.warning : theme.fgMuted }}
-              >
-                {filesFooterLabel(files().length, uncommittedCount())}
-              </span>
               <span title={`${totalAdded()} added lines`} style={{ color: theme.success }}>
                 +{totalAdded()}
               </span>

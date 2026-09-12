@@ -12,6 +12,13 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
+      # Runners have no global Git identity, and tests that let the app create a
+      # repository of its own commit into it without a local one to fall back on.
+      - name: Give Git an identity
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'

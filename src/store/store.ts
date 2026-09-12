@@ -8,6 +8,9 @@ export {
   getProjectPath,
   getProjectBranchPrefix,
   pickAndAddProject,
+  addDocumentProject,
+  codeProjects,
+  isDocumentProject,
   validateProjectPaths,
   relinkProject,
   isProjectMissing,
@@ -26,6 +29,14 @@ export {
   removeCustomAgent,
   setAgentEnvFile,
 } from './agents';
+export {
+  openCanvasDocument,
+  activateCanvasTab,
+  closeCanvasTab,
+  openTaskCanvas,
+  closeTaskCanvas,
+  isTaskCanvasVisible,
+} from './canvas';
 export {
   createTask,
   createImportedTask,
@@ -58,6 +69,7 @@ export {
   toggleAITerminalLayout,
   setTaskLastInputAt,
   markTaskUserActivity,
+  setTaskPromptDraft,
   setTaskPromptDraftActive,
   setTaskTerminalInputPending,
   initMCPListeners,
@@ -116,6 +128,7 @@ export {
   setTaskViewportVisibility,
   toggleSidebar,
   toggleArena,
+  setDocumentWorkspacesEnabled,
   toggleFocusMode,
   toggleTaskFocusMode,
   setTaskSplitMode,

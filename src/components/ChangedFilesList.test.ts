@@ -5,8 +5,6 @@ import {
   coverageFooterLabel,
   coverageFooterTitle,
   FileCoverageBadge,
-  filesFooterLabel,
-  filesFooterTitle,
   isCoverageEligible,
 } from './ChangedFilesList';
 
@@ -68,18 +66,6 @@ describe('coverageFooterLabel', () => {
 
   it('shows the radar percentage when changed files are covered', () => {
     expect(coverageFooterLabel(true, 82, true)).toBe('◔ 82%');
-  });
-});
-
-describe('filesFooterLabel', () => {
-  it('shows only total files when everything is committed', () => {
-    expect(filesFooterLabel(7, 0)).toBe('▤ 7');
-    expect(filesFooterTitle(7, 0)).toBe('7 changed files.');
-  });
-
-  it('merges total and uncommitted counts into one compact token', () => {
-    expect(filesFooterLabel(7, 2)).toBe('▤ 7·2u');
-    expect(filesFooterTitle(7, 2)).toBe('7 changed files, 2 uncommitted.');
   });
 });
 

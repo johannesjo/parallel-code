@@ -10,6 +10,7 @@ interface InfoBarProps {
   class?: string;
   allowOverflow?: boolean;
   compact?: boolean;
+  style?: JSX.CSSProperties;
 }
 
 export function InfoBar(props: InfoBarProps) {
@@ -35,6 +36,7 @@ export function InfoBar(props: InfoBarProps) {
         'text-overflow': 'ellipsis',
         cursor: props.onClick ? 'pointer' : 'default',
         'user-select': 'none',
+        ...props.style,
       }}
     >
       {props.children}

@@ -23,6 +23,7 @@ vi.mock('../lib/shell', () => ({
 }));
 
 import { TaskBranchInfoBar } from './TaskBranchInfoBar';
+import { getProject } from '../store/store';
 
 const task: Task = {
   id: 'task-1',
@@ -129,6 +130,26 @@ describe('TaskBranchInfoBar source link', () => {
   });
 });
 
+describe('TaskBranchInfoBar project chip', () => {
+  it('renders the full name and its initials so the narrow layout can swap them', () => {
+    vi.mocked(getProject).mockReturnValue({
+      id: 'project-1',
+      name: 'parallel-code',
+      path: '/repo',
+      color: 'hsl(210, 70%, 75%)',
+    } as never);
+
+    const html = renderToString(() => TaskBranchInfoBar({ task, onEditProject: vi.fn() }));
+
+    expect(html).not.toContain('class="project-swatch"');
+    expect(html).toContain('border-left:3px solid hsl(210, 70%, 75%)');
+    expect(html).toContain('class="task-branch-project-label">parallel-code</span>');
+    expect(html).toContain('class="task-branch-project-compact-label"');
+    expect(html).toContain('>PC</span>');
+    expect(html).toContain('aria-label="Project: parallel-code · Project settings"');
+  });
+});
+
 describe('TaskBranchInfoBar responsive styles', () => {
   const css = readFileSync(resolve(__dirname, '../styles.css'), 'utf8');
 
@@ -141,7 +162,7 @@ describe('TaskBranchInfoBar responsive styles', () => {
   it.each([
     { width: 620, className: 'task-branch-path' },
     { width: 620, className: 'task-branch-existing-worktree' },
-    { width: 480, className: 'task-branch-project' },
+    { width: 480, className: 'task-branch-project-label' },
     { width: 420, className: 'task-pr-review-label' },
     { width: 340, className: 'task-branch-name' },
     { width: 340, className: 'task-pr-prefix' },
@@ -150,6 +171,15 @@ describe('TaskBranchInfoBar responsive styles', () => {
       new RegExp(
         `@container\\s+task-branch-info\\s+\\(max-width:\\s*${width}px\\)[\\s\\S]*?\\.${className}\\b[^{]*{[^}]*display:\\s*none`,
       ),
+    );
+  });
+
+  it('keeps the project visible as initials at 480px', () => {
+    expect(css).not.toMatch(
+      /@container\s+task-branch-info\s+\(max-width:\s*480px\)[\s\S]*?\.task-branch-project\s*{[^}]*display:\s*none/,
+    );
+    expect(css).toMatch(
+      /@container\s+task-branch-info\s+\(max-width:\s*480px\)[\s\S]*?\.task-branch-project-compact-label\s*{[^}]*display:\s*inline/,
     );
   });
 

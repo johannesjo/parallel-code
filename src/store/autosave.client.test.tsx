@@ -3,8 +3,10 @@
 // no-op, so the effect under test would never run there.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createRoot } from 'solid-js';
+import { produce } from 'solid-js/store';
 import { store, setStore } from './core';
 import { setupAutosave, AUTOSAVE_DEBOUNCE_MS, AUTOSAVE_MAX_WAIT_MS } from './autosave';
+import { setTaskPromptDraft } from './tasks';
 
 const { mockSaveState } = vi.hoisted(() => ({ mockSaveState: vi.fn(async () => {}) }));
 vi.mock('./persistence', async (importOriginal) => ({
@@ -79,5 +81,47 @@ describe('setupAutosave scheduling', () => {
       vi.advanceTimersByTime(AUTOSAVE_MAX_WAIT_MS * 2);
       expect(mockSaveState).not.toHaveBeenCalled();
     });
+  });
+
+  it('autosaves drafts of hidden document tasks after typing settles', () => {
+    const id = 'doc-agent-autosave-docs';
+    const previousProjects = [...store.projects];
+    setStore('projects', [
+      ...previousProjects,
+      {
+        id: 'autosave-docs',
+        name: 'Docs',
+        path: '/docs',
+        color: '',
+        kind: 'document',
+      },
+    ]);
+    setStore('tasks', id, {
+      id,
+      name: 'Docs',
+      projectId: 'autosave-docs',
+      worktreePath: '/docs',
+      branchName: '',
+      gitIsolation: 'none',
+      agentIds: [],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+    });
+    try {
+      withAutosave(() => {
+        expect(store.taskOrder).not.toContain(id);
+        setTaskPromptDraft(id, 'Keep this unfinished thought');
+        vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+        expect(mockSaveState).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      setStore('projects', previousProjects);
+      setStore(
+        produce((s) => {
+          delete s.tasks['doc-agent-autosave-docs'];
+        }),
+      );
+    }
   });
 });

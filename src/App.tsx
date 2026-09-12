@@ -87,6 +87,16 @@ import { isMac, mod } from './lib/platform';
 import { createCtrlWheelZoomHandler } from './lib/wheelZoom';
 import { redrawAllTerminals } from './lib/terminalFitManager';
 import { ArenaOverlay } from './arena/ArenaOverlay';
+import { DocumentWorkspaceOverlay } from './documents/DocumentWorkspaceOverlay';
+import { isDocumentAgentTaskId } from './documents/agent-task';
+import {
+  closeDocumentWorkspace,
+  documentStore,
+  initDocumentListeners,
+  setDocumentComposerDraft,
+  setDocumentSelection,
+} from './documents/store';
+import { dismissPinnedBubbles } from './documents/workspace-ui';
 import { resetForNewMatch } from './arena/store';
 import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 import { startPrChecksSubscription } from './store/pr-checks';
@@ -94,6 +104,8 @@ import { startUpdateSubscription } from './store/updates';
 import { startRemoteTaskHandlers } from './store/remoteTaskHandler';
 import { startRemoteStatusSync } from './store/remoteStatusSync';
 import { startAgentHookStatusListener } from './store/agentHookStatus';
+import { applyPlanContent, startCanvasAutoOpen } from './store/canvas';
+import type { PlanContentMessage } from './store/canvas';
 
 const MIN_WINDOW_DIMENSION = 100;
 
@@ -336,6 +348,14 @@ function App() {
     // Before the first await: restored agents start firing hooks as soon as
     // loadState spawns them, and IPC does not replay what nobody listened to.
     const stopAgentHookStatusListener = startAgentHookStatusListener();
+    const stopCanvasAutoOpen = startCanvasAutoOpen();
+    // Listen for plan content pushed from backend plan watcher
+    const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      applyPlanContent(data as PlanContentMessage);
+    });
+
+    const stopDocumentListeners = initDocumentListeners();
     void syncWindowFocused();
     void syncWindowMaximized();
 
@@ -507,12 +527,12 @@ function App() {
     for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
       const task = store.tasks[taskId];
       if (!task?.worktreePath || !task.planFileName) continue;
-      invoke<{ content: string; fileName: string } | null>(IPC.ReadPlanContent, {
-        worktreePath: task.worktreePath,
-        fileName: task.planFileName,
-      })
+      invoke<{ content: string; fileName: string; relativePath: string } | null>(
+        IPC.ReadPlanContent,
+        { worktreePath: task.worktreePath, fileName: task.planFileName },
+      )
         .then((result) => {
-          if (result) setPlanContent(taskId, result.content, result.fileName);
+          if (result) setPlanContent(taskId, result.content, result.fileName, result.relativePath);
         })
         .catch((err) => {
           console.warn(`Failed to restore plan for task ${taskId}:`, err);
@@ -546,15 +566,6 @@ function App() {
     const stopUpdateSubscription = startUpdateSubscription();
     const stopRemoteTaskHandlers = startRemoteTaskHandlers();
     const stopRemoteStatusSync = startRemoteStatusSync();
-
-    // Listen for plan content pushed from backend plan watcher
-    const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
-      if (!data || typeof data !== 'object') return;
-      const msg = data as { taskId: string; content: string | null; fileName: string | null };
-      if (msg.taskId && store.tasks[msg.taskId]) {
-        setPlanContent(msg.taskId, msg.content, msg.fileName);
-      }
-    });
 
     // Listen for steps content pushed from backend steps watcher
     const offStepsContent = window.electron.ipcRenderer.on(IPC.StepsContent, (data: unknown) => {
@@ -645,6 +656,10 @@ function App() {
     });
     setCloseHandlerReady(true);
 
+    // A document workspace's hidden agent task can be the active one; it has
+    // no worktree to close, merge or push and no panel a shell could show in.
+    const listedTask = (id: string) => store.tasks[id] !== undefined && !isDocumentAgentTaskId(id);
+
     const actionHandlers: Record<string, (e: KeyboardEvent) => void> = {
       'navigateRow:up': () => navigateRow('up'),
       'navigateRow:down': () => navigateRow('down'),
@@ -673,19 +688,19 @@ function App() {
           closeTerminal(id);
           return;
         }
-        if (store.tasks[id]) setPendingAction({ type: 'close', taskId: id });
+        if (listedTask(id)) setPendingAction({ type: 'close', taskId: id });
       },
       mergeTask: () => {
         const id = store.activeTaskId;
-        if (id && store.tasks[id]) setPendingAction({ type: 'merge', taskId: id });
+        if (id && listedTask(id)) setPendingAction({ type: 'merge', taskId: id });
       },
       pushTask: () => {
         const id = store.activeTaskId;
-        if (id && store.tasks[id]) setPendingAction({ type: 'push', taskId: id });
+        if (id && listedTask(id)) setPendingAction({ type: 'push', taskId: id });
       },
       spawnShell: () => {
         const id = store.activeTaskId;
-        if (id && store.tasks[id]) spawnShellForTask(id);
+        if (id && listedTask(id)) spawnShellForTask(id);
       },
       sendPrompt: () => sendActivePrompt(),
       createTerminal: (e) => {
@@ -699,6 +714,19 @@ function App() {
       closeDialogs: () => {
         if (store.showArena) {
           closeArena();
+          return;
+        }
+        if (store.activeDocumentProjectId) {
+          // A pinned note covers the prose and goes first. Then the composer,
+          // up with a passage or with a draft opened from the toolbar or a
+          // note; either way Escape closes it before the workspace.
+          if (dismissPinnedBubbles()) return;
+          if (documentStore.selection || documentStore.composerDraft) {
+            setDocumentSelection(null);
+            setDocumentComposerDraft(null);
+          } else {
+            closeDocumentWorkspace();
+          }
           return;
         }
         if (store.showHelpDialog) {
@@ -746,6 +774,8 @@ function App() {
       stopRemoteTaskHandlers();
       stopRemoteStatusSync();
       stopAgentHookStatusListener();
+      stopCanvasAutoOpen();
+      stopDocumentListeners();
       offPlanContent();
       offStepsContent();
       unlistenFocusChanged?.();
@@ -908,7 +938,18 @@ function App() {
               </svg>
             </button>
           </Show>
-          <TilingLayout />
+          <div class="task-workspace">
+            <div
+              class="task-workspace-code"
+              classList={{ 'is-hidden': !!store.activeDocumentProjectId }}
+              inert={!!store.activeDocumentProjectId}
+            >
+              <TilingLayout />
+            </div>
+            <Show when={store.activeDocumentProjectId}>
+              <DocumentWorkspaceOverlay />
+            </Show>
+          </div>
           <NewTaskDialog
             open={store.showNewTaskDialog}
             onClose={() => toggleNewTaskDialog(false)}

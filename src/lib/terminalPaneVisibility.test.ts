@@ -4,6 +4,22 @@ import { isTerminalPaneOnScreen } from './terminalPaneVisibility';
 const base = { focusMode: false, activeTaskId: 't1', taskId: 't1', viewportVisibility: undefined };
 
 describe('isTerminalPaneOnScreen', () => {
+  it('shows only the document workspace terminal while that workspace covers coding tasks', () => {
+    const workspaceTaskId = 'doc-agent-docs';
+    expect(isTerminalPaneOnScreen({ ...base, workspaceTaskId })).toBe(false);
+    expect(isTerminalPaneOnScreen({ ...base, workspaceTaskId, taskId: workspaceTaskId })).toBe(
+      true,
+    );
+    expect(
+      isTerminalPaneOnScreen({
+        ...base,
+        workspaceTaskId,
+        taskId: workspaceTaskId,
+        paneVisible: false,
+      }),
+    ).toBe(false);
+    expect(isTerminalPaneOnScreen({ ...base, workspaceTaskId, standalone: true })).toBe(true);
+  });
   it('in tiling mode, only fully off-screen tasks are hidden', () => {
     expect(isTerminalPaneOnScreen({ ...base, viewportVisibility: undefined })).toBe(true);
     expect(isTerminalPaneOnScreen({ ...base, viewportVisibility: 'visible' })).toBe(true);
