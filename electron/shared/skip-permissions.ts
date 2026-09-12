@@ -39,3 +39,22 @@ export function getSkipPermissionsArgs(command: string): string[] {
   const basename = command.split('/').filter(Boolean).pop() ?? command;
   return [...(SKIP_PERMISSIONS_ARGS.get(basename) ?? [])];
 }
+
+/**
+ * Skip-permissions flags for an agent definition, preferring what the
+ * definition carries and falling back to the table above.
+ *
+ * The fallback is the point. An `AgentDef` can reach a launch path with
+ * `skip_permissions_args` empty — restored from a profile written before the
+ * field existed, or synthesised from a bare command — and reading the field
+ * directly silently turns an explicit `skipPermissions: true` into a launch
+ * that prompts on every tool call.
+ */
+export function resolveSkipPermissionsArgs(def: {
+  command: string;
+  skip_permissions_args?: string[];
+}): string[] {
+  return def.skip_permissions_args?.length
+    ? [...def.skip_permissions_args]
+    : getSkipPermissionsArgs(def.command);
+}

@@ -15,6 +15,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { errMessage } from '../lib/log';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
+import { resolveSkipPermissionsArgs } from '../../electron/shared/skip-permissions';
 import {
   store,
   createTask,
@@ -887,7 +888,10 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
 
   const agentSupportsSkipPermissions = () => {
     const agent = selectedAgent();
-    return !!agent?.skip_permissions_args?.length;
+    // Resolve by command as well as by the def's own args: an agent restored
+    // from an older profile still takes the flag, and hiding the checkbox
+    // records skipPermissions: false for the life of the task.
+    return !!agent && resolveSkipPermissionsArgs(agent).length > 0;
   };
 
   const canSubmit = () => {

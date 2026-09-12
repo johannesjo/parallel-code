@@ -459,6 +459,22 @@ describe('MCP_TaskCreated IPC handler', () => {
     taskCreatedHandler(baseEvent);
     expect(mockTasks['sub-task-1'].controlledBy).toBeDefined();
   });
+
+  // This def is synthesised when availableAgents has no entry for the
+  // coordinator's command, and it is persisted under `id: cmd` — an id
+  // enrichAgentDef will never match on restore — so an empty list here is
+  // stored permanently and read by every later consumer of the def.
+  it("synthesises a fallback def carrying the command's skip-permissions flags", () => {
+    taskCreatedHandler({ ...baseEvent, agentCommand: 'claude' });
+    const agent = mockAgents['agent-sub-1'] as { def: { skip_permissions_args: string[] } };
+    expect(agent.def.skip_permissions_args).toEqual(['--dangerously-skip-permissions']);
+  });
+
+  it('leaves the fallback def empty for a command that takes no such flag', () => {
+    taskCreatedHandler({ ...baseEvent, agentCommand: 'opencode' });
+    const agent = mockAgents['agent-sub-1'] as { def: { skip_permissions_args: string[] } };
+    expect(agent.def.skip_permissions_args).toEqual([]);
+  });
 });
 
 describe('task automation activity lease', () => {
