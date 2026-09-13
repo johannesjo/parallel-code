@@ -2,7 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, on } from 'solid-js'
 import { activeDocumentPath, documentStore, openDocumentFile } from './store';
 import { loadDocumentFiles, workspaceUi } from './workspace-ui';
 import { buildPathTree, type PathTreeNode } from './path-tree';
-import { DocumentIcon } from './DocumentIcon';
+import { ChevronRightIcon, DocumentIcon } from '../components/icons';
 
 const DOCUMENT_RE = /\.(md|markdown|html?)$/i;
 /** Mirrors MAX_FILES in electron/documents/files.ts: a list this long was cut. */
@@ -14,16 +14,7 @@ interface FileTreePanelProps {
 
 function Chevron(props: { open: boolean }) {
   return (
-    <svg
-      width="10"
-      height="10"
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      aria-hidden="true"
-      style={{ transform: props.open ? 'rotate(90deg)' : undefined }}
-    >
-      <path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z" />
-    </svg>
+    <ChevronRightIcon size={10} style={{ transform: props.open ? 'rotate(90deg)' : undefined }} />
   );
 }
 

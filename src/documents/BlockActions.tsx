@@ -2,6 +2,7 @@ import { For, createSignal, type Accessor, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { createAnchorEffect } from '../lib/floating';
 import type { ComposerMode } from './store';
+import { EditIcon, GitGraphIcon, NoteIcon, QuestionIcon, ZapIcon } from '../components/icons';
 
 /** A composer mode, or editing the block's source in place. */
 export type BlockActionKind = ComposerMode | 'edit';
@@ -42,16 +43,16 @@ export const BLOCK_ACTIONS: readonly BlockAction[] = [
   },
 ];
 
-function iconPath(kind: BlockActionKind): string {
-  return BLOCK_ACTIONS.find((a) => a.kind === kind)?.path ?? '';
-}
-
 /** One action's glyph, the same in the block toolbar and on the composer's tabs. */
 export function ActionIcon(props: { kind: BlockActionKind }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-      <path d={iconPath(props.kind)} />
-    </svg>
+    <>
+      {props.kind === 'task' && <ZapIcon size={14} />}
+      {props.kind === 'proposals' && <GitGraphIcon size={14} />}
+      {props.kind === 'note' && <NoteIcon size={14} />}
+      {props.kind === 'question' && <QuestionIcon size={14} />}
+      {props.kind === 'edit' && <EditIcon size={14} />}
+    </>
   );
 }
 

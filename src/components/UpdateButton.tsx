@@ -11,41 +11,7 @@
 import { Show } from 'solid-js';
 import { theme } from '../lib/theme';
 import { updateStatus, downloadUpdate, installUpdate } from '../store/store';
-
-const DownloadIcon = () => (
-  <svg
-    width="16"
-    height="16"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.6"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M8 2v8" />
-    <path d="M4.5 7 8 10.5 11.5 7" />
-    <path d="M3 13h10" />
-  </svg>
-);
-
-const RestartIcon = () => (
-  <svg
-    width="16"
-    height="16"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.6"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M13 8a5 5 0 1 1-1.46-3.54" />
-    <path d="M13 2v3h-3" />
-  </svg>
-);
+import { DownloadIcon, RefreshIcon } from './icons';
 
 export function UpdateButton() {
   const phase = () => updateStatus().phase;
@@ -94,7 +60,7 @@ export function UpdateButton() {
       >
         <Show
           when={phase() === 'downloading'}
-          fallback={phase() === 'downloaded' ? <RestartIcon /> : <DownloadIcon />}
+          fallback={phase() === 'downloaded' ? <RefreshIcon /> : <DownloadIcon />}
         >
           <span style={{ 'font-size': '11px', 'font-weight': '600' }}>
             {updateStatus().downloadPercent}%

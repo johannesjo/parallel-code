@@ -3,6 +3,7 @@ import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { accentControlColors } from '../lib/controlStyle';
 import type { CommitInfo } from '../ipc/types';
+import { ChevronLeftIcon, ChevronRightIcon } from './icons';
 
 /**
  * Sentinel value used in place of a commit hash to mean "show only currently
@@ -138,9 +139,7 @@ export function CommitNavBar(props: CommitNavBarProps) {
           'flex-shrink': '0',
         }}
       >
-        <svg width={iconSize()} height={iconSize()} viewBox="0 0 16 16" fill="currentColor">
-          <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
-        </svg>
+        <ChevronLeftIcon size={iconSize()} />
       </button>
 
       {/* Chevron Right */}
@@ -167,9 +166,7 @@ export function CommitNavBar(props: CommitNavBarProps) {
           'flex-shrink': '0',
         }}
       >
-        <svg width={iconSize()} height={iconSize()} viewBox="0 0 16 16" fill="currentColor">
-          <path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z" />
-        </svg>
+        <ChevronRightIcon size={iconSize()} />
       </button>
 
       {/* Uncommitted-only button */}

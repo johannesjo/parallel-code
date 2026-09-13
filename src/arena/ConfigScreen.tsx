@@ -19,7 +19,7 @@ import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { saveArenaPresets } from './persistence';
 import { ProjectSelect } from '../components/ProjectSelect';
-import { CloseIcon } from '../components/icons';
+import { CloseIcon, ScrambleIcon } from '../components/icons';
 import { MAX_COMPETITORS, MIN_COMPETITORS } from './store';
 import type { BattleCompetitor } from './types';
 
@@ -218,20 +218,7 @@ export function ConfigScreen() {
       {/* Actions */}
       <div class="arena-config-actions">
         <button class="arena-fight-btn" disabled={!canFight() || preparing()} onClick={handleFight}>
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            style={{ 'margin-right': '6px' }}
-          >
-            <path d="M3 3L13 13M9 12L12 9" />
-            <path d="M13 3L3 13M4 9L7 12" />
-          </svg>
+          <ScrambleIcon size={20} style={{ 'margin-right': '6px' }} />
           Fight!
         </button>
       </div>
