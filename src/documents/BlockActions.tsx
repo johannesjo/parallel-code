@@ -10,7 +10,7 @@ export type BlockActionKind = ComposerMode | 'edit';
 interface BlockAction {
   kind: BlockActionKind;
   title: string;
-  /** 16×16 icon path. */
+  /** Reference icon path, asserted against the shared module by RunComposer.draft.client.test.tsx. */
   path: string;
 }
 

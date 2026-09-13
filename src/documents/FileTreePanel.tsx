@@ -67,7 +67,7 @@ export function FileTreePanel(props: FileTreePanelProps) {
             >
               <span class="docws-tree-icon">
                 <Show when={DOCUMENT_RE.test(nodeProps.node.name)} fallback={<span>·</span>}>
-                  <DocumentIcon />
+                  <DocumentIcon size={18} />
                 </Show>
               </span>
               <span class="docws-tree-name">{nodeProps.node.name}</span>

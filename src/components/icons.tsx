@@ -349,7 +349,7 @@ export function EditIcon(props: IconProps): JSX.Element {
 
 export function LogoIcon(props: IconProps): JSX.Element {
   return (
-    <StrokeSvgIcon {...props} strokeWidth="4">
+    <StrokeSvgIcon {...props} strokeWidth="4" viewBox="0 0 56 56">
       <line x1="10" y1="6" x2="10" y2="50" />
       <line x1="22" y1="6" x2="22" y2="50" />
       <path d="M30 8 H47 V24 H30" />
