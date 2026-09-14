@@ -51,6 +51,14 @@ export const READY_AGENT_FRAME_FIXTURES: AgentFrameFixture[] = [
       '> Type your message or @path/to/file',
     ].join('\n'),
   },
+  {
+    name: 'Codex CLI 0.154.0 "Ask Codex to do anything" prompt (custom nono agent wrapper)',
+    frame: [
+      '> Ask Codex to do anything',
+      '',
+      'gpt-5.5 default · /Users/brooksc/git/parallel-code/.worktrees/task-031-nono',
+    ].join('\n'),
+  },
 ];
 
 export const NOT_READY_AGENT_FRAME_FIXTURES: NotReadyAgentFrameFixture[] = [

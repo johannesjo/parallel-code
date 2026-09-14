@@ -259,6 +259,15 @@ describe('chunkContainsAgentPrompt', () => {
     ).toBe(true);
   });
 
+  it('returns true for Codex CLI 0.154.0 "Ask Codex to do anything" prompt', () => {
+    expect(chunkContainsAgentPrompt('> Ask Codex to do anything')).toBe(true);
+  });
+
+  it('returns true for Codex CLI "Ask Codex to do anything" prompt above footer/status text', () => {
+    const footer = '\n\ngpt-5.5 default · ~/repo/worktree';
+    expect(chunkContainsAgentPrompt(`> Ask Codex to do anything${footer}`)).toBe(true);
+  });
+
   it('does not treat Codex startup screens as ready', () => {
     expect(
       chunkContainsAgentPrompt('Starting MCP servers (0/2): codex_apps, parallel-code\n›'),
