@@ -246,7 +246,7 @@ function HunkView(props: {
   filePath: string;
   highlightedRange?: HighlightRange | null;
   pendingInputAfterLine?: number | null;
-  onSubmit?: (text: string, mode: 'review' | 'ask') => void;
+  onSubmit?: (text: string, mode: 'review' | 'ask', imagePaths?: string[]) => void;
   onDismiss?: () => void;
 }) {
   const [highlighted, setHighlighted] = createSignal<string[] | null>(null);
@@ -279,7 +279,7 @@ function HunkView(props: {
             }
           >
             <InlineInput
-              onSubmit={(text, mode) => props.onSubmit?.(text, mode)}
+              onSubmit={(text, mode, imagePaths) => props.onSubmit?.(text, mode, imagePaths)}
               onDismiss={() => props.onDismiss?.()}
             />
           </Show>
@@ -471,7 +471,7 @@ function FileSection(props: {
   onDismissFinding: (id: string) => void;
   highlightedRange?: HighlightRange | null;
   pendingInput?: { filePath: string; afterLine: number } | null;
-  onSubmit: (text: string, mode: 'review' | 'ask') => void;
+  onSubmit: (text: string, mode: 'review' | 'ask', imagePaths?: string[]) => void;
   onDismiss: () => void;
 }) {
   const lang = () => detectLang(props.file.path);
@@ -717,6 +717,7 @@ function FileSection(props: {
                               endLine={q.endLine}
                               selectedText={q.selectedText}
                               worktreePath={props.worktreePath}
+                              imagePaths={q.imagePaths}
                               onDismiss={() => props.onDismissQuestion(q.id)}
                             />
                           )}
@@ -968,10 +969,10 @@ export function ScrollingDiffView(props: ScrollingDiffViewProps) {
     });
   });
 
-  function handleSubmit(text: string, mode: DiffInteractionMode) {
+  function handleSubmit(text: string, mode: DiffInteractionMode, imagePaths?: string[]) {
     const savedScroll = containerRef?.scrollTop ?? 0;
 
-    review.handleSubmit(text, mode);
+    review.handleSubmit(text, mode, imagePaths);
 
     requestAnimationFrame(() => {
       if (containerRef) containerRef.scrollTop = savedScroll;

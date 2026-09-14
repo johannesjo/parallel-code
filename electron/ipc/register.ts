@@ -376,6 +376,11 @@ function sanitizeDroppedName(name: string): string {
   return `parallel-code-drop-${stamp}.png`;
 }
 
+/** Unique path for a raster image copied from the clipboard. */
+export function createClipboardImagePath(): string {
+  return path.join(os.tmpdir(), sanitizeDroppedName('clipboard.png'));
+}
+
 /**
  * Create a leading+trailing throttled event forwarder.
  * Fires immediately, suppresses for `intervalMs`, then fires once more
@@ -934,6 +939,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const provider: string | undefined =
       typeof args.provider === 'string' ? args.provider : undefined;
     assertOptionalString(args.envFile, 'envFile');
+    const rawImagePaths: unknown = args.imagePaths;
+    let imagePaths: string[] | undefined;
+    if (rawImagePaths !== undefined) {
+      assertStringArray(rawImagePaths, 'imagePaths');
+      for (const imagePath of rawImagePaths) validatePath(imagePath, 'imagePath');
+      imagePaths = rawImagePaths;
+    }
     askAboutCode(win, {
       requestId: args.requestId,
       channelId: args.onOutput.__CHANNEL_ID__,
@@ -941,6 +953,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       cwd: args.cwd,
       provider: provider === 'minimax' ? 'minimax' : 'claude',
       envFile: args.envFile,
+      imagePaths,
     });
   });
 
@@ -975,8 +988,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   // --- Clipboard ---
-  const clipboardImagePath = path.join(os.tmpdir(), 'parallel-code-clipboard.png');
-
   // Resolve the most useful representation of the current clipboard contents
   // for pasting into a terminal. Order of preference:
   //   1. file references (Finder copy, Nautilus copy, etc.) → return absolute path
@@ -998,6 +1009,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       const img = clipboard.readImage();
       if (!img.isEmpty()) {
         const buf = img.toPNG();
+        const clipboardImagePath = createClipboardImagePath();
         await fs.promises.writeFile(clipboardImagePath, buf);
         return { kind: 'image', path: clipboardImagePath };
       }

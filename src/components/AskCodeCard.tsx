@@ -14,6 +14,8 @@ interface AskCodeCardProps {
   endLine: number;
   selectedText: string;
   worktreePath: string;
+  /** Absolute paths of images attached to the question, if any. */
+  imagePaths?: string[];
   onDismiss: () => void;
 }
 
@@ -65,6 +67,7 @@ export function AskCodeCard(props: AskCodeCardProps) {
       onOutput: channel,
       provider: store.askCodeProvider,
       envFile: store.agentEnvFiles['claude-code'],
+      imagePaths: props.imagePaths?.length ? props.imagePaths : undefined,
     }).catch((err: unknown) => {
       setError(errMessage(err));
       setLoading(false);

@@ -44,6 +44,8 @@ export interface ActiveQuestion {
   startLine: number;
   endLine: number;
   selectedText: string;
+  /** Absolute paths of images attached to the question, if any. */
+  imagePaths?: string[];
 }
 
 export interface ReviewScrollTarget {
@@ -89,7 +91,7 @@ export interface ReviewContextValue {
   handleSelection: (selection: ContentSelection) => void;
   clearPendingSelection: () => void;
 
-  handleSubmit: (text: string, mode: DiffInteractionMode) => string | null;
+  handleSubmit: (text: string, mode: DiffInteractionMode, imagePaths?: string[]) => string | null;
 
   activeQuestions: () => ActiveQuestion[];
   dismissQuestion: (id: string) => void;
@@ -403,7 +405,11 @@ export function ReviewProvider(props: ReviewProviderProps) {
   }
 
   /** Create an annotation or question from the pending selection. Returns the new item's ID, or null on no-op. */
-  function handleSubmit(text: string, mode: DiffInteractionMode): string | null {
+  function handleSubmit(
+    text: string,
+    mode: DiffInteractionMode,
+    imagePaths?: string[],
+  ): string | null {
     const sel = pendingSelection();
     if (!sel) return null;
 
@@ -428,6 +434,7 @@ export function ReviewProvider(props: ReviewProviderProps) {
           startLine: sel.startLine,
           endLine: sel.endLine,
           selectedText: sel.selectedText,
+          imagePaths: imagePaths?.length ? [...imagePaths] : undefined,
         },
       ]);
     }

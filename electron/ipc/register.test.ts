@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   branchNameArg,
+  createClipboardImagePath,
   openExternalHttpUrl,
   optionalBaseBranch,
   projectRootArg,
@@ -8,6 +9,17 @@ import {
   validateExternalHttpUrl,
   worktreePathArg,
 } from './register.js';
+
+describe('createClipboardImagePath', () => {
+  it('creates a unique PNG path for every clipboard image', () => {
+    const first = createClipboardImagePath();
+    const second = createClipboardImagePath();
+
+    expect(first).not.toBe(second);
+    expect(first).toMatch(/parallel-code-drop-.*-clipboard\.png$/);
+    expect(second).toMatch(/parallel-code-drop-.*-clipboard\.png$/);
+  });
+});
 
 describe('selectMcpJsonDir', () => {
   it('returns worktreePath when defined', () => {

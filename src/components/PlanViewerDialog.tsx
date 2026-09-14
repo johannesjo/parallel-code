@@ -238,10 +238,14 @@ function PlanViewerContent(props: PlanViewerContentProps) {
     });
   }
 
-  function handleSubmitInFlow(text: string, mode: Parameters<typeof review.handleSubmit>[1]) {
+  function handleSubmitInFlow(
+    text: string,
+    mode: Parameters<typeof review.handleSubmit>[1],
+    imagePaths?: string[],
+  ) {
     const slot = pendingFlowSlot();
     batch(() => {
-      const id = review.handleSubmit(text, mode);
+      const id = review.handleSubmit(text, mode, imagePaths);
       if (!id) return;
       if (slot) setFlowSlots((prev) => ({ ...prev, [id]: slot }));
       setPendingFlowSlot(undefined);
@@ -431,6 +435,7 @@ function PlanViewerContent(props: PlanViewerContentProps) {
                         endLine={q.endLine}
                         selectedText={q.selectedText}
                         worktreePath={props.worktreePath ?? ''}
+                        imagePaths={q.imagePaths}
                         onDismiss={() => dismissQuestion(q.id)}
                       />
                     </Portal>
