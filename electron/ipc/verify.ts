@@ -2,6 +2,7 @@ import { execFile, spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { promisify } from 'util';
 import { resolveUserShell } from '../user-shell.js';
+import { killProcessTree as terminateTree } from '../process-tree.js';
 import { stripAnsi } from '../shared/prompt-detect.js';
 import { pendingVerificationRun } from '../shared/verification-run.js';
 import type { VerificationRun, VerificationRunStatus } from './shared-types.js';
@@ -107,17 +108,9 @@ function appendTail(tail: string, chunk: string): string {
 }
 
 function killProcessTree(child: Child): void {
-  const pid = child.pid;
-  const signalGroup = (signal: NodeJS.Signals) => {
-    try {
-      if (pid && process.platform !== 'win32') process.kill(-pid, signal);
-      else child.kill(signal);
-    } catch {
-      /* already gone */
-    }
-  };
-  signalGroup('SIGTERM');
-  const hardKill = setTimeout(() => signalGroup('SIGKILL'), KILL_GRACE_MS);
+  terminateTree(child, 'SIGTERM');
+  if (process.platform === 'win32') return;
+  const hardKill = setTimeout(() => terminateTree(child, 'SIGKILL'), KILL_GRACE_MS);
   hardKill.unref?.();
   child.once('close', () => clearTimeout(hardKill));
 }
@@ -132,7 +125,13 @@ function exitOutcome(code: number | null, signal: NodeJS.Signals | null): EndRea
 }
 
 function spawnCommand(request: VerifyRequest, deps: SpawnDeps): Child {
-  return deps.spawnImpl(deps.shell, ['-c', request.command], {
+  const windows = process.platform === 'win32';
+  const shellArgs = windows
+    ? (/powershell(?:\.exe)?$/i.test(deps.shell)
+        ? ['-NoProfile', '-NonInteractive', '-Command', request.command]
+        : ['/d', '/s', '/c', request.command])
+    : ['-c', request.command];
+  return deps.spawnImpl(deps.shell, shellArgs, {
     cwd: request.worktreePath,
     env: { ...process.env, ...request.env, NO_COLOR: '1', FORCE_COLOR: '0' },
     stdio: ['ignore', 'pipe', 'pipe'],

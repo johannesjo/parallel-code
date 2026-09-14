@@ -12,6 +12,7 @@ import {
   HOOK_TOKEN_HEADER,
   buildEndpointFile,
   buildHookScript,
+  buildWindowsHookScript,
 } from './hook-script.js';
 import { mapClaudeHookPayload, type AgentHookEventPayload } from './status.js';
 
@@ -81,18 +82,23 @@ function writeFiles(
 ): Pick<AgentHookServer, 'hookScriptPath' | 'claudeSettingsPath'> {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const endpointPath = path.join(dir, 'endpoint.env');
-  const hookScriptPath = path.join(dir, 'hook.sh');
+  const isWindows = process.platform === 'win32';
+  const hookScriptPath = path.join(dir, isWindows ? 'hook.ps1' : 'hook.sh');
   const claudeSettingsPath = path.join(dir, 'claude-settings.json');
   fs.writeFileSync(endpointPath, buildEndpointFile(port, token), { mode: 0o600 });
-  fs.writeFileSync(hookScriptPath, buildHookScript(), { mode: 0o755 });
+  fs.writeFileSync(hookScriptPath, isWindows ? buildWindowsHookScript() : buildHookScript(), {
+    mode: 0o755,
+  });
   fs.writeFileSync(
     claudeSettingsPath,
     JSON.stringify(buildClaudeHookSettings(hookScriptPath), null, 2) + '\n',
   );
   // `mode` only applies on creation; a directory or token file left over from
   // an older build (or loosened by hand) must be tightened again every launch.
-  fs.chmodSync(dir, 0o700);
-  fs.chmodSync(endpointPath, 0o600);
+  if (!isWindows) {
+    fs.chmodSync(dir, 0o700);
+    fs.chmodSync(endpointPath, 0o600);
+  }
   return { hookScriptPath, claudeSettingsPath };
 }
 

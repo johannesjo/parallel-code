@@ -1,8 +1,8 @@
-import path from 'path';
+import { commandName } from '../shared/command-name.js';
 
 /** True for `claude` and absolute paths to it; wrappers with other names get nothing. */
 export function isClaudeCommand(command: string): boolean {
-  return path.basename(command) === 'claude';
+  return commandName(command) === 'claude';
 }
 
 /**

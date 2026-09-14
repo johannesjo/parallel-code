@@ -29,6 +29,15 @@ export function resolveUserShell(deps: ResolveUserShellDeps = {}): string {
   const canUseShell =
     deps.canUseShell ?? ((shell: string) => platform === 'win32' || isExecutablePosixShell(shell));
 
+  if (platform === 'win32') {
+    const windowsShell = normalizeShell(env.ComSpec);
+    const powerShell = normalizeShell(env.PSModulePath) ? 'powershell.exe' : null;
+    for (const shell of [windowsShell, powerShell, 'cmd.exe']) {
+      if (shell && canUseShell(shell)) return shell;
+    }
+    return 'cmd.exe';
+  }
+
   try {
     const osShell = normalizeShell(userInfo().shell);
     if (osShell && canUseShell(osShell)) return osShell;
@@ -39,5 +48,5 @@ export function resolveUserShell(deps: ResolveUserShellDeps = {}): string {
   const envShell = normalizeShell(env.SHELL);
   if (envShell && canUseShell(envShell)) return envShell;
 
-  return platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+  return '/bin/sh';
 }

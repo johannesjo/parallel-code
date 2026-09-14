@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import type { BrowserWindow } from 'electron';
 import { RingBuffer } from '../remote/ring-buffer.js';
 import { resolveUserShell } from '../user-shell.js';
+import { resolveCommand, windowsPtyCommand } from '../command-path.js';
 import {
   detectRepoRoot,
   ensureClaudeSandboxFiles,
@@ -210,20 +211,8 @@ export function validateCommand(command: string): void {
   if (!command || !command.trim()) {
     throw new Error('Command must not be empty.');
   }
-  // Absolute paths: check directly via filesystem
-  if (command.startsWith('/')) {
-    try {
-      fs.accessSync(command, fs.constants.X_OK);
-      return;
-    } catch {
-      throw new Error(
-        `Command '${command}' not found or not executable. Check that it is installed.`,
-      );
-    }
-  }
-  // Bare names: resolve via `which` (execFileSync — no shell interpolation)
   try {
-    execFileSync('which', [command], { encoding: 'utf8', timeout: 3000 });
+    resolveCommand(command);
   } catch {
     throw new Error(
       `Command '${command}' not found in PATH. Make sure it is installed and available in your terminal.`,
@@ -518,7 +507,7 @@ export function applyAgentHookLaunch(
 export function spawnAgent(win: BrowserWindow, args: SpawnAgentArgs): void {
   const channelId = args.onOutput.__CHANNEL_ID__;
   const command = args.command || resolveUserShell();
-  const cwd = args.cwd || process.env.HOME || '/';
+  const cwd = args.cwd || process.env.HOME || process.env.USERPROFILE || process.cwd();
 
   // Renderer reloads should reattach to still-running PTYs before validating
   // the launch command. The process already exists; a missing binary after
@@ -577,7 +566,13 @@ export function spawnAgent(win: BrowserWindow, args: SpawnAgentArgs): void {
     refreshWorktreeNodeModules(cwd, repoRoot);
   }
 
-  const spawnSpec = buildPtySpawnSpec({ ...args, args: launchArgs }, command, cwd, spawnEnv);
+  const nativeCommand = args.dockerMode ? command : resolveCommand(command);
+  const nativeLaunch = process.platform === 'win32' && !args.dockerMode
+    ? windowsPtyCommand(nativeCommand, launchArgs)
+    : { command: nativeCommand, args: launchArgs };
+  const spawnSpec = buildPtySpawnSpec(
+    { ...args, args: nativeLaunch.args }, nativeLaunch.command, cwd, spawnEnv,
+  );
 
   logDebug('pty', `spawn command ${args.agentId}`, {
     taskId: args.taskId,
@@ -593,6 +588,7 @@ export function spawnAgent(win: BrowserWindow, args: SpawnAgentArgs): void {
     rows: args.rows,
     cwd: spawnSpec.cwd,
     env: spawnSpec.env,
+    useConpty: process.platform === 'win32',
   });
 
   const session: PtySession = {

@@ -1,5 +1,6 @@
 import { produce } from 'solid-js/store';
 import { invoke } from '../lib/ipc';
+import { hostBasename } from '../lib/host-path';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
 import { startRemoteAccess } from './remote';
@@ -516,8 +517,7 @@ export async function loadState(): Promise<void> {
   }
 
   if (projects.length === 0 && raw.projectRoot) {
-    const segments = raw.projectRoot.split('/');
-    const name = segments[segments.length - 1] || raw.projectRoot;
+    const name = hostBasename(raw.projectRoot);
     const id = crypto.randomUUID();
     projects = [{ id, name, path: raw.projectRoot, color: randomPastelColor() }];
     lastProjectId = id;

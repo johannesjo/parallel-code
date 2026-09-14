@@ -1,3 +1,5 @@
+import { commandName } from '../shared/command-name.js';
+
 interface ParallelCodeMcpServerConfig {
   command: string;
   args: string[];
@@ -11,15 +13,15 @@ export interface ParallelCodeMcpConfig {
 }
 
 export function isCodexCommand(command: string): boolean {
-  return command.split('/').pop()?.includes('codex') === true;
+  return commandName(command).includes('codex');
 }
 
 export function isAntigravityCommand(command: string): boolean {
-  return command.split('/').pop() === 'agy';
+  return commandName(command) === 'agy';
 }
 
 export function isCopilotCommand(command: string): boolean {
-  return command.split('/').pop() === 'copilot';
+  return commandName(command) === 'copilot';
 }
 
 function tomlString(value: string): string {

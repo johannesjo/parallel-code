@@ -1,8 +1,5 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { getSkipPermissionsArgs } from '../shared/skip-permissions.js';
-
-const execFileAsync = promisify(execFile);
+import { resolveCommand } from '../command-path.js';
 
 interface AgentDef {
   id: string;
@@ -81,14 +78,14 @@ const DEFAULT_AGENTS: AgentDef[] = [
 
 async function isCommandAvailable(command: string): Promise<boolean> {
   try {
-    await execFileAsync('which', [command], { encoding: 'utf8', timeout: 3000 });
+    resolveCommand(command);
     return true;
   } catch {
     return false;
   }
 }
 
-// TTL cache to avoid repeated `which` calls
+// TTL cache to avoid repeated filesystem/PATH checks
 let cachedAgents: AgentDef[] | null = null;
 let cacheTime = 0;
 const AGENT_CACHE_TTL = 30_000;

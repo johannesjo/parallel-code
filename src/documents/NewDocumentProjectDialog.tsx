@@ -12,6 +12,7 @@ import { Dialog } from '../components/Dialog';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { openDialog } from '../lib/dialog';
+import { hostBasename, isAbsoluteHostPath } from '../lib/host-path';
 import { errMessage } from '../lib/log';
 import { theme, sectionLabelStyle } from '../lib/theme';
 import { addDocumentProject } from '../store/projects';
@@ -38,7 +39,7 @@ function preferredDocument(files: DocumentFileInfo[]): string | undefined {
 }
 
 function folderName(folder: string): string {
-  return folder.replace(/\/+$/, '').split('/').pop() ?? folder;
+  return hostBasename(folder);
 }
 
 /** `Onboarding flow` → `onboarding-flow`, the file a new project is named after. */
@@ -154,7 +155,7 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
 
   const enclosingRepo = () => info()?.enclosingRepo ?? null;
   const canCreate = () =>
-    folder().trim().startsWith('/') &&
+    isAbsoluteHostPath(folder().trim()) &&
     documentPath().trim() &&
     projectName().trim() &&
     !busy() &&
@@ -228,7 +229,7 @@ export function NewDocumentProjectDialog(props: NewDocumentProjectDialogProps) {
             </button>
           </div>
           <Show
-            when={!folder().trim() || folder().trim().startsWith('/')}
+            when={!folder().trim() || isAbsoluteHostPath(folder().trim())}
             fallback={<span class="docws-error">The folder path has to be absolute.</span>}
           >
             <span style={{ 'font-size': '12px', color: theme.fgMuted }}>

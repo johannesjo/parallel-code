@@ -28,6 +28,7 @@ const TOOL_PRESETS: Array<{ name: string; command: string }> = [
   { name: 'Claude', command: 'claude -p "{prompt}" --dangerously-skip-permissions' },
   { name: 'Codex', command: 'codex exec --dangerously-bypass-approvals-and-sandbox "{prompt}"' },
   { name: 'Gemini', command: 'gemini -p "{prompt}" --yolo' },
+  { name: 'Antigravity', command: 'agy -p "{prompt}" --dangerously-skip-permissions' },
   { name: 'Copilot', command: 'copilot -p "{prompt}" --yolo' },
   { name: 'Aider', command: 'aider -m "{prompt}" --yes' },
   { name: 'OpenCode', command: 'opencode -p "{prompt}"' },

@@ -94,6 +94,17 @@ export async function reclaimOwnership(
   uid: number,
   gid: number,
 ): Promise<string | null> {
+  if (process.platform === 'win32') {
+    try {
+      const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+      const attribPath = path.join(systemRoot, 'System32', 'attrib.exe');
+      await exec(attribPath, ['-r', '-h', '-s', path.join(worktreePath, '*'), '/s', '/d'], { timeout: 15_000 });
+      return null;
+    } catch (e: unknown) {
+      return firstLine(e);
+    }
+  }
+
   // The two cases where no correct `docker run` can be built: `-v host:container`
   // has no escape for a colon in the host path, and chown needs a real uid.
   if (worktreePath.includes(':')) return 'the worktree path contains ":"';
@@ -122,8 +133,6 @@ export async function reclaimOwnership(
       { timeout: CHOWN_TIMEOUT_MS },
     );
 
-  // `--pull never` keeps the agent-image attempt from stalling on a registry
-  // lookup when the image was never built on this machine.
   try {
     await run(AGENT_IMAGE, true);
     return null;
@@ -152,11 +161,14 @@ export function foreignOwnedRemovalError(
     .map((e) => path.relative(worktreePath, e.path) || '.')
     .join(', ');
   const uids = [...new Set(entries.map((e) => e.uid))].join(', ');
+  const manualCmd = process.platform === 'win32'
+    ? `rmdir /s /q "${worktreePath}"`
+    : `sudo rm -rf "${worktreePath}"`;
   return new Error(
-    `Cannot remove worktree "${worktreePath}": it contains files owned by uid ${uids} ` +
-      `(e.g. ${examples}), left behind by a container that ran as root. ` +
-      `Automatic cleanup via Docker failed: ${reclaimFailure}. ` +
-      `Remove them manually, then close the task again: sudo rm -rf "${worktreePath}"`,
+    `Cannot remove worktree "${worktreePath}": it contains locked/foreign entries ` +
+      `(e.g. ${examples}, uid: ${uids}). ` +
+      `Automatic cleanup failed: ${reclaimFailure}. ` +
+      `Remove them manually, then close the task again: ${manualCmd}`,
   );
 }
 

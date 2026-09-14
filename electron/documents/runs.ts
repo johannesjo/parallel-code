@@ -14,6 +14,8 @@ import { IPC } from '../ipc/channels.js';
 import { errMessage } from '../log.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
 import { buildPtySpawnEnv, validateCommand } from '../ipc/pty.js';
+import { resolveCommand, windowsPtyCommand } from '../command-path.js';
+import { killProcessTree } from '../process-tree.js';
 import { loadEnvFile } from '../ipc/env-file.js';
 import { createWorktree, ensureWorktreeContainerExclude, removeWorktree } from '../ipc/git.js';
 import { git, gitOk } from './git.js';
@@ -136,7 +138,7 @@ function validateCandidateSpecs(value: unknown): DocumentCandidateSpec[] {
     if (!documentAgentSupport(agentId).headless)
       throw new Error(`Agent "${agentId}" has no headless mode for document runs.`);
     const command = str('command');
-    if (/[\s;&|<>$`'"\\]/.test(command)) throw new Error('candidate.command is invalid');
+    if (/[;&|<>$`'"\r\n]/.test(command)) throw new Error('candidate.command is invalid');
     // Session ids and shas are handed to CLIs and git as positional values;
     // a leading dash would turn them into flags.
     const sessionId = optStr('sessionId');
@@ -490,21 +492,10 @@ function mainSessionBusy(projectRoot: string): boolean {
 function killCandidate(entry: ActiveCandidate): void {
   const pid = entry.proc.pid;
   if (!pid || entry.proc.exitCode !== null || entry.proc.signalCode !== null) return;
-  const signal = (sig: NodeJS.Signals) => {
-    try {
-      // Negative pid: the process group created by `detached: true`.
-      process.kill(-pid, sig);
-    } catch {
-      try {
-        entry.proc.kill(sig);
-      } catch {
-        // Already gone.
-      }
-    }
-  };
-  signal('SIGTERM');
+  killProcessTree(entry.proc, 'SIGTERM');
+  if (process.platform === 'win32') return;
   if (!entry.killTimer) {
-    entry.killTimer = setTimeout(() => signal('SIGKILL'), KILL_GRACE_MS);
+    entry.killTimer = setTimeout(() => killProcessTree(entry.proc, 'SIGKILL'), KILL_GRACE_MS);
     entry.killTimer.unref?.();
   }
 }
@@ -938,12 +929,15 @@ function spawnCandidate(
   const env = buildPtySpawnEnv({}, fileEnv);
   const parser = createHeadlessParser(spec.agentId);
 
-  const proc = spawn(launch.command, launch.args, {
+  const nativeLaunch = process.platform === 'win32'
+    ? windowsPtyCommand(resolveCommand(launch.command), launch.args)
+    : { command: resolveCommand(launch.command), args: launch.args };
+  const proc = spawn(nativeLaunch.command, nativeLaunch.args, {
     cwd: candidate.worktreePath,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
     // Own process group, so cancelling reaches the CLI's children too.
-    detached: true,
+    detached: process.platform !== 'win32',
   });
   proc.stdout?.setEncoding('utf8');
   proc.stderr?.setEncoding('utf8');

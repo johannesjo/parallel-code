@@ -12,6 +12,8 @@ import { IPC } from '../ipc/channels.js';
 import { errMessage } from '../log.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
 import { buildPtySpawnEnv, validateCommand } from '../ipc/pty.js';
+import { resolveCommand, windowsPtyCommand } from '../command-path.js';
+import { killProcessTree } from '../process-tree.js';
 import { loadEnvFile } from '../ipc/env-file.js';
 import { truncateBytes } from './prompt.js';
 import { buildHeadlessLaunch, createHeadlessParser } from './agents.js';
@@ -331,17 +333,9 @@ export function buildAnnotationPrompt(
 }
 
 function killAsk(entry: ActiveAsk): void {
-  const pid = entry.proc.pid;
-  const signal = (sig: NodeJS.Signals) => {
-    try {
-      if (pid) process.kill(-pid, sig);
-      else entry.proc.kill(sig);
-    } catch {
-      // Already gone.
-    }
-  };
-  signal('SIGTERM');
-  setTimeout(() => signal('SIGKILL'), KILL_GRACE_MS).unref?.();
+  killProcessTree(entry.proc, 'SIGTERM');
+  if (process.platform !== 'win32')
+    setTimeout(() => killProcessTree(entry.proc, 'SIGKILL'), KILL_GRACE_MS).unref?.();
 }
 
 export function cancelAsk(annotationId: string): void {
@@ -373,7 +367,7 @@ export async function askAnnotation(
     throw new Error(`Agent "${agentId}" has no headless mode for document questions.`);
   const agentName = text(args.agentName, 'agentName', 64);
   const command = text(args.command, 'command', 200);
-  if (!command.trim() || /[\s;&|<>$`'"\\]/.test(command)) throw new Error('command is invalid');
+  if (!command.trim() || /[;&|<>$`'"\r\n]/.test(command)) throw new Error('command is invalid');
   const envFile = args.envFile === undefined ? undefined : text(args.envFile, 'envFile', 1_000);
   validateCommand(command);
 
@@ -395,11 +389,14 @@ export async function askAnnotation(
   });
   const env = buildPtySpawnEnv({}, envFile?.trim() ? loadEnvFile(envFile) : {});
   const parser = createHeadlessParser(agentId);
-  const proc = spawn(launch.command, launch.args, {
+  const nativeLaunch = process.platform === 'win32'
+    ? windowsPtyCommand(resolveCommand(launch.command), launch.args)
+    : { command: resolveCommand(launch.command), args: launch.args };
+  const proc = spawn(nativeLaunch.command, nativeLaunch.args, {
     cwd: projectRoot,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
-    detached: true,
+    detached: process.platform !== 'win32',
   });
   proc.stdout?.setEncoding('utf8');
   proc.stderr?.setEncoding('utf8');

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildClaudeHookSettings } from './claude-settings.js';
 
 describe('buildClaudeHookSettings', () => {
-  const settings = buildClaudeHookSettings('/Users/me/Library/App Support/hook.sh');
+  const settings = buildClaudeHookSettings('/Users/me/Library/App Support/hook.sh', 'darwin');
 
   it('registers turn, tool, and notification events', () => {
     expect(Object.keys(settings.hooks).sort()).toEqual(
@@ -36,6 +36,14 @@ describe('buildClaudeHookSettings', () => {
       command: "/bin/sh '/Users/me/Library/App Support/hook.sh'",
       timeout: 10,
     });
+  });
+
+  it('uses PowerShell for hooks on native Windows', () => {
+    const hook = buildClaudeHookSettings('C:\\Program Files\\Parallel Code\\hook.ps1', 'win32')
+      .hooks.Stop[0].hooks[0];
+    expect(hook.command).toBe(
+      '"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\\Program Files\\Parallel Code\\hook.ps1"',
+    );
   });
 
   it('does not register compaction hooks, which fire mid-turn', () => {

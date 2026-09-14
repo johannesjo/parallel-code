@@ -1,5 +1,6 @@
 import { produce } from 'solid-js/store';
 import { openDialog } from '../lib/dialog';
+import { hostBasename } from '../lib/host-path';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
@@ -190,8 +191,7 @@ export async function pickAndAddProject(): Promise<string | null> {
 
   const isGitRepo = await invoke<boolean>(IPC.CheckIsGitRepo, { path });
 
-  const segments = path.split('/');
-  const name = segments[segments.length - 1] || path;
+  const name = hostBasename(path);
   return addProject(name, path, isGitRepo);
 }
 

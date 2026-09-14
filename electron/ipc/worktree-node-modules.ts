@@ -148,8 +148,16 @@ export function ensureNodeModulesEntryLinks(sourceDir: string, targetDir: string
     try {
       // Relative links survive the repo being moved or reached through a
       // different path alias.
-      const dest = path.relative(targetDir, path.join(sourceDir, name));
-      fs.symlinkSync(dest, path.join(targetDir, name));
+      const source = path.join(sourceDir, name);
+      const dest = process.platform === 'win32' ? source : path.relative(targetDir, source);
+      const isDirectory = fs.statSync(source).isDirectory();
+      try {
+        fs.symlinkSync(dest, path.join(targetDir, name),
+          isDirectory ? (process.platform === 'win32' ? 'junction' : 'dir') : 'file');
+      } catch (err) {
+        if (process.platform !== 'win32' || isDirectory) throw err;
+        fs.copyFileSync(source, path.join(targetDir, name));
+      }
     } catch (err) {
       console.warn(`Failed to link node_modules entry '${name}':`, err);
     }

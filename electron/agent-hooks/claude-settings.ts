@@ -34,10 +34,15 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-export function buildClaudeHookSettings(hookScriptPath: string): ClaudeHookSettings {
+export function buildClaudeHookSettings(
+  hookScriptPath: string,
+  platform: NodeJS.Platform = process.platform,
+): ClaudeHookSettings {
   const hook: CommandHook = {
     type: 'command',
-    command: `/bin/sh ${shellQuote(hookScriptPath)}`,
+    command: platform === 'win32'
+      ? `"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${hookScriptPath}"`
+      : `/bin/sh ${shellQuote(hookScriptPath)}`,
     timeout: HOOK_TIMEOUT_SECONDS,
   };
   const hooks: Record<string, HookGroup[]> = {};

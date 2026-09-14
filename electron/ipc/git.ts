@@ -891,7 +891,7 @@ export async function createWorktree(
   baseBranch?: string,
   forceClean = false,
 ): Promise<{ path: string; branch: string }> {
-  const worktreePath = `${repoRoot}/.worktrees/${branchName}`;
+  const worktreePath = path.join(repoRoot, '.worktrees', branchName);
 
   if (forceClean) {
     // Clean up stale worktree/branch from a previous session that wasn't properly removed
@@ -971,7 +971,16 @@ export async function createWorktree(
         // the only path agent sandboxes allow writes to.
         if (!ensureNodeModulesEntryLinks(source, target)) continue;
       } else {
-        fs.symlinkSync(source, target);
+        const sourceStat = fs.statSync(source);
+        try {
+          fs.symlinkSync(source, target, sourceStat.isDirectory()
+            ? (process.platform === 'win32' ? 'junction' : 'dir')
+            : 'file');
+        } catch (err) {
+          if (process.platform !== 'win32' || sourceStat.isDirectory()) throw err;
+          // Developer Mode may be disabled. A file copy is independent and safe.
+          fs.copyFileSync(source, target);
+        }
       }
       createdSymlinks.push(name);
     } catch (err) {
@@ -1219,7 +1228,7 @@ export async function removeWorktree(
   // After the user adopts a branch the agent switched the worktree to, the
   // folder keeps its original branch-derived name — callers that know the real
   // path must pass it, deriving from branchName is only a fallback.
-  const worktreePath = explicitWorktreePath ?? `${repoRoot}/.worktrees/${branchName}`;
+  const worktreePath = explicitWorktreePath ?? path.join(repoRoot, '.worktrees', branchName);
 
   if (!fs.existsSync(repoRoot)) return;
 

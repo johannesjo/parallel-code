@@ -9,13 +9,14 @@
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
-    "dev": "npm run compile && npm run build:mcp && concurrently -k \"vite --config electron/vite.config.electron.ts\" \"wait-on http://localhost:1421 && VITE_DEV_SERVER_URL=http://localhost:1421 electron --no-sandbox dist-electron/main.js\"",
+    "dev": "npm run compile && npm run build:mcp && concurrently -k \"vite --config electron/vite.config.electron.ts\" \"wait-on http://localhost:1421 && node scripts/start-electron-dev.mjs\"",
     "typecheck": "tsc --noEmit",
     "compile": "tsc -p electron/tsconfig.json",
     "build:mcp": "esbuild dist-electron/mcp/server.js --bundle --platform=node --format=cjs --outfile=dist-electron/mcp-server.cjs",
-    "build:frontend": "NODE_OPTIONS='--max-old-space-size=4096' vite build --config electron/vite.config.electron.ts",
+    "build:frontend": "node --max-old-space-size=4096 node_modules/vite/bin/vite.js build --config electron/vite.config.electron.ts",
     "build:remote": "vite build --config src/remote/vite.config.ts",
     "build": "npm run build:frontend && npm run build:remote && npm run compile && npm run build:mcp && electron-builder",
+    "build:win": "npm run build:frontend && npm run build:remote && npm run compile && npm run build:mcp && electron-builder --win nsis --x64",
     "serve": "vite preview --config electron/vite.config.electron.ts",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
@@ -28,6 +29,7 @@
     "format:check": "prettier --check .",
     "test": "npm run test:unit && npm run test:client",
     "test:unit": "vitest run",
+    "test:windows": "vitest run electron/command-path.test.ts electron/user-shell.test.ts electron/agent-hooks/launch-args.test.ts electron/agent-hooks/claude-settings.test.ts electron/mcp/agent-args.test.ts src/lib/agent-args.test.ts src/lib/host-path.test.ts",
     "test:client": "vitest run --config vitest.client.config.ts",
     "test:coordinator-pty": "RUN_COORDINATOR_PTY_TEST=1 vitest run electron/mcp/coordinator-real-pty.integration.test.ts",
     "test:coverage": "vitest run --coverage",
@@ -153,6 +155,12 @@
           "StartupNotify": "true"
         }
       }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Parallel-Code-Windows-x64-Setup.${ext}"
     },
     "mac": {
       "target": [

@@ -28,13 +28,18 @@ function formatElapsed(ms: number): string {
  *  inside double quotes: ", $, `, and \. Note: ! (history expansion) is a
  *  bash-only feature and not special in POSIX /bin/sh double quotes. */
 function buildCommand(template: string, prompt: string): { command: string; args: string[] } {
+  const windows = navigator.userAgent.includes('Windows');
   const escapedPrompt = prompt
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\$/g, '\\$')
-    .replace(/`/g, '\\`');
+    .replace(/\\/g, windows ? '\\' : '\\\\')
+    .replace(/"/g, windows ? '^"' : '\\"')
+    .replace(/\$/g, windows ? '$' : '\\$')
+    .replace(/`/g, windows ? '`' : '\\`')
+    .replace(/%/g, windows ? '%%' : '%')
+    .replace(/!/g, windows ? '^!' : '!');
   const fullCommand = template.replace(/\{prompt\}/g, escapedPrompt);
-  return { command: '/bin/sh', args: ['-c', fullCommand] };
+  return windows
+    ? { command: 'cmd.exe', args: ['/d', '/s', '/c', fullCommand] }
+    : { command: '/bin/sh', args: ['-c', fullCommand] };
 }
 
 export function BattleScreen() {
@@ -92,7 +97,7 @@ export function BattleScreen() {
           {(competitor, index) => {
             const { command, args } = buildCommand(competitor.command, arenaStore.prompt);
             const agentId = competitor.agentId;
-            const cwd = competitor.worktreePath ?? '/tmp';
+            const cwd = competitor.worktreePath ?? arenaStore.cwd ?? '';
 
             return (
               <>

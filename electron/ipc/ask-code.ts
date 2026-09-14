@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from 'child_process';
 import type { BrowserWindow } from 'electron';
 import { validateCommand, ENV_BLOCK_LIST } from './pty.js';
+import { resolveCommand, windowsPtyCommand } from '../command-path.js';
+import { killProcessTree } from '../process-tree.js';
 import { loadEnvFile } from './env-file.js';
 import {
   askAboutCodeMinimax,
@@ -68,9 +70,8 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
   delete filteredEnv.CLAUDE_CODE_SESSION;
   delete filteredEnv.CLAUDE_CODE_ENTRYPOINT;
 
-  const proc = spawn(
-    'claude',
-    [
+  const launch = process.platform === 'win32'
+    ? windowsPtyCommand(resolveCommand('claude'), [
       '-p',
       prompt,
       '--output-format',
@@ -83,13 +84,17 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
       '--no-session-persistence',
       '--append-system-prompt',
       'Answer concisely about the selected code. Use markdown.',
-    ],
-    {
+    ])
+    : { command: resolveCommand('claude'), args: [
+      '-p', prompt, '--output-format', 'text', '--model', 'sonnet', '--tools', '',
+      '--no-session-persistence', '--append-system-prompt',
+      'Answer concisely about the selected code. Use markdown.',
+    ] };
+  const proc = spawn(launch.command, launch.args, {
       cwd,
       env: filteredEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
-    },
-  );
+  });
 
   const send = (msg: unknown) => {
     if (!win.isDestroyed()) {
@@ -98,7 +103,7 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
   };
 
   const session = AskCodeSession.start(activeRequests, requestId, proc, send, (request) =>
-    request.kill('SIGTERM'),
+    killProcessTree(request),
   );
 
   proc.stdout?.on('data', (chunk: Buffer) => {

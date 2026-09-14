@@ -15,6 +15,8 @@
  * named `constructor` or `toString` would read back a prototype member instead
  * of nothing. `Map` has no such keys to inherit.
  */
+import { commandName } from './command-name.js';
+
 const SKIP_PERMISSIONS_ARGS = new Map<string, readonly string[]>([
   ['claude', ['--dangerously-skip-permissions']],
   ['codex', ['--dangerously-bypass-approvals-and-sandbox']],
@@ -36,7 +38,7 @@ const SKIP_PERMISSIONS_ARGS = new Map<string, readonly string[]>([
  * not be reachable for mutation.
  */
 export function getSkipPermissionsArgs(command: string): string[] {
-  const basename = command.split('/').filter(Boolean).pop() ?? command;
+  const basename = commandName(command);
   return [...(SKIP_PERMISSIONS_ARGS.get(basename) ?? [])];
 }
 

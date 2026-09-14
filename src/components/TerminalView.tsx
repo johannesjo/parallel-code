@@ -7,6 +7,7 @@ import {
   untrack,
   Show,
 } from 'solid-js';
+import { isAbsoluteHostPath } from '../lib/host-path';
 import { Terminal, type IMarker } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -484,7 +485,7 @@ export function TerminalView(props: TerminalViewProps) {
               // Strip line:col suffix for opening
               const filePath = link.text.replace(/:\d+(:\d+)?$/, '');
               // Resolve relative paths against the task's working directory
-              const resolved = filePath.startsWith('/') ? filePath : `${props.cwd}/${filePath}`;
+              const resolved = isAbsoluteHostPath(filePath) ? filePath : `${props.cwd}/${filePath}`;
               // .md files open in viewer; Shift held = open externally instead
               if (/\.md$/i.test(resolved) && props.onFileLink && !event.shiftKey) {
                 props.onFileLink(resolved);

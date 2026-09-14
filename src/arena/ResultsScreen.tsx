@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createSignal, onMount } from 'solid-js';
 import { ChangedFilesList } from '../components/ChangedFilesList';
+import { hostBasename } from '../lib/host-path';
 import { DiffViewerDialog } from '../components/DiffViewerDialog';
 import { CommitDialog } from './CommitDialog';
 import { createMergeWorkflow } from './merge';
@@ -36,7 +37,7 @@ export function ResultsScreen() {
     const cwd = arenaStore.cwd;
     if (!cwd) return null;
     const project = store.projects.find((p) => p.path === cwd);
-    return project?.name ?? cwd.split('/').pop() ?? null;
+    return project?.name ?? hostBasename(cwd);
   });
 
   // When viewing from history, pre-populate ratings from saved match

@@ -5,6 +5,7 @@
  * that never completes (denied permission) is dropped when the map fills.
  */
 import { isPlanApprovalTool } from '../../electron/agent-hooks/status';
+import { isAbsoluteHostPath } from './host-path';
 
 interface HookEventLike {
   event: string;
@@ -27,11 +28,14 @@ const isMarkdown = (p: string): boolean => /\.(md|markdown)$/i.test(p);
  *  a Markdown file inside the worktree (or was clipped by the hook summary). */
 export function worktreeMarkdownPath(reported: string, worktreePath: string): string | null {
   if (!reported || reported.endsWith('…')) return null;
-  const root = worktreePath.replace(/\/+$/, '');
-  let rel = reported;
-  if (reported.startsWith('/')) {
-    if (!reported.startsWith(`${root}/`)) return null;
-    rel = reported.slice(root.length + 1);
+  const root = worktreePath.replace(/\\/g, '/').replace(/\/+$/, '');
+  const normalized = reported.replace(/\\/g, '/');
+  let rel = normalized;
+  if (isAbsoluteHostPath(reported)) {
+    const inside = normalized.slice(0, root.length + 1);
+    const expected = `${root}/`;
+    if (inside.toLowerCase() !== expected.toLowerCase()) return null;
+    rel = normalized.slice(root.length + 1);
   }
   rel = rel.replace(/^\.\//, '');
   const segments = rel.split('/');

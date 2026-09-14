@@ -52,6 +52,7 @@ function rendererCspPlugin(): Plugin {
 
 export default defineConfig({
   base: './',
+  css: { postcss: {} },
   plugins: [solid(), rendererCspPlugin()],
   clearScreen: false,
   server: {
