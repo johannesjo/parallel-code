@@ -259,6 +259,21 @@ describe('chunkContainsAgentPrompt', () => {
     ).toBe(true);
   });
 
+  it('returns true for Codex CLI 0.154.0 "Ask Codex to do anything" prompt (› prompt char)', () => {
+    expect(chunkContainsAgentPrompt('›  Ask Codex to do anything')).toBe(true);
+  });
+
+  it('returns true for Codex CLI "Ask Codex to do anything" prompt above footer/status text', () => {
+    const footer = '\n\ngpt-5.6-luna high · ~/repo/worktree';
+    expect(chunkContainsAgentPrompt(`›  Ask Codex to do anything${footer}`)).toBe(true);
+  });
+
+  it('returns true for a plain-> variant of the "Ask Codex to do anything" prompt', () => {
+    // Defensive: some agent builds may render the composer with a plain `>`
+    // instead of Codex's usual `›` — both should be recognized as ready.
+    expect(chunkContainsAgentPrompt('> Ask Codex to do anything')).toBe(true);
+  });
+
   it('does not treat Codex startup screens as ready', () => {
     expect(
       chunkContainsAgentPrompt('Starting MCP servers (0/2): codex_apps, parallel-code\n›'),
