@@ -29,8 +29,7 @@ export const PROMPT_PATTERNS: RegExp[] = [
 export const AGENT_READY_TAIL_PATTERNS: RegExp[] = [
   /^\s*❯\s*$/,
   /^\s*--\s*INSERT\s*--(?:$|\s|[^\w].*$)/i,
-  /^\s*›\s*$/,
-  /^\s*>\s*(?:Type your message|Ask Codex to do anything|$)/i,
+  /^\s*[›>]\s*(?:Type your message|Ask Codex to do anything|$)/i,
 ];
 
 export const AGENT_READY_TAIL_CHARS = 1000;
