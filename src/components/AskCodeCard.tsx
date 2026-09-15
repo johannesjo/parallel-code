@@ -2,6 +2,7 @@ import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { Channel, invoke } from '../lib/ipc';
+import { CloseIcon } from './icons';
 import { IPC } from '../../electron/ipc/channels';
 import { store } from '../store/store';
 import { warn as logWarn, errMessage } from '../lib/log';
@@ -130,7 +131,7 @@ export function AskCodeCard(props: AskCodeCardProps) {
           }}
           title="Dismiss"
         >
-          ×
+          <CloseIcon size={12} />
         </button>
       </div>
 

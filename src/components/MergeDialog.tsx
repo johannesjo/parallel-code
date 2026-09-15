@@ -11,6 +11,7 @@ import {
   updateTaskBranch,
 } from '../store/store';
 import { ConfirmDialog } from './ConfirmDialog';
+import { CircleIcon } from './icons';
 import { ChangedFilesList } from './ChangedFilesList';
 import { MergeReadinessPanel } from './MergeReadinessPanel';
 import { VerificationPanel } from './VerificationPanel';
@@ -424,21 +425,7 @@ export function MergeDialog(props: MergeDialogProps) {
                           color: theme.fg,
                         }}
                       >
-                        <svg
-                          width="10"
-                          height="10"
-                          viewBox="0 0 10 10"
-                          style={{ 'flex-shrink': '0' }}
-                        >
-                          <circle
-                            cx="5"
-                            cy="5"
-                            r="3"
-                            fill="none"
-                            stroke={theme.accent}
-                            stroke-width="1.5"
-                          />
-                        </svg>
+                        <CircleIcon size={10} style={{ color: theme.accent, 'flex-shrink': '0' }} />
                         <Show when={commit.hash}>
                           <span style={{ color: theme.fgMuted, 'flex-shrink': '0' }}>
                             {commit.hash}

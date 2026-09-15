@@ -1,4 +1,5 @@
 import { For, Show, createSignal, createEffect, onCleanup } from 'solid-js';
+import { StopIcon } from '../components/icons';
 import { TerminalView } from '../components/TerminalView';
 import { ChangedFilesList } from '../components/ChangedFilesList';
 import { DiffViewerDialog } from '../components/DiffViewerDialog';
@@ -115,9 +116,7 @@ export function BattleScreen() {
                           onClick={() => handleStop(agentId)}
                           title="Stop"
                         >
-                          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                            <rect x="3" y="3" width="10" height="10" rx="1" />
-                          </svg>
+                          <StopIcon size={12} />
                         </button>
                       </Show>
                     </div>

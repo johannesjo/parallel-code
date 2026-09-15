@@ -1,5 +1,15 @@
 import { For, Show, createMemo, createSignal, onMount } from 'solid-js';
 import { ChangedFilesList } from '../components/ChangedFilesList';
+import {
+  ChevronLeftThinIcon,
+  ClockIcon,
+  CompareIcon,
+  MergeIcon,
+  PlusThinIcon,
+  ShieldIcon,
+  StarIcon,
+  SyncIcon,
+} from '../components/icons';
 import { DiffViewerDialog } from '../components/DiffViewerDialog';
 import { CommitDialog } from './CommitDialog';
 import { createMergeWorkflow } from './merge';
@@ -259,9 +269,7 @@ export function ResultsScreen() {
                           onClick={() => setRating(competitor.id, star)}
                           title={`${star} star${star > 1 ? 's' : ''}`}
                         >
-                          <svg width="28" height="28" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M8 1.3l1.8 3.6 4 .6-2.9 2.8.7 4-3.6-1.9-3.6 1.9.7-4L2.2 5.5l4-.6L8 1.3z" />
-                          </svg>
+                          <StarIcon size={28} />
                         </button>
                       )}
                     </For>
@@ -280,21 +288,7 @@ export function ResultsScreen() {
                         disabled={merge.merging() || merge.mergedId() !== null}
                         onClick={() => merge.handleMergeClick(competitor)}
                       >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="1.5"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <circle cx="4" cy="4" r="2" />
-                          <circle cx="12" cy="4" r="2" />
-                          <circle cx="8" cy="13" r="2" />
-                          <path d="M4 6v1c0 2 4 4 4 4M12 6v1c0 2-4 4-4 4" />
-                        </svg>
+                        <MergeIcon size={14} />
                         {merge.merging() ? 'Merging...' : 'Merge'}
                       </button>
                     </Show>
@@ -312,104 +306,33 @@ export function ResultsScreen() {
 
       <Show when={projectLabel()}>
         <div class="arena-results-project">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M2 4l6-2 6 2v8l-6 2-6-2z" />
-            <path d="M8 2v12" />
-          </svg>
+          <ShieldIcon size={14} />
           {projectLabel()}
         </div>
       </Show>
 
       <div class="arena-config-actions">
         <button class="arena-close-btn" onClick={() => void openCompareTask()}>
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M3 3h4v10H3zM9 3h4v10H9zM5 6H3M5 8H3M5 10H3M11 6H9M11 8H9M11 10H9" />
-          </svg>
+          <CompareIcon size={14} />
           Compare All
         </button>
         <Show when={!isHistoryView()}>
           <button class="arena-close-btn" onClick={() => void resetForRematch()}>
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M2 8a6 6 0 0 1 10.2-4.3" />
-              <path d="M14 8a6 6 0 0 1-10.2 4.3" />
-              <path d="M12 1v3h-3" />
-              <path d="M4 15v-3h3" />
-            </svg>
+            <SyncIcon size={14} />
             Rematch
           </button>
           <button class="arena-close-btn" onClick={() => void resetForNewMatch()}>
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M8 3v10M3 8h10" />
-            </svg>
+            <PlusThinIcon size={14} />
             New Match
           </button>
           <button class="arena-close-btn" onClick={() => setPhase('history')}>
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <circle cx="8" cy="8" r="6" />
-              <path d="M8 4.5V8l2.5 2.5" />
-            </svg>
+            <ClockIcon size={14} />
             History
           </button>
         </Show>
         <Show when={isHistoryView()}>
           <button class="arena-close-btn" onClick={returnToHistory}>
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M10 3L5 8l5 5" />
-            </svg>
+            <ChevronLeftThinIcon size={14} />
             Back to History
           </button>
         </Show>

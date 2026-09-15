@@ -2,7 +2,7 @@ import { onCleanup, onMount } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
-import { DocumentIcon } from '../documents/DocumentIcon';
+import { DocumentIcon, FolderAltIcon } from '../components/icons';
 
 export type ProjectKindChoice = 'code' | 'document';
 
@@ -111,9 +111,7 @@ export function AddProjectMenu(props: AddProjectMenuProps) {
           {row(
             'code',
             () => (
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M1.5 3.25A1.75 1.75 0 0 1 3.25 1.5h2.9c.46 0 .9.18 1.23.51l.86.86h4.51c.97 0 1.75.78 1.75 1.75v7.63c0 .97-.78 1.75-1.75 1.75H3.25a1.75 1.75 0 0 1-1.75-1.75z" />
-              </svg>
+              <FolderAltIcon size={14} />
             ),
             'Code project…',
             'A git repo that holds tasks',

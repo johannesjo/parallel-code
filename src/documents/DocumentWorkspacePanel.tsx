@@ -61,7 +61,17 @@ import { MarkdownEditor } from './MarkdownEditor';
 import { afterSavingMarkdown, readMarkdownDraft } from './markdown-editing';
 import { ResizablePanel, type PanelChild } from '../components/ResizablePanel';
 import { createRenderedBlocks } from './use-blocks';
-import { DocumentIcon } from './DocumentIcon';
+import {
+  ChevronDownThinIcon,
+  DocumentIcon,
+  EnterFocusIcon,
+  ExitFocusIcon,
+  ExternalLinkIcon,
+  FolderOpenIcon,
+  FullWidthIcon,
+  GearIcon,
+  GitBranchAltIcon,
+} from '../components/icons';
 import { ActionIcon } from './BlockActions';
 import { Dialog } from '../components/Dialog';
 import { openInEditor, revealItemInDir } from '../lib/shell';
@@ -436,17 +446,7 @@ function DocumentPane(props: { project: Project }) {
             }
             onClick={() => setDocumentFullWidth(!store.documentFullWidth)}
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              aria-hidden="true"
-            >
-              <path d="M2 3v10M14 3v10M5 8h6M6 6 4 8l2 2M10 6l2 2-2 2" />
-            </svg>
+            <FullWidthIcon size={14} />
             <span class="docws-width-label">Full width</span>
           </button>
         </Show>
@@ -841,7 +841,7 @@ export function DocumentWorkspacePanel() {
     >
       <div class="docws-header" data-tauri-drag-region>
         <div class="docws-title" title={project()?.name}>
-          <DocumentIcon />
+          <DocumentIcon size={18} />
           <span>{project()?.name}</span>
         </div>
         <div class="docws-header-actions">
@@ -853,9 +853,7 @@ export function DocumentWorkspacePanel() {
             disabled={!editorCommand() || !openPath()}
             onClick={() => void openDocumentInEditor()}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-3a.75.75 0 0 1 1.5 0v3A3 3 0 0 1 12.5 16h-9A3 3 0 0 1 0 12.5v-9A3 3 0 0 1 3.5 0h3a.75.75 0 0 1 0 1.5h-3ZM10 .75a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0V2.56L8.53 8.53a.75.75 0 0 1-1.06-1.06L13.44 1.5H10.75A.75.75 0 0 1 10 .75Z" />
-            </svg>
+            <ExternalLinkIcon />
           </button>
           <button
             type="button"
@@ -865,9 +863,7 @@ export function DocumentWorkspacePanel() {
             disabled={!project()}
             onClick={() => openProjectFolder()}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Zm0 1.5H5c.08 0 .15.04.2.1l.9 1.2c.33.44.85.7 1.4.7h6.75a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25H1.75a.25.25 0 0 1-.25-.25V2.75a.25.25 0 0 1 .25-.25Z" />
-            </svg>
+            <FolderOpenIcon />
           </button>
           {/* The sidebar opens a document project as this workspace, so its
               settings are reachable only from here. */}
@@ -879,9 +875,7 @@ export function DocumentWorkspacePanel() {
             disabled={!project()}
             onClick={() => setEditing(project() ?? null)}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M8 2.25a.75.75 0 0 1 .73.56l.2.72a4.48 4.48 0 0 1 1.04.43l.66-.37a.75.75 0 0 1 .9.13l.75.75a.75.75 0 0 1 .13.9l-.37.66c.17.33.31.68.43 1.04l.72.2a.75.75 0 0 1 .56.73v1.06a.75.75 0 0 1-.56.73l-.72.2a4.48 4.48 0 0 1-.43 1.04l.37.66a.75.75 0 0 1-.13.9l-.75.75a.75.75 0 0 1-.9.13l-.66-.37a4.48 4.48 0 0 1-1.04.43l-.2.72a.75.75 0 0 1-.73.56H6.94a.75.75 0 0 1-.73-.56l-.2-.72a4.48 4.48 0 0 1-1.04-.43l-.66.37a.75.75 0 0 1-.9-.13l-.75-.75a.75.75 0 0 1-.13-.9l.37-.66a4.48 4.48 0 0 1-.43-1.04l-.72-.2a.75.75 0 0 1-.56-.73V7.47a.75.75 0 0 1 .56-.73l.72-.2c.11-.36.26-.71.43-1.04l-.37-.66a.75.75 0 0 1 .13-.9l.75-.75a.75.75 0 0 1 .9-.13l.66.37c.33-.17.68-.31 1.04-.43l.2-.72a.75.75 0 0 1 .73-.56H8Zm-.53 3.22a2.5 2.5 0 1 0 1.06 4.88 2.5 2.5 0 0 0-1.06-4.88Z" />
-            </svg>
+            <GearIcon />
           </button>
           <button
             type="button"
@@ -891,22 +885,9 @@ export function DocumentWorkspacePanel() {
             aria-pressed={store.focusMode && isActive()}
             onClick={() => toggleTaskFocusMode(taskId())}
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              aria-hidden="true"
-            >
-              <Show
-                when={store.focusMode}
-                fallback={<path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" />}
-              >
-                <path d="M6 2v4H2M10 2v4h4M14 10h-4v4M2 10h4v4" />
-              </Show>
-            </svg>
+            <Show when={store.focusMode} fallback={<EnterFocusIcon />}>
+              <ExitFocusIcon />
+            </Show>
           </button>
           <button
             type="button"
@@ -944,22 +925,10 @@ export function DocumentWorkspacePanel() {
             onClick={() => setRailTab('files')}
           >
             <span>{openPath()}</span>
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              aria-hidden="true"
-            >
-              <path d="m5 6 3 3 3-3" />
-            </svg>
+            <ChevronDownThinIcon size={12} />
           </button>
           <span class="docws-head-chip" title="Checked-out branch and head commit">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
-            </svg>
+            <GitBranchAltIcon size={12} />
             {snapshot()?.branch ?? 'detached'} · {snapshot()?.headSha?.slice(0, 7) ?? 'no commits'}
           </span>
         </div>

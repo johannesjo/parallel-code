@@ -2,6 +2,7 @@ import { For, Show, createMemo, createSignal } from 'solid-js';
 import { createHighlightedMarkdown } from '../lib/marked-shiki';
 import { store } from '../store/core';
 import { getProject } from '../store/projects';
+import { CloseIcon } from '../components/icons';
 import {
   askDocumentAnnotation,
   askFollowUpQuestion,
@@ -231,7 +232,7 @@ export function AnnotationBubble(props: AnnotationBubbleProps) {
             title="Delete (Del). Undo from the toolbar."
             onClick={() => void deleteDocumentAnnotation(props.annotation.id)}
           >
-            ×
+            <CloseIcon size={12} />
           </button>
         </div>
         <Show when={props.detached}>

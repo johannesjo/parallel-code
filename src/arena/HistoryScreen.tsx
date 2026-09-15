@@ -4,6 +4,7 @@ import { saveArenaHistory } from './persistence';
 import { formatDuration } from './utils';
 import { confirm } from '../lib/dialog';
 import { invoke } from '../lib/ipc';
+import { ChevronLeftThinIcon, TrashIcon } from '../components/icons';
 import { IPC } from '../../electron/ipc/channels';
 
 function formatDate(iso: string): string {
@@ -82,18 +83,7 @@ export function HistoryScreen() {
           class="arena-close-btn"
           onClick={() => setPhase(arenaStore.previousPhase ?? 'config')}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M10 3L5 8l5 5" />
-          </svg>
+          <ChevronLeftThinIcon size={14} />
           Back
         </button>
       </div>
@@ -123,18 +113,7 @@ export function HistoryScreen() {
                     title="Delete match and clean up worktrees"
                   >
                     <Show when={deleting() !== match.id} fallback={<span>...</span>}>
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="M3 4h10M6 4V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M5 4v9a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V4" />
-                      </svg>
+                      <TrashIcon size={14} />
                     </Show>
                   </button>
                 </div>

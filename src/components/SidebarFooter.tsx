@@ -10,6 +10,7 @@ import {
   stopMCPStatusPolling,
 } from '../store/store';
 import { theme } from '../lib/theme';
+import { PhoneIcon, ScrambleIcon } from './icons';
 import { sf } from '../lib/fontScale';
 import { alt, mod } from '../lib/platform';
 
@@ -101,20 +102,7 @@ export function SidebarFooter(props: { onConnectPhone: () => void }) {
           }
           style={footerButtonStyle(phoneConnected())}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
-            <line x1="12" y1="18" x2="12.01" y2="18" />
-          </svg>
+          <PhoneIcon size={14} />
           {phoneConnected() ? 'Phone connected' : 'Phone'}
         </button>
         <button
@@ -122,20 +110,7 @@ export function SidebarFooter(props: { onConnectPhone: () => void }) {
           title="Arena: run two agents on the same prompt and compare"
           style={footerButtonStyle(false)}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M3 3L13 13M9 12L12 9" />
-            <path d="M13 3L3 13M4 9L7 12" />
-          </svg>
+          <ScrambleIcon size={14} />
           Arena
         </button>
       </div>

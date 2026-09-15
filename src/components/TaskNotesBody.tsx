@@ -9,6 +9,7 @@ import {
   isPanelFocused,
 } from '../store/store';
 import { theme } from '../lib/theme';
+import { ArrowDownIcon } from './icons';
 import { sf } from '../lib/fontScale';
 import { useFocusRegistration } from '../lib/focus-registration';
 import type { Task } from '../store/types';
@@ -143,15 +144,7 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
               opacity: canSendNotes() ? '1' : '0.4',
             }}
           >
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-              <path
-                d="M7 2V12M7 12L3 8M7 12l4 -4"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
+            <ArrowDownIcon size={12} />
           </button>
           <Show when={store.showPlans && props.task.planContent}>
             <button
