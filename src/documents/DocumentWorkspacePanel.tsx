@@ -62,13 +62,15 @@ import { afterSavingMarkdown, readMarkdownDraft } from './markdown-editing';
 import { ResizablePanel, type PanelChild } from '../components/ResizablePanel';
 import { createRenderedBlocks } from './use-blocks';
 import {
+  ChevronDownThinIcon,
   DocumentIcon,
   EnterFocusIcon,
   ExitFocusIcon,
   ExternalLinkIcon,
   FolderOpenIcon,
+  FullWidthIcon,
   GearIcon,
-  GitGraphIcon,
+  GitBranchAltIcon,
 } from '../components/icons';
 import { ActionIcon } from './BlockActions';
 import { Dialog } from '../components/Dialog';
@@ -444,17 +446,7 @@ function DocumentPane(props: { project: Project }) {
             }
             onClick={() => setDocumentFullWidth(!store.documentFullWidth)}
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              aria-hidden="true"
-            >
-              <path d="M2 3v10M14 3v10M5 8h6M6 6 4 8l2 2M10 6l2 2-2 2" />
-            </svg>
+            <FullWidthIcon size={14} />
             <span class="docws-width-label">Full width</span>
           </button>
         </Show>
@@ -933,22 +925,10 @@ export function DocumentWorkspacePanel() {
             onClick={() => setRailTab('files')}
           >
             <span>{openPath()}</span>
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              aria-hidden="true"
-            >
-              <path d="m5 6 3 3 3-3" />
-            </svg>
+            <ChevronDownThinIcon size={12} />
           </button>
           <span class="docws-head-chip" title="Checked-out branch and head commit">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
-            </svg>
+            <GitBranchAltIcon size={12} />
             {snapshot()?.branch ?? 'detached'} · {snapshot()?.headSha?.slice(0, 7) ?? 'no commits'}
           </span>
         </div>

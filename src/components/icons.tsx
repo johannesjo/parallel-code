@@ -280,6 +280,38 @@ export function ExitFocusIcon(props: IconProps): JSX.Element {
   );
 }
 
+export function ChevronDownThinIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5">
+      <path d="m5 6 3 3 3-3" />
+    </StrokeSvgIcon>
+  );
+}
+
+export function ChevronRightThinIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5">
+      <path d="m6 3 5 5-5 5" />
+    </StrokeSvgIcon>
+  );
+}
+
+export function FullWidthIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5">
+      <path d="M2 3v10M14 3v10M5 8h6M6 6 4 8l2 2M10 6l2 2-2 2" />
+    </StrokeSvgIcon>
+  );
+}
+
+export function GitBranchAltIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0 0-1.5Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
+    </SvgIcon>
+  );
+}
+
 export function PullRequestIcon(props: IconProps): JSX.Element {
   return (
     <SvgIcon {...props}>

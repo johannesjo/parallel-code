@@ -3,6 +3,7 @@ import { Portal } from 'solid-js/web';
 import type { ChangeTourController } from '../lib/create-change-tour';
 import type { ChangeTourScope } from '../lib/change-tour';
 import { theme } from '../lib/theme';
+import { CheckIcon } from '../components/icons';
 import { sf } from '../lib/fontScale';
 import {
   createAnchorEffect,
@@ -139,7 +140,7 @@ export function ChangeTourButton(props: {
             </Show>
             <Show when={!props.tour.loading() && ready()}>
               <span aria-label="Tour ready" style={{ color: theme.success }}>
-                ✓
+                <CheckIcon size={12} />
               </span>
             </Show>
             <span>
