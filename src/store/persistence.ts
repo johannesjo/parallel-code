@@ -19,7 +19,9 @@ import type {
   PersistedState,
   PersistedTask,
   PersistedWindowState,
+  PoolConfig,
   Project,
+  TaskRepo,
 } from './types';
 import type { AgentDef } from '../ipc/types';
 import { inferDockerSource } from '../lib/docker';
@@ -129,6 +131,53 @@ function restoredPromptHistory(value: unknown): Task['promptHistory'] {
   });
 }
 
+/**
+ * Persisted state is untrusted input: a hand-edited or truncated file must not
+ * hand the app a repo entry whose path or branch is missing, because every
+ * pool git call is driven from these rows.
+ */
+function restoredTaskRepos(value: unknown): Task['repos'] {
+  if (!Array.isArray(value)) return undefined;
+  const repos = value.flatMap((entry: unknown): TaskRepo[] => {
+    if (!entry || typeof entry !== 'object') return [];
+    const row = entry as Record<string, unknown>;
+    const { name, path, branchName, baseBranch } = row;
+    if (typeof name !== 'string' || !name.trim()) return [];
+    if (typeof path !== 'string' || !path.trim()) return [];
+    if (typeof branchName !== 'string' || !branchName.trim()) return [];
+    if (typeof baseBranch !== 'string' || !baseBranch.trim()) return [];
+    return [{ name, path, branchName, baseBranch }];
+  });
+  return repos.length > 0 ? repos : undefined;
+}
+
+function restoredNumberMap(value: unknown): Record<string, number> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry === 'number' && Number.isInteger(entry) && entry > 0) out[key] = entry;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function restoredPool(value: unknown): PoolConfig | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const envPaths = Array.isArray(raw.envPaths)
+    ? raw.envPaths.filter((entry): entry is string => typeof entry === 'string' && !!entry.trim())
+    : [];
+  if (envPaths.length === 0) return undefined;
+  const members = Array.isArray(raw.members)
+    ? raw.members.filter((entry): entry is string => typeof entry === 'string' && !!entry.trim())
+    : undefined;
+  return {
+    envPaths,
+    members: members && members.length > 0 ? members : undefined,
+    portBase: restoredNumberMap(raw.portBase),
+    portOffsets: restoredNumberMap(raw.portOffsets),
+  };
+}
+
 function validAgentId(value: unknown, agentIds: string[]): string | undefined {
   return typeof value === 'string' && agentIds.includes(value) ? value : undefined;
 }
@@ -189,6 +238,8 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     selectedAgentId: task.selectedAgentId,
     aiTerminalLayout: task.aiTerminalLayout,
     gitIsolation: task.gitIsolation,
+    envPath: task.envPath,
+    repos: task.repos,
     baseBranch: task.baseBranch,
     externalWorktree: task.externalWorktree,
     skipPermissions: task.skipPermissions,
@@ -527,6 +578,7 @@ export async function loadState(): Promise<void> {
       p.coverageReportPath = undefined;
     }
     p.tasksCollapsed = typeof p.tasksCollapsed === 'boolean' ? p.tasksCollapsed : undefined;
+    p.pool = restoredPool(p.pool);
     // Migrate defaultDirectMode -> defaultGitIsolation
     const legacy = p as Project & { defaultDirectMode?: boolean };
     if (legacy.defaultDirectMode !== undefined && p.defaultGitIsolation === undefined) {
@@ -783,6 +835,8 @@ export async function loadState(): Promise<void> {
           promptedAgentIds: restoredPromptedAgentIds(pt, agentIds),
           initialPrompt: typeof pt.initialPrompt === 'string' ? pt.initialPrompt : undefined,
           gitIsolation: legacy.gitIsolation ?? (legacy.directMode ? 'direct' : 'worktree'),
+          envPath: typeof pt.envPath === 'string' ? pt.envPath : undefined,
+          repos: restoredTaskRepos(pt.repos),
           baseBranch: legacy.baseBranch || undefined,
           externalWorktree: pt.externalWorktree,
           skipPermissions: pt.skipPermissions === true,
@@ -896,6 +950,8 @@ export async function loadState(): Promise<void> {
           initialPrompt: typeof pt.initialPrompt === 'string' ? pt.initialPrompt : undefined,
           gitIsolation:
             legacyCollapsed.gitIsolation ?? (legacyCollapsed.directMode ? 'direct' : 'worktree'),
+          envPath: typeof pt.envPath === 'string' ? pt.envPath : undefined,
+          repos: restoredTaskRepos(pt.repos),
           baseBranch: legacyCollapsed.baseBranch || undefined,
           externalWorktree: pt.externalWorktree,
           skipPermissions: pt.skipPermissions === true,

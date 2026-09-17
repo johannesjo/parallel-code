@@ -55,4 +55,5 @@ When committing, use conventional commit messages, such as `fix(terminal): resto
 - `src/remote/`, `electron/remote/`: phone UI and its server.
 - `src/documents/`, `electron/documents/`: document workspaces; see `docs/document-workspaces.md`.
 - `docs/browser-preview.md`: native browser architecture, limitations, and verification.
+- `docs/pooled-workspaces.md`: leasing a ready environment instead of building a worktree, for projects that are a directory of git repositories.
 - `docs/architecture-overview.html`: broader architecture overview. New files under `docs/` are ignored unless explicitly included in `.gitignore`.

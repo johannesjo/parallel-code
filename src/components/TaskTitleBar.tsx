@@ -48,6 +48,8 @@ interface TaskTitleBarProps {
   onClose: () => void;
   onMerge: () => void;
   onPush: () => void;
+  /** Carry shared-library changes back to their canonical checkout. Pool only. */
+  onSyncShared?: () => void;
   pushing: boolean;
   pushSuccess: boolean;
   onTitleEditRef: (h: EditableTextHandle) => void;
@@ -241,8 +243,24 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
         </Show>
       </div>
       <div class="task-title-actions">
-        <Show when={props.task.gitIsolation === 'worktree' && !isLandedTask()}>
+        <Show
+          when={
+            (props.task.gitIsolation === 'worktree' || props.task.gitIsolation === 'pool') &&
+            !isLandedTask()
+          }
+        >
           <div class="task-action-group" role="group" aria-label="Git actions">
+            <Show when={props.task.gitIsolation === 'pool' && props.onSyncShared}>
+              <IconButton
+                icon={
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 2.5a5.5 5.5 0 0 0-4.9 3H5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 6.25V3a.75.75 0 0 1 1.5 0v1.2A7 7 0 0 1 15 8a.75.75 0 0 1-1.5 0A5.5 5.5 0 0 0 8 2.5Zm6.25 6.75A.75.75 0 0 1 15 10v3.25a.75.75 0 0 1-1.5 0v-1.2A7 7 0 0 1 1 8a.75.75 0 0 1 1.5 0 5.5 5.5 0 0 0 10.4 2.5H11a.75.75 0 0 1 0-1.5h3.25Z" />
+                  </svg>
+                }
+                onClick={() => props.onSyncShared?.()}
+                title="Sync shared: carry library changes made inside an app back to its own repository, ready to commit"
+              />
+            </Show>
             <IconButton
               icon={
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">

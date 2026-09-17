@@ -18,7 +18,9 @@ import {
   closeAgentInTask,
   showNotification,
   toggleAITerminalLayout,
+  getProject,
 } from '../store/store';
+import { poolPortEnv } from '../lib/pool-ports';
 import { markDirty } from '../lib/terminalFitManager';
 import { isAgentAskingQuestion } from '../store/taskStatus';
 import { warn as logWarn } from '../lib/log';
@@ -575,6 +577,7 @@ function AgentTerminalPane(props: {
 }) {
   onCleanup(() => props.onUnmount(props.agentId));
 
+  const poolEnv = () => poolPortEnv(getProject(props.task.projectId)?.pool, props.task);
   const dockerOverlayLabel = () => getTaskDockerOverlayLabel(props.task.dockerSource);
   const agent = () => store.agents[props.agentId];
 
@@ -687,6 +690,7 @@ function AgentTerminalPane(props: {
                 command={a().def.command}
                 args={buildTaskAgentArgs(a().def, props.task, a().resumed)}
                 cwd={props.task.worktreePath}
+                env={poolEnv()}
                 envFile={store.agentEnvFiles[a().def.id]}
                 stepsEnabled={props.task.stepsEnabled}
                 dockerMode={

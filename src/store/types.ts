@@ -14,7 +14,36 @@ import type { CustomTheme } from '../lib/custom-theme';
 /** A user override for a binding: partial key/modifiers to apply, or null to unbind. */
 export type KeybindingOverride = Partial<Pick<KeyBinding, 'key' | 'modifiers'>> | null;
 
-export type GitIsolationMode = 'worktree' | 'direct' | 'none';
+export type GitIsolationMode = 'worktree' | 'direct' | 'none' | 'pool';
+
+/**
+ * A pooled workspace: a fixed set of interchangeable environment directories,
+ * each holding the same child git repositories checked out side by side. A
+ * task leases one whole environment instead of building a worktree, so the
+ * environment's installed dependencies and build caches are used in place.
+ */
+export interface PoolConfig {
+  /** Absolute paths of the environments, in lease-preference order. */
+  envPaths: string[];
+  /** Child repo names to manage. Empty means "discover them in the env". */
+  members?: string[];
+  /** Lowest port an environment may serve on, keyed by env path. */
+  portBase?: Record<string, number>;
+  /** Port added to an environment's base, keyed by member name. */
+  portOffsets?: Record<string, number>;
+}
+
+/** One member repository of a leased environment, and the task's branch in it. */
+export interface TaskRepo {
+  /** Directory name under the environment root, e.g. "waiter". */
+  name: string;
+  /** Absolute path of the repository. */
+  path: string;
+  /** Branch the task created here; every member repo shares one name. */
+  branchName: string;
+  /** Base branch this repo was on when the task leased the environment. */
+  baseBranch: string;
+}
 
 export interface StagedNotification {
   batchId: string;
@@ -96,6 +125,8 @@ export interface Project {
   documentOpenPath?: string;
   /** Preview scale; independent of the app and terminal zoom. */
   documentZoom?: number;
+  /** Pooled workspace configuration; present only on pool projects. */
+  pool?: PoolConfig;
   /** Agent that owns the project's warm main session. */
   documentMainAgentId?: string;
   /** Resumable main sessions per agent id, with the base sha each last saw. */
@@ -171,6 +202,11 @@ export interface Task {
   closingStatus?: 'closing' | 'removing' | 'error';
   closingError?: string;
   gitIsolation: GitIsolationMode;
+  /** Environment this pool task leased; its root is also `worktreePath`. */
+  envPath?: string;
+  /** Member repos the task branched, for pool tasks. The git surface of a
+   *  pool task is every entry here, not the single `worktreePath` repo. */
+  repos?: TaskRepo[];
   baseBranch?: string;
   /** Worktree branch the user declined to adopt as the task branch (the
    *  adoption banner's Undo). Persisted — auto-adoption must not re-apply a
@@ -273,6 +309,8 @@ export interface PersistedTask {
   selectedAgentId?: string;
   aiTerminalLayout?: 'split' | 'tabs';
   gitIsolation: GitIsolationMode;
+  envPath?: string;
+  repos?: TaskRepo[];
   baseBranch?: string;
   externalWorktree?: boolean;
   skipPermissions?: boolean;

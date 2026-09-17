@@ -17,6 +17,7 @@ docs/*
 !docs/architecture-overview.html
 !docs/document-workspaces.md
 !docs/browser-preview.md
+!docs/pooled-workspaces.md
 
 # Sandbox bind-mount artifacts from user home (not project files).
 # Root-anchored so legitimate nested files with these names are still tracked.

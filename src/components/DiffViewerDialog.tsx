@@ -36,6 +36,7 @@ import type { FileDiff } from '../lib/unified-diff-parser';
 import type { ReviewAnnotation } from './review-types';
 import type { CommitInfo } from '../ipc/types';
 import type { GitIsolationMode } from '../store/types';
+import type { PoolTaskRepo } from '../ipc/types';
 import { ChangeTour } from './ChangeTour';
 import { createChangeTour, type ChangeTourController } from '../lib/create-change-tour';
 
@@ -66,6 +67,8 @@ interface DiffViewerDialogProps {
   onCommitNavigate?: (selection: CommitSelection) => void;
   /** Git isolation mode — CommitNavBar is only shown for worktree-isolated tasks */
   gitIsolation?: GitIsolationMode;
+  /** Member repos of a leased environment; set only for pool tasks. */
+  poolRepos?: PoolTaskRepo[];
   /** Optional structured-finding source. Providers capture their own repository context. */
   findingProvider?: QualityFindingProvider;
 }
@@ -266,6 +269,7 @@ function DiffViewerContent(props: DiffViewerDialogProps & { tour: ChangeTourCont
             branchName,
             baseBranch,
             selectedCommit: selection,
+            poolRepos: props.poolRepos,
           }).then(({ rawDiff }) => rawDiff);
 
     diffPromise

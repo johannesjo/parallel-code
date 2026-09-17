@@ -36,6 +36,8 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
   const coverageReportPath = () => getProject(props.task.projectId)?.coverageReportPath;
   const diffBaseBranch = () =>
     getTaskDiffBaseBranch(props.task.gitIsolation, props.task.baseBranch);
+  // Commit navigation is per-repository and a pool task spans several, so it
+  // stays off there until the per-repo commit surface lands.
   const hasCommitNav = () =>
     props.task.gitIsolation === 'worktree' || props.task.gitIsolation === 'direct';
   // The tree button only earns its place once a branch has history to graph — a
@@ -173,6 +175,7 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
         <ChangedFilesList
           worktreePath={props.task.worktreePath}
           projectRoot={getProject(props.task.projectId)?.path}
+          poolRepos={props.task.repos}
           branchName={props.task.branchName}
           baseBranch={diffBaseBranch()}
           isActive={props.isActive}

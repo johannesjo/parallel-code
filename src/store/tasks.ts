@@ -16,6 +16,7 @@ import {
   clearTaskGitStatusTracking,
   isAgentBracketedPasteEnabled,
   isAgentIdle,
+  refreshTaskStatus,
   rescheduleTaskStatusPolling,
 } from './taskStatus';
 import { recordMergedLines, recordTaskMerged } from './completion';
@@ -23,13 +24,16 @@ import { warn as logWarn } from '../lib/log';
 import { cleanTaskName } from '../lib/clean-task-name';
 import type {
   AgentDef,
+  CreatePoolTaskResult,
   CreateTaskResult,
+  PoolTaskRepo,
+  ReleasePoolEnvResult,
   ImportableWorktree,
   MergeResult,
   StepEntry,
 } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
-import type { Agent, Task, GitIsolationMode, AppStore } from './types';
+import type { Agent, Task, TaskRepo, GitIsolationMode, AppStore } from './types';
 import type { DockerSource } from '../lib/docker';
 import { COORDINATOR_PREAMBLE } from './coordinator-preamble';
 import {
@@ -72,6 +76,8 @@ function createBaseTaskRecord(args: {
   worktreePath: string;
   agentId: string;
   baseBranch?: string;
+  envPath?: string;
+  repos?: TaskRepo[];
 }): Task {
   return {
     id: args.id,
@@ -80,6 +86,8 @@ function createBaseTaskRecord(args: {
     projectId: args.projectId,
     gitIsolation: args.gitIsolation,
     baseBranch: args.baseBranch,
+    envPath: args.envPath,
+    repos: args.repos,
     branchName: args.branchName,
     worktreePath: args.worktreePath,
     agentIds: [args.agentId],
@@ -258,6 +266,8 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   let taskId: string;
   let branchName: string;
   let worktreePath: string;
+  let envPath: string | undefined;
+  let repos: TaskRepo[] | undefined;
 
   if (gitIsolation === 'worktree') {
     const branchPrefix = opts.branchPrefixOverride ?? getProjectBranchPrefix(projectId);
@@ -271,6 +281,28 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     taskId = result.id;
     branchName = result.branch_name;
     worktreePath = result.worktree_path;
+  } else if (gitIsolation === 'pool') {
+    const pool = getProject(projectId)?.pool;
+    if (!pool || pool.envPaths.length === 0) {
+      throw new Error('This project has no pool environments configured');
+    }
+    const result = await invoke<CreatePoolTaskResult>(IPC.PoolAcquireEnv, {
+      name,
+      branchPrefix: opts.branchPrefixOverride ?? getProjectBranchPrefix(projectId),
+      envPaths: pool.envPaths,
+      members: pool.members,
+      // Leases held by tasks the app no longer has are reclaimable; only the
+      // live ones may keep an environment out of the pool.
+      liveTaskIds: [...store.taskOrder, ...store.collapsedTaskOrder],
+    });
+    taskId = result.id;
+    branchName = result.branch_name;
+    envPath = result.env_path;
+    repos = result.repos;
+    // A pool task's working directory is the leased environment itself, so
+    // every path-keyed feature — shells, canvas, preview, verify — is pointed
+    // at it exactly as a worktree task points at its worktree.
+    worktreePath = result.env_path;
   } else if (gitIsolation === 'direct') {
     if (hasDirectTask(projectId)) {
       throw new Error('This project already has a task on the current branch');
@@ -366,6 +398,8 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
       branchName,
       worktreePath,
       agentId,
+      envPath,
+      repos,
     }),
     initialPrompt:
       opts.coordinatorMode && effectivePrompt
@@ -526,6 +560,23 @@ export async function closeTask(taskId: string): Promise<void> {
       });
     }
 
+    // A pool task owns no worktree to remove: it gives its environment back,
+    // which restores every member repo to its base branch and drops the lease.
+    // `deleteBranchOnClose` is what forces a branch that still holds commits;
+    // without it the branch is kept and only the checkout is restored.
+    if (task.gitIsolation === 'pool' && task.envPath && task.repos) {
+      const release = await invoke<ReleasePoolEnvResult>(IPC.PoolReleaseEnv, {
+        taskId,
+        agentIds: [...agentIds, ...shellAgentIds],
+        envPath: task.envPath,
+        repos: task.repos,
+        force: deleteBranch,
+      });
+      for (const failure of release.failures) {
+        console.warn(`Could not restore ${failure.repo} on close:`, failure.reason);
+      }
+    }
+
     // Agents are dead — deregister the coordinator so no more MCP tool calls succeed.
     // Done after kills (not before) so a failed close leaves the backend registered
     // and the coordinator agent can still make tool calls until it's actually gone.
@@ -640,6 +691,7 @@ export async function mergeTask(
   const task = store.tasks[taskId];
   if (!task) throw new Error('Task no longer exists');
   if (task.closingStatus === 'removing') throw new Error('Task is being closed');
+  if (task.gitIsolation === 'pool') return mergePoolTask(task, options);
   if (task.gitIsolation !== 'worktree') throw new Error('Only worktree tasks can be merged');
 
   const projectRoot = getProjectPath(task.projectId);
@@ -688,6 +740,7 @@ export async function mergeTask(
 export async function pushTask(taskId: string, onOutput: Channel<string>): Promise<void> {
   const task = store.tasks[taskId];
   if (!task) throw new Error('Task no longer exists');
+  if (task.gitIsolation === 'pool') return pushPoolTask(task, onOutput);
   if (task.gitIsolation !== 'worktree') throw new Error('Only worktree tasks can be pushed');
 
   const projectRoot = getProjectPath(task.projectId);
@@ -702,6 +755,120 @@ export async function pushTask(taskId: string, onOutput: Channel<string>): Promi
   void invoke(IPC.RefreshPrChecksWatcher, { taskId }).catch((err: unknown) =>
     logWarn('tasks', 'Failed to refresh PR checks after push', { err: String(err) }),
   );
+}
+
+/**
+ * Merge every member repository that has commits into its own base branch.
+ *
+ * Sequential and stopping at the first failure: a conflict in one repository
+ * means the change is not integrated, and carrying on would leave half of it
+ * on base with no record of which half. Cleanup is never passed through —
+ * closing the task is what returns the environment to the pool, and a merge
+ * that also released the lease would be two decisions behind one button.
+ *
+ * Local merging is not how these workspaces usually integrate — a repository
+ * with submodules wants a pull request per repository, children first, so the
+ * parent never points at an unmerged commit. This exists for the workspaces
+ * that do merge locally; see docs/pooled-workspaces.md.
+ */
+async function mergePoolTask(
+  task: Task,
+  options?: { squash?: boolean; message?: string },
+): Promise<void> {
+  const repos = task.repos ?? [];
+  const changed = await poolReposWithCommits(repos);
+  if (changed.length === 0) throw new Error('No pool repository has commits to merge');
+
+  for (const repo of changed) {
+    const result = await invoke<MergeResult>(IPC.MergeTask, {
+      projectRoot: repo.path,
+      branchName: repo.branchName,
+      worktreePath: repo.path,
+      baseBranch: repo.baseBranch,
+      squash: options?.squash ?? false,
+      message: options?.message,
+      cleanup: false,
+    });
+    recordMergedLines(result.lines_added, result.lines_removed);
+  }
+  recordTaskMerged();
+}
+
+/**
+ * Push every member repository that has commits, one after another.
+ *
+ * Sequential and on one output channel on purpose: the platform these
+ * workspaces come from wants a branch — and then a pull request — per
+ * repository, and a person reading the push output needs to see which
+ * repository each line belongs to. Interleaving several `git push --progress`
+ * streams would make that unreadable.
+ *
+ * A repository with no commits is skipped rather than pushed empty, so the
+ * branches that appear on the remote are the ones the change actually touched.
+ */
+async function pushPoolTask(task: Task, onOutput: Channel<string>): Promise<void> {
+  const repos = task.repos ?? [];
+  if (repos.length === 0) throw new Error('This task holds no pool repositories');
+
+  // A shared library edited inside an application still lives only in that
+  // application's copy until it is carried across. Pushing here would send the
+  // application branch without the shared change it was written against, so it
+  // is refused rather than half-done.
+  const pending = await invoke<string[]>(IPC.PoolSharedPending, { repos });
+  if (pending.length > 0) {
+    throw new Error(
+      `Shared changes have not been carried across yet: ${pending.join(', ')}. ` +
+        'Run "Sync shared" and commit them before pushing.',
+    );
+  }
+
+  const changed = await poolReposWithCommits(repos);
+  if (changed.length === 0) throw new Error('No pool repository has commits to push');
+
+  for (const repo of changed) {
+    await invoke(IPC.PushTask, {
+      projectRoot: repo.path,
+      branchName: repo.branchName,
+      label: repo.name,
+      onOutput,
+    });
+  }
+}
+
+/** Member repos whose task branch is ahead of its base. */
+async function poolReposWithCommits(repos: readonly PoolTaskRepo[]): Promise<PoolTaskRepo[]> {
+  const statuses = await invoke<{ perRepo: { repo: string; has_committed_changes: boolean }[] }>(
+    IPC.PoolStatus,
+    { repos },
+  );
+  const ahead = new Set(
+    statuses.perRepo.filter((status) => status.has_committed_changes).map((status) => status.repo),
+  );
+  return repos.filter((repo) => ahead.has(repo.name));
+}
+
+export interface SharedAggregateOutcome {
+  mirror: string;
+  applied?: boolean;
+  error?: string;
+}
+
+/**
+ * Carry shared-library changes made inside an application back to the
+ * canonical checkout of that library, where the task's branch and its commits
+ * live. Leaves the result uncommitted: the commit message is the author's.
+ */
+export async function aggregatePoolShared(taskId: string): Promise<SharedAggregateOutcome[]> {
+  const task = store.tasks[taskId];
+  if (!task) throw new Error('Task no longer exists');
+  if (task.gitIsolation !== 'pool' || !task.repos) {
+    throw new Error('Only pool tasks have shared libraries to carry across');
+  }
+  const outcomes = await invoke<SharedAggregateOutcome[]>(IPC.PoolSharedAggregate, {
+    repos: task.repos,
+  });
+  refreshTaskStatus(taskId);
+  return outcomes;
 }
 
 export function updateTaskName(taskId: string, name: string): void {

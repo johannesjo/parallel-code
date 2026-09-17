@@ -10,6 +10,7 @@ import {
   setTaskFocusedPanel,
   clearPendingAction,
   showNotification,
+  aggregatePoolShared,
   setTaskSplitMode,
   isTaskCanvasVisible,
 } from '../store/store';
@@ -220,10 +221,10 @@ export function TaskPanel(props: TaskPanelProps) {
         setShowCloseConfirm(true);
         break;
       case 'merge':
-        if (props.task.gitIsolation === 'worktree' && !isLandedTask()) setShowMergeConfirm(true);
+        if (hasGitActions() && !isLandedTask()) setShowMergeConfirm(true);
         break;
       case 'push':
-        if (props.task.gitIsolation === 'worktree' && !isLandedTask()) setShowPushConfirm(true);
+        if (hasGitActions() && !isLandedTask()) setShowPushConfirm(true);
         break;
     }
   });
@@ -292,7 +293,26 @@ export function TaskPanel(props: TaskPanelProps) {
     return props.task.agentIds[0] ?? '';
   };
 
+  /** Carry shared-library changes back to their own repository, then say what
+   *  moved. Left uncommitted on purpose — the message belongs to the author. */
+  async function syncShared(): Promise<void> {
+    try {
+      const outcomes = await aggregatePoolShared(props.task.id);
+      const applied = outcomes.filter((outcome) => outcome.applied).map((o) => o.mirror);
+      const failed = outcomes.filter((outcome) => outcome.error).map((o) => o.mirror);
+      if (failed.length > 0) showNotification(`Could not carry across: ${failed.join(', ')}`);
+      else if (applied.length === 0) showNotification('No shared changes to carry across');
+      else showNotification(`Carried across from ${applied.join(', ')} — commit when ready`);
+    } catch (err) {
+      showNotification(`Sync shared failed: ${String(err)}`);
+    }
+  }
+
   const isGitUnavailable = () => props.task.gitIsolation === 'none' || isLandedTask();
+  /** Merge and push work on a pool task too: it has branches, they just live
+   *  in several member repositories rather than in one worktree. */
+  const hasGitActions = () =>
+    props.task.gitIsolation === 'worktree' || props.task.gitIsolation === 'pool';
   const [changedFileCount, setChangedFileCount] = createSignal(0);
   // An empty notes box next to an empty file list still claimed half the
   // column. Until either has content the strip stays thin and the AI terminal
@@ -679,6 +699,7 @@ export function TaskPanel(props: TaskPanelProps) {
             onClose={() => setShowCloseConfirm(true)}
             onMerge={() => setShowMergeConfirm(true)}
             onPush={() => setShowPushConfirm(true)}
+            onSyncShared={() => void syncShared()}
             pushing={pushing()}
             pushSuccess={pushSuccess()}
             onTitleEditRef={(h) => (titleEditHandle = h)}
@@ -763,6 +784,7 @@ export function TaskPanel(props: TaskPanelProps) {
             setSelectedCommit(selection);
           }}
           gitIsolation={props.task.gitIsolation}
+          poolRepos={props.task.repos}
           findingProvider={devQualityFindingProvider ?? eslintQualityFindingProvider}
         />
       </Show>

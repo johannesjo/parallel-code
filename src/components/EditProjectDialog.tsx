@@ -1,4 +1,5 @@
 import { createSignal, createEffect, For, Show } from 'solid-js';
+import { createStore } from 'solid-js/store';
 import { Dialog } from './Dialog';
 import { updateProject, PASTEL_HUES, isProjectMissing, relinkProject } from '../store/store';
 import { sanitizeBranchPrefix, toBranchName } from '../lib/branch-name';
@@ -9,6 +10,7 @@ import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { CloseIcon } from './icons';
 import { RemoveProjectConfirm } from './RemoveProjectConfirm';
 import { isDocumentProject } from '../store/projects';
+import { poolFromForm, poolToForm, type PoolFormValues } from '../lib/pool-config';
 
 interface EditProjectDialogProps {
   project: Project | null;
@@ -31,6 +33,12 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [verifyCommand, setVerifyCommand] = createSignal('');
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
   const [newCommand, setNewCommand] = createSignal('');
+  const [poolForm, setPoolForm] = createStore<PoolFormValues>({
+    envPaths: '',
+    members: '',
+    portBase: '',
+    portOffsets: '',
+  });
   const [showImportDialog, setShowImportDialog] = createSignal(false);
   const [confirmRemove, setConfirmRemove] = createSignal(false);
   /** Branch and worktree settings only mean something where tasks run. */
@@ -51,6 +59,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
     setCoverageReportPath(p.coverageReportPath ?? '');
     setVerifyCommand(p.verifyCommand ?? '');
     setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
+    setPoolForm(poolToForm(p.pool));
     setNewCommand('');
     setConfirmRemove(false);
     requestAnimationFrame(() => nameRef?.focus());
@@ -87,6 +96,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
       coverageReportPath: coverageReportPath().trim() || undefined,
       verifyCommand: verifyCommand().trim() || undefined,
       terminalBookmarks: bookmarks(),
+      pool: poolFromForm(poolForm),
     });
     props.onClose();
   }
@@ -361,10 +371,76 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   options={[
                     { value: 'worktree', label: 'Worktree' },
                     { value: 'direct', label: 'Current Branch' },
+                    ...(poolForm.envPaths.trim() ? [{ value: 'pool', label: 'Pooled Env' }] : []),
                   ]}
                   value={defaultGitIsolation()}
                   onChange={setDefaultGitIsolation}
                 />
+              </div>
+
+              {/* Pooled environments */}
+              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+                <label style={sectionLabelStyle}>
+                  Pooled environments{' '}
+                  <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
+                    (one path per line; blank = not a pool)
+                  </span>
+                </label>
+                <textarea
+                  class="input-field"
+                  rows={4}
+                  spellcheck={false}
+                  placeholder={'/projects/MRW1\n/projects/MRW2'}
+                  value={poolForm.envPaths}
+                  onInput={(e) => setPoolForm('envPaths', e.currentTarget.value)}
+                />
+                <Show when={poolForm.envPaths.trim()}>
+                  <span style={{ 'font-size': '11px', opacity: '0.6' }}>
+                    A task leases one environment and branches every repository in it. Repositories
+                    come from the environment&rsquo;s own manifest, or from a scan of its
+                    subdirectories.
+                  </span>
+                  <label style={sectionLabelStyle}>
+                    Repositories{' '}
+                    <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
+                      (blank = whatever the environment holds)
+                    </span>
+                  </label>
+                  <textarea
+                    class="input-field"
+                    rows={2}
+                    spellcheck={false}
+                    placeholder={'waiter\napi'}
+                    value={poolForm.members}
+                    onInput={(e) => setPoolForm('members', e.currentTarget.value)}
+                  />
+                  <label style={sectionLabelStyle}>
+                    Port base per environment{' '}
+                    <span style={{ opacity: '0.5', 'text-transform': 'none' }}>(path = port)</span>
+                  </label>
+                  <textarea
+                    class="input-field"
+                    rows={2}
+                    spellcheck={false}
+                    placeholder={'/projects/MRW1 = 3500\n/projects/MRW2 = 3510'}
+                    value={poolForm.portBase}
+                    onInput={(e) => setPoolForm('portBase', e.currentTarget.value)}
+                  />
+                  <label style={sectionLabelStyle}>
+                    Port offset per repository{' '}
+                    <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
+                      (repo = offset from the base)
+                    </span>
+                  </label>
+                  <textarea
+                    class="input-field"
+                    rows={2}
+                    spellcheck={false}
+                    placeholder={'waiter = 1\nbackoffice = 2'}
+                    value={poolForm.portOffsets}
+                    onInput={(e) => setPoolForm('portOffsets', e.currentTarget.value)}
+                  />
+                </Show>
               </div>
 
               {/* Default base branch */}

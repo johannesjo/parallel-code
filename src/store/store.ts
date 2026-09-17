@@ -46,6 +46,7 @@ export {
   createImportedTask,
   closeTask,
   retryCloseTask,
+  aggregatePoolShared,
   mergeTask,
   pushTask,
   updateTaskName,

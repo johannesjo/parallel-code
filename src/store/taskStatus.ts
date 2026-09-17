@@ -1107,10 +1107,17 @@ async function refreshTaskGitStatus(
   }
 
   try {
-    const status = await invoke<WorktreeStatus>(IPC.GetWorktreeStatus, {
-      worktreePath: task.worktreePath,
-      baseBranch: task.baseBranch,
-    });
+    // A pool task's environment root holds no code of its own — its member
+    // repositories do — so asking git about that one directory would report
+    // every pool task as unchanged forever. Roll the members up instead.
+    const status =
+      task.gitIsolation === 'pool' && task.repos
+        ? (await invoke<{ combined: WorktreeStatus }>(IPC.PoolStatus, { repos: task.repos }))
+            .combined
+        : await invoke<WorktreeStatus>(IPC.GetWorktreeStatus, {
+            worktreePath: task.worktreePath,
+            baseBranch: task.baseBranch,
+          });
     if (!store.tasks[taskId] || !isCurrentGitRefresh(taskId, version)) return;
     const refreshedAt = Date.now();
     const next: TaskGitStatusSnapshot = {

@@ -6,6 +6,8 @@ import {
   isUncommittedSelection,
   type CommitSelection,
 } from '../components/CommitNavBar';
+import type { GitIsolationMode } from '../store/types';
+import type { PoolTaskRepo } from '../ipc/types';
 
 export interface TaskDiffInput {
   worktreePath: string;
@@ -13,12 +15,15 @@ export interface TaskDiffInput {
   branchName?: string | null;
   baseBranch?: string;
   selectedCommit?: CommitSelection;
+  /** Member repos of a leased environment; set only for pool tasks. */
+  poolRepos?: PoolTaskRepo[];
 }
 
 /** Direct tasks work on their base branch, so naming that branch as the diff base
- * would compare HEAD to itself and hide committed work from the All view. */
+ * would compare HEAD to itself and hide committed work from the All view.
+ * Pool tasks branch off their base like worktree tasks do, so they keep it. */
 export function getTaskDiffBaseBranch(
-  gitIsolation: 'worktree' | 'direct' | 'none',
+  gitIsolation: GitIsolationMode,
   baseBranch?: string,
 ): string | undefined {
   return gitIsolation === 'direct' ? undefined : baseBranch;
@@ -29,6 +34,13 @@ export async function loadTaskDiff(
   input: TaskDiffInput,
 ): Promise<{ rawDiff: string; cwd: string }> {
   const { worktreePath, projectRoot, branchName, baseBranch, selectedCommit } = input;
+  // A pool task's change spans several repositories, so its diff is theirs
+  // concatenated with each path re-rooted at the environment. The cwd stays
+  // the environment root, which is what those prefixed paths are relative to.
+  if (input.poolRepos && input.poolRepos.length > 0) {
+    const rawDiff = await invoke<string>(IPC.PoolAllDiffs, { repos: input.poolRepos });
+    return { rawDiff, cwd: worktreePath };
+  }
   if (isCommitHashSelection(selectedCommit) && worktreePath) {
     const rawDiff = await invoke<string>(IPC.GetCommitDiffs, {
       worktreePath,

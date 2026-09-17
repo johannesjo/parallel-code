@@ -55,10 +55,17 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
               </div>
             )}
           </Show>
-          <Show when={props.task.gitIsolation !== 'worktree'}>
+          <Show when={props.task.gitIsolation !== 'worktree' && props.task.gitIsolation !== 'pool'}>
             <p style={{ margin: '0' }}>
               This will stop all running agents and shells for this task. No git operations will be
               performed.
+            </p>
+          </Show>
+          <Show when={props.task.gitIsolation === 'pool'}>
+            <p style={{ margin: '0' }}>
+              This will stop all running agents and shells, then hand the environment back to the
+              pool: every repository returns to its base branch and the lease is released. A task
+              branch that still holds commits is kept unless the project deletes branches on close.
             </p>
           </Show>
           <Show when={props.task.gitIsolation === 'worktree'}>

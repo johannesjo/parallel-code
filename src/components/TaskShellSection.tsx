@@ -17,6 +17,7 @@ import {
   isPanelFocused,
   isPanelFocusedPrefix,
 } from '../store/store';
+import { poolPortEnv } from '../lib/pool-ports';
 import { TerminalView } from './TerminalView';
 import { CloseIcon } from './icons';
 import { theme } from '../lib/theme';
@@ -51,6 +52,7 @@ interface TaskShellSectionProps {
 }
 
 export function TaskShellSection(props: TaskShellSectionProps) {
+  const poolEnv = () => poolPortEnv(getProject(props.task.projectId)?.pool, props.task);
   const [shellToolbarIdx, setShellToolbarIdx] = createSignal(0);
   const [shellToolbarFocused, setShellToolbarFocused] = createSignal(false);
   const [shellExits, setShellExits] = createStore<
@@ -300,6 +302,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                     command={''}
                     args={['-l']}
                     cwd={props.task.worktreePath}
+                    env={poolEnv()}
                     dockerMode={props.task.dockerMode}
                     dockerImage={props.task.dockerImage}
                     initialCommand={initialCommand}

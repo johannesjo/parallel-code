@@ -99,6 +99,7 @@ export function updateProject(
       | 'verifyCommand'
       | 'terminalBookmarks'
       | 'isGitRepo'
+      | 'pool'
       | 'documentMainAgentId'
       | 'documentSessions'
       | 'documentModels'

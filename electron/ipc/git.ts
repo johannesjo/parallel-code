@@ -202,6 +202,17 @@ const SYMLINK_EXCLUDE_HEADER = '# parallel-code: worktree symlinks';
  * `..` is only rejected as a full name: as a substring (`foo..bar`) it is a
  * legal filename, not a traversal.
  */
+/**
+ * Run a git command in `cwd` and return its trimmed stdout.
+ *
+ * Exported so the pool module drives git through the same traced, buffered
+ * path as everything else here rather than reaching for `execFile` itself.
+ */
+export async function runGit(cwd: string, args: string[]): Promise<string> {
+  const { stdout } = await exec('git', args, { cwd, maxBuffer: MAX_BUFFER });
+  return stdout.trim();
+}
+
 export function isValidSymlinkName(name: string): boolean {
   if (name.length === 0 || name === '.' || name === '..') return false;
   if (name.includes('/') || name.includes('\\')) return false;
@@ -2097,6 +2108,9 @@ export function pushTask(
   projectRoot: string,
   branchName: string,
   channelId: string,
+  /** Written to the stream before git runs, so a caller pushing several
+   *  repositories in turn can say which one each block of output is from. */
+  label?: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn('git', ['push', '--progress', '-u', 'origin', '--', branchName], {
@@ -2109,6 +2123,8 @@ export function pushTask(
         win.webContents.send(`channel:${channelId}`, msg);
       }
     };
+
+    if (label) send(`\n=== ${label} ===\n`);
 
     proc.stdout?.on('data', (chunk: Buffer) => {
       send(chunk.toString('utf8'));

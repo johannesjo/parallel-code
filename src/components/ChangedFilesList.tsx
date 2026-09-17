@@ -19,7 +19,7 @@ import {
   isCommitHashSelection,
   isUncommittedSelection,
 } from './CommitNavBar';
-import type { ChangedFile, CoverageFileSummary, CoverageSummary } from '../ipc/types';
+import type { ChangedFile, CoverageFileSummary, CoverageSummary, PoolTaskRepo } from '../ipc/types';
 
 interface ChangedFilesListProps {
   worktreePath: string;
@@ -36,6 +36,8 @@ interface ChangedFilesListProps {
   coverageReportPath?: string;
   /** Project root for branch-based fallback when worktree doesn't exist */
   projectRoot?: string;
+  /** Member repos of a leased environment; set only for pool tasks. */
+  poolRepos?: PoolTaskRepo[];
   /** Branch name for branch-based fallback when worktree doesn't exist */
   branchName?: string | null;
   /** Base branch for diff comparison (e.g. 'main', 'develop'). Undefined = auto-detect. */
@@ -620,6 +622,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
   createEffect(() => {
     void props.worktreePath;
     void props.projectRoot;
+    void props.poolRepos;
     void props.branchName;
     void props.baseBranch;
     void props.selectedCommit;
@@ -653,6 +656,38 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
       if (inFlight) return;
       inFlight = true;
       try {
+        // A pool task's changes are spread over its environment's member
+        // repositories, so the list comes from the fan-out. Paths arrive
+        // prefixed with the repo name, which makes them relative to the
+        // environment root — the very path this panel already holds, so
+        // opening a file in an editor keeps working unchanged.
+        const poolRepos = props.poolRepos;
+        if (poolRepos && poolRepos.length > 0) {
+          try {
+            const result = await invoke<ChangedFile[]>(IPC.PoolChangedFiles, { repos: poolRepos });
+            if (!cancelled) {
+              batch(() => {
+                setFiles((current) => (sameChangedFiles(current, result) ? current : result));
+                setComparisonFiles((current) =>
+                  sameChangedFiles(current, result) ? current : result,
+                );
+                setComparisonInventoryState('available');
+                setCanOpenFilesInEditor(true);
+              });
+            }
+          } catch {
+            if (!cancelled) {
+              batch(() => {
+                setFiles([]);
+                setComparisonFiles(null);
+                setComparisonInventoryState('failed');
+                setCanOpenFilesInEditor(false);
+              });
+            }
+          }
+          return;
+        }
+
         // Single-commit mode: fetch files for that commit only
         if (singleCommitHash && path) {
           try {

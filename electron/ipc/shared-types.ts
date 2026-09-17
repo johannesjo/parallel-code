@@ -27,6 +27,27 @@ export interface CreateTaskResult {
   worktree_path: string;
 }
 
+/** One member repository of a leased environment, as the renderer sees it. */
+export interface PoolTaskRepo {
+  name: string;
+  path: string;
+  branchName: string;
+  baseBranch: string;
+}
+
+export interface CreatePoolTaskResult {
+  id: string;
+  branch_name: string;
+  env_path: string;
+  repos: PoolTaskRepo[];
+}
+
+export interface ReleasePoolEnvResult {
+  /** Repos whose task branch was kept because it still holds commits. */
+  keptBranches: string[];
+  failures: { repo: string; reason: string }[];
+}
+
 export interface SymlinkCandidate {
   name: string;
   isDefault: boolean;

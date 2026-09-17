@@ -912,6 +912,26 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     return pid ? hasDirectTask(pid) : false;
   };
 
+  const poolEnvCount = () => {
+    const pid = selectedProjectId();
+    return pid ? (getProject(pid)?.pool?.envPaths.length ?? 0) : 0;
+  };
+
+  /** Environments a live task already holds, so "the pool is full" is visible
+   *  before the create button rather than as the error it would otherwise be. */
+  const poolLeasedCount = () => {
+    const pid = selectedProjectId();
+    if (!pid) return 0;
+    const leased = new Set<string>();
+    for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
+      const task = store.tasks[taskId];
+      if (task?.projectId === pid && task.envPath && task.closingStatus !== 'removing') {
+        leased.add(task.envPath);
+      }
+    }
+    return leased.size;
+  };
+
   const agentSupportsSkipPermissions = () => {
     const agent = selectedAgent();
     // Resolve by command as well as by the def's own args: an agent restored
@@ -1331,6 +1351,16 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                         disabled: directDisabled(),
                         title: 'The AI agent will work on your current branch in the project root.',
                       },
+                      ...(poolEnvCount() > 0
+                        ? [
+                            {
+                              value: 'pool',
+                              label: 'Pooled Env',
+                              title:
+                                'Leases one of the ready environments this project pools and branches every repository in it.',
+                            },
+                          ]
+                        : []),
                     ]}
                     value={gitIsolation()}
                     onChange={setGitIsolation}
@@ -1338,6 +1368,12 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                   <Show when={directDisabled()}>
                     <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
                       This project already has a task on the current branch
+                    </span>
+                  </Show>
+                  <Show when={gitIsolation() === 'pool'}>
+                    <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
+                      {poolEnvCount()} environment{poolEnvCount() === 1 ? '' : 's'} in the pool;{' '}
+                      {poolLeasedCount()} in use. The first free one is leased when the task starts.
                     </span>
                   </Show>
                 </div>
