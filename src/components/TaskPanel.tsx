@@ -15,7 +15,7 @@ import {
 import {
   store,
   retryCloseTask,
-  setActiveTask,
+  activateTaskFromPointer,
   setActiveAgent,
   clearInitialPrompt,
   clearPrefillPrompt,
@@ -818,7 +818,7 @@ export function TaskPanel(props: TaskPanelProps) {
         position: 'relative',
       }}
       onClick={() => {
-        setActiveTask(props.task.id);
+        activateTaskFromPointer(props.task.id);
       }}
     >
       <TaskClosingOverlay

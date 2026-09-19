@@ -59,6 +59,7 @@ vi.mock('../store/store', () => {
     setTaskFocusedPanel: vi.fn(),
     triggerFocus: vi.fn(),
     setActiveTask: (id: string) => setStore('activeTaskId', id),
+    activateTaskFromPointer: (id: string) => setStore('activeTaskId', id),
     toggleFocusMode: (on?: boolean) => setStore('focusMode', on ?? !store.focusMode),
   };
 });

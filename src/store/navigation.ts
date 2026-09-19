@@ -1,6 +1,12 @@
+import { batch } from 'solid-js';
 import { documentAgentTaskId } from '../documents/task-id';
 import { store, setStore } from './core';
-import { getTaskFocusedPanel, setTaskFocusedPanel, triggerFocus } from './focused-panel';
+import {
+  getTaskFocusedPanel,
+  scheduleTaskFocus,
+  setTaskFocusedPanel,
+  triggerFocus,
+} from './focused-panel';
 import { showNotification } from './notification';
 import { pickAndAddProject } from './projects';
 import { reorderTask } from './tasks';
@@ -50,6 +56,23 @@ export function setActiveTask(id: string): void {
   }
   setStore('activeTaskId', id);
   setStore('activeAgentId', activeAgentId);
+}
+
+/** Activate a task from a click or tap into its column. Unlike `setActiveTask`,
+ *  which keyboard jumps share, this also takes focus away from the sidebar. */
+export function activateTaskFromPointer(id: string): void {
+  const leavingSidebar = store.sidebarFocused;
+  const wasActive = store.activeTaskId === id;
+  batch(() => {
+    setActiveTask(id);
+    // Only when the id was one setActiveTask accepted.
+    if (store.activeTaskId === id) setStore('sidebarFocused', false);
+  });
+  // A column that was already active re-runs none of its focus effects, so
+  // nothing else would move DOM focus back into it.
+  if (leavingSidebar && wasActive && store.activeTaskId === id) {
+    scheduleTaskFocus(id, getTaskFocusedPanel(id));
+  }
 }
 
 export function setActiveAgent(agentId: string): void {

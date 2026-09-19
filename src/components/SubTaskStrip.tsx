@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createSignal, createUniqueId, onMount } from 'solid-js';
 import {
   store,
-  setActiveTask,
+  activateTaskFromPointer,
   getTaskDotStatus,
   uncollapseTask,
   showNotification,
@@ -200,7 +200,7 @@ export function SubTaskStrip(props: SubTaskStripProps) {
                     if (task.collapsed) {
                       uncollapseTask(task.id);
                     }
-                    setActiveTask(task.id);
+                    activateTaskFromPointer(task.id);
                   }}
                   title={taskTone(task) ? `${task.name} — ${taskTone(task)?.label}` : task.name}
                   style={{

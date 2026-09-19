@@ -1,5 +1,10 @@
 import { For, Show } from 'solid-js';
-import { getTaskAttentionState, getTaskDotStatus, setActiveTask, store } from '../store/store';
+import {
+  getTaskAttentionState,
+  getTaskDotStatus,
+  activateTaskFromPointer,
+  store,
+} from '../store/store';
 import { openPanelOrder } from '../store/navigation';
 import { documentAgentTaskId } from '../documents/task-id';
 import { StatusDot } from './StatusDot';
@@ -32,7 +37,7 @@ export function FocusModeTaskIndicators() {
                 type="button"
                 class={`focus-mode-task-indicator${isActive() ? ' active' : ''}`}
                 onMouseDown={(event) => event.stopPropagation()}
-                onClick={() => setActiveTask(item.id)}
+                onClick={() => activateTaskFromPointer(item.id)}
                 title={isActive() ? `${item.name} (current)` : `Switch to ${item.name}`}
                 aria-label={isActive() ? `${item.name}, current item` : `Switch to ${item.name}`}
                 aria-current={isActive() ? 'true' : undefined}

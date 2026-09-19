@@ -32,8 +32,15 @@ vi.mock('./focus', () => ({}));
 vi.mock('./notification', () => ({ showNotification: vi.fn() }));
 vi.mock('./projects', () => ({ pickAndAddProject: vi.fn() }));
 vi.mock('./tasks', () => ({ reorderTask: vi.fn() }));
+// DOM focus is exercised in navigation.client.test.tsx; here, where there is no
+// document, only whether focus is requested is observed. The gates stay real.
+vi.mock('./focused-panel', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./focused-panel')>()),
+  scheduleTaskFocus: vi.fn(),
+}));
 
-import { jumpToTask, moveActiveTask } from './navigation';
+import { activateTaskFromPointer, jumpToTask, moveActiveTask, setActiveTask } from './navigation';
+import { isPanelFocused, scheduleTaskFocus } from './focused-panel';
 import { reorderTask } from './tasks';
 
 beforeEach(() => {
@@ -162,5 +169,63 @@ describe('jumpToTask', () => {
     expect(mockStore.activeTaskId).toBe('task-3');
     expect(mockStore.sidebarFocusedTaskId).toBe('task-3');
     expect(mockStore.sidebarFocusedProjectId).toBe(null);
+  });
+});
+
+// `sidebarFocused` gates every panel: while it is set, `isPanelFocused` is false
+// and `scheduleTaskFocus` will not move DOM focus. A click into a column is the
+// user leaving the sidebar; a keyboard jump is not.
+describe('activateTaskFromPointer', () => {
+  const panel = 'ai-terminal:agent-b';
+
+  beforeEach(() => {
+    mockStore.activeTaskId = 'task-1';
+    mockStore.sidebarFocused = true;
+    mockStore.focusedPanel = { 'task-2': panel };
+  });
+
+  it('setActiveTask leaves sidebarFocused set (keyboard jumps rely on it)', () => {
+    setActiveTask('task-2');
+    expect(mockStore.activeTaskId).toBe('task-2');
+    expect(isPanelFocused('task-2', panel)).toBe(false);
+  });
+
+  it('activates the column and hands it focus', () => {
+    activateTaskFromPointer('task-2');
+    expect(mockStore.activeTaskId).toBe('task-2');
+    expect(mockStore.sidebarFocused).toBe(false);
+    expect(isPanelFocused('task-2', panel)).toBe(true);
+  });
+
+  // Nothing about the selection changes here, so no focus effect runs again; the
+  // activation has to request focus itself.
+  it('clears the sidebar gate and requests focus when the column is already active', () => {
+    mockStore.activeTaskId = 'task-2';
+    activateTaskFromPointer('task-2');
+    expect(isPanelFocused('task-2', panel)).toBe(true);
+    expect(scheduleTaskFocus).toHaveBeenCalledWith('task-2', panel);
+  });
+
+  it('requests no focus itself when switching to another column', () => {
+    activateTaskFromPointer('task-2');
+    expect(scheduleTaskFocus).not.toHaveBeenCalled();
+  });
+
+  it('requests no focus when the sidebar did not have it', () => {
+    mockStore.sidebarFocused = false;
+    mockStore.activeTaskId = 'task-2';
+    activateTaskFromPointer('task-2');
+    expect(scheduleTaskFocus).not.toHaveBeenCalled();
+  });
+
+  it('leaves the sidebar focused when the id is not something setActiveTask accepts', () => {
+    activateTaskFromPointer('no-such-task');
+    expect(mockStore.activeTaskId).toBe('task-1');
+    expect(mockStore.sidebarFocused).toBe(true);
+  });
+
+  it('keeps keyboard jumps on the sidebar, as they were', () => {
+    jumpToTask(1);
+    expect(mockStore.sidebarFocused).toBe(true);
   });
 });
