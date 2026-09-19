@@ -15,7 +15,7 @@
     "build:mcp": "esbuild dist-electron/mcp/server.js --bundle --platform=node --format=cjs --outfile=dist-electron/mcp-server.cjs",
     "build:frontend": "NODE_OPTIONS='--max-old-space-size=4096' vite build --config electron/vite.config.electron.ts",
     "build:remote": "vite build --config src/remote/vite.config.ts",
-    "build": "npm run build:frontend && npm run build:remote && npm run compile && npm run build:mcp && electron-builder",
+    "build": "umask 022 && npm run build:frontend && npm run build:remote && npm run compile && npm run build:mcp && electron-builder",
     "serve": "vite preview --config electron/vite.config.electron.ts",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
@@ -130,6 +130,7 @@
   "build": {
     "appId": "com.parallel-code.app",
     "productName": "Parallel Code",
+    "afterPack": "./scripts/after-pack.cjs",
     "directories": {
       "buildResources": "build",
       "output": "release"
