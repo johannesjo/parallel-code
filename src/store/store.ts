@@ -61,6 +61,7 @@ export {
   setInitialPrompt,
   clearPrefillPrompt,
   clearTaskLandingReview,
+  setTaskSkipPermissions,
   setPrefillPrompt,
   reorderTask,
   reorderTaskVisually,
