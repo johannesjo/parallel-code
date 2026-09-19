@@ -3,7 +3,7 @@ import {
   store,
   closeTerminal,
   updateTerminalName,
-  setActiveTask,
+  activateTaskFromPointer,
   reorderTask,
   registerFocusFn,
   unregisterFocusFn,
@@ -51,7 +51,7 @@ export function TerminalPanel(props: TerminalPanelProps) {
       itemId: props.terminal.id,
       getTaskOrder: () => store.taskOrder,
       onReorder: reorderTask,
-      onTap: () => setActiveTask(props.terminal.id),
+      onTap: () => activateTaskFromPointer(props.terminal.id),
     });
   }
 
@@ -69,7 +69,7 @@ export function TerminalPanel(props: TerminalPanelProps) {
         overflow: 'clip',
         position: 'relative',
       }}
-      onClick={() => setActiveTask(props.terminal.id)}
+      onClick={() => activateTaskFromPointer(props.terminal.id)}
     >
       {/* Title bar */}
       <div

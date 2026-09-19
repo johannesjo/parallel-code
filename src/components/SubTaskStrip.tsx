@@ -1,5 +1,5 @@
 import { For, Show, createMemo, createSignal, createUniqueId, onMount } from 'solid-js';
-import { store, setActiveTask, getTaskDotStatus, uncollapseTask } from '../store/store';
+import { store, activateTaskFromPointer, getTaskDotStatus, uncollapseTask } from '../store/store';
 import { getCoordinatorChildren } from '../store/sidebar-order';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
@@ -189,7 +189,7 @@ export function SubTaskStrip(props: SubTaskStripProps) {
                   if (task.collapsed) {
                     uncollapseTask(task.id);
                   }
-                  setActiveTask(task.id);
+                  activateTaskFromPointer(task.id);
                 }}
                 title={taskTone(task) ? `${task.name} — ${taskTone(task)?.label}` : task.name}
                 style={{
