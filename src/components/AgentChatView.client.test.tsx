@@ -123,6 +123,9 @@ afterEach(() => {
   container.remove();
 });
 
+// Exact counts are formatted in the host's locale, so the expected text is too.
+const n = (value: number) => value.toLocaleString();
+
 describe('Codex chat view', () => {
   it('shows context capacity, remaining tokens, and over-limit usage independently of session totals', async () => {
     dispose = render(() => <AgentChatView task={task()} agentId="agent-1" active />, container);
@@ -132,7 +135,7 @@ describe('Codex chat view', () => {
     expect(container.querySelector('.codex-chat-context')?.textContent).toContain('Context —');
     mocks.channel?.onmessage?.(state({ contextUsage: { usedTokens: 50000, maxTokens: 200000 } }));
     expect(meter()?.textContent).toContain('Context 25% · 150K left');
-    expect(meter()?.title).toContain('50,000 of 200,000');
+    expect(meter()?.title).toContain(`${n(50_000)} of ${n(200_000)}`);
     expect(meter()?.getAttribute('aria-valuenow')).toBe('50000');
     mocks.channel?.onmessage?.(state({ contextUsage: { usedTokens: 190000, maxTokens: 200000 } }));
     expect(meter()?.dataset.level).toBe('high');
@@ -140,7 +143,7 @@ describe('Codex chat view', () => {
     expect(meter()?.textContent).toContain('Context 105% · 0 left');
     expect(meter()?.dataset.level).toBe('full');
     expect(meter()?.getAttribute('aria-valuenow')).toBe('200000');
-    expect(meter()?.getAttribute('aria-valuetext')).toContain('210,000 of 200,000');
+    expect(meter()?.getAttribute('aria-valuetext')).toContain(`${n(210_000)} of ${n(200_000)}`);
     mocks.channel?.onmessage?.(state({ contextUsage: { usedTokens: 0, maxTokens: 200000 } }));
     expect(meter()?.textContent).toContain('Context 0% · 200K left');
     mocks.channel?.onmessage?.(state({ threadId: 'new-session' }));
@@ -163,8 +166,8 @@ describe('Codex chat view', () => {
       }),
     );
     expect(counter()?.textContent).toContain('12.5K tokens');
-    expect(counter()?.title).toContain('12,500 tokens');
-    expect(counter()?.title).toContain('12,000 input');
+    expect(counter()?.title).toContain(`${n(12_500)} tokens`);
+    expect(counter()?.title).toContain(`${n(12_000)} input`);
     mocks.channel?.onmessage?.(
       state({
         tokenUsage: { totalTokens: 0, inputTokens: 0, outputTokens: 0, scope: 'connection' },
