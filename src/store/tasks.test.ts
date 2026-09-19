@@ -170,6 +170,7 @@ import {
   markTaskMcpError,
   retryTaskMcpStartup,
   clearTaskLandingReview,
+  setTaskSkipPermissions,
   toggleAITerminalLayout,
   reorderTaskVisually,
   createAgentRecord,
@@ -2020,5 +2021,36 @@ describe('mergeTask / pushTask preconditions', () => {
     vi.mocked(getProjectPath).mockReturnValue(undefined);
     await expect(pushTask('task-2', channel)).rejects.toThrow('Project folder not found');
     expect(mockInvoke).not.toHaveBeenCalled();
+  });
+});
+
+describe('setTaskSkipPermissions', () => {
+  beforeEach(() => {
+    mockTasks['skip-task'] = { agentIds: [], shellAgentIds: [], skipPermissions: false };
+  });
+
+  it('turns it on for an existing task and saves', () => {
+    setTaskSkipPermissions('skip-task', true);
+    expect(mockTasks['skip-task'].skipPermissions).toBe(true);
+    expect(mockSaveState).toHaveBeenCalledTimes(1);
+  });
+
+  it('turns it back off and saves', () => {
+    mockTasks['skip-task'].skipPermissions = true;
+    setTaskSkipPermissions('skip-task', false);
+    expect(mockTasks['skip-task'].skipPermissions).toBe(false);
+    expect(mockSaveState).toHaveBeenCalledTimes(1);
+  });
+
+  // An absent flag, from a task created before it existed, reads as off.
+  it.each([false, undefined])('does not save when it is already off (%s)', (current) => {
+    mockTasks['skip-task'].skipPermissions = current;
+    setTaskSkipPermissions('skip-task', false);
+    expect(mockSaveState).not.toHaveBeenCalled();
+  });
+
+  it('ignores an unknown task', () => {
+    setTaskSkipPermissions('nope', true);
+    expect(mockSaveState).not.toHaveBeenCalled();
   });
 });

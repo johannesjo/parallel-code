@@ -9,6 +9,7 @@ import {
   getTaskAttentionState,
   toggleTaskFocusMode,
   clearTaskLandingReview,
+  setTaskSkipPermissions,
   getPrChecks,
   getVerifyCommand,
   isTaskCanvasVisible,
@@ -31,6 +32,7 @@ import { getTaskDockerBadgeLabel } from '../lib/docker';
 import { displayTaskNameFromPrompt, shouldUsePromptDerivedTaskName } from '../lib/clean-task-name';
 import type { Task } from '../store/types';
 import { isLandedTaskState } from '../store/landing';
+import { resolveSkipPermissionsArgs } from '../../electron/shared/skip-permissions';
 
 // Kinds without an entry stay silent: a configured-but-never-run command on
 // every task would be noise, and cancelled runs carry no signal.
@@ -56,6 +58,25 @@ interface TaskTitleBarProps {
 export function TaskTitleBar(props: TaskTitleBarProps) {
   const dockerBadgeLabel = () => getTaskDockerBadgeLabel(props.task.dockerSource);
   const isLandedTask = () => isLandedTaskState(props.task.landingState);
+  // Offered when any of the task's agents takes a skip-permissions flag, resolved
+  // by command so a definition restored without its flags still qualifies.
+  // Not for tasks that start other tasks: their children take the separate
+  // propagateSkipPermissions setting (fixed at registration for a coordinator),
+  // so turning this off there would stop only the parent's own agent skipping.
+  const offersSkipPermissionsToggle = () =>
+    !props.task.coordinatorMode &&
+    !props.task.delegationParent &&
+    !isLandedTask() &&
+    props.task.agentIds.some((id) => {
+      const def = store.agents[id]?.def;
+      return !!def && resolveSkipPermissionsArgs(def).length > 0;
+    });
+  const skipPermissionsOn = () => props.task.skipPermissions === true;
+  const skipPermissionsTitle = () =>
+    (skipPermissionsOn()
+      ? "Skips the agent's permission prompts. Click to turn off."
+      : "Uses the agent's own permission settings. Click to skip its prompts.") +
+    ' Takes effect the next time the agent starts.';
   const landingBadge = () => {
     switch (props.task.landingState) {
       case 'landed_pending_review':
@@ -238,6 +259,21 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
               {badge().label}
             </span>
           )}
+        </Show>
+        <Show when={offersSkipPermissionsToggle()}>
+          <button
+            style={{
+              ...badgeStyle(skipPermissionsOn() ? theme.warning : theme.fgMuted),
+              cursor: 'pointer',
+            }}
+            title={skipPermissionsTitle()}
+            onClick={(e) => {
+              e.stopPropagation();
+              setTaskSkipPermissions(props.task.id, !skipPermissionsOn());
+            }}
+          >
+            {skipPermissionsOn() ? 'skip confirms' : 'confirms on'}
+          </button>
         </Show>
       </div>
       <div class="task-title-actions">

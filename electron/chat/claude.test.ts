@@ -276,6 +276,20 @@ describe('Claude chat adapter', () => {
     });
   });
 
+  // The mode is otherwise known only from a turn's init message, and the chat
+  // view reads it to decide whether a mode can be picked.
+  it('reports the bypass mode as soon as it connects, before any turn', async () => {
+    const h = harness([], undefined, { skipPermissions: true });
+    await h.chat.start();
+    expect(h.chat.state.permissionMode).toBe('bypassPermissions');
+  });
+
+  it('reports no mode before a turn when it does not bypass', async () => {
+    const h = harness([], undefined, { permissionMode: 'acceptEdits' });
+    await h.chat.start();
+    expect(h.chat.state.permissionMode).toBeUndefined();
+  });
+
   it('runs the mode the user picked for this chat, and only then overrides their settings', async () => {
     const h = harness([], undefined, { permissionMode: 'acceptEdits' });
     await h.chat.start();
