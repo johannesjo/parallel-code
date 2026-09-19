@@ -146,7 +146,8 @@
       "dist-electron/**/*",
       "dist-remote/**/*",
       "electron/preload.cjs",
-      "electron/browser-preload.cjs"
+      "electron/browser-preload.cjs",
+      "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**"
     ],
     "asarUnpack": [
       "**/node-pty/**",
