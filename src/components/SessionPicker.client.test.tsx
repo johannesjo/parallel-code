@@ -151,14 +151,16 @@ describe('SessionPicker', () => {
 
 describe('relativeTime', () => {
   const now = Date.parse('2026-09-17T12:00:00Z');
+  // The assertions match English wording.
+  const ago = (iso: string) => relativeTime(Date.parse(iso), now, 'en');
 
   it('picks the largest fitting unit', () => {
-    expect(relativeTime(Date.parse('2026-09-15T12:00:00Z'), now)).toMatch(/day/);
-    expect(relativeTime(Date.parse('2026-09-17T09:00:00Z'), now)).toMatch(/hour/);
-    expect(relativeTime(Date.parse('2026-09-17T11:30:00Z'), now)).toMatch(/minute/);
+    expect(ago('2026-09-15T12:00:00Z')).toMatch(/day/);
+    expect(ago('2026-09-17T09:00:00Z')).toMatch(/hour/);
+    expect(ago('2026-09-17T11:30:00Z')).toMatch(/minute/);
   });
 
   it('falls through to seconds for a very recent session', () => {
-    expect(relativeTime(Date.parse('2026-09-17T11:59:50Z'), now)).toMatch(/second/);
+    expect(ago('2026-09-17T11:59:50Z')).toMatch(/second/);
   });
 });

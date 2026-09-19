@@ -22,12 +22,15 @@ afterEach(() => {
   container.remove();
 });
 
+// Exact counts are formatted in the host's locale, so the expected text is too.
+const n = (value: number) => value.toLocaleString();
+
 it('shows how full the context is, with exact figures and over-limit usage on hover', () => {
   expect(meter()).toBeNull();
   setState({ ...base, contextUsage: { usedTokens: 50000, maxTokens: 200000 } });
   // A ring alone until the window runs short; the figures wait on hover.
   expect(meter()?.textContent).toBe('');
-  expect(meter()?.title).toContain('50,000 of 200,000 tokens used, 150K left');
+  expect(meter()?.title).toContain(`${n(50_000)} of ${n(200_000)} tokens used, 150K left`);
   expect(meter()?.getAttribute('aria-valuenow')).toBe('50000');
   setState({ ...base, contextUsage: { usedTokens: 190000, maxTokens: 200000 } });
   expect(meter()?.dataset.level).toBe('high');
@@ -36,7 +39,7 @@ it('shows how full the context is, with exact figures and over-limit usage on ho
   expect(meter()?.textContent).toBe('105%');
   expect(meter()?.dataset.level).toBe('full');
   expect(meter()?.getAttribute('aria-valuenow')).toBe('200000');
-  expect(meter()?.getAttribute('aria-valuetext')).toContain('210,000 of 200,000');
+  expect(meter()?.getAttribute('aria-valuetext')).toContain(`${n(210_000)} of ${n(200_000)}`);
   setState(base);
   expect(meter()).toBeNull();
 });
@@ -55,7 +58,7 @@ it('adds the session token breakdown to the hover text', () => {
       scope: 'conversation',
     },
   });
-  expect(meter()?.title).toContain('Session: 12,500 tokens · 12,000 input');
+  expect(meter()?.title).toContain(`Session: ${n(12_500)} tokens · ${n(12_000)} input`);
   expect(meter()?.title).toContain('for this conversation');
   setState({
     ...base,
