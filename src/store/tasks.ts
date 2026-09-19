@@ -872,6 +872,17 @@ export function clearStagedNotification(taskId: string): void {
   setStore('tasks', taskId, 'stagedNotification', undefined);
 }
 
+/** Change whether an existing task's agent launches with its skip-permissions
+ *  flag. Takes effect the next time the agent starts; a running agent keeps the
+ *  permissions it was launched with. */
+export function setTaskSkipPermissions(taskId: string, enabled: boolean): void {
+  const task = store.tasks[taskId];
+  if (!task) return;
+  if ((task.skipPermissions ?? false) === enabled) return;
+  setStore('tasks', taskId, 'skipPermissions', enabled);
+  void saveState();
+}
+
 export function clearTaskLandingReview(taskId: string): void {
   const task = store.tasks[taskId];
   if (!task) return;
