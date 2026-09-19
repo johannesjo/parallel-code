@@ -292,7 +292,9 @@ export function AgentChatView(props: {
               history={history()}
               onReview={props.onReview ? reviewFile : undefined}
               permissionMode={current().permissionMode ?? props.task.chatPermissionMode}
-              permissionsDisabled={props.task.skipPermissions}
+              // The session's own mode, not the task flag: the flag can now change while a
+              // chat runs, and the session keeps the permissions it was started with.
+              permissionsDisabled={state()?.permissionMode === 'bypassPermissions'}
               onPermissionMode={provider() === 'claude' ? selectPermissionMode : undefined}
               agentName={agentName()}
               state={current()}
