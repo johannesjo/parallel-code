@@ -94,6 +94,7 @@ export {
 export { updateTaskBranch, undoBranchAdoption, dismissBranchAdoptionNotice } from './task-branch';
 export {
   setActiveTask,
+  activateTaskFromPointer,
   setActiveAgent,
   moveActiveTask,
   jumpToTask,

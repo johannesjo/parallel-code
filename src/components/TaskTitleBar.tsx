@@ -2,7 +2,7 @@ import { Show } from 'solid-js';
 import {
   store,
   reorderTask,
-  setActiveTask,
+  activateTaskFromPointer,
   updateTaskName,
   collapseTask,
   getTaskDotStatus,
@@ -158,7 +158,7 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
       itemId: props.task.id,
       getTaskOrder: () => store.taskOrder,
       onReorder: reorderTask,
-      onTap: () => setActiveTask(props.task.id),
+      onTap: () => activateTaskFromPointer(props.task.id),
     });
   }
 
