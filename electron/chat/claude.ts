@@ -164,6 +164,10 @@ export class ClaudeChat implements AgentChat {
     if (this.isClosed())
       throw new Error(this.state.error ?? 'Claude disconnected while connecting.');
     this.noteUnadoptedSettingsMode(settingsMode);
+    // Claude reports its permission mode only in each turn's init message, so
+    // until the first prompt the state would not say this session bypasses
+    // permissions. It is known from how the session was launched.
+    if (this.opts.skipPermissions) this.state.permissionMode = 'bypassPermissions';
     this.state.status = 'ready';
     this.publish();
     void this.refreshContextUsage();
