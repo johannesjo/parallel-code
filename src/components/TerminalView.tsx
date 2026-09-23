@@ -424,13 +424,16 @@ export function TerminalView(props: TerminalViewProps) {
     const attachExisting = props.attachExisting ?? true;
     const preserveSessionOnCleanup = props.preserveSessionOnCleanup === true;
     let ptyDetachedByLanding = false;
+    // Set once the PTY reports exit or never spawned; the backend no longer
+    // has the session, so input and resizes would only fail there.
+    let ptyGone = false;
 
     function taskPtyDetached(): boolean {
       return ptyDetachedByLanding || isLandedTaskState(store.tasks[taskId]?.landingState);
     }
 
     function canForwardInput(): boolean {
-      if (store.tasks[taskId]?.automationWriteInFlight) return false;
+      if (ptyGone || store.tasks[taskId]?.automationWriteInFlight) return false;
       return !taskPtyDetached();
     }
 
@@ -806,7 +809,7 @@ export function TerminalView(props: TerminalViewProps) {
         // Resume PTY reader when xterm.js has caught up
         if (watermark < FLOW_LOW && ptyPaused) {
           ptyPaused = false;
-          if (taskPtyDetached()) return;
+          if (ptyGone || taskPtyDetached()) return;
           invoke(IPC.ResumeAgent, { agentId }).catch((err: unknown) => {
             logWarn('terminal.flow', 'ResumeAgent failed', { err });
             ptyPaused = false;
@@ -840,7 +843,7 @@ export function TerminalView(props: TerminalViewProps) {
       watermark += chunk.length;
 
       // Pause PTY reader when xterm.js falls behind
-      if (watermark > FLOW_HIGH && !ptyPaused && !taskPtyDetached()) {
+      if (watermark > FLOW_HIGH && !ptyPaused && !ptyGone && !taskPtyDetached()) {
         ptyPaused = true;
         invoke(IPC.PauseAgent, { agentId }).catch((err: unknown) => {
           logWarn('terminal.flow', 'PauseAgent failed', { err });
@@ -867,6 +870,7 @@ export function TerminalView(props: TerminalViewProps) {
           setTimeout(() => enqueueInput(cmd + '\r'), 50);
         }
       } else if (msg.type === 'Exit') {
+        ptyGone = true;
         pendingExitPayload = msg.data;
         flushOutputQueue();
         if (!outputWriteInFlight && outputQueue.length === 0 && pendingExitPayload) {
@@ -963,7 +967,7 @@ export function TerminalView(props: TerminalViewProps) {
       if (!pendingResize) return;
       const { cols, rows } = pendingResize;
       pendingResize = null;
-      if (taskPtyDetached()) return;
+      if (ptyGone || taskPtyDetached()) return;
       if (cols === lastSentCols && rows === lastSentRows) return;
       lastSentCols = cols;
       lastSentRows = rows;
@@ -1153,6 +1157,7 @@ export function TerminalView(props: TerminalViewProps) {
         // eslint-disable-next-line solid/reactivity -- promise catch handler reads current prop values intentionally
         .catch((err) => {
           if (spawnDisposed) return;
+          ptyGone = true;
           // eslint-disable-next-line no-control-regex -- intentionally stripping control/escape chars to prevent terminal injection
           const safeErr = String(err).replace(/[\x00-\x1f\x7f]/g, '');
           term?.write(`\x1b[31mFailed to spawn: ${safeErr}\x1b[0m\r\n`);
@@ -1210,7 +1215,7 @@ export function TerminalView(props: TerminalViewProps) {
       searchAddon?.dispose();
       searchAddon = undefined;
       unregisterTerminal(agentId);
-      if (ptyPaused && !taskPtyDetached()) {
+      if (ptyPaused && !ptyGone && !taskPtyDetached()) {
         fireAndForget(IPC.ResumeAgent, { agentId });
         ptyPaused = false;
       }

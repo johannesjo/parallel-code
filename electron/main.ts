@@ -191,6 +191,11 @@ function createWindow() {
       preload: path.join(__dirname, '..', 'electron', 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Terminal output is parsed on requestAnimationFrame, which a throttled
+      // background window (hidden, minimized or occluded on macOS) stops
+      // running. TUIs that query the terminal, such as Codex asking for the
+      // cursor position, then time out waiting for the reply and exit.
+      backgroundThrottling: false,
     },
   });
 
