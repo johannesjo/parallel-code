@@ -6,9 +6,10 @@ import { canResumeSessionId } from '../../electron/shared/session-resume';
 import type { SessionRecord } from '../../electron/shared/session-record';
 
 /** Relative age of a session, via the platform formatter rather than a table
- *  of thresholds. Exported for its test. */
-export function relativeTime(epochMs: number, now = Date.now()): string {
-  const format = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+ *  of thresholds. Exported for its test, which pins `locale` so the wording it
+ *  checks does not depend on the host's default. */
+export function relativeTime(epochMs: number, now = Date.now(), locale?: string): string {
+  const format = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
   const seconds = Math.round((epochMs - now) / 1000);
   const units: [Intl.RelativeTimeFormatUnit, number][] = [
     ['day', 86_400],
