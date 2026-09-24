@@ -22,6 +22,7 @@ import {
   deletePanelUserSize,
   scrollTaskElementIntoView,
   toggleNewTaskPanel,
+  armSpCompletion,
 } from '../store/store';
 import { DocumentWorkspacePanel } from '../documents/DocumentWorkspacePanel';
 import { documentAgentTaskId } from '../documents/task-id';
@@ -363,7 +364,10 @@ export function TilingLayout() {
                                 task.gitIsolation !== 'worktree' || task.externalWorktree
                                   ? 'Close this task? Running agents and shells will be stopped.'
                                   : 'Close this task? The worktree and branch will be deleted.';
-                              if (window.confirm(msg)) closeTask(panelId);
+                              if (window.confirm(msg)) {
+                                armSpCompletion(panelId, { kind: 'closed' });
+                                closeTask(panelId);
+                              }
                             } else if (store.terminals[panelId]) {
                               closeTerminal(panelId);
                             }

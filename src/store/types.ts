@@ -117,6 +117,22 @@ export interface Project {
   documentModels?: Record<string, DocumentModelChoice[]>;
   /** Agent running in the workspace's interactive terminal. */
   documentTerminalAgentId?: string;
+  /** Super Productivity project that tasks of this project are tracked in. */
+  superProductivityProjectId?: string;
+}
+
+/** A Super Productivity task the New Task form was opened from. */
+export interface SpNewTaskSource {
+  taskId: string;
+  title: string;
+  projectId: string | null;
+}
+
+/** The Super Productivity task a Parallel Code task tracks time on. */
+export interface SuperProductivityLink {
+  taskId: string;
+  /** Last title both apps agreed on — the base for the three-way title sync. */
+  syncedTitle: string;
 }
 
 export interface DocumentModelChoice {
@@ -225,6 +241,7 @@ export interface Task {
   dockerImage?: string;
   githubUrl?: string;
   prUrl?: string;
+  superProductivity?: SuperProductivityLink;
   collapsed?: boolean;
   savedAgentDef?: AgentDef;
   savedAgentDefs?: AgentDef[];
@@ -350,6 +367,8 @@ export interface PersistedTask {
   dockerImage?: string;
   githubUrl?: string;
   prUrl?: string;
+  /** Validated on load. */
+  superProductivity?: unknown;
   savedInitialPrompt?: string;
   collapsed?: boolean;
   savedAgentSessionIds?: (string | null)[];
@@ -575,6 +594,8 @@ export interface AppStore {
     name?: string;
     baseBranch?: string;
     canvasSource?: CanvasTaskSource;
+    /** Set when the form was opened from a Super Productivity task. */
+    superProductivity?: SpNewTaskSource;
   } | null;
   missingProjectIds: Record<string, true>;
   remoteAccess: RemoteAccess;

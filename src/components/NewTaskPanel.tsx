@@ -1,5 +1,6 @@
 import { createCanvasTask, validateCanvasTaskSource } from '../store/canvas-tasks';
-import type { AppStore } from '../store/types';
+import type { AppStore, SpNewTaskSource } from '../store/types';
+import { linkNewTaskToSp } from '../store/superProductivityOpen';
 import {
   createSignal,
   createEffect,
@@ -380,6 +381,7 @@ function AgentAutomationOptions(props: {
 
 export function NewTaskPanel(props: NewTaskPanelProps) {
   const [canvasPrefill, setCanvasPrefill] = createSignal<AppStore['newTaskPrefillPrompt']>(null);
+  const [spSource, setSpSource] = createSignal<SpNewTaskSource | null>(null);
   const [prompt, setPrompt] = createSignal('');
   const [advancedOpen, setAdvancedOpen] = createSignal(false);
   // Prompt/name values right after open/prefill — closing is only guarded when
@@ -566,6 +568,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
 
             // Pre-fill from an arena comparison or canvas branch.
             const prefill = store.newTaskPrefillPrompt;
+            setSpSource(prefill?.superProductivity ?? null);
             if (prefill) {
               setPrompt(prefill.prompt);
               setName(prefill.name ?? 'Compare arena results');
@@ -1030,6 +1033,8 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
       if (isFromDrop && p) {
         setPrefillPrompt(taskId, p);
       }
+      const source = spSource();
+      if (source) linkNewTaskToSp(taskId, source, projectId);
       toggleNewTaskPanel(false);
     } catch (err) {
       setError(String(err));

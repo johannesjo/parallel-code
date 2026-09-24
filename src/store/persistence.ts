@@ -20,6 +20,7 @@ import { clampCoordinatorConcurrentTasks } from '../lib/coordinator-limits';
 import { MAX_PROMPT_HISTORY } from '../lib/prompt-history';
 import { normalizeReasoningProfile } from '../investigation/profiles';
 import { restoreReasoningWorkspaces } from '../investigation/editing';
+import { isValidSpId } from '../../electron/shared/super-productivity';
 
 /** A map that fails validation is kept aside rather than crashing load or being overwritten
  *  by the next save; the user is told once. */
@@ -44,6 +45,7 @@ import type {
   Task,
   PersistedState,
   PersistedTask,
+  SuperProductivityLink,
   PersistedWindowState,
   Project,
 } from './types';
@@ -230,6 +232,14 @@ function restoredCanvas(pt: PersistedTask): Pick<Task, 'canvasTabs' | 'canvasAct
   return { canvasTabs: tabs, canvasActiveTab: active };
 }
 
+function restoreSuperProductivityLink(value: unknown): SuperProductivityLink | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { taskId, syncedTitle } = value as Record<string, unknown>;
+  return isValidSpId(taskId) && typeof syncedTitle === 'string'
+    ? { taskId, syncedTitle }
+    : undefined;
+}
+
 function validBranch(value: unknown, exclude?: string): string | undefined {
   return typeof value === 'string' && value.length > 0 && value !== exclude ? value : undefined;
 }
@@ -275,6 +285,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     dockerImage: task.dockerImage,
     githubUrl: task.githubUrl,
     prUrl: task.prUrl,
+    superProductivity: task.superProductivity,
     savedInitialPrompt: task.savedInitialPrompt,
     savedSelectedAgentIndex: task.savedSelectedAgentIndex,
     savedAgentSessionIds: task.savedAgentSessionIds,
@@ -626,6 +637,9 @@ export async function loadState(): Promise<void> {
       p.coverageReportPath = undefined;
     }
     p.tasksCollapsed = typeof p.tasksCollapsed === 'boolean' ? p.tasksCollapsed : undefined;
+    p.superProductivityProjectId = isValidSpId(p.superProductivityProjectId)
+      ? p.superProductivityProjectId
+      : undefined;
     // Migrate defaultDirectMode -> defaultGitIsolation
     const legacy = p as Project & {
       defaultDirectMode?: boolean;
@@ -986,6 +1000,7 @@ export async function loadState(): Promise<void> {
           dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
           githubUrl: pt.githubUrl,
           prUrl: pt.prUrl,
+          superProductivity: restoreSuperProductivityLink(pt.superProductivity),
           savedInitialPrompt: pt.savedInitialPrompt,
           savedSelectedAgentIndex: validAgentIndex(pt.savedSelectedAgentIndex),
           savedPromptedAgentIndexes: validPromptedAgentIndexes(pt.savedPromptedAgentIndexes),
@@ -1123,6 +1138,7 @@ export async function loadState(): Promise<void> {
           dockerImage: typeof pt.dockerImage === 'string' ? pt.dockerImage : undefined,
           githubUrl: pt.githubUrl,
           prUrl: pt.prUrl,
+          superProductivity: restoreSuperProductivityLink(pt.superProductivity),
           savedInitialPrompt: pt.savedInitialPrompt,
           savedSelectedAgentIndex: validAgentIndex(pt.savedSelectedAgentIndex),
           savedPromptedAgentIndexes: validPromptedAgentIndexes(pt.savedPromptedAgentIndexes),

@@ -18,6 +18,11 @@ import { stopAllStepsWatchers } from './ipc/steps.js';
 import { verificationRunner } from './ipc/verify.js';
 import { IPC } from './ipc/channels.js';
 import { resolveUserShell } from './user-shell.js';
+import {
+  findProtocolUrl,
+  handleProtocolUrl,
+  registerParallelCodeProtocol,
+} from './super-productivity/protocol.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -274,8 +279,20 @@ function createWindow() {
 // launch. With the lock, a second launch becomes "show the window".
 if (shouldStartApp) {
   // A second launch (icon, CLI, file manager) reaches the instance that owns
-  // the lock as this event instead of starting a process of its own.
-  app.on('second-instance', () => restoreWindow(mainWindow));
+  // the lock as this event instead of starting a process of its own. On Linux
+  // a `parallelcode://` link arrives the same way, as an argv entry.
+  app.on('second-instance', (_event, argv) => {
+    const url = findProtocolUrl(argv);
+    if (url) handleProtocolUrl(url, mainWindow);
+    else restoreWindow(mainWindow);
+  });
+
+  // macOS delivers links here, possibly before `ready` on a cold start — hence
+  // registered at top level. The link is parked until the renderer asks.
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    handleProtocolUrl(url, mainWindow);
+  });
 
   app.whenReady().then(async () => {
     // Grant microphone and clipboard access (deny camera/video)
@@ -311,6 +328,10 @@ if (shouldStartApp) {
     await startAgentHookRuntime(() => mainWindow);
     setupApplicationMenu();
     createWindow();
+    registerParallelCodeProtocol();
+    // Linux/Windows cold start: the link is a launch argument.
+    const launchUrl = findProtocolUrl(process.argv);
+    if (launchUrl) handleProtocolUrl(launchUrl, mainWindow);
   });
 }
 

@@ -52,6 +52,7 @@ import {
 } from '../store/store';
 import { CustomAgentEditor } from './CustomAgentEditor';
 import { AgentEnvFileEditor } from './AgentEnvFileEditor';
+import { SuperProductivitySettings } from './SuperProductivitySettings';
 import { mod } from '../lib/platform';
 import { DEFAULT_COORDINATOR_CONCURRENT_TASKS } from '../lib/coordinator-limits';
 import { DEFAULT_DOCKER_IMAGE, PROJECT_DOCKERFILE_RELATIVE_PATH } from '../lib/docker';
@@ -894,6 +895,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
           <SettingsSection title="Agent Environment">
             <AgentEnvFileEditor />
+          </SettingsSection>
+
+          <SettingsSection title="Super Productivity">
+            <SuperProductivitySettings />
           </SettingsSection>
 
           <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>

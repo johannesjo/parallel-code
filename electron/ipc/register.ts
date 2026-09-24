@@ -151,6 +151,7 @@ import {
   validatePath,
 } from './validate.js';
 import { registerDocumentHandlers } from '../documents/register.js';
+import { registerSuperProductivityHandlers } from '../super-productivity/register.js';
 import { listSessionsForCwd } from '../sessions/scan.js';
 import { validateBranchName as sharedValidateBranchName, validateUUID } from '../mcp/validation.js';
 import { debug as logDebug, warn as logWarn, errMessage } from '../log.js';
@@ -1463,6 +1464,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.ListCodexModels, () => listCodexModels());
 
   registerDocumentHandlers(win);
+  registerSuperProductivityHandlers();
 
   // --- File links ---
   ipcMain.handle(IPC.OpenPath, (_e, args) => {

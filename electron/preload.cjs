@@ -198,6 +198,19 @@ const ALLOWED_CHANNELS = new Set([
   'list_document_files',
   'read_document_candidate_log',
   'list_sessions',
+  'super_productivity_get_state',
+  'super_productivity_set_token',
+  'super_productivity_clear_token',
+  'super_productivity_list_projects',
+  'super_productivity_get_tracking',
+  'super_productivity_start_tracking',
+  'super_productivity_create_task',
+  'super_productivity_get_task',
+  'super_productivity_get_tasks',
+  'super_productivity_rename_task',
+  'super_productivity_complete_task',
+  'super_productivity_consume_pending_open',
+  'super_productivity_open_task_requested',
 ]);
 
 function isAllowedChannel(channel) {

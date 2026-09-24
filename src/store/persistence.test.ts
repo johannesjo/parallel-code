@@ -336,6 +336,81 @@ describe('coordinator concurrency limit persistence', () => {
   });
 });
 
+describe('Super Productivity link persistence', () => {
+  function stateWith(
+    tasks: Record<string, unknown>,
+    projectExtra: Record<string, unknown>,
+  ): string {
+    return JSON.stringify({
+      projects: [
+        {
+          id: 'project-1',
+          name: 'Repo',
+          path: '/repo',
+          color: 'hsl(0, 70%, 75%)',
+          ...projectExtra,
+        },
+      ],
+      lastProjectId: 'project-1',
+      lastAgentId: null,
+      taskOrder: Object.keys(tasks),
+      collapsedTaskOrder: [],
+      tasks,
+      activeTaskId: 'task-1',
+      sidebarVisible: true,
+    });
+  }
+
+  it('round-trips task links and the project mapping', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      stateWith(
+        {
+          'task-1': {
+            ...persistedTask(def),
+            superProductivity: { taskId: 'sp_task-1', syncedTitle: 'Fix login' },
+          },
+        },
+        { superProductivityProjectId: 'INBOX_PROJECT' },
+      ),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].superProductivity).toEqual({
+      taskId: 'sp_task-1',
+      syncedTitle: 'Fix login',
+    });
+    expect(store.projects[0].superProductivityProjectId).toBe('INBOX_PROJECT');
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    const saved = JSON.parse(lastCall[1].json);
+    expect(saved.tasks['task-1'].superProductivity).toEqual({
+      taskId: 'sp_task-1',
+      syncedTitle: 'Fix login',
+    });
+    expect(saved.projects[0].superProductivityProjectId).toBe('INBOX_PROJECT');
+  });
+
+  it('drops malformed links from hand-edited state', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      stateWith(
+        {
+          'task-1': {
+            ...persistedTask(def),
+            superProductivity: { taskId: '../x', syncedTitle: 'x' },
+          },
+        },
+        { superProductivityProjectId: 42 },
+      ),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].superProductivity).toBeUndefined();
+    expect(store.projects[0].superProductivityProjectId).toBeUndefined();
+  });
+});
+
 describe('collapsed session ownership persistence', () => {
   const session = 'fb4f2bc6-62d9-4b29-a795-240caf2fc459';
   it.each([

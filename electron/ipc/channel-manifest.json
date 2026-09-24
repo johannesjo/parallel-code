@@ -193,5 +193,18 @@
   "ListSessions": "list_sessions",
   "BrowserCommand": "browser_command",
   "BrowserBounds": "browser_bounds",
-  "BrowserState": "browser_state"
+  "BrowserState": "browser_state",
+  "SuperProductivityGetState": "super_productivity_get_state",
+  "SuperProductivitySetToken": "super_productivity_set_token",
+  "SuperProductivityClearToken": "super_productivity_clear_token",
+  "SuperProductivityListProjects": "super_productivity_list_projects",
+  "SuperProductivityGetTracking": "super_productivity_get_tracking",
+  "SuperProductivityStartTracking": "super_productivity_start_tracking",
+  "SuperProductivityCreateTask": "super_productivity_create_task",
+  "SuperProductivityGetTask": "super_productivity_get_task",
+  "SuperProductivityGetTasks": "super_productivity_get_tasks",
+  "SuperProductivityRenameTask": "super_productivity_rename_task",
+  "SuperProductivityCompleteTask": "super_productivity_complete_task",
+  "SuperProductivityConsumePendingOpen": "super_productivity_consume_pending_open",
+  "SuperProductivityOpenTaskRequested": "super_productivity_open_task_requested"
 }

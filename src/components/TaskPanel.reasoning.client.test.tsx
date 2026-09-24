@@ -118,6 +118,7 @@ vi.mock('./EditProjectDialog', () => ({ EditProjectDialog: () => null }));
 vi.mock('./TaskTitleBar', () => ({ TaskTitleBar: () => null }));
 vi.mock('./TaskBranchInfoBar', () => ({ TaskBranchInfoBar: () => null }));
 vi.mock('./TaskBranchAdoptionBanner', () => ({ TaskBranchAdoptionBanner: () => null }));
+vi.mock('./TaskSuperProductivityBanner', () => ({ TaskSuperProductivityBanner: () => null }));
 vi.mock('./TaskNotesBody', () => ({
   TaskNotesBody: (props: ComponentProps<typeof TaskNotesBody>) => (
     <div>

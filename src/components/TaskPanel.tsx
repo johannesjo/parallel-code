@@ -41,6 +41,7 @@ import { EditProjectDialog } from './EditProjectDialog';
 import { TaskTitleBar } from './TaskTitleBar';
 import { TaskBranchInfoBar } from './TaskBranchInfoBar';
 import { TaskBranchAdoptionBanner } from './TaskBranchAdoptionBanner';
+import { TaskSuperProductivityBanner } from './TaskSuperProductivityBanner';
 import { TaskNotesBody } from './TaskNotesBody';
 import { TaskChangedFilesSection } from './TaskChangedFilesSection';
 import { isCommitHashSelection, type CommitSelection } from './CommitNavBar';
@@ -926,6 +927,7 @@ export function TaskPanel(props: TaskPanelProps) {
         }
       />
       <TaskBranchAdoptionBanner task={props.task} />
+      <TaskSuperProductivityBanner taskId={props.task.id} />
       <div
         class="task-header-stack"
         style={{
