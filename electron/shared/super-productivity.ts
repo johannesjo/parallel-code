@@ -57,7 +57,9 @@ export type SpResult<T> =
 export type SpFocusDecision =
   | { kind: 'none' }
   | { kind: 'track' }
-  | { kind: 'banner'; reason: 'other_task' | 'break' | 'done'; trackingTitle?: string };
+  | { kind: 'banner'; reason: SpBannerReason; trackingTitle?: string };
+
+export type SpBannerReason = 'other_task' | 'break' | 'done' | 'missing';
 
 /**
  * What to do when the user settles on a Parallel Code task:
@@ -66,6 +68,8 @@ export type SpFocusDecision =
  * - Super Productivity tracks a task that isn't Parallel Code's → ask
  * - the linked task was completed in Super Productivity → ask, because
  *   starting a done task reopens it there
+ * - the linked task is gone there (archived by "finish day", or deleted) →
+ *   ask, rather than silently start a duplicate
  * - otherwise (nothing tracked, or another Parallel Code task) → track
  *
  * A task counts as Parallel Code's when it, or its parent, is linked:
@@ -75,6 +79,8 @@ export function decideSpFocusAction(input: {
   tracking: SpTrackingState;
   ownSpTaskId: string | null;
   ownSpTaskIsDone: boolean;
+  /** Linked, but Super Productivity no longer has an active task with that id. */
+  ownSpTaskMissing?: boolean;
   linkedSpTaskIds: ReadonlySet<string>;
 }): SpFocusDecision {
   const { tracking, ownSpTaskId, ownSpTaskIsDone, linkedSpTaskIds } = input;
@@ -86,6 +92,7 @@ export function decideSpFocusAction(input: {
   if (current && !isLinkedSpTask(current, linkedSpTaskIds)) {
     return { kind: 'banner', reason: 'other_task', trackingTitle: current.title };
   }
+  if (input.ownSpTaskMissing) return { kind: 'banner', reason: 'missing' };
   if (ownSpTaskId && ownSpTaskIsDone) return { kind: 'banner', reason: 'done' };
   return { kind: 'track' };
 }

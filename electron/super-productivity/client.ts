@@ -15,10 +15,13 @@ import type {
   SpTaskSummary,
   SpTrackingState,
 } from '../shared/super-productivity.js';
-import { appendSpNote } from '../shared/super-productivity.js';
+import { appendSpNote, isValidSpId } from '../shared/super-productivity.js';
 
 export const SP_API_BASE_URL = 'http://127.0.0.1:3876';
-const DEFAULT_TIMEOUT_MS = 5_000;
+const READ_TIMEOUT_MS = 5_000;
+/** Longer than Super Productivity's own 15 s budget: a write that timed out
+ *  here could still land there, and a retried create would duplicate it. */
+const WRITE_TIMEOUT_MS = 20_000;
 /** Enough for every open task in a busy session; bounds a renderer-supplied list. */
 export const SP_MAX_BATCH_IDS = 50;
 const BATCH_CONCURRENCY = 5;
@@ -29,7 +32,8 @@ export interface SpClientDeps {
   getToken: () => string | null;
   fetchImpl?: FetchLike;
   baseUrl?: string;
-  timeoutMs?: number;
+  readTimeoutMs?: number;
+  writeTimeoutMs?: number;
 }
 
 type RawResult = SpResult<unknown>;
@@ -40,15 +44,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function toTaskSummary(value: unknown): SpTaskSummary | null {
-  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.title !== 'string') {
+  if (!isRecord(value) || !isValidSpId(value.id) || typeof value.title !== 'string') {
     return null;
   }
   return {
     id: value.id,
     title: value.title,
     isDone: value.isDone === true,
-    projectId: typeof value.projectId === 'string' && value.projectId ? value.projectId : null,
-    parentId: typeof value.parentId === 'string' && value.parentId ? value.parentId : null,
+    projectId: isValidSpId(value.projectId) ? value.projectId : null,
+    parentId: isValidSpId(value.parentId) ? value.parentId : null,
   };
 }
 
@@ -67,7 +71,7 @@ function toTaskDetail(value: unknown): SpTaskDetail | null {
 }
 
 function toProject(value: unknown): SpProject | null {
-  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.title !== 'string') {
+  if (!isRecord(value) || !isValidSpId(value.id) || typeof value.title !== 'string') {
     return null;
   }
   if (value.isArchived === true) return null;
@@ -89,13 +93,17 @@ function reasonForStatus(status: number, code: string | undefined): SpFailureRea
 export function createSpClient(deps: SpClientDeps) {
   const fetchImpl: FetchLike = deps.fetchImpl ?? ((input, init) => fetch(input, init));
   const baseUrl = deps.baseUrl ?? SP_API_BASE_URL;
-  const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const readTimeoutMs = deps.readTimeoutMs ?? READ_TIMEOUT_MS;
+  const writeTimeoutMs = deps.writeTimeoutMs ?? WRITE_TIMEOUT_MS;
 
   async function request(method: string, path: string, body?: unknown): Promise<RawResult> {
     const token = deps.getToken();
     if (!token) return failure('not_configured');
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(
+      () => controller.abort(),
+      method === 'GET' ? readTimeoutMs : writeTimeoutMs,
+    );
     let res: Response;
     try {
       res = await fetchImpl(`${baseUrl}${path}`, {
@@ -130,8 +138,13 @@ export function createSpClient(deps: SpClientDeps) {
     return failure(reasonForStatus(res.status, code), message);
   }
 
-  async function getTask(taskId: string): Promise<SpResult<SpTaskDetail>> {
-    const res = await request('GET', `/tasks/${encodeURIComponent(taskId)}`);
+  /** `includeIssueUrl` is opt-in there: some providers fetch the issue to build it. */
+  async function getTask(
+    taskId: string,
+    opts: { includeIssueUrl?: boolean } = {},
+  ): Promise<SpResult<SpTaskDetail>> {
+    const query = opts.includeIssueUrl ? '?include=issueUrl' : '';
+    const res = await request('GET', `/tasks/${encodeURIComponent(taskId)}${query}`);
     if (!res.ok) return res;
     const task = toTaskDetail(res.value);
     return task ? { ok: true, value: task } : failure('error', 'Unexpected task shape');
@@ -192,7 +205,13 @@ export function createSpClient(deps: SpClientDeps) {
       projectId?: string;
       parentId?: string;
     }): Promise<SpResult<SpTaskSummary>> {
-      const body: Record<string, string> = { title: input.title };
+      // Literal titles: Super Productivity would otherwise parse `#tag`,
+      // `30m`, `@date` and URLs out of them, and the title sync would then
+      // copy the shortened title back. Older versions ignore the flag.
+      const body: Record<string, string | boolean> = {
+        title: input.title,
+        isIgnoreShortSyntax: true,
+      };
       if (input.parentId) body.parentId = input.parentId;
       else if (input.projectId) body.projectId = input.projectId;
       const res = await request('POST', '/tasks', body);
@@ -225,7 +244,10 @@ export function createSpClient(deps: SpClientDeps) {
     },
 
     async renameTask(taskId: string, title: string): Promise<SpResult<null>> {
-      const res = await request('PATCH', `/tasks/${encodeURIComponent(taskId)}`, { title });
+      const res = await request('PATCH', `/tasks/${encodeURIComponent(taskId)}`, {
+        title,
+        isIgnoreShortSyntax: true,
+      });
       return res.ok ? { ok: true, value: null } : res;
     },
 

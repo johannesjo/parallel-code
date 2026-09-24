@@ -1246,7 +1246,7 @@ export function initMCPListeners(): () => void {
       const task = store.tasks[taskId];
       if (!task) return;
       // The coordinator closed or landed this subtask: it is finished.
-      armSpCompletion(taskId, { kind: 'closed' });
+      armSpCompletion(taskId, { kind: isLandedTaskState(task.landingState) ? 'merged' : 'closed' });
       fireSpCompletion(taskId);
 
       const agentIds = [...task.agentIds];

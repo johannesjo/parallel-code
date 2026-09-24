@@ -75,7 +75,9 @@ export function registerSuperProductivityHandlers(): void {
   );
 
   ipcMain.handle(IPC.SuperProductivityGetTask, (_e, args: IpcArgs) =>
-    client.getTask(spId(args?.taskId, 'taskId')),
+    client.getTask(spId(args?.taskId, 'taskId'), {
+      includeIssueUrl: args?.includeIssueUrl === true,
+    }),
   );
 
   ipcMain.handle(IPC.SuperProductivityGetTasks, (_e, args: IpcArgs) => {

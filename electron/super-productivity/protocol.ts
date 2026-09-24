@@ -21,6 +21,9 @@ export function findProtocolUrl(argv: readonly string[]): string | undefined {
 }
 
 export function handleProtocolUrl(url: string, win: BrowserWindow | null): void {
+  const usable = win && !win.isDestroyed() ? win : null;
+  // Opening a link is asking for the app, valid or not.
+  if (usable) restoreWindow(usable);
   const parsed = parseParallelCodeUrl(url);
   if (!parsed) {
     // Log the scheme only; the rest is untrusted and may be long.
@@ -28,10 +31,7 @@ export function handleProtocolUrl(url: string, win: BrowserWindow | null): void 
     return;
   }
   pendingSpTaskId = parsed.spTaskId;
-  if (win && !win.isDestroyed()) {
-    restoreWindow(win);
-    win.webContents.send(IPC.SuperProductivityOpenTaskRequested);
-  }
+  usable?.webContents.send(IPC.SuperProductivityOpenTaskRequested);
 }
 
 export function consumePendingSpOpen(): string | null {

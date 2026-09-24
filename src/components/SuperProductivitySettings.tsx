@@ -7,6 +7,13 @@ import {
 } from '../store/store';
 import { theme } from '../lib/theme';
 import { errMessage } from '../lib/log';
+
+/** IPC errors arrive as "Error invoking remote method '…': Error: <message>". */
+function readableError(err: unknown): string {
+  return errMessage(err)
+    .replace(/^Error invoking remote method '[^']*': /, '')
+    .replace(/^Error: /, '');
+}
 import type { SpConnectionState } from '../../electron/shared/super-productivity';
 
 const STATUS_TEXT: Record<SpConnectionState, string> = {
@@ -38,7 +45,7 @@ export function SuperProductivitySettings() {
       await connectSuperProductivity(token().trim());
       setToken('');
     } catch (err) {
-      setError(errMessage(err));
+      setError(readableError(err));
     } finally {
       setBusy(false);
     }
@@ -50,7 +57,7 @@ export function SuperProductivitySettings() {
     try {
       await disconnectSuperProductivity();
     } catch (err) {
-      setError(errMessage(err));
+      setError(readableError(err));
     } finally {
       setBusy(false);
     }

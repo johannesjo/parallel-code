@@ -10,7 +10,6 @@ import { warn as logWarn } from '../lib/log';
 import { store, setStore } from './core';
 import { setActiveTask, toggleNewTaskPanel } from './navigation';
 import { showNotification } from './notification';
-import { uncollapseTask } from './tasks';
 import {
   buildPromptFromSpTask,
   type SpFailureReason,
@@ -38,6 +37,7 @@ function failureMessage(reason: SpFailureReason): string {
 async function openNewTaskFromSp(spTaskId: string): Promise<void> {
   const res = await invoke<SpResult<SpTaskDetail>>(IPC.SuperProductivityGetTask, {
     taskId: spTaskId,
+    includeIssueUrl: true,
   });
   if (!res.ok) {
     showNotification(failureMessage(res.reason));
@@ -50,7 +50,8 @@ async function openNewTaskFromSp(spTaskId: string): Promise<void> {
     (task) => task.superProductivity?.taskId === spTask.id && !task.closingStatus,
   );
   if (existing) {
-    if (existing.collapsed) uncollapseTask(existing.id);
+    // Expanding a collapsed task restarts its agents; leave that to the user.
+    if (existing.collapsed) showNotification(`“${existing.name}” is collapsed in Parallel Code`);
     else setActiveTask(existing.id);
     return;
   }

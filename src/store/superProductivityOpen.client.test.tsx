@@ -1,6 +1,7 @@
 // The "Start in Parallel Code" flow: a link parked in the main process opens a
 // pre-filled New Task form, and the task created from it is linked back.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { produce } from 'solid-js/store';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
 import type { Task } from './types';
@@ -54,7 +55,11 @@ describe('open a Super Productivity task in Parallel Code', () => {
       setZoomFactor: vi.fn(),
       getPathForFile: () => '',
     };
-    setStore('tasks', {});
+    setStore(
+      produce((s) => {
+        s.tasks = {};
+      }),
+    );
     setStore('showNewTaskPanel', false);
     setStore('newTaskPrefillPrompt', null);
     setStore('projects', [
@@ -80,6 +85,10 @@ describe('open a Super Productivity task in Parallel Code', () => {
       projectId: 'proj',
       superProductivity: { taskId: 'sp-1', title: 'Fix login', projectId: 'sp-proj' },
     });
+    expect(mockInvoke).toHaveBeenCalledWith(IPC.SuperProductivityGetTask, {
+      taskId: 'sp-1',
+      includeIssueUrl: true,
+    });
   });
 
   it('opens a link that arrives while running', async () => {
@@ -104,6 +113,22 @@ describe('open a Super Productivity task in Parallel Code', () => {
     setStore('taskOrder', ['a']);
     stop = startSpOpenListener();
     await vi.waitFor(() => expect(store.activeTaskId).toBe('a'));
+    expect(store.showNewTaskPanel).toBe(false);
+  });
+
+  it('does not expand a collapsed task (that would restart its agents)', async () => {
+    setStore('tasks', 'a', {
+      id: 'a',
+      name: 'Fix login',
+      agentIds: [],
+      collapsed: true,
+      superProductivity: { taskId: 'sp-1', syncedTitle: 'Fix login' },
+    } as unknown as Task);
+    stop = startSpOpenListener();
+    await vi.waitFor(() =>
+      expect(store.notification).toBe('“Fix login” is collapsed in Parallel Code'),
+    );
+    expect(store.tasks.a.collapsed).toBe(true);
     expect(store.showNewTaskPanel).toBe(false);
   });
 

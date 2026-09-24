@@ -95,6 +95,18 @@ describe('decideSpFocusAction', () => {
     ).toEqual({ kind: 'banner', reason: 'break' });
   });
 
+  it('asks instead of starting a duplicate when the linked task is gone', () => {
+    expect(
+      decideSpFocusAction({
+        tracking: { current: null, isBreak: false },
+        ownSpTaskId: null,
+        ownSpTaskIsDone: false,
+        ownSpTaskMissing: true,
+        linkedSpTaskIds: linked,
+      }),
+    ).toEqual({ kind: 'banner', reason: 'missing' });
+  });
+
   it('asks instead of reopening a task completed in Super Productivity', () => {
     expect(
       decideSpFocusAction({

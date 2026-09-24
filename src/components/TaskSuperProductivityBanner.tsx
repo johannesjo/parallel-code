@@ -27,6 +27,8 @@ function bannerText(banner: SpBanner): JSX.Element {
       return <>Super Productivity is on a break.</>;
     case 'done':
       return <>This task is marked done in Super Productivity.</>;
+    case 'missing':
+      return <>This task's Super Productivity task was archived or deleted.</>;
   }
 }
 

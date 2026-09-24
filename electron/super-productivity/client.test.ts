@@ -106,6 +106,44 @@ describe('createSpClient', () => {
     });
   });
 
+  it('asks for literal titles on create and rename', async () => {
+    const fetchImpl = fakeFetch((_m, _p, body) => ({
+      status: 201,
+      json: { ok: true, data: { id: 'n', ...(body as object) } },
+    }));
+    const client = createSpClient({ getToken: () => 'tok', fetchImpl });
+    await client.createTask({ title: 'Fix #12 in 30m', projectId: 'p1' });
+    await client.renameTask('n', 'Rename #x');
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body as string)).toEqual({
+      title: 'Fix #12 in 30m',
+      projectId: 'p1',
+      isIgnoreShortSyntax: true,
+    });
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body as string)).toEqual({
+      title: 'Rename #x',
+      isIgnoreShortSyntax: true,
+    });
+  });
+
+  it('only asks for the issue link when needed', async () => {
+    const fetchImpl = fakeFetch(() => ok({ id: 't1', title: 'Fix' }));
+    const client = createSpClient({ getToken: () => 'tok', fetchImpl });
+    await client.getTask('t1');
+    await client.getTask('t1', { includeIssueUrl: true });
+    expect(fetchImpl.mock.calls.map((call) => call[0])).toEqual([
+      'http://127.0.0.1:3876/tasks/t1',
+      'http://127.0.0.1:3876/tasks/t1?include=issueUrl',
+    ]);
+  });
+
+  it('rejects task payloads with malformed ids', async () => {
+    const client = createSpClient({
+      getToken: () => 'tok',
+      fetchImpl: fakeFetch(() => ok({ id: '../x', title: 'Fix' })),
+    });
+    expect(await client.getTask('t1')).toMatchObject({ ok: false, reason: 'error' });
+  });
+
   it('creates subtasks under their parent without a projectId', async () => {
     const fetchImpl = fakeFetch((_m, _p, body) => ({
       status: 201,
@@ -116,6 +154,7 @@ describe('createSpClient', () => {
     expect(JSON.parse(fetchImpl.mock.calls[0][1].body as string)).toEqual({
       title: 'Sub',
       parentId: 'parent',
+      isIgnoreShortSyntax: true,
     });
   });
 

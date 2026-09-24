@@ -104,6 +104,7 @@ function structuralSnapshot(): string {
             landingSummary: t.landingSummary,
             landedMetadata: t.landedMetadata,
             controlledBy: t.controlledBy,
+            superProductivity: t.superProductivity,
           },
         ];
       }),

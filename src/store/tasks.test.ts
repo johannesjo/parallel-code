@@ -136,6 +136,11 @@ vi.mock('../lib/github-url', () => ({
   parseGitHubUrl: vi.fn(),
   taskNameFromGitHubUrl: vi.fn(),
 }));
+vi.mock('./superProductivity', () => ({
+  armSpCompletion: vi.fn(),
+  fireSpCompletion: vi.fn(),
+  onTaskRenamed: vi.fn(),
+}));
 
 vi.stubGlobal('window', {
   electron: {
@@ -174,7 +179,9 @@ import {
   reorderTaskVisually,
   createAgentRecord,
   selectActiveNeighborAfterRemoval,
+  updateTaskName,
 } from './tasks';
+import { armSpCompletion, fireSpCompletion, onTaskRenamed } from './superProductivity';
 import { updateTaskBranch } from './task-branch';
 import { getCoordinatorChildren } from './sidebar-order';
 import { recordMergedLines, recordTaskMerged } from './completion';
@@ -1729,6 +1736,80 @@ describe('closeTask — IPC cleanup ordering', () => {
     expect(mockTasks['child-1'].mcpStartupError).toBeUndefined();
     expect(mockTasks['child-1'].signalDoneReceived).toBe(true);
     expect(mockTasks['child-1'].needsReview).toBe(true);
+  });
+});
+
+describe('Super Productivity completion wiring', () => {
+  const worktreeTask = () => ({
+    agentIds: [],
+    shellAgentIds: [],
+    gitIsolation: 'worktree',
+    projectId: 'proj-1',
+    branchName: 'task/task-1',
+    worktreePath: '/repo/.worktrees/task-1',
+    baseBranch: 'main',
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const harness = expectDefined(core.harness, 'mock store harness');
+    harness.reset(harness.state());
+    vi.mocked(getProjectPath).mockReturnValue('/repo');
+    mockProjects = [{ id: 'proj-1', path: '/repo' }];
+    mockInvoke.mockImplementation((channel: string) =>
+      Promise.resolve(
+        channel === IPC.MergeTask ? { lines_added: 10, lines_removed: 2 } : undefined,
+      ),
+    );
+  });
+
+  it('arms a merged completion on merge with cleanup and fires it on removal', async () => {
+    mockTasks['task-1'] = worktreeTask();
+    await mergeTask('task-1', { cleanup: true });
+    expect(armSpCompletion).toHaveBeenCalledWith('task-1', {
+      kind: 'merged',
+      linesAdded: 10,
+      linesRemoved: 2,
+    });
+    expect(fireSpCompletion).toHaveBeenCalledWith('task-1');
+  });
+
+  it('does not complete anything for a merge that keeps the task', async () => {
+    mockTasks['task-1'] = worktreeTask();
+    await mergeTask('task-1', { cleanup: false });
+    expect(armSpCompletion).not.toHaveBeenCalled();
+    expect(fireSpCompletion).not.toHaveBeenCalled();
+  });
+
+  it('closeTask fires on removal but never arms by itself (project removal relies on this)', async () => {
+    mockTasks['task-1'] = worktreeTask();
+    await closeTask('task-1');
+    expect(armSpCompletion).not.toHaveBeenCalled();
+    expect(fireSpCompletion).toHaveBeenCalledWith('task-1');
+  });
+
+  it('a subtask the coordinator closes or lands is completed', () => {
+    const closedHandler = expectDefined(ipcHandlers.get(IPC.MCP_TaskClosed), 'closed handler');
+    // The removal also clears the task's git status entry.
+    Object.assign(expectDefined(core.harness, 'mock store harness').store, { taskGitStatus: {} });
+    mockTasks['child-1'] = { ...worktreeTask(), coordinatedBy: 'coord-1' };
+    mockTasks['child-2'] = {
+      ...worktreeTask(),
+      coordinatedBy: 'coord-1',
+      landingState: 'landed_pending_review',
+    };
+    closedHandler({ taskId: 'child-1' });
+    closedHandler({ taskId: 'child-2' });
+    expect(armSpCompletion).toHaveBeenCalledWith('child-1', { kind: 'closed' });
+    expect(armSpCompletion).toHaveBeenCalledWith('child-2', { kind: 'merged' });
+    expect(fireSpCompletion).toHaveBeenCalledWith('child-1');
+    expect(fireSpCompletion).toHaveBeenCalledWith('child-2');
+  });
+
+  it('a rename is passed on', () => {
+    mockTasks['task-1'] = worktreeTask();
+    updateTaskName('task-1', 'Renamed');
+    expect(onTaskRenamed).toHaveBeenCalledWith('task-1');
   });
 });
 

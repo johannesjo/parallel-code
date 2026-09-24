@@ -12,11 +12,14 @@ import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { warn as logWarn } from '../lib/log';
 import { parseGitHubUrl } from '../lib/github-url';
+import { isDocumentAgentTaskId } from '../documents/task-id';
 import { store, setStore } from './core';
+import { showNotification } from './notification';
 import {
   buildSpDoneNote,
   decideSpFocusAction,
   resolveSpTitleSync,
+  type SpBannerReason,
   type SpConnectionState,
   type SpProject,
   type SpResult,
@@ -42,7 +45,7 @@ export { spConnection };
 
 export interface SpBanner {
   taskId: string;
-  reason: 'other_task' | 'break' | 'done';
+  reason: SpBannerReason;
   trackingTitle?: string;
 }
 
@@ -66,13 +69,28 @@ function isEnabled(): boolean {
   return spConnection() !== 'not_configured';
 }
 
+/** A task whose focus is the user's attention: not a document workspace's
+ *  hidden agent task, and not on its way out. Plain terminals aren't tasks. */
+function isTrackableTask(taskId: string): boolean {
+  const task = store.tasks[taskId];
+  return !!task && !isDocumentAgentTaskId(taskId) && !task.closingStatus && !task.collapsed;
+}
+
 // ---------------------------------------------------------------------------
 // Connection
+
+/** A token saved while Super Productivity was unreachable still gets its
+ *  projects matched — on the first successful check afterwards. */
+let autoMapPending = false;
 
 export async function refreshSpConnection(): Promise<SpConnectionState> {
   try {
     const state = await invoke<SpConnectionState>(IPC.SuperProductivityGetState);
     setSpConnection(state);
+    if (state === 'connected' && autoMapPending) {
+      autoMapPending = false;
+      await autoMapProjectsByName();
+    }
     return state;
   } catch (err) {
     logWarn('super-productivity', 'Could not read connection state', { err: String(err) });
@@ -84,12 +102,14 @@ export async function refreshSpConnection(): Promise<SpConnectionState> {
 export async function connectSuperProductivity(token: string): Promise<SpConnectionState> {
   const state = await invoke<SpConnectionState>(IPC.SuperProductivitySetToken, { token });
   setSpConnection(state);
+  autoMapPending = state !== 'connected';
   if (state === 'connected') await autoMapProjectsByName();
   return state;
 }
 
 export async function disconnectSuperProductivity(): Promise<void> {
   await invoke(IPC.SuperProductivityClearToken);
+  autoMapPending = false;
   setSpConnection('not_configured');
   setSpBanner(null);
 }
@@ -164,9 +184,13 @@ async function createSpTaskFor(taskId: string): Promise<string | null> {
   const parentSpTaskId = task.coordinatedBy
     ? store.tasks[task.coordinatedBy]?.superProductivity?.taskId
     : undefined;
-  const spProjectId = store.projects.find(
-    (p) => p.id === task.projectId,
-  )?.superProductivityProjectId;
+  let spProjectId = store.projects.find((p) => p.id === task.projectId)?.superProductivityProjectId;
+  // Super Productivity accepts an unknown projectId and files the task nowhere
+  // visible, so a mapping to a since-deleted or archived project is dropped.
+  if (spProjectId && !parentSpTaskId) {
+    const spProjects = await listSpProjects();
+    if (spProjects && !spProjects.some((p) => p.id === spProjectId)) spProjectId = undefined;
+  }
   // Fall back when the parent or project no longer exists over there (or the
   // parent is itself a subtask, which Super Productivity rejects).
   const attempts: Record<string, string>[] = [];
@@ -232,7 +256,7 @@ export function onTaskRenamed(taskId: string): void {
 async function refreshLinkedTitles(): Promise<void> {
   const byTaskId = new Map<string, string>();
   for (const task of Object.values(store.tasks)) {
-    if (task?.superProductivity && !task.closingStatus) {
+    if (task?.superProductivity && !task.closingStatus && !isDocumentAgentTaskId(task.id)) {
       byTaskId.set(task.superProductivity.taskId, task.id);
     }
   }
@@ -250,14 +274,14 @@ async function refreshLinkedTitles(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Tracking
 
-async function evaluateFocus(taskId: string, mayStart: boolean): Promise<void> {
-  const task = store.tasks[taskId];
-  if (!task || task.closingStatus || task.collapsed) return;
+async function evaluateFocus(taskId: string): Promise<void> {
+  if (!isTrackableTask(taskId)) return;
 
   const tracking = await callSp<SpTrackingState>(IPC.SuperProductivityGetTracking);
   if (!tracking.ok) return;
 
   let own: SpTaskDetail | null = null;
+  let ownMissing = false;
   const link = store.tasks[taskId]?.superProductivity;
   if (link) {
     const res = await callSp<SpTaskDetail>(IPC.SuperProductivityGetTask, { taskId: link.taskId });
@@ -265,8 +289,9 @@ async function evaluateFocus(taskId: string, mayStart: boolean): Promise<void> {
       own = res.value;
       applyTitleSync(taskId, res.value.title);
     } else if (res.reason === 'not_found') {
-      // Deleted (or archived) over there: a fresh task is created when tracking starts.
-      clearSpLink(taskId);
+      // Archived ("finish day") or deleted over there. Keep the link and ask:
+      // the banner's button links a fresh task (trackTaskInSp).
+      ownMissing = true;
     } else {
       return;
     }
@@ -277,6 +302,7 @@ async function evaluateFocus(taskId: string, mayStart: boolean): Promise<void> {
     tracking: tracking.value,
     ownSpTaskId: own?.id ?? null,
     ownSpTaskIsDone: own?.isDone ?? false,
+    ownSpTaskMissing: ownMissing,
     linkedSpTaskIds: linkedSpTaskIds(),
   });
   if (decision.kind === 'banner') {
@@ -284,20 +310,30 @@ async function evaluateFocus(taskId: string, mayStart: boolean): Promise<void> {
     return;
   }
   if (spBanner()?.taskId === taskId) setSpBanner(null);
-  if (decision.kind === 'track' && mayStart) await trackTaskInSp(taskId);
+  if (decision.kind === 'track') await trackTaskInSp(taskId, { onlyWhileActive: true });
 }
 
-/** Start tracking time on this task in Super Productivity (the banner's button, too). */
-export async function trackTaskInSp(taskId: string): Promise<boolean> {
+/**
+ * Start tracking time on this task in Super Productivity (the banner's
+ * button, too). `onlyWhileActive` drops the start when the user moved on, or
+ * the task started closing, while its Super Productivity task was created.
+ */
+export async function trackTaskInSp(
+  taskId: string,
+  opts: { onlyWhileActive?: boolean } = {},
+): Promise<boolean> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const spTaskId = await ensureSpLink(taskId);
     if (!spTaskId) return false;
+    if (opts.onlyWhileActive && (store.activeTaskId !== taskId || !isTrackableTask(taskId))) {
+      return false;
+    }
     const res = await callSp<null>(IPC.SuperProductivityStartTracking, { taskId: spTaskId });
     if (res.ok) {
       if (spBanner()?.taskId === taskId) setSpBanner(null);
       return true;
     }
-    // Deleted over there since it was linked: link a fresh task and retry once.
+    // Archived or deleted over there since it was linked: link a fresh task and retry once.
     if (res.reason !== 'not_found') return false;
     clearSpLink(taskId);
   }
@@ -345,11 +381,13 @@ export function armSpCompletion(
     prUrl: prUrlOf(task),
   });
   const spTaskId = link.taskId;
+  const name = task.name;
   armedCompletions.set(taskId, () => {
     void callSp<null>(IPC.SuperProductivityCompleteTask, { taskId: spTaskId, note }).then((res) => {
-      if (!res.ok && res.reason !== 'not_found') {
-        logWarn('super-productivity', 'Could not complete linked task', { reason: res.reason });
-      }
+      if (res.ok || res.reason === 'not_found') return;
+      // The task is gone here, so nothing will retry: say so.
+      logWarn('super-productivity', 'Could not complete linked task', { reason: res.reason });
+      showNotification(`Could not mark “${name}” done in Super Productivity`);
     });
   });
 }
@@ -365,10 +403,13 @@ export function fireSpCompletion(taskId: string): void {
 // Lifecycle
 
 /**
- * Watch focus. Only a change of the active task while the window is focused
- * counts — a restore on launch or a background focus change (a coordinator
- * spawning a subtask) is not the user's attention. Plain terminals are not
- * tasks, so focusing one leaves tracking on the last task.
+ * Watch focus. A change of the active task counts once focus has rested on
+ * it and the window is focused — a restore on launch or a background focus
+ * change (a coordinator spawning a subtask) is not the user's attention. The
+ * window check happens when the timer fires, not at the change: clicking a
+ * task in a background window can reach the renderer before the window's
+ * focus event does. Plain terminals are not tasks, so focusing one leaves
+ * tracking on the last task.
  */
 export function startSuperProductivitySync(windowFocused: Accessor<boolean>): () => void {
   void refreshSpConnection();
@@ -381,12 +422,14 @@ export function startSuperProductivitySync(windowFocused: Accessor<boolean>): ()
         (taskId) => {
           if (settleTimer) clearTimeout(settleTimer);
           settleTimer = undefined;
-          if (!taskId || !untrack(windowFocused) || !isEnabled()) return;
-          if (!store.tasks[taskId]) return;
+          // A banner belongs to the task it was raised on; its button would
+          // otherwise pull tracking back to a task the user left.
+          if (untrack(spBanner)?.taskId !== taskId) setSpBanner(null);
+          if (!taskId || !isEnabled() || !isTrackableTask(taskId)) return;
           settleTimer = setTimeout(() => {
             settleTimer = undefined;
-            if (store.activeTaskId === taskId && windowFocused()) {
-              void evaluateFocus(taskId, true);
+            if (store.activeTaskId === taskId && untrack(windowFocused)) {
+              void evaluateFocus(taskId);
             }
           }, FOCUS_SETTLE_MS);
         },
@@ -399,11 +442,12 @@ export function startSuperProductivitySync(windowFocused: Accessor<boolean>): ()
         (focused) => {
           if (!focused || !isEnabled()) return;
           void refreshLinkedTitles();
-          // Refresh a showing banner, but never start tracking just because the
-          // window came back: the user may have changed tracking on purpose.
+          // Re-check a showing banner: if the conflict was resolved over there
+          // (the other task stopped, the break ended), the focused task gets
+          // tracked like any focused task. Without a banner, coming back to
+          // the window changes nothing.
           const bannerTask = untrack(spBanner)?.taskId;
-          if (bannerTask && bannerTask === store.activeTaskId)
-            void evaluateFocus(bannerTask, false);
+          if (bannerTask && bannerTask === store.activeTaskId) void evaluateFocus(bannerTask);
         },
         { defer: true },
       ),
