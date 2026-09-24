@@ -152,6 +152,14 @@
         "to": "docker/"
       }
     ],
+    "protocols": [
+      {
+        "name": "Parallel Code",
+        "schemes": [
+          "parallelcode"
+        ]
+      }
+    ],
     "linux": {
       "target": [
         "AppImage",
