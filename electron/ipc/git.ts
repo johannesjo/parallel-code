@@ -2,7 +2,7 @@ import { execFile, execFileSync as _execFileSync, spawn } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
-import type { BrowserWindow } from 'electron';
+import type { Notify } from './notify.js';
 import { debug as logDebug } from '../log.js';
 import {
   appendGitInfoExcludeBlock,
@@ -2174,7 +2174,7 @@ export async function getFileDiffFromBranch(
 }
 
 export function pushTask(
-  win: BrowserWindow,
+  notify: Notify,
   projectRoot: string,
   branchName: string,
   channelId: string,
@@ -2185,11 +2185,7 @@ export function pushTask(
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    const send = (msg: string) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send(`channel:${channelId}`, msg);
-      }
-    };
+    const send = (msg: string) => notify(`channel:${channelId}`, msg);
 
     proc.stdout?.on('data', (chunk: Buffer) => {
       send(chunk.toString('utf8'));

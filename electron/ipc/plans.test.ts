@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import type { BrowserWindow } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC } from './channels.js';
 import { readPlanForWorktree, startPlanWatcher, stopAllPlanWatchers } from './plans.js';
@@ -45,8 +44,7 @@ function writeFile(relativePath: string, content = '# Theme plan'): void {
 
 function watchPlans() {
   const send = vi.fn();
-  const win = { isDestroyed: () => false, webContents: { send } } as unknown as BrowserWindow;
-  startPlanWatcher(win, 'task-1', worktreePath);
+  startPlanWatcher(send, 'task-1', worktreePath);
   return send;
 }
 

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import type { BrowserWindow } from 'electron';
+import type { Notify } from './notify.js';
 import { IPC } from './channels.js';
 
 interface PlanWatcher {
@@ -182,7 +182,7 @@ async function readUncommittedPlan(
 
 /** One plan publish to the renderer. */
 interface PlanPublish {
-  win: BrowserWindow;
+  notify: Notify;
   taskId: string;
   plan: PlanFile | null;
   /** The plan was found already on disk rather than seen being written. The
@@ -194,12 +194,11 @@ interface PlanPublish {
 }
 
 /** Sends plan content for a task to the renderer. */
-function sendPlanContent({ win, taskId, plan, recovered }: PlanPublish): void {
-  if (win.isDestroyed()) return;
+function sendPlanContent({ notify, taskId, plan, recovered }: PlanPublish): void {
   if (plan) {
-    win.webContents.send(IPC.PlanContent, { taskId, ...plan, recovered });
+    notify(IPC.PlanContent, { taskId, ...plan, recovered });
   } else {
-    win.webContents.send(IPC.PlanContent, {
+    notify(IPC.PlanContent, {
       taskId,
       content: null,
       fileName: null,
@@ -278,7 +277,7 @@ function startDirPolling(
  * The plan found on disk at startup is marked `recovered` so the renderer
  * shows it without opening the canvas.
  */
-export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePath: string): void {
+export function startPlanWatcher(notify: Notify, taskId: string, worktreePath: string): void {
   stopPlanWatcher(taskId);
 
   const plansDirs = PLAN_DIRS.map((rel) => path.join(worktreePath, rel));
@@ -315,7 +314,7 @@ export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePat
       // sessions, and the agent may have created it a step before writing into
       // it. Only a plan actually inside it is news; anything else is already out.
       if (fromAttachOnly && !isPlanInDirs(current.worktreePath, dirs, plan)) return;
-      sendPlanContent({ win, taskId, plan });
+      sendPlanContent({ notify, taskId, plan });
     }, 200);
   };
 
@@ -334,7 +333,7 @@ export function startPlanWatcher(win: BrowserWindow, taskId: string, worktreePat
     .then((plan) => {
       // A live event or a replacement watcher takes precedence over this startup read.
       if (plan && watchers.get(taskId) === entry && !changedSinceStart)
-        sendPlanContent({ win, taskId, plan, recovered: true });
+        sendPlanContent({ notify, taskId, plan, recovered: true });
     })
     .catch((error: unknown) => console.warn('[plans] Failed to recover existing plan:', error));
 }

@@ -30,7 +30,7 @@ import {
 import { truncateDiffForTool } from './diff-format.js';
 
 const execAsync = promisify(execFile);
-import type { BrowserWindow } from 'electron';
+import type { Notify } from '../ipc/notify.js';
 import { createTask as createBackendTask, deleteTask } from '../ipc/tasks.js';
 import { getSkipPermissionsArgs } from '../shared/skip-permissions.js';
 import {
@@ -255,7 +255,7 @@ export class Coordinator {
   // so parallel create_task calls can't overshoot the limit.
   private pendingCreateCounts = new Map<string, number>();
   private recentlyDelivered = new ReplayCache<WaitForSignalDoneResult>();
-  private win: BrowserWindow | null = null;
+  private notify: Notify | null = null;
   private projectRoot: string | null = null;
   private projectId: string | null = null;
   private defaultCoordinatorTaskId: string | null = null;
@@ -745,8 +745,8 @@ export class Coordinator {
     }
   }
 
-  setWindow(win: BrowserWindow): void {
-    this.win = win;
+  setNotify(notify: Notify): void {
+    this.notify = notify;
   }
 
   setNotificationDelayMs(ms: number): void {
@@ -1298,7 +1298,7 @@ export class Coordinator {
     this.subscribers.set(agentId, outputCb);
 
     // Spawn the agent process
-    if (!this.win) throw new Error('No window set on coordinator');
+    if (!this.notify) throw new Error('No notifier set on coordinator');
 
     const agentCommand = opts.agentCommand ?? coordinatorState.spawnDefaults.command;
     const dockerContainerName =
@@ -1360,7 +1360,7 @@ export class Coordinator {
 
       await assertLaunch();
       await spawnAgent(
-        this.win,
+        this.notify,
         {
           taskId: task.id,
           agentId,
@@ -3319,8 +3319,6 @@ export class Coordinator {
   }
 
   private notifyRenderer(channel: string, data: unknown): void {
-    if (this.win && !this.win.isDestroyed()) {
-      this.win.webContents.send(channel, data);
-    }
+    this.notify?.(channel, data);
   }
 }

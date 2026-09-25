@@ -117,6 +117,7 @@ import {
 } from './git.js';
 import { createTask, deleteTask } from './tasks.js';
 import { settleWorktreeIntents } from './worktree-intents.js';
+import { windowNotifier } from './window-notifier.js';
 import { listAgents } from './agents.js';
 import {
   saveAppState,
@@ -463,6 +464,7 @@ function createThrottledForwarder(
  * git-exclude a generated file must not block coordinator startup.
  */
 export function registerAllHandlers(win: BrowserWindow): void {
+  const notify = windowNotifier(win);
   ipcMain.handle(IPC.AgentChat, async (_event, args: Record<string, unknown>) => {
     assertString(args.agentId, 'agentId');
     assertString(args.action, 'action');
@@ -561,8 +563,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       );
       try {
         ensurePlansDirectory(args.cwd as string);
-        startPlanWatcher(win, args.taskId, args.cwd as string);
-        if (args.stepsEnabled) startStepsWatcher(win, args.taskId, args.cwd as string);
+        startPlanWatcher(notify, args.taskId, args.cwd as string);
+        if (args.stepsEnabled) startStepsWatcher(notify, args.taskId, args.cwd as string);
       } catch (err) {
         console.warn('Failed to start chat plan/steps watchers:', err);
       }
@@ -887,7 +889,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       assertPendingSpawn();
       releaseAdmission?.assertAllowed();
       try {
-        await spawnAgent(win, canvasTools ? { ...args, canvasTools: true } : args, () => {
+        await spawnAgent(notify, canvasTools ? { ...args, canvasTools: true } : args, () => {
           assertPendingSpawn();
           releaseAdmission?.assertAllowed();
         });
@@ -904,13 +906,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
       }
       if (!args.isShell && args.cwd) {
         try {
-          startPlanWatcher(win, args.taskId, args.cwd);
+          startPlanWatcher(notify, args.taskId, args.cwd);
         } catch (err) {
           console.warn('Failed to start plan watcher:', err);
         }
         if (args.stepsEnabled) {
           try {
-            startStepsWatcher(win, args.taskId, args.cwd);
+            startStepsWatcher(notify, args.taskId, args.cwd);
           } catch (err) {
             console.warn('Failed to start steps watcher:', err);
           }
@@ -989,7 +991,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const buildContext = getOptionalBuildContext(args.buildContext);
     const imageTag = getOptionalImageTag(args.imageTag);
     return buildDockerImage(
-      win,
+      notify,
       args.onOutputChannel,
       dockerfilePath || buildContext || imageTag
         ? { dockerfilePath, buildContext, imageTag }
@@ -1170,7 +1172,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const projectRoot = projectRootArg(args);
     const branchName = branchNameArg(args);
     assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
-    return pushTask(win, projectRoot, branchName, args.onOutput.__CHANNEL_ID__);
+    return pushTask(notify, projectRoot, branchName, args.onOutput.__CHANNEL_ID__);
   });
   ipcMain.handle(IPC.RebaseTask, (_e, args) => {
     const worktreePath = worktreePathArg(args);
@@ -2277,7 +2279,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       const { Coordinator } = await import('../mcp/coordinator.js');
       coordinator = new Coordinator();
       coordinator.setOrchestrationEnabled(delegation.isOrchestrationEnabled());
-      coordinator.setWindow(win);
+      coordinator.setNotify(notify);
       coordinator.setSessionMcpProvider((task) => {
         if (!delegation.getTask(task.coordinatorTaskId) || !remoteServer) return undefined;
         if (!delegation.getTask(task.id)) {

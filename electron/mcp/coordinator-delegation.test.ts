@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   setupCoordinatorHarness,
   resetCoordinatorMocks,
-  mockWin,
+  mockNotify,
   mockCreateBackendTask,
   mockSpawnAgent,
   mockExecFile,
@@ -59,7 +59,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   resetCoordinatorMocks();
   coordinator = new Coordinator();
-  coordinator.setWindow(mockWin);
+  coordinator.setNotify(mockNotify);
   coordinator.registerCoordinator('parent', 'project', {
     projectRoot: '/project',
     branchName: 'parent',
@@ -95,7 +95,7 @@ describe('ordinary delegation lifecycle', () => {
       'parent',
     );
     expect(mockSpawnAgent).toHaveBeenCalledWith(
-      mockWin,
+      mockNotify,
       expect.objectContaining({ command: 'codex', envFile: '/agent.env' }),
       expect.any(Function),
     );
@@ -111,7 +111,7 @@ describe('ordinary delegation lifecycle', () => {
   it('uses per-assignment launch options without mutating the parent defaults', async () => {
     await create({ agentEnvFile: '/selected.env', skipPermissions: true });
     expect(mockSpawnAgent).toHaveBeenLastCalledWith(
-      mockWin,
+      mockNotify,
       expect.objectContaining({
         envFile: '/selected.env',
         args: expect.arrayContaining(['--dangerously-bypass-approvals-and-sandbox']),
@@ -121,7 +121,7 @@ describe('ordinary delegation lifecycle', () => {
     coordinator.removeCoordinatedTask('task-1');
     await create();
     expect(mockSpawnAgent).toHaveBeenLastCalledWith(
-      mockWin,
+      mockNotify,
       expect.objectContaining({ envFile: '/agent.env', args: [] }),
       expect.any(Function),
     );

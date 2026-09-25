@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { Coordinator } from './coordinator.js';
+import type { Notify } from '../ipc/notify.js';
 import { writeToAgent } from '../ipc/pty.js';
 
 const RUN_REAL_AGENT_SMOKE = process.env.RUN_REAL_AGENT_SMOKE === '1';
@@ -28,15 +29,10 @@ interface RendererEvent {
   payload: unknown;
 }
 
-function createMockWindow(events: RendererEvent[]): import('electron').BrowserWindow {
-  return {
-    isDestroyed: () => false,
-    webContents: {
-      send: (channel: string, payload: unknown) => {
-        events.push({ channel, payload });
-      },
-    },
-  } as unknown as import('electron').BrowserWindow;
+function createMockNotify(events: RendererEvent[]): Notify {
+  return (channel, payload) => {
+    events.push({ channel, payload });
+  };
 }
 
 function runGit(cwd: string, args: string[]): void {
@@ -174,7 +170,7 @@ describeRealAgents('Coordinator real agent startup smoke', () => {
       }
 
       try {
-        coordinator.setWindow(createMockWindow(rendererEvents));
+        coordinator.setNotify(createMockNotify(rendererEvents));
         coordinator.setDefaultProject('proj-1', repo);
         coordinator.registerCoordinator('coord-1', 'proj-1', {
           branchName: 'main',

@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import type { BrowserWindow } from 'electron';
+import type { Notify } from './notify.js';
 import { RingBuffer } from '../remote/ring-buffer.js';
 import { resolveUserShell } from '../user-shell.js';
 import {
@@ -198,10 +198,8 @@ function toIpcBytes(buf: Buffer): Uint8Array {
   return new Uint8Array(buf);
 }
 
-function sendToChannel(win: BrowserWindow, channelId: string, msg: unknown): void {
-  if (!win.isDestroyed()) {
-    win.webContents.send(`channel:${channelId}`, msg);
-  }
+function sendToChannel(notify: Notify, channelId: string, msg: unknown): void {
+  notify(`channel:${channelId}`, msg);
 }
 
 // --- PTY event bus for spawn/exit/interrupt notifications ---
@@ -544,7 +542,7 @@ function buildPtySpawnSpec(
  * the relaunch is visible rather than looking like one continuous run. Written
  * to the new session's buffer too, so a renderer reload keeps it.
  */
-function replayCarriedScrollback(win: BrowserWindow, session: PtySession): void {
+function replayCarriedScrollback(notify: Notify, session: PtySession): void {
   const carried = carriedScrollback.get(session.agentId);
   if (!carried) return;
   carriedScrollback.delete(session.agentId);
@@ -556,7 +554,7 @@ function replayCarriedScrollback(win: BrowserWindow, session: PtySession): void 
   const replay = Buffer.concat([Buffer.from(carried, 'base64'), divider]);
   session.scrollback.write(replay);
   session.queries.feedDisplayOnly(replay.toString('utf8'));
-  sendToChannel(win, session.channelId, { type: 'Data', data: toIpcBytes(replay) });
+  sendToChannel(notify, session.channelId, { type: 'Data', data: toIpcBytes(replay) });
 }
 
 function cleanupExistingSession(agentId: string, existing: PtySession | undefined): void {
@@ -568,7 +566,7 @@ function cleanupExistingSession(agentId: string, existing: PtySession | undefine
 }
 
 function attachPtyOutputHandlers(
-  win: BrowserWindow,
+  notify: Notify,
   session: PtySession,
   args: SpawnAgentArgs,
   command: string,
@@ -580,7 +578,7 @@ function attachPtyOutputHandlers(
   const containerName = session.containerName;
 
   const send = (msg: unknown) => {
-    sendToChannel(win, session.channelId, msg);
+    sendToChannel(notify, session.channelId, msg);
   };
 
   if (args.dockerMode) {
@@ -723,7 +721,7 @@ export function applyAgentHookLaunch(
 }
 
 export async function spawnAgent(
-  win: BrowserWindow,
+  notify: Notify,
   args: SpawnAgentArgs,
   beforeSpawn?: () => void,
 ): Promise<void> {
@@ -746,7 +744,7 @@ export async function spawnAgent(
       existing.queries.resize(args.cols, args.rows);
     }
     if (existing.scrollback.length > 0) {
-      sendToChannel(win, channelId, {
+      sendToChannel(notify, channelId, {
         type: 'Data',
         data: toIpcBytes(existing.scrollback.read()),
       });
@@ -842,8 +840,8 @@ export async function spawnAgent(
     containerName: spawnSpec.containerName,
   };
   sessions.set(args.agentId, session);
-  replayCarriedScrollback(win, session);
-  attachPtyOutputHandlers(win, session, args, command);
+  replayCarriedScrollback(notify, session);
+  attachPtyOutputHandlers(notify, session, args, command);
 
   emitPtyEvent('spawn', args.agentId);
 }
@@ -1354,7 +1352,7 @@ let activeBuild: Promise<{ ok: boolean; error?: string }> | null = null;
  * in-flight promise; custom builds are never deduplicated.
  */
 export function buildDockerImage(
-  win: BrowserWindow,
+  notify: Notify,
   onOutputChannel: string,
   opts?: { dockerfilePath?: string; buildContext?: string; imageTag?: string },
 ): Promise<{ ok: boolean; error?: string }> {
@@ -1382,11 +1380,7 @@ export function buildDockerImage(
     const hash = hashDockerfile(resolvedDockerfilePath) ?? 'unknown';
     const imageTag = opts?.imageTag ?? DOCKER_DEFAULT_IMAGE;
 
-    const send = (text: string) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send(onOutputChannel, text);
-      }
-    };
+    const send = (text: string) => notify(onOutputChannel, text);
 
     const proc = cpSpawn(
       'docker',

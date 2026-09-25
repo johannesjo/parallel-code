@@ -35,7 +35,7 @@ import {
   mockVerifyCancel,
   mockFsMkdir,
   mockOnAgentHookEvent,
-  mockWin,
+  mockNotify,
   getExitHandler,
   getHookEventHandler,
   getInterruptHandler,
@@ -68,7 +68,7 @@ describe('Coordinator registerCoordinator — idempotency', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
   });
 
@@ -1072,7 +1072,7 @@ describe('Coordinator coordinator notifications', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
   });
 
@@ -1396,7 +1396,7 @@ describe('Coordinator signal_done', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
   });
 
@@ -1503,7 +1503,7 @@ describe('Coordinator land_self', () => {
     vi.mocked(mockDeleteTask).mockResolvedValue(undefined);
     mockGit();
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1', { worktreePath: '/tmp/project' });
     await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
@@ -1935,7 +1935,7 @@ describe('Coordinator sub-agent spawn settings', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -2074,7 +2074,7 @@ describe('Coordinator settings.local.json sub-task injection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
     mockCreateBackendTask.mockResolvedValue({
@@ -2165,7 +2165,7 @@ describe('Coordinator waitForIdle', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -2268,7 +2268,7 @@ describe('Coordinator waitForSignalDone', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -2406,7 +2406,7 @@ describe('Coordinator sendPrompt', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -2814,7 +2814,7 @@ describe('Coordinator mergeTask active ownership guard', () => {
       lines_removed: 0,
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -2891,7 +2891,7 @@ describe('Coordinator deregisterCoordinator', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
   });
 
@@ -3077,7 +3077,7 @@ describe('Coordinator per-task projectRoot', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project-a');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -3109,7 +3109,7 @@ describe('Coordinator waiter resolver cleanup on timeout', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -3171,7 +3171,7 @@ describe('Coordinator MCP_TaskCreated spawn settings', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -3265,7 +3265,7 @@ describe('Coordinator sub-task MCP config isolation', () => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(false);
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -3345,7 +3345,7 @@ describe('Coordinator MCP config restart rewrite', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -3505,7 +3505,7 @@ describe('Coordinator two-class token — subtask configs use subtaskToken', () 
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -3582,7 +3582,7 @@ describe('Coordinator hydrateTask — restart hydration', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -3888,7 +3888,7 @@ describe('Coordinator setTaskControl — queued send until activity lease clears
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -3979,7 +3979,7 @@ describe('Coordinator waitForSignalDone — notification lifecycle', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -4098,7 +4098,7 @@ describe('Coordinator cleanupTask — failure resilience', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -4347,7 +4347,7 @@ describe('Coordinator cleanupTask — Docker sub-task container stop', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
     coordinator.setDockerContainerName('coord-1', 'my-coord-container');
@@ -4409,7 +4409,7 @@ describe('Coordinator setMCPServerInfo — token rotation', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -4490,12 +4490,12 @@ describe('Multiple Docker coordinators — isolation', () => {
     });
 
     coordA = new Coordinator();
-    coordA.setWindow(mockWin);
+    coordA.setNotify(mockNotify);
     coordA.setDefaultProject('proj-a', '/tmp/project-a');
     coordA.registerCoordinator('coord-a', 'proj-a');
 
     coordB = new Coordinator();
-    coordB.setWindow(mockWin);
+    coordB.setNotify(mockNotify);
     coordB.setDefaultProject('proj-b', '/tmp/project-b');
     coordB.registerCoordinator('coord-b', 'proj-b');
   });
@@ -4547,7 +4547,7 @@ describe('Coordinator Docker sub-task — per-container spawn', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
     coordinator.setDockerContainerName('coord-1', 'my-coord-container');
@@ -4593,7 +4593,7 @@ describe('Coordinator interrupted bootstrap', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -4638,7 +4638,7 @@ describe('Coordinator very fast prompt — scrollback detection', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -4708,7 +4708,7 @@ describe('Coordinator close with active sub-tasks', () => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(false);
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -4799,7 +4799,7 @@ describe('Coordinator restart hydration with Docker container name', () => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(false);
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -4856,7 +4856,7 @@ describe('Coordinator removeCoordinatedTask', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -5008,7 +5008,7 @@ describe('Coordinator restart round-trip integration', () => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(false);
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -5197,7 +5197,7 @@ describe('Coordinator hydrateTask — mcpConfigPath directory scoping', () => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(false);
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
     coordinator.setMCPServerInfo(
@@ -5345,7 +5345,7 @@ describe('Coordinator closeTask — per-task config isolation (two sub-tasks)', 
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(false);
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
     coordinator.setMCPServerInfo(
@@ -5400,7 +5400,7 @@ describe('Coordinator Docker mode — per-container sub-tasks', () => {
       worktree_path: '/tmp/project/.worktrees/task/docker-sub',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
 
     // Register coordinator in Docker mode
@@ -5520,7 +5520,7 @@ describe('Coordinator waitForSignalDone — requestId replay after transport fai
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -5661,7 +5661,7 @@ describe('Coordinator getTaskDiff — preamble-bearing files', () => {
       worktree_path: '/tmp/worktree',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
     vi.mocked(getDiffBaseSha).mockResolvedValue('base-sha-abc');
@@ -5894,7 +5894,7 @@ describe('Coordinator deregisterCoordinator — .mcp.json cleanup', () => {
       worktree_path: '/tmp/test',
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
     coordinator.setMcpJsonInfo('coord-1', '/tmp/.mcp.json', false);
@@ -6031,7 +6031,7 @@ describe('Coordinator createTask — deregister race', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
@@ -6102,7 +6102,7 @@ describe('Coordinator createTask — concurrency enforcement', () => {
       };
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1', { maxConcurrentTasks: 2 });
   });
@@ -6228,7 +6228,7 @@ describe('Coordinator hook-driven task state', () => {
       };
     });
     coordinator = new Coordinator();
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });

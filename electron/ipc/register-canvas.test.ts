@@ -164,7 +164,7 @@ it.each(['transport', 'configuration'])(
       env: { KEEP: 'value' },
     };
     expect(await handlers.get(IPC.SpawnAgent)?.(undefined, args)).toEqual({ canvasTools: false });
-    expect(spawnAgent).toHaveBeenCalledWith(win, args, expect.any(Function));
+    expect(spawnAgent).toHaveBeenCalledWith(expect.any(Function), args, expect.any(Function));
     if (failure === 'configuration')
       expect(server.unregisterCanvasAgent).toHaveBeenCalledWith('agent');
   },
@@ -195,7 +195,7 @@ it.each([
     };
     await handlers.get(IPC.SpawnAgent)?.(undefined, args);
     expect(start).not.toHaveBeenCalled();
-    expect(spawnAgent).toHaveBeenCalledWith(win, args, expect.any(Function));
+    expect(spawnAgent).toHaveBeenCalledWith(expect.any(Function), args, expect.any(Function));
   },
 );
 
@@ -234,7 +234,7 @@ it('starts an ordinary Codex terminal with canvas MCP when the development port 
     });
     expect(result).toEqual({ canvasTools: true });
     expect(spawnAgent).toHaveBeenCalledWith(
-      win,
+      expect.any(Function),
       expect.objectContaining({
         canvasTools: true,
         args: ['--config', expect.stringContaining('mcp_servers.parallel-code=')],
@@ -353,7 +353,7 @@ it('preserves the configured capability when reattaching, without reconfiguring 
   expect(await handlers.get(IPC.SpawnAgent)?.(undefined, args)).toEqual({ canvasTools: true });
   expect(start).not.toHaveBeenCalled();
   expect(spawnAgent).toHaveBeenCalledWith(
-    win,
+    expect.any(Function),
     { ...args, canvasTools: true },
     expect.any(Function),
   );

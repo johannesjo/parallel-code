@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { BrowserWindow } from 'electron';
+import type { Notify } from './notify.js';
 import { IPC } from './channels.js';
 import { appendGitInfoExcludeBlock } from './git-exclude.js';
 import {
@@ -34,12 +34,11 @@ const watchers = new Map<string, StepsWatcher>();
 const processedCount = new Map<string, number>();
 
 /** Sends parsed steps content for a task to the renderer. */
-function sendStepsContent(win: BrowserWindow, taskId: string, stepsFile: string): void {
-  if (win.isDestroyed()) return;
+function sendStepsContent(notify: Notify, taskId: string, stepsFile: string): void {
   const steps = readStepsFile(stepsFile);
   logInfo('steps', 'send', { taskId, len: steps?.length ?? null });
   if (steps) applyTimestamps(steps, stepsFile, taskId);
-  win.webContents.send(IPC.StepsContent, { taskId, steps });
+  notify(IPC.StepsContent, { taskId, steps });
 }
 
 /**
@@ -146,7 +145,7 @@ function ensureStepsIgnored(worktreePath: string): void {
  * An initial read is performed after starting the watcher to handle
  * the race condition where the agent writes before the watcher is set up.
  */
-export function startStepsWatcher(win: BrowserWindow, taskId: string, worktreePath: string): void {
+export function startStepsWatcher(notify: Notify, taskId: string, worktreePath: string): void {
   stopStepsWatcher(taskId);
   ensureStepsIgnored(worktreePath);
 
@@ -169,7 +168,7 @@ export function startStepsWatcher(win: BrowserWindow, taskId: string, worktreePa
     if (current.timeout) clearTimeout(current.timeout);
     current.timeout = setTimeout(() => {
       current.timeout = null;
-      sendStepsContent(win, taskId, current.stepsFile);
+      sendStepsContent(notify, taskId, current.stepsFile);
     }, 200);
   };
 
@@ -188,7 +187,7 @@ export function startStepsWatcher(win: BrowserWindow, taskId: string, worktreePa
         if (!current) return;
         attachStepsDirWatcher(current, taskId, onChange);
         if (fs.existsSync(stepsFile)) {
-          sendStepsContent(win, taskId, stepsFile);
+          sendStepsContent(notify, taskId, stepsFile);
         }
       });
       parentWatcher.on('error', (err) => {
@@ -204,7 +203,7 @@ export function startStepsWatcher(win: BrowserWindow, taskId: string, worktreePa
 
   // Initial read to catch files written before the watcher was set up
   if (fs.existsSync(stepsFile)) {
-    sendStepsContent(win, taskId, stepsFile);
+    sendStepsContent(notify, taskId, stepsFile);
   }
 }
 

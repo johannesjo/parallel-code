@@ -1,6 +1,6 @@
 # Runtime separation plan
 
-Status: revised after three reviews (two focused, one adversarial) and re-checked against the code on 2026-09-25. Steps 0, 1 and 2 are done. Everything else is a proposal. References name functions rather than line numbers, because line numbers drift.
+Status: revised after three reviews (two focused, one adversarial) and re-checked against the code on 2026-09-25. Steps 0, 1, 2 and 3a are done. Everything else is a proposal. References name functions rather than line numbers, because line numbers drift.
 
 ## Why
 
@@ -55,7 +55,7 @@ Each of these changes runtime behavior and needs a smoke test in the real app.
    - Verified: `electron/ipc/worktree-intents.test.ts` simulates a crash between provisioning and save and sees the orphan on the next start. `electron/ipc/tasks.test.ts` checks that the intent is written before `createWorktree` runs; it fails if the order is reversed. The journal is intended as the first part of the step 5 registry.
 3. **Runtime boundary, then split `registerAllHandlers`.** Two independent changes; land 3a first.
 
-   **3a. Notify port.** Replace `BrowserWindow` in `pty.ts`, `git.ts`, `plans.ts`, `steps.ts` and the coordinator (17 references) with a notify port. This barely touches `register.ts`, so it needs no freeze, and step 4 depends on it. → verify: `npm run check`, the existing tests for those modules, and `rg BrowserWindow` shows no matches in them.
+   **3a. Notify port (done).** `pty.ts`, `git.ts`, `plans.ts`, `steps.ts` and the coordinator take a `Notify` function (`electron/ipc/notify.ts`) instead of a `BrowserWindow`, and none of them imports Electron. `registerAllHandlers` builds one with `windowNotifier` (`electron/ipc/window-notifier.ts`), which drops messages once the window is destroyed; the coordinator's `setWindow` became `setNotify`. The coordinator still refuses to launch before a notifier is set; step 4 decides whether a no-op notifier is enough for headless launches. One behavior moved: the steps watcher still reads the steps file after the window is destroyed, and only the send is dropped. Verified: `npm run check`, `lint:arch`, the unit suite and the real-PTY coordinator test.
 
    **3b. Split `register.ts`.** #279 (pooled workspaces) was closed without merging on 2026-09-25, so it no longer blocks this. 5 of the 12 open PRs touch `register.ts` (#262, #248, #247, #162, #23). Do the split between merges, after announcing a short freeze; it does not block steps 4 and later. Before the split:
    - Commit a wiring test against the old code. It records every `ipcMain.handle` channel, throws on duplicates, asserts the `win.on` events and exactly one registration-time `onPtyEvent('exit')`, and triggers `ensureCoordinator` twice so the lazily registered `MCP_*` handlers are seen exactly once.

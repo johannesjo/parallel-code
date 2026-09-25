@@ -1,4 +1,4 @@
-import type { BrowserWindow } from 'electron';
+import type { Notify } from '../ipc/notify.js';
 import { vi } from 'vitest';
 import type { AgentHookEventPayload } from '../agent-hooks/status.js';
 
@@ -279,10 +279,7 @@ export const {
   mockVerifyCancel,
 } = mocks;
 
-export const mockWin = {
-  isDestroyed: () => false,
-  webContents: { send: mockNotifyRenderer },
-} as unknown as BrowserWindow;
+export const mockNotify: Notify = (channel, payload) => mockNotifyRenderer(channel, payload);
 
 export function createCoordinatorTask(
   overrides: Partial<BackendTaskFixture> = {},
@@ -375,7 +372,7 @@ export async function setupCoordinatorHarness(options: CoordinatorHarnessOptions
   return {
     Coordinator,
     coordinator,
-    mockWin,
+    mockNotify,
     resetCoordinatorMocks,
     mockNextTask,
     registerDefaultCoordinator,
@@ -405,7 +402,7 @@ export function registerDefaultCoordinator(
     register = false,
   }: CoordinatorHarnessOptions = {},
 ) {
-  coordinator.setWindow(mockWin);
+  coordinator.setNotify(mockNotify);
   coordinator.setDefaultProject(projectId, projectPath);
   if (register) coordinator.registerCoordinator(coordinatorId, projectId);
   return coordinator;
