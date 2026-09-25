@@ -1,6 +1,6 @@
 # Runtime separation plan
 
-Status: revised after three reviews (two focused, one adversarial) and re-checked against the code on 2026-09-25. Steps 0, 1, 2 and 3a are done. Everything else is a proposal. References name functions rather than line numbers, because line numbers drift.
+Status: revised after three reviews (two focused, one adversarial) and re-checked against the code on 2026-09-25. Steps 0, 1, 2 and 3a are done. Steps 1 and 2 fixed the only known correctness problems; everything from 3b onward is structural and waits for a named product goal (see the checkpoint after step 3). References name functions rather than line numbers, because line numbers drift.
 
 ## Why
 
@@ -13,7 +13,7 @@ The desktop renderer is the source of truth for tasks, and the main process co-o
 - Document workspaces create worktrees in the same `.worktrees/` directory as tasks (`prepareAlternateWorktree` in `electron/documents/runs.ts`). Their records live in document-run state, not `state.json`.
 - Question detection and trust-dialog acceptance run in the renderer (`looksLikeQuestion` and `tryAutoTrust` in `src/store/taskStatus.ts`). The coordinator has a separate readiness monitor (`createAgentOutputMonitor` and `scheduleInitialPromptDelivery` in `electron/mcp/coordinator.ts`, a 3,300-line file).
 - Until step 1, only xterm in the renderer answered terminal queries. Codex exits if its cursor-position query goes unanswered for about 2 s (commit `1204de82`, patched by disabling `backgroundThrottling` in `electron/main.ts`). Coordinator sub-tasks are spawned in main before any view exists, so they relied on a view mounting in time. This is the only user-facing bug we found in the history that the ownership split caused; the search was by commit message, so others may exist. Step 1 fixed it.
-- The coordinator creates and launches agents without the `SpawnAgent` IPC handler, so its children skip canvas MCP, the watchers and admission. This correctness gap remains open; step 4 closes it.
+- The coordinator launches children without the `SpawnAgent` IPC handler, but it covers the same concerns its own way: `createTask` counts in-flight children against the concurrency limit and runs its launch guards, and the session MCP provider (`setSessionMcpProvider` in `registerAllHandlers`) registers the canvas agent, ownership and wide bind. Plan and steps watchers start when the renderer adopts the child through the same handler with `attachExisting`, and their first read picks up a plan written before that. An earlier revision called this a correctness gap; it is duplicated logic, not a bug. The only visible difference is that such a plan arrives marked `recovered`, so it does not open the canvas.
 - `registerAllHandlers` is a single closure of about 2,100 lines that also runs the remote-server, coordinator and delegation lifecycles.
 - Precedent: document workspaces already run headless agents in worktrees from main, with their own records and `reconcileInterrupted` (`electron/documents/runs.ts`). Use them as the template for runtime-owned tasks.
 
@@ -57,7 +57,7 @@ Each of these changes runtime behavior and needs a smoke test in the real app.
 
    **3a. Notify port (done).** `pty.ts`, `git.ts`, `plans.ts`, `steps.ts` and the coordinator take a `Notify` function (`electron/ipc/notify.ts`) instead of a `BrowserWindow`, and none of them imports Electron. `registerAllHandlers` builds one with `windowNotifier` (`electron/ipc/window-notifier.ts`), which drops messages once the window is destroyed; the coordinator's `setWindow` became `setNotify`. The coordinator still refuses to launch before a notifier is set; step 4 decides whether a no-op notifier is enough for headless launches. One behavior moved: the steps watcher still reads the steps file after the window is destroyed, and only the send is dropped. Verified: `npm run check`, `lint:arch`, the unit suite and the real-PTY coordinator test.
 
-   **3b. Split `register.ts`.** #279 (pooled workspaces) was closed without merging on 2026-09-25, so it no longer blocks this. 5 of the 12 open PRs touch `register.ts` (#262, #248, #247, #162, #23). Do the split between merges, after announcing a short freeze; it does not block steps 4 and later. Before the split:
+   **3b. Split `register.ts`.** #279 (pooled workspaces) was closed without merging on 2026-09-25, so it no longer blocks this. 5 of the 12 open PRs touch `register.ts` (#262, #248, #247, #162, #23). Do the split between merges, after announcing a short freeze; it does not block anything before step 4. Before the split:
    - Commit a wiring test against the old code. It records every `ipcMain.handle` channel, throws on duplicates, asserts the `win.on` events and exactly one registration-time `onPtyEvent('exit')`, and triggers `ensureCoordinator` twice so the lazily registered `MCP_*` handlers are seen exactly once.
 
    Design rules from review:
@@ -75,15 +75,17 @@ Each of these changes runtime behavior and needs a smoke test in the real app.
 
    After the split, add `electron/runtime/` with a dependency-cruiser rule that uses `reachable: true`, because a direct-import rule misses transitive Electron imports. → verify: the wiring test passes unchanged, `npm run check:static`, and a smoke test of desktop, phone and coordinator flows in the real app.
 
-4. **Main-side agent launch.** Extract the `SpawnAgent` handler body into `launchAgent()`, used by both IPC and the coordinator. Today the coordinator bypasses canvas MCP, the watchers and admission. Move `buildTaskAgentArgs` into shared code; it takes a renderer `Task` and imports from `src/documents/`, so it first needs a narrower input type. Merge the renderer's question and trust detection with the coordinator's output monitor into one main-side `PromptDeliverer` instead of adding a third. It could read the step 1 terminal mirror's screen instead of the raw output tail; this is untested.
+   **Checkpoint (reached after 3a).** Reassess 3b and every later step against a named product goal, such as the phone creating tasks while the renderer is not running. None of them fixes a known bug.
 
-   Decide before starting:
-   - **Agent lifetime.** Define what collapsing a task means once main can launch agents without a view. Steps 6 and 7 build on this answer.
-   - **Settings source.** Trust acceptance depends on `autoTrustFolders`, which exists only in the renderer store and its saved state. Choose how main reads it: sent over IPC when it changes, or owned by the runtime.
+4. **Main-side agent launch.** Structural: it removes duplication between the IPC and coordinator launch paths and is a prerequisite for step 6. Do it together with step 6, and only after 3b, because the `SpawnAgent` handler depends on state held in the `registerAllHandlers` closure (`pendingSpawns`, `canvasOwners`, `wideBindAgents`, `remoteServer`, `delegation`, `ensureMcpTransport`), which needs a home outside it first.
+   - **4a. `launchAgent()`.** Extract the `SpawnAgent` handler body, used by both IPC and the coordinator. The coordinator path keeps what is specific to it: preamble injection, the per-task MCP config file for Docker, the legacy subtask token and container arguments. Move `buildTaskAgentArgs` into shared code; it takes a renderer `Task` and imports from `src/documents/`, so it first needs a narrower input type.
+   - **4b. `PromptDeliverer`.** Merge the renderer's question and trust detection (`src/store/taskStatus.ts`) with the coordinator's output monitor into one main-side deliverer instead of adding a third. It could read the step 1 terminal mirror's screen instead of the raw output tail; this is untested. Plan it separately: it is larger and needs real-app smoke tests.
 
-   → verify: a unit test shows a coordinator child launched through `launchAgent()` gets canvas MCP, the watchers and admission. The existing question and trust tests pass against `PromptDeliverer`. Smoke-test a desktop task and a coordinator child in the real app.
+   Decided (2026-09-25):
+   - **Agent lifetime.** Collapsing a task keeps its current meaning: it stops the task's agents and saves their session IDs so expanding resumes them. Coordinator children cannot be collapsed.
+   - **Settings source.** Main reads `autoTrustFolders` from each renderer save, as it already parses them. A toggle takes effect after the next autosave (1–5 s); no new IPC channel.
 
-   **Checkpoint.** Stop here and reassess steps 5–7 against a named product goal, such as the phone creating tasks while the renderer is not running. Steps 2–4 close both known correctness gaps.
+   → verify: the existing IPC and coordinator launch tests pass against `launchAgent()`, and the question and trust tests pass against `PromptDeliverer`. Smoke-test a desktop task and a coordinator child in the real app.
 
 5. **Runtime task registry.** Main writes task records it creates and reconciles them at startup. It grows out of the step 2 intent records, and its effect on `state.json` goes through the existing `normalizeState` overlay rather than a second writer with no ordering. → verify: a coordinator child survives a crash before the renderer adopts it and reappears on the next start.
 6. **One task-creation path.** `TaskRuntime.createTask(spec)` provisions, registers authority, launches, delivers the prompt, records the task and emits `TaskCreated`. The renderer adopts the task with `attachExisting`, generalizing `MCP_TaskCreated`. The phone stops using `callRenderer` for creation. → verify: one test per origin (desktop, phone, coordinator) goes through `createTask` and ends with the same durable record and `TaskCreated` event.
