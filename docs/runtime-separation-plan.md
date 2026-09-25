@@ -1,6 +1,6 @@
 # Runtime separation plan
 
-Status: revised after three reviews (two focused, one adversarial) and re-checked against the code on 2026-09-25. Steps 0, 1, 2 and 3a are done. Steps 1 and 2 fixed the only known correctness problems; everything from 3b onward is structural and waits for a named product goal (see the checkpoint after step 3). References name functions rather than line numbers, because line numbers drift.
+Status: revised after three reviews (two focused, one adversarial) and re-checked against the code on 2026-09-25. Steps 0, 1, 2 and 3a are done, and 3b is partly done (the runtime state has a home; the handler groups have not moved). Steps 1 and 2 fixed the only known correctness problems; everything from 3b onward is structural and waits for a named product goal (see the checkpoint after step 3). References name functions rather than line numbers, because line numbers drift.
 
 ## Why
 
@@ -59,6 +59,13 @@ Each of these changes runtime behavior and needs a smoke test in the real app.
 
    **3b. Split `register.ts`.** #279 (pooled workspaces) was closed without merging on 2026-09-25, so it no longer blocks this. 5 of the 12 open PRs touch `register.ts` (#262, #248, #247, #162, #23). Do the split between merges, after announcing a short freeze; it does not block anything before step 4. Before the split:
    - Commit a wiring test against the old code. It records every `ipcMain.handle` channel, throws on duplicates, asserts the `win.on` events and exactly one registration-time `onPtyEvent('exit')`, and triggers `ensureCoordinator` twice so the lazily registered `MCP_*` handlers are seen exactly once.
+
+   Progress:
+   - Done: the wiring test (`electron/ipc/register-wiring.test.ts`).
+   - Done: `electron/ipc/remote-transport.ts` owns the remote server and the rules for who started it and when it stops.
+   - Done: `electron/ipc/mcp-paths.ts` holds `hostMcpServerPath()`, replacing five copies.
+   - Done: `electron/ipc/mcp-runtime.ts` owns the transport, the lazy coordinator, delegation, `prepareDelegationParent`, the PTY exit cleanup, and `pendingSpawns`, `canvasOwners` and `wideBindAgents`. `register.ts` reads the coordinator through `mcp.coordinator()` and the server through `transport.current()`. This is the home step 4 needed. The wiring test passed unchanged after each move.
+   - Not done: moving the handler groups out of `register.ts`, which is mechanical, one commit per group. The doc and comment updates and the `electron/runtime/` rule below belong to that stage.
 
    Design rules from review:
    - Mutations of remote-server and coordinator state stay inside `mcp-runtime` methods (`startRemoteAccess`, `stopRemoteAccess`). `remoteServer()` and `coordinator()` are methods, never destructurable fields, so callers cannot capture a stale `null`.
