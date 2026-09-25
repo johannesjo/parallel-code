@@ -130,9 +130,10 @@ export function linkNewTaskToSp(taskId: string, source: SpNewTaskSource, project
     setSpLink(taskId, source.taskId, toSpTitle(task.name));
     return;
   }
-  setSpLink(taskId, source.taskId, source.title);
+  const title = toSpTitle(source.title);
+  setSpLink(taskId, source.taskId, title);
   // A name edited in the form wins, like any other rename.
-  if (toSpTitle(task.name) !== source.title) onTaskRenamed(taskId);
+  if (toSpTitle(task.name) !== title) onTaskRenamed(taskId);
 }
 
 export function startSpOpenListener(): () => void {

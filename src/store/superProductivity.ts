@@ -67,7 +67,9 @@ async function callSp<T>(channel: IPC, args?: Record<string, unknown>): Promise<
     logWarn('super-productivity', 'IPC call failed', { channel, err: String(err) });
     return { ok: false, reason: 'error' };
   }
-  if (gen !== connectionGen) return { ok: false, reason: 'not_configured' };
+  // A reply to a request made before the token changed says nothing about the
+  // connection now; the result itself (a task created, say) still stands.
+  if (gen !== connectionGen) return res;
   if (res.ok) setSpConnection('connected');
   else if (CONNECTION_STATES.has(res.reason)) setSpConnection(res.reason as SpConnectionState);
   return res;
@@ -193,37 +195,46 @@ async function createSpTaskFor(taskId: string): Promise<string | null> {
   const task = store.tasks[taskId];
   if (!task) return null;
   const title = toSpTitle(task.name) || 'Parallel Code task';
-  // An agent-spawned subtask becomes a subtask of its parent's task.
-  const parentSpTaskId = task.coordinatedBy
-    ? store.tasks[task.coordinatedBy]?.superProductivity?.taskId
-    : undefined;
-  let spProjectId = store.projects.find((p) => p.id === task.projectId)?.superProductivityProjectId;
-  // Super Productivity accepts an unknown projectId and files the task nowhere
-  // visible, so a mapping to a since-deleted or archived project is dropped —
-  // also when it is only the fallback for a parent that is gone.
-  if (spProjectId) {
-    const spProjects = await listSpProjects();
-    if (spProjects && !spProjects.some((p) => p.id === spProjectId)) spProjectId = undefined;
-  }
-  // Fall back when the parent or project no longer exists over there (or the
-  // parent is itself a subtask, which Super Productivity rejects).
-  const attempts: Record<string, string>[] = [];
-  if (parentSpTaskId) attempts.push({ parentId: parentSpTaskId });
-  if (spProjectId) attempts.push({ projectId: spProjectId });
-  attempts.push({});
-
-  for (const placement of attempts) {
+  const create = async (placement: Record<string, string>) => {
     const res = await callSp<SpTaskSummary>(IPC.SuperProductivityCreateTask, {
       title,
       ...placement,
     });
-    if (res.ok) {
-      setSpLink(taskId, res.value.id, res.value.title);
-      return store.tasks[taskId] ? res.value.id : null;
-    }
-    if (res.reason !== 'not_found' && res.reason !== 'invalid_request') return null;
+    // Linked if the task is still here; the id is returned either way, so a
+    // completion armed while this was in flight can still mark it done.
+    if (res.ok) setSpLink(taskId, res.value.id, res.value.title);
+    return res;
+  };
+  // Fall back when the parent or project no longer exists over there (or the
+  // parent is itself a subtask, which Super Productivity rejects).
+  const canFallBack = (res: SpResult<SpTaskSummary>) =>
+    !res.ok && (res.reason === 'not_found' || res.reason === 'invalid_request');
+
+  // An agent-spawned subtask becomes a subtask of its parent's task.
+  const parentSpTaskId = task.coordinatedBy
+    ? store.tasks[task.coordinatedBy]?.superProductivity?.taskId
+    : undefined;
+  if (parentSpTaskId) {
+    const res = await create({ parentId: parentSpTaskId });
+    if (res.ok) return res.value.id;
+    if (!canFallBack(res)) return null;
   }
-  return null;
+
+  // Super Productivity accepts an unknown projectId and files the task nowhere
+  // visible, so a mapping to a since-deleted or archived project is dropped.
+  let spProjectId = store.projects.find((p) => p.id === task.projectId)?.superProductivityProjectId;
+  if (spProjectId) {
+    const spProjects = await listSpProjects();
+    if (spProjects && !spProjects.some((p) => p.id === spProjectId)) spProjectId = undefined;
+  }
+  if (spProjectId) {
+    const res = await create({ projectId: spProjectId });
+    if (res.ok) return res.value.id;
+    if (!canFallBack(res)) return null;
+  }
+
+  const res = await create({});
+  return res.ok ? res.value.id : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +244,13 @@ function applyTitleSync(taskId: string, remoteTitle: string): void {
   const task = store.tasks[taskId];
   const link = task?.superProductivity;
   if (!task || !link) return;
-  const action = resolveSpTitleSync(link.syncedTitle, toSpTitle(task.name), remoteTitle.trim());
+  // Compared in the capped form Parallel Code sends, so a title over the cap
+  // pulled from there isn't then pushed back shortened.
+  const action = resolveSpTitleSync(
+    toSpTitle(link.syncedTitle),
+    toSpTitle(task.name),
+    toSpTitle(remoteTitle),
+  );
   switch (action.kind) {
     case 'none':
       return;
@@ -242,7 +259,7 @@ function applyTitleSync(taskId: string, remoteTitle: string): void {
       return;
     case 'pull':
       if (!action.title) return;
-      setStore('tasks', taskId, 'name', action.title);
+      setStore('tasks', taskId, 'name', remoteTitle.trim());
       setStore('tasks', taskId, 'nameIsAutoGenerated', false);
       setStore('tasks', taskId, 'superProductivity', 'syncedTitle', action.title);
       return;
@@ -328,8 +345,9 @@ async function evaluateFocus(taskId: string): Promise<void> {
       return;
     }
   }
-  // The user moved on, or tracking was started explicitly, meanwhile.
-  if (store.activeTaskId !== taskId || seq !== focusSeq) return;
+  // The user moved on, tracking was started explicitly, or the integration
+  // was disconnected, meanwhile.
+  if (store.activeTaskId !== taskId || seq !== focusSeq || !isEnabled()) return;
 
   const decision = decideSpFocusAction({
     tracking: tracking.value,
@@ -343,7 +361,10 @@ async function evaluateFocus(taskId: string): Promise<void> {
     return;
   }
   if (spBanner()?.taskId === taskId) setSpBanner(null);
-  if (decision.kind === 'track') await trackTaskInSp(taskId, { onlyWhileActive: true });
+  if (decision.kind !== 'track') return;
+  const started = await trackTaskInSp(taskId, { onlyWhileActive: true });
+  // Lost the connection while creating or starting: retry when the window comes back.
+  if (!started && spConnection() !== 'connected' && isEnabled()) retryTaskId = taskId;
 }
 
 /**
@@ -357,13 +378,16 @@ export async function trackTaskInSp(
 ): Promise<boolean> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const spTaskId = await ensureSpLink(taskId);
-    if (!spTaskId) return false;
+    // Gone meanwhile (the link was never stored): nothing to track.
+    if (!spTaskId || !store.tasks[taskId]) return false;
     if (opts.onlyWhileActive && (store.activeTaskId !== taskId || !isTrackableTask(taskId))) {
       return false;
     }
     const res = await callSp<null>(IPC.SuperProductivityStartTracking, { taskId: spTaskId });
     if (res.ok) {
-      focusSeq++; // an evaluation still in flight saw the state before this
+      // An evaluation of this task still in flight saw the state before this.
+      // One for a task the user has moved on to must still run.
+      if (store.activeTaskId === taskId) focusSeq++;
       if (spBanner()?.taskId === taskId) setSpBanner(null);
       return true;
     }

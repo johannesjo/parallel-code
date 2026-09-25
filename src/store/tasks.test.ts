@@ -1807,6 +1807,19 @@ describe('Super Productivity completion wiring', () => {
     expect(fireSpCompletion).toHaveBeenCalledWith('child-2');
   });
 
+  it('a subtask that merged earlier and is closed later still counts as merged', () => {
+    const closedHandler = expectDefined(ipcHandlers.get(IPC.MCP_TaskClosed), 'closed handler');
+    Object.assign(expectDefined(core.harness, 'mock store harness').store, { taskGitStatus: {} });
+    // approve-and-merge, or a land whose cleanup failed, then a plain close.
+    mockTasks['child-3'] = {
+      ...worktreeTask(),
+      coordinatedBy: 'coord-1',
+      landingState: 'landed_cleanup_failed',
+    };
+    closedHandler({ taskId: 'child-3' });
+    expect(armSpCompletion).toHaveBeenCalledWith('child-3', { kind: 'merged' });
+  });
+
   it('a rename is passed on', () => {
     mockTasks['task-1'] = worktreeTask();
     updateTaskName('task-1', 'Renamed');

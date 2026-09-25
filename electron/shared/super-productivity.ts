@@ -55,9 +55,11 @@ export const SP_MAX_BATCH_IDS = 50;
 /** The title Parallel Code sends for a task name — also what title sync compares. */
 export function toSpTitle(name: string): string {
   const title = name.trim();
-  return title.length > SP_MAX_TITLE_LENGTH
-    ? `${title.slice(0, SP_MAX_TITLE_LENGTH - 1).trimEnd()}…`
-    : title;
+  if (title.length <= SP_MAX_TITLE_LENGTH) return title;
+  let cut = title.slice(0, SP_MAX_TITLE_LENGTH - 1);
+  // Don't leave half of a surrogate pair (an emoji, say) before the ellipsis.
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  return `${cut.trimEnd()}…`;
 }
 
 export type SpResult<T> =

@@ -390,6 +390,27 @@ describe('Super Productivity sync', () => {
     ]);
   });
 
+  it('pulls a title over the cap without pushing it back shortened', async () => {
+    const long = `Long ${'y'.repeat(600)}`;
+    addTask('a', { superProductivity: { taskId: 'sp-a', syncedTitle: 'Task a' } });
+    spTask('sp-a', { title: long });
+    setWindowFocused(false);
+    await settle();
+    setWindowFocused(true);
+    await settle();
+    expect(store.tasks.a.name).toBe(long);
+    const renames = () =>
+      mockInvoke.mock.calls.filter(([channel]) => channel === IPC.SuperProductivityRenameTask);
+    expect(renames()).toHaveLength(0);
+    // And the next refresh leaves it alone too.
+    setWindowFocused(false);
+    await settle();
+    setWindowFocused(true);
+    await settle();
+    expect(renames()).toHaveLength(0);
+    expect(sp.tasks.get('sp-a')?.title).toBe(long);
+  });
+
   it('shortens a very long name for Super Productivity', async () => {
     addTask('a', { name: 'x'.repeat(600) });
     await focus('a');
@@ -479,6 +500,12 @@ describe('Super Productivity sync', () => {
     await focus('a'); // create is now in flight
     armSpCompletion('a', { kind: 'closed' });
     fireSpCompletion('a');
+    // Gone before the create answers, as after a coordinator close.
+    setStore(
+      produce((s) => {
+        delete s.tasks.a;
+      }),
+    );
     finishCreate();
     await settle();
     expect(sp.tasks.get('sp-1')?.isDone).toBe(true);

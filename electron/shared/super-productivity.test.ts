@@ -225,6 +225,12 @@ describe('toSpTitle', () => {
   it('trims and keeps short names', () => {
     expect(toSpTitle('  Fix login  ')).toBe('Fix login');
   });
+  it('never leaves half an emoji before the ellipsis', () => {
+    const title = toSpTitle(`${'x'.repeat(SP_MAX_TITLE_LENGTH - 2)}😀${'z'.repeat(10)}`);
+    expect(title.endsWith('x…')).toBe(true);
+    expect(/[\uD800-\uDBFF]…$/.test(title)).toBe(false);
+  });
+
   it('shortens names over the limit', () => {
     const title = toSpTitle('x'.repeat(SP_MAX_TITLE_LENGTH + 20));
     expect(title).toHaveLength(SP_MAX_TITLE_LENGTH);
