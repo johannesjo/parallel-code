@@ -12,10 +12,10 @@ import { getMCPRemoteServerUrl, getSubTaskMcpConfigPath } from './config.js';
 import type { Coordinator } from './coordinator.js';
 import {
   selectMcpJsonDir,
-  getDockerMcpServerDestPath,
   buildCoordinatorMCPConfig,
   validateStartMCPServerArgs,
 } from '../ipc/register.js';
+import { getDockerMcpServerDestPath } from '../ipc/mcp-paths.js';
 
 const RUN_DOCKER_MCP_TEST = process.env.RUN_DOCKER_MCP_TEST === '1';
 

@@ -119,6 +119,7 @@ import { createTask, deleteTask } from './tasks.js';
 import { settleWorktreeIntents } from './worktree-intents.js';
 import { windowNotifier } from './window-notifier.js';
 import { createRemoteTransport } from './remote-transport.js';
+import { getDockerMcpServerDestPath, hostMcpServerPath } from './mcp-paths.js';
 import { listAgents } from './agents.js';
 import {
   saveAppState,
@@ -163,14 +164,6 @@ import { redactServerUrl } from '../remote/server.js';
 
 export function selectMcpJsonDir(worktreePath: string | undefined, projectRoot: string): string {
   return worktreePath ?? projectRoot;
-}
-
-/** Path where `mcp-server.cjs` is copied inside the Docker-mounted worktree. */
-export function getDockerMcpServerDestPath(
-  worktreePath: string | undefined,
-  projectRoot: string,
-): string {
-  return path.join(worktreePath ?? projectRoot, '.parallel-code', 'mcp-server.cjs');
 }
 
 export interface CoordinatorMCPConfigOpts {
@@ -528,9 +521,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
             const server = await transport.ensureForMcp(false);
             const token = server.registerCanvasAgent(taskId, canvasId, () => active);
             unregister = () => server.unregisterCanvasAgent(canvasId);
-            const serverPath = path
-              .join(path.dirname(fileURLToPath(import.meta.url)), '..', 'mcp-server.cjs')
-              .replace('/app.asar/', '/app.asar.unpacked/');
+            const serverPath = hostMcpServerPath();
             const launchArgs = prepareCanvasMcpArgs({
               command,
               taskId,
@@ -644,9 +635,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     await ensureCoordinator();
     if (!coordinator) throw new Error('Delegation unavailable.');
     const server = await transport.ensureForMcp(task.dockerMode === true);
-    const hostServerPath = path
-      .join(path.dirname(fileURLToPath(import.meta.url)), '..', 'mcp-server.cjs')
-      .replace('/app.asar/', '/app.asar.unpacked/');
+    const hostServerPath = hostMcpServerPath();
     const serverPath = task.dockerMode
       ? getDockerMcpServerDestPath(task.worktreePath, task.projectRoot)
       : hostServerPath;
@@ -784,9 +773,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
           });
           launchArgs = prepareCanvasMcpArgs({
             ...args,
-            serverPath: path
-              .join(path.dirname(fileURLToPath(import.meta.url)), '..', 'mcp-server.cjs')
-              .replace('/app.asar/', '/app.asar.unpacked/'),
+            serverPath: hostMcpServerPath(),
             port: server.port,
             token,
             sessionCapabilities: capabilities,
@@ -826,10 +813,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         try {
           const server = await transport.ensureForMcp(args.dockerMode === true);
           assertPendingSpawn();
-          const thisDir = path.dirname(fileURLToPath(import.meta.url));
-          const serverPath = path
-            .join(thisDir, '..', 'mcp-server.cjs')
-            .replace('/app.asar/', '/app.asar.unpacked/');
+          const serverPath = hostMcpServerPath();
           const capabilities = delegation.capabilities(args.taskId);
           const token = server.registerCanvasAgent(
             args.taskId,
@@ -2205,12 +2189,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       const server = transport.current();
       if (!server) throw new Error('MCP transport unavailable.');
 
-      // Resolve the source MCP server binary path.
-      const thisDir = path.dirname(fileURLToPath(import.meta.url));
-      let hostMcpServerPath = path.join(thisDir, '..', 'mcp-server.cjs');
-      if (hostMcpServerPath.includes('/app.asar/')) {
-        hostMcpServerPath = hostMcpServerPath.replace('/app.asar/', '/app.asar.unpacked/');
-      }
+      const hostServerPath = hostMcpServerPath();
 
       // In Docker mode the server is copied into the worktree so the container can reach it.
       // Compute the destination path now (pure, no side effects) so we can build mcpConfig
@@ -2218,7 +2197,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       const dockerMcpServerPath = args.dockerContainerName
         ? getDockerMcpServerDestPath(args.worktreePath, args.projectRoot)
         : undefined;
-      const mcpServerPath = dockerMcpServerPath ?? hostMcpServerPath;
+      const mcpServerPath = dockerMcpServerPath ?? hostServerPath;
 
       const serverUrl = getMCPRemoteServerUrl(server.port, args.dockerContainerName);
 
@@ -2253,7 +2232,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       // Docker filesystem writes, MCP config file writes.
       if (dockerMcpServerPath) {
         fs.mkdirSync(path.dirname(dockerMcpServerPath), { recursive: true });
-        fs.copyFileSync(hostMcpServerPath, dockerMcpServerPath); // nosemgrep: semgrep.copyfilesync-side-effect -- all pure computation (mcpConfig, mergedMcpJson) is done above; this is correctly ordered
+        fs.copyFileSync(hostServerPath, dockerMcpServerPath); // nosemgrep: semgrep.copyfilesync-side-effect -- all pure computation (mcpConfig, mergedMcpJson) is done above; this is correctly ordered
         coordinator.setDockerContainerName(args.coordinatorTaskId, args.dockerContainerName ?? '');
         coordinator.setDockerImage(args.coordinatorTaskId, args.dockerImage ?? null);
         console.warn('[MCP] Docker mode: copied MCP server to', dockerMcpServerPath);

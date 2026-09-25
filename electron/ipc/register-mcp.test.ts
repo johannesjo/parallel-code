@@ -16,10 +16,10 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildCoordinatorMCPConfig,
-  getDockerMcpServerDestPath,
   selectMcpJsonDir,
   validateStartMCPServerArgs,
 } from './register.js';
+import { getDockerMcpServerDestPath } from './mcp-paths.js';
 import { getMCPRemoteServerUrl } from '../mcp/config.js';
 import { startRemoteServer } from '../remote/server.js';
 

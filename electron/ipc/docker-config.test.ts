@@ -6,11 +6,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  buildCoordinatorMCPConfig,
-  getDockerMcpServerDestPath,
-  selectMcpJsonDir,
-} from './register.js';
+import { buildCoordinatorMCPConfig, selectMcpJsonDir } from './register.js';
+import { getDockerMcpServerDestPath } from './mcp-paths.js';
 import { getMCPRemoteServerUrl } from '../mcp/config.js';
 
 // ── MCP server URL ─────────────────────────────────────────────────────────────
