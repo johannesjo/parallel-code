@@ -2,7 +2,7 @@ import { startRemoteServer } from '../remote/server.js';
 import type { Coordinator } from '../mcp/coordinator.js';
 
 export type RemoteServerHandle = Awaited<ReturnType<typeof startRemoteServer>>;
-type RemoteServerOptions = Omit<Parameters<typeof startRemoteServer>[0], 'port' | 'host'>;
+export type RemoteServerOptions = Omit<Parameters<typeof startRemoteServer>[0], 'port' | 'host'>;
 
 export interface RemoteTransportOptions {
   defaultPort: number;

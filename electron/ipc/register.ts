@@ -4,8 +4,6 @@ import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { IPC } from './channels.js';
-import { DelegationService } from '../mcp/delegation.js';
-import type { TaskAuthorityInput } from '../shared/delegation-types.js';
 import {
   startAgentChat,
   getAgentChat,
@@ -42,7 +40,6 @@ import {
   buildDockerImage,
   resolveProjectDockerfile,
   projectImageTag,
-  onPtyEvent,
 } from './pty.js';
 import {
   ensurePlansDirectory,
@@ -118,7 +115,7 @@ import {
 import { createTask, deleteTask } from './tasks.js';
 import { settleWorktreeIntents } from './worktree-intents.js';
 import { windowNotifier } from './window-notifier.js';
-import { createRemoteTransport } from './remote-transport.js';
+import { createMcpRuntime } from './mcp-runtime.js';
 import { getDockerMcpServerDestPath, hostMcpServerPath } from './mcp-paths.js';
 import { listAgents } from './agents.js';
 import {
@@ -565,16 +562,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // --- Remote access state ---
   // Keep development phone access and coordinator ports separate from the installed app.
   const defaultRemotePort = app.isPackaged ? 7777 : 8777;
-  const transport = createRemoteTransport({
+  const mcp = createMcpRuntime({
+    notify,
     defaultPort: defaultRemotePort,
     serverOptions: () => remoteServerOptions(),
-    coordinator: () => coordinator,
-    needsWideBind: (dockerMode) => needsWideBind(dockerMode),
-    wideBindInUse: () =>
-      wideBindAgents.size > 0 ||
-      (process.platform !== 'linux' && delegation.requiresWideTransport()),
     rememberedDevicesPath: () => path.join(getUserDataDir(), 'paired-phones.json'),
+    onCoordinatorLoaded: () => registerCoordinatorHandlers(),
   });
+  const { transport, delegation, pendingSpawns, canvasOwners, wideBindAgents, needsWideBind } = mcp;
   const taskNames = new Map<string, string>();
   // Renderer-derived per-task attention (needs input, working, ready, …), pushed
   // from the renderer via Remote_UpdateTaskStatus so the mobile overview can show
@@ -587,111 +582,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
   >();
 
   // --- MCP coordinator (lazy — only loaded when coordinator mode is enabled) ---
-  type CoordinatorType = import('../mcp/coordinator.js').Coordinator;
-  let coordinator: CoordinatorType | null = null;
   let coordinatorHandlersRegistered = false;
   let lastMcpConfigPath: string | null = null;
-  // A kill must also cancel startup while optional MCP transport is awaiting I/O.
-  const pendingSpawns = new Map<string, { sessionInstanceId: string }>();
-  /** Which spawn minted the agent's live canvas token. `pendingSpawns` cannot answer this: a
-   *  kill clears the entry to cancel the spawn, and a finished restart clears its own, so an
-   *  absent entry means both "nobody owns this" and "the owner already left". */
-  const canvasOwners = new Map<string, { sessionInstanceId: string }>();
-  let orchestrationEnabled = true;
-  try {
-    const saved = loadAppState();
-    if (saved) orchestrationEnabled = JSON.parse(saved).mcpOrchestrationEnabled !== false;
-  } catch (error) {
-    orchestrationEnabled = false;
-    logWarn('mcp', 'Could not restore orchestration setting; keeping orchestration disabled', {
-      err: errMessage(error),
-    });
-  }
-  const delegation = new DelegationService({
-    orchestrationEnabled,
-    coordinator: async () => {
-      await ensureCoordinator();
-      if (!coordinator) throw new Error('Delegation unavailable.');
-      return coordinator;
-    },
-    currentCoordinator: () => coordinator,
-    prepareParent: prepareDelegationParent,
-    sessions: () => transport.current()?.getSessionAgents() ?? [],
-    changed: (event) => {
-      if (!win.isDestroyed()) win.webContents.send(IPC.DelegationChanged, event);
-    },
-    persist: () => {
-      const json = loadAppState();
-      if (json) saveAppState(delegation.normalizeState(json));
-    },
-    parentCreated: (taskId) => {
-      if (!win.isDestroyed())
-        win.webContents.send(IPC.MCP_TaskStateSync, { taskId, delegationParent: true });
-    },
-  });
   ipcMain.handle(IPC.DelegationRequest, (_event, request) => delegation.request(request));
-
-  async function prepareDelegationParent(task: TaskAuthorityInput): Promise<void> {
-    await ensureCoordinator();
-    if (!coordinator) throw new Error('Delegation unavailable.');
-    const server = await transport.ensureForMcp(task.dockerMode === true);
-    const hostServerPath = hostMcpServerPath();
-    const serverPath = task.dockerMode
-      ? getDockerMcpServerDestPath(task.worktreePath, task.projectRoot)
-      : hostServerPath;
-    if (task.dockerMode) {
-      fs.mkdirSync(path.dirname(serverPath), { recursive: true });
-      fs.copyFileSync(hostServerPath, serverPath);
-      appendGitInfoExcludeBlock(
-        task.worktreePath,
-        '.parallel-code/',
-        '# Parallel Code MCP runtime\n.parallel-code/\n',
-        (error) =>
-          logWarn('mcp', 'Could not exclude MCP runtime directory', { err: errMessage(error) }),
-      );
-    }
-    coordinator.registerCoordinator(task.taskId, task.projectId, {
-      projectRoot: task.projectRoot,
-      worktreePath: task.worktreePath,
-      branchName: task.branchName,
-      spawnDefaults: { command: task.agentCommand, args: task.agentArgs },
-      agentEnvFile: task.agentEnvFile,
-      automaticNotifications: task.autoSendChildUpdates ?? task.coordinatorMode ?? false,
-      paused: task.delegationPaused,
-      skipPermissions: task.propagateSkipPermissions,
-      maxConcurrentTasks: task.maxConcurrentTasks,
-      verifyCommand: task.verifyCommand,
-    });
-    coordinator.setDockerContainerName(task.taskId, task.dockerMode ? 'delegation' : null);
-    coordinator.setDockerImage(task.taskId, task.dockerImage ?? null);
-    coordinator.setMCPServerInfo(
-      task.taskId,
-      getMCPRemoteServerUrl(server.port, task.dockerMode ? 'delegation' : undefined),
-      server.coordinatorTokenFor(task.taskId),
-      server.subtaskToken,
-      serverPath,
-    );
-  }
-  /** Container agents on macOS reach the host only through a wide bind; track who needs it. */
-  const wideBindAgents = new Set<string>();
-  const needsWideBind = (dockerMode: boolean) => dockerMode && process.platform !== 'linux';
-  // The canvas token is revoked on exit; the config file holding it must go too.
-  onPtyEvent('exit', (agentId) => {
-    try {
-      removeCanvasConfig(agentId);
-    } catch (error) {
-      console.warn('Could not remove canvas MCP credentials:', error);
-    }
-    wideBindAgents.delete(agentId);
-    canvasOwners.delete(agentId);
-    // The server's own exit listener runs after this one; drop the agent here so the
-    // idle check below already sees it gone.
-    transport.current()?.unregisterCanvasAgent(agentId);
-    delegation.expireMessages();
-    transport
-      .stopIfIdle()
-      .catch((error) => console.warn('[MCP] Could not stop the idle transport:', error));
-  });
 
   // --- PTY commands ---
   ipcMain.handle(IPC.SpawnAgent, async (_e, args) => {
@@ -713,7 +606,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     if (args.cwd) validatePath(args.cwd, 'cwd');
     const attaching = args.attachExisting && getAgentMeta(args.agentId);
     const releaseAdmission =
-      attaching || args.isShell ? undefined : coordinator?.reserveChildRestart(args.taskId);
+      attaching || args.isShell ? undefined : mcp.coordinator()?.reserveChildRestart(args.taskId);
     const pending = { sessionInstanceId: crypto.randomUUID() };
     pendingSpawns.set(args.agentId, pending);
     const assertPendingSpawn = () => {
@@ -738,6 +631,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         delegation.expireMessages();
       }
       let canvasTools = existing?.canvasTools === true;
+      const coordinator = mcp.coordinator();
       let releaseCanvas: (() => void) | undefined;
       if (
         !existing &&
@@ -924,7 +818,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     }
     if (args.taskId !== undefined) {
       assertString(args.taskId, 'taskId');
-      if (coordinator?.isAutomationWriteInFlight(args.taskId)) return false;
+      if (mcp.coordinator()?.isAutomationWriteInFlight(args.taskId)) return false;
     }
     return writeToAgent(args.agentId, args.data);
   });
@@ -1189,7 +1083,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       }
       const delay = state.coordinatorNotificationDelayMs;
       if (typeof delay === 'number' && Number.isFinite(delay)) {
-        coordinator?.setNotificationDelayMs(delay);
+        mcp.coordinator()?.setNotificationDelayMs(delay);
       }
     } catch (e) {
       console.warn('Ignoring malformed saved state:', e);
@@ -1787,7 +1681,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         exitCode: null,
         lastLine: '',
       }),
-      getCoordinator: () => coordinator,
+      getCoordinator: () => mcp.coordinator(),
       callSessionTool: (caller, name, params) => delegation.callTool(caller, name, params),
       isOrchestrationEnabled: () => delegation.isOrchestrationEnabled(),
       chats: { list: listTaskChats, find: findAgentChat, onChange: onAgentChatsChanged },
@@ -1889,6 +1783,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         if (args.controlledBy !== 'coordinator' && args.controlledBy !== 'human') {
           throw new Error(`Invalid controlledBy: ${String(args.controlledBy)}`);
         }
+        const coordinator = mcp.coordinator();
         if (!coordinator) throw new Error('Task coordination is not initialized');
 
         coordinator.setTaskControl(args.taskId, args.controlledBy);
@@ -1913,7 +1808,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
           validateBranchName(args.coordinatorBranch, 'coordinatorBranch');
         }
         validateOptionalVerifyCommand(args.verifyCommand);
-        coordinator?.registerCoordinator(args.coordinatorTaskId, args.projectId, {
+        mcp.coordinator()?.registerCoordinator(args.coordinatorTaskId, args.projectId, {
           branchName: args.coordinatorBranch,
           worktreePath: args.worktreePath,
           verifyCommand: args.verifyCommand,
@@ -1925,7 +1820,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       IPC.MCP_CoordinatorDeregistered,
       async (_e, args: { coordinatorTaskId: string }) => {
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
-        coordinator?.deregisterCoordinator(args.coordinatorTaskId);
+        mcp.coordinator()?.deregisterCoordinator(args.coordinatorTaskId);
         // Clean up the host-temp MCP config file written by StartMCPServer (non-Docker only).
         const tempConfigPath = path.join(
           app.getPath('temp'),
@@ -1950,13 +1845,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
       (_e, args: { coordinatorTaskId: string; batchId: string }) => {
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
         assertString(args.batchId, 'batchId');
-        coordinator?.dropNotification(args.coordinatorTaskId, args.batchId);
+        mcp.coordinator()?.dropNotification(args.coordinatorTaskId, args.batchId);
       },
     );
 
     ipcMain.handle(IPC.MCP_CoordinatedTaskPromptDelivered, (_e, args: { taskId: string }) => {
       assertString(args.taskId, 'taskId');
-      coordinator?.markPromptDelivered(args.taskId);
+      mcp.coordinator()?.markPromptDelivered(args.taskId);
     });
 
     ipcMain.handle(
@@ -1964,7 +1859,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       (_e, args: { coordinatorTaskId: string; batchId: string }) => {
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
         assertString(args.batchId, 'batchId');
-        coordinator?.ackNotification(args.coordinatorTaskId, args.batchId);
+        mcp.coordinator()?.ackNotification(args.coordinatorTaskId, args.batchId);
       },
     );
 
@@ -1972,13 +1867,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
       IPC.MCP_CoordinatorRestageAfterUserSend,
       (_e, args: { coordinatorTaskId: string }) => {
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
-        coordinator?.rescheduleRestageTimer(args.coordinatorTaskId);
+        mcp.coordinator()?.rescheduleRestageTimer(args.coordinatorTaskId);
       },
     );
 
     ipcMain.handle(IPC.MCP_TaskLandingReviewCleared, (_e, args: { taskId: string }) => {
       assertString(args.taskId, 'taskId');
-      coordinator?.markTaskReviewed(args.taskId);
+      mcp.coordinator()?.markTaskReviewed(args.taskId);
     });
 
     ipcMain.handle(
@@ -1986,7 +1881,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       (_e, args: { taskId: string; coordinatorTaskId: string }) => {
         assertString(args.taskId, 'taskId');
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
-        coordinator?.removeCoordinatedTask(args.taskId);
+        mcp.coordinator()?.removeCoordinatedTask(args.taskId);
       },
     );
 
@@ -2030,6 +1925,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         validatePath(args.worktreePath, 'worktreePath');
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
         validateUUID(args.coordinatorTaskId, 'coordinatorTaskId');
+        const coordinator = mcp.coordinator();
         if (!coordinator) throw new Error('Task coordination is not initialized');
         const authority = delegation.getTask(args.id);
         if (
@@ -2076,48 +1972,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
         return result;
       },
     );
-  }
-
-  // Lazily initialize the shared coordination backend and register its handlers.
-  // Safe to call multiple times — only initializes once.
-  let coordinatorStarting: Promise<void> | undefined;
-  async function ensureCoordinator(): Promise<void> {
-    if (coordinator) return;
-    if (coordinatorStarting) return coordinatorStarting;
-    coordinatorStarting = (async () => {
-      const { Coordinator } = await import('../mcp/coordinator.js');
-      coordinator = new Coordinator();
-      coordinator.setOrchestrationEnabled(delegation.isOrchestrationEnabled());
-      coordinator.setNotify(notify);
-      coordinator.setSessionMcpProvider((task) => {
-        const server = transport.current();
-        if (!delegation.getTask(task.coordinatorTaskId) || !server) return undefined;
-        if (!delegation.getTask(task.id)) {
-          if (task.status !== 'creating')
-            throw new Error('Task authority was not validated before restoring its MCP session.');
-          delegation.registerChild(task);
-        }
-        const sessionCapabilities = delegation.capabilities(task.id);
-        if (!sessionCapabilities) throw new Error('Task authority is unavailable.');
-        let owner = canvasOwners.get(task.agentId);
-        if (!owner) {
-          owner = { sessionInstanceId: crypto.randomUUID() };
-          canvasOwners.set(task.agentId, owner);
-        }
-        if (needsWideBind(!!task.dockerContainerName)) wideBindAgents.add(task.agentId);
-        const token = server.registerCanvasAgent(task.id, task.agentId, undefined, {
-          sessionInstanceId: owner.sessionInstanceId,
-          capabilities: sessionCapabilities,
-        });
-        return { token, sessionCapabilities };
-      });
-      registerCoordinatorHandlers();
-    })();
-    try {
-      await coordinatorStarting;
-    } finally {
-      coordinatorStarting = undefined;
-    }
   }
 
   // StartMCPServer registered eagerly (not inside registerCoordinatorHandlers) so the
@@ -2171,7 +2025,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
         }
       }
 
-      await ensureCoordinator();
+      await mcp.ensureCoordinator();
+      const coordinator = mcp.coordinator();
       if (!coordinator) return;
 
       // Set coordinator's default project + coordinator task ID, and register this coordinator
