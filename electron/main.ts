@@ -7,7 +7,10 @@ import fs from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { execFileSync } from 'child_process';
 import { registerAllHandlers } from './ipc/register.js';
-import { registerLogHandler } from './log.js';
+import { registerLogHandler, warn as logWarn } from './log.js';
+import { loadAppState } from './ipc/persistence.js';
+import { reconcileWorktreeIntents } from './ipc/worktree-intents.js';
+import { getUserDataDir } from './user-data-dir.js';
 import { installIpcTracing } from './ipc/trace.js';
 import { startAgentHookRuntime, stopAgentHookRuntime } from './agent-hooks/runtime.js';
 import { killAllAgents } from './ipc/pty.js';
@@ -182,6 +185,17 @@ function setupApplicationMenu(): void {
   );
 }
 
+/** Report task worktrees an interrupted creation left behind. Runs before the
+ *  window exists, so no task can be created before the journal is open. */
+function reportOrphanedWorktrees(): void {
+  const journal = path.join(getUserDataDir(), 'worktree-intents.json');
+  for (const orphan of reconcileWorktreeIntents(journal, loadAppState())) {
+    logWarn('worktrees', 'orphaned worktree: task creation was interrupted before save', {
+      ...orphan,
+    });
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -328,6 +342,7 @@ if (shouldStartApp) {
     // agent that misses its hooks. Failure falls back to PTY heuristics.
     await startAgentHookRuntime(() => mainWindow);
     setupApplicationMenu();
+    reportOrphanedWorktrees();
     createWindow();
     registerParallelCodeProtocol();
     // Linux/Windows cold start: the link is a launch argument.

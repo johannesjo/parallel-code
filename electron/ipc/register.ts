@@ -116,6 +116,7 @@ import {
   getUncommittedFileDiffs,
 } from './git.js';
 import { createTask, deleteTask } from './tasks.js';
+import { settleWorktreeIntents } from './worktree-intents.js';
 import { listAgents } from './agents.js';
 import {
   saveAppState,
@@ -1220,7 +1221,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertString(args.json, 'json');
     const json = delegation.normalizeState(args.json);
     syncTaskNamesFromJson(json);
-    return saveAppState(json);
+    saveAppState(json);
+    settleWorktreeIntents(json);
   });
   ipcMain.handle(IPC.LoadAppState, () => {
     const json = loadAppState();

@@ -905,6 +905,11 @@ async function removeDirWithRetries(dirPath: string): Promise<unknown> {
 
 // --- Public functions (used by tasks.ts and register.ts) ---
 
+/** Where `createWorktree` puts the worktree for a branch. */
+export function worktreePathFor(repoRoot: string, branchName: string): string {
+  return `${repoRoot}/.worktrees/${branchName}`;
+}
+
 export async function createWorktree(
   repoRoot: string,
   branchName: string,
@@ -912,7 +917,7 @@ export async function createWorktree(
   baseBranch?: string,
   forceClean = false,
 ): Promise<{ path: string; branch: string }> {
-  const worktreePath = `${repoRoot}/.worktrees/${branchName}`;
+  const worktreePath = worktreePathFor(repoRoot, branchName);
 
   if (forceClean) {
     // Clean up stale worktree/branch from a previous session that wasn't properly removed
@@ -1264,7 +1269,7 @@ export async function removeWorktree(
   // After the user adopts a branch the agent switched the worktree to, the
   // folder keeps its original branch-derived name — callers that know the real
   // path must pass it, deriving from branchName is only a fallback.
-  const worktreePath = explicitWorktreePath ?? `${repoRoot}/.worktrees/${branchName}`;
+  const worktreePath = explicitWorktreePath ?? worktreePathFor(repoRoot, branchName);
 
   if (!fs.existsSync(repoRoot)) return;
 
