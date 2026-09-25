@@ -14,8 +14,10 @@ import {
   onTaskRenamed,
   refreshSpConnection,
   spBanner,
+  spConnection,
   startSuperProductivitySync,
   trackTaskInSp,
+  disconnectSuperProductivity,
 } from './superProductivity';
 
 interface FakeSpTask {
@@ -60,6 +62,7 @@ function fakeSp(channel: string, args: Record<string, unknown> = {}): unknown {
       return ok((args.taskIds as string[]).flatMap((t) => sp.tasks.get(t) ?? []));
     case IPC.SuperProductivityCreateTask: {
       sp.creates.push(args);
+      if (args.parentId && !sp.tasks.has(args.parentId as string)) return missing;
       const task: FakeSpTask = {
         id: `sp-${sp.nextId++}`,
         title: args.title as string,
@@ -375,6 +378,123 @@ describe('Super Productivity sync', () => {
     expect(mockShowNotification).toHaveBeenCalledWith(
       'Could not mark “Task a” done in Super Productivity',
     );
+  });
+
+  it('falls back to the mapped project when the parent task is gone there', async () => {
+    addTask('parent', { superProductivity: { taskId: 'sp-gone', syncedTitle: 'Task parent' } });
+    addTask('child', { coordinatedBy: 'parent' });
+    await focus('child');
+    expect(sp.creates).toEqual([
+      { title: 'Task child', parentId: 'sp-gone' },
+      { title: 'Task child', projectId: 'sp-proj' },
+    ]);
+  });
+
+  it('shortens a very long name for Super Productivity', async () => {
+    addTask('a', { name: 'x'.repeat(600) });
+    await focus('a');
+    expect((sp.creates[0].title as string).length).toBe(500);
+  });
+
+  it('retries a focus that found Super Productivity unreachable when the window comes back', async () => {
+    addTask('a');
+    const real = mockInvoke.getMockImplementation();
+    mockInvoke.mockImplementation(async (channel: string, args?: Record<string, unknown>) =>
+      channel === IPC.SuperProductivityGetTracking
+        ? { ok: false, reason: 'unreachable' }
+        : real?.(channel, args),
+    );
+    await focus('a');
+    expect(sp.current).toBeNull();
+
+    mockInvoke.mockImplementation(real ?? (() => undefined));
+    setWindowFocused(false);
+    await settle();
+    setWindowFocused(true);
+    await settle();
+    expect(sp.current).toBe(store.tasks.a.superProductivity?.taskId);
+  });
+
+  it('ignores a connection check that was answered for a token removed meanwhile', async () => {
+    let answer: (state: string) => void = () => undefined;
+    const real = mockInvoke.getMockImplementation();
+    mockInvoke.mockImplementation(async (channel: string, args?: Record<string, unknown>) => {
+      if (channel === IPC.SuperProductivityGetState) {
+        return new Promise((resolve) => {
+          answer = resolve;
+        });
+      }
+      if (channel === IPC.SuperProductivityClearToken) return undefined;
+      return real?.(channel, args);
+    });
+    const checking = refreshSpConnection();
+    await disconnectSuperProductivity();
+    answer('connected');
+    await checking;
+    expect(spConnection()).toBe('not_configured');
+  });
+
+  it('does not bring a banner back after the task was tracked explicitly', async () => {
+    addTask('a');
+    spTask('email');
+    sp.current = 'email';
+    await focus('a');
+    expect(spBanner()?.reason).toBe('other_task');
+
+    // The window comes back while the user clicks "Track this task".
+    let release: () => void = () => undefined;
+    const real = mockInvoke.getMockImplementation();
+    mockInvoke.mockImplementation(async (channel: string, args?: Record<string, unknown>) => {
+      if (channel === IPC.SuperProductivityGetTracking) {
+        const snapshot = real?.(channel, args); // reads "email", as SP had it
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return snapshot;
+      }
+      return real?.(channel, args);
+    });
+    setWindowFocused(false);
+    await settle();
+    setWindowFocused(true);
+    await settle();
+    expect(await trackTaskInSp('a')).toBe(true);
+    release();
+    await settle();
+    expect(spBanner()).toBeNull();
+  });
+
+  it('completes the task created for a link still being made when the task is closed', async () => {
+    addTask('a');
+    let finishCreate: () => void = () => undefined;
+    const real = mockInvoke.getMockImplementation();
+    mockInvoke.mockImplementation(async (channel: string, args?: Record<string, unknown>) => {
+      if (channel === IPC.SuperProductivityCreateTask) {
+        await new Promise<void>((resolve) => {
+          finishCreate = resolve;
+        });
+      }
+      return real?.(channel, args);
+    });
+    await focus('a'); // create is now in flight
+    armSpCompletion('a', { kind: 'closed' });
+    fireSpCompletion('a');
+    finishCreate();
+    await settle();
+    expect(sp.tasks.get('sp-1')?.isDone).toBe(true);
+  });
+
+  it('completes a linked task even before the startup connection check ran', async () => {
+    mockInvoke.mockImplementation(async (channel: string, args?: Record<string, unknown>) =>
+      channel === IPC.SuperProductivityGetState ? 'not_configured' : fakeSp(channel, args),
+    );
+    await refreshSpConnection();
+    addTask('a', { superProductivity: { taskId: 'sp-a', syncedTitle: 'Task a' } });
+    spTask('sp-a');
+    armSpCompletion('a', { kind: 'closed' });
+    fireSpCompletion('a');
+    await settle();
+    expect(sp.tasks.get('sp-a')?.isDone).toBe(true);
   });
 
   it('does not complete anything for a removal nobody armed', async () => {

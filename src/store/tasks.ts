@@ -1242,11 +1242,14 @@ export function initMCPListeners(): () => void {
 
   cleanups.push(
     window.electron.ipcRenderer.on(IPC.MCP_TaskClosed, (data: unknown) => {
-      const { taskId } = data as { taskId: string };
+      const { taskId, merged } = data as {
+        taskId: string;
+        merged?: { linesAdded: number; linesRemoved: number };
+      };
       const task = store.tasks[taskId];
       if (!task) return;
-      // The coordinator closed or landed this subtask: it is finished.
-      armSpCompletion(taskId, { kind: isLandedTaskState(task.landingState) ? 'merged' : 'closed' });
+      // The coordinator closed, merged or landed this subtask: it is finished.
+      armSpCompletion(taskId, merged ? { kind: 'merged', ...merged } : { kind: 'closed' });
       fireSpCompletion(taskId);
 
       const agentIds = [...task.agentIds];

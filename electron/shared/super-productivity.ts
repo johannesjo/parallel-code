@@ -47,6 +47,19 @@ export type SpFailureReason =
   | 'invalid_request'
   | 'error';
 
+/** Longest title sent to Super Productivity; longer task names are shortened. */
+export const SP_MAX_TITLE_LENGTH = 500;
+/** Most task ids one refresh asks about (one GET each, a few at a time). */
+export const SP_MAX_BATCH_IDS = 50;
+
+/** The title Parallel Code sends for a task name — also what title sync compares. */
+export function toSpTitle(name: string): string {
+  const title = name.trim();
+  return title.length > SP_MAX_TITLE_LENGTH
+    ? `${title.slice(0, SP_MAX_TITLE_LENGTH - 1).trimEnd()}…`
+    : title;
+}
+
 export type SpResult<T> =
   | { ok: true; value: T }
   | { ok: false; reason: SpFailureReason; message?: string };
@@ -183,10 +196,15 @@ export function parseParallelCodeUrl(url: string): { action: 'new-task'; spTaskI
     return null;
   }
   if (parsed.protocol !== `${PARALLEL_CODE_PROTOCOL}:`) return null;
-  // Custom schemes keep the action in `host` (`parallelcode://new-task`), but
-  // tolerate `parallelcode:new-task` and a trailing slash as well.
-  const action = (parsed.host || parsed.pathname).replace(/^\/+|\/+$/g, '').toLowerCase();
-  if (action !== 'new-task') return null;
+  if (parsed.username || parsed.password || parsed.port) return null;
+  // The action is the host (`parallelcode://new-task`, optionally with a
+  // trailing slash) or, without one, the whole path (`parallelcode:new-task`).
+  const action = parsed.host
+    ? parsed.pathname === '' || parsed.pathname === '/'
+      ? parsed.host
+      : ''
+    : parsed.pathname;
+  if (action.toLowerCase() !== 'new-task') return null;
   const spTaskId = parsed.searchParams.get('spTaskId');
   return isValidSpId(spTaskId) ? { action: 'new-task', spTaskId } : null;
 }

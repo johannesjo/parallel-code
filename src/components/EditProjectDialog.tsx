@@ -79,8 +79,9 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
         setConfirmRemove(false);
         setSpProjectId(p.superProductivityProjectId ?? '');
         setSpProjects(null);
-        if (spConnection() !== 'not_configured') {
-          const load = ++spProjectsLoad;
+        // Bumped on every opening, so a list still loading from an earlier one is dropped.
+        const load = ++spProjectsLoad;
+        if (spConnection() !== 'not_configured' && !isDocumentProject(p)) {
           void listSpProjects().then((list) => {
             if (load === spProjectsLoad) setSpProjects(list);
           });
@@ -483,6 +484,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   <label style={sectionLabelStyle}>Super Productivity project</label>
                   <select
                     class="project-select"
+                    aria-label="Super Productivity project"
                     value={spProjectId()}
                     onChange={(e) => setSpProjectId(e.currentTarget.value)}
                   >
@@ -491,7 +493,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                       {(spProject) => <option value={spProject.id}>{spProject.title}</option>}
                     </For>
                     <Show when={spProjectId() && !list().some((sp) => sp.id === spProjectId())}>
-                      <option value={spProjectId()}>(project no longer exists)</option>
+                      <option value={spProjectId()}>(archived or deleted project)</option>
                     </Show>
                   </select>
                   <div style={{ 'font-size': '12px', color: theme.fgSubtle, padding: '2px 2px 0' }}>

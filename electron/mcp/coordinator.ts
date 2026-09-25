@@ -84,6 +84,12 @@ import type {
 import { IPC } from '../ipc/channels.js';
 import type { SessionCapabilities } from '../shared/delegation-types.js';
 
+/** Lines a merge changed, sent with MCP_TaskClosed when a task leaves by merging. */
+interface MergedLines {
+  linesAdded: number;
+  linesRemoved: number;
+}
+
 const DEFAULT_WAIT_TIMEOUT_MS = 300_000; // 5 minutes
 const PROMPT_WRITE_DELAY_MS = 50;
 const GIT_LOCK_RETRY_DELAY_MS = 2_000;
@@ -2049,7 +2055,10 @@ export class Coordinator {
     this.idleResolvers.delete(taskId);
   }
 
-  private async cleanupLandedTaskResources(task: CoordinatedTask): Promise<void> {
+  private async cleanupLandedTaskResources(
+    task: CoordinatedTask,
+    merged: MergedLines,
+  ): Promise<void> {
     this.closingTaskIds.add(task.id);
     try {
       this.suppressPendingNotificationForTask(task);
@@ -2079,7 +2088,7 @@ export class Coordinator {
       task.exitCode = 0;
       this.tasks.delete(task.id);
       this.clearTaskControlState(task.id);
-      this.notifyRenderer(IPC.MCP_TaskClosed, { taskId: task.id });
+      this.notifyRenderer(IPC.MCP_TaskClosed, { taskId: task.id, merged });
     } finally {
       this.closingTaskIds.delete(task.id);
     }
@@ -2196,7 +2205,10 @@ export class Coordinator {
     task.landingReason = undefined;
 
     try {
-      await this.cleanupLandedTaskResources(task);
+      await this.cleanupLandedTaskResources(task, {
+        linesAdded: mergeResult.linesAdded,
+        linesRemoved: mergeResult.linesRemoved,
+      });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       task.landingState = 'landed_cleanup_failed';
@@ -2280,7 +2292,10 @@ export class Coordinator {
     const result = await this.runGitMerge(task, opts, () => this.assertOrchestrationEnabled(epoch));
 
     if (opts?.cleanup) {
-      await this.cleanupTask(taskId);
+      await this.cleanupTask(taskId, {
+        linesAdded: result.linesAdded,
+        linesRemoved: result.linesRemoved,
+      });
     }
 
     return {
@@ -2438,7 +2453,9 @@ export class Coordinator {
     this.clearTaskControlState(taskId);
   }
 
-  private async cleanupTask(taskId: string): Promise<void> {
+  /** `merged` says the task leaves because it was merged (for the renderer's
+   *  Super Productivity note); a plain close or failed start passes nothing. */
+  private async cleanupTask(taskId: string, merged?: MergedLines): Promise<void> {
     const task = this.tasks.get(taskId);
     if (!task) return;
     this.closingTaskIds.add(taskId);
@@ -2510,7 +2527,7 @@ export class Coordinator {
     this.closingTaskIds.delete(taskId);
 
     // Notify renderer
-    this.notifyRenderer(IPC.MCP_TaskClosed, { taskId });
+    this.notifyRenderer(IPC.MCP_TaskClosed, merged ? { taskId, merged } : { taskId });
   }
 
   getTask(taskId: string): CoordinatedTask | undefined {

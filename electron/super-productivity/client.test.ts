@@ -189,4 +189,73 @@ describe('createSpClient', () => {
     });
     expect(await down.getTasks(['a'])).toEqual({ ok: false, reason: 'unreachable' });
   });
+
+  it('treats only a missing entity as gone, not an unknown route', async () => {
+    const respond = (code: string) =>
+      createSpClient({
+        getToken: () => 'tok',
+        fetchImpl: fakeFetch(() => ({
+          status: 404,
+          json: { ok: false, error: { code, message: '' } },
+        })),
+      });
+    expect(await respond('TASK_NOT_FOUND').getTask('t1')).toMatchObject({ reason: 'not_found' });
+    expect(await respond('NOT_FOUND').getTask('t1')).toMatchObject({ reason: 'error' });
+    const html = createSpClient({
+      getToken: () => 'tok',
+      fetchImpl: vi.fn(async () => new Response('<html>nope</html>', { status: 404 })),
+    });
+    expect(await html.getTask('t1')).toMatchObject({ reason: 'error' });
+  });
+
+  it('keeps going past a task that fails to load, and returns summaries only', async () => {
+    const client = createSpClient({
+      getToken: () => 'tok',
+      fetchImpl: fakeFetch((_m, path) =>
+        path === '/tasks/bad'
+          ? { status: 500, json: { ok: false, error: { code: 'INTERNAL_ERROR', message: '' } } }
+          : ok({ id: path.split('/').pop(), title: 'T', notes: 'private' }),
+      ),
+    });
+    const res = await client.getTasks(['a', 'bad', 'b', 'c', 'd', 'e', 'f', 'g']);
+    expect(res.ok && res.value.map((t) => t.id).sort()).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+      'e',
+      'f',
+      'g',
+    ]);
+    expect(res.ok && res.value.every((t) => !('notes' in t))).toBe(true);
+  });
+
+  it('times out a response body that never finishes', async () => {
+    const client = createSpClient({
+      getToken: () => 'tok',
+      readTimeoutMs: 20,
+      fetchImpl: vi.fn(async (_input: string, init: RequestInit) => {
+        const body = new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"ok":'));
+            init.signal?.addEventListener('abort', () =>
+              controller.error(new DOMException('aborted', 'AbortError')),
+            );
+          },
+        });
+        return new Response(body, { status: 200 });
+      }),
+    });
+    expect(await client.getTask('t1')).toEqual({ ok: false, reason: 'unreachable' });
+  });
+
+  it('refuses to read an unreadable current task as "nothing tracked"', async () => {
+    const client = createSpClient({
+      getToken: () => 'tok',
+      fetchImpl: fakeFetch((_m, path) =>
+        path === '/focus' ? ok({ timer: null }) : ok({ id: '../x', title: 'Weird' }),
+      ),
+    });
+    expect(await client.getTracking()).toMatchObject({ ok: false, reason: 'error' });
+  });
 });

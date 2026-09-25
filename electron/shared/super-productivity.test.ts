@@ -6,6 +6,8 @@ import {
   decideSpFocusAction,
   parseParallelCodeUrl,
   resolveSpTitleSync,
+  SP_MAX_TITLE_LENGTH,
+  toSpTitle,
   type SpTaskSummary,
 } from './super-productivity.js';
 
@@ -174,6 +176,10 @@ describe('parseParallelCodeUrl', () => {
       action: 'new-task',
       spTaskId: 'x',
     });
+    expect(parseParallelCodeUrl('parallelcode:new-task?spTaskId=x')).toEqual({
+      action: 'new-task',
+      spTaskId: 'x',
+    });
   });
   it('rejects anything else', () => {
     for (const url of [
@@ -182,6 +188,10 @@ describe('parseParallelCodeUrl', () => {
       'parallelcode://new-task?spTaskId=../../etc',
       'parallelcode://new-task?spTaskId=a%20b',
       'parallelcode://run?spTaskId=abc',
+      'parallelcode://new-task/anything/else?spTaskId=abc',
+      'parallelcode://user:pw@new-task?spTaskId=abc',
+      'parallelcode://new-task:99?spTaskId=abc',
+      'parallelcode:/new-task?spTaskId=abc',
       'https://new-task?spTaskId=abc',
       'not a url',
     ]) {
@@ -208,5 +218,16 @@ describe('buildPromptFromSpTask', () => {
         issueUrl: 'https://github.com/o/r/issues/7',
       }),
     ).toBe('Fix\n\nSee https://github.com/o/r/issues/7');
+  });
+});
+
+describe('toSpTitle', () => {
+  it('trims and keeps short names', () => {
+    expect(toSpTitle('  Fix login  ')).toBe('Fix login');
+  });
+  it('shortens names over the limit', () => {
+    const title = toSpTitle('x'.repeat(SP_MAX_TITLE_LENGTH + 20));
+    expect(title).toHaveLength(SP_MAX_TITLE_LENGTH);
+    expect(title.endsWith('…')).toBe(true);
   });
 });

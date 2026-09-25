@@ -19,6 +19,8 @@ import {
   buildSpDoneNote,
   decideSpFocusAction,
   resolveSpTitleSync,
+  SP_MAX_BATCH_IDS,
+  toSpTitle,
   type SpBannerReason,
   type SpConnectionState,
   type SpProject,
@@ -52,7 +54,12 @@ export interface SpBanner {
 const [spBanner, setSpBanner] = createSignal<SpBanner | null>(null);
 export { spBanner };
 
+/** Bumped when the token is saved or removed: a reply to a request made
+ *  before that must not bring back the old connection state. */
+let connectionGen = 0;
+
 async function callSp<T>(channel: IPC, args?: Record<string, unknown>): Promise<SpResult<T>> {
+  const gen = connectionGen;
   let res: SpResult<T>;
   try {
     res = await invoke<SpResult<T>>(channel, args);
@@ -60,6 +67,7 @@ async function callSp<T>(channel: IPC, args?: Record<string, unknown>): Promise<
     logWarn('super-productivity', 'IPC call failed', { channel, err: String(err) });
     return { ok: false, reason: 'error' };
   }
+  if (gen !== connectionGen) return { ok: false, reason: 'not_configured' };
   if (res.ok) setSpConnection('connected');
   else if (CONNECTION_STATES.has(res.reason)) setSpConnection(res.reason as SpConnectionState);
   return res;
@@ -84,8 +92,10 @@ function isTrackableTask(taskId: string): boolean {
 let autoMapPending = false;
 
 export async function refreshSpConnection(): Promise<SpConnectionState> {
+  const gen = connectionGen;
   try {
     const state = await invoke<SpConnectionState>(IPC.SuperProductivityGetState);
+    if (gen !== connectionGen) return spConnection();
     setSpConnection(state);
     if (state === 'connected' && autoMapPending) {
       autoMapPending = false;
@@ -100,7 +110,9 @@ export async function refreshSpConnection(): Promise<SpConnectionState> {
 
 /** Save the access token; on success, match projects by name. Throws on a malformed token. */
 export async function connectSuperProductivity(token: string): Promise<SpConnectionState> {
+  const gen = ++connectionGen;
   const state = await invoke<SpConnectionState>(IPC.SuperProductivitySetToken, { token });
+  if (gen !== connectionGen) return spConnection();
   setSpConnection(state);
   autoMapPending = state !== 'connected';
   if (state === 'connected') await autoMapProjectsByName();
@@ -108,6 +120,7 @@ export async function connectSuperProductivity(token: string): Promise<SpConnect
 }
 
 export async function disconnectSuperProductivity(): Promise<void> {
+  connectionGen++;
   await invoke(IPC.SuperProductivityClearToken);
   autoMapPending = false;
   setSpConnection('not_configured');
@@ -179,15 +192,16 @@ function ensureSpLink(taskId: string): Promise<string | null> {
 async function createSpTaskFor(taskId: string): Promise<string | null> {
   const task = store.tasks[taskId];
   if (!task) return null;
-  const title = task.name.trim() || 'Parallel Code task';
+  const title = toSpTitle(task.name) || 'Parallel Code task';
   // An agent-spawned subtask becomes a subtask of its parent's task.
   const parentSpTaskId = task.coordinatedBy
     ? store.tasks[task.coordinatedBy]?.superProductivity?.taskId
     : undefined;
   let spProjectId = store.projects.find((p) => p.id === task.projectId)?.superProductivityProjectId;
   // Super Productivity accepts an unknown projectId and files the task nowhere
-  // visible, so a mapping to a since-deleted or archived project is dropped.
-  if (spProjectId && !parentSpTaskId) {
+  // visible, so a mapping to a since-deleted or archived project is dropped —
+  // also when it is only the fallback for a parent that is gone.
+  if (spProjectId) {
     const spProjects = await listSpProjects();
     if (spProjects && !spProjects.some((p) => p.id === spProjectId)) spProjectId = undefined;
   }
@@ -219,7 +233,7 @@ function applyTitleSync(taskId: string, remoteTitle: string): void {
   const task = store.tasks[taskId];
   const link = task?.superProductivity;
   if (!task || !link) return;
-  const action = resolveSpTitleSync(link.syncedTitle, task.name.trim(), remoteTitle.trim());
+  const action = resolveSpTitleSync(link.syncedTitle, toSpTitle(task.name), remoteTitle.trim());
   switch (action.kind) {
     case 'none':
       return;
@@ -250,7 +264,7 @@ async function pushTitle(taskId: string, title: string): Promise<void> {
 export function onTaskRenamed(taskId: string): void {
   const task = store.tasks[taskId];
   if (!isEnabled() || !task?.superProductivity) return;
-  void pushTitle(taskId, task.name.trim());
+  void pushTitle(taskId, toSpTitle(task.name));
 }
 
 async function refreshLinkedTitles(): Promise<void> {
@@ -260,25 +274,43 @@ async function refreshLinkedTitles(): Promise<void> {
       byTaskId.set(task.superProductivity.taskId, task.id);
     }
   }
-  if (byTaskId.size === 0) return;
-  const res = await callSp<SpTaskSummary[]>(IPC.SuperProductivityGetTasks, {
-    taskIds: [...byTaskId.keys()].slice(0, 50),
-  });
-  if (!res.ok) return;
-  for (const spTask of res.value) {
-    const taskId = byTaskId.get(spTask.id);
-    if (taskId) applyTitleSync(taskId, spTask.title);
+  const ids = [...byTaskId.keys()];
+  for (let start = 0; start < ids.length; start += SP_MAX_BATCH_IDS) {
+    const res = await callSp<SpTaskSummary[]>(IPC.SuperProductivityGetTasks, {
+      taskIds: ids.slice(start, start + SP_MAX_BATCH_IDS),
+    });
+    if (!res.ok) return;
+    for (const spTask of res.value) {
+      const taskId = byTaskId.get(spTask.id);
+      if (taskId) applyTitleSync(taskId, spTask.title);
+    }
   }
 }
 
 // ---------------------------------------------------------------------------
 // Tracking
 
+/** Bumped by every focus evaluation and every explicit start: an evaluation
+ *  whose replies arrive after a newer one began must not act on them. */
+let focusSeq = 0;
+/** The task whose evaluation found Super Productivity unreachable; retried
+ *  when the window regains focus. */
+let retryTaskId: string | null = null;
+
+const CONNECTION_FAILURES: ReadonlySet<string> = CONNECTION_STATES;
+
 async function evaluateFocus(taskId: string): Promise<void> {
   if (!isTrackableTask(taskId)) return;
+  const seq = ++focusSeq;
 
   const tracking = await callSp<SpTrackingState>(IPC.SuperProductivityGetTracking);
-  if (!tracking.ok) return;
+  if (!tracking.ok) {
+    if (CONNECTION_FAILURES.has(tracking.reason) && tracking.reason !== 'not_configured') {
+      retryTaskId = taskId;
+    }
+    return;
+  }
+  if (retryTaskId === taskId) retryTaskId = null;
 
   let own: SpTaskDetail | null = null;
   let ownMissing = false;
@@ -296,7 +328,8 @@ async function evaluateFocus(taskId: string): Promise<void> {
       return;
     }
   }
-  if (store.activeTaskId !== taskId) return; // the user moved on meanwhile
+  // The user moved on, or tracking was started explicitly, meanwhile.
+  if (store.activeTaskId !== taskId || seq !== focusSeq) return;
 
   const decision = decideSpFocusAction({
     tracking: tracking.value,
@@ -330,6 +363,7 @@ export async function trackTaskInSp(
     }
     const res = await callSp<null>(IPC.SuperProductivityStartTracking, { taskId: spTaskId });
     if (res.ok) {
+      focusSeq++; // an evaluation still in flight saw the state before this
       if (spBanner()?.taskId === taskId) setSpBanner(null);
       return true;
     }
@@ -357,6 +391,16 @@ function prUrlOf(task: { prUrl?: string; githubUrl?: string }): string | undefin
 /** Completions waiting for their task to leave the store (see armSpCompletion). */
 const armedCompletions = new Map<string, () => void>();
 
+function completeSpTask(spTaskId: string, note: string, name: string): void {
+  void callSp<null>(IPC.SuperProductivityCompleteTask, { taskId: spTaskId, note }).then((res) => {
+    // Gone over there, or never set up here: nothing to report.
+    if (res.ok || res.reason === 'not_found' || res.reason === 'not_configured') return;
+    // The task is gone here, so nothing will retry: say so.
+    logWarn('super-productivity', 'Could not complete linked task', { reason: res.reason });
+    showNotification(`Could not mark “${name}” done in Super Productivity`);
+  });
+}
+
 /**
  * Prepare marking the linked task done for when this task leaves Parallel
  * Code by the user's close, a merge, or a coordinator closing it. Captures
@@ -364,6 +408,10 @@ const armedCompletions = new Map<string, () => void>();
  * fireSpCompletion from removeTaskFromStore, so a close that fails and is
  * retried completes only once it really happened. Removing a project closes
  * its tasks without arming this, and collapsing never removes a task.
+ *
+ * Arms whenever a link exists, even before the connection check at startup
+ * has run: a link means the integration was set up. A task whose linked
+ * task is still being created completes that one once it exists.
  */
 export function armSpCompletion(
   taskId: string,
@@ -371,7 +419,8 @@ export function armSpCompletion(
 ): void {
   const task = store.tasks[taskId];
   const link = task?.superProductivity;
-  if (!task || !link || !isEnabled()) return;
+  const creating = link ? undefined : creatingLinks.get(taskId);
+  if (!task || (!link && !creating)) return;
   const note = buildSpDoneNote({
     kind: input.kind,
     branchName: task.gitIsolation === 'worktree' ? task.branchName : undefined,
@@ -380,14 +429,14 @@ export function armSpCompletion(
     linesRemoved: input.linesRemoved,
     prUrl: prUrlOf(task),
   });
-  const spTaskId = link.taskId;
   const name = task.name;
   armedCompletions.set(taskId, () => {
-    void callSp<null>(IPC.SuperProductivityCompleteTask, { taskId: spTaskId, note }).then((res) => {
-      if (res.ok || res.reason === 'not_found') return;
-      // The task is gone here, so nothing will retry: say so.
-      logWarn('super-productivity', 'Could not complete linked task', { reason: res.reason });
-      showNotification(`Could not mark “${name}” done in Super Productivity`);
+    if (link) {
+      completeSpTask(link.taskId, note, name);
+      return;
+    }
+    void creating?.then((spTaskId) => {
+      if (spTaskId) completeSpTask(spTaskId, note, name);
     });
   });
 }
@@ -411,7 +460,11 @@ export function fireSpCompletion(taskId: string): void {
  * focus event does. Plain terminals are not tasks, so focusing one leaves
  * tracking on the last task.
  */
+let stopActiveSync: (() => void) | null = null;
+
 export function startSuperProductivitySync(windowFocused: Accessor<boolean>): () => void {
+  // One watcher at a time (a dev reload can start another).
+  stopActiveSync?.();
   void refreshSpConnection();
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -444,10 +497,14 @@ export function startSuperProductivitySync(windowFocused: Accessor<boolean>): ()
           void refreshLinkedTitles();
           // Re-check a showing banner: if the conflict was resolved over there
           // (the other task stopped, the break ended), the focused task gets
-          // tracked like any focused task. Without a banner, coming back to
-          // the window changes nothing.
+          // tracked like any focused task. Likewise retry a focus that found
+          // Super Productivity unreachable. Otherwise, coming back to the
+          // window changes nothing.
+          const active = store.activeTaskId;
           const bannerTask = untrack(spBanner)?.taskId;
-          if (bannerTask && bannerTask === store.activeTaskId) void evaluateFocus(bannerTask);
+          if (active && (bannerTask === active || retryTaskId === active)) {
+            void evaluateFocus(active);
+          }
         },
         { defer: true },
       ),
@@ -455,8 +512,12 @@ export function startSuperProductivitySync(windowFocused: Accessor<boolean>): ()
     return disposeRoot;
   });
 
-  return () => {
+  const stop = () => {
     if (settleTimer) clearTimeout(settleTimer);
+    focusSeq++; // drop evaluations still in flight
     dispose();
+    if (stopActiveSync === stop) stopActiveSync = null;
   };
+  stopActiveSync = stop;
+  return stop;
 }

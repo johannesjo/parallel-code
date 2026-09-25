@@ -7,12 +7,15 @@ import { ipcMain } from 'electron';
 import { IPC } from '../ipc/channels.js';
 import { assertOptionalString, assertString, assertStringArray } from '../ipc/validate.js';
 import { getUserDataDir } from '../user-data-dir.js';
-import { isValidSpId } from '../shared/super-productivity.js';
-import { createSpClient, SP_MAX_BATCH_IDS } from './client.js';
+import {
+  isValidSpId,
+  SP_MAX_BATCH_IDS,
+  SP_MAX_TITLE_LENGTH,
+} from '../shared/super-productivity.js';
+import { createSpClient } from './client.js';
 import { clearSpToken, isValidSpToken, readSpToken, writeSpToken } from './token-store.js';
 import { consumePendingSpOpen } from './protocol.js';
 
-const MAX_TITLE_LENGTH = 500;
 const MAX_NOTE_LENGTH = 2_000;
 
 type IpcArgs = Record<string, unknown> | undefined;
@@ -68,7 +71,7 @@ export function registerSuperProductivityHandlers(): void {
 
   ipcMain.handle(IPC.SuperProductivityCreateTask, (_e, args: IpcArgs) =>
     client.createTask({
-      title: boundedText(args?.title, 'title', MAX_TITLE_LENGTH),
+      title: boundedText(args?.title, 'title', SP_MAX_TITLE_LENGTH),
       projectId: optionalSpId(args?.projectId, 'projectId'),
       parentId: optionalSpId(args?.parentId, 'parentId'),
     }),
@@ -90,7 +93,7 @@ export function registerSuperProductivityHandlers(): void {
   ipcMain.handle(IPC.SuperProductivityRenameTask, (_e, args: IpcArgs) =>
     client.renameTask(
       spId(args?.taskId, 'taskId'),
-      boundedText(args?.title, 'title', MAX_TITLE_LENGTH),
+      boundedText(args?.title, 'title', SP_MAX_TITLE_LENGTH),
     ),
   );
 

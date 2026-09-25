@@ -41,13 +41,15 @@ export function consumePendingSpOpen(): string | null {
 }
 
 /**
- * Make this app the handler for `parallelcode://`. Packaged builds only: a
- * dev run would point the OS at the dev Electron binary and keep it there.
- * macOS and the .deb also declare the scheme at install time (package.json
- * build.protocols); an AppImage only gets it if it was desktop-integrated.
+ * Make this app the default handler for `parallelcode://` on macOS, where the
+ * bundle declares the scheme (package.json build.protocols) but another app
+ * may have claimed it. Packaged builds only: a dev run would point the OS at
+ * the dev Electron binary and keep it there. Linux is left alone: the .deb
+ * registers the scheme at install time, and on an AppImage that isn't
+ * desktop-integrated the call can only fail, on every launch.
  */
 export function registerParallelCodeProtocol(): void {
-  if (!app.isPackaged) return;
+  if (!app.isPackaged || process.platform !== 'darwin') return;
   if (!app.setAsDefaultProtocolClient(PARALLEL_CODE_PROTOCOL))
     warn('super-productivity', 'Could not register the parallelcode:// handler');
 }

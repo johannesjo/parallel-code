@@ -1793,15 +1793,16 @@ describe('Super Productivity completion wiring', () => {
     // The removal also clears the task's git status entry.
     Object.assign(expectDefined(core.harness, 'mock store harness').store, { taskGitStatus: {} });
     mockTasks['child-1'] = { ...worktreeTask(), coordinatedBy: 'coord-1' };
-    mockTasks['child-2'] = {
-      ...worktreeTask(),
-      coordinatedBy: 'coord-1',
-      landingState: 'landed_pending_review',
-    };
+    mockTasks['child-2'] = { ...worktreeTask(), coordinatedBy: 'coord-1' };
     closedHandler({ taskId: 'child-1' });
-    closedHandler({ taskId: 'child-2' });
+    // What the coordinator sends after land_self or merge_task with cleanup.
+    closedHandler({ taskId: 'child-2', merged: { linesAdded: 4, linesRemoved: 1 } });
     expect(armSpCompletion).toHaveBeenCalledWith('child-1', { kind: 'closed' });
-    expect(armSpCompletion).toHaveBeenCalledWith('child-2', { kind: 'merged' });
+    expect(armSpCompletion).toHaveBeenCalledWith('child-2', {
+      kind: 'merged',
+      linesAdded: 4,
+      linesRemoved: 1,
+    });
     expect(fireSpCompletion).toHaveBeenCalledWith('child-1');
     expect(fireSpCompletion).toHaveBeenCalledWith('child-2');
   });

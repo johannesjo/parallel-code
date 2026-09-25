@@ -1533,10 +1533,11 @@ describe('Coordinator land_self', () => {
       expect.objectContaining({ agentIds: expect.arrayContaining(['secondary']) }),
     );
     expect(coordinator.getTask('task-1')).toBeUndefined();
-    expect(mockNotifyRenderer).toHaveBeenCalledWith(
-      'mcp_task_closed',
-      expect.objectContaining({ taskId: 'task-1' }),
-    );
+    // The renderer marks the Super Productivity task done with a merge note.
+    expect(mockNotifyRenderer).toHaveBeenCalledWith('mcp_task_closed', {
+      taskId: 'task-1',
+      merged: { linesAdded: expect.any(Number), linesRemoved: expect.any(Number) },
+    });
   });
 
   it('stages a landed notification so the coordinator hears about successful self-land', async () => {
@@ -2837,6 +2838,18 @@ describe('Coordinator mergeTask active ownership guard', () => {
     });
 
     expect(vi.mocked(mergeTask)).toHaveBeenCalled();
+  });
+
+  it('says the task was merged when a merge with cleanup closes it', async () => {
+    await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
+    coordinator.signalDone('task-1');
+
+    await coordinator.mergeTask('task-1', { cleanup: true });
+
+    expect(mockNotifyRenderer).toHaveBeenCalledWith('mcp_task_closed', {
+      taskId: 'task-1',
+      merged: { linesAdded: 1, linesRemoved: 0 },
+    });
   });
 
   it('runs the verify command before a coordinator-driven merge and escalates on failure', async () => {
