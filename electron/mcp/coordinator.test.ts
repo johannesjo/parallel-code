@@ -3926,6 +3926,39 @@ describe('Coordinator sub-task MCP config isolation', () => {
     );
   });
 
+  it('rejects a tracked preferred Kimi config that would override the fallback server', async () => {
+    const preferredPath = '/tmp/test/.kimi-code/mcp.json';
+    mockSpawnSync.mockImplementation((_command: string, args: string[]) => ({
+      status: args[args.length - 1] === '.kimi-code/mcp.json' ? 0 : 1,
+      error: undefined,
+      stderr: Buffer.alloc(0),
+    }));
+    mockExistsSync.mockImplementation((path) => path === preferredPath);
+    mockReadFileSync.mockImplementation((path) =>
+      path === preferredPath
+        ? JSON.stringify({ mcpServers: { 'parallel-code': { command: 'tracked-server' } } })
+        : '# existing\n',
+    );
+    coordinator.setCoordinatorSpawnDefaults('coord-1', 'kimi', []);
+    coordinator.setMCPServerInfo(
+      'coord-1',
+      'http://localhost:3001',
+      'coordinator-tok',
+      'subtask-tok',
+      '/path/server.js',
+    );
+
+    await expect(
+      coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' }),
+    ).rejects.toThrow('.kimi-code/mcp.json already defines mcpServers["parallel-code"]');
+    expect(mockAtomicWriteFileSync).not.toHaveBeenCalledWith(
+      '/tmp/test/.mcp.json',
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(mockSpawnAgent).not.toHaveBeenCalled();
+  });
+
   it('only parses the selected Kimi discovery path', async () => {
     mockSpawnSync.mockImplementation((_command: string, args: string[]) => ({
       status: args[args.length - 1] === '.mcp.json' ? 0 : 1,

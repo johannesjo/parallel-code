@@ -1887,6 +1887,17 @@ export class Coordinator {
       );
     }
 
+    if (candidate.relativePath === '.mcp.json') {
+      // Kimi loads .kimi-code/mcp.json after .mcp.json. A server defined there
+      // would replace the task-scoped server written to the fallback path.
+      const preferredPath = join(task.worktreePath, KIMI_AUTO_DISCOVERED_MCP_PATHS[0]);
+      if (readMcpJsonContent(preferredPath).mcpServers?.['parallel-code'] !== undefined) {
+        throw new Error(
+          `Unable to create Kimi child MCP config: ${KIMI_AUTO_DISCOVERED_MCP_PATHS[0]} already defines mcpServers["parallel-code"] and would override .mcp.json.`,
+        );
+      }
+    }
+
     const { configPath, relativePath } = candidate;
     const content = readMcpJsonContent(configPath);
     const existingParallelCode = content.mcpServers?.['parallel-code'];
