@@ -118,6 +118,7 @@ import {
 import { createTask, deleteTask } from './tasks.js';
 import { settleWorktreeIntents } from './worktree-intents.js';
 import { windowNotifier } from './window-notifier.js';
+import { createRemoteTransport } from './remote-transport.js';
 import { listAgents } from './agents.js';
 import {
   saveAppState,
@@ -209,22 +210,6 @@ export function buildCoordinatorMCPConfig(opts: CoordinatorMCPConfigOpts): {
       },
     },
   };
-}
-
-async function startRemoteServerOnFreePort(
-  start: number,
-  end: number,
-  opts: Omit<Parameters<typeof startRemoteServer>[0], 'port'>,
-): Promise<Awaited<ReturnType<typeof startRemoteServer>>> {
-  for (let port = start; port <= end; port++) {
-    try {
-      return await startRemoteServer({ ...opts, port });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE' && port < end) continue;
-      throw err;
-    }
-  }
-  throw new Error(`No free port found in range ${start}–${end}`);
 }
 
 function isMissingCommandError(err: unknown, command: string): boolean {
@@ -533,12 +518,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
             } catch (error) {
               console.warn('Could not remove chat canvas credentials:', error);
             }
-            void stopIdleMcpTransport().catch((error) =>
-              console.warn('[MCP] Could not stop the idle chat transport:', error),
-            );
+            void transport
+              .stopIfIdle()
+              .catch((error) =>
+                console.warn('[MCP] Could not stop the idle chat transport:', error),
+              );
           };
           try {
-            const server = await ensureMcpTransport(false);
+            const server = await transport.ensureForMcp(false);
             const token = server.registerCanvasAgent(taskId, canvasId, () => active);
             unregister = () => server.unregisterCanvasAgent(canvasId);
             const serverPath = path
@@ -587,7 +574,16 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // --- Remote access state ---
   // Keep development phone access and coordinator ports separate from the installed app.
   const defaultRemotePort = app.isPackaged ? 7777 : 8777;
-  let remoteServer: Awaited<ReturnType<typeof startRemoteServer>> | null = null;
+  const transport = createRemoteTransport({
+    defaultPort: defaultRemotePort,
+    serverOptions: () => remoteServerOptions(),
+    coordinator: () => coordinator,
+    needsWideBind: (dockerMode) => needsWideBind(dockerMode),
+    wideBindInUse: () =>
+      wideBindAgents.size > 0 ||
+      (process.platform !== 'linux' && delegation.requiresWideTransport()),
+    rememberedDevicesPath: () => path.join(getUserDataDir(), 'paired-phones.json'),
+  });
   const taskNames = new Map<string, string>();
   // Renderer-derived per-task attention (needs input, working, ready, …), pushed
   // from the renderer via Remote_UpdateTaskStatus so the mobile overview can show
@@ -604,16 +600,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
   let coordinator: CoordinatorType | null = null;
   let coordinatorHandlersRegistered = false;
   let lastMcpConfigPath: string | null = null;
-  // True when the remote server was started by StartMCPServer (not the manual StartRemoteServer).
-  // Used to stop the server automatically when the last MCP coordinator deregisters.
-  let remoteServerStartedForMcp = false;
-  // True when the user has explicitly requested remote access via StartRemoteServer.
-  // Prevents auto-stop when coordinator deregisters even if MCP started the server first.
-  let remoteServerRequestedManually = false;
-  // True when StopRemoteServer was called while a coordinator was active.
-  // The server will be stopped when the last coordinator deregisters.
-  let remoteServerPendingStop = false;
-
   // A kill must also cancel startup while optional MCP transport is awaiting I/O.
   const pendingSpawns = new Map<string, { sessionInstanceId: string }>();
   /** Which spawn minted the agent's live canvas token. `pendingSpawns` cannot answer this: a
@@ -639,7 +625,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     },
     currentCoordinator: () => coordinator,
     prepareParent: prepareDelegationParent,
-    sessions: () => remoteServer?.getSessionAgents() ?? [],
+    sessions: () => transport.current()?.getSessionAgents() ?? [],
     changed: (event) => {
       if (!win.isDestroyed()) win.webContents.send(IPC.DelegationChanged, event);
     },
@@ -657,7 +643,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   async function prepareDelegationParent(task: TaskAuthorityInput): Promise<void> {
     await ensureCoordinator();
     if (!coordinator) throw new Error('Delegation unavailable.');
-    const server = await ensureMcpTransport(task.dockerMode === true);
+    const server = await transport.ensureForMcp(task.dockerMode === true);
     const hostServerPath = path
       .join(path.dirname(fileURLToPath(import.meta.url)), '..', 'mcp-server.cjs')
       .replace('/app.asar/', '/app.asar.unpacked/');
@@ -711,11 +697,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
     canvasOwners.delete(agentId);
     // The server's own exit listener runs after this one; drop the agent here so the
     // idle check below already sees it gone.
-    remoteServer?.unregisterCanvasAgent(agentId);
+    transport.current()?.unregisterCanvasAgent(agentId);
     delegation.expireMessages();
-    stopIdleMcpTransport().catch((error) =>
-      console.warn('[MCP] Could not stop the idle transport:', error),
-    );
+    transport
+      .stopIfIdle()
+      .catch((error) => console.warn('[MCP] Could not stop the idle transport:', error));
   });
 
   // --- PTY commands ---
@@ -758,13 +744,18 @@ export function registerAllHandlers(win: BrowserWindow): void {
       if (!existing) {
         wideBindAgents.delete(args.agentId);
         canvasOwners.delete(args.agentId);
-        remoteServer?.unregisterCanvasAgent(args.agentId);
+        transport.current()?.unregisterCanvasAgent(args.agentId);
         removeCanvasConfig(args.agentId);
         delegation.expireMessages();
       }
       let canvasTools = existing?.canvasTools === true;
       let releaseCanvas: (() => void) | undefined;
-      if (!existing && !args.isShell && remoteServer && canConfigureCanvasMcp(args.command, [])) {
+      if (
+        !existing &&
+        !args.isShell &&
+        transport.current() &&
+        canConfigureCanvasMcp(args.command, [])
+      ) {
         canvasTools = !!(
           coordinator?.isRegisteredCoordinator(args.taskId) || coordinator?.getTask(args.taskId)
         );
@@ -775,7 +766,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         coordinator?.getTask(args.taskId) &&
         delegation.getTask(args.taskId)
       ) {
-        const server = await ensureMcpTransport(args.dockerMode === true);
+        const server = await transport.ensureForMcp(args.dockerMode === true);
         assertPendingSpawn();
         canvasOwners.set(args.agentId, pending);
         const child = coordinator.getTask(args.taskId);
@@ -833,7 +824,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         canConfigureCanvasMcp(args.command, args.args)
       ) {
         try {
-          const server = await ensureMcpTransport(args.dockerMode === true);
+          const server = await transport.ensureForMcp(args.dockerMode === true);
           assertPendingSpawn();
           const thisDir = path.dirname(fileURLToPath(import.meta.url));
           const serverPath = path
@@ -880,7 +871,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
             assertPendingSpawn();
           } catch (cancelled) {
             // The kill arrived while the transport was starting; nothing will register on it.
-            await stopIdleMcpTransport();
+            await transport.stopIfIdle();
             throw cancelled;
           }
           console.warn('Canvas MCP unavailable; starting the agent without canvas tools:', error);
@@ -918,7 +909,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
           }
         }
       }
-      const session = remoteServer
+      const session = transport
+        .current()
         ?.getSessionAgents()
         .find((item) => item.agentId === args.agentId);
       return {
@@ -929,7 +921,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     } catch (error) {
       if (canvasOwners.get(args.agentId) === pending) {
         canvasOwners.delete(args.agentId);
-        remoteServer?.unregisterCanvasAgent(args.agentId);
+        transport.current()?.unregisterCanvasAgent(args.agentId);
         wideBindAgents.delete(args.agentId);
         removeCanvasConfig(args.agentId);
         delegation.expireMessages();
@@ -1798,7 +1790,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
     getTaskContext: (taskId: string) => taskContext.get(taskId),
   };
 
-  type RemoteServerHandle = Awaited<ReturnType<typeof startRemoteServer>>;
   const remoteServerOptions = (): Omit<
     Parameters<typeof startRemoteServer>[0],
     'port' | 'host'
@@ -1819,92 +1810,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
       ...mobileTaskBridge,
     };
   };
-  // One in-flight start for manual and MCP callers alike: a spawn during a manual start
-  // (or the reverse) waits for that listener instead of opening a second, orphaned one.
-  // Callers loop on it inline so an idle path reaches startTransport without yielding;
-  // a failed start reports to its own caller, waiters simply see no server.
-  let mcpTransportStarting: Promise<RemoteServerHandle> | undefined;
-  function startTransport(
-    start: () => Promise<RemoteServerHandle>,
-    forMcp: boolean,
-  ): Promise<RemoteServerHandle> {
-    const starting = (async () => {
-      try {
-        const server = await start();
-        remoteServer = server;
-        remoteServerStartedForMcp = forMcp;
-        return server;
-      } finally {
-        mcpTransportStarting = undefined;
-      }
-    })();
-    mcpTransportStarting = starting;
-    return starting;
-  }
-  // Stopping the server while its listener is being re-bound would orphan the new listener
-  // and hand callers a stopped handle; an exit during that window defers to the rebind.
-  let transportRebinding: Promise<void> | undefined;
-  /** A rebind that leaves nothing listening hands back a dead handle; drop it. */
-  async function rebindTransport(server: RemoteServerHandle, host: string): Promise<void> {
-    transportRebinding = server.rebind(host);
-    try {
-      await transportRebinding;
-    } catch (error) {
-      if (!server.listening && remoteServer === server) {
-        remoteServer = null;
-        remoteServerStartedForMcp = false;
-        remoteServerRequestedManually = false;
-        remoteServerPendingStop = false;
-      }
-      throw error;
-    } finally {
-      transportRebinding = undefined;
-      // The last agent may have exited meanwhile; its deferred idle check runs once now.
-      await stopIdleMcpTransport();
-    }
-  }
-  /** An MCP-only server has no reason to run once neither a coordinator nor a canvas agent needs it. */
-  async function stopIdleMcpTransport(): Promise<void> {
-    const server = remoteServer;
-    if (transportRebinding || !server) return;
-    if (coordinator?.hasActiveCoordinator() || server.hasCanvasAgents()) return;
-    if (!remoteServerPendingStop && !(remoteServerStartedForMcp && !remoteServerRequestedManually))
-      return;
-    const forgetDevices = remoteServerPendingStop;
-    remoteServer = null;
-    remoteServerStartedForMcp = false;
-    remoteServerRequestedManually = false;
-    remoteServerPendingStop = false;
-    await server.stop(forgetDevices);
-  }
-  const warnDockerBind = () =>
-    console.warn(
-      '[MCP] Docker mode (macOS): MCP server bound to 0.0.0.0 — reachable from local network ' +
-        'interfaces. Traffic from containers uses Docker Desktop internal routing; the bearer ' +
-        'token still gates every request.',
-    );
-  async function ensureMcpTransport(dockerMode: boolean): Promise<RemoteServerHandle> {
-    while (mcpTransportStarting) await mcpTransportStarting.catch(() => undefined);
-    // Docker mode on macOS requires 0.0.0.0: containers reach the host through
-    // host.docker.internal, which routes through Docker Desktop's virtual adapter.
-    const wideOpen = needsWideBind(dockerMode);
-    if (remoteServer && wideOpen && remoteServer.bindHost === '127.0.0.1') {
-      warnDockerBind();
-      await rebindTransport(remoteServer, '0.0.0.0');
-    }
-    // The idle check after a rebind may have released a transport nobody used any more.
-    if (remoteServer) return remoteServer;
-    if (wideOpen) warnDockerBind();
-    return startTransport(
-      () =>
-        startRemoteServerOnFreePort(defaultRemotePort, defaultRemotePort + 23, {
-          host: wideOpen ? '0.0.0.0' : '127.0.0.1',
-          ...remoteServerOptions(),
-        }),
-      true,
-    );
-  }
-
   const VALID_ATTENTION: ReadonlySet<RemoteAttentionState> = new Set([
     'idle',
     'active',
@@ -1951,115 +1856,35 @@ export function registerAllHandlers(win: BrowserWindow): void {
         }
       }
       // Only bother rebroadcasting when a phone could be listening.
-      if (remoteServer) notifyAgentListChanged();
+      if (transport.current()) notifyAgentListChanged();
     },
   );
 
   ipcMain.handle(IPC.GeneratePairingPin, () => {
-    if (!remoteServer) throw new Error('Remote server is not running');
-    return remoteServer.generatePairingPin();
+    const server = transport.current();
+    if (!server) throw new Error('Remote server is not running');
+    return server.generatePairingPin();
   });
 
   // --- Remote access ---
-  ipcMain.handle(IPC.StartRemoteServer, async (_e, args: { port?: number }) => {
-    while (mcpTransportStarting) await mcpTransportStarting.catch(() => undefined);
-    // If server was started for MCP-only (loopback), rebind to 0.0.0.0 so WiFi/Tailscale
-    // clients can reach it. Skip rebind while a coordinator is active — restarting the
-    // server would break ongoing MCP connections.
-    if (remoteServer && remoteServerStartedForMcp && !coordinator?.hasActiveLegacyCoordinator()) {
-      await rebindTransport(remoteServer, '0.0.0.0');
-    }
-    // The idle check after a rebind may have released a transport nobody used any more.
-    if (remoteServer) {
-      // Loopback-only means the server is MCP-only and inaccessible from other devices.
-      // Return unavailableReason without marking this as a successful manual start.
-      if (remoteServer.bindHost === '127.0.0.1') {
-        return {
-          url: remoteServer.url,
-          wifiUrl: null,
-          tailscaleUrl: null,
-          port: remoteServer.port,
-          unavailableReason: 'coordinator_active' as const,
-        };
-      }
-      remoteServer.enableRememberedDevices(path.join(getUserDataDir(), 'paired-phones.json'));
-      remoteServerRequestedManually = true;
-      remoteServerPendingStop = false;
-      return {
-        url: remoteServer.url,
-        wifiUrl: remoteServer.wifiUrl,
-        tailscaleUrl: remoteServer.tailscaleUrl,
-        port: remoteServer.port,
-      };
-    }
+  ipcMain.handle(IPC.StartRemoteServer, (_e, args: { port?: number }) =>
+    transport.startRemoteAccess(args.port),
+  );
 
-    // Remote access is an explicit user action — bind to all interfaces so WiFi/Tailscale clients
-    // can reach the SPA. Coordinator MCP-only mode uses 127.0.0.1 by default.
-    const server = await startTransport(
-      () =>
-        startRemoteServer({
-          port: args.port ?? defaultRemotePort,
-          host: '0.0.0.0',
-          ...remoteServerOptions(),
-        }),
-      false,
-    );
-    server.enableRememberedDevices(path.join(getUserDataDir(), 'paired-phones.json'));
-    remoteServerRequestedManually = true;
-    remoteServerPendingStop = false;
-    return {
-      url: server.url,
-      wifiUrl: server.wifiUrl,
-      tailscaleUrl: server.tailscaleUrl,
-      port: server.port,
-    };
-  });
-
-  ipcMain.handle(IPC.StopRemoteServer, async (): Promise<{ stopped: boolean; reason?: string }> => {
-    if (!remoteServer) return { stopped: true };
-    if (coordinator?.hasActiveLegacyCoordinator()) {
-      // The coordinator MCP transport shares this HTTP server. Stopping it while
-      // a coordinator is active would break all in-flight MCP tool calls.
-      // Record the pending stop so the last coordinator deregistration will auto-stop.
-      remoteServerPendingStop = true;
-      console.warn(
-        '[Remote] Stop requested but coordinator MCP is active — will stop on last coordinator exit',
-      );
-      return { stopped: false, reason: 'coordinator_active' };
-    }
-    if (remoteServer.hasCanvasAgents() || coordinator?.hasActiveCoordinator()) {
-      // Running agents keep their canvas transport; only the phone-facing access ends.
-      // Loopback is unreachable from other devices, so the shared URL stops working.
-      if (
-        wideBindAgents.size > 0 ||
-        (process.platform !== 'linux' && delegation.requiresWideTransport())
-      )
-        return { stopped: false, reason: 'docker_active' };
-      remoteServer.forgetRememberedDevices();
-      // Mark it MCP-only before narrowing so the idle check after the rebind may release it.
-      remoteServerStartedForMcp = true;
-      remoteServerRequestedManually = false;
-      remoteServerPendingStop = false;
-      await rebindTransport(remoteServer, '127.0.0.1');
-      return { stopped: true };
-    }
-    await remoteServer.stop(true);
-    remoteServer = null;
-    remoteServerRequestedManually = false;
-    return { stopped: true };
-  });
+  ipcMain.handle(IPC.StopRemoteServer, () => transport.stopRemoteAccess());
 
   ipcMain.handle(IPC.GetRemoteStatus, () => {
-    if (!remoteServer || remoteServer.bindHost === '127.0.0.1') {
+    const server = transport.current();
+    if (!server || server.bindHost === '127.0.0.1') {
       return { enabled: false, connectedClients: 0 };
     }
     return {
       enabled: true,
-      connectedClients: remoteServer.connectedClients(),
-      url: remoteServer.url,
-      wifiUrl: remoteServer.wifiUrl,
-      tailscaleUrl: remoteServer.tailscaleUrl,
-      port: remoteServer.port,
+      connectedClients: server.connectedClients(),
+      url: server.url,
+      wifiUrl: server.wifiUrl,
+      tailscaleUrl: server.tailscaleUrl,
+      port: server.port,
     };
   });
 
@@ -2130,7 +1955,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         // Stop the remote server when the last coordinator exits if:
         // - MCP started the server and user hasn't separately requested manual access, OR
         // - the user explicitly requested stop while coordinator was active (pendingStop)
-        await stopIdleMcpTransport();
+        await transport.stopIfIdle();
       },
     );
 
@@ -2281,7 +2106,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       coordinator.setOrchestrationEnabled(delegation.isOrchestrationEnabled());
       coordinator.setNotify(notify);
       coordinator.setSessionMcpProvider((task) => {
-        if (!delegation.getTask(task.coordinatorTaskId) || !remoteServer) return undefined;
+        const server = transport.current();
+        if (!delegation.getTask(task.coordinatorTaskId) || !server) return undefined;
         if (!delegation.getTask(task.id)) {
           if (task.status !== 'creating')
             throw new Error('Task authority was not validated before restoring its MCP session.');
@@ -2295,7 +2121,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
           canvasOwners.set(task.agentId, owner);
         }
         if (needsWideBind(!!task.dockerContainerName)) wideBindAgents.add(task.agentId);
-        const token = remoteServer.registerCanvasAgent(task.id, task.agentId, undefined, {
+        const token = server.registerCanvasAgent(task.id, task.agentId, undefined, {
           sessionInstanceId: owner.sessionInstanceId,
           capabilities: sessionCapabilities,
         });
@@ -2375,8 +2201,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
         verifyCommand: args.verifyCommand,
       });
 
-      await ensureMcpTransport(!!args.dockerContainerName);
-      if (!remoteServer) throw new Error('MCP transport unavailable.');
+      await transport.ensureForMcp(!!args.dockerContainerName);
+      const server = transport.current();
+      if (!server) throw new Error('MCP transport unavailable.');
 
       // Resolve the source MCP server binary path.
       const thisDir = path.dirname(fileURLToPath(import.meta.url));
@@ -2393,7 +2220,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         : undefined;
       const mcpServerPath = dockerMcpServerPath ?? hostMcpServerPath;
 
-      const serverUrl = getMCPRemoteServerUrl(remoteServer.port, args.dockerContainerName);
+      const serverUrl = getMCPRemoteServerUrl(server.port, args.dockerContainerName);
 
       // Build mcpConfig and mergedMcpJson (pure computation — no filesystem or state side effects).
       // Doing this before any Docker copy or coordinator mutation ensures that if .mcp.json
@@ -2401,7 +2228,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       const mcpConfig = buildCoordinatorMCPConfig({
         mcpServerPath,
         serverUrl,
-        token: remoteServer.coordinatorTokenFor(args.coordinatorTaskId),
+        token: server.coordinatorTokenFor(args.coordinatorTaskId),
         coordinatorTaskId: args.coordinatorTaskId,
         skipPermissions: args.skipPermissions,
         propagateSkipPermissions: args.propagateSkipPermissions,
@@ -2446,8 +2273,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       coordinator.setMCPServerInfo(
         args.coordinatorTaskId,
         serverUrl,
-        remoteServer.coordinatorTokenFor(args.coordinatorTaskId),
-        remoteServer.subtaskToken,
+        server.coordinatorTokenFor(args.coordinatorTaskId),
+        server.subtaskToken,
         mcpServerPath,
       );
       coordinator.setCoordinatorSpawnDefaults(
@@ -2517,7 +2344,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         configPath,
         mcpLaunchArgs,
         serverUrl,
-        port: remoteServer.port,
+        port: server.port,
       };
     },
   );
@@ -2531,9 +2358,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
     // The MCP server process is spawned by the agent CLI via launch args,
     // not by us. We report whether the remote HTTP server that the MCP
     // server connects to is running — if it's up, MCP tools should work.
+    const server = transport.current();
     return {
-      running: remoteServer !== null,
-      port: remoteServer?.port ?? null,
+      running: server !== null,
+      port: server?.port ?? null,
       // TODO: Surface this from the coordinator map if the UI needs it.
       coordinatorTaskId: null,
       mcpConfigPath: lastMcpConfigPath ?? null,
