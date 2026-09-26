@@ -91,3 +91,41 @@ export function appendGitInfoExcludeBlock(
   if (!excludePath) return 'missing';
   return appendGitInfoExcludeBlockAtPath(excludePath, marker, block, onError);
 }
+
+/** Resolve and read once, then append only the missing blocks in a single write. */
+export function appendGitInfoExcludeBlocks(
+  worktreePath: string,
+  blocks: ReadonlyArray<{ marker: string; block: string }>,
+  onError?: (err: unknown, markers: string[]) => void,
+): AppendGitInfoExcludeResult {
+  if (blocks.length === 0) return 'present';
+  const excludePath = resolveGitInfoExcludePath(worktreePath);
+  if (!excludePath) return 'missing';
+  let existing = '';
+  try {
+    existing = fs.readFileSync(excludePath, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      onError?.(
+        err,
+        blocks.map(({ marker }) => marker),
+      );
+      return 'failed';
+    }
+  }
+  const known = new Set(existing.split('\n').map(normalizeExcludeLine));
+  const missing = blocks.filter(({ marker }) => !known.has(marker));
+  if (missing.length === 0) return 'present';
+  return appendGitInfoExcludeBlockAtPath(
+    excludePath,
+    missing[0].marker,
+    missing.map(({ block }) => (block.endsWith('\n') ? block : `${block}\n`)).join(''),
+    (err) =>
+      onError?.(
+        err,
+        missing.map(({ marker }) => marker),
+      ),
+    existing,
+    true,
+  );
+}

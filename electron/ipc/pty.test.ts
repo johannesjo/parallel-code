@@ -459,6 +459,7 @@ describe('spawnAgent docker mode', () => {
       ['opencode', '.config/opencode'],
       ['copilot', '.config/github-copilot'],
       ['agy', '.gemini/antigravity-cli'],
+      ['kimi', '.kimi-code'],
     ])(
       '%s bind-mounts a user-owned host directory when shareDockerAgentAuth is enabled',
       async (command, relDir) => {
@@ -1028,6 +1029,46 @@ describe('spawnAgent session reattach', () => {
 
     expect(oldProc.kill).toHaveBeenCalled();
     expect(mockPtySpawn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Kimi Docker-only support', () => {
+  it.each(['kimi', '/opt/bin/kimi'])('rejects a native %s before spawning', async (command) => {
+    await expect(
+      spawnAgent(createMockNotify(), buildSpawnArgs({ command, dockerMode: false })),
+    ).rejects.toThrow('Kimi Code requires Docker mode');
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+    expect(mockExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it('allows a Docker Kimi launch without a host Kimi installation', async () => {
+    await spawnAgent(createMockNotify(), buildSpawnArgs({ command: 'kimi' }));
+    expect(getLastSpawnCall().command).toBe('docker');
+    expect(getLastSpawnCall().args).toContain('kimi');
+    expect(mockExecFileSync).not.toHaveBeenCalledWith('which', ['kimi'], expect.anything());
+  });
+
+  it('does not kill an existing PTY when a native Kimi replacement is rejected', async () => {
+    const notify = createMockNotify();
+    const args = buildSpawnArgs();
+    await spawnAgent(notify, args);
+    const proc = mockPtySpawn.mock.results[0].value;
+    await expect(
+      spawnAgent(notify, { ...args, command: 'kimi', dockerMode: false }),
+    ).rejects.toThrow('Kimi Code requires Docker mode');
+    expect(proc.kill).not.toHaveBeenCalled();
+  });
+
+  it('reattaches before applying new-launch eligibility checks', async () => {
+    const notify = createMockNotify();
+    const args = buildSpawnArgs({ command: 'kimi' });
+    await spawnAgent(notify, args);
+    const proc = mockPtySpawn.mock.results[0].value;
+    await expect(
+      spawnAgent(notify, { ...args, dockerMode: false, attachExisting: true }),
+    ).resolves.not.toThrow();
+    expect(mockPtySpawn).toHaveBeenCalledTimes(1);
+    expect(proc.resume).toHaveBeenCalled();
   });
 });
 

@@ -58,6 +58,7 @@ import {
 import { theme, sectionLabelStyle, bannerStyle } from '../lib/theme';
 import { isMac } from '../lib/platform';
 import { AgentSelector } from './AgentSelector';
+import { isAgentSupportedInMode } from '../../electron/shared/agent-support';
 import { BranchPrefixField } from './BranchPrefixField';
 import { BranchCombobox } from './BranchCombobox';
 import { ProjectSelect } from './ProjectSelect';
@@ -920,6 +921,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     const branchOk = isNonGitProject() || (!!baseBranch() && !branchesError());
     return (
       !!selectedProjectId() &&
+      isAgentSupportedInMode(selectedAgent()?.command ?? '', dockerMode()) &&
       !loading() &&
       !branchesLoading() &&
       // Block submit until the symlink candidate list for THIS project has
@@ -941,6 +943,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     const agent = selectedAgent();
     if (!agent) {
       setError('Select an agent');
+      return;
+    }
+    if (!isAgentSupportedInMode(agent.command, dockerMode())) {
+      setError('Kimi Code requires Docker mode. Enable Docker isolation to start this agent.');
       return;
     }
 
@@ -1190,6 +1196,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
           <AgentSelector
             agents={store.availableAgents}
             selectedAgent={selectedAgent()}
+            dockerMode={dockerMode()}
             onSelect={setSelectedAgent}
             wrap={false}
           />

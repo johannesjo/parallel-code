@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { Dialog } from './Dialog';
 import { AgentSelector } from './AgentSelector';
+import { isAgentSupportedInMode } from '../../electron/shared/agent-support';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { createImportedTask, getProjectPath, loadAgents, store } from '../store/store';
@@ -102,6 +103,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
     !importing() &&
     !!props.project &&
     !!selectedAgent() &&
+    isAgentSupportedInMode(selectedAgent()?.command ?? '') &&
     visibleCandidates().some((candidate) => selectedPaths().has(candidate.path));
 
   const closeDisabled = () => shouldDisableImportClose(importing());
@@ -114,7 +116,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
   async function handleImport(): Promise<void> {
     const project = props.project;
     const agent = selectedAgent();
-    if (!project || !agent) return;
+    if (!project || !agent || !isAgentSupportedInMode(agent.command)) return;
 
     const selected = visibleCandidates().filter((candidate) => selectedPaths().has(candidate.path));
     if (selected.length === 0) return;

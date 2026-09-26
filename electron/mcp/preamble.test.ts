@@ -34,6 +34,52 @@ describe('sub-task preamble injection', () => {
     }
   });
 
+  it.each(['kimi', '/usr/local/bin/kimi'])(
+    'writes %s child preambles to AGENTS.md instead of Claude settings',
+    async (agentCommand) => {
+      const dir = mkdtempSync(join(tmpdir(), 'parallel-code-preamble-test-'));
+      const agentsPath = join(dir, 'AGENTS.md');
+      const settingsPath = join(dir, '.claude', 'settings.local.json');
+      const queue = new Map<string, Promise<void>>();
+
+      try {
+        const injected = await injectSubTaskPreamble({
+          worktreePath: dir,
+          agentCommand,
+          queue,
+        });
+
+        expect(injected).toMatchObject({
+          filePath: agentsPath,
+          existedBefore: false,
+          restoreOnFailure: true,
+        });
+        expect(readFileSync(agentsPath, 'utf8')).toContain('<sub-task-mode>');
+        expect(existsSync(settingsPath)).toBe(false);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each(['kimi-helper', '/opt/kimi/bin/claude', 'KIMI'])(
+    'does not classify %s as the Kimi executable',
+    async (agentCommand) => {
+      const dir = mkdtempSync(join(tmpdir(), 'parallel-code-preamble-test-'));
+      try {
+        const injected = await injectSubTaskPreamble({
+          worktreePath: dir,
+          agentCommand,
+          queue: new Map(),
+        });
+        expect(injected.filePath).toBe(join(dir, '.claude', 'settings.local.json'));
+        expect(existsSync(join(dir, 'AGENTS.md'))).toBe(false);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
   it('writes Claude settings.local.json without making it a failure-restore target', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'parallel-code-preamble-test-'));
     const settingsPath = join(dir, '.claude', 'settings.local.json');

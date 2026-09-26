@@ -1,4 +1,5 @@
-import type { VerificationRun } from '../ipc/shared-types.js';
+import type { AutoDiscoveredMcpConfigState, VerificationRun } from '../ipc/shared-types.js';
+export type { AutoDiscoveredMcpConfigState } from '../ipc/shared-types.js';
 import type { ActivityEvidence } from '../agent-hooks/status.js';
 import type { CompletionRecord, SubtaskVerification } from '../shared/completion-report.js';
 export type { SubtaskVerification, SubtaskVerificationCheck } from '../shared/completion-report.js';
@@ -25,6 +26,8 @@ export interface CoordinatedTask {
   initialPrompt?: string;
   automationWriteInFlight?: boolean;
   mcpConfigPath?: string; // path to per-task tmp config, deleted on cleanup
+  autoDiscoveredMcpConfig?: AutoDiscoveredMcpConfigState;
+  agentCommand?: string;
   doneToken?: string; // per-task token; only the owning sub-task may call /done
   preambleFileExistedBefore?: boolean; // true if the preamble file existed before injection (even if empty)
   signalDoneAt?: Date; // set when sub-task explicitly calls signal_done

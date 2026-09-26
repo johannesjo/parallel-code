@@ -6,6 +6,8 @@ describe('getSkipPermissionsArgs', () => {
     expect(getSkipPermissionsArgs('claude')).toEqual(['--dangerously-skip-permissions']);
     expect(getSkipPermissionsArgs('codex')).toEqual(['--dangerously-bypass-approvals-and-sandbox']);
     expect(getSkipPermissionsArgs('gemini')).toEqual(['--yolo']);
+    expect(getSkipPermissionsArgs('kimi')).toEqual(['--yolo']);
+    expect(getSkipPermissionsArgs('/usr/local/bin/kimi')).toEqual(['--yolo']);
     expect(getSkipPermissionsArgs('copilot')).toEqual(['--yolo']);
     expect(getSkipPermissionsArgs('agy')).toEqual(['--dangerously-skip-permissions']);
   });

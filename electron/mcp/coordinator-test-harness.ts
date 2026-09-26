@@ -25,6 +25,7 @@ const enoent = () => Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
 
 const mocks = vi.hoisted(() => {
   const mockExecFile = vi.fn();
+  const mockSpawnSync = vi.fn();
   const mockWriteFileSync = vi.fn();
   const mockReadFileSync = vi.fn();
   const mockExistsSync = vi.fn();
@@ -37,6 +38,7 @@ const mocks = vi.hoisted(() => {
   const mockFsMkdir = vi.fn();
   const mockAtomicWriteFileSync = vi.fn();
   const mockAtomicWriteFile = vi.fn();
+  const mockAppendGitInfoExcludeBlocks = vi.fn();
   const mockNotifyRenderer = vi.fn();
   const mockLogInfo = vi.fn();
   const mockLogWarn = vi.fn();
@@ -61,6 +63,7 @@ const mocks = vi.hoisted(() => {
 
   return {
     mockExecFile,
+    mockSpawnSync,
     mockWriteFileSync,
     mockReadFileSync,
     mockExistsSync,
@@ -73,6 +76,7 @@ const mocks = vi.hoisted(() => {
     mockFsMkdir,
     mockAtomicWriteFileSync,
     mockAtomicWriteFile,
+    mockAppendGitInfoExcludeBlocks,
     mockNotifyRenderer,
     mockLogInfo,
     mockLogWarn,
@@ -99,6 +103,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('child_process', () => ({
   execFile: mocks.mockExecFile,
+  spawnSync: mocks.mockSpawnSync,
 }));
 
 vi.mock('fs', () => ({
@@ -120,6 +125,10 @@ vi.mock('fs/promises', () => ({
 vi.mock('./atomic.js', () => ({
   atomicWriteFileSync: mocks.mockAtomicWriteFileSync,
   atomicWriteFile: mocks.mockAtomicWriteFile,
+}));
+
+vi.mock('../ipc/git-exclude.js', () => ({
+  appendGitInfoExcludeBlocks: mocks.mockAppendGitInfoExcludeBlocks,
 }));
 
 vi.mock('../shared/prompt-detect.js', () => ({
@@ -244,6 +253,7 @@ vi.mock('../log.js', () => ({
 
 export const {
   mockExecFile,
+  mockSpawnSync,
   mockWriteFileSync,
   mockReadFileSync,
   mockExistsSync,
@@ -256,6 +266,7 @@ export const {
   mockFsMkdir,
   mockAtomicWriteFileSync,
   mockAtomicWriteFile,
+  mockAppendGitInfoExcludeBlocks,
   mockNotifyRenderer,
   mockLogInfo,
   mockLogWarn,
@@ -308,6 +319,8 @@ export function resetCoordinatorMocks(): void {
       return { on: vi.fn() };
     },
   );
+  mockSpawnSync.mockReset();
+  mockSpawnSync.mockReturnValue({ status: 1, error: undefined, stderr: Buffer.alloc(0) });
 
   mockWriteFileSync.mockReset();
   mockReadFileSync.mockReset();
@@ -331,6 +344,8 @@ export function resetCoordinatorMocks(): void {
   mockAtomicWriteFileSync.mockReset();
   mockAtomicWriteFile.mockReset();
   mockAtomicWriteFile.mockResolvedValue(undefined);
+  mockAppendGitInfoExcludeBlocks.mockReset();
+  mockAppendGitInfoExcludeBlocks.mockReturnValue('appended');
 
   mockNotifyRenderer.mockReset();
   mockLogInfo.mockReset();
