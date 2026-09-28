@@ -331,11 +331,13 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
           </div>
         </div>
 
-        {/* QR Code */}
+        {/* QR Code — never shrink: the panel is a height-capped flex column,
+            and a squeezed box would crop the code instead of scrolling. */}
         <div
           style={{
             width: '200px',
             height: '200px',
+            'flex-shrink': '0',
             'border-radius': 'var(--radius-md)',
             background: '#ffffff',
             display: 'flex',
