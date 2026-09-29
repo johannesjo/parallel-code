@@ -262,6 +262,16 @@ describe('markAgentExited', () => {
     expect(mockRefreshUsage).toHaveBeenCalledWith('codex');
   });
 
+  it('refreshes Antigravity usage for an Antigravity agent', () => {
+    mockAgents = {
+      'agent-1': exitedAgent({ status: 'running', def: { ...codexDef, id: 'antigravity' } }),
+    };
+
+    markAgentExited('agent-1', exitInfo);
+
+    expect(mockRefreshUsage).toHaveBeenCalledWith('antigravity');
+  });
+
   it('leaves usage alone when an agent without a tracked meter exits', () => {
     mockAgents = {
       'agent-1': exitedAgent({ status: 'running', def: { ...codexDef, id: 'gemini' } }),

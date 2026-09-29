@@ -38,6 +38,7 @@ import { parseCanvasView, type CanvasView } from '../shared/canvas-view.js';
 import { parseAgentTourPayload, type AgentTourPayload } from '../shared/agent-tour.js';
 import type { SessionCaller, SessionCapabilities } from '../shared/delegation-types.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
+import type { UsageProvider, UsageState } from '../ipc/shared-types.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import type { Coordinator } from '../mcp/coordinator.js';
 import { validateBranchName } from '../mcp/validation.js';
@@ -934,6 +935,8 @@ export function startRemoteServer(opts: {
   getTaskNotes?: (taskId: string) => Promise<string>;
   /** Persist a task's notes (renderer-backed). */
   setTaskNotes?: (taskId: string, notes: string) => Promise<void>;
+  /** The desktop's last agent-subscription usage snapshot (renderer-backed). */
+  getUsage?: () => Promise<Record<UsageProvider, UsageState>>;
   /** Renderer-derived task attention state (needs input, working, ready, …). */
   getTaskAttention?: (taskId: string) => RemoteAttentionState;
   getTaskContext?: (
@@ -1351,6 +1354,21 @@ export function startRemoteServer(opts: {
         }
 
         return jsonEnd(405, { error: 'method not allowed' });
+      }
+
+      // --- Subscription usage (read-only: mobile + paired) ---
+      // Serves the snapshot the desktop status bar already polls, so phones
+      // never add requests to the rate-limited usage endpoints.
+      if (url.pathname === '/api/mobile/usage') {
+        if (tokenClass !== 'mobile' && tokenClass !== 'paired')
+          return jsonEnd(403, { error: 'forbidden' });
+        if (req.method !== 'GET') return jsonEnd(405, { error: 'method not allowed' });
+        if (!opts.getUsage) return jsonEnd(503, { error: 'usage unavailable' });
+        opts
+          .getUsage()
+          .then((usage) => jsonEnd(200, usage))
+          .catch((err) => jsonEnd(500, { error: String(err) }));
+        return;
       }
 
       // --- Task notes (read: mobile + paired; write: paired) ---

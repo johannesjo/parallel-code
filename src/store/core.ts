@@ -106,7 +106,11 @@ export const [store, setStore] = createStore<AppStore>({
   customThemes: {},
   activeCustomThemeId: null,
   mcpStatus: { running: false, port: null, coordinatorTaskId: null, mcpConfigPath: null },
-  usage: { claude: { ...EMPTY_USAGE }, codex: { ...EMPTY_USAGE } },
+  usage: {
+    claude: { ...EMPTY_USAGE },
+    codex: { ...EMPTY_USAGE },
+    antigravity: { ...EMPTY_USAGE },
+  },
 });
 
 type CleanupPanelStore = Pick<

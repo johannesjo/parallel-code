@@ -14,15 +14,19 @@ import {
   usageVisible,
 } from './usage-format';
 
-const PROVIDER_LABELS: Record<UsageProvider, string> = { claude: 'Claude', codex: 'Codex' };
+const PROVIDER_LABELS: Record<UsageProvider, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  antigravity: 'Antigravity',
+};
 const POPOVER_WIDTH = 300;
 
 function UsageMeter(props: { label: string; window: UsageWindow; width?: number }) {
   const warn = () => props.window.usedPercent >= USAGE_WARN_PERCENT;
   const color = () => (warn() ? theme.warning : theme.accent);
-  const reset = () => formatReset(props.window.resetsAt);
   // The bar drains: filled means budget still available, matching the "% left" readout.
   const left = () => remainingPercent(props.window);
+  const reset = () => (left() === 100 ? '' : formatReset(props.window.resetsAt));
 
   return (
     <span style={{ display: 'inline-flex', 'align-items': 'center', gap: '6px' }}>
@@ -188,7 +192,7 @@ function ProviderUsage(props: { provider: UsageProvider }) {
 
 /**
  * Bottom bar with the rate-limit windows of every agent subscription the app
- * can read (Claude Code, Codex). Hidden until the first successful read, and
+ * can read (Claude Code, Codex, Antigravity). Hidden until the first successful read, and
  * permanently when no agent has a subscription login (API-key users).
  */
 export function UsageStatusBar() {

@@ -2,6 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { agents, status, canControl } from './ws';
 import { agentStatusDisplay } from './attention';
 import { ConnectionBanner } from './ConnectionBanner';
+import { UsageStrip } from './UsageStrip';
 import { readLocal, writeLocal } from './storage';
 import { ProjectSwatch } from '../components/ProjectSwatch';
 import type { RemoteAgent } from '../../electron/remote/protocol';
@@ -72,6 +73,7 @@ export function AgentList(props: AgentListProps) {
         </div>
       </Show>
       <main class="mobile-scroll">
+        <UsageStrip />
         <Show when={agents().length > 0}>
           <div class="mobile-search-field">
             <input

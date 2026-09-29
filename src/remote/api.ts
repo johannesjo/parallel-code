@@ -1,8 +1,9 @@
 // REST helpers for the mobile SPA. Data flows over the WebSocket (see ws.ts);
-// these cover the request/response actions: pairing, task creation, and
-// reading/saving task notes.
+// these cover the request/response actions: pairing, task creation, task
+// notes, and the subscription usage meters.
 
 import { getToken, getPairedToken } from './auth';
+import type { UsageProvider, UsageState } from '../../electron/ipc/shared-types';
 
 export class ApiError extends Error {
   status: number;
@@ -97,4 +98,11 @@ export async function saveNotes(taskId: string, notes: string): Promise<void> {
     body: { notes },
     token,
   });
+}
+
+/** The desktop's agent-subscription usage. Works with the base connection token. */
+export function fetchUsage(): Promise<Record<UsageProvider, UsageState>> {
+  const token = getToken();
+  if (!token) throw new ApiError('Not connected', 401);
+  return request<Record<UsageProvider, UsageState>>('/api/mobile/usage', { token });
 }

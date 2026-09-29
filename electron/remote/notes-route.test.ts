@@ -245,3 +245,48 @@ describe('notes route without a renderer bridge', () => {
     expect(res.status).toBe(503);
   });
 });
+
+describe('GET /api/mobile/usage', () => {
+  const usage = {
+    claude: {
+      fiveHour: { usedPercent: 40, resetsAt: null },
+      sevenDay: null,
+      fetchedAt: 1,
+      status: 'ok' as const,
+      error: null,
+    },
+    codex: {
+      fiveHour: null,
+      sevenDay: null,
+      fetchedAt: null,
+      status: 'idle' as const,
+      error: null,
+    },
+    antigravity: {
+      fiveHour: null,
+      sevenDay: null,
+      fetchedAt: null,
+      status: 'idle' as const,
+      error: null,
+    },
+  };
+  const getUsage = vi.fn(async () => usage);
+  beforeEach(() => start({ getUsage }));
+
+  it('returns the desktop snapshot for mobile and paired tokens', async () => {
+    for (const token of [mobileToken, await pair()]) {
+      const res = await request('GET', '/api/mobile/usage', { token });
+      expect(res.status).toBe(200);
+      expect(res.json).toEqual(usage);
+    }
+  });
+
+  it('rejects agent tokens and non-GET methods', async () => {
+    getUsage.mockClear();
+    for (const token of [coordinatorToken, subtaskToken]) {
+      expect((await request('GET', '/api/mobile/usage', { token })).status).toBe(403);
+    }
+    expect((await request('POST', '/api/mobile/usage', { token: mobileToken })).status).toBe(405);
+    expect(getUsage).not.toHaveBeenCalled();
+  });
+});

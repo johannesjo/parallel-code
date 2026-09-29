@@ -23,6 +23,7 @@ const { mockRefreshUsage, usage } = vi.hoisted(() => {
         error: null,
       } satisfies UsageState,
       codex: idle,
+      antigravity: idle,
     },
   };
 });
@@ -30,7 +31,7 @@ const { mockRefreshUsage, usage } = vi.hoisted(() => {
 vi.mock('../store/store', () => ({
   store: { usage },
   refreshUsage: mockRefreshUsage,
-  USAGE_PROVIDERS: ['claude', 'codex'],
+  USAGE_PROVIDERS: ['claude', 'codex', 'antigravity'],
 }));
 
 const disposers: Array<() => void> = [];
@@ -90,5 +91,20 @@ describe('UsageStatusBar', () => {
     const container = mount();
     container.querySelector<HTMLElement>('[role="status"]')?.click();
     expect(mockRefreshUsage).toHaveBeenCalledWith('claude', { force: true });
+  });
+
+  it('does not display reset due when a window has 100% left', () => {
+    usage.antigravity = {
+      fiveHour: { usedPercent: 0, resetsAt: Date.now() - 60_000 },
+      sevenDay: null,
+      fetchedAt: Date.now(),
+      status: 'ok',
+      error: null,
+    };
+    const container = mount();
+    const entries = container.querySelectorAll('[role="status"]');
+    const agyEntry = Array.from(entries).find((e) => e.textContent?.includes('Antigravity'));
+    expect(agyEntry?.textContent).toContain('100% left');
+    expect(agyEntry?.textContent).not.toContain('reset due');
   });
 });

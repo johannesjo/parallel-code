@@ -18,12 +18,18 @@ const IDLE: UsageState = {
 
 vi.mock('./core', async () => {
   const { createMockStoreHarness } = await import('./test-helpers');
-  core.harness = createMockStoreHarness({ usage: { claude: { ...IDLE }, codex: { ...IDLE } } });
+  core.harness = createMockStoreHarness({
+    usage: { claude: { ...IDLE }, codex: { ...IDLE }, antigravity: { ...IDLE } },
+  });
   return core.harness.moduleMock();
 });
 vi.mock('../lib/ipc', () => ({ invoke: mockInvoke }));
 vi.mock('../../electron/ipc/channels', () => ({
-  IPC: { GetClaudeUsage: 'get_claude_usage', GetCodexUsage: 'get_codex_usage' },
+  IPC: {
+    GetClaudeUsage: 'get_claude_usage',
+    GetCodexUsage: 'get_codex_usage',
+    GetAntigravityUsage: 'get_antigravity_usage',
+  },
 }));
 
 type Slice = typeof import('./usage');
@@ -129,17 +135,19 @@ describe('usage store slice', () => {
     expect(mockInvoke.mock.calls.map(([channel]) => channel)).toEqual([
       'get_claude_usage',
       'get_codex_usage',
+      'get_antigravity_usage',
     ]);
     await vi.advanceTimersByTimeAsync(5 * 60_000);
-    expect(mockInvoke).toHaveBeenCalledTimes(4);
+    expect(mockInvoke).toHaveBeenCalledTimes(6);
     slice.stopUsagePolling();
     await vi.advanceTimersByTimeAsync(10 * 60_000);
-    expect(mockInvoke).toHaveBeenCalledTimes(4);
+    expect(mockInvoke).toHaveBeenCalledTimes(6);
   });
 
-  it('maps the bundled Claude Code and Codex agents to their meters', () => {
+  it('maps the bundled Claude Code, Codex, and Antigravity agents to their meters', () => {
     expect(slice.usageProviderForAgent('claude-code')).toBe('claude');
     expect(slice.usageProviderForAgent('codex')).toBe('codex');
+    expect(slice.usageProviderForAgent('antigravity')).toBe('antigravity');
     expect(slice.usageProviderForAgent('gemini')).toBeNull();
   });
 });

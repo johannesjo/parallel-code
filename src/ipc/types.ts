@@ -23,6 +23,7 @@ export type {
   StepEntry,
   UsageProvider,
   UsageResult,
+  UsageState,
   UsageWindow,
   VerificationRun,
   VerificationRunStatus,

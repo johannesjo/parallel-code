@@ -246,6 +246,64 @@ select:focus-visible {
 textarea.mobile-input {
   resize: vertical;
 }
+.mobile-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--mobile-border);
+  border-radius: 10px;
+  background: var(--mobile-panel);
+  color: var(--mobile-muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+.usage-provider {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.usage-provider.stale {
+  opacity: 0.6;
+}
+.usage-name {
+  min-width: 52px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.usage-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.usage-bar {
+  width: 48px;
+  height: 5px;
+  overflow: hidden;
+  border: 1px solid var(--mobile-border);
+  border-radius: 3px;
+  background: var(--mobile-bg);
+}
+.usage-bar span {
+  display: block;
+  height: 100%;
+  background: var(--mobile-accent);
+}
+.usage-left {
+  color: #e0eaf3;
+  font-weight: 500;
+}
+.usage-meter.warn .usage-bar span {
+  background: #ffdd98;
+}
+.usage-meter.warn .usage-left {
+  color: #ffdd98;
+}
 .mobile-group {
   margin-top: 16px;
 }
