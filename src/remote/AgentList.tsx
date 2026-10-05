@@ -2,6 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { agents, status, canControl } from './ws';
 import { agentStatusDisplay } from './attention';
 import { ConnectionBanner } from './ConnectionBanner';
+import { UsageStrip } from './UsageStrip';
 import { NotificationSettings } from './NotificationSettings';
 import { readLocal, writeLocal } from './storage';
 import { ProjectSwatch } from '../components/ProjectSwatch';
@@ -73,6 +74,7 @@ export function AgentList(props: AgentListProps) {
         </div>
       </Show>
       <main class="mobile-scroll">
+        <UsageStrip />
         <Show when={canControl()}>
           <NotificationSettings />
         </Show>

@@ -35,8 +35,9 @@ const BY_ATTENTION: Partial<Record<RemoteAttentionState, StatusDisplay>> = {
 };
 
 export function agentStatusDisplay(
-  agent: Pick<RemoteAgent, 'status' | 'attention'>,
+  agent: Pick<RemoteAgent, 'status' | 'attention' | 'collapsed'>,
 ): StatusDisplay {
+  if (agent.collapsed) return { label: 'Minimized', color: GREY, glow: false };
   const known = BY_ATTENTION[agent.attention];
   if (known) return known;
   // attention is 'idle' (or unknown): distinguish a live idle agent from an

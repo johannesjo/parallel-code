@@ -1,14 +1,16 @@
 import headless from '@xterm/headless';
+import serializeAddon from '@xterm/addon-serialize';
 
 const { Terminal } = headless;
+const { SerializeAddon } = serializeAddon;
 
 /**
- * Lines kept above the viewport. Widening a terminal unwraps lines and pulls
- * scrollback back into view, which moves the cursor row, so the mirror needs
- * about a screen's worth to agree with the renderer's xterm. Far below the
- * renderer's 10k because one mirror runs per PTY in the main process.
+ * Lines kept above the viewport. Phones are sent this history when they open a
+ * terminal, so it matches the desktop renderer's scrollback (10k, see
+ * TERMINAL_SCROLL_OPTIONS) — any less and a phone shows a truncated history.
+ * Lines are allocated as output arrives, so a short session costs little.
  */
-const SCROLLBACK_LINES = 200;
+const SCROLLBACK_LINES = 10_000;
 
 // A cursor position report: CSI row;col R, or the DEC form CSI ? row;col R.
 // eslint-disable-next-line no-control-regex
@@ -26,6 +28,11 @@ export interface TerminalQueryResponder {
   feedDisplayOnly(data: string): void;
   /** Current visible screen and input mode; null until queued output has been parsed. */
   snapshot(): { text: string; bracketedPaste: boolean } | null;
+  /**
+   * The screen and history as ANSI text that redraws them, once everything fed
+   * so far is parsed. Null once disposed.
+   */
+  serialize(): Promise<string | null>;
   resize(cols: number, rows: number): void;
   dispose(): void;
 }
@@ -48,6 +55,8 @@ export function createTerminalQueryResponder(opts: {
     rows: Math.max(1, opts.rows),
     scrollback: SCROLLBACK_LINES,
   });
+  const serializer = new SerializeAddon();
+  term.loadAddon(serializer);
   let muted = 0;
   let disposed = false;
   let pendingWrites = 0;
@@ -83,6 +92,13 @@ export function createTerminalQueryResponder(opts: {
         lines.push(buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? '');
       }
       return { text: lines.join('\n'), bracketedPaste: term.modes.bracketedPasteMode };
+    },
+    serialize() {
+      if (disposed) return Promise.resolve(null);
+      // Writes are parsed in order, so this callback runs after all earlier feeds.
+      return new Promise((resolve) => {
+        term.write('', () => resolve(disposed ? null : serializer.serialize()));
+      });
     },
     resize(cols, rows) {
       if (!disposed && cols > 0 && rows > 0) term.resize(cols, rows);

@@ -60,3 +60,28 @@ describe('chat message validation', () => {
     expect(parseClientMessage(JSON.stringify({ ...action, ...invalid }))).toBeNull();
   });
 });
+
+describe('parseClientMessage view-size', () => {
+  it('accepts a size and a bare release', () => {
+    expect(
+      parseClientMessage(JSON.stringify({ type: 'view-size', agentId: 'a', cols: 60, rows: 50 })),
+    ).toEqual({ type: 'view-size', agentId: 'a', cols: 60, rows: 50 });
+    expect(parseClientMessage(JSON.stringify({ type: 'view-size', agentId: 'a' }))).toEqual({
+      type: 'view-size',
+      agentId: 'a',
+    });
+  });
+
+  it('rejects partial or out-of-range sizes', () => {
+    for (const size of [
+      { cols: 60 },
+      { cols: 0, rows: 50 },
+      { cols: 60, rows: 501 },
+      { cols: 1.5, rows: 2 },
+    ]) {
+      expect(
+        parseClientMessage(JSON.stringify({ type: 'view-size', agentId: 'a', ...size })),
+      ).toBeNull();
+    }
+  });
+});

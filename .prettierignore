@@ -17,3 +17,7 @@ package-lock.json
 *.AppImage
 *.deb
 *.dmg
+
+# Android build outputs
+android/.gradle/
+android/**/build/

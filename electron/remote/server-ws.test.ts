@@ -14,8 +14,10 @@ import { join } from 'node:path';
 vi.mock('../ipc/pty.js', () => ({
   writeToAgent: vi.fn(),
   resizeAgent: vi.fn(),
+  setAgentRemoteSize: vi.fn(),
   killAgent: vi.fn(),
   subscribeToAgent: vi.fn(),
+  subscribeToAgentRendered: vi.fn(() => null),
   unsubscribeFromAgent: vi.fn(),
   getAgentScrollback: vi.fn(() => null),
   getActiveAgentIds: vi.fn(() => []),
@@ -175,12 +177,79 @@ describe('mobile token over WebSocket', () => {
     expect(pty.resizeAgent).not.toHaveBeenCalled();
   });
 
+  it('rejects view-size with 4003 and leaves the PTY size alone', async () => {
+    const ws = await connectAndAuth(mobileToken);
+    const closed = waitForClose(ws);
+    ws.send(JSON.stringify({ type: 'view-size', agentId: 'agent-1', cols: 60, rows: 50 }));
+    expect(await closed).toBe(4003);
+    expect(pty.setAgentRemoteSize).not.toHaveBeenCalled();
+  });
+
   it('rejects kill with 4003 and does not kill the agent', async () => {
     const ws = await connectAndAuth(mobileToken);
     const closed = waitForClose(ws);
     ws.send(JSON.stringify({ type: 'kill', agentId: 'agent-1' }));
     expect(await closed).toBe(4003);
     expect(pty.killAgent).not.toHaveBeenCalled();
+  });
+});
+
+describe('subscribe snapshot', () => {
+  it('sends the rendered snapshot when the PTY has one', async () => {
+    vi.mocked(pty.subscribeToAgentRendered).mockImplementation((_id, onSnapshot) => {
+      onSnapshot({ data: 'cmVuZGVyZWQ=', cols: 60, rows: 50 });
+      return vi.fn();
+    });
+    const ws = await connectAndAuth(mobileToken);
+    const scrollback = new Promise<unknown>((resolve) =>
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(String(raw)) as { type: string };
+        if (msg.type === 'scrollback') resolve(msg);
+      }),
+    );
+    ws.send(JSON.stringify({ type: 'subscribe', agentId: 'agent-1' }));
+    expect(await scrollback).toEqual({
+      type: 'scrollback',
+      agentId: 'agent-1',
+      data: 'cmVuZGVyZWQ=',
+      cols: 60,
+      rows: 50,
+    });
+    expect(pty.getAgentScrollback).not.toHaveBeenCalled();
+    ws.close();
+  });
+});
+
+describe('paired phone view size', () => {
+  it('sizes the PTY and hands it back when the phone disconnects', async () => {
+    const ws = await connectAndAuth(await pair());
+    ws.send(JSON.stringify({ type: 'view-size', agentId: 'agent-1', cols: 60, rows: 50 }));
+    await vi.waitFor(() =>
+      expect(pty.setAgentRemoteSize).toHaveBeenCalledWith('agent-1', { cols: 60, rows: 50 }),
+    );
+    ws.close();
+    await vi.waitFor(() => expect(pty.setAgentRemoteSize).toHaveBeenCalledWith('agent-1', null));
+  });
+
+  it('hands the size back on an explicit release', async () => {
+    const ws = await connectAndAuth(await pair());
+    ws.send(JSON.stringify({ type: 'view-size', agentId: 'agent-1', cols: 60, rows: 50 }));
+    ws.send(JSON.stringify({ type: 'view-size', agentId: 'agent-1' }));
+    await vi.waitFor(() => expect(pty.setAgentRemoteSize).toHaveBeenCalledWith('agent-1', null));
+    ws.close();
+  });
+
+  it('ignores a release from a phone that does not own the size', async () => {
+    const owner = await connectAndAuth(await pair());
+    const other = await connectAndAuth(await pair());
+    owner.send(JSON.stringify({ type: 'view-size', agentId: 'agent-1', cols: 60, rows: 50 }));
+    await vi.waitFor(() => expect(pty.setAgentRemoteSize).toHaveBeenCalledTimes(1));
+    other.send(JSON.stringify({ type: 'view-size', agentId: 'agent-1' }));
+    other.close();
+    // Give the ignored release a chance to arrive before checking.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(pty.setAgentRemoteSize).toHaveBeenCalledTimes(1);
+    owner.close();
   });
 });
 

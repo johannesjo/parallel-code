@@ -70,6 +70,16 @@ describe('createTerminalQueryResponder', () => {
     await vi.waitFor(() => expect(replies).toEqual(['\x1b[5;1R']));
   });
 
+  it('serializes the same history depth the desktop terminal keeps', async () => {
+    const { responder } = setup();
+    const lines = Array.from({ length: 5000 }, (_, i) => `line ${i}`);
+    responder.feed(lines.join('\r\n'));
+    const text = await responder.serialize();
+    expect(text).toContain('line 0\r\n');
+    expect(text).toContain('line 4999');
+    responder.dispose();
+  });
+
   it('stops answering once disposed', async () => {
     const { responder, replies } = setup();
     responder.dispose();

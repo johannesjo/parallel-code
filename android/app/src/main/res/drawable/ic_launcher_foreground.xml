@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher mark (two bars and the glyph), inside the adaptive icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF2BC8FF"
+        android:pathData="M26.4,24.0H31.2V84.0H26.4Z M42.0,24.0H48.0V84.0H42.0Z M56.4,24.0H81.6V28.8H56.4Z M76.8,24.0H81.6V50.4H76.8Z M56.4,45.6H81.6V50.4H56.4Z M56.4,57.6H81.6V62.4H56.4Z M56.4,57.6H61.2V84.0H56.4Z M56.4,79.2H81.6V84.0H56.4Z" />
+</vector>

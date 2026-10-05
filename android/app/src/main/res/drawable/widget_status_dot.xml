@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget's status dot; tinted per status from AgentWidget. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="#FFFFFFFF" />
+    <size android:width="8dp" android:height="8dp" />
+</shape>

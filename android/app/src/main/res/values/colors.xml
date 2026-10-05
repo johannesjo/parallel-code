@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#FF000000</color>
+
+    <!-- The widget card, one color for its fill and its border, faded together by the
+         transparency setting: 100%, 75%, 50%, 25%. The Light card keeps a light grey
+         border so its edge still reads against a white fill. -->
+    <color name="widget_card_obsidian_100">#FF1E1E1E</color>
+    <color name="widget_card_obsidian_75">#BF1E1E1E</color>
+    <color name="widget_card_obsidian_50">#801E1E1E</color>
+    <color name="widget_card_obsidian_25">#401E1E1E</color>
+    <color name="widget_border_obsidian_100">#FF1E1E1E</color>
+    <color name="widget_border_obsidian_75">#BF1E1E1E</color>
+    <color name="widget_border_obsidian_50">#801E1E1E</color>
+    <color name="widget_border_obsidian_25">#401E1E1E</color>
+
+    <color name="widget_card_slate_100">#FF3A3F44</color>
+    <color name="widget_card_slate_75">#BF3A3F44</color>
+    <color name="widget_card_slate_50">#803A3F44</color>
+    <color name="widget_card_slate_25">#403A3F44</color>
+    <color name="widget_border_slate_100">#FF3A3F44</color>
+    <color name="widget_border_slate_75">#BF3A3F44</color>
+    <color name="widget_border_slate_50">#803A3F44</color>
+    <color name="widget_border_slate_25">#403A3F44</color>
+
+    <color name="widget_card_light_100">#FFFFFFFF</color>
+    <color name="widget_card_light_75">#BFFFFFFF</color>
+    <color name="widget_card_light_50">#80FFFFFF</color>
+    <color name="widget_card_light_25">#40FFFFFF</color>
+    <color name="widget_border_light_100">#FFE8EAEC</color>
+    <color name="widget_border_light_75">#BFE8EAEC</color>
+    <color name="widget_border_light_50">#80E8EAEC</color>
+    <color name="widget_border_light_25">#40E8EAEC</color>
+</resources>

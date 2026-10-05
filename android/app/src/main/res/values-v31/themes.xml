@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ launch splash: the app mark on the Obsidian background, then straight into the app. -->
+    <style name="Theme.ParallelCode" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#171717</item>
+        <item name="android:statusBarColor">#171717</item>
+        <item name="android:navigationBarColor">#171717</item>
+        <item name="android:windowSplashScreenBackground">#171717</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#000000</item>
+    </style>
+</resources>

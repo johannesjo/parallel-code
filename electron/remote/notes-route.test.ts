@@ -11,6 +11,7 @@ vi.mock('../ipc/pty.js', () => ({
   resizeAgent: vi.fn(),
   killAgent: vi.fn(),
   subscribeToAgent: vi.fn(),
+  subscribeToAgentRendered: vi.fn(() => null),
   unsubscribeFromAgent: vi.fn(),
   getAgentScrollback: vi.fn(() => null),
   getActiveAgentIds: vi.fn(() => []),
@@ -243,5 +244,132 @@ describe('notes route without a renderer bridge', () => {
       body: { notes: 'x' },
     });
     expect(res.status).toBe(503);
+  });
+});
+
+describe('GET /api/mobile/usage', () => {
+  const usage = {
+    claude: {
+      fiveHour: { usedPercent: 40, resetsAt: null },
+      sevenDay: null,
+      fetchedAt: 1,
+      status: 'ok' as const,
+      error: null,
+    },
+    codex: {
+      fiveHour: null,
+      sevenDay: null,
+      fetchedAt: null,
+      status: 'idle' as const,
+      error: null,
+    },
+  };
+  const getUsage = vi.fn(async () => usage);
+  beforeEach(() => start({ getUsage }));
+
+  it('returns the desktop snapshot for mobile and paired tokens', async () => {
+    for (const token of [mobileToken, await pair()]) {
+      const res = await request('GET', '/api/mobile/usage', { token });
+      expect(res.status).toBe(200);
+      expect(res.json).toEqual(usage);
+    }
+  });
+
+  it('rejects agent tokens and non-GET methods', async () => {
+    getUsage.mockClear();
+    for (const token of [coordinatorToken, subtaskToken]) {
+      expect((await request('GET', '/api/mobile/usage', { token })).status).toBe(403);
+    }
+    expect((await request('POST', '/api/mobile/usage', { token: mobileToken })).status).toBe(405);
+    expect(getUsage).not.toHaveBeenCalled();
+  });
+});
+
+describe('/api/mobile/tasks/:taskId/commit', () => {
+  const status = { files: [{ path: 'a.ts', status: 'M', staged: true }] };
+  const getCommitStatus = vi.fn(async (_taskId: string) => status);
+  const commitActionFromMobile = vi.fn(
+    async (_req: { taskId: string; action: string; message?: string }) => status,
+  );
+  beforeEach(() => {
+    getCommitStatus.mockClear();
+    commitActionFromMobile.mockClear();
+    return start({ getCommitStatus, commitActionFromMobile });
+  });
+  const path = '/api/mobile/tasks/task-1/commit';
+
+  it('lists the commit status for mobile and paired tokens', async () => {
+    for (const token of [mobileToken, await pair()]) {
+      const res = await request('GET', path, { token });
+      expect(res.status).toBe(200);
+      expect(res.json).toEqual(status);
+    }
+    expect(getCommitStatus).toHaveBeenCalledWith('task-1');
+  });
+
+  it('rejects agent tokens', async () => {
+    for (const token of [coordinatorToken, subtaskToken]) {
+      expect((await request('GET', path, { token })).status).toBe(403);
+      expect((await request('POST', path, { token, body: { action: 'stage-all' } })).status).toBe(
+        403,
+      );
+    }
+    expect(getCommitStatus).not.toHaveBeenCalled();
+    expect(commitActionFromMobile).not.toHaveBeenCalled();
+  });
+
+  it('needs pairing to stage, unstage or commit', async () => {
+    const res = await request('POST', path, { token: mobileToken, body: { action: 'stage-all' } });
+    expect(res.status).toBe(403);
+    expect(commitActionFromMobile).not.toHaveBeenCalled();
+  });
+
+  it('runs a staging action for a paired token and answers the new status', async () => {
+    const token = await pair();
+    for (const action of ['stage-all', 'unstage-all']) {
+      const res = await request('POST', path, { token, body: { action } });
+      expect(res.status).toBe(200);
+      expect(res.json).toEqual(status);
+      expect(commitActionFromMobile).toHaveBeenLastCalledWith({
+        taskId: 'task-1',
+        action,
+        message: undefined,
+      });
+    }
+  });
+
+  it('commits with a trimmed message', async () => {
+    const res = await request('POST', path, {
+      token: await pair(),
+      body: { action: 'commit', message: '  fix: thing \n' },
+    });
+    expect(res.status).toBe(200);
+    expect(commitActionFromMobile).toHaveBeenCalledWith({
+      taskId: 'task-1',
+      action: 'commit',
+      message: 'fix: thing',
+    });
+  });
+
+  it.each([
+    { action: 'push' },
+    { action: 'commit' },
+    { action: 'commit', message: '   ' },
+    { action: 'commit', message: 42 },
+    { action: 'commit', message: 'x'.repeat(16 * 1024 + 1) },
+  ])('rejects an invalid request body %#', async (body) => {
+    const res = await request('POST', path, { token: await pair(), body });
+    expect(res.status).toBe(400);
+    expect(commitActionFromMobile).not.toHaveBeenCalled();
+  });
+
+  it.each(['__proto__', '%'])('rejects the task id %s with 400', async (id) => {
+    const res = await request('GET', `/api/mobile/tasks/${id}/commit`, { token: mobileToken });
+    expect(res.status).toBe(400);
+    expect(getCommitStatus).not.toHaveBeenCalled();
+  });
+
+  it('rejects other methods', async () => {
+    expect((await request('PUT', path, { token: await pair(), body: {} })).status).toBe(405);
   });
 });

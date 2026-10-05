@@ -9,6 +9,7 @@ vi.mock('../ipc/pty.js', () => ({
   resizeAgent: vi.fn(),
   killAgent: vi.fn(),
   subscribeToAgent: vi.fn(),
+  subscribeToAgentRendered: vi.fn(() => null),
   unsubscribeFromAgent: vi.fn(),
   getAgentScrollback: vi.fn(() => null),
   getActiveAgentIds: vi.fn(() => []),
@@ -22,7 +23,8 @@ vi.mock('./protocol.js', () => ({
   parseClientMessage: vi.fn(() => null),
 }));
 
-const { requireOwnedTask, readCoordinatorBody } = await import('./server.js');
+const pty = await import('../ipc/pty.js');
+const { requireOwnedTask, readCoordinatorBody, buildAgentList } = await import('./server.js');
 
 type FakeRequest = EventEmitter & { destroy: ReturnType<typeof vi.fn> };
 
@@ -100,5 +102,97 @@ describe('readCoordinatorBody', () => {
 
     expect(replies).toEqual([{ status: 413, body: { error: 'Request body too large' } }]);
     expect(req.destroy).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildAgentList', () => {
+  it('includes active agents and incorporates collapsed tasks', () => {
+    vi.mocked(pty.getActiveAgentIds).mockReturnValue(['agent-1']);
+    vi.mocked(pty.getAgentMeta).mockImplementation((id) =>
+      id === 'agent-1'
+        ? ({
+            agentId: 'agent-1',
+            taskId: 'task-1',
+            isShell: false,
+            command: 'node',
+            args: [],
+            cols: 80,
+            rows: 24,
+            createdAt: Date.now(),
+          } as ReturnType<typeof pty.getAgentMeta>)
+        : null,
+    );
+
+    const getTaskName = (id: string) => (id === 'task-1' ? 'Task 1' : 'Task 2');
+    const getAgentStatus = () => ({
+      status: 'running' as const,
+      exitCode: null,
+      lastLine: 'Working...',
+    });
+    const getTaskAttention = () => 'active' as const;
+    const getTaskContext = (id: string) =>
+      id === 'task-2'
+        ? {
+            projectName: 'Proj',
+            projectColor: '#fff',
+            agentName: 'AgentDef',
+            lastLine: 'Last known line',
+            taskName: 'Task 2 Name',
+            collapsed: true,
+          }
+        : undefined;
+    const getCollapsedTaskIds = () => ['task-2'];
+
+    const agents = buildAgentList(
+      getTaskName,
+      getAgentStatus,
+      getTaskAttention,
+      getTaskContext,
+      getCollapsedTaskIds,
+    );
+
+    expect(agents).toHaveLength(2);
+    expect(agents[0]).toMatchObject({
+      agentId: 'agent-1',
+      taskId: 'task-1',
+      taskName: 'Task 1',
+      status: 'running',
+    });
+    expect(agents[1]).toMatchObject({
+      agentId: 'collapsed:task-2',
+      taskId: 'task-2',
+      taskName: 'Task 2 Name',
+      projectName: 'Proj',
+      status: 'exited',
+      collapsed: true,
+      lastLine: 'Last known line',
+    });
+  });
+
+  it('marks existing agents as collapsed if present in getCollapsedTaskIds', () => {
+    vi.mocked(pty.getActiveAgentIds).mockReturnValue(['agent-1']);
+    vi.mocked(pty.getAgentMeta).mockImplementation(
+      () =>
+        ({
+          agentId: 'agent-1',
+          taskId: 'task-1',
+          isShell: false,
+        }) as ReturnType<typeof pty.getAgentMeta>,
+    );
+
+    const agents = buildAgentList(
+      () => 'Task 1',
+      () => ({ status: 'running', exitCode: null, lastLine: '' }),
+      () => 'idle',
+      undefined,
+      () => ['task-1'],
+    );
+
+    expect(agents).toHaveLength(1);
+    expect(agents[0]).toMatchObject({
+      agentId: 'agent-1',
+      taskId: 'task-1',
+      collapsed: true,
+    });
   });
 });

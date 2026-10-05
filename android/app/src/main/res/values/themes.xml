@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ParallelCode" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#171717</item>
+        <item name="android:statusBarColor">#171717</item>
+        <item name="android:navigationBarColor">#171717</item>
+    </style>
+</resources>

@@ -1,8 +1,9 @@
 // REST helpers for the mobile SPA. Data flows over the WebSocket (see ws.ts);
-// these cover the request/response actions: pairing, task creation, and
-// reading/saving task notes.
+// these cover the request/response actions: pairing, task creation, task
+// notes, and the subscription usage meters.
 
 import { getToken, getPairedToken } from './auth';
+import type { UsageProvider, UsageState } from '../../electron/ipc/shared-types';
 
 export class ApiError extends Error {
   status: number;
@@ -88,6 +89,83 @@ export async function fetchNotes(taskId: string): Promise<string> {
   return r.notes;
 }
 
+export interface TaskDiff {
+  diff: string;
+  /** True when the diff was cut short for the phone. */
+  truncated: boolean;
+  /** True when the task has no branch of its own, so there is nothing to review. */
+  unsupported?: boolean;
+}
+
+/** Fetch a task's diff for review. Works with the base connection token. */
+export function fetchTaskDiff(taskId: string): Promise<TaskDiff> {
+  const token = getToken();
+  if (!token) throw new ApiError('Not connected', 401);
+  return request<TaskDiff>(`/api/mobile/tasks/${encodeURIComponent(taskId)}/diff`, { token });
+}
+
+export interface ReadinessCheck {
+  label: string;
+  status: 'pass' | 'warning' | 'blocked' | 'checking' | 'neutral';
+  detail: string;
+}
+
+export interface MergeReadiness {
+  readiness: {
+    overall: 'ready' | 'attention' | 'blocked' | 'checking';
+    checks: ReadinessCheck[];
+  };
+  canMerge: boolean;
+  baseBranch: string;
+  branchName: string;
+}
+
+/** Fetch read-only merge readiness. Works with the base connection token. */
+export function fetchMergeReadiness(taskId: string): Promise<MergeReadiness> {
+  const token = getToken();
+  if (!token) throw new ApiError('Not connected', 401);
+  return request<MergeReadiness>(`/api/mobile/tasks/${encodeURIComponent(taskId)}/readiness`, {
+    token,
+  });
+}
+
+/** Merge a task. Requires a paired token: this runs real git. */
+export function mergeTask(
+  taskId: string,
+  opts: { squash: boolean; cleanup: boolean },
+): Promise<void> {
+  const token = getPairedToken();
+  if (!token) throw new ApiError('Not paired', 401);
+  return request<{ ok: boolean }>(`/api/mobile/tasks/${encodeURIComponent(taskId)}/merge`, {
+    method: 'POST',
+    body: opts,
+    token,
+  }).then(() => {});
+}
+
+/**
+ * Close a task. Requires a paired token: this removes its worktree.
+ *
+ * The desktop refuses when closing would lose work and answers 409 with
+ * warnings, so the caller must decide whether to retry with `force`.
+ * Returns those warnings; an empty array means the task was closed.
+ */
+export async function closeTask(taskId: string, force = false): Promise<{ warnings: string[] }> {
+  const token = getPairedToken();
+  if (!token) throw new ApiError('Not paired', 401);
+  try {
+    await request<{ ok: boolean }>(`/api/mobile/tasks/${encodeURIComponent(taskId)}/close`, {
+      method: 'POST',
+      body: { force },
+      token,
+    });
+    return { warnings: [] };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409) return { warnings: [err.message] };
+    throw err;
+  }
+}
+
 /** Save the notes for a task. Requires a paired token (it is a write). */
 export async function saveNotes(taskId: string, notes: string): Promise<void> {
   const token = getPairedToken();
@@ -97,6 +175,13 @@ export async function saveNotes(taskId: string, notes: string): Promise<void> {
     body: { notes },
     token,
   });
+}
+
+/** The desktop's agent-subscription usage. Works with the base connection token. */
+export function fetchUsage(): Promise<Record<UsageProvider, UsageState>> {
+  const token = getToken();
+  if (!token) throw new ApiError('Not connected', 401);
+  return request<Record<UsageProvider, UsageState>>('/api/mobile/usage', { token });
 }
 
 /** Notification delivery is owned by this paired phone, independently of its live socket. */

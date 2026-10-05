@@ -30,7 +30,74 @@ export interface RemoteAgent {
   attention: RemoteAttentionState;
   /** Set for the app's built-in chat, which has no terminal to stream. */
   kind?: 'chat';
+  /** True when the task is collapsed / minimized on the desktop. */
+  collapsed?: boolean;
 }
+
+/**
+ * The desktop's answer to a phone's close request. `closed: false` means
+ * nothing was closed because closing would lose work; `warnings` says what.
+ */
+export type RemoteCloseResult = { closed: true } | { closed: false; warnings: string[] };
+
+/** A task's changes against its base branch, as a unified diff; `truncated` when cut short. */
+export interface RemoteTaskDiff {
+  diff: string;
+  truncated: boolean;
+  /** True when the task has no branch of its own, so there is nothing to compare. */
+  unsupported?: boolean;
+}
+
+/** One readiness row in a phone's merge dialog; mirrors the desktop's panel. */
+export interface RemoteReadinessCheck {
+  label: string;
+  status: 'pass' | 'warning' | 'blocked' | 'checking' | 'neutral';
+  detail: string;
+}
+
+/**
+ * Read-only merge readiness, plus the flags a phone's confirm dialog needs.
+ * Built by the desktop's own `buildMergeReadiness`, so both surfaces agree on
+ * what blocks a merge. `canMerge` is false only for a blocker, never a warning.
+ */
+export interface RemoteMergeReadiness {
+  readiness: {
+    overall: 'ready' | 'attention' | 'blocked' | 'checking';
+    checks: RemoteReadinessCheck[];
+  };
+  canMerge: boolean;
+  baseBranch: string;
+  branchName: string;
+}
+
+/** One uncommitted file in a phone's commit dialog; `staged` when the index holds a change to it. */
+export interface RemoteCommitFile {
+  path: string;
+  status: string;
+  staged: boolean;
+}
+
+/**
+ * A task's uncommitted files, as the desktop's commit dialog lists them.
+ * `unsupported` marks a task without a worktree of its own to commit in.
+ */
+export interface RemoteCommitStatus {
+  files: RemoteCommitFile[];
+  unsupported?: boolean;
+}
+
+/** What a paired phone may do from its commit dialog. */
+export const REMOTE_COMMIT_ACTIONS = ['stage-all', 'unstage-all', 'commit'] as const;
+export type RemoteCommitAction = (typeof REMOTE_COMMIT_ACTIONS)[number];
+
+/** Metadata attached to a task's remote agent entry. */
+export type RemoteTaskContext = Pick<
+  RemoteAgent,
+  'projectName' | 'projectColor' | 'agentName' | 'lastLine'
+> & {
+  taskName?: string;
+  collapsed?: boolean;
+};
 
 /** Conversation actions a paired phone may take on a running chat. */
 export const REMOTE_CHAT_ACTIONS = [
@@ -117,6 +184,18 @@ export interface ResizeCommand {
   rows: number;
 }
 
+/**
+ * A paired phone's terminal size for an agent it is viewing: the PTY takes it
+ * so full-screen TUIs fill the phone. Without cols/rows it hands the size back
+ * to the desktop; so does disconnecting.
+ */
+export interface ViewSizeCommand {
+  type: 'view-size';
+  agentId: string;
+  cols?: number;
+  rows?: number;
+}
+
 export interface KillCommand {
   type: 'kill';
   agentId: string;
@@ -155,6 +234,7 @@ export type ClientMessage =
   | AuthCommand
   | InputCommand
   | ResizeCommand
+  | ViewSizeCommand
   | KillCommand
   | SubscribeCommand
   | UnsubscribeCommand
@@ -199,15 +279,19 @@ export function parseClientMessage(raw: string): ClientMessage | null {
           ...(typeof msg.prefixKey === 'string' ? { prefixKey: msg.prefixKey } : {}),
         };
       case 'resize':
-        if (typeof msg.cols !== 'number' || typeof msg.rows !== 'number') return null;
-        if (!Number.isInteger(msg.cols) || !Number.isInteger(msg.rows)) return null;
-        if (msg.cols < 1 || msg.cols > 500 || msg.rows < 1 || msg.rows > 500) return null;
+        if (!isTerminalDimension(msg.cols) || !isTerminalDimension(msg.rows)) return null;
         return {
           type: 'resize',
           agentId: msg.agentId,
           cols: msg.cols,
           rows: msg.rows,
         };
+      case 'view-size': {
+        if (msg.cols === undefined && msg.rows === undefined)
+          return { type: 'view-size', agentId: msg.agentId };
+        if (!isTerminalDimension(msg.cols) || !isTerminalDimension(msg.rows)) return null;
+        return { type: 'view-size', agentId: msg.agentId, cols: msg.cols, rows: msg.rows };
+      }
       case 'kill':
         return { type: 'kill', agentId: msg.agentId };
       case 'subscribe':
@@ -225,6 +309,10 @@ export function parseClientMessage(raw: string): ClientMessage | null {
   } catch {
     return null;
   }
+}
+
+function isTerminalDimension(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 500;
 }
 
 function parseChatAction(msg: Record<string, unknown>, agentId: string): ChatActionCommand | null {

@@ -6,12 +6,16 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  commitStaged,
   createWorktree,
   ensureClaudeSandboxFiles,
   ensureSymlinkExcludes,
+  getStagedFiles,
   getSymlinkCandidates,
   refreshWorktreeNodeModules,
   removeWorktree,
+  stageAll,
+  unstageAll,
 } from './git.js';
 
 const tempDirs: string[] = [];
@@ -623,5 +627,31 @@ describe('ensureSymlinkExcludes', () => {
     const status = git(root, ['status', '--porcelain']);
     expect(status).not.toContain('star*file');
     expect(status).toContain('starZZfile');
+  });
+});
+
+describe('commit staging', () => {
+  it('stages every change and commits only what is staged', async () => {
+    const root = initRepository();
+    fs.writeFileSync(path.join(root, 'tracked.txt'), 'changed\n', 'utf8');
+    fs.writeFileSync(path.join(root, 'new.txt'), 'new\n', 'utf8');
+    expect(await getStagedFiles(root)).toEqual([]);
+
+    await stageAll(root);
+    expect((await getStagedFiles(root)).sort()).toEqual(['new.txt', 'tracked.txt']);
+
+    await unstageAll(root);
+    expect(await getStagedFiles(root)).toEqual([]);
+    expect(fs.readFileSync(path.join(root, 'tracked.txt'), 'utf8')).toBe('changed\n');
+    await stageAll(root);
+
+    git(root, ['config', 'user.name', 'Parallel Code Tests']);
+    git(root, ['config', 'user.email', 'tests@parallel-code.local']);
+    fs.writeFileSync(path.join(root, 'later.txt'), 'later\n', 'utf8');
+    await commitStaged(root, 'staged work');
+
+    expect(git(root, ['log', '-1', '--format=%s'])).toBe('staged work');
+    expect(await getStagedFiles(root)).toEqual([]);
+    expect(git(root, ['status', '--porcelain'])).toBe('?? later.txt');
   });
 });

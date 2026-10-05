@@ -77,7 +77,10 @@ export function startRemoteStatusSync(): () => void {
       const statuses: Record<string, RemoteAttentionState> = {};
       const contexts: Record<
         string,
-        Pick<RemoteAgent, 'projectName' | 'projectColor' | 'agentName' | 'lastLine'>
+        Pick<
+          RemoteAgent,
+          'projectName' | 'projectColor' | 'agentName' | 'lastLine' | 'taskName' | 'collapsed'
+        >
       > = {};
       for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
         // Like the desktop attention tray, surface unanswered questions even
@@ -92,13 +95,21 @@ export function startRemoteStatusSync(): () => void {
         const agent = store.agents[agentId];
         const project = store.projects.find((project) => project.id === task.projectId);
         contexts[taskId] = {
+          taskName: task.name,
+          collapsed: Boolean(task.collapsed),
           projectName: project?.name ?? '',
           projectColor: project?.color ?? '',
-          agentName: agent?.def.name ?? '',
+          agentName: agent?.def.name ?? task.savedAgentDef?.name ?? '',
           // Untracked like the terminal tail: a streaming reply changes every frame.
           lastLine: taskUsesAgentChat(task)
-            ? untrack(() => remoteChatPreview(store.agents[task.agentIds[0]]?.chatState))
-            : remoteOutputPreview(getAgentOutputTail(agentId)),
+            ? untrack(() =>
+                remoteChatPreview(
+                  task.agentIds[0] ? store.agents[task.agentIds[0]]?.chatState : undefined,
+                ),
+              )
+            : agentId
+              ? remoteOutputPreview(getAgentOutputTail(agentId))
+              : '',
         };
       }
 

@@ -16,10 +16,11 @@ import type {
   AgentDef,
   StepEntry,
   UsageProvider,
-  UsageWindow,
+  UsageState,
   VerificationRun,
   WorktreeStatus,
 } from '../ipc/types';
+export type { UsageState } from '../ipc/types';
 import type { ChatPermissionMode, ChatSession } from '../../electron/shared/agent-chat-types';
 import type { AskCodeProvider } from '../../electron/shared/ask-code-models';
 import type { DockerSource } from '../lib/docker';
@@ -495,16 +496,6 @@ export interface MCPStatus {
   port: number | null;
   coordinatorTaskId: string | null;
   mcpConfigPath: string | null;
-}
-
-export interface UsageState {
-  fiveHour: UsageWindow | null;
-  sevenDay: UsageWindow | null;
-  /** When the current windows were fetched; null until the first success. */
-  fetchedAt: number | null;
-  /** `unavailable` means no subscription login — the bar hides. `error` keeps the last snapshot. */
-  status: 'idle' | 'ok' | 'error' | 'unavailable';
-  error: string | null;
 }
 
 // Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.

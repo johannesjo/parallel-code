@@ -188,3 +188,173 @@ it('adds a task created from a phone without taking focus from the active task',
   expect(store.activeTaskId).toBe('task');
   expect(store.activeAgentId).toBe('agent');
 });
+
+/** Replies to the close request once the handler has finished. */
+async function closeRequest(force: boolean) {
+  listeners.get(IPC.Remote_CloseTaskRequest)?.({ reqId: 'req', taskId: 'task', force });
+  await vi.waitFor(() =>
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith(IPC.Remote_RendererReply, expect.anything()),
+  );
+  const reply = vi.mocked(invoke).mock.calls.find(([c]) => c === IPC.Remote_RendererReply);
+  return reply?.[1] as { ok: boolean; data?: unknown; error?: string };
+}
+
+it('refuses to close a task with unsaved work unless forced', async () => {
+  vi.mocked(invoke).mockImplementation(async (channel: string) =>
+    channel === IPC.GetWorktreeStatus
+      ? { has_uncommitted_changes: true, has_committed_changes: false }
+      : undefined,
+  );
+
+  const reply = await closeRequest(false);
+
+  expect(reply).toMatchObject({
+    ok: true,
+    data: {
+      closed: false,
+      warnings: ['There are uncommitted changes that will be permanently lost.'],
+    },
+  });
+  expect(vi.mocked(invoke)).not.toHaveBeenCalledWith(IPC.DeleteTask, expect.anything());
+  expect(store.tasks.task.closingStatus).toBeUndefined();
+});
+
+it('closes a clean task without forcing', async () => {
+  vi.mocked(invoke).mockImplementation(async (channel: string) =>
+    channel === IPC.GetWorktreeStatus
+      ? { has_uncommitted_changes: false, has_committed_changes: false }
+      : undefined,
+  );
+
+  const reply = await closeRequest(false);
+
+  expect(reply).toMatchObject({ ok: true, data: { closed: true } });
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith(IPC.DeleteTask, expect.anything());
+});
+
+it('force-closes without checking the worktree', async () => {
+  const reply = await closeRequest(true);
+
+  expect(reply).toMatchObject({ ok: true, data: { closed: true } });
+  expect(vi.mocked(invoke)).not.toHaveBeenCalledWith(IPC.GetWorktreeStatus, expect.anything());
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith(IPC.DeleteTask, expect.anything());
+});
+
+it('reports an unknown task instead of closing', async () => {
+  listeners.get(IPC.Remote_CloseTaskRequest)?.({ reqId: 'req', taskId: 'missing', force: true });
+  await vi.waitFor(() =>
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith(
+      IPC.Remote_RendererReply,
+      expect.objectContaining({ ok: false, error: 'Task not found' }),
+    ),
+  );
+});
+
+it('answers a phone diff request with the task diff against its base', async () => {
+  setStore('tasks', 'task', 'baseBranch', 'main');
+  vi.mocked(invoke).mockImplementation(async (channel: string) =>
+    channel === IPC.GetAllFileDiffs ? 'diff --git a/x b/x' : undefined,
+  );
+
+  listeners.get(IPC.Remote_GetDiffRequest)?.({ reqId: 'req', taskId: 'task' });
+
+  await vi.waitFor(() =>
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith(
+      IPC.Remote_RendererReply,
+      expect.objectContaining({
+        ok: true,
+        data: { diff: 'diff --git a/x b/x', truncated: false },
+      }),
+    ),
+  );
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith(IPC.GetAllFileDiffs, {
+    worktreePath: '/tmp/task',
+    baseBranch: 'main',
+  });
+});
+
+/** Sends one commit-channel request and waits for its reply. */
+async function commitRequest(channel: string, payload: Record<string, unknown>) {
+  vi.mocked(invoke).mockClear();
+  listeners.get(channel)?.({ reqId: 'req', taskId: 'task', ...payload });
+  await vi.waitFor(() =>
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith(IPC.Remote_RendererReply, expect.anything()),
+  );
+  const reply = vi.mocked(invoke).mock.calls.find(([c]) => c === IPC.Remote_RendererReply);
+  return reply?.[1] as { ok: boolean; data?: unknown; error?: string };
+}
+
+function mockWorktreeChanges(): void {
+  vi.mocked(invoke).mockImplementation(async (channel: string) => {
+    if (channel === IPC.GetUncommittedChangedFiles)
+      return [
+        { path: 'a.ts', status: 'M', lines_added: 1, lines_removed: 0, committed: false },
+        { path: 'b.ts', status: '?', lines_added: 2, lines_removed: 0, committed: false },
+      ];
+    if (channel === IPC.GetStagedFiles) return ['a.ts'];
+    return undefined;
+  });
+}
+
+it('lists uncommitted files with their staged state for the phone', async () => {
+  mockWorktreeChanges();
+
+  const reply = await commitRequest(IPC.Remote_GetCommitStatusRequest, {});
+
+  expect(reply).toEqual({
+    reqId: 'req',
+    ok: true,
+    data: {
+      files: [
+        { path: 'a.ts', status: 'M', staged: true },
+        { path: 'b.ts', status: '?', staged: false },
+      ],
+    },
+    error: undefined,
+  });
+});
+
+it('marks a task without its own worktree as unsupported for commits', async () => {
+  setStore('tasks', 'task', 'gitIsolation', 'none');
+
+  const status = await commitRequest(IPC.Remote_GetCommitStatusRequest, {});
+  expect(status).toMatchObject({ ok: true, data: { files: [], unsupported: true } });
+
+  const action = await commitRequest(IPC.Remote_CommitActionRequest, { action: 'stage-all' });
+  expect(action.ok).toBe(false);
+  expect(vi.mocked(invoke)).not.toHaveBeenCalledWith(IPC.StageAll, expect.anything());
+});
+
+it.each([
+  { action: 'stage-all', channel: IPC.StageAll, args: { worktreePath: '/tmp/task' } },
+  { action: 'unstage-all', channel: IPC.UnstageAll, args: { worktreePath: '/tmp/task' } },
+  {
+    action: 'commit',
+    channel: IPC.CommitStaged,
+    args: { worktreePath: '/tmp/task', message: 'fix it' },
+  },
+])('runs $action in the task worktree and answers the new status', async (c) => {
+  mockWorktreeChanges();
+
+  const reply = await commitRequest(IPC.Remote_CommitActionRequest, {
+    action: c.action,
+    message: 'fix it',
+  });
+
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith(c.channel, c.args);
+  expect(reply).toMatchObject({ ok: true, data: { files: expect.any(Array) } });
+});
+
+it('reports a failed commit to the phone', async () => {
+  vi.mocked(invoke).mockImplementation(async (channel: string) => {
+    if (channel === IPC.CommitStaged) throw new Error('nothing to commit');
+    return undefined;
+  });
+
+  const reply = await commitRequest(IPC.Remote_CommitActionRequest, {
+    action: 'commit',
+    message: 'x',
+  });
+
+  expect(reply).toMatchObject({ ok: false, error: 'nothing to commit' });
+});

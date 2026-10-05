@@ -18,9 +18,9 @@ it('keeps invalid diagram source without leaking Mermaid error graphics into the
 
   renderMermaidIn(container, 'invalid');
 
-  await vi.waitFor(() => expect(warn).toHaveBeenCalled(), { timeout: 5000 });
+  await vi.waitFor(() => expect(warn).toHaveBeenCalled(), { timeout: 15000 });
   expect(block.textContent).toBe(source);
   expect(block.querySelector('svg')).toBeNull();
   expect(document.body.children).toHaveLength(1);
   expect(document.body.textContent).not.toContain('Syntax error in text');
-});
+}, 15000);

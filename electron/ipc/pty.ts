@@ -53,6 +53,12 @@ interface PtySession {
   peerInputQueue?: { data: string; at: number }[];
   /** Assigned container name when running in Docker mode, null otherwise. */
   containerName: string | null;
+  /** The size the desktop pane asked for; restored when a phone stops overriding it. */
+  desktopSize?: { cols: number; rows: number };
+  /** A viewing phone's size, which the PTY takes while it is set. */
+  remoteSize?: { cols: number; rows: number };
+  /** Send batched output now, so subscribers have everything the mirror has parsed. */
+  flushOutput?: () => void;
 }
 
 const sessions = new Map<string, PtySession>();
@@ -631,6 +637,8 @@ function attachPtyOutputHandlers(
     }
   };
 
+  session.flushOutput = flush;
+
   session.proc.onData((data: string) => {
     session.queries.feed(data);
     const chunk = Buffer.from(data, 'utf8');
@@ -754,10 +762,7 @@ export async function spawnAgent(
     existing.taskId = args.taskId;
     existing.isShell = args.isShell ?? existing.isShell;
     existing.proc.resume();
-    if (args.cols > 0 && args.rows > 0) {
-      existing.proc.resize(args.cols, args.rows);
-      existing.queries.resize(args.cols, args.rows);
-    }
+    if (args.cols > 0 && args.rows > 0) resizeDesktopView(existing, args.cols, args.rows);
     if (existing.scrollback.length > 0) {
       sendToChannel(notify, channelId, {
         type: 'Data',
@@ -1012,11 +1017,44 @@ export async function writeAgentPrompt(
   }
 }
 
+function applySize(session: PtySession, cols: number, rows: number): void {
+  if (session.proc.cols === cols && session.proc.rows === rows) return;
+  session.proc.resize(cols, rows);
+  session.queries.resize(cols, rows);
+}
+
+function resizeDesktopView(session: PtySession, cols: number, rows: number): void {
+  session.desktopSize = { cols, rows };
+  if (!session.remoteSize) applySize(session, cols, rows);
+}
+
+/** Resize for the desktop pane. While a phone overrides the size, it is remembered instead. */
 export function resizeAgent(agentId: string, cols: number, rows: number): void {
   const session = sessions.get(agentId);
   if (!session) throw new Error(`Agent not found: ${agentId}`);
-  session.proc.resize(cols, rows);
-  session.queries.resize(cols, rows);
+  resizeDesktopView(session, cols, rows);
+}
+
+/**
+ * Give the PTY a viewing phone's size, so a full-screen TUI fills the phone, or
+ * pass null to hand it back to the desktop pane's last size.
+ */
+export function setAgentRemoteSize(
+  agentId: string,
+  size: { cols: number; rows: number } | null,
+): void {
+  const session = sessions.get(agentId);
+  if (!session) throw new Error(`Agent not found: ${agentId}`);
+  if (size) {
+    session.desktopSize ??= { cols: session.proc.cols, rows: session.proc.rows };
+    session.remoteSize = size;
+    applySize(session, size.cols, size.rows);
+    return;
+  }
+  if (!session.remoteSize) return;
+  session.remoteSize = undefined;
+  const desktop = session.desktopSize;
+  if (desktop) applySize(session, desktop.cols, desktop.rows);
 }
 
 export function pauseAgent(agentId: string): void {
@@ -1092,6 +1130,41 @@ export function subscribeToAgent(agentId: string, cb: (encoded: string) => void)
   if (!session) return false;
   session.subscribers.add(cb);
   return true;
+}
+
+/**
+ * Subscribe starting from a rendered snapshot: the screen and up to 10k lines
+ * of history from the main-process mirror, as ANSI text, instead of the raw
+ * byte replay, which redraw-heavy TUIs fill with repaints of one screen.
+ * Output already in the snapshot is not sent again; later output reaches `cb`
+ * after `onSnapshot`. The snapshot is null when the mirror is gone (the process
+ * exited), so the caller can fall back to the raw replay. Returns the
+ * subscriber to pass to unsubscribeFromAgent, or null for an unknown agent.
+ */
+export function subscribeToAgentRendered(
+  agentId: string,
+  onSnapshot: (snapshot: { data: string; cols: number; rows: number } | null) => void,
+  cb: (encoded: string) => void,
+): ((encoded: string) => void) | null {
+  const session = sessions.get(agentId);
+  if (!session) return null;
+  // The mirror parses output as it arrives but subscribers get it in batches:
+  // flush, so what the snapshot will contain has all been sent already.
+  session.flushOutput?.();
+  const { cols, rows } = session.proc;
+  let queued: string[] | null = [];
+  const subscriber = (encoded: string) => {
+    if (queued) queued.push(encoded);
+    else cb(encoded);
+  };
+  session.subscribers.add(subscriber);
+  void session.queries.serialize().then((text) => {
+    const later = queued ?? [];
+    queued = null;
+    onSnapshot(text === null ? null : { data: Buffer.from(text).toString('base64'), cols, rows });
+    for (const encoded of later) cb(encoded);
+  });
+  return subscriber;
 }
 
 /** Remove a previously registered output subscriber. */

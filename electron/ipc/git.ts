@@ -1967,10 +1967,34 @@ export async function getBranchWorktreePath(
   }
 }
 
+/** Paths with staged changes in a worktree's index. */
+export async function getStagedFiles(worktreePath: string): Promise<string[]> {
+  const { stdout } = await exec('git', ['diff', '--cached', '--name-only', '-z'], {
+    cwd: worktreePath,
+    maxBuffer: MAX_BUFFER,
+  });
+  return stdout.split('\0').filter(Boolean);
+}
+
+/** Stage every change in a worktree, including untracked and deleted files. */
+export async function stageAll(worktreePath: string): Promise<void> {
+  await exec('git', ['add', '-A'], { cwd: worktreePath });
+}
+
+/** Unstage everything in a worktree, keeping the working-tree changes. */
+export async function unstageAll(worktreePath: string): Promise<void> {
+  await exec('git', ['reset', '--quiet'], { cwd: worktreePath });
+}
+
+/** Commit what is already staged in a worktree. */
+export async function commitStaged(worktreePath: string, message: string): Promise<void> {
+  await exec('git', ['commit', '-m', message], { cwd: worktreePath });
+}
+
 /** Stage all changes and commit in a worktree. */
 export async function commitAll(worktreePath: string, message: string): Promise<void> {
-  await exec('git', ['add', '-A'], { cwd: worktreePath });
-  await exec('git', ['commit', '-m', message], { cwd: worktreePath });
+  await stageAll(worktreePath);
+  await commitStaged(worktreePath, message);
 }
 
 /** Discard all uncommitted changes in a worktree (keeps committed work). */

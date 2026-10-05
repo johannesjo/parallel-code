@@ -70,7 +70,16 @@ import { readCoverageSummary } from './coverage.js';
 import { loadEslintQualityFindings } from './eslint-quality-findings.js';
 import { buildVerifyEnv, validateVerifyCommand, verificationRunner } from './verify.js';
 import { startRemoteServer, getMCPLogs, type RemoteProject } from '../remote/server.js';
-import type { RemoteAttentionState, RemoteAgent } from '../remote/protocol.js';
+import type {
+  RemoteAttentionState,
+  RemoteCloseResult,
+  RemoteCommitAction,
+  RemoteCommitStatus,
+  RemoteMergeReadiness,
+  RemoteTaskContext,
+  RemoteTaskDiff,
+} from '../remote/protocol.js';
+import type { UsageProvider, UsageState } from './shared-types.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
 import { getUserDataDir } from '../user-data-dir.js';
 import {
@@ -96,6 +105,10 @@ import {
   listImportableWorktrees,
   getBranchWorktreePath,
   commitAll,
+  commitStaged,
+  getStagedFiles,
+  stageAll,
+  unstageAll,
   discardUncommitted,
   checkMergeStatus,
   mergeTask,
@@ -578,10 +591,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // the same richer status as the desktop. The renderer owns this computation
   // (it depends on reactive terminal/git/steps state), so main just caches it.
   const taskAttention = new Map<string, RemoteAttentionState>();
-  const taskContext = new Map<
-    string,
-    Pick<RemoteAgent, 'projectName' | 'projectColor' | 'agentName' | 'lastLine'>
-  >();
+  const taskContext = new Map<string, RemoteTaskContext>();
 
   // --- MCP coordinator (lazy — only loaded when coordinator mode is enabled) ---
   let coordinatorHandlersRegistered = false;
@@ -977,6 +987,20 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const worktreePath = worktreePathArg(args);
     assertString(args.message, 'message');
     return commitAll(worktreePath, args.message);
+  });
+  ipcMain.handle(IPC.GetStagedFiles, (_e, args) => {
+    return getStagedFiles(worktreePathArg(args));
+  });
+  ipcMain.handle(IPC.StageAll, (_e, args) => {
+    return stageAll(worktreePathArg(args));
+  });
+  ipcMain.handle(IPC.UnstageAll, (_e, args) => {
+    return unstageAll(worktreePathArg(args));
+  });
+  ipcMain.handle(IPC.CommitStaged, (_e, args) => {
+    const worktreePath = worktreePathArg(args);
+    assertString(args.message, 'message');
+    return commitStaged(worktreePath, args.message);
   });
   ipcMain.handle(IPC.DiscardUncommitted, (_e, args) => {
     return discardUncommitted(worktreePathArg(args));
@@ -1666,8 +1690,31 @@ export function registerAllHandlers(win: BrowserWindow): void {
       callRenderer<{ notes: string }>(IPC.Remote_GetNotesRequest, { taskId }).then((r) => r.notes),
     setTaskNotes: (taskId: string, notes: string) =>
       callRenderer<{ ok: boolean }>(IPC.Remote_SetNotesRequest, { taskId, notes }).then(() => {}),
+    closeTaskFromMobile: (taskId: string, force: boolean) =>
+      callRenderer<RemoteCloseResult>(IPC.Remote_CloseTaskRequest, { taskId, force }),
+    getTaskDiff: (taskId: string) =>
+      callRenderer<RemoteTaskDiff>(IPC.Remote_GetDiffRequest, { taskId }),
+    getMergeReadiness: (taskId: string) =>
+      callRenderer<RemoteMergeReadiness>(IPC.Remote_GetMergeReadinessRequest, { taskId }),
+    mergeTaskFromMobile: (req: { taskId: string; squash: boolean; cleanup: boolean }) =>
+      callRenderer<{ ok: boolean }>(IPC.Remote_MergeTaskRequest, req).then(() => {}),
+    getCommitStatus: (taskId: string) =>
+      callRenderer<RemoteCommitStatus>(IPC.Remote_GetCommitStatusRequest, { taskId }),
+    commitActionFromMobile: (req: {
+      taskId: string;
+      action: RemoteCommitAction;
+      message?: string;
+    }) => callRenderer<RemoteCommitStatus>(IPC.Remote_CommitActionRequest, req),
+    getUsage: () => callRenderer<Record<UsageProvider, UsageState>>(IPC.Remote_GetUsageRequest, {}),
     getTaskAttention: (taskId: string): RemoteAttentionState => taskAttention.get(taskId) ?? 'idle',
     getTaskContext: (taskId: string) => taskContext.get(taskId),
+    getCollapsedTaskIds: (): string[] => {
+      const result: string[] = [];
+      for (const [taskId, ctx] of taskContext.entries()) {
+        if (ctx.collapsed) result.push(taskId);
+      }
+      return result;
+    },
   };
 
   const remoteServerOptions = (): Omit<
@@ -1711,7 +1758,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
         statuses?: Record<string, string>;
         contexts?: Record<
           string,
-          { projectName?: unknown; projectColor?: unknown; agentName?: unknown; lastLine?: unknown }
+          {
+            projectName?: unknown;
+            projectColor?: unknown;
+            agentName?: unknown;
+            lastLine?: unknown;
+            taskName?: unknown;
+            collapsed?: unknown;
+          }
         >;
       },
     ) => {
@@ -1722,7 +1776,12 @@ export function registerAllHandlers(win: BrowserWindow): void {
       if (args.contexts && typeof args.contexts === 'object') {
         for (const [taskId, context] of Object.entries(args.contexts)) {
           if (!context || typeof context !== 'object') continue;
+          const taskName =
+            typeof context.taskName === 'string' ? context.taskName.slice(0, 200) : undefined;
+          if (taskName) taskNames.set(taskId, taskName);
           taskContext.set(taskId, {
+            taskName,
+            collapsed: Boolean(context.collapsed),
             projectName:
               typeof context.projectName === 'string' ? context.projectName.slice(0, 200) : '',
             projectColor:

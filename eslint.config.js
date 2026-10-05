@@ -12,6 +12,8 @@ export default [
       'dist-electron/**',
       'dist-remote/**',
       'release/**',
+      'android/.gradle/**',
+      'android/**/build/**',
       'node_modules/**',
       '.worktrees/**',
       '.claude/**',
@@ -98,6 +100,20 @@ export default [
   // Showcase and benchmark scripts are command-line tools that report on stdout.
   {
     files: ['scripts/showcase/**/*.ts', 'scripts/bench/**/*.ts'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+
+  // The look generator is a command-line tool: it reports what it wrote or why it
+  // refused, which is the whole output of a --check run in CI.
+  {
+    files: ['scripts/generate-android-looks.mjs'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+      },
+    },
     rules: {
       'no-console': 'off',
     },

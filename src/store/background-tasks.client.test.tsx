@@ -274,6 +274,7 @@ it('offers the action and a manual return in the task header', () => {
         isActive={store.activeTaskId === 'one'}
         onClose={() => undefined}
         onMerge={() => undefined}
+        onCommit={() => undefined}
         onPush={() => undefined}
         pushing={false}
         pushSuccess={false}

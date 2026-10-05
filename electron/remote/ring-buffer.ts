@@ -4,7 +4,7 @@ export class RingBuffer {
   private pos = 0;
   private full = false;
 
-  constructor(private readonly capacity: number = 64 * 1024) {
+  constructor(private readonly capacity: number = 2 * 1024 * 1024) {
     this.buf = Buffer.alloc(capacity);
   }
 
