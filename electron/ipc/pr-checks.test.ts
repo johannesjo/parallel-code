@@ -563,6 +563,28 @@ describe('refreshPrChecksWatcher', () => {
       now.mockRestore();
     }
   });
+
+  it.each([
+    ['MERGED', true],
+    ['CLOSED', false],
+  ])('stops watching a %s PR and reports merged=%s', async (state, merged) => {
+    const send = vi.fn();
+    initPrChecks(fakeWindow(send));
+    stubGh((_args, cb) =>
+      cb(null, JSON.stringify({ state, headRefOid: 'sha', statusCheckRollup: [] }), ''),
+    );
+
+    startPrChecksWatcher({
+      taskId: 't1',
+      prUrl: 'https://github.com/a/b/pull/1',
+      taskName: 'test',
+    });
+    await flushPromises();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][1]).toMatchObject({ taskId: 't1', cleared: true, merged });
+    expect(__getStateForTests().taskIds).toEqual([]);
+  });
 });
 
 describe('startPrChecksWatcher — graceful degradation', () => {

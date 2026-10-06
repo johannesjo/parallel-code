@@ -87,6 +87,56 @@ describe('startPrChecksSubscription updates', () => {
     });
     disposeRoot?.();
   });
+
+  it('keeps a merged PR state after the watcher clears', () => {
+    setStore('taskOrder', ['task-1']);
+    setStore('tasks', {
+      'task-1': {
+        id: 'task-1',
+        name: 'Task',
+        projectId: 'project-1',
+        branchName: 'task/task-1',
+        worktreePath: '/repo/.worktrees/task-1',
+        agentIds: [],
+        shellAgentIds: [],
+        notes: '',
+        lastPrompt: '',
+        gitIsolation: 'worktree',
+        prUrl: 'https://github.com/acme/app/pull/12',
+      },
+    });
+
+    let disposeRoot: (() => void) | undefined;
+    createRoot((dispose) => {
+      disposeRoot = dispose;
+      startPrChecksSubscription();
+    });
+    const updateHandler = mockOn.mock.calls.find(
+      ([channel]) => channel === IPC.PrChecksUpdate,
+    )?.[1] as ((data: unknown) => void) | undefined;
+    const cleared = {
+      taskId: 'task-1',
+      overall: 'none',
+      passing: 0,
+      pending: 0,
+      failing: 0,
+      checks: [],
+      checkedAt: '2026-08-04T10:00:00.000Z',
+      cleared: true,
+    };
+
+    updateHandler?.({ ...cleared, merged: true });
+    expect(getPrChecks('task-1')).toMatchObject({ overall: 'none', merged: true });
+
+    updateHandler?.({ ...cleared, merged: false });
+    expect(getPrChecks('task-1')).toBeUndefined();
+
+    // A later open PR on the same task must not inherit the merged flag.
+    updateHandler?.({ ...cleared, merged: true });
+    updateHandler?.({ ...cleared, overall: 'success', passing: 1, cleared: false });
+    expect(getPrChecks('task-1')).toMatchObject({ overall: 'success', merged: false });
+    disposeRoot?.();
+  });
 });
 
 describe('startPrChecksSubscription branch PR detection', () => {

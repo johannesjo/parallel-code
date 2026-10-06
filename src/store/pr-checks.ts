@@ -142,6 +142,20 @@ export function startPrChecksSubscription(): () => void {
     if (typeof msg.taskId !== 'string') return;
     if (!store.tasks[msg.taskId]) return;
     if (typeof msg.overall !== 'string') return;
+    // A merged PR is final, so keep its bookkeeping: the effect then neither
+    // re-polls it nor misses a later URL change or task removal.
+    if (msg.cleared && msg.merged) {
+      setPrChecks(msg.taskId, {
+        overall: 'none',
+        merged: true,
+        passing: 0,
+        pending: 0,
+        failing: 0,
+        checks: [],
+        checkedAt: typeof msg.checkedAt === 'string' ? msg.checkedAt : new Date().toISOString(),
+      });
+      return;
+    }
     // On a `cleared` update the main process has stopped watching — drop our
     // bookkeeping so a later reopen-and-restart goes through.
     if (msg.cleared) {
@@ -151,6 +165,9 @@ export function startPrChecksSubscription(): () => void {
     }
     setPrChecks(msg.taskId, {
       overall: msg.overall as PrChecksOverall,
+      // Explicit: store writes shallow-merge, so an omitted flag would keep a
+      // previous PR's `merged: true`.
+      merged: false,
       isDraft: msg.isDraft === true,
       reviewDecision:
         msg.reviewDecision === 'APPROVED' ||

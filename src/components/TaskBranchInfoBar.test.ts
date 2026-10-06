@@ -99,6 +99,25 @@ describe('TaskBranchInfoBar PR review metadata', () => {
     expect(html).not.toContain('task-pr-review-icon--approved');
   });
 
+  it('shows a merged PR in GitHub purple instead of its review state', () => {
+    mockGetPrChecks.mockReturnValue({
+      overall: 'none',
+      merged: true,
+      passing: 0,
+      pending: 0,
+      failing: 0,
+      checks: [],
+      checkedAt: '2026-08-04T10:00:00.000Z',
+    });
+
+    const html = renderToString(() => TaskBranchInfoBar({ task, onEditProject: vi.fn() }));
+
+    expect(html).toContain('<span class="task-pr-review-label">Merged</span>');
+    expect(html).toContain('class="task-pr-review-status" style="color:#8957e5');
+    expect(html).toContain('task-pr-review-icon--merged">');
+    expect(html).toContain('aria-label="PR #12, Merged"');
+  });
+
   it('keeps compact review and CI meaning in the PR button accessible label', () => {
     const html = renderToString(() => TaskBranchInfoBar({ task, onEditProject: vi.fn() }));
 

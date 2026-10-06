@@ -160,6 +160,9 @@ export interface PrChecksUpdatePayload {
    *  closed). The renderer should drop its bookkeeping so a later restart of
    *  the watcher (e.g. PR reopened) goes through cleanly. */
   cleared: boolean;
+  /** Set with `cleared` when the PR was merged rather than closed. Absent for
+   *  older senders. */
+  merged?: boolean;
 }
 
 export interface BranchPrDetectionResult {

@@ -5,6 +5,8 @@ export interface PrChecksState {
   overall: PrChecksOverall;
   isDraft?: boolean;
   reviewDecision?: PrChecksUpdatePayload['reviewDecision'];
+  /** The PR was merged on GitHub; the main process no longer watches it. */
+  merged?: boolean;
   passing: number;
   pending: number;
   failing: number;

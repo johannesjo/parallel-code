@@ -221,7 +221,7 @@ async function refreshOne(taskId: string): Promise<void> {
     entry.failing = 0;
     entry.checks = [];
     entry.lastRefreshedAt = Date.now();
-    sendUpdate(entry, { cleared: true });
+    sendUpdate(entry, { cleared: true, merged: status.state === 'MERGED' });
     tasks.delete(taskId);
     if (tasks.size === 0) clearTickInterval();
     return;
@@ -307,7 +307,7 @@ async function refreshOne(taskId: string): Promise<void> {
   }
 }
 
-function sendUpdate(entry: TaskEntry, opts?: { cleared?: boolean }): void {
+function sendUpdate(entry: TaskEntry, opts?: { cleared?: boolean; merged?: boolean }): void {
   if (!win || win.isDestroyed() || disabled) return;
   const payload: PrChecksUpdatePayload = {
     taskId: entry.taskId,
@@ -320,6 +320,7 @@ function sendUpdate(entry: TaskEntry, opts?: { cleared?: boolean }): void {
     checks: entry.checks,
     checkedAt: new Date(entry.lastRefreshedAt).toISOString(),
     cleared: opts?.cleared ?? false,
+    merged: opts?.merged ?? false,
   };
   win.webContents.send(IPC.PrChecksUpdate, payload);
 }

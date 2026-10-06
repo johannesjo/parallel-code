@@ -18,7 +18,7 @@ import { parseGitHubUrl } from '../lib/github-url';
 import { abbreviateHomePath } from '../lib/path';
 import { projectInitials } from '../lib/project-initials';
 import type { Task } from '../store/types';
-import { AlertIcon, CheckIcon, PencilIcon, PersonIcon } from './icons';
+import { AlertIcon, CheckIcon, GitMergeIcon, PencilIcon, PersonIcon } from './icons';
 
 const infoBarBtnStyle: JSX.CSSProperties = {
   'align-self': 'stretch',
@@ -37,7 +37,10 @@ const warningChipStyle: JSX.CSSProperties = {
   padding: '1px 6px',
 };
 
-type ReviewStatusKind = 'approved' | 'changes-requested' | 'review-needed' | 'draft';
+type ReviewStatusKind = 'approved' | 'changes-requested' | 'review-needed' | 'draft' | 'merged';
+
+/** GitHub's own "merged" purple, so the state reads the same as on github.com. */
+const GITHUB_MERGED_COLOR = '#8957e5';
 
 interface ReviewStatus {
   kind: ReviewStatusKind;
@@ -61,6 +64,9 @@ function ReviewStatusIcon(props: { kind: ReviewStatusKind }) {
       </Match>
       <Match when={props.kind === 'draft'}>
         <PencilIcon size={12} />
+      </Match>
+      <Match when={props.kind === 'merged'}>
+        <GitMergeIcon size={12} />
       </Match>
     </Switch>
   );
@@ -167,6 +173,15 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
           const reviewStatus = (): ReviewStatus | null => {
             const c = pr();
             if (!c) return null;
+            if (c.merged) {
+              return {
+                kind: 'merged',
+                label: 'Merged',
+                accessibleLabel: 'Merged',
+                title: 'Pull request merged',
+                color: GITHUB_MERGED_COLOR,
+              };
+            }
             if (c.isDraft) {
               return {
                 kind: 'draft',
