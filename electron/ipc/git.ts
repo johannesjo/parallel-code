@@ -403,18 +403,24 @@ async function pickMergeBase(
   if (!localMb || !originMb) return null;
   if (localMb === originMb) return { sha: localMb, ref: branch };
 
-  const isAncestor = async (anc: string, desc: string): Promise<boolean> => {
-    try {
-      await exec('git', ['merge-base', '--is-ancestor', anc, desc], { cwd: repoRoot });
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  if (await isAncestor(originMb, localMb)) return { sha: localMb, ref: branch };
-  if (await isAncestor(localMb, originMb)) return { sha: originMb, ref: `origin/${branch}` };
+  if (await isAncestor(repoRoot, originMb, localMb)) return { sha: localMb, ref: branch };
+  if (await isAncestor(repoRoot, localMb, originMb)) {
+    return { sha: originMb, ref: `origin/${branch}` };
+  }
   return { sha: localMb, ref: branch };
+}
+
+async function isAncestor(
+  repoRoot: string,
+  ancestor: string,
+  descendant: string,
+): Promise<boolean> {
+  try {
+    await exec('git', ['merge-base', '--is-ancestor', ancestor, descendant], { cwd: repoRoot });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -443,15 +449,22 @@ async function pickMergeBase(
  * --right-only` to `HEAD...<main>` to count *main's* unique commits not in
  * HEAD (i.e. how stale HEAD is relative to main), so the merge dialog's
  * "Rebase first" prompt agrees with this filter.
+ *
+ * `compareRef` matches patches against a branch other than `base.ref`; only
+ * commits after `base.sha` are then considered (e.g. a child rebased onto main
+ * still carries copies of its parent's commits above the rebase target).
  */
 async function refineDiffBaseWithCherryPick(
   repoRoot: string,
   base: PickedMergeBase,
   head: string,
+  compareRef = base.ref,
 ): Promise<PickedMergeBase> {
   let unique: string[];
   let oldestParent: string | null = null;
   try {
+    const range = [`${compareRef}...${head}`];
+    if (compareRef !== base.ref) range.push(`^${base.sha}`);
     const { stdout } = await exec(
       'git',
       [
@@ -461,7 +474,7 @@ async function refineDiffBaseWithCherryPick(
         '--no-merges',
         '--reverse',
         '--pretty=%H %P',
-        `${base.ref}...${head}`,
+        ...range,
       ],
       { cwd: repoRoot, maxBuffer: MAX_BUFFER },
     );
@@ -515,26 +528,190 @@ async function refineDiffBaseWithCherryPick(
   return base;
 }
 
-/** Read rebases oldest first so repeated rebases retain the inherited baseline. */
-async function findRebases(
-  repoRoot: string,
-  head: string,
-): Promise<{ target: string; previousHead: string }[]> {
+/**
+ * Reflog of `head`'s branch as `<sha>\0<subject>` entries, newest first.
+ * Empty for a detached head or a missing reflog.
+ */
+async function readBranchReflog(repoRoot: string, head: string): Promise<string[]> {
   try {
-    const { stdout: ref } = await exec('git', ['rev-parse', '--symbolic-full-name', head], {
+    // A pinned SHA has no symbolic name; it is the checked-out branch's head.
+    const { stdout } = await exec('git', ['rev-parse', '--symbolic-full-name', head], {
       cwd: repoRoot,
     });
-    const branch = ref.trim() || (await getCurrentBranchName(repoRoot));
-    const { stdout } = await exec('git', ['reflog', 'show', '--format=%H%x00%gs', branch], {
+    const ref = stdout.trim() || `refs/heads/${await getCurrentBranchName(repoRoot)}`;
+    if (!ref.startsWith('refs/heads/')) return [];
+    const { stdout: reflog } = await exec('git', ['reflog', 'show', '--format=%H%x00%gs', ref], {
       cwd: repoRoot,
       maxBuffer: MAX_BUFFER,
     });
-    const entries = stdout.trimEnd().split('\n');
-    const rebases: { target: string; previousHead: string }[] = [];
+    return reflog.split('\n').filter(Boolean);
+  } catch {
+    // Missing or expired reflogs are not evidence of a changed branch point.
+    return [];
+  }
+}
+
+/** Commit a branch was created from, read from its oldest reflog entry. */
+function findBranchCreationCommit(headReflog: string[]): string | null {
+  const [sha, subject] = (headReflog[headReflog.length - 1] ?? '').split('\0');
+  return subject?.startsWith('branch: Created from') ? sha : null;
+}
+
+/**
+ * Where `head`'s branch was created from `branch`, when that is newer than
+ * `base`. A parent that amends, squashes or conflict-resolves its commits
+ * after a child forked leaves the child holding pre-rewrite copies that
+ * neither the merge-base nor the cherry-pick refinement can exclude, so the
+ * child would otherwise show all inherited parent work as its own.
+ *
+ * Deliberately not `git merge-base --fork-point`: the base branch's reflog
+ * also remembers the head's own commits after an undone fast-forward merge,
+ * which would hide that work. The creation point must instead have been a
+ * tip of `branch`; a branch an agent created mid-work never was.
+ */
+async function findForkPoint(
+  repoRoot: string,
+  opts: { branch: string; headReflog: string[]; head: string; base: string },
+): Promise<string | null> {
+  try {
+    const created = findBranchCreationCommit(opts.headReflog);
+    if (!created || created === opts.base) return null;
+    if (!(await isAncestor(repoRoot, opts.base, created))) return null;
+    if (!(await isAncestor(repoRoot, created, opts.head))) return null;
+    const { stdout } = await exec(
+      'git',
+      ['reflog', 'show', '--format=%H', `refs/heads/${opts.branch}`],
+      { cwd: repoRoot, maxBuffer: MAX_BUFFER },
+    );
+    return stdout.split('\n').includes(created) ? created : null;
+  } catch {
+    // Missing or expired base branch reflog.
+    return null;
+  }
+}
+
+// Fixed identity and dates make the synthetic base commit content-addressed:
+// refreshing the diff reuses one object instead of piling up dangling commits.
+const SYNTHETIC_COMMIT_ENV = {
+  GIT_AUTHOR_NAME: 'Parallel Code',
+  GIT_AUTHOR_EMAIL: 'parallel-code@localhost',
+  GIT_AUTHOR_DATE: '@0 +0000',
+  GIT_COMMITTER_NAME: 'Parallel Code',
+  GIT_COMMITTER_EMAIL: 'parallel-code@localhost',
+  GIT_COMMITTER_DATE: '@0 +0000',
+};
+
+interface MainBranchRefs {
+  name: string;
+  /** Existing local and remote-tracking refs of the main branch. */
+  refs: string[];
+}
+
+async function resolveMainBranchRefs(repoRoot: string): Promise<MainBranchRefs> {
+  const name = await detectMainBranch(repoRoot);
+  const [hasLocal, hasOrigin] = await Promise.all([
+    localBranchExists(repoRoot, name),
+    remoteTrackingRefExists(repoRoot, name),
+  ]);
+  const refs = [
+    ...(hasLocal ? [`refs/heads/${name}`] : []),
+    ...(hasOrigin ? [`refs/remotes/origin/${name}`] : []),
+  ];
+  return { name, refs };
+}
+
+async function isOnMainBranch(repoRoot: string, sha: string, main: MainBranchRefs) {
+  for (const ref of main.refs) if (await isAncestor(repoRoot, sha, ref)) return true;
+  return false;
+}
+
+/**
+ * Newest main-branch commit that `head`'s own merges brought in on top of
+ * `base`. Merges reachable from main are main's history (the head may have
+ * fast-forwarded onto main), and merged branches main lacks are the head's own
+ * side work; neither counts. Null when there is none or the merged upstream
+ * snapshots diverge from each other.
+ */
+async function findMergedUpstreamTip(
+  repoRoot: string,
+  base: string,
+  head: string,
+  main: MainBranchRefs,
+): Promise<string | null> {
+  if (main.refs.length === 0) return null;
+  const { stdout } = await exec(
+    'git',
+    [
+      'rev-list',
+      ...['--first-parent', '--merges', '--parents', head, `^${base}`],
+      ...main.refs.map((ref) => `^${ref}`),
+    ],
+    { cwd: repoRoot, maxBuffer: MAX_BUFFER },
+  );
+  let tip: string | null = null;
+  // Newest merge first; each line is `<merge> <first parent> <merged parents...>`.
+  for (const merged of stdout.split('\n').flatMap((line) => line.trim().split(' ').slice(2))) {
+    if (await isAncestor(repoRoot, merged, base)) continue;
+    if (!(await isOnMainBranch(repoRoot, merged, main))) continue;
+    if (tip === null || (await isAncestor(repoRoot, tip, merged))) tip = merged;
+    else if (!(await isAncestor(repoRoot, merged, tip))) return null;
+  }
+  return tip;
+}
+
+/**
+ * Fold main-branch work that `head` merged on top of `base` (a child running
+ * `git merge main`) into a synthetic base commit, so the diff shows only the
+ * head's own work. Returns null when nothing upstream was merged in, or when
+ * the base and that upstream conflict and so have no clean combined snapshot.
+ */
+async function foldMergedUpstream(
+  repoRoot: string,
+  opts: { branch: string; base: string; head: string; main: MainBranchRefs },
+): Promise<string | null> {
+  const { branch, base, head, main } = opts;
+  if (branch === main.name) return null;
+  try {
+    const tip = await findMergedUpstreamTip(repoRoot, base, head, main);
+    if (!tip) return null;
+    // Exits non-zero on conflicts, which lands in the catch below.
+    const { stdout: tree } = await exec('git', ['merge-tree', '--write-tree', base, tip], {
+      cwd: repoRoot,
+    });
+    const { stdout: commit } = await exec(
+      'git',
+      [
+        'commit-tree',
+        '--no-gpg-sign',
+        ...['-p', base, '-p', tip, '-m', 'Parallel Code diff base'],
+        tree.split('\n')[0].trim(),
+      ],
+      { cwd: repoRoot, env: { ...process.env, ...SYNTHETIC_COMMIT_ENV } },
+    );
+    return commit.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read rebases (including `git pull --rebase`) and fast-forwards
+ * (`git merge`/`git pull` moving the branch onto another tip) oldest first so repeated moves retain the inherited
+ * baseline.
+ */
+async function findRebases(
+  repoRoot: string,
+  entries: string[],
+): Promise<{ target: string; previousHead: string; fastForward: boolean }[]> {
+  try {
+    const rebases: { target: string; previousHead: string; fastForward: boolean }[] = [];
     for (let index = 0; index < entries.length; index++) {
-      const target = entries[index].match(
-        /^[0-9a-f]{40}\0rebase \(finish\): .* onto ([0-9a-f]{40})$/,
-      )?.[1];
+      const fastForward = /^[0-9a-f]{40}\0(?:merge|pull)\b.*: Fast-forward$/.test(entries[index]);
+      const target = fastForward
+        ? entries[index].split('\0', 1)[0]
+        : entries[index].match(
+            /^[0-9a-f]{40}\0(?:rebase|pull\b.*) \(finish\): .* onto ([0-9a-f]{40})$/,
+          )?.[1];
       if (!target) continue;
       const previousHead = entries[index + 1]?.split('\0', 1)[0];
       if (previousHead && /^[0-9a-f]{40}$/.test(previousHead)) {
@@ -549,7 +726,7 @@ async function findRebases(
           );
           if (commonBase.trim() !== target) continue;
         }
-        rebases.push({ target, previousHead });
+        rebases.push({ target, previousHead, fastForward });
       }
     }
     return rebases.reverse();
@@ -596,16 +773,35 @@ async function detectDiffBase(
     diffBaseCache.delete(key);
   }
 
-  const picked = await pickMergeBase(repoRoot, branch, headRef);
+  let compareBranch = branch;
+  let picked = await pickMergeBase(repoRoot, branch, headRef);
+  if (!picked && baseBranch) {
+    // The parent branch is gone, usually deleted after landing upstream, so
+    // its inherited work can only be recognized on the main branch now.
+    compareBranch = await detectMainBranch(repoRoot);
+    if (compareBranch !== branch) picked = await pickMergeBase(repoRoot, compareBranch, headRef);
+  }
   if (!picked) return { sha: headRef, ref: headRef };
 
   let refined = await refineDiffBaseWithCherryPick(repoRoot, picked, headRef);
+  const headReflog = await readBranchReflog(repoRoot, requestedHead);
+  const forkPoint = await findForkPoint(repoRoot, {
+    branch: compareBranch,
+    headReflog,
+    head: headRef,
+    base: refined.sha,
+  });
+  if (forkPoint) refined = { sha: forkPoint, ref: forkPoint };
   if (baseBranch) {
-    // A child may rebase away from its parent. Use that recorded target, not
-    // today's main tip: main can subsequently receive the child's own commits.
-    // The explicit parent remains the integration target.
-    for (const rebase of await findRebases(repoRoot, requestedHead)) {
+    const beforeRebases = refined.sha;
+    const main = await resolveMainBranchRefs(repoRoot);
+    // A child may rebase or fast-forward away from its parent. Use that
+    // recorded target, not today's main tip: main can subsequently receive the
+    // child's own commits. The explicit parent remains the integration target.
+    for (const rebase of await findRebases(repoRoot, headReflog)) {
       if (rebase.target === refined.sha) continue;
+      // Fast-forwarding onto a branch of its own is the child's work.
+      if (rebase.fastForward && !(await isOnMainBranch(repoRoot, rebase.target, main))) continue;
       try {
         await Promise.all([
           exec('git', ['merge-base', '--is-ancestor', refined.sha, rebase.target], {
@@ -644,6 +840,17 @@ async function detectDiffBase(
         // Ignore obsolete rebase records and targets outside the current ancestry.
       }
     }
+    if (refined.sha !== beforeRebases) {
+      // A rebase replays copies of parent commits above the target.
+      refined = await refineDiffBaseWithCherryPick(repoRoot, refined, headRef, picked.ref);
+    }
+    const folded = await foldMergedUpstream(repoRoot, {
+      branch: compareBranch,
+      base: refined.sha,
+      head: headRef,
+      main,
+    });
+    if (folded) refined = { sha: folded, ref: folded };
   }
   diffBaseCache.set(key, { value: refined, expiresAt: Date.now() + DIFF_BASE_TTL });
   return refined;
@@ -666,7 +873,9 @@ async function detectMergeBase(
 }
 
 function oneWayDiffRange(base: PickedMergeBase, head: string): string {
-  return `${base.ref}...${head}`;
+  // A SHA base is already the exact start point. A synthetic base is not an
+  // ancestor of head, so a three-dot range would discard the folded upstream.
+  return base.ref === base.sha ? `${base.sha}..${head}` : `${base.ref}...${head}`;
 }
 
 async function detectOneWayDiffRange(

@@ -11,6 +11,7 @@ import {
   getChangedFilesFromBranch,
   getDiffBaseSha,
   getFileDiff,
+  getFileDiffFromBranch,
   getWorktreeStatus,
 } from './git.js';
 
@@ -74,16 +75,78 @@ describe('subtask diffs after rebasing onto upstream', () => {
     ]);
   });
 
-  it('keeps the parent baseline when upstream follows a divergent ancestry', async () => {
-    const { child } = fixture();
-    commitFile(child, 'child.txt', 'child work\n');
+  it('excludes upstream work the child merged in', async () => {
+    const { root, child } = fixture();
+    const childHead = commitFile(child, 'child.txt', 'child work\n');
     git(child, 'merge', 'main', '-m', 'bring upstream into child');
+    const mergeHead = git(child, 'rev-parse', 'HEAD');
 
     // Both tips are ancestors of the merge, but main does not descend from parent.
     expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
       'child.txt',
+    ]);
+    expect(await getAllFileDiffs(child, 'parent')).not.toContain('upstream-');
+    expect((await getFileDiff(child, 'upstream-after.txt', 'parent')).diff).toBe('');
+    expect((await getBranchCommits(child, 'parent')).map((commit) => commit.hash)).toEqual([
+      childHead,
+      mergeHead,
+    ]);
+    expect(
+      (await getChangedFilesFromBranch(root, 'child', 'parent')).map((file) => file.path),
+    ).toEqual(['child.txt']);
+    expect((await getFileDiffFromBranch(root, 'child', 'upstream-after.txt', 'parent')).diff).toBe(
+      '',
+    );
+    expect((await getFileDiffFromBranch(root, 'child', 'child.txt', 'parent')).diff).toContain(
+      '+child work',
+    );
+    expect((await getWorktreeStatus(child, 'parent')).has_committed_changes).toBe(true);
+  });
+
+  it('excludes upstream work the child merged in more than once', async () => {
+    const { root, child } = fixture();
+    commitFile(child, 'child.txt', 'child work\n');
+    git(child, 'merge', 'main', '-m', 'first upstream merge');
+    commitFile(root, 'upstream-later.txt', 'later upstream work\n');
+    git(child, 'merge', 'main', '-m', 'second upstream merge');
+
+    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
+      'child.txt',
+    ]);
+  });
+
+  it('shows merged upstream work when it conflicts with the parent', async () => {
+    const { root, child } = fixture();
+    commitFile(root, 'parent.txt', 'main rewrote parent work\n');
+    commitFile(child, 'child.txt', 'child work\n');
+    try {
+      git(child, 'merge', 'main', '-m', 'bring upstream into child');
+    } catch {
+      writeFileSync(join(child, 'parent.txt'), 'resolved\n');
+      git(child, 'add', 'parent.txt');
+      git(child, 'commit', '--no-edit');
+    }
+
+    // No clean parent-plus-upstream snapshot exists, so nothing is folded away.
+    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
+      'child.txt',
+      'parent.txt',
       'upstream-after.txt',
       'upstream-before.txt',
+    ]);
+  });
+
+  it('keeps work the child merged in from a branch of its own', async () => {
+    const { child } = fixture();
+    git(child, 'checkout', '-b', 'child-side');
+    commitFile(child, 'side.txt', 'side work\n');
+    git(child, 'checkout', 'child');
+    commitFile(child, 'child.txt', 'child work\n');
+    git(child, 'merge', 'child-side', '-m', 'merge own side branch');
+
+    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
+      'child.txt',
+      'side.txt',
     ]);
   });
 
@@ -129,24 +192,23 @@ describe('subtask diffs after rebasing onto upstream', () => {
     },
   );
 
-  it('keeps content authored in a merge commit visible and mergeable', async () => {
+  it('keeps content authored in a merge commit visible', async () => {
     const { root, child } = fixture('fast-forward');
     const upstreamHead = git(root, 'rev-parse', 'HEAD');
     git(child, 'merge', '--no-ff', '--no-commit', 'main');
     const mergeHead = commitFile(child, 'base.txt', 'child integration fix\n');
 
-    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
-      'base.txt',
-      'upstream-after.txt',
-    ]);
+    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual(['base.txt']);
     expect(await getAllFileDiffs(child, 'parent')).toContain('+child integration fix');
-    expect((await getBranchCommits(child, 'parent')).map((commit) => commit.hash)).toEqual([
+    expect((await getBranchCommits(child, 'parent')).map((commit) => commit.hash)).not.toContain(
       upstreamHead,
+    );
+    expect((await getBranchCommits(child, 'parent')).map((commit) => commit.hash)).toContain(
       mergeHead,
-    ]);
+    );
     expect(
       (await getChangedFilesFromBranch(root, 'child', 'parent')).map((file) => file.path),
-    ).toEqual(['base.txt', 'upstream-after.txt']);
+    ).toEqual(['base.txt']);
     expect(await getWorktreeStatus(child, 'parent')).toMatchObject({
       has_committed_changes: true,
       base_branch: 'parent',
@@ -349,4 +411,175 @@ describe('subtask diffs after rebasing onto upstream', () => {
       expect((await getWorktreeStatus(child, 'parent')).base_branch).toBe('parent');
     },
   );
+});
+
+describe('subtask diffs after the parent rewrites its history', () => {
+  // Rewritten parent commits are not patch-equivalent to the child's copies
+  // (amend, squash, conflict-resolving rebase), so only the parent's reflog
+  // still knows where the child forked.
+  it('excludes inherited parent work after the parent amends it', async () => {
+    const { root, child } = fixture();
+    commitFile(child, 'child.txt', 'child work\n');
+    git(root, 'checkout', 'parent');
+    writeFileSync(join(root, 'parent.txt'), 'parent work, revised\n');
+    git(root, 'commit', '-a', '--amend', '--no-edit');
+    commitFile(root, 'parent-later.txt', 'later parent work\n');
+    git(root, 'checkout', 'main');
+
+    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
+      'child.txt',
+    ]);
+    expect((await getBranchCommits(child, 'parent')).map((commit) => commit.message)).toEqual([
+      'child.txt',
+    ]);
+    expect(
+      (await getChangedFilesFromBranch(root, 'child', 'parent')).map((file) => file.path),
+    ).toEqual(['child.txt']);
+  });
+
+  it('keeps child work after the parent fast-forwards to it and is reset', async () => {
+    const { root, child } = fixture();
+    commitFile(child, 'child.txt', 'child work\n');
+    git(root, 'checkout', 'parent');
+    git(root, 'merge', '--ff-only', 'child');
+    git(root, 'reset', '--hard', 'HEAD~1');
+    git(root, 'checkout', 'main');
+
+    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
+      'child.txt',
+    ]);
+  });
+
+  it('keeps task work after main fast-forwards to it and is reset', async () => {
+    const { root } = fixture();
+    const task = join(root, '.worktrees/task');
+    git(root, 'worktree', 'add', '-b', 'task', task, 'main');
+    commitFile(task, 'task.txt', 'task work\n');
+    git(root, 'merge', '--ff-only', 'task');
+    git(root, 'reset', '--hard', 'HEAD~1');
+
+    expect((await getChangedFiles(task, 'main')).map((file) => file.path)).toEqual(['task.txt']);
+    expect((await getChangedFiles(task)).map((file) => file.path)).toEqual(['task.txt']);
+  });
+
+  it('keeps work committed before the agent switched to a new branch', async () => {
+    const { root, child } = fixture();
+    commitFile(child, 'child.txt', 'child work\n');
+    git(child, 'checkout', '-b', 'child-renamed');
+    commitFile(child, 'child-later.txt', 'later child work\n');
+    git(root, 'checkout', 'parent');
+    git(root, 'commit', '--allow-empty', '--amend', '--no-edit', '-m', 'parent rewritten');
+    git(root, 'checkout', 'main');
+
+    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toContain(
+      'child.txt',
+    );
+  });
+
+  it('excludes rewritten main work a top-level task branched from', async () => {
+    const { root } = fixture();
+    const task = join(root, '.worktrees/task');
+    git(root, 'worktree', 'add', '-b', 'task', task, 'main');
+    commitFile(task, 'task.txt', 'task work\n');
+    writeFileSync(join(root, 'upstream-after.txt'), 'upstream rewritten\n');
+    git(root, 'commit', '-a', '--amend', '--no-edit');
+
+    expect((await getChangedFiles(task, 'main')).map((file) => file.path)).toEqual(['task.txt']);
+    expect((await getChangedFiles(task)).map((file) => file.path)).toEqual(['task.txt']);
+  });
+
+  it('keeps the merge-base when the parent reflog is unavailable', async () => {
+    const { root, child } = fixture();
+    commitFile(child, 'child.txt', 'child work\n');
+    git(root, 'checkout', 'parent');
+    writeFileSync(join(root, 'parent.txt'), 'parent work, revised\n');
+    git(root, 'commit', '-a', '--amend', '--no-edit');
+    git(root, 'checkout', 'main');
+    git(root, 'reflog', 'expire', '--expire=all', 'refs/heads/parent');
+
+    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
+      'child.txt',
+      'parent.txt',
+    ]);
+  });
+});
+
+describe('subtask diffs after the child moves to upstream or loses its parent', () => {
+  it('excludes rebased copies of parent work after the child rebases onto main', async () => {
+    const { root, child } = fixture();
+    git(root, 'checkout', 'parent');
+    commitFile(root, 'parent-later.txt', 'parent work main lacks\n');
+    git(root, 'checkout', 'main');
+    git(child, 'merge', '--ff-only', 'parent');
+    commitFile(child, 'child.txt', 'child work\n');
+    git(child, 'rebase', 'main');
+
+    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
+      'child.txt',
+    ]);
+    expect((await getBranchCommits(child, 'parent')).map((commit) => commit.message)).toEqual([
+      'child.txt',
+    ]);
+  });
+
+  it.each(['merge', 'pull'] as const)(
+    'excludes upstream work the child fast-forwarded onto by %s',
+    async (command) => {
+      const { root, child } = fixture('fast-forward');
+      if (command === 'merge') git(child, 'merge', 'main');
+      else git(child, 'pull', '--ff-only', root, 'main');
+      commitFile(child, 'child.txt', 'child work\n');
+
+      expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
+        'child.txt',
+      ]);
+      expect((await getBranchCommits(child, 'parent')).map((commit) => commit.message)).toEqual([
+        'child.txt',
+      ]);
+      expect(
+        (await getChangedFilesFromBranch(root, 'child', 'parent')).map((file) => file.path),
+      ).toEqual(['child.txt']);
+    },
+  );
+
+  it('excludes inherited work after the child pulls main with --rebase', async () => {
+    const { root, child } = fixture();
+    commitFile(child, 'child.txt', 'child work\n');
+    git(child, 'pull', '--rebase', root, 'main');
+
+    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
+      'child.txt',
+    ]);
+    expect((await getBranchCommits(child, 'parent')).map((commit) => commit.message)).toEqual([
+      'child.txt',
+    ]);
+  });
+
+  it('keeps work the child fast-forwarded onto from a branch of its own', async () => {
+    const { child } = fixture('fast-forward');
+    git(child, 'checkout', '-b', 'child-side');
+    commitFile(child, 'side.txt', 'side work\n');
+    git(child, 'checkout', 'child');
+    git(child, 'merge', 'child-side');
+    commitFile(child, 'child.txt', 'child work\n');
+
+    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
+      'child.txt',
+      'side.txt',
+    ]);
+  });
+
+  it('compares against main after the parent branch is deleted', async () => {
+    const { root, child } = fixture();
+    commitFile(child, 'child.txt', 'child work\n');
+    git(root, 'branch', '-D', 'parent');
+
+    expect((await getChangedFiles(child, 'parent')).map((file) => file.path)).toEqual([
+      'child.txt',
+    ]);
+    expect(
+      (await getChangedFilesFromBranch(root, 'child', 'parent')).map((file) => file.path),
+    ).toEqual(['child.txt']);
+    expect((await getWorktreeStatus(child, 'parent')).has_committed_changes).toBe(true);
+  });
 });
