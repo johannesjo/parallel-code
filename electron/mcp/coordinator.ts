@@ -1865,7 +1865,7 @@ export class Coordinator {
   }
 
   /** Runs the project's verify command in the task worktree, the same check the
-   *  merge dialog offers. Anything but a pass escalates so the user sees the
+   *  Finish dialog offers. Anything but a pass escalates so the user sees the
    *  task flagged, and throws so the calling agent sees the output. */
   private async verifyBeforeLanding(task: CoordinatedTask): Promise<void> {
     const command = this.coordinators.get(task.coordinatorTaskId)?.verifyCommand;

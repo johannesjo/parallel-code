@@ -73,6 +73,7 @@ vi.mock('./ScrollingDiffView', async (importOriginal) => {
     ScrollingDiffView: (props: Parameters<typeof original.ScrollingDiffView>[0]) => (
       <div
         data-testid="diff-target"
+        data-navigation={JSON.stringify(props.scrollToAnnotation)}
         data-files={JSON.stringify(props.files.map((file) => file.path))}
       >
         <original.ScrollingDiffView {...props} />
@@ -519,4 +520,37 @@ it('keeps a generated tour while browsing another scope with live context', asyn
   expect(tour.stops()).toHaveLength(1);
   expect(tour.sourceDiff()).toBe(diff);
   expect(host.querySelector('[aria-label="Guided change tour"]')).toBeNull();
+});
+
+it('navigates to the cited old-side line and exposes the return label', async () => {
+  vi.mocked(invoke).mockImplementation(async (channel) =>
+    channel === IPC.GetAllFileDiffs ? diff : undefined,
+  );
+  const close = vi.fn();
+  dispose = render(
+    () => (
+      <DiffViewerDialog
+        scrollToFile="first.ts"
+        scrollToLine={1}
+        scrollToSide="old"
+        closeLabel="Back to evidence"
+        worktreePath="/repo"
+        onClose={close}
+      />
+    ),
+    document.body,
+  );
+  await vi.waitFor(() =>
+    expect(
+      document.querySelector('[data-testid="diff-target"]')?.getAttribute('data-navigation'),
+    ).toContain('"side":"old"'),
+  );
+  expect(
+    JSON.parse(
+      document.querySelector('[data-testid="diff-target"]')?.getAttribute('data-navigation') ??
+        '{}',
+    ),
+  ).toEqual({ filePath: 'first.ts', startLine: 1, side: 'old' });
+  document.querySelector<HTMLButtonElement>('[aria-label="Back to evidence"]')?.click();
+  expect(close).toHaveBeenCalledOnce();
 });

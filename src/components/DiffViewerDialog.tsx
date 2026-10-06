@@ -49,6 +49,9 @@ interface DiffViewerDialogProps {
    * '' = open on all changes with no file focused.
    */
   scrollToFile: string | null;
+  scrollToLine?: number;
+  scrollToSide?: 'old' | 'new';
+  closeLabel?: string;
   /** Visible task title shown while reviewing changes. */
   taskName?: string;
   worktreePath: string;
@@ -133,6 +136,9 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
             tour={tour}
             startTour={props.startTour}
             scrollToFile={props.scrollToFile}
+            scrollToLine={props.scrollToLine}
+            scrollToSide={props.scrollToSide}
+            closeLabel={props.closeLabel}
             taskName={props.taskName}
             worktreePath={props.worktreePath}
             onClose={props.onClose}
@@ -230,6 +236,8 @@ function DiffViewerContent(props: DiffViewerDialogProps & { tour: ChangeTourCont
 
   createEffect(() => {
     const scrollTarget = props.scrollToFile;
+    const scrollLine = props.scrollToLine;
+    const scrollSide = props.scrollToSide;
     // Access selectedCommit before the early return so the effect tracks it
     // even when the dialog is closed — ensures we re-run on reopen.
     const selection = props.selectedCommit;
@@ -292,6 +300,15 @@ function DiffViewerContent(props: DiffViewerDialogProps & { tour: ChangeTourCont
           setTourOpen(!!startTour && tour.stops().length > 0);
         });
         review.completeDiffLoad(diffIdentity, newFiles);
+        if (scrollTarget && scrollLine) {
+          review.setScrollTarget({
+            filePath: scrollTarget,
+            startLine: scrollLine,
+            side:
+              scrollSide ??
+              (newFiles.find((file) => file.path === scrollTarget)?.status === 'D' ? 'old' : 'new'),
+          });
+        }
       })
       .catch((err) => {
         if (!fetchGeneration.isCurrent(thisGen)) return;
@@ -463,9 +480,12 @@ function DiffViewerContent(props: DiffViewerDialogProps & { tour: ChangeTourCont
             'align-items': 'center',
             'border-radius': 'var(--radius-xs)',
           }}
-          title="Close"
+          title={props.closeLabel ?? 'Close'}
+          aria-label={props.closeLabel ?? 'Close'}
         >
-          <CloseIcon />
+          <Show when={props.closeLabel} fallback={<CloseIcon />}>
+            {props.closeLabel}
+          </Show>
         </button>
       </div>
 

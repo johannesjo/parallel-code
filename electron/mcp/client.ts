@@ -8,6 +8,7 @@ import type { ReasoningDocument } from '../shared/reasoning.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import { randomUUID } from 'crypto';
 import type { SignalDoneInput, SignalDoneResult } from '../shared/completion-report.js';
+import type { EvidenceSubmission } from '../shared/evidence.js';
 import type {
   ApiTaskSummary,
   ApiTaskDetail,
@@ -144,6 +145,14 @@ export class MCPClient {
     payload: AgentTourPayload,
   ): Promise<{ ok: true; subject: string }> {
     return this.taskOwnerRequest('POST', `/api/tours/${encodeURIComponent(taskId)}`, payload);
+  }
+
+  async submitEvidence(taskId: string, submission: EvidenceSubmission): Promise<unknown> {
+    return this.taskOwnerRequest('POST', `/api/evidence/${encodeURIComponent(taskId)}`, submission);
+  }
+
+  async getEvidence(taskId: string): Promise<unknown> {
+    return this.taskOwnerRequest('GET', `/api/evidence/${encodeURIComponent(taskId)}`);
   }
 
   async signalDone(taskId: string, input: SignalDoneInput): Promise<SignalDoneResult> {

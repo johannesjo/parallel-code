@@ -33,6 +33,8 @@ interface AskCodeRequest {
   /** CLI model alias or slug; the handler validates it before it reaches argv. */
   model?: string;
   purpose?: AskCodePurpose;
+  /** Reasoning level; the handler validates it against the provider's levels. */
+  effort?: string;
   /** Env file configured for the agent behind the chosen provider, if any. */
   envFile?: string;
 }
@@ -102,6 +104,7 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
       'text',
       '--model',
       args.model ?? ASK_CODE_MODELS.claude,
+      ...(args.effort ? ['--effort', args.effort] : []),
       // Empty string disables all tool usage for quick Q&A responses
       '--tools',
       '',
@@ -237,6 +240,8 @@ function askAboutCodeCodex(args: AskCodeRequest, send: (msg: unknown) => void): 
       '-c',
       'tools.web_search=false',
       ...(args.model ? ['-m', args.model] : []),
+      // Codex has no effort flag; the config override takes a TOML value.
+      ...(args.effort ? ['-c', `model_reasoning_effort="${args.effort}"`] : []),
       '-',
     ],
     { cwd: args.cwd, env: askCodeEnv(args.envFile), stdio: ['pipe', 'pipe', 'pipe'] },

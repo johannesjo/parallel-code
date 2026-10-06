@@ -37,6 +37,11 @@ import { parseMindMapUpdate, type MindMapDocument, type MindMapUpdate } from '..
 import { parseReasoningUpdate } from '../shared/reasoning-feed.js';
 import { parseCanvasView, type CanvasView } from '../shared/canvas-view.js';
 import { parseAgentTourPayload, type AgentTourPayload } from '../shared/agent-tour.js';
+import {
+  EVIDENCE_LIMITS,
+  parseEvidenceSubmission,
+  type EvidenceSubmission,
+} from '../shared/evidence.js';
 import type { SessionCaller, SessionCapabilities } from '../shared/delegation-types.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
@@ -382,8 +387,10 @@ type CanvasOps = Pick<
   | 'updateReasoning'
   | 'openCanvas'
   | 'publishTour'
+  | 'submitEvidence'
+  | 'getEvidence'
 >;
-type CanvasRoute = 'mindmaps' | 'reasoning' | 'canvas' | 'tours';
+type CanvasRoute = 'mindmaps' | 'reasoning' | 'canvas' | 'tours' | 'evidence';
 /** A published tour inlines its own context; the shared parser caps it again. */
 const TOUR_MAX_BODY_BYTES = 256 * 1024;
 const CANVAS_MAX_IN_FLIGHT = 4;
@@ -403,6 +410,20 @@ function canvasErrorStatus(err: unknown): number {
   if (message.includes('Body too large')) return 413;
   if (CANVAS_CONFLICT.test(message)) return 409;
   return CANVAS_UNAVAILABLE.test(message) ? 503 : 400;
+}
+
+async function evidenceRequest(
+  ops: CanvasOps,
+  req: IncomingMessage,
+  taskId: string,
+): Promise<unknown> {
+  if (req.method === 'GET') {
+    if (!ops.getEvidence) throw httpError(503, 'Evidence unavailable');
+    return ops.getEvidence(taskId);
+  }
+  if (!ops.submitEvidence) throw httpError(503, 'Evidence unavailable');
+  const body = await readJsonBody(req, EVIDENCE_LIMITS.submissionBytes * 2);
+  return ops.submitEvidence(taskId, parseEvidenceSubmission(body));
 }
 
 async function canvasRequest(
@@ -425,6 +446,7 @@ async function canvasRequest(
     await ops.publishTour(taskId, payload);
     return { ok: true, subject: payload.subject };
   }
+  if (route === 'evidence') return evidenceRequest(ops, req, taskId);
   const reasoning = route === 'reasoning';
   if (req.method === 'GET') {
     const read = reasoning ? ops.readReasoning : ops.readMindMap;
@@ -931,6 +953,10 @@ export function startRemoteServer(opts: {
   openCanvas?: (taskId: string, view: CanvasView) => Promise<void>;
   /** Show a tour the agent wrote for its own task (renderer-backed). */
   publishTour?: (taskId: string, payload: AgentTourPayload) => Promise<unknown>;
+  /** Record the agent's handoff claim and start building evidence (renderer-backed). */
+  submitEvidence?: (taskId: string, submission: EvidenceSubmission) => Promise<unknown>;
+  /** The app's evidence status for the agent's own task (renderer-backed). */
+  getEvidence?: (taskId: string) => Promise<unknown>;
   /** Read a task's notes (renderer-backed). */
   getTaskNotes?: (taskId: string) => Promise<string>;
   /** Persist a task's notes (renderer-backed). */
@@ -1200,7 +1226,9 @@ export function startRemoteServer(opts: {
         res.end(JSON.stringify(body));
       };
 
-      const mapMatch = url.pathname.match(/^\/api\/(mindmaps|reasoning|canvas|tours)\/([^/]+)$/);
+      const mapMatch = url.pathname.match(
+        /^\/api\/(mindmaps|reasoning|canvas|tours|evidence)\/([^/]+)$/,
+      );
       if (mapMatch) {
         const route = mapMatch[1] as CanvasRoute;
         let taskId: string;

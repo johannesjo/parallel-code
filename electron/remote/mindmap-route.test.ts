@@ -66,6 +66,10 @@ const updateReasoning = vi.fn(async (taskId: string, update: ReasoningUpdate) =>
 });
 const openCanvas = vi.fn(async (_taskId: string, _view: 'mindmap' | 'reasoning') => {});
 const publishTour = vi.fn(async (_taskId: string, _payload: AgentTourPayload) => ({ ok: true }));
+const submitEvidence = vi.fn(async (_taskId: string, _submission: unknown) => ({
+  status: 'building',
+}));
+const getEvidence = vi.fn(async (_taskId: string) => ({ status: 'none', checks: [] }));
 const read = vi.fn(async (_taskId: string) => structuredClone(map));
 const update = vi.fn(
   async (
@@ -96,6 +100,8 @@ beforeEach(async () => {
     updateReasoning,
     openCanvas,
     publishTour,
+    submitEvidence,
+    getEvidence,
   });
   token = server.registerCanvasAgent('task-1', 'agent-1');
   client = new MCPClient(`http://127.0.0.1:${server.port}`, token);
@@ -211,6 +217,26 @@ it('publishes a tour for the owning task only and validates the payload', async 
   expect(publishTour).toHaveBeenCalledTimes(1);
 });
 
+it('accepts evidence for the owning task only and rejects app-owned fields', async () => {
+  const submission = { summary: 'Adds retries', notVerified: ['Safari'] };
+  await expect(client.submitEvidence('task-1', submission)).resolves.toEqual({
+    status: 'building',
+  });
+  expect(submitEvidence).toHaveBeenCalledWith('task-1', submission);
+  await expect(client.getEvidence('task-1')).resolves.toEqual({ status: 'none', checks: [] });
+  await expect(client.submitEvidence('task-2', submission)).rejects.toThrow('403');
+  await expect(client.getEvidence('task-2')).rejects.toThrow('403');
+  const endpoint = `http://127.0.0.1:${server.port}/api/evidence/task-1`;
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const forged = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ confidence: 'high' }),
+  });
+  expect(forged.status).toBe(400);
+  expect(submitEvidence).toHaveBeenCalledTimes(1);
+});
+
 it('rejects access to other tasks, terminals, task control and device pairing', async () => {
   await expect(client.readMindMap('task-2')).rejects.toThrow('403');
   for (const path of [
@@ -296,6 +322,8 @@ it('serves discoverable tools over real MCP stdio and reflects subsequent manual
       'reasoning_update',
       'canvas_open',
       'tour_publish',
+      'submit_evidence',
+      'get_evidence',
     ]);
     const opened = await mcp.callTool({ name: 'canvas_open', arguments: { view: 'mindmap' } });
     expect(opened.isError).not.toBe(true);

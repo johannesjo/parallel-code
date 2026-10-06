@@ -22,6 +22,11 @@ import type {
 } from '../ipc/types';
 import type { ChatPermissionMode, ChatSession } from '../../electron/shared/agent-chat-types';
 import type { AskCodeProvider } from '../../electron/shared/ask-code-models';
+import type {
+  EvidenceModelSettings,
+  EvidencePackage,
+  ProjectCheck,
+} from '../../electron/shared/evidence';
 import type { DockerSource } from '../lib/docker';
 import type { LookPreset, AppearanceMode } from '../lib/look';
 import type { KeyBinding } from '../lib/keybindings';
@@ -93,6 +98,13 @@ export interface Project {
    *  Lives in app state on purpose: a repo file could make opening a hostile
    *  clone run arbitrary commands on the host. */
   verifyCommand?: string;
+  /** Checks an evidence package runs besides the verify command. App state,
+   *  for the same reason as `verifyCommand`. */
+  evidenceChecks?: ProjectCheck[];
+  /** Model that writes the evidence test summary and findings. */
+  evidenceModel?: EvidenceModelSettings;
+  /** Build evidence in the background after an agent turn that added commits. */
+  evidenceAutoBuild?: boolean;
   terminalBookmarks?: TerminalBookmark[];
   isGitRepo?: boolean; // undefined treated as true for backward compat
   tasksCollapsed?: boolean; // sidebar task group, defaults to expanded
@@ -312,6 +324,8 @@ export interface Task {
   /** Latest app-run verify command result. Distinct from `verification`,
    *  which is the agent's self-report through land_self. */
   verificationRun?: VerificationRun;
+  /** Latest evidence package: what the app observed, the agent claimed and a model thought. */
+  evidence?: EvidencePackage;
   landingState?: LandingState;
   landingReason?: string;
   landingSummary?: string;
@@ -408,6 +422,8 @@ export interface PersistedTask {
   needsReview?: boolean;
   verification?: SubtaskVerification;
   verificationRun?: VerificationRun;
+  /** Validated on load. */
+  evidence?: unknown;
   landingState?: LandingState;
   landingReason?: string;
   landingSummary?: string;

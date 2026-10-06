@@ -101,6 +101,9 @@ export function updateProject(
       | 'defaultBaseBranch'
       | 'coverageReportPath'
       | 'verifyCommand'
+      | 'evidenceChecks'
+      | 'evidenceModel'
+      | 'evidenceAutoBuild'
       | 'terminalBookmarks'
       | 'isGitRepo'
       | 'documentMainAgentId'
@@ -133,6 +136,12 @@ export function updateProject(
         s.projects[idx].coverageReportPath = updates.coverageReportPath;
       if (Object.prototype.hasOwnProperty.call(updates, 'verifyCommand'))
         s.projects[idx].verifyCommand = updates.verifyCommand;
+      if (Object.prototype.hasOwnProperty.call(updates, 'evidenceChecks'))
+        s.projects[idx].evidenceChecks = updates.evidenceChecks;
+      if (Object.prototype.hasOwnProperty.call(updates, 'evidenceModel'))
+        s.projects[idx].evidenceModel = updates.evidenceModel;
+      if (updates.evidenceAutoBuild !== undefined)
+        s.projects[idx].evidenceAutoBuild = updates.evidenceAutoBuild;
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
       if (updates.isGitRepo !== undefined) s.projects[idx].isGitRepo = updates.isGitRepo;

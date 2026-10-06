@@ -17,6 +17,8 @@ import {
 } from '../store/store';
 import { GIST_LABEL } from '../lib/understanding-tour';
 import type { Task } from '../store/types';
+import type { FinishDialog } from './FinishDialog';
+import { UNCOMMITTED_SELECTION } from './CommitNavBar';
 import type { DiffViewerDialog } from './DiffViewerDialog';
 import type { TaskNotesBody } from './TaskNotesBody';
 import type { UnderstandingTourDialog } from './UnderstandingTourDialog';
@@ -109,8 +111,27 @@ vi.mock('./PromptInput', () => ({
   PromptInput: () => <textarea class="test-prompt" value="Draft" />,
 }));
 vi.mock('./CloseTaskDialog', () => ({ CloseTaskDialog: () => null }));
-vi.mock('./MergeDialog', () => ({ MergeDialog: () => null }));
-vi.mock('./PushDialog', () => ({ PushDialog: () => null }));
+vi.mock('./FinishDialog', () => ({
+  FinishDialog: (props: ComponentProps<typeof FinishDialog>) => (
+    <Show when={props.open}>
+      <button
+        class="test-evidence-review"
+        onClick={() => {
+          props.onClose();
+          props.onDiffFileClick({
+            path: 'src/earlier.ts',
+            status: 'M',
+            lines_added: 1,
+            lines_removed: 0,
+            committed: true,
+          });
+        }}
+      >
+        Review evidence file
+      </button>
+    </Show>
+  ),
+}));
 vi.mock('./DiffViewerDialog', () => ({
   DiffViewerDialog: (props: ComponentProps<typeof DiffViewerDialog>) => (
     <div
@@ -122,6 +143,12 @@ vi.mock('./DiffViewerDialog', () => ({
       <button class="test-diff-select" onClick={() => props.onCommitNavigate?.('old-commit')}>
         Select commit
       </button>
+      <button
+        class="test-diff-uncommitted"
+        onClick={() => props.onCommitNavigate?.(UNCOMMITTED_SELECTION)}
+      >
+        Select uncommitted changes
+      </button>
       <button class="test-diff-close" onClick={() => props.onClose()}>
         Close
       </button>
@@ -130,7 +157,13 @@ vi.mock('./DiffViewerDialog', () => ({
 }));
 vi.mock('./PlanViewerDialog', () => ({ PlanViewerDialog: () => null }));
 vi.mock('./EditProjectDialog', () => ({ EditProjectDialog: () => null }));
-vi.mock('./TaskTitleBar', () => ({ TaskTitleBar: () => null }));
+vi.mock('./TaskTitleBar', () => ({
+  TaskTitleBar: (props: { onFinish: () => void }) => (
+    <button class="test-finish-open" onClick={() => props.onFinish()}>
+      Finish
+    </button>
+  ),
+}));
 vi.mock('./TaskBranchInfoBar', () => ({ TaskBranchInfoBar: () => null }));
 vi.mock('./TaskBranchAdoptionBanner', () => ({ TaskBranchAdoptionBanner: () => null }));
 vi.mock('./TaskSuperProductivityBanner', () => ({ TaskSuperProductivityBanner: () => null }));
@@ -636,4 +669,24 @@ it('keeps prompt focus when incoming files reopen the supporting column', async 
   } finally {
     width.mockRestore();
   }
+});
+
+it.each([
+  ['.test-diff-select', 'old-commit'],
+  ['.test-diff-uncommitted', UNCOMMITTED_SELECTION],
+])('opens evidence in the cumulative diff after selecting %s', (selectionButton, selection) => {
+  const { container } = mountEmptyTask();
+  const click = (selector: string) =>
+    expectDefined(container.querySelector<HTMLButtonElement>(selector)).click();
+  const diff = () => expectDefined(container.querySelector<HTMLElement>('.test-diff'));
+  click('.test-chat-review');
+  click(selectionButton);
+  expect(diff().dataset.commit).toBe(selection);
+  click('.test-diff-close');
+  click('.test-finish-open');
+  click('.test-evidence-review');
+  expect(diff().dataset.open).toBe('true');
+  expect(diff().dataset.file).toBe('src/earlier.ts');
+  expect(diff().dataset.commit).toBe('all');
+  expect(container.querySelector('.test-evidence-review')).toBeNull();
 });

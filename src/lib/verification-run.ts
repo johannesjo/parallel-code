@@ -39,11 +39,20 @@ export function isVerificationStale(
   run: VerificationRun,
   currentHeadSha: string | null | undefined,
 ): boolean {
-  return Boolean(currentHeadSha && run.headSha && run.headSha !== currentHeadSha);
+  return (
+    Boolean(currentHeadSha && run.headSha && run.headSha !== currentHeadSha) ||
+    changedDuringRun(run)
+  );
+}
+
+/** A commit or edit landed while the command ran, so it tested neither state. */
+export function changedDuringRun(run: VerificationRun): boolean {
+  if (run.headShaAfter !== undefined && run.headShaAfter !== run.headSha) return true;
+  return run.dirtyAfter === true && !run.dirty;
 }
 
 /** Pure read model shared by the merge-readiness row, the title bar and the
- *  verification panel, so they never disagree about what a run means. */
+ *  evidence check list, so they never disagree about what a run means. */
 export function summarizeVerificationRun(
   run: VerificationRun | undefined,
   currentHeadSha?: string | null,
@@ -93,7 +102,7 @@ export function summarizeVerificationRun(
 /** Solid's setStore merges objects, so an optional key missing from a new run
  *  would keep the previous run's value. Spelling it out makes the merge drop it. */
 export function asStoreVerificationRun(run: VerificationRun): VerificationRun {
-  return { message: undefined, ...run };
+  return { message: undefined, headShaAfter: undefined, dirtyAfter: undefined, ...run };
 }
 
 /** Prompt that hands a failing run back to the agent, mirroring how diff

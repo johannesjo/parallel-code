@@ -67,18 +67,20 @@ export function Dialog(props: DialogProps) {
     const page = 200;
     const handler = (e: KeyboardEvent) => {
       if (e.target !== el) return;
+      // A dialog with a pinned footer scrolls an inner region, not the panel.
+      const target = el.querySelector<HTMLElement>('[data-dialog-scroll]') ?? el;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        el.scrollTop += step;
+        target.scrollTop += step;
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        el.scrollTop -= step;
+        target.scrollTop -= step;
       } else if (e.key === 'PageDown') {
         e.preventDefault();
-        el.scrollTop += page;
+        target.scrollTop += page;
       } else if (e.key === 'PageUp') {
         e.preventDefault();
-        el.scrollTop -= page;
+        target.scrollTop -= page;
       }
     };
     el.addEventListener('keydown', handler);

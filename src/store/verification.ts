@@ -3,8 +3,11 @@ import { IPC } from '../../electron/ipc/channels';
 import { Channel, invoke } from '../lib/ipc';
 import { asStoreVerificationRun, compileVerificationFailurePrompt } from '../lib/verification-run';
 import { pendingVerificationRun } from '../../electron/shared/verification-run';
+import { VERIFY_CHECK_ID } from '../../electron/shared/evidence';
+import { reusableVerifyRun } from '../lib/evidence-plan';
 import type { VerificationRun } from '../ipc/types';
 import { setStore, store } from './core';
+import { getTaskChecks, isEvidenceBusy, putCheck } from './evidence-state';
 import { saveState } from './persistence';
 import { getProject } from './projects';
 import { sendPrompt } from './tasks';
@@ -91,8 +94,31 @@ export async function runTaskVerification(taskId: string): Promise<VerificationR
   if (!isCurrent()) return run;
   clearLiveOutput(taskId);
   setRun(taskId, run);
+  showVerificationInEvidence(taskId);
   void saveState();
   return run;
+}
+
+/** Puts a manual run into the evidence package of the same commit, so the
+ *  package and the verify status agree. Busy builds reconcile when they finish. */
+export function showVerificationInEvidence(taskId: string): void {
+  const run = store.tasks[taskId]?.verificationRun;
+  const pkg = store.tasks[taskId]?.evidence;
+  const check = getTaskChecks(taskId).find((c) => c.id === VERIFY_CHECK_ID);
+  if (!pkg || !check || !run || isEvidenceBusy(pkg)) return;
+  const previous = pkg.checks.find((result) => result.checkId === VERIFY_CHECK_ID);
+  if (previous && previous.startedAt > run.startedAt) return;
+  const reused = reusableVerifyRun(run, check, pkg.scan.headSha);
+  if (reused) putCheck(taskId, pkg.id, reused);
+}
+
+/** Takes over a verify run an evidence build made. A manual run still in
+ *  flight, or one started later, is newer and wins. */
+export function adoptVerificationRun(taskId: string, run: VerificationRun): void {
+  const current = store.tasks[taskId]?.verificationRun;
+  if (run.status === 'cancelled') return;
+  if (current && (current.status === 'running' || current.startedAt > run.startedAt)) return;
+  setRun(taskId, run);
 }
 
 export function cancelTaskVerification(taskId: string): Promise<boolean> {

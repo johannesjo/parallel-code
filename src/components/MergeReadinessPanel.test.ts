@@ -41,13 +41,26 @@ describe('buildMergeReadiness', () => {
   it('reports ready when merge safety and reported verification pass', () => {
     const readiness = buildMergeReadiness(input());
 
-    expect(readiness.overall).toBe('ready');
     expect(readiness.checks).toEqual([
       expect.objectContaining({ label: 'Merge safety', status: 'pass' }),
-      expect.objectContaining({ label: 'Verification', status: 'pass' }),
+      expect.objectContaining({ label: 'Agent report', status: 'pass' }),
       expect.objectContaining({ label: 'Coverage', status: 'neutral' }),
       expect.objectContaining({ label: 'PR checks', status: 'neutral' }),
+      expect.objectContaining({ label: 'Evidence', status: 'neutral' }),
     ]);
+  });
+
+  it('treats evidence as advice: low confidence asks for attention, medium stays neutral', () => {
+    const evidence = (level: 'low' | 'medium' | 'high') =>
+      buildMergeReadiness(
+        input({ evidence: { level, reasons: level === 'high' ? [] : [{ level, text: 'Why.' }] } }),
+      );
+    expect(evidence('high').checks[4]).toEqual(
+      expect.objectContaining({ status: 'pass', detail: 'High confidence.' }),
+    );
+    expect(evidence('low').checks[4]?.detail).toBe('Low confidence. Why.');
+    expect(evidence('low').checks[4]?.status).toBe('warning');
+    expect(evidence('medium').checks[4]?.status).toBe('neutral');
   });
 
   it('reports checking while merge data is loading', () => {
@@ -55,7 +68,6 @@ describe('buildMergeReadiness', () => {
       input({ mergeStatus: undefined, mergeStatusLoading: true }),
     );
 
-    expect(readiness.overall).toBe('checking');
     expect(readiness.checks[0]).toEqual(
       expect.objectContaining({ status: 'checking', detail: 'Checking merge safety…' }),
     );
@@ -86,7 +98,6 @@ describe('buildMergeReadiness', () => {
   ])('reports not ready for $name', ({ overrides, detail }) => {
     const readiness = buildMergeReadiness(input(overrides));
 
-    expect(readiness.overall).toBe('blocked');
     expect(readiness.checks[0]).toEqual(expect.objectContaining({ status: 'blocked', detail }));
   });
 
@@ -110,7 +121,6 @@ describe('buildMergeReadiness', () => {
   ])('preserves the known blocker for $name', ({ overrides, detail }) => {
     const readiness = buildMergeReadiness(input(overrides));
 
-    expect(readiness.overall).toBe('blocked');
     expect(readiness.checks[0]).toEqual(expect.objectContaining({ status: 'blocked', detail }));
   });
 
@@ -122,7 +132,6 @@ describe('buildMergeReadiness', () => {
       }),
     );
 
-    expect(readiness.overall).toBe('attention');
     expect(readiness.checks[0]).toEqual(
       expect.objectContaining({
         status: 'warning',
@@ -151,7 +160,6 @@ describe('buildMergeReadiness', () => {
       }),
     );
 
-    expect(readiness.overall).toBe('attention');
     expect(readiness.checks[1]).toEqual(
       expect.objectContaining({ status: 'warning', detail: 'test failed — 2 tests failed' }),
     );
@@ -167,7 +175,6 @@ describe('buildMergeReadiness', () => {
       }),
     );
 
-    expect(readiness.overall).toBe('attention');
     expect(readiness.checks[3]).toEqual(
       expect.objectContaining({
         status: 'warning',
@@ -198,7 +205,6 @@ describe('buildMergeReadiness', () => {
       }),
     );
 
-    expect(readiness.overall).toBe('attention');
     expect(readiness.checks[2]).toEqual(
       expect.objectContaining({
         label: 'Coverage',
@@ -260,7 +266,6 @@ describe('buildMergeReadiness', () => {
       }),
     );
 
-    expect(readiness.overall).toBe('ready');
     expect(readiness.checks[2]).toEqual(
       expect.objectContaining({
         status: 'pass',
@@ -284,7 +289,6 @@ describe('buildMergeReadiness', () => {
       }),
     );
 
-    expect(readiness.overall).toBe('ready');
     expect(readiness.checks[2]).toEqual(
       expect.objectContaining({
         status: 'pass',
@@ -412,7 +416,6 @@ describe('buildMergeReadiness', () => {
       }),
     );
 
-    expect(readiness.overall).toBe('ready');
     expect(readiness.checks[2]).toEqual(
       expect.objectContaining({
         status: 'neutral',
@@ -442,7 +445,6 @@ describe('buildMergeReadiness', () => {
       }),
     );
 
-    expect(readiness.overall).toBe('ready');
     expect(readiness.checks[2]).toEqual(
       expect.objectContaining({
         status: 'neutral',
@@ -454,31 +456,46 @@ describe('buildMergeReadiness', () => {
 });
 
 describe('MergeReadinessPanel', () => {
-  it('renders an accessible textual summary without relying on status color', () => {
-    const readiness = buildMergeReadiness(input());
-    const html = renderToString(() => MergeReadinessPanel({ readiness }));
+  const rows = (overrides: Partial<MergeReadinessInput> = {}) =>
+    renderToString(() =>
+      MergeReadinessPanel({ checks: buildMergeReadiness(input(overrides)).checks }),
+    );
 
-    expect(html).toContain('aria-label="Ready to merge summary"');
-    expect(html).toContain('Ready to merge');
+  it('gives a row of its own only to checks that need a look', () => {
+    const html = rows({
+      worktreeStatus: { ...cleanWorktreeStatus, has_uncommitted_changes: true },
+    });
+    // The warning keeps its detail on screen; passing rows only name themselves.
+    expect(html).toContain('>Uncommitted changes will be excluded.</span>');
+    expect(html).toContain('title="2 checks passed.');
+    expect(html).not.toContain('color:var(--fg-muted)">2 checks passed.');
+    expect(html).toMatch(/class="dialog-sr-only">(<!--\$-->)?Passed(<!--\/-->)?: </);
+  });
+
+  it('never folds the rows away', () => {
+    const html = rows();
+    expect(html).not.toContain('<details');
     expect(html).toContain('Merge safety');
-    expect(html).toContain('Verification');
+  });
+
+  it('names every status in text and keeps details and help reachable without hover', () => {
+    const html = rows();
+    expect(html).toContain('Agent report');
     expect(html).toContain('2 checks passed.');
     expect(html).toContain('Coverage');
     expect(html).toContain('No task coverage report.');
     expect(html).toContain('PR checks');
     expect(html).toContain('No PR checks available.');
+    // Quiet rows share a line; each label's hover gives its detail and help.
     expect(html).toContain(
-      'title="Ready means every available check passed. Needs attention means a warning; Not ready means a merge-safety blocker; Checking means merge data is loading. This summary is advisory."',
+      'Checks the task branch for conflicts with its base branch, branch mismatch, committed changes, and local uncommitted changes.',
+    );
+    expect(html).toContain('What the agent reported when it called land_self.');
+    expect(html).toContain(
+      'Uses checks reported for a detected GitHub pull request. Pull requests are optional, and unavailable check data is neutral.',
     );
     expect(html).toContain(
-      'title="Checks the task branch for conflicts with its base branch, branch mismatch, committed changes, and local uncommitted changes."',
-    );
-    expect(html).toContain('title="Runs the project\'s verify command in the task worktree');
-    expect(html).toContain(
-      'title="Uses checks reported for a detected GitHub pull request. Pull requests are optional, and unavailable check data is neutral."',
-    );
-    expect(html).toContain(
-      'title="Compares existing task and base-branch coverage reports. Opening the dialog never runs tests or modifies either worktree."',
+      'Compares existing task and base-branch coverage reports. Opening the dialog never runs tests or modifies either worktree.',
     );
   });
 });

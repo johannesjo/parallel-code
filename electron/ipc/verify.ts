@@ -19,6 +19,8 @@ export interface VerifyRequest {
   key: string;
   worktreePath: string;
   command: string;
+  /** Automatic evidence checks require this HEAD and a clean tree at execution time. */
+  expectedHeadSha?: string;
   /** Extra variables visible to the command (task id, branch, …). */
   env?: Record<string, string>;
   timeoutMs?: number;
@@ -35,6 +37,8 @@ export interface VerifyRunnerDeps {
 export interface VerificationRunner {
   start(request: VerifyRequest): Promise<VerificationRun>;
   cancel(key: string): boolean;
+  /** Stops every run whose key starts with `prefix`, e.g. all of a task's evidence checks. */
+  cancelPrefix(prefix: string): boolean;
   /** Stops every running and queued run, e.g. when the app quits. */
   cancelAll(): void;
   isRunning(key: string): boolean;
@@ -214,10 +218,31 @@ async function execute(
 ): Promise<VerificationRun> {
   const startedAt = new Date().toISOString();
   const snapshot = await snapshotGitState(request.worktreePath, deps.execFileImpl);
+  if (
+    request.expectedHeadSha !== undefined &&
+    (snapshot.headSha !== request.expectedHeadSha || snapshot.dirty)
+  ) {
+    return {
+      command: request.command,
+      ...snapshot,
+      headShaAfter: snapshot.headSha,
+      dirtyAfter: snapshot.dirty,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      status: 'cancelled',
+      exitCode: null,
+      outputTail: '',
+      message:
+        'Automatic check held: the worktree changed since the evidence scan. Rebuild or run this check explicitly.',
+    };
+  }
   const outcome = await runCommand(request, signal, deps);
+  const after = await snapshotGitState(request.worktreePath, deps.execFileImpl);
   return {
     command: request.command,
     ...snapshot,
+    headShaAfter: after.headSha,
+    dirtyAfter: after.dirty,
     startedAt,
     ...outcome,
     finishedAt: new Date().toISOString(),
@@ -292,11 +317,17 @@ export function createVerificationRunner(deps: VerifyRunnerDeps = {}): Verificat
     }
   };
 
-  const cancelAll = (): void => {
-    for (const key of [...active.keys()]) cancel(key);
+  const cancelPrefix = (prefix: string): boolean => {
+    const keys = [...active.keys()].filter((key) => key.startsWith(prefix));
+    for (const key of keys) cancel(key);
+    return keys.length > 0;
   };
 
-  return { start, cancel, cancelAll, isRunning: (key) => active.has(key) };
+  const cancelAll = (): void => {
+    cancelPrefix('');
+  };
+
+  return { start, cancel, cancelPrefix, cancelAll, isRunning: (key) => active.has(key) };
 }
 
 export const verificationRunner = createVerificationRunner();

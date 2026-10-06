@@ -1,24 +1,20 @@
-import { For } from 'solid-js';
+import { For, Show } from 'solid-js';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
-import type { MergeReadiness, MergeReadinessCheckStatus } from './merge-readiness';
-
-const overallCopy: Record<MergeReadiness['overall'], { title: string; detail: string }> = {
-  ready: { title: 'Ready to merge', detail: 'Known checks passed.' },
-  attention: { title: 'Needs attention', detail: 'Review these items before merging.' },
-  blocked: { title: 'Not ready to merge', detail: 'Resolve merge blockers before continuing.' },
-  checking: { title: 'Checking merge readiness', detail: 'Waiting for merge status.' },
-};
-
-const overallHelp =
-  'Ready means every available check passed. Needs attention means a warning; Not ready means a merge-safety blocker; Checking means merge data is loading. This summary is advisory.';
+import type { MergeReadinessCheck, MergeReadinessCheckStatus } from './merge-readiness';
 
 function checkHelp(label: string): string | undefined {
   if (label === 'Merge safety') {
     return 'Checks the task branch for conflicts with its base branch, branch mismatch, committed changes, and local uncommitted changes.';
   }
-  if (label === 'Verification') {
-    return "Runs the project's verify command in the task worktree when you click Run, when land_self is called, or when the coordinator merges. The result is pinned to the commit it ran at. Without a configured command this falls back to what the agent reported via land_self; opening the dialog never runs commands.";
+  if (label === 'Verify command') {
+    return "Runs the project's verify command in the task worktree when you click Run or build evidence, when land_self is called, or when the coordinator merges. Agents and the coordinator must pass it to land; for your own merge it is advisory. The result is pinned to the commit it ran at; opening the dialog never runs commands.";
+  }
+  if (label === 'Agent report') {
+    return 'What the agent reported when it called land_self. Set a verify command in the project settings so the app runs the check itself.';
+  }
+  if (label === 'Evidence') {
+    return 'Confidence of the evidence package for this commit: checks, test changes and flags. Advisory; it never blocks a merge.';
   }
   if (label === 'PR checks') {
     return 'Uses checks reported for a detected GitHub pull request. Pull requests are optional, and unavailable check data is neutral.';
@@ -29,10 +25,10 @@ function checkHelp(label: string): string | undefined {
   return undefined;
 }
 
-function statusColor(status: MergeReadinessCheckStatus | MergeReadiness['overall']): string {
-  if (status === 'pass' || status === 'ready') return theme.success;
+function statusColor(status: MergeReadinessCheckStatus): string {
+  if (status === 'pass') return theme.success;
   if (status === 'blocked') return theme.error;
-  if (status === 'warning' || status === 'attention' || status === 'checking') return theme.warning;
+  if (status === 'warning' || status === 'checking') return theme.warning;
   return theme.fgMuted;
 }
 
@@ -44,57 +40,84 @@ function statusSymbol(status: MergeReadinessCheckStatus): string {
   return '—';
 }
 
-export function MergeReadinessPanel(props: { readiness: MergeReadiness }) {
-  const copy = () => overallCopy[props.readiness.overall];
-  const color = () => statusColor(props.readiness.overall);
+/** Spoken in place of the hidden symbol, so status never rests on glyph or colour. */
+const STATUS_WORD: Record<MergeReadinessCheckStatus, string> = {
+  pass: 'Passed',
+  warning: 'Warning',
+  blocked: 'Blocked',
+  checking: 'Checking',
+  neutral: 'No data',
+};
 
+/** Passing and informational rows need no reading; they share one line each. */
+function isQuiet(status: MergeReadinessCheckStatus): boolean {
+  return status === 'pass' || status === 'neutral';
+}
+
+/** One line naming every check of a quiet status; the details are on hover. */
+function QuietLine(props: { checks: MergeReadinessCheck[]; status: 'pass' | 'neutral' }) {
+  const checks = () => props.checks.filter((check) => check.status === props.status);
   return (
-    <section
-      aria-label="Ready to merge summary"
-      style={{
-        'margin-bottom': '12px',
-        padding: '10px 12px',
-        border: `1px solid color-mix(in srgb, ${color()} 45%, ${theme.border})`,
-        'border-left': `3px solid ${color()}`,
-        'border-radius': 'var(--radius-md)',
-        background: 'color-mix(in srgb, var(--fg) 3%, transparent)',
-      }}
-    >
-      <div
-        aria-live="polite"
-        style={{ display: 'flex', 'align-items': 'baseline', gap: '8px', 'margin-bottom': '8px' }}
-      >
-        <strong title={overallHelp} style={{ color: color(), 'font-size': sf(13) }}>
-          {copy().title}
-        </strong>
-        <span style={{ color: theme.fgMuted, 'font-size': sf(12) }}>{copy().detail}</span>
-      </div>
-      <div style={{ display: 'grid', gap: '5px' }}>
-        <For each={props.readiness.checks}>
-          {(check) => (
-            <div
-              style={{
-                display: 'grid',
-                'grid-template-columns': '116px minmax(0, 1fr)',
-                gap: '8px',
-                'align-items': 'baseline',
-                'font-size': sf(12),
-              }}
-            >
+    <Show when={checks().length > 0}>
+      <div style={{ 'font-size': sf(12), color: statusColor(props.status) }}>
+        <span aria-hidden="true" style={{ display: 'inline-block', width: '16px' }}>
+          {statusSymbol(props.status)}
+        </span>
+        <span class="dialog-sr-only">{STATUS_WORD[props.status]}: </span>
+        <For each={checks()}>
+          {(check, index) => (
+            <>
+              {index() > 0 ? ' · ' : ''}
               <span
-                title={checkHelp(check.label)}
-                style={{ color: statusColor(check.status), 'font-weight': '600' }}
+                title={`${check.detail}${checkHelp(check.label) ? `\n\n${checkHelp(check.label)}` : ''}`}
               >
-                <span aria-hidden="true" style={{ display: 'inline-block', width: '16px' }}>
-                  {statusSymbol(check.status)}
-                </span>
                 {check.label}
+                {/* The hover title is out of reach without a pointer. */}
+                <span class="dialog-sr-only"> ({check.detail})</span>
               </span>
-              <span style={{ color: theme.fgMuted }}>{check.detail}</span>
-            </div>
+            </>
           )}
         </For>
       </div>
-    </section>
+    </Show>
+  );
+}
+
+/**
+ * The readiness signals no other part of the dialog shows. Always open: a fold
+ * that tracked the status closed itself mid-run and hid what was being watched.
+ * Rows that need a look get a line each; the rest share one to save height.
+ */
+export function MergeReadinessPanel(props: { checks: MergeReadinessCheck[] }) {
+  return (
+    <div aria-label="Merge readiness" role="group" style={{ display: 'grid', gap: '5px' }}>
+      <For each={props.checks.filter((check) => !isQuiet(check.status))}>
+        {(check) => (
+          <div
+            style={{
+              display: 'grid',
+              'grid-template-columns': '116px minmax(0, 1fr)',
+              gap: '8px',
+              'align-items': 'baseline',
+              'font-size': sf(12),
+            }}
+          >
+            <span
+              title={checkHelp(check.label)}
+              style={{ color: statusColor(check.status), 'font-weight': '600' }}
+            >
+              <span aria-hidden="true" style={{ display: 'inline-block', width: '16px' }}>
+                {statusSymbol(check.status)}
+              </span>
+              <span class="dialog-sr-only">{STATUS_WORD[check.status]}: </span>
+              {check.label}
+            </span>
+            <span style={{ color: theme.fgMuted }}>{check.detail}</span>
+          </div>
+        )}
+      </For>
+      <QuietLine checks={props.checks} status="pass" />
+      <QuietLine checks={props.checks} status="neutral" />
+    </div>
   );
 }

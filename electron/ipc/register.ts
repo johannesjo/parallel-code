@@ -69,6 +69,7 @@ import {
 import { readCoverageSummary } from './coverage.js';
 import { loadEslintQualityFindings } from './eslint-quality-findings.js';
 import { buildVerifyEnv, validateVerifyCommand, verificationRunner } from './verify.js';
+import { scanEvidence } from './evidence-scan.js';
 import { startRemoteServer, getMCPLogs, type RemoteProject } from '../remote/server.js';
 import type { RemoteAttentionState, RemoteAgent } from '../remote/protocol.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
@@ -81,6 +82,7 @@ import {
 import type { MindMapDocument, MindMapUpdate } from '../shared/mindmap.js';
 import type { CanvasView } from '../shared/canvas-view.js';
 import type { AgentTourPayload } from '../shared/agent-tour.js';
+import type { EvidenceSubmission } from '../shared/evidence.js';
 import { buildMcpLaunchArgs } from '../mcp/agent-args.js';
 import {
   getSymlinkCandidates,
@@ -102,6 +104,7 @@ import {
   getBranchLog,
   pushTask,
   rebaseTask,
+  mergeBaseIntoTask,
   createWorktree,
   removeWorktree,
   isGitRepo,
@@ -137,7 +140,12 @@ import {
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
 import { setMinimaxApiKey } from './ask-code-minimax.js';
 import { isStructuredPurpose } from './ask-code-purpose.js';
-import { isAskCodeModel, type AskCodeProvider } from '../shared/ask-code-models.js';
+import { readCheckSources } from './check-sources.js';
+import {
+  isAskCodeEffort,
+  isAskCodeModel,
+  type AskCodeProvider,
+} from '../shared/ask-code-models.js';
 import { listCodexModels } from './codex-models.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
 import { fetchClaudeUsage } from './claude-usage.js';
@@ -292,6 +300,15 @@ function absolutePathArg(args: IpcArgs, key: string): string {
 
 export function projectRootArg(args: IpcArgs): string {
   return absolutePathArg(args, 'projectRoot');
+}
+
+function evidenceKeyPrefix(taskId: string): string {
+  return `${taskId}:evidence:`;
+}
+
+/** One key per check, so different checks can run side by side. */
+function evidenceRunKey(taskId: string, checkId: string): string {
+  return `${evidenceKeyPrefix(taskId)}${checkId}`;
 }
 
 export function worktreePathArg(args: IpcArgs): string {
@@ -880,6 +897,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
       buildContext: args.projectRoot,
     };
   });
+  ipcMain.handle(IPC.ReadCheckSources, (_e, args) => {
+    validatePath(args.projectRoot, 'projectRoot');
+    return readCheckSources(args.projectRoot);
+  });
 
   // --- Task commands ---
   ipcMain.handle(IPC.CreateTask, (_e, args) => {
@@ -911,7 +932,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertBoolean(args.deleteBranch, 'deleteBranch');
     assertOptionalString(args.taskId, 'taskId');
     // A verify run still going would keep writing into the worktree being deleted.
-    if (args.taskId) verificationRunner.cancel(args.taskId);
+    if (args.taskId) {
+      verificationRunner.cancel(args.taskId);
+      verificationRunner.cancelPrefix(evidenceKeyPrefix(args.taskId));
+    }
     const authority = args.taskId ? delegation.getTask(args.taskId) : undefined;
     if (authority?.delegationParent || authority?.coordinatorMode)
       return delegation.closeParent(authority.taskId, args.deleteBranch);
@@ -1049,6 +1073,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.RebaseTask, (_e, args) => {
     const worktreePath = worktreePathArg(args);
     return rebaseTask(worktreePath, optionalBaseBranch(args));
+  });
+  ipcMain.handle(IPC.MergeBaseIntoTask, (_e, args) => {
+    const worktreePath = worktreePathArg(args);
+    return mergeBaseIntoTask(worktreePath, optionalBaseBranch(args));
   });
   ipcMain.handle(IPC.GetMainBranch, (_e, args) => {
     return getMainBranch(projectRootArg(args));
@@ -1253,9 +1281,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validateVerifyCommand(args.command);
     assertOptionalString(args.branchName, 'branchName');
     assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
+    assertOptionalBoolean(args.evidence, 'evidence');
+    if (args.evidence) assertString(args.checkId, 'checkId');
+    assertOptionalString(args.expectedHeadSha, 'expectedHeadSha');
     const channel = `channel:${args.onOutput.__CHANNEL_ID__}`;
     return verificationRunner.start({
-      key: args.taskId,
+      // Evidence checks have their own keys so they never cancel a manual run.
+      key: args.evidence ? evidenceRunKey(args.taskId, args.checkId) : args.taskId,
+      expectedHeadSha: args.expectedHeadSha,
       worktreePath,
       command: args.command,
       env: buildVerifyEnv({ taskId: args.taskId, branchName: args.branchName, worktreePath }),
@@ -1266,7 +1299,18 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.CancelTaskVerification, (_e, args) => {
     assertString(args.taskId, 'taskId');
-    return verificationRunner.cancel(args.taskId);
+    assertOptionalBoolean(args.evidence, 'evidence');
+    assertOptionalString(args.checkId, 'checkId');
+    if (!args.evidence) return verificationRunner.cancel(args.taskId);
+    // Without a check id, Stop and Rebuild cancel every evidence check of the task.
+    return args.checkId
+      ? verificationRunner.cancel(evidenceRunKey(args.taskId, args.checkId))
+      : verificationRunner.cancelPrefix(evidenceKeyPrefix(args.taskId));
+  });
+  ipcMain.handle(IPC.GetEvidenceScan, (_e, args) => {
+    const worktreePath = worktreePathArg(args);
+    if (args.baseBranch !== undefined) validateBranchName(args.baseBranch, 'baseBranch');
+    return scanEvidence(worktreePath, args.baseBranch);
   });
 
   // --- Task-scoped reasoning reports ---
@@ -1319,6 +1363,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     // Only a model the provider offers may become a CLI argument.
     if (args.model !== undefined && !isAskCodeModel(provider, args.model))
       throw new Error('Invalid code Q&A model');
+    if (args.effort !== undefined && !isAskCodeEffort(provider, args.effort))
+      throw new Error('Invalid code Q&A reasoning level');
     assertOptionalString(args.envFile, 'envFile');
     askAboutCode(win, {
       purpose: args.purpose,
@@ -1328,6 +1374,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       cwd: args.cwd,
       provider,
       model: args.model,
+      effort: args.effort,
       envFile: args.envFile,
     });
   });
@@ -1659,6 +1706,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
       callRenderer<{ ok: boolean }>(IPC.MCP_OpenCanvasRequest, { taskId, view }).then(() => {}),
     publishTour: (taskId: string, payload: AgentTourPayload) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishTourRequest, { taskId, payload }),
+    submitEvidence: (taskId: string, payload: EvidenceSubmission) =>
+      callRenderer<unknown>(IPC.MCP_SubmitEvidenceRequest, { taskId, payload }),
+    getEvidence: (taskId: string) => callRenderer<unknown>(IPC.MCP_GetEvidenceRequest, { taskId }),
     getProjects: () => callRenderer<RemoteProject[]>(IPC.Remote_GetProjectsRequest, {}),
     createTaskFromMobile: (req: { projectId: string; name: string; prompt: string }) =>
       callRenderer<{ taskId: string }>(IPC.Remote_CreateTaskRequest, req),

@@ -1,4 +1,4 @@
-import { Show, createSignal, createUniqueId, createEffect, onCleanup } from 'solid-js';
+import { Show, createSignal, createUniqueId, createEffect, onCleanup, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import type { ChangeTourController } from '../lib/create-change-tour';
 import { theme } from '../lib/theme';
@@ -17,6 +17,8 @@ export function ChangeTourButton(props: {
   tour: ChangeTourController;
   onClick: () => void;
   disabled?: boolean;
+  /** Extra actions shown as segments between the tour action and the model menu. */
+  children?: JSX.Element;
 }) {
   const ready = () => props.tour.stops().length > 0;
   /** A reader who closed the tour midway picks it up where they left. */
@@ -185,6 +187,7 @@ export function ChangeTourButton(props: {
               </svg>
             </button>
           </div>
+          {props.children}
           <TourModelMenu class="change-tour-model" />
         </div>
         <Show when={helpOpen()}>
@@ -235,6 +238,7 @@ export function ChangeTourButton(props: {
         <Show when={props.tour.error()}>
           <p
             role="alert"
+            class="change-tour-error"
             style={{
               color: theme.error,
               margin: '0',

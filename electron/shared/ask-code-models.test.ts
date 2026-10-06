@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { askCodeEnvFile, defaultAskCodeModel, isAskCodeModel } from './ask-code-models.js';
+import {
+  askCodeEnvFile,
+  defaultAskCodeModel,
+  isAskCodeEffort,
+  isAskCodeModel,
+} from './ask-code-models.js';
 
 const ENV_FILES = { 'claude-code': '/env/claude.env', codex: '/env/codex.env' };
 
@@ -31,5 +36,15 @@ describe('ask-code model guards', () => {
   it('leaves the Codex model to the CLI until one is picked', () => {
     expect(defaultAskCodeModel('codex')).toBe('');
     expect(defaultAskCodeModel('claude')).toBe('sonnet');
+  });
+});
+
+describe('isAskCodeEffort', () => {
+  it('accepts only the levels the provider CLI takes', () => {
+    expect(isAskCodeEffort('claude', 'high')).toBe(true);
+    expect(isAskCodeEffort('claude', 'minimal')).toBe(false);
+    expect(isAskCodeEffort('codex', 'minimal')).toBe(true);
+    expect(isAskCodeEffort('minimax', 'high')).toBe(false);
+    expect(isAskCodeEffort('claude', 'high" --danger')).toBe(false);
   });
 });

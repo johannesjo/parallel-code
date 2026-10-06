@@ -2527,21 +2527,40 @@ export function pushTask(
   });
 }
 
-export async function rebaseTask(worktreePath: string, baseBranch?: string): Promise<void> {
+/**
+ * Brings the base branch into the task branch, by rebase or by merge commit. A
+ * failure is aborted, so the worktree is never left mid-operation.
+ */
+async function syncWithBase(
+  worktreePath: string,
+  baseBranch: string | undefined,
+  operation: 'rebase' | 'merge',
+): Promise<void> {
   const lockKey = await detectRepoLockKey(worktreePath).catch(() => worktreePath);
 
   return withWorktreeLock(lockKey, async () => {
     const mainBranch = baseBranch ?? (await detectMainBranch(worktreePath));
+    const args =
+      operation === 'merge' ? ['merge', '--no-edit', mainBranch] : ['rebase', mainBranch];
     try {
-      await exec('git', ['rebase', mainBranch], { cwd: worktreePath });
+      await exec('git', args, { cwd: worktreePath });
     } catch (e) {
-      await exec('git', ['rebase', '--abort'], { cwd: worktreePath }).catch((recoverErr) =>
-        console.warn('git rebase --abort failed:', recoverErr),
+      await exec('git', [operation, '--abort'], { cwd: worktreePath }).catch((recoverErr) =>
+        console.warn(`git ${operation} --abort failed:`, recoverErr),
       );
-      throw new Error(`Rebase failed: ${e}`);
+      throw new Error(`${operation === 'merge' ? 'Merge' : 'Rebase'} failed: ${e}`);
     }
     invalidateDiffBaseCache();
   });
+}
+
+export function rebaseTask(worktreePath: string, baseBranch?: string): Promise<void> {
+  return syncWithBase(worktreePath, baseBranch, 'rebase');
+}
+
+/** Like `rebaseTask`, but keeps the branch history and adds a merge commit. */
+export function mergeBaseIntoTask(worktreePath: string, baseBranch?: string): Promise<void> {
+  return syncWithBase(worktreePath, baseBranch, 'merge');
 }
 
 /** Check whether a directory is the root of a git repository. */

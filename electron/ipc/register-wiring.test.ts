@@ -67,6 +67,8 @@ const NOT_HANDLED_HERE: readonly string[] = [
   IPC.MCP_CoordinatorOrphanedNotification,
   IPC.MCP_OpenCanvasRequest,
   IPC.MCP_PublishTourRequest,
+  IPC.MCP_SubmitEvidenceRequest,
+  IPC.MCP_GetEvidenceRequest,
   IPC.MCP_ReadMindMapRequest,
   IPC.MCP_ReadReasoningRequest,
   IPC.MCP_StaleUrlWarning,

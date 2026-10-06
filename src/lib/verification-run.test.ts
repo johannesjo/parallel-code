@@ -28,6 +28,27 @@ describe('summarizeVerificationRun', () => {
     ['running', run({ status: 'running', finishedAt: null }), 'aaa', 'running', 'Running'],
     ['passed at current HEAD', run(), 'aaa', 'passed', 'Passed'],
     ['passed at an older HEAD', run(), 'bbb', 'stale', 'Verified at an older commit'],
+    [
+      'committed during the run',
+      run({ headShaAfter: 'ccc' }),
+      'ccc',
+      'stale',
+      'Verified at an older commit',
+    ],
+    [
+      'edited during the run',
+      run({ dirtyAfter: true }),
+      'aaa',
+      'stale',
+      'Verified at an older commit',
+    ],
+    [
+      'unchanged during the run',
+      run({ headShaAfter: 'aaa', dirtyAfter: false }),
+      'aaa',
+      'passed',
+      'Passed',
+    ],
     ['passed without a git pin', run({ headSha: null }), 'bbb', 'passed', 'Passed'],
     ['passed with unknown current HEAD', run(), undefined, 'passed', 'Passed'],
     [

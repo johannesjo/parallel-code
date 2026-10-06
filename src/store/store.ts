@@ -216,6 +216,26 @@ export {
   runTaskVerification,
   sendVerificationFailureToAgent,
 } from './verification';
+export {
+  buildEvidence,
+  cancelEvidenceChecks,
+  getEvidenceForAgent,
+  runEvidenceCheck,
+  sendEvidenceToAgent,
+  stopEvidence,
+  submitEvidence,
+} from './evidence';
+export { runEvidenceReview } from './evidence-review';
+export {
+  acceptEvidenceFlag,
+  dismissEvidenceFinding,
+  restoreEvidenceFinding,
+  reopenEvidenceFlag,
+  getEvidenceConfidence,
+  getEvidenceUiState,
+  getTaskChecks,
+  isEvidenceBusy,
+} from './evidence-state';
 export { getMergedTasksTodayCount, getMergedLineTotals } from './completion';
 export {
   createTerminal,

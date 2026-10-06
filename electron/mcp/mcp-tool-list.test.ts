@@ -14,6 +14,7 @@ import {
   CANVAS_VIEW_TOOLS,
   CANVAS_INSTRUCTIONS,
   TOUR_TOOLS,
+  EVIDENCE_TOOLS,
   hasCanvasTools,
   type ToolDef,
 } from './mcp-tool-list.js';
@@ -27,6 +28,7 @@ describe('selectTools — role-based tool list', () => {
       ...REASONING_TOOLS,
       ...CANVAS_VIEW_TOOLS,
       ...TOUR_TOOLS,
+      ...EVIDENCE_TOOLS,
     ]);
     expect(tools.map((t: ToolDef) => t.name)).toStrictEqual([
       'land_self',
@@ -37,6 +39,8 @@ describe('selectTools — role-based tool list', () => {
       'reasoning_update',
       'canvas_open',
       'tour_publish',
+      'submit_evidence',
+      'get_evidence',
     ]);
   });
 
@@ -48,6 +52,7 @@ describe('selectTools — role-based tool list', () => {
       ...REASONING_TOOLS,
       ...CANVAS_VIEW_TOOLS,
       ...TOUR_TOOLS,
+      ...EVIDENCE_TOOLS,
     ]);
   });
 
@@ -147,6 +152,7 @@ it('ordinary canvas sessions advertise only map tools', () => {
     ...REASONING_TOOLS,
     ...CANVAS_VIEW_TOOLS,
     ...TOUR_TOOLS,
+    ...EVIDENCE_TOOLS,
   ]);
 });
 
@@ -221,6 +227,8 @@ describe('session capability tool sets', () => {
     'reasoning_update',
     'canvas_open',
     'tour_publish',
+    'submit_evidence',
+    'get_evidence',
   ];
   const supervision = [
     'list_tasks',

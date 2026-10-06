@@ -60,6 +60,62 @@ describe('verification runner', () => {
     expect(run.finishedAt).not.toBeNull();
   });
 
+  it.each(['dirty', 'new-head'] as const)(
+    'holds queued automatic checks when the tree becomes %s',
+    async (change) => {
+      const { repo, head } = initRepo();
+      const r = createVerificationRunner({ shell: '/bin/sh', maxConcurrent: 1 });
+      let started: (() => void) | undefined;
+      const ready = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const blocker = r.start({
+        key: 'blocker',
+        worktreePath: repo,
+        command: 'echo ready; sleep 30',
+        onOutput: () => started?.(),
+      });
+      await ready;
+      const queued = r.start({
+        key: 'evidence',
+        worktreePath: repo,
+        command: 'echo executed',
+        expectedHeadSha: head,
+      });
+      if (change === 'dirty') fs.writeFileSync(path.join(repo, 'package.json'), '{}');
+      else
+        execFileSync(
+          'git',
+          ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-qm', 'next'],
+          { cwd: repo, stdio: ['ignore', 'pipe', 'ignore'] },
+        );
+      r.cancel('blocker');
+      await blocker;
+      const held = await queued;
+      expect(held.status).toBe('cancelled');
+      expect(held.outputTail).toBe('');
+      expect(held.message).toContain('worktree changed');
+      const explicit = await r.start({
+        key: 'manual',
+        worktreePath: repo,
+        command: 'echo explicit',
+      });
+      expect(explicit.status).toBe('passed');
+    },
+  );
+
+  it('runs automatic checks when the expected commit is still clean', async () => {
+    const { repo, head } = initRepo();
+    const result = await runner().start({
+      key: 'evidence',
+      worktreePath: repo,
+      command: 'echo checked',
+      expectedHeadSha: head,
+    });
+    expect(result.status).toBe('passed');
+    expect(result.outputTail).toContain('checked');
+  });
+
   it('reports a failing command with its exit code and stderr', async () => {
     const run = await runner().start({
       key: 't1',
@@ -167,6 +223,20 @@ describe('verification runner', () => {
     expect(r.isRunning('b')).toBe(false);
   });
 
+  it("cancelPrefix stops one task's evidence checks and leaves other runs alone", async () => {
+    const r = runner();
+    const unit = r.start({ key: 't1:evidence:unit', worktreePath: tmpDir(), command: 'sleep 30' });
+    const e2e = r.start({ key: 't1:evidence:e2e', worktreePath: tmpDir(), command: 'sleep 30' });
+    await sleep(100);
+    expect(r.isRunning('t1:evidence:e2e')).toBe(true);
+
+    expect(r.cancelPrefix('t1:evidence:')).toBe(true);
+    expect(r.cancelPrefix('t1:evidence:')).toBe(false);
+
+    const runs = await Promise.all([unit, e2e]);
+    expect(runs.map((run) => run.status)).toEqual(['cancelled', 'cancelled']);
+  });
+
   it('reports a run whose process cannot even be spawned', async () => {
     const spawnImpl = (() => {
       throw new Error('spawn ENOTDIR');
@@ -201,6 +271,21 @@ describe('verification runner', () => {
     fs.writeFileSync(path.join(repo, 'new.txt'), 'x');
     const dirty = await runner().start({ key: 't1', worktreePath: repo, command: 'true' });
     expect(dirty).toMatchObject({ status: 'passed', headSha: head, dirty: true });
+  });
+
+  it('records the git state after the run so a commit during the run is visible', async () => {
+    const { repo, head } = initRepo();
+
+    const run = await runner().start({
+      key: 't1',
+      worktreePath: repo,
+      command:
+        'git -c user.name=t -c user.email=t@t commit --allow-empty -q -m during && echo x > late.txt',
+    });
+
+    expect(run).toMatchObject({ status: 'passed', headSha: head, dirty: false, dirtyAfter: true });
+    expect(run.headShaAfter).toMatch(/^[0-9a-f]{40}$/);
+    expect(run.headShaAfter).not.toBe(head);
   });
 
   it('keeps the HEAD pin and counts the tree as dirty when git status fails', async () => {

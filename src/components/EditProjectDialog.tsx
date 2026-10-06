@@ -10,10 +10,17 @@ import {
   setProjectSpMapping,
 } from '../store/store';
 import type { SpProject } from '../../electron/shared/super-productivity';
+import {
+  DEFAULT_EVIDENCE_MODEL,
+  parseEvidenceModelSettings,
+} from '../../electron/shared/evidence-settings';
 import { sanitizeBranchPrefix, toBranchName } from '../lib/branch-name';
 import { theme, sectionLabelStyle } from '../lib/theme';
 import type { Project, TerminalBookmark, GitIsolationMode } from '../store/types';
+import { EvidenceSettingsFields, finalizeChecks, type CheckDraft } from './EvidenceSettingsFields';
 import { SegmentedButtons } from './SegmentedButtons';
+import { SuggestChecksButton } from './SuggestChecksButton';
+import { keepCheckIds } from '../lib/check-suggestion';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { CloseIcon } from './icons';
 import { RemoveProjectConfirm } from './RemoveProjectConfirm';
@@ -22,6 +29,8 @@ import { isDocumentProject } from '../store/projects';
 
 interface EditProjectDialogProps {
   project: Project | null;
+  /** Opens on the verify command and evidence checks instead of the name. */
+  focusChecks?: boolean;
   onClose: () => void;
 }
 
@@ -42,6 +51,9 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [defaultBaseBranch, setDefaultBaseBranch] = createSignal('');
   const [coverageReportPath, setCoverageReportPath] = createSignal('');
   const [verifyCommand, setVerifyCommand] = createSignal('');
+  const [evidenceChecks, setEvidenceChecks] = createSignal<CheckDraft[]>([]);
+  const [evidenceModel, setEvidenceModel] = createSignal(DEFAULT_EVIDENCE_MODEL);
+  const [evidenceAutoBuild, setEvidenceAutoBuild] = createSignal(false);
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
   const [newCommand, setNewCommand] = createSignal('');
   const [showImportDialog, setShowImportDialog] = createSignal(false);
@@ -55,6 +67,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const isDocument = () => isDocumentProject(props.project ?? undefined);
   const showsTaskSettings = () => props.project?.isGitRepo !== false && !isDocument();
   let nameRef!: HTMLInputElement;
+  let verifyRef: HTMLInputElement | undefined;
 
   // Sync signals when a project opens. Keyed on identity, not fields: saving
   // updates the stored project while a peer-access save is still pending, and a
@@ -74,6 +87,9 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
         setDefaultBaseBranch(p.defaultBaseBranch ?? '');
         setCoverageReportPath(p.coverageReportPath ?? '');
         setVerifyCommand(p.verifyCommand ?? '');
+        setEvidenceChecks(p.evidenceChecks ? [...p.evidenceChecks] : []);
+        setEvidenceModel(p.evidenceModel ?? DEFAULT_EVIDENCE_MODEL);
+        setEvidenceAutoBuild(p.evidenceAutoBuild === true);
         setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
         setNewCommand('');
         setConfirmRemove(false);
@@ -86,7 +102,11 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
             if (load === spProjectsLoad) setSpProjects(list);
           });
         }
-        requestAnimationFrame(() => nameRef?.focus());
+        requestAnimationFrame(() => {
+          const target = (props.focusChecks && verifyRef) || nameRef;
+          target?.focus();
+          if (target === verifyRef) target.scrollIntoView({ block: 'center' });
+        });
       },
     ),
   );
@@ -125,6 +145,9 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
       defaultBaseBranch: defaultBaseBranch() || undefined,
       coverageReportPath: coverageReportPath().trim() || undefined,
       verifyCommand: verifyCommand().trim() || undefined,
+      evidenceChecks: finalizeChecks(evidenceChecks()),
+      evidenceModel: parseEvidenceModelSettings(evidenceModel()),
+      evidenceAutoBuild: evidenceAutoBuild(),
       terminalBookmarks: bookmarks(),
     };
     // Local fields save first: a failed peer-access update in the main process must
@@ -517,6 +540,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 <input
                   class="input-field"
                   type="text"
+                  ref={verifyRef}
                   value={verifyCommand()}
                   onInput={(e) => setVerifyCommand(e.currentTarget.value)}
                   placeholder="npm run typecheck && npm test"
@@ -538,13 +562,32 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                     padding: '2px 2px 0',
                   }}
                 >
-                  Runs from the merge dialog, when an agent calls <code>land_self</code>, and before
-                  the coordinator merges. A failure is advisory in the merge dialog, but{' '}
+                  Runs from the Finish dialog, when an agent calls <code>land_self</code>, and
+                  before the coordinator merges. A failure is advisory in the Finish dialog, but{' '}
                   <code>land_self</code> and <code>merge_task</code> refuse to merge until it
                   passes. <code>PARALLEL_CODE_TASK_ID</code> and <code>PARALLEL_CODE_BRANCH</code>{' '}
                   are set for namespacing shared resources.
                 </div>
+                <SuggestChecksButton
+                  projectRoot={project().path}
+                  model={evidenceModel()}
+                  onSuggest={(suggestion) => {
+                    // Keep what the user has when the model has nothing for a field.
+                    if (suggestion.verifyCommand) setVerifyCommand(suggestion.verifyCommand);
+                    if (suggestion.checks.length > 0)
+                      setEvidenceChecks(keepCheckIds(evidenceChecks(), suggestion.checks));
+                  }}
+                />
               </div>
+
+              <EvidenceSettingsFields
+                checks={evidenceChecks()}
+                onChecksChange={setEvidenceChecks}
+                model={evidenceModel()}
+                autoBuild={evidenceAutoBuild()}
+                onAutoBuildChange={setEvidenceAutoBuild}
+                onModelChange={setEvidenceModel}
+              />
 
               <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
                 <label style={sectionLabelStyle}>

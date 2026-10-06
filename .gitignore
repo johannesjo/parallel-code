@@ -26,6 +26,7 @@ docs/*
 !docs/guided-understanding-plan.md
 !docs/runtime-separation-plan.md
 !docs/agent-coordination-plan.md
+!docs/evidence-packages.md
 
 # Sandbox bind-mount artifacts from user home (not project files).
 # Root-anchored so legitimate nested files with these names are still tracked.

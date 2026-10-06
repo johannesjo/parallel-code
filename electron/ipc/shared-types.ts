@@ -97,6 +97,10 @@ export interface VerificationRun {
   headSha: string | null;
   /** True when the worktree had uncommitted changes when the run started. */
   dirty: boolean;
+  /** HEAD and dirty state once the command ended. A difference from the start
+   *  means the code changed during the run, so the result covers neither. */
+  headShaAfter?: string | null;
+  dirtyAfter?: boolean;
   startedAt: string;
   finishedAt: string | null;
   /** Bounded tail of combined stdout and stderr, ANSI stripped. */

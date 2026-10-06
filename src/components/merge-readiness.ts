@@ -5,6 +5,11 @@ import {
   MATERIAL_COVERAGE_DELTA,
   type CoverageComparison,
 } from '../lib/coverage-comparison';
+import type {
+  EvidenceConfidence,
+  EvidenceConfidenceLevel,
+} from '../../electron/shared/evidence-confidence';
+import { EVIDENCE_LEVEL } from '../lib/evidence-display';
 import type { SubtaskVerification } from '../store/types';
 import {
   summarizeVerificationRun,
@@ -21,7 +26,6 @@ export interface MergeReadinessCheck {
 }
 
 export interface MergeReadiness {
-  overall: 'ready' | 'attention' | 'blocked' | 'checking';
   checks: MergeReadinessCheck[];
 }
 
@@ -33,6 +37,8 @@ interface PrReadinessState {
 }
 
 export interface MergeReadinessInput {
+  /** Confidence of the task's evidence package; advisory, never blocks. */
+  evidence?: EvidenceConfidence;
   expectedBranch: string;
   mergeStatus?: MergeStatus;
   mergeStatusLoading: boolean;
@@ -126,7 +132,7 @@ function verificationRunCheck(
 ): MergeReadinessCheck {
   const summary = summarizeVerificationRun(run, headSha);
   return {
-    label: 'Verification',
+    label: 'Verify command',
     status: RUN_KIND_STATUS[summary.kind],
     detail: summary.kind === 'running' ? summary.detail : `${summary.label}. ${summary.detail}`,
   };
@@ -142,7 +148,7 @@ function verificationCheck(input: MergeReadinessInput): MergeReadinessCheck {
 function reportedVerificationCheck(verification?: SubtaskVerification): MergeReadinessCheck {
   if (!verification?.checks.length) {
     return {
-      label: 'Verification',
+      label: 'Agent report',
       status: 'warning',
       detail: 'No verification was reported.',
     };
@@ -150,15 +156,37 @@ function reportedVerificationCheck(verification?: SubtaskVerification): MergeRea
   const failed = verification.checks.find((check) => check.result !== 'passed');
   if (failed) {
     return {
-      label: 'Verification',
+      label: 'Agent report',
       status: 'warning',
       detail: `${failed.name} ${failed.result}${failed.reason ? ` — ${failed.reason}` : ''}`,
     };
   }
   return {
-    label: 'Verification',
+    label: 'Agent report',
     status: 'pass',
     detail: `${countLabel(verification.checks.length, 'check')} passed.`,
+  };
+}
+
+// Medium is the usual state of a reviewed change, so only low or outdated
+// evidence asks for attention.
+const EVIDENCE_STATUS: Record<EvidenceConfidenceLevel, MergeReadinessCheckStatus> = {
+  checking: 'checking',
+  'not-checked': 'warning',
+  low: 'warning',
+  medium: 'neutral',
+  high: 'pass',
+};
+
+function evidenceCheck(confidence?: EvidenceConfidence): MergeReadinessCheck {
+  if (!confidence) {
+    return { label: 'Evidence', status: 'neutral', detail: 'No evidence package yet.' };
+  }
+  const reason = confidence.reasons[0]?.text;
+  return {
+    label: 'Evidence',
+    status: EVIDENCE_STATUS[confidence.level],
+    detail: `${EVIDENCE_LEVEL[confidence.level].label}.${reason ? ` ${reason}` : ''}`,
   };
 }
 
@@ -283,13 +311,7 @@ export function buildMergeReadiness(input: MergeReadinessInput): MergeReadiness 
     verificationCheck(input),
     coverageCheck(input.coverage, input.mergeStatus),
     prCheck(input.prChecks),
+    evidenceCheck(input.evidence),
   ];
-  const overall = checks.some((check) => check.status === 'blocked')
-    ? 'blocked'
-    : checks.some((check) => check.status === 'checking')
-      ? 'checking'
-      : checks.some((check) => check.status === 'warning')
-        ? 'attention'
-        : 'ready';
-  return { overall, checks };
+  return { checks };
 }

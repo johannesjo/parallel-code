@@ -11,6 +11,7 @@ import {
   clearTaskLandingReview,
   getPrChecks,
   getVerifyCommand,
+  getEvidenceConfidence,
   isTaskCanvasVisible,
   openTaskCanvas,
   closeTaskCanvas,
@@ -21,11 +22,7 @@ import { StatusDot, getDotTooltip } from './StatusDot';
 import { CheckIcon, CloseIcon } from './icons';
 import { theme } from '../lib/theme';
 import { badgeStyle } from '../lib/badgeStyle';
-import {
-  summarizeVerificationRun,
-  usesVerificationRun,
-  type VerificationSummaryKind,
-} from '../lib/verification-run';
+import { taskCheckSignal } from '../lib/task-check-signal';
 import { handleDragReorder } from '../lib/dragReorder';
 import { getTaskDockerBadgeLabel } from '../lib/docker';
 import { displayTaskNameFromPrompt, shouldUsePromptDerivedTaskName } from '../lib/clean-task-name';
@@ -33,22 +30,12 @@ import type { Task } from '../store/types';
 import { isLandedTaskState } from '../store/landing';
 import { bringTaskToFront, isTaskBackgrounded, sendTaskToBack } from '../store/background-tasks';
 
-// Kinds without an entry stay silent: a configured-but-never-run command on
-// every task would be noise, and cancelled runs carry no signal.
-const RUN_BADGES: Partial<Record<VerificationSummaryKind, { label: string; color: string }>> = {
-  running: { label: 'Verifying…', color: theme.fgMuted },
-  passed: { label: 'Verified', color: theme.success },
-  stale: { label: 'Verify stale', color: theme.warning },
-  dirty: { label: 'Verified (dirty)', color: theme.warning },
-  failed: { label: 'Verify failed', color: theme.error },
-};
-
 interface TaskTitleBarProps {
   task: Task;
   isActive: boolean;
   onClose: () => void;
-  onMerge: () => void;
-  onPush: () => void;
+  /** Opens the finish dialog: evidence, tour, then merge or push. */
+  onFinish: () => void;
   pushing: boolean;
   pushSuccess: boolean;
   onTitleEditRef: (h: EditableTextHandle) => void;
@@ -85,37 +72,21 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
         return null;
     }
   };
-  // Same precedence as the merge dialog so the badge and its readiness row agree.
-  const verificationBadge = () =>
-    usesVerificationRun(props.task.verificationRun, Boolean(getVerifyCommand(props.task.id)))
-      ? runVerificationBadge()
-      : reportedVerificationBadge();
-  const runVerificationBadge = () => {
-    const summary = summarizeVerificationRun(
-      props.task.verificationRun,
-      store.taskGitStatus[props.task.id]?.head_sha,
-    );
-    const badge = RUN_BADGES[summary.kind];
-    return badge ? { ...badge, title: `${summary.label}. ${summary.detail}` } : null;
-  };
-  const reportedVerificationBadge = () => {
-    const checks = props.task.verification?.checks;
-    if (!checks?.length) return null;
-    if (checks.every((check) => check.result === 'passed')) {
-      return {
-        label: `Verified ${checks.length}`,
-        color: theme.success,
-        title: checks.map((check) => `${check.name}: ${check.command}`).join('\n'),
-      };
-    }
-    const failed = checks.find((check) => check.result !== 'passed');
-    return {
-      label: failed?.result === 'blocked' ? 'Verification blocked' : 'Verification failed',
-      color: theme.warning,
-      title: failed
-        ? `${failed.name}: ${failed.command}${failed.reason ? `\n${failed.reason}` : ''}`
-        : 'Verification did not pass',
-    };
+  // Hidden while the agent works: the result is about to change anyway. A busy
+  // shell (dev server, watcher) is not agent work and must not hide a failure.
+  const checkSignal = () => {
+    const attention = getTaskAttentionState(props.task.id);
+    if (attention === 'active' || (!attention && getTaskDotStatus(props.task.id) === 'busy'))
+      return undefined;
+    const git = store.taskGitStatus[props.task.id];
+    return taskCheckSignal({
+      evidence: getEvidenceConfidence(props.task, git),
+      evidencePackage: props.task.evidence,
+      verificationRun: props.task.verificationRun,
+      verification: props.task.verification,
+      verifyCommandConfigured: Boolean(getVerifyCommand(props.task.id)),
+      headSha: git?.head_sha,
+    });
   };
   const titleLabel = () => {
     const initialPrompt = props.task.savedInitialPrompt?.trim();
@@ -146,9 +117,13 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
     }
     return `CI failed — ${c.failing} failing, ${c.passing} passing${c.pending ? `, ${c.pending} pending` : ''}`;
   };
-  const pushTitle = () => {
+  const finishTitle = () => {
+    const base = props.task.baseBranch ?? 'base';
+    const title = props.pushing
+      ? 'Pushing… (open to see output)'
+      : `Finish: merge into ${base} or push`;
     const ci = ciTitle();
-    return ci ? `Push to remote\n${ci}` : 'Push to remote';
+    return ci ? `${title}\n${ci}` : title;
   };
 
   const statusDescription = () =>
@@ -187,6 +162,13 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
                 ? ` — ${statusDescription().split(' — ').slice(1).join(' — ')}`
                 : ''}
             </span>
+            <Show when={checkSignal()}>
+              {(signal) => (
+                <span style={{ color: signal().color }} title={signal().title}>
+                  {` · ${signal().label}`}
+                </span>
+              )}
+            </Show>
           </span>
         </span>
         <Show when={props.task.gitIsolation === 'direct'}>
@@ -237,57 +219,27 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
             </button>
           )}
         </Show>
-        <Show when={verificationBadge()}>
-          {(badge) => (
-            <span style={badgeStyle(badge().color)} title={badge().title}>
-              {badge().label}
-            </span>
-          )}
-        </Show>
       </div>
       <div class="task-title-actions">
         <Show when={props.task.gitIsolation === 'worktree' && !isLandedTask()}>
           <div class="task-action-group" role="group" aria-label="Git actions">
-            <IconButton
-              icon={
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z" />
-                </svg>
-              }
-              onClick={() => props.onMerge()}
-              title={props.task.baseBranch ? `Merge into ${props.task.baseBranch}` : 'Merge'}
-            />
             <div style={{ position: 'relative', display: 'inline-flex' }}>
-              <Show
-                when={!props.pushing}
-                fallback={
-                  <div
-                    style={{
-                      display: 'inline-flex',
-                      'align-items': 'center',
-                      'justify-content': 'center',
-                      padding: '4px',
-                      border: `1px solid ${theme.border}`,
-                      'border-radius': 'var(--radius-sm)',
-                    }}
+              <IconButton
+                icon={
+                  <Show
+                    when={!props.pushing}
+                    fallback={
+                      <span class="inline-spinner" style={{ width: '14px', height: '14px' }} />
+                    }
                   >
-                    <span class="inline-spinner" style={{ width: '14px', height: '14px' }} />
-                  </div>
-                }
-              >
-                <IconButton
-                  icon={
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                      <path
-                        d="M4.75 8a.75.75 0 0 1 .75-.75h5.19L8.22 4.78a.75.75 0 0 1 1.06-1.06l3.5 3.5a.75.75 0 0 1 0 1.06l-3.5 3.5a.75.75 0 1 1-1.06-1.06l2.47-2.47H5.5A.75.75 0 0 1 4.75 8Z"
-                        transform="rotate(-90 8 8)"
-                      />
+                      <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm1.5 0a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm10.28-1.72-4.5 4.5a.75.75 0 0 1-1.06 0l-2-2a.75.75 0 0 1 1.06-1.06L6.75 9.19l3.97-3.97a.75.75 0 0 1 1.06 1.06Z" />
                     </svg>
-                  }
-                  onClick={() => props.onPush()}
-                  title={pushTitle()}
-                />
-              </Show>
+                  </Show>
+                }
+                onClick={() => props.onFinish()}
+                title={finishTitle()}
+              />
               <Show
                 when={ciChecks()}
                 fallback={
@@ -396,11 +348,7 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
             title={store.focusMode ? 'Exit focus mode' : 'Focus on this task'}
           />
         </div>
-        <div
-          class="task-action-group task-lifecycle-actions"
-          role="group"
-          aria-label="Task actions"
-        >
+        <div class="task-action-group" role="group" aria-label="Task actions">
           <IconButton
             icon={
               <svg

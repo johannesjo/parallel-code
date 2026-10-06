@@ -1,3 +1,5 @@
+import { documentAgentSupport } from '../documents/shared.js';
+
 /** Shared with the renderer so tour help describes the actual requested model. */
 export const ASK_CODE_MODELS = { claude: 'sonnet', minimax: 'MiniMax-M2.7' } as const;
 
@@ -45,4 +47,18 @@ export function askCodeEnvFile(
 ): string | undefined {
   if (provider === 'claude') return envFiles['claude-code'];
   return provider === 'codex' ? envFiles.codex : undefined;
+}
+
+/**
+ * Reasoning levels each CLI accepts, mirrored from the document runner so the
+ * two never disagree. MiniMax is an HTTP call with no such setting.
+ */
+export function askCodeEfforts(provider: AskCodeProvider): readonly string[] {
+  if (provider === 'claude') return documentAgentSupport('claude-code').efforts;
+  return provider === 'codex' ? documentAgentSupport('codex').efforts : [];
+}
+
+/** Guards an effort before it becomes a CLI argument. */
+export function isAskCodeEffort(provider: AskCodeProvider, value: unknown): value is string {
+  return typeof value === 'string' && askCodeEfforts(provider).includes(value);
 }

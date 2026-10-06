@@ -6,6 +6,7 @@
 
 import { publishAgentTour } from './agent-tour';
 import { getTaskMindMap, openCanvasViewFromAgent, updateTaskMindMapFromAgent } from './canvas';
+import { getEvidenceForAgent, submitEvidence } from './evidence';
 import { getTaskReasoning, updateTaskReasoningFromAgent } from './reasoning';
 import { store } from './core';
 import { codeProjects } from './projects';
@@ -13,6 +14,7 @@ import { createTask, updateTaskNotes } from './tasks';
 import { invoke } from '../lib/ipc';
 import { errMessage } from '../lib/log';
 import { IPC } from '../../electron/ipc/channels';
+import { parseEvidenceSubmission } from '../../electron/shared/evidence';
 import { resolveSkipPermissionsArgs } from '../../electron/shared/skip-permissions';
 import type { AgentDef, GitIgnoredEntry } from '../ipc/types';
 
@@ -243,7 +245,34 @@ export function startRemoteTaskHandlers(): () => void {
       }
     },
   );
+  const offSubmitEvidence = window.electron.ipcRenderer.on(
+    IPC.MCP_SubmitEvidenceRequest,
+    (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const req = data as GetNotesRequest & { payload: unknown };
+      try {
+        // Validated again here: the renderer is the boundary that stores it.
+        reply(req.reqId, true, submitEvidence(req.taskId, parseEvidenceSubmission(req.payload)));
+      } catch (error) {
+        reply(req.reqId, false, undefined, errMessage(error));
+      }
+    },
+  );
+  const offGetEvidence = window.electron.ipcRenderer.on(
+    IPC.MCP_GetEvidenceRequest,
+    (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const req = data as GetNotesRequest;
+      try {
+        reply(req.reqId, true, getEvidenceForAgent(req.taskId));
+      } catch (error) {
+        reply(req.reqId, false, undefined, errMessage(error));
+      }
+    },
+  );
   return () => {
+    offSubmitEvidence();
+    offGetEvidence();
     offReadReasoning();
     offUpdateReasoning();
     offReadMap();
