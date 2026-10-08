@@ -10,6 +10,7 @@ import { getUserDataDir } from '../user-data-dir.js';
 import {
   isValidSpId,
   SP_MAX_BATCH_IDS,
+  SP_MAX_NOTES_LENGTH,
   SP_MAX_TITLE_LENGTH,
 } from '../shared/super-productivity.js';
 import { createSpClient } from './client.js';
@@ -36,6 +37,19 @@ function boundedText(value: unknown, label: string, max: number): string {
   if (!text) throw new Error(`${label} must not be empty`);
   if (text.length > max) throw new Error(`${label} is too long`);
   return text;
+}
+
+function boundedNotes(value: unknown, label: string): string {
+  assertString(value, label);
+  if (value.length > SP_MAX_NOTES_LENGTH) throw new Error(`${label} is too long`);
+  return value;
+}
+
+function optionalBoundedNotes(value: unknown, label: string): string | undefined {
+  assertOptionalString(value, label);
+  if (value === undefined) return undefined;
+  if (value.length > SP_MAX_NOTES_LENGTH) throw new Error(`${label} is too long`);
+  return value;
 }
 
 export function registerSuperProductivityHandlers(): void {
@@ -72,6 +86,7 @@ export function registerSuperProductivityHandlers(): void {
   ipcMain.handle(IPC.SuperProductivityCreateTask, (_e, args: IpcArgs) =>
     client.createTask({
       title: boundedText(args?.title, 'title', SP_MAX_TITLE_LENGTH),
+      notes: optionalBoundedNotes(args?.notes, 'notes'),
       projectId: optionalSpId(args?.projectId, 'projectId'),
       parentId: optionalSpId(args?.parentId, 'parentId'),
     }),
@@ -95,6 +110,10 @@ export function registerSuperProductivityHandlers(): void {
       spId(args?.taskId, 'taskId'),
       boundedText(args?.title, 'title', SP_MAX_TITLE_LENGTH),
     ),
+  );
+
+  ipcMain.handle(IPC.SuperProductivityUpdateTaskNotes, (_e, args: IpcArgs) =>
+    client.updateTaskNotes(spId(args?.taskId, 'taskId'), boundedNotes(args?.notes, 'notes')),
   );
 
   ipcMain.handle(IPC.SuperProductivityCompleteTask, (_e, args: IpcArgs) =>

@@ -8,12 +8,18 @@ import { produce } from 'solid-js/store';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
 import type { Task } from './types';
-import { SP_MAX_TITLE_LENGTH, toSpTitle } from '../../electron/shared/super-productivity';
+import {
+  appendSpNote,
+  SP_MAX_TITLE_LENGTH,
+  toSpTitle,
+} from '../../electron/shared/super-productivity';
 import {
   armSpCompletion,
   disarmSpCompletion,
   fireSpCompletion,
   onTaskRenamed,
+  onTaskNotesChanged,
+  NOTES_SYNC_DEBOUNCE_MS,
   TITLE_REFRESH_MIN_MS,
   refreshSpConnection,
   spBanner,
@@ -72,7 +78,7 @@ function fakeSp(channel: string, args: Record<string, unknown> = {}): unknown {
         isDone: false,
         projectId: (args.projectId as string | undefined) ?? null,
         parentId: (args.parentId as string | undefined) ?? null,
-        notes: '',
+        notes: (args.notes as string | undefined) ?? '',
       };
       sp.tasks.set(task.id, task);
       return ok(task);
@@ -87,11 +93,17 @@ function fakeSp(channel: string, args: Record<string, unknown> = {}): unknown {
       task.title = args.title as string;
       return ok(null);
     }
+    case IPC.SuperProductivityUpdateTaskNotes: {
+      const task = sp.tasks.get(id);
+      if (!task) return missing;
+      task.notes = args.notes as string;
+      return ok(null);
+    }
     case IPC.SuperProductivityCompleteTask: {
       const task = sp.tasks.get(id);
       if (!task) return missing;
       task.isDone = true;
-      task.notes = args.note as string;
+      task.notes = appendSpNote(task.notes, args.note as string);
       return ok(null);
     }
     default:
@@ -601,5 +613,79 @@ describe('Super Productivity sync', () => {
     fireSpCompletion('a');
     await vi.advanceTimersByTimeAsync(0);
     expect(sp.tasks.get('sp-a')?.isDone).toBe(false);
+  });
+
+  it('creates the task with notes in Super Productivity when task has notes', async () => {
+    addTask('a', { notes: 'Existing notes on task' });
+    setStore('activeTaskId', 'a');
+    await settle(1_500);
+
+    expect(sp.creates).toEqual([
+      { title: 'Task a', notes: 'Existing notes on task', projectId: 'sp-proj' },
+    ]);
+    expect(store.tasks.a.superProductivity).toEqual({
+      taskId: 'sp-1',
+      syncedTitle: 'Task a',
+      syncedNotes: 'Existing notes on task',
+    });
+    expect(sp.tasks.get('sp-1')?.notes).toBe('Existing notes on task');
+  });
+
+  it('pushes notes changes made in Parallel Code after debounce', async () => {
+    addTask('a', {
+      notes: 'Initial notes',
+      superProductivity: { taskId: 'sp-a', syncedTitle: 'Task a', syncedNotes: 'Initial notes' },
+    });
+    spTask('sp-a', { notes: 'Initial notes' });
+
+    setStore('tasks', 'a', 'notes', 'Edited in Parallel Code');
+    onTaskNotesChanged('a');
+
+    // Before debounce fires
+    await vi.advanceTimersByTimeAsync(NOTES_SYNC_DEBOUNCE_MS - 100);
+    expect(sp.tasks.get('sp-a')?.notes).toBe('Initial notes');
+
+    // After debounce fires
+    await vi.advanceTimersByTimeAsync(150);
+    expect(sp.tasks.get('sp-a')?.notes).toBe('Edited in Parallel Code');
+    expect(store.tasks.a.superProductivity?.syncedNotes).toBe('Edited in Parallel Code');
+  });
+
+  it('flushes pending notes push when completing a task', async () => {
+    addTask('a', {
+      notes: 'Initial notes',
+      superProductivity: { taskId: 'sp-a', syncedTitle: 'Task a', syncedNotes: 'Initial notes' },
+    });
+    spTask('sp-a', { notes: 'Initial notes' });
+
+    setStore('tasks', 'a', 'notes', 'Final note before close');
+    onTaskNotesChanged('a');
+
+    armSpCompletion('a', { kind: 'closed' });
+    // Should have flushed immediately without waiting for debounce
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sp.tasks.get('sp-a')?.notes).toBe('Final note before close');
+
+    fireSpCompletion('a');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sp.tasks.get('sp-a')?.isDone).toBe(true);
+    expect(sp.tasks.get('sp-a')?.notes).toContain('Final note before close');
+    expect(sp.tasks.get('sp-a')?.notes).toContain('Closed in Parallel Code');
+  });
+
+  it('pulls notes changed in Super Productivity on focus evaluation', async () => {
+    addTask('a', {
+      notes: 'Old notes',
+      superProductivity: { taskId: 'sp-a', syncedTitle: 'Task a', syncedNotes: 'Old notes' },
+    });
+    spTask('sp-a', { notes: 'Updated remotely in Super Productivity' });
+
+    setStore('activeTaskId', 'a');
+    await settle(1_500);
+
+    expect(store.tasks.a.notes).toBe('Updated remotely in Super Productivity');
+    expect(store.tasks.a.superProductivity?.syncedNotes).toBe(
+      'Updated remotely in Super Productivity',
+    );
   });
 });

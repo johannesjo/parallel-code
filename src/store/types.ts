@@ -143,6 +143,8 @@ export interface SuperProductivityLink {
   taskId: string;
   /** Last title both apps agreed on — the base for the three-way title sync. */
   syncedTitle: string;
+  /** Last notes pushed to or pulled from Super Productivity. */
+  syncedNotes?: string;
 }
 
 export interface DocumentModelChoice {
@@ -612,6 +614,7 @@ export interface AppStore {
     prompt: string;
     projectId: string | null;
     name?: string;
+    notes?: string;
     baseBranch?: string;
     canvasSource?: CanvasTaskSource;
     /** Set when the form was opened from a Super Productivity task. */

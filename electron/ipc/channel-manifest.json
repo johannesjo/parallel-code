@@ -223,6 +223,7 @@
   "SuperProductivityGetTasks": "super_productivity_get_tasks",
   "SuperProductivityRenameTask": "super_productivity_rename_task",
   "SuperProductivityCompleteTask": "super_productivity_complete_task",
+  "SuperProductivityUpdateTaskNotes": "super_productivity_update_task_notes",
   "SuperProductivityConsumePendingOpen": "super_productivity_consume_pending_open",
   "SuperProductivityOpenTaskRequested": "super_productivity_open_task_requested"
 }

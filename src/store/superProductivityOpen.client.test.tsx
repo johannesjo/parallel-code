@@ -84,6 +84,7 @@ describe('open a Super Productivity task in Parallel Code', () => {
     expect(store.newTaskPrefillPrompt).toEqual({
       prompt: 'Fix login\n\nSteps to reproduce\n\nhttps://github.com/o/r/issues/7',
       name: 'Fix login',
+      notes: 'Steps to reproduce',
       projectId: 'proj',
       superProductivity: { taskId: 'sp-1', title: 'Fix login', projectId: 'sp-proj' },
     });
@@ -141,6 +142,21 @@ describe('open a Super Productivity task in Parallel Code', () => {
     expect(store.projects.find((p) => p.id === 'other')?.superProductivityProjectId).toBe(
       'sp-other',
     );
+  });
+
+  it('links the created task with initial notes', () => {
+    setStore('tasks', 'b', { id: 'b', name: 'Fix login', notes: 'Initial notes' } as Task);
+    linkNewTaskToSp(
+      'b',
+      { taskId: 'sp-9', title: 'Fix login', projectId: 'sp-other' },
+      'other',
+      'Initial notes',
+    );
+    expect(store.tasks.b.superProductivity).toEqual({
+      taskId: 'sp-9',
+      syncedTitle: 'Fix login',
+      syncedNotes: 'Initial notes',
+    });
   });
 
   it('opens nothing without a project, so no pre-fill is left behind', async () => {

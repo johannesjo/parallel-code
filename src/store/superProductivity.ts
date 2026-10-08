@@ -18,8 +18,10 @@ import { showNotification } from './notification';
 import {
   buildSpDoneNote,
   decideSpFocusAction,
+  resolveSpNotesSync,
   resolveSpTitleSync,
   SP_MAX_BATCH_IDS,
+  toSpNotes,
   toSpTitle,
   type SpBannerReason,
   type SpConnectionState,
@@ -125,6 +127,8 @@ export async function connectSuperProductivity(token: string): Promise<SpConnect
 
 export async function disconnectSuperProductivity(): Promise<void> {
   connectionGen++;
+  for (const timer of pendingNotesDebounce.values()) clearTimeout(timer);
+  pendingNotesDebounce.clear();
   await invoke(IPC.SuperProductivityClearToken);
   autoMapPending = false;
   setSpConnection('not_configured');
@@ -171,9 +175,18 @@ function linkedSpTaskIds(): Set<string> {
   return ids;
 }
 
-export function setSpLink(taskId: string, spTaskId: string, syncedTitle: string): void {
+export function setSpLink(
+  taskId: string,
+  spTaskId: string,
+  syncedTitle: string,
+  syncedNotes?: string,
+): void {
   if (!store.tasks[taskId]) return;
-  setStore('tasks', taskId, 'superProductivity', { taskId: spTaskId, syncedTitle });
+  setStore('tasks', taskId, 'superProductivity', {
+    taskId: spTaskId,
+    syncedTitle,
+    ...(syncedNotes !== undefined ? { syncedNotes } : {}),
+  });
 }
 
 function clearSpLink(taskId: string): void {
@@ -197,14 +210,16 @@ async function createSpTaskFor(taskId: string): Promise<string | null> {
   const task = store.tasks[taskId];
   if (!task) return null;
   const title = toSpTitle(task.name) || 'Parallel Code task';
+  const notes = task.notes ? toSpNotes(task.notes) : undefined;
   const create = async (placement: Record<string, string>) => {
     const res = await callSp<SpTaskSummary>(IPC.SuperProductivityCreateTask, {
       title,
+      ...(notes ? { notes } : {}),
       ...placement,
     });
     // Linked if the task is still here; the id is returned either way, so a
     // completion armed while this was in flight can still mark it done.
-    if (res.ok) setSpLink(taskId, res.value.id, res.value.title);
+    if (res.ok) setSpLink(taskId, res.value.id, res.value.title, notes);
     return res;
   };
   // Fall back when the parent or project no longer exists over there (or the
@@ -307,6 +322,76 @@ async function refreshLinkedTitles(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Notes
+
+export const NOTES_SYNC_DEBOUNCE_MS = 500;
+const pendingNotesDebounce = new Map<string, ReturnType<typeof setTimeout>>();
+
+function applyNotesSync(taskId: string, remoteNotes: string): void {
+  const task = store.tasks[taskId];
+  const link = task?.superProductivity;
+  if (!task || !link) return;
+  const action = resolveSpNotesSync(link.syncedNotes, task.notes, remoteNotes);
+  switch (action.kind) {
+    case 'none':
+      return;
+    case 'rebase':
+      setStore('tasks', taskId, 'superProductivity', 'syncedNotes', action.notes);
+      return;
+    case 'pull':
+      setStore('tasks', taskId, 'notes', action.notes);
+      setStore('tasks', taskId, 'superProductivity', 'syncedNotes', action.notes);
+      return;
+    case 'push':
+      void pushNotes(taskId);
+  }
+}
+
+export async function pushNotes(taskId: string): Promise<void> {
+  const timer = pendingNotesDebounce.get(taskId);
+  if (timer) {
+    clearTimeout(timer);
+    pendingNotesDebounce.delete(taskId);
+  }
+  const task = store.tasks[taskId];
+  const spTaskId = task?.superProductivity?.taskId;
+  if (!spTaskId || !task) return;
+  const notes = task.notes ?? '';
+  if (task.superProductivity?.syncedNotes === notes) return;
+  const res = await callSp<null>(IPC.SuperProductivityUpdateTaskNotes, {
+    taskId: spTaskId,
+    notes: toSpNotes(notes),
+  });
+  if (res.ok && store.tasks[taskId]?.superProductivity?.taskId === spTaskId) {
+    setStore('tasks', taskId, 'superProductivity', 'syncedNotes', notes);
+  }
+}
+
+/** Called after the user edits notes for a task in Parallel Code. */
+export function onTaskNotesChanged(taskId: string): void {
+  const task = store.tasks[taskId];
+  if (!isEnabled() || !task?.superProductivity) return;
+  if (task.superProductivity.syncedNotes === task.notes) return;
+  const existing = pendingNotesDebounce.get(taskId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    pendingNotesDebounce.delete(taskId);
+    void pushNotes(taskId);
+  }, NOTES_SYNC_DEBOUNCE_MS);
+  pendingNotesDebounce.set(taskId, timer);
+}
+
+export function flushPendingNotes(taskId?: string): void {
+  if (taskId) {
+    if (pendingNotesDebounce.has(taskId)) void pushNotes(taskId);
+  } else {
+    for (const tid of [...pendingNotesDebounce.keys()]) {
+      void pushNotes(tid);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tracking
 
 /** Bumped by every focus evaluation and every explicit start: an evaluation
@@ -342,6 +427,7 @@ async function evaluateFocus(taskId: string): Promise<void> {
     if (res.ok) {
       own = res.value;
       applyTitleSync(taskId, res.value.title);
+      applyNotesSync(taskId, res.value.notes);
     } else if (res.reason === 'not_found') {
       // Archived ("finish day") or deleted over there. Keep the link and ask:
       // the banner's button links a fresh task (trackTaskInSp).
@@ -448,6 +534,7 @@ export function armSpCompletion(
   taskId: string,
   input: { kind: 'merged' | 'closed'; linesAdded?: number; linesRemoved?: number },
 ): void {
+  flushPendingNotes(taskId);
   const task = store.tasks[taskId];
   const link = task?.superProductivity;
   const creating = link ? undefined : creatingLinks.get(taskId);
@@ -562,6 +649,8 @@ export function startSuperProductivitySync(windowFocused: Accessor<boolean>): ()
 
   const stop = () => {
     if (settleTimer) clearTimeout(settleTimer);
+    for (const timer of pendingNotesDebounce.values()) clearTimeout(timer);
+    pendingNotesDebounce.clear();
     focusSeq++; // drop evaluations still in flight
     dispose();
     if (stopActiveSync === stop) stopActiveSync = null;

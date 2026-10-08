@@ -240,9 +240,13 @@ function restoredCanvas(pt: PersistedTask): Pick<Task, 'canvasTabs' | 'canvasAct
 
 function restoreSuperProductivityLink(value: unknown): SuperProductivityLink | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { taskId, syncedTitle } = value as Record<string, unknown>;
+  const { taskId, syncedTitle, syncedNotes } = value as Record<string, unknown>;
   return isValidSpId(taskId) && typeof syncedTitle === 'string'
-    ? { taskId, syncedTitle }
+    ? {
+        taskId,
+        syncedTitle,
+        ...(typeof syncedNotes === 'string' ? { syncedNotes } : {}),
+      }
     : undefined;
 }
 

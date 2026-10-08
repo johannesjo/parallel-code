@@ -218,6 +218,7 @@ export function createSpClient(deps: SpClientDeps) {
 
     async createTask(input: {
       title: string;
+      notes?: string;
       projectId?: string;
       parentId?: string;
     }): Promise<SpResult<SpTaskSummary>> {
@@ -228,6 +229,7 @@ export function createSpClient(deps: SpClientDeps) {
         title: input.title,
         isIgnoreShortSyntax: true,
       };
+      if (typeof input.notes === 'string') body.notes = input.notes;
       if (input.parentId) body.parentId = input.parentId;
       else if (input.projectId) body.projectId = input.projectId;
       const res = await request('POST', '/tasks', body);
@@ -267,6 +269,13 @@ export function createSpClient(deps: SpClientDeps) {
       const res = await request('PATCH', `/tasks/${encodeURIComponent(taskId)}`, {
         title,
         isIgnoreShortSyntax: true,
+      });
+      return res.ok ? { ok: true, value: null } : res;
+    },
+
+    async updateTaskNotes(taskId: string, notes: string): Promise<SpResult<null>> {
+      const res = await request('PATCH', `/tasks/${encodeURIComponent(taskId)}`, {
+        notes,
       });
       return res.ok ? { ok: true, value: null } : res;
     },
