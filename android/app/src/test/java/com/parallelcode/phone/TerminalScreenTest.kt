@@ -108,18 +108,18 @@ class TerminalScreenTest {
     }
 
     @Test
-    fun retainsUpTo5000LinesOfHistory() {
+    fun retainsUpTo20000LinesOfHistory() {
         val s = screen(rows = 2)
-        // Feed 5,050 lines
-        for (i in 1..5050) {
+        // Feed 20,050 lines
+        for (i in 1..20050) {
             s.feed("L$i\r\n".toByteArray())
         }
         val lines = s.styledLines()
-        // Should keep 5000 history lines + 1 non-empty grid row (trailing blank row is trimmed)
-        assertEquals(5001, lines.size)
-        // Earliest line should be L50, since 1-49 were pruned past 5000
+        // Should keep 20,000 history lines + 1 non-empty grid row (trailing blank row is trimmed)
+        assertEquals(20001, lines.size)
+        // Earliest line should be L50, since 1-49 were pruned past 20,000
         val text = s.text()
-        assertTrue(text.contains("L5050"))
+        assertTrue(text.contains("L20050"))
         assertTrue(text.contains("L52"))
         assertEquals(false, text.contains("L40\n"))
     }

@@ -57,6 +57,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -73,6 +75,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -89,6 +92,18 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
@@ -112,6 +127,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -925,8 +941,6 @@ fun AgentScreen(
     client: RemoteClient,
     alwaysFollowOutput: Boolean,
     fitTerminalToPhone: Boolean,
-    quickReplies: List<String>,
-    sendQuickReplies: Boolean = false,
     promptHistory: PromptHistoryStore? = null,
     pageLabel: String? = null,
     nextNeedingYou: RemoteAgent? = null,
@@ -943,7 +957,6 @@ fun AgentScreen(
     var merging by remember { mutableStateOf(false) }
     var viewSize by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var terminalExpanded by rememberSaveable { mutableStateOf(false) }
-    var terminalZoom by rememberSaveable { mutableFloatStateOf(1f) }
     BackHandler(enabled = terminalExpanded) { terminalExpanded = false }
 
     // With "Fit the terminal to this phone" on and paired, the PTY takes this screen's size so
@@ -1022,6 +1035,11 @@ fun AgentScreen(
                         }
                     },
                     actions = {
+                        if (tab == AgentTab.TERMINAL && agent?.collapsed != true) {
+                            IconButton(onClick = { terminalExpanded = true }) {
+                                Icon(Icons.Filled.Fullscreen, contentDescription = "Expand terminal")
+                            }
+                        }
                         if (agent != null && state.canControl) {
                             TextButton(onClick = { merging = true }) {
                                 Text("Merge", fontWeight = FontWeight.SemiBold)
@@ -1059,48 +1077,6 @@ fun AgentScreen(
                             )
                         },
                     )
-                }
-            }
-            if (tab == AgentTab.TERMINAL) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Row {
-                        TextButton(
-                            onClick = { terminalZoom = (terminalZoom - 0.25f).coerceAtLeast(0.75f) },
-                            enabled = terminalZoom > 0.75f,
-                            modifier = Modifier.semantics { contentDescription = "Zoom out" },
-                        ) {
-                            Text("A−")
-                        }
-                        TextButton(
-                            onClick = { terminalZoom = 1f },
-                            modifier = Modifier.semantics { contentDescription = "Reset terminal zoom" },
-                        ) { Text("${(terminalZoom * 100).toInt()}%") }
-                        TextButton(
-                            onClick = { terminalZoom = (terminalZoom + 0.25f).coerceAtMost(2.5f) },
-                            enabled = terminalZoom < 2.5f,
-                            modifier = Modifier.semantics { contentDescription = "Zoom in" },
-                        ) {
-                            Text("A+")
-                        }
-                    }
-                    Row {
-                        // Jump straight to the next task waiting on you, as the phone web UI does.
-                        nextNeedingYou?.let { next ->
-                            TextButton(
-                                onClick = { onOpenTask(next.agentId) },
-                                modifier = Modifier.semantics {
-                                    contentDescription = "Next task needing you: ${next.taskName}"
-                                },
-                            ) { Text("Next task →") }
-                        }
-                        TextButton(onClick = { terminalExpanded = !terminalExpanded }) {
-                            Text(if (terminalExpanded) "Restore" else "Expand")
-                        }
-                    }
                 }
             }
             AnimatedContent(
@@ -1143,15 +1119,41 @@ fun AgentScreen(
                             }
                         }
                     } else {
-                        TerminalText(
-                            lines,
-                            buffer.screen.cols,
-                            Modifier.fillMaxSize(),
-                            alwaysFollow = alwaysFollowOutput,
-                            zoom = terminalZoom,
-                            fitToView = sizeTerminal,
-                            onViewSize = { cols, rows -> viewSize = cols to rows },
-                        )
+                        Box(Modifier.fillMaxSize()) {
+                            TerminalText(
+                                lines,
+                                buffer.screen.cols,
+                                Modifier.fillMaxSize(),
+                                alwaysFollow = alwaysFollowOutput,
+                                fitToView = sizeTerminal,
+                                onViewSize = { cols, rows -> viewSize = cols to rows },
+                            )
+                            // Jump straight to the next task waiting on you, as the phone web UI does.
+                            nextNeedingYou?.let { next ->
+                                TerminalPill(
+                                    "Next task →",
+                                    onClick = { onOpenTask(next.agentId) },
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(start = 16.dp, bottom = 12.dp)
+                                        .semantics { contentDescription = "Next task needing you: ${next.taskName}" },
+                                )
+                            }
+                            if (terminalExpanded) {
+                                IconButton(
+                                    onClick = { terminalExpanded = false },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(4.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Filled.FullscreenExit,
+                                        contentDescription = "Restore terminal layout",
+                                        tint = AppTheme.extra.textMuted,
+                                    )
+                                }
+                            }
+                        }
                     }
                     AgentTab.NOTES -> if (agent != null) {
                         NotesPane(agent.taskId, state.canControl, client, Modifier.fillMaxSize())
@@ -1185,8 +1187,6 @@ fun AgentScreen(
                 ReplyBox(
                     agentId = agentId,
                     compact = terminalExpanded,
-                    quickReplies = quickReplies,
-                    sendQuickReplies = sendQuickReplies,
                     working = agent?.running == true &&
                         (agent.attention == "active" || agent.attention == "shell_busy"),
                     promptHistory = promptHistory,
@@ -1302,7 +1302,6 @@ private fun TerminalText(
     cols: Int,
     modifier: Modifier,
     alwaysFollow: Boolean,
-    zoom: Float,
     fitToView: Boolean,
     onViewSize: (cols: Int, rows: Int) -> Unit,
 ) {
@@ -1317,6 +1316,9 @@ private fun TerminalText(
     var follow by remember { mutableStateOf(true) }
     val isNearBottom by remember { derivedStateOf { !list.canScrollForward } }
     var hasNewOutputWhileScrolled by remember { mutableStateOf(false) }
+    // Pinching magnifies the whole terminal, as a picture would, rather than reflowing its text.
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
 
     // Follow output only while parked at the bottom, decided where each scroll ends. Deciding at
     // the start instead kept follow on for a scroll that began at the bottom (the usual case), so
@@ -1342,7 +1344,41 @@ private fun TerminalText(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(palette.background)),
+            .background(Color(palette.background))
+            .clipToBounds()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    do {
+                        // The Initial pass runs before the list's own scrolling, so two fingers
+                        // zoom and pan here while one finger still scrolls the history.
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val pressed = event.changes.filter { it.pressed }
+                        if (pressed.size >= 2) {
+                            val next = (zoom * event.calculateZoom()).coerceIn(1f, MAX_TERMINAL_ZOOM)
+                            val centroid = event.calculateCentroid(useCurrent = true)
+                            pan = clampPan(
+                                centroid - (centroid - pan) * (next / zoom) + event.calculatePan(),
+                                next,
+                                size.width.toFloat(),
+                                size.height.toFloat(),
+                            )
+                            zoom = next
+                            event.changes.forEach { it.consume() }
+                        } else if (pressed.size == 1 && zoom > 1f) {
+                            // The list only scrolls vertically: one finger pans sideways too.
+                            val dx = pressed[0].positionChange().x
+                            pan = clampPan(pan + Offset(dx, 0f), zoom, size.width.toFloat(), size.height.toFloat())
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(onDoubleTap = {
+                    zoom = 1f
+                    pan = Offset.Zero
+                })
+            },
     ) {
         // The PTY keeps the desktop's size, which rarely matches the phone. Size the font so its
         // columns span the screen width (within readable bounds), wrap lines still too wide at the
@@ -1356,10 +1392,9 @@ private fun TerminalText(
             measurer.measure("0".repeat(10), TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp)).size.width / 10f
         }
         val autoFont = (10f * textWidthPx / (cols.coerceAtLeast(1) * charPxAt10)).coerceIn(8f, 14f).sp
-        val phoneFont = TERMINAL_FONT * zoom
-        val fontSize = if (fitToView) phoneFont else autoFont * zoom
+        val phoneFont = TERMINAL_FONT
+        val fontSize = if (fitToView) phoneFont else autoFont
 
-        // Offer the dimensions at the selected font so zoom also resizes a fitted PTY.
         val viewPaddingPx = with(density) { 16.dp.roundToPx() }
         val viewHeightPx = constraints.maxHeight
         LaunchedEffect(textWidthPx, viewHeightPx, phoneFont, density) {
@@ -1374,7 +1409,15 @@ private fun TerminalText(
 
         LazyColumn(
             state = list,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    transformOrigin = TransformOrigin(0f, 0f)
+                    scaleX = zoom
+                    scaleY = zoom
+                    translationX = pan.x
+                    translationY = pan.y
+                },
             contentPadding = PaddingValues(horizontal = TERMINAL_PADDING_H, vertical = 8.dp),
             verticalArrangement = Arrangement.Bottom,
         ) {
@@ -1399,6 +1442,20 @@ private fun TerminalText(
                 .fillMaxHeight()
                 .padding(end = 2.dp, top = 4.dp, bottom = 4.dp),
         )
+
+        if (zoom > 1f) {
+            TerminalPill(
+                "${(zoom * 100).roundToInt()}% · Reset",
+                onClick = {
+                    zoom = 1f
+                    pan = Offset.Zero
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 8.dp)
+                    .semantics { contentDescription = "Reset terminal zoom" },
+            )
+        }
 
         // Floating jump-to-bottom / new-output pill button
         AnimatedVisibility(
@@ -1451,6 +1508,37 @@ private fun TerminalText(
 
 private val TERMINAL_PADDING_H = 12.dp
 private val TERMINAL_FONT = 11.sp
+private const val MAX_TERMINAL_ZOOM = 4f
+
+/**
+ * Keeps a terminal magnified by [zoom] (from its top-left corner) covering its whole view, so a pan
+ * never reveals empty space past an edge.
+ */
+internal fun clampPan(pan: Offset, zoom: Float, width: Float, height: Float): Offset = Offset(
+    pan.x.coerceIn(width * (1f - zoom), 0f),
+    pan.y.coerceIn(height * (1f - zoom), 0f),
+)
+
+/** A small floating button over the terminal, quiet like the rest of the routine controls. */
+@Composable
+private fun TerminalPill(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, AppTheme.extra.border),
+        shadowElevation = 6.dp,
+        modifier = modifier,
+    ) {
+        Text(
+            text,
+            Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = AppTheme.extra.textPrimary,
+        )
+    }
+}
 
 @Composable
 private fun TerminalVerticalScrollbar(
@@ -1554,8 +1642,6 @@ private fun arrowKeyFor(label: String): Pair<ImageVector, String>? = when (label
 private fun ReplyBox(
     agentId: String,
     compact: Boolean = false,
-    quickReplies: List<String>,
-    sendQuickReplies: Boolean = false,
     working: Boolean = false,
     promptHistory: PromptHistoryStore? = null,
     needsInput: Boolean = false,
@@ -1604,9 +1690,6 @@ private fun ReplyBox(
                         }
                     }
                 }
-            }
-            if (!compact) QuickReplies(quickReplies, enabled = !busy) {
-                if (sendQuickReplies) run { send(it, false) } else draft = appendToDraft(draft, it)
             }
             AnimatedVisibility(
                 visible = error != null,

@@ -567,8 +567,6 @@ private fun PhoneApp(model: PhoneViewModel) {
                         client = model.client,
                         alwaysFollowOutput = alwaysFollowOutput,
                         fitTerminalToPhone = fitTerminalToPhone && active,
-                        quickReplies = quickReplies,
-                        sendQuickReplies = sendQuickReplies,
                         promptHistory = model.promptHistory,
                         pageLabel = pageLabel,
                         nextNeedingYou = nextTaskNeedingYou(agents, agentId),

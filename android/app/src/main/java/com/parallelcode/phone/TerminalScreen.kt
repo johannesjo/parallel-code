@@ -402,6 +402,10 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
     }
 
     private companion object {
-        const val MAX_HISTORY = 5000
+        /**
+         * Lines kept above the screen. Opening a terminal replays the desktop's history, up to its
+         * 10,000 lines (REMOTE_SCROLLBACK_LINES), and a terminal left open keeps growing past that.
+         */
+        const val MAX_HISTORY = 20_000
     }
 }
