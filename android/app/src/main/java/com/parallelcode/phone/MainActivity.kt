@@ -541,7 +541,7 @@ private fun PhoneApp(model: PhoneViewModel) {
                 val sendQuickReplies by model.sendQuickReplies.collectAsState()
                 val fitTerminalToPhone by model.fitTerminalToPhone.collectAsState()
                 // The tasks in the order the list shows them: swipe sideways to move between them.
-                val pages = remember(agents) { agents.filter { !it.collapsed } + agents.filter { it.collapsed } }
+                val pages = remember(agents) { taskListOrder(agents) }
                 val openIndex = pages.indexOfFirst { it.agentId == currentScreen.agentId }
 
                 @Composable
@@ -571,6 +571,8 @@ private fun PhoneApp(model: PhoneViewModel) {
                         sendQuickReplies = sendQuickReplies,
                         promptHistory = model.promptHistory,
                         pageLabel = pageLabel,
+                        nextNeedingYou = nextTaskNeedingYou(agents, agentId),
+                        onOpenTask = { screenKey = "agent:$it" },
                         onBack = { screenKey = "agents" },
                         onPair = { screenKey = "pair" },
                     )
@@ -582,6 +584,11 @@ private fun PhoneApp(model: PhoneViewModel) {
                 } else {
                     val pager = rememberPagerState(initialPage = openIndex) { pages.size }
                     val currentPages by rememberUpdatedState(pages)
+                    // Opening another task without swiping (Next task, a notification) turns the
+                    // pager to it. A swipe has already settled there, so it does nothing then.
+                    LaunchedEffect(pager, openIndex) {
+                        if (pager.currentPage != openIndex) pager.scrollToPage(openIndex)
+                    }
                     LaunchedEffect(pager) {
                         snapshotFlow { pager.settledPage }.collect { page ->
                             // Only a swipe moves between tasks. This page stays composed while it

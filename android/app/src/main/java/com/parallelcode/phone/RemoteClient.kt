@@ -531,7 +531,11 @@ class RemoteClient(
     }
 
     /** Type into an agent's terminal; `submit` presses Enter once the text has landed. */
-    suspend fun sendInput(agentId: String, data: String, submit: Boolean) {
+    /**
+     * Types [data] into the agent's terminal. A [prefixKey] (such as `!` for an agent's shell mode)
+     * is typed by the desktop in a write of its own first, so the TUI reads it as a keystroke.
+     */
+    suspend fun sendInput(agentId: String, data: String, submit: Boolean, prefixKey: String? = null) {
         if (data.length > MAX_INPUT_LENGTH) {
             throw IOException("This message is too long. Shorten it and try again.")
         }
@@ -540,7 +544,8 @@ class RemoteClient(
                 .put("type", "input")
                 .put("agentId", agentId)
                 .put("data", data)
-                .put("submit", submit),
+                .put("submit", submit)
+                .apply { if (prefixKey != null) put("prefixKey", prefixKey) },
         )
     }
 

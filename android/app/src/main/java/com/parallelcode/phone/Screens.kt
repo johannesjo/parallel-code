@@ -367,6 +367,11 @@ fun AgentsScreen(
     val scope = rememberCoroutineScope()
     val activeAgents = remember(agents) { agents.filter { !it.collapsed } }
     val minimizedAgents = remember(agents) { agents.filter { it.collapsed } }
+    var search by rememberSaveable { mutableStateOf("") }
+    var filterKey by rememberSaveable { mutableStateOf(TaskFilter.ALL.key) }
+    val filter = TaskFilter.fromKey(filterKey)
+    val matchingSearch = remember(activeAgents, search) { activeAgents.filter { matchesSearch(it, search) } }
+    val groups = remember(matchingSearch, filter) { groupTasks(matchingSearch.filter(filter::matches)) }
     val showHostSwitch = computers.size > 1
     val hostLabel = computers.firstOrNull { it.baseUrl == host }?.label
         ?: host.substringAfter("://")
@@ -559,8 +564,32 @@ fun AgentsScreen(
                         }
                     }
                 }
-                items(activeAgents, key = { it.agentId }) { agent ->
-                    AgentCard(agent, onOpen, modifier = Modifier.animateItem())
+                if (activeAgents.isNotEmpty()) {
+                    item(key = "task-filters") {
+                        TaskSearchAndFilters(
+                            search = search,
+                            onSearch = { search = it },
+                            filter = filter,
+                            onFilter = { filterKey = it.key },
+                            countFor = { option -> matchingSearch.count(option::matches) },
+                        )
+                    }
+                    if (groups.isEmpty()) {
+                        item(key = "no-matching-tasks") {
+                            NoMatchingTasks(search, filter) {
+                                search = ""
+                                filterKey = TaskFilter.ALL.key
+                            }
+                        }
+                    }
+                }
+                groups.forEach { (group, groupAgents) ->
+                    item(key = "group:${group.name}") {
+                        TaskGroupHeader(group, groupAgents.size, Modifier.animateItem())
+                    }
+                    items(groupAgents, key = { it.agentId }) { agent ->
+                        AgentCard(agent, onOpen, modifier = Modifier.animateItem())
+                    }
                 }
             }
         }
@@ -900,6 +929,8 @@ fun AgentScreen(
     sendQuickReplies: Boolean = false,
     promptHistory: PromptHistoryStore? = null,
     pageLabel: String? = null,
+    nextNeedingYou: RemoteAgent? = null,
+    onOpenTask: (agentId: String) -> Unit = {},
     onBack: () -> Unit,
     onPair: () -> Unit,
 ) {
@@ -1056,8 +1087,19 @@ fun AgentScreen(
                             Text("A+")
                         }
                     }
-                    TextButton(onClick = { terminalExpanded = !terminalExpanded }) {
-                        Text(if (terminalExpanded) "Restore" else "Expand")
+                    Row {
+                        // Jump straight to the next task waiting on you, as the phone web UI does.
+                        nextNeedingYou?.let { next ->
+                            TextButton(
+                                onClick = { onOpenTask(next.agentId) },
+                                modifier = Modifier.semantics {
+                                    contentDescription = "Next task needing you: ${next.taskName}"
+                                },
+                            ) { Text("Next task →") }
+                        }
+                        TextButton(onClick = { terminalExpanded = !terminalExpanded }) {
+                            Text(if (terminalExpanded) "Restore" else "Expand")
+                        }
                     }
                 }
             }
@@ -1148,9 +1190,13 @@ fun AgentScreen(
                     working = agent?.running == true &&
                         (agent.attention == "active" || agent.attention == "shell_busy"),
                     promptHistory = promptHistory,
-                    send = { draft ->
+                    needsInput = agent?.attention == "needs_input",
+                    sendsLineBreaksAsSpaces = !buffer.screen.bracketedPaste,
+                    send = { draft, shell ->
                         val data = messageForTerminal(draft, buffer.screen.bracketedPaste)
-                        if (data.isNotEmpty()) client.sendInput(agentId, data, submit = true)
+                        if (data.isNotEmpty()) {
+                            client.sendInput(agentId, data, submit = true, prefixKey = if (shell) "!" else null)
+                        }
                     },
                     sendKey = { client.sendInput(agentId, it, submit = false) },
                 )
@@ -1512,12 +1558,17 @@ private fun ReplyBox(
     sendQuickReplies: Boolean = false,
     working: Boolean = false,
     promptHistory: PromptHistoryStore? = null,
-    send: suspend (String) -> Unit,
+    needsInput: Boolean = false,
+    sendsLineBreaksAsSpaces: Boolean = false,
+    send: suspend (text: String, shell: Boolean) -> Unit,
     sendKey: suspend (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     var draft by rememberSaveable { mutableStateOf("") }
+    // As in the desktop TUI and the phone web UI, a `!` typed into an empty reply switches to the
+    // agent's shell: the desktop types the `!` as its own keystroke before the command.
+    var shellMode by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showHistory by remember { mutableStateOf(false) }
@@ -1555,7 +1606,7 @@ private fun ReplyBox(
                 }
             }
             if (!compact) QuickReplies(quickReplies, enabled = !busy) {
-                if (sendQuickReplies) run { send(it) } else draft = appendToDraft(draft, it)
+                if (sendQuickReplies) run { send(it, false) } else draft = appendToDraft(draft, it)
             }
             AnimatedVisibility(
                 visible = error != null,
@@ -1564,12 +1615,40 @@ private fun ReplyBox(
             ) {
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
+            if (sendsLineBreaksAsSpaces && '\n' in draft) {
+                Text(
+                    "This terminal sends line breaks as spaces.",
+                    color = AppTheme.extra.textMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(
                     value = draft,
-                    onValueChange = { draft = it },
+                    onValueChange = {
+                        // Only a typed bang switches; a pasted or dictated draft stays text.
+                        if (it == "!" && draft.isEmpty() && !shellMode) shellMode = true else draft = it
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Reply to agent", color = AppTheme.extra.textSubtle) },
+                    placeholder = {
+                        Text(
+                            when {
+                                shellMode -> "Shell command"
+                                needsInput -> "Reply to agent"
+                                else -> "Message agent"
+                            },
+                            color = AppTheme.extra.textSubtle,
+                        )
+                    },
+                    leadingIcon = if (shellMode) {
+                        {
+                            TextButton(
+                                onClick = { shellMode = false },
+                                enabled = !busy,
+                                modifier = Modifier.semantics { contentDescription = "Shell command mode. Tap to message the agent instead." },
+                            ) { Text("!", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold) }
+                        }
+                    } else null,
                     minLines = if (compact) 1 else 2,
                     maxLines = if (compact) 3 else 6,
                     enabled = !busy,
@@ -1633,10 +1712,12 @@ private fun ReplyBox(
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 val text = draft
+                                val shell = shellMode
                                 run {
-                                    send(text)
+                                    send(text, shell)
                                     promptHistory?.record(agentId, text)
                                     draft = ""
+                                    shellMode = false
                                 }
                             },
                         ) { Text("Send", fontWeight = FontWeight.Bold) }
