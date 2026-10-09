@@ -115,6 +115,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -136,6 +137,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -945,6 +948,7 @@ fun AgentScreen(
     pageLabel: String? = null,
     nextNeedingYou: RemoteAgent? = null,
     onOpenTask: (agentId: String) -> Unit = {},
+    onZoomedChange: (Boolean) -> Unit = {},
     onBack: () -> Unit,
     onPair: () -> Unit,
 ) {
@@ -958,6 +962,8 @@ fun AgentScreen(
     var viewSize by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var terminalExpanded by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = terminalExpanded) { terminalExpanded = false }
+    // A task minimized on the desktop shows no terminal, so nothing would offer the way back.
+    LaunchedEffect(agent?.collapsed) { if (agent?.collapsed == true) terminalExpanded = false }
 
     // With "Fit the terminal to this phone" on and paired, the PTY takes this screen's size so
     // full-screen TUIs fill the phone; leaving
@@ -1127,6 +1133,7 @@ fun AgentScreen(
                                 alwaysFollow = alwaysFollowOutput,
                                 fitToView = sizeTerminal,
                                 onViewSize = { cols, rows -> viewSize = cols to rows },
+                                onZoomedChange = onZoomedChange,
                             )
                             // Jump straight to the next task waiting on you, as the phone web UI does.
                             nextNeedingYou?.let { next ->
@@ -1304,6 +1311,7 @@ private fun TerminalText(
     alwaysFollow: Boolean,
     fitToView: Boolean,
     onViewSize: (cols: Int, rows: Int) -> Unit,
+    onZoomedChange: (Boolean) -> Unit = {},
 ) {
     // The terminal follows the active look, as it does on the desktop: its own ANSI
     // set over the look's panel background.
@@ -1319,6 +1327,11 @@ private fun TerminalText(
     // Pinching magnifies the whole terminal, as a picture would, rather than reflowing its text.
     var zoom by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
+    // A zoomed terminal pans sideways under one finger, so the task pager must not swipe meanwhile.
+    val zoomed = zoom > 1f
+    val currentOnZoomedChange by rememberUpdatedState(onZoomedChange)
+    LaunchedEffect(zoomed) { currentOnZoomedChange(zoomed) }
+    DisposableEffect(Unit) { onDispose { currentOnZoomedChange(false) } }
 
     // Follow output only while parked at the bottom, decided where each scroll ends. Deciding at
     // the start instead kept follow on for a scroll that began at the bottom (the usual case), so
@@ -1651,7 +1664,13 @@ private fun ReplyBox(
 ) {
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
-    var draft by rememberSaveable { mutableStateOf("") }
+    // The TextFieldValue overload: the String one skips an edit that repeats one it was refused,
+    // so a second `!` (re-entering shell mode, or `!!`) would be dropped.
+    var field by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
+    val draft = field.text
+    fun setDraft(text: String) {
+        field = TextFieldValue(text, TextRange(text.length))
+    }
     // As in the desktop TUI and the phone web UI, a `!` typed into an empty reply switches to the
     // agent's shell: the desktop types the `!` as its own keystroke before the command.
     var shellMode by rememberSaveable { mutableStateOf(false) }
@@ -1707,10 +1726,15 @@ private fun ReplyBox(
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(
-                    value = draft,
+                    value = field,
                     onValueChange = {
                         // Only a typed bang switches; a pasted or dictated draft stays text.
-                        if (it == "!" && draft.isEmpty() && !shellMode) shellMode = true else draft = it
+                        if (it.text == "!" && draft.isEmpty() && !shellMode) {
+                            shellMode = true
+                            field = TextFieldValue()
+                        } else {
+                            field = it
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = {
@@ -1751,7 +1775,7 @@ private fun ReplyBox(
                     VoiceInputButton(
                         enabled = !busy,
                         modifier = Modifier.fillMaxHeight(),
-                    ) { draft = appendToDraft(draft, it) }
+                    ) { setDraft(appendToDraft(draft, it)) }
                     if (promptHistory != null) {
                         OutlinedButton(
                             onClick = { showHistory = true },
@@ -1799,7 +1823,7 @@ private fun ReplyBox(
                                 run {
                                     send(text, shell)
                                     promptHistory?.record(agentId, text)
-                                    draft = ""
+                                    setDraft("")
                                     shellMode = false
                                 }
                             },
@@ -1812,7 +1836,7 @@ private fun ReplyBox(
                 PromptHistoryDialog(
                     history = history,
                     onPick = {
-                        draft = appendToDraft(draft, it)
+                        setDraft(appendToDraft(draft, it))
                         showHistory = false
                     },
                     onDismiss = { showHistory = false },
