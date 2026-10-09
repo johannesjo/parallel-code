@@ -5,9 +5,18 @@ import { HoverHint } from './HoverHint';
 import { askCodeModelLabel } from './ask-code-label';
 
 const HEADINGS: Record<UnderstandingTourKind, string> = {
-  plan: 'Guided tour of this document',
+  plan: 'Guided tour of this plan',
   file: 'Guided tour of this file',
+  document: 'Guided tour of this document',
   agent: 'Tour from the agent',
+};
+
+/** What an idle button's tour will cover; agent tours are written, not generated. */
+const IDLE_BODIES: Record<Exclude<UnderstandingTourKind, 'agent'>, string> = {
+  plan: 'A handful of cards on what this plan proposes: the gist, the key decisions, what it leaves for you to decide, and its risks. About a minute of reading.',
+  document:
+    'A handful of cards on what this document is, what it claims or decides, and what it asks of you. About a minute of reading.',
+  file: 'A handful of cards on what this file is, how it works and what to watch out for. It reads the file and its direct imports.',
 };
 
 export interface TourHintText {
@@ -43,10 +52,7 @@ export function tourHintText(input: {
     };
   return {
     heading,
-    body:
-      input.kind === 'plan'
-        ? 'A handful of cards on what this document proposes: the gist, the key decisions, trade-offs and risks. About a minute of reading.'
-        : 'A handful of cards on what this file is, how it works and what to watch out for. It reads the file and its direct imports.',
+    body: IDLE_BODIES[input.kind],
     action: 'Generates in the background; a notification tells you when it is ready.',
   };
 }

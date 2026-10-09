@@ -39,6 +39,11 @@ export const TOUR_CARD_LIMITS = {
   refs: 6,
   questions: 2,
   question: 140,
+  /** A verbatim excerpt of the plan or document a card's claim rests on. */
+  source: 200,
+  /** Section headings a plan or document tour deliberately left out. */
+  omitted: 4,
+  omittedItem: 120,
   /** Each of a comparison's two sides. */
   comparisonLabel: 30,
   comparisonText: 240,
@@ -70,13 +75,15 @@ const CARD_JSON_OVERHEAD_CHARS = 200;
  */
 export const UNDERSTANDING_MAX_OUTPUT_CHARS =
   (TOUR_CARD_LIMITS.maxCards + 1) *
-  (toleratedCap(TOUR_CARD_LIMITS.label) +
-    toleratedCap(TOUR_CARD_LIMITS.title) +
-    toleratedCap(TOUR_CARD_LIMITS.body) +
-    toleratedCap(TOUR_CARD_LIMITS.whyItMatters) +
-    toleratedCap(TOUR_CARD_LIMITS.mermaidDiagram) +
-    2 *
-      (toleratedCap(TOUR_CARD_LIMITS.comparisonLabel) +
-        toleratedCap(TOUR_CARD_LIMITS.comparisonText)) +
-    TOUR_CARD_LIMITS.questions * (TOUR_CARD_LIMITS.question + 3) +
-    CARD_JSON_OVERHEAD_CHARS);
+    (toleratedCap(TOUR_CARD_LIMITS.label) +
+      toleratedCap(TOUR_CARD_LIMITS.title) +
+      toleratedCap(TOUR_CARD_LIMITS.body) +
+      toleratedCap(TOUR_CARD_LIMITS.whyItMatters) +
+      toleratedCap(TOUR_CARD_LIMITS.mermaidDiagram) +
+      2 *
+        (toleratedCap(TOUR_CARD_LIMITS.comparisonLabel) +
+          toleratedCap(TOUR_CARD_LIMITS.comparisonText)) +
+      TOUR_CARD_LIMITS.questions * (TOUR_CARD_LIMITS.question + 3) +
+      toleratedCap(TOUR_CARD_LIMITS.source) +
+      CARD_JSON_OVERHEAD_CHARS) +
+  TOUR_CARD_LIMITS.omitted * (TOUR_CARD_LIMITS.omittedItem + 3);

@@ -30,7 +30,10 @@ import { useFocusRegistration } from '../lib/focus-registration';
 import { openFileInEditor } from '../lib/shell';
 import { errMessage } from '../lib/log';
 import type { CanvasTab, Task } from '../store/types';
-import type { UnderstandingTourController } from '../lib/create-understanding-tour';
+import {
+  documentTourKind,
+  type UnderstandingTourController,
+} from '../lib/create-understanding-tour';
 import { TOUR_MIN_DOCUMENT_CHARS } from '../../electron/shared/understanding-limits';
 import { ConfirmDialog } from './ConfirmDialog';
 import { CanvasFilePicker } from './CanvasFilePicker';
@@ -275,6 +278,7 @@ export function TaskCanvasPanel(props: TaskCanvasPanelProps) {
           onOpenInDefaultEditor={openDefaultEditor}
           understanding={props.understanding}
           onTakeTour={activeDocumentIsLong() ? props.onTakeTour : undefined}
+          tourKind={(path) => documentTourKind(props.task, path)}
         />
         <Show when={pickerOpen()}>
           <CanvasFilePicker

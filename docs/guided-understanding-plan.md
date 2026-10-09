@@ -2,6 +2,8 @@
 
 **Status: implemented.** Implementation plan for the Guided Understanding vision: short, visual, interactive explanations of a plan or a piece of code, consumable in roughly 30 seconds to 2 minutes, with dynamic branching for depth.
 
+Follow-up: [tour-polish-plan.md](tour-polish-plan.md) adds document tours for canvas Markdown, verified source quotes and omitted sections for plan and document tours.
+
 ## 1. Outcome and scope
 
 Ship one new experience, the **Understanding Tour**, reachable from two contextual entry points:

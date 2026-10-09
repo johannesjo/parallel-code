@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   GIST_LABEL,
+  groundBranch,
+  groundTour,
   parseAgentTour,
   parseTourBranch,
   parseUnderstandingTour,
@@ -311,5 +313,58 @@ describe('parseTourBranch', () => {
 
   it('rejects a non-object response', () => {
     expect(() => parseTourBranch('[1]', 0, question)).toThrow('not a JSON object');
+  });
+});
+
+describe('groundTour', () => {
+  const text = '# Plan\n\n## Approach\n\nWe keep the buffer before IPC.\n\n## Appendix\n\nTables.';
+  const quoted = { ...card, source: 'We keep  the buffer\nbefore IPC.' };
+  const invented = { ...card, title: 'Invented', source: 'We remove the buffer entirely.' };
+
+  function textTour(kind: 'plan' | 'document' | 'file', extra: Record<string, unknown> = {}) {
+    return parseUnderstandingTour(
+      JSON.stringify({ gist, cards: [quoted, invented], ...extra }),
+      kind,
+      'plan.md',
+    );
+  }
+
+  it('keeps quotes found in the text, as one line, and drops the rest', () => {
+    const tour = groundTour(textTour('document'), text);
+    expect(tour.cards[1].source).toBe('We keep the buffer before IPC.');
+    expect(tour.cards[2].source).toBeUndefined();
+    expect(tour.cards[2].title).toBe('Invented');
+  });
+
+  it('keeps only omitted entries that name a heading of the text', () => {
+    const tour = groundTour(
+      textTour('plan', { omitted: ['appendix', 'Security review', 42, 'Approach'] }),
+      text,
+    );
+    expect(tour.omitted).toEqual(['appendix', 'Approach']);
+    const none = groundTour(textTour('plan', { omitted: ['Nothing real'] }), text);
+    expect(none).not.toHaveProperty('omitted');
+  });
+
+  it('strips quotes and omissions from tours without one source text', () => {
+    const tour = groundTour(textTour('file', { omitted: ['Appendix'] }), text);
+    expect(tour.cards.every((entry) => entry.source === undefined)).toBe(true);
+    expect(tour).not.toHaveProperty('omitted');
+  });
+
+  it('checks follow-up answers the same way', () => {
+    const branch = parseTourBranch(JSON.stringify({ cards: [quoted, invented] }), 1, 'Why?');
+    const grounded = groundBranch(branch, 'plan', text);
+    expect(grounded.cards.map((entry) => entry.source)).toEqual([
+      'We keep the buffer before IPC.',
+      undefined,
+    ]);
+    const agent = groundBranch(branch, 'agent', text);
+    expect(agent.cards.every((entry) => entry.source === undefined)).toBe(true);
+  });
+
+  it('never lets an agent tour carry a quote', () => {
+    const tour = parseAgentTour({ subject: 'x', gist, cards: [quoted] });
+    expect(tour.cards[1].source).toBeUndefined();
   });
 });

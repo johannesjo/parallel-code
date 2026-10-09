@@ -4701,6 +4701,39 @@ html[data-look='islands-light'] .window-title-icon {
   line-height: 1.4;
 }
 
+/* Evidence on demand: a quiet disclosure, not a second body. */
+.understanding-source {
+  margin-top: 14px;
+}
+
+.understanding-source > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--fg-muted);
+  font-family: var(--font-ui);
+  font-size: 11px;
+}
+
+.understanding-source > summary:hover {
+  color: var(--fg);
+}
+
+.understanding-source > blockquote {
+  margin: 8px 0 0;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.understanding-omitted {
+  margin: 22px 0 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 /* The card's tone appears once, as the rule beside the consequence. */
 .understanding-why {
   margin-top: 22px;

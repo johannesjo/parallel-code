@@ -72,6 +72,7 @@ import { createEslintQualityFindingProvider } from '../lib/eslint-quality-findin
 import { createChangeTour } from '../lib/create-change-tour';
 import {
   createUnderstandingTour,
+  documentTourKind,
   planTourSubject,
   tourInputSubject,
   type UnderstandingTourInput,
@@ -292,8 +293,17 @@ export function TaskPanel(props: TaskPanelProps) {
       worktreePath: props.task.worktreePath,
       filePath,
     });
-  /** A document open on the canvas is read fresh, so an edited file gets a new tour. */
+  /**
+   * A document open on the canvas is read fresh, so an edited file gets a new
+   * tour. The task's own plan takes the plan tour with the same text the notes
+   * button sends, so switching between the two never regenerates it.
+   */
   const openDocumentTour = (path: string) => {
+    const kind = documentTourKind(props.task, path);
+    if (kind === 'plan' && props.task.planContent) {
+      openPlanTour();
+      return;
+    }
     const { worktreePath, name: taskName } = props.task;
     void invoke<DocumentSnapshot>(IPC.ReadDocument, {
       projectRoot: worktreePath,
@@ -301,13 +311,12 @@ export function TaskPanel(props: TaskPanelProps) {
     })
       .then((snapshot) => {
         if (snapshot.missing) throw new Error('the file is not in the worktree');
-        startOrOpenTour({
-          kind: 'plan',
-          taskName,
-          worktreePath,
-          planContent: snapshot.content,
-          subject: path,
-        });
+        const content = snapshot.content;
+        startOrOpenTour(
+          kind === 'plan'
+            ? { kind, taskName, worktreePath, planContent: content, subject: path }
+            : { kind, taskName, worktreePath, content, subject: path },
+        );
       })
       .catch((error: unknown) => showNotification(`Could not read ${path}: ${errMessage(error)}`));
   };

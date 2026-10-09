@@ -26,6 +26,8 @@ interface CanvasTabStripProps {
   /** Both present: the open document gets a Take Tour button. */
   understanding?: UnderstandingTourController;
   onTakeTour?: (path: string) => void;
+  /** Which tour the open document gets: the task's plan or any other document. */
+  tourKind?: (path: string) => 'plan' | 'document';
 }
 
 /** What the "+" menu offers. */
@@ -175,7 +177,7 @@ export function CanvasTabStrip(props: CanvasTabStripProps) {
             <UnderstandButton
               label="Take Tour"
               tour={target().tour}
-              kind="plan"
+              kind={props.tourKind?.(target().path) ?? 'document'}
               subject={target().path}
               onClick={() => target().onTakeTour(target().path)}
               class="btn-secondary review-plan-btn canvas-tour-btn"

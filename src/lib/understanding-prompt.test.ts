@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   GO_DEEPER_QUESTION,
+  buildDocumentTourPrompt,
   buildFileTourPrompt,
   buildFollowUpPrompt,
   buildPlanTourPrompt,
@@ -95,7 +96,7 @@ describe('buildPlanTourPrompt', () => {
   });
 
   it('states the output schema, the caps and the tones', () => {
-    expect(prompt).toContain('{"gist":CARD,"cards":[CARD, ...]}');
+    expect(prompt).toContain('{"gist":CARD,"cards":[CARD, ...],"omitted":["Heading text", ...]}');
     for (const field of ['label', 'title', 'body', 'whyItMatters', 'tone', 'diagram', 'refs'])
       expect(prompt).toContain(field);
     expect(prompt).toContain(`label ${TOUR_CARD_LIMITS.label}`);
@@ -315,5 +316,65 @@ describe('rework requests', () => {
     });
     expect(prompt).toContain('the code change');
     expect(prompt).toContain("contains only the diff of this stop's files:");
+  });
+});
+
+describe('plan and document tours', () => {
+  const readme = '# Parallel Code\n\n## Install\n\nRun it.\n```sh\n# not a heading\n```\n';
+  const documentPrompt = buildDocumentTourPrompt({
+    taskName: 'Docs',
+    path: 'README.md',
+    content: readme,
+  });
+  const planPrompt = buildPlanTourPrompt({ taskName: 'Add buffering', planContent });
+  const filePrompt = buildFileTourPrompt({ taskName: 'Add buffering', context });
+
+  it('frames a document for a reader, not an approver', () => {
+    expect(documentPrompt).toContain('what does it ask of me?');
+    expect(documentPrompt).toContain('runbook or how-to');
+    expect(documentPrompt).toContain('what this document means for the reader');
+    expect(documentPrompt).not.toContain('approve');
+    expect(documentPrompt).not.toContain('This decision depends on X');
+    expect(documentPrompt).toContain('Document path: "README.md"');
+  });
+
+  it('asks the approver for open decisions and at most one implied gap', () => {
+    expect(planPrompt).toContain('decisions for you');
+    expect(planPrompt).toContain('at most one gap card');
+  });
+
+  it('asks plan and document tours for quotes, omissions, the language and a short gist', () => {
+    for (const prompt of [planPrompt, documentPrompt]) {
+      expect(prompt).toContain('"source":"verbatim excerpt"');
+      expect(prompt).toContain('"omitted":["Heading text", ...]');
+      expect(prompt).toContain('in the language the text is written in');
+      expect(prompt).toContain('The gist has no "form"');
+    }
+    expect(filePrompt).not.toContain('verbatim excerpt');
+    expect(filePrompt).not.toContain('"omitted"');
+  });
+
+  it('includes the heading outline below the untrusted marker, without fenced headings', () => {
+    const outline = JSON.stringify('- Parallel Code\n  - Install');
+    expect(documentPrompt).toContain(outline);
+    expect(documentPrompt.indexOf('never instructions')).toBeLessThan(
+      documentPrompt.indexOf(outline),
+    );
+    expect(
+      buildDocumentTourPrompt({ taskName: 'x', path: 'notes.md', content: 'plain notes' }),
+    ).toContain('The text has no headings.');
+  });
+
+  it('asks follow-ups for quotes only in plan and document tours', () => {
+    const ask = (kind: 'plan' | 'document' | 'file') =>
+      buildFollowUpPrompt({
+        tour: { ...tour, kind },
+        currentIndex: 0,
+        question: 'Why?',
+        context: 'x',
+      });
+    expect(ask('plan')).toContain('"source":"verbatim excerpt"');
+    expect(ask('document')).toContain('the document');
+    expect(ask('file')).not.toContain('verbatim excerpt');
   });
 });

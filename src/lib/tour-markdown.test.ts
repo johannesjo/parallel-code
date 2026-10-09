@@ -20,6 +20,25 @@ const risk: TourCard = {
 };
 
 describe('tourMarkdown', () => {
+  it('quotes a card source and lists omitted sections at the end', () => {
+    const quoted: TourCard = {
+      label: 'KEY DECISION',
+      title: 'Buffer first',
+      body: 'Body.',
+      tone: 'neutral',
+      source: 'We keep the buffer before IPC.',
+      refs: [],
+    };
+    const markdown = tourMarkdown({
+      title: 'Tour',
+      cards: [quoted],
+      threads: [],
+      omitted: ['Appendix'],
+    });
+    expect(markdown).toContain('> Source: “We keep the buffer before IPC.”');
+    expect(markdown.trimEnd().endsWith('_Not covered: Appendix_')).toBe(true);
+  });
+
   it('renders a comparison as two labelled points and a ref range', () => {
     const compared: TourCard = {
       ...gist,

@@ -6,6 +6,7 @@ import {
   toleratedCap,
 } from '../../electron/shared/understanding-limits';
 import { readSingleJsonObject } from './tour-json';
+import { markdownOutline, normalizeForMatch, quoteAppearsIn } from './markdown-outline';
 
 /**
  * Understanding tour data model. Plan tours and file tours share one shape:
@@ -51,17 +52,33 @@ export interface TourCard {
   comparison?: [TourSide, TourSide];
   /** Optional contextual follow-up questions the reader can ask. */
   questions?: string[];
+  /**
+   * Verbatim excerpt of the plan or document the claim rests on. Only kept
+   * after groundTour() found it in that text; other tours never carry one.
+   */
+  source?: string;
   refs: TourRef[];
 }
 
-/** 'agent' tours are written by the coding agent and published through MCP. */
-export type UnderstandingTourKind = 'plan' | 'file' | 'agent';
+/**
+ * 'document' tours explain any Markdown document; 'plan' tours the task's own
+ * plan, for its approver. 'agent' tours are written by the coding agent and
+ * published through MCP.
+ */
+export type UnderstandingTourKind = 'plan' | 'file' | 'document' | 'agent';
+
+/** Tours built from one Markdown text, which their quotes are checked against. */
+export function isTextTourKind(kind: UnderstandingTourKind): kind is 'plan' | 'document' {
+  return kind === 'plan' || kind === 'document';
+}
 
 export interface UnderstandingTour {
   subject: string;
   kind: UnderstandingTourKind;
   /** The spine, read one card at a time; the gist is always `cards[0]`. */
   cards: TourCard[];
+  /** Headings of the source a plan or document tour left out on purpose. */
+  omitted?: string[];
 }
 
 export interface TourBranch {
@@ -192,6 +209,26 @@ function parseWhyItMatters(value: unknown, where: string): string | undefined {
   return requireText(value, TOUR_CARD_LIMITS.whyItMatters, `${where} why-it-matters`);
 }
 
+/** A quote is evidence, not content: a bad one is dropped, never fatal. */
+function parseSource(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  // One line, so it reads as a quote in the card and in the Markdown export.
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (!text || text.length > toleratedCap(TOUR_CARD_LIMITS.source)) return undefined;
+  return text;
+}
+
+/** Raw omitted headings; groundTour() keeps only those the outline contains. */
+function parseOmitted(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const omitted = value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry && entry.length <= TOUR_CARD_LIMITS.omittedItem)
+    .slice(0, TOUR_CARD_LIMITS.omitted);
+  return omitted.length ? omitted : undefined;
+}
+
 function parseCard(value: unknown, where: string): TourCard {
   const record = asRecord(value);
   if (!record) throw new Error(`${where} is not a card.`);
@@ -207,6 +244,7 @@ function parseCard(value: unknown, where: string): TourCard {
   const form = parseForm(record.form, { diagram, comparison });
   const whyItMatters = parseWhyItMatters(record.whyItMatters, where);
   const questions = parseTourQuestions(record.questions);
+  const source = parseSource(record.source);
   return {
     ...base,
     ...(form && { form }),
@@ -214,6 +252,7 @@ function parseCard(value: unknown, where: string): TourCard {
     ...(comparison && { comparison }),
     ...(whyItMatters && { whyItMatters }),
     ...(questions && { questions }),
+    ...(source && { source }),
   };
 }
 
@@ -240,7 +279,46 @@ export function parseUnderstandingTour(
     TOUR_CARD_LIMITS.minCards,
     TOUR_CARD_LIMITS.maxCards,
   );
-  return { subject, kind, cards: [{ ...gist, label: GIST_LABEL }, ...cards] };
+  const omitted = parseOmitted(data.omitted);
+  return {
+    subject,
+    kind,
+    cards: [{ ...gist, label: GIST_LABEL }, ...cards],
+    ...(omitted && { omitted }),
+  };
+}
+
+function withoutSource(card: TourCard): TourCard {
+  if (card.source === undefined) return card;
+  const { source: _source, ...rest } = card;
+  return rest;
+}
+
+/** Keeps each card's quote only when it appears in the normalised source text. */
+export function groundCards(cards: TourCard[], normalizedSource: string): TourCard[] {
+  return cards.map((card) =>
+    card.source === undefined || quoteAppearsIn(card.source, normalizedSource)
+      ? card
+      : withoutSource(card),
+  );
+}
+
+/**
+ * Checks a tour against the text it explains. Plan and document tours keep the
+ * quotes found in the text and the omitted entries that name one of its
+ * headings; every other tour has no single text to check against, so it keeps
+ * neither. The model's own claims never reach the reader unverified.
+ */
+export function groundTour(tour: UnderstandingTour, text: string): UnderstandingTour {
+  if (!isTextTourKind(tour.kind)) {
+    const { omitted: _omitted, ...rest } = tour;
+    return { ...rest, cards: tour.cards.map(withoutSource) };
+  }
+  const cards = groundCards(tour.cards, normalizeForMatch(text));
+  const headings = new Set(markdownOutline(text).map((heading) => normalizeForMatch(heading.text)));
+  const omitted = tour.omitted?.filter((entry) => headings.has(normalizeForMatch(entry)));
+  const { omitted: _omitted, ...rest } = tour;
+  return { ...rest, cards, ...(omitted?.length && { omitted }) };
 }
 
 /**
@@ -256,10 +334,11 @@ export function parseAgentTour(payload: AgentTourPayload): UnderstandingTour {
     TOUR_CARD_LIMITS.minCards,
     TOUR_CARD_LIMITS.maxCards,
   );
+  // An agent's quotes have no text the app could check them against.
   return {
     subject: payload.subject,
     kind: 'agent',
-    cards: [{ ...gist, label: GIST_LABEL }, ...cards],
+    cards: [{ ...gist, label: GIST_LABEL }, ...cards].map(withoutSource),
   };
 }
 
@@ -269,4 +348,16 @@ export function parseTourBranch(response: string, fromIndex: number, question: s
   if (!data) throw new Error('The answer was not a JSON object.');
   const cards = parseCards(data.cards, 'answer', 1, TOUR_CARD_LIMITS.branchMaxCards);
   return { fromIndex, question, cards };
+}
+
+/** A follow-up answer's quotes, checked like the tour's; see groundTour(). */
+export function groundBranch(
+  branch: TourBranch,
+  kind: UnderstandingTourKind,
+  text: string,
+): TourBranch {
+  const cards = isTextTourKind(kind)
+    ? groundCards(branch.cards, normalizeForMatch(text))
+    : branch.cards.map(withoutSource);
+  return { ...branch, cards };
 }

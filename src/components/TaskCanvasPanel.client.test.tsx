@@ -576,6 +576,21 @@ describe('TaskCanvasPanel', () => {
     expect(container.querySelector('.canvas-tour-btn')).toBeNull();
   });
 
+  it('gives the task plan a plan tour and any other document a document tour', async () => {
+    mockIpc(LONG_SOURCE);
+    const { container, setTask } = mount('docs/design.md', { onTakeTour: vi.fn() });
+    await editorLine(container, 'Keep state in one store.');
+    const hintFor = () => {
+      const button = container.querySelector<HTMLButtonElement>('.canvas-tour-btn');
+      button?.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+      button?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+      return document.querySelector('[role="tooltip"]')?.textContent ?? '';
+    };
+    expect(hintFor()).toContain('Guided tour of this document');
+    setTask({ planPath: 'docs/design.md' });
+    expect(hintFor()).toContain('Guided tour of this plan');
+  });
+
   it('shows no tour button without a handler', async () => {
     mockIpc(LONG_SOURCE);
     const { container } = mount('docs/design.md');

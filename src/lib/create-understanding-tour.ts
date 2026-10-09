@@ -12,6 +12,7 @@ import { errMessage, warn as logWarn } from './log';
 import { startUnderstandingRequest, type UnderstandingRequestKind } from './understanding-request';
 import {
   GO_DEEPER_QUESTION,
+  buildDocumentTourPrompt,
   buildFileTourPrompt,
   buildFollowUpPrompt,
   buildPlanTourPrompt,
@@ -20,6 +21,8 @@ import {
   renderFileTourContext,
 } from './understanding-prompt';
 import {
+  groundBranch,
+  groundTour,
   parseTourBranch,
   parseUnderstandingTour,
   type FileTourContext,
@@ -35,6 +38,16 @@ import {
  */
 export function planTourSubject(task: { planFileName?: string; planPath?: string }): string {
   return task.planPath ?? task.planFileName ?? 'plan';
+}
+
+/**
+ * Which tour a canvas document gets: the task's own plan keeps its plan tour,
+ * so both entry points share one cached tour; any other document gets a
+ * document tour. Only the real plan path counts, never the file-name fallback
+ * of planTourSubject(), which could name an unrelated document.
+ */
+export function documentTourKind(task: { planPath?: string }, path: string): 'plan' | 'document' {
+  return task.planPath !== undefined && path === task.planPath ? 'plan' : 'document';
 }
 
 /** Hooks for background generation: the entry button is the only thing on screen. */
@@ -58,6 +71,14 @@ export type UnderstandingTourInput = ReworkInstructions &
         subject: string;
       }
     | { kind: 'file'; taskName: string; worktreePath: string; filePath: string }
+    /** A Markdown document from the canvas, read fresh when the tour starts. */
+    | {
+        kind: 'document';
+        taskName: string;
+        worktreePath: string;
+        content: string;
+        subject: string;
+      }
     /**
      * A tour the agent published. It is only regenerated when the reader
      * reworks it, from `context`: the material the agent summarised.
@@ -85,14 +106,16 @@ function cacheKey(kind: UnderstandingTourKind, subject: string): string {
 }
 
 /**
- * A plan tour explains the plan text it was built from, so an edited plan needs
- * a new tour. File tours are keyed by path only and checked after they open,
- * see checkFileFreshness().
+ * Plan and document tours explain the text they were built from, so an edited
+ * text needs a new tour. File tours are keyed by path only and checked after
+ * they open, see checkFileFreshness().
  */
 function isStale(cached: UnderstandingTourInput, input: UnderstandingTourInput): boolean {
-  return (
-    cached.kind === 'plan' && input.kind === 'plan' && cached.planContent !== input.planContent
-  );
+  if (cached.kind === 'plan' && input.kind === 'plan')
+    return cached.planContent !== input.planContent;
+  if (cached.kind === 'document' && input.kind === 'document')
+    return cached.content !== input.content;
+  return false;
 }
 
 export function createUnderstandingTour(options: UnderstandingTourOptions = {}) {
@@ -229,6 +252,16 @@ export function createUnderstandingTour(options: UnderstandingTourOptions = {}) 
         }),
         context: input.planContent,
       };
+    if (input.kind === 'document')
+      return {
+        prompt: buildDocumentTourPrompt({
+          taskName: input.taskName,
+          path: input.subject,
+          content: input.content,
+          instructions,
+        }),
+        context: input.content,
+      };
     const bundle = await invoke<FileTourContext>(IPC.ReadFileTourContext, {
       worktreePath: input.worktreePath,
       filePath: input.filePath,
@@ -264,7 +297,10 @@ export function createUnderstandingTour(options: UnderstandingTourOptions = {}) 
       setProgress(input.instructions ? 'Reworking tour…' : 'Generating tour…');
       const text = await run({ prompt: built.prompt, request: 'tour', active });
       if (text === undefined) return;
-      const parsed = parseUnderstandingTour(text, input.kind, tourSubject);
+      const parsed = groundTour(
+        parseUnderstandingTour(text, input.kind, tourSubject),
+        built.context,
+      );
       setCache((prev) =>
         new Map(prev).set(cacheKey(input.kind, tourSubject), {
           tour: parsed,
@@ -467,7 +503,12 @@ export function createUnderstandingTour(options: UnderstandingTourOptions = {}) 
       });
       const text = await run({ prompt, request: 'follow-up', active, fromIndex });
       if (text === undefined) return;
-      const nextThreads = [...threads(), parseTourBranch(text, fromIndex, question)];
+      const branch = groundBranch(
+        parseTourBranch(text, fromIndex, question),
+        current.kind,
+        context,
+      );
+      const nextThreads = [...threads(), branch];
       setThreads(nextThreads);
       cacheThreads(nextThreads);
       setAsking(false);

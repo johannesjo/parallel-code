@@ -39,7 +39,7 @@ function FileGlyph() {
 
 /**
  * One tour card: label, title, optional evidence (diagram or comparison),
- * markdown body, why-it-matters, refs. `data-form` lets the stylesheet give a
+ * markdown body, source quote, why-it-matters, refs. `data-form` lets the stylesheet give a
  * takeaway, comparison or flow card its own shape.
  */
 export function TourCard(props: {
@@ -48,6 +48,8 @@ export function TourCard(props: {
   onAsk?: (question: string) => void;
   asking?: boolean;
   answeredQuestions?: string[];
+  /** Sections the tour left out; the dialog passes them to the last card only. */
+  omitted?: string[];
 }) {
   const bodyHtml = createHighlightedMarkdown(() => props.card.body);
   const tone = () => props.card.tone;
@@ -121,6 +123,16 @@ export function TourCard(props: {
         // eslint-disable-next-line solid/no-innerhtml -- createHighlightedMarkdown sanitizes with DOMPurify
         innerHTML={bodyHtml()}
       />
+      {/* Collapsed: the quote answers "where does it say that?" without adding
+          a second body to read. groundTour() already checked it is verbatim. */}
+      <Show when={props.card.source}>
+        {(source) => (
+          <details class="understanding-source">
+            <summary>Source</summary>
+            <blockquote>{source()}</blockquote>
+          </details>
+        )}
+      </Show>
       <Show when={props.card.whyItMatters}>
         {(why) => (
           <div class="understanding-why">
@@ -146,6 +158,11 @@ export function TourCard(props: {
             )}
           </For>
         </div>
+      </Show>
+      <Show when={props.omitted?.length}>
+        <p class="understanding-omitted" style={{ color: theme.fgMuted }}>
+          Not covered: {props.omitted?.join(', ')}
+        </p>
       </Show>
       <Show when={props.onAsk && questions().length > 0}>
         <div class="tour-questions" role="group" aria-label="Explore this card">

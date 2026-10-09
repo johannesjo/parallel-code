@@ -4,6 +4,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { UNDERSTANDING_TIMEOUT_MS } from '../../electron/shared/understanding-limits';
 import {
   createUnderstandingTour,
+  documentTourKind,
   type UnderstandingTourOptions,
 } from './create-understanding-tour';
 import { invoke } from './ipc';
@@ -504,6 +505,42 @@ describe('createUnderstandingTour', () => {
     stream(1, TOUR_JSON);
     await flush();
     expect(tour.open({ ...edited })).toBe(true);
+  });
+
+  it('routes only the real plan path to a plan tour', () => {
+    expect(documentTourKind({ planPath: 'docs/plan.md' }, 'docs/plan.md')).toBe('plan');
+    expect(documentTourKind({ planPath: 'docs/plan.md' }, 'README.md')).toBe('document');
+    expect(documentTourKind({}, 'plan.md')).toBe('document');
+  });
+
+  it('generates a document tour, grounded in the document it explains', async () => {
+    const tour = setup();
+    const input = {
+      kind: 'document',
+      taskName: 'Task',
+      worktreePath: '/repo',
+      content: '# Guide\n\nAlways run the migration first.\n\n## Appendix\n\nTables.',
+      subject: 'docs/guide.md',
+    } as const;
+    void tour.generate(input);
+    await flush();
+    expect(promptOf(0)).toContain('You explain a Markdown document');
+    stream(
+      0,
+      JSON.stringify({
+        gist: card({ title: 'Gist title', source: 'Always run the migration first.' }),
+        cards: [card({ title: 'One', source: 'Never run the migration.' })],
+        omitted: ['Appendix', 'Made up'],
+      }),
+    );
+    await flush();
+    const shown = tour.tour();
+    expect(shown?.kind).toBe('document');
+    expect(shown?.cards[0].source).toBe('Always run the migration first.');
+    expect(shown?.cards[1].source).toBeUndefined();
+    expect(shown?.omitted).toEqual(['Appendix']);
+    expect(tour.isReady('document', 'docs/guide.md')).toBe(true);
+    expect(tour.open({ ...input, content: `${input.content}\nMore.` })).toBe(false);
   });
 
   it('flags a reopened file tour once the file has changed, without regenerating it', async () => {

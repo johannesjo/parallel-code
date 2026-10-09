@@ -78,6 +78,7 @@ export function UnderstandingTourDialog(props: {
       title: `Tour: ${props.tour.subject()}`,
       cards: cards(),
       threads: props.tour.threads(),
+      omitted: tour()?.omitted,
     });
   }
 
@@ -318,6 +319,7 @@ export function UnderstandingTourDialog(props: {
                         onAsk={(question) => void controller().ask(question)}
                         asking={props.tour.asking()}
                         answeredQuestions={threads().map((thread) => thread.question)}
+                        omitted={onLastCard() ? tour()?.omitted : undefined}
                       />
                       {/* Every question asked here stays, in the order asked, under the card. */}
                       <TourThreads

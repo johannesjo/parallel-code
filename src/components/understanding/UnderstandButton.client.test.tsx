@@ -47,7 +47,7 @@ describe('UnderstandButton hint', () => {
 
     button.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
     const shown = hint();
-    expect(shown?.textContent).toContain('Guided tour of this document');
+    expect(shown?.textContent).toContain('Guided tour of this plan');
     expect(shown?.textContent).toContain('docs/plan.md');
     expect(shown?.textContent).toContain('a notification tells you when it is ready');
     expect(shown?.textContent).toContain('Uses: Claude Code');
@@ -134,8 +134,12 @@ describe('tourHintText', () => {
   it('describes each kind and state', () => {
     expect(tourHintText({ ...base, kind: 'file' }).body).toContain('direct imports');
     expect(tourHintText({ ...base, kind: 'plan' }).body).toContain('key decisions');
-    expect(tourHintText({ ...base, kind: 'plan', loading: true, elapsedSeconds: 4 })).toEqual({
+    expect(tourHintText({ ...base, kind: 'document' })).toMatchObject({
       heading: 'Guided tour of this document',
+      body: expect.stringContaining('what it asks of you'),
+    });
+    expect(tourHintText({ ...base, kind: 'plan', loading: true, elapsedSeconds: 4 })).toEqual({
+      heading: 'Guided tour of this plan',
       body: 'Generating… Waiting for provider · 4s',
       action: 'Click to cancel.',
     });

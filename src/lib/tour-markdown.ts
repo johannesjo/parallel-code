@@ -23,6 +23,7 @@ function cardMarkdown(card: TourCard, heading: string): string {
   }
   if (card.comparison)
     parts.push(card.comparison.map((side) => `- **${side.label}:** ${side.text}`).join('\n'));
+  if (card.source) parts.push(`> Source: “${card.source}”`);
   if (card.whyItMatters) parts.push(`> **Why this matters:** ${card.whyItMatters}`);
   if (card.refs.length) parts.push(`Refs: ${card.refs.map(refText).join(', ')}`);
   return parts.join('\n\n');
@@ -36,6 +37,8 @@ export function tourMarkdown(input: {
   title: string;
   cards: TourCard[];
   threads: TourBranch[];
+  /** Sections the tour left out, listed after the last card. */
+  omitted?: string[];
 }): string {
   const sections = input.cards.map((card, index) => {
     const answers = input.threads
@@ -48,5 +51,6 @@ export function tourMarkdown(input: {
       );
     return [cardMarkdown(card, `## ${index + 1}.`), ...answers].join('\n\n');
   });
-  return `# ${input.title}\n\n${sections.join('\n\n---\n\n')}\n`;
+  const omitted = input.omitted?.length ? `\n\n_Not covered: ${input.omitted.join(', ')}_` : '';
+  return `# ${input.title}\n\n${sections.join('\n\n---\n\n')}${omitted}\n`;
 }
