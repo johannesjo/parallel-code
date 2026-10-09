@@ -60,13 +60,13 @@ The hard caps stay.
 ### D. Selective source quotes
 
 - Optional card field `source`, at most `TOUR_CARD_LIMITS.source` (200) characters: a verbatim excerpt of the text the card's claim rests on. `cardInstructions` takes an option so only plan and document tours (and their follow-ups) ask for it, and only on cards whose claim rests on one specific passage; never on mechanical cards.
-- `parseCard` accepts it like `whyItMatters`. `verifySources(cards, text)` keeps a quote only when every `…`- or `...`-separated fragment occurs in the source after normalising both sides: Markdown links to their text, emphasis and code markers removed, list and heading markers removed, curly quotes and dashes folded, whitespace collapsed, case folded. Otherwise the field is dropped silently.
+- `parseCard` accepts it like `whyItMatters`. `groundTour` (and `groundBranch` for follow-ups, change tours included) keeps a quote only when it occurs in the source after normalising both sides: Markdown links to their text, backslash escapes, emphasis and code markers removed, list, quote and heading markers removed wherever whitespace bounds them, curly quotes and dashes folded, whitespace collapsed, case folded. An ellipsis may join at most two fragments of at least 12 characters each, the second within 300 characters after the first, so distant true phrases cannot be stitched into a claim the text never makes. Otherwise the field is dropped silently.
 - Tours without a verifiable text never show a quote: `parseAgentTour` and the file tour path strip `source`.
 - `TourCard` shows it collapsed: a muted "Source" disclosure below the body that expands to the quote. No colour, per the UI rules. `tourMarkdown` exports it as a block quote.
 
 ### E. Outline and verified omissions
 
-- Plan and document prompts include the heading outline (ATX `#`–`###` headings outside fenced code). The line is left out when there are no headings; above 60 headings only levels 1–2 are kept, then the list is cut at 60.
+- Plan and document prompts include the heading outline (ATX `#`–`###` and setext headings, outside fenced code, HTML comments and front matter). The line is left out when there are no headings; above 60 headings only levels 1–2 are kept, then the list is cut at 60.
 - Optional tour field `omitted`: up to 4 section headings the tour deliberately left out. An entry survives only when it matches a heading in the extracted outline (same normalisation as D); bad entries are dropped, never fatal.
 - Shown as one muted line at the foot of the last card ("Not covered: …"), and in the Markdown export. The overview is not used: it is hidden behind a toggle and shared with change tours.
 
@@ -91,7 +91,7 @@ The hard caps stay.
 
 ## 5. Verification
 
-- Unit: document prompt framing, closing card, language rule; plan prompt items; sources requested only for plan and document; outline extraction (fences, empty, >60 headings); `verifySources` (match, emphasis, links, curly quotes, fragments, miss); `omitted` keeps only outline headings; agent tours strip sources; budget includes new fields.
+- Unit: document prompt framing, closing card, language rule; plan prompt items; sources requested only for plan and document; outline extraction (fences, empty, >60 headings); `quoteAppearsIn` and `groundTour` (match, emphasis, links, escapes, curly quotes, list items, fragments and their gap, miss); `omitted` keeps only outline headings; agent tours strip sources; budget includes new fields.
 - Update existing assertions: hint heading for `plan`, closing-card text.
 - Client: canvas routing picks `plan` for `task.planPath` and `document` otherwise; quote disclosure renders; omitted line on the last card only.
 - `npm run check`, `npm run check:static`, `npm test`.

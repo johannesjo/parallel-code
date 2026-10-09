@@ -268,7 +268,7 @@ export function buildFollowUpPrompt(input: {
     : '';
   return withinBudget(`You are answering a follow-up question inside an understanding tour of ${subject} ${JSON.stringify(tour.subject)}.
 Answer only the question, in 1 to ${TOUR_CARD_LIMITS.branchMaxCards} cards. Do not restate the tour and do not start a new tour.
-${cardInstructions(BRANCH_OUTPUT, { sources: tour.kind !== 'change' && isTextTourKind(tour.kind) })}
+${cardInstructions(BRANCH_OUTPUT, { sources: isTextTourKind(tour.kind) })}
 The reader is on spine card ${currentIndex + 1} of ${tour.cards.length}; answer from there. If the tour follows a concrete example, keep using it.
 Write in the language the tour is written in.
 ${UNTRUSTED}

@@ -68,7 +68,7 @@ export interface TourCard {
 export type UnderstandingTourKind = 'plan' | 'file' | 'document' | 'agent';
 
 /** Tours built from one Markdown text, which their quotes are checked against. */
-export function isTextTourKind(kind: UnderstandingTourKind): kind is 'plan' | 'document' {
+export function isTextTourKind(kind: string): kind is 'plan' | 'document' {
   return kind === 'plan' || kind === 'document';
 }
 
@@ -224,7 +224,7 @@ function parseOmitted(value: unknown): string[] | undefined {
   const omitted = value
     .filter((entry): entry is string => typeof entry === 'string')
     .map((entry) => entry.trim())
-    .filter((entry) => entry && entry.length <= TOUR_CARD_LIMITS.omittedItem)
+    .filter((entry) => entry && entry.length <= toleratedCap(TOUR_CARD_LIMITS.omittedItem))
     .slice(0, TOUR_CARD_LIMITS.omitted);
   return omitted.length ? omitted : undefined;
 }
@@ -295,7 +295,7 @@ function withoutSource(card: TourCard): TourCard {
 }
 
 /** Keeps each card's quote only when it appears in the normalised source text. */
-export function groundCards(cards: TourCard[], normalizedSource: string): TourCard[] {
+function groundCards(cards: TourCard[], normalizedSource: string): TourCard[] {
   return cards.map((card) =>
     card.source === undefined || quoteAppearsIn(card.source, normalizedSource)
       ? card
@@ -350,12 +350,11 @@ export function parseTourBranch(response: string, fromIndex: number, question: s
   return { fromIndex, question, cards };
 }
 
-/** A follow-up answer's quotes, checked like the tour's; see groundTour(). */
-export function groundBranch(
-  branch: TourBranch,
-  kind: UnderstandingTourKind,
-  text: string,
-): TourBranch {
+/**
+ * A follow-up answer's quotes, checked like the tour's; see groundTour().
+ * Change tours pass 'change': they have no single text, so quotes are dropped.
+ */
+export function groundBranch(branch: TourBranch, kind: string, text: string): TourBranch {
   const cards = isTextTourKind(kind)
     ? groundCards(branch.cards, normalizeForMatch(text))
     : branch.cards.map(withoutSource);

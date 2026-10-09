@@ -1,7 +1,7 @@
 import { createSignal, onCleanup } from 'solid-js';
 import { errMessage } from './log';
 import { startUnderstandingRequest } from './understanding-request';
-import { parseTourBranch, type TourBranch } from './understanding-tour';
+import { groundBranch, parseTourBranch, type TourBranch } from './understanding-tour';
 
 /**
  * Follow-up questions asked under the stops of a change tour. Answers stay in
@@ -72,7 +72,9 @@ export function createTourQuestions() {
     if (outcome.status === 'cancelled') return;
     try {
       if (outcome.status === 'failed') throw new Error(outcome.message);
-      setThreads([...threads(), parseTourBranch(outcome.text, fromIndex, question)]);
+      // A change tour has no single text to check quotes against, so none survive.
+      const branch = groundBranch(parseTourBranch(outcome.text, fromIndex, question), 'change', '');
+      setThreads([...threads(), branch]);
     } catch (cause) {
       setError({ message: errMessage(cause), fromIndex });
     }

@@ -38,6 +38,35 @@ describe('markdownOutline', () => {
     expect(markdownOutline(many)).toHaveLength(MAX_OUTLINE_HEADINGS);
   });
 
+  it('does not close a fence on a line with an info string', () => {
+    const text = '```\n# a\n```js\n# b\n```\n# c';
+    expect(markdownOutline(text).map((heading) => heading.text)).toEqual(['c']);
+  });
+
+  it('reads setext headings and skips front matter and HTML comments', () => {
+    const text = [
+      '---',
+      'title: x',
+      '# not a heading',
+      '---',
+      'Title',
+      '=====',
+      '',
+      '<!-- # hidden',
+      '# also hidden -->',
+      'Section',
+      '-------',
+      '- item',
+      '---',
+      '',
+      '---',
+    ].join('\n');
+    expect(markdownOutline(text)).toEqual([
+      { level: 1, text: 'Title' },
+      { level: 2, text: 'Section' },
+    ]);
+  });
+
   it('indents nested headings', () => {
     expect(renderOutline(markdownOutline('# A\n## B\n### C'))).toBe('- A\n  - B\n    - C');
   });
@@ -57,6 +86,34 @@ describe('quoteAppearsIn', () => {
   it('matches fragments joined by an ellipsis, in order only', () => {
     expect(quoteAppearsIn('We keep the buffer … never" blocks the renderer', source)).toBe(true);
     expect(quoteAppearsIn('never" blocks the renderer ... We keep the buffer', source)).toBe(false);
+  });
+
+  it('matches quotes spanning list items, escapes and either kind of dash', () => {
+    const list = normalizeForMatch(
+      '1. Stop the worker.\n2. Drain the queue before restart.\n\nUse foo\\_bar for it.',
+    );
+    expect(quoteAppearsIn('1. Stop the worker.\n2. Drain the queue before restart.', list)).toBe(
+      true,
+    );
+    expect(quoteAppearsIn('Stop the worker. Drain the queue', list)).toBe(true);
+    expect(quoteAppearsIn('Use foo_bar for it.', list)).toBe(true);
+    expect(quoteAppearsIn('We keep the buffer before IPC \u2014 always.', source)).toBe(true);
+  });
+
+  it('never stitches distant or many fragments into a claim the text does not make', () => {
+    const text = normalizeForMatch(
+      `We do not ship the buffer before IPC. ${'Filler sentence here. '.repeat(20)}` +
+        'Later we will keep a fallback buffer for retries.',
+    );
+    expect(quoteAppearsIn('We do not … keep a fallback buffer for retries', text)).toBe(false);
+    expect(
+      quoteAppearsIn('We do not ship the buffer … keep a fallback buffer for retries', text),
+    ).toBe(false);
+    const near = normalizeForMatch('Alpha beta gamma delta. Epsilon zeta eta theta. Iota kappa.');
+    expect(quoteAppearsIn('Alpha beta gamma … Epsilon zeta eta', near)).toBe(true);
+    expect(quoteAppearsIn('Alpha beta gamma … Epsilon zeta eta … Iota kappa lambda', near)).toBe(
+      false,
+    );
   });
 
   it('rejects paraphrases and quotes made only of tiny fragments', () => {
