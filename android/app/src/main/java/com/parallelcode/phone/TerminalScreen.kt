@@ -36,7 +36,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
     private var savedMainGrid: Array<Line>? = null
     // Lines that scrolled off never change again, so they are kept already split into style runs:
     // rendering then only has to split the screen's rows.
-    private val history = ArrayDeque<List<StyledSpan>>()
+    private val history = LineHistory<List<StyledSpan>>(MAX_HISTORY)
     private var row = 0
     private var col = 0
     private var wrapPending = false
@@ -91,8 +91,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
         val shift = (row + 1 - newRows).coerceAtLeast(0)
         if (savedMainGrid == null) {
             for (r in 0 until shift) {
-                history.addLast(spans(grid[r]))
-                if (history.size > MAX_HISTORY) history.removeFirst()
+                history.add(spans(grid[r]))
             }
         }
         fun refit(old: Array<Line>, from: Int) = Array(newRows) { r ->
@@ -128,13 +127,25 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
     /** Scrolled-off history followed by the screen, as plain text. */
     fun text(): String = styledLines().joinToString("\n") { line -> line.joinToString("") { it.text } }
 
-    /** History then screen, each line split into style runs, without trailing blank lines. */
+    /**
+     * History then screen, each line split into style runs, without trailing blank lines. Built
+     * for every output frame, so the history is shared from a snapshot rather than copied.
+     */
     fun styledLines(): List<List<StyledSpan>> {
-        val lines = ArrayList<List<StyledSpan>>(history.size + rows)
-        lines.addAll(history)
-        grid.mapTo(lines, ::spans)
-        while (lines.isNotEmpty() && lines.last().isEmpty()) lines.removeAt(lines.lastIndex)
-        return lines
+        val past = history.snapshot()
+        val screen = grid.map(::spans)
+        var count = past.size + screen.size
+        fun line(i: Int) = if (i < past.size) past[i] else screen[i - past.size]
+        while (count > 0 && line(count - 1).isEmpty()) count--
+        val total = count
+        return object : AbstractList<List<StyledSpan>>() {
+            override val size = total
+
+            override fun get(index: Int): List<StyledSpan> {
+                if (index !in 0 until total) throw IndexOutOfBoundsException("$index of $total")
+                return line(index)
+            }
+        }
     }
 
     private fun spans(line: Line): List<StyledSpan> {
@@ -246,8 +257,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
         repeat(n.coerceAtMost(scrollBottom - scrollTop + 1)) {
             // Lines scrolling off the top row move into history so agent TUIs with pinned status bars can be scrolled.
             if (scrollTop == 0 && savedMainGrid == null) {
-                history.addLast(spans(grid[0]))
-                if (history.size > MAX_HISTORY) history.removeFirst()
+                history.add(spans(grid[0]))
             }
             for (r in scrollTop until scrollBottom) grid[r] = grid[r + 1]
             grid[scrollBottom] = blankLine()

@@ -320,6 +320,9 @@ private fun PhoneApp(model: PhoneViewModel) {
     val state by model.client.state.collectAsState()
     val agents by model.client.agents.collectAsState()
     var screenKey by rememberSaveable { mutableStateOf("agents") }
+    // Held above the screen switch, so the list's search and filter survive opening a task.
+    var taskSearch by rememberSaveable { mutableStateOf("") }
+    var taskFilterKey by rememberSaveable { mutableStateOf(TaskFilter.ALL.key) }
     val screen = when {
         screenKey == "pair" -> Screen.Pair
         screenKey == "new-task" -> Screen.NewTask
@@ -410,6 +413,10 @@ private fun PhoneApp(model: PhoneViewModel) {
                     onSettings = { screenKey = "settings" },
                     computers = computers,
                     onSwitchComputer = { model.client.switchTo(it) },
+                    search = taskSearch,
+                    onSearch = { taskSearch = it },
+                    filter = TaskFilter.fromKey(taskFilterKey),
+                    onFilter = { taskFilterKey = it.key },
                 )
             }
             Screen.Settings -> {

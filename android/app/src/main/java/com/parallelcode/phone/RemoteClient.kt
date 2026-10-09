@@ -530,22 +530,29 @@ class RemoteClient(
         }
     }
 
-    /** Type into an agent's terminal; `submit` presses Enter once the text has landed. */
     /**
-     * Types [data] into the agent's terminal. A [prefixKey] (such as `!` for an agent's shell mode)
-     * is typed by the desktop in a write of its own first, so the TUI reads it as a keystroke.
+     * Types [data] into the agent's terminal; `submit` presses Enter once the text has landed.
+     *
+     * A [prefixKey] (such as `!` for an agent's shell mode) is typed first, in a write of its own,
+     * so the TUI reads it as a keystroke and opens that mode. The phone types it itself rather
+     * than sending the protocol's `prefixKey`: desktops from before that field drop it, which
+     * would send a shell command to the agent as a prompt.
      */
     suspend fun sendInput(agentId: String, data: String, submit: Boolean, prefixKey: String? = null) {
         if (data.length > MAX_INPUT_LENGTH) {
             throw IOException("This message is too long. Shorten it and try again.")
+        }
+        if (prefixKey != null) {
+            request(JSONObject().put("type", "input").put("agentId", agentId).put("data", prefixKey).put("submit", false))
+            // The prefix needs its own terminal read before the text arrives, as on the desktop.
+            delay(PREFIX_KEY_DELAY_MS)
         }
         request(
             JSONObject()
                 .put("type", "input")
                 .put("agentId", agentId)
                 .put("data", data)
-                .put("submit", submit)
-                .apply { if (prefixKey != null) put("prefixKey", prefixKey) },
+                .put("submit", submit),
         )
     }
 
@@ -787,5 +794,6 @@ class RemoteClient(
         // The server drops a socket message past 64 KiB; leave room for the envelope.
         const val MAX_CHAT_MESSAGE_LENGTH = 60_000
         const val MAX_INPUT_LENGTH = 4096
+        const val PREFIX_KEY_DELAY_MS = 50L
     }
 }

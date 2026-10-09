@@ -444,7 +444,7 @@ fun SettingsScreen(
                         HorizontalDivider(thickness = 1.dp, color = AppTheme.extra.borderSubtle, modifier = Modifier.padding(vertical = 14.dp))
                         SettingSwitchRow(
                             title = "Send quick replies immediately",
-                            description = "Tapping a quick reply sends it straight to the agent. Off, it is added to your draft first.",
+                            description = "Tapping a quick reply in a built-in chat sends it straight away. Off, it is added to your draft first.",
                             checked = sendQuickReplies,
                             onCheckedChange = onSendQuickRepliesChange,
                         )
@@ -1074,7 +1074,7 @@ private fun QuickRepliesEditor(replies: List<String>, onChange: (List<String>) -
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            "Shown above the reply box; tap one to add it to your message. One per line.",
+            "Shown above the reply box in built-in chats; tap one to add it to your message. One per line.",
             style = MaterialTheme.typography.bodyMedium,
             color = AppTheme.extra.textMuted,
         )

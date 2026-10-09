@@ -140,6 +140,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.Animatable
@@ -380,15 +381,16 @@ fun AgentsScreen(
     onSettings: () -> Unit,
     computers: List<SavedComputer> = emptyList(),
     onSwitchComputer: (String) -> Unit = {},
+    search: String = "",
+    onSearch: (String) -> Unit = {},
+    filter: TaskFilter = TaskFilter.ALL,
+    onFilter: (TaskFilter) -> Unit = {},
 ) {
     var refreshing by remember { mutableStateOf(false) }
     var showSwitchMenu by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val activeAgents = remember(agents) { agents.filter { !it.collapsed } }
     val minimizedAgents = remember(agents) { agents.filter { it.collapsed } }
-    var search by rememberSaveable { mutableStateOf("") }
-    var filterKey by rememberSaveable { mutableStateOf(TaskFilter.ALL.key) }
-    val filter = TaskFilter.fromKey(filterKey)
     val matchingSearch = remember(activeAgents, search) { activeAgents.filter { matchesSearch(it, search) } }
     val groups = remember(matchingSearch, filter) { groupTasks(matchingSearch.filter(filter::matches)) }
     val showHostSwitch = computers.size > 1
@@ -587,17 +589,17 @@ fun AgentsScreen(
                     item(key = "task-filters") {
                         TaskSearchAndFilters(
                             search = search,
-                            onSearch = { search = it },
+                            onSearch = onSearch,
                             filter = filter,
-                            onFilter = { filterKey = it.key },
+                            onFilter = onFilter,
                             countFor = { option -> matchingSearch.count(option::matches) },
                         )
                     }
                     if (groups.isEmpty()) {
                         item(key = "no-matching-tasks") {
                             NoMatchingTasks(search, filter) {
-                                search = ""
-                                filterKey = TaskFilter.ALL.key
+                                onSearch("")
+                                onFilter(TaskFilter.ALL)
                             }
                         }
                     }
@@ -1134,6 +1136,8 @@ fun AgentScreen(
                                 fitToView = sizeTerminal,
                                 onViewSize = { cols, rows -> viewSize = cols to rows },
                                 onZoomedChange = onZoomedChange,
+                                // Keeps an agent's prompt clear of the Next task pill below it.
+                                bottomInset = if (nextNeedingYou != null) 44.dp else 0.dp,
                             )
                             // Jump straight to the next task waiting on you, as the phone web UI does.
                             nextNeedingYou?.let { next ->
@@ -1312,6 +1316,8 @@ private fun TerminalText(
     fitToView: Boolean,
     onViewSize: (cols: Int, rows: Int) -> Unit,
     onZoomedChange: (Boolean) -> Unit = {},
+    /** Room kept under the newest line for a pill floating over the terminal's bottom. */
+    bottomInset: Dp = 0.dp,
 ) {
     // The terminal follows the active look, as it does on the desktop: its own ANSI
     // set over the look's panel background.
@@ -1328,7 +1334,7 @@ private fun TerminalText(
     var zoom by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
     // A zoomed terminal pans sideways under one finger, so the task pager must not swipe meanwhile.
-    val zoomed = zoom > 1f
+    val zoomed by remember { derivedStateOf { zoom > 1f } }
     val currentOnZoomedChange by rememberUpdatedState(onZoomedChange)
     LaunchedEffect(zoomed) { currentOnZoomedChange(zoomed) }
     DisposableEffect(Unit) { onDispose { currentOnZoomedChange(false) } }
@@ -1410,6 +1416,10 @@ private fun TerminalText(
 
         val viewPaddingPx = with(density) { 16.dp.roundToPx() }
         val viewHeightPx = constraints.maxHeight
+        // A smaller view (the keyboard opening, leaving expanded mode) must not reveal an empty band.
+        LaunchedEffect(constraints.maxWidth, constraints.maxHeight) {
+            pan = clampPan(pan, zoom, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
+        }
         LaunchedEffect(textWidthPx, viewHeightPx, phoneFont, density) {
             val probe = measurer.measure(
                 "0".repeat(10),
@@ -1431,7 +1441,12 @@ private fun TerminalText(
                     translationX = pan.x
                     translationY = pan.y
                 },
-            contentPadding = PaddingValues(horizontal = TERMINAL_PADDING_H, vertical = 8.dp),
+            contentPadding = PaddingValues(
+                start = TERMINAL_PADDING_H,
+                end = TERMINAL_PADDING_H,
+                top = 8.dp,
+                bottom = 8.dp + bottomInset,
+            ),
             verticalArrangement = Arrangement.Bottom,
         ) {
             items(lines.size) { i ->
@@ -1456,9 +1471,9 @@ private fun TerminalText(
                 .padding(end = 2.dp, top = 4.dp, bottom = 4.dp),
         )
 
-        if (zoom > 1f) {
-            TerminalPill(
-                "${(zoom * 100).roundToInt()}% · Reset",
+        if (zoomed) {
+            ZoomResetPill(
+                zoom = { zoom },
                 onClick = {
                     zoom = 1f
                     pan = Offset.Zero
@@ -1531,6 +1546,12 @@ internal fun clampPan(pan: Offset, zoom: Float, width: Float, height: Float): Of
     pan.x.coerceIn(width * (1f - zoom), 0f),
     pan.y.coerceIn(height * (1f - zoom), 0f),
 )
+
+/** Shows the pinch zoom and resets it; reads [zoom] here, so a pinch recomposes only this pill. */
+@Composable
+private fun ZoomResetPill(zoom: () -> Float, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    TerminalPill("${(zoom() * 100).roundToInt()}% · Reset", onClick, modifier)
+}
 
 /** A small floating button over the terminal, quiet like the rest of the routine controls. */
 @Composable
@@ -1729,7 +1750,7 @@ private fun ReplyBox(
                     value = field,
                     onValueChange = {
                         // Only a typed bang switches; a pasted or dictated draft stays text.
-                        if (it.text == "!" && draft.isEmpty() && !shellMode) {
+                        if (it.text == "!" && field.text.isEmpty() && !shellMode) {
                             shellMode = true
                             field = TextFieldValue()
                         } else {

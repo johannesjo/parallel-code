@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -21,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +38,7 @@ internal fun TaskSearchAndFilters(
     onFilter: (TaskFilter) -> Unit,
     countFor: (TaskFilter) -> Int,
 ) {
+    val focusManager = LocalFocusManager.current
     Column(
         Modifier.padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -55,6 +58,8 @@ internal fun TaskSearchAndFilters(
                 }
             } else null,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            // The list filters as you type, so Search only puts the keyboard away.
+            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
             shape = MaterialTheme.shapes.large,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = AppTheme.extra.inputBg,
