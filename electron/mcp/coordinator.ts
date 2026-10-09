@@ -64,6 +64,7 @@ import {
   AGENT_READY_TAIL_CHARS,
 } from '../shared/prompt-detect.js';
 import { buildSubTaskPreamble } from './sub-task-preamble.js';
+import { isStalled, promptDelivery, type PromptDelivery } from './prompt-delivery.js';
 import { buildVerifyEnv, verificationRunner } from '../ipc/verify.js';
 import { pendingVerificationRun } from '../shared/verification-run.js';
 import type { VerificationRun } from '../ipc/shared-types.js';
@@ -79,6 +80,7 @@ import type {
   ApiLandSelfResult,
   LandSelfInput,
   LandingState,
+  StalledChild,
   SubtaskVerification,
   WaitForSignalDoneResult,
 } from './types.js';
@@ -238,6 +240,7 @@ export class Coordinator {
     this.clearQueuedPromptFlushTimer(task.id);
     task.initialPrompt = undefined;
     task.pendingPrompts = undefined;
+    task.promptQueuedAt = undefined;
     task.unsubmittedPrompt = false;
     this.notifyRenderer(IPC.MCP_TaskStateSync, {
       taskId: task.id,
@@ -340,6 +343,9 @@ export class Coordinator {
           if (!reattached) {
             // A fresh process has an empty input line.
             task.unsubmittedPrompt = false;
+            // Its empty prompt says nothing about prompts the old process took.
+            task.promptSubmittedAt = undefined;
+            task.promptStartedAt = undefined;
             this.advanceReviewRevision(task);
           }
           this.updateTailFromScrollback(task);
@@ -435,6 +441,7 @@ export class Coordinator {
       return;
     }
     // 'working' and 'waiting' both mean the agent is mid-turn.
+    this.markPromptStarted(task);
     this.promptReadySeenAt.delete(task.id);
     if (task.status === 'idle') {
       task.status = 'running';
@@ -668,6 +675,14 @@ export class Coordinator {
           task.suppressIdleUntil = undefined;
           task.lastPromptEchoText = undefined;
         }
+      }
+      if (
+        !hasAgentPrompt &&
+        task.promptSubmittedAt !== undefined &&
+        task.promptStartedAt === undefined &&
+        getAgentPromptReadiness(this.normalizedTail(task.agentId)).reason === 'busy'
+      ) {
+        this.markPromptStarted(task);
       }
       if (hasAgentPrompt) {
         this.handlePromptDetected(task, stableAgentPrompt);
@@ -1148,6 +1163,7 @@ export class Coordinator {
       if (task.coordinatorTaskId !== parentId) continue;
       this.clearPromptDeliveryState(task.id);
       task.pendingPrompts = undefined;
+      task.promptQueuedAt = undefined;
       this.controlMap.set(task.id, 'human');
       for (const agentId of this.agentIdsForTask(task)) killAgent(agentId);
     }
@@ -1344,6 +1360,7 @@ export class Coordinator {
       initialPrompt: opts.prompt
         ? buildSubTaskPreamble(coordinatorState.verifyCommand, opts.integrationPolicy) + opts.prompt
         : undefined,
+      promptQueuedAt: opts.prompt ? Date.now() : undefined,
       dockerContainerName: this.coordinators.get(coordinatorId)?.dockerContainerName ?? null,
     };
 
@@ -1564,6 +1581,7 @@ export class Coordinator {
       branchName: t.branchName,
       status: t.status,
       activityEvidence: this.activityEvidence(t),
+      delivery: this.promptDelivery(t),
       coordinatorTaskId: t.coordinatorTaskId,
       integrationPolicy: t.integrationPolicy,
       signalDoneAt: t.signalDoneAt?.toISOString(),
@@ -1592,6 +1610,7 @@ export class Coordinator {
       integrationPolicy: task.integrationPolicy,
       exitCode: task.exitCode,
       activityEvidence: this.activityEvidence(task),
+      delivery: this.promptDelivery(task),
       pendingPrompt: task.pendingPrompts?.[0],
       pendingPrompts: task.pendingPrompts ? [...task.pendingPrompts] : undefined,
       pendingPromptCount: task.pendingPrompts?.length,
@@ -1621,17 +1640,17 @@ export class Coordinator {
       throw new Error(`Prompt queue full (${MAX_PENDING_PROMPTS} pending)`);
     this.advanceReviewRevision(task);
     if (task.initialPrompt && !task.assignedPromptDelivered) {
-      task.pendingPrompts = [...(task.pendingPrompts ?? []), prompt];
+      this.queuePrompt(task, prompt);
       this.clearInitialPromptTimer(task.id);
       this.scheduleInitialPromptDelivery(task, 0);
       return { queued: true };
     }
-    if (task.pendingPrompts?.length) {
-      task.pendingPrompts = [...task.pendingPrompts, prompt];
-      return { queued: true };
-    }
-    if (this.controlMap.get(taskId) === 'human' || this.writingPromptTaskIds.has(taskId)) {
-      task.pendingPrompts = [...(task.pendingPrompts ?? []), prompt];
+    if (
+      task.pendingPrompts?.length ||
+      this.controlMap.get(taskId) === 'human' ||
+      this.writingPromptTaskIds.has(taskId)
+    ) {
+      this.queuePrompt(task, prompt);
       return { queued: true };
     }
 
@@ -1649,6 +1668,55 @@ export class Coordinator {
     return { queued: false };
   }
 
+  private queuePrompt(task: CoordinatedTask, prompt: string): void {
+    task.pendingPrompts = [...(task.pendingPrompts ?? []), prompt];
+    task.promptQueuedAt ??= Date.now();
+  }
+
+  private markPromptSubmitted(task: CoordinatedTask): void {
+    task.promptSubmittedAt = Date.now();
+    task.promptStartedAt = undefined;
+    task.promptQueuedAt = task.pendingPrompts?.length ? Date.now() : undefined;
+  }
+
+  /** Only a prompt the coordinator submitted awaits confirmation. */
+  private markPromptStarted(task: CoordinatedTask): void {
+    if (task.promptSubmittedAt !== undefined) task.promptStartedAt ??= Date.now();
+  }
+
+  private promptDelivery(task: CoordinatedTask): PromptDelivery | undefined {
+    if (task.status === 'exited' || task.status === 'error') return undefined;
+    const now = Date.now();
+    const blockedBy =
+      this.controlMap.get(task.id) === 'human'
+        ? 'user_activity'
+        : this.awaitingInitialPrompt(task)
+          ? 'agent_startup'
+          : 'agent_busy';
+    return promptDelivery({
+      now,
+      queuedAt: this.hasUndeliveredPrompt(task) ? (task.promptQueuedAt ?? now) : undefined,
+      blockedBy,
+      submittedAt: task.promptSubmittedAt,
+      startedAt: task.promptStartedAt,
+      // No output at all since the submit is as telling as a repainted empty prompt.
+      awaitingInput: this.normalizedTail(task.agentId) === '' || this.tailHasAgentPrompt(task),
+    });
+  }
+
+  private stalledChildren(coordinatorTaskId: string): StalledChild[] {
+    const stalled: StalledChild[] = [];
+    for (const task of this.tasks.values()) {
+      // A child that signalled done took its prompt, whatever its screen shows.
+      if (task.coordinatorTaskId !== coordinatorTaskId || task.signalDoneAt) continue;
+      const delivery = this.promptDelivery(task);
+      if (delivery && isStalled(delivery, task.status === 'idle')) {
+        stalled.push({ taskId: task.id, name: task.name, delivery });
+      }
+    }
+    return stalled;
+  }
+
   /** A body whose Enter failed is still in the agent's input. Submit it instead of
    *  typing the next prompt onto it; the queue flushes on the following ready prompt. */
   private submitStrandedPrompt(task: CoordinatedTask, epoch: number): void {
@@ -1663,6 +1731,7 @@ export class Coordinator {
       return;
     }
     task.unsubmittedPrompt = false;
+    this.markPromptSubmitted(task);
     task.status = 'running';
     // The ❯ that triggered this is stale; wait for a fresh one before the next prompt.
     this.tailBuffers.set(task.agentId, '');
@@ -1767,6 +1836,7 @@ export class Coordinator {
       });
       // A direct write's Enter also submits any body stranded before it.
       task.unsubmittedPrompt = false;
+      this.markPromptSubmitted(task);
       task.status = 'running';
       task.signalDoneAt = undefined;
       task.lastPromptEchoText = stripAnsi(prompt)
@@ -2819,6 +2889,7 @@ export class Coordinator {
       initialPrompt: opts.initialPrompt,
       pendingPrompts: opts.pendingPrompts?.length ? [...opts.pendingPrompts] : undefined,
       assignedPromptDelivered: opts.assignedPromptDelivered ?? !opts.initialPrompt,
+      promptQueuedAt: opts.initialPrompt || opts.pendingPrompts?.length ? Date.now() : undefined,
       signalDoneAt: opts.signalDoneAt ? new Date(opts.signalDoneAt) : undefined,
       signalDoneConsumed: opts.signalDoneConsumed,
       completion,
@@ -3530,7 +3601,8 @@ export class Coordinator {
           activeWaitCount: this.activeSignalWaitCounts.get(coordinatorTaskId) ?? 0,
         });
         const remaining = this.countRemaining(coordinatorTaskId);
-        complete({ remaining, timedOut: true });
+        const stalled = this.stalledChildren(coordinatorTaskId);
+        complete({ remaining, timedOut: true, ...(stalled.length ? { stalled } : {}) });
       }, timeoutMs);
 
       let resolvers = this.anySignalResolvers.get(coordinatorTaskId);

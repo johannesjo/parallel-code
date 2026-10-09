@@ -6,6 +6,7 @@ export type { SubtaskVerification, SubtaskVerificationCheck } from '../shared/co
 // Shared types for the MCP coordinating-agent system.
 
 import type { IntegrationPolicy } from '../shared/delegation-types.js';
+import type { PromptDelivery } from './prompt-delivery.js';
 export type { IntegrationPolicy } from '../shared/delegation-types.js';
 
 export interface CoordinatedTask {
@@ -42,6 +43,11 @@ export interface CoordinatedTask {
   assignedPromptDelivered?: boolean;
   /** A prompt body was typed but its Enter failed; submit it before the next prompt. */
   unsubmittedPrompt?: boolean;
+  /** Since when the oldest undelivered prompt has waited to be typed. */
+  promptQueuedAt?: number;
+  /** When the latest prompt's Enter was written, and when the agent showed it started. */
+  promptSubmittedAt?: number;
+  promptStartedAt?: number;
   // Ignore the prompt that was already visible when a coordinator-delivered prompt was sent.
   suppressIdleUntil?: number;
   lastPromptEchoText?: string;
@@ -60,6 +66,14 @@ export interface WaitForSignalDoneResult {
   completion?: CompletionRecord;
   remaining: number; // unconsumed signals + still-running tasks for this coordinator
   timedOut?: true; // set when no signal arrived before the timeout
+  /** On timeout: children whose prompt has not reached their agent for a while. */
+  stalled?: StalledChild[];
+}
+
+export interface StalledChild {
+  taskId: string;
+  name: string;
+  delivery: PromptDelivery;
 }
 
 export interface PendingNotification {
@@ -154,6 +168,8 @@ export interface ApiTaskSummary {
   reviewRevision?: number;
   /** Diagnostic evidence for the primary agent, independent of assignment completion. */
   activityEvidence?: ActivityEvidence;
+  /** Set while the latest prompt is queued or its receipt is unconfirmed. */
+  delivery?: PromptDelivery;
   integrationPolicy?: IntegrationPolicy;
   id: string;
   name: string;

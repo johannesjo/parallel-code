@@ -559,6 +559,26 @@ describe('delegation authority and creation', () => {
       'unavailable',
     );
   });
+
+  it('says a closed child is gone instead of calling it foreign', async () => {
+    await register('parent');
+    core.getTaskStatus.mockReturnValue(null);
+    await expect(
+      service.callTool(session('parent'), 'send_prompt', { taskId: 'landed', prompt: 'more' }),
+    ).rejects.toThrow('no longer active');
+  });
+
+  it('points peer prompts that miss their recipient to send_prompt', async () => {
+    await register('parent');
+    await expect(
+      service.callTool(session('parent'), 'send_agent_prompt', {
+        agentId: 'agent-child',
+        sessionInstanceId: 'guessed',
+        prompt: 'continue',
+        requestId: 'r1',
+      }),
+    ).rejects.toThrow('use send_prompt');
+  });
 });
 
 describe('held peer messages and access', () => {

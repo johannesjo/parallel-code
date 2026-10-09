@@ -539,7 +539,13 @@ export class DelegationService {
     }
     const childId = id(params.taskId, 'taskId');
     const child = coordinator?.getTaskStatus(childId);
-    if (!coordinator || !child || child.coordinatorTaskId !== task.taskId)
+    // Closed, merged and self-landed children leave the coordinator entirely.
+    if (!child)
+      throw new DelegationError(
+        'Task is no longer active (closed, merged or landed). Create a new task for further work.',
+        404,
+      );
+    if (!coordinator || child.coordinatorTaskId !== task.taskId)
       throw new DelegationError('This is not your child task', 403);
     switch (name) {
       case 'get_task_status':
@@ -599,7 +605,10 @@ export class DelegationService {
       !this.canContact(caller.taskId, target.taskId) ||
       getAgentMeta(agentId)?.isShell
     )
-      throw new DelegationError('Recipient unavailable or outside your scope', 403);
+      throw new DelegationError(
+        'Recipient unavailable or outside your scope. For your own child tasks, use send_prompt with their taskId.',
+        403,
+      );
     return target;
   }
 

@@ -125,6 +125,14 @@ const landedMetadata = object(
     'verification',
   ],
 );
+const delivery = object(
+  {
+    state: { enum: ['queued', 'unconfirmed'] },
+    blockedBy: { enum: ['agent_startup', 'user_activity', 'agent_busy'] },
+    sinceMs: { type: 'number', minimum: 0 },
+  },
+  ['state', 'sinceMs'],
+);
 const taskSummary = object(
   {
     id: string,
@@ -156,6 +164,7 @@ const taskSummary = object(
       },
       ['agentId', 'source', 'activity', 'event', 'freshness'],
     ),
+    delivery,
   },
   ['id', 'name', 'branchName', 'status', 'coordinatorTaskId'],
 );
@@ -196,6 +205,9 @@ export const toolOutputSchemas = {
         completion,
         remaining: { type: 'integer', minimum: 0 },
         timedOut: { const: true },
+        stalled: array(
+          object({ taskId: string, name: string, delivery }, ['taskId', 'name', 'delivery']),
+        ),
       },
       ['remaining'],
     ),
