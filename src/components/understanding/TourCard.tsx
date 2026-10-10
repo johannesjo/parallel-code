@@ -3,6 +3,7 @@ import { createHighlightedMarkdown } from '../../lib/marked-shiki';
 import { renderMermaidIn } from '../../lib/mermaid';
 import { theme } from '../../lib/theme';
 import type { TourCard as TourCardData, TourRef, TourTone } from '../../lib/understanding-tour';
+import { FileIcon } from '../icons';
 
 /** Tone colour per card; `neutral` and `mechanical` carry no accent. */
 const TONE_COLOR: Record<TourTone, string> = {
@@ -24,17 +25,7 @@ function refLabel(ref: TourRef): string {
 
 /** Marks a ref chip as a place in the codebase rather than a word. */
 function FileGlyph() {
-  return (
-    <svg width="9" height="11" viewBox="0 0 9 11" aria-hidden="true">
-      <path
-        d="M1 0.5h4L8 3.5v7H1z"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1"
-        stroke-linejoin="round"
-      />
-    </svg>
-  );
+  return <FileIcon size={9} height={11} />;
 }
 
 /**

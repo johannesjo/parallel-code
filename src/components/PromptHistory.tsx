@@ -4,6 +4,7 @@ import { createAnchorEffect, createHeldSignal, placeBelow } from '../lib/floatin
 import type { BelowAnchor } from '../lib/floating';
 import type { Task } from '../store/types';
 import { promptHistoryOf } from '../lib/prompt-history';
+import { HistoryAltIcon } from './icons';
 
 export function PromptHistory(props: { task: Task; emptyLabel: string }) {
   const id = createUniqueId();
@@ -86,19 +87,7 @@ export function PromptHistory(props: { task: Task; emptyLabel: string }) {
           }
         }}
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M2 7a6 6 0 1 1 1.5 5M2 3v4h4M8 4.5V8l2.5 1.5" />
-        </svg>
+        <HistoryAltIcon size={14} />
         <span>{props.task.lastPrompt || props.emptyLabel}</span>
       </button>
       <Show when={open()}>

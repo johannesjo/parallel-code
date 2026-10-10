@@ -1037,3 +1037,64 @@ export function QuestionAltIcon(props: IconProps): JSX.Element {
     </SvgIcon>
   );
 }
+
+/** Stroke-drawn history: the prompt-history trigger; HistoryIcon above is the filled one. */
+export function HistoryAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M2 7a6 6 0 1 1 1.5 5M2 3v4h4M8 4.5V8l2.5 1.5" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Compact prompt-style terminal for the shell toolbar; see also TerminalIcon above. */
+export function TerminalSmallIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.25" roundCaps roundJoins>
+      <rect x="1.5" y="2.5" width="13" height="11" />
+      <path d="m4 6 2 2-2 2m4 0h3" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** The chat composer's send arrow; ArrowUpIcon is the prompt bar's compact variant. */
+export function ArrowUpAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M8 12V4M4 8l4-4 4 4" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Compact stop square: the chat composer's stop button. */
+export function StopSmallIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="4.5" y="4.5" width="7" height="7" rx="1" />
+    </SvgIcon>
+  );
+}
+
+export function FileIcon(props: IconProps & { height?: number | string }): JSX.Element {
+  const width = () => props.size ?? 16;
+  const height = () => props.height ?? props.size ?? 16;
+
+  return (
+    <svg
+      width={width()}
+      height={height()}
+      viewBox="0 0 9 11"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1"
+      stroke-linejoin="round"
+      class={props.class}
+      style={props.style}
+      aria-hidden={props.title ? undefined : 'true'}
+      role={props.title ? 'img' : undefined}
+    >
+      {props.title ? <title>{props.title}</title> : null}
+      <path d="M1 0.5h4L8 3.5v7H1z" />
+    </svg>
+  );
+}
