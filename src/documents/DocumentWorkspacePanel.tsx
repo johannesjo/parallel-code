@@ -67,7 +67,7 @@ import { openInEditor, revealItemInDir } from '../lib/shell';
 import {
   ChevronDownThinIcon,
   CloseIcon,
-  CollapseIcon,
+  CollapseAltIcon,
   DocumentIcon,
   ExpandAltIcon,
   ExternalLinkIcon,
@@ -891,9 +891,9 @@ export function DocumentWorkspacePanel() {
             aria-pressed={store.focusMode && isActive()}
             onClick={() => toggleTaskFocusMode(taskId())}
           >
-            {/* Same glyph as the task title bar: one focus icon everywhere. */}
-            <Show when={store.focusMode} fallback={<ExpandAltIcon />}>
-              <CollapseIcon />
+            {/* Unfocused shows the corners-in glyph (enter focus); focused shows corners-out. */}
+            <Show when={store.focusMode} fallback={<CollapseAltIcon />}>
+              <ExpandAltIcon />
             </Show>
           </button>
           <button
