@@ -990,6 +990,7 @@ export function TaskPanel(props: TaskPanelProps) {
             task={props.task}
             onEditProject={(id) => setEditingProjectId(id)}
             onOpenPullRequest={setOpenPrUrl}
+            onFinish={canFinish() ? () => openFinish('merge') : undefined}
           />
         </div>
       </div>

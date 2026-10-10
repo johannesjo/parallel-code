@@ -418,6 +418,31 @@ body.font-smoothing {
   flex: 0 0 auto;
 }
 
+/* Neutral like Finish: merging is routine, so only hover adds emphasis. */
+.task-pr-merge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-right: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.task-pr-merge:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--fg);
+}
+
 .task-pr-label,
 .task-pr-review-status {
   display: inline-flex;

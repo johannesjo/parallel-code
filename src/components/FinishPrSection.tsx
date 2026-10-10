@@ -6,6 +6,7 @@ import type { PrMergeMethod } from '../ipc/types';
 import type { Task } from '../store/types';
 import type { MergeReadinessCheck } from './merge-readiness';
 import { MergeReadinessPanel } from './MergeReadinessPanel';
+import { CommentIcon, ToolsIcon } from './icons';
 import { PR_METHOD_LABELS, prIsBlocked, taskPrUrl, type FinishPr } from './pr-actions';
 
 interface FinishPrSectionProps {
@@ -100,26 +101,28 @@ export function FinishPrSection(props: FinishPrSectionProps) {
               <Show when={ciFailed()}>
                 <button
                   type="button"
-                  class="btn-secondary"
+                  class="btn-secondary btn-with-icon"
                   disabled={busyOrDisabled()}
                   aria-busy={props.pr.busy() === 'fix-ci'}
                   onClick={() => void stage('fix-ci')}
                   title="Collect failed checks and their log tails into a prompt for the agent"
                   style={dialogButtonStyle(false, busyOrDisabled())}
                 >
+                  <ToolsIcon size={14} />
                   {props.pr.busy() === 'fix-ci' ? 'Collecting…' : 'Fix CI'}
                 </button>
               </Show>
               <Show when={changesRequested()}>
                 <button
                   type="button"
-                  class="btn-secondary"
+                  class="btn-secondary btn-with-icon"
                   disabled={busyOrDisabled()}
                   aria-busy={props.pr.busy() === 'review'}
                   onClick={() => void stage('review')}
                   title="Collect unresolved review comments into a prompt for the agent"
                   style={dialogButtonStyle(false, busyOrDisabled())}
                 >
+                  <CommentIcon size={14} />
                   {props.pr.busy() === 'review' ? 'Collecting…' : 'Address review'}
                 </button>
               </Show>

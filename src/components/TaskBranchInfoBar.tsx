@@ -18,7 +18,7 @@ import { parseGitHubUrl } from '../lib/github-url';
 import { abbreviateHomePath } from '../lib/path';
 import { projectInitials } from '../lib/project-initials';
 import type { Task } from '../store/types';
-import { AlertIcon, CheckIcon, GitMergeIcon, PencilIcon, PersonIcon } from './icons';
+import { AlertIcon, CheckIcon, GitMergeIcon, PencilIcon, PersonIcon, ToolsIcon } from './icons';
 
 const infoBarBtnStyle: JSX.CSSProperties = {
   'align-self': 'stretch',
@@ -99,6 +99,9 @@ const fixCiBtnStyle: JSX.CSSProperties = {
   cursor: 'pointer',
   'white-space': 'nowrap',
   'flex-shrink': '0',
+  display: 'inline-flex',
+  'align-items': 'center',
+  gap: '4px',
 };
 
 /** Stages the failed checks and their log tails as a prompt in the task input. */
@@ -132,6 +135,7 @@ function FixCiButton(props: { taskId: string; prUrl: string; prNumber: number })
       title="Collect failed checks and their log tails into a prompt for the agent"
       style={{ ...fixCiBtnStyle, opacity: busy() ? '0.7' : '1' }}
     >
+      <ToolsIcon size={12} />
       {busy() ? 'Collecting…' : 'Fix CI'}
     </button>
   );
@@ -142,6 +146,8 @@ interface TaskBranchInfoBarProps {
   onEditProject: (projectId: string) => void;
   /** Opens the in-app PR panel; without it the PR chip opens GitHub. */
   onOpenPullRequest?: (prUrl: string) => void;
+  /** Opens the finish dialog; without it there is no Merge shortcut. */
+  onFinish?: () => void;
 }
 
 export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
@@ -401,12 +407,38 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
             </button>
           );
           const ciFailed = () => pr()?.overall === 'failure' && !pr()?.merged;
+          // Only offer Merge when GitHub would accept it without a bypass.
+          const readyToMerge = () => {
+            const c = pr();
+            return (
+              !!c &&
+              c.overall === 'success' &&
+              !c.merged &&
+              !c.isDraft &&
+              !hasConflicts() &&
+              c.reviewDecision !== 'CHANGES_REQUESTED' &&
+              c.reviewDecision !== 'REVIEW_REQUIRED'
+            );
+          };
           return (
             <>
               {prButton}
               <Show when={ciFailed() && prNumber()}>
                 {(number) => (
                   <FixCiButton taskId={props.task.id} prUrl={url()} prNumber={Number(number())} />
+                )}
+              </Show>
+              <Show when={readyToMerge() && props.onFinish}>
+                {(finish) => (
+                  <button
+                    type="button"
+                    class="task-pr-merge"
+                    onClick={() => finish()()}
+                    title={`CI passed — open Finish to merge PR #${prNumber()}`}
+                  >
+                    <GitMergeIcon size={12} />
+                    Merge
+                  </button>
                 )}
               </Show>
             </>
