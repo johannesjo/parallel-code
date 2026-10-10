@@ -850,7 +850,7 @@ describe('automatic peer delivery', () => {
     await expect(send(sender, session('r0'), 'over')).rejects.toThrow('limit reached');
   });
 
-  it('resets stability on output changes and waits behind coordinator prompts', async () => {
+  it('resets readiness while coordinator prompts are pending', async () => {
     vi.useFakeTimers();
     const { deliver } = await queued();
     await deliver();
@@ -859,14 +859,44 @@ describe('automatic peer delivery', () => {
     await deliver();
     core.hasPendingPrompt.mockReturnValue(false);
     await deliver();
-    mocks.promptSnapshot.mockReturnValue({ text: 'Changed output\n› Ask Codex to do anything' });
-    await vi.advanceTimersByTimeAsync(1500);
     await deliver();
     expect(mocks.writePrompt).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1500);
     await deliver();
     expect(mocks.writePrompt).toHaveBeenCalledOnce();
   });
+
+  it('delivers when the prompt stays ready despite changing terminal output', async () => {
+    vi.useFakeTimers();
+    const { deliver } = await queued();
+    for (let tick = 0; tick < 3; tick++) {
+      mocks.promptSnapshot.mockReturnValue({
+        text: `Background output ${tick}\n› Ask Codex to do anything\nStatus ${tick}`,
+      });
+      await deliver();
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    expect(mocks.writePrompt).toHaveBeenCalledOnce();
+  });
+
+  it.each(['Working (esc to interrupt)', '› my draft', null])(
+    'restarts the ready interval after an unavailable prompt: %s',
+    async (text) => {
+      vi.useFakeTimers();
+      const { deliver } = await queued();
+      await deliver();
+      await vi.advanceTimersByTimeAsync(1500);
+      mocks.promptSnapshot.mockReturnValueOnce(text === null ? null : { text });
+      await deliver();
+      await deliver();
+      await vi.advanceTimersByTimeAsync(1000);
+      await deliver();
+      expect(mocks.writePrompt).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(500);
+      await deliver();
+      expect(mocks.writePrompt).toHaveBeenCalledOnce();
+    },
+  );
 
   it('publishes delivery before input drains and cannot expire a submitted receipt', async () => {
     vi.useFakeTimers();

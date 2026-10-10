@@ -127,6 +127,7 @@ it.each([
   { automationWriteInFlight: true },
   { landingState: 'landed_pending_review' as const },
   {
+    autoSendChildUpdates: true,
     stagedNotification: {
       batchId: 'child',
       notificationIds: ['child'],
@@ -142,6 +143,49 @@ it.each([
   setStore('tasks', task.id, reconcile({ ...task }));
   await vi.advanceTimersByTimeAsync(1_000);
   expect(invoke).toHaveBeenCalledOnce();
+});
+
+it.each([
+  {},
+  { autoSendChildUpdates: false },
+  { coordinatorMode: true, autoSendChildUpdates: false },
+])('delivers child messages while completion updates await manual review: %j', async (policy) => {
+  inbox([message('one', 'first')]);
+  setStore('tasks', task.id, {
+    ...policy,
+    delegationParent: true,
+    stagedNotification: {
+      batchId: 'completion',
+      notificationIds: ['child'],
+      text: 'Child complete',
+      autoFireAt: 0,
+      userEdited: false,
+    },
+  });
+  setStore('tasks', 'sender', { ...task, id: 'sender', coordinatedBy: task.id });
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(delivered).toHaveBeenCalledOnce();
+  expect(delegationStates[task.id].messages[0].state).toBe('delivered');
+  expect(store.tasks[task.id].stagedNotification?.batchId).toBe('completion');
+});
+
+it.each([
+  { coordinatorMode: true },
+  { autoSendChildUpdates: false, userEdited: true },
+  { autoSendChildUpdates: false, promptDraft: 'My instructions' },
+])('preserves notification and draft holds: %j', async ({ userEdited = false, ...policy }) => {
+  setStore('tasks', task.id, {
+    ...policy,
+    stagedNotification: {
+      batchId: 'completion',
+      notificationIds: ['child'],
+      text: 'Child complete',
+      autoFireAt: 0,
+      userEdited,
+    },
+  });
+  await vi.advanceTimersByTimeAsync(3_000);
+  expect(invoke).not.toHaveBeenCalled();
 });
 
 it('holds while orchestration is off, state is paused, or the known recipient changed', async () => {
@@ -465,22 +509,33 @@ it.each([{ promptDraft: 'draft' }, { terminalInputPending: true }, { promptDraft
   },
 );
 
-it.each([{ promptDraft: 'draft' }, { promptDraftActive: true }])(
-  'delivers a second opinion without waiting for the main agent composer: %j',
-  async (draft) => {
-    inbox([{ ...message(), origin: 'user' }]);
-    setStore('tasks', task.id, { controlledBy: 'human', ...draft });
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(invoke).toHaveBeenCalledWith(IPC.DelegationRequest, {
-      action: 'deliverMessage',
-      deliveryId: 'one',
-      agentId: 'second',
-      sessionInstanceId: 'second-instance',
-    });
-    expect(delivered).toHaveBeenCalledOnce();
-    expect(store.tasks[task.id]).toMatchObject(draft);
+it.each([
+  { promptDraft: 'draft' },
+  { promptDraftActive: true },
+  { prefillPrompt: 'Main pane instructions' },
+  {
+    autoSendChildUpdates: true,
+    stagedNotification: {
+      batchId: 'completion',
+      notificationIds: ['child'],
+      text: 'Child complete',
+      autoFireAt: 0,
+      userEdited: false,
+    },
   },
-);
+])('delivers a second opinion without waiting for the main agent composer: %j', async (draft) => {
+  inbox([{ ...message(), origin: 'user' }]);
+  setStore('tasks', task.id, { controlledBy: 'human', ...draft });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(invoke).toHaveBeenCalledWith(IPC.DelegationRequest, {
+    action: 'deliverMessage',
+    deliveryId: 'one',
+    agentId: 'second',
+    sessionInstanceId: 'second-instance',
+  });
+  expect(delivered).toHaveBeenCalledOnce();
+  expect(store.tasks[task.id]).toMatchObject(draft);
+});
 
 it('keeps second opinions queued while terminal input is pending', async () => {
   inbox([{ ...message(), origin: 'user' }]);

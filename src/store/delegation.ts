@@ -216,8 +216,13 @@ export function startPeerMessageDelivery(onDelivered: (message: PeerMessage) => 
           (checkComposerDraft && (task.promptDraftActive || task.promptDraft?.trim())) ||
           task.terminalInputPending ||
           (task.userActivityHoldUntil ?? 0) > Date.now() ||
-          task.prefillPrompt ||
-          task.stagedNotification
+          (checkComposerDraft && task.prefillPrompt) ||
+          // Manual completion summaries can remain unread indefinitely. Only
+          // reserve input for an automatic notification or a user-edited one.
+          (checkComposerDraft &&
+            task.stagedNotification &&
+            ((task.autoSendChildUpdates ?? task.coordinatorMode) ||
+              task.stagedNotification.userEdited))
         )
           continue;
         const generation = agent.generation;

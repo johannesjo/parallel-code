@@ -130,7 +130,7 @@ export class DelegationService {
   private messageRequestCount = 0;
   private readonly messageWaiters = new Set<() => void>();
   private readonly delivering = new Set<string>();
-  private readonly readyMessages = new Map<string, { text: string; since: number }>();
+  private readonly readyMessages = new Map<string, number>();
   private readonly closes = new Map<string, Promise<{ detachedChildIds: string[] }>>();
 
   constructor(
@@ -843,11 +843,13 @@ export class DelegationService {
       return;
     }
     const previous = this.readyMessages.get(message.deliveryId);
-    if (!previous || previous.text !== snapshot.text) {
-      this.readyMessages.set(message.deliveryId, { text: snapshot.text, since: Date.now() });
+    // Readiness must persist, but unrelated output and status repainting need
+    // not stop. The coordinator uses the same continuous-readiness approach.
+    if (previous === undefined) {
+      this.readyMessages.set(message.deliveryId, Date.now());
       return;
     }
-    if (Date.now() - previous.since < 1500) return;
+    if (Date.now() - previous < 1500) return;
     this.delivering.add(agentId);
     try {
       assertCurrent();
