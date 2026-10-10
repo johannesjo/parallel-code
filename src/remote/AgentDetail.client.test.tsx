@@ -799,7 +799,7 @@ describe('failed PR checks', () => {
     );
   });
 
-  it('keeps the open prompt when CI leaves the failed state mid-edit', async () => {
+  it('keeps the open prompt when CI or the agent list changes mid-edit', async () => {
     const first = agents()[0];
     const [list, setList] = createSignal([first]);
     // eslint-disable-next-line solid/reactivity -- the component tracks reads through this mock
@@ -812,6 +812,9 @@ describe('failed PR checks', () => {
       expect(host.querySelector('[aria-label="Fix CI prompt"]')).not.toBeNull(),
     );
     setList([{ ...first, ci: 'pending' }]);
+    expect(host.querySelector('[aria-label="Fix CI prompt"]')).not.toBeNull();
+    // A reconnect briefly empties the list.
+    setList([]);
     expect(host.querySelector('[aria-label="Fix CI prompt"]')).not.toBeNull();
   });
 

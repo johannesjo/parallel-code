@@ -14,7 +14,8 @@ export function TaskHeader(props: {
 }) {
   const agent = () => agents().find((a) => a.agentId === props.agentId);
   const display = () => agentStatusDisplay(agent() ?? { status: 'exited', attention: 'idle' });
-  const [fixingCi, setFixingCi] = createSignal(false);
+  // The task id, held from the click: a reconnect blanking `agent()` must not drop the user's edits.
+  const [fixingCiTask, setFixingCiTask] = createSignal<string>();
   return (
     <>
       <header class="mobile-header mobile-task-header">
@@ -50,16 +51,18 @@ export function TaskHeader(props: {
       </Show>
       {/* Paired only: the prompt exists to be sent, which a view-only phone cannot do. */}
       <Show when={canControl() && agent()?.ci === 'failure' && agent()?.taskId}>
-        <div class="mobile-banner error">
-          <span>PR checks failed</span>
-          <button class="mobile-button quiet" onClick={() => setFixingCi(true)}>
-            Fix CI
-          </button>
-        </div>
+        {(taskId) => (
+          <div class="mobile-banner error">
+            <span>PR checks failed</span>
+            <button class="mobile-button quiet" onClick={() => setFixingCiTask(taskId())}>
+              Fix CI
+            </button>
+          </div>
+        )}
       </Show>
       {/* Outside the banner's Show: a CI re-run mid-edit must not discard the user's edits. */}
-      <Show when={fixingCi() && agent()?.taskId}>
-        {(taskId) => <FixCiDialog taskId={taskId()} onClose={() => setFixingCi(false)} />}
+      <Show when={fixingCiTask()}>
+        {(taskId) => <FixCiDialog taskId={taskId()} onClose={() => setFixingCiTask()} />}
       </Show>
     </>
   );

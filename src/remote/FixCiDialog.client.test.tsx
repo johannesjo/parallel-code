@@ -55,7 +55,7 @@ it('says so when no check failed, and offers nothing to send', async () => {
 });
 
 it('asks for a desktop update when the route is missing', async () => {
-  vi.mocked(fetchFixCiPrompt).mockRejectedValue(new ApiError('Not found', 404));
+  vi.mocked(fetchFixCiPrompt).mockRejectedValue(new ApiError('forbidden', 403));
   mount();
   await vi.waitFor(() => expect(host.textContent).toContain('Update Parallel Code'));
 });

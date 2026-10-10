@@ -5,8 +5,8 @@ import { ApiError, fetchFixCiPrompt, sendFixCiPrompt } from './api';
 const MAX_PROMPT_CHARS = 60_000;
 
 function errorText(err: unknown): string {
-  // Desktops from before this route answer 404 for the unknown path.
-  if (err instanceof ApiError && err.status === 404)
+  // Desktops from before this route refuse the unknown paired-token path with 403.
+  if (err instanceof ApiError && (err.status === 403 || err.status === 404))
     return 'Update Parallel Code on your computer to fix CI from here.';
   return err instanceof Error ? err.message : String(err);
 }

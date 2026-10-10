@@ -51,8 +51,9 @@ internal fun FixCiDialog(
             val loaded = client.fetchFixCiPrompt(taskId)
             if (loaded == null) nothingFailed = true else prompt = loaded.take(MAX_FIX_CI_PROMPT_LENGTH)
         } catch (e: ApiException) {
+            // Older desktops refuse unknown paired-token paths with 403, as fetchAgentChoices notes.
             error =
-                if (e.status == 404) {
+                if (e.status == 403 || e.status == 404) {
                     "Update Parallel Code on your computer to fix CI here."
                 } else {
                     e.message

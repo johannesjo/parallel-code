@@ -968,7 +968,8 @@ fun AgentScreen(
     var tab by rememberSaveable { mutableStateOf(AgentTab.TERMINAL) }
     var closing by remember { mutableStateOf(false) }
     var merging by remember { mutableStateOf(false) }
-    var fixingCi by remember { mutableStateOf(false) }
+    // The task id, held from the click: a reconnect blanking `agent` must not drop the user's edits.
+    var fixingCiTask by rememberSaveable { mutableStateOf<String?>(null) }
     var viewSize by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var terminalExpanded by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = terminalExpanded) { terminalExpanded = false }
@@ -1007,12 +1008,12 @@ fun AgentScreen(
         )
     }
 
-    if (fixingCi && agent != null) {
+    fixingCiTask?.let { taskId ->
         FixCiDialog(
-            taskId = agent.taskId,
+            taskId = taskId,
             client = client,
-            onDismiss = { fixingCi = false },
-            onSent = { fixingCi = false },
+            onDismiss = { fixingCiTask = null },
+            onSent = { fixingCiTask = null },
         )
     }
 
@@ -1067,7 +1068,7 @@ fun AgentScreen(
                         }
                         if (agent != null && state.canControl && agent.ci == "failure") {
                             // Red like the desktop's Fix CI button: a failed check is urgent.
-                            TextButton(onClick = { fixingCi = true }) {
+                            TextButton(onClick = { fixingCiTask = agent.taskId }) {
                                 Text("Fix CI", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
                             }
                         }
