@@ -53,11 +53,11 @@ interface TerminalListener {
     fun onOutput(data: ByteArray)
 }
 
-/** A REST call the desktop refused or could not answer; `status` is 0 when it was unreachable. */
-/** [json] is the error reply's body, for routes that explain a refusal (e.g. close warnings). */
 /** Read timeout for requests that wait on desktop git work; see [RemoteClient.slowHttp]. */
 private const val SLOW_REQUEST_SECONDS = 130L
 
+/** A REST call the desktop refused or could not answer; `status` is 0 when it was unreachable. */
+/** [json] is the error reply's body, for routes that explain a refusal (e.g. close warnings). */
 class ApiException(message: String, val status: Int = 0, val json: JSONObject? = null) : IOException(message)
 
 data class MobileProject(val id: String, val name: String, val agentName: String?)
@@ -100,7 +100,7 @@ class RemoteClient(
 
     /**
      * For requests the desktop answers only once real git work is done: creating a task builds a
-     * worktree, merging and closing run git too. The desktop waits up to 120 s for that work
+     * worktree; merging, closing, the diff and merge readiness run git too. The desktop waits up to 120 s for that work
      * (callRenderer in electron/ipc/register.ts), so OkHttp's default 10 s read timeout reported
      * "could not reach your computer" for a request that was still running, and usually succeeded.
      * A little longer than the desktop lets the desktop's own error come through instead.
@@ -325,13 +325,21 @@ class RemoteClient(
     }
 
     /**
-     * Agents and models a paired phone may start tasks with. Empty from a desktop
-     * that predates the route (it answers 404); tasks then use its default agent.
+     * Agents and models a paired phone may start tasks with. Empty from a desktop that predates
+     * the route: it refuses unknown paths for a paired token with 403. Tasks then use its
+     * default agent.
      */
-    suspend fun fetchAgentChoices(): List<MobileAgentChoice> = try {
-        parseAgentChoices(apiRaw("GET", "/api/mobile/agents", null, pairedTokenOrThrow()))
-    } catch (e: ApiException) {
-        if (e.status == 404) emptyList() else throw e
+    suspend fun fetchAgentChoices(): List<MobileAgentChoice> {
+        val raw = try {
+            apiRaw("GET", "/api/mobile/agents", null, pairedTokenOrThrow())
+        } catch (e: ApiException) {
+            if (e.status == 403 || e.status == 404) return emptyList() else throw e
+        }
+        return try {
+            parseAgentChoices(raw)
+        } catch (e: JSONException) {
+            throw ApiException("Your computer sent an unexpected reply.")
+        }
     }
 
     /**
@@ -362,7 +370,13 @@ class RemoteClient(
 
     /** The task's changes against its base branch; readable with the view-only token. */
     suspend fun fetchDiff(taskId: String): TaskDiff {
-        val json = api("GET", "/api/mobile/tasks/${encodePath(taskId)}/diff", null, credentials.pairedToken ?: credentials.link?.token)
+        val json = api(
+            "GET",
+            "/api/mobile/tasks/${encodePath(taskId)}/diff",
+            null,
+            credentials.pairedToken ?: credentials.link?.token,
+            slow = true,
+        )
         return TaskDiff.from(json)
     }
 
@@ -397,6 +411,7 @@ class RemoteClient(
                 "/api/mobile/tasks/${encodePath(taskId)}/readiness",
                 null,
                 credentials.pairedToken ?: credentials.link?.token,
+                slow = true,
             ),
         )
 
@@ -483,7 +498,7 @@ class RemoteClient(
                 // A slow request may still finish on the desktop, so don't call it unreachable.
                 // (A connect timeout is also a SocketTimeoutException, hence the hedged wording.)
                 if (slow && e is SocketTimeoutException) {
-                    throw ApiException("Your computer did not answer in time. The change may still go through.")
+                    throw ApiException("Your computer did not answer in time.")
                 }
                 throw ApiException("Could not reach your computer. Check you're on the same network.")
             }

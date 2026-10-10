@@ -66,6 +66,7 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
     var loadAttempt by remember { mutableIntStateOf(0) }
     var projectId by rememberSaveable { mutableStateOf("") }
     var agents by remember { mutableStateOf<List<MobileAgentChoice>>(emptyList()) }
+    var agentsLoaded by remember { mutableStateOf(false) }
     var agentId by rememberSaveable { mutableStateOf("") }
     // Empty runs the agent with the model its desktop settings configure.
     var modelId by rememberSaveable { mutableStateOf("") }
@@ -105,6 +106,7 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
             modelId = ""
             if (e.status == 401) onNeedsPairing()
         }
+        agentsLoaded = true
     }
 
     Scaffold(
@@ -161,8 +163,10 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
                     val agent = agents.find { it.id == agentId }
                     if (agent == null) {
                         // An older desktop lists no agents; say which one it will start.
-                        loaded.find { it.id == projectId }?.agentName?.let {
-                            Text("Runs with $it", style = MaterialTheme.typography.bodySmall, color = AppTheme.extra.textMuted)
+                        if (agentsLoaded) {
+                            loaded.find { it.id == projectId }?.agentName?.let {
+                                Text("Runs with $it", style = MaterialTheme.typography.bodySmall, color = AppTheme.extra.textMuted)
+                            }
                         }
                     } else {
                         SelectField(

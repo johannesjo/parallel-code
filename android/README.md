@@ -93,7 +93,7 @@ See `electron/remote/server.ts` and `electron/remote/protocol.ts`.
 | Watch        | `subscribe` / `unsubscribe`; the server sends `scrollback`, then `output` (base64 PTY bytes)                                  |
 | View size    | `view-size` with `{ cols, rows }` (paired) while a terminal is open; without them, or on disconnect, the desktop size returns |
 | Projects     | `GET /api/mobile/projects` (paired)                                                                                           |
-| Agents       | `GET /api/mobile/agents` (paired) → `[{ id, name, isDefault, models }]`; `404` on older desktops                              |
+| Agents       | `GET /api/mobile/agents` (paired) → `[{ id, name, isDefault, models }]`; `403` on older desktops                              |
 | New task     | `POST /api/mobile/tasks` with `{ projectId, name, prompt, agentId?, model? }` (paired); returns `{ taskId }`                  |
 | Usage        | `GET /api/mobile/usage`; the desktop status bar's snapshot, readable view-only                                                |
 | Notes        | `GET` / `PUT /api/mobile/notes/<taskId>` with `{ notes }`; reading works view-only, saving needs pairing                      |
