@@ -3,7 +3,14 @@ import { TaskProjectFilter } from './TaskProjectFilter';
 import { createProjectFilterTransition } from '../lib/projectFilterTransition';
 import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
 import type { JSX } from 'solid-js';
-import { GitHubIcon } from './icons';
+import {
+  BotIcon,
+  ChevronDownAltIcon,
+  DocumentIcon,
+  FolderIcon,
+  GitHubIcon,
+  PlusLargeIcon,
+} from './icons';
 import { openGitHubIssues } from '../store/github';
 import { errMessage } from '../lib/log';
 import {
@@ -46,7 +53,6 @@ import { EditProjectDialog } from './EditProjectDialog';
 import { NewDocumentProjectDialog } from '../documents/NewDocumentProjectDialog';
 import { openDocumentWorkspace } from '../documents/store';
 import { codeProjects, isDocumentProject } from '../store/projects';
-import { DocumentIcon } from '../documents/DocumentIcon';
 import { AddProjectMenu } from './AddProjectMenu';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { SidebarFooter } from './SidebarFooter';
@@ -119,17 +125,7 @@ function createOffscreenAttentionState(taskId: () => string) {
 
 /** Small bot/coordinator icon (16x16 SVG). */
 function CoordinatorIcon() {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      style={{ 'flex-shrink': '0', opacity: '0.7' }}
-    >
-      <path d="M8 1a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V6h3a2 2 0 0 1 2 2v1.27A2 2 0 0 1 15 11a2 2 0 0 1-3 1.73V11a1 1 0 0 0-1-1H9v2.27A2 2 0 0 1 10 14a2 2 0 0 1-4 0c0-.74.4-1.39 1-1.73V10H5a1 1 0 0 0-1 1v1.73A2 2 0 0 1 5 14a2 2 0 0 1-4 0c0-.74.4-1.39 1-1.73V11a2 2 0 0 1-1-1.73V8a2 2 0 0 1 2-2h3V4.73A2 2 0 0 1 6 3a2 2 0 0 1 2-2Z" />
-    </svg>
-  );
+  return <BotIcon size={12} style={{ 'flex-shrink': '0', opacity: '0.7' }} />;
 }
 
 function DirectBranchBadge(props: { branchName: string }) {
@@ -220,20 +216,14 @@ export function ProjectTaskGroupToggle(props: {
         gap: '5px',
       }}
     >
-      <svg
-        width="12"
-        height="12"
-        viewBox="0 0 16 16"
-        fill="currentColor"
-        aria-hidden="true"
+      <ChevronDownAltIcon
+        size={12}
         style={{
           'flex-shrink': '0',
           transform: props.collapsed ? 'rotate(-90deg)' : 'none',
           transition: 'transform 0.15s ease',
         }}
-      >
-        <path d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" />
-      </svg>
+      />
       <ProjectSwatch color={props.project.color} size={6} />
       <span
         style={{
@@ -641,20 +631,14 @@ export function Sidebar() {
                 color: theme.fgMuted,
               }}
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="currentColor"
-                aria-hidden="true"
+              <ChevronDownAltIcon
+                size={16}
                 style={{
                   'flex-shrink': '0',
                   transform: store.projectsCollapsed ? 'rotate(-90deg)' : 'none',
                   transition: 'transform 0.15s ease',
                 }}
-              >
-                <path d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" />
-              </svg>
+              />
               <span
                 style={{
                   'font-size': sf(12),
@@ -666,11 +650,7 @@ export function Sidebar() {
               </span>
             </button>
             <IconButton
-              icon={
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
-                </svg>
-              }
+              icon={<PlusLargeIcon />}
               onClick={(e) => handleAddProject(e.currentTarget)}
               title="Add project"
               size="sm"
@@ -848,15 +828,7 @@ export function Sidebar() {
                 width: '100%',
               }}
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 16 16"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
-              </svg>
+              <FolderIcon size={14} />
               Link Project
             </button>
           }
@@ -880,9 +852,7 @@ export function Sidebar() {
               width: '100%',
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
-            </svg>
+            <PlusLargeIcon size={14} />
             New Task
           </button>
         </Show>

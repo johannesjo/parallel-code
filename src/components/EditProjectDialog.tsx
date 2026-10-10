@@ -22,7 +22,15 @@ import { SegmentedButtons } from './SegmentedButtons';
 import { SuggestChecksButton } from './SuggestChecksButton';
 import { keepCheckIds } from '../lib/check-suggestion';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
-import { CloseIcon, DownloadIcon, FolderIcon, LinkIcon, PlusIcon, TrashIcon } from './icons';
+import {
+  CloseIcon,
+  DownloadIcon,
+  FolderIcon,
+  GitBranchIcon,
+  LinkIcon,
+  PlusIcon,
+  TrashIcon,
+} from './icons';
 import { RemoveProjectConfirm } from './RemoveProjectConfirm';
 import { updateProjectCoordination } from '../store/projects';
 import { isDocumentProject } from '../store/projects';
@@ -398,15 +406,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                       gap: '6px',
                     }}
                   >
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 16 16"
-                      fill="currentColor"
-                      style={{ 'flex-shrink': '0' }}
-                    >
-                      <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6.25 7.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 7.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 0h5.5a2.5 2.5 0 0 0 2.5-2.5v-.5a.75.75 0 0 0-1.5 0v.5a1 1 0 0 1-1 1H5a3.25 3.25 0 1 0 0 6.5h6.25a.75.75 0 0 0 0-1.5H5a1.75 1.75 0 1 1 0-3.5Z" />
-                    </svg>
+                    <GitBranchIcon size={11} style={{ 'flex-shrink': '0' }} />
                     {sanitizeBranchPrefix(branchPrefix())}/{toBranchName('example-branch-name')}
                   </div>
                 </Show>

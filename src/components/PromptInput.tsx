@@ -47,6 +47,7 @@ import {
 import { taskUsesAgentChat } from '../store/agent-chat';
 import { isLandedTaskState } from '../store/landing';
 import { processAutoFireTick } from './autofire-tick';
+import { ArrowUpIcon } from './icons';
 import {
   resolveAutoSendVerifyOutcome,
   shouldAckInitialPromptDelivery,
@@ -1046,15 +1047,7 @@ export function PromptInput(props: PromptInputProps) {
           }}
           title="Send prompt"
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path
-              d="M7 12V2M7 2L3 6M7 2l4 4"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
+          <ArrowUpIcon size={14} />
         </button>
         <Show
           when={
