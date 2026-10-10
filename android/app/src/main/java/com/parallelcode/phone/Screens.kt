@@ -793,7 +793,8 @@ private fun AgentCard(
     onOpen: (RemoteAgent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isAttention = !agent.collapsed && (agent.attention == "needs_input" || agent.attention == "error")
+    val isError = agent.attention == "error" || agent.ciFailed()
+    val isAttention = !agent.collapsed && (agent.attention == "needs_input" || isError)
     val attentionTransition = rememberInfiniteTransition(label = "attentionPulse")
     val attentionGlow by if (isAttention) {
         attentionTransition.animateFloat(
@@ -810,7 +811,7 @@ private fun AgentCard(
     }
 
     val cardBorderColor = if (isAttention) {
-        if (agent.attention == "error") MaterialTheme.colorScheme.error.copy(alpha = attentionGlow)
+        if (isError) MaterialTheme.colorScheme.error.copy(alpha = attentionGlow)
         else AppTheme.extra.attentionBorder.copy(alpha = attentionGlow)
     } else {
         AppTheme.extra.border
@@ -830,12 +831,13 @@ private fun AgentCard(
 
     val (statusColor, statusText) = when {
         agent.collapsed -> Pair(AppTheme.extra.textMuted, "Minimized")
+        agent.ciFailed() -> Pair(MaterialTheme.colorScheme.error, "CI failed")
         !agent.running -> Pair(AppTheme.extra.textMuted, agent.exitCode?.let { "Exited ($it)" } ?: "Exited")
         agent.attention == "needs_input" -> Pair(AppTheme.extra.warningText, "Needs input")
         agent.attention == "error" -> Pair(MaterialTheme.colorScheme.error, "Error")
         agent.attention == "active" -> Pair(MaterialTheme.colorScheme.primary, "Working")
         agent.attention == "shell_busy" -> Pair(MaterialTheme.colorScheme.primary, "Running command")
-        agent.attention == "ready" -> Pair(AppTheme.extra.success, "Ready")
+        agent.attention == "ready" -> Pair(AppTheme.extra.success, readyLabel(agent.ci))
         agent.attention == "review" -> Pair(AppTheme.extra.review, "Review")
         else -> Pair(AppTheme.extra.textMuted, "Idle")
     }
@@ -966,6 +968,7 @@ fun AgentScreen(
     var tab by rememberSaveable { mutableStateOf(AgentTab.TERMINAL) }
     var closing by remember { mutableStateOf(false) }
     var merging by remember { mutableStateOf(false) }
+    var fixingCi by remember { mutableStateOf(false) }
     var viewSize by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var terminalExpanded by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = terminalExpanded) { terminalExpanded = false }
@@ -1001,6 +1004,15 @@ fun AgentScreen(
                 merging = false
                 onBack()
             },
+        )
+    }
+
+    if (fixingCi && agent != null) {
+        FixCiDialog(
+            taskId = agent.taskId,
+            client = client,
+            onDismiss = { fixingCi = false },
+            onSent = { fixingCi = false },
         )
     }
 
@@ -1051,6 +1063,12 @@ fun AgentScreen(
                         if (tab == AgentTab.TERMINAL && agent?.collapsed != true) {
                             IconButton(onClick = { terminalExpanded = true }) {
                                 Icon(Icons.Filled.Fullscreen, contentDescription = "Expand terminal")
+                            }
+                        }
+                        if (agent != null && state.canControl && agent.ci == "failure") {
+                            // Red like the desktop's Fix CI button: a failed check is urgent.
+                            TextButton(onClick = { fixingCi = true }) {
+                                Text("Fix CI", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
                             }
                         }
                         if (agent != null && state.canControl) {
@@ -1881,13 +1899,14 @@ fun statusLabel(state: ConnectionState) = when (state.status) {
 
 internal fun agentStatusLabel(agent: RemoteAgent): String {
     if (agent.collapsed) return "Minimized"
+    if (agent.ciFailed()) return "CI failed"
     if (!agent.running) return agent.exitCode?.let { "Exited ($it)" } ?: "Exited"
     return when (agent.attention) {
         "needs_input" -> "Needs input"
         "active" -> "Working"
         "shell_busy" -> "Running command"
         "error" -> "Error"
-        "ready" -> "Ready"
+        "ready" -> readyLabel(agent.ci)
         "review" -> "Review"
         else -> "Idle"
     }

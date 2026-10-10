@@ -187,6 +187,11 @@ select:focus-visible {
   background: #132838;
   color: #b3e6ff;
 }
+/* Failed CI is urgent, like the desktop's red Fix CI button. */
+.mobile-banner.error {
+  background: #311b23;
+  color: #ffb0bb;
+}
 .mobile-error {
   color: #ffb0bb;
   background: #311b23;
@@ -269,6 +274,10 @@ select:focus-visible {
 }
 textarea.mobile-input {
   resize: vertical;
+}
+.mobile-fix-ci-prompt {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
 }
 .mobile-group {
   margin-top: 16px;

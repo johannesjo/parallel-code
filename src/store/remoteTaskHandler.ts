@@ -16,12 +16,16 @@ import {
   createTask,
   getCoordinatorCloseWarning,
   mergeTask,
+  sendPrompt,
   updateTaskNotes,
 } from './tasks';
 import { getVerifyCommand } from './verification';
 import { getPrChecks } from './pr-checks-state';
+import { loadFailedChecksPrompt } from './github';
 import { getEvidenceConfidence } from './evidence-state';
 import { buildMergeReadiness, type MergeReadinessCheck } from '../components/merge-readiness';
+import { taskPrUrl } from '../components/pr-actions';
+import { parseGitHubUrl } from '../lib/github-url';
 import { invoke } from '../lib/ipc';
 import { errMessage } from '../lib/log';
 import { getTaskDiffBaseBranch, loadTaskDiff } from '../lib/load-task-diff';
@@ -68,6 +72,11 @@ interface CloseTaskRequest extends RendererRequest {
 }
 interface GetTaskDiffRequest extends RendererRequest {
   taskId: string;
+}
+
+interface SendFixCiPromptRequest extends RendererRequest {
+  taskId: string;
+  prompt: string;
 }
 
 function reply(reqId: string, ok: boolean, data?: unknown, error?: string): void {
@@ -417,6 +426,35 @@ async function handleMergeTask(req: MergeTaskRequest): Promise<void> {
   }
 }
 
+/** The desktop's Fix CI prompt for a phone to review; null when nothing failed. */
+async function handleGetFixCiPrompt(req: GetTaskDiffRequest): Promise<void> {
+  try {
+    if (!isKnownTask(store.tasks, req.taskId)) throw new Error('Task not found');
+    const url = taskPrUrl(store.tasks[req.taskId]);
+    const number = url ? Number(parseGitHubUrl(url)?.number) : 0;
+    reply(req.reqId, true, {
+      prompt: url && number ? await loadFailedChecksPrompt({ number, url }) : null,
+    });
+  } catch (err) {
+    reply(req.reqId, false, undefined, errMessage(err));
+  }
+}
+
+/** Sends the Fix CI prompt the phone showed, to the agent its task card follows. */
+async function handleSendFixCiPrompt(req: SendFixCiPromptRequest): Promise<void> {
+  try {
+    if (!isKnownTask(store.tasks, req.taskId)) throw new Error('Task not found');
+    const task = store.tasks[req.taskId];
+    const agentId =
+      task.agentIds.find((id) => store.agents[id]?.status === 'running') ?? task.agentIds[0];
+    if (!agentId) throw new Error('Task has no agent');
+    await sendPrompt(req.taskId, agentId, req.prompt);
+    reply(req.reqId, true, { ok: true });
+  } catch (err) {
+    reply(req.reqId, false, undefined, errMessage(err));
+  }
+}
+
 /** Subscribe to mobile task-creation requests. Returns an unsubscribe fn. */
 export function startRemoteTaskHandlers(): () => void {
   const offReadReasoning = window.electron.ipcRenderer.on(
@@ -476,6 +514,19 @@ export function startRemoteTaskHandlers(): () => void {
     (data: unknown) => {
       if (data && typeof data === 'object')
         void handleGetMergeReadiness(data as GetTaskDiffRequest);
+    },
+  );
+  const offFixCiPrompt = window.electron.ipcRenderer.on(
+    IPC.Remote_GetFixCiPromptRequest,
+    (data: unknown) => {
+      if (data && typeof data === 'object') void handleGetFixCiPrompt(data as GetTaskDiffRequest);
+    },
+  );
+  const offSendFixCi = window.electron.ipcRenderer.on(
+    IPC.Remote_SendFixCiPromptRequest,
+    (data: unknown) => {
+      if (data && typeof data === 'object')
+        void handleSendFixCiPrompt(data as SendFixCiPromptRequest);
     },
   );
   const offMerge = window.electron.ipcRenderer.on(IPC.Remote_MergeTaskRequest, (data: unknown) => {
@@ -585,6 +636,8 @@ export function startRemoteTaskHandlers(): () => void {
     offClose();
     offDiff();
     offReadiness();
+    offFixCiPrompt();
+    offSendFixCi();
     offMerge();
   };
 }

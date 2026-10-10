@@ -210,3 +210,25 @@ export function removePushSubscription(endpoint: string): Promise<{ ok: true }> 
   if (!token) throw new ApiError('Authorize this phone first', 401);
   return request('/api/mobile/push', { token, method: 'DELETE', body: { endpoint } });
 }
+
+/** The desktop's Fix CI prompt for the task's PR; null when no check failed. Paired only. */
+export async function fetchFixCiPrompt(taskId: string): Promise<string | null> {
+  const token = getPairedToken();
+  if (!token) throw new ApiError('Not paired', 401);
+  const r = await request<{ prompt: string | null }>(
+    `/api/mobile/tasks/${encodeURIComponent(taskId)}/fix-ci`,
+    { token },
+  );
+  return r.prompt;
+}
+
+/** Send the reviewed Fix CI prompt to the task's agent. Paired only. */
+export async function sendFixCiPrompt(taskId: string, prompt: string): Promise<void> {
+  const token = getPairedToken();
+  if (!token) throw new ApiError('Not paired', 401);
+  await request<{ ok: boolean }>(`/api/mobile/tasks/${encodeURIComponent(taskId)}/fix-ci`, {
+    method: 'POST',
+    body: { prompt },
+    token,
+  });
+}

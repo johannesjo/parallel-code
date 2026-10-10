@@ -9,6 +9,7 @@ import { clearPairedToken } from './auth';
 import { readLocal, writeLocal } from './storage';
 import { messageForTerminal } from './terminalText';
 import { TaskHeader } from './TaskHeader';
+import { needsYou } from './attention';
 import {
   subscribeAgent,
   unsubscribeAgent,
@@ -72,11 +73,7 @@ export function AgentDetail(props: AgentDetailProps) {
   const [notesSaved, setNotesSaved] = createSignal(false);
   const agent = () => agents().find((a) => a.agentId === props.agentId);
   const taskId = () => agent()?.taskId;
-  const nextAttentionTask = () =>
-    agents().find(
-      (a) =>
-        a.agentId !== props.agentId && (a.attention === 'needs_input' || a.attention === 'error'),
-    );
+  const nextAttentionTask = () => agents().find((a) => a.agentId !== props.agentId && needsYou(a));
   const nextTask = () => {
     const list = agents();
     if (list.length < 2) return undefined;

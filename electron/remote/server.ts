@@ -436,6 +436,9 @@ type CanvasRoute = 'mindmaps' | 'reasoning' | 'canvas' | 'tours' | 'github-lists
 const TOUR_MAX_BODY_BYTES = 256 * 1024;
 /** 100 items with full-length titles and reasons, plus JSON overhead. */
 const GITHUB_LIST_MAX_BODY_BYTES = 1024 * 1024;
+// Several failed jobs at 4,000 log characters each; the chat route allows the same.
+const FIX_CI_MAX_PROMPT_CHARS = 60_000;
+const FIX_CI_MAX_BODY_BYTES = 256 * 1024;
 const CANVAS_MAX_IN_FLIGHT = 4;
 // The renderer reports failures as plain messages; 409 tells the agent to read again, 400 to fix its input.
 const CANVAS_CONFLICT =
@@ -1020,6 +1023,10 @@ export function startRemoteServer(opts: {
   getTaskNotes?: (taskId: string) => Promise<string>;
   /** Read merge readiness for the phone's merge dialog (renderer-backed). */
   getMergeReadiness?: (taskId: string) => Promise<RemoteMergeReadiness>;
+  /** The failed-checks prompt for a task's PR, or null when nothing failed (renderer-backed). */
+  getFixCiPrompt?: (taskId: string) => Promise<string | null>;
+  /** Send a phone-reviewed Fix CI prompt to the task's agent (renderer-backed). */
+  sendFixCiPrompt?: (taskId: string, prompt: string) => Promise<void>;
   /** Merge a task on behalf of a paired phone (renderer-backed). */
   mergeTaskFromMobile?: (req: {
     taskId: string;
@@ -1708,6 +1715,51 @@ export function startRemoteServer(opts: {
               squash: body.squash === true,
               cleanup: body.cleanup === true,
             }).then(
+              () => jsonEnd(200, { ok: true }),
+              (err: unknown) => jsonEnd(500, { error: String(err) }),
+            );
+          })
+          .catch(() => jsonEnd(400, { error: 'bad request' }));
+        return;
+      }
+
+      // --- Paired-mobile Fix CI ---
+      // GET builds the desktop's failed-checks prompt; POST sends the text the
+      // phone showed back to the agent. The log tails are untrusted GitHub
+      // content, so the user reads (and may edit) them before the agent does.
+      const fixCiMatch = url.pathname.match(/^\/api\/mobile\/tasks\/([^/]+)\/fix-ci$/);
+      if (fixCiMatch) {
+        if (tokenClass !== 'paired') return jsonEnd(403, { error: 'forbidden' });
+        if (req.method !== 'GET' && req.method !== 'POST')
+          return jsonEnd(405, { error: 'method not allowed' });
+        const getFixCiPrompt = opts.getFixCiPrompt;
+        const sendFixCiPrompt = opts.sendFixCiPrompt;
+        if (!getFixCiPrompt || !sendFixCiPrompt)
+          return jsonEnd(503, { error: 'fix CI unavailable' });
+        let taskId: string;
+        try {
+          taskId = decodeURIComponent(fixCiMatch[1]);
+        } catch {
+          return jsonEnd(400, { error: 'invalid task id' });
+        }
+        if (taskId === '__proto__' || taskId === 'constructor' || taskId === 'prototype') {
+          return jsonEnd(400, { error: 'invalid task id' });
+        }
+        if (req.method === 'GET') {
+          getFixCiPrompt(taskId)
+            .then((prompt) => jsonEnd(200, { prompt }))
+            .catch((err) => jsonEnd(500, { error: String(err) }));
+          return;
+        }
+        readJsonBody(req, FIX_CI_MAX_BODY_BYTES)
+          .then((body) => {
+            if (
+              typeof body.prompt !== 'string' ||
+              !body.prompt.trim() ||
+              body.prompt.length > FIX_CI_MAX_PROMPT_CHARS
+            )
+              return jsonEnd(400, { error: 'prompt must be a non-empty string' });
+            return sendFixCiPrompt(taskId, body.prompt).then(
               () => jsonEnd(200, { ok: true }),
               (err: unknown) => jsonEnd(500, { error: String(err) }),
             );

@@ -166,3 +166,29 @@ it('points Android browsers to the app and leaves other phones alone', () => {
   expect(host.textContent).not.toContain('Android app');
   userAgent.mockRestore();
 });
+
+it('files failed CI under Needs you and names a ready task by its checks', () => {
+  const base = { status: 'running', exitCode: null, lastLine: '' } as const;
+  const list: RemoteAgent[] = [
+    { ...base, agentId: 'a1', taskId: 't1', taskName: 'Red PR', attention: 'idle', ci: 'failure' },
+    {
+      ...base,
+      agentId: 'a2',
+      taskId: 't2',
+      taskName: 'Green PR',
+      attention: 'ready',
+      ci: 'success',
+    },
+  ];
+  Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list }) });
+  dispose = render(
+    () => <AgentList onSelect={() => {}} onNewTask={() => {}} onPair={() => {}} />,
+    host,
+  );
+  const group = (name: string) => host.querySelector(`section[aria-label="${name}"]`);
+  expect(group('Needs you')?.textContent).toContain('Red PR');
+  expect(group('Needs you')?.textContent).toContain('CI failed');
+  expect(group('Ready to review')?.textContent).toContain('Green PR');
+  expect(group('Ready to review')?.textContent).toContain('Ready to merge');
+  expect(host.textContent).toContain('1 task needs your attention');
+});

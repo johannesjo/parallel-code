@@ -57,14 +57,23 @@ export async function mergePullRequestForTask(
   return merged;
 }
 
+/** The "fix CI" prompt for a PR's failed checks, or null when nothing failed. */
+export async function loadFailedChecksPrompt(pr: {
+  number: number;
+  url: string;
+}): Promise<string | null> {
+  const checks = await invoke<PrFailedCheck[]>(IPC.GetPrFailedChecks, { prUrl: pr.url });
+  return checks.length === 0 ? null : buildFailedChecksPrompt(pr, checks);
+}
+
 /** Stages a "fix CI" prompt in the task's prompt input. Returns false when nothing failed. */
 export async function stageFailedChecksPrompt(
   taskId: string,
   pr: { number: number; url: string },
 ): Promise<boolean> {
-  const checks = await invoke<PrFailedCheck[]>(IPC.GetPrFailedChecks, { prUrl: pr.url });
-  if (checks.length === 0) return false;
-  stagePrompt(taskId, buildFailedChecksPrompt(pr, checks));
+  const prompt = await loadFailedChecksPrompt(pr);
+  if (prompt === null) return false;
+  stagePrompt(taskId, prompt);
   return true;
 }
 

@@ -100,8 +100,18 @@ fun ChatScreen(
     DisposableEffect(agentId) { onDispose { client.unwatchChat(agentId) } }
     val chat by chatFlow.collectAsState()
     var closing by remember { mutableStateOf(false) }
+    var fixingCi by remember { mutableStateOf(false) }
     val agentName = agent?.agentName ?: "The agent"
     val canSend = state.canControl && state.status == ConnectionStatus.CONNECTED
+
+    if (fixingCi && agent != null) {
+        FixCiDialog(
+            taskId = agent.taskId,
+            client = client,
+            onDismiss = { fixingCi = false },
+            onSent = { fixingCi = false },
+        )
+    }
 
     if (closing && agent != null) {
         CloseTaskDialog(
@@ -147,6 +157,12 @@ fun ChatScreen(
                         }
                     },
                     actions = {
+                        if (agent != null && state.canControl && agent.ci == "failure") {
+                            // Red like the desktop's Fix CI button: a failed check is urgent.
+                            TextButton(onClick = { fixingCi = true }) {
+                                Text("Fix CI", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
                         if (agent != null && state.canControl) {
                             TextButton(onClick = { closing = true }) {
                                 Text("Close", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)

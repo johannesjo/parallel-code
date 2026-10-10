@@ -6,10 +6,15 @@ import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { setStore, store } from './core';
 import { startRemoteTaskHandlers } from './remoteTaskHandler';
+import { sendPrompt } from './tasks';
 import type { Task } from './types';
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn() }));
 vi.mock('./persistence', () => ({ saveState: vi.fn(async () => undefined) }));
+vi.mock('./tasks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./tasks')>()),
+  sendPrompt: vi.fn(async () => undefined),
+}));
 
 const tourCard = { label: 'KEY DECISION', title: 'One idea', body: 'Body text.' };
 const tourPayload = { subject: 'the retry bug', gist: tourCard, cards: [tourCard] };
@@ -436,3 +441,61 @@ it.each([
     expect(reply.data.deleteBranchOnClose).toBe(expected);
   },
 );
+
+/** Like `request`, for handlers that await IPC before replying. */
+async function settledRequest(channel: string, payload: Record<string, unknown>) {
+  vi.mocked(invoke).mockClear();
+  listeners.get(channel)?.({ reqId: 'req', ...payload });
+  let reply: { ok: boolean; data?: unknown; error?: string } | undefined;
+  await vi.waitFor(() => {
+    const call = vi.mocked(invoke).mock.calls.find(([c]) => c === IPC.Remote_RendererReply);
+    expect(call).toBeDefined();
+    reply = call?.[1] as typeof reply;
+  });
+  return reply;
+}
+
+it('builds the Fix CI prompt from the PR failed checks', async () => {
+  setStore('tasks', 'task', 'prUrl', 'https://github.com/o/r/pull/7');
+  vi.mocked(invoke).mockImplementation(async (channel) =>
+    channel === IPC.GetPrFailedChecks ? [{ name: 'lint', url: null, logTail: 'boom' }] : undefined,
+  );
+  const reply = await settledRequest(IPC.Remote_GetFixCiPromptRequest, { taskId: 'task' });
+  expect(invoke).toHaveBeenCalledWith(IPC.GetPrFailedChecks, {
+    prUrl: 'https://github.com/o/r/pull/7',
+  });
+  const prompt = (reply?.data as { prompt: string }).prompt;
+  expect(prompt).toContain('CI failed on pull request #7');
+  expect(prompt).toContain('### lint');
+});
+
+it('answers a null Fix CI prompt without a PR or failed checks', async () => {
+  let reply = await settledRequest(IPC.Remote_GetFixCiPromptRequest, { taskId: 'task' });
+  expect(reply).toMatchObject({ ok: true, data: { prompt: null } });
+  expect(invoke).not.toHaveBeenCalledWith(IPC.GetPrFailedChecks, expect.anything());
+
+  setStore('tasks', 'task', 'prUrl', 'https://github.com/o/r/pull/7');
+  vi.mocked(invoke).mockImplementation(async (channel) =>
+    channel === IPC.GetPrFailedChecks ? [] : undefined,
+  );
+  reply = await settledRequest(IPC.Remote_GetFixCiPromptRequest, { taskId: 'task' });
+  expect(reply).toMatchObject({ ok: true, data: { prompt: null } });
+});
+
+it('sends the phone-reviewed Fix CI prompt to the task agent', async () => {
+  const reply = await settledRequest(IPC.Remote_SendFixCiPromptRequest, {
+    taskId: 'task',
+    prompt: 'Fix lint',
+  });
+  expect(reply).toMatchObject({ ok: true });
+  expect(sendPrompt).toHaveBeenCalledWith('task', 'agent', 'Fix lint');
+});
+
+it('rejects Fix CI requests for unknown tasks', async () => {
+  vi.mocked(sendPrompt).mockClear();
+  for (const channel of [IPC.Remote_GetFixCiPromptRequest, IPC.Remote_SendFixCiPromptRequest]) {
+    const reply = await settledRequest(channel, { taskId: 'missing', prompt: 'x' });
+    expect(reply).toMatchObject({ ok: false, error: 'Task not found' });
+  }
+  expect(sendPrompt).not.toHaveBeenCalled();
+});

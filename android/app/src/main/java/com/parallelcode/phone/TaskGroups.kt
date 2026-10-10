@@ -22,7 +22,22 @@ enum class TaskFilter(val key: String, val label: String) {
     }
 }
 
-fun RemoteAgent.needsYou(): Boolean = running && (attention == "needs_input" || attention == "error")
+/**
+ * Failed PR checks need you once the agent has nothing more urgent to say: a question, an error,
+ * work in progress or a review flag still wins.
+ */
+fun RemoteAgent.ciFailed(): Boolean =
+    !collapsed && ci == "failure" && (attention == "idle" || attention == "ready")
+
+fun RemoteAgent.needsYou(): Boolean =
+    (running && (attention == "needs_input" || attention == "error")) || ciFailed()
+
+/** `ready` only knows nothing failed; the PR checks say whether it can actually merge. */
+fun readyLabel(ci: String?): String = when (ci) {
+    "success" -> "Ready to merge"
+    "pending" -> "CI running"
+    else -> "Ready"
+}
 
 fun taskGroup(agent: RemoteAgent): TaskGroup = when {
     agent.needsYou() -> TaskGroup.NEEDS_YOU
