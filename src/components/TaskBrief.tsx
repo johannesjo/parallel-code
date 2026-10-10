@@ -468,10 +468,8 @@ function TaskBriefCard(props: {
   const [decisionEdits, setDecisionEdits] = createSignal<Record<string, DecisionEdit>>({});
   const setDecisionEdit = (text: string, value: DecisionEdit | undefined) =>
     setDecisionEdits((prev) => {
-      const next = { ...prev };
-      if (value) next[text] = value;
-      else delete next[text];
-      return next;
+      const rest = Object.fromEntries(Object.entries(prev).filter(([key]) => key !== text));
+      return value ? { ...rest, [text]: value } : rest;
     });
   // Keeps the relative times current while the card stays open.
   const [now, setNow] = createSignal(Date.now());
