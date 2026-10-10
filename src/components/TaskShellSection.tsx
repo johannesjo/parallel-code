@@ -18,7 +18,7 @@ import {
   isPanelFocusedPrefix,
 } from '../store/store';
 import { TerminalView } from './TerminalView';
-import { CloseIcon } from './icons';
+import { CloseIcon, TerminalSmallIcon } from './icons';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { mod } from '../lib/platform';
@@ -177,21 +177,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
           aria-label="Open terminal"
           style={toolbarBtnStyle(shellToolbarIdx() === 0 && shellToolbarFocused(), true)}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.25"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            style={{ 'flex-shrink': '0' }}
-            aria-hidden="true"
-          >
-            <rect x="1.5" y="2.5" width="13" height="11" />
-            <path d="m4 6 2 2-2 2m4 0h3" />
-          </svg>
+          <TerminalSmallIcon size={14} style={{ 'flex-shrink': '0' }} />
         </button>
         <For each={projectBookmarks()}>
           {(bookmark, i) => (

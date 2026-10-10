@@ -9,7 +9,7 @@ import type { Composer as ComposerState } from './composer-state';
 import { ModelPicker, PermissionPicker } from './ModelPicker';
 import { Progress } from './Progress';
 import { RequestCard, type RespondToRequest } from './RequestCard';
-import { PencilIcon, SendIcon, SyncIcon } from '../icons';
+import { ArrowUpAltIcon, PencilIcon, SendIcon, StopSmallIcon, SyncIcon } from '../icons';
 
 export interface ChatHistoryEntry {
   title: string;
@@ -247,15 +247,7 @@ export function Composer(props: ComposerProps) {
                 title={working() ? 'Queue message (Enter)' : 'Send message (Enter)'}
                 onClick={() => void c.send()}
               >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path
-                    d="M8 12V4M4 8l4-4 4 4"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
+                <ArrowUpAltIcon size={16} />
               </button>
             </Show>
             <Show when={working()}>
@@ -266,15 +258,7 @@ export function Composer(props: ComposerProps) {
                 title="Stop response"
                 onClick={() => void c.stop()}
               >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <rect x="4.5" y="4.5" width="7" height="7" rx="1" />
-                </svg>
+                <StopSmallIcon size={16} />
               </button>
             </Show>
           </span>
