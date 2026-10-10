@@ -3242,6 +3242,26 @@ html:is(
   animation: spinnerSpin 0.9s linear infinite;
 }
 
+/* CI progress: a wedge that fills from 12 o'clock as checks finish, inside a
+   slowly turning dashed ring. Only the ring turns so the wedge stays readable,
+   and the filled wedge keeps it apart from the agent's ring spinner. */
+.status-glyph-ci {
+  position: relative;
+  display: inline-block;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: conic-gradient(currentColor var(--ci-sweep), transparent 0);
+}
+
+.status-glyph-ci::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 1px dashed currentColor;
+  animation: spinnerSpin 2.4s linear infinite;
+}
+
 .status-glyph-question {
   display: inline-block;
   box-sizing: border-box;
@@ -5086,7 +5106,8 @@ html[data-look='islands-light'] .window-title-icon {
   }
 
   /* The hollow ring alone still says "working"; only the rotation goes. */
-  .status-glyph-spinner {
+  .status-glyph-spinner,
+  .status-glyph-ci::before {
     animation: none;
   }
 

@@ -2,7 +2,8 @@ import { renderToString } from 'solid-js/web';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { removePrChecks, setPrChecks } from '../store/pr-checks-state';
-import { StatusDot, getDotTooltip } from './StatusDot';
+import { theme } from '../lib/theme';
+import { StatusDot, getDotTooltip, getStatusGlyph } from './StatusDot';
 
 function prChecks(overall: 'pending' | 'success' | 'failure' | 'none') {
   return { overall, passing: 0, pending: 0, failing: 0, checks: [], checkedAt: '' };
@@ -73,6 +74,62 @@ describe('status glyph shapes', () => {
       const html = renderToString(() => StatusDot({ status: 'busy', attention }));
       expect(html, attention).not.toContain('status-glyph-spinner');
       expect(html, attention).not.toContain('status-glyph-question');
+    }
+  });
+});
+
+describe('CI glyphs', () => {
+  afterEach(() => removePrChecks('t1'));
+
+  function checks(overall: 'pending' | 'failure', counts: Partial<Record<string, number>> = {}) {
+    return { ...prChecks(overall), passing: 3, pending: 1, failing: 0, ...counts };
+  }
+
+  it('shows a progress pie while CI runs and a cross when it fails', () => {
+    setPrChecks('t1', checks('pending'));
+    const running = renderToString(() => StatusDot({ status: 'ready', taskId: 't1' }));
+    expect(running).toContain('status-glyph-ci');
+    expect(running).toContain('--ci-sweep:75%');
+    expect(running).toContain('title="CI running — 3 of 4 checks done');
+
+    setPrChecks('t1', checks('failure', { pending: 0, failing: 2 }));
+    const failed = renderToString(() => StatusDot({ status: 'ready', taskId: 't1' }));
+    expect(failed).toContain('×');
+    expect(failed).toContain('title="CI failed — 2 of 5 checks failing');
+  });
+
+  it('yields to a working, blocked, or errored agent', () => {
+    expect(getStatusGlyph('busy', 'active', 'failed')).toBe('spinner');
+    expect(getStatusGlyph('busy', 'needs_input', 'failed')).toBe('question');
+    expect(getStatusGlyph('busy', 'error', 'running')).toBe('dot');
+    expect(getStatusGlyph('busy', 'shell_busy', 'running')).toBe('ci_running');
+    expect(getStatusGlyph('review', 'review', 'failed')).toBe('ci_failed');
+  });
+
+  it('turns the pie red once a check fails mid-run', () => {
+    setPrChecks('t1', checks('pending', { failing: 1 }));
+    const html = renderToString(() => StatusDot({ status: 'ready', taskId: 't1' }));
+    expect(html).toContain(`color:${theme.error}`);
+    expect(html).toContain('4 of 5 checks done, 1 failing');
+  });
+
+  it('keeps the agent tooltip when the agent glyph wins', () => {
+    setPrChecks('t1', checks('failure', { pending: 0, failing: 1 }));
+    expect(getDotTooltip('busy', 'active', 't1')).toBe('Active — agent is working');
+    expect(getDotTooltip('busy', 'needs_input', 't1')).toBe('Waiting for input');
+  });
+
+  it('ignores merged PRs and passing or absent CI', () => {
+    for (const next of [
+      { ...checks('failure', { failing: 1 }), merged: true },
+      { ...checks('pending'), merged: true },
+      prChecks('success'),
+      prChecks('none'),
+    ]) {
+      setPrChecks('t1', next);
+      const html = renderToString(() => StatusDot({ status: 'ready', taskId: 't1' }));
+      expect(html, next.overall).not.toContain('×');
+      expect(html, next.overall).not.toContain('status-glyph-ci');
     }
   });
 });

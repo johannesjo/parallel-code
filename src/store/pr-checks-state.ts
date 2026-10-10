@@ -35,3 +35,30 @@ export function removePrChecks(taskId: string): void {
     }),
   );
 }
+
+/** The CI states a task's status glyph surfaces. Passing CI already shows as
+ *  the green "Ready to merge" dot, so only running and failed runs appear here. */
+export interface CiGlyphState {
+  state: 'running' | 'failed';
+  done: number;
+  total: number;
+  failing: number;
+  /** Finished share of checks, 0–100. */
+  progress: number;
+}
+
+export function getCiGlyphState(taskId: string): CiGlyphState | undefined {
+  const c = prChecks[taskId];
+  // A merged PR's last run no longer matters, even if it ended red.
+  if (!c || c.merged) return undefined;
+  if (c.overall !== 'pending' && c.overall !== 'failure') return undefined;
+  const done = c.passing + c.failing;
+  const total = done + c.pending;
+  return {
+    state: c.overall === 'pending' ? 'running' : 'failed',
+    done,
+    total,
+    failing: c.failing,
+    progress: total > 0 ? (done / total) * 100 : 0,
+  };
+}
