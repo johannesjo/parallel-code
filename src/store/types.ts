@@ -254,6 +254,8 @@ export interface Task {
   githubUrl?: string;
   prUrl?: string;
   superProductivity?: SuperProductivityLink;
+  /** Absolute return time for a timed snooze, retained across app restarts. */
+  snoozedUntil?: number;
   collapsed?: boolean;
   savedAgentDef?: AgentDef;
   savedAgentDefs?: AgentDef[];
@@ -387,6 +389,8 @@ export interface PersistedTask {
   superProductivity?: unknown;
   savedInitialPrompt?: string;
   secondOpinionDismissed?: boolean;
+  /** Absolute return time for a timed snooze, retained across app restarts. */
+  snoozedUntil?: number;
   collapsed?: boolean;
   savedAgentSessionIds?: (string | null)[];
   savedSelectedAgentIndex?: number;

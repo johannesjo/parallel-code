@@ -1,17 +1,27 @@
 import { matchesTaskProjectFilter } from './task-project-filter';
-import { batch, createEffect, createRoot, createSignal, untrack } from 'solid-js';
+import { batch, createEffect, createRoot, createSignal, onCleanup, untrack } from 'solid-js';
 import { store, setStore } from './core';
 import { AGENT_HOOK_STALE_MS, getAgentHookStatus, type AgentHookStatus } from './agentHookStatus';
 import { scrollTaskIntoView } from './focused-panel';
 import { setActiveTask } from './navigation';
+import { collapseTask, uncollapseTask } from './tasks';
 import { getPrChecks } from './pr-checks-state';
 import { getCoordinatorChildren } from './sidebar-order';
 import { getTaskOpenQuestions, isAgentIdle, type TaskOpenQuestion } from './taskStatus';
 
-// Session-only: restarting the app ends the running agents this baseline describes.
-const [backgroundTasks, setBackgroundTasks] = createSignal<ReadonlyMap<string, ActivitySnapshot>>(
+// Activity baselines are session-only. Timed snoozes are also saved on the task.
+const [backgroundTasks, setBackgroundTasks] = createSignal<ReadonlyMap<string, BackgroundTask>>(
   new Map(),
 );
+
+interface BackgroundTask extends ActivitySnapshot {
+  snoozedUntil?: number;
+}
+
+export function getTaskSnoozedUntil(taskId: string): number | undefined {
+  const owner = backgroundOwner(taskId);
+  return owner ? backgroundTasks().get(owner)?.snoozedUntil : undefined;
+}
 
 export function isTaskBackgrounded(taskId: string): boolean {
   return backgroundOwner(taskId) !== undefined;
@@ -137,19 +147,52 @@ function keepFocusAcrossReorder(): void {
   });
 }
 
-export function sendTaskToBack(taskId: string): void {
+function validSnoozeHours(hours: number): boolean {
+  return Number.isFinite(hours) && hours >= 0.01 && hours <= 168;
+}
+
+export async function snoozeTask(taskId: string, hours: number, keepRunning = true): Promise<void> {
+  if (!validSnoozeHours(hours)) return;
+  taskId = backgroundOwner(taskId) ?? taskId;
+  const task = store.tasks[taskId];
+  if (!task || task.collapsed || task.closingStatus || !store.taskOrder.includes(taskId)) return;
+  if (keepRunning) {
+    sendTaskToBack(taskId, hours);
+    return;
+  }
+  // The coordinator registry owns its agents; collapse cannot safely replace them.
+  if (task.coordinatorMode || task.delegationParent || task.coordinatedBy) return;
+  const snoozedUntil = Date.now() + hours * 3_600_000;
+  await collapseTask(taskId);
+  if (!store.tasks[taskId]?.collapsed) return;
+  batch(() => {
+    setStore('tasks', taskId, 'snoozedUntil', snoozedUntil);
+    setBackgroundTasks((previous) =>
+      new Map(previous).set(taskId, { ...activitySnapshot(taskId), snoozedUntil }),
+    );
+  });
+}
+
+export function sendTaskToBack(taskId: string, snoozeHours?: number): void {
+  if (snoozeHours !== undefined && !validSnoozeHours(snoozeHours)) return;
+  taskId = backgroundOwner(taskId) ?? taskId;
   const task = store.tasks[taskId];
   if (!task || task.collapsed || task.closingStatus || !store.taskOrder.includes(taskId)) return;
   const block = taskBlock(taskId);
   const remaining = store.taskOrder.filter((id) => !block.includes(id));
-  const snapshot = activitySnapshot(taskId);
+  const snapshot: BackgroundTask = {
+    ...activitySnapshot(taskId),
+    snoozedUntil: snoozeHours === undefined ? undefined : Date.now() + snoozeHours * 3_600_000,
+  };
   const neighbor = foregroundNeighbor(taskId, block);
   batch(() => {
+    for (const id of block) setStore('tasks', id, 'snoozedUntil', undefined);
     setBackgroundTasks((previous) => {
       const next = new Map(previous);
       for (const id of block) next.delete(id);
       return next.set(taskId, snapshot);
     });
+    setStore('tasks', taskId, 'snoozedUntil', snapshot.snoozedUntil);
     setStore('taskOrder', [...remaining, ...block]);
     if (store.activeTaskId && block.includes(store.activeTaskId)) {
       if (neighbor) setActiveTask(neighbor);
@@ -164,13 +207,19 @@ export function sendTaskToBack(taskId: string): void {
 export function bringTaskToFront(taskId: string): void {
   const owner = backgroundOwner(taskId);
   if (!owner) return;
+  const restorePaused =
+    store.tasks[owner]?.snoozedUntil !== undefined &&
+    !store.tasks[owner]?.closingStatus &&
+    store.collapsedTaskOrder.includes(owner);
   batch(() => {
+    if (store.tasks[owner]) setStore('tasks', owner, 'snoozedUntil', undefined);
     setBackgroundTasks((previous) => {
       const next = new Map(previous);
       next.delete(owner);
       return next;
     });
-    if (!store.taskOrder.includes(owner) || store.tasks[owner]?.collapsed) return;
+    if (restorePaused && store.tasks[owner]?.collapsed) uncollapseTask(owner, { activate: false });
+    if (!store.taskOrder.includes(owner)) return;
     const block = taskBlock(owner);
     keepFocusAcrossReorder();
     setStore('taskOrder', [...block, ...store.taskOrder.filter((id) => !block.includes(id))]);
@@ -184,20 +233,66 @@ export function bringTaskToFront(taskId: string): void {
  * changes order only; it never takes focus from the task the user is working on. */
 export function startBackgroundTaskWatcher(): () => void {
   return createRoot((dispose) => {
+    // loadState restores task/agent sessions first. Rebuild only timed snoozes;
+    // untimed activity baselines belong to the previous run.
+    batch(() => {
+      const restored = new Map(backgroundTasks());
+      for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
+        const task = store.tasks[taskId];
+        if (task?.snoozedUntil !== undefined) {
+          restored.set(taskId, { ...activitySnapshot(taskId), snoozedUntil: task.snoozedUntil });
+        }
+      }
+      setBackgroundTasks(restored);
+      // A saved/fallback selection must not immediately cancel a restored snooze.
+      if (store.activeTaskId && isTaskBackgrounded(store.activeTaskId)) {
+        const foreground = store.taskOrder.find(
+          (id) => !isTaskBackgrounded(id) && matchesTaskProjectFilter(id),
+        );
+        if (foreground) setActiveTask(foreground);
+        else {
+          setStore('activeTaskId', null);
+          setStore('activeAgentId', null);
+          setStore('focusMode', false);
+        }
+      }
+    });
+    createEffect(() => {
+      const deadlines = [...backgroundTasks().values()].flatMap((task) =>
+        task.snoozedUntil === undefined ? [] : [task.snoozedUntil],
+      );
+      if (!deadlines.length) return;
+      // Recheck wall time periodically, including after sleep or a clock change.
+      const timer = setTimeout(
+        () => {
+          for (const [taskId, task] of backgroundTasks()) {
+            if (task.snoozedUntil !== undefined && task.snoozedUntil <= Date.now()) {
+              bringTaskToFront(taskId);
+            }
+          }
+          setBackgroundTasks((tasks) => new Map(tasks));
+        },
+        Math.max(0, Math.min(60_000, Math.min(...deadlines) - Date.now())),
+      );
+      onCleanup(() => clearTimeout(timer));
+    });
     createEffect(() => {
       for (const [taskId, baseline] of backgroundTasks()) {
         const task = store.tasks[taskId];
-        const current = activitySnapshot(taskId);
-        const change = activityChange(baseline, current);
+        const current = baseline.snoozedUntil === undefined ? activitySnapshot(taskId) : undefined;
+        const change = current ? activityChange(baseline, current) : 'same';
         if (
           !task ||
-          task.collapsed ||
-          !store.taskOrder.includes(taskId) ||
+          task.closingStatus ||
+          (task.collapsed
+            ? baseline.snoozedUntil === undefined || !store.collapsedTaskOrder.includes(taskId)
+            : !store.taskOrder.includes(taskId)) ||
+          (baseline.snoozedUntil !== undefined && task.snoozedUntil === undefined) ||
           taskBlock(taskId).includes(store.activeTaskId ?? '') ||
           change === 'new'
         ) {
           untrack(() => bringTaskToFront(taskId));
-        } else if (change === 'rebaseline') {
+        } else if (change === 'rebaseline' && current) {
           untrack(() => setBackgroundTasks((previous) => new Map(previous).set(taskId, current)));
         }
       }

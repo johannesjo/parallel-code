@@ -83,6 +83,7 @@ function structuralSnapshot(): string {
             externalWorktree: t.externalWorktree,
             savedInitialPrompt: t.savedInitialPrompt,
             collapsed: t.collapsed,
+            snoozedUntil: t.snoozedUntil,
             agentSessionIds: t.agentSessionIds,
             savedAgentSessionIds: t.savedAgentSessionIds,
             coordinatedBy: t.coordinatedBy,

@@ -2343,3 +2343,75 @@ it.each([false, true])(
     expect(saved.tasks['task-1'].secondOpinionDismissed).toBe(true);
   },
 );
+
+describe('timed snooze persistence', () => {
+  function savedSnooze(snoozedUntil: unknown): string {
+    return JSON.stringify({
+      projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+      taskOrder: ['task-1'],
+      tasks: {
+        'task-1': {
+          ...persistedTask(agentDef()),
+          agentIds: ['agent-1'],
+          agentSessionIds: { 'agent-1': 'fb4f2bc6-62d9-4b29-a795-240caf2fc459' },
+          snoozedUntil,
+        },
+      },
+      activeTaskId: null,
+    });
+  }
+
+  it.each([-60_000, 3_600_000])(
+    'round-trips an overdue or future deadline (%s)',
+    async (offset) => {
+      const deadline = Date.now() + offset;
+      mockInvoke.mockResolvedValueOnce(savedSnooze(deadline));
+      await loadState();
+      expect(store.tasks['task-1'].snoozedUntil).toBe(deadline);
+      expect(store.tasks['task-1'].agentSessionIds).toEqual({
+        'agent-1': 'fb4f2bc6-62d9-4b29-a795-240caf2fc459',
+      });
+      expect(store.agents['agent-1'].resumed).toBe(true);
+      await saveState();
+      const savedCall = mockInvoke.mock.calls.findLast(([channel]) => channel === IPC.SaveAppState);
+      const saved = JSON.parse(savedCall?.[1].json);
+      expect(saved.tasks['task-1'].snoozedUntil).toBe(deadline);
+
+      mockInvoke.mockResolvedValueOnce(JSON.stringify(saved));
+      await loadState();
+      expect(store.tasks['task-1'].snoozedUntil).toBe(deadline);
+    },
+  );
+
+  it('round-trips a stopped snooze without starting agents before its deadline', async () => {
+    const deadline = Date.now() + 3_600_000;
+    const state = JSON.parse(savedSnooze(deadline));
+    state.taskOrder = [];
+    state.collapsedTaskOrder = ['task-1'];
+    state.tasks['task-1'].collapsed = true;
+    state.tasks['task-1'].savedAgentSessionIds = ['fb4f2bc6-62d9-4b29-a795-240caf2fc459'];
+    mockInvoke.mockResolvedValueOnce(JSON.stringify(state));
+    await loadState();
+    expect(store.tasks['task-1'].collapsed).toBe(true);
+    expect(store.tasks['task-1'].snoozedUntil).toBe(deadline);
+    expect(store.tasks['task-1'].agentIds).toEqual([]);
+    expect(store.tasks['task-1'].savedAgentDefs).toHaveLength(1);
+    await saveState();
+    const savedCall = mockInvoke.mock.calls.findLast(([channel]) => channel === IPC.SaveAppState);
+    const saved = JSON.parse(savedCall?.[1].json);
+    expect(saved.tasks['task-1'].snoozedUntil).toBe(deadline);
+    expect(saved.tasks['task-1'].savedAgentSessionIds).toEqual([
+      'fb4f2bc6-62d9-4b29-a795-240caf2fc459',
+    ]);
+    mockInvoke.mockResolvedValueOnce(JSON.stringify(saved));
+    await loadState();
+    expect(store.tasks['task-1'].snoozedUntil).toBe(deadline);
+    expect(store.tasks['task-1'].agentIds).toEqual([]);
+  });
+
+  it.each([null, 'tomorrow', -1, 0, 1e20])('ignores invalid saved deadlines: %s', async (value) => {
+    mockInvoke.mockResolvedValueOnce(savedSnooze(value));
+    await loadState();
+    expect(store.tasks['task-1'].snoozedUntil).toBeUndefined();
+  });
+});

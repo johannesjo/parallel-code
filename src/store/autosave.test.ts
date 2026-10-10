@@ -154,6 +154,7 @@ describe('autosave snapshot includes new-task-default fields', () => {
     'autoSendChildUpdates',
     'propagateSkipPermissions',
     'maxConcurrentTasks',
+    'snoozedUntil',
   ] as const)('%s changes the snapshot', (field) => {
     const taskId = 'autosave-draft-task';
     const task: Task = {
@@ -174,7 +175,7 @@ describe('autosave snapshot includes new-task-default fields', () => {
       const before = persistedSnapshot();
       if (field === 'promptHistory') {
         setStore('tasks', taskId, 'promptHistory', [{ text: 'Repeated prompt', sentAt: 1 }]);
-      } else if (field === 'maxConcurrentTasks') {
+      } else if (field === 'maxConcurrentTasks' || field === 'snoozedUntil') {
         setStore('tasks', taskId, field, 5);
       } else if (
         field === 'autoMergeChildren' ||

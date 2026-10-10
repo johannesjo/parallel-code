@@ -984,65 +984,6 @@
   padding: 0;
   color: var(--fg-subtle);
 }
-/* The menu lives in document.body, outside the chat's variables, so it uses the
-   app's own theme colors. */
-.chat-menu-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-}
-.chat-menu {
-  position: fixed;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 6px 20px #0006;
-  overflow-y: auto;
-}
-.chat-menu > * {
-  /* A long history scrolls instead of squeezing its entries. */
-  flex-shrink: 0;
-}
-.chat-menu-group {
-  padding: 6px 8px 2px;
-  color: var(--fg-muted);
-  font-size: 11px;
-}
-.chat-menu button {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 8px;
-  color: var(--fg);
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.chat-menu button:enabled:hover,
-.chat-menu button:focus-visible {
-  background: var(--bg-hover);
-}
-.chat-menu button:disabled {
-  color: var(--fg-muted);
-  cursor: default;
-}
-.chat-menu-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.chat-menu kbd {
-  color: var(--fg-muted);
-  font: inherit;
-}
 .chat-context-chips {
   display: flex;
   flex-wrap: wrap;

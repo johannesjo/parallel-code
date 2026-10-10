@@ -17,8 +17,9 @@ import {
 } from '../store/store';
 import { EditableText, type EditableTextHandle } from './EditableText';
 import { IconButton } from './IconButton';
+import { MoreMenu } from './chat/MoreMenu';
 import { StatusDot, getDotTooltip } from './StatusDot';
-import { CloseIcon } from './icons';
+import { ActivityIcon, ClockIcon, CloseIcon, PlayIcon, StopIcon, UndoIcon } from './icons';
 import { theme } from '../lib/theme';
 import { badgeStyle } from '../lib/badgeStyle';
 import { taskCheckSignal } from '../lib/task-check-signal';
@@ -27,7 +28,13 @@ import { getTaskDockerBadgeLabel } from '../lib/docker';
 import { displayTaskNameFromPrompt, shouldUsePromptDerivedTaskName } from '../lib/clean-task-name';
 import type { Task } from '../store/types';
 import { isLandedTaskState } from '../store/landing';
-import { bringTaskToFront, isTaskBackgrounded, sendTaskToBack } from '../store/background-tasks';
+import {
+  bringTaskToFront,
+  getTaskSnoozedUntil,
+  isTaskBackgrounded,
+  sendTaskToBack,
+  snoozeTask,
+} from '../store/background-tasks';
 
 interface TaskTitleBarProps {
   task: Task;
@@ -41,6 +48,24 @@ interface TaskTitleBarProps {
 }
 
 export function TaskTitleBar(props: TaskTitleBarProps) {
+  const canStopAgents = () =>
+    !props.task.coordinatorMode && !props.task.delegationParent && !props.task.coordinatedBy;
+  const snoozeChoices = (keepRunning: boolean) =>
+    (keepRunning ? [0.25, 0.5, 1, 2, 4, 8] : [1, 4, 8, 24, 72, 168]).map((hours) => ({
+      label:
+        hours < 1
+          ? `${hours * 60} minutes`
+          : hours === 1
+            ? '1 hour'
+            : hours === 168
+              ? '1 week'
+              : hours >= 24
+                ? `${hours / 24} ${hours === 24 ? 'day' : 'days'}`
+                : `${hours} hours`,
+      icon: <ClockIcon size={14} />,
+      run: () => void snoozeTask(props.task.id, hours, keepRunning),
+    }));
+  const snoozedUntil = () => getTaskSnoozedUntil(props.task.id);
   const dockerBadgeLabel = () => getTaskDockerBadgeLabel(props.task.dockerSource);
   const isLandedTask = () => isLandedTaskState(props.task.landingState);
   const landingBadge = () => {
@@ -166,7 +191,11 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
           <span style={badgeStyle(theme.accent)}>Imported</span>
         </Show>
         <Show when={isTaskBackgrounded(props.task.id)}>
-          <span style={badgeStyle(theme.fgMuted)}>Background</span>
+          <span style={badgeStyle(theme.fgMuted)}>
+            {snoozedUntil() === undefined
+              ? 'Background'
+              : `Snoozed until ${new Date(snoozedUntil() ?? 0).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`}
+          </span>
         </Show>
         <Show when={props.task.needsReview}>
           <span
@@ -201,8 +230,8 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
         </Show>
       </div>
       <div class="task-title-actions">
-        <Show when={props.task.gitIsolation === 'worktree' && !isLandedTask()}>
-          <div class="task-action-group" role="group" aria-label="Git actions">
+        <div class="task-action-group" role="group" aria-label="Task actions">
+          <Show when={props.task.gitIsolation === 'worktree' && !isLandedTask()}>
             <button
               type="button"
               class="task-finish-btn"
@@ -229,8 +258,62 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
               </Show>
               {props.pushing ? 'Pushing…' : props.pushSuccess ? 'Pushed' : 'Finish'}
             </button>
-          </div>
-        </Show>
+          </Show>
+          <MoreMenu
+            label="Later"
+            icon={<ClockIcon size={14} />}
+            class="task-finish-btn"
+            items={[
+              {
+                label: isTaskBackgrounded(props.task.id)
+                  ? 'Restore to front'
+                  : 'Snooze until new activity',
+                icon: isTaskBackgrounded(props.task.id) ? (
+                  <UndoIcon size={14} />
+                ) : (
+                  <ActivityIcon size={14} />
+                ),
+                run: () =>
+                  isTaskBackgrounded(props.task.id)
+                    ? bringTaskToFront(props.task.id)
+                    : sendTaskToBack(props.task.id),
+              },
+              {
+                label: 'Snooze · keep running',
+                icon: <PlayIcon size={14} />,
+                children: snoozeChoices(true),
+              },
+              {
+                label: 'Snooze · stop agents',
+                icon: <StopIcon size={14} />,
+                children: snoozeChoices(false),
+                disabled: !canStopAgents(),
+                title: canStopAgents()
+                  ? undefined
+                  : 'Coordinated tasks need to keep their agents running.',
+              },
+              ...(canStopAgents()
+                ? [
+                    {
+                      label: 'Minimize (stop agents)',
+                      icon: (
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                          aria-hidden="true"
+                        >
+                          <path d="M2 8a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8Z" />
+                        </svg>
+                      ),
+                      run: () => void collapseTask(props.task.id),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </div>
         <div class="task-action-group" role="group" aria-label="View actions">
           <IconButton
             icon={
@@ -267,51 +350,7 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
             pressed={store.focusMode}
           />
         </div>
-        <div class="task-action-group" role="group" aria-label="Task actions">
-          <IconButton
-            icon={
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M3 3h10M3 13h10" />
-                <path
-                  d={
-                    isTaskBackgrounded(props.task.id)
-                      ? 'M8 11V5m0 0L5.5 7.5M8 5l2.5 2.5'
-                      : 'M8 5v6m0 0L5.5 8.5M8 11l2.5-2.5'
-                  }
-                />
-              </svg>
-            }
-            onClick={() =>
-              isTaskBackgrounded(props.task.id)
-                ? bringTaskToFront(props.task.id)
-                : sendTaskToBack(props.task.id)
-            }
-            title={
-              isTaskBackgrounded(props.task.id)
-                ? 'Bring task to front'
-                : 'Send task to back until new activity'
-            }
-          />
-          <Show when={!props.task.coordinatorMode && !props.task.delegationParent}>
-            <IconButton
-              icon={
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M2 8a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8Z" />
-                </svg>
-              }
-              onClick={() => collapseTask(props.task.id)}
-              title="Collapse task"
-            />
-          </Show>
+        <div class="task-action-group" role="group" aria-label="Close task">
           <IconButton icon={<CloseIcon />} onClick={() => props.onClose()} title="Close task" />
         </div>
       </div>

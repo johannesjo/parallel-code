@@ -1060,6 +1060,7 @@ export async function collapseTask(taskId: string): Promise<void> {
     produce((s) => {
       if (!s.tasks[taskId]) return;
       s.tasks[taskId].collapsed = true;
+      s.tasks[taskId].snoozedUntil = undefined;
       s.tasks[taskId].savedAgentDef = agentDefs[0];
       s.tasks[taskId].savedAgentDefs = agentDefs.length > 0 ? agentDefs : undefined;
       s.tasks[taskId].savedAgentSessionIds = savedAgentIds.map(
@@ -1100,7 +1101,8 @@ export async function collapseTask(taskId: string): Promise<void> {
   rescheduleTaskStatusPolling();
 }
 
-export function uncollapseTask(taskId: string): void {
+export function uncollapseTask(taskId: string, options: { activate?: boolean } = {}): void {
+  const activate = options.activate ?? true;
   const task = store.tasks[taskId];
   if (!task || !task.collapsed) return;
 
@@ -1118,10 +1120,13 @@ export function uncollapseTask(taskId: string): void {
     produce((s) => {
       const t = s.tasks[taskId];
       t.collapsed = false;
+      t.snoozedUntil = undefined;
       s.collapsedTaskOrder = s.collapsedTaskOrder.filter((id) => id !== taskId);
       s.taskOrder.push(taskId);
-      if (s.taskProjectFilter && s.taskProjectFilter !== t.projectId) s.taskProjectFilter = null;
-      s.activeTaskId = taskId;
+      if (activate) {
+        if (s.taskProjectFilter && s.taskProjectFilter !== t.projectId) s.taskProjectFilter = null;
+        s.activeTaskId = taskId;
+      }
 
       for (let i = 0; i < restoredAgents.length; i++) {
         const { id: agentId, def } = restoredAgents[i];
@@ -1153,7 +1158,7 @@ export function uncollapseTask(taskId: string): void {
       t.savedAgentSessionIds = undefined;
       t.savedSelectedAgentIndex = undefined;
       t.savedPromptedAgentIndexes = undefined;
-      s.activeAgentId = t.selectedAgentId ?? null;
+      if (activate) s.activeAgentId = t.selectedAgentId ?? null;
     }),
   );
 

@@ -251,6 +251,15 @@ function validBranch(value: unknown, exclude?: string): string | undefined {
   return typeof value === 'string' && value.length > 0 && value !== exclude ? value : undefined;
 }
 
+function restoredSnoozedUntil(value: unknown): number | undefined {
+  return typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value > 0 &&
+    value <= 8_640_000_000_000_000
+    ? value
+    : undefined;
+}
+
 /**
  * Serialize a Task to its persisted shape. The caller supplies agentDefs
  * because active and collapsed tasks source them differently (live store
@@ -309,6 +318,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     stepsEnabled: task.stepsEnabled,
     branchAdoptedFrom: task.branchAdoptedFrom,
     branchOfferDismissed: task.branchOfferDismissed,
+    snoozedUntil: task.snoozedUntil,
     ...(collapsed ? { collapsed: true } : {}),
     delegationParent: task.delegationParent,
     delegationPaused: task.delegationPaused,
@@ -1019,6 +1029,7 @@ export async function loadState(): Promise<void> {
           claudeChatSessionId:
             typeof pt.claudeChatSessionId === 'string' ? pt.claudeChatSessionId : undefined,
           shellAgentIds,
+          snoozedUntil: restoredSnoozedUntil(pt.snoozedUntil),
           notes: pt.notes,
           promptDraft: typeof pt.promptDraft === 'string' ? pt.promptDraft : undefined,
           browserUrl: typeof pt.browserUrl === 'string' ? pt.browserUrl : undefined,
@@ -1199,6 +1210,7 @@ export async function loadState(): Promise<void> {
           branchAdoptedFrom: validBranch(pt.branchAdoptedFrom, pt.branchName),
           branchOfferDismissed: validBranch(pt.branchOfferDismissed),
           collapsed: true,
+          snoozedUntil: restoredSnoozedUntil(pt.snoozedUntil),
           savedAgentSessionIds: Array.isArray(pt.savedAgentSessionIds)
             ? agentDefs.map((_, index) => {
                 const id = pt.savedAgentSessionIds?.[index];

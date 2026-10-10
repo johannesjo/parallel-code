@@ -5,13 +5,18 @@ import { TaskTitleBar } from '../components/TaskTitleBar';
 import { store, setStore } from './core';
 import { AGENT_HOOK_STALE_MS, applyAgentHookEvent, getAgentHookStatus } from './agentHookStatus';
 import { clearAgentActivity, getTaskAttentionState, markAgentBusy } from './taskStatus';
+import { invoke } from '../lib/ipc';
+import { IPC } from '../../electron/ipc/channels';
+import { collapseTask, uncollapseTask } from './tasks';
 import { setActiveTask } from './navigation';
 import { removePrChecks, setPrChecks, type PrChecksState } from './pr-checks-state';
 import { computeAttentionEntries } from './sidebar-attention';
 import {
   bringTaskToFront,
+  getTaskSnoozedUntil,
   isTaskBackgrounded,
   sendTaskToBack,
+  snoozeTask,
   startBackgroundTaskWatcher,
 } from './background-tasks';
 import type { Task } from './types';
@@ -40,7 +45,9 @@ function hook(state: 'working' | 'waiting' | 'done', event: string, taskId = 'on
 let stop: () => void;
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.mocked(invoke).mockClear().mockResolvedValue(undefined);
   setStore('taskProjectFilter', null);
+  setStore('focusMode', false);
   setStore('tasks', reconcile({ one: task('one'), two: task('two'), three: task('three') }));
   setStore('agents', reconcile({}));
   setStore('taskGitStatus', reconcile({}));
@@ -340,17 +347,20 @@ it('offers the action and a manual return in the task header', () => {
     container,
   );
   try {
-    const send = container.querySelector<HTMLButtonElement>(
-      'button[title="Send task to back until new activity"]',
+    const doLater = container.querySelector<HTMLButtonElement>('button[aria-label="Later"]');
+    doLater?.click();
+    const send = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === 'Snooze until new activity',
     );
-    expect(send).not.toBeNull();
+    expect(send).toBeDefined();
     send?.click();
     expect(isTaskBackgrounded('one')).toBe(true);
     expect(container.textContent).toContain('Background');
-    const restore = container.querySelector<HTMLButtonElement>(
-      'button[title="Bring task to front"]',
+    doLater?.click();
+    const restore = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === 'Restore to front',
     );
-    expect(restore).not.toBeNull();
+    expect(restore).toBeDefined();
     restore?.click();
     expect(isTaskBackgrounded('one')).toBe(false);
     expect(container.textContent).not.toContain('Background');
@@ -387,4 +397,220 @@ it('keeps the selected project when sending its active task to the back', () => 
   sendTaskToBack('two');
   expect(store.activeTaskId).toBe('three');
   expect(store.taskProjectFilter).toBe('project');
+});
+
+it('keeps timed snooze through new activity and restores at its deadline without taking focus', () => {
+  const now = Date.now();
+  sendTaskToBack('one', 2);
+  expect(getTaskSnoozedUntil('one')).toBe(now + 2 * 3_600_000);
+  hook('waiting', 'PermissionRequest');
+  setStore('tasks', 'one', 'needsReview', true);
+  expect(isTaskBackgrounded('one')).toBe(true);
+  vi.advanceTimersByTime(2 * 3_600_000 - 1);
+  expect(isTaskBackgrounded('one')).toBe(true);
+  vi.advanceTimersByTime(1);
+  expect(isTaskBackgrounded('one')).toBe(false);
+  expect(getTaskSnoozedUntil('one')).toBeUndefined();
+  expect(store.taskOrder[0]).toBe('one');
+  expect(store.activeTaskId).toBe('two');
+});
+
+it('replaces a snooze deadline and supports early manual restore', () => {
+  sendTaskToBack('one', 1);
+  vi.advanceTimersByTime(30 * 60_000);
+  sendTaskToBack('one', 2);
+  vi.advanceTimersByTime(30 * 60_000);
+  expect(isTaskBackgrounded('one')).toBe(true);
+  bringTaskToFront('one');
+  sendTaskToBack('one');
+  vi.advanceTimersByTime(2 * 3_600_000);
+  expect(isTaskBackgrounded('one')).toBe(true);
+  expect(getTaskSnoozedUntil('one')).toBeUndefined();
+});
+
+it('ends timed snooze when the task is selected', () => {
+  sendTaskToBack('one', 1);
+  setActiveTask('one');
+  expect(isTaskBackgrounded('one')).toBe(false);
+  expect(getTaskSnoozedUntil('one')).toBeUndefined();
+});
+
+it('reschedules the whole snoozed coordinator group from a child', () => {
+  setStore('tasks', 'two', 'coordinatedBy', 'one');
+  sendTaskToBack('one', 1);
+  sendTaskToBack('two', 2);
+  expect(getTaskSnoozedUntil('one')).toBe(getTaskSnoozedUntil('two'));
+  hook('waiting', 'PermissionRequest', 'two');
+  vi.advanceTimersByTime(3_600_000);
+  expect(isTaskBackgrounded('two')).toBe(true);
+  vi.advanceTimersByTime(3_600_000);
+  expect(store.taskOrder).toEqual(['one', 'two', 'three']);
+  expect(isTaskBackgrounded('two')).toBe(false);
+});
+
+it('expires an overdue snooze after the clock jumps forward', () => {
+  sendTaskToBack('one', 1);
+  vi.setSystemTime(Date.now() + 2 * 3_600_000);
+  vi.advanceTimersByTime(60_000);
+  expect(isTaskBackgrounded('one')).toBe(false);
+});
+
+it('cancels scheduled work when the watcher is disposed', () => {
+  sendTaskToBack('one', 1);
+  stop();
+  vi.advanceTimersByTime(3_600_000);
+  expect(isTaskBackgrounded('one')).toBe(true);
+});
+
+it.each([0, -1, 0.001, 169, Infinity, NaN])('rejects invalid snooze hours: %s', (hours) => {
+  sendTaskToBack('one', hours);
+  expect(isTaskBackgrounded('one')).toBe(false);
+  expect(store.taskOrder).toEqual(['one', 'two', 'three']);
+});
+
+it('rebuilds a saved snooze and retains the original deadline after restart', () => {
+  stop();
+  const deadline = Date.now() + 30 * 60_000;
+  setStore('tasks', 'one', 'snoozedUntil', deadline);
+  setStore('taskOrder', ['two', 'three', 'one']);
+  setActiveTask('two');
+  stop = startBackgroundTaskWatcher();
+  expect(getTaskSnoozedUntil('one')).toBe(deadline);
+  hook('waiting', 'PermissionRequest');
+  expect(isTaskBackgrounded('one')).toBe(true);
+  vi.advanceTimersByTime(30 * 60_000);
+  expect(store.taskOrder[0]).toBe('one');
+  expect(store.activeTaskId).toBe('two');
+  expect(store.tasks.one.snoozedUntil).toBeUndefined();
+});
+
+it('returns a task on startup when its saved deadline passed while the app was closed', () => {
+  stop();
+  setStore('tasks', 'one', 'snoozedUntil', Date.now() - 60_000);
+  setStore('taskOrder', ['two', 'three', 'one']);
+  setActiveTask('two');
+  stop = startBackgroundTaskWatcher();
+  vi.advanceTimersByTime(0);
+  expect(store.taskOrder[0]).toBe('one');
+  expect(isTaskBackgrounded('one')).toBe(false);
+  expect(store.tasks.one.snoozedUntil).toBeUndefined();
+  expect(store.activeTaskId).toBe('two');
+});
+
+it('does not cancel a restored snooze through the saved active selection', () => {
+  stop();
+  setStore('taskOrder', ['one']);
+  setStore('focusMode', true);
+  setStore('tasks', 'one', 'snoozedUntil', Date.now() + 3_600_000);
+  stop = startBackgroundTaskWatcher();
+  expect(isTaskBackgrounded('one')).toBe(true);
+  expect(store.activeTaskId).toBeNull();
+  expect(store.activeAgentId).toBeNull();
+  expect(store.focusMode).toBe(false);
+});
+
+it('restores coordinator snooze ownership even when a child was the saved selection', () => {
+  stop();
+  setStore('tasks', 'two', 'coordinatedBy', 'one');
+  const deadline = Date.now() + 3_600_000;
+  setStore('tasks', 'one', 'snoozedUntil', deadline);
+  setActiveTask('two');
+  stop = startBackgroundTaskWatcher();
+  expect(getTaskSnoozedUntil('two')).toBe(deadline);
+  expect(store.activeTaskId).toBe('three');
+  bringTaskToFront('two');
+  expect(store.tasks.one.snoozedUntil).toBeUndefined();
+});
+
+it('clears the durable deadline when switching to activity-based backgrounding', () => {
+  sendTaskToBack('one', 2);
+  expect(store.tasks.one.snoozedUntil).toBe(getTaskSnoozedUntil('one'));
+  sendTaskToBack('one');
+  expect(store.tasks.one.snoozedUntil).toBeUndefined();
+  expect(isTaskBackgrounded('one')).toBe(true);
+});
+
+it('stops agents for an unchecked snooze and resumes the saved session without taking focus', async () => {
+  const sessionId = 'fb4f2bc6-62d9-4b29-a795-240caf2fc459';
+  setStore('tasks', 'one', 'agentSessionIds', { 'one-agent': sessionId });
+  await snoozeTask('one', 1, false);
+  expect(invoke).toHaveBeenCalledWith(IPC.KillAgent, { agentId: 'one-agent' });
+  expect(store.tasks.one.collapsed).toBe(true);
+  expect(store.tasks.one.agentIds).toEqual([]);
+  expect(store.tasks.one.savedAgentSessionIds).toEqual([sessionId]);
+  expect(isTaskBackgrounded('one')).toBe(true);
+  const selectedTask = store.activeTaskId;
+  const selectedAgent = store.activeAgentId;
+  setStore('taskProjectFilter', 'other');
+  vi.advanceTimersByTime(3_600_000);
+  expect(store.tasks.one.collapsed).toBe(false);
+  const resumedId = store.tasks.one.agentIds[0];
+  expect(store.agents[resumedId].resumed).toBe(true);
+  expect(store.tasks.one.agentSessionIds?.[resumedId]).toBe(sessionId);
+  expect(store.taskOrder[0]).toBe('one');
+  expect(store.activeTaskId).toBe(selectedTask);
+  expect(store.activeAgentId).toBe(selectedAgent);
+  expect(store.taskProjectFilter).toBe('other');
+});
+
+it('allows early manual restoration of a stopped snooze and cancels its timer', async () => {
+  await snoozeTask('one', 1, false);
+  uncollapseTask('one');
+  expect(store.tasks.one.snoozedUntil).toBeUndefined();
+  expect(isTaskBackgrounded('one')).toBe(false);
+  const agentIds = [...store.tasks.one.agentIds];
+  vi.advanceTimersByTime(3_600_000);
+  expect(store.tasks.one.agentIds).toEqual(agentIds);
+});
+
+it('restores a stopped snooze after restarting the app', () => {
+  stop();
+  const def = store.agents['one-agent'].def;
+  setStore('tasks', 'one', {
+    collapsed: true,
+    agentIds: [],
+    savedAgentDefs: [def],
+    snoozedUntil: Date.now() + 3_600_000,
+  });
+  setStore('taskOrder', ['two', 'three']);
+  setStore('collapsedTaskOrder', ['one']);
+  setActiveTask('two');
+  stop = startBackgroundTaskWatcher();
+  vi.advanceTimersByTime(3_600_000 - 1);
+  expect(store.tasks.one.collapsed).toBe(true);
+  vi.advanceTimersByTime(1);
+  expect(store.tasks.one.collapsed).toBe(false);
+  expect(store.tasks.one.agentIds).toHaveLength(1);
+  expect(store.activeTaskId).toBe('two');
+});
+
+it('does not resurrect a stopped snooze that is being closed', async () => {
+  await snoozeTask('one', 1, false);
+  setStore('tasks', 'one', 'closingStatus', 'removing');
+  vi.advanceTimersByTime(3_600_000);
+  expect(store.tasks.one.collapsed).toBe(true);
+  expect(store.taskOrder).not.toContain('one');
+  expect(isTaskBackgrounded('one')).toBe(false);
+});
+
+it.each([{ coordinatorMode: true }, { delegationParent: true }, { coordinatedBy: 'parent' }])(
+  'does not stop coordinator-managed tasks: %j',
+  async (fields) => {
+    setStore('tasks', 'one', fields);
+    await snoozeTask('one', 1, false);
+    expect(store.tasks.one.collapsed).not.toBe(true);
+    expect(invoke).not.toHaveBeenCalledWith(IPC.KillAgent, expect.anything());
+    expect(isTaskBackgrounded('one')).toBe(false);
+  },
+);
+
+it('cancels a running snooze when the user explicitly minimizes the task', async () => {
+  sendTaskToBack('one', 1);
+  await collapseTask('one');
+  expect(store.tasks.one.snoozedUntil).toBeUndefined();
+  expect(isTaskBackgrounded('one')).toBe(false);
+  vi.advanceTimersByTime(3_600_000);
+  expect(store.tasks.one.collapsed).toBe(true);
+  expect(store.tasks.one.agentIds).toEqual([]);
+  expect(store.taskOrder).not.toContain('one');
 });
