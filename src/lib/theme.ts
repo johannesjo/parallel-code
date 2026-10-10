@@ -282,6 +282,17 @@ export function bannerStyle(color: string): Record<string, string> {
   };
 }
 
+/** A secondary choice that reads as text, e.g. switching how a dialog acts. */
+export const linkButtonStyle: Record<string, string> = {
+  background: 'none',
+  border: 'none',
+  padding: '0',
+  color: theme.fgMuted,
+  'text-decoration': 'underline',
+  cursor: 'pointer',
+  'font-size': '12px',
+};
+
 /** Inline style for dialog footer buttons; pair with the btn-primary/btn-secondary class. */
 export function dialogButtonStyle(primary: boolean, disabled = false): Record<string, string> {
   return {

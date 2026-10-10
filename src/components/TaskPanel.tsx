@@ -1139,6 +1139,10 @@ export function TaskPanel(props: TaskPanelProps) {
             setFinishAction(null);
             setOpenPrUrl(url);
           }}
+          onCloseTask={() => {
+            setFinishAction(null);
+            setShowCloseConfirm(true);
+          }}
           onPushStart={() => {
             setPushing(true);
             setPushSuccess(false);

@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, on } from 'solid-js';
+import { Show, createEffect, createSignal, on } from 'solid-js';
 import type { ChangeTourController } from '../lib/create-change-tour';
 import type { Task } from '../store/types';
 import type { ChangedFile } from '../ipc/types';
@@ -8,13 +8,15 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { DiffViewerDialog } from './DiffViewerDialog';
 import { EvidencePanel } from './EvidencePanel';
 import { MergeReadinessPanel } from './MergeReadinessPanel';
+import { FinishPrSection, PrMergeRoute } from './FinishPrSection';
 import { MergeBlockers, MergeChanges, MergeOptions } from './MergeSection';
 import { PushSection } from './PushSection';
 import { ReadinessSection } from './ReadinessSection';
 import { createMergeState } from './merge-state';
+import { PR_MERGE_ACTIONS, createFinishPr, taskPrUrl } from './pr-actions';
 import { createPushRun } from './push-run';
-import { parseGitHubUrl } from '../lib/github-url';
-import { getPrChecks, getProject } from '../store/store';
+import { getProject } from '../store/store';
+import { showNotification } from '../store/notification';
 import { theme } from '../lib/theme';
 import { SyncIcon, UploadIcon } from './icons';
 
@@ -30,6 +32,8 @@ interface FinishDialogProps {
   onTourClick: () => void;
   onRegenerateTour: () => void;
   onOpenPullRequest: (url: string) => void;
+  /** Starts closing the task, once its PR merged on GitHub. */
+  onCloseTask: () => void;
   onPushStart: () => void;
   onPushDone: (success: boolean) => void;
   onDiffFileClick: (file: ChangedFile) => void;
@@ -70,14 +74,26 @@ export function FinishDialog(props: FinishDialogProps) {
       return props.task;
     },
     onStart: () => props.onPushStart(),
-    onDone: (success) => props.onPushDone(success),
+    onDone: (success) => {
+      // Both heads may have moved; the push-first blocker compares them.
+      if (success) {
+        merge.refetchAll();
+        void pr.refetch();
+      }
+      props.onPushDone(success);
+    },
   });
-  const prUrl = () =>
-    [props.task.prUrl, props.task.githubUrl].find((url) => {
-      const parsed = url ? parseGitHubUrl(url) : null;
-      return parsed?.type === 'pull' && !!parsed.number;
-    });
-  const pr = () => getPrChecks(props.task.id);
+  const pr = createFinishPr({
+    get open() {
+      return props.open;
+    },
+    get task() {
+      return props.task;
+    },
+    // Reading an errored resource throws; treat it as an unreadable HEAD.
+    headSha: () => (merge.worktreeStatus.error ? null : merge.worktreeStatus()?.head_sha),
+  });
+  const prMerging = () => pr.busy() === 'merge';
 
   // Tracks only `open`: reset reads `pushing`, and re-running when a push ends
   // would wipe the error it just reported.
@@ -91,7 +107,11 @@ export function FinishDialog(props: FinishDialogProps) {
   );
 
   const confirmLabel = () => {
-    if (merge.merging()) return 'Merging...';
+    if (pr.mode() === 'merged') return 'Close task';
+    if (merge.merging() || prMerging()) return 'Merging...';
+    const method = pr.method();
+    if (pr.mode() === 'pr')
+      return `${method ? PR_MERGE_ACTIONS[method] : 'Merge'} PR #${pr.number()}`;
     // The target lives on the button, so the dialog needs no sentence restating it.
     return `${merge.squash() ? 'Squash merge' : 'Merge'} into ${merge.baseBranchName()}`;
   };
@@ -99,12 +119,40 @@ export function FinishDialog(props: FinishDialogProps) {
   // verify command in the check list, evidence by the panel these rows sit in.
   const readinessRows = () =>
     merge.mergeReadiness().checks.filter((check) => !SHOWN_ELSEWHERE.has(check.label));
-  const confirmDisabled = () => push.pushing() || !merge.canMerge();
+  const prCheckRows = () =>
+    merge.mergeReadiness().checks.filter((check) => check.label === 'PR checks');
+  const confirmDisabled = () => {
+    if (push.pushing()) return true;
+    if (pr.mode() === 'merged') return false;
+    if (pr.mode() === 'pr') return !!pr.busy() || !!pr.blocker();
+    return !!pr.busy() || !merge.canMerge();
+  };
+  const footerNote = () => {
+    if (merge.merging() || prMerging() || pr.mode() === 'merged') return undefined;
+    return pr.mode() === 'pr' ? pr.blocker() : merge.mergeBlocker();
+  };
   const mergeAndClose = async () => {
     if (await merge.merge()) props.onClose();
   };
+  const mergePr = async () => {
+    const number = pr.number();
+    const outcome = await pr.merge();
+    if (outcome === 'failed') return;
+    if (outcome === 'queued') {
+      showNotification(`Merge requested for PR #${number}; GitHub has not merged it yet.`);
+      props.onClose();
+      return;
+    }
+    showNotification(`Merged PR #${number}`);
+    // Stay open: the refetched PR flips the footer to Close task.
+    void pr.refetch();
+  };
   const confirm = () => {
-    void mergeAndClose();
+    if (pr.mode() === 'merged') {
+      props.onClose();
+      props.onCloseTask();
+    } else if (pr.mode() === 'pr') void mergePr();
+    else void mergeAndClose();
   };
 
   return (
@@ -172,68 +220,23 @@ export function FinishDialog(props: FinishDialogProps) {
                 <MergeReadinessPanel checks={readinessRows()} />
               </EvidencePanel>
             </ReadinessSection>
-            <section
-              aria-label="GitHub PR and CI"
-              style={{ margin: '20px 0', 'font-size': '13px' }}
-            >
-              <h3 style={{ margin: '0 0 8px', 'font-size': '13px', color: theme.fg }}>
-                GitHub PR and CI
-              </h3>
-              <Show when={prUrl()} fallback={<p>No pull request detected for this task.</p>}>
-                {(url) => (
-                  <>
-                    <button
-                      type="button"
-                      class="btn-secondary"
-                      disabled={push.pushing() || merge.merging()}
-                      onClick={() => props.onOpenPullRequest(url())}
-                      title="View pull request, fix CI, address reviews, or merge on GitHub"
-                    >
-                      PR #{parseGitHubUrl(url())?.number} · Details and actions…
-                    </button>
-                    <Show when={pr()?.merged}>
-                      <p>Merged on GitHub</p>
-                    </Show>
-                    <Show when={pr()?.isDraft && !pr()?.merged}>
-                      <p>Draft pull request</p>
-                    </Show>
-                    <Show when={pr()?.reviewDecision}>
-                      {(decision) => <p>Review: {decision().toLowerCase().replace(/_/g, ' ')}</p>}
-                    </Show>
-                    <Show when={pr()?.mergeable === 'CONFLICTING' && !pr()?.merged}>
-                      <p style={{ color: theme.warning }}>PR has conflicts with its base branch.</p>
-                    </Show>
-                    <MergeReadinessPanel
-                      checks={merge
-                        .mergeReadiness()
-                        .checks.filter((check) => check.label === 'PR checks')}
-                    />
-                    <Show when={pr()?.checks.length}>
-                      <ul
-                        aria-label="GitHub CI checks"
-                        style={{
-                          'max-height': '140px',
-                          'overflow-y': 'auto',
-                          'padding-left': '20px',
-                        }}
-                      >
-                        <For each={pr()?.checks}>
-                          {(check) => (
-                            <li>
-                              {check.name}: {check.bucket}
-                            </li>
-                          )}
-                        </For>
-                      </ul>
-                    </Show>
-                    <p style={{ color: theme.fgSubtle }}>
-                      CI reflects the PR on GitHub, not unpushed local changes.
-                    </p>
-                  </>
-                )}
-              </Show>
-            </section>
-            <MergeOptions task={props.task} state={merge} />
+            <FinishPrSection
+              task={props.task}
+              pr={pr}
+              checkRows={prCheckRows()}
+              disabled={push.pushing() || merge.merging()}
+              onOpenPullRequest={(url) => props.onOpenPullRequest(url)}
+              onStaged={() => {
+                showNotification('Prompt staged in the task input. Review it, then send.');
+                props.onClose();
+              }}
+            />
+            <Show when={taskPrUrl(props.task)}>
+              <PrMergeRoute pr={pr} disabled={push.pushing() || merge.merging()} />
+            </Show>
+            <Show when={pr.mode() === 'local'}>
+              <MergeOptions task={props.task} state={merge} />
+            </Show>
             <Show when={push.pushing() || push.output() || push.error()}>
               <div style={{ 'margin-top': '12px' }}>
                 <PushSection run={push} />
@@ -245,13 +248,13 @@ export function FinishDialog(props: FinishDialogProps) {
           <button
             type="button"
             class="btn-secondary btn-with-icon"
-            disabled={push.pushing() || merge.merging()}
+            disabled={push.pushing() || merge.merging() || prMerging()}
             onClick={() => void push.start()}
             title={`Push ${props.task.branchName} to origin; the task stays open`}
             style={{
               ...pushButtonStyle,
-              cursor: push.pushing() || merge.merging() ? 'not-allowed' : 'pointer',
-              opacity: merge.merging() ? '0.5' : '1',
+              cursor: push.pushing() || merge.merging() || prMerging() ? 'not-allowed' : 'pointer',
+              opacity: merge.merging() || prMerging() ? '0.5' : '1',
             }}
           >
             <UploadIcon size={14} />
@@ -259,8 +262,8 @@ export function FinishDialog(props: FinishDialogProps) {
           </button>
         }
         confirmDisabled={confirmDisabled()}
-        footerNote={merge.merging() ? undefined : merge.mergeBlocker()}
-        confirmLoading={merge.merging()}
+        footerNote={footerNote()}
+        confirmLoading={merge.merging() || prMerging()}
         confirmLabel={confirmLabel()}
         cancelLabel={push.pushing() ? 'Close' : 'Cancel'}
         onConfirm={confirm}
