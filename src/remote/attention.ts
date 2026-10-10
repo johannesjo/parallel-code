@@ -34,10 +34,34 @@ const BY_ATTENTION: Partial<Record<RemoteAttentionState, StatusDisplay>> = {
   ready: { label: 'Ready', color: GREEN, glow: false },
 };
 
-export function agentStatusDisplay(
-  agent: Pick<RemoteAgent, 'status' | 'attention' | 'collapsed'>,
-): StatusDisplay {
+type StatusInput = Pick<RemoteAgent, 'status' | 'attention' | 'collapsed' | 'ci'>;
+
+/** Failed PR checks need the user once the agent has stopped; a busier state still wins. */
+export function isCiFailed(agent: Omit<StatusInput, 'status'>): boolean {
+  return (
+    !agent.collapsed &&
+    agent.ci === 'failure' &&
+    (agent.attention === 'idle' || agent.attention === 'ready')
+  );
+}
+
+/** The tasks the overview counts, files and filters under "Needs you". */
+export function needsYou(agent: Omit<StatusInput, 'status'>): boolean {
+  return agent.attention === 'needs_input' || agent.attention === 'error' || isCiFailed(agent);
+}
+
+/** `ready` only says nothing failed; the PR checks say whether it can merge yet. */
+const READY_BY_CI: Record<NonNullable<RemoteAgent['ci']>, string> = {
+  success: 'Ready to merge',
+  pending: 'CI running',
+  failure: 'Ready',
+};
+
+export function agentStatusDisplay(agent: StatusInput): StatusDisplay {
   if (agent.collapsed) return { label: 'Minimized', color: GREY, glow: false };
+  if (isCiFailed(agent)) return { label: 'CI failed', color: RED, glow: true };
+  if (agent.attention === 'ready' && agent.ci)
+    return { label: READY_BY_CI[agent.ci], color: GREEN, glow: false };
   const known = BY_ATTENTION[agent.attention];
   if (known) return known;
   // attention is 'idle' (or unknown): distinguish a live idle agent from an

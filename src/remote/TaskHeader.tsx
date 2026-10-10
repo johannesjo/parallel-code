@@ -1,6 +1,7 @@
-import { Show, type JSX } from 'solid-js';
+import { createSignal, Show, type JSX } from 'solid-js';
 import { agentStatusDisplay } from './attention';
 import { ConnectionBanner } from './ConnectionBanner';
+import { FixCiDialog } from './FixCiDialog';
 import { agents, canControl, status } from './ws';
 
 /** Title, status and connection banners shared by a task's terminal and chat screens. */
@@ -13,6 +14,8 @@ export function TaskHeader(props: {
 }) {
   const agent = () => agents().find((a) => a.agentId === props.agentId);
   const display = () => agentStatusDisplay(agent() ?? { status: 'exited', attention: 'idle' });
+  // The task id, held from the click: a reconnect blanking `agent()` must not drop the user's edits.
+  const [fixingCiTask, setFixingCiTask] = createSignal<string>();
   return (
     <>
       <header class="mobile-header mobile-task-header">
@@ -45,6 +48,21 @@ export function TaskHeader(props: {
             Enable replies
           </button>
         </div>
+      </Show>
+      {/* Paired only: the prompt exists to be sent, which a view-only phone cannot do. */}
+      <Show when={canControl() && agent()?.ci === 'failure' && agent()?.taskId}>
+        {(taskId) => (
+          <div class="mobile-banner error">
+            <span>PR checks failed</span>
+            <button class="mobile-button quiet" onClick={() => setFixingCiTask(taskId())}>
+              Fix CI
+            </button>
+          </div>
+        )}
+      </Show>
+      {/* Outside the banner's Show: a CI re-run mid-edit must not discard the user's edits. */}
+      <Show when={fixingCiTask()}>
+        {(taskId) => <FixCiDialog taskId={taskId()} onClose={() => setFixingCiTask()} />}
       </Show>
     </>
   );

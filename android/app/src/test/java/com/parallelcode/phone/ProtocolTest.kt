@@ -41,6 +41,17 @@ class ProtocolTest {
     }
 
     @Test
+    fun parsesPrCheckStatusWhenPresent() {
+        val msg = parseServerMessage(
+            """{"type":"agents","list":[
+            {"agentId":"a1","taskId":"t1","taskName":"A","status":"running","exitCode":null,"lastLine":"","attention":"idle","ci":"failure"},
+            {"agentId":"a2","taskId":"t2","taskName":"B","status":"running","exitCode":null,"lastLine":"","attention":"ready"}]}""",
+        ) as ServerMessage.Agents
+        assertEquals("failure", msg.list[0].ci)
+        assertNull(msg.list[1].ci)
+    }
+
+    @Test
     fun decodesTerminalData() {
         val scrollback = parseServerMessage(
             """{"type":"scrollback","agentId":"a1","data":"aGk=","cols":100}""",

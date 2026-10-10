@@ -80,6 +80,8 @@ vi.mock('./api', () => ({
   }),
   mergeTask: vi.fn().mockResolvedValue(undefined),
   closeTask: vi.fn().mockResolvedValue(undefined),
+  fetchFixCiPrompt: vi.fn().mockResolvedValue('CI failed on pull request #7.'),
+  sendFixCiPrompt: vi.fn(),
   ApiError: class extends Error {},
 }));
 
@@ -766,5 +768,62 @@ describe('phone terminal viewport', () => {
     terminalMocks.scrollback?.('', 100, 60);
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     expect(scroller.scrollTop).toBe(120);
+  });
+});
+
+describe('failed PR checks', () => {
+  beforeEach(() => {
+    vi.mocked(agents).mockReturnValue([
+      {
+        agentId: 'a1',
+        taskId: 't1',
+        taskName: 'First task',
+        status: 'running',
+        attention: 'idle',
+        ci: 'failure',
+        exitCode: null,
+        lastLine: '',
+      },
+    ]);
+  });
+
+  it('offers Fix CI to a paired phone and opens the prompt for review', async () => {
+    mount();
+    const fix = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Fix CI');
+    if (!fix) throw new Error('Missing Fix CI button');
+    fix.click();
+    await vi.waitFor(() =>
+      expect(host.querySelector<HTMLTextAreaElement>('[aria-label="Fix CI prompt"]')?.value).toBe(
+        'CI failed on pull request #7.',
+      ),
+    );
+  });
+
+  it('keeps the open prompt when CI or the agent list changes mid-edit', async () => {
+    const first = agents()[0];
+    const [list, setList] = createSignal([first]);
+    // eslint-disable-next-line solid/reactivity -- the component tracks reads through this mock
+    vi.mocked(agents).mockImplementation(list);
+    mount();
+    const fix = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Fix CI');
+    if (!fix) throw new Error('Missing Fix CI button');
+    fix.click();
+    await vi.waitFor(() =>
+      expect(host.querySelector('[aria-label="Fix CI prompt"]')).not.toBeNull(),
+    );
+    setList([{ ...first, ci: 'pending' }]);
+    expect(host.querySelector('[aria-label="Fix CI prompt"]')).not.toBeNull();
+    // A reconnect briefly empties the list.
+    setList([]);
+    expect(host.querySelector('[aria-label="Fix CI prompt"]')).not.toBeNull();
+  });
+
+  it('shows the status but no Fix CI to a view-only phone', () => {
+    wsMocks.canControl = false;
+    mount();
+    expect(host.textContent).toContain('CI failed');
+    expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Fix CI')).toBe(
+      false,
+    );
   });
 });

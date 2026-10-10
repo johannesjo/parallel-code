@@ -14,9 +14,11 @@ class TaskGroupsTest {
         collapsed: Boolean = false,
         project: String? = null,
         agentName: String? = null,
+        ci: String? = null,
     ) = RemoteAgent(
         agentId = id, taskId = id, taskName = "Task $id", running = running, exitCode = null, lastLine = "",
         projectName = project, agentName = agentName, attention = attention, isChat = false, collapsed = collapsed,
+        ci = ci,
     )
 
     @Test
@@ -29,6 +31,29 @@ class TaskGroupsTest {
         assertEquals(TaskGroup.OTHER, taskGroup(agent("a", "idle")))
         assertEquals(TaskGroup.OTHER, taskGroup(agent("a", "shell_busy")))
         assertEquals(TaskGroup.OTHER, taskGroup(agent("a", "needs_input", running = false)))
+    }
+
+    @Test
+    fun failedCiNeedsYouUnlessSomethingMoreUrgentShows() {
+        assertEquals(TaskGroup.NEEDS_YOU, taskGroup(agent("a", "idle", ci = "failure")))
+        assertEquals(TaskGroup.NEEDS_YOU, taskGroup(agent("a", "ready", ci = "failure")))
+        // An exited agent's PR still failed; the task needs you either way.
+        assertEquals(TaskGroup.NEEDS_YOU, taskGroup(agent("a", "idle", running = false, ci = "failure")))
+        assertEquals(TaskGroup.WORKING, taskGroup(agent("a", "active", ci = "failure")))
+        assertEquals(TaskGroup.REVIEW, taskGroup(agent("a", "review", ci = "failure")))
+        assertEquals(TaskGroup.REVIEW, taskGroup(agent("a", "ready", ci = "pending")))
+        assertFalse(agent("a", "idle", collapsed = true, ci = "failure").needsYou())
+        assertTrue(TaskFilter.NEEDS_YOU.matches(agent("a", "ready", ci = "failure")))
+    }
+
+    @Test
+    fun labelsReadyByPrCheckStatus() {
+        assertEquals("Ready to merge", readyLabel("success"))
+        assertEquals("CI running", readyLabel("pending"))
+        assertEquals("Ready", readyLabel(null))
+        assertEquals("CI failed", agentStatusLabel(agent("a", "ready", ci = "failure")))
+        assertEquals("Ready to merge", agentStatusLabel(agent("a", "ready", ci = "success")))
+        assertEquals("Working", agentStatusLabel(agent("a", "active", ci = "failure")))
     }
 
     @Test

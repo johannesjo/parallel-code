@@ -80,6 +80,7 @@ import {
 import type {
   RemoteAgentChoice,
   RemoteAttentionState,
+  RemoteCiStatus,
   RemoteCloseResult,
   RemoteMergeReadiness,
   RemoteTaskContext,
@@ -1798,6 +1799,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
       callRenderer<RemoteTaskDiff>(IPC.Remote_GetDiffRequest, { taskId }),
     getMergeReadiness: (taskId: string) =>
       callRenderer<RemoteMergeReadiness>(IPC.Remote_GetMergeReadinessRequest, { taskId }),
+    getFixCiPrompt: (taskId: string) =>
+      callRenderer<{ prompt: string | null }>(IPC.Remote_GetFixCiPromptRequest, { taskId }).then(
+        (r) => r.prompt,
+      ),
+    sendFixCiPrompt: (taskId: string, prompt: string) =>
+      callRenderer<{ ok: boolean }>(IPC.Remote_SendFixCiPromptRequest, { taskId, prompt }).then(
+        () => {},
+      ),
     mergeTaskFromMobile: (req: { taskId: string; squash: boolean; cleanup: boolean }) =>
       callRenderer<{ ok: boolean }>(IPC.Remote_MergeTaskRequest, req).then(() => {}),
     getTaskAttention: (taskId: string): RemoteAttentionState => taskAttention.get(taskId) ?? 'idle',
@@ -1840,6 +1849,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     'ready',
     'review',
   ]);
+  const VALID_CI: ReadonlySet<RemoteCiStatus> = new Set(['pending', 'failure', 'success']);
 
   // Renderer pushes the full per-task attention snapshot whenever it changes.
   // We replace the cache and re-broadcast the agent list so connected phones
@@ -1859,6 +1869,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
             lastLine?: unknown;
             taskName?: unknown;
             collapsed?: unknown;
+            ci?: unknown;
           }
         >;
       },
@@ -1882,6 +1893,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
               typeof context.projectColor === 'string' ? context.projectColor.slice(0, 200) : '',
             agentName: typeof context.agentName === 'string' ? context.agentName.slice(0, 200) : '',
             lastLine: typeof context.lastLine === 'string' ? context.lastLine.slice(0, 300) : '',
+            ci: VALID_CI.has(context.ci as RemoteCiStatus)
+              ? (context.ci as RemoteCiStatus)
+              : undefined,
           });
         }
       }

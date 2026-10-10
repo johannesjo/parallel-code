@@ -105,6 +105,8 @@
   "Remote_GetDiffRequest": "remote_get_diff_request",
   "Remote_GetMergeReadinessRequest": "remote_get_merge_readiness_request",
   "Remote_MergeTaskRequest": "remote_merge_task_request",
+  "Remote_GetFixCiPromptRequest": "remote_get_fix_ci_prompt_request",
+  "Remote_SendFixCiPromptRequest": "remote_send_fix_ci_prompt_request",
   "Remote_UpdateTaskStatus": "remote_update_task_status",
   "Remote_RendererReply": "remote_renderer_reply",
   "PlanContent": "plan_content",

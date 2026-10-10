@@ -4,6 +4,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { fireAndForget } from '../lib/ipc';
 import { applyAgentHookEvent } from './agentHookStatus';
 import { setStore } from './core';
+import { removePrChecks, setPrChecks, type PrChecksState } from './pr-checks-state';
 import { startRemoteStatusSync } from './remoteStatusSync';
 import { clearAgentActivity, markAgentOutput } from './taskStatus';
 
@@ -64,6 +65,7 @@ afterEach(() => {
   stop = undefined;
   clearAgentActivity('agent');
   clearAgentActivity('other');
+  removePrChecks('task');
   vi.useRealTimers();
 });
 
@@ -123,4 +125,34 @@ it('syncs an existing terminal question in a collapsed review task when phone ac
 
   markAgentOutput('agent', new TextEncoder().encode('\r\n❯\r\n'), 'task');
   expectAttention('review');
+});
+
+function lastCi(): unknown {
+  const [, payload] = vi.mocked(fireAndForget).mock.lastCall ?? [];
+  return (payload as { contexts: Record<string, { ci?: unknown }> }).contexts.task.ci;
+}
+
+it('publishes the PR check status, and drops it once the PR merges or has no checks', () => {
+  const checks: PrChecksState = {
+    overall: 'failure',
+    passing: 1,
+    pending: 0,
+    failing: 1,
+    checks: [],
+    checkedAt: '2026-10-10T00:00:00Z',
+  };
+  stop = startRemoteStatusSync();
+  expect(lastCi()).toBeUndefined();
+
+  setPrChecks('task', checks);
+  expect(lastCi()).toBe('failure');
+
+  setPrChecks('task', { ...checks, overall: 'success', failing: 0 });
+  expect(lastCi()).toBe('success');
+
+  setPrChecks('task', { ...checks, overall: 'none' });
+  expect(lastCi()).toBeUndefined();
+
+  setPrChecks('task', { ...checks, overall: 'success', merged: true });
+  expect(lastCi()).toBeUndefined();
 });

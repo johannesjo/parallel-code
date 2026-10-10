@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { agents, status, canControl } from './ws';
-import { agentStatusDisplay } from './attention';
+import { agentStatusDisplay, needsYou as agentNeedsYou } from './attention';
 import { ConnectionBanner } from './ConnectionBanner';
 import { NotificationSettings } from './NotificationSettings';
 import { readLocal, writeLocal } from './storage';
@@ -15,12 +15,17 @@ interface AgentListProps {
   onPair: () => void;
 }
 
+const inStates = (states: string[]) => (agent: RemoteAgent) => states.includes(agent.attention);
+
+// A task lands in the first group it matches, so failed CI files under "Needs you".
 const groups = [
-  { name: 'Needs you', states: ['needs_input', 'error'] },
-  { name: 'Working', states: ['active'] },
-  { name: 'Ready to review', states: ['review', 'ready'] },
-  { name: 'Other tasks', states: ['idle', 'shell_busy'] },
+  { name: 'Needs you', matches: agentNeedsYou },
+  { name: 'Working', matches: inStates(['active']) },
+  { name: 'Ready to review', matches: inStates(['review', 'ready']) },
+  { name: 'Other tasks', matches: inStates(['idle', 'shell_busy']) },
 ];
+
+const groupOf = (agent: RemoteAgent) => groups.find((group) => group.matches(agent));
 
 export function AgentList(props: AgentListProps) {
   let searchInput: HTMLInputElement | undefined;
@@ -31,9 +36,7 @@ export function AgentList(props: AgentListProps) {
   );
   createEffect(() => writeLocal('task-search', search()));
   createEffect(() => writeLocal('task-filter', filter()));
-  const needsYou = createMemo(
-    () => agents().filter((a) => a.attention === 'needs_input' || a.attention === 'error').length,
-  );
+  const needsYou = createMemo(() => agents().filter(agentNeedsYou).length);
   const matchingSearch = createMemo(() => {
     const query = search().trim().toLocaleLowerCase();
     return agents().filter((a) =>
@@ -44,8 +47,8 @@ export function AgentList(props: AgentListProps) {
   });
   const matchesFilter = (agent: RemoteAgent, id: string) =>
     id === 'all' ||
-    (id === 'attention' && ['needs_input', 'error'].includes(agent.attention)) ||
-    (id === 'review' && ['review', 'ready'].includes(agent.attention));
+    (id === 'attention' && agentNeedsYou(agent)) ||
+    (id === 'review' && groupOf(agent)?.name === 'Ready to review');
   const filtered = createMemo(() => matchingSearch().filter((a) => matchesFilter(a, filter())));
   function clearFilters() {
     setSearch('');
@@ -169,7 +172,7 @@ export function AgentList(props: AgentListProps) {
         </Show>
         <For each={groups}>
           {(group) => {
-            const items = () => filtered().filter((a) => group.states.includes(a.attention));
+            const items = () => filtered().filter((a) => groupOf(a) === group);
             return (
               <Show when={items().length > 0}>
                 <section class="mobile-group" aria-label={group.name}>

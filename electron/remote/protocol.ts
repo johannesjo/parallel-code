@@ -32,7 +32,11 @@ export interface RemoteAgent {
   kind?: 'chat';
   /** True when the task is collapsed / minimized on the desktop. */
   collapsed?: boolean;
+  /** Overall PR check status; absent without an open PR that reports checks. */
+  ci?: RemoteCiStatus;
 }
+
+export type RemoteCiStatus = 'pending' | 'failure' | 'success';
 
 /** An agent the mobile "New Task" screen can launch, with the models it offers. */
 export interface RemoteAgentChoice {
@@ -87,6 +91,7 @@ export type RemoteTaskContext = Pick<
 > & {
   taskName?: string;
   collapsed?: boolean;
+  ci?: RemoteCiStatus;
 };
 
 /** Conversation actions a paired phone may take on a running chat. */

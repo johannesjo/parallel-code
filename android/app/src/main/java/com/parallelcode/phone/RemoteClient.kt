@@ -426,6 +426,22 @@ class RemoteClient(
         )
     }
 
+    /**
+     * The desktop's Fix CI prompt: the failed PR checks and their log tails. Null when nothing
+     * failed. Paired only, since the phone's next step is sending it to the agent.
+     */
+    suspend fun fetchFixCiPrompt(taskId: String): String? =
+        parseFixCiPrompt(
+            api("GET", fixCiPath(taskId), null, pairedTokenOrThrow(), slow = true),
+        )
+
+    /** Send the reviewed Fix CI prompt to the task's agent, exactly as the user left it. */
+    suspend fun sendFixCiPrompt(taskId: String, prompt: String) {
+        api("POST", fixCiPath(taskId), JSONObject().put("prompt", prompt), pairedTokenOrThrow(), slow = true)
+    }
+
+    private fun fixCiPath(taskId: String) = "/api/mobile/tasks/${encodePath(taskId)}/fix-ci"
+
     private val _usage = MutableStateFlow<List<ProviderUsage>>(emptyList())
 
     private val usageRoute = MissingRoutes()
