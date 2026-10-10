@@ -19,7 +19,15 @@ import { createFocusRestore } from '../lib/focus-restore';
 import { topDialog } from '../lib/dialog-stack';
 import { registerFocusFn, unregisterFocusFn } from '../store/focused-panel';
 import { setStore } from '../store/core';
-import { ContainerIcon, FolderIcon, GitBranchIcon, GitHubIcon, PlusIcon, SyncIcon } from './icons';
+import {
+  ChevronRightThinIcon,
+  ContainerIcon,
+  FolderIcon,
+  GitBranchIcon,
+  GitHubIcon,
+  PlusIcon,
+  SyncIcon,
+} from './icons';
 import { ConfirmDialog } from './ConfirmDialog';
 import { errMessage } from '../lib/log';
 import { invoke } from '../lib/ipc';
@@ -1400,16 +1408,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                 cursor: 'pointer',
               }}
             >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 16 16"
-                fill="none"
-                aria-hidden="true"
+              <ChevronRightThinIcon
+                size={12}
                 style={{ transform: advancedOpen() ? 'rotate(90deg)' : undefined }}
-              >
-                <path d="m6 3 5 5-5 5" stroke="currentColor" stroke-width="1.5" />
-              </svg>
+              />
               Advanced options
             </button>
           </div>

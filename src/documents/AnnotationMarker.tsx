@@ -9,6 +9,7 @@ import {
 import { AnnotationBubble } from './AnnotationBubble';
 import type { DocumentAnnotation } from './types';
 import { registerPinnedBubble } from './workspace-ui';
+import { CommentAltIcon } from '../components/icons';
 
 interface AnnotationMarkerProps {
   /** Portalled controls must follow their owning panel’s visibility. */
@@ -148,24 +149,7 @@ export function AnnotationMarker(props: AnnotationMarkerProps) {
       >
         {/* A question waiting on its agent spins in the margin, so the wait is
             visible without opening the bubble to read "Answering…". */}
-        <Show
-          when={awaiting()}
-          fallback={
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              aria-hidden="true"
-            >
-              <rect x="1.6" y="2.6" width="12.8" height="10.8" rx="2.4" />
-              <path d="M4.6 6.4h6.8M4.6 9.4h4.2" />
-            </svg>
-          }
-        >
+        <Show when={awaiting()} fallback={<CommentAltIcon />}>
           <span class="inline-spinner" aria-hidden="true" />
         </Show>
         <Show when={props.annotations.length > 1}>
