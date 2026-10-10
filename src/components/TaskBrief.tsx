@@ -13,6 +13,7 @@ import {
   keepBriefDecision,
   refreshTaskBrief,
   reopenBriefDecision,
+  refreshCodeFingerprint,
   requestConfidenceRating,
 } from '../store/task-brief';
 import { showNotification } from '../store/notification';
@@ -72,7 +73,12 @@ const linkButton: JSX.CSSProperties = {
 function useConfidenceView(task: () => Task) {
   const stale = createMemo(() => {
     const confidence = task().confidence;
-    return !!confidence && isConfidenceStale(confidence, task().brief);
+    if (!confidence) return false;
+    // The newest code read wins: a brief, or a check made when the card opened.
+    const code = task().codeFingerprint;
+    const brief = task().brief;
+    const latest = code ? { generatedAt: code.at, fingerprint: code.fingerprint } : brief;
+    return isConfidenceStale(confidence, latest);
   });
   return { stale };
 }
@@ -126,6 +132,8 @@ export function TaskBriefBar(props: TaskBriefBarProps) {
       document.addEventListener('keydown', onKeyDown, true);
       // Move focus into the card so keyboard users land on its controls.
       queueMicrotask(() => card?.querySelector<HTMLElement>('button, textarea')?.focus());
+      // Check whether a rating still matches the code; briefs do this after each turn.
+      if (props.task.confidence) void refreshCodeFingerprint(props.task.id);
     } else {
       document.removeEventListener('pointerdown', onPointerDown, true);
       document.removeEventListener('keydown', onKeyDown, true);
@@ -141,6 +149,7 @@ export function TaskBriefBar(props: TaskBriefBarProps) {
 
   const headline = () => {
     const brief = props.task.brief?.brief;
+    if (!store.taskBriefs) return 'Confidence rating';
     if (brief) return brief.headline || brief.goal;
     if (props.task.briefStatus?.state === 'generating') return 'Writing the brief…';
     return 'The brief appears after the agent finishes a turn';
@@ -325,39 +334,44 @@ function Section(props: { label: string; children: JSX.Element }) {
   );
 }
 
-/** The correction being typed, kept on the card so a brief update cannot discard it. */
+/**
+ * A correction being typed, kept on the card by decision text so a brief
+ * rewrite cannot discard it or re-enable Send while it is on its way.
+ */
 interface DecisionEdit {
-  text: string;
   draft: string;
+  sending: boolean;
 }
 
 function DecisionRow(props: {
   task: Task;
   item: BriefItem;
-  edit: DecisionEdit | null;
-  setEdit: (edit: DecisionEdit | null) => void;
+  edit: DecisionEdit | undefined;
+  setEdit: (text: string, edit: DecisionEdit | undefined) => void;
 }) {
   const state = () => props.task.brief?.decisions[props.item.text];
-  const editing = () => props.edit?.text === props.item.text;
-  const draft = () => (editing() ? (props.edit?.draft ?? '') : '');
-  const setDraft = (value: string) => props.setEdit({ text: props.item.text, draft: value });
-  const setEditing = (on: boolean) => {
-    if (on) setDraft(`About your decision "${props.item.text}": `);
-    else props.setEdit(null);
-  };
-  const [sending, setSending] = createSignal(false);
+  const editing = () => !!props.edit;
+  const draft = () => props.edit?.draft ?? '';
+  const sending = () => props.edit?.sending ?? false;
+  const setDraft = (value: string) =>
+    props.setEdit(props.item.text, { draft: value, sending: sending() });
+  const setEditing = (on: boolean) =>
+    props.setEdit(
+      props.item.text,
+      on ? { draft: `About your decision "${props.item.text}": `, sending: false } : undefined,
+    );
 
   const send = async () => {
     const text = draft().trim();
     if (!text || sending()) return;
-    setSending(true);
+    const decision = props.item.text;
+    props.setEdit(decision, { draft: draft(), sending: true });
     try {
-      await changeBriefDecision(props.task.id, props.item.text, text);
-      setEditing(false);
+      await changeBriefDecision(props.task.id, decision, text);
+      props.setEdit(decision, undefined);
     } catch (error) {
+      props.setEdit(decision, { draft: draft(), sending: false });
       showNotification(`Could not send the change: ${errMessage(error)}`);
-    } finally {
-      setSending(false);
     }
   };
 
@@ -451,7 +465,14 @@ function TaskBriefCard(props: {
 }) {
   const [showTurns, setShowTurns] = createSignal(false);
   const [rating, setRating] = createSignal(false);
-  const [decisionEdit, setDecisionEdit] = createSignal<DecisionEdit | null>(null);
+  const [decisionEdits, setDecisionEdits] = createSignal<Record<string, DecisionEdit>>({});
+  const setDecisionEdit = (text: string, value: DecisionEdit | undefined) =>
+    setDecisionEdits((prev) => {
+      const next = { ...prev };
+      if (value) next[text] = value;
+      else delete next[text];
+      return next;
+    });
   // Keeps the relative times current while the card stays open.
   const [now, setNow] = createSignal(Date.now());
   const ticker = setInterval(() => setNow(Date.now()), 30_000);
@@ -622,7 +643,7 @@ function TaskBriefCard(props: {
                       <DecisionRow
                         task={props.task}
                         item={item}
-                        edit={decisionEdit()}
+                        edit={decisionEdits()[item.text]}
                         setEdit={setDecisionEdit}
                       />
                     )}

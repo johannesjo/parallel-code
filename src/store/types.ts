@@ -336,6 +336,8 @@ export interface Task {
   brief?: TaskBriefRecord;
   /** Runtime-only: a brief is being written, or the last attempt failed. */
   briefStatus?: { state: 'generating' } | { state: 'failed'; message: string };
+  /** Runtime-only: newest diff fingerprint read, which ratings are compared against. */
+  codeFingerprint?: { fingerprint: string; at: number };
   /** Latest rating the agent published through `confidence_publish`. */
   confidence?: TaskConfidence;
   landingState?: LandingState;

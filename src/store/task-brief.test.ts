@@ -34,6 +34,7 @@ import {
   changeBriefDecision,
   keepBriefDecision,
   publishTaskConfidence,
+  refreshCodeFingerprint,
   refreshTaskBrief,
   requestConfidenceRating,
 } from './task-brief';
@@ -151,6 +152,72 @@ describe('refreshTaskBrief', () => {
     await refreshTaskBrief('t1');
     expect(mockStartRequest.mock.calls[0][0].prompt).toContain('the diff could not be read');
     expect(task().brief?.fingerprint).toBe('');
+  });
+
+  it('leaves a prompt sent while the diff is read for the next brief', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(1_000);
+      reply({ headline: 'first' });
+      await refreshTaskBrief('t1');
+      const sent = (text: string, sentAt: number) =>
+        setStore('tasks', 't1', 'promptHistory', (history) => [
+          ...(history ?? []),
+          { text, sentAt },
+        ]);
+      sent('Second prompt', 1_500);
+      let resolveDiff: (value: { rawDiff: string; cwd: string }) => void = () => {};
+      mockLoadTaskDiff.mockReturnValueOnce(new Promise((resolve) => (resolveDiff = resolve)));
+      vi.setSystemTime(2_000);
+      reply({ headline: 'second' });
+      const run = refreshTaskBrief('t1');
+      sent('Sent during the diff read', 2_500);
+      resolveDiff({ rawDiff: DIFF, cwd: '/wt' });
+      await run;
+      const second = mockStartRequest.mock.calls[1][0].prompt as string;
+      expect(second).toContain('Second prompt');
+      expect(second).not.toContain('Sent during the diff read');
+      vi.setSystemTime(3_000);
+      reply({ headline: 'third' });
+      await refreshTaskBrief('t1');
+      const third = mockStartRequest.mock.calls[2][0].prompt as string;
+      expect(third).toContain('Sent during the diff read');
+      expect(third).not.toContain('Second prompt');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('treats a new agent reply as news even without a prompt or code change', async () => {
+    hook.status = { lastAssistantMessage: 'Here is what I found.', updatedAt: 1 };
+    reply({ headline: 'first' });
+    await refreshTaskBrief('t1');
+    await refreshTaskBrief('t1');
+    expect(mockStartRequest).toHaveBeenCalledTimes(1);
+    hook.status = { lastAssistantMessage: 'A different answer.', updatedAt: 2 };
+    reply({ headline: 'second' });
+    await refreshTaskBrief('t1');
+    expect(task().brief?.brief.headline).toBe('second');
+  });
+
+  it('clears the spinner when the task starts closing mid-brief', async () => {
+    let finish: (text: string) => void = () => {};
+    mockStartRequest.mockReturnValueOnce({
+      result: new Promise<string>((resolve) => (finish = resolve)),
+      cancel: vi.fn(),
+    });
+    const run = refreshTaskBrief('t1');
+    await vi.waitFor(() => expect(mockStartRequest).toHaveBeenCalled());
+    setStore('tasks', 't1', 'closingStatus', 'closing');
+    finish(JSON.stringify({ headline: 'late' }));
+    await run;
+    expect(task().briefStatus).toBeUndefined();
+    expect(task().brief).toBeUndefined();
+  });
+
+  it('records the code it read so ratings can be compared without a new brief', async () => {
+    await refreshCodeFingerprint('t1');
+    expect(task().codeFingerprint?.fingerprint).toBeTruthy();
   });
 
   it('uses the last chat reply for chat agents', async () => {

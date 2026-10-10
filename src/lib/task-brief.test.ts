@@ -47,15 +47,18 @@ describe('buildTaskBriefPrompt', () => {
     expect(prompt).toContain('diff --git a/src/auth.ts');
   });
 
-  it('keeps the fence closed when long prompts are truncated', () => {
+  it('keeps the newest prompts and closes every fence when they are too long', () => {
     const prompt = buildTaskBriefPrompt({
       taskName: 't',
-      prompts: ['x'.repeat(BRIEF_LIMITS.promptsChars), 'second prompt'],
+      prompts: ['oldest', 'x'.repeat(BRIEF_LIMITS.promptsChars), 'newest prompt'],
       agentMessage: '',
       rawDiff: '',
     });
+    expect(prompt).toContain('newest prompt');
+    expect(prompt).toContain('(1 older prompt(s) left out)');
+    expect(prompt).not.toContain('oldest');
     const section = prompt.split('## Prompts since the previous brief\n')[1].split('\n\n## ')[0];
-    expect(section.startsWith('<repo-content>')).toBe(true);
+    expect(section.match(/<repo-content>/g)).toHaveLength(2);
     expect(section.endsWith('</repo-content>')).toBe(true);
     expect(section).toContain('[… truncated]');
   });

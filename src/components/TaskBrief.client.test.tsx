@@ -1,8 +1,9 @@
 import { render } from 'solid-js/web';
 import { createStore, type SetStoreFunction } from 'solid-js/store';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockChange, mockKeep, mockRate } = vi.hoisted(() => ({
+const { mockChange, mockKeep, mockRate, mockRefreshCode } = vi.hoisted(() => ({
+  mockRefreshCode: vi.fn(),
   mockChange: vi.fn(),
   mockKeep: vi.fn(),
   mockRate: vi.fn(),
@@ -13,14 +14,17 @@ vi.mock('../store/task-brief', () => ({
   keepBriefDecision: mockKeep,
   reopenBriefDecision: vi.fn(),
   refreshTaskBrief: vi.fn(),
+  refreshCodeFingerprint: mockRefreshCode,
   requestConfidenceRating: mockRate,
 }));
 
+import { setStore } from '../store/core';
 import type { Task } from '../store/types';
 import { TaskBriefBar, TaskBriefLine } from './TaskBrief';
 
 let dispose: (() => void) | undefined;
 let lastSetState: SetStoreFunction<Task> | undefined;
+beforeEach(() => setStore('taskBriefs', true));
 afterEach(() => {
   dispose?.();
   document.body.replaceChildren();
@@ -135,6 +139,46 @@ describe('TaskBriefBar', () => {
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
     lastSetState?.('brief', 'brief', 'decided', [{ text: 'Used BullMQ.' }, { text: 'New one.' }]);
     expect(card()?.querySelector('textarea')?.value).toBe('Half typed');
+  });
+
+  it('keeps each draft and lets only its own send clear it', async () => {
+    let finishSend: () => void = () => {};
+    mockChange.mockReturnValueOnce(new Promise<void>((resolve) => (finishSend = resolve)));
+    const task = baseTask();
+    task.brief?.brief.decided.push({ text: 'Retries 5 times.' });
+    const { bar } = mount(task);
+    bar.click();
+    const changeButtons = () =>
+      Array.from(card()?.querySelectorAll('button') ?? []).filter(
+        (b) => b.textContent === 'Change…',
+      );
+    changeButtons()[0]?.click();
+    button('Send to agent')?.click();
+    expect(button('Sending…')).toBeDefined();
+    changeButtons()[0]?.click();
+    const fields = () => Array.from(card()?.querySelectorAll('textarea') ?? []);
+    expect(fields()).toHaveLength(2);
+    fields()[1].value = 'Alert on-call instead';
+    fields()[1].dispatchEvent(new Event('input', { bubbles: true }));
+    finishSend();
+    await vi.waitFor(() => expect(fields()).toHaveLength(1));
+    expect(fields()[0].value).toBe('Alert on-call instead');
+  });
+
+  it('checks a rating against the current code when opened with briefs off', () => {
+    setStore('taskBriefs', false);
+    const { bar } = mount(baseTask({ brief: undefined }));
+    expect(bar.textContent).toContain('Confidence rating');
+    bar.click();
+    expect(mockRefreshCode).toHaveBeenCalledWith('task');
+    expect(card()?.textContent).toContain('Task briefs are off');
+  });
+
+  it('marks a rating out of date from a newer code check', () => {
+    const { bar } = mount(
+      baseTask({ brief: undefined, codeFingerprint: { fingerprint: 'changed', at: 5_000 } }),
+    );
+    expect(bar.textContent).toContain('out of date');
   });
 
   it('closes on Escape and asks for a rating from the footer', () => {
