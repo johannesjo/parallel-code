@@ -394,8 +394,7 @@ export async function saveState(): Promise<void> {
     showPlans: store.showPlans,
     modelTaskNames: store.modelTaskNames,
     taskNameModel: store.taskNameModel,
-    // Default on: only an explicit opt-out is stored.
-    taskBriefs: store.taskBriefs ? undefined : false,
+    taskBriefs: store.taskBriefs || undefined,
     confidencePrompt: store.confidencePrompt.trim() || undefined,
     showSidebarTips: store.showSidebarTips,
     showSidebarProgress: store.showSidebarProgress,
@@ -842,7 +841,7 @@ export async function loadState(): Promise<void> {
       s.taskNameModel = isTaskNameModelId(raw.taskNameModel)
         ? raw.taskNameModel
         : DEFAULT_TASK_NAME_MODEL;
-      s.taskBriefs = raw.taskBriefs !== false;
+      s.taskBriefs = raw.taskBriefs === true;
       s.confidencePrompt =
         typeof raw.confidencePrompt === 'string' ? raw.confidencePrompt.slice(0, 4_000) : '';
       s.showSidebarTips = typeof raw.showSidebarTips === 'boolean' ? raw.showSidebarTips : true;

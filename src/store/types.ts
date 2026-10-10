@@ -619,7 +619,7 @@ export interface AppStore {
   /** Opt-in: ask a cheap model for a short title when a task is named from its prompt. */
   modelTaskNames: boolean;
   taskNameModel: TaskNameModelId;
-  /** Write a task brief with the naming model after each agent turn. */
+  /** Opt-in: write a task brief with the naming model after each agent turn. */
   taskBriefs: boolean;
   /** Prompt "Rate confidence" sends; empty uses the built-in self-check. */
   confidencePrompt: string;

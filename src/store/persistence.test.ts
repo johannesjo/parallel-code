@@ -1485,6 +1485,22 @@ describe('new task defaults persistence', () => {
   });
 });
 
+describe('task brief settings', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('keeps task briefs off unless they were turned on', async () => {
+    mockInvoke.mockResolvedValueOnce(basePayload());
+    await loadState();
+    expect(store.taskBriefs).toBe(false);
+    mockInvoke.mockResolvedValueOnce(basePayload({ taskBriefs: true }));
+    await loadState();
+    expect(store.taskBriefs).toBe(true);
+    mockInvoke.mockResolvedValueOnce(basePayload({ taskBriefs: 'yes' }));
+    await loadState();
+    expect(store.taskBriefs).toBe(false);
+  });
+});
+
 describe('retired Steps settings', () => {
   beforeEach(() => vi.clearAllMocks());
 

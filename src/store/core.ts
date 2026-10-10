@@ -65,7 +65,7 @@ export const [store, setStore] = createStore<AppStore>({
   showPlans: true,
   modelTaskNames: false,
   taskNameModel: DEFAULT_TASK_NAME_MODEL,
-  taskBriefs: true,
+  taskBriefs: false,
   confidencePrompt: '',
   showSidebarTips: true,
   showSidebarProgress: true,
