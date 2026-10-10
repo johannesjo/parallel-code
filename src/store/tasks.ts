@@ -45,7 +45,13 @@ import type {
   StepEntry,
 } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
-import type { Agent, Task, GitIsolationMode, AppStore } from './types';
+import type {
+  Agent,
+  AppStore,
+  AutoDiscoveredMcpConfigState,
+  GitIsolationMode,
+  Task,
+} from './types';
 import type { DockerSource } from '../lib/docker';
 import {
   clampCoordinatorConcurrentTasks,
@@ -1224,6 +1230,7 @@ interface MCPTaskCreatedEvent {
   integrationPolicy?: IntegrationPolicy;
   prompt?: string;
   mcpConfigPath?: string;
+  autoDiscoveredMcpConfig?: AutoDiscoveredMcpConfigState;
   preambleFileExistedBefore?: boolean;
   agentCommand?: string;
   agentArgs?: string[];
@@ -1274,6 +1281,7 @@ export function initMCPListeners(): () => void {
         // background sub-task panels may never mount a PromptInput.
         initialPrompt: evt.prompt,
         mcpConfigPath: evt.mcpConfigPath,
+        autoDiscoveredMcpConfig: evt.autoDiscoveredMcpConfig,
         mcpLaunchArgs: evt.mcpLaunchArgs,
         preambleFileExistedBefore: evt.preambleFileExistedBefore,
         skipPermissions: evt.skipPermissions ?? false,
@@ -1473,6 +1481,7 @@ export function initMCPListeners(): () => void {
         controlledBy?: 'coordinator' | 'human' | null;
         automationWriteInFlight?: boolean;
         mcpConfigPath?: string | null;
+        autoDiscoveredMcpConfig?: AutoDiscoveredMcpConfigState | null;
         mcpStartupStatus?: 'pending' | 'ready' | 'error' | null;
         mcpStartupError?: string | null;
       };
@@ -1535,11 +1544,18 @@ export function initMCPListeners(): () => void {
           setStore('tasks', evt.taskId, 'automationWriteInFlight', evt.automationWriteInFlight);
         if (evt.mcpConfigPath !== undefined)
           setStore('tasks', evt.taskId, 'mcpConfigPath', evt.mcpConfigPath ?? undefined);
+        if (evt.autoDiscoveredMcpConfig !== undefined)
+          setStore(
+            'tasks',
+            evt.taskId,
+            'autoDiscoveredMcpConfig',
+            evt.autoDiscoveredMcpConfig ?? undefined,
+          );
         if (evt.mcpStartupStatus !== undefined)
           setStore('tasks', evt.taskId, 'mcpStartupStatus', evt.mcpStartupStatus ?? undefined);
         if (evt.mcpStartupError !== undefined)
           setStore('tasks', evt.taskId, 'mcpStartupError', evt.mcpStartupError ?? undefined);
-        if (hasLandingStateUpdate) void saveState();
+        if (hasLandingStateUpdate || evt.autoDiscoveredMcpConfig !== undefined) void saveState();
       }
     }),
     window.electron.ipcRenderer.on(IPC.MCP_TaskHydrated, (data: unknown) => {
@@ -1584,19 +1600,30 @@ function isAntigravityCommand(command: string | undefined): boolean {
   return command?.split('/').pop() === 'agy';
 }
 
+function isKimiCommand(command: string | undefined): boolean {
+  return command?.split('/').pop() === 'kimi';
+}
+
 function taskRequiresMcpLaunchArgs(taskId: string): boolean {
   const task = store.tasks[taskId];
   if (!task) return true;
   const agentDef = task.agentIds[0] ? store.agents[task.agentIds[0]]?.def : undefined;
   return (
     isCodexCommand(agentDef?.command) ||
-    (Boolean(task.mcpConfigPath) && !isAntigravityCommand(agentDef?.command))
+    (Boolean(task.mcpConfigPath) &&
+      !isAntigravityCommand(agentDef?.command) &&
+      !isKimiCommand(agentDef?.command))
   );
 }
 
 export function applyTaskMcpLaunchResult(
   taskId: string,
-  result: { mcpLaunchArgs?: string[] } | undefined,
+  result:
+    | {
+        mcpLaunchArgs?: string[];
+        autoDiscoveredMcpConfig?: AutoDiscoveredMcpConfigState | null;
+      }
+    | undefined,
 ): boolean {
   if (!store.tasks[taskId]) return false;
   const args = result?.mcpLaunchArgs;
@@ -1605,6 +1632,15 @@ export function applyTaskMcpLaunchResult(
     return false;
   }
   if (Array.isArray(args)) setTaskMcpLaunchArgs(taskId, args);
+  if (result?.autoDiscoveredMcpConfig !== undefined) {
+    setStore(
+      'tasks',
+      taskId,
+      'autoDiscoveredMcpConfig',
+      result.autoDiscoveredMcpConfig ?? undefined,
+    );
+    void saveState();
+  }
   markTaskMcpReady(taskId);
   return true;
 }
@@ -1670,7 +1706,10 @@ export function retryTaskMcpStartup(taskId: string): Promise<void> {
       return Promise.resolve();
     }
     const agentDef = task.agentIds[0] ? store.agents[task.agentIds[0]]?.def : undefined;
-    return invoke<{ mcpLaunchArgs?: string[] }>(IPC.MCP_HydrateCoordinatedTask, {
+    return invoke<{
+      mcpLaunchArgs?: string[];
+      autoDiscoveredMcpConfig?: AutoDiscoveredMcpConfigState | null;
+    }>(IPC.MCP_HydrateCoordinatedTask, {
       id: task.id,
       name: task.name,
       projectId: task.projectId,
@@ -1692,6 +1731,7 @@ export function retryTaskMcpStartup(taskId: string): Promise<void> {
       landingSummary: task.landingSummary,
       landedMetadata: task.landedMetadata,
       mcpConfigPath: task.mcpConfigPath,
+      autoDiscoveredMcpConfig: task.autoDiscoveredMcpConfig,
       agentCommand: agentDef?.command ?? 'claude',
       preambleFileExistedBefore: task.preambleFileExistedBefore,
     })

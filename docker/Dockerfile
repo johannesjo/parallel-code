@@ -50,7 +50,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN ln -sf "$(command -v fdfind)" /usr/local/bin/fd 2>/dev/null || true
 
 # AI agent CLIs — must be present so Docker-mode tasks can execute them
-RUN npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli opencode-ai
+# Keep Kimi below 0.33: newer releases block fresh worktrees on workspace trust.
+RUN npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli opencode-ai @moonshot-ai/kimi-code@0.32.0
 
 # Antigravity CLI (agy) — distributed as a Go binary via the official installer
 # (not on npm). The installer's `--dir` flag drops the binary straight into a

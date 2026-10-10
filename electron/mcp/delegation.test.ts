@@ -73,6 +73,7 @@ let core: {
   setMaxConcurrentSubTasks: ReturnType<typeof vi.fn>;
   hasPendingPrompt: ReturnType<typeof vi.fn>;
   recordUserMerge: ReturnType<typeof vi.fn>;
+  assertTaskDirectMergeAllowed: ReturnType<typeof vi.fn>;
 };
 let persist: () => void;
 let prepareParent: ReturnType<typeof vi.fn<() => Promise<void>>>;
@@ -197,6 +198,7 @@ beforeEach(() => {
     setMaxConcurrentSubTasks: vi.fn(),
     hasPendingPrompt: vi.fn().mockReturnValue(false),
     recordUserMerge: vi.fn(),
+    assertTaskDirectMergeAllowed: vi.fn().mockResolvedValue(undefined),
   };
   persist = vi.fn();
   prepareParent = vi.fn(async () => {});
@@ -430,6 +432,41 @@ describe('delegation authority and creation', () => {
     );
     await service.recordDirectMerge('/project-link', 'child');
     expect(core.recordUserMerge).toHaveBeenCalledWith('child');
+  });
+
+  it.each(['kimi', '/usr/local/bin/kimi'])(
+    'awaits the Finish credential gate for %s children',
+    async (agentCommand) => {
+      await register('parent');
+      await register('child', {
+        parentTaskId: 'parent',
+        branchName: 'child',
+        agentCommand,
+        integrationPolicy: 'review',
+      });
+      core.assertTaskDirectMergeAllowed.mockRejectedValueOnce(new Error('Token history blocked'));
+      await expect(service.assertDirectMergeAllowed('/repo', 'child')).rejects.toThrow(
+        'Token history blocked',
+      );
+      expect(core.assertTaskDirectMergeAllowed).toHaveBeenCalledWith('child');
+      expect(core.recordUserMerge).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not apply the Kimi gate to unrelated, closed, or ordinary tasks', async () => {
+    await register('parent');
+    await register('kimi-child', {
+      parentTaskId: 'parent',
+      branchName: 'kimi-child',
+      agentCommand: 'kimi',
+    });
+    await service.assertDirectMergeAllowed('/elsewhere', 'kimi-child');
+    await service.assertDirectMergeAllowed('/repo', 'other-branch');
+    service.unregister('kimi-child');
+    await service.assertDirectMergeAllowed('/repo', 'kimi-child');
+    await register('ordinary', { agentCommand: 'kimi' });
+    await service.assertDirectMergeAllowed('/repo', 'feature');
+    expect(core.assertTaskDirectMergeAllowed).not.toHaveBeenCalled();
   });
 
   it.each([{ delegationParent: true }, { coordinatorMode: true }])(

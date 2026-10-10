@@ -8,6 +8,7 @@ import type { CoordinatedTask } from './types.js';
 import { parseSignalDoneInput } from '../shared/completion-report.js';
 import { getAgentPromptReadiness, stripAnsi } from './prompt-detect.js';
 import { canConfigureCanvasMcp } from './canvas-config.js';
+import { isKimiCommand } from './agent-args.js';
 import { validateBranchName } from './validation.js';
 import {
   MAX_COORDINATOR_CONCURRENT_TASKS,
@@ -1125,6 +1126,8 @@ export class DelegationService {
         throw new DelegationError(
           'Merge first, then close this task to detach its children safely.',
         );
+      if (task.parentTaskId && isKimiCommand(task.agentCommand))
+        await (await this.options.coordinator()).assertTaskDirectMergeAllowed(task.taskId);
     }
   }
 

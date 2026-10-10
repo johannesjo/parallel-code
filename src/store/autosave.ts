@@ -97,6 +97,7 @@ function structuralSnapshot(): string {
             delegationPaused: t.delegationPaused,
             integrationPolicy: t.integrationPolicy,
             mcpConfigPath: t.mcpConfigPath,
+            autoDiscoveredMcpConfig: t.autoDiscoveredMcpConfig,
             preambleFileExistedBefore: t.preambleFileExistedBefore,
             completion: t.completion,
             reviewRevision: t.reviewRevision,

@@ -1,4 +1,11 @@
 import type { TriageKind, TriageSort } from '../shared/github-triage.js';
+
+/** Persisted ownership fingerprint for an auto-discovered MCP configuration. */
+export interface AutoDiscoveredMcpConfigState {
+  path: string;
+  writtenParallelCodeFingerprint: string;
+}
+
 export type PtyOutput =
   | { type: 'Data'; data: Uint8Array } // raw terminal bytes
   | {

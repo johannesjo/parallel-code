@@ -2,10 +2,11 @@
 // Manages task lifecycle independently of the SolidJS renderer,
 // using existing backend primitives (pty, git, tasks).
 
-import { randomUUID, randomBytes } from 'crypto';
-import { execFile } from 'child_process';
+import { createHash, randomUUID, randomBytes } from 'crypto';
+import { execFile, spawnSync } from 'child_process';
+import { dirname, join } from 'path';
 import { promisify } from 'util';
-import { unlinkSync, readFileSync, existsSync } from 'fs';
+import { mkdirSync, unlinkSync, readFileSync, existsSync } from 'fs';
 import { unlink as fsUnlink } from 'fs/promises';
 import {
   buildSubTaskMcpConfig,
@@ -14,9 +15,15 @@ import {
   writeSubTaskMcpConfig,
   writeSubTaskMcpConfigSync,
 } from './config.js';
-import { buildMcpLaunchArgs, isCodexCommand, type ParallelCodeMcpConfig } from './agent-args.js';
+import {
+  buildMcpLaunchArgs,
+  isCodexCommand,
+  isKimiCommand,
+  type ParallelCodeMcpConfig,
+} from './agent-args.js';
 import { validateBranchName } from './validation.js';
 import { atomicWriteFileSync } from './atomic.js';
+import { appendGitInfoExcludeBlocks } from '../ipc/git-exclude.js';
 import { ReplayCache } from './replay-cache.js';
 import {
   detectPreambleFiles,
@@ -79,6 +86,7 @@ import type {
   ApiTaskDetail,
   ApiDiffResult,
   ApiLandSelfResult,
+  AutoDiscoveredMcpConfigState,
   LandSelfInput,
   LandingState,
   StalledChild,
@@ -138,6 +146,82 @@ const PREAMBLE_ARTIFACT_PATHS = new Set([
   '.claude/settings.local.json',
 ]);
 const UNRESOLVED_LANDED_COMMIT = 'unresolved';
+const KIMI_AUTO_DISCOVERED_MCP_PATHS = ['.kimi-code/mcp.json', '.mcp.json'] as const;
+
+type McpJsonContent = Record<string, unknown> & {
+  mcpServers?: Record<string, unknown>;
+};
+
+type RestoreMcpConfigResult = {
+  status: 'none' | 'restored' | 'failed';
+  managedEntry?: unknown;
+};
+
+function parseMcpJsonContent(configPath: string, raw: string): McpJsonContent {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(`${configPath} contains invalid JSON`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${configPath} must contain a JSON object`);
+  }
+
+  const content = parsed as McpJsonContent;
+  const servers = content.mcpServers;
+  if (
+    servers !== undefined &&
+    (!servers || typeof servers !== 'object' || Array.isArray(servers))
+  ) {
+    throw new Error(`${configPath} mcpServers must be a JSON object`);
+  }
+  return content;
+}
+
+function readMcpJsonContent(configPath: string): McpJsonContent {
+  if (!existsSync(configPath)) return {};
+  return parseMcpJsonContent(configPath, readFileSync(configPath, 'utf-8'));
+}
+
+function mcpEntryFingerprint(value: unknown): string {
+  return createHash('sha256')
+    .update(JSON.stringify(value) ?? 'undefined')
+    .digest('hex');
+}
+
+function isTrackedGitPath(worktreePath: string, relativePath: string): boolean {
+  const result = spawnSync('git', ['ls-files', '--error-unmatch', '--', relativePath], {
+    cwd: worktreePath,
+    stdio: 'ignore',
+    timeout: 3000,
+  });
+  if (result.error) {
+    throw new Error(`Unable to verify whether ${relativePath} is tracked: ${result.error.message}`);
+  }
+  if (result.status === 0) return true;
+  if (result.status === 1) return false;
+  throw new Error(`Unable to verify whether ${relativePath} is tracked`);
+}
+
+function validateAutoDiscoveredMcpConfigState(
+  value: unknown,
+  worktreePath: string,
+): AutoDiscoveredMcpConfigState | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const state = value as Record<string, unknown>;
+  const allowedPaths = KIMI_AUTO_DISCOVERED_MCP_PATHS.map((path) => join(worktreePath, path));
+  if (typeof state.path !== 'string' || !allowedPaths.includes(state.path)) return undefined;
+  if (
+    typeof state.writtenParallelCodeFingerprint !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(state.writtenParallelCodeFingerprint)
+  )
+    return undefined;
+  return {
+    path: state.path,
+    writtenParallelCodeFingerprint: state.writtenParallelCodeFingerprint,
+  };
+}
 
 function pasteDelayMs(text: string): number {
   const lines = text.split('\n').length;
@@ -873,6 +957,14 @@ export class Coordinator {
         doneToken: task.doneToken,
       });
       writeSubTaskMcpConfigSync(mcpConfigPath, mcpConfig);
+      try {
+        this.writeKimiAutoDiscoveredMcpConfig(task, mcpConfig);
+      } catch (err) {
+        logWarn('coordinator.kimi_mcp', 'failed to refresh Kimi child MCP config', {
+          taskId: task.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }
 
@@ -1383,6 +1475,7 @@ export class Coordinator {
     };
 
     const agentCommand = opts.agentCommand ?? coordinatorState.spawnDefaults.command;
+    task.agentCommand = agentCommand;
     const dockerContainerName =
       this.coordinators.get(task.coordinatorTaskId)?.dockerContainerName ?? null;
 
@@ -1423,6 +1516,7 @@ export class Coordinator {
         subTaskMcpConfigPath = configPath;
         task.mcpConfigPath = configPath;
         assertStillPresent();
+        this.writeKimiAutoDiscoveredMcpConfig(task, mcpConfig);
       }
 
       const skipPermissions = opts.skipPermissions ?? coordinatorState.propagateSkipPermissions;
@@ -1514,6 +1608,7 @@ export class Coordinator {
         signalDoneConsumed: task.signalDoneConsumed ?? false,
         baseBranch: task.baseBranch,
         mcpConfigPath: subTaskMcpConfigPath,
+        autoDiscoveredMcpConfig: task.autoDiscoveredMcpConfig,
         prompt: task.initialPrompt,
         preambleFileExistedBefore: task.preambleFileExistedBefore,
         agentCommand: agentCommand,
@@ -2284,6 +2379,266 @@ export class Coordinator {
     this.clearAgentBuffers(task.agentId);
   }
 
+  private writeKimiAutoDiscoveredMcpConfig(
+    task: CoordinatedTask,
+    mcpConfig: ReturnType<typeof buildSubTaskMcpConfig>,
+    syncState = true,
+  ): void {
+    if (!task.agentCommand || !isKimiCommand(task.agentCommand)) return;
+
+    const writtenParallelCode = mcpConfig.mcpServers['parallel-code'];
+    const priorState = task.autoDiscoveredMcpConfig;
+    type Candidate = {
+      relativePath: (typeof KIMI_AUTO_DISCOVERED_MCP_PATHS)[number];
+      configPath: string;
+      tracked: boolean;
+    };
+    const toCandidate = (
+      relativePath: (typeof KIMI_AUTO_DISCOVERED_MCP_PATHS)[number],
+    ): Candidate => ({
+      relativePath,
+      configPath: join(task.worktreePath, relativePath),
+      tracked: isTrackedGitPath(task.worktreePath, relativePath),
+    });
+    let candidate: Candidate | undefined;
+    if (priorState) {
+      const relativePath = KIMI_AUTO_DISCOVERED_MCP_PATHS.find(
+        (path) => join(task.worktreePath, path) === priorState.path,
+      );
+      if (relativePath) candidate = toCandidate(relativePath);
+    } else {
+      for (const relativePath of KIMI_AUTO_DISCOVERED_MCP_PATHS) {
+        const current = toCandidate(relativePath);
+        if (!current.tracked) {
+          candidate = current;
+          break;
+        }
+      }
+    }
+    if (!candidate) {
+      throw new Error(
+        'Unable to create Kimi child MCP config: both .kimi-code/mcp.json and .mcp.json are tracked by Git.',
+      );
+    }
+    if (candidate.tracked) {
+      throw new Error(
+        `Unable to create Kimi child MCP config: ${candidate.relativePath} is tracked by Git.`,
+      );
+    }
+
+    if (candidate.relativePath === '.mcp.json') {
+      // Kimi loads .kimi-code/mcp.json after .mcp.json. A server defined there
+      // would replace the task-scoped server written to the fallback path.
+      const preferredPath = join(task.worktreePath, KIMI_AUTO_DISCOVERED_MCP_PATHS[0]);
+      if (readMcpJsonContent(preferredPath).mcpServers?.['parallel-code'] !== undefined) {
+        throw new Error(
+          `Unable to create Kimi child MCP config: ${KIMI_AUTO_DISCOVERED_MCP_PATHS[0]} already defines mcpServers["parallel-code"] and would override .mcp.json.`,
+        );
+      }
+    }
+
+    const { configPath, relativePath } = candidate;
+    const content = readMcpJsonContent(configPath);
+    const existingParallelCode = content.mcpServers?.['parallel-code'];
+    const isManagedCandidate = priorState?.path === configPath;
+    if (existingParallelCode !== undefined && !isManagedCandidate) {
+      throw new Error(
+        `Unable to create Kimi child MCP config: ${relativePath} already defines mcpServers["parallel-code"].`,
+      );
+    }
+    const servers = content.mcpServers ?? {};
+
+    if (
+      priorState?.path === configPath &&
+      existingParallelCode !== undefined &&
+      mcpEntryFingerprint(servers['parallel-code']) !== priorState.writtenParallelCodeFingerprint
+    ) {
+      logWarn('coordinator.kimi_mcp', 'auto-discovered MCP config changed; refusing overwrite', {
+        taskId: task.id,
+        configPath,
+      });
+      return;
+    }
+
+    const relativeDir = relativePath.includes('/')
+      ? relativePath.slice(0, relativePath.lastIndexOf('/') + 1)
+      : '';
+    // Leading slash anchors both patterns to the worktree root. Without it a
+    // slashless pattern such as `.mcp.json` matches at any depth and would hide
+    // a user's nested config from git status.
+    const configPattern = `/${relativePath}`;
+    const atomicTmpPattern = `/${relativeDir}.parallel-code-atomic-*.tmp`;
+    const excludePatterns = [
+      {
+        marker: configPattern,
+        block: `# Parallel Code Kimi MCP config (contains ephemeral token)\n${configPattern}\n`,
+      },
+      {
+        marker: atomicTmpPattern,
+        block: `${atomicTmpPattern}\n`,
+      },
+    ];
+    const result = appendGitInfoExcludeBlocks(task.worktreePath, excludePatterns, (err, markers) =>
+      console.warn(`[MCP] Could not git-exclude child Kimi MCP paths ${markers.join(', ')}:`, err),
+    );
+    if (result !== 'appended' && result !== 'present') {
+      throw new Error(
+        `Unable to git-exclude Kimi child MCP credential paths ${configPattern}, ${atomicTmpPattern}; refusing to write them.`,
+      );
+    }
+
+    content.mcpServers = { ...servers, 'parallel-code': writtenParallelCode };
+    mkdirSync(dirname(configPath), { recursive: true });
+    atomicWriteFileSync(configPath, JSON.stringify(content, null, 2), { mode: 0o600 });
+    task.autoDiscoveredMcpConfig = {
+      path: configPath,
+      writtenParallelCodeFingerprint: mcpEntryFingerprint(writtenParallelCode),
+    };
+    if (syncState) this.syncAutoDiscoveredMcpConfig(task);
+  }
+
+  private syncAutoDiscoveredMcpConfig(task: CoordinatedTask): void {
+    this.notifyRenderer(IPC.MCP_TaskStateSync, {
+      taskId: task.id,
+      autoDiscoveredMcpConfig: task.autoDiscoveredMcpConfig ?? null,
+    });
+  }
+
+  private readManagedMcpEntryFromTaskConfig(
+    task: CoordinatedTask,
+    state: AutoDiscoveredMcpConfigState,
+  ): unknown {
+    if (!task.mcpConfigPath || !existsSync(task.mcpConfigPath)) return undefined;
+    try {
+      const entry = readMcpJsonContent(task.mcpConfigPath).mcpServers?.['parallel-code'];
+      return mcpEntryFingerprint(entry) === state.writtenParallelCodeFingerprint
+        ? entry
+        : undefined;
+    } catch (err) {
+      logWarn('coordinator.kimi_mcp', 'failed to read per-task MCP config for history check', {
+        taskId: task.id,
+        configPath: task.mcpConfigPath,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return undefined;
+    }
+  }
+
+  private restoreTaskAutoDiscoveredMcpConfig(task: CoordinatedTask): RestoreMcpConfigResult {
+    const state = task.autoDiscoveredMcpConfig;
+    if (!state) return { status: 'none' };
+
+    try {
+      const content = readMcpJsonContent(state.path);
+      const servers = content.mcpServers ?? {};
+      const managedEntry = servers['parallel-code'];
+      if (managedEntry === undefined) {
+        const historicalManagedEntry = this.readManagedMcpEntryFromTaskConfig(task, state);
+        if (historicalManagedEntry === undefined) return { status: 'failed' };
+        task.autoDiscoveredMcpConfig = undefined;
+        this.syncAutoDiscoveredMcpConfig(task);
+        return { status: 'restored', managedEntry: historicalManagedEntry };
+      }
+      if (mcpEntryFingerprint(managedEntry) !== state.writtenParallelCodeFingerprint)
+        return { status: 'failed' };
+
+      delete servers['parallel-code'];
+
+      const hasServers = Object.keys(servers).length > 0;
+      const hasOtherKeys = Object.keys(content).some((key) => key !== 'mcpServers');
+      if (!hasServers && !hasOtherKeys) {
+        unlinkSync(state.path);
+        task.autoDiscoveredMcpConfig = undefined;
+        this.syncAutoDiscoveredMcpConfig(task);
+        return { status: 'restored', managedEntry };
+      }
+      if (hasServers) content.mcpServers = servers;
+      else delete content.mcpServers;
+      atomicWriteFileSync(state.path, JSON.stringify(content, null, 2), { mode: 0o600 });
+      task.autoDiscoveredMcpConfig = undefined;
+      this.syncAutoDiscoveredMcpConfig(task);
+      return { status: 'restored', managedEntry };
+    } catch (err) {
+      logWarn('coordinator.kimi_mcp', 'failed to restore auto-discovered MCP config', {
+        taskId: task.id,
+        configPath: state.path,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { status: 'failed' };
+    }
+  }
+
+  private extractManagedMcpTokens(managedEntry: unknown): string[] {
+    if (!managedEntry || typeof managedEntry !== 'object' || Array.isArray(managedEntry)) return [];
+    const env = (managedEntry as { env?: unknown }).env;
+    if (!env || typeof env !== 'object' || Array.isArray(env)) return [];
+    return ['PARALLEL_CODE_MCP_TOKEN', 'PARALLEL_CODE_MCP_DONE_TOKEN']
+      .map((key) => (env as Record<string, unknown>)[key])
+      .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  }
+
+  private async assertManagedMcpTokensAbsentFromGitHistory(
+    task: CoordinatedTask,
+    managedEntry: unknown,
+  ): Promise<void> {
+    const tokens = this.extractManagedMcpTokens(managedEntry);
+    if (tokens.length === 0) {
+      throw new Error(
+        'Unable to verify managed Kimi MCP tokens before landing or merge; refusing to continue.',
+      );
+    }
+    const historyRange = task.baseBranch ? `${task.baseBranch}..HEAD` : 'HEAD';
+    const result = await execAsync(
+      'git',
+      [
+        'log',
+        historyRange,
+        '-m',
+        '--text',
+        '--no-textconv',
+        '-p',
+        '--format=',
+        '--',
+        '.mcp.json',
+        '.kimi-code/mcp.json',
+        ':(glob)**/.parallel-code-atomic-*.tmp',
+      ],
+      { cwd: task.worktreePath, maxBuffer: 8 * 1024 * 1024 },
+    );
+    const history = execStdout(result);
+    if (tokens.some((token) => history.includes(token))) {
+      throw new Error(
+        'Managed Kimi MCP token was found in task Git history; refusing to land or merge until the token-bearing commit is removed.',
+      );
+    }
+  }
+
+  private kimiMcpRecoveryError(task: CoordinatedTask, operation: string): string {
+    const configPath =
+      task.autoDiscoveredMcpConfig?.path ?? join(task.worktreePath, '.kimi-code', 'mcp.json');
+    return (
+      `Unable to restore managed Kimi MCP config before ${operation}; refusing to validate, stage or merge a worktree that may contain ephemeral MCP tokens. ` +
+      `Inspect ${configPath}. If you edited mcpServers["parallel-code"], preserve any intentional changes securely outside the worktree, then remove only that entry and retry; keep other MCP servers intact. ` +
+      'If the entry was not edited, check that the config is valid JSON and its directory is writable before retrying. Do not commit this config or its tokens.'
+    );
+  }
+
+  private refreshTaskMcpConfigAfterLandingFailure(task: CoordinatedTask): void {
+    try {
+      this.rewriteHydratedSubtaskMcpConfig(
+        task,
+        task.coordinatorTaskId,
+        task.mcpConfigPath,
+        task.agentCommand,
+      );
+    } catch (err) {
+      logWarn('coordinator.kimi_mcp', 'failed to restore MCP config after landing failure', {
+        taskId: task.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   /** Best-effort removal of a task's per-sub-task MCP config file. */
   private unlinkMcpConfigFile(path: string | undefined): void {
     if (!path) return;
@@ -2295,6 +2650,7 @@ export class Coordinator {
   }
 
   private clearTaskMcpConfig(task: CoordinatedTask): void {
+    this.restoreTaskAutoDiscoveredMcpConfig(task);
     this.unlinkMcpConfigFile(task.mcpConfigPath);
     task.mcpConfigPath = undefined;
   }
@@ -2410,16 +2766,46 @@ export class Coordinator {
     task.verification = input.verification;
     task.landingSummary = input.summary;
 
+    const restoreMcpConfig = this.restoreTaskAutoDiscoveredMcpConfig(task);
+    if (restoreMcpConfig.status === 'failed') {
+      // Re-arm before escalating. In the case that gets us here the managed
+      // entry is already gone from the worktree, so without this the child is
+      // left with no parallel-code server and cannot report the escalation
+      // back. The write refuses to touch an entry it does not own, so a
+      // fingerprint mismatch stays untouched; landing fails closed either way.
+      this.refreshTaskMcpConfigAfterLandingFailure(task);
+      const reason = this.kimiMcpRecoveryError(task, 'self-landing');
+      this.escalateLanding(task, 'landing_escalated', reason);
+      throw new Error(reason);
+    }
+    if (restoreMcpConfig.managedEntry !== undefined) {
+      try {
+        await this.assertManagedMcpTokensAbsentFromGitHistory(task, restoreMcpConfig.managedEntry);
+      } catch (err) {
+        if (restoreMcpConfig.status === 'restored')
+          this.refreshTaskMcpConfigAfterLandingFailure(task);
+        const reason = err instanceof Error ? err.message : String(err);
+        this.escalateLanding(task, 'landing_escalated', reason);
+        throw err;
+      }
+    }
+    const shouldRefreshMcpConfig = restoreMcpConfig.status === 'restored';
     try {
       await this.prepareCleanSelfLandingWorktree(task, () =>
         this.assertOrchestrationEnabled(epoch),
       );
     } catch (err) {
+      if (shouldRefreshMcpConfig) this.refreshTaskMcpConfigAfterLandingFailure(task);
       const reason = err instanceof Error ? err.message : String(err);
       this.escalateLanding(task, 'landing_escalated', reason);
       throw err;
     }
-    await this.verifyBeforeLanding(task);
+    try {
+      await this.verifyBeforeLanding(task);
+    } catch (err) {
+      if (shouldRefreshMcpConfig) this.refreshTaskMcpConfigAfterLandingFailure(task);
+      throw err;
+    }
 
     let mergeResult: { mainBranch: string; linesAdded: number; linesRemoved: number };
     try {
@@ -2427,6 +2813,7 @@ export class Coordinator {
         this.assertOrchestrationEnabled(epoch),
       );
     } catch (err) {
+      if (shouldRefreshMcpConfig) this.refreshTaskMcpConfigAfterLandingFailure(task);
       const reason = err instanceof Error ? err.message : String(err);
       const state =
         reason.toLowerCase().includes('conflict') || reason.includes('Merge failed')
@@ -2529,56 +2916,116 @@ export class Coordinator {
     if (!this.coordinators.has(task.coordinatorTaskId))
       throw new Error('The parent is unavailable; integration is disabled.');
     this.assertTaskCanBeMerged(task);
-
-    // Strip injected preamble files before staging so they don't land in history,
-    // then auto-commit any uncommitted changes in the task worktree before merging.
-    if (task.worktreePath) {
-      await stripPreambleFromBranch(task);
+    const restoreMcpConfig = this.restoreTaskAutoDiscoveredMcpConfig(task);
+    if (restoreMcpConfig.status === 'failed') {
+      this.refreshTaskMcpConfigAfterLandingFailure(task);
+      throw new Error(this.kimiMcpRecoveryError(task, 'merge'));
+    }
+    if (restoreMcpConfig.managedEntry !== undefined) {
       try {
         this.assertOrchestrationEnabled(epoch);
-        await execAsync('git', ['add', '-A'], { cwd: task.worktreePath });
-        this.assertOrchestrationEnabled(epoch);
-        await execAsync('git', ['commit', '-m', 'WIP: auto-commit before merge'], {
-          cwd: task.worktreePath,
-        });
-      } catch {
-        // Commit failed — check if uncommitted changes still exist
-        const { stdout: statusOut } = await execAsync('git', ['status', '--porcelain'], {
-          cwd: task.worktreePath,
-        });
-        if (statusOut.trim()) {
-          throw new Error(
-            `Auto-commit failed and the task worktree still has uncommitted changes. ` +
-              `Please commit or discard changes in ${task.worktreePath} before merging.`,
-          );
-        }
-        // Nothing to commit — swallow silently
+        await this.assertManagedMcpTokensAbsentFromGitHistory(task, restoreMcpConfig.managedEntry);
+      } catch (err) {
+        if (restoreMcpConfig.status === 'restored')
+          this.refreshTaskMcpConfigAfterLandingFailure(task);
+        throw err;
       }
     }
-    // skipVerification is the coordinator's way past a failure the task cannot
-    // fix, such as a suite that is already red on the base branch.
-    if (!opts?.skipVerification) await this.verifyBeforeLanding(task);
+    const shouldRefreshMcpConfig = restoreMcpConfig.status === 'restored';
 
-    const result = await this.runGitMerge(task, opts, () => this.assertOrchestrationEnabled(epoch));
+    try {
+      // Strip injected preamble files before staging so they don't land in history,
+      // then auto-commit any uncommitted changes in the task worktree before merging.
+      if (task.worktreePath) {
+        await stripPreambleFromBranch(task);
+        try {
+          this.assertOrchestrationEnabled(epoch);
+          await execAsync('git', ['add', '-A'], { cwd: task.worktreePath });
+          this.assertOrchestrationEnabled(epoch);
+          await execAsync('git', ['commit', '-m', 'WIP: auto-commit before merge'], {
+            cwd: task.worktreePath,
+          });
+        } catch {
+          // Commit failed — check if uncommitted changes still exist
+          const { stdout: statusOut } = await execAsync('git', ['status', '--porcelain'], {
+            cwd: task.worktreePath,
+          });
+          if (statusOut.trim()) {
+            throw new Error(
+              `Auto-commit failed and the task worktree still has uncommitted changes. ` +
+                `Please commit or discard changes in ${task.worktreePath} before merging.`,
+            );
+          }
+          // Nothing to commit — swallow silently
+        }
+      }
 
-    if (opts?.cleanup) {
-      await this.cleanupTask(taskId, {
+      // Verify the cleaned, committed tree so the recorded HEAD/dirty state
+      // describes what will be merged, matching the upstream landing order.
+      // skipVerification remains the explicit escape hatch for base-branch failures.
+      this.assertOrchestrationEnabled(epoch);
+      if (!opts?.skipVerification) await this.verifyBeforeLanding(task);
+
+      const result = await this.runGitMerge(task, opts, () =>
+        this.assertOrchestrationEnabled(epoch),
+      );
+
+      if (opts?.cleanup) {
+        await this.cleanupTask(taskId, {
+          linesAdded: result.linesAdded,
+          linesRemoved: result.linesRemoved,
+        });
+      }
+      if (this.tasks.has(taskId) && shouldRefreshMcpConfig) {
+        this.refreshTaskMcpConfigAfterLandingFailure(task);
+      }
+
+      return {
+        mainBranch: result.mainBranch,
         linesAdded: result.linesAdded,
         linesRemoved: result.linesRemoved,
-      });
+      };
+    } catch (err) {
+      if (shouldRefreshMcpConfig) this.refreshTaskMcpConfigAfterLandingFailure(task);
+      throw err;
     }
+  }
 
-    return {
-      mainBranch: result.mainBranch,
-      linesAdded: result.linesAdded,
-      linesRemoved: result.linesRemoved,
-    };
+  /** Restore runtime credentials and reject token-bearing history before desktop Finish. */
+  async assertTaskDirectMergeAllowed(taskId: string): Promise<void> {
+    const task = this.tasks.get(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+    const discoveryState = task.autoDiscoveredMcpConfig;
+    if (!discoveryState) return;
+
+    const restored = this.restoreTaskAutoDiscoveredMcpConfig(task);
+    if (restored.status === 'failed') {
+      this.refreshTaskMcpConfigAfterLandingFailure(task);
+      throw new Error(this.kimiMcpRecoveryError(task, 'Finish merge'));
+    }
+    try {
+      await this.assertManagedMcpTokensAbsentFromGitHistory(task, restored.managedEntry);
+    } catch (err) {
+      if (restored.status === 'restored') this.refreshTaskMcpConfigAfterLandingFailure(task);
+      throw err;
+    } finally {
+      // Finish may fail after preflight. Keep the fingerprint until a successful
+      // merge is recorded, so a retry still checks history even with no entry on disk.
+      if (restored.status === 'restored' && !task.autoDiscoveredMcpConfig) {
+        task.autoDiscoveredMcpConfig = discoveryState;
+        this.syncAutoDiscoveredMcpConfig(task);
+      }
+    }
   }
 
   /** The user merged this child through the desktop Finish dialog; that merge is the review. */
   recordUserMerge(taskId: string): void {
     const task = this.tasks.get(taskId);
     if (!task || task.landingState === 'reviewed') return;
+    if (task.autoDiscoveredMcpConfig) {
+      task.autoDiscoveredMcpConfig = undefined;
+      this.syncAutoDiscoveredMcpConfig(task);
+    }
     task.landingState = 'reviewed';
     task.landingReason = undefined;
     this.syncLandingState(task);
@@ -2768,12 +3215,16 @@ export class Coordinator {
     landingSummary?: string;
     landedMetadata?: CoordinatedTask['landedMetadata'];
     mcpConfigPath?: string;
+    autoDiscoveredMcpConfig?: AutoDiscoveredMcpConfigState;
     agentCommand?: string;
     preambleFileExistedBefore?: boolean;
     initialPrompt?: string;
     pendingPrompts?: string[];
     assignedPromptDelivered?: boolean;
-  }): { mcpLaunchArgs?: string[] } {
+  }): {
+    mcpLaunchArgs?: string[];
+    autoDiscoveredMcpConfig: AutoDiscoveredMcpConfigState | null;
+  } {
     const coordinatorState = this.coordinators.get(opts.coordinatorTaskId);
     if (!coordinatorState) {
       throw new Error(`coordinator ${opts.coordinatorTaskId} is not registered`);
@@ -2790,14 +3241,38 @@ export class Coordinator {
 
     const existingTask = this.tasks.get(opts.id);
     if (existingTask) {
-      if (!this.orchestrationEnabled) this.discardAutomatedPrompts(existingTask);
-      if (safeMcpConfigPath) existingTask.mcpConfigPath = safeMcpConfigPath;
+      // Publish restored fields only after both credential files have been written.
+      const stagedTask = { ...existingTask };
+      stagedTask.agentCommand = opts.agentCommand ?? stagedTask.agentCommand;
+      if (safeMcpConfigPath) stagedTask.mcpConfigPath = safeMcpConfigPath;
+      if (opts.autoDiscoveredMcpConfig !== undefined) {
+        const restoredState = validateAutoDiscoveredMcpConfigState(
+          opts.autoDiscoveredMcpConfig,
+          existingTask.worktreePath,
+        );
+        if (restoredState) {
+          stagedTask.autoDiscoveredMcpConfig = restoredState;
+        } else if (existingTask.autoDiscoveredMcpConfig) {
+          logWarn(
+            'coordinator.kimi_mcp',
+            'ignored invalid persisted Kimi MCP state; preserving live state',
+            { taskId: existingTask.id },
+          );
+        }
+      }
       const mcpLaunchArgs = this.rewriteHydratedSubtaskMcpConfig(
-        existingTask,
+        stagedTask,
         opts.coordinatorTaskId,
-        safeMcpConfigPath ?? existingTask.mcpConfigPath,
+        stagedTask.mcpConfigPath,
         opts.agentCommand,
+        true,
       );
+      const configStateChanged =
+        stagedTask.autoDiscoveredMcpConfig !== existingTask.autoDiscoveredMcpConfig;
+      Object.assign(existingTask, stagedTask);
+      if (!this.orchestrationEnabled) this.discardAutomatedPrompts(existingTask);
+      // Notification failures must not roll back just one of the committed files.
+      if (configStateChanged) this.syncAutoDiscoveredMcpConfig(existingTask);
       // A renderer reload may have missed the publication event. Send the live
       // record back, rather than letting an older saved report replace it.
       this.notifyRenderer(IPC.MCP_TaskStateSync, {
@@ -2808,7 +3283,10 @@ export class Coordinator {
         signalDoneAt: existingTask.signalDoneAt?.toISOString() ?? null,
         signalDoneConsumed: existingTask.signalDoneConsumed ?? false,
       });
-      return { mcpLaunchArgs };
+      return {
+        mcpLaunchArgs,
+        autoDiscoveredMcpConfig: existingTask.autoDiscoveredMcpConfig ?? null,
+      };
     }
 
     const completion = parseCompletionRecord(opts.completion);
@@ -2844,6 +3322,11 @@ export class Coordinator {
       landingSummary: opts.landingSummary,
       landedMetadata: opts.landedMetadata,
       preambleFileExistedBefore: opts.preambleFileExistedBefore,
+      agentCommand: opts.agentCommand,
+      autoDiscoveredMcpConfig: validateAutoDiscoveredMcpConfigState(
+        opts.autoDiscoveredMcpConfig,
+        opts.worktreePath,
+      ),
     };
     this.tasks.set(task.id, task);
     if (!this.orchestrationEnabled) this.discardAutomatedPrompts(task);
@@ -2886,12 +3369,16 @@ export class Coordinator {
       } catch {
         /* agent not yet spawned — onPtyEvent('spawn') will subscribe when it starts */
       }
-      return { mcpLaunchArgs };
+      return {
+        mcpLaunchArgs,
+        autoDiscoveredMcpConfig: task.autoDiscoveredMcpConfig ?? null,
+      };
     } catch (err) {
       // Clean up partial map entries so the agentId doesn't linger in state.
       this.clearAgentBuffers(agentId);
       this.subscribers.delete(agentId);
       this.clearPromptDeliveryState(task.id);
+      this.clearTaskMcpConfig(task);
       this.tasks.delete(task.id);
       throw err;
     }
@@ -2941,6 +3428,7 @@ export class Coordinator {
     coordinatorTaskId: string,
     mcpConfigPath: string | undefined,
     agentCommand: string | undefined,
+    preserveExistingConfig = false,
   ): string[] | undefined {
     const serverInfo = this.coordinators.get(coordinatorTaskId)?.mcpServerInfo;
     if (!serverInfo) return undefined;
@@ -2955,6 +3443,7 @@ export class Coordinator {
       taskId: task.id,
       doneToken: task.doneToken,
     });
+    task.agentCommand = agentCommand ?? task.agentCommand ?? 'claude';
     if (session && !mcpConfigPath) {
       mcpConfigPath = getSubTaskMcpConfigPath(
         this.coordinators.get(coordinatorTaskId)?.dockerContainerName,
@@ -2963,10 +3452,39 @@ export class Coordinator {
       );
       task.mcpConfigPath = mcpConfigPath;
     }
-    if (mcpConfigPath) {
-      writeSubTaskMcpConfigSync(mcpConfigPath, mcpConfig);
+    const launchArgs = this.buildTaskMcpLaunchArgs(task.agentCommand, mcpConfigPath, mcpConfig);
+    let previousConfig: string | undefined;
+    if (preserveExistingConfig && mcpConfigPath) {
+      try {
+        previousConfig = readFileSync(mcpConfigPath, 'utf8');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
     }
-    return this.buildTaskMcpLaunchArgs(agentCommand ?? 'claude', mcpConfigPath, mcpConfig);
+    let configWritten = false;
+    try {
+      if (mcpConfigPath) {
+        writeSubTaskMcpConfigSync(mcpConfigPath, mcpConfig);
+        configWritten = true;
+      }
+      this.writeKimiAutoDiscoveredMcpConfig(task, mcpConfig, !preserveExistingConfig);
+    } catch (err) {
+      if (preserveExistingConfig && configWritten && mcpConfigPath) {
+        try {
+          if (previousConfig === undefined) unlinkSync(mcpConfigPath);
+          else atomicWriteFileSync(mcpConfigPath, previousConfig, { mode: 0o600 });
+        } catch (restoreError) {
+          throw Object.assign(
+            new Error(
+              'Task hydration failed and the previous per-task MCP config could not be restored.',
+            ),
+            { cause: err, restoreError },
+          );
+        }
+      }
+      throw err;
+    }
+    return launchArgs;
   }
 
   isRegisteredCoordinator(coordinatorTaskId: string): boolean {

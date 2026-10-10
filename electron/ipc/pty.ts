@@ -31,6 +31,7 @@ import {
 } from '../agent-hooks/observations.js';
 import { HOOK_PTY_ENV_KEYS } from '../agent-hooks/hook-script.js';
 import { isClaudeCommand, withClaudeHookSettings } from '../agent-hooks/launch-args.js';
+import { isAgentSupportedInMode } from '../shared/agent-support.js';
 import { debug as logDebug, warn as logWarn } from '../log.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -785,6 +786,9 @@ export async function spawnAgent(
   }
 
   // In Docker mode, we validate `docker` exists rather than the inner command
+  if (!isAgentSupportedInMode(command, args.dockerMode)) {
+    throw new Error('Kimi Code requires Docker mode. Enable Docker isolation to start this agent.');
+  }
   if (!args.dockerMode) {
     validateCommand(command);
   } else {
@@ -1349,6 +1353,7 @@ const AGENT_CONFIG_DIRS: Record<string, string[]> = {
   opencode: ['.config/opencode'],
   copilot: ['.config/github-copilot'],
   agy: ['.gemini/antigravity-cli'],
+  kimi: ['.kimi-code'],
 };
 
 // Config files (not directories) each agent CLI uses for auth, relative to HOME.
