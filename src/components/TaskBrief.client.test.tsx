@@ -1,5 +1,5 @@
 import { render } from 'solid-js/web';
-import { createStore } from 'solid-js/store';
+import { createStore, type SetStoreFunction } from 'solid-js/store';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const { mockChange, mockKeep, mockRate } = vi.hoisted(() => ({
@@ -20,6 +20,7 @@ import type { Task } from '../store/types';
 import { TaskBriefBar, TaskBriefLine } from './TaskBrief';
 
 let dispose: (() => void) | undefined;
+let lastSetState: SetStoreFunction<Task> | undefined;
 afterEach(() => {
   dispose?.();
   document.body.replaceChildren();
@@ -67,7 +68,8 @@ function baseTask(overrides: Partial<Task> = {}): Task {
 }
 
 function mount(task: Task, onFileClick = vi.fn()) {
-  const [state] = createStore(task);
+  const [state, setState] = createStore(task);
+  lastSetState = setState;
   const root = document.createElement('div');
   document.body.append(root);
   dispose = render(() => <TaskBriefBar task={state} onFileClick={onFileClick} />, root);
@@ -121,6 +123,18 @@ describe('TaskBriefBar', () => {
     await vi.waitFor(() =>
       expect(mockChange).toHaveBeenCalledWith('task', 'Used BullMQ.', 'Use pg-boss instead.'),
     );
+  });
+
+  it('keeps a half-typed correction when the brief is rewritten', () => {
+    const { bar } = mount(baseTask());
+    bar.click();
+    button('Change…')?.click();
+    const textarea = card()?.querySelector('textarea');
+    if (!textarea) throw new Error('Missing correction field');
+    textarea.value = 'Half typed';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    lastSetState?.('brief', 'brief', 'decided', [{ text: 'Used BullMQ.' }, { text: 'New one.' }]);
+    expect(card()?.querySelector('textarea')?.value).toBe('Half typed');
   });
 
   it('closes on Escape and asks for a rating from the footer', () => {

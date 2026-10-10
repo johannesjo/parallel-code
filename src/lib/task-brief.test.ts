@@ -47,6 +47,19 @@ describe('buildTaskBriefPrompt', () => {
     expect(prompt).toContain('diff --git a/src/auth.ts');
   });
 
+  it('keeps the fence closed when long prompts are truncated', () => {
+    const prompt = buildTaskBriefPrompt({
+      taskName: 't',
+      prompts: ['x'.repeat(BRIEF_LIMITS.promptsChars), 'second prompt'],
+      agentMessage: '',
+      rawDiff: '',
+    });
+    const section = prompt.split('## Prompts since the previous brief\n')[1].split('\n\n## ')[0];
+    expect(section.startsWith('<repo-content>')).toBe(true);
+    expect(section.endsWith('</repo-content>')).toBe(true);
+    expect(section).toContain('[… truncated]');
+  });
+
   it('truncates a large diff', () => {
     const prompt = buildTaskBriefPrompt({
       taskName: 't',

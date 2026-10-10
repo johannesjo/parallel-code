@@ -239,7 +239,6 @@ vi.mock('./TaskCanvasDocument', () => ({
   TaskCanvasDocument: () => <textarea class="test-canvas" />,
 }));
 vi.mock('./ConfirmDialog', () => ({ ConfirmDialog: () => null }));
-vi.mock('./TaskCurrentStateLine', () => ({ TaskCurrentStateLine: () => null }));
 vi.mock('./TaskClosingOverlay', () => ({ TaskClosingOverlay: () => null }));
 vi.mock('./SubTaskStrip', () => ({ SubTaskStrip: () => null }));
 vi.mock('./TaskReasoningGraphHost', () => ({

@@ -14,6 +14,7 @@ import {
   type BriefDecisionState,
 } from '../lib/task-brief';
 import { DEFAULT_CONFIDENCE_PROMPT } from '../lib/task-confidence';
+import { isAgentChat } from './agent-chat';
 import { getAgentHookStatus } from './agentHookStatus';
 import { store, setStore } from './core';
 import { getProjectPath } from './projects';
@@ -34,7 +35,8 @@ function isLiveTask(task: Task | undefined): task is Task {
   return !!task && !task.closingStatus && !!task.worktreePath;
 }
 
-async function readTaskDiff(task: Task): Promise<string> {
+/** The branch diff, '' when the task has no git, or undefined when it could not be read. */
+async function readTaskDiff(task: Task): Promise<string | undefined> {
   if (task.gitIsolation === 'none') return '';
   try {
     const { rawDiff } = await loadTaskDiff({
@@ -46,38 +48,53 @@ async function readTaskDiff(task: Task): Promise<string> {
     return rawDiff;
   } catch (error) {
     logWarn('taskBrief', 'Could not read the task diff', { error: errMessage(error) });
-    return '';
+    return undefined;
   }
 }
 
-/** The agent's own end-of-turn message when hooks report it, else its visible screen. */
+/**
+ * The agent's own end-of-turn message: the last chat reply, the hook-reported
+ * message, or else its visible terminal screen.
+ */
 function latestAgentMessage(task: Task): string {
   let best: { at: number; text: string } | undefined;
   for (const agentId of task.agentIds) {
+    if (isAgentChat(task, agentId)) {
+      const reply = store.agents[agentId]?.chatState?.items.findLast(
+        (item) => item.kind === 'assistant' && item.text.trim(),
+      );
+      if (reply?.kind === 'assistant') return reply.text.trim();
+      continue;
+    }
     const hook = getAgentHookStatus(agentId);
     const text = hook?.lastAssistantMessage?.trim();
     if (hook && text && (!best || hook.updatedAt > best.at)) best = { at: hook.updatedAt, text };
   }
   if (best) return best.text;
-  const agentId = task.agentIds[0];
+  const agentId = task.agentIds.find((id) => !isAgentChat(task, id));
   return agentId ? normalizeCurrentFrame(getAgentOutputTail(agentId)) : '';
 }
 
-/** Prompts sent since the previous brief; the newest one when timestamps are missing. */
+/** Prompts sent after `since`; for the first brief, the prompt the task started with. */
 function promptsSince(task: Task, since: number): string[] {
   const history = task.promptHistory ?? [];
   const recent = history.filter((entry) => (entry.sentAt ?? 0) > since).map((e) => e.text);
-  if (recent.length) return recent;
-  if (since === 0 && task.savedInitialPrompt) return [task.savedInitialPrompt];
-  return task.lastPrompt ? [task.lastPrompt] : [];
+  if (recent.length || since > 0) return recent;
+  const first = task.savedInitialPrompt || history.at(-1)?.text || task.lastPrompt;
+  return first ? [first] : [];
 }
 
 /**
  * Rewrites the task's brief from the previous one, the prompts of the turn, the
  * agent's last message and the branch diff. One request per task at a time; a
- * turn that ends meanwhile queues one more run.
+ * turn that ends meanwhile queues one more run. Unless `force` is set, nothing
+ * is sent when no prompt went out and the code did not change since the last
+ * brief: agents also look busy while starting up or echoing typed input.
  */
-export async function refreshTaskBrief(taskId: string): Promise<void> {
+export async function refreshTaskBrief(
+  taskId: string,
+  options: { force?: boolean } = {},
+): Promise<void> {
   const task = store.tasks[taskId];
   if (!store.taskBriefs || !isLiveTask(task)) return;
   if (inFlight.has(taskId)) {
@@ -92,12 +109,22 @@ export async function refreshTaskBrief(taskId: string): Promise<void> {
   };
   inFlight.set(taskId, handle);
   setStore('tasks', taskId, 'briefStatus', { state: 'generating' });
-  const startedAt = Date.now();
+  // What the brief covers: prompts and code up to now, not up to when the model answers.
+  const capturedAt = Date.now();
   try {
     const previous = task.brief;
     const rawDiff = await readTaskDiff(task);
     if (cancelled) return;
     const prompts = promptsSince(task, previous?.generatedAt ?? 0);
+    const fingerprint = rawDiff === undefined ? '' : diffFingerprint(rawDiff);
+    const unchanged =
+      !!previous &&
+      prompts.length === 0 &&
+      (rawDiff === undefined || fingerprint === previous.fingerprint);
+    if ((unchanged || (!previous && !prompts.length && !rawDiff)) && !options.force) {
+      setStore('tasks', taskId, 'briefStatus', undefined);
+      return;
+    }
     const request = startEvidenceModelRequest({
       prompt: buildTaskBriefPrompt({
         taskName: task.name,
@@ -117,21 +144,26 @@ export async function refreshTaskBrief(taskId: string): Promise<void> {
     };
     const response = await request.result;
     if (cancelled || !isLiveTask(store.tasks[taskId])) return;
-    const { brief, turnOutcome } = parseTaskBriefResponse(response, diffPaths(rawDiff));
+    const { brief, turnOutcome } = parseTaskBriefResponse(
+      response,
+      rawDiff === undefined ? undefined : diffPaths(rawDiff),
+    );
     const current = store.tasks[taskId].brief;
     setStore('tasks', taskId, 'brief', {
       brief,
-      generatedAt: Date.now(),
-      fingerprint: diffFingerprint(rawDiff),
-      turns: appendBriefTurn(current?.turns ?? [], {
-        prompt: prompts.at(-1) ?? '',
-        outcome: turnOutcome || brief.headline,
-        endedAt: startedAt,
-      }),
+      generatedAt: capturedAt,
+      fingerprint,
+      turns: prompts.length
+        ? appendBriefTurn(current?.turns ?? [], {
+            prompt: prompts.at(-1) ?? '',
+            outcome: turnOutcome || brief.headline,
+            endedAt: capturedAt,
+          })
+        : (current?.turns ?? []),
       decisions: carryDecisionStates(current?.decisions, brief.decided),
     });
     setStore('tasks', taskId, 'briefStatus', undefined);
-    logInfo('taskBrief', 'Brief updated', { taskId, durationMs: Date.now() - startedAt });
+    logInfo('taskBrief', 'Brief updated', { taskId, durationMs: Date.now() - capturedAt });
   } catch (error) {
     if (cancelled || !store.tasks[taskId]) return;
     const message = errMessage(error);
@@ -139,10 +171,18 @@ export async function refreshTaskBrief(taskId: string): Promise<void> {
     setStore('tasks', taskId, 'briefStatus', { state: 'failed', message });
   } finally {
     if (inFlight.get(taskId) === handle) inFlight.delete(taskId);
-    if (cancelled && store.tasks[taskId]?.briefStatus?.state === 'generating')
-      setStore('tasks', taskId, 'briefStatus', undefined);
-    if (rerun.delete(taskId)) void refreshTaskBrief(taskId);
+    if (cancelled) {
+      rerun.delete(taskId);
+      if (store.tasks[taskId]?.briefStatus?.state === 'generating')
+        setStore('tasks', taskId, 'briefStatus', undefined);
+    } else if (rerun.delete(taskId)) void refreshTaskBrief(taskId);
   }
+}
+
+/** Stops the brief being written for a task, and the one queued after it. */
+function cancelTaskBrief(taskId: string): void {
+  rerun.delete(taskId);
+  inFlight.get(taskId)?.cancel();
 }
 
 /**
@@ -177,7 +217,12 @@ export function startTaskBriefWatcher(): () => void {
     }
 
     createEffect(() => {
-      if (!store.taskBriefs) return;
+      if (!store.taskBriefs) {
+        // Forget what was working, so turning briefs back on is not read as a turn ending.
+        for (const taskId of [...timers.keys()]) clearTimer(taskId);
+        working.clear();
+        return;
+      }
       const ids = new Set(store.taskOrder);
       for (const taskId of ids) {
         const now = isTaskWorking(taskId);
@@ -190,13 +235,14 @@ export function startTaskBriefWatcher(): () => void {
         if (ids.has(taskId)) continue;
         working.delete(taskId);
         clearTimer(taskId);
-        inFlight.get(taskId)?.cancel();
+        cancelTaskBrief(taskId);
       }
     });
 
     return () => {
       for (const taskId of [...timers.keys()]) clearTimer(taskId);
-      for (const handle of inFlight.values()) handle.cancel();
+      for (const taskId of [...inFlight.keys()]) cancelTaskBrief(taskId);
+      rerun.clear();
       dispose();
     };
   });
@@ -259,6 +305,8 @@ export function publishTaskConfidence(taskId: string, input: unknown): void {
   const publishedAt = Date.now();
   setStore('tasks', taskId, 'confidence', { ...payload, publishedAt });
   void readTaskDiff(task).then((rawDiff) => {
+    // Unread code cannot be compared later, so the rating keeps no fingerprint.
+    if (rawDiff === undefined) return;
     if (store.tasks[taskId]?.confidence?.publishedAt !== publishedAt) return;
     setStore('tasks', taskId, 'confidence', 'fingerprint', diffFingerprint(rawDiff));
   });

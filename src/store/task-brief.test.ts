@@ -18,6 +18,10 @@ vi.mock('../lib/load-task-diff', () => ({
 vi.mock('./tasks', () => ({ sendPrompt: mockSendPrompt }));
 vi.mock('./projects', () => ({ getProjectPath: () => '/repo' }));
 vi.mock('./agentHookStatus', () => ({ getAgentHookStatus: () => hook.status }));
+vi.mock('./agent-chat', () => ({
+  isAgentChat: (task: { mainAgentView?: string; agentIds: string[] }, agentId: string) =>
+    task.mainAgentView === 'chat' && task.agentIds[0] === agentId,
+}));
 vi.mock('./taskStatus', () => ({
   isTaskWorking: mockIsTaskWorking,
   getAgentOutputTail: () => 'screen text',
@@ -102,6 +106,7 @@ describe('refreshTaskBrief', () => {
     await refreshTaskBrief('t1');
     keepBriefDecision('t1', 'Dropped X.');
     reply({ headline: 'h2', decided: [{ text: 'Dropped X.' }] });
+    mockLoadTaskDiff.mockResolvedValue({ rawDiff: `${DIFF}\n+more`, cwd: '/wt' });
     await refreshTaskBrief('t1');
     expect(task().brief?.decisions).toEqual({ 'Dropped X.': 'kept' });
 
@@ -109,9 +114,53 @@ describe('refreshTaskBrief', () => {
       result: Promise.reject(new Error('provider down')),
       cancel: vi.fn(),
     });
-    await refreshTaskBrief('t1');
+    await refreshTaskBrief('t1', { force: true });
     expect(task().briefStatus).toEqual({ state: 'failed', message: 'provider down' });
     expect(task().brief?.brief.headline).toBe('h2');
+  });
+
+  it('skips the model when no prompt went out and the code did not change', async () => {
+    reply({ headline: 'first' });
+    await refreshTaskBrief('t1');
+    await refreshTaskBrief('t1');
+    expect(mockStartRequest).toHaveBeenCalledTimes(1);
+    expect(task().brief?.turns).toHaveLength(1);
+    expect(task().briefStatus).toBeUndefined();
+
+    reply({ headline: 'forced' });
+    await refreshTaskBrief('t1', { force: true });
+    expect(task().brief?.brief.headline).toBe('forced');
+    // A rewrite without a new prompt is not a new turn.
+    expect(task().brief?.turns).toHaveLength(1);
+
+    setStore('tasks', 't1', 'promptHistory', [
+      { text: 'Fix the redirect', sentAt: 50 },
+      { text: 'Now add a test', sentAt: Date.now() + 1_000 },
+    ]);
+    reply({ headline: 'after prompt' });
+    await refreshTaskBrief('t1');
+    expect(task().brief?.turns.map((turn) => turn.prompt)).toEqual([
+      'Fix the redirect',
+      'Now add a test',
+    ]);
+  });
+
+  it('does not mistake an unreadable diff for no changes', async () => {
+    mockLoadTaskDiff.mockRejectedValue(new Error('git failed'));
+    reply({ headline: 'h' });
+    await refreshTaskBrief('t1');
+    expect(mockStartRequest.mock.calls[0][0].prompt).toContain('the diff could not be read');
+    expect(task().brief?.fingerprint).toBe('');
+  });
+
+  it('uses the last chat reply for chat agents', async () => {
+    setStore('tasks', 't1', 'mainAgentView', 'chat');
+    setStore('agents', 'agent-1', {
+      chatState: { items: [{ kind: 'assistant', text: 'Chat reply: done.' }] },
+    } as never);
+    reply({ headline: 'h' });
+    await refreshTaskBrief('t1');
+    expect(mockStartRequest.mock.calls[0][0].prompt).toContain('Chat reply: done.');
   });
 
   it('does nothing when briefs are off', async () => {
@@ -129,6 +178,7 @@ describe('refreshTaskBrief', () => {
     const first = refreshTaskBrief('t1');
     await vi.waitFor(() => expect(mockStartRequest).toHaveBeenCalledTimes(1));
     reply({ headline: 'second' });
+    mockLoadTaskDiff.mockResolvedValue({ rawDiff: `${DIFF}\n+more`, cwd: '/wt' });
     void refreshTaskBrief('t1');
     resolveFirst(JSON.stringify({ headline: 'first' }));
     await first;

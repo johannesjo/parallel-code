@@ -124,6 +124,8 @@ export function TaskBriefBar(props: TaskBriefBarProps) {
     if (next) {
       document.addEventListener('pointerdown', onPointerDown, true);
       document.addEventListener('keydown', onKeyDown, true);
+      // Move focus into the card so keyboard users land on its controls.
+      queueMicrotask(() => card?.querySelector<HTMLElement>('button, textarea')?.focus());
     } else {
       document.removeEventListener('pointerdown', onPointerDown, true);
       document.removeEventListener('keydown', onKeyDown, true);
@@ -174,7 +176,7 @@ export function TaskBriefBar(props: TaskBriefBarProps) {
           margin: '0',
           border: 'none',
           'border-bottom': `1px solid ${theme.border}`,
-          background: theme.bgSelectedSubtle,
+          background: 'transparent',
           color: props.task.brief ? theme.fg : theme.fgMuted,
           'font-size': sf(11),
           'font-family': 'inherit',
@@ -323,10 +325,26 @@ function Section(props: { label: string; children: JSX.Element }) {
   );
 }
 
-function DecisionRow(props: { task: Task; item: BriefItem }) {
+/** The correction being typed, kept on the card so a brief update cannot discard it. */
+interface DecisionEdit {
+  text: string;
+  draft: string;
+}
+
+function DecisionRow(props: {
+  task: Task;
+  item: BriefItem;
+  edit: DecisionEdit | null;
+  setEdit: (edit: DecisionEdit | null) => void;
+}) {
   const state = () => props.task.brief?.decisions[props.item.text];
-  const [editing, setEditing] = createSignal(false);
-  const [draft, setDraft] = createSignal('');
+  const editing = () => props.edit?.text === props.item.text;
+  const draft = () => (editing() ? (props.edit?.draft ?? '') : '');
+  const setDraft = (value: string) => props.setEdit({ text: props.item.text, draft: value });
+  const setEditing = (on: boolean) => {
+    if (on) setDraft(`About your decision "${props.item.text}": `);
+    else props.setEdit(null);
+  };
   const [sending, setSending] = createSignal(false);
 
   const send = async () => {
@@ -364,14 +382,7 @@ function DecisionRow(props: { task: Task; item: BriefItem }) {
           >
             Keep
           </button>
-          <button
-            type="button"
-            style={quietButton}
-            onClick={() => {
-              setDraft(`About your decision "${props.item.text}": `);
-              setEditing(true);
-            }}
-          >
+          <button type="button" style={quietButton} onClick={() => setEditing(true)}>
             Change…
           </button>
         </span>
@@ -440,6 +451,11 @@ function TaskBriefCard(props: {
 }) {
   const [showTurns, setShowTurns] = createSignal(false);
   const [rating, setRating] = createSignal(false);
+  const [decisionEdit, setDecisionEdit] = createSignal<DecisionEdit | null>(null);
+  // Keeps the relative times current while the card stays open.
+  const [now, setNow] = createSignal(Date.now());
+  const ticker = setInterval(() => setNow(Date.now()), 30_000);
+  onCleanup(() => clearInterval(ticker));
   const brief = () => props.task.brief?.brief;
   const findings = () => props.task.confidence?.findings ?? [];
   const open = () => [...(brief()?.open ?? []), ...findingItems(findings(), ['gap', 'risk'])];
@@ -475,7 +491,9 @@ function TaskBriefCard(props: {
             <span style={{ 'font-size': sf(12), color: theme.fgMuted, 'line-height': '1.45' }}>
               {props.task.briefStatus?.state === 'failed'
                 ? `The brief could not be written: ${props.task.briefStatus.message}`
-                : 'The brief is written by the naming model after each agent turn.'}
+                : store.taskBriefs
+                  ? 'The brief is written by the naming model after each agent turn.'
+                  : 'Task briefs are off in Settings; ratings still show here.'}
             </span>
           }
         >
@@ -505,7 +523,7 @@ function TaskBriefCard(props: {
                   }}
                 >
                   {confidence().source ? `${confidence().source} · ` : ''}
-                  {formatRelativeAge(confidence().publishedAt, Date.now())}
+                  {formatRelativeAge(confidence().publishedAt, now())}
                   {props.stale ? ' · code changed since' : ''}
                 </span>
               </span>
@@ -600,7 +618,14 @@ function TaskBriefCard(props: {
                   }}
                 >
                   <For each={b().decided}>
-                    {(item) => <DecisionRow task={props.task} item={item} />}
+                    {(item) => (
+                      <DecisionRow
+                        task={props.task}
+                        item={item}
+                        edit={decisionEdit()}
+                        setEdit={setDecisionEdit}
+                      />
+                    )}
                   </For>
                 </ul>
               </Section>
@@ -628,7 +653,7 @@ function TaskBriefCard(props: {
                 </span>
                 <span style={{ 'font-size': sf(11), color: theme.fgMuted, 'line-height': '1.4' }}>
                   {turn.outcome}
-                  {turn.endedAt ? ` · ${formatRelativeAge(turn.endedAt, Date.now())}` : ''}
+                  {turn.endedAt ? ` · ${formatRelativeAge(turn.endedAt, now())}` : ''}
                 </span>
               </div>
             )}
@@ -650,7 +675,7 @@ function TaskBriefCard(props: {
           {props.task.briefStatus?.state === 'generating'
             ? 'Updating…'
             : props.task.brief
-              ? `Updated ${formatRelativeAge(props.task.brief.generatedAt, Date.now())}`
+              ? `Updated ${formatRelativeAge(props.task.brief.generatedAt, now())}`
               : ''}
         </span>
         <Show when={props.task.brief?.turns.length}>
@@ -668,7 +693,7 @@ function TaskBriefCard(props: {
             type="button"
             style={linkButton}
             disabled={props.task.briefStatus?.state === 'generating'}
-            onClick={() => void refreshTaskBrief(props.task.id)}
+            onClick={() => void refreshTaskBrief(props.task.id, { force: true })}
           >
             Update now
           </button>

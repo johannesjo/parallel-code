@@ -704,7 +704,7 @@ html[data-look='parallel-code'] .task-item-name {
   letter-spacing: -0.015em;
 }
 
-html[data-look='parallel-code'] .task-item :is(.task-agent-status, .task-current-state-sidebar) {
+html[data-look='parallel-code'] .task-item :is(.task-agent-status, .task-brief-line) {
   font-family: var(--font-ui);
   font-variant-numeric: tabular-nums;
   opacity: 1;
@@ -2315,7 +2315,7 @@ textarea::placeholder {
    Hovering a row is the signal that its detail is wanted. A mono face sets them
    apart from the name as machine-reported state rather than a second title. */
 .task-item .task-agent-status,
-.task-item .task-current-state-sidebar {
+.task-item .task-brief-line {
   margin-top: 4px;
   padding-left: var(--task-row-indent);
   font-family: var(--font-mono);
@@ -2324,7 +2324,7 @@ textarea::placeholder {
 }
 
 /* The two status lines belong together — only the pair is offset from the title. */
-.task-item .task-agent-status + .task-current-state-sidebar {
+.task-item .task-agent-status + .task-brief-line {
   margin-top: 1px;
 }
 
@@ -2336,7 +2336,7 @@ textarea::placeholder {
     [data-attention='error'],
     [data-attention='review']
   )
-  :is(.task-agent-status, .task-current-state-sidebar) {
+  :is(.task-agent-status, .task-brief-line) {
   opacity: 1;
 }
 

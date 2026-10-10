@@ -118,6 +118,8 @@ export function TaskPanel(props: TaskPanelProps) {
     ACTIVE_TASK_SETTLE_MS,
   );
   const [showCloseConfirm, setShowCloseConfirm] = createSignal(false);
+  // With briefs off, the bar still carries a rating the agent published.
+  const showBriefBar = () => store.taskBriefs || !!props.task.confidence;
   const [planFullscreen, setPlanFullscreen] = createSignal(false);
 
   // Countdown clock for staged coordinator notifications shown while auto mode is active.
@@ -921,7 +923,7 @@ export function TaskPanel(props: TaskPanelProps) {
       <div
         class="task-header-stack"
         style={{
-          flex: `0 0 ${store.taskBriefs ? 120 : 96}px`,
+          flex: `0 0 ${showBriefBar() ? 120 : 96}px`,
           display: 'flex',
           'flex-direction': 'column',
           overflow: 'hidden',
@@ -943,7 +945,7 @@ export function TaskPanel(props: TaskPanelProps) {
             onTitleEditRef={(h) => (titleEditHandle = h)}
           />
         </div>
-        <Show when={store.taskBriefs}>
+        <Show when={showBriefBar()}>
           <TaskBriefBar
             task={props.task}
             onFileClick={(file) => setDiffScrollTarget(file)}

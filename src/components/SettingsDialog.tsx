@@ -555,9 +555,9 @@ export function SettingsDialog(props: SettingsDialogProps) {
             >
               <span style={{ 'font-size': '13px', color: theme.fg }}>Confidence rating prompt</span>
               <span style={{ 'font-size': '12px', color: theme.fgMuted }}>
-                Sent to the agent by Rate confidence on the task brief. Leave empty for the built-in
-                self-check, or name your own rating skill. It should end with the agent calling
-                confidence_publish.
+                Sent to the agent by Rate confidence on the task brief (shown while task briefs are
+                on). Leave empty for the built-in self-check, or name your own rating skill. It
+                should end with the agent calling confidence_publish.
               </span>
               <textarea
                 rows={3}
