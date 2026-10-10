@@ -3250,7 +3250,9 @@ html:is(
   display: inline-block;
   box-sizing: border-box;
   border-radius: 999px;
-  background: conic-gradient(currentColor var(--ci-sweep), transparent 0);
+  /* The padding gap keeps the wedge from merging into the ring as it fills. */
+  padding: 2px;
+  background: conic-gradient(currentColor var(--ci-sweep), transparent 0) content-box;
 }
 
 .status-glyph-ci::before {

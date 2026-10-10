@@ -2,6 +2,7 @@ import { render } from 'solid-js/web';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { StatusDot } from './StatusDot';
 import { clearAgentActivity, markAgentOutput, markAgentSpawned } from '../store/taskStatus';
+import { removePrChecks, setPrChecks } from '../store/pr-checks-state';
 
 vi.mock('../store/core', () => ({
   store: {
@@ -59,4 +60,23 @@ it('clears the displayed output timestamp on replacement and cleanup', () => {
   expect(title()).toContain('Activity inferred from terminal output');
   clearAgentActivity('agent');
   expect(title()).toContain('observation time unknown');
+});
+
+it('swaps the CI glyph when checks finish while it is on screen', () => {
+  const ciHost = document.createElement('div');
+  const checks = { passing: 1, pending: 1, failing: 0, checks: [], checkedAt: '' };
+  setPrChecks('task', { ...checks, overall: 'pending' });
+  const disposeCi = render(
+    () => <StatusDot status="ready" attention="ready" taskId="task" />,
+    ciHost,
+  );
+  expect(ciHost.querySelector('.status-glyph-ci')).not.toBeNull();
+
+  setPrChecks('task', { ...checks, pending: 0, failing: 1, overall: 'failure' });
+  expect(ciHost.querySelector('.status-glyph-ci')).toBeNull();
+  expect(ciHost.querySelector('.status-glyph-question')?.textContent).toBe('×');
+  expect(ciHost.querySelector('.status-glyph')?.getAttribute('title')).toContain('CI failed');
+
+  disposeCi();
+  removePrChecks('task');
 });

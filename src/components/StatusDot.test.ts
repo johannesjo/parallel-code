@@ -106,6 +106,13 @@ describe('CI glyphs', () => {
     expect(getStatusGlyph('review', 'review', 'failed')).toBe('ci_failed');
   });
 
+  it('keeps a minimum wedge before any check has registered', () => {
+    setPrChecks('t1', prChecks('pending'));
+    const html = renderToString(() => StatusDot({ status: 'ready', taskId: 't1' }));
+    expect(html).toContain('--ci-sweep:12%');
+    expect(html).toContain('title="CI running');
+  });
+
   it('turns the pie red once a check fails mid-run', () => {
     setPrChecks('t1', checks('pending', { failing: 1 }));
     const html = renderToString(() => StatusDot({ status: 'ready', taskId: 't1' }));
