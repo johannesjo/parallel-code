@@ -2,8 +2,7 @@ import { onCleanup, onMount } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
-import { DocumentIcon } from '../documents/DocumentIcon';
-import { FolderAltIcon } from './icons';
+import { DocumentIcon, FolderAltIcon } from './icons';
 
 export type ProjectKindChoice = 'code' | 'document';
 

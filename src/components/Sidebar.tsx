@@ -3,7 +3,14 @@ import { TaskProjectFilter } from './TaskProjectFilter';
 import { createProjectFilterTransition } from '../lib/projectFilterTransition';
 import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
 import type { JSX } from 'solid-js';
-import { BotIcon, ChevronDownAltIcon, FolderIcon, GitHubIcon, PlusLargeIcon } from './icons';
+import {
+  BotIcon,
+  ChevronDownAltIcon,
+  DocumentIcon,
+  FolderIcon,
+  GitHubIcon,
+  PlusLargeIcon,
+} from './icons';
 import { openGitHubIssues } from '../store/github';
 import { errMessage } from '../lib/log';
 import {
@@ -46,7 +53,6 @@ import { EditProjectDialog } from './EditProjectDialog';
 import { NewDocumentProjectDialog } from '../documents/NewDocumentProjectDialog';
 import { openDocumentWorkspace } from '../documents/store';
 import { codeProjects, isDocumentProject } from '../store/projects';
-import { DocumentIcon } from '../documents/DocumentIcon';
 import { AddProjectMenu } from './AddProjectMenu';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { SidebarFooter } from './SidebarFooter';
