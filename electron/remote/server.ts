@@ -28,6 +28,7 @@ import {
   parseClientMessage,
   type ServerMessage,
   type RemoteAgent,
+  type RemoteAgentChoice,
   type RemoteAttentionState,
   type RemoteTaskContext,
   type RemoteCloseResult,
@@ -56,6 +57,7 @@ import type { Coordinator } from '../mcp/coordinator.js';
 import { validateBranchName } from '../mcp/validation.js';
 import type { ApiTaskDetail, LandSelfInput, SubtaskVerification } from '../mcp/types.js';
 import { parseSignalDoneInput } from '../shared/completion-report.js';
+import { CODEX_MODEL_PATTERN } from '../shared/ask-code-models.js';
 
 // --- MCP log ring buffer ---
 export interface MCPLogEntry {
@@ -302,6 +304,15 @@ export interface RemoteProject {
   id: string;
   name: string;
 }
+
+/** The task a paired phone asked for; agent and model fall back to the desktop default. */
+export type MobileTaskRequest = {
+  projectId: string;
+  name: string;
+  prompt: string;
+  agentId?: string;
+  model?: string;
+};
 
 /** Detect available network IPs (WiFi and Tailscale). */
 function getNetworkIps(): { wifi: string | null; tailscale: string | null } {
@@ -987,12 +998,10 @@ export function startRemoteServer(opts: {
   ) => Promise<unknown>;
   /** List projects the mobile "New Task" screen can target (renderer-backed). */
   getProjects?: () => Promise<RemoteProject[]>;
+  /** List agents and models the mobile "New Task" screen offers (renderer-backed). */
+  getAgentChoices?: () => Promise<RemoteAgentChoice[]>;
   /** Create a top-level task on behalf of a paired phone (renderer-backed). */
-  createTaskFromMobile?: (req: {
-    projectId: string;
-    name: string;
-    prompt: string;
-  }) => Promise<{ taskId: string }>;
+  createTaskFromMobile?: (req: MobileTaskRequest) => Promise<{ taskId: string }>;
   readMindMap?: (taskId: string) => Promise<MindMapDocument>;
   readReasoning?: (taskId: string) => Promise<ReasoningDocument>;
   updateReasoning?: (taskId: string, update: ReasoningUpdate) => Promise<ReasoningDocument>;
@@ -1455,10 +1464,23 @@ export function startRemoteServer(opts: {
       }
 
       // --- Paired-mobile task creation ---
-      // GET projects for the picker + POST a new top-level task. Both require the
-      // elevated "paired" token; the read-only mobile token is rejected here.
-      if (url.pathname === '/api/mobile/projects' || url.pathname === '/api/mobile/tasks') {
+      // GET projects and agents for the pickers + POST a new top-level task. All
+      // require the elevated "paired" token; the read-only mobile token is rejected here.
+      if (
+        url.pathname === '/api/mobile/projects' ||
+        url.pathname === '/api/mobile/agents' ||
+        url.pathname === '/api/mobile/tasks'
+      ) {
         if (tokenClass !== 'paired') return jsonEnd(403, { error: 'forbidden' });
+
+        if (url.pathname === '/api/mobile/agents' && req.method === 'GET') {
+          if (!opts.getAgentChoices) return jsonEnd(503, { error: 'task creation unavailable' });
+          opts
+            .getAgentChoices()
+            .then((agents) => jsonEnd(200, agents))
+            .catch((err) => jsonEnd(500, { error: String(err) }));
+          return;
+        }
 
         if (url.pathname === '/api/mobile/projects' && req.method === 'GET') {
           if (!opts.getProjects) return jsonEnd(503, { error: 'task creation unavailable' });
@@ -1486,7 +1508,21 @@ export function startRemoteServer(opts: {
               const projectId = typeof body.projectId === 'string' ? body.projectId : '';
               if (!projectId)
                 return jsonEnd(400, { error: 'projectId must be a non-empty string' });
-              createTask({ projectId, name, prompt })
+              const request: MobileTaskRequest = { projectId, name, prompt };
+              // Optional: older phones omit both and get the desktop default agent.
+              if (body.agentId !== undefined) {
+                if (typeof body.agentId !== 'string' || !body.agentId || body.agentId.length > 200)
+                  return jsonEnd(400, { error: 'agentId must be a non-empty string' });
+                request.agentId = body.agentId;
+              }
+              if (body.model !== undefined) {
+                // The renderer checks the model against the agent's list; this
+                // only keeps the value a plain CLI argument.
+                if (typeof body.model !== 'string' || !CODEX_MODEL_PATTERN.test(body.model))
+                  return jsonEnd(400, { error: 'model is not a valid model name' });
+                request.model = body.model;
+              }
+              createTask(request)
                 .then((r) => jsonEnd(201, { taskId: r.taskId }))
                 .catch((err) => jsonEnd(500, { error: String(err) }));
             })

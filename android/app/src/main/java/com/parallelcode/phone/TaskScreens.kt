@@ -10,7 +10,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -22,20 +21,20 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -51,9 +50,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -68,6 +65,10 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
     var projects by remember { mutableStateOf<List<MobileProject>?>(null) }
     var loadAttempt by remember { mutableIntStateOf(0) }
     var projectId by rememberSaveable { mutableStateOf("") }
+    var agents by remember { mutableStateOf<List<MobileAgentChoice>>(emptyList()) }
+    var agentId by rememberSaveable { mutableStateOf("") }
+    // Empty runs the agent with the model its desktop settings configure.
+    var modelId by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
     var prompt by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -89,6 +90,20 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
         } catch (e: ApiException) {
             projects = emptyList()
             failed(e)
+            return@LaunchedEffect
+        }
+        try {
+            val choices = client.fetchAgentChoices()
+            agents = choices
+            val agent = choices.find { it.id == agentId } ?: choices.find { it.isDefault } ?: choices.firstOrNull()
+            agentId = agent?.id.orEmpty()
+            if (agent?.models?.none { it.id == modelId } != false) modelId = ""
+        } catch (e: ApiException) {
+            // Without the list the desktop still starts its default agent.
+            agents = emptyList()
+            agentId = ""
+            modelId = ""
+            if (e.status == 401) onNeedsPairing()
         }
     }
 
@@ -124,12 +139,6 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                "PROJECT",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = AppTheme.extra.textMuted,
-            )
             val loaded = projects
             when {
                 loaded == null -> Text("Loading projects…", color = AppTheme.extra.textMuted)
@@ -140,47 +149,43 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
                     )
                     TextButton(onClick = { loadAttempt++ }) { Text("Retry") }
                 }
-                else -> loaded.forEach { project ->
-                    val isSelected = project.id == projectId
-                    Surface(
-                        shape = MaterialTheme.shapes.large,
-                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else AppTheme.extra.border),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(MaterialTheme.shapes.large)
-                            .selectable(
-                                selected = isSelected,
+                else -> {
+                    SelectField(
+                        label = "Project",
+                        options = loaded,
+                        selected = loaded.find { it.id == projectId },
+                        optionLabel = { it.name },
+                        onSelect = { projectId = it.id },
+                        enabled = !busy,
+                    )
+                    val agent = agents.find { it.id == agentId }
+                    if (agent == null) {
+                        // An older desktop lists no agents; say which one it will start.
+                        loaded.find { it.id == projectId }?.agentName?.let {
+                            Text("Runs with $it", style = MaterialTheme.typography.bodySmall, color = AppTheme.extra.textMuted)
+                        }
+                    } else {
+                        SelectField(
+                            label = "Agent",
+                            options = agents,
+                            selected = agent,
+                            optionLabel = { it.name },
+                            onSelect = {
+                                if (it.id != agentId) modelId = ""
+                                agentId = it.id
+                            },
+                            enabled = !busy,
+                        )
+                        if (agent.models.isNotEmpty()) {
+                            val defaultModel = AgentModel("", "Default")
+                            SelectField(
+                                label = "Model",
+                                options = listOf(defaultModel) + agent.models,
+                                selected = agent.models.find { it.id == modelId } ?: defaultModel,
+                                optionLabel = { it.label },
+                                onSelect = { modelId = it.id },
                                 enabled = !busy,
-                                role = Role.RadioButton,
-                                onClick = { projectId = project.id },
-                            ),
-                    ) {
-                        Row(
-                            Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(
-                                selected = isSelected,
-                                onClick = null,
-                                enabled = !busy,
-                                colors = RadioButtonDefaults.colors(
-                                    selectedColor = MaterialTheme.colorScheme.primary,
-                                    unselectedColor = AppTheme.extra.textMuted,
-                                ),
                             )
-                            Column(Modifier.padding(start = 10.dp)) {
-                                Text(
-                                    project.name,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = AppTheme.extra.textPrimary,
-                                )
-                                Text(
-                                    project.agentName?.let { "Runs with $it" } ?: "Runs with your default agent",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = AppTheme.extra.textMuted,
-                                )
-                            }
                         }
                     }
                 }
@@ -250,7 +255,13 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
                     error = null
                     scope.launch {
                         try {
-                            client.createTask(projectId, title, prompt.trim())
+                            client.createTask(
+                                projectId,
+                                title,
+                                prompt.trim(),
+                                agentId.ifEmpty { null },
+                                modelId.ifEmpty { null },
+                            )
                             onDone()
                         } catch (e: ApiException) {
                             failed(
@@ -263,6 +274,61 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
                     }
                 },
             ) { Text(if (busy) "Creating…" else "Create task", fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+/** A read-only dropdown, the phone's equivalent of an HTML select. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun <T> SelectField(
+    label: String,
+    options: List<T>,
+    selected: T?,
+    optionLabel: (T) -> String,
+    onSelect: (T) -> Unit,
+    enabled: Boolean,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded && enabled,
+        onExpandedChange = { if (enabled) expanded = it },
+    ) {
+        OutlinedTextField(
+            value = selected?.let(optionLabel).orEmpty(),
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            enabled = enabled,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded && enabled) },
+            shape = MaterialTheme.shapes.large,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = AppTheme.extra.inputBg,
+                unfocusedContainerColor = AppTheme.extra.inputBg,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = AppTheme.extra.border,
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled),
+        )
+        ExposedDropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            optionLabel(option),
+                            fontWeight = if (option == selected) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    },
+                    onClick = {
+                        onSelect(option)
+                        expanded = false
+                    },
+                    contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
+                )
+            }
         }
     }
 }

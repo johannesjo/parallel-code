@@ -311,9 +311,30 @@ class RemoteClient(
         }
     }
 
-    /** Start a top-level task on the desktop; returns its task id. */
-    suspend fun createTask(projectId: String, name: String, prompt: String): String {
+    /**
+     * Agents and models a paired phone may start tasks with. Empty from a desktop
+     * that predates the route (it answers 404); tasks then use its default agent.
+     */
+    suspend fun fetchAgentChoices(): List<MobileAgentChoice> = try {
+        parseAgentChoices(apiRaw("GET", "/api/mobile/agents", null, pairedTokenOrThrow()))
+    } catch (e: ApiException) {
+        if (e.status == 404) emptyList() else throw e
+    }
+
+    /**
+     * Start a top-level task on the desktop; returns its task id. A null [agentId]
+     * or [model] leaves that choice to the desktop's defaults.
+     */
+    suspend fun createTask(
+        projectId: String,
+        name: String,
+        prompt: String,
+        agentId: String? = null,
+        model: String? = null,
+    ): String {
         val body = JSONObject().put("projectId", projectId).put("name", name).put("prompt", prompt)
+        agentId?.let { body.put("agentId", it) }
+        model?.let { body.put("model", it) }
         return api("POST", "/api/mobile/tasks", body, pairedTokenOrThrow()).getString("taskId")
     }
 

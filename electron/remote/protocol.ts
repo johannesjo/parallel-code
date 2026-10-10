@@ -38,6 +38,16 @@ export interface RemoteAgent {
  * The desktop's answer to a phone's close request. `closed: false` means
  * nothing was closed because closing would lose work; `warnings` says what.
  */
+/** An agent the mobile "New Task" screen can launch, with the models it offers. */
+export interface RemoteAgentChoice {
+  id: string;
+  name: string;
+  /** The agent the desktop New Task dialog would preselect. */
+  isDefault: boolean;
+  /** Model overrides; empty when the agent only runs with its configured model. */
+  models: { id: string; label: string }[];
+}
+
 export type RemoteCloseResult = { closed: true } | { closed: false; warnings: string[] };
 
 /** A task's changes against its base branch, as a unified diff; `truncated` when cut short. */

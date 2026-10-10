@@ -94,6 +94,7 @@ const ALLOWED_CHANNELS = new Set([
   'generate_pairing_pin',
   'remote_get_projects_request',
   'remote_create_task_request',
+  'remote_get_agents_request',
   'mcp_read_mindmap_request',
   'mcp_read_reasoning_request',
   'mcp_update_reasoning_request',

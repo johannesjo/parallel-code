@@ -87,6 +87,7 @@
   "GeneratePairingPin": "generate_pairing_pin",
   "Remote_GetProjectsRequest": "remote_get_projects_request",
   "Remote_CreateTaskRequest": "remote_create_task_request",
+  "Remote_GetAgentsRequest": "remote_get_agents_request",
   "MCP_ReadMindMapRequest": "mcp_read_mindmap_request",
   "MCP_ReadReasoningRequest": "mcp_read_reasoning_request",
   "MCP_UpdateReasoningRequest": "mcp_update_reasoning_request",

@@ -189,6 +189,119 @@ it('adds a task created from a phone without taking focus from the active task',
   expect(store.activeAgentId).toBe('agent');
 });
 
+const phoneAgents = [
+  {
+    id: 'claude',
+    name: 'Claude',
+    command: 'claude',
+    args: ['--model', 'sonnet'],
+    resume_args: ['--continue'],
+    skip_permissions_args: [],
+    description: '',
+  },
+  {
+    id: 'codex',
+    name: 'Codex',
+    command: '/usr/bin/codex',
+    args: [],
+    resume_args: [],
+    skip_permissions_args: [],
+    description: '',
+  },
+  {
+    id: 'gemini',
+    name: 'Gemini',
+    command: 'gemini',
+    args: [],
+    resume_args: [],
+    skip_permissions_args: [],
+    description: '',
+  },
+  {
+    id: 'missing',
+    name: 'Missing',
+    command: 'missing',
+    args: [],
+    resume_args: [],
+    skip_permissions_args: [],
+    description: '',
+    available: false,
+  },
+];
+
+function mockPhoneTaskIpc() {
+  setStore('projects', [
+    { id: 'project', name: 'Project', path: '/tmp/project', color: '', defaultBaseBranch: 'main' },
+  ]);
+  setStore('availableAgents', phoneAgents);
+  setStore('lastAgentId', 'codex');
+  vi.mocked(invoke).mockImplementation(async (channel: string) => {
+    if (channel === IPC.ListCodexModels) return [{ slug: 'gpt-5', displayName: 'GPT-5' }];
+    if (channel === IPC.GetGitignoredDirs) return [];
+    if (channel === IPC.CreateTask)
+      return { id: 'phone-task', branch_name: 'task/phone', worktree_path: '/tmp/phone' };
+    return undefined;
+  });
+}
+
+/** Sends a phone request and waits for the reply the main process would forward. */
+async function phoneRequest(channel: string, payload: Record<string, unknown>) {
+  listeners.get(channel)?.({ reqId: 'req', ...payload });
+  await vi.waitFor(() =>
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith(IPC.Remote_RendererReply, expect.anything()),
+  );
+  const reply = vi.mocked(invoke).mock.calls.find(([c]) => c === IPC.Remote_RendererReply);
+  return reply?.[1] as { ok: boolean; data?: unknown; error?: string };
+}
+
+it('lists available agents with the models a phone may pick', async () => {
+  mockPhoneTaskIpc();
+  const reply = await phoneRequest(IPC.Remote_GetAgentsRequest, {});
+  expect(reply.data).toEqual([
+    {
+      id: 'claude',
+      name: 'Claude',
+      isDefault: false,
+      models: ['fable', 'opus', 'sonnet', 'haiku'].map((id) => ({ id, label: id })),
+    },
+    { id: 'codex', name: 'Codex', isDefault: true, models: [{ id: 'gpt-5', label: 'GPT-5' }] },
+    { id: 'gemini', name: 'Gemini', isDefault: false, models: [] },
+  ]);
+});
+
+it('launches a phone task with the chosen agent and model', async () => {
+  mockPhoneTaskIpc();
+  const reply = await phoneRequest(IPC.Remote_CreateTaskRequest, {
+    projectId: 'project',
+    name: 'From phone',
+    prompt: 'Do it',
+    agentId: 'claude',
+    model: 'opus',
+  });
+  expect(reply).toMatchObject({ ok: true, data: { taskId: 'phone-task' } });
+  const agentId = store.tasks['phone-task']?.agentIds[0] ?? '';
+  // The chosen model replaces the configured one rather than adding a second flag.
+  expect(store.agents[agentId]?.def).toMatchObject({ id: 'claude', args: ['--model', 'opus'] });
+});
+
+it.each([
+  { agentId: 'missing', error: 'Agent not available' },
+  { agentId: 'unknown', error: 'Agent not available' },
+  { agentId: 'gemini', model: 'opus', error: 'Model not available for this agent' },
+  { agentId: 'claude', model: 'gpt-5', error: 'Model not available for this agent' },
+])('rejects a stale agent or model choice: $agentId $model', async (choice) => {
+  mockPhoneTaskIpc();
+  const reply = await phoneRequest(IPC.Remote_CreateTaskRequest, {
+    projectId: 'project',
+    name: 'From phone',
+    prompt: 'Do it',
+    agentId: choice.agentId,
+    model: choice.model,
+  });
+  expect(reply).toMatchObject({ ok: false, error: choice.error });
+  expect(vi.mocked(invoke)).not.toHaveBeenCalledWith(IPC.CreateTask, expect.anything());
+});
+
 /** Replies to the close request once the handler has finished. */
 async function closeRequest(force: boolean) {
   listeners.get(IPC.Remote_CloseTaskRequest)?.({ reqId: 'req', taskId: 'task', force });

@@ -28,9 +28,18 @@ import { getTaskDiffBaseBranch, loadTaskDiff } from '../lib/load-task-diff';
 import { IPC } from '../../electron/ipc/channels';
 import { parseEvidenceSubmission } from '../../electron/shared/evidence';
 import { resolveSkipPermissionsArgs } from '../../electron/shared/skip-permissions';
+import {
+  ASK_CODE_CLAUDE_MODELS,
+  type CodexModelChoice,
+} from '../../electron/shared/ask-code-models';
+import { reviewerWithModel } from '../lib/agent-handoff';
 import type { AgentDef, GitIgnoredEntry, MergeStatus, WorktreeStatus } from '../ipc/types';
 import type { Task } from './types';
-import type { RemoteCloseResult, RemoteTaskDiff } from '../../electron/remote/protocol';
+import type {
+  RemoteAgentChoice,
+  RemoteCloseResult,
+  RemoteTaskDiff,
+} from '../../electron/remote/protocol';
 
 interface RendererRequest {
   reqId: string;
@@ -40,6 +49,8 @@ interface CreateTaskRequest extends RendererRequest {
   projectId: string;
   name: string;
   prompt: string;
+  agentId?: string;
+  model?: string;
 }
 
 interface GetNotesRequest extends RendererRequest {
@@ -71,11 +82,65 @@ function handleGetProjects(req: RendererRequest): void {
     codeProjects().map((p) => ({
       id: p.id,
       name: p.name,
-      agentName:
-        (store.availableAgents.find((a) => a.id === store.lastAgentId) ?? store.availableAgents[0])
-          ?.name ?? '',
+      agentName: defaultAgent()?.name ?? '',
     })),
   );
+}
+
+/** The agent the desktop New Task dialog preselects: the last one used, else the first. */
+function defaultAgent(): AgentDef | undefined {
+  return store.availableAgents.find((a) => a.id === store.lastAgentId) ?? store.availableAgents[0];
+}
+
+/**
+ * Models a phone may pick for an agent: the Claude aliases and the Codex CLI's
+ * cached list, the same choices the desktop model menus offer. Other agents
+ * only run with the model their own arguments configure.
+ */
+async function agentModelChoices(agent: AgentDef): Promise<RemoteAgentChoice['models']> {
+  const command = agent.command.split('/').pop();
+  if (command === 'claude')
+    return ASK_CODE_CLAUDE_MODELS.map((model) => ({ id: model, label: model }));
+  if (command !== 'codex') return [];
+  try {
+    const list = await invoke<CodexModelChoice[]>(IPC.ListCodexModels);
+    return Array.isArray(list) ? list.map((m) => ({ id: m.slug, label: m.displayName })) : [];
+  } catch {
+    // The CLI may not have written its cache yet; the agent still runs with its default.
+    return [];
+  }
+}
+
+async function handleGetAgents(req: RendererRequest): Promise<void> {
+  try {
+    const fallback = defaultAgent();
+    const agents: RemoteAgentChoice[] = await Promise.all(
+      store.availableAgents
+        .filter((agent) => agent.available !== false)
+        .map(async (agent) => ({
+          id: agent.id,
+          name: agent.name,
+          isDefault: agent.id === fallback?.id,
+          models: await agentModelChoices(agent),
+        })),
+    );
+    reply(req.reqId, true, agents);
+  } catch (err) {
+    reply(req.reqId, false, undefined, errMessage(err));
+  }
+}
+
+/** The agent a phone asked for, with its model override applied. Throws on a stale choice. */
+async function resolveMobileAgent(req: CreateTaskRequest): Promise<AgentDef> {
+  const agentDef = req.agentId
+    ? store.availableAgents.find((a) => a.id === req.agentId && a.available !== false)
+    : defaultAgent();
+  if (!agentDef) throw new Error(req.agentId ? 'Agent not available' : 'No agent configured');
+  if (!req.model) return agentDef;
+  const models = await agentModelChoices(agentDef);
+  if (!models.some((m) => m.id === req.model))
+    throw new Error('Model not available for this agent');
+  return reviewerWithModel(agentDef, req.model);
 }
 
 /**
@@ -99,11 +164,8 @@ async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
     const project = store.projects.find((p) => p.id === req.projectId);
     if (!project) throw new Error('Project not found');
 
-    // Default agent: the last one used, else the first available (mirrors the
-    // New Task dialog's initial selection).
-    const agentDef =
-      store.availableAgents.find((a) => a.id === store.lastAgentId) ?? store.availableAgents[0];
-    if (!agentDef) throw new Error('No agent configured');
+    // Without a choice from the phone, the agent the New Task dialog preselects.
+    const agentDef = await resolveMobileAgent(req);
 
     // Non-git projects can't use worktree isolation; fall back to working
     // directly in the project folder.
@@ -385,6 +447,9 @@ export function startRemoteTaskHandlers(): () => void {
       if (data && typeof data === 'object') handleGetProjects(data as RendererRequest);
     },
   );
+  const offAgents = window.electron.ipcRenderer.on(IPC.Remote_GetAgentsRequest, (data: unknown) => {
+    if (data && typeof data === 'object') void handleGetAgents(data as RendererRequest);
+  });
   const offCreate = window.electron.ipcRenderer.on(
     IPC.Remote_CreateTaskRequest,
     (data: unknown) => {
@@ -514,6 +579,7 @@ export function startRemoteTaskHandlers(): () => void {
     offPublishGitHubList();
     offProjects();
     offCreate();
+    offAgents();
     offGetNotes();
     offSetNotes();
     offClose();
