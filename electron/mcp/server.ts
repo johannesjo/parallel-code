@@ -11,6 +11,7 @@ import { parseMindMapUpdate } from '../shared/mindmap.js';
 import { parseReasoningUpdate } from '../shared/reasoning-feed.js';
 import { parseCanvasView } from '../shared/canvas-view.js';
 import { parseAgentTourPayload } from '../shared/agent-tour.js';
+import { parseConfidencePayload } from '../shared/task-confidence.js';
 import { isGitHubAgentTaskId, parseGitHubList } from '../shared/github-list.js';
 import { parseEvidenceSubmission } from '../shared/evidence.js';
 import {
@@ -105,6 +106,7 @@ export async function handleMCPToolCall(
     'reasoning_update',
     'canvas_open',
     'tour_publish',
+    'confidence_publish',
     'github_list_publish',
     'submit_evidence',
     'get_evidence',
@@ -181,6 +183,12 @@ export async function handleMCPToolCall(
         const id = taskId || coordinatorId;
         if (!id) throw new Error('A task-scoped MCP session is required.');
         const result = await client.publishTour(id, parseAgentTourPayload(params));
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+      case 'confidence_publish': {
+        const id = taskId || coordinatorId;
+        if (!id) throw new Error('A task-scoped MCP session is required.');
+        const result = await client.publishConfidence(id, parseConfidencePayload(params));
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       case 'github_list_publish': {

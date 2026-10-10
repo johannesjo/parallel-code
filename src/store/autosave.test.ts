@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { store, setStore } from './core';
+import { setStore } from './core';
 import { persistedSnapshot } from './autosave';
 import type { Task } from './types';
 
@@ -21,15 +21,6 @@ describe('autosave snapshot includes new-task-default fields', () => {
     setStore('mcpOrchestrationEnabled', false);
     expect(persistedSnapshot()).not.toBe(before);
     setStore('mcpOrchestrationEnabled', true);
-  });
-
-  it('defaultStepsEnabled changes the snapshot', () => {
-    setStore('defaultStepsEnabled', false);
-    const before = persistedSnapshot();
-    setStore('defaultStepsEnabled', true);
-    const after = persistedSnapshot();
-    expect(before).not.toBe(after);
-    setStore('defaultStepsEnabled', false);
   });
 
   it('defaultSkipPermissions changes the snapshot', () => {
@@ -73,10 +64,6 @@ describe('autosave snapshot includes new-task-default fields', () => {
     const after = persistedSnapshot();
     expect(before).not.toBe(after);
     setStore('terminalScreenReaderMode', false);
-  });
-
-  it('showSteps is not tracked separately (migrated to defaultStepsEnabled)', () => {
-    expect('showSteps' in store).toBe(false);
   });
 
   it('a Super Productivity link changes the snapshot', () => {

@@ -5,6 +5,7 @@
 // main-side bridge.
 
 import { publishAgentTour } from './agent-tour';
+import { publishTaskConfidence } from './task-brief';
 import { publishGitHubList } from './github-lists';
 import { getTaskMindMap, openCanvasViewFromAgent, updateTaskMindMapFromAgent } from './canvas';
 import { getEvidenceForAgent, submitEvidence } from './evidence';
@@ -581,6 +582,19 @@ export function startRemoteTaskHandlers(): () => void {
       }
     },
   );
+  const offPublishConfidence = window.electron.ipcRenderer.on(
+    IPC.MCP_PublishConfidenceRequest,
+    (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const req = data as GetNotesRequest & { payload: unknown };
+      try {
+        publishTaskConfidence(req.taskId, req.payload);
+        reply(req.reqId, true, { ok: true });
+      } catch (error) {
+        reply(req.reqId, false, undefined, errMessage(error));
+      }
+    },
+  );
   const offPublishGitHubList = window.electron.ipcRenderer.on(
     IPC.MCP_PublishGitHubListRequest,
     (data: unknown) => {
@@ -627,6 +641,7 @@ export function startRemoteTaskHandlers(): () => void {
     offUpdateMap();
     offOpenCanvas();
     offPublishTour();
+    offPublishConfidence();
     offPublishGitHubList();
     offProjects();
     offCreate();

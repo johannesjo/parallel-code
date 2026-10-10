@@ -679,6 +679,29 @@ describe('mind map tools', () => {
     expect(client.publishTour).toHaveBeenCalledTimes(1);
   });
 
+  it('publishes a confidence rating for the session task and rejects a malformed one before transport', async () => {
+    const client = {
+      publishConfidence: vi.fn().mockResolvedValue({ ok: true, scores: 1 }),
+    } as unknown as MCPClient;
+    const rating = {
+      scores: [{ label: 'Correct', score: 80.4, why: 'Happy path tested.' }],
+      findings: [{ kind: 'gap', text: 'No dedupe yet.', file: 'src/a.ts' }],
+      source: 'review skill',
+    };
+    const context = { client, taskId: 'own-task', coordinatorId: '', canvasOnly: true };
+    expect(
+      await handleMCPToolCall(context, 'confidence_publish', { ...rating, taskId: 'other' }),
+    ).not.toHaveProperty('isError');
+    expect(client.publishConfidence).toHaveBeenCalledWith('own-task', {
+      ...rating,
+      scores: [{ label: 'Correct', score: 80, why: 'Happy path tested.' }],
+    });
+    expect(
+      await handleMCPToolCall(context, 'confidence_publish', { ...rating, scores: [] }),
+    ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('scores') }] });
+    expect(client.publishConfidence).toHaveBeenCalledTimes(1);
+  });
+
   it('publishes a GitHub list for the session task and rejects a malformed one before transport', async () => {
     const client = {
       publishGitHubList: vi.fn().mockResolvedValue({ ok: true, name: 'This week' }),

@@ -48,8 +48,7 @@ import { TaskChangedFilesSection } from './TaskChangedFilesSection';
 import { isCommitHashSelection, type CommitSelection } from './CommitNavBar';
 import { TaskShellSection } from './TaskShellSection';
 import { TaskCanvasPanel } from './TaskCanvasPanel';
-import { TaskStepsSection } from './TaskStepsSection';
-import { TaskCurrentStateLine } from './TaskCurrentStateLine';
+import { TaskBriefBar } from './TaskBrief';
 import { TaskAITerminal } from './TaskAITerminal';
 import { isAgentChat } from '../store/agent-chat';
 import { TaskClosingOverlay } from './TaskClosingOverlay';
@@ -95,7 +94,6 @@ interface TaskPanelProps {
 // Panels that auto-grow to their content share one ceiling so a long body
 // can't take over the column: never taller than the panel's own px cap, and
 // never taller than 33vh. User drag pins intentionally bypass this.
-const STEPS_PANEL_AUTO_MAX = 'min(240px, 33vh)';
 const CHANGED_FILES_PANEL_AUTO_MAX = 'min(300px, 33vh)';
 const NOTES_PANEL_AUTO_MAX = 'min(400px, 33vh)';
 // Last agent-tour revision shown per task. Collapsing and expanding a task
@@ -127,8 +125,8 @@ export function TaskPanel(props: TaskPanelProps) {
   createEffect(() => {
     const n = props.task.stagedNotification;
     const hasActiveCountdown = Boolean(autoSendChildUpdates() && n && !n.userEdited);
-    if (!props.task.stepsEnabled && !hasActiveCountdown) return;
-    const id = window.setInterval(() => setNowMs(Date.now()), hasActiveCountdown ? 1_000 : 30_000);
+    if (!hasActiveCountdown) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1_000);
     onCleanup(() => clearInterval(id));
   });
   const stagedCountdown = () => {
@@ -322,12 +320,6 @@ export function TaskPanel(props: TaskPanelProps) {
   };
   const [editingProjectId, setEditingProjectId] = createSignal<string | null>(null);
   const [editingChecks, setEditingChecks] = createSignal(false);
-  // Jump-to-step state is a single signal so ↗ can be hidden entirely before
-  // TerminalView is ready (otherwise firstIndex would default to 0, showing ↗
-  // on every step while `jump` is still undefined and every click no-ops).
-  const [stepNav, setStepNav] = createSignal<
-    { jump: (stepIndex: number) => boolean; firstIndex: number } | undefined
-  >();
   // Per-agent scrollback markers; jumping also brings the terminal into focus.
   const [transcriptMarks, setTranscriptMarks] = createSignal<ReadonlyMap<string, TranscriptMarks>>(
     new Map(),
@@ -366,13 +358,12 @@ export function TaskPanel(props: TaskPanelProps) {
 
   const [emptySupportExpanded, setEmptySupportExpanded] = createSignal(false);
   // Hide only genuinely empty support panels. Plans, tours, commit navigation,
-  // steps and shells are useful content even when the file/notes counts are zero.
+  // and shells are useful content even when the file/notes counts are zero.
   const canCollapseSupport = createMemo(
     () =>
       topStripEmpty() &&
       !(store.showPlans && props.task.planContent) &&
       !props.task.agentTour &&
-      !props.task.stepsEnabled &&
       props.task.shellAgentIds.length === 0 &&
       commitList().length === 0 &&
       selectedCommit() === null &&
@@ -586,9 +577,6 @@ export function TaskPanel(props: TaskPanelProps) {
         selectedAgentId={selectedAgentId()}
         onSelectAgent={setActiveAgent}
         promptHandle={promptHandle}
-        onStepJumpReady={(fn, fromIdx) => {
-          setStepNav(fn ? { jump: fn, firstIndex: fromIdx } : undefined);
-        }}
         onTranscriptMarksReady={handleTranscriptMarks}
       />
     </div>
@@ -680,23 +668,6 @@ export function TaskPanel(props: TaskPanelProps) {
       understanding={understanding}
     />
   );
-  const stepsSectionEl = (
-    <TaskStepsSection
-      task={props.task}
-      isActive={props.isActive}
-      onFileClick={(file) => setDiffScrollTarget(file)}
-      firstJumpableIndex={stepNav()?.firstIndex}
-      onJumpToStep={
-        stepNav()
-          ? (idx) => {
-              const ok = stepNav()?.jump(idx) ?? false;
-              if (ok) setTaskFocusedPanel(props.task.id, 'ai-terminal');
-              return ok;
-            }
-          : undefined
-      }
-    />
-  );
   // Prompt wrapper carries its own intrinsic height so the flex-first panel
   // tree sizes it to 72 px by default and lets a user-drag pin override.
   const promptInputEl = (
@@ -731,14 +702,6 @@ export function TaskPanel(props: TaskPanelProps) {
   // PanelChild wrappers. Flex-first layout means each child declares only
   // what it needs (id, minSize for drag floor); the tree picks one child per
   // ResizablePanel to be the flex absorber via `absorberIds`.
-
-  const stepsSectionChild: PanelChild = {
-    id: 'steps-section',
-    resizeLabel: 'Resize steps panel',
-    minSize: 28,
-    maxAutoSize: STEPS_PANEL_AUTO_MAX,
-    content: () => stepsSectionEl,
-  };
 
   // With no terminals open the shell section collapses to its 35 px toolbar.
   // Mark it noPin so dragging an adjacent handle can't pin it past content
@@ -857,7 +820,6 @@ export function TaskPanel(props: TaskPanelProps) {
                 ...(supportCollapsed() ? [] : [notesAndFilesChild]),
                 shellSectionChild,
                 aiTerminalChild,
-                ...(props.task.stepsEnabled ? [stepsSectionChild] : []),
                 ...(!isAgentChat(props.task, firstAgentId()) &&
                 (store.showPromptInput || autoSendChildUpdates())
                   ? [promptInputChild]
@@ -902,7 +864,6 @@ export function TaskPanel(props: TaskPanelProps) {
                     children={[
                       ...(isGitUnavailable() ? [] : [changedFilesChild]),
                       notesChild,
-                      ...(props.task.stepsEnabled ? [stepsSectionChild] : []),
                       shellSectionChild,
                     ]}
                   />
@@ -960,7 +921,7 @@ export function TaskPanel(props: TaskPanelProps) {
       <div
         class="task-header-stack"
         style={{
-          flex: `0 0 ${props.task.stepsEnabled ? 120 : 96}px`,
+          flex: `0 0 ${store.taskBriefs ? 120 : 96}px`,
           display: 'flex',
           'flex-direction': 'column',
           overflow: 'hidden',
@@ -970,7 +931,7 @@ export function TaskPanel(props: TaskPanelProps) {
         {/* 68px fits the title bar's two rows: a 30px icon-button row, the 2px
             row gap, a ~21px badge row, and the bar's 12px vertical padding.
             The stack totals above are this plus the 28px branch bar (and the
-            24px steps line when enabled). */}
+            24px brief line when briefs are on). */}
         <div style={{ flex: '0 0 68px', overflow: 'hidden' }}>
           <TaskTitleBar
             task={props.task}
@@ -982,8 +943,13 @@ export function TaskPanel(props: TaskPanelProps) {
             onTitleEditRef={(h) => (titleEditHandle = h)}
           />
         </div>
-        <Show when={props.task.stepsEnabled}>
-          <TaskCurrentStateLine task={props.task} nowMs={nowMs()} variant="card" />
+        <Show when={store.taskBriefs}>
+          <TaskBriefBar
+            task={props.task}
+            onFileClick={(file) => setDiffScrollTarget(file)}
+            onWalkThrough={openOrGenerateTour}
+            walkThroughDisabled={changedFileCount() === 0}
+          />
         </Show>
         <div style={{ flex: '0 0 28px', overflow: 'hidden' }}>
           <TaskBranchInfoBar

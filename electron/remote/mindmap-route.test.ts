@@ -67,6 +67,7 @@ const updateReasoning = vi.fn(async (taskId: string, update: ReasoningUpdate) =>
 });
 const openCanvas = vi.fn(async (_taskId: string, _view: 'mindmap' | 'reasoning') => {});
 const publishTour = vi.fn(async (_taskId: string, _payload: AgentTourPayload) => ({ ok: true }));
+const publishConfidence = vi.fn(async (_taskId: string, _payload: unknown) => ({ ok: true }));
 const publishGitHubList = vi.fn(async (_taskId: string, _list: unknown) => ({ ok: true }));
 const submitEvidence = vi.fn(async (_taskId: string, _submission: unknown) => ({
   status: 'building',
@@ -102,6 +103,7 @@ beforeEach(async () => {
     updateReasoning,
     openCanvas,
     publishTour,
+    publishConfidence,
     publishGitHubList,
     submitEvidence,
     getEvidence,
@@ -191,6 +193,25 @@ it('opens canvas views for the owning task only and validates the view', async (
   expect(unknown.status).toBe(400);
   expect((await fetch(endpoint, { headers })).status).toBe(405);
   expect(openCanvas).toHaveBeenCalledTimes(1);
+});
+
+it('publishes a confidence rating for the owning task only and validates it', async () => {
+  const rating = { scores: [{ label: 'Confidence', score: 72, why: 'Tests not run.' }] };
+  await expect(client.publishConfidence('task-1', { ...rating, findings: [] })).resolves.toEqual({
+    ok: true,
+    scores: 1,
+  });
+  expect(publishConfidence).toHaveBeenCalledWith('task-1', { ...rating, findings: [] });
+  await expect(client.publishConfidence('task-2', { ...rating, findings: [] })).rejects.toThrow(
+    '403',
+  );
+  const malformed = await fetch(`http://127.0.0.1:${server.port}/api/confidence/task-1`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scores: [{ label: 'Confidence', score: 140, why: 'x' }] }),
+  });
+  expect(malformed.status).toBe(400);
+  expect(publishConfidence).toHaveBeenCalledTimes(1);
 });
 
 it('publishes a tour for the owning task only and validates the payload', async () => {
@@ -349,6 +370,7 @@ it('serves discoverable tools over real MCP stdio and reflects subsequent manual
       'reasoning_update',
       'canvas_open',
       'tour_publish',
+      'confidence_publish',
       'submit_evidence',
       'get_evidence',
     ]);

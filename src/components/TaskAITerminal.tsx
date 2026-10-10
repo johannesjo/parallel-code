@@ -62,8 +62,6 @@ import type { AgentDef } from '../ipc/types';
 import type { PromptInputHandle } from './PromptInput';
 import { buildTaskAgentArgs, isResumeArgsFailure } from '../lib/agent-args';
 
-type StepNavApi = TranscriptMarks;
-
 interface TaskAITerminalProps {
   task: Task;
   isActive: boolean;
@@ -72,14 +70,6 @@ interface TaskAITerminalProps {
   selectedAgentId: string;
   onSelectAgent?: (agentId: string) => void;
   promptHandle: PromptInputHandle | undefined;
-  /** Receives a function that scrolls the AI terminal to the moment a given step
-   *  index was recorded, along with the first step index that is jumpable — steps
-   *  below that index were written before the current terminal mount and have no
-   *  marker. Called with `undefined` jump when the terminal unmounts. */
-  onStepJumpReady?: (
-    jump: ((stepIndex: number) => boolean) | undefined,
-    firstJumpableIndex: number,
-  ) => void;
   /** Each agent terminal's raw marker API, so other panels can anchor their own keys. */
   onTranscriptMarksReady?: (agentId: string, api: TranscriptMarks | undefined) => void;
   /** First look at a Markdown path the agent printed; returns true when it
@@ -87,9 +77,6 @@ interface TaskAITerminalProps {
   onFileLink?: (filePath: string) => boolean;
   onReview?: (path?: string) => void;
 }
-
-/** Marker key of the step at index `i` in the agent's scrollback. */
-const stepKey = (i: number): string => `step:${i}`;
 
 export function TaskAITerminal(props: TaskAITerminalProps) {
   const [handoff, setHandoff] = createSignal<{
@@ -128,47 +115,6 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
     registerAction(key, open);
     onCleanup(() => unregisterAction(key, open));
   });
-  // Step bookmarks — TerminalView hands us a mark/jump API once the xterm
-  // instance is ready. We only mark steps that arrive while the terminal is live;
-  // historical steps written before this mount aren't jumpable (anchoring them
-  // all at line 0 was the source of the original "jump to" bug).
-  let stepNav: StepNavApi | undefined;
-  let activeStepNavAgentId: string | null = null;
-  let lastMarkedLen = 0;
-  const stepNavByAgent = new Map<string, StepNavApi>();
-  onCleanup(() => props.onStepJumpReady?.(undefined, 0));
-
-  function syncStepNavSource(agentIds = props.task.agentIds) {
-    const agentId = agentIds.length === 1 ? agentIds[0] : null;
-    const api = agentId ? stepNavByAgent.get(agentId) : undefined;
-    if (agentId === activeStepNavAgentId && api === stepNav) return;
-
-    activeStepNavAgentId = agentId;
-    stepNav = api;
-    if (!api) {
-      lastMarkedLen = 0;
-      props.onStepJumpReady?.(undefined, 0);
-      return;
-    }
-
-    const firstJumpable = untrack(() => props.task.stepsContent?.length ?? 0);
-    lastMarkedLen = firstJumpable;
-    props.onStepJumpReady?.((i) => api.jump(stepKey(i)), firstJumpable);
-  }
-
-  createEffect(() => syncStepNavSource(props.task.agentIds));
-
-  createEffect(() => {
-    const len = props.task.stepsContent?.length ?? 0;
-    if (!stepNav) return; // Don't advance lastMarkedLen until a terminal is ready.
-    if (len <= lastMarkedLen) {
-      lastMarkedLen = len;
-      return;
-    }
-    for (let i = lastMarkedLen; i < len; i++) stepNav.mark(stepKey(i));
-    lastMarkedLen = len;
-  });
-
   // --- Markdown file viewer ---
   const [mdViewerContent, setMdViewerContent] = createSignal('');
   const [mdViewerFileName, setMdViewerFileName] = createSignal('');
@@ -344,18 +290,6 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
         setMdViewerFilePath(filePath);
         setMdViewerOpen(true);
       });
-  }
-
-  function handleStepNavReady(agentId: string, api: StepNavApi | undefined) {
-    props.onTranscriptMarksReady?.(agentId, api);
-    if (!api) {
-      stepNavByAgent.delete(agentId);
-      syncStepNavSource();
-      return;
-    }
-
-    stepNavByAgent.set(agentId, api);
-    syncStepNavSource();
   }
 
   return (
@@ -671,7 +605,7 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                   }))}
                 onReady={registerAgentFocus}
                 onUnmount={unregisterAgentFocus}
-                onStepNavReady={(api) => handleStepNavReady(agentId, api)}
+                onTranscriptMarksReady={(api) => props.onTranscriptMarksReady?.(agentId, api)}
               />
             )}
           </For>
@@ -839,9 +773,7 @@ function AgentTerminalPane(props: {
   onFileLink: (filePath: string) => void;
   onReady: (agentId: string, focusFn: () => void) => void;
   onUnmount: (agentId: string) => void;
-  onStepNavReady?: (
-    api: { mark: (key: string) => void; jump: (key: string) => boolean } | undefined,
-  ) => void;
+  onTranscriptMarksReady?: (api: TranscriptMarks | undefined) => void;
 }) {
   onCleanup(() => props.onUnmount(props.agentId));
 
@@ -1011,7 +943,6 @@ function AgentTerminalPane(props: {
                     )}
                     cwd={props.task.worktreePath}
                     envFile={store.agentEnvFiles[a().def.id]}
-                    stepsEnabled={props.task.stepsEnabled}
                     dockerMode={
                       props.task.dockerMode ||
                       Boolean(
@@ -1086,7 +1017,7 @@ function AgentTerminalPane(props: {
                       terminalFocus = focusFn;
                       props.onReady(a().id, focusCurrentView);
                     }}
-                    onStepNavReady={props.onStepNavReady}
+                    onTranscriptMarksReady={props.onTranscriptMarksReady}
                     fontSize={13}
                   />
                 </Show>

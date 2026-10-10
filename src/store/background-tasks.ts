@@ -104,9 +104,7 @@ function activitySnapshot(taskId: string): ActivitySnapshot {
     return {
       // Git-derived readiness can disappear during a refresh without any
       // agent activity. Only explicit review requests belong in this baseline.
-      review: Boolean(
-        task?.needsReview || task?.stepsContent?.at(-1)?.status === 'awaiting_review',
-      ),
+      review: Boolean(task?.needsReview),
       // Agent questions are compared per agent; this covers shell terminals.
       question: questions.find((question) => !agentIds.includes(question.agentId)) ?? null,
       done: task?.signalDoneAt,

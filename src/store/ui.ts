@@ -173,6 +173,14 @@ export function setTaskNameModel(model: TaskNameModelId): void {
   setStore('taskNameModel', model);
 }
 
+export function setTaskBriefs(enabled: boolean): void {
+  setStore('taskBriefs', enabled);
+}
+
+export function setConfidencePrompt(prompt: string): void {
+  setStore('confidencePrompt', prompt);
+}
+
 export function setShowSidebarTips(show: boolean): void {
   setStore('showSidebarTips', show);
 }
@@ -229,10 +237,6 @@ export function setVerboseLogging(enabled: boolean): void {
 
 export function setPreferUiMode(enabled: boolean): void {
   setStore('preferUiMode', enabled);
-}
-
-export function setDefaultStepsEnabled(enabled: boolean): void {
-  setStore('defaultStepsEnabled', enabled);
 }
 
 export function setDefaultSkipPermissions(enabled: boolean): void {

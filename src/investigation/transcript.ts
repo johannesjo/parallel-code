@@ -1,7 +1,7 @@
 import type { MapOperation } from '../../electron/shared/graph';
 import type { InvestigationUpdate } from './state';
 
-/** Marker API a terminal exposes for its scrollback; steps use `step:<index>` keys. */
+/** Marker API a terminal exposes for its scrollback. */
 export interface TranscriptMarks {
   mark: (key: string) => void;
   jump: (key: string) => boolean;

@@ -1398,65 +1398,8 @@ describe('UI mode preference persistence', () => {
 describe('new task defaults persistence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    setStore('defaultStepsEnabled', false);
     setStore('defaultSkipPermissions', false);
     setStore('defaultPropagateSkipPermissions', false);
-  });
-
-  // --- defaultStepsEnabled ---
-
-  it('defaults defaultStepsEnabled to false when absent from saved state', async () => {
-    mockInvoke.mockResolvedValueOnce(basePayload());
-    await loadState();
-    expect(store.defaultStepsEnabled).toBe(false);
-  });
-
-  it('restores defaultStepsEnabled=true from saved state', async () => {
-    mockInvoke.mockResolvedValueOnce(basePayload({ defaultStepsEnabled: true }));
-    await loadState();
-    expect(store.defaultStepsEnabled).toBe(true);
-  });
-
-  it('does not persist defaultStepsEnabled=false', async () => {
-    setStore('defaultStepsEnabled', false);
-    mockInvoke.mockResolvedValueOnce(undefined);
-    await saveState();
-    const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
-    expect(saved.defaultStepsEnabled).toBeUndefined();
-  });
-
-  it('persists defaultStepsEnabled=true', async () => {
-    setStore('defaultStepsEnabled', true);
-    mockInvoke.mockResolvedValueOnce(undefined);
-    await saveState();
-    const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
-    expect(saved.defaultStepsEnabled).toBe(true);
-  });
-
-  it.each([
-    ['string', 'yes'],
-    ['number', 1],
-    ['null', null],
-  ])('ignores non-boolean defaultStepsEnabled (%s)', async (_label, value) => {
-    setStore('defaultStepsEnabled', true);
-    mockInvoke.mockResolvedValueOnce(basePayload({ defaultStepsEnabled: value }));
-    await loadState();
-    expect(store.defaultStepsEnabled).toBe(false);
-  });
-
-  it('invalid present defaultStepsEnabled does not fall back to showSteps=true', async () => {
-    mockInvoke.mockResolvedValueOnce(
-      JSON.stringify({
-        projects: [],
-        taskOrder: [],
-        collapsedTaskOrder: [],
-        tasks: {},
-        showSteps: true,
-        defaultStepsEnabled: 'yes',
-      }),
-    );
-    await loadState();
-    expect(store.defaultStepsEnabled).toBe(false);
   });
 
   // --- defaultSkipPermissions ---
@@ -1542,13 +1485,10 @@ describe('new task defaults persistence', () => {
   });
 });
 
-describe('showSteps → defaultStepsEnabled migration', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    setStore('defaultStepsEnabled', false);
-  });
+describe('retired Steps settings', () => {
+  beforeEach(() => vi.clearAllMocks());
 
-  it('migrates legacy showSteps=true to defaultStepsEnabled=true', async () => {
+  it('ignores legacy Steps fields and does not write them back', async () => {
     mockInvoke.mockResolvedValueOnce(
       JSON.stringify({
         projects: [],
@@ -1556,68 +1496,16 @@ describe('showSteps → defaultStepsEnabled migration', () => {
         collapsedTaskOrder: [],
         tasks: {},
         showSteps: true,
-      }),
-    );
-    await loadState();
-    expect(store.defaultStepsEnabled).toBe(true);
-  });
-
-  it('defaultStepsEnabled wins when both fields are present', async () => {
-    // If a user saves with the new field but an old showSteps is also present
-    // (e.g. partially migrated state), the explicit new field takes precedence.
-    mockInvoke.mockResolvedValueOnce(
-      JSON.stringify({
-        projects: [],
-        taskOrder: [],
-        collapsedTaskOrder: [],
-        tasks: {},
-        showSteps: false,
         defaultStepsEnabled: true,
       }),
     );
     await loadState();
-    expect(store.defaultStepsEnabled).toBe(true);
-  });
-
-  it('explicit defaultStepsEnabled=false is not overridden by showSteps=true', async () => {
-    // This is the direction the old || logic got wrong — an explicit false was
-    // overridden by a legacy true.  The new presence-check logic must respect
-    // the explicit new field even when the legacy field disagrees.
-    mockInvoke.mockResolvedValueOnce(
-      JSON.stringify({
-        projects: [],
-        taskOrder: [],
-        collapsedTaskOrder: [],
-        tasks: {},
-        showSteps: true,
-        defaultStepsEnabled: false,
-      }),
-    );
-    await loadState();
-    expect(store.defaultStepsEnabled).toBe(false);
-  });
-
-  it('showSteps=false does not set defaultStepsEnabled=true', async () => {
-    mockInvoke.mockResolvedValueOnce(
-      JSON.stringify({
-        projects: [],
-        taskOrder: [],
-        collapsedTaskOrder: [],
-        tasks: {},
-        showSteps: false,
-      }),
-    );
-    await loadState();
-    expect(store.defaultStepsEnabled).toBe(false);
-  });
-
-  it('showSteps is not saved by saveState', async () => {
-    setStore('defaultStepsEnabled', true);
     mockInvoke.mockResolvedValueOnce(undefined);
     await saveState();
-    const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
+    const saveCall = mockInvoke.mock.calls.findLast((call) => typeof call[1]?.json === 'string');
+    const saved = JSON.parse(saveCall?.[1].json);
     expect(saved.showSteps).toBeUndefined();
-    expect(saved.defaultStepsEnabled).toBe(true);
+    expect(saved.defaultStepsEnabled).toBeUndefined();
   });
 });
 

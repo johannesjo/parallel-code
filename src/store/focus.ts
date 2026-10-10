@@ -55,7 +55,7 @@ export function triggerAction(key: string): void {
 // Grid-based spatial navigation. Two task layouts:
 //  - vertical stack (default): everything in one column
 //  - split (focus mode, panel wide enough): ai-terminal panes/prompt anchor the
-//    left, changed-files/notes/steps/shell anchor the right, and AI panes are
+//    left, changed-files/notes/shell anchor the right, and AI panes are
 //    repeated down the left columns so left/right crossings stay consistent.
 
 const SHELL_TOOLBAR_PANEL_PREFIX = 'shell-toolbar:';
@@ -125,9 +125,6 @@ function buildMainGrid(panelId: string): string[][] {
       const grid: string[][] = [['title']];
       grid.push([...aiCols, 'changed-files']);
       grid.push([...aiCols, 'notes']);
-      if (task.stepsEnabled && task.stepsContent?.length) {
-        grid.push([...aiCols, 'steps']);
-      }
 
       // Pair the bottom-left (prompt or first AI pane if prompt hidden) with
       // whatever's at the bottom-right, so → from prompt jumps into the shell
@@ -150,9 +147,6 @@ function buildMainGrid(panelId: string): string[][] {
       grid.push(task.shellAgentIds.map((_, i) => shellPanelId(i)));
     }
     grid.push(aiCols);
-    if (task.stepsEnabled && task.stepsContent?.length) {
-      grid.push(['steps']);
-    }
     if (store.showPromptInput) {
       grid.push(['prompt']);
     }
@@ -321,7 +315,7 @@ export function navigateRow(direction: 'up' | 'down'): void {
     return;
   }
   let pos = findInGrid(grid, current);
-  // The previously focused cell can vanish (task.stepsEnabled off, shells killed,
+  // The previously focused cell can vanish (shells killed,
   // width crossing threshold). Recover by falling back to the default instead of
   // leaving arrow keys silently broken until the user clicks.
   if (!pos) {

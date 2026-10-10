@@ -27,6 +27,8 @@ import {
   setShowPromptInput,
   setModelTaskNames,
   setTaskNameModel,
+  setTaskBriefs,
+  setConfidencePrompt,
   setShowSidebarTips,
   setShowSidebarProgress,
   setSidebarNeedsInputFirst,
@@ -47,7 +49,6 @@ import {
   setDocumentWorkspacesEnabled,
   setCoordinatorNotificationDelayMs,
   setPreferUiMode,
-  setDefaultStepsEnabled,
   setDefaultSkipPermissions,
   setCanvasOwnershipBadges,
   setDefaultPropagateSkipPermissions,
@@ -61,6 +62,7 @@ import { CopyIcon, PencilIcon, PlusIcon, SyncIcon } from './icons';
 import { mod } from '../lib/platform';
 import { DEFAULT_COORDINATOR_CONCURRENT_TASKS } from '../lib/coordinator-limits';
 import { DEFAULT_DOCKER_IMAGE, PROJECT_DOCKERFILE_RELATIVE_PATH } from '../lib/docker';
+import { DEFAULT_CONFIDENCE_PROMPT } from '../lib/task-confidence';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -498,7 +500,13 @@ export function SettingsDialog(props: SettingsDialogProps) {
               onChange={setModelTaskNames}
               description="Ask a cheap model for a short title when a task is named from its prompt; sends the prompt to that model's provider. The branch keeps its prompt-based name"
             />
-            <Show when={store.modelTaskNames}>
+            <SettingsCheckboxRow
+              label="Write task briefs"
+              checked={store.taskBriefs}
+              onChange={setTaskBriefs}
+              description="After each agent turn, a cheap model summarises what changed, what is open and what the agent decided. Sends the turn's prompts, the agent's last message and the diff to that model's provider"
+            />
+            <Show when={store.modelTaskNames || store.taskBriefs}>
               <label
                 style={{
                   display: 'flex',
@@ -511,7 +519,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 }}
               >
                 <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
-                  Naming model
+                  Naming and brief model
                 </span>
                 <select
                   value={store.taskNameModel}
@@ -534,6 +542,41 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 </select>
               </label>
             </Show>
+            <label
+              style={{
+                display: 'flex',
+                'flex-direction': 'column',
+                gap: '6px',
+                padding: '8px 12px',
+                'border-radius': 'var(--radius-md)',
+                background: theme.bgInput,
+                border: `1px solid ${theme.border}`,
+              }}
+            >
+              <span style={{ 'font-size': '13px', color: theme.fg }}>Confidence rating prompt</span>
+              <span style={{ 'font-size': '12px', color: theme.fgMuted }}>
+                Sent to the agent by Rate confidence on the task brief. Leave empty for the built-in
+                self-check, or name your own rating skill. It should end with the agent calling
+                confidence_publish.
+              </span>
+              <textarea
+                rows={3}
+                value={store.confidencePrompt}
+                placeholder={DEFAULT_CONFIDENCE_PROMPT}
+                onChange={(e) => setConfidencePrompt(e.currentTarget.value)}
+                style={{
+                  resize: 'vertical',
+                  background: theme.taskPanelBg,
+                  border: `1px solid ${theme.border}`,
+                  'border-radius': 'var(--radius-sm)',
+                  padding: '6px 10px',
+                  color: theme.fg,
+                  'font-size': '12px',
+                  'font-family': 'inherit',
+                  outline: 'none',
+                }}
+              />
+            </label>
             <SettingsCheckboxRow
               label="Show ownership badges on canvases"
               checked={store.canvasOwnershipBadges}
@@ -592,12 +635,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
               checked={store.preferUiMode}
               onChange={setPreferUiMode}
               description="Start new Claude and Codex tasks in Chat when supported. You can still switch each task to Terminal. Existing tasks keep their current view."
-            />
-            <SettingsCheckboxRow
-              label="Steps tracking"
-              checked={store.defaultStepsEnabled}
-              onChange={setDefaultStepsEnabled}
-              description="Pre-tick Steps tracking in the New Task dialog"
             />
             <SettingsCheckboxRow
               label="Dangerously skip all confirms by default"

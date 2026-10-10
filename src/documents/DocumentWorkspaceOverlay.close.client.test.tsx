@@ -17,14 +17,14 @@ vi.mock('../components/TaskPanel', () => ({ TaskPanel: () => <div>Code task</div
 // the way the terminal pane reads the task while the tree comes down.
 vi.mock('../components/TerminalView', () => ({
   TerminalView: (props: {
-    onStepNavReady?: (api: unknown) => void;
+    onTranscriptMarksReady?: (api: unknown) => void;
     onReady?: (fn: () => void) => void;
   }) => {
     onMount(() => {
       props.onReady?.(() => {});
-      props.onStepNavReady?.({ mark: () => {}, jump: () => false });
+      props.onTranscriptMarksReady?.({ mark: () => {}, jump: () => false });
     });
-    onCleanup(() => props.onStepNavReady?.(undefined));
+    onCleanup(() => props.onTranscriptMarksReady?.(undefined));
     return <div class="terminal-stub" />;
   },
 }));

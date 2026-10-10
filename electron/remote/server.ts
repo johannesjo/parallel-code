@@ -44,6 +44,11 @@ import { parseMindMapUpdate, type MindMapDocument, type MindMapUpdate } from '..
 import { parseReasoningUpdate } from '../shared/reasoning-feed.js';
 import { parseCanvasView, type CanvasView } from '../shared/canvas-view.js';
 import { parseAgentTourPayload, type AgentTourPayload } from '../shared/agent-tour.js';
+import {
+  CONFIDENCE_LIMITS,
+  parseConfidencePayload,
+  type ConfidencePayload,
+} from '../shared/task-confidence.js';
 import { parseGitHubList, type GitHubCustomList } from '../shared/github-list.js';
 import {
   EVIDENCE_LIMITS,
@@ -427,11 +432,19 @@ type CanvasOps = Pick<
   | 'updateReasoning'
   | 'openCanvas'
   | 'publishTour'
+  | 'publishConfidence'
   | 'publishGitHubList'
   | 'submitEvidence'
   | 'getEvidence'
 >;
-type CanvasRoute = 'mindmaps' | 'reasoning' | 'canvas' | 'tours' | 'github-lists' | 'evidence';
+type CanvasRoute =
+  | 'mindmaps'
+  | 'reasoning'
+  | 'canvas'
+  | 'tours'
+  | 'confidence'
+  | 'github-lists'
+  | 'evidence';
 /** A published tour inlines its own context; the shared parser caps it again. */
 const TOUR_MAX_BODY_BYTES = 256 * 1024;
 /** 100 items with full-length titles and reasons, plus JSON overhead. */
@@ -491,6 +504,13 @@ async function canvasRequest(
     const payload = parseAgentTourPayload(await readJsonBody(req, TOUR_MAX_BODY_BYTES));
     await ops.publishTour(taskId, payload);
     return { ok: true, subject: payload.subject };
+  }
+  if (route === 'confidence') {
+    if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
+    if (!ops.publishConfidence) throw httpError(503, 'Confidence ratings unavailable');
+    const payload = parseConfidencePayload(await readJsonBody(req, CONFIDENCE_LIMITS.payloadBytes));
+    await ops.publishConfidence(taskId, payload);
+    return { ok: true, scores: payload.scores.length };
   }
   if (route === 'github-lists') {
     if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
@@ -1013,6 +1033,8 @@ export function startRemoteServer(opts: {
   openCanvas?: (taskId: string, view: CanvasView) => Promise<void>;
   /** Show a tour the agent wrote for its own task (renderer-backed). */
   publishTour?: (taskId: string, payload: AgentTourPayload) => Promise<unknown>;
+  /** Show a confidence rating the agent published for its own task (renderer-backed). */
+  publishConfidence?: (taskId: string, payload: ConfidencePayload) => Promise<unknown>;
   /** Show an issue list the agent ordered and grouped on its project's GitHub page. */
   publishGitHubList?: (taskId: string, list: GitHubCustomList) => Promise<unknown>;
   /** Record the agent's handoff claim and start building evidence (renderer-backed). */
@@ -1315,7 +1337,7 @@ export function startRemoteServer(opts: {
       };
 
       const mapMatch = url.pathname.match(
-        /^\/api\/(mindmaps|reasoning|canvas|tours|github-lists|evidence)\/([^/]+)$/,
+        /^\/api\/(mindmaps|reasoning|canvas|tours|confidence|github-lists|evidence)\/([^/]+)$/,
       );
       if (mapMatch) {
         const route = mapMatch[1] as CanvasRoute;

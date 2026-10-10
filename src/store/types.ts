@@ -14,7 +14,6 @@ import type { AgentTourPayload } from '../../electron/shared/agent-tour';
 import type { CanvasTaskLink, CanvasTaskSource } from '../lib/canvas-task-links';
 import type {
   AgentDef,
-  StepEntry,
   CreditUsage,
   UsageProvider,
   UsageWindow,
@@ -24,6 +23,8 @@ import type {
 import type { ChatPermissionMode, ChatSession } from '../../electron/shared/agent-chat-types';
 import type { AskCodeProvider } from '../../electron/shared/ask-code-models';
 import type { TaskNameModelId } from '../../electron/shared/task-name-model';
+import type { TaskBriefRecord } from '../lib/task-brief';
+import type { TaskConfidence } from '../lib/task-confidence';
 import type {
   EvidenceModelSettings,
   EvidencePackage,
@@ -294,8 +295,6 @@ export interface Task {
   reasoningWorkspaces?: Record<string, ReasoningWorkspace>;
   /** Column shown without a tab (the user asked for it). Not persisted. */
   canvasOpen?: boolean;
-  stepsEnabled?: boolean;
-  stepsContent?: StepEntry[];
   lastInputAt?: string;
   stagedNotification?: StagedNotification;
   userActivityHoldUntil?: number;
@@ -333,6 +332,12 @@ export interface Task {
   verificationRun?: VerificationRun;
   /** Latest evidence package: what the app observed, the agent claimed and a model thought. */
   evidence?: EvidencePackage;
+  /** Snapshot of the work so far, rewritten by a cheap model after each agent turn. */
+  brief?: TaskBriefRecord;
+  /** Runtime-only: a brief is being written, or the last attempt failed. */
+  briefStatus?: { state: 'generating' } | { state: 'failed'; message: string };
+  /** Latest rating the agent published through `confidence_publish`. */
+  confidence?: TaskConfidence;
   landingState?: LandingState;
   landingReason?: string;
   landingSummary?: string;
@@ -410,7 +415,6 @@ export interface PersistedTask {
   mindMap?: unknown;
   reasoningProfile?: ReasoningProfile;
   reasoningWorkspaces?: Record<string, ReasoningWorkspace>;
-  stepsEnabled?: boolean;
   branchAdoptedFrom?: string;
   branchOfferDismissed?: string;
   delegationParent?: boolean;
@@ -436,6 +440,10 @@ export interface PersistedTask {
   verificationRun?: VerificationRun;
   /** Validated on load. */
   evidence?: unknown;
+  /** Validated on load. */
+  brief?: unknown;
+  /** Validated on load. */
+  confidence?: unknown;
   landingState?: LandingState;
   landingReason?: string;
   landingSummary?: string;
@@ -485,6 +493,8 @@ export interface PersistedState {
   showPlans?: boolean;
   modelTaskNames?: boolean;
   taskNameModel?: TaskNameModelId;
+  taskBriefs?: boolean;
+  confidencePrompt?: string;
   showSidebarTips?: boolean;
   showSidebarProgress?: boolean;
   sidebarNeedsInputFirst?: boolean;
@@ -513,7 +523,6 @@ export interface PersistedState {
   coordinatorNotificationDelayMs?: number;
   coordinatorControlHintDismissed?: boolean;
   preferUiMode?: boolean;
-  defaultStepsEnabled?: boolean;
   defaultSkipPermissions?: boolean;
   defaultPropagateSkipPermissions?: boolean;
   /** Show which canvas nodes the user owns (agents cannot edit them without override). */
@@ -610,6 +619,10 @@ export interface AppStore {
   /** Opt-in: ask a cheap model for a short title when a task is named from its prompt. */
   modelTaskNames: boolean;
   taskNameModel: TaskNameModelId;
+  /** Write a task brief with the naming model after each agent turn. */
+  taskBriefs: boolean;
+  /** Prompt "Rate confidence" sends; empty uses the built-in self-check. */
+  confidencePrompt: string;
   showSidebarTips: boolean;
   showSidebarProgress: boolean;
   /** Pin tasks that are waiting on an answer to the top of the sidebar task
@@ -670,7 +683,6 @@ export interface AppStore {
   coordinatorNotificationDelayMs: number;
   coordinatorControlHintDismissed: boolean;
   preferUiMode: boolean;
-  defaultStepsEnabled: boolean;
   defaultSkipPermissions: boolean;
   defaultPropagateSkipPermissions: boolean;
   canvasOwnershipBadges: boolean;

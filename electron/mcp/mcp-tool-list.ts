@@ -2,6 +2,7 @@ import type { SessionCapabilities } from '../shared/delegation-types.js';
 import { graphOperationsSchema } from '../shared/graph-schema.js';
 import { CANVAS_INSTRUCTIONS, canvasViews } from '../shared/canvas-view.js';
 import { AGENT_TOUR_LIMITS } from '../shared/agent-tour.js';
+import { CONFIDENCE_LIMITS } from '../shared/task-confidence.js';
 import { GITHUB_LIST_LIMITS, isGitHubAgentTaskId } from '../shared/github-list.js';
 import { EVIDENCE_LIMITS } from '../shared/evidence.js';
 import { TOUR_CARD_LIMITS, TOUR_FORMS, TOUR_TONES } from '../shared/understanding-limits.js';
@@ -185,6 +186,55 @@ export const TOUR_TOOLS: ToolDef[] = [
         context: { type: 'string', maxLength: AGENT_TOUR_LIMITS.context },
       },
       required: ['subject', 'gist', 'cards'],
+    },
+  },
+];
+
+const confidenceCaps = CONFIDENCE_LIMITS;
+
+export const CONFIDENCE_TOOLS: ToolDef[] = [
+  {
+    name: 'confidence_publish',
+    description:
+      'Publish a confidence rating of the current changes on your task. The app shows it on the task brief and marks it out of date once the code changes after it. ' +
+      'Use it when the user asks you to rate your confidence, or as the last step of a rating or review skill. Do not change code while rating. ' +
+      `Send ${confidenceCaps.minScores} to ${confidenceCaps.maxScores} scores; name them as your rating defines them (one "Confidence" score, or dimensions such as "Correct", "Complete", "Minimal"). ` +
+      `A score is {label (at most ${confidenceCaps.label} characters), score (0-100), why (one line, at most ${confidenceCaps.why} characters: what keeps it from being higher)}. ` +
+      `Optional findings, at most ${confidenceCaps.maxFindings}: {kind: "gap" (missing or unverified), "extra" (change the task did not ask for) or "risk", text (at most ${confidenceCaps.findingText} characters), file? (repository-relative)}. ` +
+      `Optional "source" names who rated, such as a skill name, at most ${confidenceCaps.source} characters.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        scores: {
+          type: 'array',
+          minItems: confidenceCaps.minScores,
+          maxItems: confidenceCaps.maxScores,
+          items: {
+            type: 'object',
+            properties: {
+              label: { type: 'string', maxLength: confidenceCaps.label },
+              score: { type: 'number', minimum: 0, maximum: 100 },
+              why: { type: 'string', maxLength: confidenceCaps.why },
+            },
+            required: ['label', 'score', 'why'],
+          },
+        },
+        findings: {
+          type: 'array',
+          maxItems: confidenceCaps.maxFindings,
+          items: {
+            type: 'object',
+            properties: {
+              kind: { type: 'string', enum: ['gap', 'extra', 'risk'] },
+              text: { type: 'string', maxLength: confidenceCaps.findingText },
+              file: { type: 'string', maxLength: confidenceCaps.file },
+            },
+            required: ['kind', 'text'],
+          },
+        },
+        source: { type: 'string', maxLength: confidenceCaps.source },
+      },
+      required: ['scores'],
     },
   },
 ];
@@ -622,6 +672,7 @@ export function selectTools(
     ...REASONING_TOOLS,
     ...CANVAS_VIEW_TOOLS,
     ...TOUR_TOOLS,
+    ...CONFIDENCE_TOOLS,
     // Publishing opens the GitHub page's list picker; other tasks have no page to publish to.
     ...(isGitHubAgentTaskId(taskId) ? GITHUB_LIST_TOOLS : []),
     ...EVIDENCE_TOOLS,

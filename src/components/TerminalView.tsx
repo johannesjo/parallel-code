@@ -151,7 +151,6 @@ interface TerminalViewProps {
    *  shell terminals (in-task shells and standalone full-size panels) opt out
    *  (pass false) so they fill the pane with no left inset. */
   bookmarksEnabled?: boolean;
-  stepsEnabled?: boolean;
   dockerMode?: boolean;
   dockerImage?: string;
   spawnDelayMs?: number;
@@ -169,11 +168,11 @@ interface TerminalViewProps {
   onReady?: (focusFn: () => void) => void;
   onBufferReady?: (getBuffer: () => string) => void;
   /** Exposes the scrollback-marker API: `mark(key)` registers a marker at the current line
-   *  under `key` (steps use `step:<index>`, reasoning updates `reasoning:<sequence>`);
+   *  under `key` (reasoning updates use `reasoning:<sequence>`);
    *  `jump(key)` scrolls the viewport so that marker is visible.
    *  Called with `undefined` on unmount so the consumer can reset its state — important
    *  on agent restart, where this component remounts but the parent does not. */
-  onStepNavReady?: (
+  onTranscriptMarksReady?: (
     api: { mark: (key: string) => void; jump: (key: string) => boolean } | undefined,
   ) => void;
   fontSize?: number;
@@ -549,31 +548,31 @@ export function TerminalView(props: TerminalViewProps) {
 
     props.onReady?.(() => term?.focus());
 
-    // Step bookmarks — anchor each agent step to the current scrollback line so the
-    // user can jump from the steps panel back to the terminal moment a step was written.
+    // Transcript marks — anchor a key to the current scrollback line so other
+    // panels can jump back to the terminal moment something happened.
     // Markers auto-track buffer truncation; once the marker scrolls past the scrollback
     // limit xterm disposes it, in which case `jump` returns false so the caller can no-op.
-    // Remove disposed markers so truncated scrollback does not retain old steps.
-    const stepMarkers = new Map<string, IMarker>();
-    const stepNavApi = {
+    // Remove disposed markers so truncated scrollback does not retain old keys.
+    const transcriptMarkers = new Map<string, IMarker>();
+    const transcriptMarksApi = {
       mark(key: string) {
-        if (!term || stepMarkers.has(key)) return;
+        if (!term || transcriptMarkers.has(key)) return;
         const m = term.registerMarker(0);
         if (m) {
-          stepMarkers.set(key, m);
-          m.onDispose(() => stepMarkers.delete(key));
+          transcriptMarkers.set(key, m);
+          m.onDispose(() => transcriptMarkers.delete(key));
         }
       },
       jump(key: string): boolean {
         if (!term) return false;
-        const m = stepMarkers.get(key);
+        const m = transcriptMarkers.get(key);
         if (!m || m.isDisposed) return false;
         term.scrollToLine(m.line);
         return true;
       },
     };
-    props.onStepNavReady?.(stepNavApi);
-    onCleanup(() => props.onStepNavReady?.(undefined));
+    props.onTranscriptMarksReady?.(transcriptMarksApi);
+    onCleanup(() => props.onTranscriptMarksReady?.(undefined));
 
     // Scroll-bookmark overview: keep bookmark icon positions in sync with the
     // buffer. onRender fires per visual frame (on new output and on scroll), but
@@ -1200,7 +1199,6 @@ export function TerminalView(props: TerminalViewProps) {
         cols: term.cols,
         rows: term.rows,
         isShell: props.isShell,
-        stepsEnabled: props.stepsEnabled,
         dockerMode: props.dockerMode,
         dockerImage: props.dockerImage,
         dockerMountWorktreeParent: props.dockerMountWorktreeParent,

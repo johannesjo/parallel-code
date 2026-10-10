@@ -1427,7 +1427,7 @@
               </div>
               <div class="host-service" role="listitem">
                 <strong>Local storage</strong>
-                <span>State, themes, keybindings, watched plans and steps</span>
+                <span>State, themes, keybindings, watched plans and task briefs</span>
               </div>
               <div class="host-service" role="listitem">
                 <strong>Host integrations</strong>
@@ -1473,7 +1473,7 @@
               <h3>Capture intent</h3>
               <p>
                 <code>NewTaskDialog</code> resolves project, agent, base branch, isolation, Docker,
-                steps, prompt, and coordinator options.
+                prompt, and coordinator options.
               </p>
             </article>
             <article class="phase" role="listitem">
@@ -1617,13 +1617,13 @@
                 <tr>
                   <th scope="row">
                     <strong>Task artifacts</strong><br /><code>plans.ts</code> /
-                    <code>steps.ts</code>
+                    <code>task-brief.ts</code>
                   </th>
-                  <td>Newest plan and the agent-maintained engineering timeline.</td>
-                  <td>Per worktree; watched while a task is live.</td>
+                  <td>Newest plan, and the task brief a cheap model rewrites after each turn.</td>
+                  <td>Plans are watched per worktree; briefs live in app state.</td>
                   <td>
-                    <code>.claude/plans</code>, <code>docs/plans</code>, and
-                    <code>.claude/steps.json</code>.
+                    <code>.claude/plans</code>, <code>docs/plans</code>, and the persisted task
+                    state.
                   </td>
                 </tr>
                 <tr>
@@ -1650,7 +1650,7 @@
               <strong>Restore order matters</strong>
               <p>
                 Startup loads agents and state, restores coordinator servers before their children,
-                reloads plan/steps content, validates project paths, then starts autosave and live
+                reloads plan content, validates project paths, then starts autosave and live
                 subscriptions.
               </p>
             </article>

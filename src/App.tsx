@@ -70,7 +70,6 @@ import {
   setNewTaskDropUrl,
   validateProjectPaths,
   setPlanContent,
-  setStepsContent,
   setDockerAvailable,
   toggleTaskFocusMode,
   initMCPListeners,
@@ -112,6 +111,7 @@ import { resetForNewMatch } from './arena/store';
 import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 import { startSuperProductivitySync, startSpOpenListener } from './store/store';
 import { startBackgroundTaskWatcher } from './store/background-tasks';
+import { startTaskBriefWatcher } from './store/task-brief';
 import { startPrChecksSubscription } from './store/pr-checks';
 import { startUpdateSubscription } from './store/updates';
 import { startRemoteTaskHandlers } from './store/remoteTaskHandler';
@@ -561,21 +561,6 @@ function App() {
         });
     }
 
-    // Restore steps content for tasks that had steps before restart
-    for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
-      const task = store.tasks[taskId];
-      if (!task?.worktreePath || !task.stepsEnabled) continue;
-      invoke<unknown[] | null>(IPC.ReadStepsContent, {
-        worktreePath: task.worktreePath,
-      })
-        .then((result) => {
-          if (result) setStepsContent(taskId, result);
-        })
-        .catch((err) => {
-          console.warn(`Failed to restore steps for task ${taskId}:`, err);
-        });
-    }
-
     await validateProjectPaths();
     await restoreWindowState();
     await captureWindowState();
@@ -587,20 +572,11 @@ function App() {
     const stopSuperProductivitySync = startSuperProductivitySync(windowFocused);
     const stopSpOpenListener = startSpOpenListener();
     const stopBackgroundTaskWatcher = startBackgroundTaskWatcher();
+    const stopTaskBriefWatcher = startTaskBriefWatcher();
     const stopPrChecksSubscription = startPrChecksSubscription();
     const stopUpdateSubscription = startUpdateSubscription();
     const stopRemoteTaskHandlers = startRemoteTaskHandlers();
     const stopRemoteStatusSync = startRemoteStatusSync();
-
-    // Listen for steps content pushed from backend steps watcher
-    const offStepsContent = window.electron.ipcRenderer.on(IPC.StepsContent, (data: unknown) => {
-      if (!data || typeof data !== 'object') return;
-      const msg = data as { taskId: string; steps: unknown[] | null };
-      log.debug('steps', 'recv', { taskId: msg.taskId, len: msg.steps?.length ?? null });
-      if (msg.taskId && store.tasks[msg.taskId]) {
-        setStepsContent(msg.taskId, msg.steps);
-      }
-    });
 
     const handlePaste = (e: ClipboardEvent) => {
       if (store.showNewTaskPanel || store.showHelpDialog || store.showSettingsDialog) return;
@@ -802,6 +778,7 @@ function App() {
       stopSuperProductivitySync();
       stopSpOpenListener();
       stopBackgroundTaskWatcher();
+      stopTaskBriefWatcher();
       stopPrChecksSubscription();
       stopUpdateSubscription();
       stopRemoteTaskHandlers();
@@ -812,7 +789,6 @@ function App() {
       stopDocumentListeners();
       stopWindowVisibilityTracking();
       offPlanContent();
-      offStepsContent();
       unlistenFocusChanged?.();
       unlistenResized?.();
       unlistenMoved?.();

@@ -1,5 +1,7 @@
 import { parseCompletionRecord } from '../../electron/shared/completion-report';
 import { persistedEvidence, restoredEvidence } from '../lib/evidence-package';
+import { restoreTaskBriefRecord } from '../lib/task-brief';
+import { restoreTaskConfidence } from '../lib/task-confidence';
 import {
   parseEvidenceModelSettings,
   parseProjectChecks,
@@ -315,7 +317,6 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     mindMap: task.mindMap ?? task.mindMapUnreadable,
     reasoningProfile: task.reasoningProfile,
     reasoningWorkspaces: task.reasoningWorkspaces,
-    stepsEnabled: task.stepsEnabled,
     branchAdoptedFrom: task.branchAdoptedFrom,
     branchOfferDismissed: task.branchOfferDismissed,
     snoozedUntil: task.snoozedUntil,
@@ -341,6 +342,8 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     verification: task.verification,
     verificationRun: task.verificationRun,
     evidence: persistedEvidence(task.evidence),
+    brief: task.brief,
+    confidence: task.confidence,
     landingState: task.landingState,
     landingReason: task.landingReason,
     landingSummary: task.landingSummary,
@@ -391,6 +394,9 @@ export async function saveState(): Promise<void> {
     showPlans: store.showPlans,
     modelTaskNames: store.modelTaskNames,
     taskNameModel: store.taskNameModel,
+    // Default on: only an explicit opt-out is stored.
+    taskBriefs: store.taskBriefs ? undefined : false,
+    confidencePrompt: store.confidencePrompt.trim() || undefined,
     showSidebarTips: store.showSidebarTips,
     showSidebarProgress: store.showSidebarProgress,
     sidebarNeedsInputFirst: store.sidebarNeedsInputFirst,
@@ -426,7 +432,6 @@ export async function saveState(): Promise<void> {
     documentFullWidth: store.documentFullWidth || undefined,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed || undefined,
     preferUiMode: store.preferUiMode || undefined,
-    defaultStepsEnabled: store.defaultStepsEnabled || undefined,
     defaultSkipPermissions: store.defaultSkipPermissions || undefined,
     defaultPropagateSkipPermissions: store.defaultPropagateSkipPermissions || undefined,
     // Default on: only an explicit opt-out is stored.
@@ -589,9 +594,10 @@ interface LegacyPersistedState {
   windowState?: unknown;
   autoTrustFolders?: unknown;
   showPlans?: unknown;
-  showSteps?: unknown;
   modelTaskNames?: unknown;
   taskNameModel?: unknown;
+  taskBriefs?: unknown;
+  confidencePrompt?: unknown;
   showSidebarTips?: unknown;
   showSidebarProgress?: unknown;
   sidebarNeedsInputFirst?: unknown;
@@ -623,7 +629,6 @@ interface LegacyPersistedState {
   documentFullWidth?: unknown;
   coordinatorControlHintDismissed?: unknown;
   preferUiMode?: unknown;
-  defaultStepsEnabled?: unknown;
   defaultSkipPermissions?: unknown;
   defaultPropagateSkipPermissions?: unknown;
   canvasOwnershipBadges?: unknown;
@@ -837,6 +842,9 @@ export async function loadState(): Promise<void> {
       s.taskNameModel = isTaskNameModelId(raw.taskNameModel)
         ? raw.taskNameModel
         : DEFAULT_TASK_NAME_MODEL;
+      s.taskBriefs = raw.taskBriefs !== false;
+      s.confidencePrompt =
+        typeof raw.confidencePrompt === 'string' ? raw.confidencePrompt.slice(0, 4_000) : '';
       s.showSidebarTips = typeof raw.showSidebarTips === 'boolean' ? raw.showSidebarTips : true;
       s.showSidebarProgress =
         typeof raw.showSidebarProgress === 'boolean' ? raw.showSidebarProgress : true;
@@ -925,15 +933,6 @@ export async function loadState(): Promise<void> {
 
       s.coordinatorControlHintDismissed = raw.coordinatorControlHintDismissed === true;
 
-      // Migrate legacy showSteps — only fall back to it when the new field is
-      // absent (not present-but-invalid) so invalid values and explicit false
-      // are never overridden by the legacy field.
-      s.defaultStepsEnabled =
-        typeof raw.defaultStepsEnabled === 'boolean'
-          ? raw.defaultStepsEnabled
-          : 'defaultStepsEnabled' in (raw as object)
-            ? false
-            : raw.showSteps === true;
       s.preferUiMode = raw.preferUiMode === true;
       s.defaultSkipPermissions = raw.defaultSkipPermissions === true;
       s.defaultPropagateSkipPermissions = raw.defaultPropagateSkipPermissions === true;
@@ -1063,7 +1062,6 @@ export async function loadState(): Promise<void> {
           reasoningProfile: normalizeReasoningProfile(pt.reasoningProfile),
           canvasTaskLinks: restoreCanvasTaskLinks(pt.canvasTaskLinks),
           reasoningWorkspaces: restoreReasoningWorkspaces(pt.reasoningWorkspaces),
-          stepsEnabled: pt.stepsEnabled,
           branchAdoptedFrom: validBranch(pt.branchAdoptedFrom, pt.branchName),
           branchOfferDismissed: validBranch(pt.branchOfferDismissed),
           delegationParent: pt.delegationParent === true,
@@ -1099,6 +1097,8 @@ export async function loadState(): Promise<void> {
           verification: pt.verification,
           verificationRun: restoredVerificationRun(pt.verificationRun),
           evidence: restoredEvidence(pt.evidence),
+          brief: restoreTaskBriefRecord(pt.brief),
+          confidence: restoreTaskConfidence(pt.confidence),
           landingState: pt.landingState,
           landingReason: pt.landingReason,
           landingSummary: pt.landingSummary,
@@ -1208,7 +1208,6 @@ export async function loadState(): Promise<void> {
           reasoningProfile: normalizeReasoningProfile(pt.reasoningProfile),
           canvasTaskLinks: restoreCanvasTaskLinks(pt.canvasTaskLinks),
           reasoningWorkspaces: restoreReasoningWorkspaces(pt.reasoningWorkspaces),
-          stepsEnabled: pt.stepsEnabled,
           branchAdoptedFrom: validBranch(pt.branchAdoptedFrom, pt.branchName),
           branchOfferDismissed: validBranch(pt.branchOfferDismissed),
           collapsed: true,
@@ -1252,6 +1251,8 @@ export async function loadState(): Promise<void> {
           verification: pt.verification,
           verificationRun: restoredVerificationRun(pt.verificationRun),
           evidence: restoredEvidence(pt.evidence),
+          brief: restoreTaskBriefRecord(pt.brief),
+          confidence: restoreTaskConfidence(pt.confidence),
           landingState: pt.landingState,
           landingReason: pt.landingReason,
           landingSummary: pt.landingSummary,

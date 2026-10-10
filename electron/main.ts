@@ -16,7 +16,6 @@ import { killAllAgents } from './ipc/pty.js';
 import { removeAllCanvasConfigs } from './mcp/canvas-config.js';
 import { stopAllPlanWatchers } from './ipc/plans.js';
 import { stopAllDocumentWork } from './documents/register.js';
-import { stopAllStepsWatchers } from './ipc/steps.js';
 import { verificationRunner } from './ipc/verify.js';
 import { IPC } from './ipc/channels.js';
 import { gateIpcHandlersOn, resolveLoginShellEnv } from './login-env.js';
@@ -330,7 +329,6 @@ app.on('will-quit', () => {
   stopAgentHookRuntime();
   stopAllPlanWatchers();
   stopAllDocumentWork();
-  stopAllStepsWatchers();
 });
 
 // "Keep them alive in the background" hides the window; without this the dock

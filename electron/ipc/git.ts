@@ -151,6 +151,7 @@ const DEFAULT_SYMLINK_CANDIDATES = new Set(SYMLINK_CANDIDATES);
  * Entries inside `.claude/` that must NOT be seeded from the main repo's
  * `.claude/` into new worktrees (per-worktree-local state).
  */
+// `steps.json` belonged to the retired Steps panel; old worktrees may still hold one.
 const CLAUDE_DIR_EXCLUDE = new Set(['plans', 'steps.json']);
 
 /**

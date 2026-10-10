@@ -16,7 +16,6 @@ vi.mock('./git.js', async (importOriginal) => ({
 }));
 vi.mock('./pty.js', () => ({ killAgent: vi.fn(), notifyAgentListChanged: vi.fn() }));
 vi.mock('./plans.js', () => ({ stopPlanWatcher: vi.fn() }));
-vi.mock('./steps.js', () => ({ stopStepsWatcher: vi.fn() }));
 vi.mock('../github/pr-checkout.js', () => ({
   resolvePrCheckout: mocks.resolvePrCheckout,
   localBranchExists: mocks.localBranchExists,

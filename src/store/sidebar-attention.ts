@@ -56,19 +56,13 @@ function taskAttentionEntries(taskId: string): AttentionEntry[] {
     since: question.since,
     panel: panelForAskingAgent(taskId, question.agentId),
   }));
-  const latest = task.stepsContent?.at(-1);
-  const awaitingReview = latest?.status === 'awaiting_review';
   const landedReview = task.landingState === 'landed_pending_review';
   if (
     landedReview ||
     (!isLandedTaskState(task.landingState) &&
-      (task.needsReview ||
-        awaitingReview ||
-        (task.integrationPolicy === 'review' && task.signalDoneReceived)))
+      (task.needsReview || (task.integrationPolicy === 'review' && task.signalDoneReceived)))
   ) {
-    const at = landedReview
-      ? task.landedMetadata?.landedAt
-      : (task.signalDoneAt ?? (awaitingReview ? latest.timestamp : undefined));
+    const at = landedReview ? task.landedMetadata?.landedAt : task.signalDoneAt;
     const since = at ? Date.parse(at) : NaN;
     entries.push({
       key: JSON.stringify([taskId, 'review', task.completion?.id ?? at ?? 'legacy']),

@@ -14,6 +14,7 @@ import {
   CANVAS_VIEW_TOOLS,
   CANVAS_INSTRUCTIONS,
   TOUR_TOOLS,
+  CONFIDENCE_TOOLS,
   GITHUB_LIST_TOOLS,
   EVIDENCE_TOOLS,
   hasCanvasTools,
@@ -33,6 +34,7 @@ describe('selectTools — role-based tool list', () => {
       ...REASONING_TOOLS,
       ...CANVAS_VIEW_TOOLS,
       ...TOUR_TOOLS,
+      ...CONFIDENCE_TOOLS,
       ...EVIDENCE_TOOLS,
     ]);
     expect(tools.map((t: ToolDef) => t.name)).toStrictEqual([
@@ -44,6 +46,7 @@ describe('selectTools — role-based tool list', () => {
       'reasoning_update',
       'canvas_open',
       'tour_publish',
+      'confidence_publish',
       'submit_evidence',
       'get_evidence',
     ]);
@@ -57,6 +60,7 @@ describe('selectTools — role-based tool list', () => {
       ...REASONING_TOOLS,
       ...CANVAS_VIEW_TOOLS,
       ...TOUR_TOOLS,
+      ...CONFIDENCE_TOOLS,
       ...EVIDENCE_TOOLS,
     ]);
   });
@@ -155,6 +159,7 @@ it('ordinary canvas sessions advertise only map tools', () => {
     ...REASONING_TOOLS,
     ...CANVAS_VIEW_TOOLS,
     ...TOUR_TOOLS,
+    ...CONFIDENCE_TOOLS,
     ...EVIDENCE_TOOLS,
   ]);
 });
@@ -165,6 +170,7 @@ it('offers github_list_publish only to the GitHub page agent', () => {
     ...REASONING_TOOLS,
     ...CANVAS_VIEW_TOOLS,
     ...TOUR_TOOLS,
+    ...CONFIDENCE_TOOLS,
     ...GITHUB_LIST_TOOLS,
     ...EVIDENCE_TOOLS,
   ]);
@@ -241,6 +247,7 @@ describe('session capability tool sets', () => {
     'reasoning_update',
     'canvas_open',
     'tour_publish',
+    'confidence_publish',
     'submit_evidence',
     'get_evidence',
   ];

@@ -18,7 +18,6 @@ const core = vi.hoisted(() => ({
         collapsedTaskOrder: string[];
         projects: { id: string; path: string; tasksCollapsed?: boolean }[];
         availableAgents: unknown[];
-        defaultStepsEnabled: boolean;
         preferUiMode: boolean;
       }>
     | undefined,
@@ -46,8 +45,6 @@ const ipcHandlers = new Map<string, (data: unknown) => void>();
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
 vi.mock('../lib/ipc', () => ({ Channel: vi.fn(), invoke: mockInvoke }));
-
-let mockDefaultStepsEnabled = false;
 
 vi.mock('./core', async () => {
   const { createMockStoreHarness } = await import('./test-helpers');
@@ -89,12 +86,6 @@ vi.mock('./core', async () => {
     },
     set agentEnvFiles(next) {
       mockAgentEnvFiles = next;
-    },
-    get defaultStepsEnabled() {
-      return mockDefaultStepsEnabled;
-    },
-    set defaultStepsEnabled(next) {
-      mockDefaultStepsEnabled = next;
     },
   });
   return core.harness.moduleMock({ cleanupPanelEntries: vi.fn() });
@@ -269,7 +260,6 @@ beforeEach(() => {
   mockCollapsedTaskOrder = [];
   mockProjects = [];
   mockAgentEnvFiles = {};
-  mockDefaultStepsEnabled = false;
   mockInvoke.mockResolvedValue(undefined);
   mockSaveState.mockResolvedValue(undefined);
 });
@@ -1001,7 +991,6 @@ describe('createTask delegation options', () => {
     mockTasks = {};
     mockAgents = {};
     mockTaskOrder = [];
-    mockDefaultStepsEnabled = false;
     mockAgentEnvFiles = { 'agent-def': '~/.config/parallel-code/claude.env' };
     vi.mocked(getProjectPath).mockReturnValue('/repo');
     mockProjects = [{ id: 'proj-1', path: '/repo' }];
@@ -1083,60 +1072,6 @@ describe('createTask delegation options', () => {
       propagateSkipPermissions: false,
       maxConcurrentTasks: 4,
     });
-  });
-});
-
-// ─── createTask stepsEnabled default regression ────────────────────────────────
-
-describe('createTask does not mutate defaultStepsEnabled', () => {
-  const agentDef = {
-    id: 'agent-def',
-    name: 'Claude',
-    command: 'claude',
-    args: [],
-    resume_args: [],
-    skip_permissions_args: [],
-    description: 'Claude',
-  };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    const harness = expectDefined(core.harness, 'mock store harness');
-    harness.reset(harness.state());
-    mockTasks = {};
-    mockAgents = {};
-    mockTaskOrder = [];
-    mockDefaultStepsEnabled = false;
-    vi.mocked(getProjectPath).mockReturnValue('/repo');
-    mockProjects = [{ id: 'proj-1', path: '/repo' }];
-    vi.mocked(getProjectBranchPrefix).mockReturnValue('task');
-    vi.mocked(isProjectMissing).mockReturnValue(false);
-    mockInvoke.mockImplementation((channel: string) => {
-      if (channel === IPC.CreateTask) {
-        return Promise.resolve({
-          id: 'task-1',
-          branch_name: 'task/my-task',
-          worktree_path: '/repo/.worktrees/my-task',
-        });
-      }
-      return Promise.resolve(undefined);
-    });
-  });
-
-  it('does not write back defaultStepsEnabled when stepsEnabled differs from the default', async () => {
-    mockDefaultStepsEnabled = false;
-    await createTask({
-      name: 'My Task',
-      agentDef,
-      projectId: 'proj-1',
-      gitIsolation: 'worktree',
-      baseBranch: 'main',
-      stepsEnabled: true,
-    });
-    const defaultsMutated = mockSetStore.mock.calls.some(
-      (args) => args[0] === 'defaultStepsEnabled',
-    );
-    expect(defaultsMutated).toBe(false);
   });
 });
 
@@ -1559,11 +1494,10 @@ describe('sendPrompt', () => {
     expect(sentText()).toBe('update the mind map');
   });
 
-  it('delivers chat images with steps and records only accepted prompts', async () => {
+  it('delivers chat images and records only accepted prompts', async () => {
     mockAgents = { 'agent-1': { status: 'running', def: { id: 'codex' } } };
     mockTasks['task-1'].agentIds = ['agent-1'];
     mockTasks['task-1'].mainAgentView = 'chat';
-    mockTasks['task-1'].stepsEnabled = true;
     const images = [{ name: 'shot.png', mediaType: 'image/png' as const, data: 'AAAA' }];
     mockInvoke.mockRejectedValueOnce(new Error('Disconnected'));
     await expect(sendPrompt('task-1', 'agent-1', 'hello chat', { images })).rejects.toThrow(
@@ -1574,7 +1508,7 @@ describe('sendPrompt', () => {
     expect(mockInvoke).toHaveBeenLastCalledWith(IPC.AgentChat, {
       action: 'send',
       agentId: 'agent-1',
-      text: expect.stringContaining('For active statuses'),
+      text: 'hello chat',
       images,
     });
     expect(mockTasks['task-1'].lastPrompt).toBe('hello chat');
@@ -1589,23 +1523,6 @@ describe('sendPrompt', () => {
     await expect(sendPrompt('task-1', 'agent-1', 'not accepted')).rejects.toThrow('Disconnected');
     expect(mockTasks['task-1'].lastPrompt).toBe('');
     expect(writePayloads()).toEqual([]);
-  });
-
-  it('asks tracked active steps to describe what is happening now', async () => {
-    mockTasks['task-1'].stepsEnabled = true;
-
-    await sendPrompt('task-1', 'agent-1', 'hello Codex');
-
-    const injectedPrompt = writePayloads()[1];
-    expect(injectedPrompt).toContain(
-      'For active statuses, describe what is happening now in present tense.',
-    );
-    expect(injectedPrompt).toContain(
-      'For awaiting_review and done, describe the outcome or decision.',
-    );
-    expect(injectedPrompt).toContain('must always contain one valid JSON array');
-    expect(injectedPrompt).toContain('rewrite the complete array');
-    expect(injectedPrompt).not.toContain('Outcome-oriented, not action-oriented.');
   });
 
   it('keeps Enter outside the bracketed paste block', async () => {

@@ -68,7 +68,6 @@ beforeEach(() => {
     focusMode: false,
     newTaskDropUrl: null,
     newTaskPrefillPrompt: null,
-    defaultStepsEnabled: false,
     defaultSkipPermissions: false,
   });
   container = document.createElement('div');
@@ -260,7 +259,6 @@ describe('inline task creation', () => {
     assert(name);
     name.value = 'Custom task name';
     name.dispatchEvent(new Event('input', { bubbles: true }));
-    container.querySelector<HTMLInputElement>('[data-nav-field="steps-enabled"] input')?.click();
     toggle.click();
     expect(container.querySelector('[data-nav-field="task-name"]')).toBeNull();
     vi.mocked(createTask).mockResolvedValueOnce('created-task');
@@ -269,7 +267,7 @@ describe('inline task creation', () => {
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await vi.waitFor(() => expect(store.showNewTaskPanel).toBe(false));
     expect(createTask).toHaveBeenLastCalledWith(
-      expect.objectContaining({ name: 'Custom task name', stepsEnabled: true }),
+      expect.objectContaining({ name: 'Custom task name' }),
     );
   });
 

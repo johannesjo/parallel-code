@@ -311,6 +311,7 @@ describe('isStructuredPurpose', () => {
     expect(isStructuredPurpose('understand')).toBe(true);
     expect(isStructuredPurpose('evidence')).toBe(true);
     expect(isStructuredPurpose('task-name')).toBe(true);
+    expect(isStructuredPurpose('brief')).toBe(true);
     expect(isStructuredPurpose('plan')).toBe(false);
     expect(isStructuredPurpose(undefined)).toBe(false);
   });

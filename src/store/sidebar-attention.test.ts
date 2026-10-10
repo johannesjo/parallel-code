@@ -199,9 +199,6 @@ describe('independent attention reasons', () => {
         signalDoneReceived: true,
         signalDoneAt: '2026-09-26T10:00:00Z',
         signalDoneConsumed: true,
-        stepsContent: [
-          { summary: 'Ready', status: 'awaiting_review', timestamp: '2026-09-26T10:00:00Z' },
-        ],
       },
       { agentId: 'agent-1', since: 100 },
     );

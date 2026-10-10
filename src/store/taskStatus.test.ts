@@ -1323,19 +1323,6 @@ describe('task attention state', () => {
     expect(taskNeedsAttention('task-1')).toBe(true);
   });
 
-  it('shows review before busy when the latest step is awaiting review', () => {
-    setMockTask('task-1', {
-      agentIds: ['agent-1'],
-      stepsContent: [{ id: 'step-1', status: 'awaiting_review' }],
-    });
-    setMockAgent('agent-1', { status: 'running' });
-
-    markAgentSpawned('agent-1');
-
-    expect(getTaskAttentionState('task-1')).toBe('review');
-    expect(getTaskDotStatus('task-1')).toBe('review');
-  });
-
   it('returns error when a task agent exits non-zero', () => {
     setMockTask('task-1', { agentIds: ['agent-1'] });
     setMockAgent('agent-1', { status: 'exited', exitCode: 1, signal: null });

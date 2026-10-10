@@ -112,7 +112,6 @@ export function AgentChatView(props: {
         provider: provider(),
         agentId: props.agentId,
         taskId: props.task.id,
-        stepsEnabled: props.task.stepsEnabled,
         command: agent.def.command,
         cwd: props.task.worktreePath,
         envFile: store.agentEnvFiles[agent.def.id],

@@ -1108,12 +1108,6 @@ export function getTaskAttentionState(taskId: string): TaskAttentionState {
   const hasQuestion = hasRunningTaskActivity(taskId, isAgentBlockedOnInput);
   if (hasQuestion) return 'needs_input';
 
-  const steps = task.stepsContent;
-  if (steps && steps.length > 0) {
-    const latest = steps[steps.length - 1];
-    if (latest.status === 'awaiting_review') return 'review';
-  }
-
   if (isTaskWorking(taskId)) return 'active';
 
   if (isTaskReady(taskId)) return 'ready';
@@ -1168,12 +1162,6 @@ export function taskNeedsAttention(taskId: string): boolean {
 export function getTaskDotStatus(taskId: string): TaskDotStatus {
   const task = store.tasks[taskId];
   if (!task) return 'waiting';
-
-  const steps = task.stepsContent;
-  if (steps && steps.length > 0) {
-    const latest = steps[steps.length - 1];
-    if (latest.status === 'awaiting_review') return 'review';
-  }
 
   const active = activeAgents(); // reactive read
   // Shell panes are deliberately excluded: `busy` reads as "the agent is doing

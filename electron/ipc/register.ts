@@ -49,7 +49,6 @@ import {
   stopPlanWatcher,
   readPlanForWorktree,
 } from './plans.js';
-import { startStepsWatcher, stopStepsWatcher, readStepsForWorktree } from './steps.js';
 import { readFileTourContext } from './understanding-context.js';
 import {
   prepareReasoningFeed,
@@ -96,6 +95,7 @@ import {
 import type { MindMapDocument, MindMapUpdate } from '../shared/mindmap.js';
 import type { CanvasView } from '../shared/canvas-view.js';
 import type { AgentTourPayload } from '../shared/agent-tour.js';
+import type { ConfidencePayload } from '../shared/task-confidence.js';
 import type { GitHubCustomList } from '../shared/github-list.js';
 import type { EvidenceSubmission } from '../shared/evidence.js';
 import {
@@ -530,7 +530,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
           'Switch from Terminal to Chat after Codex is idle to hand off this conversation.',
         );
       assertString(args.taskId, 'taskId');
-      assertOptionalBoolean(args.stepsEnabled, 'stepsEnabled');
       assertString(args.command, 'command');
       validateCommand(args.command);
       validatePath(args.cwd, 'cwd');
@@ -606,9 +605,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       try {
         ensurePlansDirectory(args.cwd as string);
         startPlanWatcher(notify, args.taskId, args.cwd as string);
-        if (args.stepsEnabled) startStepsWatcher(notify, args.taskId, args.cwd as string);
       } catch (err) {
-        console.warn('Failed to start chat plan/steps watchers:', err);
+        console.warn('Failed to start chat plan watcher:', err);
       }
       return result;
     }
@@ -665,7 +663,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertOptionalBoolean(args.canvasMcp, 'canvasMcp');
     if (args.managedMcpLaunchArgs !== undefined)
       assertStringArray(args.managedMcpLaunchArgs, 'managedMcpLaunchArgs');
-    assertOptionalBoolean(args.stepsEnabled, 'stepsEnabled');
     assertOptionalString(args.envFile, 'envFile');
     if (args.cwd) validatePath(args.cwd, 'cwd');
     const attaching = args.attachExisting && getAgentMeta(args.agentId);
@@ -842,13 +839,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
           startPlanWatcher(notify, args.taskId, args.cwd);
         } catch (err) {
           console.warn('Failed to start plan watcher:', err);
-        }
-        if (args.stepsEnabled) {
-          try {
-            startStepsWatcher(notify, args.taskId, args.cwd);
-          } catch (err) {
-            console.warn('Failed to start steps watcher:', err);
-          }
         }
       }
       const session = transport
@@ -1292,12 +1282,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return readPlanForWorktree(args.worktreePath, fileName);
   });
 
-  // --- Steps watcher cleanup ---
-  ipcMain.handle(IPC.StopStepsWatcher, (_e, args) => {
-    assertString(args.taskId, 'taskId');
-    stopStepsWatcher(args.taskId);
-  });
-
   // --- PR CI status watcher ---
   initPrChecks(win);
   ipcMain.handle(IPC.StartPrChecksWatcher, (_e, args) => {
@@ -1411,12 +1395,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.CommitReasoningEdit, (_e, args) => {
     return appendReasoningUpdate(...reasoningArgs(args), args.update, 'user');
-  });
-
-  // --- Steps content (one-shot read) ---
-  ipcMain.handle(IPC.ReadStepsContent, (_e, args) => {
-    validatePath(args.worktreePath, 'worktreePath');
-    return readStepsForWorktree(args.worktreePath);
   });
 
   // --- Ask about code ---
@@ -1780,6 +1758,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       callRenderer<{ ok: boolean }>(IPC.MCP_OpenCanvasRequest, { taskId, view }).then(() => {}),
     publishTour: (taskId: string, payload: AgentTourPayload) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishTourRequest, { taskId, payload }),
+    publishConfidence: (taskId: string, payload: ConfidencePayload) =>
+      callRenderer<{ ok: boolean }>(IPC.MCP_PublishConfidenceRequest, { taskId, payload }),
     publishGitHubList: (taskId: string, list: GitHubCustomList) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishGitHubListRequest, { taskId, list }),
     submitEvidence: (taskId: string, payload: EvidenceSubmission) =>
