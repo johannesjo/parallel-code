@@ -1001,3 +1001,39 @@ export function ArrowRightThinIcon(props: IconProps): JSX.Element {
     </StrokeSvgIcon>
   );
 }
+
+/** Filled octicon chevron for commit-step navigation; see also the stroke ChevronLeftIcon above. */
+export function ChevronLeftAltIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
+    </SvgIcon>
+  );
+}
+
+/** Rounded send-arrow for the prompt composer's submit button. */
+export function ArrowUpIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} viewBox="0 0 14 14" strokeWidth="2" roundCaps roundJoins>
+      <path d="M7 12V2M7 2L3 6M7 2l4 4" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Rounded send-arrow for the task-notes composer's submit button. */
+export function ArrowDownIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} viewBox="0 0 14 14" strokeWidth="2" roundCaps roundJoins>
+      <path d="M7 2V12M7 12L3 8M7 12l4 -4" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Simplified question mark: the file Understand affordance; the octicon-style question differs. */
+export function QuestionAltIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0ZM1.5 8a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0Zm6.6-3.7c-.9 0-1.5.4-1.9 1a.75.75 0 0 1-1.3-.8c.7-1 1.7-1.7 3.2-1.7 1.7 0 3.1 1.1 3.1 2.7 0 1.2-.7 1.9-1.5 2.4-.6.4-.9.7-.9 1.2a.75.75 0 0 1-1.5 0c0-1.3.8-1.9 1.5-2.4.6-.4.9-.7.9-1.2 0-.7-.7-1.2-1.6-1.2ZM8 11.4a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z" />
+    </SvgIcon>
+  );
+}

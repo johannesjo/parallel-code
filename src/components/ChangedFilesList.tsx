@@ -8,6 +8,7 @@ import { getStatusColor } from '../lib/status-colors';
 import { openFileInEditor } from '../lib/shell';
 import { isMarkdownPath } from '../lib/canvas-tabs';
 import { buildFileTree, flattenVisibleTree } from '../lib/file-tree';
+import { ExternalLinkIcon, PanelRightIcon, QuestionAltIcon } from './icons';
 import {
   buildCoverageComparison,
   formatCoverageDelta,
@@ -356,9 +357,7 @@ function OpenInEditorButton(props: {
       title="Open in editor"
       aria-label={`Open ${props.filePath} in editor`}
     >
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-3a.75.75 0 0 1 1.5 0v3A3 3 0 0 1 12.5 16h-9A3 3 0 0 1 0 12.5v-9A3 3 0 0 1 3.5 0h3a.75.75 0 0 1 0 1.5h-3ZM10 .75a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0V2.56L8.53 8.53a.75.75 0 0 1-1.06-1.06L13.44 1.5H10.75A.75.75 0 0 1 10 .75Z" />
-      </svg>
+      <ExternalLinkIcon />
     </button>
   );
 }
@@ -403,14 +402,7 @@ function UnderstandFileButton(props: {
           }}
           aria-label={`Understand ${props.filePath}`}
         >
-          <Show
-            when={loading()}
-            fallback={
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0ZM1.5 8a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0Zm6.6-3.7c-.9 0-1.5.4-1.9 1a.75.75 0 0 1-1.3-.8c.7-1 1.7-1.7 3.2-1.7 1.7 0 3.1 1.1 3.1 2.7 0 1.2-.7 1.9-1.5 2.4-.6.4-.9.7-.9 1.2a.75.75 0 0 1-1.5 0c0-1.3.8-1.9 1.5-2.4.6-.4.9-.7.9-1.2 0-.7-.7-1.2-1.6-1.2ZM8 11.4a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z" />
-              </svg>
-            }
-          >
+          <Show when={loading()} fallback={<QuestionAltIcon />}>
             <span class="inline-spinner" aria-hidden="true" />
           </Show>
         </button>
@@ -443,17 +435,7 @@ function OpenMarkdownButton(props: { filePath: string; onOpenMarkdownClick?: () 
       title="Open in canvas"
       aria-label={`Open ${props.filePath} in canvas`}
     >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.5"
-      >
-        <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
-        <path d="M10 2.75v10.5" />
-      </svg>
+      <PanelRightIcon />
     </button>
   );
 }
