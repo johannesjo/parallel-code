@@ -14,7 +14,7 @@ import { theme } from '../lib/theme';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import type { RemoteAccess } from '../store/types';
-import { CloseIcon, SyncIcon } from './icons';
+import { CheckLargeIcon, CloseIcon, SyncIcon } from './icons';
 
 type NetworkMode = 'wifi' | 'tailscale';
 
@@ -476,18 +476,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               gap: '8px',
             }}
           >
-            <svg
-              width="48"
-              height="48"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke={theme.success}
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M20 6L9 17l-5-5" />
-            </svg>
+            <CheckLargeIcon size={48} style={{ color: theme.success }} />
             <span style={{ 'font-size': '15px', color: theme.success, 'font-weight': '500' }}>
               {store.remoteAccess.connectedClients} client(s) connected
             </span>

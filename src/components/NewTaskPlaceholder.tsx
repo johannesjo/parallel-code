@@ -3,6 +3,7 @@ import { toggleNewTaskPanel, createTerminal, unfocusPlaceholder } from '../store
 import { registerFocusFn, unregisterFocusFn } from '../store/focus';
 import { theme } from '../lib/theme';
 import { mod } from '../lib/platform';
+import { PlusLargeIcon } from './icons';
 
 /** Quiet ghost surface: a faint fill instead of a dashed wireframe border, so
  *  the add column reads as part of the strip rather than a placeholder. The
@@ -62,9 +63,7 @@ export function NewTaskPlaceholder() {
         style={{ ...ghostStyle, flex: '1' }}
         title={`New task (${mod}+N)`}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-          <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
-        </svg>
+        <PlusLargeIcon />
       </div>
 
       {/* Terminal button — same width, fixed height */}

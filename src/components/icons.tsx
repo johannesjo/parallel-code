@@ -499,3 +499,253 @@ export function ActivityIcon(props: IconProps): JSX.Element {
     </SvgIcon>
   );
 }
+
+interface StrokeSvgIconProps extends IconProps {
+  children: JSX.Element;
+  viewBox?: string;
+  strokeWidth: number | string;
+  roundCaps?: boolean;
+  roundJoins?: boolean;
+}
+
+/** Stroke-drawn glyphs (fill="none"): attributes mirror what the call sites pasted. */
+function StrokeSvgIcon(props: StrokeSvgIconProps): JSX.Element {
+  const size = () => props.size ?? 16;
+
+  return (
+    <svg
+      width={size()}
+      height={size()}
+      viewBox={props.viewBox ?? '0 0 16 16'}
+      fill="none"
+      stroke="currentColor"
+      stroke-width={props.strokeWidth}
+      stroke-linecap={props.roundCaps ? 'round' : undefined}
+      stroke-linejoin={props.roundJoins ? 'round' : undefined}
+      class={props.class}
+      style={props.style}
+      aria-hidden={props.title ? undefined : 'true'}
+      role={props.title ? 'img' : undefined}
+    >
+      {props.title ? <title>{props.title}</title> : null}
+      {props.children}
+    </svg>
+  );
+}
+
+/** The parallel-bars logo from the window title bar. */
+export function LogoIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="4" viewBox="0 0 56 56">
+      <line x1="10" y1="6" x2="10" y2="50" />
+      <line x1="22" y1="6" x2="22" y2="50" />
+      <path d="M30 8 H47 V24 H30" />
+      <path d="M49 32 H32 V48 H49" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Thin 10x10 window controls (custom title bar). */
+export function MinimizeIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} viewBox="0 0 10 10" strokeWidth="1.2" roundCaps>
+      <path d="M1 5h8" />
+    </StrokeSvgIcon>
+  );
+}
+
+export function MaximizeIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} viewBox="0 0 10 10" strokeWidth="1.1">
+      <rect x="1.5" y="1.5" width="7" height="7" />
+    </StrokeSvgIcon>
+  );
+}
+
+export function RestoreIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} viewBox="0 0 10 10" strokeWidth="1.1">
+      <path d="M2 1.5h6v6H2z" />
+      <path d="M1 3.5v5h5" />
+    </StrokeSvgIcon>
+  );
+}
+
+export function CloseThinIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} viewBox="0 0 10 10" strokeWidth="1.2" roundCaps>
+      <path d="M2 2l6 6M8 2 2 8" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Coordinator/bot marker shown next to agent-driven tasks. */
+export function BotIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 1a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V6h3a2 2 0 0 1 2 2v1.27A2 2 0 0 1 15 11a2 2 0 0 1-3 1.73V11a1 1 0 0 0-1-1H9v2.27A2 2 0 0 1 10 14a2 2 0 0 1-4 0c0-.74.4-1.39 1-1.73V10H5a1 1 0 0 0-1 1v1.73A2 2 0 0 1 5 14a2 2 0 0 1-4 0c0-.74.4-1.39 1-1.73V11a2 2 0 0 1-1-1.73V8a2 2 0 0 1 2-2h3V4.73A2 2 0 0 1 6 3a2 2 0 0 1 2-2Z" />
+    </SvgIcon>
+  );
+}
+
+/** Filled chevron for collapsible section headers; see also ChevronDownIcon above. */
+export function ChevronDownAltIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" />
+    </SvgIcon>
+  );
+}
+
+/** Chunky plus for "create" affordances; PlusIcon above is the inline-text variant. */
+export function PlusLargeIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
+    </SvgIcon>
+  );
+}
+
+/** Compact plus that stays legible at 13px and below. */
+export function PlusSmallIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 2.75a.75.75 0 0 1 .75.75v3.75h3.75a.75.75 0 0 1 0 1.5H8.75v3.75a.75.75 0 0 1-1.5 0V8.75H3.5a.75.75 0 0 1 0-1.5h3.75V3.5A.75.75 0 0 1 8 2.75Z" />
+    </SvgIcon>
+  );
+}
+
+/** Single horizontal bar: the collapsed-task affordance. */
+export function MinusIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 8a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8Z" />
+    </SvgIcon>
+  );
+}
+
+/** Squared folder for "link a project" affordances; FolderIcon above is the filled one. */
+export function FolderAltIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M1.5 3.25A1.75 1.75 0 0 1 3.25 1.5h2.9c.46 0 .9.18 1.23.51l.86.86h4.51c.97 0 1.75.78 1.75 1.75v7.63c0 .97-.78 1.75-1.75 1.75H3.25a1.75 1.75 0 0 1-1.75-1.75z" />
+    </SvgIcon>
+  );
+}
+
+/** Keyboard: the shortcuts cheat-sheet affordance in the sidebar footer. */
+export function KeyboardIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.25">
+      <rect x="1.5" y="3.5" width="13" height="9" rx="1" />
+      <path d="M4 6h1m2 0h1m2 0h2M4 8.5h1m2 0h1m2 0h2M5 10.5h6" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Side panel with a divider: toggles the task canvas. */
+export function PanelRightIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5">
+      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
+      <path d="M10 2.75v10.5" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Corners-in brackets (exit focus); see also the bracket-style ExpandIcon above. */
+export function CollapseAltIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.75 5.5A.75.75 0 0 0 3.5 4.75V3.5h1.25a.75.75 0 0 0 0-1.5H2.5a.5.5 0 0 0-.5.5v2.25c0 .414.336.75.75.75ZM12.5 4.75a.75.75 0 0 0 1.5 0V2.5a.5.5 0 0 0-.5-.5h-2.25a.75.75 0 0 0 0 1.5h1.25v1.25ZM3.5 11.25a.75.75 0 0 0-1.5 0V13.5a.5.5 0 0 0 .5.5h2.25a.75.75 0 0 0 0-1.5H3.5v-1.25ZM13.25 10.5a.75.75 0 0 0-.75.75v1.25h-1.25a.75.75 0 0 0 0 1.5H13.5a.5.5 0 0 0 .5-.5v-2.25a.75.75 0 0 0-.75-.75Z" />
+    </SvgIcon>
+  );
+}
+
+/** Check inside a circle: the Finish (merge or push) button's idle glyph. */
+export function CheckCircleIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm1.5 0a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm10.28-1.72-4.5 4.5a.75.75 0 0 1-1.06 0l-2-2a.75.75 0 0 1 1.06-1.06L6.75 9.19l3.97-3.97a.75.75 0 0 1 1.06 1.06Z" />
+    </SvgIcon>
+  );
+}
+
+/** Terminal window chrome (panel-layout toggle); see also the prompt-style TerminalIcon above. */
+export function TerminalAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.3">
+      <rect x="2" y="2.75" width="12" height="10.5" rx="1.25" />
+      <path d="M2 5.75 H14" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Two side-by-side panels: the split-terminal layout toggle. */
+export function ColumnsIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.3">
+      <rect x="2" y="2.75" width="5" height="10.5" rx="1.25" />
+      <rect x="9" y="2.75" width="5" height="10.5" rx="1.25" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Phone handset: remote-access affordances. */
+export function PhoneIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} viewBox="0 0 24 24" strokeWidth="2" roundCaps roundJoins>
+      <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+      <line x1="12" y1="18" x2="12.01" y2="18" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Crossing strokes: the Arena (agent-vs-agent) affordance. */
+export function ScrambleIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M3 3L13 13M9 12L12 9" />
+      <path d="M13 3L3 13M4 9L7 12" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Stroke-drawn download; see also the filled DownloadIcon above. */
+export function DownloadAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.6" roundCaps roundJoins>
+      <path d="M8 2v8" />
+      <path d="M4.5 7 8 10.5 11.5 7" />
+      <path d="M3 13h10" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Circular arrow: restart to install an update. */
+export function RefreshIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.6" roundCaps roundJoins>
+      <path d="M13 8a5 5 0 1 1-1.46-3.54" />
+      <path d="M13 2v3h-3" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Oversized check for success states (phone connected). */
+export function CheckLargeIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} viewBox="0 0 24 24" strokeWidth="2.5" roundCaps roundJoins>
+      <path d="M20 6L9 17l-5-5" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** The GitHub octocat mark; GitHubIcon above is this project's own glyph. */
+export function GitHubMarkIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+    </SvgIcon>
+  );
+}
