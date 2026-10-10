@@ -407,7 +407,8 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
             </button>
           );
           const ciFailed = () => pr()?.overall === 'failure' && !pr()?.merged;
-          // Only offer Merge when GitHub would accept it without a bypass.
+          // Hide Merge when the PR state already rules a merge out; the finish dialog
+          // still decides the route (GitHub or local) and any remaining protection.
           const readyToMerge = () => {
             const c = pr();
             return (
@@ -434,7 +435,7 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
                     type="button"
                     class="task-pr-merge"
                     onClick={() => finish()()}
-                    title={`CI passed — open Finish to merge PR #${prNumber()}`}
+                    title="CI passed — open Finish to merge"
                   >
                     <GitMergeIcon size={12} />
                     Merge

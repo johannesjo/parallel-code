@@ -168,7 +168,9 @@ describe('TaskBranchInfoBar GitHub actions', () => {
     const html = renderToString(() => TaskBranchInfoBar({ task, onEditProject: vi.fn() }));
 
     expect(html).toMatch(/class="task-pr-fix-ci"[^>]*style="background:var\(--error\)/);
-    expect(html).toMatch(/class="task-pr-fix-ci"[^>]*>.*<svg.*Fix CI(<!--\/-->)?<\/button>/);
+    expect(html).toMatch(
+      /class="task-pr-fix-ci"[^>]*>(<!--\$-->)?<svg[^>]*>.*?<\/svg>(<!--\/-->)?(<!--\$-->)?Fix CI(<!--\/-->)?<\/button>/,
+    );
   });
 
   it.each([
