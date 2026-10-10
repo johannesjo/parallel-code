@@ -27,6 +27,7 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
+import java.net.SocketTimeoutException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
@@ -54,6 +55,9 @@ interface TerminalListener {
 
 /** A REST call the desktop refused or could not answer; `status` is 0 when it was unreachable. */
 /** [json] is the error reply's body, for routes that explain a refusal (e.g. close warnings). */
+/** Read timeout for requests that wait on desktop git work; see [RemoteClient.slowHttp]. */
+private const val SLOW_REQUEST_SECONDS = 130L
+
 class ApiException(message: String, val status: Int = 0, val json: JSONObject? = null) : IOException(message)
 
 data class MobileProject(val id: String, val name: String, val agentName: String?)
@@ -93,6 +97,15 @@ class RemoteClient(
         .connectTimeout(10, TimeUnit.SECONDS)
         .pingInterval(30, TimeUnit.SECONDS)
         .build()
+
+    /**
+     * For requests the desktop answers only once real git work is done: creating a task builds a
+     * worktree, merging and closing run git too. The desktop waits up to 120 s for that work
+     * (callRenderer in electron/ipc/register.ts), so OkHttp's default 10 s read timeout reported
+     * "could not reach your computer" for a request that was still running, and usually succeeded.
+     * A little longer than the desktop lets the desktop's own error come through instead.
+     */
+    private val slowHttp = http.newBuilder().readTimeout(SLOW_REQUEST_SECONDS, TimeUnit.SECONDS).build()
 
     private val _state = MutableStateFlow(ConnectionState(link = credentials.link))
     val state: StateFlow<ConnectionState> = _state.asStateFlow()
@@ -335,7 +348,7 @@ class RemoteClient(
         val body = JSONObject().put("projectId", projectId).put("name", name).put("prompt", prompt)
         agentId?.let { body.put("agentId", it) }
         model?.let { body.put("model", it) }
-        return api("POST", "/api/mobile/tasks", body, pairedTokenOrThrow()).getString("taskId")
+        return api("POST", "/api/mobile/tasks", body, pairedTokenOrThrow(), slow = true).getString("taskId")
     }
 
     /** The task's notes panel; readable with the view-only token. */
@@ -394,6 +407,7 @@ class RemoteClient(
             "/api/mobile/tasks/${encodePath(taskId)}/merge",
             JSONObject().put("squash", squash).put("cleanup", cleanup),
             pairedTokenOrThrow(),
+            slow = true,
         )
     }
 
@@ -409,7 +423,13 @@ class RemoteClient(
      * desktop refuses when work would be lost and this returns its warnings; empty means closed.
      */
     suspend fun closeTask(taskId: String, force: Boolean): List<String> = try {
-        api("POST", "/api/mobile/tasks/${encodePath(taskId)}/close", JSONObject().put("force", force), pairedTokenOrThrow())
+        api(
+            "POST",
+            "/api/mobile/tasks/${encodePath(taskId)}/close",
+            JSONObject().put("force", force),
+            pairedTokenOrThrow(),
+            slow = true,
+        )
         emptyList()
     } catch (e: ApiException) {
         val warnings = e.json?.optJSONArray("warnings")
@@ -424,14 +444,26 @@ class RemoteClient(
     private fun pairedTokenOrThrow(): String =
         credentials.pairedToken ?: throw ApiException("Pair this phone first.", 401)
 
-    private suspend fun api(method: String, path: String, body: JSONObject?, token: String?): JSONObject =
+    private suspend fun api(
+        method: String,
+        path: String,
+        body: JSONObject?,
+        token: String?,
+        slow: Boolean = false,
+    ): JSONObject =
         try {
-            JSONObject(apiRaw(method, path, body, token))
+            JSONObject(apiRaw(method, path, body, token, slow))
         } catch (e: JSONException) {
             throw ApiException("Your computer sent an unexpected reply.")
         }
 
-    private suspend fun apiRaw(method: String, path: String, body: JSONObject?, token: String?): String {
+    private suspend fun apiRaw(
+        method: String,
+        path: String,
+        body: JSONObject?,
+        token: String?,
+        slow: Boolean = false,
+    ): String {
         val link = credentials.link ?: throw ApiException("Not connected to a computer.")
         if (token == null) throw ApiException("Not connected to a computer.")
         if (mustWaitForVpn()) {
@@ -445,9 +477,14 @@ class RemoteClient(
         val start = System.currentTimeMillis()
         val (code, text) = withContext(Dispatchers.IO) {
             try {
-                http.newCall(request).execute().use { it.code to it.body.string() }
+                (if (slow) slowHttp else http).newCall(request).execute().use { it.code to it.body.string() }
             } catch (e: IOException) {
                 _latencyMs.value = null
+                // A slow request may still finish on the desktop, so don't call it unreachable.
+                // (A connect timeout is also a SocketTimeoutException, hence the hedged wording.)
+                if (slow && e is SocketTimeoutException) {
+                    throw ApiException("Your computer did not answer in time. The change may still go through.")
+                }
                 throw ApiException("Could not reach your computer. Check you're on the same network.")
             }
         }
