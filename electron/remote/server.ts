@@ -2042,6 +2042,8 @@ export function startRemoteServer(opts: {
   });
 
   const clientSubs = new WeakMap<WebSocket, Map<string, (data: string) => void>>();
+  // The agents each client asked to stream; unlike clientSubs, this outlives the PTY.
+  const clientWants = new WeakMap<WebSocket, Set<string>>();
   // Which phone currently sizes each agent's PTY (see ViewSizeCommand).
   const viewSizeOwners = new Map<string, WebSocket>();
   const authenticatedClients = new Set<WebSocket>();
@@ -2052,6 +2054,65 @@ export function startRemoteServer(opts: {
   // A phone on a slow link cannot drain a full conversation every frame interval;
   // past this backlog, chat frames wait rather than pile up in the send buffer.
   const SOCKET_BACKLOG_BYTES = 1024 * 1024;
+
+  /**
+   * Stream an agent's terminal to a phone, starting from its rendered snapshot.
+   * Also runs again when the agent's PTY respawns under the same ID (switching
+   * a task back from chat to terminal), since the old PTY's subscribers die with it.
+   */
+  function streamAgent(ws: WebSocket, agentId: string): void {
+    const subs = clientSubs.get(ws);
+    const sendScrollback = (data: string, cols: number, rows: number) => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      ws.send(
+        JSON.stringify({
+          type: 'scrollback',
+          agentId,
+          data,
+          cols,
+          rows,
+        } satisfies ServerMessage),
+      );
+    };
+    const sendRawScrollback = () => {
+      const scrollback = getAgentScrollback(agentId);
+      if (scrollback) sendScrollback(scrollback, getAgentCols(agentId), getAgentRows(agentId));
+    };
+    const cb = (encoded: string) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        if (ws.bufferedAmount > SOCKET_BACKLOG_BYTES) {
+          // Terminal chunks cannot be skipped safely. Release the queued bytes;
+          // the phone reconnects and resets its terminal from scrollback replay.
+          ws.terminate();
+          return;
+        }
+        ws.send(
+          JSON.stringify({
+            type: 'output',
+            agentId,
+            data: encoded,
+          } satisfies ServerMessage),
+        );
+      }
+    };
+    // Phones get the rendered screen and history; a live agent's raw
+    // replay can be nothing but repaints of its last screen.
+    const subscriber = subscribeToAgentRendered(
+      agentId,
+      (snapshot) => {
+        if (snapshot) sendScrollback(snapshot.data, snapshot.cols, snapshot.rows);
+        else sendRawScrollback();
+      },
+      cb,
+    );
+    if (subscriber) {
+      subs?.set(agentId, subscriber);
+    } else {
+      // Not a live PTY session: replay what is left, as before.
+      sendRawScrollback();
+      if (subscribeToAgent(agentId, cb)) subs?.set(agentId, cb);
+    }
+  }
 
   function broadcast(msg: ServerMessage): void {
     const json = JSON.stringify(msg);
@@ -2069,7 +2130,19 @@ export function startRemoteServer(opts: {
     push.snapshot(list);
     broadcast({ type: 'agents', list });
   };
-  const unsubSpawn = onPtyEvent('spawn', publishAgents);
+  const unsubSpawn = onPtyEvent('spawn', (agentId, data) => {
+    publishAgents();
+    if ((data as { reattached?: boolean } | undefined)?.reattached) return;
+    // A new PTY under a known ID (a task switched back from chat to terminal)
+    // starts with no subscribers, and the phone still believes it is streaming.
+    for (const client of wss.clients) {
+      if (!clientWants.get(client)?.has(agentId)) continue;
+      const stale = clientSubs.get(client)?.get(agentId);
+      if (stale) unsubscribeFromAgent(agentId, stale);
+      clientSubs.get(client)?.delete(agentId);
+      streamAgent(client, agentId);
+    }
+  });
 
   const unsubChats =
     opts.chats?.onChange(() => {
@@ -2111,6 +2184,7 @@ export function startRemoteServer(opts: {
 
   wss.on('connection', (ws, req) => {
     clientSubs.set(ws, new Map());
+    clientWants.set(ws, new Set());
     ws.on('pong', () => awaitingPong.delete(ws));
     if (opts.chats)
       clientChats.set(
@@ -2341,64 +2415,14 @@ export function startRemoteServer(opts: {
           break;
 
         case 'subscribe': {
-          const subs = clientSubs.get(ws);
-          if (subs?.has(msg.agentId)) break;
-
-          const sendScrollback = (data: string, cols: number, rows: number) => {
-            if (ws.readyState !== WebSocket.OPEN) return;
-            ws.send(
-              JSON.stringify({
-                type: 'scrollback',
-                agentId: msg.agentId,
-                data,
-                cols,
-                rows,
-              } satisfies ServerMessage),
-            );
-          };
-          const sendRawScrollback = () => {
-            const scrollback = getAgentScrollback(msg.agentId);
-            if (scrollback)
-              sendScrollback(scrollback, getAgentCols(msg.agentId), getAgentRows(msg.agentId));
-          };
-          const cb = (encoded: string) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              if (ws.bufferedAmount > SOCKET_BACKLOG_BYTES) {
-                // Terminal chunks cannot be skipped safely. Release the queued bytes;
-                // the phone reconnects and resets its terminal from scrollback replay.
-                ws.terminate();
-                return;
-              }
-              ws.send(
-                JSON.stringify({
-                  type: 'output',
-                  agentId: msg.agentId,
-                  data: encoded,
-                } satisfies ServerMessage),
-              );
-            }
-          };
-          // Phones get the rendered screen and history; a live agent's raw
-          // replay can be nothing but repaints of its last screen.
-          const subscriber = subscribeToAgentRendered(
-            msg.agentId,
-            (snapshot) => {
-              if (snapshot) sendScrollback(snapshot.data, snapshot.cols, snapshot.rows);
-              else sendRawScrollback();
-            },
-            cb,
-          );
-          if (subscriber) {
-            subs?.set(msg.agentId, subscriber);
-          } else {
-            // Not a live PTY session: replay what is left, as before.
-            sendRawScrollback();
-            if (subscribeToAgent(msg.agentId, cb)) subs?.set(msg.agentId, cb);
-          }
+          clientWants.get(ws)?.add(msg.agentId);
+          if (clientSubs.get(ws)?.has(msg.agentId)) break;
+          streamAgent(ws, msg.agentId);
           break;
         }
 
         case 'unsubscribe': {
+          clientWants.get(ws)?.delete(msg.agentId);
           const subs = clientSubs.get(ws);
           const cb = subs?.get(msg.agentId);
           if (cb) {
