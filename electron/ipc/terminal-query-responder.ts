@@ -23,9 +23,6 @@ export const REMOTE_SCROLLBACK_LINES = 10_000;
 // eslint-disable-next-line no-control-regex
 const CURSOR_POSITION_REPORT = /^\x1b\[\??\d+;\d+R$/;
 
-/** How the program asked for mouse reports: DECSET 1006 (SGR), 1016 (SGR pixels), or neither. */
-type MouseEncoding = 'default' | 'sgr' | 'sgr-pixels';
-
 /** Answers a PTY's cursor-position queries from the main process. */
 export interface TerminalQueryResponder {
   /** Parse process output; a cursor-position query in it is answered through `reply`. */
@@ -48,7 +45,7 @@ export interface TerminalQueryResponder {
   setScrollback(lines: number): void;
   /**
    * What the renderer's xterm sends for `lines` wheel turns over a 1-based cell,
-   * negative scrolling up. Null when the program is not reading the wheel.
+   * negative scrolling up. Null when the program is not reading SGR wheel reports.
    */
   wheelReport(lines: number, col: number, row: number): string | null;
   dispose(): void;
@@ -78,12 +75,13 @@ export function createTerminalQueryResponder(opts: {
   let muted = 0;
   let disposed = false;
   let pendingWrites = 0;
-  // xterm keeps the report encoding private, so follow the same modes it does.
-  let mouseEncoding: MouseEncoding = 'default';
+  // xterm keeps the report encoding private, so follow the same modes it does:
+  // 1006 selects SGR reports, 1016 SGR pixel reports, and resetting either the default.
+  let sgrReports = false;
   const trackMouseEncoding = (params: (number | number[])[], set: boolean) => {
     for (const param of params) {
-      if (param === 1006) mouseEncoding = set ? 'sgr' : 'default';
-      else if (param === 1016) mouseEncoding = set ? 'sgr-pixels' : 'default';
+      if (param === 1006) sgrReports = set;
+      else if (param === 1016) sgrReports = false;
     }
     return false;
   };
@@ -94,7 +92,7 @@ export function createTerminalQueryResponder(opts: {
     trackMouseEncoding(params, false),
   );
   term.parser.registerEscHandler({ final: 'c' }, () => {
-    mouseEncoding = 'default';
+    sgrReports = false;
     return false;
   });
 
@@ -145,19 +143,13 @@ export function createTerminalQueryResponder(opts: {
     },
     wheelReport(lines, col, row) {
       const tracking = term.modes.mouseTrackingMode;
-      // X10 tracking reports presses only; pixel reports need the renderer's cell size.
-      if (disposed || !lines || tracking === 'none' || tracking === 'x10') return null;
-      if (mouseEncoding === 'sgr-pixels') return null;
-      const button = lines < 0 ? 64 : 65;
+      // X10 tracking reports presses only. The renderer sends other encodings as
+      // binary events the desktop pane never forwards, so the wheel does nothing there.
+      if (disposed || !lines || !sgrReports || tracking === 'none' || tracking === 'x10')
+        return null;
       const x = Math.min(term.cols, Math.max(1, col));
       const y = Math.min(term.rows, Math.max(1, row));
-      let report = `\x1b[<${button};${x};${y}M`;
-      if (mouseEncoding === 'default') {
-        // Each value is one byte offset by 32, so cells past 223 cannot be reported.
-        if (x > 223 || y > 223) return null;
-        report = `\x1b[M${String.fromCharCode(button + 32, x + 32, y + 32)}`;
-      }
-      return report.repeat(Math.abs(lines));
+      return `\x1b[<${lines < 0 ? 64 : 65};${x};${y}M`.repeat(Math.abs(lines));
     },
     dispose() {
       if (disposed) return;
