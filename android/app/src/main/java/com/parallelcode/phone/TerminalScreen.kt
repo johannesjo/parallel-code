@@ -22,6 +22,13 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
     var bracketedPaste = false
         private set
 
+    /**
+     * A full-screen program (Claude Code's fullscreen mode, vim) holds the alternate screen. It
+     * keeps its history to itself, so the phone scrolls it by sending it the mouse wheel.
+     */
+    val alternateScreen: Boolean
+        get() = savedMainGrid != null
+
     private class Line(cols: Int, style: Long) {
         val chars = CharArray(cols) { ' ' }
         val styles = LongArray(cols) { style }
@@ -129,10 +136,11 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
 
     /**
      * History then screen, each line split into style runs, without trailing blank lines. Built
-     * for every output frame, so the history is shared from a snapshot rather than copied.
+     * for every output frame, so the history is shared from a snapshot rather than copied. The
+     * alternate screen shows alone, as in xterm: the history above it is the shell's, not the program's.
      */
     fun styledLines(): List<List<StyledSpan>> {
-        val past = history.snapshot()
+        val past = if (alternateScreen) emptyList() else history.snapshot()
         val screen = grid.map(::spans)
         var count = past.size + screen.size
         fun line(i: Int) = if (i < past.size) past[i] else screen[i - past.size]

@@ -104,6 +104,9 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -111,6 +114,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -144,6 +148,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.Animatable
@@ -965,6 +970,7 @@ fun AgentScreen(
     val version by buffer.version.collectAsState()
     // Recomposition is batched per frame, so a burst of output renders the text once.
     val lines = remember(version) { buffer.screen.styledLines() }
+    val fullScreen = remember(version) { buffer.screen.alternateScreen }
     var tab by rememberSaveable { mutableStateOf(AgentTab.TERMINAL) }
     var closing by remember { mutableStateOf(false) }
     var merging by remember { mutableStateOf(false) }
@@ -1160,6 +1166,11 @@ fun AgentScreen(
                                 fitToView = sizeTerminal,
                                 onViewSize = { cols, rows -> viewSize = cols to rows },
                                 onZoomedChange = onZoomedChange,
+                                onWheel = if (fullScreen && state.canControl) {
+                                    { wheelLines: Int -> client.scrollTerminal(agentId, wheelLines) }
+                                } else {
+                                    null
+                                },
                                 // Keeps an agent's prompt clear of the Next task pill below it.
                                 bottomInset = if (nextNeedingYou != null) 44.dp else 0.dp,
                             )
@@ -1340,6 +1351,8 @@ private fun TerminalText(
     fitToView: Boolean,
     onViewSize: (cols: Int, rows: Int) -> Unit,
     onZoomedChange: (Boolean) -> Unit = {},
+    /** Takes the drag the terminal cannot follow, as mouse-wheel lines for a full-screen agent. */
+    onWheel: ((lines: Int) -> Unit)? = null,
     /** Room kept under the newest line for a pill floating over the terminal's bottom. */
     bottomInset: Dp = 0.dp,
 ) {
@@ -1362,6 +1375,8 @@ private fun TerminalText(
     val currentOnZoomedChange by rememberUpdatedState(onZoomedChange)
     LaunchedEffect(zoomed) { currentOnZoomedChange(zoomed) }
     DisposableEffect(Unit) { onDispose { currentOnZoomedChange(false) } }
+    val wheel = remember { AgentWheel() }
+    SideEffect { wheel.onWheel = onWheel }
 
     // Follow output only while parked at the bottom, decided where each scroll ends. Deciding at
     // the start instead kept follow on for a scroll that began at the bottom (the usual case), so
@@ -1389,6 +1404,7 @@ private fun TerminalText(
             .fillMaxSize()
             .background(Color(palette.background))
             .clipToBounds()
+            .nestedScroll(wheel)
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -1437,6 +1453,7 @@ private fun TerminalText(
         val autoFont = (10f * textWidthPx / (cols.coerceAtLeast(1) * charPxAt10)).coerceIn(8f, 14f).sp
         val phoneFont = TERMINAL_FONT
         val fontSize = if (fitToView) phoneFont else autoFont
+        SideEffect { wheel.linePx = with(density) { (fontSize * 1.27f).toPx() } }
 
         val viewPaddingPx = with(density) { 16.dp.roundToPx() }
         val viewHeightPx = constraints.maxHeight
@@ -1555,6 +1572,34 @@ private fun TerminalText(
                 }
             }
         }
+    }
+}
+
+/**
+ * Turns the drag a full-screen agent's terminal cannot follow into mouse-wheel lines for the agent,
+ * as scrolling over the desktop pane does: the agent keeps its transcript out of the history.
+ */
+internal class AgentWheel : NestedScrollConnection {
+    var onWheel: ((lines: Int) -> Unit)? = null
+    var linePx = 0f
+    private var pending = 0f
+
+    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+        val turn = onWheel
+        if (turn == null || source != NestedScrollSource.UserInput || linePx <= 0f) return Offset.Zero
+        // Dragging down reveals what came before, so the wheel turns up (negative lines).
+        pending -= available.y
+        val lines = (pending / linePx).toInt()
+        if (lines != 0) {
+            pending -= lines * linePx
+            turn(lines)
+        }
+        return Offset(0f, available.y)
+    }
+
+    override suspend fun onPreFling(available: Velocity): Velocity {
+        pending = 0f
+        return Velocity.Zero
     }
 }
 

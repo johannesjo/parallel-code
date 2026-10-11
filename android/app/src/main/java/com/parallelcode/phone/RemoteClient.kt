@@ -606,6 +606,25 @@ class RemoteClient(
         terminalBuffers[agentId]?.resize(cols, rows)
     }
 
+    /**
+     * Turn the mouse wheel over an agent's full-screen TUI, as scrolling over the desktop pane
+     * does: the TUI keeps its transcript out of the terminal history. Negative [lines] scroll up.
+     * Needs pairing; the server closes a view-only socket that tries. Agents scroll their
+     * transcript wherever the wheel turns, so it turns over the middle of the screen.
+     */
+    fun scrollTerminal(agentId: String, lines: Int) {
+        val screen = terminalBuffers[agentId]?.screen ?: return
+        if (lines == 0 || !_state.value.canControl) return
+        send(
+            JSONObject()
+                .put("type", "scroll")
+                .put("agentId", agentId)
+                .put("lines", lines.coerceIn(-MAX_SCROLL_LINES, MAX_SCROLL_LINES))
+                .put("col", screen.cols / 2 + 1)
+                .put("row", screen.rows / 2 + 1),
+        )
+    }
+
     /** Stream an agent's terminal. Retained for backwards compatibility. */
     fun watchTerminal(agentId: String, listener: TerminalListener): () -> Unit {
         getTerminalBuffer(agentId)
@@ -883,6 +902,8 @@ class RemoteClient(
         // The server drops a socket message past 64 KiB; leave room for the envelope.
         const val MAX_CHAT_MESSAGE_LENGTH = 60_000
         const val MAX_INPUT_LENGTH = 4096
+        // The server's MAX_SCROLL_LINES: wheel turns in one scroll message.
+        const val MAX_SCROLL_LINES = 100
         const val PREFIX_KEY_DELAY_MS = 50L
     }
 }

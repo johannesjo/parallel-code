@@ -1,6 +1,7 @@
 package com.parallelcode.phone
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -69,6 +70,16 @@ class TerminalScreenTest {
     fun restoresTheMainScreenAfterAFullScreenProgram() {
         val s = screen(data = "shell\u001b[?1049hvim stuff\u001b[?1049l")
         assertEquals("shell", s.text())
+    }
+
+    @Test
+    fun showsAFullScreenProgramWithoutTheShellHistoryBehindIt() {
+        val s = screen(rows = 2, data = "1\r\n2\r\n3\u001b[?1049h\u001b[Hclaude")
+        assertTrue(s.alternateScreen)
+        assertEquals("claude", s.text())
+        s.feed("\u001b[?1049l".toByteArray())
+        assertFalse(s.alternateScreen)
+        assertEquals("1\n2\n3", s.text())
     }
 
     @Test
