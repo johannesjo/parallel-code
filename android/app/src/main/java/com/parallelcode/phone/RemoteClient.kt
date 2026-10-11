@@ -140,6 +140,8 @@ class RemoteClient(
     private var handshakeJob: Job? = null
     private val terminalBuffers = mutableMapOf<String, TerminalBuffer>()
     private val subscribedAgents = mutableSetOf<String>()
+    /** Screens showing each agent's terminal; it streams until the last one lets go. */
+    private val terminalWatchers = mutableMapOf<String, Int>()
     private val chats = mutableMapOf<String, MutableStateFlow<ChatState?>>()
     private val chatWatchers = mutableMapOf<String, Int>()
     /** The agent whose PTY takes this phone's terminal size, and that size (see [setViewSize]). */
@@ -539,16 +541,29 @@ class RemoteClient(
     /**
      * Stream an agent's terminal while it is on screen. Only viewed terminals stream: opening one
      * starts from the desktop's rendered snapshot, so nothing needs buffering in the background.
-     * Pair with [releaseTerminal].
+     * Pair each call with [releaseTerminal]: two screens can show one terminal at once (a task
+     * reopened while its last screen still animates out, the pager taking over from a lone task),
+     * and the screen leaving last must not drop the buffer the other one is drawing.
      */
     fun getTerminalBuffer(agentId: String): TerminalBuffer {
+        terminalWatchers[agentId] = (terminalWatchers[agentId] ?: 0) + 1
+        return streamTerminal(agentId)
+    }
+
+    private fun streamTerminal(agentId: String): TerminalBuffer {
         val buffer = terminalBuffers.getOrPut(agentId) { TerminalBuffer(agentId) }
         subscribeAgent(agentId)
         return buffer
     }
 
-    /** Stop streaming a terminal that left the screen. */
+    /** Stop streaming a terminal once no screen shows it. */
     fun releaseTerminal(agentId: String) {
+        val watchers = (terminalWatchers[agentId] ?: 0) - 1
+        if (watchers > 0) {
+            terminalWatchers[agentId] = watchers
+            return
+        }
+        terminalWatchers.remove(agentId)
         terminalBuffers.remove(agentId)
         if (subscribedAgents.remove(agentId) && socketOpen) {
             send(JSONObject().put("type", "unsubscribe").put("agentId", agentId))
@@ -627,7 +642,7 @@ class RemoteClient(
 
     /** Stream an agent's terminal. Retained for backwards compatibility. */
     fun watchTerminal(agentId: String, listener: TerminalListener): () -> Unit {
-        getTerminalBuffer(agentId)
+        streamTerminal(agentId)
         val listeners = terminalListeners.getOrPut(agentId) { mutableSetOf() }
         listeners.add(listener)
         return {
@@ -810,7 +825,7 @@ class RemoteClient(
                     list.map { if (it.agentId == msg.agentId) it.copy(running = msg.running, exitCode = msg.exitCode) else it }
                 }
                 if (msg.running) {
-                    getTerminalBuffer(msg.agentId)
+                    streamTerminal(msg.agentId)
                 }
             }
             is ServerMessage.Scrollback -> {
