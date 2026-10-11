@@ -64,7 +64,7 @@ class SettingsStore(private val prefs: SharedPreferences) {
         get() = prefs.getBoolean(KEY_FIT_TERMINAL, false)
         set(value) = prefs.edit { putBoolean(KEY_FIT_TERMINAL, value) }
 
-    /** Replies offered above the reply box, one per line. */
+    /** Replies offered with the reply box (above it in chats, behind a button in terminals), one per line. */
     var quickReplies: List<String>
         get() = (prefs.getString(KEY_QUICK_REPLIES, null) ?: DEFAULT_QUICK_REPLIES.joinToString("\n"))
             .lines().map { it.trim() }.filter { it.isNotEmpty() }

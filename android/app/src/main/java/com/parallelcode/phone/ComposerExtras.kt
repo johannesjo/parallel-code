@@ -63,7 +63,8 @@ fun QuickReplies(replies: List<String>, enabled: Boolean, onPick: (String) -> Un
 
 /**
  * The same saved replies behind one button, for a reply box with no row to spare: tapping the
- * button lists them, and picking one hands it to [onPick]. Hidden when there are none.
+ * button lists them, and picking one hands it to [onPick]. Hidden when there are none. [modifier]
+ * applies to the button itself.
  */
 @Composable
 fun QuickRepliesButton(
@@ -89,6 +90,8 @@ fun QuickRepliesButton(
                 DropdownMenuItem(
                     text = { Text(reply, maxLines = 2, overflow = TextOverflow.Ellipsis) },
                     onClick = {
+                        // The closing menu still takes taps while it animates out: pick only once.
+                        if (!open) return@DropdownMenuItem
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         open = false
                         onPick(reply)

@@ -1076,7 +1076,7 @@ private fun QuickRepliesEditor(replies: List<String>, onChange: (List<String>) -
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            "Shown above the reply box in built-in chats and behind the star button in terminals; tap one to add it to your message. One per line.",
+            "Shown above the reply box in built-in chats and behind the star button in terminals. One per line.",
             style = MaterialTheme.typography.bodyMedium,
             color = AppTheme.extra.textMuted,
         )

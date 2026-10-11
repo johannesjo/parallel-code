@@ -1833,8 +1833,14 @@ private fun ReplyBox(
                         enabled = !busy,
                         modifier = Modifier.fillMaxHeight(),
                     ) {
-                        // Sent straight away, a reply goes to the agent even while the draft is a shell command.
-                        if (sendQuickReplies) run { send(it, false) } else setDraft(appendToDraft(draft, it))
+                        // A quick reply is for the agent, sent straight away or not: one that starts the
+                        // draft leaves shell mode, so Send cannot run it as a shell command.
+                        if (sendQuickReplies) {
+                            run { send(it, false) }
+                        } else {
+                            if (draft.isBlank()) shellMode = false
+                            setDraft(appendToDraft(draft, it))
+                        }
                     }
                     if (promptHistory != null) {
                         OutlinedButton(
