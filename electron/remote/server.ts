@@ -13,6 +13,7 @@ import {
   writeToAgent,
   resizeAgent,
   setAgentRemoteSize,
+  scrollAgent,
   killAgent,
   subscribeToAgent,
   subscribeToAgentRendered,
@@ -2185,9 +2186,13 @@ export function startRemoteServer(opts: {
         ws.close(4003, 'Pairing required');
         return;
       }
-      // A viewing phone may size the terminal once paired: it changes what the
-      // desktop pane shows, and typing already needs the same trust.
-      if (msg.type === 'view-size' && tokenType !== 'coordinator' && tokenType !== 'paired') {
+      // A viewing phone may size or scroll the terminal once paired: both change
+      // what the desktop pane shows, and typing already needs the same trust.
+      if (
+        (msg.type === 'view-size' || msg.type === 'scroll') &&
+        tokenType !== 'coordinator' &&
+        tokenType !== 'paired'
+      ) {
         ws.close(4003, 'Pairing required');
         return;
       }
@@ -2322,6 +2327,10 @@ export function startRemoteServer(opts: {
           }
           break;
         }
+
+        case 'scroll':
+          scrollAgent(msg.agentId, msg.lines, msg.col, msg.row);
+          break;
 
         case 'kill':
           try {

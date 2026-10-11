@@ -111,6 +111,7 @@ import {
   setAgentRemoteSize,
   setRemoteHistory,
   resolveProjectDockerfile,
+  scrollAgent,
   spawnAgent,
   setAgentHookRuntime,
   subscribeToAgent,
@@ -1256,6 +1257,26 @@ describe('peer prompt delivery', () => {
       }
     },
   );
+
+  it('scrolls a TUI that reads the wheel without holding back peer prompts', async () => {
+    const { args, proc } = await launch();
+    scrollAgent(args.agentId, -2, 10, 5);
+    expect(proc.write).not.toHaveBeenCalled();
+    proc.emitData('\x1b[?1049h\x1b[?1000;1006h');
+    await vi.waitFor(() => expect(getAgentPromptSnapshot(args.agentId)).not.toBeNull());
+    scrollAgent(args.agentId, -2, 10, 5);
+    expect(proc.write.mock.calls).toEqual([['\x1b[<64;10;5M\x1b[<64;10;5M']]);
+    const delivery = writeAgentPrompt(args.agentId, 'peer', () => {});
+    // A report inside the peer's paste would be typed into the composer.
+    scrollAgent(args.agentId, 1, 10, 5);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await delivery).toBe(true);
+    expect(proc.write.mock.calls.slice(1)).toEqual([
+      ['\x1b[I'],
+      ['\x1b[200~peer\x1b[201~'],
+      ['\r'],
+    ]);
+  });
 
   it('defers to recent raw input for five seconds', async () => {
     const { args, proc } = await launch();

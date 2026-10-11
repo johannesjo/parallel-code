@@ -15,6 +15,7 @@ vi.mock('../ipc/pty.js', () => ({
   writeToAgent: vi.fn(),
   resizeAgent: vi.fn(),
   setAgentRemoteSize: vi.fn(),
+  scrollAgent: vi.fn(),
   killAgent: vi.fn(),
   subscribeToAgent: vi.fn(),
   subscribeToAgentRendered: vi.fn(() => null),
@@ -185,6 +186,14 @@ describe('mobile token over WebSocket', () => {
     expect(pty.setAgentRemoteSize).not.toHaveBeenCalled();
   });
 
+  it('rejects scroll with 4003 and sends nothing to the PTY', async () => {
+    const ws = await connectAndAuth(mobileToken);
+    const closed = waitForClose(ws);
+    ws.send(JSON.stringify({ type: 'scroll', agentId: 'agent-1', lines: -3, col: 10, row: 5 }));
+    expect(await closed).toBe(4003);
+    expect(pty.scrollAgent).not.toHaveBeenCalled();
+  });
+
   it('rejects kill with 4003 and does not kill the agent', async () => {
     const ws = await connectAndAuth(mobileToken);
     const closed = waitForClose(ws);
@@ -250,6 +259,15 @@ describe('paired phone view size', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(pty.setAgentRemoteSize).toHaveBeenCalledTimes(1);
     owner.close();
+  });
+});
+
+describe('paired phone scroll', () => {
+  it('turns the wheel over the agent screen', async () => {
+    const ws = await connectAndAuth(await pair());
+    ws.send(JSON.stringify({ type: 'scroll', agentId: 'agent-1', lines: -3, col: 10, row: 5 }));
+    await vi.waitFor(() => expect(pty.scrollAgent).toHaveBeenCalledWith('agent-1', -3, 10, 5));
+    ws.close();
   });
 });
 

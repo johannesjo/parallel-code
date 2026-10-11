@@ -280,6 +280,14 @@ function request(msg: Record<string, unknown>): Promise<void> {
   });
 }
 
+/**
+ * Turn the mouse wheel over a full-screen agent UI, which keeps its transcript
+ * out of the terminal history. Needs a paired phone; the server closes others.
+ */
+export function scrollAgent(agentId: string, lines: number, col: number, row: number): void {
+  if (canControl()) send({ type: 'scroll', agentId, lines, col, row });
+}
+
 export function subscribeAgent(agentId: string): void {
   send({ type: 'subscribe', agentId });
 }

@@ -3,7 +3,7 @@ import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { AgentDetail } from './AgentDetail';
 import { fetchMergeReadiness, fetchNotes, fetchTaskDiff, mergeTask, closeTask } from './api';
-import { agents, sendInput } from './ws';
+import { agents, scrollAgent, sendInput } from './ws';
 import type { RemoteAgent } from '../../electron/remote/protocol';
 
 const terminalMocks = vi.hoisted(() => ({
@@ -11,6 +11,8 @@ const terminalMocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   options: { fontSize: 14 },
   scrollback: undefined as ((data: string, cols: number, rows: number) => void) | undefined,
+  bufferType: 'normal' as 'normal' | 'alternate',
+  element: undefined as HTMLElement | undefined,
 }));
 
 vi.mock('@xterm/xterm', () => ({
@@ -19,7 +21,20 @@ vi.mock('@xterm/xterm', () => ({
     rows = 24;
     modes = { bracketedPasteMode: true };
     options = terminalMocks.options;
-    buffer = { active: { length: 0, viewportY: 0, baseY: 0, getLine: () => undefined } };
+    buffer = {
+      active: {
+        get type() {
+          return terminalMocks.bufferType;
+        },
+        length: 0,
+        viewportY: 0,
+        baseY: 0,
+        getLine: () => undefined,
+      },
+    };
+    get element() {
+      return terminalMocks.element;
+    }
     open() {}
     refresh(start: number, end: number) {
       terminalMocks.refresh(start, end);
@@ -62,6 +77,7 @@ vi.mock('./ws', () => ({
   subscribeAgent: vi.fn(),
   unsubscribeAgent: vi.fn(),
   sendInput: vi.fn(),
+  scrollAgent: vi.fn(),
   onOutput: () => () => {},
   onScrollback: (_id: string, callback: (data: string, cols: number, rows: number) => void) => {
     terminalMocks.scrollback = callback;
@@ -112,6 +128,8 @@ beforeEach(() => {
       },
     ]);
   terminalMocks.options.fontSize = 14;
+  terminalMocks.bufferType = 'normal';
+  terminalMocks.element = undefined;
   localStorage.clear();
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
   host = document.createElement('div');
@@ -714,6 +732,29 @@ describe('phone terminal viewport', () => {
     const move = touch(scroller, 'touchmove', 100, 260);
     expect(terminalMocks.scrollLines).toHaveBeenCalledWith(-3);
     expect(move.defaultPrevented).toBe(true);
+    expect(sendInput).not.toHaveBeenCalled();
+  });
+
+  it('scrolls a full-screen agent UI by turning the wheel over the cell under the finger', () => {
+    const element = document.createElement('div');
+    const screen = document.createElement('div');
+    screen.className = 'xterm-screen';
+    element.append(screen);
+    // 80x24 cells of 10px, starting 100px down the page.
+    vi.spyOn(screen, 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 100, width: 800, height: 240 }),
+    );
+    terminalMocks.element = element;
+    terminalMocks.bufferType = 'alternate';
+    mount();
+    const { scroller } = viewport(300);
+    touch(scroller, 'touchstart', 100, 200);
+    touch(scroller, 'touchmove', 100, 260);
+    expect(scrollAgent).toHaveBeenCalledWith('a1', -3, 11, 17);
+    // Past the grid, the nearest edge cell still gets the wheel.
+    touch(scroller, 'touchmove', 900, 1100);
+    expect(scrollAgent).toHaveBeenLastCalledWith('a1', expect.any(Number), 80, 24);
+    expect(terminalMocks.scrollLines).not.toHaveBeenCalled();
     expect(sendInput).not.toHaveBeenCalled();
   });
 

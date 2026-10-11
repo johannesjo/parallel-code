@@ -191,6 +191,22 @@ export interface ViewSizeCommand {
   rows?: number;
 }
 
+/** Wheel turns in one scroll message, so each stays a small terminal write. */
+export const MAX_SCROLL_LINES = 100;
+
+/**
+ * A paired phone's swipe over a full-screen TUI, sent on as mouse-wheel turns
+ * so the agent scrolls its own transcript. Negative lines scroll up; col and
+ * row are the 1-based cell under the finger.
+ */
+export interface ScrollCommand {
+  type: 'scroll';
+  agentId: string;
+  lines: number;
+  col: number;
+  row: number;
+}
+
 export interface KillCommand {
   type: 'kill';
   agentId: string;
@@ -230,6 +246,7 @@ export type ClientMessage =
   | InputCommand
   | ResizeCommand
   | ViewSizeCommand
+  | ScrollCommand
   | KillCommand
   | SubscribeCommand
   | UnsubscribeCommand
@@ -287,6 +304,22 @@ export function parseClientMessage(raw: string): ClientMessage | null {
         if (!isTerminalDimension(msg.cols) || !isTerminalDimension(msg.rows)) return null;
         return { type: 'view-size', agentId: msg.agentId, cols: msg.cols, rows: msg.rows };
       }
+      case 'scroll':
+        if (
+          typeof msg.lines !== 'number' ||
+          !Number.isInteger(msg.lines) ||
+          msg.lines === 0 ||
+          Math.abs(msg.lines) > MAX_SCROLL_LINES
+        )
+          return null;
+        if (!isTerminalDimension(msg.col) || !isTerminalDimension(msg.row)) return null;
+        return {
+          type: 'scroll',
+          agentId: msg.agentId,
+          lines: msg.lines,
+          col: msg.col,
+          row: msg.row,
+        };
       case 'kill':
         return { type: 'kill', agentId: msg.agentId };
       case 'subscribe':

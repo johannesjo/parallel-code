@@ -94,6 +94,30 @@ describe('createTerminalQueryResponder', () => {
     responder.dispose();
   });
 
+  it('reports wheel turns only while the program reads them, in the encoding it asked for', async () => {
+    const { responder } = setup();
+    expect(responder.wheelReport(-1, 10, 5)).toBeNull();
+    // Serializing waits for everything fed so far to be parsed.
+    responder.feed('\x1b[?1049h\x1b[?1000;1006h');
+    await responder.serialize();
+    expect(responder.wheelReport(-2, 10, 5)).toBe('\x1b[<64;10;5M\x1b[<64;10;5M');
+    expect(responder.wheelReport(1, 500, 0)).toBe('\x1b[<65;80;1M');
+    responder.feed('\x1b[?1006l');
+    await responder.serialize();
+    expect(responder.wheelReport(1, 10, 5)).toBe('\x1b[Ma*%');
+    responder.feed('\x1b[?1016h');
+    await responder.serialize();
+    expect(responder.wheelReport(1, 10, 5)).toBeNull();
+    responder.feed('\x1bc\x1b[?1002h');
+    await responder.serialize();
+    expect(responder.wheelReport(-1, 1, 1)).toBe('\x1b[M`!!');
+    responder.feed('\x1b[?1002l\x1b[?9h');
+    await responder.serialize();
+    expect(responder.wheelReport(-1, 1, 1)).toBeNull();
+    responder.dispose();
+    expect(responder.wheelReport(-1, 1, 1)).toBeNull();
+  });
+
   it('stops answering once disposed', async () => {
     const { responder, replies } = setup();
     responder.dispose();

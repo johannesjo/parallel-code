@@ -899,6 +899,20 @@ export function writeToAgent(agentId: string, data: string): void {
   writeSessionInput(session, data);
 }
 
+/**
+ * Turn the mouse wheel over the agent's screen, as the desktop pane does. A
+ * full-screen TUI keeps its transcript out of the terminal's history, so this
+ * is the only way a phone can scroll it. Does nothing unless the TUI reads the wheel.
+ */
+export function scrollAgent(agentId: string, lines: number, col: number, row: number): void {
+  const session = sessions.get(agentId);
+  // Inside a peer prompt's paste, a report would be typed into the composer.
+  if (!session || session.peerInputQueue || handingOff.has(agentId)) return;
+  const report = session.queries.wheelReport(lines, col, row);
+  // Not through writeSessionInput: a scroll is not a draft that holds back peer prompts.
+  if (report) session.proc.write(report);
+}
+
 function writeSessionInput(session: PtySession, data: string): void {
   const userActivity = hasTerminalUserActivity(data);
   if (userActivity) session.lastInputAt = Date.now();

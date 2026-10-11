@@ -85,3 +85,28 @@ describe('parseClientMessage view-size', () => {
     }
   });
 });
+
+describe('parseClientMessage scroll', () => {
+  it('accepts wheel lines over a cell', () => {
+    expect(
+      parseClientMessage(
+        JSON.stringify({ type: 'scroll', agentId: 'a', lines: -3, col: 10, row: 5 }),
+      ),
+    ).toEqual({ type: 'scroll', agentId: 'a', lines: -3, col: 10, row: 5 });
+  });
+
+  it('rejects empty, fractional, oversized, or off-screen scrolls', () => {
+    for (const scroll of [
+      { lines: 0, col: 1, row: 1 },
+      { lines: 1.5, col: 1, row: 1 },
+      { lines: -101, col: 1, row: 1 },
+      { lines: '1', col: 1, row: 1 },
+      { lines: 1, col: 0, row: 1 },
+      { lines: 1, col: 1 },
+    ]) {
+      expect(
+        parseClientMessage(JSON.stringify({ type: 'scroll', agentId: 'a', ...scroll })),
+      ).toBeNull();
+    }
+  });
+});

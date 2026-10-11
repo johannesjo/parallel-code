@@ -10,11 +10,13 @@ import { readLocal, writeLocal } from './storage';
 import { messageForTerminal } from './terminalText';
 import { TaskHeader } from './TaskHeader';
 import { needsYou } from './attention';
+import { MAX_SCROLL_LINES } from '../../electron/remote/protocol';
 import {
   subscribeAgent,
   unsubscribeAgent,
   onOutput,
   onScrollback,
+  scrollAgent,
   sendInput,
   agents,
   status,
@@ -208,7 +210,23 @@ export function AgentDetail(props: AgentDetailProps) {
     let touchY = 0;
     let touchId: number | undefined;
     let historyPixels = 0;
-    const scrollTerminal = (dx: number, dy: number) => {
+    // A full-screen agent UI keeps its transcript out of the terminal history:
+    // turn the wheel over the cell under the finger, as the desktop pane does.
+    const scrollFullScreen = (lines: number, x: number, y: number) => {
+      if (!term) return;
+      const rect = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
+      const cell = (offset: number, size: number | undefined, cells: number) =>
+        size
+          ? Math.min(cells, Math.max(1, Math.floor((offset / size) * cells) + 1))
+          : Math.ceil(cells / 2);
+      scrollAgent(
+        props.agentId,
+        Math.max(-MAX_SCROLL_LINES, Math.min(MAX_SCROLL_LINES, lines)),
+        cell(x - (rect?.left ?? 0), rect?.width, term.cols),
+        cell(y - (rect?.top ?? 0), rect?.height, term.rows),
+      );
+    };
+    const scrollTerminal = (dx: number, dy: number, x: number, y: number) => {
       if (!term || !terminalScroller) return;
       terminalScroller.scrollLeft += dx;
       const previousTop = terminalScroller.scrollTop;
@@ -220,7 +238,8 @@ export function AgentDetail(props: AgentDetailProps) {
         historyPixels += dy - (terminalScroller.scrollTop - previousTop);
         const lines = Math.trunc(historyPixels / terminalLineHeight);
         if (lines) {
-          term.scrollLines(lines);
+          if (term.buffer.active.type === 'alternate') scrollFullScreen(lines, x, y);
+          else term.scrollLines(lines);
           historyPixels -= lines * terminalLineHeight;
         }
       }
@@ -249,7 +268,7 @@ export function AgentDetail(props: AgentDetailProps) {
         return;
       }
       e.preventDefault();
-      scrollTerminal(touchX - touch.clientX, touchY - touch.clientY);
+      scrollTerminal(touchX - touch.clientX, touchY - touch.clientY, touch.clientX, touch.clientY);
       touchX = touch.clientX;
       touchY = touch.clientY;
     };
@@ -268,7 +287,7 @@ export function AgentDetail(props: AgentDetailProps) {
           : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
             ? (terminalScroller?.clientHeight ?? terminalLineHeight)
             : 1;
-      scrollTerminal(e.deltaX * scale, e.deltaY * scale);
+      scrollTerminal(e.deltaX * scale, e.deltaY * scale, e.clientX, e.clientY);
     };
     terminalScroller.addEventListener('touchstart', touchStart, { passive: true });
     terminalScroller.addEventListener('touchmove', touchMove, { passive: false });
