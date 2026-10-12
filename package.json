@@ -2,6 +2,7 @@
   "name": "parallel-code",
   "version": "5.1.0",
   "description": "",
+  "desktopName": "parallel-code.desktop",
   "author": {
     "name": "Johannes Millan",
     "email": "contact@super-productivity.com"
@@ -178,6 +179,7 @@
         "rpm"
       ],
       "category": "Development",
+      "syncDesktopName": true,
       "desktop": {
         "entry": {
           "StartupWMClass": "parallel-code",
