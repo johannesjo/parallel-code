@@ -192,11 +192,14 @@ function redraw(term: Terminal): void {
   }
 }
 
-export function redrawTerminal(id: string): void {
-  const entry = entries.get(id);
-  if (entry) redraw(entry.term);
-}
-
+/**
+ * Repaint every terminal. There is deliberately no single-terminal variant:
+ * xterm shares one glyph atlas between all WebGL terminals with the same font
+ * and theme, and clearing it only resets the calling terminal's render model.
+ * The others keep pointing at atlas cells that are then refilled with other
+ * glyphs, which garbles them (issue #121). The repaints are deferred to the
+ * next frame, so every model is cleared before any glyph is drawn again.
+ */
 export function redrawAllTerminals(): void {
   for (const [, entry] of entries) redraw(entry.term);
 }

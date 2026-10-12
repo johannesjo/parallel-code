@@ -46,7 +46,7 @@ import {
   registerTerminal,
   unregisterTerminal,
   markDirty,
-  redrawTerminal,
+  redrawAllTerminals,
 } from '../lib/terminalFitManager';
 import { dataTransferToShellArgs, escapePath } from '../lib/terminalDrop';
 import { cleanCopiedTerminalText } from '../lib/copy-text';
@@ -1146,7 +1146,8 @@ export function TerminalView(props: TerminalViewProps) {
     // on macOS it is repainted instead (issue #121): a WebGL surface throttled
     // while backgrounded can come back with a corrupt glyph atlas, and a
     // hidden pane never fires terminalFitManager's IntersectionObserver.
-    // Linux never showed the corruption, so it skips that repaint.
+    // The repaint covers every terminal because the atlas it rebuilds is
+    // shared. Linux never showed the corruption, so it skips that repaint.
     let prevOnScreen: boolean | undefined;
     createEffect(() => {
       const onScreen = paneOnScreen();
@@ -1159,7 +1160,7 @@ export function TerminalView(props: TerminalViewProps) {
           // loadAddon → setRenderer already repaints this pane in full.
           attachWebgl();
         } else if (isMac && prevOnScreen === false) {
-          redrawTerminal(agentId);
+          redrawAllTerminals();
         }
       } else if (webglDetachTimer === undefined) {
         webglDetachTimer = window.setTimeout(() => {

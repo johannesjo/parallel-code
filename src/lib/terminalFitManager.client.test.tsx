@@ -185,3 +185,35 @@ describe('deferred resizes', () => {
     expect(addon.fit).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('repainting terminals', () => {
+  it('resets every terminal, since they share one glyph atlas', () => {
+    const terms = ['repaint-a', 'repaint-b', 'repaint-c'].map((id) => {
+      const term = {
+        rows: 24,
+        buffer: { active: { viewportY: 0, baseY: 0 } },
+        clearTextureAtlas: vi.fn(),
+        refresh: vi.fn(),
+      };
+      manager.registerTerminal(
+        id,
+        document.createElement('div'),
+        { fit() {} } as unknown as FitAddon,
+        term as unknown as Terminal,
+      );
+      return { id, term };
+    });
+    // A terminal torn down mid-repaint must not stop the others.
+    terms[1].term.clearTextureAtlas.mockImplementation(() => {
+      throw new Error('disposed');
+    });
+
+    manager.redrawAllTerminals();
+
+    for (const { id, term } of terms) {
+      expect(term.clearTextureAtlas).toHaveBeenCalledTimes(1);
+      if (id !== 'repaint-b') expect(term.refresh).toHaveBeenCalledWith(0, 23);
+      manager.unregisterTerminal(id);
+    }
+  });
+});
