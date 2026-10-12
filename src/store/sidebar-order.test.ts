@@ -13,6 +13,7 @@ type MockStore = {
   taskOrder: string[];
   collapsedTaskOrder: string[];
   projects: Array<{ id: string; tasksCollapsed?: boolean }>;
+  terminals?: Record<string, unknown>;
 };
 
 const core = vi.hoisted(() => ({
@@ -35,7 +36,12 @@ import {
   computeSidebarDraggableTaskOrder,
   computeGroupedTasks,
   computeSidebarTaskOrder,
+  computeTileOrder,
+  computeVisibleTaskOrder,
+  computeVisualReorder,
   getCoordinatorChildren,
+  groupInsertIndex,
+  taskVisualGroupKey,
 } from './sidebar-order';
 
 beforeEach(() => {
@@ -123,5 +129,143 @@ describe('project filtering', () => {
     mockStore.taskOrder = ['a'];
     mockStore.taskProjectFilter = 'removed';
     expect(computeSidebarTaskOrder()).toEqual(['a']);
+  });
+});
+
+describe('visual tile order', () => {
+  it('groups tasks by project, then taskOrder within a project', () => {
+    mockStore.projects = [{ id: 'one' }, { id: 'two' }];
+    mockStore.tasks = {
+      a: { projectId: 'one' },
+      b: { projectId: 'two' },
+      c: { projectId: 'one' },
+    };
+    mockStore.taskOrder = ['c', 'a', 'b'];
+
+    expect(computeVisibleTaskOrder()).toEqual(['c', 'a', 'b']);
+  });
+
+  it('nests coordinated children directly under their coordinator', () => {
+    mockStore.projects = [{ id: 'one' }];
+    mockStore.tasks = {
+      coord: { projectId: 'one', coordinatorMode: true },
+      child: { projectId: 'one', coordinatedBy: 'coord' },
+      other: { projectId: 'one' },
+    };
+    mockStore.taskOrder = ['coord', 'other', 'child'];
+
+    expect(computeVisibleTaskOrder()).toEqual(['coord', 'child', 'other']);
+  });
+
+  it('puts orphaned tasks after every project group', () => {
+    mockStore.projects = [{ id: 'one' }];
+    mockStore.tasks = { a: { projectId: 'one' }, orphan: {} };
+    mockStore.taskOrder = ['orphan', 'a'];
+
+    expect(computeVisibleTaskOrder()).toEqual(['a', 'orphan']);
+  });
+
+  it('terminates terminal tiles after task tiles, keeping their order', () => {
+    mockStore.projects = [{ id: 'one' }];
+    mockStore.tasks = { a: { projectId: 'one' } };
+    mockStore.taskOrder = ['term-1', 'a', 'term-2'];
+    mockStore.terminals = { 'term-1': {}, 'term-2': {} };
+
+    expect(computeTileOrder()).toEqual(['a', 'term-1', 'term-2']);
+  });
+
+  it('keeps tasks of a collapsed project group in the tile order', () => {
+    mockStore.projects = [{ id: 'one', tasksCollapsed: true }];
+    mockStore.tasks = { a: { projectId: 'one' } };
+    mockStore.taskOrder = ['a'];
+
+    expect(computeVisibleTaskOrder()).toEqual(['a']);
+  });
+});
+
+describe('visual reorder', () => {
+  it('keeps a moved block inside its own project group', () => {
+    mockStore.projects = [{ id: 'one' }, { id: 'two' }];
+    mockStore.tasks = {
+      a: { projectId: 'one' },
+      b: { projectId: 'two' },
+      c: { projectId: 'one' },
+    };
+    mockStore.taskOrder = ['a', 'b', 'c'];
+    const order = ['a', 'c', 'b'];
+
+    // A drop at the very end lands past another group: ignored.
+    expect(computeVisualReorder(order, 'a', 2)).toBeNull();
+    expect(computeVisualReorder(order, 'c', 2)).toBeNull();
+    // Within group: move a to the end of its own group (before b, group two).
+    expect(computeVisualReorder(order, 'a', 1)).toEqual(['b', 'c', 'a']);
+    // Move c to the start of group one.
+    expect(computeVisualReorder(order, 'c', 0)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('returns null for cross-group drops without mutating', () => {
+    mockStore.projects = [{ id: 'one' }, { id: 'two' }];
+    mockStore.tasks = {
+      a: { projectId: 'one' },
+      b: { projectId: 'two' },
+    };
+    mockStore.taskOrder = ['a', 'b'];
+
+    expect(computeVisualReorder(['a', 'b'], 'a', 1)).toBeNull();
+    expect(computeVisualReorder(['a', 'b'], 'b', 0)).toBeNull();
+  });
+
+  it('moves a coordinator together with its active children', () => {
+    mockStore.projects = [{ id: 'one' }];
+    mockStore.tasks = {
+      coord: { projectId: 'one', coordinatorMode: true },
+      child: { projectId: 'one', coordinatedBy: 'coord' },
+      other: { projectId: 'one' },
+    };
+    mockStore.taskOrder = ['other', 'coord', 'child'];
+
+    const next = computeVisualReorder(['other', 'coord', 'child'], 'coord', 0);
+    expect(next).toEqual(['coord', 'child', 'other']);
+  });
+
+  it('keeps terminals grouped after tasks when reordering', () => {
+    mockStore.projects = [{ id: 'one' }];
+    mockStore.tasks = { a: { projectId: 'one' } };
+    mockStore.taskOrder = ['a', 'term-1', 'term-2'];
+    mockStore.terminals = { 'term-1': {}, 'term-2': {} };
+
+    expect(computeVisualReorder(['a', 'term-1', 'term-2'], 'term-1', 2)).toEqual([
+      'a',
+      'term-2',
+      'term-1',
+    ]);
+    expect(computeVisualReorder(['a', 'term-1', 'term-2'], 'a', 2)).toBeNull();
+  });
+});
+
+describe('group helpers', () => {
+  it('taskVisualGroupKey separates tasks, orphans and terminals', () => {
+    mockStore.projects = [{ id: 'one' }];
+    mockStore.tasks = { a: { projectId: 'one' }, orphan: {} };
+    mockStore.terminals = { term: {} };
+
+    expect(taskVisualGroupKey('a')).toBe('one');
+    expect(taskVisualGroupKey('orphan')).toBe('__orphan__');
+    expect(taskVisualGroupKey('term')).toBeNull();
+  });
+
+  it('groupInsertIndex anchors a block to its group', () => {
+    mockStore.projects = [{ id: 'one' }, { id: 'two' }];
+    mockStore.tasks = {
+      a: { projectId: 'one' },
+      b: { projectId: 'two' },
+      c: { projectId: 'one' },
+    };
+    mockStore.taskOrder = ['a', 'b', 'c'];
+
+    expect(groupInsertIndex(mockStore.taskOrder, ['c'], 'end')).toBe(1);
+    expect(groupInsertIndex(mockStore.taskOrder, ['c'], 'start')).toBe(0);
+    expect(groupInsertIndex(mockStore.taskOrder, ['b'], 'start')).toBe(2);
+    expect(groupInsertIndex(mockStore.taskOrder, ['b'], 'end')).toBe(2);
   });
 });

@@ -36,7 +36,7 @@ vi.mock('./core', async () => {
 vi.mock('./focus', () => ({}));
 vi.mock('./notification', () => ({ showNotification: vi.fn() }));
 vi.mock('./projects', () => ({ pickAndAddProject: vi.fn() }));
-vi.mock('./tasks', () => ({ reorderTask: vi.fn() }));
+vi.mock('./tasks', () => ({ reorderTaskInTileOrder: vi.fn() }));
 // DOM focus is exercised in navigation.client.test.tsx; here, where there is no
 // document, only whether focus is requested is observed. The gates stay real.
 vi.mock('./focused-panel', async (importOriginal) => ({
@@ -47,7 +47,7 @@ vi.mock('./focused-panel', async (importOriginal) => ({
 
 import { activateTaskFromPointer, jumpToTask, moveActiveTask, setActiveTask } from './navigation';
 import { isPanelFocused, scheduleTaskFocus } from './focused-panel';
-import { reorderTask } from './tasks';
+import { reorderTaskInTileOrder } from './tasks';
 
 beforeEach(() => {
   const harness = expectDefined(core.harness, 'mock store harness');
@@ -79,11 +79,11 @@ afterEach(() => {
 
 describe('moveActiveTask', () => {
   it.each([
-    ['right', 'task-1', 0, 2],
-    ['left', 'task-3', 2, 0],
+    ['right', 'task-1', 'task-1', 1],
+    ['left', 'task-3', 'task-3', 0],
   ] as const)(
     'moves %s past tasks hidden by the project filter',
-    (direction, activeId, from, to) => {
+    (direction, activeId, movedId, target) => {
       mockStore.projects = [{ id: 'a' }, { id: 'b' }];
       mockStore.taskProjectFilter = 'a';
       mockStore.tasks['task-1'].projectId = 'a';
@@ -91,7 +91,7 @@ describe('moveActiveTask', () => {
       mockStore.tasks['task-3'].projectId = 'a';
       mockStore.activeTaskId = activeId;
       moveActiveTask(direction);
-      expect(reorderTask).toHaveBeenCalledWith(from, to);
+      expect(reorderTaskInTileOrder).toHaveBeenCalledWith(movedId, target);
     },
   );
 
@@ -101,7 +101,7 @@ describe('moveActiveTask', () => {
 
     moveActiveTask('right');
 
-    expect(reorderTask).not.toHaveBeenCalled();
+    expect(reorderTaskInTileOrder).not.toHaveBeenCalled();
   });
 });
 

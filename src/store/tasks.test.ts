@@ -119,17 +119,21 @@ vi.mock('./completion', () => ({
 }));
 vi.mock('../lib/log', () => ({ warn: vi.fn() }));
 vi.mock('../lib/clean-task-name', () => ({ cleanTaskName: vi.fn() }));
-vi.mock('./sidebar-order', () => ({
-  getCoordinatorChildren: vi.fn(),
-  computeSidebarDraggableTaskOrder: vi.fn(() =>
-    mockTaskOrder.filter((taskId) => {
-      const projectId = mockTasks[taskId]?.projectId;
-      return !mockProjects.some(
-        (project) => project.id === projectId && project.tasksCollapsed === true,
-      );
-    }),
-  ),
-}));
+vi.mock('./sidebar-order', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./sidebar-order')>();
+  return {
+    ...actual,
+    getCoordinatorChildren: vi.fn(),
+    computeSidebarDraggableTaskOrder: vi.fn(() =>
+      mockTaskOrder.filter((taskId) => {
+        const projectId = mockTasks[taskId]?.projectId;
+        return !mockProjects.some(
+          (project) => project.id === projectId && project.tasksCollapsed === true,
+        );
+      }),
+    ),
+  };
+});
 vi.mock('../lib/github-url', () => ({
   parseGitHubUrl: vi.fn(),
   taskNameFromGitHubUrl: vi.fn(),

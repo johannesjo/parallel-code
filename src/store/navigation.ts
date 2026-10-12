@@ -12,9 +12,10 @@ import {
 } from './focused-panel';
 import { showNotification } from './notification';
 import { isPlannableProject, pickAndAddProject } from './projects';
-import { matchProject, reorderTask } from './tasks';
+import { matchProject, reorderTask, reorderTaskInTileOrder } from './tasks';
 import { closeProjectPages } from './project-pages';
 import { restoreFailedDraft } from './task-creation';
+import { computeTileOrder } from './sidebar-order';
 
 const AI_TERMINAL_PREFIX = 'ai-terminal:';
 
@@ -36,7 +37,7 @@ function selectedAgentIdForTask(task: {
 
 /** Visible tile order; the single document workspace follows coding tasks. */
 export function openPanelOrder(): string[] {
-  const taskOrder = store.taskOrder.filter(matchesTaskProjectFilter);
+  const taskOrder = computeTileOrder();
   return store.activeDocumentProjectId
     ? [...taskOrder, documentAgentTaskId(store.activeDocumentProjectId)]
     : taskOrder;
@@ -117,14 +118,15 @@ export function setActiveAgent(agentId: string): void {
 
 export function moveActiveTask(direction: 'left' | 'right'): void {
   if (store.newTaskPanelFocused) return;
-  const { taskOrder, activeTaskId } = store;
-  if (!activeTaskId || taskOrder.length < 2) return;
-  const visibleOrder = taskOrder.filter(matchesTaskProjectFilter);
+  const { activeTaskId } = store;
+  if (!activeTaskId) return;
+  const visibleOrder = computeTileOrder();
+  if (visibleOrder.length < 2) return;
   const idx = visibleOrder.indexOf(activeTaskId);
   if (idx === -1) return;
   const target = direction === 'left' ? idx - 1 : idx + 1;
   if (target < 0 || target >= visibleOrder.length) return;
-  reorderTask(taskOrder.indexOf(activeTaskId), taskOrder.indexOf(visibleOrder[target]));
+  reorderTaskInTileOrder(activeTaskId, target);
   // Re-focus the moved task and scroll it into view (DOM node move loses focus)
   setTaskFocusedPanel(activeTaskId, getTaskFocusedPanel(activeTaskId));
 }

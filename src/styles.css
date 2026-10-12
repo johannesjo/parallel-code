@@ -189,6 +189,21 @@ body.font-smoothing {
   box-sizing: border-box;
 }
 
+/* Project identity frame on each tile's title bar: a thin, low-saturation
+   outline echoes the column's left rail, so a task's project is readable
+   across the strip at a glance. Stronger when the tile is active, but it stays
+   a frame and never competes with the accent or status colours reserved for
+   urgency. */
+.task-title-bar {
+  outline: 1px solid color-mix(in srgb, var(--task-project-color, transparent) 28%, transparent);
+  outline-offset: -1px;
+}
+
+.task-title-bar[data-active='true'] {
+  outline-width: 2px;
+  outline-color: color-mix(in srgb, var(--task-project-color, transparent) 58%, transparent);
+}
+
 .task-title-bar > .editable-text {
   grid-column: 2;
   font-size: inherit;

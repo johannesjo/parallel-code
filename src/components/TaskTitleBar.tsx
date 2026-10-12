@@ -2,7 +2,8 @@ import { For, Show, createSignal, onCleanup, onMount } from 'solid-js';
 import { Dynamic, Portal } from 'solid-js/web';
 import {
   store,
-  reorderTask,
+  getProject,
+  reorderTaskInTileOrder,
   activateTaskFromPointer,
   updateTaskName,
   getTaskDotStatus,
@@ -28,6 +29,8 @@ import {
 import { taskScreens } from '../store/task-screens';
 import { withViewTransition } from '../lib/viewTransition';
 import { handleDragReorder } from '../lib/dragReorder';
+import { computeTileOrder } from '../store/sidebar-order';
+import { getTaskDockerBadgeLabel } from '../lib/docker';
 import { displayTaskNameFromPrompt, shouldUsePromptDerivedTaskName } from '../lib/clean-task-name';
 import type { Task } from '../store/types';
 import { isLandedTaskState } from '../store/landing';
@@ -132,11 +135,14 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
   function handleTitleMouseDown(e: MouseEvent) {
     handleDragReorder(e, {
       itemId: props.task.id,
-      getTaskOrder: () => store.taskOrder,
-      onReorder: reorderTask,
+      getTaskOrder: () => computeTileOrder(),
+      onReorder: (_fromIdx, toIdx) => reorderTaskInTileOrder(props.task.id, toIdx),
       onTap: () => activateTaskFromPointer(props.task.id),
     });
   }
+
+  // No project colour (orphan task) → no frame; the column border still frames it.
+  const projectColor = () => getProject(props.task.projectId)?.color;
 
   return (
     <div
@@ -145,6 +151,7 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
       data-active={props.isActive}
       // A push in progress or just done stays visible in every column.
       data-actions-pinned={props.pushing || props.pushSuccess}
+      style={{ '--task-project-color': projectColor() }}
       onMouseDown={handleTitleMouseDown}
     >
       <TaskStatusGlyph taskId={props.task.id} />

@@ -4,7 +4,7 @@ import {
   closeTerminal,
   updateTerminalName,
   activateTaskFromPointer,
-  reorderTask,
+  reorderTaskInTileOrder,
   registerFocusFn,
   unregisterFocusFn,
   setTaskFocusedPanel,
@@ -18,6 +18,7 @@ import { TerminalView } from './TerminalView';
 import { CloseIcon } from './icons';
 import { theme } from '../lib/theme';
 import { handleDragReorder } from '../lib/dragReorder';
+import { computeTileOrder } from '../store/sidebar-order';
 import type { Terminal } from '../store/types';
 import { isTaskColumnHighlighted, scheduleTaskFocus } from '../store/focused-panel';
 
@@ -51,8 +52,8 @@ export function TerminalPanel(props: TerminalPanelProps) {
   function handleTitleMouseDown(e: MouseEvent) {
     handleDragReorder(e, {
       itemId: props.terminal.id,
-      getTaskOrder: () => store.taskOrder,
-      onReorder: reorderTask,
+      getTaskOrder: () => computeTileOrder(),
+      onReorder: (_fromIdx, toIdx) => reorderTaskInTileOrder(props.terminal.id, toIdx),
       onTap: () => activateTaskFromPointer(props.terminal.id),
     });
   }
