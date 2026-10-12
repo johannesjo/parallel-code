@@ -74,7 +74,7 @@ export function getDotTooltip(
   if (attention === 'active') return 'Active — agent is working';
   if (attention === 'shell_busy') return 'Terminal busy — no agent working';
   if (attention === 'needs_input') return 'Waiting for input';
-  if (attention === 'error') return 'Error — agent exited with an error';
+  if (attention === 'error') return 'Error — an agent exited or its turn failed';
   // Without this, a review-flagged task whose agent is still active falls
   // through to the dot-status map and reads "Busy" under a purple dot.
   if (attention === 'review') return 'Ready for review';

@@ -86,11 +86,31 @@ describe('live agent activity observations', () => {
       detail: 'Provider unavailable',
       freshness: 'current',
     });
-    observeAgentHook(event({ state: 'done', event: 'Notification', at: 200 }));
+    // The idle reminder says nothing new about a failed turn.
+    expect(
+      observeAgentHook(event({ state: 'done', event: 'Notification', at: 200 })),
+    ).toBeUndefined();
     expect(getAgentActivityEvidence(agentId, 201)).toMatchObject({
-      activity: 'ready',
-      since: 200,
+      activity: 'turn_finished',
+      event: 'StopFailure',
+      since: 100,
       detail: 'Provider unavailable',
+    });
+  });
+
+  it('turns a finished turn into readiness on the idle reminder', () => {
+    registerAgentLaunch(agentId, taskId, launchId);
+    observeAgentHook(event({ state: 'done', event: 'Stop', at: 100 }));
+    observeAgentHook(event({ state: 'done', event: 'Notification', at: 200 }));
+    expect(getAgentActivityEvidence(agentId, 201)).toMatchObject({ activity: 'ready', since: 200 });
+  });
+
+  it('keeps an unanswered wait current however long it lasts', () => {
+    registerAgentLaunch(agentId, taskId, launchId);
+    observeAgentHook(event({ state: 'waiting', event: 'PermissionRequest', prompt: 'permission' }));
+    expect(getAgentActivityEvidence(agentId, 100 + AGENT_HOOK_STALE_MS)).toMatchObject({
+      activity: 'waiting',
+      freshness: 'current',
     });
   });
 

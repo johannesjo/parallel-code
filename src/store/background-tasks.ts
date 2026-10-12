@@ -59,7 +59,7 @@ interface AgentActivity {
   /** Facts derived from the hook status or, once it is gone, from output heuristics. */
   activity: string;
   hooked: boolean;
-  /** When the working/waiting claim was reported; only such claims expire. */
+  /** When the working claim was reported; only such claims expire. */
   claimAt?: number;
 }
 
@@ -87,7 +87,7 @@ function agentActivity(agentId: string, questions: readonly TaskOpenQuestion[]):
       hookMarker(hook),
     ]),
     hooked: hook !== null,
-    claimAt: hook && hook.state !== 'done' ? hook.updatedAt : undefined,
+    claimAt: hook?.state === 'working' ? hook.updatedAt : undefined,
   };
 }
 

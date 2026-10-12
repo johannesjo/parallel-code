@@ -111,6 +111,7 @@ import {
   clearAgentActivity,
 } from './taskStatus';
 import {
+  AGENT_HOOK_STALE_MS,
   applyAgentActivityObservation,
   applyAgentHookEvent,
   getAgentHookStatus,
@@ -1692,6 +1693,33 @@ describe('hook-reported agent status', () => {
     hook('agent-1', 'done', 'Stop');
     markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
 
+    expect(getTaskAttentionState('task-1')).toBe('needs_input');
+    expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-1');
+  });
+
+  it('reports a failed turn as an error until the next turn starts', () => {
+    hook('agent-1', 'working');
+    hook('agent-1', 'done', 'StopFailure');
+    expect(getTaskAttentionState('task-1')).toBe('error');
+    expect(taskNeedsAttention('task-1')).toBe(true);
+
+    // Claude's idle reminder must not quietly clear the failure.
+    vi.advanceTimersByTime(60_000);
+    hook('agent-1', 'done', 'Notification');
+    expect(getTaskAttentionState('task-1')).toBe('error');
+
+    hook('agent-1', 'working');
+    expect(getTaskAttentionState('task-1')).toBe('active');
+  });
+
+  it('does not report an error for a turn that finished normally', () => {
+    hook('agent-1', 'done', 'Stop');
+    expect(getTaskAttentionState('task-1')).toBe('idle');
+  });
+
+  it('keeps needs_input for a prompt left unanswered past the stale window', () => {
+    hook('agent-1', 'waiting', 'PermissionRequest');
+    vi.advanceTimersByTime(AGENT_HOOK_STALE_MS * 2);
     expect(getTaskAttentionState('task-1')).toBe('needs_input');
     expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-1');
   });

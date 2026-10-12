@@ -244,6 +244,33 @@ describe('agentHookStatus', () => {
     expect(getAgentHookStatus('a2')?.state).toBe('done');
   });
 
+  it('keeps an unanswered prompt however long it waits', () => {
+    applyAgentHookEvent(event({ agentId: 'a1', state: 'working' }));
+    applyAgentHookEvent(
+      event({
+        agentId: 'a1',
+        state: 'waiting',
+        event: 'PermissionRequest',
+        prompt: 'permission',
+        at: Date.now() + 1_000,
+      }),
+    );
+    vi.advanceTimersByTime(AGENT_HOOK_STALE_MS * 4);
+    expect(getAgentHookStatus('a1')).toMatchObject({ state: 'waiting', prompt: 'permission' });
+    expect(getTaskAgentHookStatus('t1')?.state).toBe('waiting');
+  });
+
+  it('keeps a restored wait whose observation is older than the stale window', () => {
+    const old = observation({
+      state: 'waiting',
+      event: 'PermissionRequest',
+      prompt: 'permission',
+      at: Date.now() - AGENT_HOOK_STALE_MS * 2,
+    });
+    applyAgentActivitySnapshot({ sequence: old.sequence, observations: [old] });
+    expect(getAgentHookStatus('a1')?.state).toBe('waiting');
+  });
+
   it('infers an interrupt from a bare Esc that no hook event follows', () => {
     applyAgentHookEvent(event({ state: 'working' }));
     noteAgentTerminalInput('a1', '\x1b');

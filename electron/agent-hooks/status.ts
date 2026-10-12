@@ -241,6 +241,10 @@ export function transitionAgentHookStatus(
     previous.toolUseId !== event.toolUseId
   )
     return previous;
+  // Claude's idle reminder re-reports a finished turn. After a failed turn it
+  // says nothing new, and the failure must stay visible until a new turn starts.
+  if (previous?.event === 'StopFailure' && event.state === 'done' && event.event === 'Notification')
+    return previous;
   const sameState = previous?.state === event.state;
   const finished = (name: string) => name === 'Stop' || name === 'StopFailure';
   const sameActivity =
@@ -278,8 +282,9 @@ export function activityEvidenceFromHook(
     since: status.since,
     prompt: status.prompt,
     detail: status.detail,
+    // A waiting agent is silent until answered, so only `working` goes stale.
     freshness:
-      status.state !== 'done' && now - status.updatedAt >= AGENT_HOOK_STALE_MS
+      status.state === 'working' && now - status.updatedAt >= AGENT_HOOK_STALE_MS
         ? 'stale'
         : 'current',
   };

@@ -1033,12 +1033,15 @@ export function getReadyLabel(taskId: string): string {
   return 'Ready';
 }
 
+/** An agent exited with an error, or a running one reported that its turn
+ *  failed (API error, rate limit) and stopped working with its process still up. */
 function hasTaskAgentError(taskId: string): boolean {
   const task = store.tasks[taskId];
   if (!task) return false;
   return task.agentIds.some((id) => {
     const agent = store.agents[id];
     if (agent && isAgentChat(task, id)) return !!agent.chatState?.error;
+    if (agent?.status === 'running') return getAgentHookStatus(id)?.event === 'StopFailure';
     if (agent?.status !== 'exited') return false;
     return agent.exitCode !== 0 || agent.signal !== null;
   });

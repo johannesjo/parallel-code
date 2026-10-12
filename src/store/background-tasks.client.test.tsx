@@ -257,17 +257,27 @@ it('returns for a new turn after an idle re-report', () => {
   expect(isTaskBackgrounded('one')).toBe(false);
 });
 
-it.each([
-  ['waiting', 'PermissionRequest'],
-  ['working', 'UserPromptSubmit'],
-] as const)('stays in the back when a %s hook claim goes stale', (state, event) => {
-  hook(state, event);
+it('stays in the back when a working hook claim goes stale', () => {
+  hook('working', 'UserPromptSubmit');
   sendTaskToBack('one');
   vi.advanceTimersByTime(AGENT_HOOK_STALE_MS);
   expect(getAgentHookStatus('one-agent')).toBeNull();
   expect(isTaskBackgrounded('one')).toBe(true);
 
   // Expiry re-baselines the task; later activity still wakes it.
+  hook('waiting', 'PermissionRequest');
+  expect(isTaskBackgrounded('one')).toBe(false);
+});
+
+it('stays in the back while a sent-back wait goes unanswered', () => {
+  hook('waiting', 'PermissionRequest');
+  sendTaskToBack('one');
+  vi.advanceTimersByTime(AGENT_HOOK_STALE_MS * 2);
+  expect(getAgentHookStatus('one-agent')?.state).toBe('waiting');
+  expect(isTaskBackgrounded('one')).toBe(true);
+
+  // A new ask still wakes it.
+  vi.advanceTimersByTime(1_000);
   hook('waiting', 'PermissionRequest');
   expect(isTaskBackgrounded('one')).toBe(false);
 });

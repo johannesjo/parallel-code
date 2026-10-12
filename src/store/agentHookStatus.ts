@@ -46,7 +46,7 @@ export interface TaskAgentHookStatus extends AgentHookStatus {
   agentId: string;
 }
 
-/** A `working`/`waiting` claim this old has lost its hook stream; heuristics take over. */
+/** A `working` claim this old has lost its hook stream; heuristics take over. */
 export { AGENT_HOOK_STALE_MS };
 /** Esc/Ctrl-C only counts as an interrupt if no hook event follows within this window. */
 const INTERRUPT_SETTLE_MS = 500;
@@ -96,8 +96,11 @@ function clearTimer(timers: Map<string, ReturnType<typeof setTimeout>>, agentId:
 function setStatus(agentId: string, status: AgentHookStatus): void {
   updateStatuses((next) => next.set(agentId, status));
   clearTimer(staleTimers, agentId);
-  // `done` is a terminal fact and stays put; only an ongoing claim can go stale.
-  if (status.state === 'done') return;
+  // Only `working` can go stale: a working agent keeps firing hooks, so long
+  // silence means the stream was lost. A waiting agent is silent by design
+  // until someone answers, and an unanswered prompt matters most after a long
+  // absence. `done` is a terminal fact and stays put.
+  if (status.state !== 'working') return;
   const remaining = status.updatedAt + AGENT_HOOK_STALE_MS - Date.now();
   if (remaining <= 0) {
     updateStatuses((next) => next.delete(agentId));
