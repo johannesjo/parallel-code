@@ -23,6 +23,23 @@ const askOptions = (overrides: Partial<AskOptions> = {}): AskOptions => ({
   ...overrides,
 });
 
+/** A killed orphan lingers as a zombie where init does not reap it, as in
+ *  some containers, and signal 0 still reaches a zombie. */
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  try {
+    // "pid (comm) state …"; comm may itself contain parentheses.
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return stat.charAt(stat.lastIndexOf(')') + 2) !== 'Z';
+  } catch {
+    return true; // No procfs (macOS); signal 0 is all there is.
+  }
+}
+
 const chats: ClaudeChat[] = [];
 let settingsDir: string;
 beforeEach(() => {
@@ -639,9 +656,9 @@ describe('Claude chat adapter', () => {
     await h.chat.runShell('(sleep 30 & echo $! > job.pid); echo started');
     await vi.waitFor(() => expect(h.chat.state.items[0].activity?.status).toBe('completed'));
     const pid = Number(readFileSync(join(cwd, 'job.pid'), 'utf8'));
-    expect(() => process.kill(pid, 0)).not.toThrow();
+    expect(isRunning(pid)).toBe(true);
     h.chat.stop();
-    await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow());
+    await vi.waitFor(() => expect(isRunning(pid)).toBe(false));
   });
 
   it('refuses a ! command while Claude is answering', async () => {
