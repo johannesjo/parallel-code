@@ -91,7 +91,7 @@ When you're happy with the result, merge the branch back to main from the sideba
 - **Canvas per task** — a Markdown file from the worktree rendered live as the agent writes it; edit it in place, or select a passage and send it to the agent with your question
 - **Browser preview in the canvas** — run a local app in the task shell, open **+ → Browser**, and pick elements to reference in your prompt ([usage and limits](docs/browser-preview.md))
 - **PR CI status watcher** — desktop notification when GitHub checks settle
-- **Super Productivity integration** — the task you focus is tracked in Super Productivity (a matching task is created there on first focus, in the Super Productivity project you link in project settings), titles stay in sync, and merging or closing a task marks it done there. A task Super Productivity is already tracking that isn't a Parallel Code task is never replaced — a banner offers to switch instead. Connect in Settings with the token from Super Productivity's Local REST API (Settings → Misc; the API must stay turned on). With Super Productivity's bundled **Parallel Code** plugin enabled, **Start in Parallel Code** on a task opens a pre-filled New Task form here; that link needs the macOS app or the `.deb` (an AppImage only handles it if it was integrated into your desktop).
+- **Super Productivity integration** — the task you focus is tracked in Super Productivity (a matching task is created there on first focus, in the Super Productivity project you link in project settings), titles stay in sync, and merging or closing a task marks it done there. A task Super Productivity is already tracking that isn't a Parallel Code task is never replaced — a banner offers to switch instead. Connect in Settings with the token from Super Productivity's Local REST API (Settings → Misc; the API must stay turned on). With Super Productivity's bundled **Parallel Code** plugin enabled, **Start in Parallel Code** on a task opens a pre-filled New Task form here; that link needs the macOS app or the `.deb`/`.rpm` (an AppImage only handles it if it was integrated into your desktop).
 - Shell terminals per task, scoped to the worktree
 - **Direct mode** for working on the main branch without isolation, plus support for **folders without a git repo**
 - **Existing worktree import** — bring already-created worktrees into Parallel Code
@@ -120,7 +120,7 @@ When you're happy with the result, merge the branch back to main from the sideba
 
 1. **Download** the latest release for your platform from the [releases page](https://github.com/johannesjo/parallel-code/releases/latest):
    - **macOS** — `.dmg` (universal)
-   - **Linux** — `.AppImage` or `.deb`
+   - **Linux** — `.AppImage`, `.deb` (Debian/Ubuntu: `sudo dpkg -i file.deb`) or `.rpm` (Fedora: `sudo dnf install file.rpm`; openSUSE: `sudo zypper install file.rpm`)
 
 2. **Install at least one AI coding CLI:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Antigravity CLI](https://antigravity.google/), or [Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli)
 
