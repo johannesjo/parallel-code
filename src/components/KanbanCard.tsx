@@ -98,8 +98,10 @@ function activityLine(task: Task): { text: string; since?: number } {
   }
   const said = firstLine(hook?.lastAssistantMessage);
   if (said) return { text: said, since: hook?.since };
-  const asked = firstLine(task.lastPrompt);
-  return { text: asked ? `› ${asked}` : '', since: hook?.since };
+  // Nothing reported yet: name the agent rather than echo the prompt, which
+  // starts with the card's own title.
+  const agent = task.agentIds.map((id) => store.agents[id]?.def?.name).find(Boolean);
+  return { text: agent ?? '', since: hook?.since };
 }
 
 function openTask(task: Task): void {
@@ -154,7 +156,7 @@ function TaskRow(props: { task: Task }) {
             openTask(props.task);
           }}
         >
-          {state() === 'needs_input' ? 'Answer' : props.task.name}
+          {state() === 'needs_input' ? 'Answer' : state() === 'error' ? 'Show' : 'Open'}
           <ExternalLinkIcon size={10} />
         </button>
       </div>
@@ -231,7 +233,8 @@ export function KanbanCardView(props: KanbanCardViewProps) {
         'drop-before': props.dropBefore,
         dragging: props.dragging,
         flash: props.flash,
-        urgent: state() === 'needs_input' || state() === 'error',
+        asking: state() === 'needs_input',
+        failed: state() === 'error',
         blocked: props.blockedBy.length > 0,
       }}
       data-card={props.dataRef}

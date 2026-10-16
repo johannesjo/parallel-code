@@ -122,8 +122,8 @@
   font-variant-numeric: tabular-nums;
 }
 .kanban .kanban-summary.urgent {
-  color: var(--error);
-  border-color: color-mix(in srgb, var(--error) 55%, var(--border));
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
   font-weight: 600;
 }
 /* A dialog's or form's primary action: full-strength text, not colour. */
@@ -451,7 +451,11 @@
   opacity: 0.4;
   transform: scale(0.98);
 }
-.kanban-card.urgent {
+/* Questions use the app's attention colour, failures its error colour. */
+.kanban-card.asking {
+  border-left-color: var(--warning);
+}
+.kanban-card.failed {
   border-left-color: var(--error);
 }
 .kanban-card.flash {
@@ -627,7 +631,9 @@
   background: var(--fg-muted);
   animation: kanban-breathe 1.4s ease-in-out infinite;
 }
-.state-needs_input .kanban-dot,
+.state-needs_input .kanban-dot {
+  background: var(--warning);
+}
 .state-error .kanban-dot {
   background: var(--error);
 }
@@ -647,7 +653,10 @@
   color: var(--fg-muted);
   white-space: nowrap;
 }
-.state-needs_input .kanban-task-state,
+.state-needs_input .kanban-task-state {
+  color: var(--warning);
+  font-weight: 600;
+}
 .state-error .kanban-task-state {
   color: var(--error);
   font-weight: 600;
@@ -658,15 +667,17 @@
 }
 .kanban .kanban-task-open {
   margin-left: auto;
-  min-width: 0;
-  max-width: 60%;
+  flex-shrink: 0;
   padding: 1px 6px;
   font-size: 12px;
   background: transparent;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.kanban .kanban-task-open.urgent {
+.state-needs_input .kanban-task-open.urgent {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+  font-weight: 600;
+}
+.state-error .kanban-task-open.urgent {
   color: var(--error);
   border-color: color-mix(in srgb, var(--error) 55%, var(--border));
   font-weight: 600;

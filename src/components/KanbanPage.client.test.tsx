@@ -170,15 +170,16 @@ describe('KanbanPage', () => {
       name: 'Build sync engine',
       projectId: 'p1',
       branchName: 'task/sync',
-      agentIds: [],
+      agentIds: ['a1'],
       lastPrompt: 'implement the engine',
     } as unknown as Task);
+    setStore('agents', 'a1', { def: { name: 'Claude Code' } } as never);
     vi.mocked(getTaskAttentionState).mockReturnValue('needs_input');
     await mount();
     const card = cardEl('Sync engine');
-    expect(card.classList.contains('urgent')).toBe(true);
+    expect(card.classList.contains('asking')).toBe(true);
     expect(card.textContent).toContain('Needs input');
-    expect(card.querySelector('.kanban-task-activity')?.textContent).toBe('› implement the engine');
+    expect(card.querySelector('.kanban-task-activity')?.textContent).toBe('Claude Code');
     expect(host.querySelector('.kanban-summary.urgent')?.textContent).toBe('1 need you');
     button('Answer').click();
     expect(jumpToWaitingTask).toHaveBeenCalledWith('t1', null);
