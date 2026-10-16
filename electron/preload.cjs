@@ -137,6 +137,8 @@ const ALLOWED_CHANNELS = new Set([
   'read_file_text',
   'read_file_tour_context',
   'save_tour_file',
+  'read_kanban_board',
+  'write_kanban_board',
   'list_thinking_tours',
   'resolve_clipboard_paste',
   'save_dropped_image',

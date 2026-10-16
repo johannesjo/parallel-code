@@ -3,8 +3,9 @@ import { TaskProjectFilter } from './TaskProjectFilter';
 import { createProjectFilterTransition } from '../lib/projectFilterTransition';
 import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
 import type { JSX } from 'solid-js';
-import { GitHubIcon } from './icons';
+import { GitHubIcon, KanbanIcon } from './icons';
 import { openGitHubIssues } from '../store/github';
+import { openKanban } from '../store/kanban';
 import { errMessage } from '../lib/log';
 import {
   store,
@@ -759,6 +760,37 @@ export function Sidebar() {
                         >
                           Folder not found
                         </span>
+                      </Show>
+                      <Show
+                        when={
+                          store.kanbanEnabled &&
+                          !isDocumentProject(project) &&
+                          !isProjectMissing(project.id)
+                        }
+                      >
+                        <button
+                          type="button"
+                          class="icon-btn"
+                          title={`Kanban board for ${project.name}`}
+                          aria-label={`Kanban board for ${project.name}`}
+                          aria-pressed={store.kanbanProjectId === project.id}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openKanban(store.kanbanProjectId === project.id ? null : project.id);
+                          }}
+                          style={{
+                            color:
+                              store.kanbanProjectId === project.id ? theme.accent : theme.fgMuted,
+                            display: 'flex',
+                            background: 'transparent',
+                            border: 'none',
+                            padding: '2px',
+                            'flex-shrink': '0',
+                          }}
+                        >
+                          <KanbanIcon size={14} />
+                        </button>
                       </Show>
                       <Show when={!isDocumentProject(project) && !isProjectMissing(project.id)}>
                         <button

@@ -130,6 +130,8 @@
   "ReadFileText": "read_file_text",
   "ReadFileTourContext": "read_file_tour_context",
   "SaveTourFile": "save_tour_file",
+  "ReadKanbanBoard": "read_kanban_board",
+  "WriteKanbanBoard": "write_kanban_board",
   "ListThinkingTours": "list_thinking_tours",
   "ResolveClipboardPaste": "resolve_clipboard_paste",
   "SaveDroppedImage": "save_dropped_image",

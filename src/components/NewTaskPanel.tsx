@@ -1,7 +1,8 @@
 import { taskProjectFilter } from '../store/task-project-filter';
 import { createCanvasTask, validateCanvasTaskSource } from '../store/canvas-tasks';
-import type { AppStore, SpNewTaskSource } from '../store/types';
+import type { AppStore, KanbanNewTaskSource, SpNewTaskSource } from '../store/types';
 import { linkNewTaskToSp } from '../store/superProductivityOpen';
+import { linkNewTaskToKanbanCard } from '../store/kanban';
 import { nameTaskWithModel } from '../store/model-task-name';
 import {
   createSignal,
@@ -390,6 +391,7 @@ function AgentAutomationOptions(props: {
 export function NewTaskPanel(props: NewTaskPanelProps) {
   const [canvasPrefill, setCanvasPrefill] = createSignal<AppStore['newTaskPrefillPrompt']>(null);
   const [spSource, setSpSource] = createSignal<SpNewTaskSource | null>(null);
+  const [kanbanSource, setKanbanSource] = createSignal<KanbanNewTaskSource | null>(null);
   const [prompt, setPrompt] = createSignal('');
   const [githubPickerOpen, setGithubPickerOpen] = createSignal(false);
   /** Open PR the task will check out instead of branching from the base branch. */
@@ -587,6 +589,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             // Pre-fill from an arena comparison or canvas branch.
             const prefill = store.newTaskPrefillPrompt;
             setSpSource(prefill?.superProductivity ?? null);
+            setKanbanSource(prefill?.kanban ?? null);
             if (prefill) {
               setPrompt(prefill.prompt);
               setName(prefill.name ?? 'Compare arena results');
@@ -1137,6 +1140,8 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
       }
       const source = spSource();
       if (source) linkNewTaskToSp(taskId, source, projectId);
+      const card = kanbanSource();
+      if (card) void linkNewTaskToKanbanCard(taskId, card, projectId);
       if (!manualName && p) void nameTaskWithModel(taskId, p);
       toggleNewTaskPanel(false);
     } catch (err) {

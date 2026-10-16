@@ -141,6 +141,14 @@ export interface Project {
 }
 
 /** A Super Productivity task the New Task form was opened from. */
+/** The Kanban card a new task was started from; see src/store/kanban.ts. */
+export interface KanbanNewTaskSource {
+  projectId: string;
+  title: string;
+  column: string;
+  ref: { column: number; card: number };
+}
+
 export interface SpNewTaskSource {
   taskId: string;
   title: string;
@@ -529,6 +537,7 @@ export interface PersistedState {
   darkThemeCustomId?: string | null;
   mcpOrchestrationEnabled?: boolean;
   documentWorkspacesEnabled?: boolean;
+  kanbanEnabled?: boolean;
   documentFullWidth?: boolean;
   coordinatorNotificationDelayMs?: number;
   coordinatorControlHintDismissed?: boolean;
@@ -665,12 +674,16 @@ export interface AppStore {
     githubPr?: import('../ipc/types').GitHubWorkItem;
     /** Set when the form was opened from a Super Productivity task. */
     superProductivity?: SpNewTaskSource;
+    /** Set when the form was opened from a Kanban card. */
+    kanban?: KanbanNewTaskSource;
   } | null;
   missingProjectIds: Record<string, true>;
   remoteAccess: RemoteAccess;
   /** Persisted: start the remote (Connect Phone) server automatically on launch. */
   autoStartRemoteAccess: boolean;
   githubIssuesProjectId: string | null;
+  /** Project whose Kanban board occupies the task area. */
+  kanbanProjectId: string | null;
   showArena: boolean;
   /** The thinking space: how it opens, or null when closed. */
   thinkingSpace: 'list' | 'new' | null;
@@ -691,6 +704,8 @@ export interface AppStore {
   darkThemeCustomId: string | null;
   mcpOrchestrationEnabled: boolean;
   documentWorkspacesEnabled: boolean;
+  /** Experimental: a Markdown Kanban board per project (KANBAN.md). */
+  kanbanEnabled: boolean;
   /** Let the rendered document take the whole column instead of a reading width. */
   documentFullWidth: boolean;
   /** Project whose document workspace is open in the task area. */

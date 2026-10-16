@@ -1,4 +1,5 @@
 import { GitHubIssuesPage } from './components/GitHubIssuesPage';
+import { KanbanPage } from './components/KanbanPage';
 import '@xterm/xterm/css/xterm.css';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
@@ -134,6 +135,15 @@ const ArenaOverlay = lazy(() =>
 );
 
 const MIN_WINDOW_DIMENSION = 100;
+
+/** Whether a project page (GitHub issues or the Kanban board) covers the task area. */
+function projectPageOpen(): boolean {
+  return store.projects.some(
+    (p) =>
+      p.id === store.githubIssuesProjectId ||
+      (store.kanbanEnabled && p.id === store.kanbanProjectId),
+  );
+}
 
 function DropOverlay() {
   return (
@@ -667,7 +677,7 @@ function App() {
     // A document workspace's hidden agent task can be the active one; it has
     // no worktree to close, merge or push and no panel a shell could show in.
     const listedTask = (id: string) =>
-      !store.githubIssuesProjectId && store.tasks[id] !== undefined && !isHiddenAgentTaskId(id);
+      !projectPageOpen() && store.tasks[id] !== undefined && !isHiddenAgentTaskId(id);
 
     const actionHandlers: Record<string, (e: KeyboardEvent) => void> = {
       'navigateRow:up': () => navigateRow('up'),
@@ -682,7 +692,7 @@ function App() {
         Array.from({ length: 9 }, (_, i) => [`jumpToTask:${i + 1}`, () => jumpToTask(i)]),
       ),
       closeShell: (e) => {
-        if (store.githubIssuesProjectId) return;
+        if (projectPageOpen()) return;
         // Auto-repeat would walk through adjacent terminals or canvas tabs.
         if (e.repeat) return;
         const target = resolvePanelCloseTarget(store);
@@ -692,7 +702,7 @@ function App() {
         else triggerAction(`${target.taskId}:close-canvas-active-tab`);
       },
       closeTask: () => {
-        if (store.githubIssuesProjectId) return;
+        if (projectPageOpen()) return;
         const id = store.activeTaskId;
         if (!id) return;
         if (store.terminals[id]) {
@@ -718,7 +728,7 @@ function App() {
         if (!e.repeat && id && listedTask(id)) triggerAction(`${id}:second-opinion`);
       },
       sendPrompt: () => {
-        if (!store.githubIssuesProjectId) sendActivePrompt();
+        if (!projectPageOpen()) sendActivePrompt();
       },
       createTerminal: (e) => {
         if (!e.repeat) createTerminal();
@@ -767,7 +777,7 @@ function App() {
         // toggleTaskFocusMode ignores a standalone terminal as the active item.
         // The new-task panel and GitHub page hide focus mode; leave it for
         // when they close rather than flipping it unseen.
-        if (store.focusMode && !store.showNewTaskPanel && !store.githubIssuesProjectId) {
+        if (store.focusMode && !store.showNewTaskPanel && !projectPageOpen()) {
           toggleFocusMode(false);
         }
       },
@@ -949,14 +959,13 @@ function App() {
           <div
             class="task-workspace"
             style={{
-              display: store.projects.some((p) => p.id === store.githubIssuesProjectId)
-                ? 'none'
-                : undefined,
+              display: projectPageOpen() ? 'none' : undefined,
             }}
           >
             <TilingLayout />
           </div>
           <GitHubIssuesPage />
+          <KanbanPage />
         </main>
         <UsageStatusBar />
         <HelpDialog open={store.showHelpDialog} onClose={() => toggleHelpDialog(false)} />

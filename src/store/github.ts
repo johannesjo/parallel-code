@@ -115,6 +115,7 @@ function stagePrompt(taskId: string, text: string): void {
 
 /** Browser state is separate from the task composer and survives task handoff. */
 export function openGitHubIssues(projectId: string | null): void {
+  if (projectId) setStore('kanbanProjectId', null);
   setStore('githubIssuesProjectId', projectId);
 }
 

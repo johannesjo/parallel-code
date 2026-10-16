@@ -309,6 +309,11 @@ export function setDocumentWorkspacesEnabled(enabled: boolean): void {
   if (!enabled) setStore('activeDocumentProjectId', null);
 }
 
+export function setKanbanEnabled(enabled: boolean): void {
+  setStore('kanbanEnabled', enabled);
+  if (!enabled) setStore('kanbanProjectId', null);
+}
+
 export function setDocumentFullWidth(fullWidth: boolean): void {
   setStore('documentFullWidth', fullWidth);
 }

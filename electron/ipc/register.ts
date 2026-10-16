@@ -51,6 +51,7 @@ import {
 } from './plans.js';
 import { readFileTourContext } from './understanding-context.js';
 import { saveTourFile } from './tour-files.js';
+import { readKanbanBoard, writeKanbanBoard } from './kanban.js';
 import { listThinkingTours } from './thinking-tours.js';
 import {
   prepareReasoningFeed,
@@ -1489,6 +1490,12 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.worktreePath, 'worktreePath');
     return saveTourFile(args.worktreePath, args);
   });
+
+  // --- Kanban board (KANBAN.md at the project root) ---
+  ipcMain.handle(IPC.ReadKanbanBoard, (_e, args) => readKanbanBoard(args?.projectRoot));
+  ipcMain.handle(IPC.WriteKanbanBoard, (_e, args) =>
+    writeKanbanBoard(args?.projectRoot, args?.content, args?.expected),
+  );
 
   // Tours written outside any task; they save through SaveTourFile into this folder.
   ipcMain.handle(IPC.ListThinkingTours, () =>

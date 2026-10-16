@@ -58,6 +58,7 @@ function structuralSnapshot(): string {
     coordinatorNotificationDelayMs: store.coordinatorNotificationDelayMs,
     mcpOrchestrationEnabled: store.mcpOrchestrationEnabled,
     documentWorkspacesEnabled: store.documentWorkspacesEnabled,
+    kanbanEnabled: store.kanbanEnabled,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed,
     autoStartRemoteAccess: store.autoStartRemoteAccess,
     shareDockerAgentAuth: store.shareDockerAgentAuth,

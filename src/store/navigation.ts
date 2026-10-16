@@ -69,6 +69,7 @@ export function setActiveTask(id: string): void {
   }
   if (!isDocument && !matchesTaskProjectFilter(id)) setStore('taskProjectFilter', null);
   setStore('githubIssuesProjectId', null);
+  setStore('kanbanProjectId', null);
   setStore('newTaskPanelFocused', false);
   setStore('placeholderFocused', false);
   let activeAgentId: string | null = null;
@@ -146,6 +147,7 @@ export function toggleNewTaskPanel(show?: boolean): void {
   }
   if (shouldShow) {
     setStore('githubIssuesProjectId', null);
+    setStore('kanbanProjectId', null);
     setStore('sidebarFocused', false);
     setStore('placeholderFocused', false);
   } else {

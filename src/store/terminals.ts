@@ -30,6 +30,7 @@ export function createTerminal(): void {
   setStore('taskOrder', store.taskOrder.length, id);
   setStore('focusedPanel', id, 'terminal');
   setStore('githubIssuesProjectId', null);
+  setStore('kanbanProjectId', null);
   setStore('activeTaskId', id);
   setStore('activeAgentId', null);
   setStore('sidebarFocused', false);

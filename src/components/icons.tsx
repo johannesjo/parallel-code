@@ -149,6 +149,20 @@ export function ListIcon(props: IconProps): JSX.Element {
   );
 }
 
+export function KanbanIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path
+        d="M2.75 2.75h2.5v10.5h-2.5zM6.75 2.75h2.5v6.5h-2.5zM10.75 2.75h2.5v8.5h-2.5z"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linejoin="round"
+      />
+    </SvgIcon>
+  );
+}
+
 export function AlertIcon(props: IconProps): JSX.Element {
   return (
     <SvgIcon {...props}>

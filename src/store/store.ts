@@ -141,6 +141,7 @@ export {
   toggleArena,
   openThinkingSpace,
   setDocumentWorkspacesEnabled,
+  setKanbanEnabled,
   toggleFocusMode,
   toggleTaskFocusMode,
   setTaskSplitMode,

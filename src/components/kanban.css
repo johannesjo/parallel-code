@@ -1,0 +1,267 @@
+.kanban {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--island-bg);
+  color: var(--fg);
+  /* Controls inherit this, so buttons and inputs share one size. */
+  font-size: 13px;
+}
+.kanban button,
+.kanban input,
+.kanban select,
+.kanban textarea {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+}
+.kanban button {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.kanban button > svg {
+  flex-shrink: 0;
+}
+.kanban button:hover:not(:disabled) {
+  background: var(--bg-elevated);
+}
+.kanban button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.kanban :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kanban small {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.kanban-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.kanban-heading h2 {
+  font-size: 19px;
+  margin: 0 0 2px;
+  line-height: 1.3;
+}
+.kanban-heading h2 span {
+  color: var(--fg-muted);
+}
+.kanban-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* A dialog's or form's primary action: full-strength text, not colour. */
+.kanban .kanban-primary {
+  font-weight: 600;
+}
+.kanban-error {
+  margin: 0;
+  padding: 8px 20px;
+  color: var(--error);
+  border-bottom: 1px solid var(--border);
+}
+.kanban-empty {
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.kanban-empty p {
+  margin: 0 0 8px;
+}
+.kanban-columns {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px;
+  overflow: auto;
+}
+.kanban-column {
+  flex: 0 0 280px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  min-height: 0;
+}
+.kanban-column.drag-over {
+  border-color: var(--accent);
+}
+.kanban-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  cursor: grab;
+}
+.kanban-column-header h3 {
+  margin: 0;
+  padding: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.kanban-count {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+.kanban .kanban-icon {
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-muted);
+  padding: 4px;
+}
+.kanban-notes {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.kanban-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  min-height: 4px;
+}
+.kanban-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--island-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  /* Reserve the drop marker's line so showing it never moves the cards. */
+  border-top-width: 2px;
+  cursor: grab;
+}
+.kanban-card.drop-before {
+  border-top-color: var(--accent);
+}
+.kanban-card-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.kanban .kanban-card-title input {
+  margin: 2px 0 0;
+  padding: 0;
+  flex-shrink: 0;
+}
+.kanban-card.done .kanban-card-title span {
+  color: var(--fg-muted);
+  text-decoration: line-through;
+}
+.kanban-card-body {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.kanban-card-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.kanban .kanban-task-link {
+  padding: 2px 6px;
+  max-width: 100%;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kanban-branch {
+  font-family: var(--font-mono, monospace);
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+.kanban-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kanban-card-actions button {
+  font-size: 12px;
+  padding: 3px 8px;
+}
+.kanban-card-actions .kanban-delete {
+  margin-left: auto;
+}
+.kanban-card-editor {
+  cursor: default;
+}
+.kanban-card-editor textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+.kanban-move {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.kanban-move select {
+  flex: 1;
+  min-width: 0;
+}
+.kanban .kanban-add-card {
+  justify-content: flex-start;
+  background: transparent;
+  border-style: dashed;
+  color: var(--fg-muted);
+}
+.kanban-add-column {
+  flex: 0 0 220px;
+  display: flex;
+  flex-direction: column;
+}
+.kanban-inline-field {
+  width: 100%;
+  box-sizing: border-box;
+}
