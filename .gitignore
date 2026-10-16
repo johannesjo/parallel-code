@@ -48,3 +48,6 @@ docs/*
 
 # Local scratch space (UI preview harnesses, throwaway scripts)
 /.tmp/
+GEMINI.md
+.idea/
+CLAUDE.md

@@ -361,6 +361,18 @@ export type UsageResult =
   /** Transient failure — the renderer keeps its last good snapshot. */
   | { status: 'error'; message: string };
 
+/** The renderer's view of one provider's usage, also served to the phone. */
+export interface UsageState {
+  fiveHour: UsageWindow | null;
+  sevenDay: UsageWindow | null;
+  creditUsage?: CreditUsage | null;
+  /** When the current windows were fetched; null until the first success. */
+  fetchedAt: number | null;
+  /** `unavailable` means no subscription login — the bar hides. `error` keeps the last snapshot. */
+  status: 'idle' | 'ok' | 'error' | 'unavailable';
+  error: string | null;
+}
+
 /** One OS process in the resources panel. */
 export interface ResourceProcess {
   pid: number;

@@ -3,6 +3,9 @@ import { render } from 'solid-js/web';
 import { App } from './App';
 import { reconnect } from './ws';
 
+// Usage meters poll over HTTP; they have their own tests.
+vi.mock('./UsageStrip', () => ({ UsageStrip: () => null }));
+
 class Socket {
   static OPEN = 1;
   static CONNECTING = 0;

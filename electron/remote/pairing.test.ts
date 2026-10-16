@@ -111,6 +111,7 @@ async function startServer(enableRemembered = true) {
 beforeEach(async () => {
   createTaskFromMobile.mockClear();
   getProjects.mockClear();
+  getAgentChoices.mockClear();
   credentialsDir = mkdtempSync(join(tmpdir(), 'phone-pairing-'));
   await startServer();
 });
@@ -316,6 +317,7 @@ describe('paired-mobile routes', () => {
       projectId: 'proj-1',
       name: 'Fix bug',
       prompt: 'Investigate the crash',
+      agentId: 'claude',
     });
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ taskId: 'task-123' });
@@ -323,6 +325,7 @@ describe('paired-mobile routes', () => {
       projectId: 'proj-1',
       name: 'Fix bug',
       prompt: 'Investigate the crash',
+      agentId: 'claude',
     });
   });
 
