@@ -6,6 +6,7 @@ import { store, setStore } from './core';
 import type { Project, Task } from './types';
 import { sanitizeBranchPrefix } from '../lib/branch-name';
 import { projectHiddenAgentTaskIds } from '../documents/task-id';
+import { closeProjectPages } from './project-pages';
 import { forgetBlockEdits } from '../documents/block-edit-state';
 import { forgetGitHubLists } from './github-list-storage';
 import { clearAgentActivity } from './taskStatus';
@@ -315,7 +316,9 @@ export async function relinkProject(projectId: string): Promise<boolean> {
   if (moved.length) {
     // Unmount before stopping old PTYs; an attached process cannot change cwd.
     if (store.activeDocumentProjectId === projectId) setStore('activeDocumentProjectId', null);
-    if (store.githubIssuesProjectId === projectId) setStore('githubIssuesProjectId', null);
+    if (store.githubIssuesProjectId === projectId || store.kanbanProjectId === projectId) {
+      closeProjectPages();
+    }
     await Promise.all(
       moved.flatMap((task) =>
         [...task.agentIds, ...task.shellAgentIds].map((agentId) =>

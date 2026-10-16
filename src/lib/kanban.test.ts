@@ -23,6 +23,8 @@ import {
   addIssueCard,
   findCardByIssue,
   parseGitHubIssueUrl,
+  cardFingerprint,
+  removeCard,
 } from './kanban';
 
 const SAMPLE = `# Launch plan
@@ -494,5 +496,87 @@ describe('GitHub issues', () => {
     // eslint-disable-next-line no-control-regex
     expect(prompt).not.toMatch(/[\u001b\u202e\u200b]/);
     expect(prompt).toContain('run [201~ this');
+  });
+});
+
+describe('fuzzing findings', () => {
+  const roundTrip = (md: string) => serializeKanban(parseKanban(md));
+
+  it('treats a <!-- mentioned mid-sentence as text', () => {
+    const board = parseKanban(
+      '## Backlog\n\nTip: write `<!--` to hide text.\n\n- [ ] A\n  Mention <!-- in body\n  branch: `task/a`\n\n## Done\n\n- [x] B\n',
+    );
+    expect(board.columns.map((c) => c.cards.map((card) => card.title))).toEqual([['A'], ['B']]);
+    expect(board.columns[0].cards[0].branches).toEqual(['task/a']);
+  });
+
+  it('keeps cards that land after an unclosed fence or comment in notes', () => {
+    const board = parseKanban(
+      '## Backlog\n\n- [ ] Ship it\n\n## Done\n\n- [x] Old\n\n<!-- scratch notes\n',
+    );
+    const archived = parseKanban(serializeKanban(archiveCard(board, { column: 0, card: 0 })));
+    expect(archived.columns.flatMap((c) => c.cards).length).toBe(2);
+  });
+
+  it('keeps the indentation of free text', () => {
+    const md = '    ## Not a column\n\n## Real\n\n    - [ ] example in code\n\n- [ ] Card\n';
+    const board = parseKanban(roundTrip(md));
+    expect(board.columns.map((c) => c.title)).toEqual(['Real']);
+    expect(board.columns[0].cards.map((c) => c.title)).toEqual(['Card']);
+  });
+
+  it('leaves a sub-heading in place when the card below it is removed or moved', () => {
+    const board = parseKanban(
+      '## Backlog\n\n- [ ] A\n\n### Frontend\n\n- [ ] B\n- [ ] C\n\n## Done\n',
+    );
+    const removed = serializeKanban(removeCard(board, { column: 0, card: 1 }));
+    expect(removed).toContain('### Frontend\n\n- [ ] C');
+    const moved = serializeKanban(moveCard(board, { column: 0, card: 1 }, 1));
+    expect(moved).toContain('### Frontend\n\n- [ ] C');
+    expect(moved).toContain('## Done\n\n- [x] B');
+  });
+
+  it('keeps every issue line of a card, in order', () => {
+    const md =
+      '## Todo\n\n- [ ] X\n  issue: https://github.com/o/r/issues/1\n  issue: https://github.com/o/r/issues/2\n';
+    expect(roundTrip(md)).toBe(md);
+    expect(parseKanban(md).columns[0].cards[0].issue).toBe('https://github.com/o/r/issues/1');
+  });
+
+  it('keeps columns without a title', () => {
+    expect(roundTrip('##\n\n- [ ] A\n')).toBe('##\n\n- [ ] A\n');
+  });
+
+  it('finds the right one of two cards with the same title', () => {
+    const board = parseKanban('## Todo\n\n- [ ] Fix\n  first\n- [ ] Other\n- [ ] Fix\n  second\n');
+    const fingerprint = cardFingerprint(board.columns[0].cards[2]);
+    const shifted = removeCard(board, { column: 0, card: 1 });
+    expect(
+      findCard(shifted, {
+        title: 'Fix',
+        column: 'Todo',
+        ref: { column: 0, card: 2 },
+        fingerprint,
+      }),
+    ).toEqual({
+      column: 0,
+      card: 1,
+    });
+    const inserted = addCard(board, 0, 'New', '', 0);
+    expect(
+      findCard(inserted, {
+        title: 'Fix',
+        column: 'Todo',
+        ref: { column: 0, card: 2 },
+        fingerprint,
+      }),
+    ).toEqual({
+      column: 0,
+      card: 3,
+    });
+  });
+
+  it('rejects issue URLs with spaces', () => {
+    expect(parseGitHubIssueUrl('https://github.com/o/r/issues/1#x y')).toBeNull();
   });
 });

@@ -189,7 +189,9 @@ describe('KanbanPage', () => {
     expect(card.classList.contains('asking')).toBe(true);
     expect(card.textContent).toContain('Needs input');
     expect(card.querySelector('.kanban-task-activity')?.textContent).toBe('Claude Code');
-    expect(host.querySelector('.kanban-summary.urgent')?.textContent).toBe('1 needs input');
+    expect(
+      button('Needs input, 1').querySelector('.kanban-segment-count.urgent')?.textContent,
+    ).toBe('1');
     button('Answer').click();
     expect(jumpToWaitingTask).toHaveBeenCalledWith('t1', null);
   });
@@ -426,5 +428,93 @@ describe('KanbanPage', () => {
     );
     await mount();
     expect(cardEl('Docs').querySelector('.kanban-issue')?.textContent).toContain('#12');
+  });
+
+  it('offers no undo when the delete could not be saved', async () => {
+    await mount();
+    const { invoke } = await import('../lib/ipc');
+    vi.mocked(invoke).mockImplementationOnce(async () => {
+      throw new Error('EACCES');
+    });
+    cardEl('Docs').focus();
+    press(cardEl('Docs'), 'Delete');
+    await settle();
+    expect(host.querySelector('.kanban-undo.shown')).toBeNull();
+    // The card is back on screen, read from disk.
+    expect(cardEl('Docs')).toBeTruthy();
+  });
+
+  it('reports a save whose card was removed elsewhere instead of claiming Saved', async () => {
+    await mount();
+    cardEl('Docs').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await settle();
+    disk.text = (disk.text ?? '').replace('- [ ] Docs\n', '');
+    const title = host.querySelector<HTMLInputElement>('input[aria-label="Card title"]');
+    if (!title) throw new Error('no editor');
+    title.value = 'Docs v2';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+    title.closest('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    const { showNotification } = await import('../store/notification');
+    expect(showNotification).toHaveBeenCalledWith(expect.stringContaining('Not saved'));
+    expect(disk.text).not.toContain('Docs v2');
+  });
+
+  it('deletes the right one of two cards with the same title', async () => {
+    disk.text = '## Backlog\n\n- [ ] Fix\n  alpha\n- [ ] Fix\n  beta\n';
+    await mount();
+    const second = [...host.querySelectorAll<HTMLElement>('.kanban-card')][1];
+    second.focus();
+    // Another writer adds a card on top before the board reloads.
+    disk.text = '## Backlog\n\n- [ ] New\n- [ ] Fix\n  alpha\n- [ ] Fix\n  beta\n';
+    press(second, 'Delete');
+    await settle();
+    expect(disk.text).toContain('alpha');
+    expect(disk.text).not.toContain('beta');
+  });
+
+  it('keeps typed text when the edited card moves while the editor is open', async () => {
+    await mount();
+    cardEl('Sync engine').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await settle();
+    const title = host.querySelector<HTMLInputElement>('input[aria-label="Card title"]');
+    if (!title) throw new Error('no editor');
+    title.value = 'Sync engine v2';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+    button('Delete column Backlog').click();
+    await settle();
+    expect(host.querySelector<HTMLInputElement>('input[aria-label="Card title"]')?.value).toBe(
+      'Sync engine v2',
+    );
+  });
+
+  it('closes the editor when its column is renamed and then collapsed', async () => {
+    await mount();
+    cardEl('Docs').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await settle();
+    disk.text = (disk.text ?? '').replace('## Backlog', '## Todo');
+    button('Rename column Backlog').click();
+    await settle();
+    const field = host.querySelector<HTMLInputElement>('input[aria-label="Column name"]');
+    if (!field) throw new Error('no rename field');
+    field.value = 'Todo';
+    press(field, 'Enter');
+    await settle();
+    button('Collapse column Todo').click();
+    await settle();
+    press(host.querySelector<HTMLElement>('.kanban') as HTMLElement, 'ArrowDown');
+    await settle();
+    expect(cardEl('Sync engine').getAttribute('draggable')).toBe('true');
+  });
+
+  it('closes the GitHub picker on Escape from its search field', async () => {
+    await mount();
+    button('Add from GitHub').click();
+    await settle();
+    const search = host.querySelector<HTMLInputElement>('.kanban-picker input');
+    if (!search) throw new Error('no picker');
+    press(search, 'Escape');
+    await settle();
+    expect(host.querySelector('.kanban-picker')).toBeNull();
   });
 });

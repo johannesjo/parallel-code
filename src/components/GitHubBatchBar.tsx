@@ -26,12 +26,19 @@ export function GitHubBatchBar(props: {
   async function addSelectedToBoard() {
     setAddingToBoard(true);
     try {
-      const added = await addIssuesToBoard(props.project.id, [...props.view.selected]);
-      if (added !== null) {
-        const skipped = props.view.selected.length - added;
+      const total = props.view.selected.length;
+      const result = await addIssuesToBoard(props.project.id, [...props.view.selected]);
+      if (result) {
+        const { added, created, column } = result;
+        const cards = `${added} ${added === 1 ? 'card' : 'cards'}`;
+        const skipped = total - added;
         showNotification(
-          `Added ${added} ${added === 1 ? 'card' : 'cards'} to the Kanban board` +
-            (skipped ? `; ${skipped} already on it` : ''),
+          added === 0
+            ? `All ${total} are already on the Kanban board`
+            : (created
+                ? `Created KANBAN.md with ${cards} in ${column}`
+                : `Added ${cards} to ${column}`) +
+                (skipped ? `; ${skipped} already on the board` : ''),
         );
       }
     } finally {
@@ -61,19 +68,19 @@ export function GitHubBatchBar(props: {
         <CloseIcon /> Clear selection
       </button>
       <button
+        disabled={!props.view.selected.length || addingToBoard()}
+        title="Add the selected items as cards to the project's Kanban board"
+        onClick={() => void addSelectedToBoard()}
+      >
+        <KanbanIcon /> Add to board
+      </button>
+      <button
         class="github-issue-primary"
         disabled={!props.view.selected.length || store.showNewTaskPanel}
         aria-describedby="github-triage-note"
         onClick={() => startGitHubTriageTask(props.project.id, [...props.view.selected])}
       >
         <SparkleIcon /> Triage with agent
-      </button>
-      <button
-        disabled={!props.view.selected.length || addingToBoard()}
-        title="Add the selected items as cards to the project's Kanban board"
-        onClick={() => void addSelectedToBoard()}
-      >
-        <KanbanIcon size={12} /> Add to board
       </button>
       <Show when={store.showNewTaskPanel}>
         <small id="github-triage-note">

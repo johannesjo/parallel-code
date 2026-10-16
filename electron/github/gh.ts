@@ -55,6 +55,11 @@ export function describeGhError(err: unknown): string {
   if (/gh repo set-default/i.test(stderr)) {
     return 'GitHub CLI does not know which repository to use. Run "gh repo set-default" in the project folder.';
   }
+  if (
+    /no git remotes found|none of the git remotes .* point to a known github host/i.test(stderr)
+  ) {
+    return 'This project has no GitHub remote, so there are no GitHub issues to show.';
+  }
   if (/rate limit/i.test(stderr)) {
     return 'GitHub API rate limit reached. Try again in a few minutes.';
   }

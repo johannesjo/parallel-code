@@ -3,13 +3,15 @@ import {
   Show,
   createMemo,
   createResource,
+  createEffect,
   createSignal,
   createUniqueId,
+  on,
   onMount,
   untrack,
   type JSX,
 } from 'solid-js';
-import { CloseIcon, CopyIcon, ExternalLinkIcon, GitHubIcon, LinkIcon, PlayIcon } from './icons';
+import { CloseIcon, CopyIcon, ExternalLinkIcon, GitHubIcon, LinkIcon, PencilIcon } from './icons';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { formatRelativeAge } from '../lib/relativeAge';
@@ -126,7 +128,7 @@ function openTask(task: Task): void {
   jumpToWaitingTask(task.id, question?.panel ?? null);
 }
 
-function TaskRow(props: { task: Task }) {
+function TaskRow(props: { task: Task; tabIndex: number }) {
   const state = createMemo(() => cardTaskState(props.task));
   const activity = createMemo(() => activityLine(props.task));
   const checks = () => getPrChecks(props.task.id)?.overall;
@@ -143,6 +145,7 @@ function TaskRow(props: { task: Task }) {
           {(url) => (
             <button
               type="button"
+              tabIndex={props.tabIndex}
               class={`kanban-chip pr-${checks() ?? 'none'}`}
               title={`Open pull request${checks() ? ` (checks: ${checks()})` : ''}`}
               onClick={(e) => {
@@ -163,6 +166,7 @@ function TaskRow(props: { task: Task }) {
         </Show>
         <button
           type="button"
+          tabIndex={props.tabIndex}
           class="kanban-task-open"
           classList={{ urgent: urgent() }}
           title={urgent() ? 'Open the task where the agent waits' : `Open task ${props.task.name}`}
@@ -183,7 +187,7 @@ function TaskRow(props: { task: Task }) {
   );
 }
 
-function BranchRow(props: { branch: string }) {
+function BranchRow(props: { branch: string; tabIndex: number }) {
   return (
     <li class="kanban-task state-gone">
       <div class="kanban-task-head">
@@ -192,6 +196,7 @@ function BranchRow(props: { branch: string }) {
         </span>
         <button
           type="button"
+          tabIndex={props.tabIndex}
           class="kanban-icon"
           title="Copy branch name"
           aria-label={`Copy branch name ${props.branch}`}
@@ -225,7 +230,7 @@ function issueState(url: string): Promise<string | null> {
 }
 
 /** `#12` for the card's GitHub issue or PR, with its state once GitHub answers. */
-function IssueChip(props: { url: string }) {
+function IssueChip(props: { url: string; tabIndex: number }) {
   const parsed = () => parseGitHubIssueUrl(props.url);
   const [state] = createResource(() => props.url, issueState);
   return (
@@ -235,7 +240,7 @@ function IssueChip(props: { url: string }) {
           type="button"
           class="kanban-chip kanban-issue"
           classList={{ closed: state() === 'closed' || state() === 'merged' }}
-          tabIndex={-1}
+          tabIndex={props.tabIndex}
           title={`Open ${issue().kind === 'pr' ? 'pull request' : 'issue'} ${issue().repo}#${issue().number} on GitHub${state() ? ` (${state()})` : ''}`}
           onClick={(e) => {
             e.stopPropagation();
@@ -300,7 +305,7 @@ export function KanbanCardView(props: KanbanCardViewProps) {
               : '',
       props.blockedBy.length ? `Waits for ${props.blockedBy.join(', ')}` : '',
       checklist().length ? `Checklist ${checked()} of ${checklist().length}` : '',
-      props.card.issue ? 'Tracks a GitHub issue' : '',
+      props.card.issue ? `Linked to #${parseGitHubIssueUrl(props.card.issue)?.number ?? ''}` : '',
     ]
       .filter(Boolean)
       .join('. ');
@@ -323,7 +328,7 @@ export function KanbanCardView(props: KanbanCardViewProps) {
       tabIndex={props.tabIndex}
       aria-labelledby={titleId}
       aria-describedby={describedId}
-      aria-current={props.selected ? 'true' : undefined}
+      role="listitem"
       draggable={props.draggable}
       onFocus={(e) => {
         if (e.target === e.currentTarget) props.onSelect();
@@ -388,8 +393,11 @@ export function KanbanCardView(props: KanbanCardViewProps) {
         <ul class="kanban-tasks" aria-label="Tasks">
           <For each={tasks()}>
             {(entry) => (
-              <Show when={entry.task} fallback={<BranchRow branch={entry.branch} />}>
-                {(task) => <TaskRow task={task()} />}
+              <Show
+                when={entry.task}
+                fallback={<BranchRow branch={entry.branch} tabIndex={innerTab()} />}
+              >
+                {(task) => <TaskRow task={task()} tabIndex={innerTab()} />}
               </Show>
             )}
           </For>
@@ -413,23 +421,50 @@ export function KanbanCardView(props: KanbanCardViewProps) {
             props.onStart();
           }}
         >
-          <PlayIcon size={10} /> {props.card.branches.length ? 'Start another task' : 'Start task'}
+          {props.card.branches.length ? 'Start another task' : 'Start task'}
         </button>
         <span class="kanban-card-meta">
-          <Show when={props.card.issue}>{(url) => <IssueChip url={url()} />}</Show>
+          <Show when={props.card.issue}>
+            {(url) => <IssueChip url={url()} tabIndex={innerTab()} />}
+          </Show>
           <Show when={checklist().length}>
             <span class="kanban-progress" title="Checklist">
               {checked()}/{checklist().length}
             </span>
           </Show>
+          {/* Revealed on hover or selection, in space that is always there. */}
+          <button
+            type="button"
+            class="kanban-icon kanban-card-edit"
+            tabIndex={innerTab()}
+            title="Edit, archive or delete (E)"
+            aria-label={`Edit card ${props.card.title || 'Untitled'}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onEdit();
+            }}
+          >
+            <PencilIcon size={12} />
+          </button>
         </span>
       </div>
     </article>
   );
 }
 
+/** What the open card editor holds, kept by the board so a re-render cannot drop typed text. */
+export interface EditorDraft {
+  title: string;
+  body: string;
+  depends: string[];
+  column: number;
+}
+
 export function KanbanCardEditor(props: {
   card: KanbanCard;
+  /** Text typed before the editor was re-created; wins over the card's own. */
+  draft?: EditorDraft | null;
+  onDraft?: (draft: EditorDraft) => void;
   columns: string[];
   column: number;
   /** Titles of the other cards, for dependencies. */
@@ -440,10 +475,20 @@ export function KanbanCardEditor(props: {
   onCancel: () => void;
 }) {
   const initial = untrack(() => props.card);
-  const [title, setTitle] = createSignal(initial.title);
-  const [body, setBody] = createSignal(initial.body);
-  const [depends, setDepends] = createSignal<string[]>([...initial.depends]);
-  const [column, setColumn] = createSignal(untrack(() => props.column));
+  const saved = untrack(() => props.draft);
+  const [title, setTitle] = createSignal(saved?.title ?? initial.title);
+  const [body, setBody] = createSignal(saved?.body ?? initial.body);
+  const [depends, setDepends] = createSignal<string[]>([...(saved?.depends ?? initial.depends)]);
+  const [column, setColumn] = createSignal(saved?.column ?? untrack(() => props.column));
+  createEffect(
+    on(
+      [title, body, depends, column],
+      ([t, b, d, c]) => props.onDraft?.({ title: t, body: b, depends: d, column: c }),
+      {
+        defer: true,
+      },
+    ),
+  );
   let titleRef: HTMLInputElement | undefined;
   let bodyRef: HTMLTextAreaElement | undefined;
   const grow = () => {
@@ -534,7 +579,7 @@ export function KanbanCardEditor(props: {
                 e.currentTarget.value = '';
               }}
             >
-              <option value="">Add dependency…</option>
+              <option value="">Add…</option>
               <For each={candidates()}>{(t) => <option value={t}>{t}</option>}</For>
             </select>
           </Show>

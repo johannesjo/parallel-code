@@ -16,6 +16,10 @@ describe('describeGhError', () => {
     expect(describeGhError(err)).toBe('spawn /bin/sh ENOENT');
   });
 
+  it('explains a project without a GitHub remote', () => {
+    expect(describeGhError({ stderr: 'no git remotes found' })).toMatch(/no GitHub remote/);
+  });
+
   it('explains missing auth', () => {
     expect(describeGhError({ stderr: 'You are not logged into any GitHub hosts.' })).toMatch(
       /not logged in/,

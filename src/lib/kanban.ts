@@ -42,6 +42,8 @@ export interface KanbanCard {
   depends: string[];
   /** The GitHub issue or pull request the card tracks, as a URL; empty when none. */
   issue: string;
+  /** Further `issue:` lines, kept in order after the first. */
+  extraIssues?: string[];
   /**
    * Column text written between the previous card and this one (a sub-heading
    * grouping the cards below it, say). It travels with the card, so the text
@@ -100,7 +102,7 @@ Plan the project here. Each card can start a Parallel Code task.
 `;
 
 // Headings need a space before closing hashes, so `## C#` keeps its `#`.
-const COLUMN_RE = /^ {0,3}##[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
+const COLUMN_RE = /^ {0,3}##(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
 const BOARD_TITLE_RE = /^ {0,3}#[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
 const CARD_RE = /^ ?[-*+](?:[ \t]+(?:\[([ xX])\](?=[ \t]|$))?[ \t]*(.*))?$/;
 const THEMATIC_BREAK_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
@@ -166,9 +168,13 @@ function closesFence(line: string, fence: Fence): boolean {
 }
 
 /** Whether a line leaves an HTML comment open. */
+/**
+ * Whether a line opens an HTML comment block that it leaves open. As in
+ * CommonMark, only a line that starts with `<!--` does; a `<!--` mentioned
+ * mid-sentence is plain text.
+ */
 function opensComment(line: string): boolean {
-  const start = line.lastIndexOf('<!--');
-  return start >= 0 && !line.slice(start + 4).includes('-->');
+  return /^[ \t]*<!--/.test(line) && !line.slice(line.indexOf('<!--') + 4).includes('-->');
 }
 
 /**
@@ -190,7 +196,7 @@ class Literal {
       return;
     }
     if (this.comment) {
-      if (line.includes('-->')) this.comment = opensComment(line.slice(line.indexOf('-->') + 3));
+      if (line.includes('-->')) this.comment = false;
       return;
     }
     const fence = fenceOpening(line);
@@ -215,13 +221,16 @@ function splitFrontmatter(lines: string[]): { frontmatter: string[]; rest: strin
 }
 
 /** Splits a card's raw lines into description and metadata. */
-function readCardBody(raw: string[]): Pick<KanbanCard, 'body' | 'branches' | 'depends' | 'issue'> {
+function readCardBody(
+  raw: string[],
+): Pick<KanbanCard, 'body' | 'branches' | 'depends' | 'issue' | 'extraIssues'> {
   const lines = trimBlankLines(raw.map(stripCardIndent));
   const top = Math.min(...lines.filter((l) => l.trim()).map(indentOf), Infinity);
   const literal = new Literal();
   const branches: string[] = [];
   const depends: string[] = [];
   let issue = '';
+  const extraIssues: string[] = [];
   const body: string[] = [];
   for (const line of lines) {
     if (!literal.active && line.trim() && indentOf(line) === top) {
@@ -237,15 +246,22 @@ function readCardBody(raw: string[]): Pick<KanbanCard, 'body' | 'branches' | 'de
         if (!depends.includes(dependency[1])) depends.push(dependency[1]);
         continue;
       }
-      if (linked && !issue) {
-        issue = linked[1];
+      if (linked) {
+        if (!issue) issue = linked[1];
+        else extraIssues.push(linked[1]);
         continue;
       }
     }
     literal.feed(line);
     body.push(line);
   }
-  return { body: trimBlankLines(body).join('\n'), branches, depends, issue };
+  return {
+    body: trimBlankLines(body).join('\n'),
+    branches,
+    depends,
+    issue,
+    ...(extraIssues.length ? { extraIssues } : {}),
+  };
 }
 
 export function parseKanban(markdown: string): KanbanBoard {
@@ -338,7 +354,7 @@ export function parseKanban(markdown: string): KanbanBoard {
     }
     const heading = COLUMN_RE.exec(line);
     if (heading) {
-      column = { title: heading[1], notes: [], cards: [], pending: [] };
+      column = { title: heading[1] ?? '', notes: [], cards: [], pending: [] };
       columns.push(column);
       continue;
     }
@@ -384,14 +400,24 @@ function closeOpenLiterals(lines: string[]): string[] {
   return closing.length ? [...lines, ...closing] : lines;
 }
 
+/**
+ * Free text (preamble, notes, text between cards) as written: only blank edge
+ * lines go, since leading spaces can make it an indented code block. A fence
+ * or comment it leaves open is closed, so cards written after it stay cards.
+ */
+function block(text: string): string {
+  return closeOpenLiterals(trimBlankLines(text.replace(/\r\n?/g, '\n').split('\n'))).join('\n');
+}
+
 function serializeCard(card: KanbanCard): string {
   const lines: string[] = [];
-  if (card.before.trim()) lines.push(card.before.trim(), '');
+  if (card.before.trim()) lines.push(block(card.before), '');
   const title = singleLine(card.title);
   lines.push(`- [${card.done ? 'x' : ' '}]${title ? ` ${title}` : ''}`);
   const body = closeOpenLiterals(trimBlankLines(card.body.replace(/\r\n?/g, '\n').split('\n')));
   for (const line of body) lines.push(line.trim() ? `  ${line}` : '');
   if (card.issue) lines.push(`  issue: ${card.issue}`);
+  for (const url of card.extraIssues ?? []) lines.push(`  issue: ${url}`);
   for (const dependency of card.depends) lines.push(`  depends: ${singleLine(dependency)}`);
   for (const branch of card.branches) lines.push(`  branch: \`${branch}\``);
   return lines.join('\n');
@@ -401,10 +427,11 @@ export function serializeKanban(board: KanbanBoard): string {
   const parts: string[] = [];
   if (board.frontmatter.trim()) parts.push(board.frontmatter.trim());
   if (board.title.trim()) parts.push(`# ${singleLine(board.title)}`);
-  if (board.preamble.trim()) parts.push(board.preamble.trim());
+  if (board.preamble.trim()) parts.push(block(board.preamble));
   for (const column of board.columns) {
-    parts.push(`## ${singleLine(column.title) || 'Untitled'}`);
-    if (column.notes.trim()) parts.push(column.notes.trim());
+    const title = singleLine(column.title);
+    parts.push(title ? `## ${title}` : '##');
+    if (column.notes.trim()) parts.push(block(column.notes));
     if (column.cards.length) {
       // A card with text before it starts a new block, so the text stays a paragraph.
       const blocks: string[][] = [[]];
@@ -414,7 +441,7 @@ export function serializeKanban(board: KanbanBoard): string {
       }
       for (const block of blocks) parts.push(block.join('\n'));
     }
-    if (column.after.trim()) parts.push(column.after.trim());
+    if (column.after.trim()) parts.push(block(column.after));
   }
   if (board.footer.trim()) parts.push(board.footer.trim());
   const text = `${parts.join('\n\n')}\n`;
@@ -605,7 +632,11 @@ export function insertCard(board: KanbanBoard, ref: KanbanCardRef, card: KanbanC
   const next = clone(board);
   const target = next.columns[ref.column];
   if (!target) return board;
-  target.cards.splice(Math.min(ref.card, target.cards.length), 0, cloneCard(card));
+  // Its text above stayed in the column when it was removed.
+  target.cards.splice(Math.min(ref.card, target.cards.length), 0, {
+    ...cloneCard(card),
+    before: '',
+  });
   return next;
 }
 
@@ -628,11 +659,26 @@ export function updateCard(
   return next;
 }
 
+/**
+ * Takes a card out of its column. Text written above it (a sub-heading over a
+ * group of cards) stays in the column: it passes to the next card, or to the
+ * column's closing text when the card was the last.
+ */
+function detachCard(column: KanbanColumn, index: number): KanbanCard {
+  const [card] = column.cards.splice(index, 1);
+  if (card.before.trim()) {
+    const next = column.cards[index];
+    if (next) next.before = [card.before, next.before].filter((t) => t.trim()).join('\n\n');
+    else column.after = [card.before, column.after].filter((t) => t.trim()).join('\n\n');
+  }
+  return { ...card, before: '' };
+}
+
 export function removeCard(board: KanbanBoard, ref: KanbanCardRef): KanbanBoard {
   const next = clone(board);
   const column = next.columns[ref.column];
   if (!column?.cards[ref.card]) return board;
-  column.cards.splice(ref.card, 1);
+  detachCard(column, ref.card);
   return next;
 }
 
@@ -662,7 +708,7 @@ export function moveCard(
   const target = board.columns[toColumn];
   if (!source?.cards[from.card] || !target) return board;
   const next = clone(board);
-  const [card] = next.columns[from.column].cards.splice(from.card, 1);
+  const card = detachCard(next.columns[from.column], from.card);
   const cards = next.columns[toColumn].cards;
   let index = toIndex ?? cards.length;
   // Removing the card first shifts later positions in the same column up by one.
@@ -687,15 +733,42 @@ export function archiveCard(board: KanbanBoard, ref: KanbanCardRef): KanbanBoard
 }
 
 /**
- * Finds a card again after the file may have changed: first at its old place if
+ * What identifies a card besides its title: its description and metadata. The
+ * checkmark is left out, since ticking a card must not make it unfindable.
+ */
+export function cardFingerprint(card: KanbanCard): string {
+  return JSON.stringify([card.title, card.body, card.depends, card.issue, card.branches]);
+}
+
+/**
+ * Finds a card again after the file may have changed. With a fingerprint, an
+ * exact match wins (at its old place, then in its column, then anywhere), so
+ * of two cards with the same title the right one is found even after cards
+ * moved. Otherwise, or when the card has been edited since: its old place if
  * the title still matches, then the first card with that title in the same
  * column, then anywhere on the board.
  */
 export function findCard(
   board: KanbanBoard,
-  hint: { title: string; column?: string; ref?: KanbanCardRef },
+  hint: { title: string; column?: string; ref?: KanbanCardRef; fingerprint?: string },
 ): KanbanCardRef | null {
   const title = singleLine(hint.title);
+  if (hint.fingerprint) {
+    const at = (ref: KanbanCardRef) => {
+      const card = board.columns[ref.column]?.cards[ref.card];
+      return !!card && cardFingerprint(card) === hint.fingerprint;
+    };
+    if (hint.ref && at(hint.ref)) return hint.ref;
+    const order = board.columns
+      .map((column, index) => ({ column, index }))
+      .sort(
+        (a, b) => Number(b.column.title === hint.column) - Number(a.column.title === hint.column),
+      );
+    for (const { column, index } of order) {
+      const card = column.cards.findIndex((c) => cardFingerprint(c) === hint.fingerprint);
+      if (card >= 0) return { column: index, card };
+    }
+  }
   if (hint.ref && board.columns[hint.ref.column]?.cards[hint.ref.card]?.title === title) {
     return hint.ref;
   }
@@ -802,7 +875,7 @@ export function parseGitHubIssueUrl(
   url: string,
 ): { repo: string; number: number; kind: 'issue' | 'pr' } | null {
   const match =
-    /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(issues|pull)\/(\d+)(?:[/?#].*)?$/.exec(
+    /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(issues|pull)\/(\d+)(?:[/?#]\S*)?$/.exec(
       url.trim(),
     );
   if (!match) return null;

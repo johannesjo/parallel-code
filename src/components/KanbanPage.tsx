@@ -7,20 +7,26 @@ import {
   createMemo,
   createSignal,
   createUniqueId,
+  on,
   onCleanup,
   onMount,
   untrack,
 } from 'solid-js';
 import { createAgentPaneState, GitHubAgentPane, type AgentPaneState } from './GitHubAgentPane';
 import { GitHubItemPicker } from './GitHubItemPicker';
-import { KanbanCardEditor, KanbanCardView, cardState, useKanbanClock } from './KanbanCard';
+import {
+  KanbanCardEditor,
+  KanbanCardView,
+  cardState,
+  useKanbanClock,
+  type EditorDraft,
+} from './KanbanCard';
 import { ResizablePanel, type PanelChild } from './ResizablePanel';
 import {
   ArrowLeftIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CloseIcon,
-  ExternalLinkIcon,
   GitHubIcon,
   PencilIcon,
   PlusIcon,
@@ -47,6 +53,7 @@ import {
   addColumn,
   addIssueCard,
   archiveCard,
+  cardFingerprint,
   findCard,
   findCardByIssue,
   insertCard,
@@ -68,6 +75,7 @@ import {
   type KanbanColumn,
 } from '../lib/kanban';
 import { openFileInEditor } from '../lib/shell';
+import { isMac } from '../lib/platform';
 import { errMessage } from '../lib/log';
 import type { Project } from '../store/types';
 import './github-issues.css';
@@ -170,17 +178,24 @@ function KanbanLayout(props: { project: Project }) {
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'external' | 'error';
 
-/** Where a card was when an action started; found again by title if the board moved. */
+/**
+ * Where a card was when an action started, and what it held. Found again by
+ * its fingerprint, then by title, if the board moved meanwhile.
+ */
 interface CardHint {
   title: string;
   column: string;
   ref: KanbanCardRef;
+  fingerprint?: string;
 }
+
+/** A change to apply to the board as it is; null when its card or column is gone. */
+type Intent = (board: KanbanBoard) => KanbanBoard | null;
 
 interface UndoOffer {
   label: string;
   /** Puts back what the action removed, applied to the board as it is then. */
-  restore: (board: KanbanBoard) => KanbanBoard;
+  restore: Intent;
 }
 
 function cardKey(column: string, card: KanbanCard): string {
@@ -198,26 +213,31 @@ function plural(count: number, one: string, many = `${one}s`): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
-/** Puts a deleted column back where it was, taking its cards back from the neighbour. */
+/**
+ * Puts a deleted column back where it was. Only the cards still waiting in the
+ * neighbouring column come back with it; a card moved on since stays where it
+ * was put, so nothing is ever duplicated.
+ */
 function restoreColumn(board: KanbanBoard, index: number, column: KanbanColumn): KanbanBoard {
   let next = board;
   const neighbour = Math.max(0, index - 1);
+  const restored: KanbanCard[] = [];
   for (const card of [...column.cards].reverse()) {
+    const fingerprint = cardFingerprint(card);
     const cards = next.columns[neighbour]?.cards ?? [];
     let at = -1;
     for (let i = cards.length - 1; i >= 0; i--) {
-      if (cards[i].title === card.title) {
+      if (cardFingerprint(cards[i]) === fingerprint) {
         at = i;
         break;
       }
     }
-    if (at >= 0) next = removeCard(next, { column: neighbour, card: at });
+    if (at < 0) continue;
+    restored.unshift(cards[at]);
+    next = removeCard(next, { column: neighbour, card: at });
   }
   const columns = [...next.columns];
-  columns.splice(Math.min(index, columns.length), 0, {
-    ...column,
-    cards: column.cards.map((c) => ({ ...c })),
-  });
+  columns.splice(Math.min(index, columns.length), 0, { ...column, cards: restored });
   return { ...next, columns };
 }
 
@@ -226,11 +246,13 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
   const projectId = untrack(() => props.project.id);
   const session = boardSession(projectId);
   const helpId = createUniqueId();
+  const hintId = createUniqueId();
   // undefined: loading; null: the project has no KANBAN.md yet.
   const [text, setText] = createSignal<string | null | undefined>(undefined);
   const [error, setError] = createSignal('');
   const [saveState, setSaveState] = createSignal<SaveState>('idle');
   const [editing, setEditing] = createSignal<CardHint | null>(null);
+  const [draft, setDraft] = createSignal<EditorDraft | null>(null);
   const [renaming, setRenaming] = createSignal<string | null>(null);
   const [adding, setAdding] = createSignal<string | null>(null);
   const [selection, setSelection] = createSignal<CardHint | null>(null);
@@ -283,7 +305,9 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
   const hintFor = (ref: KanbanCardRef): CardHint | null => {
     const column = board()?.columns[ref.column];
     const c = column?.cards[ref.card];
-    return column && c ? { title: c.title, column: column.title, ref } : null;
+    return column && c
+      ? { title: c.title, column: column.title, ref, fingerprint: cardFingerprint(c) }
+      : null;
   };
   const sameRef = (a: KanbanCardRef | null, b: KanbanCardRef) =>
     !!a && a.column === b.column && a.card === b.card;
@@ -357,7 +381,7 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
   });
 
   function afterWrite(): void {
-    writing--;
+    writing = Math.max(0, writing - 1);
     // Show the file as written, which may hold other writers' changes too.
     if (!writing && !disposed) void reload(true);
   }
@@ -367,58 +391,83 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
   }
 
   /**
-   * Applies a change at once and saves it. `fn` is re-applied to the file as
-   * it is on disk, again if another writer got in first, so an edit made
-   * while the planning agent or an editor changes the board is never lost.
-   * Returns whether the board changed.
+   * Applies a change at once and saves it. The intent is re-applied to the
+   * file as it is on disk, again if another writer got in first, so an edit
+   * made while the planning agent or an editor changes the board is never
+   * lost. Returns null when nothing changed, else a promise of whether the
+   * change reached the file; a change whose card or column is gone by then
+   * is reported, never silently dropped.
    */
-  function change(fn: (b: KanbanBoard) => KanbanBoard): boolean {
+  function change(fn: Intent): Promise<boolean> | null {
     const current = board();
-    if (!current) return false;
-    const content = serializeKanban(fn(current));
-    if (content === text()) return false;
+    const local = current && fn(current);
+    if (!local) return null;
+    const content = serializeKanban(local);
+    if (content === text()) return null;
     generation++;
     setText(content);
     setSaveState('saving');
     writing++;
-    writes = writes
-      .then(() => updateKanbanFile(root, (b) => fn(b)))
+    let applied = false;
+    let missing = false;
+    const saved = writes
+      .then(() =>
+        updateKanbanFile(root, (b) => {
+          applied = true;
+          const next = fn(b);
+          missing = !next;
+          return next;
+        }),
+      )
       .then(
         () => {
+          if (!applied || missing) {
+            settleSaveState('error');
+            showNotification(
+              applied
+                ? 'Not saved: the card or column was changed or removed elsewhere'
+                : 'Not saved: KANBAN.md no longer exists',
+            );
+            return false;
+          }
           if (writing === 1) settleSaveState('saved');
+          return true;
         },
         (err: unknown) => {
           settleSaveState('error');
           showNotification(`Could not save KANBAN.md: ${errMessage(err)}`);
+          return false;
         },
-      )
-      .finally(afterWrite);
-    return true;
+      );
+    writes = saved.then(afterWrite);
+    return saved;
   }
 
   /** Runs `op` on the card the hint names, wherever it is when the change applies. */
   const atCard =
-    (hint: CardHint, op: (b: KanbanBoard, ref: KanbanCardRef) => KanbanBoard) =>
-    (b: KanbanBoard) => {
+    (hint: CardHint, op: (b: KanbanBoard, ref: KanbanCardRef) => KanbanBoard | null): Intent =>
+    (b) => {
       const ref = findCard(b, hint);
-      return ref ? op(b, ref) : b;
+      return ref ? op(b, ref) : null;
     };
   const atColumn =
-    (title: string, op: (b: KanbanBoard, index: number) => KanbanBoard) => (b: KanbanBoard) => {
+    (title: string, op: (b: KanbanBoard, index: number) => KanbanBoard): Intent =>
+    (b) => {
       const index = b.columns.findIndex((c) => c.title === title);
-      return index >= 0 ? op(b, index) : b;
+      return index >= 0 ? op(b, index) : null;
     };
 
-  /** Applies a destructive change and offers to take it back. */
-  function changeWithUndo(
-    label: string,
-    fn: (b: KanbanBoard) => KanbanBoard,
-    restore: (b: KanbanBoard) => KanbanBoard,
-  ): void {
-    if (!change(fn)) return;
-    announce(`${label}. Press U to undo.`);
-    setUndo({ label, restore });
-    armUndoTimer();
+  /** Applies a destructive change and, once it is saved, offers to take it back. */
+  function changeWithUndo(label: string, fn: Intent, restore: Intent): void {
+    const saved = change(fn);
+    if (!saved) return;
+    setUndo(null);
+    void saved.then((ok) => {
+      if (!ok || disposed) return;
+      announce(`${label}. Press U to undo.`);
+      setUndo({ label, restore });
+      armUndoTimer();
+    });
   }
 
   function armUndoTimer(): void {
@@ -431,9 +480,12 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
     setUndo(null);
     clearTimeout(undoTimer);
     if (!offer) return;
-    change(offer.restore);
-    announce('Undone');
     section?.focus({ preventScroll: true });
+    if (!change(offer.restore)) {
+      showNotification("Can't undo: the board changed since");
+      return;
+    }
+    announce('Undone');
   }
 
   const card = (ref: KanbanCardRef | null) =>
@@ -453,11 +505,13 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
     if (!hint || !removed) return;
     setEditing(null);
     const next = neighbourAfterRemoval(ref);
-    changeWithUndo(
-      `Deleted “${removed.title || 'Untitled'}”`,
-      atCard(hint, removeCard),
-      atColumn(hint.column, (b, column) => insertCard(b, { column, card: hint.ref.card }, removed)),
-    );
+    changeWithUndo(`Deleted “${removed.title || 'Untitled'}”`, atCard(hint, removeCard), (b) => {
+      // Already back (another writer restored it): nothing to undo.
+      if (findCard(b, { title: removed.title, fingerprint: hint.fingerprint })) return null;
+      return atColumn(hint.column, (cur, column) =>
+        insertCard(cur, { column, card: hint.ref.card }, removed),
+      )(b);
+    });
     focusHint(next);
   }
 
@@ -470,8 +524,11 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
     changeWithUndo(`Archived “${archived.title || 'Untitled'}”`, atCard(hint, archiveCard), (b) => {
       const archiveIndex = b.columns.findIndex((c) => isArchiveColumn(c.title));
       const column = b.columns.findIndex((c) => c.title === hint.column);
-      const at = b.columns[archiveIndex]?.cards.findIndex((c) => c.title === archived.title);
-      if (archiveIndex < 0 || column < 0 || at === undefined || at < 0) return b;
+      const fingerprint = cardFingerprint(archived);
+      const at = b.columns[archiveIndex]?.cards.findIndex(
+        (c) => cardFingerprint(c) === fingerprint,
+      );
+      if (archiveIndex < 0 || column < 0 || at === undefined || at < 0) return null;
       return moveCard(b, { column: archiveIndex, card: at }, column, hint.ref.card);
     });
     focusHint(next);
@@ -485,7 +542,8 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
         ? `Deleted column “${column.title}”; its cards moved to the neighbouring column`
         : `Deleted column “${column.title}”`,
       atColumn(column.title, removeColumn),
-      (b) => restoreColumn(b, index, column),
+      (b) =>
+        b.columns.some((c) => c.title === column.title) ? null : restoreColumn(b, index, column),
     );
   }
 
@@ -567,7 +625,8 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
     batch(() => {
       // Nothing may stay open in a column that is about to hide.
       if (collapsing) {
-        if (editing()?.column === title) setEditing(null);
+        const edited = editingRef();
+        if (edited && board()?.columns[edited.column]?.title === title) setEditing(null);
         if (adding() === title) setAdding(null);
         if (renaming() === title) setRenaming(null);
       }
@@ -674,7 +733,7 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
     const column = b.columns[target];
     if (!column) return;
     const index = Math.min(ref.card, column.cards.length);
-    change(atCard(hint, (cur, at) => moveCard(cur, at, target, index)));
+    change(atCard(hint, (cur, at) => moveToColumn(cur, at, column.title, index)));
     if (isCollapsed(column.title)) toggleCollapsed(column.title, false);
     announce(`Moved “${hint.title}” to ${column.title}`);
     focusHint({ title: hint.title, column: column.title, ref: { column: target, card: index } });
@@ -721,14 +780,13 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
     if (e.metaKey || e.ctrlKey) return;
     if (key === '?') {
       handled();
-      setShowHelp((open) => !open);
+      togglePopover('help');
       return;
     }
     if (key === 'Escape') {
       if (showHelp() || showPicker()) {
         handled();
-        setShowHelp(false);
-        setShowPicker(false);
+        closePopovers();
       } else if (filterActive()) {
         handled();
         setQuery('');
@@ -807,6 +865,19 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
   createEffect(() => {
     if (editing() && board() && !editingRef()) setEditing(null);
   });
+  // A new card or rename field whose column was renamed or removed elsewhere closes,
+  // so it can never hold the keyboard and the live updates off.
+  createEffect(() => {
+    const b = board();
+    if (!b) return;
+    const titles = new Set(b.columns.map((c) => c.title));
+    const a = adding();
+    if (a !== null && (!titles.has(a) || isCollapsed(a))) setAdding(null);
+    const r = renaming();
+    if (r !== null && (!titles.has(r) || isCollapsed(r))) setRenaming(null);
+  });
+  // A draft belongs to one editor; opening or closing one starts afresh.
+  createEffect(on(editing, () => setDraft(null), { defer: true }));
 
   // --- Drag and drop ---
 
@@ -838,7 +909,7 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
     const target = board()?.columns[column];
     if (!target) return;
     const from = resolve(hint);
-    change(atCard(hint, (b, at) => moveCard(b, at, column, cardIndex)));
+    change(atCard(hint, (b, at) => moveToColumn(b, at, target.title, cardIndex)));
     const landed =
       cardIndex === undefined
         ? target.cards.length - (from?.column === column ? 1 : 0)
@@ -851,6 +922,17 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
       column: target.title,
       ref: { column, card: Math.max(0, landed) },
     });
+  }
+
+  /** Moves a card to the column with this title, wherever that column is by now. */
+  function moveToColumn(
+    b: KanbanBoard,
+    at: KanbanCardRef,
+    title: string,
+    index?: number,
+  ): KanbanBoard | null {
+    const column = b.columns.findIndex((c) => c.title === title);
+    return column < 0 ? null : moveCard(b, at, column, index);
   }
 
   function dropColumn(e: DragEvent, column: number): void {
@@ -881,6 +963,8 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
     );
   }
 
+  const firstColumnTitle = () => board()?.columns.find((c) => !isArchiveColumn(c.title))?.title;
+
   function addFromGitHub(item: { title: string; url: string }): void {
     const b = board();
     const first = b?.columns.findIndex((c) => !isArchiveColumn(c.title)) ?? -1;
@@ -906,14 +990,32 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
     }
   };
 
+  let pickerToggle: HTMLButtonElement | undefined;
+  let helpToggle: HTMLButtonElement | undefined;
+  /** One popover at a time; closing one hands focus back to its toggle. */
+  function togglePopover(which: 'picker' | 'help'): void {
+    const opening = which === 'picker' ? !showPicker() : !showHelp();
+    batch(() => {
+      setShowPicker(which === 'picker' && opening);
+      setShowHelp(which === 'help' && opening);
+    });
+    if (!opening) (which === 'picker' ? pickerToggle : helpToggle)?.focus();
+  }
+  function closePopovers(returnFocus = true): void {
+    const toggle = showPicker() ? pickerToggle : showHelp() ? helpToggle : undefined;
+    batch(() => {
+      setShowPicker(false);
+      setShowHelp(false);
+    });
+    if (returnFocus) (toggle ?? section)?.focus();
+  }
   // Clicks outside the popovers close them.
   createEffect(() => {
     if (!showHelp() && !showPicker()) return;
     const close = (e: PointerEvent) => {
       const target = e.target as HTMLElement;
       if (target.closest('.kanban-help, .kanban-picker, [data-popover-toggle]')) return;
-      setShowHelp(false);
-      setShowPicker(false);
+      closePopovers(false);
     };
     document.addEventListener('pointerdown', close, true);
     onCleanup(() => document.removeEventListener('pointerdown', close, true));
@@ -925,6 +1027,7 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
       ref={section}
       tabIndex={-1}
       aria-labelledby="kanban-title"
+      aria-describedby={hintId}
       inert={props.covered || undefined}
       onKeyDown={onBoardKeyDown}
     >
@@ -950,10 +1053,12 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
           <Show when={board()}>
             <button
               type="button"
+              ref={pickerToggle}
               data-popover-toggle
+              aria-haspopup="dialog"
               aria-expanded={showPicker()}
               title="Add open GitHub issues and pull requests as cards"
-              onClick={() => setShowPicker((open) => !open)}
+              onClick={() => togglePopover('picker')}
             >
               <GitHubIcon size={14} /> Add from GitHub
             </button>
@@ -971,9 +1076,7 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
           <Show when={text() && !error()}>
             <button
               type="button"
-              class="kanban-icon-button"
               title="Open KANBAN.md in your editor"
-              aria-label="Open KANBAN.md in your editor"
               onClick={() =>
                 void openFileInEditor(root, 'KANBAN.md', {
                   line: 1,
@@ -981,7 +1084,7 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
                 }).catch((err: unknown) => showNotification(errMessage(err)))
               }
             >
-              <ExternalLinkIcon />
+              Open file
             </button>
           </Show>
           <button
@@ -998,24 +1101,37 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
           </button>
         </div>
         <Show when={showPicker()}>
-          <div class="kanban-picker" role="dialog" aria-label="Add from GitHub">
+          <div
+            class="kanban-picker"
+            role="dialog"
+            aria-label="Add from GitHub"
+            onKeyDown={(e) => {
+              // Escape closes the picker even from its search field.
+              if (e.key !== 'Escape') return;
+              e.preventDefault();
+              e.stopPropagation();
+              closePopovers();
+            }}
+          >
             <div class="kanban-popover-head">
               <strong>Add from GitHub</strong>
               <button
                 type="button"
                 class="kanban-icon"
                 aria-label="Close Add from GitHub"
-                onClick={() => setShowPicker(false)}
+                onClick={() => closePopovers()}
               >
                 <CloseIcon size={12} />
               </button>
             </div>
             <small>
-              Each pick adds a card to the first column. The issue text stays on GitHub; a task
-              started from the card reads it there.
+              Each pick adds a card to {firstColumnTitle() || 'the first column'}. The issue text
+              stays on GitHub; a task started from the card reads it there.
             </small>
             <GitHubItemPicker
               projectRoot={root}
+              bare
+              autofocus
               onPick={addFromGitHub}
               pickedLabel={(item) => {
                 const b = board();
@@ -1065,66 +1181,55 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
                 ] as const
               }
             >
-              {([value, label]) => (
-                <button
-                  type="button"
-                  aria-pressed={quick() === value}
-                  onClick={() => setQuick(value)}
-                >
-                  {label}
-                </button>
-              )}
+              {([value, label]) => {
+                // Live counts sit inside their filter, in space that is always
+                // reserved, so a task starting never reflows the toolbar.
+                const count = () =>
+                  value === 'attention'
+                    ? summary().attention
+                    : value === 'running'
+                      ? summary().running
+                      : value === 'review'
+                        ? summary().review
+                        : null;
+                return (
+                  <button
+                    type="button"
+                    aria-pressed={quick() === value}
+                    aria-label={count() ? `${label}, ${count()}` : undefined}
+                    onClick={() => setQuick(quick() === value && value !== 'all' ? 'all' : value)}
+                  >
+                    {label}
+                    <Show when={count() !== null}>
+                      <span
+                        class="kanban-segment-count"
+                        classList={{ urgent: value === 'attention' && !!count() }}
+                        aria-hidden="true"
+                      >
+                        {count() || ''}
+                      </span>
+                    </Show>
+                  </button>
+                );
+              }}
             </For>
           </div>
           <span class="kanban-spacer" />
-          {/* Live counts sit in this always-present row, so they never reflow the header. */}
-          <div class="kanban-summaries">
-            <Show when={summary().attention}>
-              <button
-                type="button"
-                class="kanban-summary urgent"
-                aria-pressed={quick() === 'attention'}
-                title="Show the cards whose task needs your input"
-                onClick={() => setQuick(quick() === 'attention' ? 'all' : 'attention')}
-              >
-                {summary().attention} {summary().attention === 1 ? 'needs' : 'need'} input
-              </button>
-            </Show>
-            <Show when={summary().running}>
-              <button
-                type="button"
-                class="kanban-summary"
-                aria-pressed={quick() === 'running'}
-                onClick={() => setQuick(quick() === 'running' ? 'all' : 'running')}
-              >
-                <span class="kanban-dot running" aria-hidden="true" /> {summary().running} running
-              </button>
-            </Show>
-            <Show when={summary().review}>
-              <button
-                type="button"
-                class="kanban-summary"
-                aria-pressed={quick() === 'review'}
-                onClick={() => setQuick(quick() === 'review' ? 'all' : 'review')}
-              >
-                {summary().review} to review
-              </button>
-            </Show>
-          </div>
           <button
             type="button"
             class="kanban-icon-button"
+            ref={helpToggle}
             data-popover-toggle
             aria-expanded={showHelp()}
-            aria-controls={helpId}
+            aria-controls={showHelp() ? helpId : undefined}
             title="Keyboard shortcuts (?)"
             aria-label="Keyboard shortcuts"
-            onClick={() => setShowHelp((open) => !open)}
+            onClick={() => togglePopover('help')}
           >
             ?
           </button>
           <Show when={showHelp()}>
-            <KeyboardHelp id={helpId} onClose={() => setShowHelp(false)} />
+            <KeyboardHelp id={helpId} onClose={() => closePopovers()} />
           </Show>
         </div>
       </Show>
@@ -1333,7 +1438,7 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
                     <Show when={column().notes}>
                       <ColumnNotes text={column().notes} />
                     </Show>
-                    <div class="kanban-cards">
+                    <div class="kanban-cards" role="list" aria-label={column().title || 'Untitled'}>
                       <For each={visible()[columnIndex] ?? []}>
                         {(cardIndex) => {
                           const ref = () => ({ column: columnIndex, card: cardIndex });
@@ -1429,6 +1534,8 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
                                 >
                                   <KanbanCardEditor
                                     card={current()}
+                                    draft={draft()}
+                                    onDraft={setDraft}
                                     columns={b().columns.map((col) => col.title)}
                                     column={columnIndex}
                                     otherTitles={b()
@@ -1521,13 +1628,16 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
           </div>
         )}
       </Show>
+      <span id={hintId} class="kanban-sr-only">
+        Arrow keys move between cards, Enter edits a card, S starts a task, question mark lists all
+        shortcuts.
+      </span>
       <div class="kanban-sr-only" aria-live="polite">
         {announcement()}
       </div>
       <div
         class="kanban-undo"
         classList={{ shown: undo() !== null }}
-        role="status"
         onPointerEnter={() => clearTimeout(undoTimer)}
         onPointerLeave={() => undo() && armUndoTimer()}
         onFocusIn={() => clearTimeout(undoTimer)}
@@ -1550,22 +1660,24 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
   );
 }
 
+const MOD = isMac ? '⌘' : 'Ctrl';
+
 const SHORTCUTS: [string[], string][] = [
   [['←', '→', '↑', '↓'], 'Move between cards (or h j k l)'],
   [['Shift', '+ arrow'], 'Move the card'],
-  [['<', '>'], 'Move the card’s column'],
+  [['<', '>'], 'Move the whole column left or right'],
   [['Enter'], 'Edit the card (or e)'],
   [['s'], 'Start a task from the card'],
   [['x'], 'Mark done or not done (or Space)'],
   [['1', '…', '9'], 'Tick checklist item 1 to 9'],
   [['a'], 'Archive the card'],
   [['Delete'], 'Delete the card (or Backspace)'],
-  [['u'], 'Undo (or Ctrl+Z)'],
+  [['u'], `Undo (or ${MOD}+Z)`],
   [['n'], 'New card in the selected column'],
   [['r'], 'Rename the selected column'],
   [['/'], 'Filter cards'],
   [['Esc'], 'Close this list, or clear the filter'],
-  [['Ctrl', '+ Enter'], 'Save the card being edited'],
+  [[MOD, '+ Enter'], 'Save the card being edited'],
   [['?'], 'Show or hide this list'],
 ];
 

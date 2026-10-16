@@ -11,6 +11,9 @@ interface GitHubItemPickerProps {
   onPick: (item: GitHubWorkItem) => void;
   /** Marks items that are already taken (e.g. on the Kanban board) and disables them. */
   pickedLabel?: (item: GitHubWorkItem) => string | null;
+  /** Without its own frame, for use inside a popover that already has one. */
+  bare?: boolean;
+  autofocus?: boolean;
 }
 
 /** Lists the project repo's open issues and PRs, searchable through `gh --search`. */
@@ -30,13 +33,20 @@ export function GitHubItemPicker(props: GitHubItemPickerProps) {
         display: 'flex',
         'flex-direction': 'column',
         gap: '6px',
-        padding: '8px',
-        border: `1px solid ${theme.border}`,
-        'border-radius': 'var(--radius-md)',
-        background: theme.bgInput,
+        ...(props.bare
+          ? {}
+          : {
+              padding: '8px',
+              border: `1px solid ${theme.border}`,
+              'border-radius': 'var(--radius-md)',
+              background: theme.bgInput,
+            }),
       }}
     >
       <input
+        ref={(el) => {
+          if (props.autofocus) queueMicrotask(() => el.focus());
+        }}
         class="input-field"
         type="search"
         aria-label="Search issues and pull requests"
@@ -88,8 +98,11 @@ export function GitHubItemPicker(props: GitHubItemPickerProps) {
               <button
                 type="button"
                 class="github-item-option"
-                disabled={!!props.pickedLabel?.(item)}
-                onClick={() => props.onPick(item)}
+                // aria-disabled, not disabled: a picked item keeps focus for the next pick.
+                aria-disabled={props.pickedLabel?.(item) ? true : undefined}
+                onClick={() => {
+                  if (!props.pickedLabel?.(item)) props.onPick(item);
+                }}
                 title={item.url}
                 style={{
                   display: 'flex',
@@ -103,7 +116,8 @@ export function GitHubItemPicker(props: GitHubItemPickerProps) {
                   color: theme.fg,
                   'font-size': '13px',
                   'text-align': 'left',
-                  cursor: 'pointer',
+                  cursor: props.pickedLabel?.(item) ? 'default' : 'pointer',
+                  opacity: props.pickedLabel?.(item) ? '0.6' : '1',
                 }}
               >
                 <span

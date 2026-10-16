@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import type { Notify } from './notify.js';
 import { KANBAN_FILE } from './kanban.js';
+import { atomicWriteFileSync } from '../mcp/atomic.js';
 import { debug as logDebug } from '../log.js';
 import {
   appendGitInfoExcludeBlock,
@@ -1454,9 +1455,46 @@ async function seedClaudeSandboxFiles(
   }
 }
 
-/** Uncommitted changes that block a merge: all of them except the Kanban board's. */
+/**
+ * Unstaged edits to the project's Kanban board, which the app makes as tasks
+ * move: ` M KANBAN.md` or `?? KANBAN.md`. Staged or conflicted states are not
+ * the app's doing and are left to block a merge like any other change.
+ */
+function isUnstagedKanbanLine(line: string): boolean {
+  return (line[0] === ' ' || line[0] === '?') && line.slice(3) === KANBAN_FILE;
+}
+
+/** Uncommitted changes that block a merge: all of them except unstaged board edits. */
 export function blockingStatusLines(porcelain: string): string[] {
-  return porcelain.split('\n').filter((line) => line.trim() && line.slice(3) !== KANBAN_FILE);
+  return porcelain.split('\n').filter((line) => line.trim() && !isUnstagedKanbanLine(line));
+}
+
+/**
+ * Moves unstaged Kanban board edits out of the way for a merge and returns
+ * a function that puts them back. The file returns to its committed state (or
+ * is removed when untracked), so the merge, its checkout and any recovery
+ * (`reset --hard`) run on a clean tree and can never touch the board's edits;
+ * the saved text is written back afterwards whatever the merge did. If the
+ * merge changed the board too, the local board wins and the merged version
+ * stays in the commit, visible as a diff.
+ */
+export async function setAsideKanbanEdits(
+  mergeRoot: string,
+  porcelain: string,
+): Promise<() => Promise<void>> {
+  const line = porcelain.split('\n').find(isUnstagedKanbanLine);
+  if (!line) return async () => {};
+  const target = path.join(mergeRoot, KANBAN_FILE);
+  const saved = await fs.promises.readFile(target);
+  if (line.startsWith('??')) await fs.promises.unlink(target);
+  else await exec('git', ['checkout', '--', KANBAN_FILE], { cwd: mergeRoot });
+  return async () => {
+    try {
+      atomicWriteFileSync(target, saved);
+    } catch (err) {
+      console.warn(`Failed to restore ${KANBAN_FILE} after merge:`, err);
+    }
+  };
 }
 
 /**
@@ -2361,8 +2399,8 @@ export async function mergeTask(
     const mergeRoot = targetWorktree ?? projectRoot;
 
     // Verify clean working tree in the merge root. The project's Kanban board
-    // (KANBAN.md) is edited in place by the app as tasks move, so it alone does
-    // not block a merge; git still refuses if the merge itself touches it.
+    // (KANBAN.md) is edited in place by the app as tasks move, so its unstaged
+    // edits do not block a merge: they are set aside and restored around it.
     const { stdout: statusOut } = await exec('git', ['status', '--porcelain'], {
       cwd: mergeRoot,
     });
@@ -2370,68 +2408,72 @@ export async function mergeTask(
       throw new Error(
         'Working tree has uncommitted changes. Please commit or stash them before merging.',
       );
+    const restoreKanban = await setAsideKanbanEdits(mergeRoot, statusOut);
+    try {
+      // Capture the current branch BEFORE any checkout so we can restore it afterward.
+      const originalBranch = targetWorktree
+        ? null
+        : await getCurrentBranchName(projectRoot).catch(() => null);
 
-    // Capture the current branch BEFORE any checkout so we can restore it afterward.
-    const originalBranch = targetWorktree
-      ? null
-      : await getCurrentBranchName(projectRoot).catch(() => null);
+      if (!targetWorktree) {
+        // Need to checkout the target branch in the main repo
+        await exec('git', ['checkout', mainBranch], { cwd: projectRoot });
+      }
 
-    if (!targetWorktree) {
-      // Need to checkout the target branch in the main repo
-      await exec('git', ['checkout', mainBranch], { cwd: projectRoot });
-    }
+      const restoreBranch = async () => {
+        if (originalBranch) {
+          try {
+            await exec('git', ['checkout', originalBranch], { cwd: projectRoot });
+          } catch (e) {
+            console.warn(`Failed to restore branch '${originalBranch}':`, e);
+          }
+        }
+      };
 
-    const restoreBranch = async () => {
-      if (originalBranch) {
+      if (squash) {
         try {
-          await exec('git', ['checkout', originalBranch], { cwd: projectRoot });
+          await exec('git', ['merge', '--squash', '--', branchName], { cwd: mergeRoot });
         } catch (e) {
-          console.warn(`Failed to restore branch '${originalBranch}':`, e);
+          await exec('git', ['reset', '--hard', 'HEAD'], { cwd: mergeRoot }).catch((recoverErr) =>
+            console.warn('git reset --hard failed during squash recovery:', recoverErr),
+          );
+          await restoreBranch();
+          throw new Error(`Squash merge failed: ${e}`);
+        }
+        const msg = message ?? 'Squash merge';
+        try {
+          await exec('git', ['commit', '-m', msg], { cwd: mergeRoot });
+        } catch (e) {
+          await exec('git', ['reset', '--hard', 'HEAD'], { cwd: mergeRoot }).catch((recoverErr) =>
+            console.warn('git reset --hard failed during commit recovery:', recoverErr),
+          );
+          await restoreBranch();
+          throw new Error(`Commit failed: ${e}`);
+        }
+      } else {
+        try {
+          await exec('git', ['merge', '--', branchName], { cwd: mergeRoot });
+        } catch (e) {
+          await exec('git', ['merge', '--abort'], { cwd: mergeRoot }).catch((recoverErr) =>
+            console.warn('git merge --abort failed:', recoverErr),
+          );
+          await restoreBranch();
+          throw new Error(`Merge failed: ${e}`);
         }
       }
-    };
 
-    if (squash) {
-      try {
-        await exec('git', ['merge', '--squash', '--', branchName], { cwd: mergeRoot });
-      } catch (e) {
-        await exec('git', ['reset', '--hard', 'HEAD'], { cwd: mergeRoot }).catch((recoverErr) =>
-          console.warn('git reset --hard failed during squash recovery:', recoverErr),
-        );
-        await restoreBranch();
-        throw new Error(`Squash merge failed: ${e}`);
+      invalidateDiffBaseCache();
+
+      if (cleanup) {
+        await removeWorktree(projectRoot, branchName, true, worktreePath);
       }
-      const msg = message ?? 'Squash merge';
-      try {
-        await exec('git', ['commit', '-m', msg], { cwd: mergeRoot });
-      } catch (e) {
-        await exec('git', ['reset', '--hard', 'HEAD'], { cwd: mergeRoot }).catch((recoverErr) =>
-          console.warn('git reset --hard failed during commit recovery:', recoverErr),
-        );
-        await restoreBranch();
-        throw new Error(`Commit failed: ${e}`);
-      }
-    } else {
-      try {
-        await exec('git', ['merge', '--', branchName], { cwd: mergeRoot });
-      } catch (e) {
-        await exec('git', ['merge', '--abort'], { cwd: mergeRoot }).catch((recoverErr) =>
-          console.warn('git merge --abort failed:', recoverErr),
-        );
-        await restoreBranch();
-        throw new Error(`Merge failed: ${e}`);
-      }
+
+      await restoreBranch();
+
+      return { main_branch: mainBranch, lines_added: linesAdded, lines_removed: linesRemoved };
+    } finally {
+      await restoreKanban();
     }
-
-    invalidateDiffBaseCache();
-
-    if (cleanup) {
-      await removeWorktree(projectRoot, branchName, true, worktreePath);
-    }
-
-    await restoreBranch();
-
-    return { main_branch: mainBranch, lines_added: linesAdded, lines_removed: linesRemoved };
   });
 }
 

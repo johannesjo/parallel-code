@@ -2,12 +2,15 @@
 import { createEffect, createRoot, on } from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
+import { cleanHandoffText } from '../lib/agent-handoff';
 import { errMessage, warn as logWarn } from '../lib/log';
 import {
   DEFAULT_KANBAN_MARKDOWN,
   addIssueCard,
   advanceCardForBranch,
   findCardByIssue,
+  isArchiveColumn,
+  parseGitHubIssueUrl,
   buildKanbanPlanPrompt,
   buildKanbanTaskPrompt,
   findCard,
@@ -90,10 +93,11 @@ export function startKanbanCardTask(
   if (!column || !card) return false;
   setStore('newTaskPrefillPrompt', {
     projectId,
-    name: card.title,
+    name: cleanHandoffText(card.title),
     prompt: buildKanbanTaskPrompt(board, ref),
-    // A card tracking an issue links its task to it, as the GitHub page does.
-    ...(card.issue ? { githubUrl: card.issue } : {}),
+    // A card tracking an issue links its task to it, as the GitHub page does. A
+    // pull request is not linked: the task works on a fresh branch, not that PR.
+    ...(parseGitHubIssueUrl(card.issue)?.kind === 'issue' ? { githubUrl: card.issue } : {}),
     kanban: { projectId, title: card.title, column: column.title, ref: { ...ref } },
   });
   openKanban(null);
@@ -239,23 +243,39 @@ export function prefillKanbanPlanPrompt(project: Project, goal = ''): boolean {
   return true;
 }
 
+/** What adding GitHub items to a board did. */
+export interface AddIssuesResult {
+  added: number;
+  /** The board did not exist and was created for them. */
+  created: boolean;
+  /** The column the cards went to. */
+  column: string;
+}
+
 /**
  * Adds GitHub issues or PRs to the project's board as cards in the first
  * column, skipping any it already tracks and creating the board if the
- * project has none. Returns how many cards were added, or null on failure.
+ * project has none. Null on failure, which is reported.
  */
 export async function addIssuesToBoard(
   projectId: string,
   items: readonly { title: string; url: string }[],
-): Promise<number | null> {
+): Promise<AddIssuesResult | null> {
   const projectRoot = getProjectPath(projectId);
   if (!projectRoot) return null;
   try {
+    let created = false;
     if ((await readKanbanFile(projectRoot)) === null) {
-      // Another writer may create it first; the update below works on either.
-      await writeKanbanFile(projectRoot, DEFAULT_KANBAN_MARKDOWN, null).catch(() => undefined);
+      try {
+        await writeKanbanFile(projectRoot, DEFAULT_KANBAN_MARKDOWN, null);
+        created = true;
+      } catch (err) {
+        // Losing the race to another writer is fine; the update below uses its board.
+        if (!/changed on disk/.test(errMessage(err))) throw err;
+      }
     }
     let added = 0;
+    let column = '';
     await updateKanbanFile(projectRoot, (board) => {
       added = 0;
       const next = items.reduce((current, item) => {
@@ -263,9 +283,10 @@ export async function addIssuesToBoard(
         if (updated !== current) added++;
         return updated;
       }, board);
+      column = next.columns.find((c) => !isArchiveColumn(c.title))?.title ?? '';
       return next === board ? null : next;
     });
-    return added;
+    return { added, created, column };
   } catch (err) {
     logWarn('kanban', 'could not add issues to board', { projectId, error: errMessage(err) });
     showNotification(`Could not add to the Kanban board: ${errMessage(err)}`);

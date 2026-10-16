@@ -123,6 +123,29 @@ export function GitHubIssueDetail(props: {
               <button disabled={busy() || !!editing() || issue.loading} onClick={refresh}>
                 <SyncIcon /> Refresh issue
               </button>
+              {/* One button whose label follows the board, so focus stays on it. */}
+              <button
+                aria-busy={addingToBoard() || boardColumn.loading || undefined}
+                title={
+                  boardColumn()
+                    ? "Open the project's Kanban board"
+                    : "Add a card for this item to the project's Kanban board (KANBAN.md)"
+                }
+                onClick={() => {
+                  if (addingToBoard() || boardColumn.loading) return;
+                  if (boardColumn()) openKanban(props.projectId);
+                  else void addToBoard(current());
+                }}
+              >
+                <KanbanIcon />{' '}
+                {boardColumn.loading && boardColumn() === undefined
+                  ? 'Board…'
+                  : addingToBoard()
+                    ? 'Adding…'
+                    : boardColumn()
+                      ? `On board · ${boardColumn()}`
+                      : 'Add to board'}
+              </button>
             </div>
             <h2>{current().title}</h2>
             <GitHubItemBadges item={current()} />
@@ -153,27 +176,6 @@ export function GitHubIssueDetail(props: {
                     ? 'Review with agent'
                     : 'Start task'}
               </button>
-              <Show
-                when={!boardColumn.error && boardColumn()}
-                fallback={
-                  <button
-                    disabled={addingToBoard() || boardColumn.loading}
-                    title="Add a card for this item to the project's Kanban board (KANBAN.md)"
-                    onClick={() => void addToBoard(current())}
-                  >
-                    <KanbanIcon size={12} /> Add to board
-                  </button>
-                }
-              >
-                {(column) => (
-                  <button
-                    title="Open the project's Kanban board"
-                    onClick={() => openKanban(props.projectId)}
-                  >
-                    <KanbanIcon size={12} /> On board · {column()}
-                  </button>
-                )}
-              </Show>
               <small>
                 {store.showNewTaskPanel
                   ? 'Finish or dismiss your open task draft before starting another.'

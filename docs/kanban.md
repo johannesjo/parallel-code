@@ -8,6 +8,7 @@ couple of seconds.
 
 ## File format
 
+<!-- prettier-ignore -->
 ```markdown
 # Offline sync
 
@@ -16,15 +17,15 @@ Optional notes about the board.
 ## Backlog
 
 - [ ] Conflict resolution UI
-      Show both versions side by side and let the user pick.
+  Show both versions side by side and let the user pick.
   - [ ] Diff view for text fields
-        depends: Sync engine
-        issue: https://github.com/acme/app/issues/12
+  depends: Sync engine
+  issue: https://github.com/acme/app/issues/12
 
 ## In progress
 
 - [ ] Sync engine
-      branch: `task/sync-engine`
+  branch: `task/sync-engine`
 
 ## Done
 
@@ -62,8 +63,11 @@ Optional notes about the board.
 - A card moves forward on its own, never backwards: to Review when the agent
   signals done or opens a PR, to Done when the branch is merged from the app,
   the task lands, or its PR merges on GitHub.
-- Merging is not blocked by the board: the merge clean-tree check ignores
-  `KANBAN.md`. Git still refuses a merge that would itself change the file.
+- Merging is not blocked by the board. Unstaged edits to `KANBAN.md` are set
+  aside before a merge and written back afterwards, whatever the merge does;
+  if the task's branch changed the board too, the local board wins and the
+  merged version stays in the commit. Staged board changes still block a
+  merge, like any other uncommitted change.
 
 ## Planning agent
 

@@ -18,7 +18,9 @@
   /* Controls inherit this, so buttons and inputs share one size. */
   font-size: 13px;
   outline: none;
-  --kanban-surface: var(--task-container-bg, color-mix(in srgb, var(--fg) 3%, var(--island-bg)));
+  /* Columns sit a step off the page in every look, including those whose
+     task-container colour equals the page. */
+  --kanban-surface: color-mix(in srgb, var(--fg) 4%, var(--island-bg));
   --kanban-control-height: 30px;
 }
 .kanban button,
@@ -49,7 +51,7 @@
   flex-shrink: 0;
 }
 .kanban button:hover:not(:disabled) {
-  background: var(--bg-elevated);
+  background: var(--bg-hover);
 }
 .kanban button:disabled {
   opacity: 0.45;
@@ -59,7 +61,7 @@
 .kanban button[aria-pressed='true'] {
   border-color: var(--accent);
   color: var(--fg);
-  background: var(--bg-elevated);
+  background: var(--bg-selected-subtle);
 }
 .kanban :is(button, input, select, textarea, .kanban-card):focus-visible {
   outline: 2px solid var(--border-focus);
@@ -201,8 +203,30 @@
 /* Colour and background mark the pressed segment; a weight change would widen it. */
 .kanban .kanban-segments button[aria-pressed='true'] {
   color: var(--fg);
-  background: var(--bg-elevated);
+  background: var(--bg-selected-subtle);
   box-shadow: inset 0 -2px 0 var(--accent);
+}
+/* Space for a two-digit count is always there, so counts never move the row. */
+.kanban-segment-count {
+  display: inline-block;
+  min-width: 2.2ch;
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--fg-muted);
+}
+.kanban-segment-count:empty {
+  visibility: hidden;
+}
+/* Needs input: colour on the border, text at full strength for contrast in every look. */
+.kanban-segment-count.urgent {
+  border-color: var(--warning);
+  color: var(--fg);
+  font-weight: 600;
 }
 .kanban-summaries {
   display: flex;
@@ -242,9 +266,11 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
+  max-height: min(70vh, 560px);
+  overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--island-bg);
+  background: var(--bg-elevated);
   box-shadow: var(--shadow-soft);
 }
 .kanban-help {
@@ -471,6 +497,10 @@
   color: var(--fg-muted);
 }
 .kanban-collapsed-title {
+  max-height: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   writing-mode: vertical-rl;
   font-size: 12px;
   font-weight: 600;
@@ -542,30 +572,40 @@
   background: var(--island-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  /* Reserve the drop marker's and the urgency marker's lines so showing them never moves cards. */
-  border-top-width: 2px;
-  border-left-width: 3px;
-  border-left-color: transparent;
   cursor: grab;
   outline: none;
+  /* Markers below are drawn with shadows and a pseudo-element, never with
+     border widths, so showing them never moves a card. */
+  --kanban-ring: 0 0 0 transparent;
+  --kanban-bar: inset 0 0 0 transparent;
+  box-shadow: var(--kanban-bar), var(--kanban-ring);
   transition:
     border-color 120ms ease,
+    box-shadow 120ms ease,
     opacity 120ms ease,
     transform 120ms ease;
 }
 .kanban-card:hover {
   border-color: color-mix(in srgb, var(--fg) 22%, var(--border));
-  border-left-color: transparent;
 }
 .kanban-card.selected {
   border-color: var(--border-focus);
+  --kanban-ring: 0 0 0 1px var(--border-focus);
 }
-/* The selected border already marks focus; no second ring on top. */
+/* The selection ring already marks focus; no second outline on top. */
 .kanban-card.selected:focus-visible {
   outline: none;
 }
-.kanban-card.drop-before {
-  border-top-color: var(--accent);
+/* The drop marker sits in the gap above the card. */
+.kanban-card.drop-before::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -5px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
 }
 .kanban-card.dragging {
   opacity: 0.4;
@@ -573,10 +613,10 @@
 }
 /* Questions use the app's attention colour, failures its error colour. */
 .kanban-card.asking {
-  border-left-color: var(--warning);
+  --kanban-bar: inset 3px 0 0 var(--warning);
 }
 .kanban-card.failed {
-  border-left-color: var(--error);
+  --kanban-bar: inset 3px 0 0 var(--error);
 }
 .kanban-card.flash {
   animation: kanban-flash 1.6s ease-out;
@@ -799,8 +839,8 @@
   background: transparent;
 }
 .state-needs_input .kanban-task-open.urgent {
-  color: var(--warning);
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+  color: var(--fg);
+  border-color: var(--warning);
   font-weight: 600;
 }
 .state-error .kanban-task-open.urgent {
@@ -885,6 +925,15 @@
   font-size: 11px;
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
+}
+.kanban .kanban-card-edit {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.kanban-card:hover .kanban-card-edit,
+.kanban-card.selected .kanban-card-edit,
+.kanban .kanban-card-edit:focus-visible {
+  opacity: 1;
 }
 
 /* --- Card editor --- */

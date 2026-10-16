@@ -155,8 +155,12 @@ describe('GitHub issues on the board', () => {
   const issue = { title: 'Crash on start', url: 'https://github.com/acme/app/issues/12' };
 
   it('adds issues once and reports the column they are in', async () => {
-    expect(await addIssuesToBoard('p1', [issue, issue])).toBe(1);
-    expect(await addIssuesToBoard('p1', [issue])).toBe(0);
+    expect(await addIssuesToBoard('p1', [issue, issue])).toEqual({
+      added: 1,
+      created: false,
+      column: 'Backlog',
+    });
+    expect((await addIssuesToBoard('p1', [issue]))?.added).toBe(0);
     expect(disk.text).toContain(
       '- [ ] Crash on start\n  issue: https://github.com/acme/app/issues/12',
     );
@@ -165,8 +169,16 @@ describe('GitHub issues on the board', () => {
 
   it('creates the board when the project has none', async () => {
     disk.text = null;
-    expect(await addIssuesToBoard('p1', [issue])).toBe(1);
+    expect(await addIssuesToBoard('p1', [issue])).toMatchObject({ added: 1, created: true });
     expect(disk.text).toContain('## Backlog\n\n- [ ] Crash on start');
+  });
+
+  it('does not make a pull request card the new task’s own PR', () => {
+    const pr = 'https://github.com/acme/app/pull/7';
+    const board = parseKanban(`## Todo\n\n- [ ] Review\n  issue: ${pr}\n`);
+    expect(startKanbanCardTask('p1', board, { column: 0, card: 0 })).toBe(true);
+    expect((store.newTaskPrefillPrompt as { githubUrl?: string }).githubUrl).toBeUndefined();
+    setStore('showNewTaskPanel', false);
   });
 
   it('links a task started from an issue card to the issue', () => {
