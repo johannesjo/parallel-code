@@ -36,7 +36,12 @@ export function githubAgentAvailability(): 'loading' | 'failed' | 'none' | 'read
 
 /** The project's GitHub agent task, created on first use. Null while no agent is installed. */
 export function ensureGitHubAgentTask(project: Project): Task | null {
-  return ensureHiddenAgentTask(githubAgentTaskId(project.id), project, pickGitHubAgent);
+  return ensureProjectAgentTask(githubAgentTaskId(project.id), project);
+}
+
+/** A hidden agent task in the project checkout under `id`, created on first use. */
+export function ensureProjectAgentTask(id: string, project: Project): Task | null {
+  return ensureHiddenAgentTask(id, project, pickGitHubAgent);
 }
 
 /** Puts `text` in the GitHub agent's prompt box for the user to edit and send. */

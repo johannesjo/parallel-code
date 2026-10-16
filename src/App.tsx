@@ -775,7 +775,7 @@ function App() {
         // Not global, so an Escape typed into the agent terminal still
         // reaches the agent instead of leaving focus mode. Exits directly:
         // toggleTaskFocusMode ignores a standalone terminal as the active item.
-        // The new-task panel and GitHub page hide focus mode; leave it for
+        // The new-task panel and project pages hide focus mode; leave it for
         // when they close rather than flipping it unseen.
         if (store.focusMode && !store.showNewTaskPanel && !projectPageOpen()) {
           toggleFocusMode(false);

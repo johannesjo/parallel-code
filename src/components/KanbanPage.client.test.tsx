@@ -5,7 +5,7 @@ import { KanbanPage } from './KanbanPage';
 import { setStore, store } from '../store/core';
 import { getTaskAttentionState } from '../store/taskStatus';
 import { jumpToWaitingTask } from '../store/sidebar-attention';
-import { prefillGitHubAgentPrompt } from '../store/github-agent';
+import { setPrefillPrompt } from '../store/tasks';
 import type { Task } from '../store/types';
 
 const disk = vi.hoisted(() => ({ text: null as string | null }));
@@ -55,7 +55,11 @@ vi.mock('../store/sidebar-attention', () => ({
   computeAttentionEntries: () => [],
   jumpToWaitingTask: vi.fn(),
 }));
-vi.mock('../store/github-agent', () => ({ prefillGitHubAgentPrompt: vi.fn(() => true) }));
+vi.mock('../store/github-agent', () => ({
+  ensureProjectAgentTask: vi.fn((id: string) => ({ id })),
+}));
+vi.mock('../store/tasks', () => ({ setPrefillPrompt: vi.fn(), uncollapseTask: vi.fn() }));
+vi.mock('../store/github', () => ({ readGitHubIssue: vi.fn(async () => ({ state: 'open' })) }));
 // The agent terminal needs Electron; the pane's own behavior is covered on the GitHub page.
 vi.mock('./GitHubAgentPane', async () => {
   const { createSignal } = await import('solid-js');
@@ -94,9 +98,11 @@ let host: HTMLDivElement;
 let dispose: (() => void) | undefined;
 
 async function settle(): Promise<void> {
-  for (let i = 0; i < 5; i++) await Promise.resolve();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  // Saves read, write and read again; give each hop a turn.
+  for (let round = 0; round < 4; round++) {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 }
 
 async function mount(): Promise<void> {
@@ -113,7 +119,9 @@ function button(name: string): HTMLButtonElement {
 }
 
 function cardEl(title: string): HTMLElement {
-  const found = host.querySelector<HTMLElement>(`.kanban-card[aria-label="${title}"]`);
+  const found = [...host.querySelectorAll<HTMLElement>('.kanban-card')].find(
+    (card) => card.querySelector('.kanban-card-title > span:last-child')?.textContent === title,
+  );
   if (!found) throw new Error(`No card ${title}`);
   return found;
 }
@@ -170,6 +178,7 @@ describe('KanbanPage', () => {
       name: 'Build sync engine',
       projectId: 'p1',
       branchName: 'task/sync',
+      gitIsolation: 'worktree',
       agentIds: ['a1'],
       lastPrompt: 'implement the engine',
     } as unknown as Task);
@@ -180,7 +189,7 @@ describe('KanbanPage', () => {
     expect(card.classList.contains('asking')).toBe(true);
     expect(card.textContent).toContain('Needs input');
     expect(card.querySelector('.kanban-task-activity')?.textContent).toBe('Claude Code');
-    expect(host.querySelector('.kanban-summary.urgent')?.textContent).toBe('1 need you');
+    expect(host.querySelector('.kanban-summary.urgent')?.textContent).toBe('1 needs input');
     button('Answer').click();
     expect(jumpToWaitingTask).toHaveBeenCalledWith('t1', null);
   });
@@ -294,7 +303,9 @@ describe('KanbanPage', () => {
     button('Blocked').click();
     await settle();
     expect(
-      [...host.querySelectorAll('.kanban-card')].map((c) => c.getAttribute('aria-label')),
+      [...host.querySelectorAll('.kanban-card .kanban-card-title > span:last-child')].map(
+        (c) => c.textContent,
+      ),
     ).toEqual(['Write migration']);
     // The filter is remembered per project; leave it as the next test expects.
     button('All').click();
@@ -304,14 +315,15 @@ describe('KanbanPage', () => {
     await mount();
     button('Plan with agent').click();
     await settle();
-    expect(prefillGitHubAgentPrompt).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'p1' }),
+    // The board's own planner, not the GitHub page's agent.
+    expect(setPrefillPrompt).toHaveBeenCalledWith(
+      'kanban-agent-p1',
       expect.stringContaining('KANBAN.md'),
     );
     expect(host.querySelector('aside[aria-label="Planning agent"]')).not.toBeNull();
   });
 
-  it('reloads after a refused write instead of overwriting', async () => {
+  it('re-applies a change on top of an edit made elsewhere', async () => {
     await mount();
     disk.text = BOARD.replace('- [ ] Docs', '- [ ] Edited elsewhere');
     const box = host.querySelector<HTMLInputElement>('input[aria-label="Done: Write migration"]');
@@ -319,7 +331,100 @@ describe('KanbanPage', () => {
     box.checked = true;
     box.dispatchEvent(new Event('change', { bubbles: true }));
     await settle();
+    // The change is re-applied to the file as it now is: nothing is lost.
     expect(disk.text).toContain('- [ ] Edited elsewhere');
+    expect(disk.text).toContain('- [x] Write migration');
     expect(host.textContent).toContain('Edited elsewhere');
+  });
+
+  it('saves an edit made while the file changed elsewhere, onto the right card', async () => {
+    await mount();
+    cardEl('Docs').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await settle();
+    const title = host.querySelector<HTMLInputElement>('input[aria-label="Card title"]');
+    if (!title) throw new Error('no editor');
+    // Another writer moves cards around while the editor is open.
+    disk.text = BOARD.replace(
+      '- [ ] Write migration',
+      '- [ ] Inserted above\n- [ ] Write migration',
+    );
+    title.value = 'Docs v2';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+    title.closest('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    expect(disk.text).toContain('- [ ] Inserted above');
+    expect(disk.text).toContain('- [ ] Write migration');
+    expect(disk.text).toContain('- [ ] Docs v2');
+    expect(disk.text).not.toContain('- [ ] Docs\n');
+  });
+
+  it('never drags a card while another is being edited', async () => {
+    await mount();
+    cardEl('Docs').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await settle();
+    expect(cardEl('Write migration').getAttribute('draggable')).toBe('false');
+  });
+
+  it('keeps keyboard actions on visible cards after a delete under a filter', async () => {
+    await mount();
+    const filter = host.querySelector<HTMLInputElement>('input[aria-label="Filter cards"]');
+    if (!filter) throw new Error('no filter');
+    filter.value = 'docs';
+    filter.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    cardEl('Docs').focus();
+    press(cardEl('Docs'), 'Delete');
+    await settle();
+    // Nothing visible is left, so a second Delete must not touch a hidden card.
+    press(host.querySelector<HTMLElement>('.kanban') as HTMLElement, 'Delete');
+    await settle();
+    expect(disk.text).toContain('Write migration');
+    filter.value = '';
+    filter.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+  });
+
+  it('closes an empty new-card field on Enter, so the keyboard keeps working', async () => {
+    await mount();
+    button('Add card').click();
+    const input = host.querySelector<HTMLInputElement>('input[aria-label="New card title"]');
+    if (!input) throw new Error('no input');
+    press(input, 'Enter');
+    await settle();
+    expect(host.querySelector('input[aria-label="New card title"]')).toBeNull();
+    press(host.querySelector<HTMLElement>('.kanban') as HTMLElement, 'ArrowDown');
+    await settle();
+    expect(cardEl('Write migration').classList.contains('selected')).toBe(true);
+  });
+
+  it('closes the editor when its column collapses', async () => {
+    await mount();
+    cardEl('Docs').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await settle();
+    button('Collapse column Backlog').click();
+    await settle();
+    button('Expand column Backlog, 2 cards').click();
+    await settle();
+    expect(host.querySelector('form.kanban-card-editor')).toBeNull();
+  });
+
+  it('undoes a delete with the U key', async () => {
+    await mount();
+    cardEl('Docs').focus();
+    press(cardEl('Docs'), 'Delete');
+    await settle();
+    expect(disk.text).not.toContain('Docs');
+    press(host.querySelector<HTMLElement>('.kanban') as HTMLElement, 'u');
+    await settle();
+    expect(disk.text).toContain('- [ ] Docs');
+  });
+
+  it('shows a card’s GitHub issue', async () => {
+    disk.text = BOARD.replace(
+      '- [ ] Docs',
+      '- [ ] Docs\n  issue: https://github.com/acme/app/issues/12',
+    );
+    await mount();
+    expect(cardEl('Docs').querySelector('.kanban-issue')?.textContent).toContain('#12');
   });
 });

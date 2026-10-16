@@ -30,6 +30,7 @@ docs/*
 !docs/agent-coordination-plan.md
 !docs/agent-handoff-plan.md
 !docs/evidence-packages.md
+!docs/kanban.md
 
 # Sandbox bind-mount artifacts from user home (not project files).
 # Root-anchored so legitimate nested files with these names are still tracked.

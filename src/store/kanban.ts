@@ -4,7 +4,10 @@ import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { errMessage, warn as logWarn } from '../lib/log';
 import {
+  DEFAULT_KANBAN_MARKDOWN,
+  addIssueCard,
   advanceCardForBranch,
+  findCardByIssue,
   buildKanbanPlanPrompt,
   buildKanbanTaskPrompt,
   findCard,
@@ -15,7 +18,9 @@ import {
   type KanbanCardRef,
 } from '../lib/kanban';
 import { setStore, store } from './core';
-import { prefillGitHubAgentPrompt } from './github-agent';
+import { ensureProjectAgentTask } from './github-agent';
+import { setPrefillPrompt } from './tasks';
+import { kanbanAgentTaskId } from '../documents/task-id';
 import { toggleNewTaskPanel } from './navigation';
 import { showNotification } from './notification';
 import { getPrChecks } from './pr-checks-state';
@@ -87,6 +92,8 @@ export function startKanbanCardTask(
     projectId,
     name: card.title,
     prompt: buildKanbanTaskPrompt(board, ref),
+    // A card tracking an issue links its task to it, as the GitHub page does.
+    ...(card.issue ? { githubUrl: card.issue } : {}),
     kanban: { projectId, title: card.title, column: column.title, ref: { ...ref } },
   });
   openKanban(null);
@@ -106,7 +113,15 @@ export async function linkNewTaskToKanbanCard(
 ): Promise<void> {
   const task = store.tasks[taskId];
   // The card describes its own project's work.
-  if (!task?.branchName || source.projectId !== projectId) return;
+  if (!task || source.projectId !== projectId) return;
+  // Only a worktree task has a branch of its own; a direct task works on the
+  // base branch, which every other direct task shares.
+  if (task.gitIsolation !== 'worktree' || !task.branchName) {
+    showNotification(
+      `The task works without its own branch, so it was not linked to "${source.title}"`,
+    );
+    return;
+  }
   const projectRoot = getProjectPath(projectId);
   if (!projectRoot) return;
   let missing = false;
@@ -158,18 +173,30 @@ function taskLanded(task: Task): boolean {
 /**
  * Keeps cards in step with their tasks while the app runs: a task that reaches
  * review moves its card to the Review column, a landed one or one whose PR
- * merged to Done. Only
- * transitions seen while running count, so starting the app never rewrites a
- * board; merges done from the app report themselves through `mergeTask`.
+ * merged to Done. Only transitions seen while running count; a task's state at
+ * startup is the baseline, though PR checks arrive later and may then report a
+ * merge. Each task moves its card at most once per stage, so a card dragged
+ * back by hand stays put. Merges done from the app are reported by their
+ * callers (the merge dialog and the phone handler).
  */
 export function startKanbanAutomation(): () => void {
   return createRoot((dispose) => {
     const seen = new Map<string, { review: boolean; landed: boolean }>();
+    const moved = new Set<string>();
+    const advanceOnce = (
+      task: { id: string; projectId: string; branch: string },
+      stage: 'review' | 'done',
+    ) => {
+      const key = `${task.id}:${stage}`;
+      if (moved.has(key)) return;
+      moved.add(key);
+      void advanceKanbanCard(task.projectId, task.branch, stage);
+    };
     createEffect(
       on(
         () =>
           Object.values(store.tasks).map((task) =>
-            task
+            task && task.gitIsolation === 'worktree'
               ? {
                   id: task.id,
                   projectId: task.projectId,
@@ -187,13 +214,12 @@ export function startKanbanAutomation(): () => void {
             const before = seen.get(task.id);
             seen.set(task.id, { review: task.review, landed: task.landed });
             if (!before) continue;
-            if (task.landed && !before.landed) {
-              void advanceKanbanCard(task.projectId, task.branch, 'done');
-            } else if (task.review && !before.review) {
-              void advanceKanbanCard(task.projectId, task.branch, 'review');
-            }
+            if (task.landed && !before.landed) advanceOnce(task, 'done');
+            else if (task.review && !before.review) advanceOnce(task, 'review');
           }
           for (const id of seen.keys()) if (!present.has(id)) seen.delete(id);
+          for (const key of moved)
+            if (!present.has(key.slice(0, key.lastIndexOf(':')))) moved.delete(key);
         },
       ),
     );
@@ -201,7 +227,59 @@ export function startKanbanAutomation(): () => void {
   });
 }
 
-/** Puts a planning prompt for `goal` in the project agent's prompt box, to edit and send. */
+/**
+ * Puts a planning prompt for `goal` in the board agent's prompt box, to edit
+ * and send. An unsent draft in that box is left alone.
+ */
 export function prefillKanbanPlanPrompt(project: Project, goal = ''): boolean {
-  return prefillGitHubAgentPrompt(project, buildKanbanPlanPrompt(goal));
+  const task = ensureProjectAgentTask(kanbanAgentTaskId(project.id), project);
+  if (!task) return false;
+  if ((task.prefillPrompt ?? task.promptDraft ?? '').trim()) return true;
+  setPrefillPrompt(task.id, buildKanbanPlanPrompt(goal));
+  return true;
+}
+
+/**
+ * Adds GitHub issues or PRs to the project's board as cards in the first
+ * column, skipping any it already tracks and creating the board if the
+ * project has none. Returns how many cards were added, or null on failure.
+ */
+export async function addIssuesToBoard(
+  projectId: string,
+  items: readonly { title: string; url: string }[],
+): Promise<number | null> {
+  const projectRoot = getProjectPath(projectId);
+  if (!projectRoot) return null;
+  try {
+    if ((await readKanbanFile(projectRoot)) === null) {
+      // Another writer may create it first; the update below works on either.
+      await writeKanbanFile(projectRoot, DEFAULT_KANBAN_MARKDOWN, null).catch(() => undefined);
+    }
+    let added = 0;
+    await updateKanbanFile(projectRoot, (board) => {
+      added = 0;
+      const next = items.reduce((current, item) => {
+        const updated = addIssueCard(current, item);
+        if (updated !== current) added++;
+        return updated;
+      }, board);
+      return next === board ? null : next;
+    });
+    return added;
+  } catch (err) {
+    logWarn('kanban', 'could not add issues to board', { projectId, error: errMessage(err) });
+    showNotification(`Could not add to the Kanban board: ${errMessage(err)}`);
+    return null;
+  }
+}
+
+/** The board column a GitHub issue or PR sits in, or null when it is not on the board. */
+export async function issueBoardColumn(projectId: string, url: string): Promise<string | null> {
+  const projectRoot = getProjectPath(projectId);
+  if (!projectRoot) return null;
+  const text = await readKanbanFile(projectRoot).catch(() => null);
+  if (text === null) return null;
+  const board = parseKanban(text);
+  const ref = findCardByIssue(board, url);
+  return ref ? (board.columns[ref.column]?.title ?? null) : null;
 }

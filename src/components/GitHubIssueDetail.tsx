@@ -14,6 +14,7 @@ import {
   startGitHubIssueTask,
   updateGitHubIssue,
 } from '../store/github';
+import { addIssuesToBoard, issueBoardColumn, openKanban } from '../store/kanban';
 import { GitHubItemBadges } from './GitHubItemBadges';
 import {
   ChevronLeftIcon,
@@ -22,6 +23,7 @@ import {
   ExternalLinkIcon,
   PencilIcon,
   PersonIcon,
+  KanbanIcon,
   PlayIcon,
   SyncIcon,
 } from './icons';
@@ -46,6 +48,20 @@ export function GitHubIssueDetail(props: {
   );
   // Reading an errored resource throws to the app-wide ErrorBoundary; show the error inline instead.
   const loadedIssue = () => (issue.error ? undefined : issue());
+  const [boardColumn, { refetch: refetchBoardColumn }] = createResource(
+    () => ({ projectId: props.projectId, url: props.url }),
+    ({ projectId, url }) => issueBoardColumn(projectId, url),
+  );
+  const [addingToBoard, setAddingToBoard] = createSignal(false);
+  async function addToBoard(item: { title: string; url: string }) {
+    setAddingToBoard(true);
+    try {
+      await addIssuesToBoard(props.projectId, [item]);
+      await refetchBoardColumn();
+    } finally {
+      setAddingToBoard(false);
+    }
+  }
   const linkedTasks = createMemo(() =>
     Object.values(store.tasks).filter(
       (t) => sameGitHubIssue(t.githubUrl, props.url) || sameGitHubIssue(t.prUrl, props.url),
@@ -137,6 +153,27 @@ export function GitHubIssueDetail(props: {
                     ? 'Review with agent'
                     : 'Start task'}
               </button>
+              <Show
+                when={!boardColumn.error && boardColumn()}
+                fallback={
+                  <button
+                    disabled={addingToBoard() || boardColumn.loading}
+                    title="Add a card for this item to the project's Kanban board (KANBAN.md)"
+                    onClick={() => void addToBoard(current())}
+                  >
+                    <KanbanIcon size={12} /> Add to board
+                  </button>
+                }
+              >
+                {(column) => (
+                  <button
+                    title="Open the project's Kanban board"
+                    onClick={() => openKanban(props.projectId)}
+                  >
+                    <KanbanIcon size={12} /> On board · {column()}
+                  </button>
+                )}
+              </Show>
               <small>
                 {store.showNewTaskPanel
                   ? 'Finish or dismiss your open task draft before starting another.'

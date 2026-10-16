@@ -1,6 +1,8 @@
 /* The Kanban board page. Visual intensity is reserved for urgency (a task that
    needs input or failed); everything routine stays neutral. Elements that come
-   and go reserve their space so the board never jumps. */
+   and go reserve their space so the board never jumps. Colours, shadows and
+   radii come from the look's tokens, so every look (light, flat, islands)
+   renders the board in its own style. */
 
 .kanban {
   position: relative;
@@ -16,6 +18,8 @@
   /* Controls inherit this, so buttons and inputs share one size. */
   font-size: 13px;
   outline: none;
+  --kanban-surface: var(--task-container-bg, color-mix(in srgb, var(--fg) 3%, var(--island-bg)));
+  --kanban-control-height: 30px;
 }
 .kanban button,
 .kanban input,
@@ -26,7 +30,7 @@
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 5px 9px;
+  padding: 6px 9px;
 }
 .kanban button {
   cursor: pointer;
@@ -51,12 +55,14 @@
   opacity: 0.45;
   cursor: default;
 }
+/* A pressed toggle may show state with the accent (the documented exception). */
 .kanban button[aria-pressed='true'] {
   border-color: var(--accent);
   color: var(--fg);
+  background: var(--bg-elevated);
 }
 .kanban :is(button, input, select, textarea, .kanban-card):focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 1px;
 }
 .kanban small {
@@ -70,23 +76,32 @@
 .kanban-spacer {
   flex: 1;
 }
+.kanban-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 /* --- Header --- */
 
 .kanban-heading {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 16px;
-  padding: 14px 20px 12px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--border);
 }
 .kanban-heading-title {
   min-width: 0;
 }
 .kanban-heading h2 {
-  font-size: 18px;
+  font-size: 19px;
   margin: 0 0 2px;
   line-height: 1.3;
   overflow: hidden;
@@ -99,9 +114,9 @@
 }
 .kanban-save-state {
   display: inline-block;
-  min-width: 11ch;
+  min-width: 17ch;
   margin-left: 10px;
-  color: var(--fg-subtle, var(--fg-muted));
+  color: var(--fg-muted);
 }
 .kanban-save-state.error {
   color: var(--error);
@@ -112,19 +127,14 @@
   gap: 6px;
   flex-wrap: wrap;
 }
+.kanban-heading button,
+.kanban-toolbar button {
+  height: var(--kanban-control-height);
+  padding-block: 0;
+}
 .kanban .kanban-icon-button {
-  width: 30px;
-  height: 30px;
+  width: var(--kanban-control-height);
   padding: 0;
-}
-.kanban .kanban-summary {
-  background: transparent;
-  font-variant-numeric: tabular-nums;
-}
-.kanban .kanban-summary.urgent {
-  color: var(--warning);
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
-  font-weight: 600;
 }
 /* A dialog's or form's primary action: full-strength text, not colour. */
 .kanban .kanban-primary {
@@ -134,6 +144,7 @@
 /* --- Toolbar --- */
 
 .kanban-toolbar {
+  position: relative;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -145,44 +156,71 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 8px;
+  height: var(--kanban-control-height);
+  box-sizing: border-box;
+  padding: 0 6px 0 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-input);
   color: var(--fg-muted);
-  width: min(260px, 100%);
+  width: min(240px, 100%);
 }
 .kanban-search:focus-within {
-  border-color: var(--accent);
+  border-color: var(--border-focus);
 }
 .kanban .kanban-search input {
   border: 0;
   background: transparent;
-  padding: 5px 0;
+  padding: 0;
   flex: 1;
   min-width: 0;
   outline: none;
 }
+.kanban-search:focus-within kbd {
+  visibility: hidden;
+}
 .kanban-segments {
   display: inline-flex;
+  max-width: 100%;
+  overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  overflow: hidden;
 }
+/* Square inside the group in every look, including those that force a radius. */
 .kanban .kanban-segments button {
   border: 0;
-  border-radius: 0;
+  border-radius: 0 !important;
   background: transparent;
   color: var(--fg-muted);
-  padding: 4px 10px;
+  padding: 0 10px;
+  height: calc(var(--kanban-control-height) - 2px);
 }
 .kanban .kanban-segments button + button {
   border-left: 1px solid var(--border);
 }
+/* Colour and background mark the pressed segment; a weight change would widen it. */
 .kanban .kanban-segments button[aria-pressed='true'] {
   color: var(--fg);
   background: var(--bg-elevated);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.kanban-summaries {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.kanban .kanban-summary {
+  background: transparent;
+  font-variant-numeric: tabular-nums;
+}
+.kanban .kanban-summary.urgent {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
   font-weight: 600;
+}
+.kanban .kanban-summary.urgent[aria-pressed='true'] {
+  background: var(--bg-elevated);
+  border-color: var(--warning);
 }
 
 .kanban-error {
@@ -190,6 +228,64 @@
   padding: 8px 20px;
   color: var(--error);
   border-bottom: 1px solid var(--border);
+}
+
+/* --- Popovers (keyboard help, Add from GitHub) --- */
+
+.kanban-help,
+.kanban-picker {
+  position: absolute;
+  z-index: 4;
+  right: 20px;
+  top: calc(100% + 4px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--island-bg);
+  box-shadow: var(--shadow-soft);
+}
+.kanban-help {
+  width: min(340px, calc(100% - 40px));
+}
+.kanban-picker {
+  width: min(520px, calc(100% - 40px));
+}
+.kanban-popover-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.kanban-help dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+.kanban-help dt {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+.kanban-help dd {
+  margin: 0;
+  color: var(--fg-muted);
+}
+.kanban kbd {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--kanban-surface);
+  color: var(--fg);
 }
 
 /* --- Loading and empty states --- */
@@ -202,8 +298,8 @@
 .kanban-skeleton {
   flex: 0 0 280px;
   height: 220px;
-  border-radius: var(--radius-md);
-  background: var(--bg);
+  border-radius: var(--radius-lg);
+  background: var(--kanban-surface);
   border: 1px solid var(--border);
   animation: kanban-pulse 1.2s ease-in-out infinite alternate;
 }
@@ -237,7 +333,7 @@
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--bg);
+  background: var(--kanban-surface);
   font-family: var(--font-mono, monospace);
   font-size: 12px;
   line-height: 1.55;
@@ -259,7 +355,8 @@
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 16px 20px 56px;
+  /* Room below the last card for the undo bar that floats there. */
+  padding: 16px 20px 76px;
   overflow: auto;
   scroll-padding-inline: 20px;
 }
@@ -273,9 +370,9 @@
   flex-direction: column;
   gap: 8px;
   padding: 6px 6px 8px;
-  background: var(--bg);
+  background: var(--kanban-surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   min-height: 0;
   transition: border-color 120ms ease;
 }
@@ -309,19 +406,22 @@
   white-space: nowrap;
 }
 .kanban-count {
-  color: var(--fg-subtle, var(--fg-muted));
+  color: var(--fg-muted);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
 }
+/* Revealed on hover or focus; hidden tools take no clicks. */
 .kanban-column-tools {
   display: flex;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 120ms ease;
 }
 .kanban-column:hover .kanban-column-tools,
 .kanban-column-tools:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 .kanban .kanban-icon {
   background: transparent;
@@ -336,24 +436,39 @@
 .kanban-notes {
   margin: 0;
   padding: 0 6px;
+  display: flex;
+  flex-direction: column;
   color: var(--fg-muted);
   font-size: 12px;
   white-space: pre-wrap;
 }
-.kanban .kanban-column-collapsed {
+.kanban-notes-heading {
+  color: var(--fg);
+  font-weight: 600;
+}
+.kanban-column-collapsed {
   flex: 0 0 38px;
   min-height: 160px;
   max-height: 100%;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--kanban-surface);
+  transition: border-color 120ms ease;
+}
+.kanban-column-collapsed.drag-over {
+  border-color: var(--accent);
+}
+.kanban .kanban-column-collapsed button {
+  flex: 1;
   flex-direction: column;
   justify-content: flex-start;
   gap: 10px;
   padding: 10px 0;
-  background: var(--bg);
-  border-radius: var(--radius-md);
+  background: transparent;
+  border: 0;
+  border-radius: inherit !important;
   color: var(--fg-muted);
-}
-.kanban .kanban-column-collapsed.drag-over {
-  border-color: var(--accent);
 }
 .kanban-collapsed-title {
   writing-mode: vertical-rl;
@@ -366,19 +481,21 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow-x: hidden;
   overflow-y: auto;
   min-height: 8px;
-  padding: 2px;
-  margin: -2px;
+  /* Room for the 3px focus ring inside the scroll box. */
+  padding: 4px;
+  margin: -4px;
 }
 .kanban-column-empty {
   margin: 0;
   padding: 14px 8px;
   text-align: center;
   font-size: 12px;
-  color: var(--fg-subtle, var(--fg-muted));
+  color: var(--fg-muted);
   border: 1px dashed var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
 }
 .kanban .kanban-add-card {
   justify-content: flex-start;
@@ -403,6 +520,7 @@
   padding: 0;
   background: transparent;
   border-style: dashed;
+  border-radius: var(--radius-lg);
   color: var(--fg-muted);
 }
 .kanban .kanban-add-column-button:hover {
@@ -423,26 +541,28 @@
   padding: 9px 10px 8px;
   background: var(--island-bg);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   /* Reserve the drop marker's and the urgency marker's lines so showing them never moves cards. */
   border-top-width: 2px;
   border-left-width: 3px;
   border-left-color: transparent;
   cursor: grab;
   outline: none;
-  box-shadow: 0 1px 0 rgb(0 0 0 / 0.04);
   transition:
     border-color 120ms ease,
-    box-shadow 120ms ease,
     opacity 120ms ease,
     transform 120ms ease;
 }
 .kanban-card:hover {
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  border-color: color-mix(in srgb, var(--fg) 22%, var(--border));
+  border-left-color: transparent;
 }
 .kanban-card.selected {
-  border-color: var(--border-focus, var(--accent));
-  border-left-color: var(--border-focus, var(--accent));
+  border-color: var(--border-focus);
+}
+/* The selected border already marks focus; no second ring on top. */
+.kanban-card.selected:focus-visible {
+  outline: none;
 }
 .kanban-card.drop-before {
   border-top-color: var(--accent);
@@ -477,6 +597,10 @@
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
+.kanban-card-title .untitled {
+  color: var(--fg-muted);
+  font-style: italic;
+}
 .kanban .kanban-checklist input {
   margin: 2px 0 0;
   padding: 0;
@@ -494,6 +618,12 @@
   height: 15px;
   margin-top: 1px;
 }
+/* A 25px target around the 15px mark, without changing the layout. */
+.kanban-done::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+}
 .kanban .kanban-done input {
   position: absolute;
   inset: 0;
@@ -506,7 +636,7 @@
 .kanban-done-mark {
   position: absolute;
   inset: 0;
-  border: 1.5px solid var(--fg-subtle, var(--fg-muted));
+  border: 1.5px solid var(--fg-muted);
   border-radius: 50%;
   display: grid;
   place-content: center;
@@ -536,16 +666,14 @@
   transform: rotate(-45deg) scale(1);
 }
 .kanban-done input:focus-visible + .kanban-done-mark {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 1px;
 }
+/* A done card reads done by colour and strike-through; opacity would cut contrast. */
 .kanban-card.done .kanban-card-title > span {
   color: var(--fg-muted);
   text-decoration: line-through;
   text-decoration-color: color-mix(in srgb, var(--fg-muted) 60%, transparent);
-}
-.kanban-card.done {
-  opacity: 0.8;
 }
 .kanban-card-body {
   margin: 0;
@@ -580,7 +708,7 @@
   text-decoration: line-through;
 }
 .kanban-more {
-  color: var(--fg-subtle, var(--fg-muted));
+  color: var(--fg-muted);
   padding-left: 20px;
 }
 .kanban-blocked {
@@ -638,7 +766,7 @@
   background: var(--error);
 }
 .state-review .kanban-dot {
-  background: var(--accent);
+  background: var(--review, var(--fg-muted));
 }
 @keyframes kanban-breathe {
   0%,
@@ -653,16 +781,14 @@
   color: var(--fg-muted);
   white-space: nowrap;
 }
-.state-needs_input .kanban-task-state {
-  color: var(--warning);
-  font-weight: 600;
-}
+/* The bar and the Answer button carry the colour; the label stays plain. */
+.state-needs_input .kanban-task-state,
 .state-error .kanban-task-state {
-  color: var(--error);
+  color: var(--fg);
   font-weight: 600;
 }
 .kanban-task-age {
-  color: var(--fg-subtle, var(--fg-muted));
+  color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
 }
 .kanban .kanban-task-open {
@@ -687,7 +813,7 @@
   padding-left: 13px;
   font-family: var(--font-mono, monospace);
   font-size: 11px;
-  color: var(--fg-subtle, var(--fg-muted));
+  color: var(--fg-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -707,7 +833,7 @@
   padding: 0 6px;
   height: 18px;
   font-size: 11px;
-  border-radius: 9px;
+  border-radius: var(--radius-xs) !important;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--fg-muted);
@@ -716,6 +842,9 @@
 .kanban .kanban-chip.pr-failure {
   color: var(--error);
   border-color: color-mix(in srgb, var(--error) 55%, var(--border));
+}
+.kanban .kanban-issue.closed {
+  text-decoration: line-through;
 }
 .kanban .kanban-chip-remove {
   padding: 0;
@@ -737,7 +866,7 @@
   margin-left: -6px;
   background: transparent;
   border-color: transparent;
-  color: var(--fg-subtle, var(--fg-muted));
+  color: var(--fg-muted);
 }
 .kanban-card:hover .kanban-start,
 .kanban-card.selected .kanban-start,
@@ -750,14 +879,12 @@
   display: flex;
   gap: 6px;
   align-items: center;
+  min-width: 0;
 }
 .kanban-progress {
   font-size: 11px;
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
-}
-.kanban-progress.complete {
-  color: var(--success);
 }
 
 /* --- Card editor --- */
@@ -765,8 +892,8 @@
 .kanban-card-editor {
   cursor: default;
   gap: 8px;
-  border-color: var(--border-focus, var(--accent));
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-soft);
 }
 .kanban .kanban-editor-title {
   font-weight: 600;
@@ -782,7 +909,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
 }
 .kanban-editor-label {
   flex: 0 0 64px;
@@ -791,7 +917,7 @@
 .kanban-editor-row select {
   flex: 1;
   min-width: 0;
-  padding: 3px 6px;
+  padding: 4px 6px;
 }
 .kanban-depends {
   flex: 1;
@@ -804,33 +930,36 @@
 .kanban-editor-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
 }
-.kanban-editor-actions button {
-  font-size: 12px;
-  padding: 3px 10px;
+.kanban-editor-actions.secondary {
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
 }
 .kanban .kanban-quiet {
   background: transparent;
   border-color: transparent;
   color: var(--fg-muted);
+  padding-inline: 6px;
 }
 
-/* --- Overlays --- */
+/* --- Undo bar --- */
 
 .kanban-undo {
   position: absolute;
   left: 50%;
-  bottom: 16px;
+  bottom: 14px;
   z-index: 3;
+  max-width: min(560px, calc(100% - 40px));
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 8px 8px 8px 14px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--island-bg);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.3);
+  box-shadow: var(--shadow-soft);
   transform: translate(-50%, 8px);
   opacity: 0;
   visibility: hidden;
@@ -844,49 +973,15 @@
   visibility: visible;
   transform: translate(-50%, 0);
 }
-.kanban-undo button {
-  font-weight: 600;
-}
-.kanban-help {
-  position: absolute;
-  right: 20px;
-  top: 104px;
-  z-index: 3;
-  width: min(320px, calc(100% - 40px));
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--island-bg);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.3);
-}
-.kanban-help header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.kanban-help dl {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 6px 12px;
-  margin: 0;
-  font-size: 12px;
-}
-.kanban-help dt {
+.kanban-undo-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.kanban-help dd {
-  margin: 0;
-  color: var(--fg-muted);
-}
-.kanban kbd {
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-  padding: 1px 5px;
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  background: var(--bg);
+.kanban-undo button {
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

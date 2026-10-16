@@ -1,6 +1,6 @@
 import { matchesTaskProjectFilter } from './task-project-filter';
 import { batch } from 'solid-js';
-import { documentAgentTaskId, isGitHubAgentTaskId } from '../documents/task-id';
+import { documentAgentTaskId, isProjectPageAgentTaskId } from '../documents/task-id';
 import { store, setStore } from './core';
 import { info as logInfo } from '../lib/log';
 import {
@@ -12,6 +12,7 @@ import {
 import { showNotification } from './notification';
 import { pickAndAddProject } from './projects';
 import { reorderTask } from './tasks';
+import { closeProjectPages } from './project-pages';
 
 const AI_TERMINAL_PREFIX = 'ai-terminal:';
 
@@ -53,8 +54,8 @@ export function openItemName(id: string): string {
 }
 
 export function setActiveTask(id: string): void {
-  // Its panel lives on the GitHub page, which an active task would close.
-  if (isGitHubAgentTaskId(id)) return;
+  // Its panel lives on the GitHub page or the board, which an active task would close.
+  if (isProjectPageAgentTaskId(id)) return;
   const task = store.tasks[id];
   const terminal = store.terminals[id];
   const isDocument =
@@ -68,8 +69,7 @@ export function setActiveTask(id: string): void {
     });
   }
   if (!isDocument && !matchesTaskProjectFilter(id)) setStore('taskProjectFilter', null);
-  setStore('githubIssuesProjectId', null);
-  setStore('kanbanProjectId', null);
+  closeProjectPages();
   setStore('newTaskPanelFocused', false);
   setStore('placeholderFocused', false);
   let activeAgentId: string | null = null;
@@ -146,8 +146,7 @@ export function toggleNewTaskPanel(show?: boolean): void {
     return;
   }
   if (shouldShow) {
-    setStore('githubIssuesProjectId', null);
-    setStore('kanbanProjectId', null);
+    closeProjectPages();
     setStore('sidebarFocused', false);
     setStore('placeholderFocused', false);
   } else {

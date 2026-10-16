@@ -2,7 +2,7 @@ import { Match, Switch, createEffect, createSignal, untrack, type JSX } from 'so
 import { githubAgentTaskId } from '../documents/task-id';
 import { setStore, store } from '../store/core';
 import { triggerFocus } from '../store/focused-panel';
-import { ensureGitHubAgentTask, githubAgentAvailability } from '../store/github-agent';
+import { ensureProjectAgentTask, githubAgentAvailability } from '../store/github-agent';
 import type { Project } from '../store/types';
 import { HiddenAgentPane } from './HiddenAgentPane';
 import { CloseIcon } from './icons';
@@ -14,10 +14,13 @@ export interface AgentPaneState {
 
 // Until the user chooses, the pane is open only where the project already has an
 // agent task: opening the page must not start a paid session.
-export function createAgentPaneState(projectId: string): AgentPaneState {
+export function createAgentPaneState(
+  projectId: string,
+  taskId = githubAgentTaskId(projectId),
+): AgentPaneState {
   const [choice, setOpen] = createSignal<boolean | undefined>(undefined);
   return {
-    open: () => choice() ?? store.tasks[githubAgentTaskId(projectId)] !== undefined,
+    open: () => choice() ?? store.tasks[taskId] !== undefined,
     setOpen,
   };
 }
@@ -35,13 +38,15 @@ export function GitHubAgentPane(props: {
   /** What to suggest asking; the GitHub page asks for issue lists. */
   hint?: JSX.Element;
   label?: string;
+  /** Another page's own hidden agent; the GitHub page's by default. */
+  taskId?: string;
 }) {
-  const taskId = () => githubAgentTaskId(props.project.id);
+  const taskId = () => props.taskId ?? githubAgentTaskId(props.project.id);
   // Starts once the agent list is known; a started task ends the effect's work, so
   // re-runs (availability changes, task appearing) cannot start a second session.
   createEffect(() => {
     if (githubAgentAvailability() !== 'ready' || store.tasks[taskId()]) return;
-    if (!untrack(() => ensureGitHubAgentTask(props.project))) return;
+    if (!untrack(() => ensureProjectAgentTask(taskId(), props.project))) return;
     // The prompt registers its focus function once the pane has mounted.
     const promptKey = `${taskId()}:prompt`;
     queueMicrotask(() => triggerFocus(promptKey));

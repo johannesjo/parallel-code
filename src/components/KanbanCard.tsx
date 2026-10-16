@@ -1,9 +1,20 @@
-import { For, Show, createMemo, createSignal, onMount, untrack, type JSX } from 'solid-js';
-import { CloseIcon, CopyIcon, ExternalLinkIcon, LinkIcon, PlayIcon } from './icons';
+import {
+  For,
+  Show,
+  createMemo,
+  createResource,
+  createSignal,
+  createUniqueId,
+  onMount,
+  untrack,
+  type JSX,
+} from 'solid-js';
+import { CloseIcon, CopyIcon, ExternalLinkIcon, GitHubIcon, LinkIcon, PlayIcon } from './icons';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { formatRelativeAge } from '../lib/relativeAge';
-import { cardChecklist, cardSummary, type KanbanCard } from '../lib/kanban';
+import { cardChecklist, cardSummary, parseGitHubIssueUrl, type KanbanCard } from '../lib/kanban';
+import { readGitHubIssue } from '../store/github';
 import { store } from '../store/core';
 import { getAgentHookStatus } from '../store/agentHookStatus';
 import { getPrChecks } from '../store/pr-checks-state';
@@ -34,8 +45,12 @@ export function useKanbanClock(): () => void {
 
 /** The open task of this project working on `branch`, if any. */
 export function linkedTask(projectId: string, branch: string): Task | undefined {
+  // Only worktree tasks own their branch; a direct task works on a shared one.
   return Object.values(store.tasks).find(
-    (task) => task?.projectId === projectId && task.branchName === branch,
+    (task) =>
+      task?.projectId === projectId &&
+      task.gitIsolation === 'worktree' &&
+      task.branchName === branch,
   );
 }
 
@@ -156,7 +171,7 @@ function TaskRow(props: { task: Task }) {
             openTask(props.task);
           }}
         >
-          {state() === 'needs_input' ? 'Answer' : state() === 'error' ? 'Show' : 'Open'}
+          {state() === 'needs_input' ? 'Answer' : state() === 'error' ? 'Show error' : 'Open'}
           <ExternalLinkIcon size={10} />
         </button>
       </div>
@@ -172,7 +187,7 @@ function BranchRow(props: { branch: string }) {
   return (
     <li class="kanban-task state-gone">
       <div class="kanban-task-head">
-        <span class="kanban-branch" title="No open task works on this branch">
+        <span class="kanban-branch" title={`${props.branch}: no open task works on this branch`}>
           {props.branch}
         </span>
         <button
@@ -194,6 +209,49 @@ function BranchRow(props: { branch: string }) {
   );
 }
 
+/** GitHub state per issue URL, shared by every card and kept for a few minutes. */
+const issueStates = new Map<string, { at: number; state: Promise<string | null> }>();
+const ISSUE_STATE_TTL_MS = 5 * 60_000;
+
+function issueState(url: string): Promise<string | null> {
+  const cached = issueStates.get(url);
+  if (cached && Date.now() - cached.at < ISSUE_STATE_TTL_MS) return cached.state;
+  const state = readGitHubIssue(url).then(
+    (issue) => issue.state,
+    () => null,
+  );
+  issueStates.set(url, { at: Date.now(), state });
+  return state;
+}
+
+/** `#12` for the card's GitHub issue or PR, with its state once GitHub answers. */
+function IssueChip(props: { url: string }) {
+  const parsed = () => parseGitHubIssueUrl(props.url);
+  const [state] = createResource(() => props.url, issueState);
+  return (
+    <Show when={parsed()}>
+      {(issue) => (
+        <button
+          type="button"
+          class="kanban-chip kanban-issue"
+          classList={{ closed: state() === 'closed' || state() === 'merged' }}
+          tabIndex={-1}
+          title={`Open ${issue().kind === 'pr' ? 'pull request' : 'issue'} ${issue().repo}#${issue().number} on GitHub${state() ? ` (${state()})` : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            void invoke(IPC.ShellOpenExternal, { url: props.url });
+          }}
+        >
+          <GitHubIcon size={10} />#{issue().number}
+          <Show when={state() === 'closed' || state() === 'merged'}>
+            <span> · {state()}</span>
+          </Show>
+        </button>
+      )}
+    </Show>
+  );
+}
+
 export interface KanbanCardViewProps {
   card: KanbanCard;
   projectId: string;
@@ -201,6 +259,7 @@ export interface KanbanCardViewProps {
   blockedBy: string[];
   selected: boolean;
   tabIndex: number;
+  draggable: boolean;
   dropBefore: boolean;
   dragging: boolean;
   flash: boolean;
@@ -217,6 +276,8 @@ export interface KanbanCardViewProps {
 }
 
 export function KanbanCardView(props: KanbanCardViewProps) {
+  const titleId = createUniqueId();
+  const describedId = createUniqueId();
   const checklist = createMemo(() => cardChecklist(props.card));
   const summary = createMemo(() => cardSummary(props.card));
   const tasks = createMemo(() =>
@@ -224,6 +285,27 @@ export function KanbanCardView(props: KanbanCardViewProps) {
   );
   const state = createMemo(() => cardState(props.projectId, props.card));
   const checked = () => checklist().filter((item) => item.done).length;
+  // What a screen reader hears after the title: the card's state in words.
+  const description = () =>
+    [
+      props.card.done ? 'Done' : '',
+      state() === 'needs_input'
+        ? 'Needs input'
+        : state() === 'error'
+          ? 'Task failed'
+          : state() === 'active'
+            ? 'Task working'
+            : state() === 'review'
+              ? 'Ready for review'
+              : '',
+      props.blockedBy.length ? `Waits for ${props.blockedBy.join(', ')}` : '',
+      checklist().length ? `Checklist ${checked()} of ${checklist().length}` : '',
+      props.card.issue ? 'Tracks a GitHub issue' : '',
+    ]
+      .filter(Boolean)
+      .join('. ');
+  // Inner controls join the tab order only on the selected card.
+  const innerTab = () => (props.selected ? 0 : -1);
   return (
     <article
       class="kanban-card"
@@ -239,29 +321,38 @@ export function KanbanCardView(props: KanbanCardViewProps) {
       }}
       data-card={props.dataRef}
       tabIndex={props.tabIndex}
-      aria-label={props.card.title}
-      draggable={true}
-      onFocus={() => props.onSelect()}
+      aria-labelledby={titleId}
+      aria-describedby={describedId}
+      aria-current={props.selected ? 'true' : undefined}
+      draggable={props.draggable}
+      onFocus={(e) => {
+        if (e.target === e.currentTarget) props.onSelect();
+      }}
       onDragStart={(e) => props.onDragStart(e)}
       onDragEnd={() => props.onDragEnd()}
       onDragOver={(e) => props.onDragOver(e)}
       onDrop={(e) => props.onDrop(e)}
       onDblClick={(e) => {
-        if (!(e.target as HTMLElement).closest('button, input, a')) props.onEdit();
+        if (!(e.target as HTMLElement).closest('button, input, a, label')) props.onEdit();
       }}
     >
+      <span id={describedId} class="kanban-sr-only">
+        {description()}
+      </span>
       <div class="kanban-card-title">
         <label class="kanban-done">
           <input
             type="checkbox"
             checked={props.card.done}
-            tabIndex={-1}
-            aria-label={`Done: ${props.card.title}`}
+            tabIndex={innerTab()}
+            aria-label={`Done: ${props.card.title || 'Untitled'}`}
             onChange={(e) => props.onToggleDone(e.currentTarget.checked)}
           />
           <span class="kanban-done-mark" aria-hidden="true" />
         </label>
-        <span>{props.card.title}</span>
+        <span id={titleId} classList={{ untitled: !props.card.title }}>
+          {props.card.title || 'Untitled'}
+        </span>
       </div>
       <Show when={summary()}>
         <p class="kanban-card-body">{summary()}</p>
@@ -275,7 +366,7 @@ export function KanbanCardView(props: KanbanCardViewProps) {
                   <input
                     type="checkbox"
                     checked={item.done}
-                    tabIndex={-1}
+                    tabIndex={innerTab()}
                     onChange={() => props.onToggleChecklist(item.line)}
                   />
                   <span>{item.text}</span>
@@ -304,40 +395,35 @@ export function KanbanCardView(props: KanbanCardViewProps) {
           </For>
         </ul>
       </Show>
-      {/* A done card has nothing to start; keep only its checklist progress. */}
-      <Show when={!props.card.done || checklist().length}>
-        <div class="kanban-card-footer">
-          <Show when={!props.card.done}>
-            <button
-              type="button"
-              class="kanban-start"
-              tabIndex={-1}
-              title={
-                props.blockedBy.length
-                  ? `Waits for ${props.blockedBy.join(', ')}; start anyway`
-                  : 'Start a task from this card (S)'
-              }
-              onClick={(e) => {
-                e.stopPropagation();
-                props.onStart();
-              }}
-            >
-              <PlayIcon size={10} /> {props.card.branches.length ? 'Start another' : 'Start task'}
-            </button>
+      {/* Always rendered, so ticking a card done never changes its height. */}
+      <div class="kanban-card-footer">
+        <button
+          type="button"
+          class="kanban-start"
+          tabIndex={props.card.done ? -1 : innerTab()}
+          aria-hidden={props.card.done || undefined}
+          style={{ visibility: props.card.done ? 'hidden' : 'visible' }}
+          title={
+            props.blockedBy.length
+              ? `Waits for ${props.blockedBy.join(', ')}; start anyway`
+              : 'Start a task from this card (S)'
+          }
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onStart();
+          }}
+        >
+          <PlayIcon size={10} /> {props.card.branches.length ? 'Start another task' : 'Start task'}
+        </button>
+        <span class="kanban-card-meta">
+          <Show when={props.card.issue}>{(url) => <IssueChip url={url()} />}</Show>
+          <Show when={checklist().length}>
+            <span class="kanban-progress" title="Checklist">
+              {checked()}/{checklist().length}
+            </span>
           </Show>
-          <span class="kanban-card-meta">
-            <Show when={checklist().length}>
-              <span
-                class="kanban-progress"
-                classList={{ complete: checked() === checklist().length }}
-                title="Checklist"
-              >
-                {checked()}/{checklist().length}
-              </span>
-            </Show>
-          </span>
-        </div>
-      </Show>
+        </span>
+      </div>
     </article>
   );
 }
@@ -386,6 +472,7 @@ export function KanbanCardEditor(props: {
   return (
     <form
       class="kanban-card kanban-card-editor"
+      aria-label={`Edit card ${initial.title || 'Untitled'}`}
       onKeyDown={onKeyDown}
       onSubmit={(e) => {
         e.preventDefault();
@@ -396,6 +483,7 @@ export function KanbanCardEditor(props: {
         ref={titleRef}
         class="kanban-editor-title"
         aria-label="Card title"
+        placeholder="Card title"
         value={title()}
         onInput={(e) => setTitle(e.currentTarget.value)}
         onKeyDown={(e) => {
@@ -446,7 +534,7 @@ export function KanbanCardEditor(props: {
                 e.currentTarget.value = '';
               }}
             >
-              <option value="">Add card…</option>
+              <option value="">Add dependency…</option>
               <For each={candidates()}>{(t) => <option value={t}>{t}</option>}</For>
             </select>
           </Show>
@@ -465,7 +553,8 @@ export function KanbanCardEditor(props: {
         <button type="button" onClick={() => props.onCancel()} title="Cancel (Esc)">
           Cancel
         </button>
-        <span class="kanban-spacer" />
+      </div>
+      <div class="kanban-editor-actions secondary">
         <button type="button" class="kanban-quiet" onClick={() => props.onArchive()}>
           Archive
         </button>

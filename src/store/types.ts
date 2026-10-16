@@ -140,7 +140,6 @@ export interface Project {
   superProductivityProjectId?: string;
 }
 
-/** A Super Productivity task the New Task form was opened from. */
 /** The Kanban card a new task was started from; see src/store/kanban.ts. */
 export interface KanbanNewTaskSource {
   projectId: string;
@@ -149,6 +148,7 @@ export interface KanbanNewTaskSource {
   ref: { column: number; card: number };
 }
 
+/** A Super Productivity task the New Task form was opened from. */
 export interface SpNewTaskSource {
   taskId: string;
   title: string;

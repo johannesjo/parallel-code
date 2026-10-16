@@ -771,7 +771,7 @@ export function Sidebar() {
                           onKeyDown={(e) => e.stopPropagation()}
                           onClick={(e) => {
                             e.stopPropagation();
-                            openKanban(store.kanbanProjectId === project.id ? null : project.id);
+                            openKanban(project.id);
                           }}
                           style={{
                             color:

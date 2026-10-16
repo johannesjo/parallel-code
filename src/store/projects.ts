@@ -3,9 +3,9 @@ import { openDialog } from '../lib/dialog';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
-import type { Project } from './types';
+import type { Project, Task } from './types';
 import { sanitizeBranchPrefix } from '../lib/branch-name';
-import { documentAgentTaskId, githubAgentTaskId } from '../documents/task-id';
+import { projectHiddenAgentTaskIds } from '../documents/task-id';
 import { forgetBlockEdits } from '../documents/block-edit-state';
 import { forgetGitHubLists } from './github-list-storage';
 import { clearAgentActivity } from './taskStatus';
@@ -305,20 +305,25 @@ export async function relinkProject(projectId: string): Promise<boolean> {
   const project = getProject(projectId);
   if (!project) return false;
   if (project.path !== newPath) forgetBlockEditsLeftBy(projectId, project.path);
-  const task =
-    store.tasks[
-      project.kind === 'document' ? documentAgentTaskId(projectId) : githubAgentTaskId(projectId)
-    ];
-  if (task && task.worktreePath !== newPath) {
+  const moved = projectHiddenAgentTaskIds(project)
+    .map((id) => store.tasks[id])
+    .filter((task): task is Task => !!task && task.worktreePath !== newPath);
+  // The board reads its file from the project path it opened with.
+  if (store.kanbanProjectId === projectId && project.path !== newPath) {
+    setStore('kanbanProjectId', null);
+  }
+  if (moved.length) {
     // Unmount before stopping old PTYs; an attached process cannot change cwd.
     if (store.activeDocumentProjectId === projectId) setStore('activeDocumentProjectId', null);
     if (store.githubIssuesProjectId === projectId) setStore('githubIssuesProjectId', null);
     await Promise.all(
-      [...task.agentIds, ...task.shellAgentIds].map((agentId) =>
-        invoke(IPC.KillAgent, { agentId }),
+      moved.flatMap((task) =>
+        [...task.agentIds, ...task.shellAgentIds].map((agentId) =>
+          invoke(IPC.KillAgent, { agentId }),
+        ),
       ),
     );
-    for (const id of task.agentIds) clearAgentActivity(id);
+    for (const task of moved) for (const id of task.agentIds) clearAgentActivity(id);
   }
 
   setStore(
@@ -327,7 +332,7 @@ export async function relinkProject(projectId: string): Promise<boolean> {
       if (idx === -1) return;
       s.projects[idx].path = newPath;
       s.projects[idx].isGitRepo = isGitRepo;
-      if (task && task.worktreePath !== newPath) {
+      for (const task of moved) {
         s.tasks[task.id].worktreePath = newPath;
         for (const id of task.agentIds) {
           const agent = s.agents[id];

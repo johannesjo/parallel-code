@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setStore } from './core';
-import { advanceKanbanCard, startKanbanAutomation, updateKanbanFile } from './kanban';
-import { addCard } from '../lib/kanban';
+import { setStore, store } from './core';
+import {
+  addIssuesToBoard,
+  advanceKanbanCard,
+  issueBoardColumn,
+  linkNewTaskToKanbanCard,
+  openKanban,
+  startKanbanAutomation,
+  startKanbanCardTask,
+  updateKanbanFile,
+} from './kanban';
+import { showNotification } from './notification';
+import { addCard, parseKanban } from '../lib/kanban';
 import type { Task } from './types';
 
 const disk = vi.hoisted(() => ({ text: null as string | null, conflicts: 0 }));
@@ -23,13 +33,20 @@ vi.mock('../lib/ipc', () => ({
 }));
 vi.mock('./core', async () => {
   const { createStore } = await import('solid-js/store');
-  const [store, setStore] = createStore({ tasks: {} as Record<string, Task> });
+  const [store, setStore] = createStore({
+    tasks: {} as Record<string, Task>,
+    showNewTaskPanel: false,
+    newTaskPrefillPrompt: null as unknown,
+    githubIssuesProjectId: null as string | null,
+    kanbanProjectId: null as string | null,
+  });
   return { store, setStore };
 });
 vi.mock('./navigation', () => ({ toggleNewTaskPanel: vi.fn() }));
 vi.mock('./projects', () => ({ getProjectPath: () => '/repo' }));
 vi.mock('./notification', () => ({ showNotification: vi.fn() }));
-vi.mock('./github-agent', () => ({ prefillGitHubAgentPrompt: vi.fn() }));
+vi.mock('./github-agent', () => ({ ensureProjectAgentTask: vi.fn() }));
+vi.mock('./tasks', () => ({ setPrefillPrompt: vi.fn() }));
 vi.mock('./pr-checks-state', () => ({ getPrChecks: () => undefined }));
 
 const BOARD = `# Plan
@@ -85,6 +102,7 @@ describe('card automation', () => {
       id: 't1',
       projectId: 'p1',
       branchName: 'task/sync',
+      gitIsolation: 'worktree',
       signalDoneReceived: true,
     } as Task;
     setStore('tasks', 't1', task);
@@ -98,5 +116,73 @@ describe('card automation', () => {
     await flush();
     expect(disk.text).toMatch(/## Review\n\n- \[ \] Sync engine/);
     stop();
+  });
+});
+
+describe('linking tasks to cards', () => {
+  const source = {
+    projectId: 'p1',
+    title: 'Sync engine',
+    column: 'In progress',
+    ref: { column: 1, card: 0 },
+  };
+
+  it('links a worktree task by its branch', async () => {
+    setStore('tasks', 't1', {
+      id: 't1',
+      projectId: 'p1',
+      branchName: 'task/new',
+      gitIsolation: 'worktree',
+    } as Task);
+    await linkNewTaskToKanbanCard('t1', source, 'p1');
+    expect(disk.text).toContain('  branch: `task/sync`\n  branch: `task/new`');
+  });
+
+  it('does not link a direct task to the shared base branch, and says so', async () => {
+    setStore('tasks', 't2', {
+      id: 't2',
+      projectId: 'p1',
+      branchName: 'main',
+      gitIsolation: 'direct',
+    } as Task);
+    await linkNewTaskToKanbanCard('t2', source, 'p1');
+    expect(disk.text).toBe(BOARD);
+    expect(showNotification).toHaveBeenCalledWith(expect.stringContaining('was not linked'));
+  });
+});
+
+describe('GitHub issues on the board', () => {
+  const issue = { title: 'Crash on start', url: 'https://github.com/acme/app/issues/12' };
+
+  it('adds issues once and reports the column they are in', async () => {
+    expect(await addIssuesToBoard('p1', [issue, issue])).toBe(1);
+    expect(await addIssuesToBoard('p1', [issue])).toBe(0);
+    expect(disk.text).toContain(
+      '- [ ] Crash on start\n  issue: https://github.com/acme/app/issues/12',
+    );
+    expect(await issueBoardColumn('p1', issue.url)).toBe('Backlog');
+  });
+
+  it('creates the board when the project has none', async () => {
+    disk.text = null;
+    expect(await addIssuesToBoard('p1', [issue])).toBe(1);
+    expect(disk.text).toContain('## Backlog\n\n- [ ] Crash on start');
+  });
+
+  it('links a task started from an issue card to the issue', () => {
+    const board = parseKanban(`## Todo\n\n- [ ] Crash\n  issue: ${issue.url}\n`);
+    expect(startKanbanCardTask('p1', board, { column: 0, card: 0 })).toBe(true);
+    expect(store.newTaskPrefillPrompt).toMatchObject({ githubUrl: issue.url, name: 'Crash' });
+  });
+});
+
+describe('project pages', () => {
+  it('opening the board closes the GitHub page', () => {
+    setStore('githubIssuesProjectId', 'p1');
+    openKanban('p1');
+    expect(store.githubIssuesProjectId).toBeNull();
+    expect(store.kanbanProjectId).toBe('p1');
+    openKanban(null);
+    expect(store.kanbanProjectId).toBeNull();
   });
 });

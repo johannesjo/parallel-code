@@ -1,3 +1,5 @@
+import { cleanHandoffText } from './agent-handoff';
+
 /**
  * A Kanban board stored as plain Markdown (KANBAN.md at the project root):
  *
@@ -11,6 +13,7 @@
  *     Description lines, indented under the card.
  *     - [ ] An acceptance criterion
  *     depends: Another card's title
+ *     issue: https://github.com/owner/repo/issues/12
  *     branch: `task/branch-name`
  *
  *   ## Done
@@ -20,8 +23,9 @@
  * Each `##` heading is a column, each top-level list item a card, and the
  * indented lines under it the card's description. `- [ ]` items in a
  * description are the card's checklist. A `depends:` line names a card that
- * has to be done first, and a `branch:` line links the card to the Parallel
- * Code task working on that branch. Anything else inside a column (a
+ * has to be done first, an `issue:` line the GitHub issue or pull request the
+ * card tracks, and a `branch:` line links the card to the Parallel Code task
+ * working on that branch. Anything else inside a column (a
  * paragraph, a sub-heading) is kept as the column's notes, and Obsidian
  * Kanban's front matter and settings block are kept as they are, so a board
  * written by hand, by an agent or in Obsidian survives a round trip.
@@ -30,19 +34,29 @@
 export interface KanbanCard {
   title: string;
   done: boolean;
-  /** Description, without the indentation and without `branch:`/`depends:` lines. */
+  /** Description, without the card's indentation and without its metadata lines. */
   body: string;
   /** Branches of the tasks started from this card, oldest first. */
   branches: string[];
   /** Titles of the cards this one waits for. */
   depends: string[];
+  /** The GitHub issue or pull request the card tracks, as a URL; empty when none. */
+  issue: string;
+  /**
+   * Column text written between the previous card and this one (a sub-heading
+   * grouping the cards below it, say). It travels with the card, so the text
+   * keeps its place relative to the cards around it.
+   */
+  before: string;
 }
 
 export interface KanbanColumn {
   title: string;
-  /** Text inside the column that is not a card. */
+  /** Text inside the column before its first card. */
   notes: string;
   cards: KanbanCard[];
+  /** Text inside the column after its last card. */
+  after: string;
 }
 
 export interface KanbanBoard {
@@ -54,6 +68,9 @@ export interface KanbanBoard {
   columns: KanbanColumn[];
   /** Trailing `%% kanban:settings %%` block written by Obsidian Kanban. */
   footer: string;
+  /** The file's line ending and byte-order mark, kept on write. */
+  eol: '\n' | '\r\n';
+  bom: boolean;
 }
 
 /** Where a card sits on the board. */
@@ -82,13 +99,19 @@ Plan the project here. Each card can start a Parallel Code task.
 ## Done
 `;
 
-const COLUMN_RE = /^##\s+(.*?)\s*#*\s*$/;
-const BOARD_TITLE_RE = /^#\s+(.*?)\s*#*\s*$/;
-const CARD_RE = /^[-*+]\s+(?:\[([ xX])\]\s*)?(.*)$/;
-const INDENTED_RE = /^(?:\t| {2,})/;
-const BRANCH_RE = /^branch:\s*`?([^`\s]+)`?\s*$/i;
-const DEPENDS_RE = /^depends(?:\s+on)?:\s*(.+?)\s*$/i;
-const CHECKLIST_RE = /^([-*+]\s+\[)([ xX])(\]\s+)(.*)$/;
+// Headings need a space before closing hashes, so `## C#` keeps its `#`.
+const COLUMN_RE = /^ {0,3}##[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
+const BOARD_TITLE_RE = /^ {0,3}#[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
+const CARD_RE = /^ ?[-*+](?:[ \t]+(?:\[([ xX])\](?=[ \t]|$))?[ \t]*(.*))?$/;
+const THEMATIC_BREAK_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+const FENCE_OPEN_RE = /^([ \t]*)(`{3,}|~{3,})(.*)$/;
+const FOOTER_RE = /^%%\s*kanban:settings/;
+// The app writes these exactly; prose that merely starts with "Branch:" stays prose.
+const BRANCH_RE = /^branch:[ \t]*`([^`\s]+)`[ \t]*$/;
+const DEPENDS_RE = /^depends:[ \t]*(\S.*?)[ \t]*$/;
+const ISSUE_RE = /^issue:[ \t]*(https:\/\/github\.com\/\S+)[ \t]*$/;
+const CHECKLIST_RE = /^([ \t]*[-*+][ \t]+\[)([ xX])(\][ \t]+)(.*)$/;
+const NEGATED_RE = /\b(not|un)[ \t-]*(started|done|finished|complete[d]?)\b/i;
 const DONE_COLUMN_RE = /\b(done|complete[d]?|finished|shipped|closed)\b/i;
 const ACTIVE_COLUMN_RE = /\b(in progress|doing|active|wip|working|started)\b/i;
 const REVIEW_COLUMN_RE = /\b(review|reviewing|qa|testing|verify|verification)\b/i;
@@ -102,136 +125,273 @@ function trimBlankLines(lines: string[]): string[] {
   return lines.slice(start, end);
 }
 
-/** Removes the indentation every non-blank line shares (tabs count as four spaces). */
-function dedent(lines: string[]): string[] {
-  const expanded = lines.map((line) => line.replace(/^\t+/, (tabs) => '    '.repeat(tabs.length)));
-  const indents = expanded
-    .filter((line) => line.trim())
-    .map((line) => line.length - line.trimStart().length);
-  const common = indents.length ? Math.min(...indents) : 0;
-  return expanded.map((line) =>
-    line.slice(Math.min(common, line.length - line.trimStart().length)),
-  );
-}
-
 function singleLine(text: string): string {
   return text.replace(/\s*[\r\n]+\s*/g, ' ').trim();
 }
 
-/** Splits off leading YAML front matter. */
+/** Leading whitespace width, a tab counting as four columns. */
+function indentOf(line: string): number {
+  let width = 0;
+  for (const ch of line) {
+    if (ch === ' ') width++;
+    else if (ch === '\t') width += 4 - (width % 4);
+    else break;
+  }
+  return width;
+}
+
+/** Removes a card's content indentation: up to two spaces or one tab. */
+function stripCardIndent(line: string): string {
+  if (line.startsWith('\t')) return line.slice(1);
+  return line.replace(/^ {1,2}/, '');
+}
+
+interface Fence {
+  char: string;
+  length: number;
+  indent: number;
+}
+
+/** The fence a line opens, following CommonMark: a backtick fence's info has no backtick. */
+function fenceOpening(line: string): Fence | null {
+  const match = FENCE_OPEN_RE.exec(line);
+  if (!match) return null;
+  if (match[2][0] === '`' && match[3].includes('`')) return null;
+  return { char: match[2][0], length: match[2].length, indent: indentOf(match[1]) };
+}
+
+function closesFence(line: string, fence: Fence): boolean {
+  const trimmed = line.trim();
+  return trimmed.length >= fence.length && [...trimmed].every((ch) => ch === fence.char);
+}
+
+/** Whether a line leaves an HTML comment open. */
+function opensComment(line: string): boolean {
+  const start = line.lastIndexOf('<!--');
+  return start >= 0 && !line.slice(start + 4).includes('-->');
+}
+
+/**
+ * Tracks code fences and HTML comments across lines, so text inside them is
+ * never read as board structure.
+ */
+class Literal {
+  fence: Fence | null = null;
+  comment = false;
+
+  get active(): boolean {
+    return this.fence !== null || this.comment;
+  }
+
+  /** Feeds one line that is not structure; returns nothing. */
+  feed(line: string): void {
+    if (this.fence) {
+      if (closesFence(line, this.fence)) this.fence = null;
+      return;
+    }
+    if (this.comment) {
+      if (line.includes('-->')) this.comment = opensComment(line.slice(line.indexOf('-->') + 3));
+      return;
+    }
+    const fence = fenceOpening(line);
+    if (fence) this.fence = fence;
+    else if (opensComment(line)) this.comment = true;
+  }
+}
+
+/** YAML front matter: a leading `---` block that reads like keys and values. */
 function splitFrontmatter(lines: string[]): { frontmatter: string[]; rest: string[] } {
   if (lines[0]?.trim() !== '---') return { frontmatter: [], rest: lines };
   const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
   if (end < 0) return { frontmatter: [], rest: lines };
+  const inner = lines.slice(1, end);
+  const yamlish = inner.every(
+    (line) => !line.trim() || /^[\w-]+[ \t]*:/.test(line) || /^[ \t]/.test(line),
+  );
+  if (!yamlish || !inner.some((line) => /^[\w-]+[ \t]*:/.test(line))) {
+    return { frontmatter: [], rest: lines };
+  }
   return { frontmatter: lines.slice(0, end + 1), rest: lines.slice(end + 1) };
 }
 
-/** Splits off a trailing `%% kanban:settings ... %%` block. */
-function splitFooter(lines: string[]): { rest: string[]; footer: string[] } {
-  const start = lines.findIndex((line) => /^%%\s*kanban:settings/.test(line.trim()));
-  if (start < 0) return { rest: lines, footer: [] };
-  return { rest: lines.slice(0, start), footer: trimBlankLines(lines.slice(start)) };
+/** Splits a card's raw lines into description and metadata. */
+function readCardBody(raw: string[]): Pick<KanbanCard, 'body' | 'branches' | 'depends' | 'issue'> {
+  const lines = trimBlankLines(raw.map(stripCardIndent));
+  const top = Math.min(...lines.filter((l) => l.trim()).map(indentOf), Infinity);
+  const literal = new Literal();
+  const branches: string[] = [];
+  const depends: string[] = [];
+  let issue = '';
+  const body: string[] = [];
+  for (const line of lines) {
+    if (!literal.active && line.trim() && indentOf(line) === top) {
+      const text = line.trim();
+      const branch = BRANCH_RE.exec(text);
+      const dependency = DEPENDS_RE.exec(text);
+      const linked = ISSUE_RE.exec(text);
+      if (branch) {
+        if (!branches.includes(branch[1])) branches.push(branch[1]);
+        continue;
+      }
+      if (dependency) {
+        if (!depends.includes(dependency[1])) depends.push(dependency[1]);
+        continue;
+      }
+      if (linked && !issue) {
+        issue = linked[1];
+        continue;
+      }
+    }
+    literal.feed(line);
+    body.push(line);
+  }
+  return { body: trimBlankLines(body).join('\n'), branches, depends, issue };
 }
 
 export function parseKanban(markdown: string): KanbanBoard {
-  const all = markdown.replace(/\r\n?/g, '\n').split('\n');
-  const { frontmatter, rest: afterFront } = splitFrontmatter(all);
-  const { rest: lines, footer } = splitFooter(afterFront);
+  const bom = markdown.startsWith('﻿');
+  const text = bom ? markdown.slice(1) : markdown;
+  const crlf = (text.match(/\r\n/g) ?? []).length;
+  const lf = (text.match(/\n/g) ?? []).length;
+  const all = text.replace(/\r\n?/g, '\n').split('\n');
+  const { frontmatter, rest: lines } = splitFrontmatter(all);
   const board: KanbanBoard = {
     frontmatter: frontmatter.join('\n'),
     title: '',
     preamble: '',
     columns: [],
-    footer: footer.join('\n'),
+    footer: '',
+    eol: crlf > 0 && crlf * 2 >= lf ? '\r\n' : '\n',
+    bom,
   };
+
+  type ColumnDraft = { title: string; notes: string[]; cards: KanbanCard[]; pending: string[] };
+  type CardDraft = { title: string; done: boolean; lines: string[]; before: string[] };
   const preamble: string[] = [];
-  type ColumnDraft = KanbanColumn & { noteLines: string[] };
-  type CardDraft = { title: string; done: boolean; lines: string[] };
+  const columns: ColumnDraft[] = [];
   let column: ColumnDraft | null = null;
   let card: CardDraft | null = null;
-  const columns: ColumnDraft[] = [];
-  let fence = false;
+  // Fences and comments in notes and the preamble; a card tracks its own.
+  const literal = new Literal();
+  const cardLiteral = new Literal();
 
   const finishCard = () => {
     if (!card || !column) return;
-    const branches: string[] = [];
-    const depends: string[] = [];
-    const body: string[] = [];
-    let inFence = false;
-    for (const line of dedent(trimBlankLines(card.lines))) {
-      if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
-      const branch = !inFence && BRANCH_RE.exec(line.trim());
-      const dependency = !inFence && !line.startsWith(' ') && DEPENDS_RE.exec(line.trim());
-      if (branch) {
-        if (!branches.includes(branch[1])) branches.push(branch[1]);
-      } else if (dependency) {
-        if (!depends.includes(dependency[1])) depends.push(dependency[1]);
-      } else body.push(line);
-    }
     column.cards.push({
       title: card.title,
       done: card.done,
-      body: trimBlankLines(body).join('\n'),
-      branches,
-      depends,
+      before: trimBlankLines(card.before).join('\n'),
+      ...readCardBody(card.lines),
     });
     card = null;
   };
 
-  for (const line of lines) {
-    // A fenced code block inside a description must not start columns or cards.
-    const fenceLine = /^\s*(```|~~~)/.test(line);
-    if (!fence) {
-      const heading = COLUMN_RE.exec(line);
-      if (heading) {
-        finishCard();
-        column = { title: heading[1], notes: '', cards: [], noteLines: [] };
-        columns.push(column);
+  /** Text that is not a card: the preamble, a column's notes, or between cards. */
+  const note = (line: string) => {
+    literal.feed(line);
+    if (!column) preamble.push(line);
+    else if (!column.cards.length && !card) column.notes.push(line);
+    else column.pending.push(line);
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (card) {
+      // A card's content is indented; a fence or comment inside it ends with the card.
+      const indented = !line.trim() || indentOf(line) >= 2;
+      if (cardLiteral.active && indented) {
+        cardLiteral.feed(line);
+        card.lines.push(line);
         continue;
       }
-      if (!column) {
-        const title = BOARD_TITLE_RE.exec(line);
-        if (title && !board.title && !preamble.some((l) => l.trim())) board.title = title[1];
-        else preamble.push(line);
+      if (indented) {
+        cardLiteral.feed(line);
+        card.lines.push(line);
         continue;
       }
-      const item = CARD_RE.exec(line);
-      if (item) {
-        finishCard();
-        card = {
-          title: item[2].trim(),
-          done: item[1] !== undefined && item[1] !== ' ',
-          lines: [],
-        };
+      const previous = card.lines.length ? card.lines[card.lines.length - 1] : 'title';
+      const lazy =
+        !cardLiteral.active &&
+        previous.trim() !== '' &&
+        !CARD_RE.test(line) &&
+        !COLUMN_RE.test(line) &&
+        !THEMATIC_BREAK_RE.test(line) &&
+        !/^ {0,3}(#|>|```|~~~|<!--|%%)/.test(line);
+      if (lazy) {
+        // A paragraph continued without indentation still belongs to the card.
+        card.lines.push(line);
         continue;
       }
+      cardLiteral.fence = null;
+      cardLiteral.comment = false;
+      finishCard();
     }
-    if (fenceLine) fence = !fence;
+
+    if (literal.active) {
+      note(line);
+      continue;
+    }
+    if (FOOTER_RE.test(line)) {
+      board.footer = trimBlankLines(lines.slice(i)).join('\n');
+      break;
+    }
+    const heading = COLUMN_RE.exec(line);
+    if (heading) {
+      column = { title: heading[1], notes: [], cards: [], pending: [] };
+      columns.push(column);
+      continue;
+    }
     if (!column) {
-      preamble.push(line);
+      const title = BOARD_TITLE_RE.exec(line);
+      if (title && !board.title && !preamble.some((l) => l.trim())) board.title = title[1];
+      else note(line);
       continue;
     }
-    if (card && (fence || INDENTED_RE.test(line) || !line.trim())) {
-      card.lines.push(line);
+    const item = !THEMATIC_BREAK_RE.test(line) && CARD_RE.exec(line);
+    if (item) {
+      card = {
+        title: (item[2] ?? '').trim(),
+        done: item[1] !== undefined && item[1] !== ' ',
+        lines: [],
+        before: column.cards.length ? column.pending : [],
+      };
+      if (!column.cards.length) column.notes.push(...column.pending);
+      column.pending = [];
       continue;
     }
-    finishCard();
-    column.noteLines.push(line);
+    note(line);
   }
   finishCard();
 
   board.preamble = trimBlankLines(preamble).join('\n');
-  board.columns = columns.map(({ noteLines, ...rest }) => ({
-    ...rest,
-    notes: trimBlankLines(noteLines).join('\n'),
+  board.columns = columns.map((c) => ({
+    title: c.title,
+    notes: trimBlankLines(c.notes).join('\n'),
+    cards: c.cards,
+    after: trimBlankLines(c.pending).join('\n'),
   }));
   return board;
 }
 
+/** Closes a fence or comment a description leaves open, so nothing after it is swallowed. */
+function closeOpenLiterals(lines: string[]): string[] {
+  const literal = new Literal();
+  for (const line of lines) literal.feed(line);
+  const closing: string[] = [];
+  if (literal.fence) closing.push(literal.fence.char.repeat(literal.fence.length));
+  if (literal.comment) closing.push('-->');
+  return closing.length ? [...lines, ...closing] : lines;
+}
+
 function serializeCard(card: KanbanCard): string {
-  const lines = [`- [${card.done ? 'x' : ' '}] ${singleLine(card.title) || 'Untitled'}`];
-  const body = card.body.replace(/\r\n?/g, '\n');
-  for (const line of trimBlankLines(body.split('\n'))) lines.push(line.trim() ? `  ${line}` : '');
+  const lines: string[] = [];
+  if (card.before.trim()) lines.push(card.before.trim(), '');
+  const title = singleLine(card.title);
+  lines.push(`- [${card.done ? 'x' : ' '}]${title ? ` ${title}` : ''}`);
+  const body = closeOpenLiterals(trimBlankLines(card.body.replace(/\r\n?/g, '\n').split('\n')));
+  for (const line of body) lines.push(line.trim() ? `  ${line}` : '');
+  if (card.issue) lines.push(`  issue: ${card.issue}`);
   for (const dependency of card.depends) lines.push(`  depends: ${singleLine(dependency)}`);
   for (const branch of card.branches) lines.push(`  branch: \`${branch}\``);
   return lines.join('\n');
@@ -240,36 +400,42 @@ function serializeCard(card: KanbanCard): string {
 export function serializeKanban(board: KanbanBoard): string {
   const parts: string[] = [];
   if (board.frontmatter.trim()) parts.push(board.frontmatter.trim());
-  // An Obsidian board (front matter, no title) stays without one.
-  if (board.title.trim() || !board.frontmatter.trim()) {
-    parts.push(`# ${singleLine(board.title) || 'Kanban'}`);
-  }
+  if (board.title.trim()) parts.push(`# ${singleLine(board.title)}`);
   if (board.preamble.trim()) parts.push(board.preamble.trim());
   for (const column of board.columns) {
     parts.push(`## ${singleLine(column.title) || 'Untitled'}`);
     if (column.notes.trim()) parts.push(column.notes.trim());
-    if (column.cards.length) parts.push(column.cards.map(serializeCard).join('\n'));
+    if (column.cards.length) {
+      // A card with text before it starts a new block, so the text stays a paragraph.
+      const blocks: string[][] = [[]];
+      for (const card of column.cards) {
+        if (card.before.trim() && blocks[blocks.length - 1].length) blocks.push([]);
+        blocks[blocks.length - 1].push(serializeCard(card));
+      }
+      for (const block of blocks) parts.push(block.join('\n'));
+    }
+    if (column.after.trim()) parts.push(column.after.trim());
   }
   if (board.footer.trim()) parts.push(board.footer.trim());
-  return `${parts.join('\n\n')}\n`;
+  const text = `${parts.join('\n\n')}\n`;
+  return `${board.bom ? '﻿' : ''}${board.eol === '\r\n' ? text.replace(/\n/g, '\r\n') : text}`;
+}
+
+function cloneCard(card: KanbanCard): KanbanCard {
+  return { ...card, branches: [...card.branches], depends: [...card.depends] };
 }
 
 function clone(board: KanbanBoard): KanbanBoard {
   return {
     ...board,
-    columns: board.columns.map((column) => ({
-      ...column,
-      cards: column.cards.map((card) => ({
-        ...card,
-        branches: [...card.branches],
-        depends: [...card.depends],
-      })),
-    })),
+    columns: board.columns.map((column) => ({ ...column, cards: column.cards.map(cloneCard) })),
   };
 }
 
 export function isDoneColumn(title: string): boolean {
-  return DONE_COLUMN_RE.test(title);
+  return (
+    DONE_COLUMN_RE.test(title) && !NEGATED_RE.test(title) && !/definition of done/i.test(title)
+  );
 }
 
 export function isArchiveColumn(title: string): boolean {
@@ -277,7 +443,13 @@ export function isArchiveColumn(title: string): boolean {
 }
 
 function columnIndex(board: KanbanBoard, re: RegExp): number {
-  return board.columns.findIndex((column) => re.test(column.title));
+  return board.columns.findIndex(
+    (column) => re.test(column.title) && !NEGATED_RE.test(column.title),
+  );
+}
+
+function doneColumnIndex(board: KanbanBoard): number {
+  return board.columns.findIndex((column) => isDoneColumn(column.title));
 }
 
 /** The column a started card moves to: the first "In progress"-like column. */
@@ -348,7 +520,12 @@ export function toggleChecklistItem(
 
 export function addColumn(board: KanbanBoard, title: string): KanbanBoard {
   const next = clone(board);
-  const column = { title: singleLine(title) || 'Untitled', notes: '', cards: [] };
+  const column: KanbanColumn = {
+    title: singleLine(title) || 'Untitled',
+    notes: '',
+    cards: [],
+    after: '',
+  };
   // New columns go before an Archive column, which stays last.
   const archive = next.columns.findIndex((c) => isArchiveColumn(c.title));
   if (archive >= 0 && !isArchiveColumn(column.title)) next.columns.splice(archive, 0, column);
@@ -370,7 +547,10 @@ export function removeColumn(board: KanbanBoard, index: number): KanbanBoard {
   if (removed?.cards.length) {
     const target = next.columns[Math.max(0, index - 1)];
     if (!target) return board;
-    target.cards.push(...removed.cards);
+    for (const card of removed.cards) {
+      card.done = doneAfterMove(card.done, removed.title, target.title);
+      target.cards.push(card);
+    }
   }
   return next;
 }
@@ -408,26 +588,39 @@ export function addCard(
   const target = next.columns[column];
   if (!target) return board;
   const card: KanbanCard = {
-    title: singleLine(title) || 'Untitled',
+    title: singleLine(title),
     done: isDoneColumn(target.title),
-    body: body.trim(),
+    body: trimBlankLines(body.split('\n')).join('\n'),
     branches: [],
     depends: [],
+    issue: '',
+    before: '',
   };
   target.cards.splice(index ?? target.cards.length, 0, card);
+  return next;
+}
+
+/** Puts a card back where it was, e.g. to undo a delete. */
+export function insertCard(board: KanbanBoard, ref: KanbanCardRef, card: KanbanCard): KanbanBoard {
+  const next = clone(board);
+  const target = next.columns[ref.column];
+  if (!target) return board;
+  target.cards.splice(Math.min(ref.card, target.cards.length), 0, cloneCard(card));
   return next;
 }
 
 export function updateCard(
   board: KanbanBoard,
   ref: KanbanCardRef,
-  change: Partial<Pick<KanbanCard, 'title' | 'body' | 'done' | 'depends'>>,
+  change: Partial<Pick<KanbanCard, 'title' | 'body' | 'done' | 'depends' | 'issue'>>,
 ): KanbanBoard {
   const next = clone(board);
   const card = next.columns[ref.column]?.cards[ref.card];
   if (!card) return board;
   if (change.title !== undefined) card.title = singleLine(change.title) || card.title;
-  if (change.body !== undefined) card.body = change.body.trim();
+  // Only blank lines are trimmed: leading spaces can be an indented code block.
+  if (change.body !== undefined) card.body = trimBlankLines(change.body.split('\n')).join('\n');
+  if (change.issue !== undefined) card.issue = change.issue.trim();
   if (change.done !== undefined) card.done = change.done;
   if (change.depends !== undefined) {
     card.depends = [...new Set(change.depends.map(singleLine).filter(Boolean))];
@@ -444,8 +637,20 @@ export function removeCard(board: KanbanBoard, ref: KanbanCardRef): KanbanBoard 
 }
 
 /**
- * Moves a card to `toColumn` before position `toIndex` (the end when omitted).
- * Entering a "Done" column checks the card; leaving one unchecks it.
+ * A card's checkmark after moving between columns: entering a Done column
+ * checks it, leaving one for an ordinary column unchecks it, and the Archive
+ * column changes nothing either way.
+ */
+function doneAfterMove(done: boolean, from: string, to: string): boolean {
+  if (isArchiveColumn(to) || isArchiveColumn(from)) return done;
+  if (isDoneColumn(to)) return true;
+  if (isDoneColumn(from)) return false;
+  return done;
+}
+
+/**
+ * Moves a card to `toColumn` before position `toIndex` (the end when omitted),
+ * updating its checkmark as `doneAfterMove` says.
  */
 export function moveCard(
   board: KanbanBoard,
@@ -463,10 +668,7 @@ export function moveCard(
   // Removing the card first shifts later positions in the same column up by one.
   if (from.column === toColumn && toIndex !== undefined && toIndex > from.card) index--;
   cards.splice(Math.max(0, Math.min(index, cards.length)), 0, card);
-  if (from.column !== toColumn) {
-    if (isDoneColumn(target.title)) card.done = true;
-    else if (isDoneColumn(source.title)) card.done = false;
-  }
+  if (from.column !== toColumn) card.done = doneAfterMove(card.done, source.title, target.title);
   return next;
 }
 
@@ -478,7 +680,7 @@ export function archiveCard(board: KanbanBoard, ref: KanbanCardRef): KanbanBoard
   if (archive === ref.column) return board;
   if (archive < 0) {
     next = clone(next);
-    next.columns.push({ title: 'Archive', notes: '', cards: [] });
+    next.columns.push({ title: 'Archive', notes: '', cards: [], after: '' });
     archive = next.columns.length - 1;
   }
   return moveCard(next, ref, archive, 0);
@@ -497,7 +699,10 @@ export function findCard(
   if (hint.ref && board.columns[hint.ref.column]?.cards[hint.ref.card]?.title === title) {
     return hint.ref;
   }
-  const columns = board.columns.map((column, index) => ({ column, index }));
+  // An archived copy of the card is never a stand-in for a live one.
+  const columns = board.columns
+    .map((column, index) => ({ column, index }))
+    .filter(({ column }) => !isArchiveColumn(column.title) || column.title === hint.column);
   const preferred = columns.filter(({ column }) => column.title === hint.column);
   for (const { column, index } of [...preferred, ...columns]) {
     const card = column.cards.findIndex((c) => c.title === title);
@@ -550,24 +755,27 @@ export function advanceCardForBranch(
 ): KanbanBoard | null {
   const ref = findCardByBranch(board, branch);
   if (!ref || isCardDone(board, ref)) return null;
-  const target =
-    stage === 'done' ? columnIndex(board, DONE_COLUMN_RE) : columnIndex(board, REVIEW_COLUMN_RE);
+  const target = stage === 'done' ? doneColumnIndex(board) : columnIndex(board, REVIEW_COLUMN_RE);
   if (target < 0 || target <= ref.column) {
     if (stage !== 'done') return null;
     // Merged on a board without a Done column ahead: check the card off in place.
-    const next = updateCard(board, ref, { done: true });
-    return next;
+    return updateCard(board, ref, { done: true });
   }
   const moved = moveCard(board, ref, target, stage === 'done' ? 0 : undefined);
   return stage === 'done' ? updateCard(moved, { column: target, card: 0 }, { done: true }) : moved;
 }
 
-/** The agent prompt for a task started from a card. */
+/**
+ * The agent prompt for a task started from a card. Card text comes from a file
+ * in the repository, which may not be the user's own writing: controls that
+ * could end the terminal paste early and invisible characters are removed.
+ * The prompt is prefilled for the user to read, never sent on its own.
+ */
 export function buildKanbanTaskPrompt(board: KanbanBoard, ref: KanbanCardRef): string {
   const column = board.columns[ref.column];
   const card = column?.cards[ref.card];
   if (!column || !card) return '';
-  const parts = [card.title];
+  const parts = [card.title || 'Untitled card'];
   if (card.body.trim()) parts.push(card.body.trim());
   if (cardChecklist(card).length) {
     parts.push(
@@ -577,10 +785,64 @@ export function buildKanbanTaskPrompt(board: KanbanBoard, ref: KanbanCardRef): s
   if (card.depends.length) {
     parts.push(`This card builds on: ${card.depends.join(', ')}.`);
   }
+  const issue = parseGitHubIssueUrl(card.issue);
+  if (issue) {
+    parts.push(
+      `It tracks GitHub ${issue.kind === 'pr' ? 'pull request' : 'issue'} ${card.issue}; read it with \`gh\` for the details${issue.kind === 'issue' ? `, and reference it in commits and the pull request (for example "Fixes #${issue.number}")` : ''}.`,
+    );
+  }
   parts.push(
     `This task comes from the card "${card.title}" in the "${column.title}" column of the project's Kanban board (KANBAN.md).`,
   );
-  return parts.join('\n\n');
+  return cleanHandoffText(parts.join('\n\n'));
+}
+
+/** Owner, repository and number of a github.com issue or pull request URL. */
+export function parseGitHubIssueUrl(
+  url: string,
+): { repo: string; number: number; kind: 'issue' | 'pr' } | null {
+  const match =
+    /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(issues|pull)\/(\d+)(?:[/?#].*)?$/.exec(
+      url.trim(),
+    );
+  if (!match) return null;
+  return { repo: match[1], number: Number(match[3]), kind: match[2] === 'pull' ? 'pr' : 'issue' };
+}
+
+/** The card tracking a GitHub issue or PR, if any. */
+export function findCardByIssue(board: KanbanBoard, url: string): KanbanCardRef | null {
+  const wanted = parseGitHubIssueUrl(url);
+  if (!wanted) return null;
+  for (let column = 0; column < board.columns.length; column++) {
+    const card = board.columns[column].cards.findIndex((c) => {
+      const linked = parseGitHubIssueUrl(c.issue);
+      return (
+        !!linked &&
+        linked.number === wanted.number &&
+        linked.repo.toLowerCase() === wanted.repo.toLowerCase()
+      );
+    });
+    if (card >= 0) return { column, card };
+  }
+  return null;
+}
+
+/**
+ * Adds a card for a GitHub issue or PR to the first column, unless the board
+ * already tracks it. Only the title is copied; the body stays on GitHub, where
+ * the agent reads it, so untrusted text never lands in the file unseen.
+ */
+export function addIssueCard(
+  board: KanbanBoard,
+  item: { title: string; url: string },
+  column = 0,
+): KanbanBoard {
+  if (findCardByIssue(board, item.url) || !parseGitHubIssueUrl(item.url)) return board;
+  const target = Math.min(Math.max(0, column), board.columns.length - 1);
+  if (target < 0) return board;
+  const added = addCard(board, target, cleanHandoffText(item.title));
+  const index = added.columns[target].cards.length - 1;
+  return updateCard(added, { column: target, card: index }, { issue: item.url });
 }
 
 /** The prompt the board's planning agent starts with; the user fills in the goal. */

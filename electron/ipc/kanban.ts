@@ -29,20 +29,54 @@ function boardPath(projectRoot: unknown): string {
   return path.join(root, KANBAN_FILE);
 }
 
-function readBoardFile(target: string): string {
-  if (fs.statSync(target).size > KANBAN_MAX_BYTES) {
-    throw new Error(`${KANBAN_FILE} is too large (max 1 MB)`);
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+/**
+ * Reads the board through one descriptor that refuses symlinks and does not
+ * block on a FIFO, checking type and size on that same descriptor, so nothing
+ * swapped in between a check and the read is ever read. Null when absent.
+ * Text that is not valid UTF-8 is refused: saving it back would replace bytes.
+ */
+function readBoardFile(target: string): string | null {
+  let fd: number;
+  try {
+    fd = fs.openSync(
+      target,
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
+    );
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return null;
+    if (code === 'ELOOP') throw new Error(`${KANBAN_FILE} is not a regular file`);
+    throw error;
   }
-  return fs.readFileSync(target, 'utf8');
+  try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) throw new Error(`${KANBAN_FILE} is not a regular file`);
+    if (stat.size > KANBAN_MAX_BYTES) throw new Error(`${KANBAN_FILE} is too large (max 1 MB)`);
+    const buffer = Buffer.alloc(KANBAN_MAX_BYTES + 1);
+    let length = 0;
+    for (;;) {
+      const read = fs.readSync(fd, buffer, length, buffer.length - length, null);
+      if (read === 0) break;
+      length += read;
+      if (length > KANBAN_MAX_BYTES) throw new Error(`${KANBAN_FILE} is too large (max 1 MB)`);
+    }
+    try {
+      return utf8.decode(buffer.subarray(0, length));
+    } catch {
+      throw new Error(
+        `${KANBAN_FILE} is not valid UTF-8; fix the file's encoding to use the board`,
+      );
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 /** The board's Markdown, or null when the project has no board yet. */
 export function readKanbanBoard(projectRoot: unknown): string | null {
-  const target = boardPath(projectRoot);
-  const entry = entryAt(target);
-  if (entry === 'missing') return null;
-  if (entry === 'other') throw new Error(`${KANBAN_FILE} is not a regular file`);
-  return readBoardFile(target);
+  return readBoardFile(boardPath(projectRoot));
 }
 
 /**

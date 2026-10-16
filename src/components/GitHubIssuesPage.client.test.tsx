@@ -13,7 +13,7 @@ import {
   startGitHubIssueTask,
   updateGitHubIssue,
 } from '../store/github';
-import { ensureGitHubAgentTask, prefillGitHubAgentPrompt } from '../store/github-agent';
+import { ensureProjectAgentTask, prefillGitHubAgentPrompt } from '../store/github-agent';
 import { triggerFocus } from '../store/focused-panel';
 import { publishGitHubList, showGitHubList } from '../store/github-lists';
 import type { GitHubIssueSummary, GitHubIssuePage } from '../ipc/types';
@@ -46,7 +46,7 @@ vi.mock('../store/tasks', () => ({
 vi.mock('../store/focused-panel', () => ({ setTaskFocusedPanel: vi.fn(), triggerFocus: vi.fn() }));
 const agentState = vi.hoisted(() => ({ loaded: true, failed: false, installed: true }));
 vi.mock('../store/github-agent', () => ({
-  ensureGitHubAgentTask: vi.fn(() => null),
+  ensureProjectAgentTask: vi.fn(() => null),
   prefillGitHubAgentPrompt: vi.fn(() => true),
   githubAgentAvailability: () =>
     !agentState.loaded
@@ -433,20 +433,23 @@ it('keeps the agent pane closed and starts no session until opened, then starts 
   mount();
   await flush();
   expect(host.querySelector('.github-agent')).toBeNull();
-  expect(ensureGitHubAgentTask).not.toHaveBeenCalled();
-  vi.mocked(ensureGitHubAgentTask).mockImplementationOnce(() => {
+  expect(ensureProjectAgentTask).not.toHaveBeenCalled();
+  vi.mocked(ensureProjectAgentTask).mockImplementationOnce(() => {
     const task = { id: 'gh-agent-p1', projectId: 'p1' } as Task;
     setStore('tasks', task.id, task);
     return task;
   });
   button('Agent').click();
-  expect(ensureGitHubAgentTask).toHaveBeenCalledTimes(1);
-  expect(ensureGitHubAgentTask).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }));
+  expect(ensureProjectAgentTask).toHaveBeenCalledTimes(1);
+  expect(ensureProjectAgentTask).toHaveBeenCalledWith(
+    'gh-agent-p1',
+    expect.objectContaining({ id: 'p1' }),
+  );
   expect(host.querySelector('.github-agent')?.textContent).toContain('Agent pane for gh-agent-p1');
   expect(host.querySelector('.github-agent')?.textContent).not.toContain('Start agent');
   await flush();
   expect(triggerFocus).toHaveBeenCalledWith('gh-agent-p1:prompt');
-  expect(ensureGitHubAgentTask).toHaveBeenCalledTimes(1);
+  expect(ensureProjectAgentTask).toHaveBeenCalledTimes(1);
   button('Agent').click();
   expect(host.querySelector('.github-agent')).toBeNull();
   expect(store.githubIssuesProjectId).toBe('p1');
@@ -499,7 +502,7 @@ it('explains in the opened pane that no agent is installed instead of starting o
   await flush();
   button('Agent').click();
   expect(host.querySelector('.github-agent')?.textContent).toContain('No agent is installed');
-  expect(ensureGitHubAgentTask).not.toHaveBeenCalled();
+  expect(ensureProjectAgentTask).not.toHaveBeenCalled();
 });
 
 it('disables "List with agent" and says why when no agent is installed', async () => {

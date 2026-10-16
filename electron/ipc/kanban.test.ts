@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { KANBAN_FILE, readKanbanBoard, writeKanbanBoard } from './kanban.js';
 
@@ -59,5 +60,22 @@ describe('kanban board file', () => {
     expect(() => writeKanbanBoard(project, 'x', 42)).toThrow(/expected/);
     expect(() => writeKanbanBoard(project, 'x'.repeat(1024 * 1024 + 1), null)).toThrow(/too large/);
     expect(fs.existsSync(board())).toBe(false);
+  });
+});
+
+describe('kanban board file hardening', () => {
+  it('refuses a FIFO without blocking', () => {
+    execFileSync('mkfifo', [board()]);
+    expect(() => readKanbanBoard(project)).toThrow(/not a regular file/);
+  });
+
+  it('refuses to read, and so never rewrites, a file that is not valid UTF-8', () => {
+    fs.writeFileSync(board(), Buffer.from([0x23, 0x20, 0xff, 0x0a]));
+    expect(() => readKanbanBoard(project)).toThrow(/not valid UTF-8/);
+  });
+
+  it('reads a byte-order mark and CRLF unchanged', () => {
+    fs.writeFileSync(board(), '﻿# B\r\n');
+    expect(readKanbanBoard(project)).toBe('﻿# B\r\n');
   });
 });

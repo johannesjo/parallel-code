@@ -1,4 +1,4 @@
-import { For, Show } from 'solid-js';
+import { For, Show, createSignal } from 'solid-js';
 import type { SetStoreFunction } from 'solid-js/store';
 import { githubAgentTaskId } from '../documents/task-id';
 import { store } from '../store/core';
@@ -8,7 +8,9 @@ import type { GitHubIssueSummary } from '../ipc/types';
 import type { Project } from '../store/types';
 import { agentsLoadingText, type AgentPaneState } from './GitHubAgentPane';
 import type { BrowserSession } from './github-issues-session';
-import { CheckIcon, CloseIcon, ListIcon, SparkleIcon } from './icons';
+import { CheckIcon, CloseIcon, KanbanIcon, ListIcon, SparkleIcon } from './icons';
+import { addIssuesToBoard } from '../store/kanban';
+import { showNotification } from '../store/notification';
 
 export function GitHubBatchBar(props: {
   project: Project;
@@ -20,6 +22,22 @@ export function GitHubBatchBar(props: {
   toggleSelected: (item: GitHubIssueSummary) => void;
 }) {
   const agentReady = () => githubAgentAvailability() === 'ready';
+  const [addingToBoard, setAddingToBoard] = createSignal(false);
+  async function addSelectedToBoard() {
+    setAddingToBoard(true);
+    try {
+      const added = await addIssuesToBoard(props.project.id, [...props.view.selected]);
+      if (added !== null) {
+        const skipped = props.view.selected.length - added;
+        showNotification(
+          `Added ${added} ${added === 1 ? 'card' : 'cards'} to the Kanban board` +
+            (skipped ? `; ${skipped} already on it` : ''),
+        );
+      }
+    } finally {
+      setAddingToBoard(false);
+    }
+  }
   function selectPage(items: GitHubIssueSummary[]) {
     props.setView('selected', (selected) => {
       const all = new Map(selected.map((item) => [item.url, item]));
@@ -49,6 +67,13 @@ export function GitHubBatchBar(props: {
         onClick={() => startGitHubTriageTask(props.project.id, [...props.view.selected])}
       >
         <SparkleIcon /> Triage with agent
+      </button>
+      <button
+        disabled={!props.view.selected.length || addingToBoard()}
+        title="Add the selected items as cards to the project's Kanban board"
+        onClick={() => void addSelectedToBoard()}
+      >
+        <KanbanIcon size={12} /> Add to board
       </button>
       <Show when={store.showNewTaskPanel}>
         <small id="github-triage-note">

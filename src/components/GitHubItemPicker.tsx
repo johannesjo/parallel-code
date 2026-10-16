@@ -9,6 +9,8 @@ const SEARCH_DEBOUNCE_MS = 400;
 interface GitHubItemPickerProps {
   projectRoot: string;
   onPick: (item: GitHubWorkItem) => void;
+  /** Marks items that are already taken (e.g. on the Kanban board) and disables them. */
+  pickedLabel?: (item: GitHubWorkItem) => string | null;
 }
 
 /** Lists the project repo's open issues and PRs, searchable through `gh --search`. */
@@ -57,7 +59,8 @@ export function GitHubItemPicker(props: GitHubItemPickerProps) {
       <Show when={items.error}>
         {(err) => (
           <div role="alert" style={{ ...bannerStyle(theme.error), 'font-size': '12px' }}>
-            {errMessage(err())}
+            {/* Electron wraps IPC errors in its own prefix; the cause is what helps. */}
+            {errMessage(err()).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '')}
           </div>
         )}
       </Show>
@@ -85,6 +88,7 @@ export function GitHubItemPicker(props: GitHubItemPickerProps) {
               <button
                 type="button"
                 class="github-item-option"
+                disabled={!!props.pickedLabel?.(item)}
                 onClick={() => props.onPick(item)}
                 title={item.url}
                 style={{
@@ -123,8 +127,8 @@ export function GitHubItemPicker(props: GitHubItemPickerProps) {
                 >
                   {item.title}
                 </span>
-                <span style={{ 'flex-shrink': '0', 'font-size': '11px', color: theme.fgSubtle }}>
-                  {item.author}
+                <span style={{ 'flex-shrink': '0', 'font-size': '11px', color: theme.fgMuted }}>
+                  {props.pickedLabel?.(item) ?? item.author}
                 </span>
               </button>
             </li>

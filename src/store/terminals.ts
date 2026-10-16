@@ -8,6 +8,7 @@ import { clearAgentActivity } from './taskStatus';
 import { triggerFocus, getTaskFocusedPanel } from './focused-panel';
 import type { Terminal } from './types';
 import { warn as logWarn } from '../lib/log';
+import { closeProjectPages } from './project-pages';
 
 let terminalCounter = 0;
 let lastCreateTime = 0;
@@ -29,8 +30,7 @@ export function createTerminal(): void {
   setStore('terminals', id, terminal);
   setStore('taskOrder', store.taskOrder.length, id);
   setStore('focusedPanel', id, 'terminal');
-  setStore('githubIssuesProjectId', null);
-  setStore('kanbanProjectId', null);
+  closeProjectPages();
   setStore('activeTaskId', id);
   setStore('activeAgentId', null);
   setStore('sidebarFocused', false);

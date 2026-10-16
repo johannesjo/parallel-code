@@ -35,6 +35,7 @@ import { showNotification } from '../store/notification';
 import type { DocumentModelChoice, Project } from '../store/types';
 import { afterSavingMarkdown, flushMarkdownEditor } from './markdown-editing';
 import { pushRecentPath } from './path-tree';
+import { closeProjectPages } from '../store/project-pages';
 
 export type DocumentView = 'document' | 'history';
 
@@ -278,7 +279,7 @@ export async function openDocumentWorkspace(projectId: string): Promise<void> {
   // Only quick edits wait: an await here would hold back the loading state of every open.
   // An open one is already syncing, so switching back to it does not wait either.
   if (project.quickEditSource && docStore.projectId !== projectId) await syncQuickEdit(project);
-  setStore('githubIssuesProjectId', null);
+  closeProjectPages();
   if (docStore.projectId === projectId) {
     setActiveTask(documentAgentTaskId(projectId));
     return;

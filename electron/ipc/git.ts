@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import type { Notify } from './notify.js';
+import { KANBAN_FILE } from './kanban.js';
 import { debug as logDebug } from '../log.js';
 import {
   appendGitInfoExcludeBlock,
@@ -1453,6 +1454,11 @@ async function seedClaudeSandboxFiles(
   }
 }
 
+/** Uncommitted changes that block a merge: all of them except the Kanban board's. */
+export function blockingStatusLines(porcelain: string): string[] {
+  return porcelain.split('\n').filter((line) => line.trim() && line.slice(3) !== KANBAN_FILE);
+}
+
 /**
  * Keep the worktree container out of the project's `git status`. `.worktrees/`
  * sits inside the repo's own working tree, so in a project whose `.gitignore`
@@ -2354,11 +2360,13 @@ export async function mergeTask(
       mergeWorktreePath ?? (await getBranchWorktreePath(projectRoot, mainBranch))?.path;
     const mergeRoot = targetWorktree ?? projectRoot;
 
-    // Verify clean working tree in the merge root
+    // Verify clean working tree in the merge root. The project's Kanban board
+    // (KANBAN.md) is edited in place by the app as tasks move, so it alone does
+    // not block a merge; git still refuses if the merge itself touches it.
     const { stdout: statusOut } = await exec('git', ['status', '--porcelain'], {
       cwd: mergeRoot,
     });
-    if (statusOut.trim())
+    if (blockingStatusLines(statusOut).length)
       throw new Error(
         'Working tree has uncommitted changes. Please commit or stash them before merging.',
       );
