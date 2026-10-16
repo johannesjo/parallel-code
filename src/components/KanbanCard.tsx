@@ -248,13 +248,16 @@ export function KanbanCardView(props: KanbanCardViewProps) {
       }}
     >
       <div class="kanban-card-title">
-        <input
-          type="checkbox"
-          checked={props.card.done}
-          tabIndex={-1}
-          aria-label={`Done: ${props.card.title}`}
-          onChange={(e) => props.onToggleDone(e.currentTarget.checked)}
-        />
+        <label class="kanban-done">
+          <input
+            type="checkbox"
+            checked={props.card.done}
+            tabIndex={-1}
+            aria-label={`Done: ${props.card.title}`}
+            onChange={(e) => props.onToggleDone(e.currentTarget.checked)}
+          />
+          <span class="kanban-done-mark" aria-hidden="true" />
+        </label>
         <span>{props.card.title}</span>
       </div>
       <Show when={summary()}>
@@ -298,35 +301,40 @@ export function KanbanCardView(props: KanbanCardViewProps) {
           </For>
         </ul>
       </Show>
-      <div class="kanban-card-footer">
-        <button
-          type="button"
-          class="kanban-start"
-          tabIndex={-1}
-          title={
-            props.blockedBy.length
-              ? `Waits for ${props.blockedBy.join(', ')}; start anyway`
-              : 'Start a task from this card (S)'
-          }
-          onClick={(e) => {
-            e.stopPropagation();
-            props.onStart();
-          }}
-        >
-          <PlayIcon size={10} /> {props.card.branches.length ? 'Start another' : 'Start task'}
-        </button>
-        <span class="kanban-card-meta">
-          <Show when={checklist().length}>
-            <span
-              class="kanban-progress"
-              classList={{ complete: checked() === checklist().length }}
-              title="Checklist"
+      {/* A done card has nothing to start; keep only its checklist progress. */}
+      <Show when={!props.card.done || checklist().length}>
+        <div class="kanban-card-footer">
+          <Show when={!props.card.done}>
+            <button
+              type="button"
+              class="kanban-start"
+              tabIndex={-1}
+              title={
+                props.blockedBy.length
+                  ? `Waits for ${props.blockedBy.join(', ')}; start anyway`
+                  : 'Start a task from this card (S)'
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onStart();
+              }}
             >
-              {checked()}/{checklist().length}
-            </span>
+              <PlayIcon size={10} /> {props.card.branches.length ? 'Start another' : 'Start task'}
+            </button>
           </Show>
-        </span>
-      </div>
+          <span class="kanban-card-meta">
+            <Show when={checklist().length}>
+              <span
+                class="kanban-progress"
+                classList={{ complete: checked() === checklist().length }}
+                title="Checklist"
+              >
+                {checked()}/{checklist().length}
+              </span>
+            </Show>
+          </span>
+        </div>
+      </Show>
     </article>
   );
 }

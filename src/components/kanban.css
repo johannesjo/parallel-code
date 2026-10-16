@@ -264,8 +264,9 @@
   scroll-padding-inline: 20px;
 }
 .kanban-column {
-  /* Grow to fill wide screens, but keep cards readable. */
-  flex: 1 0 264px;
+  /* Fill wide screens and shrink to fit narrower ones, keeping cards readable. */
+  flex: 1 1 280px;
+  min-width: 228px;
   max-width: 380px;
   max-height: 100%;
   display: flex;
@@ -341,7 +342,7 @@
 }
 .kanban .kanban-column-collapsed {
   flex: 0 0 38px;
-  align-self: stretch;
+  min-height: 160px;
   max-height: 100%;
   flex-direction: column;
   justify-content: flex-start;
@@ -390,12 +391,22 @@
   color: var(--fg);
 }
 .kanban-add-column {
-  flex: 0 0 200px;
+  flex: 0 0 38px;
   display: flex;
   flex-direction: column;
 }
-.kanban-add-column .kanban-add-card {
-  border: 1px dashed var(--border);
+.kanban-add-column.open {
+  flex-basis: 220px;
+}
+.kanban .kanban-add-column-button {
+  height: 38px;
+  padding: 0;
+  background: transparent;
+  border-style: dashed;
+  color: var(--fg-muted);
+}
+.kanban .kanban-add-column-button:hover {
+  color: var(--fg);
 }
 .kanban-inline-field {
   width: 100%;
@@ -462,7 +473,6 @@
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
-.kanban .kanban-card-title input,
 .kanban .kanban-checklist input {
   margin: 2px 0 0;
   padding: 0;
@@ -470,7 +480,62 @@
   accent-color: var(--fg-muted);
   cursor: pointer;
 }
-.kanban-card.done .kanban-card-title span {
+/* The card's own done mark is round, so it never reads as a checklist item.
+   The native checkbox stays for keyboard and screen readers but is invisible:
+   some looks force a radius on every input, so the mark is drawn on a span. */
+.kanban-done {
+  position: relative;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+}
+.kanban .kanban-done input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.kanban-done-mark {
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid var(--fg-subtle, var(--fg-muted));
+  border-radius: 50%;
+  display: grid;
+  place-content: center;
+  pointer-events: none;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+.kanban-done-mark::after {
+  content: '';
+  width: 7px;
+  height: 4px;
+  margin-top: -2px;
+  border: solid var(--island-bg);
+  border-width: 0 0 1.5px 1.5px;
+  transform: rotate(-45deg) scale(0);
+  transition: transform 120ms ease;
+}
+.kanban-done:hover .kanban-done-mark {
+  border-color: var(--fg);
+}
+.kanban-done input:checked + .kanban-done-mark {
+  background: var(--fg-muted);
+  border-color: var(--fg-muted);
+}
+.kanban-done input:checked + .kanban-done-mark::after {
+  transform: rotate(-45deg) scale(1);
+}
+.kanban-done input:focus-visible + .kanban-done-mark {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.kanban-card.done .kanban-card-title > span {
   color: var(--fg-muted);
   text-decoration: line-through;
   text-decoration-color: color-mix(in srgb, var(--fg-muted) 60%, transparent);
@@ -523,7 +588,7 @@
   color: var(--fg-muted);
   overflow-wrap: anywhere;
 }
-.kanban-card.blocked .kanban-card-title span {
+.kanban-card.blocked .kanban-card-title > span {
   color: var(--fg-muted);
 }
 
@@ -654,18 +719,20 @@
   gap: 6px;
   min-height: 22px;
 }
+/* A routine action: plain text until the card is hovered or selected. */
 .kanban .kanban-start {
   font-size: 12px;
-  padding: 2px 8px;
+  padding: 2px 8px 2px 6px;
+  margin-left: -6px;
   background: transparent;
-  color: var(--fg-muted);
-  opacity: 0.7;
+  border-color: transparent;
+  color: var(--fg-subtle, var(--fg-muted));
 }
 .kanban-card:hover .kanban-start,
 .kanban-card.selected .kanban-start,
 .kanban .kanban-start:focus-visible {
-  opacity: 1;
   color: var(--fg);
+  border-color: var(--border);
 }
 .kanban-card-meta {
   margin-left: auto;

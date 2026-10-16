@@ -271,6 +271,8 @@ function KanbanBoardView(props: { project: Project; agentPane: AgentPaneState; c
   // Follow edits made in an editor or by an agent. An open editor would lose
   // its place if the cards under it moved, so wait until it closes.
   onMount(() => {
+    // Take focus so the shortcuts work at once, unless the user is typing elsewhere.
+    if (!isTypingTarget(document.activeElement)) section?.focus({ preventScroll: true });
     void reload().then(() => {
       if (columnsRef) columnsRef.scrollLeft = session.scrollLeft;
     });
@@ -1263,12 +1265,18 @@ function InlineField(props: {
 function AddColumn(props: { onAdd: (title: string) => void }) {
   const [open, setOpen] = createSignal(false);
   return (
-    <div class="kanban-add-column">
+    <div class="kanban-add-column" classList={{ open: open() }}>
       <Show
         when={open()}
         fallback={
-          <button type="button" class="kanban-add-card" onClick={() => setOpen(true)}>
-            <PlusIcon size={12} /> Add column
+          <button
+            type="button"
+            class="kanban-add-column-button"
+            title="Add column"
+            aria-label="Add column"
+            onClick={() => setOpen(true)}
+          >
+            <PlusIcon size={13} />
           </button>
         }
       >
