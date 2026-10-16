@@ -158,6 +158,34 @@ describe('createSpClient', () => {
     });
   });
 
+  it('creates a task with notes when provided', async () => {
+    const fetchImpl = fakeFetch((_m, _p, body) => ({
+      status: 201,
+      json: { ok: true, data: { id: 'n', ...(body as object) } },
+    }));
+    const client = createSpClient({ getToken: () => 'tok', fetchImpl });
+    await client.createTask({ title: 'Task with notes', notes: 'Initial notes content' });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body as string)).toEqual({
+      title: 'Task with notes',
+      notes: 'Initial notes content',
+      isIgnoreShortSyntax: true,
+    });
+  });
+
+  it('updates task notes via PATCH', async () => {
+    const fetchImpl = fakeFetch((_m, _p, _b) => ok({}));
+    const client = createSpClient({ getToken: () => 'tok', fetchImpl });
+    const res = await client.updateTaskNotes('t1', 'Updated notes');
+    expect(res).toEqual({ ok: true, value: null });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      expect.stringContaining('/tasks/t1'),
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ notes: 'Updated notes' }),
+      }),
+    );
+  });
+
   it('completes a task by appending to its notes', async () => {
     const fetchImpl = fakeFetch((method) =>
       method === 'GET' ? ok({ id: 't1', title: 'Fix', notes: 'Old' }) : ok({}),

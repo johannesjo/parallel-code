@@ -62,6 +62,17 @@ export function toSpTitle(name: string): string {
   return `${cut.trimEnd()}…`;
 }
 
+/** Longest notes sent to Super Productivity; longer notes are shortened. */
+export const SP_MAX_NOTES_LENGTH = 100_000;
+
+/** The notes Parallel Code sends to Super Productivity. */
+export function toSpNotes(notes: string): string {
+  if (notes.length <= SP_MAX_NOTES_LENGTH) return notes;
+  let cut = notes.slice(0, SP_MAX_NOTES_LENGTH - 1);
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  return cut;
+}
+
 export type SpResult<T> =
   | { ok: true; value: T }
   | { ok: false; reason: SpFailureReason; message?: string };
@@ -138,6 +149,44 @@ export function resolveSpTitleSync(base: string, local: string, remote: string):
   if (local === remote) return base === local ? { kind: 'none' } : { kind: 'rebase', title: local };
   if (local === base) return { kind: 'pull', title: remote };
   return { kind: 'push', title: local };
+}
+
+// ---------------------------------------------------------------------------
+// Notes sync
+
+export type SpNotesSyncAction =
+  | { kind: 'none' }
+  /** Both sides agree on notes; only the remembered base moves. */
+  | { kind: 'rebase'; notes: string }
+  /** Super Productivity's notes changed: copy them into Parallel Code. */
+  | { kind: 'pull'; notes: string }
+  /** Parallel Code's notes changed (or both did): send them to Super Productivity. */
+  | { kind: 'push'; notes: string };
+
+/**
+ * Three-way notes merge against the last notes both apps agreed on.
+ * If base is not set (e.g. freshly linked task):
+ * - If local is empty and remote has notes, pull remote into local.
+ * - Otherwise local wins (push to remote).
+ * If base is set:
+ * - Whichever side moved away from base wins; when both moved, Parallel Code wins.
+ */
+export function resolveSpNotesSync(
+  base: string | undefined,
+  local: string,
+  remote: string,
+): SpNotesSyncAction {
+  const normLocal = toSpNotes(local);
+  const normRemote = toSpNotes(remote);
+  if (normLocal === normRemote) {
+    return base === normLocal ? { kind: 'none' } : { kind: 'rebase', notes: normLocal };
+  }
+  if (base === undefined) {
+    if (!normLocal.trim() && normRemote.trim()) return { kind: 'pull', notes: normRemote };
+    return { kind: 'push', notes: normLocal };
+  }
+  if (normLocal === base) return { kind: 'pull', notes: normRemote };
+  return { kind: 'push', notes: normLocal };
 }
 
 // ---------------------------------------------------------------------------
