@@ -106,7 +106,6 @@ export const [store, setStore] = createStore<AppStore>({
   verboseLogging: false,
   mcpOrchestrationEnabled: true,
   documentWorkspacesEnabled: false,
-  kanbanEnabled: false,
   documentFullWidth: false,
   activeDocumentProjectId: null,
   coordinatorNotificationDelayMs: 60_000,

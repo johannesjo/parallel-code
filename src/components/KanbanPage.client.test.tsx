@@ -26,7 +26,6 @@ vi.mock('../store/core', async () => {
     showNewTaskPanel: false,
     githubIssuesProjectId: null,
     kanbanProjectId: null,
-    kanbanEnabled: true,
     newTaskPrefillPrompt: null,
     editorCommand: '',
   });
@@ -90,7 +89,6 @@ beforeEach(() => {
       showNewTaskPanel: false,
       githubIssuesProjectId: null,
       kanbanProjectId: 'p1',
-      kanbanEnabled: true,
       newTaskPrefillPrompt: null,
       editorCommand: '',
     } as never),

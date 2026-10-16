@@ -47,7 +47,6 @@ import {
   setDarkTheme,
   setMcpOrchestrationEnabled,
   setDocumentWorkspacesEnabled,
-  setKanbanEnabled,
   setCoordinatorNotificationDelayMs,
   setPreferUiMode,
   setDisableClaudeUiMode,
@@ -1399,14 +1398,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
               checked={store.documentWorkspacesEnabled}
               onChange={setDocumentWorkspacesEnabled}
               description="Add document projects: a folder with one Markdown document, set up for you if it is not a Git repository yet. Select a passage, send the same instruction to one or more agents running headlessly in isolated worktrees, compare the proposals side by side, and accept one as a single readable commit. Adds Documents as an Open as choice when adding a project."
-            />
-          </SettingsSection>
-          <SettingsSection title="Kanban board">
-            <SettingsCheckboxRow
-              label="Kanban board"
-              checked={store.kanbanEnabled}
-              onChange={setKanbanEnabled}
-              description="Plan a project on a board kept as plain Markdown in KANBAN.md at the project root: each heading is a column, each list item a card. Start a task from any card; the card records the task's branch and moves to In progress. Edit the file by hand or let an agent edit it, and the board follows. Adds a board button to each code project in the sidebar."
             />
           </SettingsSection>
         </div>

@@ -52,9 +52,7 @@ const CARD_DRAG_TYPE = 'application/x-parallel-code-kanban-card';
 const COLUMN_DRAG_TYPE = 'application/x-parallel-code-kanban-column';
 
 export function KanbanPage() {
-  const project = createMemo(() =>
-    store.kanbanEnabled ? store.projects.find((p) => p.id === store.kanbanProjectId) : undefined,
-  );
+  const project = createMemo(() => store.projects.find((p) => p.id === store.kanbanProjectId));
   return (
     <Show when={project()} keyed>
       {(p) => <KanbanBoardView project={p} />}

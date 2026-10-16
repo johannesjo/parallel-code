@@ -537,7 +537,6 @@ export interface PersistedState {
   darkThemeCustomId?: string | null;
   mcpOrchestrationEnabled?: boolean;
   documentWorkspacesEnabled?: boolean;
-  kanbanEnabled?: boolean;
   documentFullWidth?: boolean;
   coordinatorNotificationDelayMs?: number;
   coordinatorControlHintDismissed?: boolean;
@@ -704,8 +703,6 @@ export interface AppStore {
   darkThemeCustomId: string | null;
   mcpOrchestrationEnabled: boolean;
   documentWorkspacesEnabled: boolean;
-  /** Experimental: a Markdown Kanban board per project (KANBAN.md). */
-  kanbanEnabled: boolean;
   /** Let the rendered document take the whole column instead of a reading width. */
   documentFullWidth: boolean;
   /** Project whose document workspace is open in the task area. */

@@ -457,7 +457,6 @@ export async function saveState(): Promise<void> {
     darkThemeCustomId: store.darkThemeCustomId ?? undefined,
     mcpOrchestrationEnabled: store.mcpOrchestrationEnabled,
     documentWorkspacesEnabled: store.documentWorkspacesEnabled || undefined,
-    kanbanEnabled: store.kanbanEnabled || undefined,
     documentFullWidth: store.documentFullWidth || undefined,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed || undefined,
     preferUiMode: store.preferUiMode || undefined,
@@ -657,7 +656,6 @@ interface LegacyPersistedState {
   darkThemeCustomId?: unknown;
   mcpOrchestrationEnabled?: unknown;
   documentWorkspacesEnabled?: unknown;
-  kanbanEnabled?: unknown;
   documentFullWidth?: unknown;
   coordinatorControlHintDismissed?: unknown;
   preferUiMode?: unknown;
@@ -964,7 +962,6 @@ export async function loadState(): Promise<void> {
 
       s.mcpOrchestrationEnabled = raw.mcpOrchestrationEnabled !== false;
       s.documentWorkspacesEnabled = raw.documentWorkspacesEnabled === true;
-      s.kanbanEnabled = raw.kanbanEnabled === true;
       s.documentFullWidth = raw.documentFullWidth === true;
 
       s.coordinatorControlHintDismissed = raw.coordinatorControlHintDismissed === true;

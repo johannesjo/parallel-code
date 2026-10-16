@@ -139,9 +139,7 @@ const MIN_WINDOW_DIMENSION = 100;
 /** Whether a project page (GitHub issues or the Kanban board) covers the task area. */
 function projectPageOpen(): boolean {
   return store.projects.some(
-    (p) =>
-      p.id === store.githubIssuesProjectId ||
-      (store.kanbanEnabled && p.id === store.kanbanProjectId),
+    (p) => p.id === store.githubIssuesProjectId || p.id === store.kanbanProjectId,
   );
 }
 

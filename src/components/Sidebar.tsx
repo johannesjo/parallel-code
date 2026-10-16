@@ -761,13 +761,7 @@ export function Sidebar() {
                           Folder not found
                         </span>
                       </Show>
-                      <Show
-                        when={
-                          store.kanbanEnabled &&
-                          !isDocumentProject(project) &&
-                          !isProjectMissing(project.id)
-                        }
-                      >
+                      <Show when={!isDocumentProject(project) && !isProjectMissing(project.id)}>
                         <button
                           type="button"
                           class="icon-btn"
