@@ -14,6 +14,7 @@ import {
   store,
 } from '../store/store';
 import type { Task } from '../store/types';
+import { advanceKanbanCard } from '../store/kanban';
 import type { CommitInfo, MergeStatus, WorktreeStatus } from '../ipc/types';
 import { buildMergeReadiness } from './merge-readiness';
 import { buildSquashMessage, formatSquashMessage } from './squash-message';
@@ -206,6 +207,8 @@ export function createMergeState(props: MergeStateProps) {
   async function merge(): Promise<boolean> {
     setMergeError('');
     setMerging(true);
+    // Read before merging: cleanup removes the task from the store.
+    const { projectId, branchName } = props.task;
     try {
       await mergeTask(props.task.id, {
         squash: squash(),
@@ -214,6 +217,7 @@ export function createMergeState(props: MergeStateProps) {
           : undefined,
         cleanup: !requiresSeparateClose() && cleanupAfterMerge(),
       });
+      void advanceKanbanCard(projectId, branchName, 'done');
       return true;
     } catch (err) {
       setMergeError(errMessage(err));

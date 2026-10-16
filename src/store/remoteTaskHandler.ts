@@ -23,6 +23,7 @@ import {
 import { getVerifyCommand } from './verification';
 import { getPrChecks } from './pr-checks-state';
 import { loadFailedChecksPrompt } from './github';
+import { advanceKanbanCard } from './kanban';
 import { getEvidenceConfidence } from './evidence-state';
 import { buildMergeReadiness, type MergeReadinessCheck } from '../components/merge-readiness';
 import { taskPrUrl } from '../components/pr-actions';
@@ -414,6 +415,8 @@ async function handleMergeTask(req: MergeTaskRequest): Promise<void> {
     reply(req.reqId, false, undefined, 'Task not found');
     return;
   }
+  // Read before merging: cleanup removes the task from the store.
+  const { projectId, branchName } = store.tasks[req.taskId];
   try {
     await mergeTask(req.taskId, {
       squash: req.squash === true,
@@ -421,6 +424,7 @@ async function handleMergeTask(req: MergeTaskRequest): Promise<void> {
       // worktree and branch the way the desktop checkbox explicitly allows.
       cleanup: req.cleanup === true,
     });
+    void advanceKanbanCard(projectId, branchName, 'done');
     reply(req.reqId, true, { ok: true });
   } catch (err) {
     reply(req.reqId, false, undefined, errMessage(err));

@@ -117,6 +117,7 @@ import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 import { startSuperProductivitySync, startSpOpenListener } from './store/store';
 import { startBackgroundTaskWatcher } from './store/background-tasks';
 import { startTaskBriefWatcher } from './store/task-brief';
+import { startKanbanAutomation } from './store/kanban';
 import { startPrChecksSubscription } from './store/pr-checks';
 import { startUpdateSubscription } from './store/updates';
 import { startRemoteTaskHandlers } from './store/remoteTaskHandler';
@@ -588,6 +589,7 @@ function App() {
     const stopSpOpenListener = startSpOpenListener();
     const stopBackgroundTaskWatcher = startBackgroundTaskWatcher();
     const stopTaskBriefWatcher = startTaskBriefWatcher();
+    const stopKanbanAutomation = startKanbanAutomation();
     const stopPrChecksSubscription = startPrChecksSubscription();
     const stopUpdateSubscription = startUpdateSubscription();
     const stopRemoteTaskHandlers = startRemoteTaskHandlers();
@@ -811,6 +813,7 @@ function App() {
       stopSpOpenListener();
       stopBackgroundTaskWatcher();
       stopTaskBriefWatcher();
+      stopKanbanAutomation();
       stopPrChecksSubscription();
       stopUpdateSubscription();
       stopRemoteTaskHandlers();

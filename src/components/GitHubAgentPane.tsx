@@ -1,4 +1,4 @@
-import { Match, Switch, createEffect, createSignal, untrack } from 'solid-js';
+import { Match, Switch, createEffect, createSignal, untrack, type JSX } from 'solid-js';
 import { githubAgentTaskId } from '../documents/task-id';
 import { setStore, store } from '../store/core';
 import { triggerFocus } from '../store/focused-panel';
@@ -29,7 +29,13 @@ export function agentsLoadingText(): string {
 }
 
 /** Mounted only while the pane is open, so starting here never happens behind a closed pane. */
-export function GitHubAgentPane(props: { project: Project; agentPane: AgentPaneState }) {
+export function GitHubAgentPane(props: {
+  project: Project;
+  agentPane: AgentPaneState;
+  /** What to suggest asking; the GitHub page asks for issue lists. */
+  hint?: JSX.Element;
+  label?: string;
+}) {
   const taskId = () => githubAgentTaskId(props.project.id);
   // Starts once the agent list is known; a started task ends the effect's work, so
   // re-runs (availability changes, task appearing) cannot start a second session.
@@ -41,7 +47,7 @@ export function GitHubAgentPane(props: { project: Project; agentPane: AgentPaneS
     queueMicrotask(() => triggerFocus(promptKey));
   });
   return (
-    <aside class="github-agent" aria-label="GitHub agent">
+    <aside class="github-agent" aria-label={props.label ?? 'GitHub agent'}>
       <header>
         <div class="github-agent-title">
           <strong>Agent</strong>
@@ -56,8 +62,8 @@ export function GitHubAgentPane(props: { project: Project; agentPane: AgentPaneS
           </button>
         </div>
         <small>
-          Ask for a list, such as “the most important issues this week, by priority, grouped by
-          area”.
+          {props.hint ??
+            'Ask for a list, such as “the most important issues this week, by priority, grouped by area”.'}
         </small>
       </header>
       <HiddenAgentPane
