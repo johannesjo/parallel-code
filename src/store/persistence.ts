@@ -360,6 +360,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     coordinatedBy: task.coordinatedBy,
     controlledBy: task.controlledBy,
     mcpConfigPath: task.mcpConfigPath,
+    autoDiscoveredMcpConfig: task.autoDiscoveredMcpConfig,
     completion: task.completion,
     reviewRevision: task.reviewRevision,
     signalDoneReceived: task.signalDoneReceived,
@@ -1121,6 +1122,7 @@ export async function loadState(): Promise<void> {
           mcpStartupStatus:
             pt.coordinatorMode || pt.coordinatedBy ? ('pending' as const) : undefined,
           mcpConfigPath: pt.mcpConfigPath,
+          autoDiscoveredMcpConfig: pt.autoDiscoveredMcpConfig,
           completion: parseCompletionRecord(pt.completion),
           reviewRevision:
             Number.isSafeInteger(pt.reviewRevision) && (pt.reviewRevision ?? -1) >= 0
@@ -1277,6 +1279,7 @@ export async function loadState(): Promise<void> {
           mcpStartupStatus:
             pt.coordinatorMode || pt.coordinatedBy ? ('pending' as const) : undefined,
           mcpConfigPath: pt.mcpConfigPath,
+          autoDiscoveredMcpConfig: pt.autoDiscoveredMcpConfig,
           completion: parseCompletionRecord(pt.completion),
           reviewRevision:
             Number.isSafeInteger(pt.reviewRevision) && (pt.reviewRevision ?? -1) >= 0

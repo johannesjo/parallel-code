@@ -14,6 +14,7 @@ import type { AgentTourPayload } from '../../electron/shared/agent-tour';
 import type { CanvasTaskLink, CanvasTaskSource } from '../lib/canvas-task-links';
 import type {
   AgentDef,
+  AutoDiscoveredMcpConfigState,
   CreditUsage,
   UsageProvider,
   UsageWindow,
@@ -42,6 +43,8 @@ import type { ReasoningWorkspace } from '../investigation/editing';
 export type KeybindingOverride = Partial<Pick<KeyBinding, 'key' | 'modifiers'>> | null;
 
 export type GitIsolationMode = 'worktree' | 'direct' | 'none';
+
+export type { AutoDiscoveredMcpConfigState } from '../ipc/types';
 
 export interface StagedNotification {
   batchId: string;
@@ -323,6 +326,7 @@ export interface Task {
   controlledBy?: 'coordinator' | 'human';
   automationWriteInFlight?: boolean;
   mcpConfigPath?: string;
+  autoDiscoveredMcpConfig?: AutoDiscoveredMcpConfigState;
   mcpLaunchArgs?: string[];
   preambleFileExistedBefore?: boolean;
   completion?: CompletionRecord;
@@ -438,6 +442,7 @@ export interface PersistedTask {
   coordinatedBy?: string;
   controlledBy?: 'coordinator' | 'human';
   mcpConfigPath?: string;
+  autoDiscoveredMcpConfig?: AutoDiscoveredMcpConfigState;
   preambleFileExistedBefore?: boolean;
   completion?: CompletionRecord;
   reviewRevision?: number;
