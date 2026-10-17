@@ -12,6 +12,7 @@ import {
 import { store } from '../store/store';
 import { askCodeLabel } from './understanding/ask-code-label';
 import { TourModelMenu } from './understanding/TourModelMenu';
+import { ArrowRightThinIcon, CloseAltIcon, CycleIcon } from './icons';
 
 export function ChangeTourButton(props: {
   tour: ChangeTourController;
@@ -117,26 +118,7 @@ export function ChangeTourButton(props: {
               <Show
                 when={props.tour.loading()}
                 fallback={
-                  <Show
-                    when={ready()}
-                    fallback={
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.25"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                      >
-                        <circle cx="4" cy="3" r="1.5" />
-                        <circle cx="12" cy="13" r="1.5" />
-                        <path d="M5.5 3h5a2.5 2.5 0 0 1 0 5h-5a2.5 2.5 0 0 0 0 5h5" />
-                      </svg>
-                    }
-                  >
+                  <Show when={ready()} fallback={<CycleIcon size={14} />}>
                     <span
                       aria-label="Tour ready"
                       style={{
@@ -172,19 +154,7 @@ export function ChangeTourButton(props: {
                   </span>
                 </Show>
               </span>
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d={props.tour.loading() ? 'm4 4 8 8M12 4l-8 8' : 'M3 8h10m-4-4 4 4-4 4'} />
-              </svg>
+              {props.tour.loading() ? <CloseAltIcon size={14} /> : <ArrowRightThinIcon size={14} />}
             </button>
           </div>
           {props.children}
