@@ -6,6 +6,7 @@ import type { JSX } from 'solid-js';
 import {
   BotIcon,
   ChevronDownAltIcon,
+  DocumentIcon,
   FolderIcon,
   GitHubIcon,
   KanbanIcon,
@@ -54,7 +55,6 @@ import { EditProjectDialog } from './EditProjectDialog';
 import { AddProjectDialog } from '../documents/AddProjectDialog';
 import { openDocumentWorkspace } from '../documents/store';
 import { codeProjects, isDocumentProject } from '../store/projects';
-import { DocumentIcon } from '../documents/DocumentIcon';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { SidebarFooter } from './SidebarFooter';
 import { IconButton } from './IconButton';

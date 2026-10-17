@@ -819,3 +819,222 @@ export function LightbulbIcon(props: IconProps): JSX.Element {
     </StrokeSvgIcon>
   );
 }
+
+/** Stroke-drawn bar: minimize the document workspace back to the sidebar. */
+export function MinimizeBarIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5">
+      <path d="M3.5 12.25h9" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Filled octicon chevron for commit-step navigation; see also the stroke ChevronRightIcon above. */
+export function ChevronRightAltIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z" />
+    </SvgIcon>
+  );
+}
+
+/** Sharp stroke chevron on the Advanced options disclosure; see also ChevronRightIcon above. */
+export function ChevronRightThinIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5">
+      <path d="m6 3 5 5-5 5" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Rounded stroke chevron for Arena back buttons; see also ChevronLeftIcon above. */
+export function ChevronLeftThinIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M10 3L5 8l5 5" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Corners-out brackets: shown while focus mode is active, as the exit-focus affordance; pairs with CollapseAltIcon. */
+export function ExpandAltIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M5.5 2.75A.75.75 0 0 0 4.75 2H2.5a.5.5 0 0 0-.5.5v2.25a.75.75 0 0 0 1.5 0V3.5h1.25a.75.75 0 0 0 .75-.75ZM11.25 2a.75.75 0 0 0 0 1.5H12.5v1.25a.75.75 0 0 0 1.5 0V2.5a.5.5 0 0 0-.5-.5h-2.25ZM3.5 11.25a.75.75 0 0 0-1.5 0V13.5a.5.5 0 0 0 .5.5h2.25a.75.75 0 0 0 0-1.5H3.5v-1.25ZM14 11.25a.75.75 0 0 0-1.5 0v1.25h-1.25a.75.75 0 0 0 0 1.5H13.5a.5.5 0 0 0 .5-.5v-2.25Z" />
+    </SvgIcon>
+  );
+}
+
+/** Margins with in/out arrows: the reading-width toggle in the document toolbar. */
+export function FullWidthIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5">
+      <path d="M2 3v10M14 3v10M5 8h6M6 6 4 8l2 2M10 6l2 2-2 2" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Outline folder: reveal the project folder in the file manager; FolderIcon above is filled. */
+export function FolderOpenIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Zm0 1.5H5c.08 0 .15.04.2.1l.9 1.2c.33.44.85.7 1.4.7h6.75a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25H1.75a.25.25 0 0 1-.25-.25V2.75a.25.25 0 0 1 .25-.25Z" />
+    </SvgIcon>
+  );
+}
+
+/** The document-project glyph: sidebar rows, the workspace header and the file tree. */
+export function DocumentIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M4 1.5h5l3 3v10H4z" />
+      <path d="M9 1.5v3h3M6 8h4M6 10.5h4" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Stroke-drawn note card in the annotation margin; CommentIcon above is the speech bubble. */
+export function CommentAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.6" roundCaps>
+      <rect x="1.6" y="2.6" width="12.8" height="10.8" rx="2.4" />
+      <path d="M4.6 6.4h6.8M4.6 9.4h4.2" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Note card with lines: the composer's note mode. */
+export function NoteIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M0 3.75C0 2.784.784 2 1.75 2h12.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25Zm1.75-.25a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25ZM3.5 6.25a.75.75 0 0 1 .75-.75h7a.75.75 0 0 1 0 1.5h-7a.75.75 0 0 1-.75-.75Zm.75 2.25h4a.75.75 0 0 1 0 1.5h-4a.75.75 0 0 1 0-1.5Z" />
+    </SvgIcon>
+  );
+}
+
+/** Circled question mark: the composer's ask mode. */
+export function QuestionIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.92 6.085h.001a.749.749 0 1 1-1.342-.67c.169-.339.436-.701.849-.977C6.845 4.16 7.369 4 8 4a2.756 2.756 0 0 1 1.637.525c.503.377.863.965.863 1.725 0 .448-.115.83-.329 1.15-.205.307-.47.513-.692.662-.109.072-.22.138-.313.195l-.006.004a6.24 6.24 0 0 0-.26.16.952.952 0 0 0-.276.245.75.75 0 0 1-1.248-.832c.184-.264.42-.489.692-.661.103-.067.207-.132.313-.195l.007-.004c.1-.061.182-.11.258-.161a.969.969 0 0 0 .277-.245C8.96 6.514 9 6.427 9 6.25a.612.612 0 0 0-.262-.525A1.27 1.27 0 0 0 8 5.5c-.369 0-.595.09-.74.187a1.01 1.01 0 0 0-.34.398ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z" />
+    </SvgIcon>
+  );
+}
+
+/** Filled square: stop a running arena competitor; StopIcon above is the octagon. */
+export function StopAltIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="3" y="3" width="10" height="10" rx="1" />
+    </SvgIcon>
+  );
+}
+
+/** Stroke-drawn trash bin: delete a history match; TrashIcon above is the filled one. */
+export function TrashAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M3 4h10M6 4V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M5 4v9a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V4" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Five-pointed star: rate an arena competitor's approach. */
+export function StarIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M8 1.3l1.8 3.6 4 .6-2.9 2.8.7 4-3.6-1.9-3.6 1.9.7-4L2.2 5.5l4-.6L8 1.3z" />
+    </SvgIcon>
+  );
+}
+
+/** Cradle joining two nodes: merge a worktree into the project's main branch. */
+export function MergeIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <circle cx="4" cy="4" r="2" />
+      <circle cx="12" cy="4" r="2" />
+      <circle cx="8" cy="13" r="2" />
+      <path d="M4 6v1c0 2 4 4 4 4M12 6v1c0 2-4 4-4 4" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Boxed shield: the arena project's container; ShieldIcon above is the filled badge. */
+export function ShieldAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M2 4l6-2 6 2v8l-6 2-6-2z" />
+      <path d="M8 2v12" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Two ruled columns: compare every arena approach side by side. */
+export function CompareIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M3 3h4v10H3zM9 3h4v10H9zM5 6H3M5 8H3M5 10H3M11 6H9M11 8H9M11 10H9" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Chasing arrows: run the arena match again; SyncIcon above is the filled one. */
+export function SyncAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M2 8a6 6 0 0 1 10.2-4.3" />
+      <path d="M14 8a6 6 0 0 1-10.2 4.3" />
+      <path d="M12 1v3h-3" />
+      <path d="M4 15v-3h3" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Stroke-drawn plus: start a fresh arena match. */
+export function PlusThinIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M8 3v10M3 8h10" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Stroke-drawn clock face: arena match history; ClockIcon above is the filled one. */
+export function ClockAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 4.5V8l2.5 2.5" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Two nodes joined by a loop: generate a tour of the changes. */
+export function CycleIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.25" roundCaps roundJoins>
+      <circle cx="4" cy="3" r="1.5" />
+      <circle cx="12" cy="13" r="1.5" />
+      <path d="M5.5 3h5a2.5 2.5 0 0 1 0 5h-5a2.5 2.5 0 0 0 0 5h5" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Stroke-drawn X: cancel tour generation; CloseThinIcon above is the 10x10 window control. */
+export function CloseAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="m4 4 8 8M12 4l-8 8" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Stroke-drawn arrow: the tour button's go affordance once it is idle. */
+export function ArrowRightThinIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M3 8h10m-4-4 4 4-4 4" />
+    </StrokeSvgIcon>
+  );
+}

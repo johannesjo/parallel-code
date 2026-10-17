@@ -35,7 +35,6 @@ import { AgentChatView } from './AgentChatView';
 import { isAgentChat, agentChatProvider, agentChatUnavailableReason } from '../store/agent-chat';
 import { agentViewHandsOff, agentViewSwitchCost, switchMainAgentView } from '../store/agent-view';
 import { setStore } from '../store/core';
-import { DocumentIcon } from '../documents/DocumentIcon';
 import { isEditableDocumentPath } from '../lib/document-path';
 import { editAsDocument } from '../documents/store';
 import { saveState } from '../store/persistence';
@@ -49,6 +48,7 @@ import {
   CloseIcon,
   ColumnsIcon,
   CommentIcon,
+  DocumentIcon,
   ExternalLinkIcon,
   EyeIcon,
   CopyIcon,
