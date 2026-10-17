@@ -3,7 +3,7 @@ import { nodeTrail, type TourNode } from '../../lib/tour-tree';
 import { ChevronRightTinyIcon } from '../icons';
 
 function Chevron() {
-  return <ChevronRightTinyIcon />;
+  return <ChevronRightTinyIcon size={8} />;
 }
 
 /**
