@@ -1,7 +1,6 @@
 import { createSignal, For, onMount, Show, untrack } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { CopyIcon, EyeIcon, SendIcon } from './icons';
-import { DocumentIcon } from '../documents/DocumentIcon';
+import { CopyIcon, DocumentIcon, EyeIcon, SendIcon } from './icons';
 
 /** Selection text is captured before opening, so focus changes cannot alter the handoff. */
 export function TerminalSelectionMenu(props: {
