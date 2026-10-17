@@ -1,12 +1,9 @@
 import { For, Show, createEffect, createSignal } from 'solid-js';
 import { nodeTrail, type TourNode } from '../../lib/tour-tree';
+import { ChevronRightTinyIcon } from '../icons';
 
 function Chevron() {
-  return (
-    <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
-      <path d="M2.5 1.5 5.5 4l-3 2.5" fill="none" stroke="currentColor" />
-    </svg>
-  );
+  return <ChevronRightTinyIcon size={8} />;
 }
 
 /**

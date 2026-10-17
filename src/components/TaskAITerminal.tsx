@@ -35,7 +35,6 @@ import { AgentChatView } from './AgentChatView';
 import { isAgentChat, agentChatProvider, agentChatUnavailableReason } from '../store/agent-chat';
 import { agentViewHandsOff, agentViewSwitchCost, switchMainAgentView } from '../store/agent-view';
 import { setStore } from '../store/core';
-import { DocumentIcon } from '../documents/DocumentIcon';
 import { isEditableDocumentPath } from '../lib/document-path';
 import { editAsDocument } from '../documents/store';
 import { saveState } from '../store/persistence';
@@ -47,11 +46,16 @@ import { ConfirmDialog } from './ConfirmDialog';
 import {
   CheckIcon,
   CloseIcon,
+  ColumnsIcon,
   CommentIcon,
+  DocumentIcon,
+  ExternalLinkIcon,
   EyeIcon,
   CopyIcon,
   PlayIcon,
+  PlusSmallIcon,
   SyncIcon,
+  TerminalAltIcon,
   TerminalIcon,
 } from './icons';
 import { theme } from '../lib/theme';
@@ -474,31 +478,11 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                     when={tabsMode()}
                     fallback={
                       /* Currently side-by-side → click switches to tabs (one panel). */
-                      <svg
-                        width="13"
-                        height="13"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.3"
-                      >
-                        <rect x="2" y="2.75" width="12" height="10.5" rx="1.25" />
-                        <path d="M2 5.75 H14" />
-                      </svg>
+                      <TerminalAltIcon size={13} />
                     }
                   >
                     {/* Currently tabbed → click switches to side-by-side columns. */}
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.3"
-                    >
-                      <rect x="2" y="2.75" width="5" height="10.5" rx="1.25" />
-                      <rect x="9" y="2.75" width="5" height="10.5" rx="1.25" />
-                    </svg>
+                    <ColumnsIcon size={13} />
                   </Show>
                 </button>
               </Show>
@@ -708,9 +692,7 @@ function AddAgentMenu(props: { taskId: string }) {
           padding: '0',
         }}
       >
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M8 2.75a.75.75 0 0 1 .75.75v3.75h3.75a.75.75 0 0 1 0 1.5H8.75v3.75a.75.75 0 0 1-1.5 0V8.75H3.5a.75.75 0 0 1 0-1.5h3.75V3.5A.75.75 0 0 1 8 2.75Z" />
-        </svg>
+        <PlusSmallIcon size={13} />
       </button>
       <Show when={open()}>
         <div
@@ -1143,9 +1125,7 @@ function MarkdownViewerDialog(props: {
             }}
             title="Open in editor"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-3a.75.75 0 0 1 1.5 0v3A3 3 0 0 1 12.5 16h-9A3 3 0 0 1 0 12.5v-9A3 3 0 0 1 3.5 0h3a.75.75 0 0 1 0 1.5h-3ZM10 .75a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0V2.56L8.53 8.53a.75.75 0 0 1-1.06-1.06L13.44 1.5H10.75A.75.75 0 0 1 10 .75Z" />
-            </svg>
+            <ExternalLinkIcon />
           </button>
         </Show>
         <Show when={props.onEditAsDocument && isEditableDocumentPath(props.filePath)}>

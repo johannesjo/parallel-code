@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { FileTreePanel } from './FileTreePanel';
+import { ChevronDownThinIcon } from '../components/icons';
 import { openDocumentFile } from './store';
 import { setFilesOpen, workspaceUi } from './workspace-ui';
 
@@ -108,17 +109,7 @@ export function FilesPopover(props: FilesPopoverProps) {
         onClick={() => setFilesOpen(!open())}
       >
         <span>{props.openPath}</span>
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          aria-hidden="true"
-        >
-          <path d="m5 6 3 3 3-3" />
-        </svg>
+        <ChevronDownThinIcon size={12} />
       </button>
       <Show when={open()}>
         <div class="docws-files-popover" role="dialog" aria-label="Switch document">
