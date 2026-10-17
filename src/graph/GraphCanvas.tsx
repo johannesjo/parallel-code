@@ -15,7 +15,14 @@ import {
 import { nodeTrail, visibleNodes, type MapData, type MapNode } from './model';
 import { defaultAppearance, type NodeAppearance } from './presentation';
 import { KindMark } from './KindMark';
-import { KebabIcon, LinkIcon } from '../components/icons';
+import {
+  CrosshairIcon,
+  FrameCornersIcon,
+  KebabIcon,
+  LinkIcon,
+  LockIcon,
+  NotePageIcon,
+} from '../components/icons';
 import './graph.css';
 import { adjacentNode, positionsFor, type Position, type MapOrientation } from './layout';
 import { NodeContextMenu, type NodeAction } from './NodeContextMenu';
@@ -832,18 +839,7 @@ export function GraphCanvas<N extends MapNode>(props: GraphProps<N>) {
                             <Show when={props.showOwnership && ownershipTitle(record().userEdited)}>
                               {(title) => (
                                 <span class="mindmap-ownership" title={title()}>
-                                  <svg
-                                    width="10"
-                                    height="10"
-                                    viewBox="0 0 16 16"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.5"
-                                    aria-hidden="true"
-                                  >
-                                    <rect x="3" y="7" width="10" height="8" rx="1.5" />
-                                    <path d="M5 7V5a3 3 0 0 1 6 0v2" stroke-linecap="round" />
-                                  </svg>
+                                  <LockIcon size={10} />
                                 </span>
                               )}
                             </Show>
@@ -864,22 +860,7 @@ export function GraphCanvas<N extends MapNode>(props: GraphProps<N>) {
                                 title="Has notes"
                                 aria-hidden="true"
                               >
-                                <svg
-                                  width="14"
-                                  height="14"
-                                  viewBox="0 0 16 16"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  stroke-width="1.3"
-                                >
-                                  <path
-                                    d="M3 1.5h7l3 3v10H3zM10 1.5v3h3M5.5 7h5M5.5 10h5"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                  />
-                                </svg>
+                                <NotePageIcon size={14} />
                               </span>
                             </Show>
                           </span>
@@ -1011,18 +992,7 @@ export function GraphCanvas<N extends MapNode>(props: GraphProps<N>) {
             fit();
           }}
         >
-          <svg
-            class="investigation-navigation-icon"
-            aria-hidden="true"
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-          >
-            <path d="M6 2H2v4m8-4h4v4M2 10v4h4m8-4v4h-4" />
-          </svg>
+          <FrameCornersIcon size={14} class="investigation-navigation-icon" />
           <span class="investigation-navigation-label">Fit map</span>
         </button>
         <Show when={props.showActivity || props.onFindCurrent || props.snapshot.activeId}>
@@ -1037,19 +1007,7 @@ export function GraphCanvas<N extends MapNode>(props: GraphProps<N>) {
                 locate(props.snapshot.activeId, 1);
             }}
           >
-            <svg
-              class="investigation-navigation-icon"
-              aria-hidden="true"
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-            >
-              <circle cx="8" cy="8" r="4" />
-              <path d="M8 1v3m0 8v3M1 8h3m8 0h3" />
-            </svg>
+            <CrosshairIcon size={14} class="investigation-navigation-icon" />
             <span class="investigation-navigation-label">Find current</span>
           </button>
         </Show>

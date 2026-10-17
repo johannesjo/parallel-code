@@ -1065,3 +1065,176 @@ export function QuestionAltIcon(props: IconProps): JSX.Element {
     </SvgIcon>
   );
 }
+
+/** Stroke-drawn padlock: a mind-map node the user has edited. */
+export function LockIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5">
+      <rect x="3" y="7" width="10" height="8" rx="1.5" />
+      <path d="M5 7V5a3 3 0 0 1 6 0v2" stroke-linecap="round" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Page with ruled lines: the notes indicator on a mind-map node. */
+export function NotePageIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.3">
+      <path
+        d="M3 1.5h7l3 3v10H3zM10 1.5v3h3M5.5 7h5M5.5 10h5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Four corner brackets: frame the whole mind map (Fit map). */
+export function FrameCornersIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5">
+      <path d="M6 2H2v4m8-4h4v4M2 10v4h4m8-4v4h-4" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Circle with cross ticks: locate the current work on the mind map. */
+export function CrosshairIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5">
+      <circle cx="8" cy="8" r="4" />
+      <path d="M8 1v3m0 8v3M1 8h3m8 0h3" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Tall ruled page marking an observation node; pass height to keep the 8:7 ratio. */
+export function DocumentLinesIcon(props: IconProps & { height?: number | string }): JSX.Element {
+  const width = () => props.size ?? 16;
+  const height = () => props.height ?? width();
+
+  return (
+    <svg
+      width={width()}
+      height={height()}
+      viewBox="0 0 16 18"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      class={props.class}
+      style={props.style}
+      aria-hidden={props.title ? undefined : 'true'}
+      role={props.title ? 'img' : undefined}
+    >
+      {props.title ? <title>{props.title}</title> : null}
+      <path
+        d="M3 1h7l3 3v13H3zM10 1v3h3M5.5 7h5M5.5 10h5M5.5 13h3"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Tiny 8x8 chevron for the compact tour outline rows. */
+export function ChevronRightTinyIcon(props: IconProps): JSX.Element {
+  return (
+    <svg
+      width={props.size ?? 16}
+      height={props.size ?? 16}
+      viewBox="0 0 8 8"
+      fill="none"
+      stroke="currentColor"
+      class={props.class}
+      style={props.style}
+      aria-hidden={props.title ? undefined : 'true'}
+      role={props.title ? 'img' : undefined}
+    >
+      {props.title ? <title>{props.title}</title> : null}
+      <path d="M2.5 1.5 5.5 4l-3 2.5" />
+    </svg>
+  );
+}
+
+/** Solid triangle caret: the project filter's dropdown affordance. */
+export function CaretDownIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="m4 6 4 4 4-4z" />
+    </SvgIcon>
+  );
+}
+
+/** Sharp stroke chevron under the workspace's file path; see also ChevronDownIcon above. */
+export function ChevronDownThinIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5">
+      <path d="m5 6 3 3 3-3" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Stroke-drawn history: the prompt-history trigger; HistoryIcon above is the filled one. */
+export function HistoryAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M2 7a6 6 0 1 1 1.5 5M2 3v4h4M8 4.5V8l2.5 1.5" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Compact prompt-style terminal for the shell toolbar; see also TerminalIcon above. */
+export function TerminalSmallIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.25" roundCaps roundJoins>
+      <rect x="1.5" y="2.5" width="13" height="11" />
+      <path d="m4 6 2 2-2 2m4 0h3" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** The chat composer's send arrow; ArrowUpIcon is the prompt bar's compact variant. */
+export function ArrowUpAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M8 12V4M4 8l4-4 4 4" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Compact stop square: the chat composer's stop button. */
+export function StopSmallIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="4.5" y="4.5" width="7" height="7" rx="1" />
+    </SvgIcon>
+  );
+}
+
+export function FileIcon(props: IconProps & { height?: number | string }): JSX.Element {
+  const width = () => props.size ?? 16;
+  const height = () => props.height ?? props.size ?? 16;
+
+  return (
+    <svg
+      width={width()}
+      height={height()}
+      viewBox="0 0 9 11"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1"
+      stroke-linejoin="round"
+      class={props.class}
+      style={props.style}
+      aria-hidden={props.title ? undefined : 'true'}
+      role={props.title ? 'img' : undefined}
+    >
+      {props.title ? <title>{props.title}</title> : null}
+      <path d="M1 0.5h4L8 3.5v7H1z" />
+    </svg>
+  );
+}
