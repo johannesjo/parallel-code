@@ -3,7 +3,10 @@ import { store, setStore } from './core';
 import { saveState } from './persistence';
 import type { FeatureHintId } from '../lib/feature-hints';
 
-/** After a tip goes, the next one waits this long, so tips never chain. */
+/**
+ * After a tip is dismissed or its feature used, the next one waits this long,
+ * so tips never chain. A tip that only leaves the view starts no wait.
+ */
 const COOLDOWN_MS = 60_000;
 
 /** The one tip on screen. Several can be eligible at once; the first claim wins. */

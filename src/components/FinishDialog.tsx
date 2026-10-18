@@ -16,8 +16,7 @@ import { ReadinessSection } from './ReadinessSection';
 import { createMergeState } from './merge-state';
 import { PR_MERGE_ACTIONS, createFinishPr, taskPrUrl } from './pr-actions';
 import { createPushRun } from './push-run';
-import { getProject } from '../store/store';
-import { getVerifyCommand } from '../store/verification';
+import { getProject, getTaskChecks } from '../store/store';
 import { markFeatureHintSeen } from '../store/onboarding';
 import { showNotification } from '../store/notification';
 import { theme } from '../lib/theme';
@@ -65,7 +64,8 @@ const SHOWN_ELSEWHERE = new Set(['Merge safety', 'Verify command', 'Evidence', '
 export function FinishDialog(props: FinishDialogProps) {
   const merge = createMergeState(props);
   let readinessAnchor: HTMLDivElement | undefined;
-  const hasVerifyCommand = () => Boolean(getVerifyCommand(props.task.id));
+  // The same test the evidence panel uses to offer Configure checks.
+  const hasChecks = () => getTaskChecks(props.task.id).length > 0;
   const [reviewLocation, setReviewLocation] = createSignal<{
     file: string;
     line?: number;
@@ -236,18 +236,15 @@ export function FinishDialog(props: FinishDialogProps) {
               anchor={() => readinessAnchor}
               title="Check what backs this change"
               actions={
-                hasVerifyCommand()
+                hasChecks()
                   ? undefined
                   : // It leaves this dialog for the project settings.
-                    [{ label: 'Set up checks', run: () => props.onConfigureChecks(), quiet: true }]
+                    [{ label: 'Configure checks', run: props.onConfigureChecks, quiet: true }]
               }
             >
               Readiness gathers the evidence behind this merge: which checks ran, and what the agent
               says it did.
-              <Show when={!hasVerifyCommand()}>
-                {' '}
-                Add a verify command to run your tests from here.
-              </Show>
+              <Show when={!hasChecks()}> Add a verify command to run your tests from here.</Show>
             </FeatureHint>
             <FinishPrSection
               task={props.task}

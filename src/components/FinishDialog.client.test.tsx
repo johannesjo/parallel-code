@@ -3,7 +3,8 @@ import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { FinishDialog } from './FinishDialog';
 import { invoke } from '../lib/ipc';
-import { getPrChecks, mergeTask, pushTask } from '../store/store';
+import { setStore } from '../store/core';
+import { getPrChecks, getTaskChecks, mergeTask, pushTask } from '../store/store';
 import {
   getPullRequestDetails,
   markPullRequestReadyForTask,
@@ -20,7 +21,7 @@ vi.mock('../store/store', () => ({
   getProject: () => undefined,
   getPrChecks: vi.fn(() => undefined),
   getVerifyCommand: () => undefined,
-  getTaskChecks: () => [],
+  getTaskChecks: vi.fn(() => []),
   buildEvidence: vi.fn(async () => {}),
   getEvidenceUiState: () => ({}),
   isEvidenceBusy: () => false,
@@ -196,6 +197,7 @@ function mount(options: { task?: Task; tour?: ChangeTourController } = {}) {
     onOpenPullRequest: vi.fn(),
     onPushDone: vi.fn(),
     onRegenerateTour: vi.fn(),
+    onConfigureChecks: vi.fn(),
   };
   dispose = render(
     () => (
@@ -207,7 +209,6 @@ function mount(options: { task?: Task; tour?: ChangeTourController } = {}) {
         tourDisabled={false}
         onTourClick={() => {}}
         onPushStart={() => {}}
-        onConfigureChecks={() => {}}
         onDiffFileClick={() => {}}
         {...handlers}
       />
@@ -385,8 +386,10 @@ describe('FinishDialog merge blocker', () => {
 });
 
 describe('FinishDialog readiness tip', () => {
-  it('points first-time users at readiness and offers to set up checks', () => {
+  function mountWithTip() {
     vi.useFakeTimers();
+    // An earlier test may have dismissed the tip.
+    setStore('seenFeatureHints', []);
     // happy-dom lays nothing out; the tip needs its anchor on screen.
     const box = vi
       .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
@@ -398,38 +401,33 @@ describe('FinishDialog readiness tip', () => {
       box.mockRestore();
       vi.useRealTimers();
     });
-    const onConfigureChecks = vi.fn();
-    dispose = render(
-      () => (
-        <FinishDialog
-          open
-          task={task()}
-          initialCleanup
-          tour={tour()}
-          tourDisabled={false}
-          onTourClick={() => {}}
-          onRegenerateTour={() => {}}
-          onOpenPullRequest={() => {}}
-          onCloseTask={() => {}}
-          onPushStart={() => {}}
-          onPushDone={() => {}}
-          onConfigureChecks={onConfigureChecks}
-          onDiffFileClick={() => {}}
-          onClose={() => {}}
-        />
-      ),
-      document.body,
-    );
+    const handlers = mount();
     vi.advanceTimersByTime(650);
+    return { handlers, note: document.querySelector('[role="note"]') };
+  }
+  const tipButton = (note: Element | null, text: string) =>
+    [...(note?.querySelectorAll('button') ?? [])].find((b) => b.textContent === text);
 
-    const note = document.querySelector('[role="note"]');
+  it('points first-time users at readiness and offers to configure checks', () => {
+    const { handlers, note } = mountWithTip();
     expect(note?.textContent).toContain('Check what backs this change');
     expect(note?.textContent).toContain('Add a verify command');
-    [...document.querySelectorAll('button')]
-      .find((button) => button.textContent === 'Set up checks')
-      ?.click();
-    expect(onConfigureChecks).toHaveBeenCalledOnce();
+    tipButton(note, 'Configure checks')?.click();
+    expect(handlers.onConfigureChecks).toHaveBeenCalledOnce();
     expect(document.querySelector('[role="note"]')).toBeNull();
+  });
+
+  it('offers no setup once the project has any check', () => {
+    vi.mocked(getTaskChecks).mockReturnValue([
+      { id: 'lint', name: 'Lint', kind: 'custom', command: 'npm run lint', run: 'on-demand' },
+    ]);
+    onTestFinished(() => {
+      vi.mocked(getTaskChecks).mockReturnValue([]);
+    });
+    const { note } = mountWithTip();
+    expect(note?.textContent).toContain('Check what backs this change');
+    expect(note?.textContent).not.toContain('Add a verify command');
+    expect(tipButton(note, 'Configure checks')).toBeUndefined();
   });
 });
 

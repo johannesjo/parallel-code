@@ -25,6 +25,7 @@ import type { UnderstandingTourState } from '../lib/create-understanding-tour';
 import { getTaskDiffBaseBranch } from '../lib/load-task-diff';
 import { ChangeTourButton } from './ChangeTourButton';
 import { FeatureHint } from './FeatureHint';
+import { askCodeModelLabel } from './understanding/ask-code-label';
 
 interface TaskChangedFilesSectionProps {
   tour?: ChangeTourController;
@@ -229,8 +230,8 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
               anchor={() => tourAnchor}
               title="Take a tour of these changes"
             >
-              Get a short guided walkthrough of what changed, stop by stop through the diff. It
-              generates in the background, so you can keep working.
+              A short guided walkthrough of this task's diff, stop by stop. It generates in the
+              background, so you can keep working, and sends the diff to {askCodeModelLabel()}.
             </FeatureHint>
           </div>
         )}
