@@ -3230,6 +3230,11 @@ html:is(
   animation: statusPulse 1.9s ease-in-out infinite;
 }
 
+/* A one-time tip fades in over the page; it never pushes content aside. */
+.feature-hint {
+  animation: fadeIn 0.18s ease;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -5660,6 +5665,10 @@ button.tour-save-state:not(:disabled):hover {
 @media (prefers-reduced-motion: reduce) {
   .projects-collapser {
     transition: none;
+  }
+
+  .feature-hint {
+    animation: none;
   }
 
   .task-appearing,

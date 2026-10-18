@@ -16,7 +16,9 @@ import { ReadinessSection } from './ReadinessSection';
 import { createMergeState } from './merge-state';
 import { PR_MERGE_ACTIONS, createFinishPr, taskPrUrl } from './pr-actions';
 import { createPushRun } from './push-run';
-import { getProject } from '../store/store';
+import { getProject, getTaskChecks } from '../store/store';
+import { markFeatureHintSeen } from '../store/onboarding';
+import { VERIFY_CHECK_ID } from '../../electron/shared/evidence';
 import { showNotification } from '../store/notification';
 import { theme } from '../lib/theme';
 import { GitMergeIcon, SyncIcon, UploadIcon } from './icons';
@@ -63,6 +65,8 @@ const SHOWN_ELSEWHERE = new Set(['Merge safety', 'Verify command', 'Evidence', '
 export function FinishDialog(props: FinishDialogProps) {
   const merge = createMergeState(props);
   let readinessAnchor: HTMLDivElement | undefined;
+  const hasVerifyCommand = () =>
+    Boolean(getTaskChecks(props.task.id).find((check) => check.id === VERIFY_CHECK_ID)?.command);
   const [reviewLocation, setReviewLocation] = createSignal<{
     file: string;
     line?: number;
@@ -184,7 +188,10 @@ export function FinishDialog(props: FinishDialogProps) {
             >
               <ChangeTourButton
                 tour={props.tour}
-                onClick={props.onTourClick}
+                onClick={() => {
+                  markFeatureHintSeen('change-tour');
+                  props.onTourClick();
+                }}
                 disabled={props.tourDisabled}
               >
                 <Show when={props.tour.stops().length > 0 && !props.tour.loading()}>
@@ -212,7 +219,8 @@ export function FinishDialog(props: FinishDialogProps) {
                 />
               </details>
             </Show>
-            <div ref={readinessAnchor}>
+            {/* Opening the section or running a check there is taking the tip. */}
+            <div ref={readinessAnchor} onClick={() => markFeatureHintSeen('finish-review')}>
               <ReadinessSection task={props.task}>
                 <EvidencePanel
                   task={props.task}
@@ -231,10 +239,18 @@ export function FinishDialog(props: FinishDialogProps) {
               when={props.open}
               anchor={() => readinessAnchor}
               title="Check what backs this change"
+              actions={
+                hasVerifyCommand()
+                  ? undefined
+                  : [{ label: 'Set up checks', run: () => props.onConfigureChecks() }]
+              }
             >
-              Readiness collects the evidence for a merge: which checks ran, what the agent says it
-              did, and anything that blocks merging. Add a verify command in the project settings to
-              run your tests from here.
+              Readiness gathers the evidence for this merge: which checks ran, what the agent says
+              it did, and anything that blocks merging.
+              <Show when={!hasVerifyCommand()}>
+                {' '}
+                Add a verify command to run your tests from here.
+              </Show>
             </FeatureHint>
             <FinishPrSection
               task={props.task}

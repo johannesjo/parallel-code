@@ -1365,8 +1365,9 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
               actions={[{ label: 'Use example prompt', run: useDelegationExample }]}
             >
               {selectedAgent()?.name ?? 'This agent'} can start its own sub-tasks. Ask it to split a
-              change into parts, and each part runs in its own worktree while it keeps track. You
-              review each result before it merges.
+              change into parts: each part runs as its own task in its own worktree, and the agent
+              keeps track of them.
+              <Show when={!autoMergeChildren()}> You review each result before it merges.</Show>
             </FeatureHint>
           </div>
 

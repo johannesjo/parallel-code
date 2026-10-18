@@ -2,6 +2,7 @@ import {
   For,
   Show,
   createEffect,
+  createMemo,
   createSignal,
   createUniqueId,
   onCleanup,
@@ -23,7 +24,13 @@ import {
 
 const WIDTH = 300;
 /** Roughly the card's height, so an anchor near the bottom gets it above instead. */
-const HEIGHT = 170;
+const HEIGHT = 190;
+/**
+ * How long a tip waits once it could show. It lets a dialog finish opening and
+ * skips a feature that is only passing through, such as a task the user is
+ * switching past.
+ */
+const SETTLE_MS = 600;
 
 interface FeatureHintAction {
   label: string;
@@ -102,13 +109,23 @@ export function FeatureHint(props: FeatureHintProps) {
     onCleanup(() => observer.disconnect());
   });
 
+  // A memo, so moving with a scroll does not restart the settle delay.
+  const eligible = createMemo(() => wanted() && uncovered() && position() !== null);
+  const [settled, setSettled] = createSignal(false);
   createEffect(() => {
-    if (wanted() && uncovered() && position()) claimFeatureHint(owner);
+    setSettled(false);
+    if (!eligible()) return;
+    const timer = setTimeout(() => setSettled(true), SETTLE_MS);
+    onCleanup(() => clearTimeout(timer));
+  });
+  createEffect(() => {
+    if (eligible() && settled()) claimFeatureHint(owner);
     else releaseFeatureHint(owner);
   });
   onCleanup(() => releaseFeatureHint(owner));
 
-  const shown = () => wanted() && uncovered() && isFeatureHintActive(owner);
+  const shown = () => eligible() && isFeatureHintActive(owner);
+  const dismiss = () => dismissFeatureHint(props.id, owner);
 
   return (
     <Show when={shown() ? position() : undefined}>
@@ -121,6 +138,18 @@ export function FeatureHint(props: FeatureHintProps) {
           <div
             role="note"
             aria-labelledby={titleId}
+            class="feature-hint"
+            // Escape hides the tip first; a dialog around it closes on the next
+            // press. A native listener, since a delegated one runs only after
+            // the dialog's own listener on the document.
+            ref={(el) =>
+              el.addEventListener('keydown', (event) => {
+                if (event.key !== 'Escape') return;
+                event.preventDefault();
+                event.stopPropagation();
+                dismiss();
+              })
+            }
             style={{
               position: 'fixed',
               top: `${pos().top}px`,
@@ -142,6 +171,17 @@ export function FeatureHint(props: FeatureHintProps) {
               'line-height': '1.5',
             }}
           >
+            <span
+              style={{
+                display: 'block',
+                color: theme.fgSubtle,
+                'font-size': sf(11),
+                'text-transform': 'uppercase',
+                'letter-spacing': '0.05em',
+              }}
+            >
+              Tip
+            </span>
             <strong id={titleId} style={{ display: 'block', 'font-size': sf(13) }}>
               {props.title}
             </strong>
@@ -154,7 +194,7 @@ export function FeatureHint(props: FeatureHintProps) {
                     class="btn-secondary"
                     style={buttonStyle(true)}
                     onClick={() => {
-                      dismissFeatureHint(props.id, owner);
+                      dismiss();
                       action.run();
                     }}
                   >
@@ -166,7 +206,7 @@ export function FeatureHint(props: FeatureHintProps) {
                 type="button"
                 class="btn-secondary"
                 style={buttonStyle(!props.actions?.length)}
-                onClick={() => dismissFeatureHint(props.id, owner)}
+                onClick={dismiss}
               >
                 Got it
               </button>

@@ -220,12 +220,18 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
             />
             <FeatureHint
               id="change-tour"
-              when={props.isActive && !props.tourDisabled}
+              // A tour already generating or ready means the user found it.
+              when={
+                props.isActive &&
+                !props.tourDisabled &&
+                !tour().loading() &&
+                tour().stops().length === 0
+              }
               anchor={() => tourAnchor}
               title="Take a tour of these changes"
             >
-              A short walkthrough of what the agent changed and why, stop by stop through the diff.
-              It generates in the background while you keep working.
+              Get a short guided walkthrough of what changed, stop by stop through the diff. It
+              generates in the background, so you can keep working.
             </FeatureHint>
           </div>
         )}

@@ -31,11 +31,15 @@ function anchorAt(top: number): HTMLDivElement {
   return el;
 }
 
+/** Renders, then waits out the delay before a tip may show. */
 function mount(view: () => ReturnType<typeof FeatureHint>) {
   const host = document.createElement('div');
   document.body.append(host);
   disposers.push(render(view, host));
+  settle();
 }
+
+const settle = () => vi.advanceTimersByTime(600);
 
 const notes = () => [...document.querySelectorAll('[role="note"]')];
 const button = (label: string) =>
@@ -64,6 +68,7 @@ describe('FeatureHint', () => {
     expect(notes()).toHaveLength(0);
 
     vi.advanceTimersByTime(60_000);
+    settle();
     expect(notes()).toHaveLength(1);
     expect(notes()[0].textContent).toContain('Second');
   });
@@ -78,7 +83,37 @@ describe('FeatureHint', () => {
     ));
     expect(notes()).toHaveLength(0);
     setReady(true);
+    // A feature only passing through does not get a tip.
+    vi.advanceTimersByTime(300);
+    expect(notes()).toHaveLength(0);
+    setReady(false);
+    setReady(true);
+    vi.advanceTimersByTime(300);
+    expect(notes()).toHaveLength(0);
+    vi.advanceTimersByTime(300);
     expect(notes()).toHaveLength(1);
+  });
+
+  it('dismisses on Escape without closing the dialog around it', () => {
+    let anchor: HTMLDivElement | undefined;
+    const onClose = vi.fn();
+    mount(() => (
+      <Dialog open onClose={onClose}>
+        <div
+          ref={(el) => {
+            el.getBoundingClientRect = () => new DOMRect(100, 50, 200, 24);
+            anchor = el;
+          }}
+        />
+        <FeatureHint id="finish-review" when anchor={() => anchor} title="Readiness">
+          Body
+        </FeatureHint>
+      </Dialog>
+    ));
+    notes()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(notes()).toHaveLength(0);
+    expect(store.seenFeatureHints).toEqual(['finish-review']);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('runs an action and counts it as seen', () => {
@@ -126,6 +161,8 @@ describe('FeatureHint', () => {
     expect(notes().map((note) => note.textContent)).toEqual([expect.stringContaining('Outside')]);
 
     setOpen(true);
+    expect(notes()).toHaveLength(0);
+    settle();
     expect(notes()).toHaveLength(1);
     expect(notes()[0].textContent).toContain('Inside');
     expect(notes()[0].closest('.dialog-panel')).not.toBeNull();
