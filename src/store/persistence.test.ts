@@ -88,6 +88,9 @@ beforeEach(async () => {
   setStore('availableAgents', []);
   setStore('customAgents', []);
   setStore('coordinatorControlHintDismissed', false);
+  setStore('keybindingMigrationDismissed', false);
+  setStore('featureHintsEnabled', true);
+  setStore('seenFeatureHints', []);
   setStore('autoStartRemoteAccess', false);
   setStore('terminalScreenReaderMode', false);
   setStore('preferUiMode', false);
@@ -1655,16 +1658,6 @@ describe('feature tips persistence', () => {
     const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
     return JSON.parse(lastCall[1].json) as Record<string, unknown>;
   }
-
-  it('starts a new install with tips on and no shortcut migration notice', async () => {
-    setStore('featureHintsEnabled', true);
-    setStore('keybindingMigrationDismissed', false);
-    mockInvoke.mockResolvedValueOnce(null);
-    await loadState();
-    expect(store.keybindingMigrationDismissed).toBe(true);
-    expect(store.featureHintsEnabled).toBe(true);
-    expect((await lastSaved()).featureHintsEnabled).toBe(true);
-  });
 
   it('keeps tips off for an install that predates them', async () => {
     mockInvoke.mockResolvedValueOnce(stateJson({}));

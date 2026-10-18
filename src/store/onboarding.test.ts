@@ -5,8 +5,8 @@ vi.mock('../lib/ipc', () => ({ invoke: mockInvoke }));
 
 import { setStore, store } from './core';
 import {
+  activeFeatureHint,
   claimFeatureHint,
-  dismissFeatureHint,
   featureHintWanted,
   isFeatureHintActive,
   markFeatureHintSeen,
@@ -31,31 +31,42 @@ describe('feature tips', () => {
   it('shows one tip at a time and hands the slot on when it is released', () => {
     const first = Symbol('first');
     const second = Symbol('second');
-    expect(claimFeatureHint(first)).toBe(true);
-    expect(claimFeatureHint(second)).toBe(false);
-    expect(isFeatureHintActive(second)).toBe(false);
+    expect(claimFeatureHint(first, 'change-tour')).toBe(true);
+    expect(claimFeatureHint(second, 'finish-review')).toBe(false);
+    expect(activeFeatureHint()).toBe('change-tour');
 
     releaseFeatureHint(second);
     expect(isFeatureHintActive(first)).toBe(true);
 
     releaseFeatureHint(first);
-    expect(claimFeatureHint(second)).toBe(true);
+    expect(activeFeatureHint()).toBeNull();
+    expect(claimFeatureHint(second, 'finish-review')).toBe(true);
     releaseFeatureHint(second);
   });
 
-  it('marks a dismissed tip seen and holds the next one back for a while', () => {
+  it('frees the slot once the tip on screen is seen, then holds the next one back', () => {
     const first = Symbol('first');
     const second = Symbol('second');
-    claimFeatureHint(first);
-    dismissFeatureHint('change-tour', first);
+    claimFeatureHint(first, 'change-tour');
+    // Dismissing the tip and using its feature both land here.
+    markFeatureHintSeen('change-tour');
 
     expect(featureHintWanted('change-tour')).toBe(false);
     expect(store.seenFeatureHints).toEqual(['change-tour']);
-    expect(claimFeatureHint(second)).toBe(false);
+    expect(isFeatureHintActive(first)).toBe(false);
+    expect(claimFeatureHint(second, 'finish-review')).toBe(false);
 
     vi.advanceTimersByTime(60_000);
-    expect(claimFeatureHint(second)).toBe(true);
+    expect(claimFeatureHint(second, 'finish-review')).toBe(true);
     releaseFeatureHint(second);
+  });
+
+  it('leaves the tip on screen alone when another feature is used', () => {
+    const owner = Symbol('owner');
+    claimFeatureHint(owner, 'change-tour');
+    markFeatureHintSeen('finish-review');
+    expect(isFeatureHintActive(owner)).toBe(true);
+    releaseFeatureHint(owner);
   });
 
   it('records a used feature once', () => {

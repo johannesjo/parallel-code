@@ -127,6 +127,7 @@ export function Dialog(props: DialogProps) {
             ref={panelRef}
             tabIndex={0}
             role="dialog"
+            data-dialog-id={dialogId}
             aria-modal={isTopmost(dialogId) ? 'true' : undefined}
             aria-labelledby={props.labelledBy}
             aria-label={props.labelledBy ? undefined : props.ariaLabel}

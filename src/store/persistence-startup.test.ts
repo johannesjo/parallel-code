@@ -73,6 +73,22 @@ describe('startup persistence', () => {
     });
   }, 20_000);
 
+  it('starts a new install with feature tips on and no shortcut migration notice', async () => {
+    const { loadState, saveState } = await import('./persistence');
+    const { store } = await import('./core');
+    mockInvoke.mockResolvedValue(null);
+    await loadState();
+    expect(store.featureHintsEnabled).toBe(true);
+    expect(store.keybindingMigrationDismissed).toBe(true);
+
+    await saveState();
+    const saved = mockInvoke.mock.calls.find(([channel]) => channel === IPC.SaveAppState);
+    expect(JSON.parse(saved?.[1].json)).toMatchObject({
+      featureHintsEnabled: true,
+      keybindingMigrationDismissed: true,
+    });
+  }, 20_000);
+
   it('allows a first-run save only after the empty state has been loaded', async () => {
     const { loadState, saveState } = await import('./persistence');
     let finishLoad: (state: null) => void = () => undefined;

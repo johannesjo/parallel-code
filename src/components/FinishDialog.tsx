@@ -16,9 +16,9 @@ import { ReadinessSection } from './ReadinessSection';
 import { createMergeState } from './merge-state';
 import { PR_MERGE_ACTIONS, createFinishPr, taskPrUrl } from './pr-actions';
 import { createPushRun } from './push-run';
-import { getProject, getTaskChecks } from '../store/store';
+import { getProject } from '../store/store';
+import { getVerifyCommand } from '../store/verification';
 import { markFeatureHintSeen } from '../store/onboarding';
-import { VERIFY_CHECK_ID } from '../../electron/shared/evidence';
 import { showNotification } from '../store/notification';
 import { theme } from '../lib/theme';
 import { GitMergeIcon, SyncIcon, UploadIcon } from './icons';
@@ -65,8 +65,7 @@ const SHOWN_ELSEWHERE = new Set(['Merge safety', 'Verify command', 'Evidence', '
 export function FinishDialog(props: FinishDialogProps) {
   const merge = createMergeState(props);
   let readinessAnchor: HTMLDivElement | undefined;
-  const hasVerifyCommand = () =>
-    Boolean(getTaskChecks(props.task.id).find((check) => check.id === VERIFY_CHECK_ID)?.command);
+  const hasVerifyCommand = () => Boolean(getVerifyCommand(props.task.id));
   const [reviewLocation, setReviewLocation] = createSignal<{
     file: string;
     line?: number;
@@ -188,10 +187,7 @@ export function FinishDialog(props: FinishDialogProps) {
             >
               <ChangeTourButton
                 tour={props.tour}
-                onClick={() => {
-                  markFeatureHintSeen('change-tour');
-                  props.onTourClick();
-                }}
+                onClick={props.onTourClick}
                 disabled={props.tourDisabled}
               >
                 <Show when={props.tour.stops().length > 0 && !props.tour.loading()}>
@@ -242,11 +238,12 @@ export function FinishDialog(props: FinishDialogProps) {
               actions={
                 hasVerifyCommand()
                   ? undefined
-                  : [{ label: 'Set up checks', run: () => props.onConfigureChecks() }]
+                  : // It leaves this dialog for the project settings.
+                    [{ label: 'Set up checks', run: () => props.onConfigureChecks(), quiet: true }]
               }
             >
-              Readiness gathers the evidence for this merge: which checks ran, what the agent says
-              it did, and anything that blocks merging.
+              Readiness gathers the evidence behind this merge: which checks ran, and what the agent
+              says it did.
               <Show when={!hasVerifyCommand()}>
                 {' '}
                 Add a verify command to run your tests from here.

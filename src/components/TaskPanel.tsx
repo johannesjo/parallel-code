@@ -30,6 +30,7 @@ import {
   referenceTourCard,
   openCanvasDocument,
 } from '../store/store';
+import { markFeatureHintSeen } from '../store/onboarding';
 import { useFocusRegistration } from '../lib/focus-registration';
 import { isTaskColumnHighlighted, scheduleTaskFocus } from '../store/focused-panel';
 import { ResizablePanel, type PanelChild } from './ResizablePanel';
@@ -182,6 +183,7 @@ export function TaskPanel(props: TaskPanelProps) {
       selectedCommit: selectedCommit(),
     });
   const openOrGenerateTour = () => {
+    markFeatureHintSeen('change-tour');
     if (tour.stops().length === 0) return generateTour();
     setFinishAction(null);
     setStartTour(true);

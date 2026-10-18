@@ -10,6 +10,7 @@ import {
   type BelowAnchor,
 } from '../lib/floating';
 import { store } from '../store/store';
+import { activeFeatureHint } from '../store/onboarding';
 import { askCodeLabel } from './understanding/ask-code-label';
 import { TourModelMenu } from './understanding/TourModelMenu';
 
@@ -28,7 +29,13 @@ export function ChangeTourButton(props: {
       : 'Start tour';
   const helpId = createUniqueId();
   const help = createHeldSignal<boolean>(150);
-  const helpOpen = () => !!help.value() && !props.disabled && !props.tour.loading() && !ready();
+  // A first-use tip about the tour already explains it in the same spot.
+  const helpOpen = () =>
+    !!help.value() &&
+    !props.disabled &&
+    !props.tour.loading() &&
+    !ready() &&
+    activeFeatureHint() !== 'change-tour';
   const [position, setPosition] = createSignal<BelowAnchor>({ top: 0, right: 0, maxHeight: 240 });
   let controls: HTMLDivElement | undefined;
   let popover: HTMLDivElement | undefined;

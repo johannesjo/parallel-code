@@ -6,7 +6,7 @@ import {
   isPanelFocused,
   openCanvasDocument,
 } from '../store/store';
-import { markFeatureHintSeen } from '../store/onboarding';
+import { isTaskWorking } from '../store/taskStatus';
 import { ChangedFilesList } from './ChangedFilesList';
 import { CommitTreeOverlay } from './CommitTreeOverlay';
 import {
@@ -213,17 +213,16 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
             <ChangeTourButton
               tour={tour()}
               disabled={props.tourDisabled}
-              onClick={() => {
-                markFeatureHintSeen('change-tour');
-                props.onTourClick?.();
-              }}
+              onClick={() => props.onTourClick?.()}
             />
             <FeatureHint
               id="change-tour"
-              // A tour already generating or ready means the user found it.
+              // A tour already generating or ready means the user found it, and
+              // one of a diff the agent is still writing would soon be stale.
               when={
                 props.isActive &&
                 !props.tourDisabled &&
+                !isTaskWorking(props.task.id) &&
                 !tour().loading() &&
                 tour().stops().length === 0
               }

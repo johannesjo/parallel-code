@@ -384,6 +384,55 @@ describe('FinishDialog merge blocker', () => {
   });
 });
 
+describe('FinishDialog readiness tip', () => {
+  it('points first-time users at readiness and offers to set up checks', () => {
+    vi.useFakeTimers();
+    // happy-dom lays nothing out; the tip needs its anchor on screen.
+    const box = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(0, 0, 400, 40));
+    onTestFinished(() => {
+      dispose?.();
+      dispose = undefined;
+      vi.runAllTimers();
+      box.mockRestore();
+      vi.useRealTimers();
+    });
+    const onConfigureChecks = vi.fn();
+    dispose = render(
+      () => (
+        <FinishDialog
+          open
+          task={task()}
+          initialCleanup
+          tour={tour()}
+          tourDisabled={false}
+          onTourClick={() => {}}
+          onRegenerateTour={() => {}}
+          onOpenPullRequest={() => {}}
+          onCloseTask={() => {}}
+          onPushStart={() => {}}
+          onPushDone={() => {}}
+          onConfigureChecks={onConfigureChecks}
+          onDiffFileClick={() => {}}
+          onClose={() => {}}
+        />
+      ),
+      document.body,
+    );
+    vi.advanceTimersByTime(650);
+
+    const note = document.querySelector('[role="note"]');
+    expect(note?.textContent).toContain('Check what backs this change');
+    expect(note?.textContent).toContain('Add a verify command');
+    [...document.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Set up checks')
+      ?.click();
+    expect(onConfigureChecks).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="note"]')).toBeNull();
+  });
+});
+
 describe('FinishDialog tour', () => {
   it('offers to regenerate a ready tour', async () => {
     expect(mount().onRegenerateTour).not.toHaveBeenCalled();
