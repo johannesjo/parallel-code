@@ -11,7 +11,8 @@ import {
 import { Portal } from 'solid-js/web';
 import { topDialog } from '../lib/dialog-stack';
 import type { FeatureHintId } from '../lib/feature-hints';
-import { createAnchorEffect, placeBelow, type BelowAnchor } from '../lib/floating';
+import { placeHint, type HintPlacement } from '../lib/feature-hint-placement';
+import { createAnchorEffect } from '../lib/floating';
 import { sf } from '../lib/fontScale';
 import { theme } from '../lib/theme';
 import {
@@ -75,7 +76,7 @@ export function FeatureHint(props: FeatureHintProps) {
   // Identifies this instance in the single tip slot; several may share an id.
   const owner = Symbol('feature-hint');
   const titleId = createUniqueId();
-  const [position, setPosition] = createSignal<BelowAnchor | null>(null);
+  const [position, setPosition] = createSignal<HintPlacement | null>(null);
   const wanted = () => props.when && featureHintWanted(props.id);
   const panel = () => props.anchor()?.closest('.dialog-panel') ?? undefined;
   /** A dialog above the anchor would cover the tip, or the tip would float over it. */
@@ -89,12 +90,12 @@ export function FeatureHint(props: FeatureHintProps) {
     const rect = props.anchor()?.getBoundingClientRect();
     setPosition(
       rect && onScreen(rect)
-        ? placeBelow(
+        ? placeHint(
             rect,
-            Math.min(WIDTH, window.innerWidth - 24),
             { width: window.innerWidth, height: window.innerHeight },
-            12,
+            Math.min(WIDTH, window.innerWidth - 24),
             HEIGHT,
+            panel()?.getBoundingClientRect(),
           )
         : null,
     );
@@ -152,18 +153,16 @@ export function FeatureHint(props: FeatureHintProps) {
             }
             style={{
               position: 'fixed',
-              top: `${pos().top}px`,
-              right: `${pos().right}px`,
+              left: `${pos().left}px`,
+              top: pos().top === undefined ? undefined : `${pos().top}px`,
+              bottom: pos().bottom === undefined ? undefined : `${pos().bottom}px`,
               width: `${WIDTH}px`,
               'max-width': 'calc(100vw - 24px)',
-              'max-height': `${pos().maxHeight}px`,
               'box-sizing': 'border-box',
-              overflow: 'auto',
               // Under dialogs and menus, which cover it when they open.
               'z-index': '900',
-              padding: '12px 14px',
-              background: theme.bgElevated,
               color: theme.fg,
+              background: theme.bgElevated,
               border: `1px solid ${theme.border}`,
               'border-radius': 'var(--radius-sm)',
               'box-shadow': '0 4px 16px rgba(0, 0, 0, 0.3)',
@@ -171,51 +170,85 @@ export function FeatureHint(props: FeatureHintProps) {
               'line-height': '1.5',
             }}
           >
-            <span
+            <span aria-hidden="true" style={caretStyle(pos().caret)} />
+            {/* Scrolls inside, so the caret outside the edge is not clipped. */}
+            <div
               style={{
-                display: 'block',
-                color: theme.fgSubtle,
-                'font-size': sf(11),
-                'text-transform': 'uppercase',
-                'letter-spacing': '0.05em',
+                'max-height': `${pos().maxHeight}px`,
+                'box-sizing': 'border-box',
+                overflow: 'auto',
+                padding: '12px 14px',
               }}
             >
-              Tip
-            </span>
-            <strong id={titleId} style={{ display: 'block', 'font-size': sf(13) }}>
-              {props.title}
-            </strong>
-            <div style={{ margin: '6px 0 10px', color: theme.fgMuted }}>{props.children}</div>
-            <div style={{ display: 'flex', gap: '8px', 'justify-content': 'flex-end' }}>
-              <For each={props.actions}>
-                {(action) => (
-                  <button
-                    type="button"
-                    class="btn-secondary"
-                    style={buttonStyle(true)}
-                    onClick={() => {
-                      dismiss();
-                      action.run();
-                    }}
-                  >
-                    {action.label}
-                  </button>
-                )}
-              </For>
-              <button
-                type="button"
-                class="btn-secondary"
-                style={buttonStyle(!props.actions?.length)}
-                onClick={dismiss}
+              <span
+                style={{
+                  display: 'block',
+                  color: theme.fgSubtle,
+                  'font-size': sf(11),
+                  'text-transform': 'uppercase',
+                  'letter-spacing': '0.05em',
+                }}
               >
-                Got it
-              </button>
+                Tip
+              </span>
+              <strong id={titleId} style={{ display: 'block', 'font-size': sf(13) }}>
+                {props.title}
+              </strong>
+              <div style={{ margin: '6px 0 10px', color: theme.fgMuted }}>{props.children}</div>
+              <div style={{ display: 'flex', gap: '8px', 'justify-content': 'flex-end' }}>
+                <For each={props.actions}>
+                  {(action) => (
+                    <button
+                      type="button"
+                      class="btn-secondary"
+                      style={buttonStyle(true)}
+                      onClick={() => {
+                        dismiss();
+                        action.run();
+                      }}
+                    >
+                      {action.label}
+                    </button>
+                  )}
+                </For>
+                <button
+                  type="button"
+                  class="btn-secondary"
+                  style={buttonStyle(!props.actions?.length)}
+                  onClick={dismiss}
+                >
+                  Got it
+                </button>
+              </div>
             </div>
           </div>
         </Portal>
       )}
     </Show>
   );
+}
+
+const CARET = 10;
+
+/** A square turned 45° over the card's edge, bordered on its two outer sides. */
+function caretStyle(caret: HintPlacement['caret']): JSX.CSSProperties {
+  const line = `1px solid ${theme.border}`;
+  const along = `${caret.offset - CARET / 2}px`;
+  const out = `${-CARET / 2 - 1}px`;
+  const vertical = caret.side === 'top' || caret.side === 'bottom';
+  return {
+    position: 'absolute',
+    width: `${CARET}px`,
+    height: `${CARET}px`,
+    background: theme.bgElevated,
+    transform: 'rotate(45deg)',
+    [caret.side]: out,
+    [vertical ? 'left' : 'top']: along,
+    'border-top': caret.side === 'top' || caret.side === 'right' ? line : undefined,
+    'border-left': caret.side === 'top' || caret.side === 'left' ? line : undefined,
+    'border-bottom': caret.side === 'bottom' || caret.side === 'left' ? line : undefined,
+    'border-right': caret.side === 'bottom' || caret.side === 'right' ? line : undefined,
+  };
 }
 
 /** Neutral buttons; the main one is marked by full-strength text, not colour. */
