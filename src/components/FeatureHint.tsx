@@ -33,6 +33,9 @@ const ESTIMATED_HEIGHT = 190;
  */
 const SETTLE_MS = 600;
 const CARET = 10;
+/** Frames a shown tip keeps following an anchor that has stopped moving. */
+const FOLLOW_FRAMES = 30;
+const IDLE_CHECK_MS = 250;
 
 interface FeatureHintAction {
   label: string;
@@ -95,7 +98,8 @@ export function FeatureHint(props: FeatureHintProps) {
   // Identifies this instance in the single tip slot; several may share an id.
   const owner = Symbol('feature-hint');
   const titleId = createUniqueId();
-  let card: HTMLDivElement | undefined;
+  /** The card's content, whose natural height is the card's less its border. */
+  let content: HTMLDivElement | undefined;
   const [position, setPosition] = createSignal<HintPlacement | null>(null, {
     equals: samePlacement,
   });
@@ -117,7 +121,7 @@ export function FeatureHint(props: FeatureHintProps) {
       box,
       viewport,
       Math.min(WIDTH, viewport.width - 24),
-      card?.offsetHeight || ESTIMATED_HEIGHT,
+      content ? content.scrollHeight + 2 : ESTIMATED_HEIGHT,
       panel()?.getBoundingClientRect(),
     );
     // A dialog's backdrop filter makes its overlay the box that fixed
@@ -178,13 +182,28 @@ export function FeatureHint(props: FeatureHintProps) {
   const shown = () => eligible() && isFeatureHintActive(owner);
   // Anchors also move without a scroll or a resize of their own: a panel
   // opening with an animation, a split being dragged, a neighbour closing.
+  // Every frame while the anchor moves, then a slow check for the next move.
   createEffect(() => {
     if (!shown()) return;
-    let frame = requestAnimationFrame(function follow() {
+    // `place()` can hide the tip, which runs this cleanup from inside `follow`.
+    let stopped = false;
+    let frame = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let still = 0;
+    const follow = () => {
+      const before = position();
       place();
-      frame = requestAnimationFrame(follow);
+      if (stopped) return;
+      still = samePlacement(before, position()) ? still + 1 : 0;
+      if (still < FOLLOW_FRAMES) frame = requestAnimationFrame(follow);
+      else timer = setTimeout(follow, IDLE_CHECK_MS);
+    };
+    frame = requestAnimationFrame(follow);
+    onCleanup(() => {
+      stopped = true;
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
     });
-    onCleanup(() => cancelAnimationFrame(frame));
   });
 
   const dismiss = () => markFeatureHintSeen(props.id);
@@ -199,7 +218,6 @@ export function FeatureHint(props: FeatureHintProps) {
         >
           <div
             ref={(el) => {
-              card = el;
               // Escape while the tip has focus hides it, not the dialog around
               // it. A native listener, since a delegated one runs only after
               // the dialog's own listener on the document.
@@ -239,6 +257,7 @@ export function FeatureHint(props: FeatureHintProps) {
             <span aria-hidden="true" style={caretStyle(pos().caret)} />
             {/* Scrolls inside, so the caret outside the edge is not clipped. */}
             <div
+              ref={content}
               style={{
                 'max-height': `${pos().maxHeight}px`,
                 'box-sizing': 'border-box',

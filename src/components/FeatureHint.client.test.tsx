@@ -159,6 +159,52 @@ describe('FeatureHint', () => {
     expect(notes()[0].style.top).not.toBe(top);
   });
 
+  it('slows to an occasional check once its anchor holds still, and still follows it', () => {
+    const anchor = anchorAt(50);
+    const measure = vi.spyOn(anchor, 'getBoundingClientRect');
+    mount(() => (
+      <FeatureHint id="change-tour" when anchor={() => anchor} title="Tour">
+        Body
+      </FeatureHint>
+    ));
+    vi.advanceTimersByTime(1_000);
+    measure.mockClear();
+    vi.advanceTimersByTime(1_000);
+    expect(measure.mock.calls.length).toBeLessThanOrEqual(5);
+
+    const top = notes()[0].style.top;
+    boxed(anchor, 200);
+    vi.advanceTimersByTime(300);
+    expect(notes()[0].style.top).not.toBe(top);
+  });
+
+  it('stops measuring once a tip whose anchor left the view is gone', () => {
+    const scroller = boxed(document.createElement('div'), 0);
+    scroller.style.overflow = 'auto';
+    const anchor = anchorAt(10);
+    scroller.append(anchor);
+    document.body.append(scroller);
+    const [mounted, setMounted] = createSignal(true);
+    mount(() => (
+      <Show when={mounted()}>
+        <FeatureHint id="change-tour" when anchor={() => anchor} title="Tour">
+          Body
+        </FeatureHint>
+      </Show>
+    ));
+    expect(notes()).toHaveLength(1);
+
+    // Hidden from inside the tip's own follow step.
+    boxed(anchor, 400);
+    vi.advanceTimersByTime(20);
+    expect(notes()).toHaveLength(0);
+
+    setMounted(false);
+    const measure = vi.spyOn(anchor, 'getBoundingClientRect');
+    vi.advanceTimersByTime(2_000);
+    expect(measure).not.toHaveBeenCalled();
+  });
+
   it('runs an action, counts it as seen, and keeps focus where it was', () => {
     const anchor = anchorAt(50);
     const run = vi.fn();
