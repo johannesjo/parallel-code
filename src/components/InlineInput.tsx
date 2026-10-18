@@ -24,6 +24,7 @@ export function InlineInput(props: InlineInputProps) {
   const [mode, setMode] = createSignal<DiffInteractionMode>('review');
   const [imagePaths, setImagePaths] = createSignal<string[]>([]);
   const [imagePasteHint, setImagePasteHint] = createSignal('');
+  const pendingImagePastes = new Set<Promise<void>>();
   let inputRef: HTMLInputElement | undefined;
 
   /** Images are only sent to a provider whose model accepts image input. */
@@ -57,9 +58,10 @@ export function InlineInput(props: InlineInputProps) {
   const placeholder = () =>
     mode() === 'review' ? 'Add review comment...' : 'Ask about this code...';
 
-  function submit() {
+  async function submit() {
     const t = text().trim();
     if (!t) return;
+    await Promise.all([...pendingImagePastes]);
     props.onSubmit(t, mode(), imageInputEnabled() ? imagePaths() : undefined);
   }
 
@@ -76,7 +78,7 @@ export function InlineInput(props: InlineInputProps) {
 
     e.preventDefault();
     setImagePasteHint('');
-    invoke<ResolvedPaste>(IPC.ResolveClipboardPaste)
+    const pending = invoke<ResolvedPaste>(IPC.ResolveClipboardPaste)
       .then((paste) => {
         if (
           paste.path &&
@@ -93,6 +95,11 @@ export function InlineInput(props: InlineInputProps) {
         logWarn('askCode.paste', 'ResolveClipboardPaste failed', { err });
         setImagePasteHint('Could not attach the clipboard image.');
       });
+    pendingImagePastes.add(pending);
+    pending.then(
+      () => pendingImagePastes.delete(pending),
+      () => pendingImagePastes.delete(pending),
+    );
   }
 
   function handleKeyDown(e: KeyboardEvent) {

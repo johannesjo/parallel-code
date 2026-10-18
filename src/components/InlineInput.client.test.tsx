@@ -89,4 +89,34 @@ describe('InlineInput image attachment', () => {
 
     expect(onSubmit).toHaveBeenCalledWith('what does this show?', 'ask', ['/tmp/shot.png']);
   });
+
+  it('waits for an in-flight paste before submitting', async () => {
+    let resolvePaste!: (value: { kind: string; path: string }) => void;
+    const paste = new Promise<{ kind: string; path: string }>((resolve) => {
+      resolvePaste = resolve;
+    });
+    vi.mocked(invoke).mockReturnValueOnce(paste as never);
+
+    const onSubmit = vi.fn();
+    const container = mount(onSubmit);
+    const input = container.querySelector('input') as HTMLInputElement;
+    modeButton(container, 'Ask')?.click();
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', {
+      value: { items: [{ type: 'image/png', kind: 'file' }] },
+    });
+    input.dispatchEvent(event);
+    input.value = 'what does this show?';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    await Promise.resolve();
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    resolvePaste({ kind: 'image', path: '/tmp/shot.png' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onSubmit).toHaveBeenCalledWith('what does this show?', 'ask', ['/tmp/shot.png']);
+  });
 });
