@@ -59,6 +59,8 @@ function structuralSnapshot(): string {
     mcpOrchestrationEnabled: store.mcpOrchestrationEnabled,
     documentWorkspacesEnabled: store.documentWorkspacesEnabled,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed,
+    featureHintsEnabled: store.featureHintsEnabled,
+    seenFeatureHints: store.seenFeatureHints,
     autoStartRemoteAccess: store.autoStartRemoteAccess,
     shareDockerAgentAuth: store.shareDockerAgentAuth,
     appearanceMode: store.appearanceMode,

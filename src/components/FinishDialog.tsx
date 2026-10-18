@@ -7,6 +7,7 @@ import { CompletionReport } from './CompletionReport';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DiffViewerDialog } from './DiffViewerDialog';
 import { EvidencePanel } from './EvidencePanel';
+import { FeatureHint } from './FeatureHint';
 import { MergeReadinessPanel } from './MergeReadinessPanel';
 import { FinishPrSection, PrMergeRoute } from './FinishPrSection';
 import { MergeBlockers, MergeChanges, MergeOptions } from './MergeSection';
@@ -61,6 +62,7 @@ const SHOWN_ELSEWHERE = new Set(['Merge safety', 'Verify command', 'Evidence', '
  */
 export function FinishDialog(props: FinishDialogProps) {
   const merge = createMergeState(props);
+  let readinessAnchor: HTMLDivElement | undefined;
   const [reviewLocation, setReviewLocation] = createSignal<{
     file: string;
     line?: number;
@@ -210,18 +212,30 @@ export function FinishDialog(props: FinishDialogProps) {
                 />
               </details>
             </Show>
-            <ReadinessSection task={props.task}>
-              <EvidencePanel
-                task={props.task}
-                agentId={merge.selectedAgentId()}
-                headSha={merge.worktreeStatus()?.head_sha}
-                dirty={merge.worktreeStatus()?.has_uncommitted_changes}
-                onConfigure={() => props.onConfigureChecks()}
-                onReviewFile={(file, line, side) => setReviewLocation({ file, line, side })}
-              >
-                <MergeReadinessPanel checks={readinessRows()} />
-              </EvidencePanel>
-            </ReadinessSection>
+            <div ref={readinessAnchor}>
+              <ReadinessSection task={props.task}>
+                <EvidencePanel
+                  task={props.task}
+                  agentId={merge.selectedAgentId()}
+                  headSha={merge.worktreeStatus()?.head_sha}
+                  dirty={merge.worktreeStatus()?.has_uncommitted_changes}
+                  onConfigure={() => props.onConfigureChecks()}
+                  onReviewFile={(file, line, side) => setReviewLocation({ file, line, side })}
+                >
+                  <MergeReadinessPanel checks={readinessRows()} />
+                </EvidencePanel>
+              </ReadinessSection>
+            </div>
+            <FeatureHint
+              id="finish-review"
+              when={props.open}
+              anchor={() => readinessAnchor}
+              title="Check what backs this change"
+            >
+              Readiness collects the evidence for a merge: which checks ran, what the agent says it
+              did, and anything that blocks merging. Add a verify command in the project settings to
+              run your tests from here.
+            </FeatureHint>
             <FinishPrSection
               task={props.task}
               pr={pr}

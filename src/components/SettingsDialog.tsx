@@ -56,6 +56,7 @@ import {
   updateStatus,
   checkForUpdates,
 } from '../store/store';
+import { setFeatureHintsEnabled } from '../store/onboarding';
 import { CustomAgentEditor } from './CustomAgentEditor';
 import { AgentEnvFileEditor } from './AgentEnvFileEditor';
 import { SuperProductivitySettings } from './SuperProductivitySettings';
@@ -628,6 +629,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
               checked={store.showSidebarTips}
               onChange={setShowSidebarTips}
               description="Keyboard shortcut hints at the bottom of the sidebar"
+            />
+            <SettingsCheckboxRow
+              label="Show feature tips"
+              checked={store.featureHintsEnabled}
+              onChange={setFeatureHintsEnabled}
+              description="One-time tips when a feature first becomes useful, such as change tours. Turning this on shows every tip again"
             />
             <SettingsCheckboxRow
               label="Font smoothing"

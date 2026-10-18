@@ -101,6 +101,8 @@ export const [store, setStore] = createStore<AppStore>({
   keybindingPreset: 'default',
   keybindingOverridesByPreset: {},
   keybindingMigrationDismissed: false,
+  featureHintsEnabled: true,
+  seenFeatureHints: [],
   focusMode: false,
   taskSplitMode: {},
   verboseLogging: false,

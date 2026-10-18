@@ -33,6 +33,7 @@ import type {
 import type { DockerSource } from '../lib/docker';
 import type { LookPreset, AppearanceMode } from '../lib/look';
 import type { KeyBinding } from '../lib/keybindings';
+import type { FeatureHintId } from '../lib/feature-hints';
 import type { CustomTheme } from '../lib/custom-theme';
 import type { ReasoningProfile } from '../investigation/profiles';
 import type { MindMapDocument } from '../graph/model';
@@ -527,6 +528,8 @@ export interface PersistedState {
   customAgents?: AgentDef[];
   agentEnvFiles?: Record<string, string>;
   keybindingMigrationDismissed?: boolean;
+  featureHintsEnabled?: boolean;
+  seenFeatureHints?: FeatureHintId[];
   focusMode?: boolean;
   verboseLogging?: boolean;
   activeCustomThemeId?: string | null;
@@ -690,6 +693,9 @@ export interface AppStore {
   /** Per-preset user overrides. Outer key = preset ID, inner = binding ID → override. */
   keybindingOverridesByPreset: Record<string, Record<string, KeybindingOverride>>;
   keybindingMigrationDismissed: boolean;
+  /** One-time feature tips; on for new installs, off for installs that predate them. */
+  featureHintsEnabled: boolean;
+  seenFeatureHints: FeatureHintId[];
   focusMode: boolean;
   /** Per-task flag: true when the task is rendering its focus-mode two-column layout. */
   taskSplitMode: Record<string, boolean>;

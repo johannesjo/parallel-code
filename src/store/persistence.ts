@@ -28,6 +28,7 @@ import { randomPastelColor, sortProjects } from './projects';
 import { markAgentSpawned } from './taskStatus';
 import { clampCoordinatorConcurrentTasks } from '../lib/coordinator-limits';
 import { MAX_PROMPT_HISTORY } from '../lib/prompt-history';
+import { isFeatureHintId } from '../lib/feature-hints';
 import { normalizeReasoningProfile } from '../investigation/profiles';
 import { restoreReasoningWorkspaces } from '../investigation/editing';
 import { isValidSpId } from '../../electron/shared/super-productivity';
@@ -442,6 +443,9 @@ export async function saveState(): Promise<void> {
     agentEnvFiles:
       Object.keys(store.agentEnvFiles).length > 0 ? { ...store.agentEnvFiles } : undefined,
     keybindingMigrationDismissed: store.keybindingMigrationDismissed || undefined,
+    // Always stored: a missing value marks an install that predates the tips.
+    featureHintsEnabled: store.featureHintsEnabled,
+    seenFeatureHints: store.seenFeatureHints.length > 0 ? [...store.seenFeatureHints] : undefined,
     focusMode: store.focusMode || undefined,
     verboseLogging: store.verboseLogging || undefined,
     coordinatorNotificationDelayMs:
@@ -643,6 +647,8 @@ interface LegacyPersistedState {
   agentEnvFiles?: unknown;
   terminals?: unknown;
   keybindingMigrationDismissed?: unknown;
+  featureHintsEnabled?: unknown;
+  seenFeatureHints?: unknown;
   focusMode?: unknown;
   verboseLogging?: unknown;
   coordinatorNotificationDelayMs?: unknown;
@@ -670,6 +676,8 @@ export async function loadState(): Promise<void> {
   stateLoaded = false;
   const json = await invoke<string | null>(IPC.LoadAppState);
   if (!json) {
+    // A new install has no shortcuts to migrate.
+    setStore('keybindingMigrationDismissed', true);
     await delegationRequest({ action: 'orchestrationSetting', enabled: true });
     stateLoaded = true;
     return;
@@ -1013,6 +1021,13 @@ export async function loadState(): Promise<void> {
       if (typeof raw.keybindingMigrationDismissed === 'boolean') {
         s.keybindingMigrationDismissed = raw.keybindingMigrationDismissed;
       }
+
+      // Users who set the app up before feature tips existed already found
+      // their way around; they can turn the tips on in Settings.
+      s.featureHintsEnabled = raw.featureHintsEnabled === true;
+      s.seenFeatureHints = Array.isArray(raw.seenFeatureHints)
+        ? raw.seenFeatureHints.filter(isFeatureHintId)
+        : [];
 
       // Make custom agents findable during task restoration
       for (const ca of s.customAgents) {

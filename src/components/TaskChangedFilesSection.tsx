@@ -6,6 +6,7 @@ import {
   isPanelFocused,
   openCanvasDocument,
 } from '../store/store';
+import { markFeatureHintSeen } from '../store/onboarding';
 import { ChangedFilesList } from './ChangedFilesList';
 import { CommitTreeOverlay } from './CommitTreeOverlay';
 import {
@@ -23,6 +24,7 @@ import type { ChangeTourController } from '../lib/create-change-tour';
 import type { UnderstandingTourState } from '../lib/create-understanding-tour';
 import { getTaskDiffBaseBranch } from '../lib/load-task-diff';
 import { ChangeTourButton } from './ChangeTourButton';
+import { FeatureHint } from './FeatureHint';
 
 interface TaskChangedFilesSectionProps {
   tour?: ChangeTourController;
@@ -69,6 +71,7 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
   };
 
   let changedFilesRef: HTMLDivElement | undefined;
+  let tourAnchor: HTMLDivElement | undefined;
 
   onMount(() => {
     const id = props.task.id;
@@ -206,11 +209,25 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
       </div>
       <Show when={props.tour}>
         {(tour) => (
-          <ChangeTourButton
-            tour={tour()}
-            disabled={props.tourDisabled}
-            onClick={() => props.onTourClick?.()}
-          />
+          <div ref={tourAnchor} style={{ 'flex-shrink': '0' }}>
+            <ChangeTourButton
+              tour={tour()}
+              disabled={props.tourDisabled}
+              onClick={() => {
+                markFeatureHintSeen('change-tour');
+                props.onTourClick?.();
+              }}
+            />
+            <FeatureHint
+              id="change-tour"
+              when={props.isActive && !props.tourDisabled}
+              anchor={() => tourAnchor}
+              title="Take a tour of these changes"
+            >
+              A short walkthrough of what the agent changed and why, stop by stop through the diff.
+              It generates in the background while you keep working.
+            </FeatureHint>
+          </div>
         )}
       </Show>
     </div>
