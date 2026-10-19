@@ -1,6 +1,8 @@
 import { For, Show } from 'solid-js';
+import type { JSX } from 'solid-js';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
+import { CheckIcon, CloseIcon } from './icons';
 import type { MergeReadinessCheck, MergeReadinessCheckStatus } from './merge-readiness';
 
 function checkHelp(label: string): string | undefined {
@@ -32,9 +34,9 @@ function statusColor(status: MergeReadinessCheckStatus): string {
   return theme.fgMuted;
 }
 
-function statusSymbol(status: MergeReadinessCheckStatus): string {
-  if (status === 'pass') return '✓';
-  if (status === 'blocked') return '×';
+function statusSymbol(status: MergeReadinessCheckStatus): JSX.Element {
+  if (status === 'pass') return <CheckIcon size={12} />;
+  if (status === 'blocked') return <CloseIcon size={12} />;
   if (status === 'warning') return '!';
   if (status === 'checking') return '…';
   return '—';
