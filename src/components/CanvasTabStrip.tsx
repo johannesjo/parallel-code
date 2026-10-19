@@ -4,12 +4,18 @@ import { sf } from '../lib/fontScale';
 import { canvasTabKey } from '../lib/canvas-tabs';
 import type { CanvasTab, CanvasTabKind } from '../store/types';
 import { IconButton } from './IconButton';
-import { CloseIcon, ExpandIcon, ExternalLinkIcon, PlusIcon, ScreenNormalIcon } from './icons';
+import {
+  CloseIcon,
+  DocumentIcon,
+  ExpandIcon,
+  ExternalLinkIcon,
+  PlusIcon,
+  ScreenNormalIcon,
+} from './icons';
 import { UnderstandButton, tourButtonStyle } from './understanding/UnderstandButton';
 import type { UnderstandingTourController } from '../lib/create-understanding-tour';
 import { isTourFilePath } from '../lib/tour-file';
 import { isEditableDocumentPath } from '../lib/document-path';
-import { DocumentIcon } from '../documents/DocumentIcon';
 
 interface CanvasTabStripProps {
   tabs: CanvasTab[];

@@ -1,4 +1,6 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
+import type { JSX } from 'solid-js';
+import { CheckIcon, CloseIcon } from '../components/icons';
 import {
   fetchMergeReadiness,
   mergeTask as mergeTaskRequest,
@@ -27,10 +29,10 @@ const OVERALL_COPY: Record<string, { title: string; detail: string }> = {
   checking: { title: 'Checking', detail: 'Waiting for merge status.' },
 };
 
-const SYMBOL: Record<ReadinessCheck['status'], string> = {
-  pass: '✓',
+const SYMBOL: Record<ReadinessCheck['status'], JSX.Element> = {
+  pass: <CheckIcon size={12} />,
   warning: '!',
-  blocked: '×',
+  blocked: <CloseIcon size={12} />,
   checking: '…',
   neutral: '—',
 };
