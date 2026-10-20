@@ -167,6 +167,7 @@ describe('guided tour', () => {
   });
 
   it('explains generation and the configured model on hover/focus without generating', () => {
+    setAskCodeModel('MiniMax-M3.1-Flash');
     const { host } = mount();
     const button = host.querySelector('button');
     const controls = button?.closest('.change-tour-hover');
@@ -180,7 +181,10 @@ describe('guided tour', () => {
       'Sends the selected tour diff',
     );
     expect(invoke).not.toHaveBeenCalled();
+    setAskCodeModel('MiniMax-M2.7');
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('MiniMax-M2.7');
     setAskCodeProvider('claude');
+    setAskCodeModel('sonnet');
     expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
       'sonnet (CLI model alias)',
     );
