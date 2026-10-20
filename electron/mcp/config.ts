@@ -1,4 +1,5 @@
 import os from 'os';
+import type { SessionCapabilities } from '../shared/delegation-types.js';
 import { join, dirname } from 'path';
 import { atomicWriteFile, atomicWriteFileSync } from './atomic.js';
 
@@ -8,6 +9,7 @@ export interface SubTaskMcpConfigOpts {
   subtaskToken: string;
   taskId: string;
   doneToken: string;
+  sessionCapabilities?: SessionCapabilities;
 }
 
 export interface SubTaskMcpConfig {
@@ -57,13 +59,32 @@ export function getSubTaskMcpConfigPath(
     : join(tempDir, `parallel-code-subtask-${taskId}.json`);
 }
 
+/** Launch-time exposure only; the HTTP server independently enforces authority. */
+export function sessionCapabilityArgs(capabilities?: SessionCapabilities): string[] {
+  return capabilities
+    ? [
+        '--session-profile',
+        capabilities.profile,
+        ...(capabilities.canCreate ? ['--allow-create'] : []),
+        ...(capabilities.peers ? ['--peer-tools'] : []),
+      ]
+    : [];
+}
+
 export function buildSubTaskMcpConfig(args: SubTaskMcpConfigOpts): SubTaskMcpConfig {
   return {
     mcpServers: {
       'parallel-code': {
         type: 'stdio',
         command: 'node',
-        args: [args.serverPath, '--url', args.serverUrl, '--task-id', args.taskId],
+        args: [
+          args.serverPath,
+          '--url',
+          args.serverUrl,
+          '--task-id',
+          args.taskId,
+          ...sessionCapabilityArgs(args.sessionCapabilities),
+        ],
         env: {
           PARALLEL_CODE_MCP_TOKEN: args.subtaskToken,
           PARALLEL_CODE_MCP_DONE_TOKEN: args.doneToken,

@@ -1,0 +1,214 @@
+.delegation-surface {
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.delegation-surface h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.delegation-surface p {
+  margin: 8px 0;
+}
+
+.delegation-surface button,
+.delegation-button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.delegation-surface button:hover:not(:disabled),
+.delegation-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.delegation-surface .btn-primary {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.delegation-surface button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.delegation-surface small {
+  color: var(--fg-muted);
+}
+
+/* Collaboration stays visible without displacing the terminal working area. */
+.delegation-panel {
+  flex-shrink: 0;
+  max-height: 30vh;
+  overflow: auto;
+}
+
+.delegation-panel summary {
+  padding: 4px 0;
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+
+.subtask-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.subtask-status {
+  flex-shrink: 0;
+}
+
+.delegation-message-meta {
+  display: block;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.delegation-message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.delegation-message-actions .delegation-cancel-delivery {
+  margin-left: auto;
+  color: var(--fg-muted);
+}
+
+.delegation-parent-link {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.subtask-strip {
+  flex-shrink: 0;
+  padding: 4px 10px;
+}
+
+.subtask-strip-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.subtask-strip-header button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-subtle);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.subtask-strip-header button:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--border);
+}
+
+.subtask-strip-header button:disabled {
+  cursor: default;
+}
+
+/* Wraps rather than truncates: a trailing "launch failed" must stay readable. */
+.subtask-strip-summary {
+  min-width: 0;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.subtask-strip-header .subtask-strip-logs {
+  margin-left: auto;
+  border-color: var(--border);
+}
+
+/* About three rows of chips; longer lists scroll vertically instead of hiding
+   off the side of a narrow column. */
+.subtask-strip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 100px;
+  overflow-y: auto;
+  /* The gutter keeps focus outlines from being clipped by the scroll box. */
+  margin: 0 -4px;
+  padding: 4px;
+  list-style: none;
+}
+
+.subtask-strip-list[hidden] {
+  display: none;
+}
+
+.subtask-strip-item {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.subtask-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 320px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: var(--font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.subtask-chip[data-urgent] {
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  border-color: color-mix(in srgb, var(--tone) 30%, transparent);
+}
+
+.subtask-chip:not([data-urgent]):hover {
+  border-color: var(--fg-subtle);
+}
+
+.subtask-stop {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-left: 2px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-subtle);
+  cursor: pointer;
+}
+
+.subtask-stop:hover {
+  color: var(--fg);
+  border-color: var(--fg-subtle);
+}

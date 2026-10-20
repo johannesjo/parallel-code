@@ -13,7 +13,25 @@ module.exports = {
         // Allow importing pure shared modules with no Node/Electron deps:
         //   - electron/ipc/channels.ts — IPC channel enum
         //   - electron/mcp/prompt-detect.ts — regex-only prompt detector reused by the renderer task-status pipeline
-        pathNot: ['^electron/ipc/channels\\.ts', '^electron/mcp/prompt-detect\\.ts'],
+        //   - electron/mcp/validation.ts — string-only branch/UUID validators; the renderer
+        //     shares them so it never offers a branch the IPC layer would reject
+        //   - electron/shared/ — renderer-safe constants/pure helpers (no Node/Electron imports)
+        //   - electron/documents/shared.ts — agent ids/labels the document workspace shows
+        //   - electron/ipc/shared-types.ts, electron/remote/protocol.ts, electron/documents/types.ts —
+        //     IPC/HTTP payload types; keep them free of Node/Electron imports
+        pathNot: [
+          '^electron/ipc/channels\\.ts',
+          '^electron/mcp/prompt-detect\\.ts',
+          // recorded agent frames (pure data) shared with renderer status tests
+          '^electron/mcp/agent-frame-fixtures\\.ts',
+          '^electron/mcp/validation\\.ts',
+          '^electron/agent-hooks/status\\.ts',
+          '^electron/shared/',
+          '^electron/documents/shared\\.ts',
+          '^electron/ipc/shared-types\\.ts',
+          '^electron/remote/protocol\\.ts',
+          '^electron/documents/types\\.ts',
+        ],
       },
     },
     {
@@ -48,6 +66,8 @@ module.exports = {
           'types\\.(ts|tsx)$',
           '^src/main\\.tsx$',
           '^src/remote/main\\.tsx$',
+          // Registered by URL in the phone UI rather than imported as a module.
+          '^src/remote/public/sw\\.js$',
           '^electron/main\\.ts$',
           '^electron/preload\\.cjs$',
           '^electron/mcp/server\\.ts$',
@@ -62,6 +82,8 @@ module.exports = {
   ],
 
   options: {
+    // Count `import type` edges too, so type-only imports can't cross the boundaries above.
+    tsPreCompilationDeps: true,
     doNotFollow: {
       path: 'node_modules',
     },

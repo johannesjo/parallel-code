@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One computer's usage meters in the widget; the label and rule hide when only one computer counts. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/usage_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:ellipsize="end"
+        android:fontFamily="monospace"
+        android:maxLines="1"
+        android:textColor="#FFC4A77D"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <!-- RemoteViews inflates only whitelisted classes; a plain View is not one, an ImageView is. -->
+    <ImageView
+        android:id="@+id/usage_rule"
+        android:importantForAccessibility="no"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:background="#33919191" />
+
+    <TextView
+        android:id="@+id/usage_lines"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:lineSpacingExtra="2dp"
+        android:textColor="#FFB5B5B5"
+        android:textSize="12sp" />
+</LinearLayout>

@@ -11,11 +11,13 @@ vi.mock('../ipc/pty.js', () => ({
   resizeAgent: vi.fn(),
   killAgent: vi.fn(),
   subscribeToAgent: vi.fn(),
+  subscribeToAgentRendered: vi.fn(() => null),
   unsubscribeFromAgent: vi.fn(),
   getAgentScrollback: vi.fn(() => null),
   getActiveAgentIds: vi.fn(() => []),
   getAgentMeta: vi.fn(() => null),
   getAgentCols: vi.fn(() => 80),
+  getAgentRows: vi.fn(() => 24),
   onPtyEvent: vi.fn(() => vi.fn()),
 }));
 
@@ -27,6 +29,7 @@ let port = 0;
 let mobileToken = '';
 let coordinatorToken = '';
 let subtaskToken = '';
+let generatePin: () => { pin: string; expiresAt: number };
 let stop: () => Promise<void>;
 let getTaskNotes: Mock<(taskId: string) => Promise<string>>;
 let setTaskNotes: Mock<(taskId: string, notes: string) => Promise<void>>;
@@ -47,7 +50,16 @@ async function start(extra: Partial<StartOpts> = {}): Promise<void> {
   mobileToken = srv.mobileToken;
   coordinatorToken = srv.token;
   subtaskToken = srv.subtaskToken;
+  generatePin = srv.generatePairingPin;
   stop = srv.stop;
+}
+
+/** Elevate the mobile token to a paired one via the desktop PIN. */
+async function pair(): Promise<string> {
+  const { pin } = generatePin();
+  const res = await request('POST', '/api/pair/verify', { token: mobileToken, body: { pin } });
+  expect(res.status).toBe(201);
+  return (res.json as { token: string }).token;
 }
 
 beforeEach(() => {
@@ -160,14 +172,24 @@ describe('GET/PUT notes — malformed and dangerous task ids', () => {
 describe('PUT /api/mobile/notes/:taskId', () => {
   beforeEach(() => start());
 
-  it('saves notes for a mobile token', async () => {
+  it('saves notes for a paired token', async () => {
     const res = await request('PUT', '/api/mobile/notes/task-1', {
-      token: mobileToken,
+      token: await pair(),
       body: { notes: 'hello world' },
     });
     expect(res.status).toBe(200);
     expect(res.json).toEqual({ ok: true });
     expect(setTaskNotes).toHaveBeenCalledWith('task-1', 'hello world');
+  });
+
+  it('returns 403 for the read-only mobile token (writes need pairing)', async () => {
+    const res = await request('PUT', '/api/mobile/notes/task-1', {
+      token: mobileToken,
+      body: { notes: 'hello world' },
+    });
+    expect(res.status).toBe(403);
+    expect(res.json).toEqual({ error: 'pairing required' });
+    expect(setTaskNotes).not.toHaveBeenCalled();
   });
 
   it('returns 403 for a coordinator token', async () => {
@@ -181,7 +203,7 @@ describe('PUT /api/mobile/notes/:taskId', () => {
 
   it('rejects a non-string notes body with 400', async () => {
     const res = await request('PUT', '/api/mobile/notes/task-1', {
-      token: mobileToken,
+      token: await pair(),
       body: { notes: 123 },
     });
     expect(res.status).toBe(400);
@@ -190,7 +212,7 @@ describe('PUT /api/mobile/notes/:taskId', () => {
 
   it('rejects notes larger than 100 KB with 400', async () => {
     const res = await request('PUT', '/api/mobile/notes/task-1', {
-      token: mobileToken,
+      token: await pair(),
       body: { notes: 'x'.repeat(100 * 1024 + 1) },
     });
     expect(res.status).toBe(400);
@@ -200,7 +222,7 @@ describe('PUT /api/mobile/notes/:taskId', () => {
   it('accepts multi-line notes up to the limit', async () => {
     const notes = 'line\n'.repeat(1000);
     const res = await request('PUT', '/api/mobile/notes/task-1', {
-      token: mobileToken,
+      token: await pair(),
       body: { notes },
     });
     expect(res.status).toBe(200);
@@ -218,7 +240,7 @@ describe('notes route without a renderer bridge', () => {
 
   it('returns 503 for PUT when notes are unavailable', async () => {
     const res = await request('PUT', '/api/mobile/notes/task-1', {
-      token: mobileToken,
+      token: await pair(),
       body: { notes: 'x' },
     });
     expect(res.status).toBe(503);

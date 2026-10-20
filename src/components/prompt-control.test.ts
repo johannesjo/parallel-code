@@ -134,6 +134,16 @@ describe('shouldRendererAutoSendInitialPrompt', () => {
       }),
     ).toBe(false);
   });
+
+  it('does not resend a prompt the resumed session already received', () => {
+    expect(
+      shouldRendererAutoSendInitialPrompt({
+        coordinatedBy: undefined,
+        initialPrompt: 'do the work',
+        deliveredBeforeRestart: true,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe('resolveAutoSendVerifyOutcome', () => {

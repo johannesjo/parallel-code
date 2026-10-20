@@ -12,6 +12,7 @@ rules:
       include:
         - '**/electron/mcp/**'
         - '**/electron/ipc/register.ts'
+        - '**/electron/ipc/mcp-runtime.ts'
       exclude:
         - '**/electron/mcp/atomic.ts'
         - '**/*.test.ts'
@@ -27,3 +28,4 @@ rules:
     paths:
       include:
         - '**/electron/ipc/register.ts'
+        - '**/electron/ipc/mcp-runtime.ts'

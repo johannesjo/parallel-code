@@ -1,6 +1,21 @@
 import { ConfirmDialog } from './ConfirmDialog';
 import { store, removeProject, removeProjectWithTasks } from '../store/store';
 import { getProjectTaskCount } from './project-remove-confirmation';
+import { disposeHiddenAgentTasks } from '../documents/agent-task';
+import { errMessage, error as logError } from '../lib/log';
+import { NOTIFICATION_ERROR_MS, showNotification } from '../store/notification';
+
+/**
+ * Hidden agents are disposed only after the project is gone: while it exists, a
+ * mounted page may recreate a task deleted under it, leaving an orphan session.
+ * A project kept because a task failed to close keeps its agents.
+ */
+export async function removeProjectAndHiddenAgents(projectId: string, closeTasks: boolean) {
+  if (closeTasks) await removeProjectWithTasks(projectId);
+  else removeProject(projectId);
+  if (store.projects.some((p) => p.id === projectId)) return;
+  await disposeHiddenAgentTasks(projectId);
+}
 
 interface RemoveProjectConfirmProps {
   /** Project to remove; null keeps the dialog closed. */
@@ -32,11 +47,13 @@ export function RemoveProjectConfirm(props: RemoveProjectConfirmProps) {
       onConfirm={() => {
         const id = props.projectId;
         if (id) {
-          if (taskCount() > 0) {
-            removeProjectWithTasks(id);
-          } else {
-            removeProject(id);
-          }
+          // Hidden agent sessions (document, GitHub) live outside the task lists.
+          removeProjectAndHiddenAgents(id, taskCount() > 0).catch((err: unknown) => {
+            logError('project', 'Removing project failed', err, { projectId: id });
+            showNotification(`Could not remove project: ${errMessage(err)}`, {
+              durationMs: NOTIFICATION_ERROR_MS,
+            });
+          });
         }
         props.onDone();
         props.onRemoved?.();

@@ -1,4 +1,14 @@
-import { onMount, onCleanup, createEffect, createMemo, createSignal, Show } from 'solid-js';
+import { setStore } from '../store/core';
+import type { SessionCapabilities } from '../../electron/shared/delegation-types';
+import {
+  onMount,
+  onCleanup,
+  createEffect,
+  createMemo,
+  createSignal,
+  untrack,
+  Show,
+} from 'solid-js';
 import { Terminal, type IMarker } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -9,7 +19,8 @@ import { TerminalBookmarkGutter } from './TerminalBookmarks';
 import { invoke, fireAndForget, Channel } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { getTerminalFontFamily } from '../lib/fonts';
-import { TERMINAL_SCROLLBACK_LINES, base64ToUint8Array } from '../lib/terminalConstants';
+import { TERMINAL_SCROLL_OPTIONS } from '../lib/terminalConstants';
+import { leaveCursorQueriesToMain } from '../lib/terminalQueries';
 import {
   getTerminalSearchDecorations,
   getTerminalTheme,
@@ -25,7 +36,9 @@ import {
   retryTaskMcpStartup,
   markTaskUserActivity,
   setTaskTerminalInputPending,
+  noteAgentTerminalInput,
 } from '../store/store';
+import { setAgentCanvasTools } from '../store/agents';
 import { clearTerminalInputPendingFromQuestion } from '../store/tasks';
 import { isLandedTaskState } from '../store/landing';
 import { warn as logWarn } from '../lib/log';
@@ -33,13 +46,19 @@ import {
   registerTerminal,
   unregisterTerminal,
   markDirty,
-  redrawTerminal,
+  redrawAllTerminals,
 } from '../lib/terminalFitManager';
 import { dataTransferToShellArgs, escapePath } from '../lib/terminalDrop';
 import { cleanCopiedTerminalText } from '../lib/copy-text';
 import { hasTerminalUserActivity, nextTerminalInputPending } from '../lib/terminalInputPending';
+import { isEditableDocumentPath } from '../lib/document-path';
 import { computeWrappedPathLinks, createTerminalHttpLinkHandler } from '../lib/terminalLinks';
+import { recordSharedWebglContextLoss, WEBGL_REATTACH_DELAY_MS } from '../lib/webglContextLoss';
+import { isTerminalPaneOnScreen, WEBGL_DETACH_DELAY_MS } from '../lib/terminalPaneVisibility';
 import type { PtyOutput } from '../ipc/types';
+import { SyncIcon, SendIcon } from './icons';
+import { TerminalSelectionMenu } from './TerminalSelectionMenu';
+import './AgentHandoffComposer.css';
 
 let windowUnloading = false;
 if (typeof window !== 'undefined') {
@@ -112,18 +131,27 @@ const BOOKMARK_EDGE_PAD = 3;
 const CONTROL_CHARS = /[\x00-\x1f\x7f-\x9f]/g;
 
 interface TerminalViewProps {
+  onSendSelection?: (text: string, recipientAgentId?: string) => void;
+  onSecondOpinion?: () => void;
+  handoffRecipients?: { id: string; label: string }[];
   taskId: string;
   agentId: string;
+  /** False while this pane is hidden inside its task (an unselected tab).
+   *  Task-level visibility (focus mode, tiling scroll) is read from the store. */
+  visible?: boolean;
+  /** Not a task panel (arena overlay): ignore task-level visibility. */
+  standalone?: boolean;
   command: string;
   args: string[];
   cwd: string;
   env?: Record<string, string>;
+  /** Path to a `KEY=VALUE` file merged into the agent's environment at spawn. */
+  envFile?: string;
   isShell?: boolean;
   /** Scroll bookmarks reserve a 24px left gutter. Only agent terminals use it;
    *  shell terminals (in-task shells and standalone full-size panels) opt out
    *  (pass false) so they fill the pane with no left inset. */
   bookmarksEnabled?: boolean;
-  stepsEnabled?: boolean;
   dockerMode?: boolean;
   dockerImage?: string;
   spawnDelayMs?: number;
@@ -138,14 +166,17 @@ interface TerminalViewProps {
   onData?: (data: Uint8Array) => void;
   onPromptDetected?: (text: string) => void;
   onFileLink?: (filePath: string) => void;
+  /** Present: right-clicking a Markdown or HTML path offers to edit it as a document. */
+  onEditAsDocument?: (filePath: string) => void;
   onReady?: (focusFn: () => void) => void;
   onBufferReady?: (getBuffer: () => string) => void;
-  /** Exposes step-bookmark API: `mark(i)` registers a marker at the current line for
-   *  step index `i`; `jump(i)` scrolls the viewport so that marker is visible.
+  /** Exposes the scrollback-marker API: `mark(key)` registers a marker at the current line
+   *  under `key` (reasoning updates use `reasoning:<sequence>`);
+   *  `jump(key)` scrolls the viewport so that marker is visible.
    *  Called with `undefined` on unmount so the consumer can reset its state — important
    *  on agent restart, where this component remounts but the parent does not. */
-  onStepNavReady?: (
-    api: { mark: (i: number) => void; jump: (i: number) => boolean } | undefined,
+  onTranscriptMarksReady?: (
+    api: { mark: (key: string) => void; jump: (key: string) => boolean } | undefined,
   ) => void;
   fontSize?: number;
   autoFocus?: boolean;
@@ -156,6 +187,9 @@ interface TerminalViewProps {
 // Status parsing only needs recent output. Capping forwarded bytes avoids
 // expensive full-chunk decoding during large terminal bursts.
 const STATUS_ANALYSIS_MAX_BYTES = 8 * 1024;
+
+// Upper bound on waiting for an animation frame before flushing output anyway.
+const OUTPUT_FLUSH_FALLBACK_MS = 50;
 
 const openTerminalHttpLinkWithModifier = createTerminalHttpLinkHandler({
   isMac,
@@ -195,6 +229,39 @@ export function TerminalView(props: TerminalViewProps) {
   // Bumped whenever the buffer grows or scrolls, so icon positions (derived from
   // live xterm state, not signals) recompute reactively.
   const [overviewTick, setOverviewTick] = createSignal(0);
+  const [selectionMenu, setSelectionMenu] = createSignal<{
+    x: number;
+    y: number;
+    text: string;
+    documentPath?: string;
+  }>();
+  /** The path link under the pointer, so a right-click can act on it. */
+  let hoveredPath: string | undefined;
+  function openSelectionMenu(event: MouseEvent) {
+    const documentPath =
+      props.onEditAsDocument && hoveredPath && isEditableDocumentPath(hoveredPath)
+        ? hoveredPath
+        : undefined;
+    if (!props.onSendSelection && !props.onSecondOpinion && !documentPath) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectionMenu({
+      x: event.clientX,
+      y: event.clientY,
+      text: cleanCopiedTerminalText(term?.getSelection() ?? ''),
+      documentPath,
+    });
+  }
+
+  /**
+   * Drops a `:line:col` suffix and resolves the path against the terminal's directory;
+   * the main process expands ~/ because the renderer doesn't know the home directory.
+   */
+  function resolveLinkPath(text: string): string {
+    const filePath = text.replace(/:\d+(:\d+)?$/, '');
+    return /^~?\//.test(filePath) ? filePath : `${props.cwd}/${filePath}`;
+  }
+  const [hasHandoffSelection, setHasHandoffSelection] = createSignal(false);
   const [selectionActive, setSelectionActive] = createSignal(false);
   let nextBookmarkId = 1;
 
@@ -402,13 +469,19 @@ export function TerminalView(props: TerminalViewProps) {
     const attachExisting = props.attachExisting ?? true;
     const preserveSessionOnCleanup = props.preserveSessionOnCleanup === true;
     let ptyDetachedByLanding = false;
+    // Set once the PTY reports exit or never spawned; the backend no longer
+    // has the session, so input and resizes would only fail there.
+    let ptyGone = false;
+    // Set once SpawnAgent resolves. The backend registers the session only
+    // after its async setup, so earlier input and resizes are held until then.
+    let ptyReady = false;
 
     function taskPtyDetached(): boolean {
       return ptyDetachedByLanding || isLandedTaskState(store.tasks[taskId]?.landingState);
     }
 
     function canForwardInput(): boolean {
-      if (store.tasks[taskId]?.automationWriteInFlight) return false;
+      if (ptyGone || store.tasks[taskId]?.automationWriteInFlight) return false;
       return !taskPtyDetached();
     }
 
@@ -416,15 +489,17 @@ export function TerminalView(props: TerminalViewProps) {
       cursorBlink: true,
       fontSize: initialFontSize,
       fontFamily: getTerminalFontFamily(store.terminalFont),
+      screenReaderMode: store.terminalScreenReaderMode,
       theme: activeTerminalTheme(),
       allowProposedApi: true,
-      scrollback: TERMINAL_SCROLLBACK_LINES,
+      ...TERMINAL_SCROLL_OPTIONS,
       disableStdin: taskPtyDetached(),
       linkHandler: {
         activate: openTerminalHttpLinkWithModifier,
         allowNonHttpProtocols: false,
       },
     });
+    leaveCursorQueriesToMain(term);
 
     fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -433,6 +508,23 @@ export function TerminalView(props: TerminalViewProps) {
     term.open(containerRef);
     // The screen element is created by open(); cache it for cell-height measurement.
     screenEl = (term.element?.querySelector('.xterm-screen') as HTMLElement | null) ?? undefined;
+    // xterm's linkifier sees mouse-down on the screen before mouse reporting on
+    // its parent. Keep modified link clicks here: Codex also opens links from
+    // PTY mouse-down reports, which would duplicate our mouse-up activation.
+    const linkScreen = screenEl;
+    const handleLinkMouseDown = (event: MouseEvent) => {
+      if (
+        event.button !== 0 ||
+        !(isMac ? event.metaKey : event.ctrlKey) ||
+        !linkScreen?.classList.contains('xterm-cursor-pointer')
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      term?.focus();
+    };
+    linkScreen?.addEventListener('mousedown', handleLinkMouseDown);
+    onCleanup(() => linkScreen?.removeEventListener('mousedown', handleLinkMouseDown));
 
     // Block direct PTY keyboard input only after self-landing has removed the
     // backend PTY. Coordinator automation now waits for user activity instead of
@@ -458,14 +550,17 @@ export function TerminalView(props: TerminalViewProps) {
           links.map((link) => ({
             range: link.range,
             text: link.text,
+            hover() {
+              hoveredPath = resolveLinkPath(link.text);
+            },
+            leave() {
+              hoveredPath = undefined;
+            },
             activate(event: MouseEvent, _text: string) {
               // Require Cmd+click (Mac) or Ctrl+click (Linux) to open links
               const modifierHeld = isMac ? event.metaKey : event.ctrlKey;
               if (!modifierHeld) return;
-              // Strip line:col suffix for opening
-              const filePath = link.text.replace(/:\d+(:\d+)?$/, '');
-              // Resolve relative paths against the task's working directory
-              const resolved = filePath.startsWith('/') ? filePath : `${props.cwd}/${filePath}`;
+              const resolved = resolveLinkPath(link.text);
               // .md files open in viewer; Shift held = open externally instead
               if (/\.md$/i.test(resolved) && props.onFileLink && !event.shiftKey) {
                 props.onFileLink(resolved);
@@ -480,28 +575,31 @@ export function TerminalView(props: TerminalViewProps) {
 
     props.onReady?.(() => term?.focus());
 
-    // Step bookmarks — anchor each agent step to the current scrollback line so the
-    // user can jump from the steps panel back to the terminal moment a step was written.
+    // Transcript marks — anchor a key to the current scrollback line so other
+    // panels can jump back to the terminal moment something happened.
     // Markers auto-track buffer truncation; once the marker scrolls past the scrollback
     // limit xterm disposes it, in which case `jump` returns false so the caller can no-op.
-    // The map is owned by xterm and freed implicitly when term.dispose() runs in onCleanup.
-    const stepMarkers = new Map<number, IMarker>();
-    const stepNavApi = {
-      mark(i: number) {
-        if (!term || stepMarkers.has(i)) return;
+    // Remove disposed markers so truncated scrollback does not retain old keys.
+    const transcriptMarkers = new Map<string, IMarker>();
+    const transcriptMarksApi = {
+      mark(key: string) {
+        if (!term || transcriptMarkers.has(key)) return;
         const m = term.registerMarker(0);
-        if (m) stepMarkers.set(i, m);
+        if (m) {
+          transcriptMarkers.set(key, m);
+          m.onDispose(() => transcriptMarkers.delete(key));
+        }
       },
-      jump(i: number): boolean {
+      jump(key: string): boolean {
         if (!term) return false;
-        const m = stepMarkers.get(i);
+        const m = transcriptMarkers.get(key);
         if (!m || m.isDisposed) return false;
         term.scrollToLine(m.line);
         return true;
       },
     };
-    props.onStepNavReady?.(stepNavApi);
-    onCleanup(() => props.onStepNavReady?.(undefined));
+    props.onTranscriptMarksReady?.(transcriptMarksApi);
+    onCleanup(() => props.onTranscriptMarksReady?.(undefined));
 
     // Scroll-bookmark overview: keep bookmark icon positions in sync with the
     // buffer. onRender fires per visual frame (on new output and on scroll), but
@@ -552,11 +650,12 @@ export function TerminalView(props: TerminalViewProps) {
     term.onRender(syncOverview);
     term.onScroll(syncOverview);
     term.onSelectionChange(() => {
+      setHasHandoffSelection(term?.hasSelection() === true);
       // Only offer to bookmark selections in the normal buffer — a marker on the
       // alternate buffer (full-screen TUI) is cleared the moment the TUI exits.
       const has = term?.hasSelection() === true && term.buffer.active.type === 'normal';
       setSelectionActive(has);
-      if (has) setOverviewTick((t) => t + 1); // refresh the button's position
+      if (term?.hasSelection()) setOverviewTick((t) => t + 1); // refresh the button's position
     });
 
     props.onBufferReady?.(() => {
@@ -652,7 +751,8 @@ export function TerminalView(props: TerminalViewProps) {
 
         // Generic escape sequence bindings
         if (binding.escapeSequence) {
-          enqueueInput(binding.escapeSequence);
+          // Use the same input tracking as ordinary keys (including clear-line).
+          term?.input(binding.escapeSequence, true);
           return false;
         }
       }
@@ -725,6 +825,7 @@ export function TerminalView(props: TerminalViewProps) {
     }
 
     let outputRaf: number | undefined;
+    let outputFallbackTimer: number | undefined;
     let outputQueue: Uint8Array[] = [];
     let outputQueuedBytes = 0;
     let outputWriteInFlight = false;
@@ -782,7 +883,7 @@ export function TerminalView(props: TerminalViewProps) {
         // Resume PTY reader when xterm.js has caught up
         if (watermark < FLOW_LOW && ptyPaused) {
           ptyPaused = false;
-          if (taskPtyDetached()) return;
+          if (ptyGone || taskPtyDetached()) return;
           invoke(IPC.ResumeAgent, { agentId }).catch((err: unknown) => {
             logWarn('terminal.flow', 'ResumeAgent failed', { err });
             ptyPaused = false;
@@ -802,12 +903,24 @@ export function TerminalView(props: TerminalViewProps) {
       });
     }
 
+    function cancelScheduledOutputFlush() {
+      if (outputRaf !== undefined) cancelAnimationFrame(outputRaf);
+      if (outputFallbackTimer !== undefined) clearTimeout(outputFallbackTimer);
+      outputRaf = undefined;
+      outputFallbackTimer = undefined;
+    }
+
     function scheduleOutputFlush() {
       if (outputRaf !== undefined) return;
-      outputRaf = requestAnimationFrame(() => {
-        outputRaf = undefined;
+      const flush = () => {
+        cancelScheduledOutputFlush();
         flushOutputQueue();
-      });
+      };
+      outputRaf = requestAnimationFrame(flush);
+      // Frames can stop in a background window even with throttling disabled
+      // (seen on macOS). The timer keeps output, and the terminal's replies to
+      // queries such as device attributes, from stalling.
+      outputFallbackTimer = window.setTimeout(flush, OUTPUT_FLUSH_FALLBACK_MS);
     }
 
     function enqueueOutput(chunk: Uint8Array) {
@@ -816,7 +929,7 @@ export function TerminalView(props: TerminalViewProps) {
       watermark += chunk.length;
 
       // Pause PTY reader when xterm.js falls behind
-      if (watermark > FLOW_HIGH && !ptyPaused && !taskPtyDetached()) {
+      if (watermark > FLOW_HIGH && !ptyPaused && !ptyGone && !taskPtyDetached()) {
         ptyPaused = true;
         invoke(IPC.PauseAgent, { agentId }).catch((err: unknown) => {
           logWarn('terminal.flow', 'PauseAgent failed', { err });
@@ -836,13 +949,14 @@ export function TerminalView(props: TerminalViewProps) {
     let initialCommandSent = false;
     onOutput.onmessage = (msg) => {
       if (msg.type === 'Data') {
-        enqueueOutput(base64ToUint8Array(msg.data));
+        enqueueOutput(msg.data);
         if (!initialCommandSent && props.initialCommand) {
           const cmd = props.initialCommand;
           initialCommandSent = true;
           setTimeout(() => enqueueInput(cmd + '\r'), 50);
         }
       } else if (msg.type === 'Exit') {
+        ptyGone = true;
         pendingExitPayload = msg.data;
         flushOutputQueue();
         if (!outputWriteInFlight && outputQueue.length === 0 && pendingExitPayload) {
@@ -858,7 +972,7 @@ export function TerminalView(props: TerminalViewProps) {
     let inputFlushTimer: number | undefined;
 
     function flushPendingInput() {
-      if (!pendingInput) return;
+      if (!pendingInput || !ptyReady) return;
       const data = pendingInput;
       pendingInput = '';
       if (inputFlushTimer !== undefined) {
@@ -908,6 +1022,7 @@ export function TerminalView(props: TerminalViewProps) {
     term.onData((data) => {
       if (!canForwardInput()) return;
       noteUserTerminalInput(data);
+      if (!props.isShell) noteAgentTerminalInput(agentId, data);
       if (props.onPromptDetected) {
         for (const ch of data) {
           if (ch === '\r') {
@@ -938,7 +1053,12 @@ export function TerminalView(props: TerminalViewProps) {
       if (!pendingResize) return;
       const { cols, rows } = pendingResize;
       pendingResize = null;
-      if (taskPtyDetached()) return;
+      if (ptyGone || taskPtyDetached()) return;
+      // SpawnAgent sends the startup size; later sizes wait for the session.
+      if (!ptyReady) {
+        pendingResize = { cols, rows };
+        return;
+      }
       if (cols === lastSentCols && rows === lastSentRows) return;
       lastSentCols = cols;
       lastSentRows = rows;
@@ -965,55 +1085,148 @@ export function TerminalView(props: TerminalViewProps) {
       term.options.cursorBlink = props.isFocused === true;
     });
 
-    // Force a clean repaint when this pane returns to the foreground. In focus
-    // mode inactive panes are hidden with visibility:hidden (so the
-    // IntersectionObserver in terminalFitManager never fires), and a WebGL
-    // terminal whose GPU surface was throttled while backgrounded can come
-    // back with a corrupt glyph atlas. Redraw on the hidden→visible edge so
-    // foregrounding reliably clears the corruption rather than "sometimes".
-    // macOS-only (issue #121): never reported on Linux, so Linux skips the
-    // reactive subscription and the repaints entirely.
-    if (isMac) {
-      let prevVisible: boolean | undefined;
-      createEffect(() => {
-        const visible = !store.focusMode || store.activeTaskId === taskId;
-        if (prevVisible === false && visible) redrawTerminal(agentId);
-        prevVisible = visible;
-      });
+    // Whether this pane is on screen: the active task in focus mode, a task
+    // not scrolled fully out of view in tiling mode, and the selected tab
+    // within the task. Hidden panes stay mounted (visibility:hidden keeps
+    // their layout so fit() never resizes the pty) but do not keep a WebGL
+    // context — see terminalPaneVisibility.ts.
+    const paneOnScreen = createMemo(() =>
+      isTerminalPaneOnScreen({
+        focusMode: store.focusMode,
+        activeTaskId: store.activeTaskId,
+        taskId,
+        viewportVisibility: store.taskViewportVisibility[taskId],
+        paneVisible: props.visible,
+        standalone: props.standalone,
+      }),
+    );
+
+    // Load the WebGL addon while the pane is on screen. On context loss (GPU
+    // process crash, sleep/wake, or context-cap eviction — see
+    // max-active-webgl-contexts in electron/main.ts) reattach after a short
+    // delay instead of permanently falling back to the much slower DOM
+    // renderer. The loss window is shared app-wide so an eviction rotation
+    // (each reattach evicting another pane) trips the brake even though every
+    // hop lands on a different pane.
+    let webglReattachTimer: number | undefined;
+    let webglDetachTimer: number | undefined;
+
+    function attachWebgl() {
+      if (!term || webglAddon) return;
+      // A pane that went off screen while a reattach was pending stays on the
+      // DOM renderer; the visibility effect below attaches when it returns.
+      if (!untrack(paneOnScreen)) return;
+      try {
+        const addon = new WebglAddon();
+        addon.onContextLoss(() => {
+          // A loss reported by an addon we already detached is our own
+          // loseContext() below, not a GPU event — don't count it.
+          if (webglAddon !== addon) return;
+          addon.dispose();
+          webglAddon = undefined;
+          if (recordSharedWebglContextLoss()) {
+            webglReattachTimer = window.setTimeout(() => {
+              webglReattachTimer = undefined;
+              attachWebgl();
+            }, WEBGL_REATTACH_DELAY_MS);
+          }
+        });
+        term.loadAddon(addon);
+        webglAddon = addon;
+        // No manual repaint here: loadAddon → RenderService.setRenderer
+        // already forces a full refresh of this pane. redrawTerminal would
+        // additionally clear the glyph atlas xterm SHARES across panes
+        // without invalidating the other owners' render models, garbling
+        // glyphs in every healthy terminal.
+      } catch {
+        // WebGL2 not supported — DOM renderer used automatically
+      }
     }
 
-    // Load WebGL addon for all terminals. On context loss (e.g. too many
-    // WebGL contexts), the terminal gracefully falls back to the DOM renderer.
-    try {
-      webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        webglAddon?.dispose();
-        webglAddon = undefined;
-      });
-      term.loadAddon(webglAddon);
-    } catch {
-      // WebGL2 not supported — DOM renderer used automatically
+    function detachWebgl() {
+      if (webglReattachTimer !== undefined) {
+        clearTimeout(webglReattachTimer);
+        webglReattachTimer = undefined;
+      }
+      const addon = webglAddon;
+      if (!addon) return;
+      webglAddon = undefined;
+      // The renderer's canvas; dispose() removes it from the DOM.
+      const canvas = term?.element?.querySelector('canvas');
+      // Dropping the addon returns this pane to the DOM renderer. The glyph
+      // atlas is shared and ref-counted by xterm, so other panes keep theirs.
+      addon.dispose();
+      // dispose() drops the canvas but the GL context lingers in Chromium's
+      // active set until the canvas is garbage collected — and the point is
+      // to free that slot now, not at some later GC. Lose it explicitly. The
+      // addon's own loss listener went with dispose(), and the onContextLoss
+      // handler above ignores an addon that is no longer current.
+      try {
+        canvas?.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext();
+      } catch {
+        // context already gone
+      }
     }
+
+    // Attach on the hidden→visible edge, detach a little after visible→hidden.
+    // A pane that returns before the detach delay elapses keeps its context;
+    // on macOS it is repainted instead (issue #121): a WebGL surface throttled
+    // while backgrounded can come back with a corrupt glyph atlas, and a
+    // hidden pane never fires terminalFitManager's IntersectionObserver.
+    // The repaint covers every terminal because the atlas it rebuilds is
+    // shared. Linux never showed the corruption, so it skips that repaint.
+    let prevOnScreen: boolean | undefined;
+    createEffect(() => {
+      const onScreen = paneOnScreen();
+      if (onScreen) {
+        if (webglDetachTimer !== undefined) {
+          clearTimeout(webglDetachTimer);
+          webglDetachTimer = undefined;
+        }
+        if (!webglAddon && webglReattachTimer === undefined) {
+          // loadAddon → setRenderer already repaints this pane in full.
+          attachWebgl();
+        } else if (isMac && prevOnScreen === false) {
+          redrawAllTerminals();
+        }
+      } else if (webglDetachTimer === undefined) {
+        webglDetachTimer = window.setTimeout(() => {
+          webglDetachTimer = undefined;
+          detachWebgl();
+        }, WEBGL_DETACH_DELAY_MS);
+      }
+      prevOnScreen = onScreen;
+    });
 
     let spawnTimer: number | undefined;
     let spawnStarted = false;
+    let spawnDisposed = false;
 
     function startSpawn() {
       if (!term || spawnStarted) return;
       const landingState = store.tasks[taskId]?.landingState;
       if (isLandedTaskState(landingState)) return;
       spawnStarted = true;
-      invoke(IPC.SpawnAgent, {
+      invoke<{
+        canvasTools: boolean;
+        capabilities?: SessionCapabilities;
+        sessionInstanceId?: string;
+      }>(IPC.SpawnAgent, {
         taskId,
         agentId,
         command: props.command,
+        canvasMcp:
+          !!store.tasks[taskId] &&
+          !store.tasks[taskId].coordinatorMode &&
+          !store.tasks[taskId].coordinatedBy,
         args: props.args,
+        managedMcpLaunchArgs: store.tasks[taskId]?.mcpLaunchArgs,
         cwd: props.cwd,
         env: props.env ?? {},
+        envFile: props.envFile,
         cols: term.cols,
         rows: term.rows,
         isShell: props.isShell,
-        stepsEnabled: props.stepsEnabled,
         dockerMode: props.dockerMode,
         dockerImage: props.dockerImage,
         dockerMountWorktreeParent: props.dockerMountWorktreeParent,
@@ -1022,12 +1235,21 @@ export function TerminalView(props: TerminalViewProps) {
         onOutput,
       })
         // eslint-disable-next-line solid/reactivity -- promise callbacks are not reactive contexts
-        .then(() => {
+        .then((result) => {
+          if (spawnDisposed) return;
+          ptyReady = true;
+          setAgentCanvasTools(agentId, result?.canvasTools === true);
+          if (store.agents[agentId]) {
+            setStore('agents', agentId, 'capabilities', result?.capabilities);
+            setStore('agents', agentId, 'sessionInstanceId', result?.sessionInstanceId);
+          }
           flushPendingResize();
           flushPendingInput();
         })
         // eslint-disable-next-line solid/reactivity -- promise catch handler reads current prop values intentionally
         .catch((err) => {
+          if (spawnDisposed) return;
+          ptyGone = true;
           // eslint-disable-next-line no-control-regex -- intentionally stripping control/escape chars to prevent terminal injection
           const safeErr = String(err).replace(/[\x00-\x1f\x7f]/g, '');
           term?.write(`\x1b[31mFailed to spawn: ${safeErr}\x1b[0m\r\n`);
@@ -1067,6 +1289,7 @@ export function TerminalView(props: TerminalViewProps) {
     }
 
     onCleanup(() => {
+      spawnDisposed = true;
       const preserveSession = preserveSessionOnCleanup;
       if (!windowUnloading || preserveSession) {
         flushPendingInput();
@@ -1075,14 +1298,16 @@ export function TerminalView(props: TerminalViewProps) {
       if (spawnTimer !== undefined) clearTimeout(spawnTimer);
       if (inputFlushTimer !== undefined) clearTimeout(inputFlushTimer);
       if (resizeFlushTimer !== undefined) clearTimeout(resizeFlushTimer);
-      if (outputRaf !== undefined) cancelAnimationFrame(outputRaf);
+      if (webglReattachTimer !== undefined) clearTimeout(webglReattachTimer);
+      if (webglDetachTimer !== undefined) clearTimeout(webglDetachTimer);
+      cancelScheduledOutputFlush();
       onOutput.cleanup?.();
       webglAddon?.dispose();
       webglAddon = undefined;
       searchAddon?.dispose();
       searchAddon = undefined;
       unregisterTerminal(agentId);
-      if (ptyPaused && !taskPtyDetached()) {
+      if (ptyPaused && !ptyGone && !taskPtyDetached()) {
         fireAndForget(IPC.ResumeAgent, { agentId });
         ptyPaused = false;
       }
@@ -1105,6 +1330,12 @@ export function TerminalView(props: TerminalViewProps) {
     if (!term || !fitAddon) return;
     term.options.fontFamily = getTerminalFontFamily(font);
     markDirty(props.agentId);
+  });
+
+  createEffect(() => {
+    const screenReaderMode = store.terminalScreenReaderMode;
+    if (!term) return;
+    term.options.screenReaderMode = screenReaderMode;
   });
 
   createEffect(() => {
@@ -1131,7 +1362,10 @@ export function TerminalView(props: TerminalViewProps) {
   });
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div
+      onContextMenu={openSelectionMenu}
+      style={{ position: 'relative', width: '100%', height: '100%' }}
+    >
       <Show when={reserveGutter()}>
         <TerminalBookmarkGutter
           width={BOOKMARK_GUTTER_WIDTH}
@@ -1161,6 +1395,34 @@ export function TerminalView(props: TerminalViewProps) {
           contain: 'strict',
         }}
       />
+      <Show when={props.onSendSelection && hasHandoffSelection()}>
+        <button
+          type="button"
+          class="terminal-selection-trigger"
+          aria-label="Actions for selected text"
+          title="Copy or send selected text"
+          style={{ top: `${selectionButtonTop()}px` }}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={openSelectionMenu}
+        >
+          <SendIcon size={13} />
+        </button>
+      </Show>
+      <Show when={selectionMenu()} keyed>
+        {(selection) => (
+          <TerminalSelectionMenu
+            {...selection}
+            recipients={props.handoffRecipients ?? []}
+            onSend={(text, id) => props.onSendSelection?.(text, id)}
+            onOpinion={props.onSecondOpinion}
+            onEditAsDocument={props.onEditAsDocument}
+            onClose={(restoreFocus = true) => {
+              setSelectionMenu(undefined);
+              if (restoreFocus) term?.focus();
+            }}
+          />
+        )}
+      </Show>
       <Show when={searchOpen()}>
         <TerminalSearchOverlay
           query={searchQuery()}
@@ -1199,17 +1461,19 @@ export function TerminalView(props: TerminalViewProps) {
             MCP startup failed: {mcpError() ?? 'unknown error'}
           </span>
           <button
+            class="btn-with-icon"
             style={{
               padding: '6px 16px',
-              background: '#3b82f6',
-              color: '#fff',
+              background: 'var(--accent)',
+              color: 'var(--accent-text)',
               border: 'none',
-              'border-radius': '4px',
+              'border-radius': 'var(--radius-xs)',
               'font-size': '13px',
               cursor: 'pointer',
             }}
             onClick={() => retryTaskMcpStartup(props.taskId)}
           >
+            <SyncIcon size={14} />
             Retry
           </button>
         </div>

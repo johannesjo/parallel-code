@@ -1,5 +1,36 @@
 import { store, setStore } from './core';
 
+let pendingFocus: { taskId: string; panel: string } | undefined;
+
+/** Whether the new-task draft holds focus, so a deferred task focus/scroll must not steal it. */
+function newTaskDraftHasFocus(): boolean {
+  if (store.newTaskPanelFocused) return true;
+  // Chromium withholds focus events while the window is unfocused (e.g. a link
+  // dragged in from another app), so the flag lags DOM focus until then.
+  return !!document.activeElement?.closest('[data-new-task-panel]') && !document.hasFocus();
+}
+
+/** Apply focus after batched selection changes and panel visibility effects settle. */
+export function scheduleTaskFocus(taskId: string, panel: string): void {
+  if (store.activeTaskId !== taskId) return;
+  const alreadyPending = pendingFocus !== undefined;
+  pendingFocus = { taskId, panel };
+  if (alreadyPending) return;
+  queueMicrotask(() => {
+    const target = pendingFocus;
+    pendingFocus = undefined;
+    if (
+      !target ||
+      store.activeTaskId !== target.taskId ||
+      store.sidebarFocused ||
+      store.placeholderFocused ||
+      newTaskDraftHasFocus()
+    )
+      return;
+    triggerFocus(`${target.taskId}:${target.panel}`);
+  });
+}
+
 // Keep in sync with `scroll-padding-inline` on `.tiling-layout-strip` in styles.css.
 // This is intentionally larger than the 26px `.tiling-layout-scroll-affordance`
 // width so the peeked neighbor remains clickable beyond the visual affordance.
@@ -12,8 +43,10 @@ export function registerFocusFn(key: string, fn: () => void): void {
   focusRegistry.set(key, fn);
 }
 
-export function unregisterFocusFn(key: string): void {
-  focusRegistry.delete(key);
+/** Pass the registered `fn` so a component leaving a key does not delete the registration
+ *  a replacement has already made under it. */
+export function unregisterFocusFn(key: string, fn?: () => void): void {
+  if (!fn || focusRegistry.get(key) === fn) focusRegistry.delete(key);
 }
 
 export function triggerFocus(key: string): void {
@@ -26,11 +59,30 @@ export function aiTerminalPanelId(agentId: string): string {
   return `${AI_TERMINAL_PANEL}:${agentId}`;
 }
 
+/** Shell terminals are addressed by position in the task's `shellAgentIds`. */
+const SHELL_PANEL_PREFIX = 'shell:';
+
+export function shellPanelId(index: number): string {
+  return `${SHELL_PANEL_PREFIX}${index}`;
+}
+
+export function isShellPanel(panel: string): boolean {
+  return panel.startsWith(SHELL_PANEL_PREFIX);
+}
+
+export function shellPanelIndex(panel: string): number | null {
+  if (!panel.startsWith(SHELL_PANEL_PREFIX)) return null;
+  // Digits only — `Number('')` is 0 and `Number('1e2')` is 100, so a bare
+  // `shell:` or an exponent would otherwise parse as a real panel index.
+  const rest = panel.slice(SHELL_PANEL_PREFIX.length);
+  return /^\d+$/.test(rest) ? Number(rest) : null;
+}
+
 export function isAiTerminalPanel(panel: string): boolean {
   return panel === AI_TERMINAL_PANEL || panel.startsWith(`${AI_TERMINAL_PANEL}:`);
 }
 
-function agentIdFromAiTerminalPanel(panel: string): string | null {
+export function agentIdFromAiTerminalPanel(panel: string): string | null {
   return panel.startsWith(`${AI_TERMINAL_PANEL}:`)
     ? panel.slice(AI_TERMINAL_PANEL.length + 1)
     : null;
@@ -65,13 +117,36 @@ export function getTaskFocusedPanel(taskId: string): string {
  * focused panel is still recorded in `focusedPanel[taskId]`.
  */
 export function isPanelFocused(taskId: string, panel: string): boolean {
-  if (store.sidebarFocused || store.placeholderFocused) return false;
-  if (store.activeTaskId !== taskId) return false;
-  return store.focusedPanel[taskId] === panel;
+  return taskOwnsFocus(taskId) && store.focusedPanel[taskId] === panel;
+}
+
+/** Whether focus is inside this task at all, rather than the sidebar or another task. */
+function taskOwnsFocus(taskId: string): boolean {
+  if (store.sidebarFocused || store.placeholderFocused || store.newTaskPanelFocused) return false;
+  return store.activeTaskId === taskId;
+}
+
+/**
+ * Like `isPanelFocused`, but a task whose focused panel was never recorded counts
+ * as focused on its default panel. Use this where an unrecorded panel still has to
+ * be able to claim the keyboard — `focusedPanel` stays unset for a freshly active
+ * task whose prompt input took focus instead.
+ */
+export function isPanelFocusedOrDefault(taskId: string, panel: string): boolean {
+  return taskOwnsFocus(taskId) && getTaskFocusedPanel(taskId) === panel;
+}
+
+/**
+ * Whether a task column renders as the active one (full opacity, accent glow).
+ * The new-task draft is a column of its own, so while it holds focus the still
+ * active task dims like every other column instead of competing with it.
+ */
+export function isTaskColumnHighlighted(taskId: string | null): boolean {
+  return taskId !== null && store.activeTaskId === taskId && !store.newTaskPanelFocused;
 }
 
 export function isPanelFocusedPrefix(taskId: string, prefix: string): boolean {
-  if (store.sidebarFocused || store.placeholderFocused) return false;
+  if (store.sidebarFocused || store.placeholderFocused || store.newTaskPanelFocused) return false;
   if (store.activeTaskId !== taskId) return false;
   return store.focusedPanel[taskId]?.startsWith(prefix) ?? false;
 }
@@ -86,7 +161,8 @@ export function setTaskFocusedPanel(taskId: string, panel: string): void {
   }
   setStore('sidebarFocused', false);
   setStore('placeholderFocused', false);
-  triggerFocus(`${taskId}:${normalizedPanel}`);
+  setStore('newTaskPanelFocused', false);
+  scheduleTaskFocus(taskId, normalizedPanel);
   scrollTaskIntoView(taskId);
 }
 
@@ -144,15 +220,42 @@ export function scrollTaskElementIntoView(
   el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior });
 }
 
-// TODO: Move this DOM side effect out of the store layer. The scroll should be
-// owned by the view layer (TilingLayout.tsx) reacting to state changes, similar
-// to the existing createEffect that watches store.activeTaskId. Special case:
-// moveActiveTask reorders taskOrder without changing activeTaskId, so any
-// reactive move needs to handle that explicitly.
-function scrollTaskIntoView(taskId: string): void {
+let pendingScroll: { taskId: string; behavior: ScrollBehavior } | undefined;
+
+/** Selection and pane focus share one scroll per frame, including task reorders. */
+export function scrollTaskIntoView(taskId: string, behavior: ScrollBehavior = 'smooth'): void {
+  if (store.activeTaskId !== taskId) return;
+  const alreadyPending = pendingScroll !== undefined;
+  // Keep an instant return from the draft/initial selection when pane focus
+  // also requests a smooth scroll to the same task.
+  if (pendingScroll?.taskId === taskId && pendingScroll.behavior === 'instant') {
+    behavior = 'instant';
+  }
+  pendingScroll = { taskId, behavior };
+  if (alreadyPending) return;
   requestAnimationFrame(() => {
-    const el = document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(taskId)}"]`);
+    const target = pendingScroll;
+    pendingScroll = undefined;
+    if (
+      !target ||
+      (store.focusMode && !store.showNewTaskPanel) ||
+      store.activeTaskId !== target.taskId ||
+      store.placeholderFocused ||
+      newTaskDraftHasFocus()
+    )
+      return;
+    const el = document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(target.taskId)}"]`);
     if (!el) return;
-    scrollTaskElementIntoView(findHorizontalScroller(el), el, 'smooth');
+    // A canvas sits to the right of the chat. Pinning a wide task's left edge
+    // would hide the very panel the user just opened or focused.
+    const canvas =
+      store.focusedPanel[target.taskId] === 'canvas'
+        ? el.querySelector<HTMLElement>('.task-canvas-panel')
+        : null;
+    if (canvas) {
+      canvas.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: target.behavior });
+      return;
+    }
+    scrollTaskElementIntoView(findHorizontalScroller(el), el, target.behavior);
   });
 }

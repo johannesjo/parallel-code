@@ -1,6 +1,6 @@
 {
   "name": "parallel-code",
-  "version": "1.13.0",
+  "version": "4.0.0",
   "description": "",
   "author": {
     "name": "Johannes Millan",
@@ -10,14 +10,15 @@
   "type": "module",
   "scripts": {
     "dev": "npm run compile && npm run build:mcp && concurrently -k \"vite --config electron/vite.config.electron.ts\" \"wait-on http://localhost:1421 && VITE_DEV_SERVER_URL=http://localhost:1421 electron --no-sandbox dist-electron/main.js\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/frontend.tsbuildinfo",
+    "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/electron.tsbuildinfo",
     "compile": "tsc -p electron/tsconfig.json",
     "build:mcp": "esbuild dist-electron/mcp/server.js --bundle --platform=node --format=cjs --outfile=dist-electron/mcp-server.cjs",
     "build:frontend": "NODE_OPTIONS='--max-old-space-size=4096' vite build --config electron/vite.config.electron.ts",
     "build:remote": "vite build --config src/remote/vite.config.ts",
-    "build": "npm run build:frontend && npm run build:remote && npm run compile && npm run build:mcp && electron-builder",
+    "build": "umask 022 && npm run build:frontend && npm run build:remote && npm run compile && npm run build:mcp && electron-builder",
     "serve": "vite preview --config electron/vite.config.electron.ts",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "eslint . --max-warnings 0 --cache --cache-strategy content --cache-location node_modules/.cache/eslint/",
     "lint:fix": "eslint . --fix",
     "lint:dead": "knip",
     "lint:arch": "depcruise --config .dependency-cruiser.cjs src electron",
@@ -25,19 +26,36 @@
     "test:security-rules": "node scripts/test-semgrep-filesystem-safety.mjs",
     "lint:secrets": "command -v gitleaks >/dev/null 2>&1 && gitleaks detect --config .gitleaks.toml || (echo 'gitleaks not installed (brew install gitleaks)' >&2; exit 1)",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "test": "vitest run",
+    "format:check": "prettier --check . --cache",
+    "generate:android-looks": "node scripts/generate-android-looks.mjs",
+    "check:android-looks": "node scripts/generate-android-looks.mjs --check",
+    "test": "npm run test:unit && npm run test:client",
+    "test:unit": "vitest run",
+    "test:client": "vitest run --config vitest.client.config.ts",
+    "test:changed": "vitest run --changed && vitest run --config vitest.client.config.ts --changed",
     "test:coordinator-pty": "RUN_COORDINATOR_PTY_TEST=1 vitest run electron/mcp/coordinator-real-pty.integration.test.ts",
     "test:coverage": "vitest run --coverage",
+    "showcase:capture": "npm run compile && npm run build:mcp && npm run build:frontend && npm run build:remote && playwright test --config scripts/showcase/playwright.config.ts",
+    "test:ci": "vitest run --coverage && npm run test:client",
     "check:coordinator-log": "node scripts/check-coordinator-run.mjs",
-    "check": "npm run compile && npm run typecheck && npm run lint && npm run format:check",
+    "check": "npm run typecheck:electron && npm run typecheck && npm run lint && npm run format:check",
     "check:static": "npm run typecheck && npm run lint && npm run lint:dead && npm run lint:arch",
     "release": "npm run typecheck && npm version patch && git push --follow-tags",
     "postinstall": "node scripts/fix-node-pty-spawn-helper.mjs",
-    "prepare": "husky && git config core.hooksPath .husky"
+    "prepare": "husky && git config core.hooksPath .husky",
+    "dev:investigation": "concurrently -k \"vite --config electron/vite.config.electron.ts --port 1422\" \"wait-on http://localhost:1422/investigation.html && electron --no-sandbox scripts/investigation-spike.mjs\""
   },
   "license": "MIT",
+  "scarfSettings": {
+    "enabled": false
+  },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.274",
+    "@codemirror/commands": "^6.11.0",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.4",
+    "@codemirror/view": "^6.43.11",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/sora": "^5.2.8",
@@ -45,36 +63,48 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@xterm/addon-fit": "^0.12.0-beta.195",
     "@xterm/addon-search": "^0.17.0-beta.195",
+    "@xterm/addon-serialize": "^0.15.0-beta.195",
     "@xterm/addon-web-links": "^0.13.0-beta.195",
     "@xterm/addon-webgl": "^0.20.0-beta.194",
+    "@xterm/headless": "^6.1.0-beta.195",
     "@xterm/xterm": "^6.1.0-beta.195",
-    "colord": "^2.9.3",
-    "dompurify": "^3.4.11",
-    "electron-updater": "^6.8.3",
+    "colord": "^2.9.4",
+    "d3-hierarchy": "^3.1.2",
+    "d3-selection": "^3.0.0",
+    "d3-zoom": "^3.0.0",
+    "dompurify": "^3.4.16",
+    "electron-updater": "^6.8.9",
     "marked": "^17.0.3",
-    "mermaid": "^11.15.0",
-    "monaco-editor": "^0.55.1",
+    "mermaid": "^11.17.2",
     "node-pty": "^1.1.0",
+    "parse5": "^7.3.0",
     "qrcode": "^1.5.4",
     "shiki": "^4.0.2",
-    "solid-js": "^1.9.11",
+    "solid-js": "^1.9.16",
+    "web-push": "^3.6.7",
     "ws": "^8.21.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
+    "@playwright/test": "^1.63.0",
+    "@types/d3-hierarchy": "^3.1.7",
+    "@types/d3-selection": "^3.0.11",
+    "@types/d3-zoom": "^3.0.8",
     "@types/node": "^25.3.0",
     "@types/qrcode": "^1.5.6",
+    "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
     "@typescript-eslint/parser": "^8.56.0",
-    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/coverage-v8": "^4.1.11",
     "concurrently": "^10.0.3",
     "dependency-cruiser": "^17.4.0",
-    "electron": "^40.8.5",
-    "electron-builder": "^26.8.1",
+    "electron": "^41.10.6",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
     "eslint": "^9.39.3",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-solid": "^0.14.5",
+    "happy-dom": "^20.11.1",
     "husky": "^9.1.7",
     "knip": "^6.12.2",
     "lint-staged": "^16.2.7",
@@ -83,7 +113,7 @@
     "typescript-eslint": "^8.56.0",
     "vite": "^8.0.16",
     "vite-plugin-solid": "^2.11.12",
-    "vitest": "^4.0.18",
+    "vitest": "^4.1.11",
     "wait-on": "^9.0.4"
   },
   "overrides": {
@@ -99,6 +129,7 @@
   "build": {
     "appId": "com.parallel-code.app",
     "productName": "Parallel Code",
+    "afterPack": "./scripts/after-pack.cjs",
     "directories": {
       "buildResources": "build",
       "output": "release"
@@ -114,7 +145,9 @@
       "dist/**/*",
       "dist-electron/**/*",
       "dist-remote/**/*",
-      "electron/preload.cjs"
+      "electron/preload.cjs",
+      "electron/browser-preload.cjs",
+      "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**"
     ],
     "asarUnpack": [
       "**/node-pty/**",
@@ -128,6 +161,14 @@
       {
         "from": "docker/",
         "to": "docker/"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "Parallel Code",
+        "schemes": [
+          "parallelcode"
+        ]
       }
     ],
     "linux": {

@@ -5,7 +5,7 @@ import path from 'path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { changedFilesFromMaps, countReadableTextLines } from './git.js';
+import { changedFilesFromMaps, countReadableTextLines, ensureSymlinkExcludes } from './git.js';
 import { appendGitInfoExcludeBlock, resolveGitInfoExcludePath } from './git-exclude.js';
 
 const tempDirs: string[] = [];
@@ -107,6 +107,30 @@ describe('countReadableTextLines', () => {
     await expect(countReadableTextLines(file)).resolves.toBe(2);
   });
 
+  it('counts a last line without a trailing newline and an empty file as zero', async () => {
+    const dir = tempDir();
+    fs.writeFileSync(path.join(dir, 'open.txt'), 'one\ntwo', 'utf8');
+    fs.writeFileSync(path.join(dir, 'empty.txt'), '', 'utf8');
+
+    await expect(countReadableTextLines(path.join(dir, 'open.txt'))).resolves.toBe(2);
+    await expect(countReadableTextLines(path.join(dir, 'empty.txt'))).resolves.toBe(0);
+  });
+
+  it('recounts a file after it changes', async () => {
+    const file = path.join(tempDir(), 'grows.txt');
+    fs.writeFileSync(file, 'one\n', 'utf8');
+    await expect(countReadableTextLines(file)).resolves.toBe(1);
+
+    fs.appendFileSync(file, 'two\nthree\n', 'utf8');
+    await expect(countReadableTextLines(file)).resolves.toBe(3);
+
+    // Same size, different content: only the timestamps tell them apart.
+    fs.writeFileSync(file, 'a\nb\nc\nd\ne\nf\ngh', 'utf8');
+    const later = new Date(Date.now() + 5_000);
+    fs.utimesSync(file, later, later);
+    await expect(countReadableTextLines(file)).resolves.toBe(7);
+  });
+
   it('returns zero for unreadable files', async () => {
     await expect(countReadableTextLines(path.join(tempDir(), 'missing.txt'))).resolves.toBe(0);
   });
@@ -148,5 +172,32 @@ describe('git exclude helpers', () => {
       appendGitInfoExcludeBlock(root, '# marker', '# marker\nignored\n');
 
       expect(fs.readFileSync(excludePath, 'utf8')).toBe('existing\n# marker\nignored\n');
+    }));
+
+  it('symlink excludes cover missing entries beside a hand-written trailing-space line', () =>
+    withoutInheritedGitContext(() => {
+      const root = initRepository();
+      const excludePath = path.join(root, '.git', 'info', 'exclude');
+      // Git strips the unescaped trailing space, so `/foo ` already covers
+      // `foo` — but a marker match on it must not swallow the missing `/bar`.
+      fs.writeFileSync(excludePath, '/foo \n', 'utf8');
+
+      ensureSymlinkExcludes(root, ['foo', 'bar']);
+
+      expect(() => git(root, ['check-ignore', '-q', 'foo'])).not.toThrow();
+      expect(() => git(root, ['check-ignore', '-q', 'bar'])).not.toThrow();
+    }));
+
+  it('symlink excludes treat a tab-suffixed line as a distinct pattern', () =>
+    withoutInheritedGitContext(() => {
+      const root = initRepository();
+      const excludePath = path.join(root, '.git', 'info', 'exclude');
+      // Git does not strip trailing tabs — `/foo\t` ignores `foo\t`, so `foo`
+      // still needs its own entry.
+      fs.writeFileSync(excludePath, '/foo\t\n', 'utf8');
+
+      ensureSymlinkExcludes(root, ['foo']);
+
+      expect(() => git(root, ['check-ignore', '-q', 'foo'])).not.toThrow();
     }));
 });

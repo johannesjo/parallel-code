@@ -6,8 +6,37 @@ import {
   assertCanStart,
   assertPromptWithinLimit,
 } from './request-registry.js';
+import { CHANGE_TOUR_TIMEOUT_MS, CHANGE_TOUR_PROMPT_LIMIT } from '../shared/change-tour-limits.js';
 
 describe('RequestRegistry', () => {
+  it('accepts the full tour prompt budget', () => {
+    const prompt = 'x'.repeat(CHANGE_TOUR_PROMPT_LIMIT);
+    expect(() => assertPromptWithinLimit(prompt, CHANGE_TOUR_PROMPT_LIMIT)).not.toThrow();
+    expect(() => assertPromptWithinLimit(prompt)).toThrow(/Prompt too long/);
+  });
+  it('gives tours five minutes while inline questions still time out after two', () => {
+    vi.useFakeTimers();
+    const registry = new RequestRegistry<string>({ maxConcurrent: 5, timeoutMs: 120_000 });
+    const questionSend = vi.fn();
+    const tourSend = vi.fn();
+    const cancelTour = vi.fn();
+    AskCodeSession.start(registry, 'question', 'question', questionSend);
+    AskCodeSession.start(registry, 'tour', 'tour', tourSend, cancelTour, CHANGE_TOUR_TIMEOUT_MS);
+    vi.advanceTimersByTime(120_000);
+    expect(questionSend).toHaveBeenCalledWith({
+      type: 'error',
+      text: 'Request timed out after 2 minutes.',
+    });
+    expect(tourSend).not.toHaveBeenCalled();
+    expect(registry.has('tour')).toBe(true);
+    vi.advanceTimersByTime(CHANGE_TOUR_TIMEOUT_MS - 120_000);
+    expect(tourSend).toHaveBeenCalledWith({
+      type: 'error',
+      text: 'Request timed out after 5 minutes.',
+    });
+    expect(cancelTour).toHaveBeenCalledOnce();
+    expect(registry.size).toBe(0);
+  });
   afterEach(() => {
     vi.useRealTimers();
   });

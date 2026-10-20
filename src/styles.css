@@ -31,6 +31,11 @@
   --success: #2fd198;
   --error: #ff5f73;
   --warning: #ffc569;
+  /* Secondary semantic hues: "ready for review" and neutral-informational
+     (steps, sub-task states). Kept off the accent so they stay distinguishable
+     from "active". */
+  --review: #c084fc;
+  --info: #60a5fa;
   --diff-add-bg: rgba(47, 209, 152, 0.1);
   --diff-remove-bg: rgba(255, 95, 115, 0.1);
   --search-match: #ffd54f;
@@ -46,6 +51,13 @@
   --shadow-pop:
     0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent),
     0 14px 36px color-mix(in srgb, var(--accent) 16%, transparent);
+
+  /* Corner radius scale. Every rounded control picks one of these four so
+     badges, buttons, cards and panels read as one family. */
+  --radius-xs: 4px; /* badges, chips, kbd, inline markers */
+  --radius-sm: 6px; /* icon buttons, small controls, list rows */
+  --radius-md: 8px; /* buttons, inputs, cards */
+  --radius-lg: 12px; /* panels, columns, dialogs */
 }
 
 html,
@@ -55,7 +67,9 @@ body,
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: #0e1215;
+  /* Painted before data-look is applied; matches the default Obsidian --bg
+     and the BrowserWindow backgroundColor in electron/main.ts. */
+  background: #171717;
 }
 
 body {
@@ -71,7 +85,9 @@ body.font-smoothing {
 
 /* Visible keyboard focus indicators for interactive controls. The selector
    includes native elements and ARIA widgets so keyboard focus remains visible
-   across the app, including content mounted through Solid <Portal>. */
+   across the app, including content mounted through Solid <Portal>. The colour is
+   --border-focus, the same variable the focused task panel's ring uses, so every
+   focus indicator reads as one signal rather than per-pane accents. */
 :where(
   button,
   input,
@@ -91,7 +107,7 @@ body.font-smoothing {
   [role='combobox'],
   [role='radio']
 ):focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
@@ -110,19 +126,483 @@ body.font-smoothing {
   border: 0;
 }
 
+/* Full-width task titles; status and grouped actions share the second row.
+   The two rows fit the existing 68px header used by panel sizing. */
+.task-title-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  height: 100%;
+  grid-template-rows: 26px 28px;
+  padding: 6px 16px;
+  gap: 2px 8px;
+  font-size: 16px;
+  font-weight: 600;
+  user-select: none;
+  cursor: grab;
+  box-sizing: border-box;
+}
+
+.task-title-bar > .editable-text {
+  grid-column: 1 / -1;
+  font-size: inherit;
+  letter-spacing: -0.025em;
+}
+
+.task-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 2px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-input) 65%, transparent);
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.task-action-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Labelled because it is the task's main action, but kept neutral: the header
+   already carries status and badges, and colour there is reserved for urgency. */
+.task-finish-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px 0 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.task-finish-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+.task-finish-btn[data-state='pushed'] {
+  color: var(--success);
+}
+
+.task-title-details {
+  grid-column: 1;
+  font-weight: 400;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.task-title-details > * {
+  flex-shrink: 0;
+}
+
+.task-title-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* The lane centres glyphs for sidebar columns; here the glyph's left edge has
+   to meet the title's, and the fixed lane width still keeps the label steady. */
+.task-title-status > .status-glyph {
+  justify-content: flex-start;
+}
+
+.task-status-explanation {
+  display: none;
+}
+
+/* Reads as the status text it extends; the underline on hover shows it opens Finish. */
+.task-check-signal {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  white-space: pre;
+  cursor: pointer;
+}
+
+.task-check-signal:hover {
+  text-decoration: underline;
+}
+
+.task-title-bar .task-title-actions .icon-btn {
+  padding: 4px !important;
+  border-radius: var(--radius-xs);
+}
+
+.task-title-actions .icon-btn:hover {
+  background: var(--bg-hover) !important;
+  color: var(--fg) !important;
+  border-color: transparent !important;
+}
+
+.task-title-bar .task-title-actions .icon-btn:not(:hover) {
+  border-color: transparent !important;
+}
+
+/* Quiet the icon controls in columns you are not working in; pressed toggles
+   stay full strength because they show state. */
+.task-title-bar .task-title-actions .icon-btn {
+  transition: opacity 0.12s ease;
+}
+
+.task-title-bar:not([data-active='true']):not(:hover):not(:focus-within)
+  .task-title-actions
+  .icon-btn:not([aria-pressed='true']) {
+  opacity: 0.45;
+}
+
+.task-title-bar .task-title-actions .icon-btn[aria-pressed='true'] {
+  background: var(--bg-selected-subtle) !important;
+  color: var(--accent) !important;
+}
+
+.task-title-bar[data-active='true'] {
+  background: transparent;
+}
+
+.task-reasoning-empty {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--fg-muted);
+}
+.task-reasoning-graph-host {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* A flat pill; its details open inline so keyboard users can read them too. */
+.reasoning-graph-toolbar .task-reasoning-status {
+  color: var(--fg-muted);
+}
+.reasoning-graph-toolbar .task-reasoning-status:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.reasoning-graph-toolbar .task-reasoning-status:disabled:hover {
+  background: transparent;
+}
+/* Opened on purpose, so the details wrap instead of vanishing behind an ellipsis. */
+.task-reasoning-status-details {
+  margin-left: 6px;
+  color: var(--fg-muted);
+  white-space: normal;
+}
+.task-reasoning-status::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+}
+.task-reasoning-status[data-live='true']::before {
+  background: var(--success);
+}
+.task-reasoning-connection {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.task-reasoning-connection [role='alert'] {
+  flex-basis: 100%;
+  color: var(--warning);
+  overflow-wrap: anywhere;
+}
+.task-reasoning-connection button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.reasoning-setup-overlay {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  overflow: auto;
+  background: var(--task-panel-bg);
+}
+.reasoning-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 440px;
+  font-size: 12px;
+  color: var(--fg);
+}
+.reasoning-setup h3,
+.reasoning-setup p {
+  margin: 0;
+}
+.reasoning-setup > p,
+.reasoning-setup-hint,
+.reasoning-setup fieldset span {
+  color: var(--fg-muted);
+}
+.reasoning-setup fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.reasoning-setup label {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.reasoning-setup-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.reasoning-setup button {
+  color: var(--fg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+}
+.reasoning-setup button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.reasoning-setup-blocker {
+  color: var(--warning);
+}
+
+.task-branch-info-bar {
+  container-name: task-branch-info;
+  container-type: inline-size;
+  min-width: 0;
+  /* The header's single divider: title bar and branch bar read as one block. */
+  border-bottom: 1px solid var(--border);
+}
+
+.task-branch-info-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.task-pr-link {
+  flex: 0 0 auto;
+}
+
+.task-branch-project,
+.task-branch-source,
+.task-branch-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-pr-ci-state {
+  width: 10px;
+  height: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+/* Neutral like Finish: merging is routine, so only hover adds emphasis. */
+.task-pr-merge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-right: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.task-pr-merge:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+.task-pr-label,
+.task-pr-review-status {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.task-pr-review-icon {
+  display: none;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+/* The merged badge keeps its icon at every width, leading like GitHub's. */
+.task-pr-review-icon--merged {
+  display: inline-flex;
+  order: -1;
+}
+
+.task-branch-project-label,
+.task-branch-source-label,
+.task-branch-name-label,
+.task-branch-path-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-branch-source-prefix {
+  flex: 0 0 auto;
+}
+
+.task-branch-source-compact-label,
+.task-branch-project-compact-label {
+  display: none;
+  flex: 0 0 auto;
+}
+
+.task-branch-path {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.task-branch-existing-worktree {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+@container task-branch-info (max-width: 720px) {
+  .task-branch-source-prefix,
+  .task-branch-source-label {
+    display: none;
+  }
+
+  .task-branch-source-compact-label {
+    display: inline;
+  }
+}
+
+@container task-branch-info (max-width: 620px) {
+  .task-branch-path,
+  .task-branch-existing-worktree {
+    display: none;
+  }
+
+  .task-branch-name {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* The project never collapses away entirely: a task's branch name alone is
+   ambiguous across projects, so the name shrinks to its initials instead. */
+@container task-branch-info (max-width: 480px) {
+  .task-branch-project-label {
+    display: none;
+  }
+
+  .task-branch-project-compact-label {
+    display: inline;
+  }
+}
+
+@container task-branch-info (max-width: 420px) {
+  .task-pr-review-label {
+    display: none;
+  }
+
+  .task-pr-review-icon {
+    display: inline-flex;
+  }
+}
+
+@container task-branch-info (max-width: 340px) {
+  .task-branch-name,
+  .task-pr-prefix {
+    display: none;
+  }
+
+  .task-pr-ci-state {
+    order: 1;
+  }
+
+  .task-pr-review-status {
+    order: 2;
+  }
+
+  .task-pr-label {
+    order: 3;
+  }
+}
+
 .app-shell {
   position: relative;
   isolation: isolate;
 }
 
-.app-shell::after {
+/* Window frame. Painted on <body> instead of .app-shell so it survives both
+   things that used to hide it: content that scrolls or floats inside the shell,
+   and overlays portalled to <body> (dialogs, menus, toasts, lightbox) which are
+   siblings of .app-shell and would otherwise paint over it. Fixed to the
+   viewport so all four edges stay put no matter what scrolls underneath.
+
+   Top and left sit on the window edge; right and bottom are pulled in by 2px.
+   At a fractional zoom or display scale the layout viewport is up to 1.4 device
+   pixels wider and taller than the window that shows it (measured across 11
+   window sizes at zoom 1.375), so a line drawn at the extreme right or bottom
+   edge is cut off before it reaches the screen. Nothing in the renderer knows
+   the window's true size to correct for it — outerWidth and Electron's
+   getContentSize() are both rounded to DIPs, which is coarser than the error —
+   so the inset is the only reliable fix, and 1px is not enough. */
+body::after {
   content: '';
-  position: absolute;
-  inset: 0;
+  position: fixed;
+  inset: 0 2px 2px 0;
   pointer-events: none;
-  z-index: 9999;
+  z-index: 2147483647;
   border: 1px solid transparent;
-  border-radius: inherit;
   transition: border-color 0.16s ease;
 }
 
@@ -147,12 +627,565 @@ body.font-smoothing {
   z-index: 1;
 }
 
-.app-shell[data-window-border='true'][data-window-maximized='false']::after {
+body:has(.app-shell[data-window-border='true'][data-window-maximized='false'])::after {
   border-color: color-mix(in srgb, var(--fg-subtle) 42%, transparent);
 }
 
-.app-shell[data-window-border='true'][data-window-maximized='false'][data-window-focused='false']::after {
+body:has(
+    .app-shell[data-window-border='true'][data-window-maximized='false'][data-window-focused='false']
+  )::after {
   border-color: color-mix(in srgb, var(--fg-subtle) 26%, transparent);
+}
+
+/* Shown in place of empty notes and changed files. */
+.task-support-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-support-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.task-support-toggle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+/* Parallel Code website palette: parallelcode.app. */
+html[data-look='parallel-code'] {
+  color-scheme: dark;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Sora', var(--font-ui);
+  --bg: #080c10;
+  --bg-elevated: #10161c;
+  --bg-input: #0c1218;
+  --bg-hover: #151e26;
+  --bg-selected: #18343e;
+  --bg-selected-subtle: #11232c;
+  --border: #29343d;
+  --border-subtle: #1e272f;
+  --border-focus: #67d9ed;
+  --fg: #f0f4f7;
+  --fg-muted: #9aa9b6;
+  --fg-subtle: #8193a2;
+  --accent: #67d9ed;
+  --accent-hover: #91e5f3;
+  --accent-text: #080c10;
+  --link: #67d9ed;
+  --success: #98c9ae;
+  --error: #f08f8a;
+  --warning: #dfba83;
+  --review: #c1b0e8;
+  --info: #8fbddd;
+  --diff-add-bg: rgba(152, 201, 174, 0.12);
+  --diff-remove-bg: rgba(240, 143, 138, 0.12);
+  --search-match: #dfba83;
+  --search-match-active: #efa66f;
+  --island-bg: #10161c;
+  --island-border: #29343d;
+  --island-radius: 12px;
+  --task-container-bg: #0c1218;
+  --task-panel-bg: #10161c;
+  --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.16);
+  --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.3);
+}
+
+.app-shell[data-look='parallel-code']::before {
+  background: radial-gradient(ellipse at 50% 0%, #16485b33, transparent 60%);
+}
+
+/* Compact UI text, geometric headings, and relaxed prose form three clear levels. */
+html[data-look='parallel-code']
+  :is(.icon-btn, .btn-primary, .btn-secondary, .btn-danger, .input-field, .project-select) {
+  font-family: var(--font-ui);
+}
+
+html[data-look='parallel-code'] :is(.editable-text, .settings-theme-title) {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+html[data-look='parallel-code'] .task-item-name {
+  letter-spacing: -0.015em;
+}
+
+html[data-look='parallel-code'] .task-item :is(.task-agent-status, .task-brief-line) {
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  opacity: 1;
+}
+
+html[data-look='parallel-code'] :is(.prompt-textarea, .task-notes-body textarea) {
+  font-family: var(--font-ui) !important;
+  line-height: 1.6;
+}
+
+html[data-look='parallel-code'] :is(.prompt-textarea, .task-notes-body textarea)::placeholder {
+  color: var(--fg-subtle);
+  opacity: 1;
+}
+
+html[data-look='parallel-code'] :is(.info-bar, .changed-files-list-panel) {
+  font-family: var(--font-ui) !important;
+}
+
+html[data-look='parallel-code'] :is(.info-bar, .changed-files-list-panel, .sidebar-footer) {
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-look='parallel-code'] .settings-theme-desc {
+  line-height: 1.6;
+}
+
+/* Let task names and the focused workspace lead, with quieter utility controls. */
+html[data-look='parallel-code'] .icon-btn:not(.sidebar-create-btn):not(:hover):not(:focus-visible) {
+  border-color: transparent !important;
+}
+
+html[data-look='parallel-code'] .task-title-actions {
+  background: transparent;
+}
+
+html[data-look='parallel-code'] .task-branch-info-bar {
+  border-color: var(--border-subtle);
+}
+
+html[data-look='parallel-code'] .task-column.active {
+  box-shadow: none;
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border)) !important;
+}
+
+html[data-look='parallel-code'] .task-notes-body textarea {
+  padding: 12px 14px !important;
+}
+
+html[data-look='parallel-code'] :is(.prompt-textarea, .input-field, .project-select):focus {
+  border-color: var(--border-focus) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent) !important;
+}
+
+html[data-look='parallel-code'] .settings-theme-card.active {
+  background: var(--bg-selected-subtle);
+  box-shadow: none;
+}
+
+/* Color changes are enough feedback for compact controls; avoid lifting or glowing. */
+html[data-look='parallel-code'] :is(.btn-primary, .btn-danger):hover:not(:disabled) {
+  box-shadow: none;
+}
+
+html[data-look='parallel-code'] :is(.btn-primary, .btn-danger):active:not(:disabled),
+html[data-look='parallel-code'] .prompt-send-btn:hover:not(:disabled) {
+  transform: none;
+}
+
+/* Noir: a quiet frame, softly rounded workspaces, and a single focus accent.
+   Keep geometry stable when controls appear so parallel tasks never shift. */
+html[data-look='noir'] {
+  color-scheme: dark;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: var(--font-ui);
+  --bg: #0c0c10;
+  --bg-elevated: #1c1c24;
+  --bg-input: #202029;
+  --bg-hover: #2a2935;
+  --bg-selected: #343043;
+  --bg-selected-subtle: #282432;
+  --border: #33323e;
+  --border-subtle: #25252e;
+  --border-focus: #b7a5f5;
+  --fg: #e8e8ef;
+  --fg-muted: #b1b0bf;
+  --fg-subtle: #9392a3;
+  --accent: #b7a5f5;
+  --accent-hover: #cbbcfb;
+  --accent-text: #191421;
+  /* Links get their own hue so they never read as focus or selection. */
+  --link: #9cc8ea;
+  --success: #98c9ae;
+  --error: #f08f8a;
+  --warning: #dfba83;
+  --review: #8fbddd;
+  --info: #c4c3d0;
+  --diff-add-bg: rgba(152, 201, 174, 0.15);
+  --diff-remove-bg: rgba(240, 143, 138, 0.15);
+  --search-match: #dfc18e;
+  --search-match-active: #efa66f;
+  --island-bg: #15151b;
+  --island-border: #33323e;
+  --island-radius: 12px;
+  --task-container-bg: #15151b;
+  --task-panel-bg: #15151b;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.24);
+  --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+
+.app-shell[data-look='noir']::before {
+  background: none;
+}
+
+html[data-look='noir'] .sidebar-panel {
+  padding: 12px 14px 16px !important;
+  gap: 20px !important;
+}
+
+html[data-look='noir'] .icon-btn:not(.sidebar-create-btn):not(:hover):not(:focus-visible) {
+  border-color: transparent !important;
+}
+
+html[data-look='noir'] .sidebar-create-btn {
+  padding: 9px 12px !important;
+}
+
+html[data-look='noir'] .task-item {
+  border-radius: var(--radius-md) !important;
+}
+
+html[data-look='noir'] .task-item[aria-current='true'] {
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+/* The column surface is only a shade above the frame, so the border carries
+   the boundary between parallel tasks. */
+html[data-look='noir'] .task-column {
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: none;
+}
+
+html[data-look='noir'] .task-column.active {
+  box-shadow: none;
+}
+
+html[data-look='noir'] .task-title-bar {
+  background: var(--island-bg);
+}
+
+html[data-look='noir'] .task-title-bar[data-active='true'],
+html[data-look='noir'] .island-header-active {
+  box-shadow: inset 0 2px var(--accent);
+}
+
+html[data-look='noir'] .task-title-actions {
+  background: transparent;
+}
+
+html[data-look='noir'] .task-branch-info-bar {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+html[data-look='noir'] :is(.info-bar, .changed-files-list-panel, .task-notes-body textarea) {
+  font-family: var(--font-ui) !important;
+}
+
+html[data-look='noir'] :is(.info-bar, .changed-files-list-panel, .sidebar-footer) {
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-look='noir'] .info-bar button:not(:hover):not(:focus-visible) {
+  border-color: transparent !important;
+}
+
+html[data-look='noir'] .prompt-textarea {
+  font-family: var(--font-ui) !important;
+  box-shadow: none !important;
+}
+
+/* One quiet focus halo for every text field, replacing the default glow. */
+html[data-look='noir'] :is(.prompt-textarea, .input-field, .project-select):focus {
+  border-color: var(--border-focus) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent) !important;
+}
+
+html[data-look='noir'] .task-notes-body textarea {
+  padding: 12px 14px !important;
+  font-size: 13px !important;
+  line-height: 1.65;
+}
+
+html[data-look='noir'] .file-row {
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+}
+
+html[data-look='noir'] textarea::placeholder {
+  color: var(--fg-subtle);
+  opacity: 1;
+}
+
+html[data-look='noir'] .task-notes-body textarea::placeholder {
+  color: var(--fg-muted);
+}
+
+html[data-look='noir'] .prompt-send-btn:not(:disabled) {
+  border-radius: var(--radius-sm) !important;
+}
+
+html[data-look='noir'] .task-changed-files-section .changed-files-list-panel::after {
+  content: none;
+}
+
+html[data-look='noir'] .settings-theme-card.active {
+  background: var(--bg-selected-subtle);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Obsidian: flat, square-edged workspaces with quiet navigation.
+   All styling is scoped to the preset, including portalled dialogs.
+   Structural rules match both variants via [data-look^='obsidian'].
+   Amber is the accent, so "needs you" (--warning) uses a distinct orange. */
+html[data-look='obsidian'] {
+  color-scheme: dark;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: var(--font-ui);
+  --bg: #171717;
+  --bg-elevated: #242424;
+  --bg-input: #262626;
+  --bg-hover: #303030;
+  --bg-selected: #353535;
+  --bg-selected-subtle: #292929;
+  --border: #333333;
+  --border-subtle: #292929;
+  --border-focus: #c4a77d;
+  --fg: #ededed;
+  --fg-muted: #b5b5b5;
+  --fg-subtle: #919191;
+  --accent: #c4a77d;
+  --accent-hover: #d6bd96;
+  --accent-text: #1e1b16;
+  --link: #d6bd96;
+  --success: #98c9ae;
+  --error: #eaa0aa;
+  --warning: #f29b70;
+  --review: #c1b0e8;
+  --info: #c9c9c9;
+  --diff-add-bg: rgba(152, 201, 174, 0.12);
+  --diff-remove-bg: rgba(234, 160, 170, 0.12);
+  --search-match: #dfc18e;
+  --search-match-active: #efa66f;
+  --island-bg: #1e1e1e;
+  --island-border: #303030;
+  --island-radius: 0px;
+  --task-container-bg: #1e1e1e;
+  --task-panel-bg: #1e1e1e;
+  --radius-xs: 4px;
+  --radius-sm: 4px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --shadow-soft: none;
+  --shadow-pop: none;
+}
+
+/* Obsidian Light: warm paper neutrals with the same square, flat structure.
+   Accent and status hues are darkened to keep AA text contrast on white. */
+html[data-look='obsidian-light'] {
+  color-scheme: light;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: var(--font-ui);
+  --bg: #f4f4f2;
+  --bg-elevated: #ffffff;
+  --bg-input: #f2f2f0;
+  --bg-hover: #ebebe8;
+  --bg-selected: #e2e1dc;
+  --bg-selected-subtle: #eeeeeb;
+  --border: #dddcd8;
+  --border-subtle: #e9e8e4;
+  --border-focus: #8a6433;
+  --fg: #1f1f1f;
+  --fg-muted: #555555;
+  --fg-subtle: #6e6e6e;
+  --accent: #8a6433;
+  --accent-hover: #75532a;
+  --accent-text: #ffffff;
+  --link: #75532a;
+  --success: #2f7d4f;
+  --error: #b3383f;
+  --warning: #ad4e00;
+  --review: #6d4fc2;
+  --info: #5e5e5e;
+  --diff-add-bg: rgba(47, 125, 79, 0.12);
+  --diff-remove-bg: rgba(179, 56, 63, 0.1);
+  --search-match: #d9a93b;
+  --search-match-active: #e07b39;
+  --island-bg: #ffffff;
+  --island-border: #dddcd8;
+  --island-radius: 0px;
+  --task-container-bg: #ffffff;
+  --task-panel-bg: #ffffff;
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --shadow-soft: none;
+  --shadow-pop: none;
+}
+
+.app-shell[data-look^='obsidian']::before {
+  background: none;
+}
+
+html[data-look^='obsidian'] .sidebar-shell {
+  padding: 0 4px 8px;
+}
+
+html[data-look^='obsidian'] .sidebar-panel {
+  padding: 8px 12px 18px !important;
+  gap: 20px !important;
+}
+
+/* Quiet utility controls let the primary action and task names lead. */
+html[data-look^='obsidian'] .icon-btn:not(.sidebar-create-btn):not(:hover) {
+  border-color: transparent !important;
+}
+
+html[data-look^='obsidian'] .sidebar-create-btn {
+  padding: 9px 12px !important;
+  box-shadow: none;
+}
+
+html[data-look^='obsidian'] .task-item[aria-current='true'] {
+  box-shadow: none;
+}
+
+/* Columns share one working surface instead of nesting floating cards. */
+html[data-look^='obsidian'] [data-task-id] {
+  padding: 0 3px !important;
+}
+
+/* A transparent top edge on every column keeps the active marker from
+   shifting layout when selection moves. */
+html[data-look^='obsidian'] .task-column {
+  margin: 0;
+  box-shadow: none;
+  border: 0 !important;
+  border-left: 1px solid var(--border) !important;
+  border-top: 2px solid transparent !important;
+}
+
+html[data-look^='obsidian'] .task-column.active {
+  box-shadow: none;
+  border-color: var(--border) !important;
+  border-top-color: var(--accent) !important;
+}
+
+html[data-look^='obsidian'] .task-branch-info-bar {
+  border-bottom-color: var(--border-subtle);
+}
+
+/* A flat composer; panel focus remains visible around its full boundary. */
+html[data-look^='obsidian'] .prompt-input-panel {
+  padding: 0 !important;
+  background: var(--bg-input);
+  border-top: 1px solid var(--border);
+}
+
+html[data-look^='obsidian'] .prompt-textarea {
+  font-family: var(--font-ui) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-look^='obsidian'] textarea::placeholder {
+  color: var(--fg-subtle);
+}
+
+html[data-look='obsidian'] .prompt-textarea::placeholder,
+html[data-look='islands-dark'] .prompt-textarea::placeholder {
+  color: var(--fg-subtle);
+  opacity: 1;
+}
+
+html[data-look^='obsidian'] .prompt-send-btn {
+  border-radius: var(--radius-sm) !important;
+}
+
+html[data-look^='obsidian'] :is(.input-field, .project-select):focus {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--border-focus) 30%, transparent);
+}
+
+html[data-look^='obsidian'] .settings-theme-card.active {
+  background: var(--bg-selected-subtle);
+  box-shadow: none;
+}
+
+/* Prose and navigation use the UI face; code and terminal output remain mono. */
+html[data-look^='obsidian'] :is(.info-bar, .changed-files-list-panel, .task-notes-body textarea) {
+  font-family: var(--font-ui) !important;
+}
+
+/* Inter's proportional digits make diff counts jitter as they update. */
+html[data-look^='obsidian'] :is(.info-bar, .changed-files-list-panel, .sidebar-footer) {
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-look^='obsidian'] .task-notes-body textarea {
+  padding: 12px 14px !important;
+  font-size: 13px !important;
+  line-height: 1.65;
+}
+
+html[data-look^='obsidian'] .file-row {
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+}
+
+html[data-look^='obsidian'] .info-bar {
+  font-size: 12px !important;
+}
+
+html[data-look^='obsidian'] .info-bar button:not(:hover):not(:focus-visible) {
+  border-color: transparent !important;
+}
+
+/* Small controls use a softer radius while workspace boundaries stay square.
+   Override inline pill radii; status dots and loading rings keep their shape. */
+html[data-look^='obsidian'] :is(button, input, textarea, select, [role='tab']),
+html[data-look^='obsidian'] .tiling-layout-scroll-affordance::before,
+html[data-look^='obsidian'] .project-swatch,
+html[data-look^='obsidian'] .xterm-slider,
+html[data-look^='obsidian'] ::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-sm) !important;
+}
+
+/* The composer remains flush with its square workspace. */
+html[data-look^='obsidian'] .prompt-textarea {
+  border-radius: 0 !important;
+}
+
+html[data-look^='obsidian'] .info-bar button {
+  font-family: var(--font-ui) !important;
+}
+
+/* Keep keyboard focus unambiguous, including the composer and shell toolbar. */
+html[data-look^='obsidian'] .focusable-panel[data-panel-focused='true']::after,
+html[data-look^='obsidian'] .prompt-input-panel:focus-within::after {
+  content: '';
+  border-width: 2px;
+}
+
+/* The file list sits inside an already outlined focusable section. */
+html[data-look^='obsidian'] .task-changed-files-section .changed-files-list-panel::after {
+  content: none;
 }
 
 html[data-look='classic'] {
@@ -405,13 +1438,16 @@ html[data-look='catppuccin-mocha'] .task-column.active {
 }
 
 html[data-look='catppuccin-mocha'] .task-column.active {
-  box-shadow: var(--shadow-soft) !important;
+  box-shadow: var(--task-column-shadow, var(--shadow-soft)) !important;
 }
 
 /* Islands Dark — JetBrains 2025.3 inspired: lighter tinted frame, darker uniform island panels.
    Frame uses a color→gray radial reminiscent of JetBrains' "Project Gradient". */
 html[data-look='islands-dark'] {
-  --bg: radial-gradient(circle at 0% 0%, #3a76d6 0%, #2c3a4d 8%, #26282c 18%);
+  color-scheme: dark;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: var(--font-ui);
+  --bg: radial-gradient(circle at 0% 0%, #30445e 0%, #2b323d 8%, #26282c 18%);
   --bg-elevated: #181a1d;
   --bg-input: #1e2126;
   --bg-hover: #23262c;
@@ -461,6 +1497,8 @@ html[data-look='islands-light'] {
   --success: #369650;
   --error: #d62b40;
   --warning: #a98708;
+  --review: #7c3aed;
+  --info: #1d6fd6;
   --diff-add-bg: rgba(54, 150, 80, 0.14);
   --diff-remove-bg: rgba(214, 43, 64, 0.12);
   --search-match: #d39e00;
@@ -498,6 +1536,13 @@ html[data-look^='islands-'] .task-column.active {
   box-shadow: none !important;
 }
 
+/* A header marker identifies the active task independently of panel focus.
+   Inset paint preserves header size in both tiled and focus layouts. */
+html[data-look='islands-dark'] .task-title-bar[data-active='true'],
+html[data-look='islands-dark'] .island-header-active {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
 html[data-look^='islands-'] .tiling-layout-strip > .resize-handle-h {
   margin: 0 -3px;
   position: relative;
@@ -508,8 +1553,11 @@ html[data-look^='islands-'] .tiling-layout-strip > .resize-handle-h::before {
   display: none;
 }
 
+/* No top gap: unlike a task column, the nav island draws a visible 1px border
+   above its fill and curves away over 12px of radius, so at an equal box top it
+   reads as sitting lower. Starting flush lines it up with the columns. */
 html[data-look^='islands-'] .sidebar-shell {
-  padding: 6px 3px 6px 6px;
+  padding: 0 3px 6px 6px;
   box-sizing: border-box;
 }
 
@@ -558,14 +1606,6 @@ html[data-look^='islands-'] .prompt-input-panel[data-panel-focused='true']::afte
   z-index: 10;
 }
 
-/* Soften the send button so it doesn't punch through the muted theme —
-   matches the notes panel's send-notes button (soft accent tint). */
-html[data-look^='islands-'] .prompt-send-btn:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg-input)) !important;
-  color: var(--fg) !important;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border)) !important;
-}
-
 html[data-look^='islands-'] .prompt-send-btn:disabled {
   background: transparent !important;
   color: var(--fg-subtle) !important;
@@ -580,7 +1620,7 @@ html[data-look^='islands-'] .task-column.focus-mode .task-header-stack {
   margin-bottom: 5px;
   background: var(--task-panel-bg);
   border: 1px solid var(--island-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
 }
 
@@ -588,7 +1628,9 @@ html[data-look^='islands-'] .task-column.focus-mode .task-branch-info-bar {
   border-bottom: none;
 }
 
-html[data-look^='islands-'] .task-column.focus-mode .focusable-panel {
+html[data-look^='islands-']
+  .task-column.focus-mode
+  .focusable-panel:not(.shell-terminal-container) {
   background: var(--task-panel-bg) !important;
   border: 1px solid var(--island-border);
   border-radius: 8px !important;
@@ -604,7 +1646,7 @@ html[data-look^='islands-'] .task-column.focus-mode .focusable-panel {
    onto the cell for the same reason — drawn inside the panel it would also
    get clipped at the bottom. */
 html[data-look^='islands-'] .task-column.focus-mode .rp-cell:has(> .focusable-panel) {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   position: relative;
 }
 
@@ -617,7 +1659,7 @@ html[data-look^='islands-']
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: 2px solid var(--border-focus);
   pointer-events: none;
   z-index: 10;
@@ -633,8 +1675,6 @@ html[data-look^='islands-']
 
 html[data-look^='islands-'] .task-column.focus-mode .shell-terminals-row {
   background: transparent !important;
-  gap: 5px !important;
-  margin-top: 2px !important;
 }
 
 html[data-look^='islands-']
@@ -670,15 +1710,28 @@ html[data-look^='islands-'] .task-column.focus-mode .resize-handle-v {
   height: 5px;
 }
 
-/* Islands: hairline between adjacent sub-panels (notes ↔ changed-files,
+/* Outer islands provide grouping; inner panels only need their hairlines. */
+html[data-look='islands-dark'] .sidebar-panel,
+html[data-look='islands-dark'] .task-column.focus-mode .task-header-stack,
+html[data-look='islands-dark']
+  .task-column.focus-mode
+  .focusable-panel:not(.shell-terminal-container) {
+  box-shadow: none;
+}
+
+/* Islands, Obsidian and Noir: hairline between adjacent sub-panels (notes ↔ changed-files,
    shell ↔ agent terminal, etc). Drawn inside the existing 6px resize-handle
    so we don't change layout. Hidden during hover/drag — the handle's accent
    color takes over. */
-html[data-look^='islands-'] .resize-handle {
+html[data-look^='islands-'] .resize-handle,
+html[data-look^='obsidian'] .task-column .resize-handle,
+html[data-look='noir'] .task-column .resize-handle {
   position: relative;
 }
 
-html[data-look^='islands-'] .resize-handle-v::before {
+html[data-look^='islands-'] .resize-handle-v::before,
+html[data-look^='obsidian'] .task-column .resize-handle-v::before,
+html[data-look='noir'] .task-column .resize-handle-v::before {
   content: '';
   position: absolute;
   top: 50%;
@@ -690,7 +1743,9 @@ html[data-look^='islands-'] .resize-handle-v::before {
   pointer-events: none;
 }
 
-html[data-look^='islands-'] .resize-handle-h::before {
+html[data-look^='islands-'] .resize-handle-h::before,
+html[data-look^='obsidian'] .task-column .resize-handle-h::before,
+html[data-look='noir'] .task-column .resize-handle-h::before {
   content: '';
   position: absolute;
   left: 50%;
@@ -811,12 +1866,7 @@ html[data-look='workbench'] .prompt-input-panel[data-panel-focused='true']::afte
   z-index: 10;
 }
 
-/* Soft-tinted send button so the cobalt accent doesn't punch through the
-   muted palette (same logic as islands-dark). */
 html[data-look='workbench'] .prompt-send-btn:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg-input)) !important;
-  color: var(--fg) !important;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border)) !important;
   border-radius: 0 !important;
 }
 
@@ -892,20 +1942,442 @@ button {
     box-shadow 0.16s ease;
 }
 
+/* The change tour beside the diff: the understanding tour's card and threads,
+   compacted to fit the sidebar. It drives the file list below it, so an
+   accent rule and tint set it apart from that list in every look. */
+.change-tour {
+  display: flex;
+  box-sizing: border-box;
+  min-height: 0;
+  max-height: 70%;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 12px;
+  overflow: hidden;
+  border-top: 2px solid var(--accent);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 6%, var(--task-panel-bg));
+}
+
+.diff-viewer-sidebar > .change-tour {
+  /* Leave room for files and notes; shorter windows scroll the sidebar. */
+  flex-shrink: 1;
+  min-height: 240px;
+}
+
+.diff-task-notes {
+  margin: 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+
+/* The dialog keeps its step strip faint; beside the diff it is the main
+   sense of where you are, so it reads at near full strength. */
+.change-tour .understanding-segments {
+  opacity: 0.75;
+}
+
+.change-tour-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.change-tour-top .understanding-subject {
+  max-width: none;
+}
+
+.change-tour-stage {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.change-tour .understanding-card {
+  flex: none;
+  padding: 16px 18px;
+  overflow: visible;
+  box-shadow: none;
+}
+
+.change-tour .tour-rework {
+  padding: 0;
+}
+
+.change-tour-note {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.change-tour-message {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 0;
+  text-align: center;
+}
+
+.change-tour-ask {
+  display: flex;
+}
+
+.change-tour-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.change-tour-nav > button {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.change-tour-nav > .change-tour-next {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.change-tour-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+/* The action and the model chevron read as one footer row. */
+.change-tour-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.change-tour-hover {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.change-tour-row .change-tour-action {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Each action is one segment of the bar and they share its width evenly. Both
+   wrappers matter: a hover hint wraps every action, and a split action (button
+   plus its model chevron) adds another around that. Without this the split is
+   the only flexible segment, so it takes all the slack on a wide panel and all
+   the shrinking on a narrow one, where it collapses to nothing. */
+.change-tour-row > :is(.tour-hint-anchor, .tour-split),
+.change-tour-row .tour-split > .tour-hint-anchor {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Several actions share the bar and read as one control, divided the same way
+   the model chevron divides itself off. */
+.change-tour-row > * + * {
+  border-left: 1px solid var(--border-subtle);
+}
+
+/* Three labels sharing a narrow panel wrap to one character per line, and the
+   bar grows into the note it exists to stay out of. Truncate instead; every
+   action here has a hover popover that spells its label out in full. */
+.notes-tour-footer .change-tour-action-label {
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The notes panel's own min-height can exceed the ResizablePanel cell holding
+   it (pinned drag, absorber compression), and the cell clips from the bottom —
+   which would swallow this bar whole. Sticking it to the cell's visible bottom
+   edge means the textarea takes the clipping instead, as it did before the bar
+   existed. Opaque, so the overflowing note passes behind it. */
+.notes-tour-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: var(--task-panel-bg);
+}
+
+/* Secondary segments size to their label; only the tour action stretches. */
+.change-tour-row .change-tour-segment {
+  flex: 0 0 auto;
+  width: auto;
+  color: var(--fg-muted);
+}
+
+.change-tour-model {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0 10px;
+  border: 0;
+  border-left: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.change-tour-model:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.change-tour-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.change-tour-action:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.change-tour-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.change-tour-action-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.change-tour-action > :is(svg, .inline-spinner) {
+  flex-shrink: 0;
+}
+
+.review-control {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.review-control:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 10%, var(--bg-elevated));
+}
+
+.review-control:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 textarea::placeholder {
   color: color-mix(in srgb, var(--fg-subtle) 65%, transparent);
 }
 
 .task-item {
+  /* Detail lines indent past the row's leading glyphs — a 12px glyph lane plus
+     the 6px head gap each — so they start under the title text, not the dot. */
+  --task-row-indent: 18px;
   transition:
     background 0.13s ease,
     color 0.13s ease,
     border-color 0.13s ease;
 }
 
-.task-item:hover {
+.task-item:hover:not([aria-current='true']) {
   background: color-mix(in srgb, var(--accent) 10%, var(--bg-hover)) !important;
   color: var(--fg) !important;
+}
+
+/* Selection stays distinct from status and keyboard focus: an inset bar and a
+   heavier name, so it still reads where --accent and --border-focus match.
+   !important is needed only because `taskAttentionStyles` sets background
+   inline on every row. */
+.task-item[aria-current='true'] {
+  background: var(--bg-selected-subtle) !important;
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+.task-item[aria-current='true']:hover {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-hover)) !important;
+}
+
+/* Selecting a task must not hide that it also needs you: keep the attention
+   tint that the inline style would otherwise have provided. */
+.task-item[aria-current='true']:is(
+    [data-attention='needs_input'],
+    [data-attention='error'],
+    [data-attention='review']
+  ) {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-selected-subtle)) !important;
+}
+
+.task-item:is(
+    [aria-current='true'],
+    [data-attention='needs_input'],
+    [data-attention='error'],
+    [data-attention='review']
+  )
+  .task-item-name {
+  font-weight: 600;
+}
+
+/* Title line of a task row: glyph, name, badges. A wrapped two-line name must
+   not drag the glyph to the middle of the block, so everything beside the name
+   is pinned to the first line. */
+.task-item-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* One-line-tall boxes (matching .task-item-name's line-height) so the dot,
+   spinner and coordinator icon centre on the first line instead of hugging its
+   top edge. The SVG scales inside its taller box, staying visually centred. */
+.task-item-head > .status-glyph,
+.task-item-head > svg {
+  height: 1.35em;
+}
+
+/* Coordinator rows carry a bot icon in front of the status glyph. */
+.task-item-coordinator {
+  --task-row-indent: 36px;
+}
+
+/* The brief card is routine, so it is filled only when hovered or open. */
+.task-brief-bar {
+  background: transparent;
+}
+.task-brief-bar:hover,
+.task-brief-bar[aria-expanded='true'] {
+  background: var(--bg-elevated);
+}
+
+/* File chips repeat what the changed-files list shows and crowd the text, so
+   they float over the row's right edge on hover or keyboard focus. Taken out of
+   flow so revealing them never reflows the card; transparent rather than
+   display:none so they stay focusable. */
+.brief-item {
+  position: relative;
+}
+.brief-item .brief-item-file {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  background: var(--bg-elevated) !important; /* beats the chip's inline transparent */
+  opacity: 0;
+  pointer-events: none;
+}
+.brief-item:is(:hover, :focus-within) .brief-item-file {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Decision Keep/Change buttons appear the same way, so open decisions read as
+   text rather than a wall of buttons. They stay in flow, unlike the chips: an
+   overlay would cover the decision being judged, and swapping it for the
+   shorter "Kept" line would pull the rows below up by a whole row. */
+.brief-item .brief-item-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+.brief-item:is(:hover, :focus-within) .brief-item-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Task names wrap to two lines rather than being cut mid-word — at sidebar
+   widths, similar names are otherwise indistinguishable. */
+.task-item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+/* Status lines under a task name are reference detail, not the row's identity:
+   keep them quiet and give them air so the sidebar scans as a list of names.
+   Hovering a row is the signal that its detail is wanted. A mono face sets them
+   apart from the name as machine-reported state rather than a second title. */
+.task-item .task-agent-status,
+.task-item .task-brief-line {
+  margin-top: 4px;
+  padding-left: var(--task-row-indent);
+  font-family: var(--font-mono);
+  opacity: 0.6;
+  transition: opacity 0.13s ease;
+}
+
+/* The two status lines belong together — only the pair is offset from the title. */
+.task-item .task-agent-status + .task-brief-line {
+  margin-top: 1px;
+}
+
+.task-item:is(
+    :hover,
+    [data-kbd-focused='true'],
+    [aria-current='true'],
+    [data-attention='needs_input'],
+    [data-attention='error'],
+    [data-attention='review']
+  )
+  :is(.task-agent-status, .task-brief-line) {
+  opacity: 1;
+}
+
+.sidebar-attention-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+  max-height: 32vh;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+}
+
+.sidebar-attention-tray-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 2px 2px;
+}
+
+.sidebar-attention-row {
+  border: none;
+}
+
+.sidebar-attention-row + .sidebar-attention-row {
+  border-top: 1px solid color-mix(in srgb, var(--warning) 16%, transparent);
 }
 
 .sidebar-offscreen-attention-badge {
@@ -915,7 +2387,7 @@ textarea::placeholder {
   min-width: 0;
   padding: 1px 5px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1.4;
   white-space: nowrap;
@@ -926,13 +2398,13 @@ textarea::placeholder {
   backdrop-filter: blur(6px);
 }
 
-.icon-btn:hover {
-  background: color-mix(in srgb, var(--accent) 9%, var(--bg-hover)) !important;
+.icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover) !important;
   color: var(--fg) !important;
-  border-color: color-mix(in srgb, var(--accent) 52%, var(--border)) !important;
+  border-color: var(--border) !important;
 }
 
-.icon-btn:active {
+.icon-btn:active:not(:disabled) {
   transform: translateY(1px);
 }
 
@@ -940,7 +2412,7 @@ textarea::placeholder {
    whole row reads as clickable, plus a focus ring matching other sidebar
    controls. */
 .projects-toggle {
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   transition:
     background-color 0.12s ease,
     color 0.12s ease;
@@ -954,6 +2426,49 @@ textarea::placeholder {
 .projects-toggle:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 1px;
+}
+
+.project-row {
+  transition: background-color 0.12s ease;
+}
+
+.project-row:hover {
+  background: var(--bg-hover);
+}
+
+.project-row .icon-btn {
+  opacity: 0.5;
+  transition: opacity 0.12s ease;
+}
+
+.project-row:is(:hover, :focus-within) .icon-btn {
+  opacity: 1;
+}
+
+/* Give empty notes a visible input boundary instead of a floating prompt.
+   Keep the textarea mounted and directly editable in every theme. */
+.task-notes-body[data-empty='true'] textarea {
+  box-sizing: border-box;
+  width: calc(100% - 16px) !important;
+  min-height: 40px;
+  margin: 8px;
+  padding: 10px 12px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input) !important;
+}
+
+.task-notes-body[data-empty='true'] textarea:focus {
+  border-color: var(--border-focus) !important;
+}
+
+.task-notes-body .send-notes-btn:disabled {
+  visibility: hidden;
+}
+
+.task-notes-body textarea::placeholder,
+.diff-task-notes::placeholder {
+  color: var(--fg-muted);
 }
 
 /* CSS-only collapse animation. The grid-rows trick lets the row collapse from
@@ -979,6 +2494,17 @@ textarea::placeholder {
   overflow: hidden;
 }
 
+/* Hosts the tiling strip beside the sidebar. Must stay in this eager stylesheet:
+   without min-width: 0 the strip grows to its full content width and <main>
+   scrolls instead of the strip. */
+.task-workspace {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
 .tiling-layout-shell {
   position: relative;
   flex: 1;
@@ -986,11 +2512,26 @@ textarea::placeholder {
   height: 100%;
 }
 
+/* Shadowed columns need room to fade before reaching the scroll viewport.
+   Keep their resting shadow compact enough for the same gutter as the glow. */
+html:is(
+  [data-look='graphite'],
+  [data-look='midnight'],
+  [data-look='indigo'],
+  [data-look='ember'],
+  [data-look='glacier'],
+  [data-look='zenburnesque'],
+  [data-look='catppuccin-mocha']
+) {
+  --task-shadow-gutter: 10px;
+  --task-column-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+}
+
 .tiling-layout-strip {
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 2px 6px 2px 4px;
+  padding: var(--task-shadow-gutter, 2px) 6px var(--task-shadow-gutter, 2px) 4px;
   /* Native clickable-preview margins: scrollIntoView keeps 64px of each
      neighbor visible, and edge clamping snaps the first/last task flush.
      Keep in sync with TASK_CLICKABLE_PREVIEW_PX in src/store/focused-panel.ts. */
@@ -1084,32 +2625,60 @@ textarea::placeholder {
   border-right-color: color-mix(in srgb, var(--warning) 82%, white 18%);
 }
 
+/* Leading-icon buttons: centres the glyph against the label whatever the button's width. */
+.btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
 .btn-primary {
   position: relative;
   overflow: hidden;
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover-bg, var(--accent-hover)) !important;
-  box-shadow: var(--shadow-pop);
+/* Routine actions share a quiet boundary across presets and inline-styled dialogs. */
+.sidebar-create-btn,
+.prompt-send-btn:not(:disabled) {
+  background: transparent !important;
+  border: 1px solid var(--border-subtle) !important;
+  color: var(--fg-muted) !important;
+}
+
+/* Same neutral surface as the secondary buttons beside it; full-strength text
+   is what ranks the primary action above them without an accent fill. */
+.btn-primary {
+  background: var(--bg-input) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--fg) !important;
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-secondary:hover:not(:disabled),
+.sidebar-create-btn:hover:not(:disabled),
+.prompt-send-btn:hover:not(:disabled) {
+  background: var(--bg-hover) !important;
+  border-color: var(--border) !important;
+  color: var(--fg) !important;
 }
 
 .btn-primary:active:not(:disabled) {
   transform: scale(0.98);
 }
 
-.btn-danger:hover {
+.btn-danger:hover:not(:disabled) {
   filter: brightness(1.12);
   box-shadow: 0 0 18px color-mix(in srgb, var(--error) 35%, transparent);
 }
 
-.btn-danger:active {
+.btn-danger:active:not(:disabled) {
   transform: scale(0.98);
 }
 
-.btn-secondary:hover {
-  background: color-mix(in srgb, var(--accent) 8%, var(--bg-hover)) !important;
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important;
+.github-item-option:hover,
+.github-item-option:focus-visible {
+  background: var(--bg-hover) !important;
 }
 
 .review-plan-btn:hover {
@@ -1119,7 +2688,7 @@ textarea::placeholder {
 .dialog-overlay .btn-secondary:focus,
 .dialog-overlay .btn-primary:focus,
 .dialog-overlay .btn-danger:focus {
-  outline: 2.5px solid var(--accent);
+  outline: 2.5px solid var(--border-focus);
   outline-offset: 1.5px;
 }
 
@@ -1151,7 +2720,7 @@ textarea::placeholder {
 .project-select {
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 10px 12px;
   color: var(--fg);
   font-size: 14px;
@@ -1174,7 +2743,7 @@ textarea::placeholder {
 .project-select::picker(select) {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
   padding: 4px;
 }
@@ -1183,7 +2752,7 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   gap: 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
   font-size: 13px;
   color: var(--fg);
@@ -1223,7 +2792,7 @@ textarea::placeholder {
   flex-shrink: 0;
 }
 
-.agent-btn:hover {
+.agent-btn:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 7%, var(--bg-hover)) !important;
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important;
 }
@@ -1256,15 +2825,19 @@ textarea::placeholder {
   animation: taskAppear 0.24s ease;
 }
 
+.new-task-appearing {
+  animation: taskAppear 0.16s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* No max-height here: rows whose name wraps to two lines are taller than any
+   fixed cap, and a cap clips the second line for the length of the animation. */
 @keyframes taskItemAppear {
   from {
     opacity: 0;
-    max-height: 0;
     transform: translateX(-6px);
   }
   to {
     opacity: 1;
-    max-height: 40px;
     transform: translateX(0);
   }
 }
@@ -1310,10 +2883,10 @@ textarea::placeholder {
 }
 
 .task-column {
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--task-column-shadow, var(--shadow-soft));
   border-color: color-mix(in srgb, var(--border) 85%, transparent) !important;
   margin: 0 2px;
-  opacity: var(--inactive-column-opacity, 0.6);
+  opacity: var(--inactive-column-opacity, 0.9);
 }
 
 .task-column.active {
@@ -1324,6 +2897,193 @@ textarea::placeholder {
 
 .focusable-panel {
   position: relative;
+}
+
+/* Match terminal dimming: actual keyboard/mouse focus brightens the panel,
+   independently of the setting that dims entire inactive task columns. */
+:is(.task-canvas-panel, .task-notes-body, .task-changed-files-section, .diff-task-notes) {
+  opacity: 0.8;
+}
+
+:is(
+  .task-canvas-panel,
+  .task-notes-body,
+  .task-changed-files-section,
+  .diff-task-notes
+):focus-within,
+.task-canvas-panel[data-panel-focused='true'] {
+  opacity: 1;
+}
+
+/* The shell toolbar scrolls sideways once a project has many bookmarks, but a
+   scrollbar inside the compact bar would clip the buttons. Wheel and the toolbar's
+   own arrow-key navigation still reach the overflow. */
+.shell-toolbar-button:hover {
+  background: var(--bg-hover) !important;
+  color: var(--fg) !important;
+}
+
+.shell-toolbar-panel::-webkit-scrollbar {
+  display: none;
+}
+
+.agent-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 65%;
+}
+
+.agent-header-controls > * {
+  flex-shrink: 0;
+}
+
+.agent-header-controls > .agent-header-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.agent-view-error {
+  padding: 6px 10px;
+  color: var(--error);
+  background: var(--bg-input);
+  font-size: 11px;
+}
+
+/* Both destinations stay visible, with the current agent view selected. */
+.agent-view-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  /* Sits apart from the agent tabs and layout controls it is unrelated to. */
+  margin-left: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+.agent-view-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.agent-view-switch button[aria-pressed='true'] {
+  background: var(--bg-selected);
+  color: var(--fg);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.agent-view-switch button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Still clickable — clicking reports why the switch is blocked. */
+.agent-view-switch button[aria-disabled='true'] {
+  opacity: 0.55;
+}
+
+.agent-header-tabs > * {
+  flex-shrink: 0;
+}
+
+.prompt-history-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 24px;
+  height: 24px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.prompt-history-trigger > svg {
+  flex-shrink: 0;
+}
+
+.prompt-history-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-history-trigger:hover {
+  color: var(--fg);
+}
+
+.prompt-history-popover {
+  position: fixed;
+  z-index: 1500;
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 24px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-pop);
+  color: var(--fg);
+  font: 12px/1.5 var(--font-ui);
+}
+
+.prompt-history-popover ol {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.prompt-history-popover li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* No heading above the list, so the first entry needs no divider. */
+.prompt-history-popover li:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.prompt-history-popover li p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.prompt-history-popover li time {
+  flex-shrink: 0;
+}
+
+.prompt-history-popover p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prompt-history-meta {
+  color: var(--fg-muted);
+  font-size: 11px;
 }
 
 .focusable-panel:focus-within::after,
@@ -1367,11 +3127,11 @@ textarea::placeholder {
   animation: slideUp 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
-.new-task-dialog-form {
+.new-task-panel-form {
   user-select: none;
 }
 
-.new-task-dialog-form :is(input, textarea) {
+.new-task-panel-form :is(input, textarea) {
   user-select: text;
 }
 
@@ -1383,7 +3143,8 @@ textarea::placeholder {
   background: color-mix(in srgb, var(--accent) 8%, var(--bg-hover));
 }
 
-.changed-files-open-editor-btn {
+.changed-files-open-editor-btn,
+.changed-files-open-canvas-btn {
   position: absolute;
   right: 5px;
   top: 50%;
@@ -1396,14 +3157,61 @@ textarea::placeholder {
     background 0.12s ease;
 }
 
+/* The canvas button sits left of the editor button when both are revealed;
+   the editor button keeps its long-standing rightmost spot. */
+.file-row:has(.changed-files-open-editor-btn:not(:disabled)) .changed-files-open-canvas-btn {
+  right: 29px;
+}
+
 .file-row:hover .changed-files-open-editor-btn:not(:disabled),
-.changed-files-open-editor-btn:focus-visible {
+.changed-files-open-editor-btn:focus-visible,
+.file-row:hover .changed-files-open-canvas-btn,
+.changed-files-open-canvas-btn:focus-visible {
   opacity: 1;
   pointer-events: auto;
 }
 
 .changed-files-open-editor-btn:hover:not(:disabled),
-.changed-files-open-editor-btn:focus-visible {
+.changed-files-open-editor-btn:focus-visible,
+.changed-files-open-canvas-btn:hover,
+.changed-files-open-canvas-btn:focus-visible {
+  color: var(--fg) !important;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated)) !important;
+}
+
+/* The Understand action is positioned through its hint wrapper so the hint
+   anchors to the visible control. It sits left of the editor and canvas
+   buttons, and stays put while its tour generates or waits to be opened. */
+.changed-files-understand-anchor {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.file-row:has(.changed-files-open-editor-btn:not(:disabled)) .changed-files-understand-anchor,
+.file-row:has(.changed-files-open-canvas-btn) .changed-files-understand-anchor {
+  right: 29px;
+}
+
+.file-row:has(.changed-files-open-editor-btn:not(:disabled)):has(.changed-files-open-canvas-btn)
+  .changed-files-understand-anchor {
+  right: 53px;
+}
+
+.file-row:hover .changed-files-understand-anchor,
+.changed-files-understand-anchor:focus-within,
+.changed-files-understand-anchor:has([aria-busy='true']),
+.changed-files-understand-anchor:has([data-ready='true']) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.changed-files-understand-btn:hover,
+.changed-files-understand-btn:focus-visible {
   color: var(--fg) !important;
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated)) !important;
 }
@@ -1422,6 +3230,11 @@ textarea::placeholder {
   animation: statusPulse 1.9s ease-in-out infinite;
 }
 
+/* A one-time tip fades in over the page; it never pushes content aside. */
+.feature-hint {
+  animation: fadeIn 0.18s ease;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -1435,6 +3248,58 @@ textarea::placeholder {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Fixed lane so task names line up whatever glyph sits in front of them; hosts
+   override the height via the --glyph-lane box when a row needs a taller one. */
+.status-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--glyph-lane);
+  height: var(--glyph-lane);
+}
+
+/* Sidebar "working" glyph: a rotating ring reads as activity at a glance, and
+   under reduced motion the hollow ring still separates it from resting dots. */
+.status-glyph-spinner {
+  display: inline-block;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  animation: spinnerSpin 0.9s linear infinite;
+}
+
+/* CI progress: a wedge that fills from 12 o'clock as checks finish, inside a
+   slowly turning dashed ring. Only the ring turns so the wedge stays readable,
+   and the filled wedge keeps it apart from the agent's ring spinner. */
+.status-glyph-ci {
+  position: relative;
+  display: inline-block;
+  box-sizing: border-box;
+  border-radius: 999px;
+  /* The padding gap keeps the wedge from merging into the ring as it fills. */
+  padding: 2px;
+  background: conic-gradient(currentColor var(--ci-sweep), transparent 0) content-box;
+}
+
+.status-glyph-ci::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 1px dashed currentColor;
+  animation: spinnerSpin 2.4s linear infinite;
+}
+
+.status-glyph-question {
+  display: inline-block;
+  box-sizing: border-box;
+  border-radius: 999px;
+  font-weight: 700;
+  text-align: center;
 }
 
 .inline-spinner {
@@ -1483,6 +3348,11 @@ textarea::placeholder {
 .resize-handle:hover,
 .resize-handle.dragging {
   background: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.resize-handle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
 }
 
 .resize-handle-h {
@@ -1580,6 +3450,26 @@ body.dragging-task * {
   letter-spacing: 0.01em;
 }
 
+/* The task frame and resize dividers own the outside edges. Terminal groups
+   only draw the header seam and one shared divider between neighboring panes. */
+.agent-terminal-row {
+  box-sizing: border-box;
+  border-top: 1px solid var(--border);
+}
+
+.shell-toolbar-panel {
+  border-bottom: 1px solid var(--border);
+}
+
+.shell-terminal-container.focusable-panel {
+  box-sizing: border-box;
+}
+
+.agent-terminal-row:not(.agent-terminal-row-tabs) > .agent-terminal-pane + .agent-terminal-pane,
+.shell-terminals-row > .shell-terminal-container + .shell-terminal-container {
+  border-left: 1px solid var(--border);
+}
+
 .shell-terminal-close {
   position: absolute;
   top: 6px;
@@ -1638,7 +3528,7 @@ body.dragging-task * {
   text-align: left;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-input) 72%, transparent);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 12px;
   cursor: pointer;
   display: flex;
@@ -1689,7 +3579,7 @@ body.dragging-task * {
   text-align: left;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-input) 72%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 10px 12px;
   cursor: pointer;
   display: flex;
@@ -1769,6 +3659,15 @@ body.dragging-task * {
   pointer-events: none;
 }
 
+/* The Islands frame is blue, so its logo needs a contrasting neutral. */
+html[data-look='islands-dark'] .window-title-icon {
+  color: #f4f5f7;
+}
+
+html[data-look='islands-light'] .window-title-icon {
+  color: var(--fg);
+}
+
 .window-title-text {
   min-width: 0;
   overflow: hidden;
@@ -1819,83 +3718,139 @@ body.dragging-task * {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 4px;
   padding: 0 12px;
   pointer-events: none;
+  overflow: hidden;
   z-index: 1;
 }
 
 .window-titlebar > .focus-mode-task-indicators {
-  padding: 0 140px 0 44px;
+  padding: 0 140px 0 180px;
+}
+
+/* Keep clear of the macOS traffic lights. */
+.mac-titlebar-spacer > .focus-mode-task-indicators {
+  padding: 0 24px 0 230px;
 }
 
 .focus-mode-task-indicator {
-  display: inline-grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  min-width: 0;
+  max-width: 180px;
+  flex: 0 1 auto;
+  padding: 0 8px;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.8;
   pointer-events: auto;
-  /* Carve the dots out of the OS window-drag region. On Linux the titlebar's
-     [data-tauri-drag-region] is a sibling the dots overlay (not an ancestor),
+  /* Carve the pills out of the OS window-drag region. On Linux the titlebar's
+     [data-tauri-drag-region] is a sibling the pills overlay (not an ancestor),
      so main.ts's injected `[data-tauri-drag-region] button { no-drag }` rule
      can't reach them and the drag region swallows the click. */
   -webkit-app-region: no-drag;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    opacity 0.15s ease;
 }
 
-.focus-mode-task-indicator::before {
-  content: '';
-  width: 10px;
-  height: 10px;
-  border: 1px solid color-mix(in srgb, var(--fg-muted) 60%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--fg-muted) 28%, transparent);
-  transition:
-    transform 0.15s ease,
-    opacity 0.15s ease,
-    background 0.15s ease,
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+.focus-mode-task-indicator-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .focus-mode-task-indicator:hover {
   opacity: 1;
-}
-
-.focus-mode-task-indicator:hover::before {
-  border-color: color-mix(in srgb, var(--fg) 70%, transparent);
-  background: color-mix(in srgb, var(--fg) 38%, transparent);
+  color: var(--fg);
+  background: var(--bg-hover);
 }
 
 .focus-mode-task-indicator.active {
   opacity: 1;
-}
-
-.focus-mode-task-indicator.active::before {
-  transform: scale(1.15);
-  border-color: color-mix(in srgb, var(--accent) 82%, white 18%);
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .focus-mode-task-indicator:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 80%, white 20%);
+  outline: 2px solid color-mix(in srgb, var(--border-focus) 80%, white 20%);
   outline-offset: 2px;
+}
+
+/* Task switcher (Cmd+K). Neutral rows; the selected one uses the plain
+   selection background, never an accent fill. */
+.task-switcher-input {
+  padding: 9px 10px;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.task-switcher-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.task-switcher-option {
+  display: grid;
+  grid-template-columns: 14px minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  font-size: 13px;
+  color: var(--fg);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.task-switcher-option[aria-selected='true'] {
+  background: var(--bg-selected);
+}
+
+.task-switcher-name,
+.task-switcher-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-switcher-detail,
+.task-switcher-empty {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.task-switcher-empty {
+  margin: 4px 8px;
 }
 
 /* macOS native titlebar spacer (overlay style) */
 .mac-titlebar-spacer {
+  padding-left: 90px;
   height: 32px;
   min-height: 32px;
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -1915,7 +3870,7 @@ body.dragging-task * {
   padding: 12px 14px;
   transform: translateX(-50%);
   border: 1px solid var(--island-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--island-bg);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
   color: var(--fg);
@@ -1949,40 +3904,105 @@ body.dragging-task * {
   line-height: 1;
 }
 
-/* Monaco diff: hidden unchanged regions — make the collapse bar obvious and clickable */
-.monaco-editor .diff-hidden-lines .center {
-  cursor: pointer;
-  height: 28px;
-  line-height: 28px;
-  font-size: 13px;
-  font-family: var(--font-ui);
-  border-radius: 4px;
-  transition: filter 0.15s ease;
-}
-
-.monaco-editor .diff-hidden-lines .center:hover {
-  filter: brightness(1.3);
-}
-
-/* Let the label text also be single-clickable (Monaco defaults to dblclick) */
-.monaco-editor .diff-hidden-lines .center span {
+/* macOS press-and-hold quit hint. The bar filling up IS the feedback — it is
+   deliberately left out of the reduced-motion overrides below, since without it
+   there is nothing to show how much longer the key has to be held. The island
+   fades in on a delay so an accidental tap doesn't flash it; the bar underneath
+   still starts at mount, so it keeps telling the truth about elapsed time. */
+/* Shares the transient-message slot with the notification toast, one layer up:
+   a hint you see whenever a finger slips near Cmd+W belongs out of the way, not
+   centered over the terminals, and for its one second it outranks a toast. */
+.hold-to-quit {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 2100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 20px;
+  transform: translateX(-50%);
+  border: 1px solid var(--island-border);
+  border-radius: var(--radius-md);
+  background: var(--island-bg);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  color: var(--fg);
+  font-size: 14px;
+  text-align: center;
   pointer-events: none;
+  opacity: 0;
+  animation: hold-to-quit-appear 120ms ease 100ms forwards;
 }
 
-/* Hide the unfold icon — the whole bar is clickable now */
-.monaco-editor .diff-hidden-lines .center > div:first-child {
-  width: 0 !important;
+.hold-to-quit kbd {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-elevated);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.hold-to-quit-track {
   overflow: hidden;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
 }
 
-/* Hide the tiny drag handles — the center bar handles expansion */
-.monaco-editor .diff-hidden-lines .top,
-.monaco-editor .diff-hidden-lines .bottom {
-  display: none;
+/* scaleX rather than width: a width keyframe relayouts every frame on the same
+   main thread that writes terminal output, so the bar stutters under load. */
+.hold-to-quit-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(0);
+  transform-origin: left;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: hold-to-quit-fill var(--hold-to-quit-ms) linear forwards;
+}
+
+@keyframes hold-to-quit-appear {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes hold-to-quit-fill {
+  to {
+    transform: scaleX(1);
+  }
 }
 
 /* Plan markdown rendering */
 /* ── Plan markdown: base (compact panel preview) ── */
+
+/* Nothing in the prose may set the column's width: a long URL or identifier
+   breaks mid-word rather than pushing the whole document sideways. Wide code
+   blocks and tables get their own scrollbar instead (see below). */
+.plan-markdown {
+  overflow-wrap: break-word;
+}
+
+/* The renderer wraps every table in this box, so a table wider than the column
+   scrolls inside it and leaves the prose around it where it is. Scrolling makes
+   the box a formatting context, which traps the table's own margins inside it
+   where they can no longer collapse with the prose: the block spacing has to
+   move to the box. */
+.plan-markdown .md-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.plan-markdown .md-table-scroll > table {
+  margin: 0;
+}
+
+.plan-markdown-dialog .md-table-scroll {
+  margin: 0.8em 0;
+}
+
 .plan-markdown h1,
 .plan-markdown h2,
 .plan-markdown h3 {
@@ -2012,13 +4032,13 @@ body.dragging-task * {
 .plan-markdown code {
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   padding: 0.1em 0.3em;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   font-size: 0.9em;
 }
 .plan-markdown pre {
   background: color-mix(in srgb, var(--fg) 5%, transparent);
   padding: 0.5em;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   overflow-x: auto;
   margin: 0.3em 0;
 }
@@ -2029,7 +4049,7 @@ body.dragging-task * {
 .plan-markdown pre.shiki-block {
   background: var(--bg-input);
   padding: 0.6em 0.8em;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow-x: auto;
   margin: 0.4em 0;
   line-height: 1.5;
@@ -2099,6 +4119,14 @@ body.dragging-task * {
   margin: 0.6em 0;
 }
 
+/* Inline plan-review controls occupy real layout space after the selected block. */
+.plan-review-flow-slot {
+  display: flow-root;
+  width: 100%;
+  min-width: 0;
+  font-style: normal;
+}
+
 /* Lists — better spacing */
 .plan-markdown-dialog ul,
 .plan-markdown-dialog ol {
@@ -2120,7 +4148,7 @@ body.dragging-task * {
   font-size: 0.85em;
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   padding: 0.15em 0.4em;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   border: 1px solid var(--border-subtle);
 }
 
@@ -2137,7 +4165,7 @@ body.dragging-task * {
 }
 .plan-markdown-dialog pre.shiki-block {
   padding: 0.8em 1em;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   margin: 0.8em 0;
   border: 1px solid var(--border-subtle);
   background: var(--bg-input);
@@ -2210,7 +4238,7 @@ body.dragging-task * {
 /* Mermaid diagram blocks */
 .mermaid-block {
   background: color-mix(in srgb, var(--fg) 4%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 1em;
   margin: 0.8em 0;
   overflow-x: auto;
@@ -2220,9 +4248,82 @@ body.dragging-task * {
   color: var(--fg-muted);
 }
 .mermaid-block.mermaid-rendered {
+  position: relative;
   white-space: normal;
   text-align: center;
   background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+
+/* The enlarge button waits in the diagram's corner until the pointer is on it. */
+.mermaid-enlarge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--fg-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.mermaid-block:hover .mermaid-enlarge,
+.mermaid-enlarge:focus-visible {
+  opacity: 1;
+}
+
+.mermaid-enlarge:hover {
+  color: var(--fg);
+  border-color: var(--border-focus);
+}
+
+/* The diagram at the size of the window, over everything else. */
+.mermaid-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+
+.mermaid-lightbox-body {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mermaid-lightbox-body svg {
+  cursor: default;
+}
+
+.mermaid-lightbox-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  cursor: pointer;
 }
 
 /* AskCodeCard loading animation */
@@ -2236,13 +4337,1342 @@ body.dragging-task * {
   }
 }
 
+.canvas-tab-strip {
+  scrollbar-width: none;
+}
+.canvas-kind-menu button:hover {
+  background: var(--bg-hover);
+}
+
+.task-canvas-editor {
+  color: var(--fg);
+}
+
+.task-canvas-reasoning {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.task-canvas-reasoning-content {
+  flex: 1;
+  min-height: 0;
+}
+
+.workspace-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  z-index: 2;
+  -webkit-app-region: no-drag;
+}
+
+/* Workspace actions lead; activity is a separate, quieter summary. */
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-width: 0;
+  gap: 12px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.sidebar-footer-heading {
+  margin: 0 6px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+.sidebar-footer-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 6px 0;
+  border-top: 1px solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-footer-stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-footer-stat strong {
+  color: var(--fg);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.sidebar-footer-connection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.sidebar-footer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-footer-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-footer-action:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar-footer-action svg {
+  flex-shrink: 0;
+  color: var(--fg-subtle);
+}
+
+.sidebar-footer-connected-dot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.sidebar-footer-shortcuts {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.sidebar-footer-action-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-footer-shortcuts kbd {
+  color: var(--fg-subtle);
+  font: inherit;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* Understanding tour */
+
+/* The tour is one card on a dark room: the dialog panel is transparent and
+   everything around the card is a faint hairline or a muted icon, so nothing
+   competes with the words being read. */
+.understanding-dialog {
+  /* The outline starts level with the card: below the top bar and the line
+     that names an answer's question. */
+  --tour-top-height: 38px;
+  --tour-crumb-height: 26px;
+
+  display: flex;
+  min-height: 0;
+  align-items: flex-start;
+  gap: 24px;
+  padding: 0 2px;
+}
+
+.understanding-main {
+  display: flex;
+  width: min(620px, calc(100vw - 48px));
+  min-height: 0;
+  flex-direction: column;
+}
+
+/* The outline: a quiet column of the tour's claims beside the card. It has a
+   faint surface of its own so it reads on the dimmed backdrop in either theme,
+   but no border or shadow, so the card stays the one thing to look at. */
+.understanding-aside {
+  display: none;
+  width: 246px;
+  max-height: 62vh;
+  box-sizing: border-box;
+  margin-top: calc(var(--tour-top-height) + var(--tour-crumb-height));
+  padding: 10px 8px;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-elevated) 55%, transparent);
+}
+
+/* A long outline scrolls on its own, so the notes under it stay in view. */
+.understanding-aside-outline {
+  min-height: 0;
+  /* Mirrors the twisty column on the left, so rows and notes sit centred. */
+  padding-right: 14px;
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+.tour-notes {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  /* Past the outline's twisty column, so the divider and field line up with
+     its rows and the note text with its titles; mirrored on the right to
+     keep them centred. */
+  margin: 0 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.understanding-outline-card .tour-notes {
+  margin-top: 14px;
+}
+
+.tour-notes-field {
+  position: relative;
+}
+
+/* No border at rest: a faint well on the column's surface, sharpened on focus. */
+.tour-notes-input {
+  display: block;
+  width: 100%;
+  min-height: 84px;
+  max-height: 40vh;
+  box-sizing: border-box;
+  /* 6px of text inset, less the border: the text starts where the titles do. */
+  padding: 6px 5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.5;
+  /* Grows with the notes instead of a resize grip, which would sit under the send button. */
+  field-sizing: content;
+  resize: none;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+/* Room in the bottom-right corner, so text never runs under the send button. */
+.tour-notes-input--sendable {
+  padding-bottom: 28px;
+}
+
+.tour-notes-input::placeholder {
+  color: var(--fg-subtle);
+  opacity: 0.7;
+}
+
+.tour-notes-input:focus {
+  border-color: var(--border-focus);
+  background: color-mix(in srgb, var(--fg) 2%, transparent);
+  outline: none;
+}
+
+.tour-icon.tour-notes-send {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 24px;
+  height: 24px;
+}
+
+/* Legible once there is something to send, like the tour's way forward. */
+.tour-icon.tour-notes-send:not(:disabled) {
+  color: var(--fg);
+  opacity: 0.8;
+}
+
+@media (min-width: 960px) {
+  .understanding-aside {
+    display: flex;
+  }
+
+  /* With the outline beside the card, there is nothing for the toggle to show. */
+  .tour-icon.understanding-outline-toggle,
+  .understanding-outline-card {
+    display: none;
+  }
+}
+
+@media not all and (min-width: 960px) {
+  .understanding-stage[data-overview] > :not(.understanding-outline-card) {
+    display: none;
+  }
+}
+
+.understanding-outline-card {
+  padding: 18px 16px;
+}
+
+.tour-outline {
+  color: var(--fg-muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.tour-outline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Each level hangs off a hairline under its parent's twisty. */
+.tour-outline-list .tour-outline-list {
+  margin: 4px 0 2px 6px;
+  padding-left: 7px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.tour-outline-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+.tour-outline-twisty {
+  display: grid;
+  flex: none;
+  width: 14px;
+  height: 23px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  place-items: center;
+}
+
+button.tour-outline-twisty {
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+button.tour-outline-twisty:hover {
+  opacity: 1;
+}
+
+.tour-outline-twisty svg {
+  transition: transform 120ms ease;
+}
+
+.tour-outline-twisty:is([aria-expanded='true'], [data-open]) svg {
+  transform: rotate(90deg);
+}
+
+span.tour-outline-twisty[data-open] {
+  opacity: 0.45;
+}
+
+/* Two lines at most: enough to read the claim, never a wall of text. The card
+   on screen is marked by full-strength text and a faint fill, never weight,
+   which would rewrap the line. */
+.tour-outline-link {
+  display: -webkit-box;
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  overflow: hidden;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.tour-outline-link:hover {
+  color: var(--fg);
+}
+
+.tour-outline-link[aria-current='location'] {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+
+.tour-outline-link:focus-visible,
+.tour-outline-twisty:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.tour-outline-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 20px;
+  font-style: italic;
+}
+
+/* Names the question an answer card answers; empty on the tour's own cards,
+   but always there, so every card starts at the same height. */
+.understanding-crumb {
+  display: flex;
+  flex: none;
+  height: var(--tour-crumb-height);
+  box-sizing: border-box;
+  align-items: flex-start;
+  margin: 0;
+  overflow: hidden;
+}
+
+.understanding-crumb > button {
+  max-width: 100%;
+  padding: 0 4px;
+  overflow: hidden;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.understanding-crumb > button:hover {
+  color: var(--fg);
+}
+
+/* Which answer of its card's answers is on screen; empty on a tour card, so
+   the line keeps its height either way. */
+.understanding-crumb-count {
+  flex: none;
+  margin-left: auto;
+  padding: 0 4px;
+  color: var(--fg-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+/* The subject lines up with the card's left edge; the icon's box overhangs on
+   the right so its glyph sits where the card ends. */
+.understanding-top {
+  display: flex;
+  height: var(--tour-top-height);
+  box-sizing: border-box;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 10px 2px;
+}
+
+.understanding-progress {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* Mono marks the machine-addressable parts of the tour — the subject, the
+   counter, the file refs — so prose and identifiers never read alike. */
+.understanding-subject,
+/* The path may be long, so it yields space to the bar rather than pushing it. */
+.understanding-subject {
+  max-width: 50%;
+}
+
+.understanding-segments {
+  display: flex;
+  flex: 1;
+  min-width: 60px;
+  gap: 4px;
+  opacity: 0.35;
+  transition: opacity 120ms ease;
+}
+
+.understanding-segments:hover,
+.understanding-segments:focus-within {
+  opacity: 0.8;
+}
+
+/* The bar is 2px, but the button around it is tall enough to hit. */
+.understanding-segments > button {
+  position: relative;
+  flex: 1;
+  height: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.understanding-segments > button::before {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--border);
+  content: '';
+}
+
+.understanding-segments > button:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+/* Cards already read stay dimmer than the one in hand, so the strip says where
+   you are and not only how far you got. */
+.understanding-segments > button[data-state='seen']::before {
+  background: color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
+.understanding-segments > button[data-state='current']::before {
+  background: var(--accent);
+}
+
+/* A dot above the bar marks a card with answered follow-ups under it. */
+.understanding-segments > button[data-answered]::after {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--accent);
+  content: '';
+}
+
+.understanding-count {
+  flex-shrink: 0;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One stage height for every state, so the footer controls never jump when the
+   card changes. */
+.understanding-stage {
+  display: flex;
+  min-height: calc(356px + var(--tour-crumb-height));
+  max-height: 62vh;
+  flex-direction: column;
+  /* The card scrolls, not the stage, so its edges stay whole on a long card. */
+  overflow: hidden;
+}
+
+/* While the stage eases to a new height the card is briefly shorter than its
+   text; a scrollbar flashing in for that moment would read as a glitch. Only
+   its paint is hidden: hiding the overflow would rewrap the text as it ends. */
+.understanding-stage[data-resizing] :is(.understanding-stack, .understanding-card) {
+  scrollbar-color: transparent transparent;
+}
+
+/* A step's cards: the card answered on top, its answers stacked below. A card
+   alone fills the stage and scrolls itself; a stack scrolls as one. */
+.understanding-stack {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.understanding-stack-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.understanding-stack-item:only-child {
+  flex: 1;
+  min-height: 0;
+}
+
+.understanding-stack-item:not(:only-child) > .understanding-card {
+  flex: none;
+  overflow: visible;
+}
+
+/* The cards around the one on screen are context: quiet until pointed at. */
+.understanding-stack-item:not([aria-current]) {
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 120ms ease-out;
+}
+
+.understanding-stack-item:not([aria-current]):hover {
+  opacity: 0.8;
+}
+
+.understanding-stack-item:not([aria-current]) > .understanding-card {
+  box-shadow: none;
+}
+
+/* A dead end has no next card to stay level with, so it fits its message. */
+.understanding-stage--message {
+  min-height: 0;
+}
+
+/* Change tours list the answers under a stop; each answer card is whole. */
+.understanding-thread > .understanding-card {
+  flex: none;
+  overflow: visible;
+}
+
+.understanding-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.understanding-thread-question {
+  margin: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.55;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.understanding-thread > .understanding-card--message {
+  min-height: 72px;
+}
+
+/* The only surface in the dialog; the shadow lifts it off the dark backdrop. */
+.understanding-card {
+  flex: 1;
+  min-height: 0;
+  padding: 26px 28px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--fg) 4%, var(--bg-elevated));
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+
+/* States with no card to read: keep the few words they need in the middle. */
+.understanding-card--message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+}
+
+.understanding-card-label {
+  margin: 0 0 10px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* The headline states the claim; the content underneath supports it. */
+.understanding-card-title {
+  margin: 0 0 12px;
+  font-family: var(--font-ui);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+}
+
+.understanding-diagram {
+  margin: 0 0 16px;
+  padding: 16px 18px;
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre;
+}
+
+.understanding-body {
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.understanding-body p,
+.understanding-body ul,
+.understanding-body ol {
+  margin: 0 0 0.8em;
+}
+
+.understanding-body > :first-child {
+  margin-top: 0;
+}
+
+.understanding-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* A slide's points: few, short and spaced so each reads at a glance. */
+.understanding-points {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 0;
+  padding: 0 0 0 1.15em;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.understanding-body + .understanding-points {
+  margin-top: 14px;
+}
+
+.understanding-points > li::marker {
+  color: var(--fg-muted);
+}
+
+.understanding-points code {
+  font-size: 0.88em;
+}
+
+/* Laid out on every point and shown on hover, focus or once the point has an
+   answer, so the text never moves when it appears. Transparent rather than
+   hidden, so the keyboard can still reach it. */
+.understanding-point-dig {
+  margin-left: 4px;
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  line-height: 1.2;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.understanding-points > li:hover > .understanding-point-dig,
+.understanding-point-dig:focus-visible,
+.understanding-points > li[data-open] > .understanding-point-dig {
+  opacity: 1;
+}
+
+.understanding-point-dig:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.understanding-point-dig:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+
+.understanding-points > li:hover > .understanding-point-dig:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The answers under a card, at its foot: depth is found where reading ends. */
+.tour-deeper {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 22px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.tour-deeper-link {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tour-deeper-link:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.tour-deeper-link:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.tour-deeper-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tour-deeper-arrow {
+  color: var(--fg-muted);
+}
+
+.tour-deeper-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 4px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+/* Questions still to ask follow the answers already given, without a second rule. */
+.tour-deeper + .tour-questions {
+  margin-top: 4px;
+  padding-top: 0;
+  border-top: none;
+}
+
+.understanding-notes-body {
+  margin-top: 8px;
+  color: var(--fg-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.understanding-notes-body > :first-child {
+  margin-top: 0;
+}
+
+.understanding-notes-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* Card forms. A takeaway is its claim; comparison and flow cards give the
+   evidence the room and shrink the prose to a caption under it. */
+.understanding-card[data-form='takeaway'] .understanding-card-title {
+  max-width: 24ch;
+  margin: 8px 0 20px;
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 1.3;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.understanding-card[data-form='takeaway'] .understanding-body {
+  color: var(--fg-muted);
+  font-size: 16px;
+}
+
+.understanding-card[data-form='flow'] :is(.understanding-diagram, .mermaid-block) {
+  margin: 8px 0 20px;
+  padding: 20px 22px;
+  border: 1px solid var(--border-subtle);
+  color: var(--fg);
+  font-size: 13.5px;
+}
+
+.understanding-card[data-form='flow'] .mermaid-rendered {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+}
+
+/* Narrow cards scroll the diagram instead of shrinking its labels away. */
+.understanding-card[data-form='flow'] .mermaid-rendered > svg {
+  min-width: 360px;
+}
+
+.understanding-card[data-form='flow'] .understanding-body,
+.understanding-card[data-form='comparison'] .understanding-body {
+  color: var(--fg-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* Side by side where there is room; stacked in the narrow change-tour column. */
+.understanding-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.understanding-compare-side {
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.understanding-compare-side > .understanding-card-label {
+  margin-bottom: 6px;
+}
+
+.understanding-compare-text {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+/* The overview borrows the card surface, so the stage keeps its size. */
+.understanding-overview ol {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 0 0 1.6em;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.understanding-overview button {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.understanding-overview button:hover,
+.understanding-overview button[aria-current='step'] {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.understanding-overview .understanding-card-label {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.understanding-overview-title {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* Evidence on demand: a quiet disclosure, not a second body. */
+.understanding-source {
+  margin-top: 14px;
+}
+
+.understanding-source > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--fg-muted);
+  font-family: var(--font-ui);
+  font-size: 11px;
+}
+
+.understanding-source > summary:hover {
+  color: var(--fg);
+}
+
+.understanding-source > blockquote {
+  margin: 8px 0 0;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.understanding-omitted {
+  margin: 22px 0 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* The card's tone appears once, as the rule beside the consequence. */
+.understanding-why {
+  margin-top: 22px;
+  padding-left: 14px;
+  border-left: 2px solid var(--tour-tone, var(--border));
+}
+
+.understanding-why-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.understanding-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 22px;
+}
+
+.understanding-ref {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.understanding-ref:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  color: var(--fg);
+}
+
+.understanding-ref svg {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+/* Optional questions stay with their evidence, above any answers they open. */
+.tour-questions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 22px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.tour-question {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--link);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.tour-question:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.tour-question:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.tour-question:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.understanding-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 6px;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.understanding-substatus {
+  margin: 0;
+  opacity: 0.6;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* Deliberately static: the spinner on the status line already carries the
+   motion, so nothing here needs a reduced-motion override. */
+.understanding-skeleton {
+  display: flex;
+  width: 100%;
+  max-width: 320px;
+  flex-direction: column;
+  gap: 13px;
+  margin-top: 26px;
+}
+
+.understanding-skeleton > span {
+  height: 10px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+
+.tour-rework {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 10px;
+}
+
+/* Stale is a hint, not a failure: muted, with the one action it calls for. */
+.understanding-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px 10px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.understanding-notice-action {
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.understanding-notice-action:hover {
+  border-color: var(--border-focus);
+}
+
+.understanding-alert-row {
+  padding: 0 4px 10px;
+}
+
+.understanding-alert {
+  margin: 0;
+  color: var(--error);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.understanding-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px 0;
+}
+
+.understanding-footer-fill {
+  flex: 1;
+}
+
+/* Asking is subordinate to reading: no box, and a rule only while typing. */
+.understanding-ask {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A real field, so asking reads as an offer rather than as empty space. */
+.understanding-ask-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.understanding-ask-input::placeholder {
+  color: var(--fg-subtle);
+  opacity: 0.7;
+}
+
+.understanding-ask-input:focus {
+  border-color: var(--border-focus);
+  outline: none;
+}
+
+.understanding-ask-input:disabled {
+  opacity: 0.45;
+}
+
+/* Holds the spinner in the slot the Go deeper icon just left. */
+.understanding-asking {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
+}
+
+/* Tour chrome: an icon the size of a fingertip, muted until it is wanted. */
+.tour-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+.tour-icon:hover:not(:disabled),
+.tour-icon:focus-visible {
+  color: var(--fg);
+  opacity: 1;
+}
+
+.tour-icon:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 0;
+}
+
+.tour-icon:disabled {
+  opacity: 0.18;
+  cursor: default;
+}
+
+/* A toggle that is on shows its state, the one place chrome takes the accent. */
+.tour-icon[aria-pressed='true'] {
+  color: var(--accent);
+  opacity: 1;
+}
+
+/* The way forward is the one control legible at rest — still not a button. */
+.tour-icon--primary {
+  color: var(--fg);
+  opacity: 0.8;
+}
+
+/* Whether the tour is kept, in quiet words. A fixed width keeps the row still
+   as it moves between Saving…, Not saved and Saved. */
+.tour-save-state {
+  flex: none;
+  width: 150px;
+  padding: 0 4px;
+  overflow: hidden;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 28px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.tour-save-state:not(:disabled) {
+  cursor: pointer;
+}
+
+button.tour-save-state:not(:disabled):hover {
+  color: var(--fg);
+}
+
+/* Hover popover of a tour button: which file, what the click does. Glance-only. */
+.tour-hint-anchor {
+  display: inline-flex;
+}
+
+.tour-hint {
+  position: fixed;
+  z-index: 2000;
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+}
+
+.tour-hint-heading {
+  display: block;
+}
+
+.tour-hint-subject {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.tour-hint-body {
+  margin: 8px 0 0;
+}
+
+.tour-hint-action {
+  margin: 6px 0 0;
+  color: var(--fg-muted);
+}
+
 /* Keep reduced-motion overrides last so class-based rules win by source order. */
 @media (prefers-reduced-motion: reduce) {
   .projects-collapser {
     transition: none;
   }
 
+  .feature-hint {
+    animation: none;
+  }
+
   .task-appearing,
+  .new-task-appearing,
   .task-item-appearing,
   .task-removing,
   .task-item-removing,
@@ -2250,10 +5680,10 @@ body.dragging-task * {
     animation: none;
   }
 
-  /* Preserve a static busy-state distinction after removing the pulse. */
-  .status-dot-ring {
-    outline: 1px solid var(--fg-muted);
-    outline-offset: 2px;
+  /* The hollow ring alone still says "working"; only the rotation goes. */
+  .status-glyph-spinner,
+  .status-glyph-ci::before {
+    animation: none;
   }
 
   /* These animations are declared inline and require an important override. */

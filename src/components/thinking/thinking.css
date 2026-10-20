@@ -1,0 +1,345 @@
+/* A tour the reader writes: every card the same small size, so each stays one
+   idea and moving between them never resizes the stage. */
+.thinking-step {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.thinking-card {
+  display: flex;
+  height: 300px;
+  flex: none;
+  flex-direction: column;
+}
+
+.thinking-card-read,
+.thinking-card-read > .understanding-card {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.thinking-card-read > .understanding-card {
+  overflow: hidden;
+  cursor: text;
+}
+
+/* Past what a card holds the text fades out instead of being cut off hard. */
+.thinking-card[data-over] :is(.thinking-card-read > .understanding-card, .thinking-card-body) {
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+
+.thinking-card-empty {
+  margin: auto;
+  font-size: 12px;
+  opacity: 0.55;
+}
+
+.thinking-card-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.thinking-card-title,
+.thinking-card-body {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-ui);
+}
+
+.thinking-card-title {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.thinking-card-body {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* Faint and unbolded, so a hint never reads as something already written. */
+.thinking-card-title::placeholder,
+.thinking-card-body::placeholder {
+  color: color-mix(in srgb, var(--fg-subtle) 60%, transparent);
+  font-weight: 400;
+}
+
+.thinking-card-hint,
+.thinking-branch {
+  display: flex;
+  min-height: 22px;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 4px 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.thinking-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* The agent's card is a proposal until taken: framed, never filled. */
+.thinking-proposal {
+  display: flex;
+  height: 300px;
+  box-sizing: border-box;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  outline: none;
+}
+
+.thinking-proposal:focus-visible {
+  border-color: var(--fg-muted);
+}
+
+.thinking-proposal > .understanding-card {
+  overflow-y: auto;
+  box-shadow: none;
+}
+
+.thinking-proposal-rest {
+  margin: 0;
+  padding: 0 8px;
+  list-style: none;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.thinking-proposal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.thinking-proposal-actions > button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Taking the card is the way forward: full-strength text, not colour. */
+.thinking-proposal-actions > .thinking-proposal-use,
+.thinking-proposal-actions > button:hover {
+  color: var(--fg);
+}
+
+.thinking-proposal-actions kbd {
+  margin-left: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+/* The key hints stand where the ask bar stands in a generated tour. */
+.thinking-hints {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.thinking-hints > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thinking-write {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.thinking-write:hover:not(:disabled),
+.thinking-write:focus-visible {
+  color: var(--fg);
+}
+
+.thinking-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.thinking-model:hover,
+.thinking-model:focus-visible {
+  color: var(--fg);
+}
+
+.thinking-write:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Shown only in the map view, where it fills what the top bar and footer leave. */
+.thinking-map {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+/* A flex item shrinks to its content; the map should fill the card's frame. */
+.thinking-map > .mindmap-editor {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The list of thinking tours: plain rows, starting one is a routine action. */
+.thinking-space {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.thinking-space-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.thinking-space-lede,
+.thinking-space-empty,
+.thinking-space-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.thinking-space-error {
+  color: var(--error);
+}
+
+.thinking-space-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.thinking-space-new kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-muted);
+}
+
+.thinking-space-list {
+  display: flex;
+  max-height: 320px;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.thinking-space-list button {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thinking-space-list button:hover,
+.thinking-space-list button:focus-visible {
+  background: var(--bg-hover);
+}
+
+.thinking-space-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thinking-space-meta {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+/* The map is the whole tree at once, so it takes the window less a margin; the
+   outline beside it would only repeat it. Switching views may resize the
+   dialog here: the reader asked for the other view. */
+.understanding-dialog[data-map] .understanding-main {
+  width: calc(100vw - 48px);
+  align-self: stretch;
+}
+
+.understanding-dialog[data-map] .understanding-aside {
+  display: none;
+}
+
+/* The panel has the window's height; the stage, then the map, take what the
+   top bar and footer leave. */
+.understanding-dialog[data-map] {
+  height: 100%;
+}
+
+.understanding-dialog[data-map] .understanding-stage {
+  max-height: none;
+  flex: 1;
+}

@@ -1,5 +1,6 @@
 import { store, setStore } from './core';
 import { invoke } from '../lib/ipc';
+import { warn } from '../lib/log';
 import { IPC } from '../../electron/ipc/channels';
 import type { MCPStatus } from './types';
 
@@ -24,7 +25,8 @@ export async function refreshMCPStatus(): Promise<void> {
   try {
     const result = await invoke<MCPStatus>(IPC.GetMCPStatus);
     setStore('mcpStatus', result);
-  } catch {
+  } catch (err) {
+    warn('mcp', 'Could not read MCP status', { error: String(err) });
     setStore('mcpStatus', MCP_STATUS_OFFLINE);
   }
 }

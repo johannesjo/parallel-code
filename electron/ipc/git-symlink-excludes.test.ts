@@ -196,4 +196,139 @@ describe('ensureSymlinkExcludes', () => {
     expect(appended).toContain('/.env');
     expect(appended).toContain('/.cursor');
   });
+
+  it('writes /foo even when /foobar is already present', () => {
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('/foobar\n');
+
+    ensureSymlinkExcludes('/worktree', ['foo']);
+
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/foo\n');
+  });
+
+  it('appends entries when an existing line only matches after trimming leading whitespace', () => {
+    // Gitignore semantics strip trailing whitespace only — a hand-written
+    // line with a leading space is a different pattern, not a duplicate.
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce(' /foo\n');
+
+    ensureSymlinkExcludes('/worktree', ['foo', 'bar']);
+
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/foo');
+    expect(appended).toContain('/bar');
+  });
+
+  it('escapes gitignore metacharacters so names match literally', () => {
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('');
+
+    ensureSymlinkExcludes('/worktree', ['star*file', 'que?stion', 'br[ack]et', '!bang', '#hash']);
+
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/star\\*file\n');
+    expect(appended).toContain('/que\\?stion\n');
+    expect(appended).toContain('/br\\[ack\\]et\n');
+    expect(appended).toContain('/\\!bang\n');
+    expect(appended).toContain('/\\#hash\n');
+  });
+
+  it('escapes trailing spaces so the pattern matches the exact name', () => {
+    // Gitignore strips unescaped trailing spaces — `foo ` must be written as
+    // `foo\ ` or the pattern would match `foo` instead.
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('');
+
+    ensureSymlinkExcludes('/worktree', ['foo ']);
+
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/foo\\ \n');
+  });
+
+  it('treats an already-present escaped entry as a duplicate', () => {
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('/star\\*file\n');
+
+    ensureSymlinkExcludes('/worktree', ['star*file']);
+
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
+
+  it('rejects names containing newlines and warns instead of writing', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('');
+
+    ensureSymlinkExcludes('/worktree', ['good', 'bad\nname']);
+
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/good');
+    expect(appended).not.toContain('bad');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Refusing to exclude invalid symlink name'),
+    );
+    warn.mockRestore();
+  });
+
+  it('does nothing at all when every name is invalid', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    ensureSymlinkExcludes('/worktree', ['bad\r\nname']);
+
+    expect(mockExecFileSync).not.toHaveBeenCalled();
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('treats a hand-written trailing-space line as covering the same pattern', () => {
+    // Git strips unescaped trailing ASCII spaces, so `/foo ` already ignores
+    // `foo` — only the genuinely missing `/bar` may be appended. A marker
+    // match on `/foo` must not suppress the rest of the block.
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('/foo \n');
+
+    ensureSymlinkExcludes('/worktree', ['foo', 'bar']);
+
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).not.toContain('/foo');
+    expect(appended).toContain('/bar\n');
+  });
+
+  it('treats a tab-suffixed line as a distinct pattern and still appends', () => {
+    // Git strips trailing spaces only — `/foo\t` ignores a file named `foo\t`,
+    // not `foo`, so the real entry must still be written.
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('/foo\t\n');
+
+    ensureSymlinkExcludes('/worktree', ['foo']);
+
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/foo\n');
+  });
+
+  it('treats a CRLF line as covering the same pattern', () => {
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('/foo\r\n');
+
+    ensureSymlinkExcludes('/worktree', ['foo']);
+
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
+
+  it('treats an escaped trailing-space line as a distinct pattern and still appends', () => {
+    // `/foo\ ` ignores the file named `foo `, not `foo`.
+    mockExecFileSync.mockReturnValueOnce('.git\n');
+    mockReadFileSync.mockReturnValueOnce('/foo\\ \n');
+
+    ensureSymlinkExcludes('/worktree', ['foo']);
+
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const [, appended] = mockAppendFileSync.mock.calls[0] as [string, string];
+    expect(appended).toContain('/foo\n');
+  });
 });

@@ -5,6 +5,7 @@ release/
 node_modules/
 .worktrees/
 .claude/
+.tmp/
 .remember/
 .parallel-code/
 .enzyme/
@@ -16,3 +17,7 @@ package-lock.json
 *.AppImage
 *.deb
 *.dmg
+
+# Android build outputs
+android/.gradle/
+android/**/build/

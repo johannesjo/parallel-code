@@ -1,0 +1,155 @@
+.mindmap-editor {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--fg);
+  background: var(--task-panel-bg);
+  font: 13px/1.5 var(--font-ui);
+}
+.mindmap-editor button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  padding: 5px 9px;
+  font: inherit;
+  cursor: pointer;
+}
+.mindmap-editor button:hover {
+  background: var(--bg-hover);
+}
+.mindmap-editor button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.mindmap-editor :is(button, input, textarea):focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+/* Matches the reasoning graph's toolbar: small, flat controls that only pick up a
+   background on hover, so the canvas stays the loudest thing in the pane. */
+.mindmap-toolbar {
+  container: mindmap-toolbar / inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.mindmap-optional {
+  display: contents;
+}
+/* As in the reasoning toolbar, a cramped pane drops the agent-facing actions rather
+   than wrapping onto a second row. They return when the pane widens. */
+@container mindmap-toolbar (max-width: 460px) {
+  .mindmap-optional {
+    display: none;
+  }
+}
+.mindmap-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 4px 6px;
+  white-space: nowrap;
+  border-color: transparent;
+  background: transparent;
+}
+/* Editing actions stay left; the map-wide ones sit together on the right. */
+.mindmap-toolbar .mindmap-export {
+  margin-left: auto;
+}
+.mindmap-stage {
+  container: mindmap-stage / inline-size;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+}
+.mindmap-editor .investigation-node-shell[data-kind='idea'] .investigation-node-symbol,
+.mindmap-editor .investigation-node-shell[data-kind='idea'] .investigation-node-kind {
+  display: none;
+}
+.mindmap-editor .investigation-node-shell:not([data-kind='idea']) .investigation-node-symbol {
+  display: grid;
+}
+.mindmap-editor .investigation-node-copy strong {
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 500;
+}
+.mindmap-notes {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 4;
+  width: min(300px, 60%);
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-soft);
+}
+.mindmap-notes > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.mindmap-notes strong {
+  overflow-wrap: anywhere;
+}
+.mindmap-notes textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: 180px;
+  max-height: 40vh;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  background: var(--task-panel-bg);
+  color: var(--fg);
+  font: inherit;
+}
+/* Narrow panes cannot spare the overlay width: notes stack below the graph instead. */
+@container mindmap-stage (max-width: 480px) {
+  .mindmap-stage {
+    flex-direction: column;
+  }
+  .mindmap-notes {
+    position: static;
+    width: auto;
+    border-width: 1px 0 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .mindmap-notes textarea {
+    height: 120px;
+  }
+}
+.mindmap-hint {
+  padding: 5px 12px;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.mindmap-error {
+  padding: 8px 12px;
+  margin: 0;
+  color: var(--warning);
+}
+
+.mindmap-unreadable {
+  padding: 16px;
+  max-width: 48ch;
+}

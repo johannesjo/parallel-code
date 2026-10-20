@@ -1,19 +1,33 @@
 import { produce } from 'solid-js/store';
+import { parseGitHubUrl } from '../lib/github-url';
 import { getLocalDateKey } from '../lib/date';
 import { store, setStore } from './core';
 
-export function recordTaskMerged(): void {
+function mergedPrKey(prUrl: string | undefined): string | undefined {
+  const parsed = prUrl ? parseGitHubUrl(prUrl) : null;
+  if (!prUrl || !parsed || parsed.type !== 'pull' || !parsed.number) return undefined;
+  const host = new URL(prUrl).hostname.toLowerCase().replace(/^www\./, '');
+  return `${host}/${parsed.org}/${parsed.repo}/${parsed.number}`.toLowerCase();
+}
+
+/** Local and remote merges of the same PR share the daily deduplication key. */
+export function recordTaskMerged(prUrl?: string): boolean {
   const today = getLocalDateKey();
+  const key = mergedPrKey(prUrl);
+  if (key && store.completedTaskDate === today && store.countedMergedPrs.includes(key))
+    return false;
   setStore(
     produce((s) => {
       if (s.completedTaskDate !== today) {
         s.completedTaskDate = today;
-        s.completedTaskCount = 1;
-        return;
+        s.completedTaskCount = 0;
+        s.countedMergedPrs = [];
       }
       s.completedTaskCount += 1;
+      if (key) s.countedMergedPrs.push(key);
     }),
   );
+  return true;
 }
 
 export function getMergedTasksTodayCount(): number {
@@ -33,9 +47,11 @@ export function recordMergedLines(linesAdded: number, linesRemoved: number): voi
   );
 }
 
-export function getMergedLineTotals(): { added: number; removed: number } {
-  return {
-    added: store.mergedLinesAdded,
-    removed: store.mergedLinesRemoved,
-  };
+/** Count each tracked PR once on its actual local merge date, including after restart. */
+export function recordRemotePrMerged(prUrl: string, mergedAt: string): boolean {
+  const mergedDate = new Date(mergedAt);
+  if (!Number.isFinite(mergedDate.getTime()) || getLocalDateKey(mergedDate) !== getLocalDateKey())
+    return false;
+  if (!mergedPrKey(prUrl)) return false;
+  return recordTaskMerged(prUrl);
 }

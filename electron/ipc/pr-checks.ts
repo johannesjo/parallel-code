@@ -3,11 +3,14 @@ import { promisify } from 'util';
 import { Notification, type BrowserWindow } from 'electron';
 import { stat } from 'fs/promises';
 import { IPC } from './channels.js';
+import { parseMergeable, parsePrRef } from '../github/gh.js';
 import type {
   PrCheckBucket,
   PrCheckRun,
   PrChecksOverall,
   PrChecksUpdatePayload,
+  PrMergeable,
+  PrReviewDecision,
 } from './shared-types.js';
 
 export type {
@@ -15,6 +18,7 @@ export type {
   PrCheckRun,
   PrChecksOverall,
   PrChecksUpdatePayload,
+  PrReviewDecision,
 } from './shared-types.js';
 
 const exec = promisify(execFile);
@@ -30,6 +34,9 @@ interface TaskEntry {
   taskName: string;
   prUrl: string;
   overall: PrChecksOverall;
+  isDraft: boolean;
+  reviewDecision: PrReviewDecision | null;
+  mergeable: PrMergeable;
   passing: number;
   pending: number;
   failing: number;
@@ -105,6 +112,9 @@ export function startPrChecksWatcher(args: {
         taskName: args.taskName,
         prUrl: args.prUrl,
         overall: 'pending',
+        isDraft: false,
+        reviewDecision: null,
+        mergeable: 'UNKNOWN',
         passing: 0,
         pending: 0,
         failing: 0,
@@ -215,13 +225,22 @@ async function refreshOne(taskId: string): Promise<void> {
     entry.failing = 0;
     entry.checks = [];
     entry.lastRefreshedAt = Date.now();
-    sendUpdate(entry, { cleared: true });
+    sendUpdate(entry, {
+      cleared: true,
+      merged: status.state === 'MERGED',
+      mergedAt: status.mergedAt,
+    });
     tasks.delete(taskId);
     if (tasks.size === 0) clearTickInterval();
     return;
   }
 
-  const checks = status.checks;
+  // GitHub does not run pull_request workflows on conflicted branches. Include
+  // a local mergeability check so unrelated passing checks cannot imply success.
+  const checks: PrCheckRun[] =
+    status.mergeable === 'CONFLICTING'
+      ? [...status.checks, { name: 'Merge conflicts with base branch', bucket: 'fail' }]
+      : status.checks;
   const view = { state: status.state, headRefOid: status.headRefOid };
 
   const { overall, passing, pending, failing } = summarize(checks);
@@ -236,11 +255,26 @@ async function refreshOne(taskId: string): Promise<void> {
     Date.now() < entry.postPushRefreshUntil;
   if (waitingForPostPushHead) {
     entry.lastRefreshedAt = Date.now();
+    // Review metadata is PR-wide, so it can advance while old-head CI data
+    // remains suppressed during the post-push grace period.
+    if (
+      entry.isDraft !== status.isDraft ||
+      entry.reviewDecision !== status.reviewDecision ||
+      entry.mergeable !== status.mergeable
+    ) {
+      entry.isDraft = status.isDraft;
+      entry.reviewDecision = status.reviewDecision;
+      entry.mergeable = status.mergeable;
+      sendUpdate(entry);
+    }
     return;
   }
   const nothingChanged =
     !firstRefresh &&
     entry.overall === overall &&
+    entry.isDraft === status.isDraft &&
+    entry.reviewDecision === status.reviewDecision &&
+    entry.mergeable === status.mergeable &&
     entry.passing === counts.passing &&
     entry.pending === counts.pending &&
     entry.failing === counts.failing &&
@@ -256,6 +290,9 @@ async function refreshOne(taskId: string): Promise<void> {
   }
 
   entry.overall = overall;
+  entry.isDraft = status.isDraft;
+  entry.reviewDecision = status.reviewDecision;
+  entry.mergeable = status.mergeable;
   entry.passing = counts.passing;
   entry.pending = counts.pending;
   entry.failing = counts.failing;
@@ -290,17 +327,26 @@ async function refreshOne(taskId: string): Promise<void> {
   }
 }
 
-function sendUpdate(entry: TaskEntry, opts?: { cleared?: boolean }): void {
+function sendUpdate(
+  entry: TaskEntry,
+  opts?: { cleared?: boolean; merged?: boolean; mergedAt?: string },
+): void {
   if (!win || win.isDestroyed() || disabled) return;
   const payload: PrChecksUpdatePayload = {
     taskId: entry.taskId,
+    prUrl: entry.prUrl,
+    mergedAt: opts?.mergedAt,
     overall: entry.overall,
+    isDraft: entry.isDraft,
+    reviewDecision: entry.reviewDecision,
+    mergeable: entry.mergeable,
     passing: entry.passing,
     pending: entry.pending,
     failing: entry.failing,
     checks: entry.checks,
     checkedAt: new Date(entry.lastRefreshedAt).toISOString(),
     cleared: opts?.cleared ?? false,
+    merged: opts?.merged ?? false,
   };
   win.webContents.send(IPC.PrChecksUpdate, payload);
 }
@@ -372,17 +418,7 @@ export function summarize(checks: PrCheckRun[]): {
 }
 
 export function isPrUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    if (u.hostname !== 'github.com' && u.hostname !== 'www.github.com') return false;
-    // Reject URLs carrying credentials. Harmless to gh in practice, but we
-    // pass this value as a CLI arg and ought to keep it boring.
-    if (u.username || u.password) return false;
-    const parts = u.pathname.split('/').filter(Boolean);
-    return parts.length >= 4 && parts[2] === 'pull' && /^\d+$/.test(parts[3]);
-  } catch {
-    return false;
-  }
+  return parsePrRef(url) !== null;
 }
 
 export async function detectPrUrlForBranch(
@@ -390,6 +426,12 @@ export async function detectPrUrlForBranch(
   branchName: string,
 ): Promise<string | null> {
   if (!(await isDirectory(worktreePath))) return null;
+  const { stdout: remotes } = await exec('git', ['remote'], {
+    cwd: worktreePath,
+    timeout: GH_TIMEOUT_MS,
+    maxBuffer: GH_MAX_BUFFER,
+  });
+  if (!remotes.trim()) return null;
   const { stdout } = await exec(
     'gh',
     [
@@ -426,22 +468,41 @@ async function isDirectory(path: string): Promise<boolean> {
   }
 }
 
-/** Single gh call: combines PR state, head SHA, and check runs in one fork.
+/** Single gh call: combines PR state, review metadata, head SHA, and check runs in one fork.
  *  Uses `statusCheckRollup` which bundles check-run data with a normalised
  *  conclusion, so we map that to the same `bucket` taxonomy `gh pr checks`
  *  would have produced. The subcommand is `gh pr view`, not `gh pr status`
  *  (a different command). */
-export async function fetchPrStatus(
-  prUrl: string,
-): Promise<{ state: string; headRefOid: string; checks: PrCheckRun[] }> {
+export async function fetchPrStatus(prUrl: string): Promise<{
+  state: string;
+  mergedAt?: string;
+  headRefOid: string;
+  isDraft: boolean;
+  reviewDecision: PrReviewDecision | null;
+  mergeable: PrMergeable;
+  checks: PrCheckRun[];
+}> {
   const { stdout } = await exec(
     'gh',
-    ['pr', 'view', prUrl, '--json', 'state,headRefOid,statusCheckRollup'],
+    [
+      'pr',
+      'view',
+      prUrl,
+      '--json',
+      'state,mergedAt,headRefOid,isDraft,reviewDecision,mergeable,statusCheckRollup',
+    ],
     { timeout: GH_TIMEOUT_MS, maxBuffer: GH_MAX_BUFFER },
   );
   const parsed: unknown = JSON.parse(stdout);
   if (!parsed || typeof parsed !== 'object') {
-    return { state: 'UNKNOWN', headRefOid: '', checks: [] };
+    return {
+      state: 'UNKNOWN',
+      headRefOid: '',
+      isDraft: false,
+      reviewDecision: null,
+      mergeable: 'UNKNOWN',
+      checks: [],
+    };
   }
   const r = parsed as Record<string, unknown>;
   const rollup = Array.isArray(r['statusCheckRollup']) ? r['statusCheckRollup'] : [];
@@ -462,9 +523,20 @@ export async function fetchPrStatus(
   }
   return {
     state: asString(r['state']) ?? 'UNKNOWN',
+    mergedAt: asString(r['mergedAt']),
     headRefOid: asString(r['headRefOid']) ?? '',
+    isDraft: r['isDraft'] === true,
+    reviewDecision: parseReviewDecision(r['reviewDecision']),
+    mergeable: parseMergeable(r['mergeable']),
     checks,
   };
+}
+
+function parseReviewDecision(value: unknown): PrReviewDecision | null {
+  if (value === 'APPROVED' || value === 'CHANGES_REQUESTED' || value === 'REVIEW_REQUIRED') {
+    return value;
+  }
+  return null;
 }
 
 /** Maps GitHub's CheckRun status/conclusion (or legacy status-context state)

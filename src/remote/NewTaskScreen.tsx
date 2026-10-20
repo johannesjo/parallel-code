@@ -1,36 +1,34 @@
-import { createSignal, onMount, For, Show } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, For, Show } from 'solid-js';
 import { fetchProjects, createTask, ApiError, type MobileProject } from './api';
 import { clearPairedToken } from './auth';
+import { readLocal, writeLocal } from './storage';
+import { status } from './ws';
+import { ConnectionBanner } from './ConnectionBanner';
 
 interface NewTaskScreenProps {
-  onCreated: () => void;
+  onCreated: (taskId: string, name: string) => void;
   onCancel: () => void;
-  /** Called when the paired token is missing/stale — caller routes to pairing. */
   onNeedsPairing: () => void;
 }
 
-const inputStyle = {
-  width: '100%',
-  padding: '12px 14px',
-  'font-size': '15px',
-  background: '#10161d',
-  border: '1px solid #223040',
-  'border-radius': '8px',
-  color: '#d7e4f0',
-  outline: 'none',
-} as const;
-
 export function NewTaskScreen(props: NewTaskScreenProps) {
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
   const [projects, setProjects] = createSignal<MobileProject[]>([]);
-  const [projectId, setProjectId] = createSignal('');
-  const [name, setName] = createSignal('');
-  const [prompt, setPrompt] = createSignal('');
+  const [projectId, setProjectId] = createSignal(readLocal('project'));
+  const [name, setName] = createSignal(readLocal('new-name'));
+  const [prompt, setPrompt] = createSignal(readLocal('new-prompt'));
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [busy, setBusy] = createSignal(false);
+  const title = () => name().trim() || prompt().trim().replace(/\s+/g, ' ').slice(0, 80);
+  const agentName = () => projects().find((p) => p.id === projectId())?.agentName;
+  createEffect(() => writeLocal('project', projectId()));
+  createEffect(() => writeLocal('new-name', name()));
+  createEffect(() => writeLocal('new-prompt', prompt()));
 
-  // A stale paired token (desktop restarted) surfaces as 401 — drop it and send
-  // the user back through pairing rather than showing a dead-end error.
   function handleAuthError(err: unknown): boolean {
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
       clearPairedToken();
@@ -40,163 +38,164 @@ export function NewTaskScreen(props: NewTaskScreenProps) {
     return false;
   }
 
-  onMount(async () => {
+  async function loadProjects() {
+    setLoading(true);
+    setError(null);
     try {
       const list = await fetchProjects();
+      if (disposed) return;
       setProjects(list);
-      setProjectId(list[0]?.id ?? '');
+      if (!list.some((p) => p.id === projectId())) setProjectId(list[0]?.id ?? '');
     } catch (err) {
-      if (handleAuthError(err)) return;
-      setError(err instanceof Error ? err.message : 'Could not load projects');
+      if (disposed) return;
+      if (!handleAuthError(err))
+        setError(err instanceof Error ? err.message : 'Could not load projects');
     } finally {
-      setLoading(false);
+      if (!disposed) setLoading(false);
     }
-  });
-
-  const canSubmit = () => !!projectId() && !!name().trim() && !!prompt().trim() && !busy();
+  }
+  onMount(() => void loadProjects());
+  const canSubmit = () =>
+    !!projectId() && !!prompt().trim() && !busy() && !loading() && status() === 'connected';
 
   async function handleSubmit(e: Event) {
     e.preventDefault();
     if (!canSubmit()) return;
+    const taskName = title();
+    const draftPrompt = prompt();
+    const draftName = name();
     setBusy(true);
     setError(null);
     try {
-      await createTask({ projectId: projectId(), name: name().trim(), prompt: prompt().trim() });
-      props.onCreated();
+      const taskId = await createTask({
+        projectId: projectId(),
+        name: taskName,
+        prompt: draftPrompt.trim(),
+      });
+      if (readLocal('new-prompt') === draftPrompt && readLocal('new-name') === draftName) {
+        writeLocal('new-name', '');
+        writeLocal('new-prompt', '');
+      }
+      if (!disposed) {
+        setName('');
+        setPrompt('');
+        props.onCreated(taskId, taskName);
+      }
     } catch (err) {
-      if (handleAuthError(err)) return;
-      setError(err instanceof Error ? err.message : 'Could not create task');
+      if (disposed) return;
+      if (!handleAuthError(err))
+        setError(
+          `${err instanceof Error ? err.message : 'Could not create task'}. Your draft is saved. If the connection was interrupted, check the task list before retrying.`,
+        );
     } finally {
-      setBusy(false);
+      if (!disposed) setBusy(false);
     }
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        'flex-direction': 'column',
-        height: '100%',
-        background: '#0b0f14',
-        color: '#678197',
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          'align-items': 'center',
-          'justify-content': 'space-between',
-          padding: '14px 16px',
-          'border-bottom': '1px solid #223040',
-          background: '#12181f',
-          'flex-shrink': '0',
-        }}
-      >
-        <button
-          onClick={() => props.onCancel()}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: '#2ec8ff',
-            'font-size': '15px',
-            cursor: 'pointer',
-            padding: '0',
-          }}
-        >
-          Cancel
+    <div class="mobile-screen">
+      <header class="mobile-header">
+        <button class="mobile-button quiet" onClick={() => props.onCancel()} disabled={busy()}>
+          Back
         </button>
-        <span style={{ 'font-size': '16px', 'font-weight': '600', color: '#d7e4f0' }}>
-          New Task
-        </span>
-        <span style={{ width: '48px' }} />
-      </div>
-
-      <Show
-        when={!loading()}
-        fallback={
-          <div style={{ 'text-align': 'center', 'padding-top': '60px', color: '#678197' }}>
-            Loading…
-          </div>
-        }
-      >
-        <form
-          onSubmit={handleSubmit}
-          style={{
-            flex: '1',
-            overflow: 'auto',
-            padding: '16px',
-            display: 'flex',
-            'flex-direction': 'column',
-            gap: '16px',
-            'padding-bottom': 'max(16px, env(safe-area-inset-bottom))',
-          }}
-        >
-          <label style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
-            <span style={{ 'font-size': '13px', color: '#9bb0c3' }}>Project</span>
+        <div class="heading">
+          <h1>New task</h1>
+          <p>Start work on your computer, from here.</p>
+        </div>
+      </header>
+      <ConnectionBanner />
+      <main class="mobile-scroll">
+        <form id="new-task" class="mobile-form" onSubmit={handleSubmit} aria-busy={busy()}>
+          <Show when={loading()}>
+            <p class="muted" role="status">
+              Loading your projects…
+            </p>
+          </Show>
+          <label>
+            Project
             <select
+              class="mobile-input"
               value={projectId()}
               onChange={(e) => setProjectId(e.currentTarget.value)}
-              style={{ ...inputStyle, appearance: 'none' }}
+              disabled={loading() || busy()}
             >
-              <Show when={projects().length === 0}>
-                <option value="">No projects available</option>
+              <Show when={!projects().length}>
+                <option value="">
+                  {loading() ? 'Loading projects…' : 'No projects available'}
+                </option>
               </Show>
-              <For each={projects()}>{(p) => <option value={p.id}>{p.name}</option>}</For>
+              <For each={projects()}>
+                {(p) => (
+                  <option value={p.id} selected={p.id === projectId()}>
+                    {p.name}
+                  </option>
+                )}
+              </For>
             </select>
           </label>
-
-          <label style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
-            <span style={{ 'font-size': '13px', color: '#9bb0c3' }}>Task name</span>
-            <input
-              type="text"
-              maxlength={200}
-              placeholder="Short name for the task"
-              value={name()}
-              onInput={(e) => setName(e.currentTarget.value)}
-              style={inputStyle}
-            />
-          </label>
-
-          <label style={{ display: 'flex', 'flex-direction': 'column', gap: '6px', flex: '1' }}>
-            <span style={{ 'font-size': '13px', color: '#9bb0c3' }}>Prompt</span>
+          <Show when={projectId() && !loading()}>
+            <p class="mobile-project-hint muted">
+              {agentName() ? `Runs with ${agentName()}` : 'Runs with your default agent'} · Desktop
+              settings
+            </p>
+          </Show>
+          <Show when={!loading() && !projects().length && !error()}>
+            <p class="muted">Add a project in Parallel Code on your computer, then retry.</p>
+          </Show>
+          <Show when={error()}>
+            <p class="mobile-error" role="alert">
+              {error()}
+            </p>
+          </Show>
+          <Show when={!loading() && !projects().length}>
+            <button type="button" class="mobile-button" onClick={() => void loadProjects()}>
+              Retry loading projects
+            </button>
+          </Show>
+          <label>
+            What should the agent work on?
             <textarea
-              placeholder="What should the agent work on?"
+              class="mobile-input"
+              placeholder="Fix the login redirect and add a regression test…"
+              rows={7}
+              maxlength={16000}
               value={prompt()}
               onInput={(e) => setPrompt(e.currentTarget.value)}
-              maxlength={16000}
-              rows={6}
-              style={{
-                ...inputStyle,
-                resize: 'vertical',
-                'min-height': '120px',
-                'line-height': '1.5',
-              }}
+              disabled={busy()}
             />
           </label>
-
-          <Show when={error()}>
-            <p style={{ 'font-size': '13px', color: '#fca5a5', margin: '0' }}>{error()}</p>
-          </Show>
-
-          <button
-            type="submit"
-            disabled={!canSubmit()}
-            style={{
-              padding: '14px',
-              'font-size': '16px',
-              'font-weight': '600',
-              background: canSubmit() ? '#2ec8ff' : '#1a2430',
-              color: canSubmit() ? '#031018' : '#678197',
-              border: 'none',
-              'border-radius': '8px',
-              cursor: canSubmit() ? 'pointer' : 'default',
-            }}
-          >
-            {busy() ? 'Creating…' : 'Create task'}
-          </button>
+          <details class="mobile-title-options" open={!!readLocal('new-name')}>
+            <summary>
+              Custom title <span class="muted">Optional</span>
+            </summary>
+            <label>
+              Custom title{' '}
+              <input
+                class="mobile-input"
+                maxlength={200}
+                placeholder="Leave empty to use your message"
+                value={name()}
+                onInput={(e) => setName(e.currentTarget.value)}
+                disabled={busy()}
+              />
+            </label>
+          </details>
+          <p class="muted">
+            A title is created from your message unless you set one. Your draft is saved on this
+            phone.
+          </p>
         </form>
-      </Show>
+      </main>
+      <footer class="mobile-footer">
+        <button
+          class="mobile-button primary wide"
+          type="submit"
+          form="new-task"
+          disabled={!canSubmit()}
+        >
+          {busy() ? 'Creating task…' : 'Start task'}
+        </button>
+      </footer>
     </div>
   );
 }

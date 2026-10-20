@@ -1,3 +1,4 @@
+import { matchesTaskProjectFilter } from './task-project-filter';
 import { store } from './core';
 
 export interface GroupedSidebarTasks {
@@ -16,14 +17,17 @@ export function getCoordinatorChildren(coordinatorId: string): {
 } {
   const active: string[] = [];
   const collapsed: string[] = [];
+  const seen = new Set<string>();
   for (const taskId of store.taskOrder) {
-    if (store.tasks[taskId]?.coordinatedBy === coordinatorId) {
+    if (!seen.has(taskId) && store.tasks[taskId]?.coordinatedBy === coordinatorId) {
+      seen.add(taskId);
       active.push(taskId);
     }
   }
   for (const taskId of store.collapsedTaskOrder) {
     const task = store.tasks[taskId];
-    if (task?.collapsed && task.coordinatedBy === coordinatorId) {
+    if (!seen.has(taskId) && task?.collapsed && task.coordinatedBy === coordinatorId) {
+      seen.add(taskId);
       collapsed.push(taskId);
     }
   }
@@ -40,6 +44,17 @@ export function isCoordinatedChild(taskId: string): boolean {
   return !!store.tasks[task.coordinatedBy];
 }
 
+export function computeSidebarDraggableTaskOrder(): string[] {
+  const collapsedProjectIds = new Set(
+    store.projects.filter((project) => project.tasksCollapsed).map((project) => project.id),
+  );
+  return store.taskOrder.filter((taskId) => {
+    if (!matchesTaskProjectFilter(taskId) || isCoordinatedChild(taskId)) return false;
+    const projectId = store.tasks[taskId]?.projectId;
+    return !projectId || !collapsedProjectIds.has(projectId);
+  });
+}
+
 /** Group tasks by project: active first, then collapsed. Tasks without a valid project go to orphans.
  *  Coordinated children are excluded from the flat list — they render nested under their coordinator. */
 export function computeGroupedTasks(): GroupedSidebarTasks {
@@ -50,7 +65,7 @@ export function computeGroupedTasks(): GroupedSidebarTasks {
 
   for (const taskId of store.taskOrder) {
     const task = store.tasks[taskId];
-    if (!task) continue;
+    if (!task || !matchesTaskProjectFilter(taskId)) continue;
     // Skip coordinated children — they'll be rendered nested under their coordinator
     if (isCoordinatedChild(taskId)) continue;
     if (task.projectId && projectIds.has(task.projectId)) {
@@ -62,7 +77,7 @@ export function computeGroupedTasks(): GroupedSidebarTasks {
 
   for (const taskId of store.collapsedTaskOrder) {
     const task = store.tasks[taskId];
-    if (!task?.collapsed) continue;
+    if (!task?.collapsed || !matchesTaskProjectFilter(taskId)) continue;
     // Skip coordinated children
     if (isCoordinatedChild(taskId)) continue;
     if (task.projectId && projectIds.has(task.projectId)) {
@@ -82,11 +97,12 @@ export function computeSidebarTaskOrder(): string[] {
   const pushWithVisibleChildren = (taskId: string) => {
     order.push(taskId);
     const task = store.tasks[taskId];
-    if (!task?.coordinatorMode) return;
+    if (!task) return;
     const children = getCoordinatorChildren(taskId);
     order.push(...children.active, ...children.collapsed);
   };
   for (const project of store.projects) {
+    if (project.tasksCollapsed) continue;
     const group = grouped[project.id];
     if (group) {
       for (const taskId of group.active) pushWithVisibleChildren(taskId);

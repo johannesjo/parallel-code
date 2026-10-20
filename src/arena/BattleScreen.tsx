@@ -126,6 +126,7 @@ export function BattleScreen() {
                     <TerminalView
                       taskId={competitor.id}
                       agentId={agentId}
+                      standalone
                       command={command}
                       args={args}
                       cwd={cwd}

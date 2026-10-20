@@ -1,7 +1,7 @@
 import { Show, createResource } from 'solid-js';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
-import { closeTask, getProject, getCoordinatorCloseWarning } from '../store/store';
+import { armSpCompletion, closeTask, getProject, getCoordinatorCloseWarning } from '../store/store';
 import { ConfirmDialog } from './ConfirmDialog';
 import { theme, bannerStyle } from '../lib/theme';
 import type { Task } from '../store/types';
@@ -46,7 +46,7 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
                   color: theme.warning,
                   background: `color-mix(in srgb, ${theme.warning} 8%, transparent)`,
                   padding: '8px 12px',
-                  'border-radius': '8px',
+                  'border-radius': 'var(--radius-md)',
                   border: `1px solid color-mix(in srgb, ${theme.warning} 20%, transparent)`,
                   'font-weight': '600',
                 }}
@@ -156,6 +156,7 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
       danger={props.task.gitIsolation === 'worktree' && !props.task.externalWorktree}
       onConfirm={() => {
         props.onDone();
+        armSpCompletion(props.task.id, { kind: 'closed' });
         closeTask(props.task.id);
       }}
       onCancel={() => props.onDone()}

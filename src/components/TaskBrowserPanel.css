@@ -1,0 +1,70 @@
+.task-browser-panel {
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+.task-browser-toolbar,
+.task-browser-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.task-browser-panel button {
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.task-browser-panel button:hover:not(:disabled),
+.task-browser-panel button[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.task-browser-panel button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.task-browser-panel input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.task-browser-panel :is(input, button):focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+.task-browser-actions span {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.task-browser-error {
+  color: var(--error);
+  font-size: 12px;
+  padding: 8px;
+  overflow-wrap: anywhere;
+}
+.task-browser-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.task-browser-viewport p {
+  color: var(--fg-muted);
+  font-size: 12px;
+  padding: 24px;
+  text-align: center;
+}

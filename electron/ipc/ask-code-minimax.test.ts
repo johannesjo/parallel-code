@@ -1,4 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { CHANGE_TOUR_PROMPT_LIMIT } from '../shared/change-tour-limits.js';
+import {
+  UNDERSTANDING_MAX_OUTPUT_CHARS,
+  UNDERSTANDING_PROMPT_LIMIT,
+} from '../shared/understanding-limits.js';
+
+/** Purposes that ask MiniMax for one JSON object, with their own budget and prompt. */
+const STRUCTURED_PURPOSES = [
+  {
+    purpose: 'tour',
+    promptLimit: CHANGE_TOUR_PROMPT_LIMIT,
+    systemPrompt:
+      'Return exactly one JSON object matching the requested tour schema. No markdown, commentary, or additional JSON objects.',
+  },
+  {
+    purpose: 'understand',
+    promptLimit: UNDERSTANDING_PROMPT_LIMIT,
+    systemPrompt:
+      'Return exactly one JSON object matching the requested understanding tour schema. No markdown, commentary, or additional JSON objects.',
+  },
+] as const;
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -76,6 +97,58 @@ describe('askAboutCodeMinimax', () => {
     ).toThrow(/Prompt too long/);
   });
 
+  it.each(STRUCTURED_PURPOSES)(
+    'accepts a full $purpose prompt without raising the inline Q&A limit',
+    async ({ purpose, promptLimit, systemPrompt }) => {
+      const { win, messages } = makeMockWin();
+      const prompt = 'x'.repeat(promptLimit);
+      mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
+      askAboutCodeMinimax(win, {
+        requestId: `large-${purpose}`,
+        channelId: 'test',
+        prompt,
+        purpose,
+      });
+      await waitForDone(messages);
+      const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string) as {
+        messages: { content: string }[];
+        max_tokens: number;
+      };
+      expect(body.messages[1].content).toBe(prompt);
+      expect(body.messages[0].content).toBe(systemPrompt);
+      // Derived from the card caps, so raising a cap cannot silently truncate a
+      // tour the validator would have accepted.
+      expect(body.max_tokens).toBe(Math.ceil(UNDERSTANDING_MAX_OUTPUT_CHARS / 3));
+    },
+  );
+
+  it.each(STRUCTURED_PURPOSES)(
+    'rejects a $purpose larger than its dedicated allowance before fetching',
+    ({ purpose, promptLimit }) => {
+      const { win } = makeMockWin();
+      expect(() =>
+        askAboutCodeMinimax(win, {
+          requestId: `too-large-${purpose}`,
+          channelId: 'test',
+          prompt: 'x'.repeat(promptLimit + 1),
+          purpose,
+        }),
+      ).toThrow(/Prompt too long/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it('allows room for Flash thinking and the inline answer', async () => {
+    const { win, messages } = makeMockWin();
+    mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
+    askAboutCodeMinimax(win, { requestId: 'inline', channelId: 'test', prompt: 'Explain' });
+    await waitForDone(messages);
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string) as {
+      max_tokens: number;
+    };
+    expect(body.max_tokens).toBe(16_384);
+  });
+
   it('sends chunk messages for each SSE delta', async () => {
     const { win, messages } = makeMockWin();
 
@@ -100,6 +173,54 @@ describe('askAboutCodeMinimax', () => {
     expect((doneMsgs[0] as Record<string, unknown>).exitCode).toBe(0);
   });
 
+  it.each(['MiniMax-M3', 'MiniMax-M2.7', 'custom/model-v1'])(
+    'preserves the explicit %s model at the HTTP boundary',
+    async (model) => {
+      const { win, messages } = makeMockWin();
+      mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
+      askAboutCodeMinimax(win, {
+        requestId: 'saved',
+        channelId: 'saved',
+        prompt: 'Explain',
+        model,
+      });
+      await waitForDone(messages);
+      const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+      expect(body.model).toBe(model);
+      expect(body.max_tokens).toBe(2048);
+      expect(body).not.toHaveProperty('reasoning_effort');
+      expect(body).not.toHaveProperty('service_tier');
+      if (model === 'MiniMax-M3') {
+        expect(body.thinking).toEqual({ type: 'disabled' });
+        expect(body.reasoning_split).toBe(true);
+      } else {
+        expect(body).not.toHaveProperty('thinking');
+        expect(body).not.toHaveProperty('reasoning_split');
+      }
+    },
+  );
+
+  it('does not forward separated thinking into a structured answer', async () => {
+    const { win, messages } = makeMockWin();
+    mockFetch.mockResolvedValueOnce(
+      makeStreamResponse(
+        'data: {"choices":[{"delta":{"reasoning_content":"<think>private reasoning</think>"}}]}\n\n' +
+          sseChunk('{"cards":[]}') +
+          'data: [DONE]\n\n',
+      ),
+    );
+    askAboutCodeMinimax(win, {
+      requestId: 'reasoning',
+      channelId: 'reasoning',
+      prompt: 'Tour',
+      purpose: 'tour',
+    });
+    await waitForDone(messages);
+    expect(messages.filter((message) => (message as { type: string }).type === 'chunk')).toEqual([
+      { type: 'chunk', text: '{"cards":[]}' },
+    ]);
+  });
+
   it('sends error message on non-ok HTTP response', async () => {
     const { win, messages } = makeMockWin();
 
@@ -119,6 +240,28 @@ describe('askAboutCodeMinimax', () => {
 
     const doneMsgs = messages.filter((m) => (m as Record<string, unknown>).type === 'done');
     expect((doneMsgs[0] as Record<string, unknown>).exitCode).toBe(1);
+  });
+
+  it('finishes on the SSE done marker even when the connection remains open', async () => {
+    const { win, messages } = makeMockWin();
+    const cancel = vi.fn();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(sseChunk('Complete answer') + 'data: [DONE]\n\n'),
+        );
+      },
+      cancel,
+    });
+    mockFetch.mockResolvedValueOnce(new Response(stream, { status: 200 }));
+    askAboutCodeMinimax(win, { requestId: 'done-open', channelId: 'done-open', prompt: 'Explain' });
+    try {
+      await waitForDone(messages, 200);
+      expect(messages).toContainEqual({ type: 'done', exitCode: 0, cancelled: false });
+      expect(cancel).toHaveBeenCalled();
+    } finally {
+      cancelAskAboutCodeMinimax('done-open');
+    }
   });
 
   it('sends error message when fetch rejects', async () => {
@@ -163,7 +306,7 @@ describe('askAboutCodeMinimax', () => {
     );
   });
 
-  it('uses MiniMax-M3 by default', async () => {
+  it('defaults to Flash at the HTTP boundary', async () => {
     const { win, messages } = makeMockWin();
 
     mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
@@ -179,27 +322,14 @@ describe('askAboutCodeMinimax', () => {
     const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string) as {
       model: string;
     };
-    expect(body.model).toBe('MiniMax-M3');
-  });
-
-  it('uses the selected MiniMax model', async () => {
-    const { win, messages } = makeMockWin();
-
-    mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
-
-    askAboutCodeMinimax(win, {
-      requestId: 'r6-model',
-      channelId: 'ch6-model',
-      prompt: 'Test',
-      modelId: 'MiniMax-M2.7',
+    expect(mockFetch.mock.calls[0][0]).toBe('https://api.minimax.io/v1/chat/completions');
+    expect(body).toMatchObject({
+      model: 'MiniMax-M3.1-Flash',
+      thinking: { type: 'adaptive' },
+      reasoning_effort: 'low',
+      reasoning_split: true,
     });
-
-    await waitForDone(messages);
-
-    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string) as {
-      model: string;
-    };
-    expect(body.model).toBe('MiniMax-M2.7');
+    expect(body).not.toHaveProperty('service_tier');
   });
 
   it('uses temperature in MiniMax allowed range (0, 1]', async () => {

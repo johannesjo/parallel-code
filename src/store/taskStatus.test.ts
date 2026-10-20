@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { expectDefined, type MockStoreHarness } from './test-helpers';
+import { READY_AGENT_FRAME_FIXTURES } from '../../electron/mcp/agent-frame-fixtures';
 
 // Mock the SolidJS store before importing the module under test.
 let mockAutoTrustFolders = false;
@@ -7,6 +8,7 @@ let mockActiveTaskId: string | null = null;
 let mockTasks: Record<string, unknown> = {};
 let mockAgents: Record<string, unknown> = {};
 let mockTaskGitStatus: Record<string, unknown> = {};
+let mockPrChecks: Record<string, { overall: string; failing: number }> = {};
 const core = vi.hoisted(() => ({
   harness: undefined as
     | MockStoreHarness<{
@@ -60,6 +62,10 @@ vi.mock('../lib/ipc', () => ({
   invoke: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('./pr-checks-state', () => ({
+  getPrChecks: (taskId: string) => mockPrChecks[taskId],
+}));
+
 // Stub SolidJS reactive primitives — tests run outside a reactive root.
 vi.mock('solid-js', () => {
   function createSignal<T>(initial: T): [() => T, (v: T | ((prev: T) => T)) => void] {
@@ -73,9 +79,12 @@ vi.mock('solid-js', () => {
   return {
     createSignal,
     createEffect: vi.fn(),
+    createRoot: vi.fn(),
     onMount: vi.fn(),
     onCleanup: vi.fn(),
     untrack: (fn: () => unknown) => fn(),
+    // task-branch.ts (imported transitively via taskStatus.ts) calls batch.
+    batch: (fn: () => unknown) => fn(),
   };
 });
 
@@ -92,12 +101,58 @@ import {
   isAgentAskingQuestion,
   isAgentBracketedPasteEnabled,
   getTaskAttentionState,
+  getTaskOpenQuestion,
+  getTaskOpenQuestions,
   getTaskDotStatus,
   taskNeedsAttention,
   markAgentSpawned,
   markAgentOutput,
+  isAgentIdle,
   clearAgentActivity,
 } from './taskStatus';
+import {
+  AGENT_HOOK_STALE_MS,
+  applyAgentActivityObservation,
+  applyAgentHookEvent,
+  getAgentHookStatus,
+} from './agentHookStatus';
+import { getTaskActivityTooltip } from './taskStatus';
+
+const CLAUDE_DECLINE_FOCUSED_TRUST_DIALOG = [
+  ' WebFetch(domain:registry.npmjs.org),',
+  ' WebFetch(domain:api.github.com), and',
+  ' WebFetch(domain:github.com)',
+  ' These will apply without asking. Only proceed if you trust this',
+  ' configuration.',
+  '',
+  ' Security guide',
+  '',
+  ' ❯ No, exit',
+  '   Yes, I trust this folder',
+  '',
+  ' Enter to confirm · Esc to cancel',
+].join('\r\n');
+
+// The same dialog redrawn after the user presses an arrow key.
+const CLAUDE_DECLINE_DIALOG_ARROW_REDRAW = CLAUDE_DECLINE_FOCUSED_TRUST_DIALOG.replace(
+  ' ❯ No, exit\r\n   Yes, I trust this folder',
+  '   No, exit\r\n ❯ Yes, I trust this folder',
+);
+
+const CLAUDE_TRUST_DIALOG = [
+  ' Do you trust the files in this folder?',
+  '',
+  ' ❯ 1. Yes, proceed',
+  '   2. No, exit',
+  '',
+  ' Enter to confirm · Esc to cancel',
+].join('\r\n');
+
+function enterWasSent(): boolean {
+  return vi
+    .mocked(invoke)
+    .mock.calls.some(([, args]) => (args as { data?: unknown } | undefined)?.data === '\r');
+}
 
 function setMockTask(taskId: string, overrides: Record<string, unknown> = {}): void {
   mockTasks[taskId] = {
@@ -130,6 +185,7 @@ beforeEach(() => {
   mockTasks = {};
   mockAgents = {};
   mockTaskGitStatus = {};
+  mockPrChecks = {};
 });
 
 afterEach(() => {
@@ -496,12 +552,18 @@ describe('looksLikeQuestion', () => {
 describe('isTrustQuestionAutoHandled', () => {
   it('returns false when autoTrustFolders is disabled', () => {
     mockAutoTrustFolders = false;
-    expect(isTrustQuestionAutoHandled('Do you trust this folder?')).toBe(false);
+    expect(isTrustQuestionAutoHandled('Do you trust this folder?\n❯ Yes')).toBe(false);
   });
 
   it('returns true for trust dialog when autoTrustFolders is enabled', () => {
     mockAutoTrustFolders = true;
-    expect(isTrustQuestionAutoHandled('Do you trust this folder?')).toBe(true);
+    expect(isTrustQuestionAutoHandled('Do you trust this folder?\n❯ Yes')).toBe(true);
+  });
+
+  it('returns false for a trust dialog whose options are not rendered yet', () => {
+    mockAutoTrustFolders = true;
+    expect(isTrustQuestionAutoHandled('Do you trust this folder?')).toBe(false);
+    expect(isTrustQuestionAutoHandled('Do you trust this folder?\n❯ ')).toBe(false);
   });
 
   it('returns true for TUI-garbled trust dialog when autoTrustFolders is enabled', () => {
@@ -532,8 +594,15 @@ describe('isTrustQuestionAutoHandled', () => {
   it('does not false-positive on exclusion keywords in garbled text', () => {
     // "forkeyboardshortcuts" contains "key" but \b prevents matching
     mockAutoTrustFolders = true;
-    const garbled = '?forkeyboardshortcuts\nDoyoutrustthisfolder?';
+    const garbled = '?forkeyboardshortcuts\nDoyoutrustthisfolder?\n❯1.Yes';
     expect(isTrustQuestionAutoHandled(garbled)).toBe(true);
+  });
+
+  it('returns false when the dialog cursor is on the decline option', () => {
+    // Claude focuses "No, exit" when project settings grant permissions.
+    mockAutoTrustFolders = true;
+    expect(isTrustQuestionAutoHandled(CLAUDE_DECLINE_FOCUSED_TRUST_DIALOG)).toBe(false);
+    expect(isTrustQuestionAutoHandled('❯Noexit\nYes,Itrustthisfolder')).toBe(false);
   });
 
   it('returns false when "password" exclusion keyword is present', () => {
@@ -550,7 +619,9 @@ describe('isTrustQuestionAutoHandled', () => {
     setMockAgent('agent-1', { status: 'running' });
     markAgentOutput('agent-1', new TextEncoder().encode('startup'), 'task-1');
 
-    expect(isAgentTrustQuestionAutoHandled('agent-1', 'Do you trust this folder?')).toBe(true);
+    expect(isAgentTrustQuestionAutoHandled('agent-1', 'Do you trust this folder?\n❯ Yes')).toBe(
+      true,
+    );
   });
 
   it('returns false for non-forced agent trust dialogs when global auto-trust is off', () => {
@@ -562,7 +633,9 @@ describe('isTrustQuestionAutoHandled', () => {
     setMockAgent('agent-1', { status: 'running' });
     markAgentOutput('agent-1', new TextEncoder().encode('startup'), 'task-1');
 
-    expect(isAgentTrustQuestionAutoHandled('agent-1', 'Do you trust this folder?')).toBe(false);
+    expect(isAgentTrustQuestionAutoHandled('agent-1', 'Do you trust this folder?\n❯ Yes')).toBe(
+      false,
+    );
   });
 });
 
@@ -579,7 +652,7 @@ describe('isAutoTrustSettling', () => {
     markAgentSpawned('agent-1');
 
     // Feed trust dialog output to trigger tryAutoTrust via markAgentOutput
-    const trustDialog = new TextEncoder().encode('Do you trust this folder?');
+    const trustDialog = new TextEncoder().encode(CLAUDE_TRUST_DIALOG);
     markAgentOutput('agent-1', trustDialog, 'task-1');
 
     // The 50ms timer is now pending — settling should be true
@@ -590,7 +663,7 @@ describe('isAutoTrustSettling', () => {
     mockAutoTrustFolders = true;
     markAgentSpawned('agent-1');
 
-    const trustDialog = new TextEncoder().encode('Do you trust this folder?');
+    const trustDialog = new TextEncoder().encode(CLAUDE_TRUST_DIALOG);
     markAgentOutput('agent-1', trustDialog, 'task-1');
 
     // Advance past the 50ms auto-trust timer
@@ -606,7 +679,7 @@ describe('isAutoTrustSettling', () => {
     mockAutoTrustFolders = true;
     markAgentSpawned('agent-1');
 
-    const trustDialog = new TextEncoder().encode('Do you trust this folder?');
+    const trustDialog = new TextEncoder().encode(CLAUDE_TRUST_DIALOG);
     markAgentOutput('agent-1', trustDialog, 'task-1');
 
     // Advance past auto-trust timer (50ms) + past settle (1000ms) but
@@ -618,11 +691,139 @@ describe('isAutoTrustSettling', () => {
     expect(isAutoTrustSettling('agent-1')).toBe(true);
   });
 
+  it('does not press Enter when the dialog cursor is on the decline option', () => {
+    mockAutoTrustFolders = true;
+    mockActiveTaskId = 'task-1';
+    setMockTask('task-1', { agentIds: ['agent-1'] });
+    setMockAgent('agent-1');
+    markAgentSpawned('agent-1');
+
+    const dialog = new TextEncoder().encode(CLAUDE_DECLINE_FOCUSED_TRUST_DIALOG);
+    markAgentOutput('agent-1', dialog, 'task-1');
+    vi.advanceTimersByTime(2100);
+
+    expect(invoke).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ data: '\r' }),
+    );
+    expect(isAutoTrustSettling('agent-1')).toBe(false);
+    expect(isAgentAskingQuestion('agent-1')).toBe(true);
+  });
+
+  describe('trust dialog focus', () => {
+    const encode = (text: string) => new TextEncoder().encode(text);
+    const screenClear = '\x1b[2J\x1b[H';
+
+    beforeEach(() => {
+      mockAutoTrustFolders = true;
+      mockActiveTaskId = 'task-1';
+      setMockTask('task-1', { agentIds: ['agent-1'] });
+      setMockAgent('agent-1');
+      markAgentSpawned('agent-1');
+    });
+
+    it('presses Enter when the dialog focuses "Yes"', () => {
+      markAgentOutput('agent-1', encode(CLAUDE_TRUST_DIALOG), 'task-1');
+      vi.advanceTimersByTime(60);
+
+      expect(enterWasSent()).toBe(true);
+    });
+
+    it('reads the focused option from a ● radio marker, as Gemini CLI draws it', () => {
+      const gemini = (marks: [string, string, string]) =>
+        [
+          ' Do you trust this folder?',
+          '',
+          ` ${marks[0]} 1. Trust folder (repo)`,
+          ` ${marks[1]} 2. Trust parent folder (www)`,
+          ` ${marks[2]} 3. Don't trust (esc)`,
+        ].join('\r\n');
+
+      markAgentOutput('agent-1', encode(gemini(['●', ' ', ' '])), 'task-1');
+      vi.advanceTimersByTime(60);
+      expect(enterWasSent()).toBe(true);
+    });
+
+    it('treats a ● marker on "Don\'t trust" as a declined dialog', () => {
+      markAgentOutput(
+        'agent-1',
+        encode(" Do you trust this folder?\r\n   1. Trust folder\r\n ● 2. Don't trust (esc)"),
+        'task-1',
+      );
+      vi.advanceTimersByTime(60);
+      expect(enterWasSent()).toBe(false);
+    });
+
+    it('does not press Enter after an arrow key moves focus off a blocked "No, exit"', () => {
+      markAgentOutput('agent-1', encode(CLAUDE_DECLINE_FOCUSED_TRUST_DIALOG), 'task-1');
+      vi.advanceTimersByTime(500);
+      markAgentOutput(
+        'agent-1',
+        encode(screenClear + CLAUDE_DECLINE_DIALOG_ARROW_REDRAW),
+        'task-1',
+      );
+      vi.advanceTimersByTime(2_100);
+
+      expect(enterWasSent()).toBe(false);
+      expect(isAgentAskingQuestion('agent-1')).toBe(true);
+      expect(isAgentTrustQuestionAutoHandled('agent-1', CLAUDE_DECLINE_DIALOG_ARROW_REDRAW)).toBe(
+        false,
+      );
+    });
+
+    it('stays blocked after the blocked frame scrolls out of the tail', () => {
+      markAgentOutput('agent-1', encode(CLAUDE_DECLINE_FOCUSED_TRUST_DIALOG), 'task-1');
+      vi.advanceTimersByTime(500);
+      // Redraws alone overflow the 16 KB tail while the dialog stays on screen.
+      const redraws = (screenClear + CLAUDE_DECLINE_DIALOG_ARROW_REDRAW).repeat(60);
+      markAgentOutput('agent-1', encode(redraws), 'task-1');
+      vi.advanceTimersByTime(2_100);
+
+      expect(enterWasSent()).toBe(false);
+    });
+
+    it('accepts a later dialog once the blocked one has left the tail', () => {
+      markAgentOutput('agent-1', encode(CLAUDE_DECLINE_FOCUSED_TRUST_DIALOG), 'task-1');
+      vi.advanceTimersByTime(500);
+      markAgentOutput('agent-1', encode('Working on it...\r\n'.repeat(1_000)), 'task-1');
+      vi.advanceTimersByTime(500);
+      markAgentOutput('agent-1', encode(screenClear + CLAUDE_TRUST_DIALOG), 'task-1');
+      vi.advanceTimersByTime(60);
+
+      expect(enterWasSent()).toBe(true);
+    });
+
+    it('waits for the option rows of a partially rendered dialog', () => {
+      markAgentOutput('agent-1', encode(' Do you trust the files in this folder?\r\n'), 'task-1');
+      vi.advanceTimersByTime(100);
+      expect(enterWasSent()).toBe(false);
+
+      markAgentOutput('agent-1', encode(' ❯ 1. Yes, proceed\r\n   2. No, exit\r\n'), 'task-1');
+      vi.advanceTimersByTime(300);
+      expect(enterWasSent()).toBe(true);
+    });
+
+    it('does not press Enter when focus moves to "No, exit" before the delayed accept', () => {
+      markAgentOutput('agent-1', encode(CLAUDE_TRUST_DIALOG), 'task-1');
+      markAgentOutput(
+        'agent-1',
+        encode(
+          screenClear +
+            CLAUDE_TRUST_DIALOG.replace('❯ 1. Yes', '  1. Yes').replace('  2. No', '❯ 2. No'),
+        ),
+        'task-1',
+      );
+      vi.advanceTimersByTime(2_100);
+
+      expect(enterWasSent()).toBe(false);
+    });
+  });
+
   it('returns false after settling period expires', () => {
     mockAutoTrustFolders = true;
     markAgentSpawned('agent-1');
 
-    const trustDialog = new TextEncoder().encode('Do you trust this folder?');
+    const trustDialog = new TextEncoder().encode(CLAUDE_TRUST_DIALOG);
     markAgentOutput('agent-1', trustDialog, 'task-1');
 
     // 50ms timer + 1000ms cooldown + 1000ms settle = 2050ms total
@@ -685,6 +886,292 @@ describe('isAgentBracketedPasteEnabled', () => {
 // ---------------------------------------------------------------------------
 // task attention
 // ---------------------------------------------------------------------------
+describe('terminal redraw activity', () => {
+  const encode = (text: string) => new TextEncoder().encode(text);
+  const codexPrompt = '\x1b[2K\r› \r\ngpt-5.5 default · /repo/.worktrees/task';
+
+  beforeEach(() => {
+    setMockTask('task-1', { agentIds: ['agent-1'] });
+    setMockAgent('agent-1');
+  });
+
+  it.each([
+    ['cursor and focus modes', '\x1b[?25h\x1b[?1004h\x1b[12;3H'],
+    ['window title', '\x1b]0;Codex\x07'],
+    ['synchronized redraw', '\x1b[?2026h\x1b[?2026l'],
+    ['whitespace', '\r\n'],
+  ])('keeps an idle agent idle on %s output', (_name, redraw) => {
+    markAgentOutput('agent-1', encode(codexPrompt), 'task-1');
+    vi.advanceTimersByTime(15_000);
+
+    markAgentOutput('agent-1', encode(redraw), 'task-1');
+
+    expect(isAgentIdle('agent-1')).toBe(true);
+    expect(getTaskDotStatus('task-1')).toBe('waiting');
+    expect(getTaskAttentionState('task-1')).toBe('idle');
+  });
+
+  it('recognizes a Codex prompt redraw above its status footer immediately', () => {
+    markAgentSpawned('agent-1');
+    markAgentOutput('agent-1', encode(codexPrompt), 'task-1');
+
+    expect(isAgentIdle('agent-1')).toBe(true);
+    expect(getTaskDotStatus('task-1')).toBe('waiting');
+
+    markAgentOutput('agent-1', encode('\r\n' + codexPrompt), 'task-1');
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it.each(['\r\n', '\x1b[24;3H'])(
+    'recognizes a fresh Codex composer with a placeholder and help footer (%j)',
+    (separator) => {
+      markAgentSpawned('agent-1');
+      markAgentOutput(
+        'agent-1',
+        encode(
+          'OpenAI Codex' +
+            separator +
+            '› Ask Codex to do anything' +
+            separator +
+            '? for shortcuts  100% context left',
+        ),
+        'task-1',
+      );
+      expect(isAgentIdle('agent-1')).toBe(true);
+
+      markAgentOutput('agent-1', encode('? for shortcuts  100% context left'), 'task-1');
+      expect(isAgentIdle('agent-1')).toBe(true);
+    },
+  );
+
+  it.each(['Working (2s • esc to interrupt)', 'Starting MCP servers (0/2)'])(
+    'keeps the Codex composer busy during %s',
+    (status) => {
+      markAgentOutput(
+        'agent-1',
+        encode(status + '\r\n› Ask Codex to do anything\r\n? for shortcuts  100% context left'),
+        'task-1',
+      );
+      expect(isAgentIdle('agent-1')).toBe(false);
+    },
+  );
+
+  it.each(['', 'Working (2s • esc to interrupt)\r\n', 'Starting MCP servers (0/2)\r\n'])(
+    'handles a separately delivered composer footer with status %j',
+    (status) => {
+      markAgentSpawned('agent-1');
+      markAgentOutput('agent-1', encode(status + '› Ask Codex to do anything\r\n'), 'task-1');
+      markAgentOutput('agent-1', encode('? for shortcuts  100% context left'), 'task-1');
+      expect(isAgentIdle('agent-1')).toBe(status === '');
+    },
+  );
+
+  it('does not hide a returned prompt behind a trailing cursor-only line', () => {
+    markAgentSpawned('agent-1');
+    markAgentOutput('agent-1', encode('Done\r\n› \r\n\x1b[?25h'), 'task-1');
+
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it('does not extend real activity when only terminal control output follows', () => {
+    markAgentOutput('agent-1', encode('Running tests...'), 'task-1');
+    vi.advanceTimersByTime(14_000);
+
+    markAgentOutput('agent-1', encode('\x1b[?25h'), 'task-1');
+    expect(isAgentIdle('agent-1')).toBe(false);
+
+    vi.advanceTimersByTime(1_000);
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it('marks new work busy even while an old prompt remains in the output tail', () => {
+    markAgentOutput('agent-1', encode(codexPrompt), 'task-1');
+    vi.advanceTimersByTime(15_000);
+
+    markAgentOutput('agent-1', encode('\r\nRunning tests...'), 'task-1');
+
+    expect(getTaskDotStatus('task-1')).toBe('busy');
+  });
+
+  it('keeps Codex busy when its working indicator accompanies a bare prompt', () => {
+    markAgentOutput('agent-1', encode('Working (2s • esc to interrupt)\r\n› '), 'task-1');
+
+    expect(getTaskDotStatus('task-1')).toBe('busy');
+  });
+
+  it('marks work after a prompt busy when both arrive in one payload', () => {
+    markAgentOutput('agent-1', encode(codexPrompt + '\r\nRunning tests...'), 'task-1');
+
+    expect(getTaskDotStatus('task-1')).toBe('busy');
+  });
+
+  it.each(['\x1b[H', '\x1b[1;1H', '\x1b[H\x1b[2J', '\x1b[?1049h'])(
+    'ignores a working indicator from before a redraw (%j) in the same payload',
+    (redraw) => {
+      markAgentOutput(
+        'agent-1',
+        encode('Working (2s • esc to interrupt)\r\n' + redraw + 'Done\r\n› '),
+        'task-1',
+      );
+
+      expect(getTaskDotStatus('task-1')).toBe('waiting');
+    },
+  );
+
+  it('keeps a prompt idle when the Codex footer arrives in a separate payload', () => {
+    markAgentOutput('agent-1', encode('› \r\n'), 'task-1');
+    markAgentOutput('agent-1', encode('gpt-5.5 default · /repo/.worktrees/task'), 'task-1');
+
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it.each([false, true])('keeps Codex working with a footer (split: %s)', (split) => {
+    const working = 'Working (2s • esc to interrupt)\r\n› \r\n';
+    const footer = 'gpt-5.5 default · /repo/.worktrees/task';
+    for (const chunk of split ? [working, footer] : [working + footer]) {
+      markAgentOutput('agent-1', encode(chunk), 'task-1');
+    }
+
+    expect(getTaskDotStatus('task-1')).toBe('busy');
+  });
+
+  it('does not extend activity when only a Codex footer redraw follows', () => {
+    markAgentOutput('agent-1', encode('Working (2s • esc to interrupt)\r\n› \r\n'), 'task-1');
+    vi.advanceTimersByTime(14_000);
+
+    markAgentOutput('agent-1', encode('gpt-5.5 default · /repo/.worktrees/task'), 'task-1');
+    expect(isAgentIdle('agent-1')).toBe(false);
+
+    vi.advanceTimersByTime(1_000);
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it('keeps completed work idle when a footer follows its returned prompt', () => {
+    markAgentOutput('agent-1', encode('Working (2s • esc to interrupt)'), 'task-1');
+    markAgentOutput('agent-1', encode('\r\nDone\r\n› \r\n'), 'task-1');
+    expect(isAgentIdle('agent-1')).toBe(true);
+
+    markAgentOutput('agent-1', encode('gpt-5.5 default · /repo/.worktrees/task'), 'task-1');
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it('counts work following a footer in the same payload as activity', () => {
+    markAgentOutput('agent-1', encode('› \r\n'), 'task-1');
+    markAgentOutput(
+      'agent-1',
+      encode('gpt-5.5 default · /repo/.worktrees/task\r\nRunning tests...'),
+      'task-1',
+    );
+
+    expect(getTaskDotStatus('task-1')).toBe('busy');
+  });
+
+  describe('agent prompt above a footer', () => {
+    // Claude's input box and Gemini's composer are not the last line, and
+    // Gemini keeps its composer visible while working.
+    const claudePrompt = [
+      '────────────────────────────────',
+      '❯ ',
+      '────────────────────────────────',
+      '⏵⏵ accept edits on (shift+tab to cycle)',
+    ].join('\r\n');
+    const geminiPrompt = 'workspace /repo branch main\r\n> Type your message or @path/to/file';
+
+    it.each([
+      ['Claude', claudePrompt],
+      ['Gemini', geminiPrompt],
+    ])('goes idle shortly after a quiet %s prompt', (_name, prompt) => {
+      markAgentSpawned('agent-1');
+      markAgentOutput('agent-1', encode('\x1b[H\x1b[2J' + prompt), 'task-1');
+      expect(isAgentIdle('agent-1')).toBe(false);
+
+      vi.advanceTimersByTime(2_000);
+      expect(isAgentIdle('agent-1')).toBe(true);
+    });
+
+    it.each(READY_AGENT_FRAME_FIXTURES.map((f) => [f.name, f.frame]))(
+      'goes idle shortly after the recorded frame: %s',
+      (_name, frame) => {
+        markAgentSpawned('agent-1');
+        markAgentOutput('agent-1', encode('\x1b[H\x1b[2J' + frame), 'task-1');
+
+        vi.advanceTimersByTime(2_000);
+        expect(isAgentIdle('agent-1')).toBe(true);
+      },
+    );
+
+    // Gemini and Copilot show a cancel hint beside a visible composer while working.
+    it.each([
+      ['Gemini', '⠋ Thinking… (esc to cancel, 5s)\r\n' + geminiPrompt],
+      ['Copilot', '◎ Thinking (Esc to cancel)\r\n❯ \r\nMode: interactive | Claude Sonnet 4.5'],
+    ])('keeps the long timeout while a %s cancel hint is visible', (_name, frame) => {
+      markAgentSpawned('agent-1');
+      markAgentOutput('agent-1', encode('\x1b[H\x1b[2J' + frame), 'task-1');
+
+      vi.advanceTimersByTime(2_000);
+      expect(isAgentIdle('agent-1')).toBe(false);
+
+      vi.advanceTimersByTime(13_000);
+      expect(isAgentIdle('agent-1')).toBe(true);
+    });
+
+    it('stays busy while spinner output keeps arriving with the prompt visible', () => {
+      markAgentSpawned('agent-1');
+      for (let i = 0; i < 10; i += 1) {
+        markAgentOutput('agent-1', encode('\x1b[H\x1b[2J⠋ Thinking…\r\n' + geminiPrompt), 'task-1');
+        vi.advanceTimersByTime(500);
+      }
+
+      expect(isAgentIdle('agent-1')).toBe(false);
+    });
+
+    it('returns an already-idle agent to idle quickly when its prompt redraws off the last line', () => {
+      markAgentSpawned('agent-1');
+      markAgentOutput('agent-1', encode('\x1b[H\x1b[2J' + claudePrompt), 'task-1');
+      vi.advanceTimersByTime(2_000);
+      expect(isAgentIdle('agent-1')).toBe(true);
+
+      // A resize or tab switch reprints the same prompt (not on the last line).
+      markAgentOutput('agent-1', encode('\x1b[H\x1b[2J' + claudePrompt), 'task-1');
+      expect(isAgentIdle('agent-1')).toBe(false);
+
+      vi.advanceTimersByTime(2_000);
+      expect(isAgentIdle('agent-1')).toBe(true);
+    });
+
+    it('restores the long timeout when work follows a visible prompt', () => {
+      markAgentSpawned('agent-1');
+      markAgentOutput('agent-1', encode('\x1b[H\x1b[2J' + claudePrompt), 'task-1');
+      // Inside the reset throttle window.
+      vi.advanceTimersByTime(100);
+      markAgentOutput('agent-1', encode('\r\nRunning tests...'), 'task-1');
+
+      vi.advanceTimersByTime(5_000);
+      expect(isAgentIdle('agent-1')).toBe(false);
+    });
+  });
+
+  describe('shell terminals are not agent composers', () => {
+    // A shell running Vim or a Starship-themed prompt can show an
+    // AGENT_READY_TAIL_PATTERNS match (e.g. "-- INSERT --") on a line that
+    // isn't the terminal's last line. That must not arm the 2s agent-prompt
+    // confirmation timer meant for Claude/Gemini composers — a shell that
+    // is genuinely busy (editing a file) should keep the normal 15s timeout.
+    it('keeps a shell active for the full idle timeout when a prompt-like line is not the tail', () => {
+      setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
+
+      markAgentOutput('shell-1', encode('-- INSERT --\r\nsome buffer text'), 'task-1');
+      expect(getTaskAttentionState('task-1')).toBe('shell_busy');
+
+      vi.advanceTimersByTime(2_000);
+      expect(getTaskAttentionState('task-1')).toBe('shell_busy');
+
+      vi.advanceTimersByTime(13_000);
+      expect(getTaskAttentionState('task-1')).toBe('idle');
+    });
+  });
+});
+
 describe('task attention state', () => {
   it('returns ready for committed clean tasks without active attention', () => {
     setMockTask('task-1', { agentIds: ['agent-1'] });
@@ -700,6 +1187,26 @@ describe('task attention state', () => {
     expect(getTaskAttentionState('task-1')).toBe('ready');
     expect(getTaskDotStatus('task-1')).toBe('ready');
     expect(taskNeedsAttention('task-1')).toBe(false);
+  });
+
+  it.each([
+    { overall: 'failure', failing: 1 },
+    { overall: 'failure', failing: 0 },
+    { overall: 'pending', failing: 1 },
+  ])('does not report ready for a CI failure ($overall, $failing failing)', (prChecks) => {
+    setMockTask('task-1', { agentIds: ['agent-1'] });
+    setMockAgent('agent-1', { status: 'running' });
+    vi.setSystemTime(new Date('2026-05-10T10:00:00Z'));
+    mockTaskGitStatus['task-1'] = {
+      has_committed_changes: true,
+      has_uncommitted_changes: false,
+      current_branch: 'task/example',
+      refreshedAt: Date.now(),
+    };
+    mockPrChecks['task-1'] = prChecks;
+
+    expect(getTaskAttentionState('task-1')).toBe('idle');
+    expect(getTaskDotStatus('task-1')).toBe('waiting');
   });
 
   it('does not report ready from a stale git status snapshot', () => {
@@ -779,27 +1286,42 @@ describe('task attention state', () => {
     expect(taskNeedsAttention('task-1')).toBe(true);
   });
 
-  it('returns active and busy when a task shell is currently producing output', () => {
+  it('returns shell_busy without demanding attention when only a task shell is producing output', () => {
     setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
 
+    markAgentSpawned('shell-1');
+
+    expect(getTaskAttentionState('task-1')).toBe('shell_busy');
+    expect(getTaskDotStatus('task-1')).toBe('waiting');
+    expect(taskNeedsAttention('task-1')).toBe(false);
+  });
+
+  it('still reports ready while a task shell keeps producing output', () => {
+    setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
+    vi.setSystemTime(new Date('2026-05-10T10:00:00Z'));
+    mockTaskGitStatus['task-1'] = {
+      has_committed_changes: true,
+      has_uncommitted_changes: false,
+      current_branch: 'task/example',
+      refreshedAt: Date.now(),
+    };
+
+    markAgentSpawned('shell-1');
+
+    expect(getTaskAttentionState('task-1')).toBe('ready');
+    expect(getTaskDotStatus('task-1')).toBe('ready');
+  });
+
+  it('keeps reporting active when an agent works alongside a busy shell', () => {
+    setMockTask('task-1', { agentIds: ['agent-1'], shellAgentIds: ['shell-1'] });
+    setMockAgent('agent-1', { status: 'running' });
+
+    markAgentSpawned('agent-1');
     markAgentSpawned('shell-1');
 
     expect(getTaskAttentionState('task-1')).toBe('active');
     expect(getTaskDotStatus('task-1')).toBe('busy');
     expect(taskNeedsAttention('task-1')).toBe(true);
-  });
-
-  it('shows review before busy when the latest step is awaiting review', () => {
-    setMockTask('task-1', {
-      agentIds: ['agent-1'],
-      stepsContent: [{ id: 'step-1', status: 'awaiting_review' }],
-    });
-    setMockAgent('agent-1', { status: 'running' });
-
-    markAgentSpawned('agent-1');
-
-    expect(getTaskAttentionState('task-1')).toBe('review');
-    expect(getTaskDotStatus('task-1')).toBe('review');
   });
 
   it('returns error when a task agent exits non-zero', () => {
@@ -903,6 +1425,77 @@ describe('task attention state', () => {
 });
 
 // ---------------------------------------------------------------------------
+// open questions (independent of the prioritized attention state)
+// ---------------------------------------------------------------------------
+describe('getTaskOpenQuestion', () => {
+  it('returns null when nothing in the task is asking', () => {
+    setMockTask('task-1', { agentIds: ['agent-1'] });
+    setMockAgent('agent-1', { status: 'running' });
+
+    expect(getTaskOpenQuestion('task-1')).toBeNull();
+  });
+
+  it('reports the question even when another agent in the task exited non-zero', () => {
+    setMockTask('task-1', { agentIds: ['agent-1', 'agent-2'] });
+    setMockAgent('agent-1', { status: 'exited', exitCode: 1, signal: null });
+    setMockAgent('agent-2', { status: 'running' });
+
+    markAgentOutput('agent-2', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+
+    // The prioritized display status hides the question behind the failure...
+    expect(getTaskAttentionState('task-1')).toBe('error');
+    // ...but a human answer is still owed, so callers must be able to see it.
+    expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-2');
+  });
+
+  it('reports the question even when the task is flagged for review', () => {
+    setMockTask('task-1', { agentIds: ['agent-1'], needsReview: true });
+    setMockAgent('agent-1', { status: 'running' });
+
+    markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+
+    expect(getTaskAttentionState('task-1')).toBe('review');
+    expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-1');
+  });
+
+  it('returns the newest question when several agents are asking', () => {
+    setMockTask('task-1', { agentIds: ['agent-1', 'agent-2'] });
+    setMockAgent('agent-1', { status: 'running' });
+    setMockAgent('agent-2', { status: 'running' });
+
+    markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+    const first = expectDefined(getTaskOpenQuestion('task-1')).since;
+    vi.advanceTimersByTime(5_000);
+    markAgentOutput('agent-2', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+
+    const newest = expectDefined(getTaskOpenQuestion('task-1'));
+    expect(newest.agentId).toBe('agent-2');
+    expect(newest.since).toBe(first + 5_000);
+    expect(getTaskOpenQuestions('task-1')).toEqual([newest, { agentId: 'agent-1', since: first }]);
+  });
+
+  it('reports a question coming from a task shell', () => {
+    setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
+
+    markAgentOutput('shell-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+
+    expect(getTaskOpenQuestion('task-1')?.agentId).toBe('shell-1');
+  });
+
+  it('ignores a question left behind by an agent that is no longer running', () => {
+    setMockTask('task-1', { agentIds: ['agent-1'] });
+    setMockAgent('agent-1', { status: 'running' });
+
+    markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+    expect(getTaskOpenQuestion('task-1')).not.toBeNull();
+
+    setMockAgent('agent-1', { status: 'exited', exitCode: 0, signal: null });
+
+    expect(getTaskOpenQuestion('task-1')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // task dot status
 // ---------------------------------------------------------------------------
 describe('getTaskDotStatus', () => {
@@ -932,11 +1525,7 @@ describe('coordinator auto-trust', () => {
     });
     setMockAgent('agent-1', { status: 'running' });
 
-    markAgentOutput(
-      'agent-1',
-      new TextEncoder().encode('Do you trust the files in this folder?'),
-      'task-1',
-    );
+    markAgentOutput('agent-1', new TextEncoder().encode(CLAUDE_TRUST_DIALOG), 'task-1');
 
     expect(isAutoTrustSettling('agent-1')).toBe(true);
     expect(getTaskAttentionState('task-1')).not.toBe('needs_input');
@@ -952,11 +1541,7 @@ describe('coordinator auto-trust', () => {
     });
     setMockAgent('agent-1', { status: 'running' });
 
-    markAgentOutput(
-      'agent-1',
-      new TextEncoder().encode('Do you trust the files in this folder?'),
-      'task-1',
-    );
+    markAgentOutput('agent-1', new TextEncoder().encode(CLAUDE_TRUST_DIALOG), 'task-1');
     vi.advanceTimersByTime(50);
 
     expect(setStore).toHaveBeenCalledWith('tasks', 'task-1', 'userActivityHoldUntil', undefined);
@@ -978,11 +1563,7 @@ describe('coordinator auto-trust', () => {
     });
     setMockAgent('agent-1', { status: 'running' });
 
-    markAgentOutput(
-      'agent-1',
-      new TextEncoder().encode('Do you trust the files in this folder?'),
-      'task-1',
-    );
+    markAgentOutput('agent-1', new TextEncoder().encode(CLAUDE_TRUST_DIALOG), 'task-1');
     vi.advanceTimersByTime(50);
 
     expect(setStore).toHaveBeenCalledWith('tasks', 'task-1', 'userActivityHoldUntil', undefined);
@@ -1004,13 +1585,10 @@ describe('coordinator auto-trust', () => {
     });
     setMockAgent('agent-1', { status: 'running' });
 
-    markAgentOutput(
-      'agent-1',
-      new TextEncoder().encode('Do you trust the files in this folder?'),
-      'task-1',
-    );
+    markAgentOutput('agent-1', new TextEncoder().encode(CLAUDE_TRUST_DIALOG), 'task-1');
     vi.advanceTimersByTime(50);
 
+    expect(enterWasSent()).toBe(true);
     expect(setStore).not.toHaveBeenCalledWith('tasks', 'task-1', 'controlledBy', 'coordinator');
     expect(invoke).not.toHaveBeenCalledWith('mcp_control_changed', {
       taskId: 'task-1',
@@ -1029,17 +1607,175 @@ describe('coordinator auto-trust', () => {
     });
     setMockAgent('agent-1', { status: 'running' });
 
-    markAgentOutput(
-      'agent-1',
-      new TextEncoder().encode('Do you trust the files in this folder?'),
-      'task-1',
-    );
+    markAgentOutput('agent-1', new TextEncoder().encode(CLAUDE_TRUST_DIALOG), 'task-1');
     vi.advanceTimersByTime(50);
 
+    expect(enterWasSent()).toBe(true);
     expect(setStore).not.toHaveBeenCalledWith('tasks', 'task-1', 'controlledBy', 'coordinator');
     expect(invoke).not.toHaveBeenCalledWith('mcp_control_changed', {
       taskId: 'task-1',
       controlledBy: 'coordinator',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hook-reported status (authoritative over PTY heuristics when present)
+// ---------------------------------------------------------------------------
+
+describe('hook-reported agent status', () => {
+  function hook(
+    agentId: string,
+    state: 'working' | 'waiting' | 'done',
+    event = 'UserPromptSubmit',
+  ): void {
+    applyAgentHookEvent({ agentId, taskId: 'task-1', state, event, at: Date.now() });
+  }
+
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-05-10T10:00:00Z'));
+    setMockTask('task-1', { agentIds: ['agent-1'] });
+    setMockAgent('agent-1', { status: 'running' });
+  });
+
+  it('reports needs_input from a waiting hook with the hook onset as since', () => {
+    vi.setSystemTime(new Date('2026-05-10T10:05:00Z'));
+    hook('agent-1', 'waiting', 'PermissionRequest');
+
+    expect(getTaskAttentionState('task-1')).toBe('needs_input');
+    expect(getTaskDotStatus('task-1')).toBe('waiting');
+    expect(getTaskOpenQuestion('task-1')).toEqual({
+      agentId: 'agent-1',
+      since: new Date('2026-05-10T10:05:00Z').getTime(),
+    });
+  });
+
+  it('reports active from a working hook even when the terminal is silent', () => {
+    hook('agent-1', 'working');
+    vi.advanceTimersByTime(60_000);
+
+    expect(getTaskAttentionState('task-1')).toBe('active');
+    expect(getTaskDotStatus('task-1')).toBe('busy');
+  });
+
+  it('lets a working hook veto a question the heuristics see on screen', () => {
+    hook('agent-1', 'working', 'PreToolUse');
+    markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+
+    expect(isAgentAskingQuestion('agent-1')).toBe(true);
+    expect(getTaskAttentionState('task-1')).toBe('active');
+    expect(getTaskOpenQuestion('task-1')).toBeNull();
+  });
+
+  it('lets hook state decide whether the agent is idle', () => {
+    hook('agent-1', 'working');
+    markAgentOutput('agent-1', new TextEncoder().encode('\r\n❯\r\nfooter'), 'task-1');
+    vi.advanceTimersByTime(2_000);
+    expect(isAgentIdle('agent-1')).toBe(false);
+
+    markAgentOutput('agent-1', new TextEncoder().encode('Building project...'), 'task-1');
+    hook('agent-1', 'done', 'Stop');
+    expect(isAgentIdle('agent-1')).toBe(true);
+  });
+
+  it('drops to idle on Stop while the prompt is still being redrawn', () => {
+    markAgentOutput('agent-1', new TextEncoder().encode('Building project...'), 'task-1');
+    expect(getTaskAttentionState('task-1')).toBe('active');
+
+    hook('agent-1', 'done', 'Stop');
+    markAgentOutput('agent-1', new TextEncoder().encode('> '), 'task-1');
+
+    expect(getTaskAttentionState('task-1')).toBe('idle');
+    expect(getTaskDotStatus('task-1')).toBe('waiting');
+  });
+
+  it('still trusts the heuristics for prompts that fire no hook once the turn is over', () => {
+    hook('agent-1', 'done', 'Stop');
+    markAgentOutput('agent-1', new TextEncoder().encode('Continue? [Y/n]'), 'task-1');
+
+    expect(getTaskAttentionState('task-1')).toBe('needs_input');
+    expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-1');
+  });
+
+  it('reports a failed turn as an error until the next turn starts', () => {
+    hook('agent-1', 'working');
+    hook('agent-1', 'done', 'StopFailure');
+    expect(getTaskAttentionState('task-1')).toBe('error');
+    expect(taskNeedsAttention('task-1')).toBe(true);
+
+    // Claude's idle reminder must not quietly clear the failure.
+    vi.advanceTimersByTime(60_000);
+    hook('agent-1', 'done', 'Notification');
+    expect(getTaskAttentionState('task-1')).toBe('error');
+
+    hook('agent-1', 'working');
+    expect(getTaskAttentionState('task-1')).toBe('active');
+  });
+
+  it('does not report an error for a turn that finished normally', () => {
+    hook('agent-1', 'done', 'Stop');
+    expect(getTaskAttentionState('task-1')).toBe('idle');
+  });
+
+  it('keeps needs_input for a prompt left unanswered past the stale window', () => {
+    hook('agent-1', 'waiting', 'PermissionRequest');
+    vi.advanceTimersByTime(AGENT_HOOK_STALE_MS * 2);
+    expect(getTaskAttentionState('task-1')).toBe('needs_input');
+    expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-1');
+  });
+
+  it('preserves hook state on reattachment and clears it on an actual new launch or teardown', () => {
+    hook('agent-1', 'waiting', 'PermissionRequest');
+    markAgentSpawned('agent-1');
+    expect(getAgentHookStatus('agent-1')?.state).toBe('waiting');
+    applyAgentActivityObservation({
+      kind: 'launch',
+      agentId: 'agent-1',
+      taskId: 'task-1',
+      launchId: 'new-launch',
+      sequence: 1,
+      at: Date.now(),
+    });
+    expect(getAgentHookStatus('agent-1')).toBeNull();
+    expect(getTaskAttentionState('task-1')).toBe('active');
+
+    hook('agent-1', 'working');
+    clearAgentActivity('agent-1');
+    expect(getAgentHookStatus('agent-1')).toBeNull();
+  });
+
+  it('names the asking secondary agent rather than claiming primary activity', () => {
+    setMockTask('task-1', { agentIds: ['agent-1', 'agent-2'] });
+    setMockAgent('agent-2', { status: 'running' });
+    hook('agent-1', 'working');
+    hook('agent-2', 'waiting', 'PermissionRequest');
+    expect(getTaskActivityTooltip('task-1')).toContain('Agent agent-2');
+    expect(getTaskActivityTooltip('task-1')).toContain('hook report (PermissionRequest)');
+  });
+
+  it('labels hookless output inference and keeps unknown source times unknown', () => {
+    markAgentSpawned('agent-1');
+    expect(getTaskActivityTooltip('task-1')).toContain('Activity unknown');
+    expect(getTaskActivityTooltip('task-1')).toContain('observation time unknown');
+    markAgentOutput('agent-1', new TextEncoder().encode('Building project...'), 'task-1');
+    expect(getTaskActivityTooltip('task-1')).toContain('Activity inferred from terminal output');
+    expect(getTaskActivityTooltip('task-1')).toContain('observed');
+    markAgentSpawned('agent-1');
+    expect(getTaskActivityTooltip('task-1')).toContain('observation time unknown');
+  });
+
+  it('refreshes the observed output time at most once per second', () => {
+    const observedAt = (iso: string) => `observed ${new Date(iso).toLocaleString()}`;
+    markAgentSpawned('agent-1');
+    vi.setSystemTime(new Date('2026-05-10T10:00:00.500Z'));
+    markAgentOutput('agent-1', new TextEncoder().encode('Building 1'), 'task-1');
+
+    vi.setSystemTime(new Date('2026-05-10T10:00:01.200Z'));
+    markAgentOutput('agent-1', new TextEncoder().encode('Building 2'), 'task-1');
+    expect(getTaskActivityTooltip('task-1')).toContain(observedAt('2026-05-10T10:00:00Z'));
+
+    vi.setSystemTime(new Date('2026-05-10T10:00:01.600Z'));
+    markAgentOutput('agent-1', new TextEncoder().encode('Building 3'), 'task-1');
+    expect(getTaskActivityTooltip('task-1')).toContain(observedAt('2026-05-10T10:00:01Z'));
   });
 });

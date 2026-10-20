@@ -295,4 +295,68 @@ describe('pollUntilPromptAppearsInOutput', () => {
     expect(result).toBe(false);
     expect(getTail).toHaveBeenCalledTimes(1);
   });
+
+  // --- TUI rendering of the echo ---
+
+  it('matches a multi-line prompt the TUI renders with its own line breaks and indent', async () => {
+    const getTail = vi
+      .fn()
+      .mockReturnValue(
+        '\x1b[2K> should we write it?\r\n\x1b[2K\r\n\x1b[2K  Hello Johannes,\r\n\r\n  We would like to review',
+      );
+    const result = await pollUntilPromptAppearsInOutput(
+      'agent-1',
+      'should we write it?\n\n\nHello Johannes,\n\nWe would like to review',
+      '',
+      makeSignal(),
+      getTail,
+      0,
+      250,
+    );
+    expect(result).toBe(true);
+  });
+
+  it('matches a long paste the TUI collapses into a placeholder', async () => {
+    const getTail = vi.fn().mockReturnValue('> [Pasted text #1 +120 lines]');
+    const result = await pollUntilPromptAppearsInOutput(
+      'agent-1',
+      `# Handover: landing page work\n${'details\n'.repeat(120)}`,
+      '',
+      makeSignal(),
+      getTail,
+      0,
+      250,
+    );
+    expect(result).toBe(true);
+  });
+
+  it('matches a paste placeholder whose spaces the TUI draws as cursor moves', async () => {
+    const getTail = vi
+      .fn()
+      .mockReturnValue('> [Pasted\x1b[1Ctext\x1b[1C#1\x1b[1C+120\x1b[1Clines]');
+    const result = await pollUntilPromptAppearsInOutput(
+      'agent-1',
+      `# Handover: landing page work\n${'details\n'.repeat(120)}`,
+      '',
+      makeSignal(),
+      getTail,
+      0,
+      250,
+    );
+    expect(result).toBe(true);
+  });
+
+  it('ignores a paste placeholder that was already on screen before sending', async () => {
+    const getTail = vi.fn().mockReturnValue('> [Pasted text #1 +120 lines]');
+    const result = await pollUntilPromptAppearsInOutput(
+      'agent-1',
+      'build the feature',
+      '> [Pasted text #1 +120 lines]',
+      makeSignal(),
+      getTail,
+      0,
+      250,
+    );
+    expect(result).toBe(false);
+  });
 });

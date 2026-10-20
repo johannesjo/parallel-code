@@ -1,0 +1,47 @@
+.codex-chat {
+  --chat-border: var(--border);
+  --chat-accent: var(--accent);
+  /* Every theme gives --bg-elevated the same value as the panel background, so
+     cards painted with it disappeared into the chat. Derive a nested ramp from
+     the actual backdrop instead; it stays right for light and custom themes. */
+  --chat-surface: color-mix(in srgb, var(--fg) 5%, var(--task-panel-bg, var(--bg-elevated)));
+  --chat-surface-strong: color-mix(
+    in srgb,
+    var(--fg) 10%,
+    var(--task-panel-bg, var(--bg-elevated))
+  );
+  /* Keep chat overlays below the surrounding panel's focus outline. */
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--fg);
+  background: var(--task-panel-bg, var(--bg-elevated));
+  font-size: 13px;
+}
+.codex-chat-note {
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.codex-chat-island {
+  flex: 1;
+  min-height: 0;
+}
+.codex-chat-error {
+  padding: 8px 16px;
+  color: var(--error);
+  font-size: 12px;
+}
+.codex-chat-error button {
+  margin-left: 8px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  cursor: pointer;
+}

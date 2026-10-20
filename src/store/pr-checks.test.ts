@@ -18,23 +18,135 @@ vi.mock('./persistence', () => ({
 }));
 
 import { setStore, store } from './core';
-import { startPrChecksSubscription } from './pr-checks';
+import { getMergedTasksTodayCount } from './completion';
+import { getPrChecks, startPrChecksSubscription } from './pr-checks';
 
 const flushPromises = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+const mockOn = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setStore({ completedTaskCount: 0, countedMergedPrs: [] });
   setStore('taskOrder', []);
   setStore('collapsedTaskOrder', []);
   setStore('tasks', {});
   mockSaveState.mockResolvedValue(undefined);
+  mockOn.mockReturnValue(vi.fn());
   vi.stubGlobal('window', {
     electron: {
       ipcRenderer: {
-        on: vi.fn(() => vi.fn()),
+        on: mockOn,
       },
     },
     setInterval: vi.fn(() => 1),
+  });
+});
+
+describe('startPrChecksSubscription updates', () => {
+  it('stores draft and review-decision metadata from the watcher', () => {
+    setStore('taskOrder', ['task-1']);
+    setStore('tasks', {
+      'task-1': {
+        id: 'task-1',
+        name: 'Task',
+        projectId: 'project-1',
+        branchName: 'task/task-1',
+        worktreePath: '/repo/.worktrees/task-1',
+        agentIds: [],
+        shellAgentIds: [],
+        notes: '',
+        lastPrompt: '',
+        gitIsolation: 'worktree',
+        prUrl: 'https://github.com/acme/app/pull/12',
+      },
+    });
+
+    let disposeRoot: (() => void) | undefined;
+    createRoot((dispose) => {
+      disposeRoot = dispose;
+      startPrChecksSubscription();
+    });
+    const updateHandler = mockOn.mock.calls.find(
+      ([channel]) => channel === IPC.PrChecksUpdate,
+    )?.[1] as ((data: unknown) => void) | undefined;
+
+    updateHandler?.({
+      taskId: 'task-1',
+      overall: 'success',
+      passing: 2,
+      pending: 0,
+      failing: 0,
+      checks: [],
+      isDraft: false,
+      reviewDecision: 'APPROVED',
+      checkedAt: '2026-08-04T10:00:00.000Z',
+      cleared: false,
+    });
+
+    expect(getPrChecks('task-1')).toMatchObject({
+      isDraft: false,
+      reviewDecision: 'APPROVED',
+    });
+    disposeRoot?.();
+  });
+
+  it('keeps a merged PR state after the watcher clears', () => {
+    setStore('taskOrder', ['task-1']);
+    setStore('tasks', {
+      'task-1': {
+        id: 'task-1',
+        name: 'Task',
+        projectId: 'project-1',
+        branchName: 'task/task-1',
+        worktreePath: '/repo/.worktrees/task-1',
+        agentIds: [],
+        shellAgentIds: [],
+        notes: '',
+        lastPrompt: '',
+        gitIsolation: 'worktree',
+        prUrl: 'https://github.com/acme/app/pull/12',
+      },
+    });
+
+    let disposeRoot: (() => void) | undefined;
+    createRoot((dispose) => {
+      disposeRoot = dispose;
+      startPrChecksSubscription();
+    });
+    const updateHandler = mockOn.mock.calls.find(
+      ([channel]) => channel === IPC.PrChecksUpdate,
+    )?.[1] as ((data: unknown) => void) | undefined;
+    const cleared = {
+      taskId: 'task-1',
+      overall: 'none',
+      passing: 0,
+      pending: 0,
+      failing: 0,
+      checks: [],
+      checkedAt: '2026-08-04T10:00:00.000Z',
+      cleared: true,
+    };
+
+    const merge = {
+      ...cleared,
+      merged: true,
+      prUrl: 'https://github.com/acme/app/pull/12',
+      mergedAt: new Date().toISOString(),
+    };
+    updateHandler?.(merge);
+    updateHandler?.(merge);
+    expect(getMergedTasksTodayCount()).toBe(1);
+    expect(mockSaveState).toHaveBeenCalledTimes(1);
+    expect(getPrChecks('task-1')).toMatchObject({ overall: 'none', merged: true });
+
+    updateHandler?.({ ...cleared, merged: false });
+    expect(getPrChecks('task-1')).toBeUndefined();
+
+    // A later open PR on the same task must not inherit the merged flag.
+    updateHandler?.({ ...cleared, merged: true });
+    updateHandler?.({ ...cleared, overall: 'success', passing: 1, cleared: false });
+    expect(getPrChecks('task-1')).toMatchObject({ overall: 'success', merged: false });
+    disposeRoot?.();
   });
 });
 
@@ -122,6 +234,58 @@ describe('startPrChecksSubscription branch PR detection', () => {
     expect(mockInvoke).toHaveBeenCalledTimes(1);
     expect(store.tasks['task-1'].prUrl).toBeUndefined();
     expect(store.tasks['task-2'].prUrl).toBeUndefined();
+    disposeRoot?.();
+  });
+
+  it('limits concurrent branch probes and probes the rest as slots free up', async () => {
+    const ids = Array.from({ length: 10 }, (_, i) => `task-${i}`);
+    setStore('taskOrder', ids);
+    setStore(
+      'tasks',
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          {
+            id,
+            name: id,
+            projectId: 'project-1',
+            branchName: `task/${id}`,
+            worktreePath: `/repo/.worktrees/${id}`,
+            agentIds: [],
+            shellAgentIds: [],
+            notes: '',
+            lastPrompt: '',
+            gitIsolation: 'worktree' as const,
+          },
+        ]),
+      ),
+    );
+    const pending: Array<(value: { url: null }) => void> = [];
+    mockInvoke.mockImplementation(
+      () => new Promise<{ url: null }>((resolve) => pending.push(resolve)),
+    );
+    const probedPaths = () =>
+      mockInvoke.mock.calls
+        .filter(([channel]) => channel === IPC.DetectPrForBranch)
+        .map(([, args]) => (args as { worktreePath: string }).worktreePath);
+
+    let disposeRoot: (() => void) | undefined;
+    createRoot((dispose) => {
+      disposeRoot = dispose;
+      startPrChecksSubscription();
+    });
+    await flushPromises();
+    expect(probedPaths()).toHaveLength(4);
+
+    pending.shift()?.({ url: null });
+    await flushPromises();
+    expect(probedPaths()).toHaveLength(5);
+
+    while (pending.length > 0) {
+      pending.shift()?.({ url: null });
+      await flushPromises();
+    }
+    expect([...probedPaths()].sort()).toEqual(ids.map((id) => `/repo/.worktrees/${id}`).sort());
     disposeRoot?.();
   });
 });

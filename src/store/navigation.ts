@@ -1,8 +1,18 @@
+import { matchesTaskProjectFilter } from './task-project-filter';
+import { batch } from 'solid-js';
+import { documentAgentTaskId, isProjectPageAgentTaskId } from '../documents/task-id';
 import { store, setStore } from './core';
-import { getTaskFocusedPanel, setTaskFocusedPanel } from './focused-panel';
+import { info as logInfo } from '../lib/log';
+import {
+  getTaskFocusedPanel,
+  scheduleTaskFocus,
+  setTaskFocusedPanel,
+  triggerFocus,
+} from './focused-panel';
 import { showNotification } from './notification';
 import { pickAndAddProject } from './projects';
 import { reorderTask } from './tasks';
+import { closeProjectPages } from './project-pages';
 
 const AI_TERMINAL_PREFIX = 'ai-terminal:';
 
@@ -22,10 +32,46 @@ function selectedAgentIdForTask(task: {
     : null;
 }
 
+/** Visible tile order; the single document workspace follows coding tasks. */
+export function openPanelOrder(): string[] {
+  const taskOrder = store.taskOrder.filter(matchesTaskProjectFilter);
+  return store.activeDocumentProjectId
+    ? [...taskOrder, documentAgentTaskId(store.activeDocumentProjectId)]
+    : taskOrder;
+}
+
+/** Display name of an open item: a task, a terminal or the document workspace. */
+export function openItemName(id: string): string {
+  const documentProjectId = store.activeDocumentProjectId;
+  return (
+    (documentProjectId && id === documentAgentTaskId(documentProjectId)
+      ? store.projects.find((p) => p.id === documentProjectId)?.name
+      : undefined) ??
+    store.tasks[id]?.name ??
+    store.terminals[id]?.name ??
+    'Open item'
+  );
+}
+
 export function setActiveTask(id: string): void {
+  // Its panel lives on the GitHub page or the board, which an active task would close.
+  if (isProjectPageAgentTaskId(id)) return;
   const task = store.tasks[id];
   const terminal = store.terminals[id];
-  if (!task && !terminal) return;
+  const isDocument =
+    store.activeDocumentProjectId && id === documentAgentTaskId(store.activeDocumentProjectId);
+  if (!task && !terminal && !isDocument) return;
+  // Activating a snoozed task returns it; the stack says which path did it.
+  if ((task?.snoozedUntilCi || task?.snoozedUntil !== undefined) && store.activeTaskId !== id) {
+    logInfo('background-tasks', 'activating snoozed task', {
+      taskId: id,
+      stack: new Error().stack,
+    });
+  }
+  if (!isDocument && !matchesTaskProjectFilter(id)) setStore('taskProjectFilter', null);
+  closeProjectPages();
+  setStore('newTaskPanelFocused', false);
+  setStore('placeholderFocused', false);
   let activeAgentId: string | null = null;
   if (task) {
     activeAgentId =
@@ -40,6 +86,23 @@ export function setActiveTask(id: string): void {
   setStore('activeAgentId', activeAgentId);
 }
 
+/** Activate a task from a click or tap into its column. Unlike `setActiveTask`,
+ *  which keyboard jumps share, this also takes focus away from the sidebar. */
+export function activateTaskFromPointer(id: string): void {
+  const leavingSidebar = store.sidebarFocused;
+  const wasActive = store.activeTaskId === id;
+  batch(() => {
+    setActiveTask(id);
+    // Only when the id was one setActiveTask accepted.
+    if (store.activeTaskId === id) setStore('sidebarFocused', false);
+  });
+  // A column that was already active re-runs none of its focus effects, so
+  // nothing else would move DOM focus back into it.
+  if (leavingSidebar && wasActive && store.activeTaskId === id) {
+    scheduleTaskFocus(id, getTaskFocusedPanel(id));
+  }
+}
+
 export function setActiveAgent(agentId: string): void {
   setStore('activeAgentId', agentId);
   const taskId = store.activeTaskId;
@@ -50,21 +113,23 @@ export function setActiveAgent(agentId: string): void {
 }
 
 export function moveActiveTask(direction: 'left' | 'right'): void {
+  if (store.newTaskPanelFocused) return;
   const { taskOrder, activeTaskId } = store;
   if (!activeTaskId || taskOrder.length < 2) return;
-  const idx = taskOrder.indexOf(activeTaskId);
+  const visibleOrder = taskOrder.filter(matchesTaskProjectFilter);
+  const idx = visibleOrder.indexOf(activeTaskId);
   if (idx === -1) return;
   const target = direction === 'left' ? idx - 1 : idx + 1;
-  if (target < 0 || target >= taskOrder.length) return;
-  reorderTask(idx, target);
+  if (target < 0 || target >= visibleOrder.length) return;
+  reorderTask(taskOrder.indexOf(activeTaskId), taskOrder.indexOf(visibleOrder[target]));
   // Re-focus the moved task and scroll it into view (DOM node move loses focus)
   setTaskFocusedPanel(activeTaskId, getTaskFocusedPanel(activeTaskId));
 }
 
 export function jumpToTask(index: number): void {
-  // Index against taskOrder so Cmd+N matches the left-to-right tile order
-  // shown in the main area (and the order Cmd+Left/Right cycles through).
-  const id = store.taskOrder[index];
+  // Index against visible panels so Cmd+N matches the left-to-right tile order
+  // shown in the main area. Unlike Cmd+Left/Right, it can pick a snoozed tile.
+  const id = openPanelOrder()[index];
   if (!id) return;
   setActiveTask(id);
   if (store.sidebarFocused) {
@@ -73,16 +138,37 @@ export function jumpToTask(index: number): void {
   }
 }
 
-export function toggleNewTaskDialog(show?: boolean): void {
-  const shouldShow = show ?? !store.showNewTaskDialog;
+export function toggleNewTaskPanel(show?: boolean): void {
+  const shouldShow = show ?? !store.showNewTaskPanel;
   if (shouldShow && store.projects.length === 0) {
     showNotification('Add a project first');
     pickAndAddProject();
     return;
   }
-  if (!shouldShow) {
+  if (shouldShow) {
+    closeProjectPages();
+    setStore('sidebarFocused', false);
+    setStore('placeholderFocused', false);
+  } else {
+    setStore('newTaskPanelFocused', false);
     setStore('newTaskDropUrl', null);
     setStore('newTaskPrefillPrompt', null);
   }
-  setStore('showNewTaskDialog', shouldShow);
+  setStore('showNewTaskPanel', shouldShow);
+  if (shouldShow) triggerFocus('new-task');
+}
+
+export function setTaskProjectFilter(projectId: string | null): void {
+  batch(() => {
+    setStore('taskProjectFilter', projectId);
+    setStore('sidebarFocusedTaskId', null);
+    if (!store.activeTaskId || !openPanelOrder().includes(store.activeTaskId)) {
+      const nextId = openPanelOrder()[0];
+      if (nextId) setActiveTask(nextId);
+      else {
+        setStore('activeTaskId', null);
+        setStore('activeAgentId', null);
+      }
+    }
+  });
 }

@@ -2,14 +2,14 @@ const LINE_DELTA_PX = 16;
 const PAGE_DELTA_PX = 800;
 const ZOOM_STEP_DELTA_PX = 100;
 
-function toPixels(e: WheelEvent): number {
+function toPixels(e: WheelEvent, delta = e.deltaY): number {
   switch (e.deltaMode) {
     case WheelEvent.DOM_DELTA_LINE:
-      return e.deltaY * LINE_DELTA_PX;
+      return delta * LINE_DELTA_PX;
     case WheelEvent.DOM_DELTA_PAGE:
-      return e.deltaY * PAGE_DELTA_PX;
+      return delta * PAGE_DELTA_PX;
     default:
-      return e.deltaY;
+      return delta;
   }
 }
 
@@ -54,7 +54,8 @@ export function createCtrlShiftWheelResizeHandler(
     if (!e.ctrlKey || !e.shiftKey) return;
     e.preventDefault();
 
-    const deltaPx = toPixels(e);
+    // macOS reports Shift+wheel as horizontal scrolling.
+    const deltaPx = toPixels(e, e.deltaY || e.deltaX);
     if (remainderPx !== 0 && Math.sign(remainderPx) !== Math.sign(deltaPx)) {
       remainderPx = 0;
     }

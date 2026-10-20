@@ -1,22 +1,34 @@
-import { Show, createSignal, createEffect, createUniqueId, onCleanup } from 'solid-js';
+import {
+  Show,
+  createSignal,
+  createMemo,
+  createEffect,
+  createUniqueId,
+  onCleanup,
+  untrack,
+} from 'solid-js';
 import { Dialog } from './Dialog';
 import { errMessage } from '../lib/log';
-import { invoke } from '../lib/ipc';
-import { IPC } from '../../electron/ipc/channels';
+import { loadTaskDiff } from '../lib/load-task-diff';
 import { createDialogScroll } from '../lib/dialog-scroll';
+import {
+  createDiffIdentity,
+  createRequestGenerationGuard,
+  createReviewIdentity,
+} from '../lib/diff-review-lifecycle';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { parseUnifiedDiff } from '../lib/unified-diff-parser';
-import { evictStaleAnnotations } from '../lib/review-eviction';
+import { countSearchMatches } from '../lib/diff-collapse';
+import { type QualityFindingProvider } from '../lib/quality-findings';
 import { windowChromeTopInset } from '../lib/platform';
 import { ScrollingDiffView } from './ScrollingDiffView';
+import { CommitNavBar, type CommitSelection } from './CommitNavBar';
 import {
-  CommitNavBar,
-  type CommitSelection,
-  isCommitHashSelection,
-  isUncommittedSelection,
-} from './CommitNavBar';
-import { ReviewCommentsButton, ReviewSidebarPanel } from './ReviewSidebarPanel';
+  ReviewCommentsButton,
+  ReviewFindingsRefreshButton,
+  ReviewSidebarPanel,
+} from './ReviewSidebarPanel';
 import { ReviewProvider, useReview } from './ReviewProvider';
 import { ChangedFilesList } from './ChangedFilesList';
 import { CloseIcon } from './icons';
@@ -24,10 +36,22 @@ import type { FileDiff } from '../lib/unified-diff-parser';
 import type { ReviewAnnotation } from './review-types';
 import type { CommitInfo } from '../ipc/types';
 import type { GitIsolationMode } from '../store/types';
+import { ChangeTour } from './ChangeTour';
+import { createChangeTour, type ChangeTourController } from '../lib/create-change-tour';
+import type { TourLocation } from '../lib/change-tour';
+import { store, updateTaskNotes } from '../store/store';
 
 interface DiffViewerDialogProps {
-  /** Which file to auto-scroll to (the one the user clicked). Null = closed. */
+  tour?: ChangeTourController;
+  startTour?: boolean;
+  /**
+   * Which file to auto-scroll to (the one the user clicked). Null = closed;
+   * '' = open on all changes with no file focused.
+   */
   scrollToFile: string | null;
+  scrollToLine?: number;
+  scrollToSide?: 'old' | 'new';
+  closeLabel?: string;
   /** Visible task title shown while reviewing changes. */
   taskName?: string;
   worktreePath: string;
@@ -50,6 +74,8 @@ interface DiffViewerDialogProps {
   onCommitNavigate?: (selection: CommitSelection) => void;
   /** Git isolation mode — CommitNavBar is only shown for worktree-isolated tasks */
   gitIsolation?: GitIsolationMode;
+  /** Optional structured-finding source. Providers capture their own repository context. */
+  findingProvider?: QualityFindingProvider;
 }
 
 /** Compile review annotations into a prompt string for the agent. */
@@ -67,36 +93,52 @@ export function compileDiffReview(annotations: ReviewAnnotation[]): string {
 }
 
 export function DiffViewerDialog(props: DiffViewerDialogProps) {
+  const tour = untrack(() => props.tour) ?? createChangeTour();
   const titleId = createUniqueId();
+  const reviewIdentity = () =>
+    createReviewIdentity({
+      taskId: props.taskId,
+      worktreePath: props.worktreePath,
+      projectRoot: props.projectRoot,
+      branchName: props.branchName,
+    });
   return (
-    <Dialog
+    <ReviewProvider
+      taskId={props.taskId}
+      agentId={props.agentId}
+      findingProvider={props.findingProvider}
+      reviewIdentity={reviewIdentity()}
       open={props.scrollToFile !== null}
-      onClose={props.onClose}
-      width="100vw"
-      labelledBy={titleId}
-      panelStyle={{
-        height: '100vh',
-        'max-height': 'none',
-        'max-width': 'none',
-        'border-radius': '0',
-        border: 'none',
-        overflow: 'hidden',
-        padding: '0',
-        gap: '0',
-      }}
+      compilePrompt={compileDiffReview}
+      onSubmitted={props.onClose}
     >
-      <h2 id={titleId} class="dialog-sr-only">
-        Diff viewer for {props.taskName ?? 'task'}: {props.scrollToFile ?? 'all changes'}
-      </h2>
-      <Show when={props.scrollToFile !== null}>
-        <ReviewProvider
-          taskId={props.taskId}
-          agentId={props.agentId}
-          compilePrompt={compileDiffReview}
-          onSubmitted={props.onClose}
-        >
+      <Dialog
+        open={props.scrollToFile !== null}
+        onClose={props.onClose}
+        width="100vw"
+        labelledBy={titleId}
+        panelStyle={{
+          height: '100vh',
+          'max-height': 'none',
+          'max-width': 'none',
+          'border-radius': '0',
+          border: 'none',
+          overflow: 'hidden',
+          padding: '0',
+          gap: '0',
+        }}
+      >
+        <h2 id={titleId} class="dialog-sr-only">
+          Diff viewer for {props.taskName ?? 'task'}: {props.scrollToFile || 'all changes'}
+        </h2>
+        <Show when={props.scrollToFile !== null}>
           <DiffViewerContent
+            tour={tour}
+            startTour={props.startTour}
             scrollToFile={props.scrollToFile}
+            scrollToLine={props.scrollToLine}
+            scrollToSide={props.scrollToSide}
+            closeLabel={props.closeLabel}
             taskName={props.taskName}
             worktreePath={props.worktreePath}
             onClose={props.onClose}
@@ -110,16 +152,18 @@ export function DiffViewerDialog(props: DiffViewerDialogProps) {
             selectedCommit={props.selectedCommit}
             onCommitNavigate={props.onCommitNavigate}
             gitIsolation={props.gitIsolation}
+            findingProvider={props.findingProvider}
           />
-        </ReviewProvider>
-      </Show>
-    </Dialog>
+        </Show>
+      </Dialog>
+    </ReviewProvider>
   );
 }
 
 /** Inner content rendered inside ReviewProvider so it can call useReview(). */
-function DiffViewerContent(props: DiffViewerDialogProps) {
+function DiffViewerContent(props: DiffViewerDialogProps & { tour: ChangeTourController }) {
   const review = useReview();
+  const task = () => (props.taskId ? store.tasks[props.taskId] : undefined);
   const headerPaddingTop = `${windowChromeTopInset + 12}px`;
 
   const [parsedFiles, setParsedFiles] = createSignal<FileDiff[]>([]);
@@ -127,8 +171,43 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
   const [error, setError] = createSignal('');
   const [searchQuery, setSearchQuery] = createSignal('');
   const [activeFilePath, setActiveFilePath] = createSignal<string | null>(null);
+  const [tourOpen, setTourOpen] = createSignal(false);
+  const [showAllChanges, setShowAllChanges] = createSignal(false);
+  const stepFiles = createMemo(
+    () =>
+      new Set(
+        props.tour.stops()[props.tour.step()]?.locations.map((location) => location.filePath) ?? [],
+      ),
+  );
+  // While a reworked tour generates there is no step, so every file stays in view.
+  const visibleFiles = createMemo(() =>
+    tourOpen() && !showAllChanges() && stepFiles().size > 0
+      ? parsedFiles().filter((file) => stepFiles().has(file.path))
+      : parsedFiles(),
+  );
 
-  let fetchGeneration = 0;
+  function navigateTour(location: TourLocation) {
+    const { filePath } = location;
+    setActiveFilePath(filePath);
+    const file = parsedFiles().find((entry) => entry.path === filePath);
+    review.setScrollTarget({
+      filePath,
+      startLine: location.line,
+      ...(location.endLine !== undefined && { endLine: location.endLine }),
+      side: file?.status === 'D' ? 'old' : 'new',
+    });
+  }
+
+  // Findings can point outside the current step. Reveal their file rather than
+  // leaving the review sidebar's navigation aimed at a hidden diff.
+  createEffect(() => {
+    const target = review.scrollTarget();
+    untrack(() => {
+      if (tourOpen() && target && !stepFiles().has(target.filePath)) setShowAllChanges(true);
+    });
+  });
+
+  const fetchGeneration = createRequestGenerationGuard();
   let searchInputRef: HTMLInputElement | undefined;
   let diffScrollRef: HTMLDivElement | undefined;
   let containerRef: HTMLDivElement | undefined;
@@ -157,65 +236,86 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
 
   createEffect(() => {
     const scrollTarget = props.scrollToFile;
+    const scrollLine = props.scrollToLine;
+    const scrollSide = props.scrollToSide;
     // Access selectedCommit before the early return so the effect tracks it
     // even when the dialog is closed — ensures we re-run on reopen.
     const selection = props.selectedCommit;
-    if (!scrollTarget) return;
+    const startTour = props.startTour;
+    const tour = props.tour;
+    // Only `null` means closed. An empty target opens the viewer on the whole
+    // diff with no file to focus, which is how chat's "Review changes" enters.
+    if (scrollTarget === null) return;
 
     const worktreePath = props.worktreePath;
     const projectRoot = props.projectRoot;
     const branchName = props.branchName;
     const baseBranch = props.baseBranch;
-    const thisGen = ++fetchGeneration;
+    const reviewIdentity = createReviewIdentity({
+      taskId: props.taskId,
+      worktreePath,
+      projectRoot,
+      branchName,
+    });
+    const thisGen = fetchGeneration.begin();
 
+    onCleanup(() => {
+      fetchGeneration.invalidate();
+      review.suspendDiffLoad();
+    });
+
+    review.beginDiffLoad();
     setSearchQuery('');
+    setShowAllChanges(false);
     setLoading(true);
     setError('');
     setParsedFiles([]);
 
-    let diffPromise: Promise<string>;
-
-    if (isCommitHashSelection(selection) && worktreePath) {
-      // Single-commit mode
-      diffPromise = invoke<string>(IPC.GetCommitDiffs, {
-        worktreePath,
-        commitHash: selection,
-      });
-    } else if (isUncommittedSelection(selection) && worktreePath) {
-      // Uncommitted-only mode (worktree only — branch fallback has no working tree)
-      diffPromise = invoke<string>(IPC.GetUncommittedFileDiffs, { worktreePath });
-    } else {
-      // All-changes mode (existing behavior)
-      const worktreePromise = worktreePath
-        ? invoke<string>(IPC.GetAllFileDiffs, { worktreePath, baseBranch })
-        : Promise.reject(new Error('no worktree'));
-
-      diffPromise = worktreePromise.catch((err: unknown) => {
-        if (projectRoot && branchName) {
-          return invoke<string>(IPC.GetAllFileDiffsFromBranch, {
+    // Keep the tour's explanations aligned with its captured diff, even if work
+    // continued during generation. Ordinary file clicks still load current changes.
+    const tourDiff = untrack(() =>
+      startTour && tour.stops().length > 0 ? tour.sourceDiff() : null,
+    );
+    const diffPromise =
+      tourDiff !== null
+        ? Promise.resolve(tourDiff)
+        : loadTaskDiff({
+            worktreePath,
             projectRoot,
             branchName,
             baseBranch,
-          });
-        }
-        const msg = errMessage(err);
-        throw new Error(`Could not load diffs: ${msg}`);
-      });
-    }
+            selectedCommit: selection,
+          }).then(({ rawDiff }) => rawDiff);
 
     diffPromise
-      .then((rawDiff) => {
-        if (thisGen !== fetchGeneration) return;
+      .then(async (rawDiff) => {
+        if (!fetchGeneration.isCurrent(thisGen)) return;
         const newFiles = parseUnifiedDiff(rawDiff);
+        const diffIdentity = await createDiffIdentity(reviewIdentity, rawDiff);
+        if (!fetchGeneration.isCurrent(thisGen)) return;
         setParsedFiles(newFiles);
-        review.replaceAnnotations((prev) => evictStaleAnnotations(prev, newFiles));
+        untrack(() => {
+          // Browsing another diff scope must not cancel an independent tour.
+          if (startTour) tour.reconcile(rawDiff);
+          setTourOpen(!!startTour && tour.stops().length > 0);
+        });
+        review.completeDiffLoad(diffIdentity, newFiles);
+        if (scrollTarget && scrollLine) {
+          review.setScrollTarget({
+            filePath: scrollTarget,
+            startLine: scrollLine,
+            side:
+              scrollSide ??
+              (newFiles.find((file) => file.path === scrollTarget)?.status === 'D' ? 'old' : 'new'),
+          });
+        }
       })
       .catch((err) => {
-        if (thisGen !== fetchGeneration) return;
+        if (!fetchGeneration.isCurrent(thisGen)) return;
         setError(errMessage(err));
       })
       .finally(() => {
-        if (thisGen === fetchGeneration) setLoading(false);
+        if (fetchGeneration.isCurrent(thisGen)) setLoading(false);
       });
   });
 
@@ -233,24 +333,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
       0,
     );
 
-  const countMatches = () => {
-    const q = searchQuery().toLowerCase();
-    if (!q) return 0;
-    let count = 0;
-    for (const file of parsedFiles()) {
-      for (const hunk of file.hunks) {
-        for (const line of hunk.lines) {
-          let idx = 0;
-          const lower = line.content.toLowerCase();
-          while ((idx = lower.indexOf(q, idx)) !== -1) {
-            count++;
-            idx += q.length;
-          }
-        }
-      }
-    }
-    return count;
-  };
+  const countMatches = () => countSearchMatches(visibleFiles(), searchQuery());
 
   return (
     <div ref={containerRef} style={{ display: 'flex', 'flex-direction': 'column', height: '100%' }}>
@@ -355,6 +438,9 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
         </span>
 
         <ReviewCommentsButton />
+        <Show when={props.findingProvider}>
+          <ReviewFindingsRefreshButton />
+        </Show>
 
         <span style={{ flex: '1' }} />
 
@@ -367,7 +453,7 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
           style={{
             background: 'color-mix(in srgb, var(--fg) 6%, transparent)',
             border: `1px solid ${theme.borderSubtle}`,
-            'border-radius': '4px',
+            'border-radius': 'var(--radius-xs)',
             color: theme.fg,
             'font-size': sf(13),
             'font-family': "'JetBrains Mono', monospace",
@@ -392,28 +478,44 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
             padding: '4px',
             display: 'flex',
             'align-items': 'center',
-            'border-radius': '4px',
+            'border-radius': 'var(--radius-xs)',
           }}
-          title="Close"
+          title={props.closeLabel ?? 'Close'}
+          aria-label={props.closeLabel ?? 'Close'}
         >
-          <CloseIcon />
+          <Show when={props.closeLabel} fallback={<CloseIcon />}>
+            {props.closeLabel}
+          </Show>
         </button>
       </div>
 
       {/* Body */}
       <div style={{ flex: '1', overflow: 'hidden', display: 'flex' }}>
         <aside
+          class="diff-viewer-sidebar"
           style={{
-            width: '300px',
+            width: tourOpen() ? '380px' : '300px',
             'min-width': '240px',
-            'max-width': '34vw',
+            'max-width': tourOpen() ? '40vw' : '34vw',
             display: 'flex',
             'flex-direction': 'column',
-            background: theme.taskPanelBg,
+            background: theme.taskContainerBg,
+            'overflow-y': 'auto',
             'border-right': `1px solid ${theme.border}`,
             'flex-shrink': '0',
           }}
         >
+          <Show when={tourOpen() && !loading() && !error()}>
+            <ChangeTour
+              tour={props.tour}
+              worktreePath={props.worktreePath}
+              onNavigate={navigateTour}
+              onFinish={() => {
+                props.tour.navigate(0);
+                props.onClose();
+              }}
+            />
+          </Show>
           <div
             style={{
               padding: '8px 10px',
@@ -432,9 +534,56 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
           >
             Changed Files
           </div>
-          <div style={{ flex: '1', overflow: 'hidden' }}>
+          <Show when={tourOpen()}>
+            <div
+              style={{
+                padding: '8px 10px',
+                'flex-shrink': '0',
+                'font-size': sf(12),
+                color: theme.fgMuted,
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>
+                Showing {visibleFiles().length} of {parsedFiles().length} changed files
+                {showAllChanges() ? '' : ' for this step'}
+              </p>
+              <button
+                class="review-control"
+                onClick={() => {
+                  const showAll = !showAllChanges();
+                  setShowAllChanges(showAll);
+                  if (!showAll) {
+                    const location = props.tour.stops()[props.tour.step()]?.locations[0];
+                    if (location) navigateTour(location);
+                  }
+                }}
+              >
+                {showAllChanges() ? 'Show step files' : 'Show all changes'}
+              </button>
+            </div>
+          </Show>
+          <div style={{ flex: '1', 'min-height': '100px', overflow: 'hidden' }}>
             <ChangedFilesList
               worktreePath={props.worktreePath}
+              filesOverride={
+                props.startTour || tourOpen()
+                  ? visibleFiles().map((file) => ({
+                      path: file.path,
+                      status: file.status,
+                      committed: false,
+                      lines_added: file.hunks.reduce(
+                        (sum, hunk) =>
+                          sum + hunk.lines.filter((line) => line.type === 'add').length,
+                        0,
+                      ),
+                      lines_removed: file.hunks.reduce(
+                        (sum, hunk) =>
+                          sum + hunk.lines.filter((line) => line.type === 'remove').length,
+                        0,
+                      ),
+                    }))
+                  : undefined
+              }
               baseBranch={props.baseBranch}
               isActive={props.scrollToFile !== null}
               panelFocused={false}
@@ -446,6 +595,29 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
               onFileClick={(file) => setActiveFilePath(file.path)}
             />
           </div>
+          <Show when={task()}>
+            {(currentTask) => (
+              <textarea
+                class="diff-task-notes"
+                aria-label="Task notes"
+                placeholder="Add a note…"
+                value={currentTask().notes}
+                onInput={(e) => updateTaskNotes(currentTask().id, e.currentTarget.value)}
+                style={{
+                  width: 'calc(100% - 16px)',
+                  height: '140px',
+                  'max-height': '25vh',
+                  background: currentTask().notes?.trim() ? theme.taskPanelBg : theme.bgInput,
+                  padding: '8px 10px',
+                  'flex-shrink': '0',
+                  color: theme.fg,
+                  'font-size': sf(12),
+                  'font-family': "'JetBrains Mono', monospace",
+                  resize: 'none',
+                }}
+              />
+            )}
+          </Show>
         </aside>
 
         <div style={{ flex: '1', overflow: 'hidden' }}>
@@ -477,7 +649,8 @@ function DiffViewerContent(props: DiffViewerDialogProps) {
 
           <Show when={!loading() && !error()}>
             <ScrollingDiffView
-              files={parsedFiles()}
+              files={visibleFiles()}
+              allowContextExpansion={!tourOpen()}
               scrollToPath={activeFilePath()}
               worktreePath={props.worktreePath}
               baseBranch={props.baseBranch}

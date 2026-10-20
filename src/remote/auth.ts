@@ -12,16 +12,16 @@ export function initAuth(): string | null {
     localStorage.setItem(TOKEN_KEY, urlToken);
     const url = new URL(window.location.href);
     url.searchParams.delete('token');
-    window.history.replaceState({}, '', url.pathname + url.search);
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
     return urlToken;
   }
 
-  return localStorage.getItem(TOKEN_KEY);
+  return getPairedToken() ?? localStorage.getItem(TOKEN_KEY);
 }
 
-/** Get the stored token. */
+/** Prefer the paired credential, which can survive rotation of the connection link. */
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return getPairedToken() ?? localStorage.getItem(TOKEN_KEY);
 }
 
 /** Clear stored token. */
@@ -31,17 +31,19 @@ export function clearToken(): void {
 
 /** Get the stored paired (task-creation) token, if this device has paired. */
 export function getPairedToken(): string | null {
-  return localStorage.getItem(PAIRED_TOKEN_KEY);
+  return localStorage.getItem(PAIRED_TOKEN_KEY) ?? sessionStorage.getItem(PAIRED_TOKEN_KEY);
 }
 
 /** Persist the paired token after a successful pairing. */
-export function setPairedToken(token: string): void {
-  localStorage.setItem(PAIRED_TOKEN_KEY, token);
+export function setPairedToken(token: string, remember: boolean): void {
+  clearPairedToken();
+  (remember ? localStorage : sessionStorage).setItem(PAIRED_TOKEN_KEY, token);
 }
 
-/** Clear the paired token (e.g. after it goes stale on a desktop restart). */
+/** Clear the paired token (e.g. after access is revoked on the desktop). */
 export function clearPairedToken(): void {
   localStorage.removeItem(PAIRED_TOKEN_KEY);
+  sessionStorage.removeItem(PAIRED_TOKEN_KEY);
 }
 
 export type ConnectResult = 'stored' | 'navigating' | 'invalid';

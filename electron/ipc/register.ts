@@ -4,6 +4,27 @@ import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { IPC } from './channels.js';
+import { getAgentActivitySnapshot } from '../agent-hooks/observations.js';
+import {
+  startAgentChat,
+  getAgentChat,
+  stopAgentChat,
+  releaseChat,
+  listTaskChats,
+  findAgentChat,
+  onAgentChatsChanged,
+} from '../chat/sessions.js';
+import { runChatAction } from '../chat/actions.js';
+import { isChatPermissionMode } from '../shared/agent-chat-types.js';
+import {
+  buildPtySpawnEnv,
+  validateCommand,
+  handoffCodexTerminal,
+  handoffClaudeTerminal,
+} from './pty.js';
+import { loadEnvFile } from './env-file.js';
+import { getResourceSnapshot } from './resources.js';
+import { editorGotoArgs, spawnDetached, validateEditorCommand } from './open-file.js';
 import { appendGitInfoExcludeBlock } from './git-exclude.js';
 import {
   spawnAgent,
@@ -28,7 +49,18 @@ import {
   stopPlanWatcher,
   readPlanForWorktree,
 } from './plans.js';
-import { startStepsWatcher, stopStepsWatcher, readStepsForWorktree } from './steps.js';
+import { readFileTourContext } from './understanding-context.js';
+import { saveTourFile } from './tour-files.js';
+import { readKanbanBoard, writeKanbanBoard } from './kanban.js';
+import { listThinkingTours } from './thinking-tours.js';
+import {
+  prepareReasoningFeed,
+  readReasoningFeed,
+  removeReasoningFeeds,
+  appendReasoningUpdate,
+} from './reasoning.js';
+import type { ReasoningDocument } from '../shared/reasoning.js';
+import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import {
   initPrChecks,
   startPrChecksWatcher,
@@ -38,12 +70,44 @@ import {
   isPrUrl,
 } from './pr-checks.js';
 import { readCoverageSummary } from './coverage.js';
-import { startRemoteServer, getMCPLogs, type RemoteProject } from '../remote/server.js';
-import type { RemoteAttentionState } from '../remote/protocol.js';
-import { atomicWriteFileSync } from '../mcp/atomic.js';
-import { buildMcpLaunchArgs } from '../mcp/agent-args.js';
+import { loadEslintQualityFindings } from './eslint-quality-findings.js';
+import { buildVerifyEnv, validateVerifyCommand, verificationRunner } from './verify.js';
+import { scanEvidence } from './evidence-scan.js';
 import {
-  getGitIgnoredDirs,
+  startRemoteServer,
+  getMCPLogs,
+  type MobileTaskRequest,
+  type RemoteProject,
+} from '../remote/server.js';
+import type {
+  RemoteAgentChoice,
+  RemoteAttentionState,
+  RemoteCiStatus,
+  RemoteCloseResult,
+  RemoteMergeReadiness,
+  RemoteTaskContext,
+  RemoteTaskDiff,
+} from '../remote/protocol.js';
+import { atomicWriteFileSync } from '../mcp/atomic.js';
+import { getUserDataDir } from '../user-data-dir.js';
+import {
+  canConfigureCanvasMcp,
+  prepareCanvasMcpArgs,
+  removeCanvasConfig,
+} from '../mcp/canvas-config.js';
+import type { MindMapDocument, MindMapUpdate } from '../shared/mindmap.js';
+import type { CanvasView } from '../shared/canvas-view.js';
+import type { AgentTourPayload } from '../shared/agent-tour.js';
+import type { ConfidencePayload } from '../shared/task-confidence.js';
+import type { GitHubCustomList } from '../shared/github-list.js';
+import type { EvidenceSubmission } from '../shared/evidence.js';
+import {
+  buildMcpLaunchArgs,
+  isCodexCommand,
+  type ParallelCodeMcpConfig,
+} from '../mcp/agent-args.js';
+import {
+  getSymlinkCandidates,
   getMainBranch,
   getCurrentBranch,
   getChangedFiles,
@@ -54,13 +118,16 @@ import {
   getFileDiffFromBranch,
   getWorktreeStatus,
   listImportableWorktrees,
+  getBranchWorktreePath,
   commitAll,
   discardUncommitted,
   checkMergeStatus,
   mergeTask,
   getBranchLog,
+  getBranchCommitMessages,
   pushTask,
   rebaseTask,
+  mergeBaseIntoTask,
   createWorktree,
   removeWorktree,
   isGitRepo,
@@ -72,7 +139,11 @@ import {
   getUncommittedChangedFiles,
   getUncommittedFileDiffs,
 } from './git.js';
-import { createTask, deleteTask } from './tasks.js';
+import { createPrTask, createTask, deleteTask } from './tasks.js';
+import { settleWorktreeIntents } from './worktree-intents.js';
+import { windowNotifier } from './window-notifier.js';
+import { createMcpRuntime } from './mcp-runtime.js';
+import { getDockerMcpServerDestPath, hostMcpServerPath } from './mcp-paths.js';
 import { listAgents } from './agents.js';
 import {
   saveAppState,
@@ -89,10 +160,19 @@ import {
   downloadUpdate,
   quitAndInstallUpdate,
 } from './updater.js';
-import { spawn } from 'child_process';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
 import { setMinimaxApiKey } from './ask-code-minimax.js';
+import { isStructuredPurpose } from './ask-code-purpose.js';
+import { readCheckSources } from './check-sources.js';
+import {
+  isAskCodeEffort,
+  isAskCodeModel,
+  type AskCodeProvider,
+} from '../shared/ask-code-models.js';
+import { listCodexModels } from './codex-models.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
+import { fetchClaudeUsage } from './claude-usage.js';
+import { fetchCodexUsage } from './codex-usage.js';
 import path from 'path';
 import {
   assertString,
@@ -101,7 +181,13 @@ import {
   assertStringArray,
   assertOptionalString,
   assertOptionalBoolean,
+  expandHome,
+  validatePath,
 } from './validate.js';
+import { registerDocumentHandlers } from '../documents/register.js';
+import { registerSuperProductivityHandlers } from '../super-productivity/register.js';
+import { registerGitHubHandlers } from '../github/register.js';
+import { listSessionsForCwd } from '../sessions/scan.js';
 import { validateBranchName as sharedValidateBranchName, validateUUID } from '../mcp/validation.js';
 import { debug as logDebug, warn as logWarn, errMessage } from '../log.js';
 import { getMCPRemoteServerUrl, detectStaleDockerMCPUrl } from '../mcp/config.js';
@@ -109,14 +195,6 @@ import { redactServerUrl } from '../remote/server.js';
 
 export function selectMcpJsonDir(worktreePath: string | undefined, projectRoot: string): string {
   return worktreePath ?? projectRoot;
-}
-
-/** Path where `mcp-server.cjs` is copied inside the Docker-mounted worktree. */
-export function getDockerMcpServerDestPath(
-  worktreePath: string | undefined,
-  projectRoot: string,
-): string {
-  return path.join(worktreePath ?? projectRoot, '.parallel-code', 'mcp-server.cjs');
 }
 
 export interface CoordinatorMCPConfigOpts {
@@ -158,34 +236,44 @@ export function buildCoordinatorMCPConfig(opts: CoordinatorMCPConfigOpts): {
   };
 }
 
-async function startRemoteServerOnFreePort(
-  start: number,
-  end: number,
-  opts: Omit<Parameters<typeof startRemoteServer>[0], 'port'>,
-): Promise<Awaited<ReturnType<typeof startRemoteServer>>> {
-  for (let port = start; port <= end; port++) {
-    try {
-      return await startRemoteServer({ ...opts, port });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE' && port < end) continue;
-      throw err;
-    }
-  }
-  throw new Error(`No free port found in range ${start}–${end}`);
-}
-
-/** Reject paths that are non-absolute or attempt directory traversal. */
-function validatePath(p: unknown, label: string): void {
-  if (typeof p !== 'string') throw new Error(`${label} must be a string`);
-  if (!path.isAbsolute(p)) throw new Error(`${label} must be absolute`);
-  if (p.includes('..')) throw new Error(`${label} must not contain ".."`);
-}
-
 function isMissingCommandError(err: unknown, command: string): boolean {
   const e = err as { path?: unknown; syscall?: unknown };
   return (
     e.path === command || (typeof e.syscall === 'string' && e.syscall.includes(`spawn ${command}`))
   );
+}
+
+/** The file is absent in Docker mode or after a prior cleanup; any other failure is logged. */
+export function removeCoordinatorTempConfig(file: string): void {
+  try {
+    fs.unlinkSync(file);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT')
+      logWarn('mcp', `Could not remove coordinator MCP config: ${errMessage(err)}`);
+  }
+}
+
+/** Codex takes inline config in argv, which any local user can read via `ps`; point it at the
+ *  0600 config file for the token instead (Docker has no host-readable file, so it stays inline). */
+export function buildCoordinatorLaunchArgs(
+  command: string,
+  configPath: string | undefined,
+  config: ParallelCodeMcpConfig,
+): string[] {
+  if (!configPath || !isCodexCommand(command))
+    return buildMcpLaunchArgs(command, configPath, config);
+  const server = config.mcpServers['parallel-code'];
+  return buildMcpLaunchArgs(command, configPath, {
+    mcpServers: {
+      'parallel-code': { ...server, args: [...server.args, '--token-file', configPath], env: {} },
+    },
+  });
+}
+
+/** An empty string is allowed: it clears the command on an already-registered coordinator. */
+function validateOptionalVerifyCommand(command: unknown): void {
+  assertOptionalString(command, 'verifyCommand');
+  if (command) validateVerifyCommand(command);
 }
 
 /** Validates renderer-supplied args for StartMCPServer before any file I/O. Exported for testing. */
@@ -199,8 +287,12 @@ export function validateStartMCPServerArgs(args: Record<string, unknown>): void 
   }
   if (args.agentCommand !== undefined) assertString(args.agentCommand, 'agentCommand');
   if (args.agentArgs !== undefined) assertStringArray(args.agentArgs, 'agentArgs');
+  assertOptionalString(args.agentEnvFile, 'agentEnvFile');
   assertOptionalBoolean(args.skipPermissions, 'skipPermissions');
   assertOptionalBoolean(args.propagateSkipPermissions, 'propagateSkipPermissions');
+  if (args.maxConcurrentTasks !== undefined)
+    assertInt(args.maxConcurrentTasks, 'maxConcurrentTasks');
+  validateOptionalVerifyCommand(args.verifyCommand);
   if (args.dockerContainerName !== undefined) {
     assertString(args.dockerContainerName, 'dockerContainerName');
     if (!/^[a-zA-Z0-9_.-]+$/.test(args.dockerContainerName as string)) {
@@ -262,6 +354,15 @@ export function projectRootArg(args: IpcArgs): string {
   return absolutePathArg(args, 'projectRoot');
 }
 
+function evidenceKeyPrefix(taskId: string): string {
+  return `${taskId}:evidence:`;
+}
+
+/** One key per check, so different checks can run side by side. */
+function evidenceRunKey(taskId: string, checkId: string): string {
+  return `${evidenceKeyPrefix(taskId)}${checkId}`;
+}
+
 export function worktreePathArg(args: IpcArgs): string {
   return absolutePathArg(args, 'worktreePath');
 }
@@ -285,6 +386,12 @@ function optionalWorktreePath(args: IpcArgs): string | undefined {
 function validateCommitHash(hash: unknown, label: string): void {
   if (typeof hash !== 'string') throw new Error(`${label} must be a string`);
   if (!/^[0-9a-f]{4,40}$/i.test(hash)) throw new Error(`${label} must be a valid hex commit hash`);
+}
+
+/** Anything the renderer did not name falls back to the Claude Code CLI. */
+function askCodeProvider(value: unknown): AskCodeProvider {
+  if (value === 'minimax' || value === 'codex') return value;
+  return 'claude';
 }
 
 function getOptionalDockerfilePath(value: unknown): string | undefined {
@@ -402,32 +509,159 @@ function createThrottledForwarder(
  * git-exclude a generated file must not block coordinator startup.
  */
 export function registerAllHandlers(win: BrowserWindow): void {
+  const notify = windowNotifier(win);
+  ipcMain.handle(IPC.AgentHookSnapshot, () => getAgentActivitySnapshot());
+  ipcMain.handle(IPC.AgentChat, async (_event, args: Record<string, unknown>) => {
+    assertString(args.agentId, 'agentId');
+    assertString(args.action, 'action');
+    if (args.action === 'handoffToChat') {
+      // Any older separate chat must also be idle before adopting the terminal's ID.
+      await releaseChat(args.agentId);
+      if (args.provider === 'claude') {
+        // Claude's session id belongs to the pane, so nothing has to be read
+        // back out of the terminal — it only has to stop holding the session.
+        await handoffClaudeTerminal(args.agentId);
+        return {};
+      }
+      return { threadId: await handoffCodexTerminal(args.agentId) };
+    }
+    if (args.action === 'handoffToTerminal') return releaseChat(args.agentId);
+    if (args.action === 'start') {
+      if (args.provider !== 'codex' && args.provider !== 'claude')
+        throw new Error('Unsupported chat provider.');
+      if (args.provider === 'codex' && getAgentMeta(args.agentId))
+        throw new Error(
+          'Switch from Terminal to Chat after Codex is idle to hand off this conversation.',
+        );
+      assertString(args.taskId, 'taskId');
+      assertString(args.command, 'command');
+      validateCommand(args.command);
+      validatePath(args.cwd, 'cwd');
+      assertOptionalString(args.envFile, 'envFile');
+      assertOptionalString(args.threadId, 'threadId');
+      assertOptionalBoolean(args.skipPermissions, 'skipPermissions');
+      if (args.permissionMode !== undefined && !isChatPermissionMode(args.permissionMode))
+        throw new Error('Invalid permission mode.');
+      assertString(args.channelId, 'channelId');
+      validateUUID(args.channelId, 'channelId');
+      const channel = `channel:${args.channelId}`;
+      const taskId = args.taskId;
+      const command = args.command;
+      const cwd = args.cwd as string;
+      if (!/^[a-zA-Z0-9_-]{1,128}$/.test(taskId)) throw new Error('Invalid chat task ID.');
+      const result = await startAgentChat(
+        {
+          provider: args.provider,
+          agentId: args.agentId,
+          taskId,
+          command: args.command,
+          cwd: args.cwd as string,
+          threadId: args.threadId,
+          skipPermissions: args.skipPermissions,
+          permissionMode: args.permissionMode,
+          env: buildPtySpawnEnv({}, args.envFile ? loadEnvFile(args.envFile) : {}),
+        },
+        (state) => {
+          if (!win.isDestroyed()) win.webContents.send(channel, state);
+        },
+        async () => {
+          // A Claude terminal and chat can coexist: never share their credentials.
+          const canvasId = crypto.randomUUID();
+          let active = true;
+          let unregister: (() => void) | undefined;
+          const dispose = () => {
+            if (!active) return;
+            active = false;
+            unregister?.();
+            try {
+              removeCanvasConfig(canvasId);
+            } catch (error) {
+              console.warn('Could not remove chat canvas credentials:', error);
+            }
+            void transport
+              .stopIfIdle()
+              .catch((error) =>
+                console.warn('[MCP] Could not stop the idle chat transport:', error),
+              );
+          };
+          try {
+            const server = await transport.ensureForMcp(false);
+            const token = server.registerCanvasAgent(taskId, canvasId, () => active);
+            unregister = () => server.unregisterCanvasAgent(canvasId);
+            const serverPath = hostMcpServerPath();
+            const launchArgs = prepareCanvasMcpArgs({
+              command,
+              taskId,
+              agentId: canvasId,
+              cwd,
+              serverPath,
+              port: server.port,
+              token,
+            });
+            return { args: launchArgs, dispose };
+          } catch (error) {
+            dispose();
+            console.warn('Canvas MCP unavailable; starting chat without canvas tools:', error);
+            return undefined;
+          }
+        },
+      );
+      try {
+        ensurePlansDirectory(args.cwd as string);
+        startPlanWatcher(notify, args.taskId, args.cwd as string);
+      } catch (err) {
+        console.warn('Failed to start chat plan watcher:', err);
+      }
+      return result;
+    }
+    if (args.action === 'stop') {
+      // Ending the session is how a new conversation starts: the next start has no
+      // running chat to reuse, and the caller decides whether to resume a thread.
+      stopAgentChat(args.agentId);
+      return;
+    }
+    const chat = getAgentChat(args.agentId);
+    if (args.action === 'setPermissionMode') {
+      if (!isChatPermissionMode(args.permissionMode)) throw new Error('Invalid permission mode.');
+      if (!chat.setPermissionMode) throw new Error('This agent cannot change its permission mode.');
+      return chat.setPermissionMode(args.permissionMode);
+    }
+    // Desktop only: phones reach chats through their own action list, which omits it.
+    if (args.action === 'shell') {
+      assertString(args.command, 'command');
+      if (!args.command.trim() || args.command.length > 100_000)
+        throw new Error('Enter a command of at most 100,000 characters.');
+      if (!chat.runShell) throw new Error('This agent cannot run shell commands from Chat.');
+      return chat.runShell(args.command);
+    }
+    return runChatAction(chat, args);
+  });
   // --- Remote access state ---
-  let remoteServer: Awaited<ReturnType<typeof startRemoteServer>> | null = null;
+  // Keep development phone access and coordinator ports separate from the installed app.
+  const defaultRemotePort = app.isPackaged ? 7777 : 8777;
+  const mcp = createMcpRuntime({
+    notify,
+    defaultPort: defaultRemotePort,
+    serverOptions: () => remoteServerOptions(),
+    rememberedDevicesPath: () => path.join(getUserDataDir(), 'paired-phones.json'),
+    onCoordinatorLoaded: () => registerCoordinatorHandlers(),
+  });
+  const { transport, delegation, pendingSpawns, canvasOwners, wideBindAgents, needsWideBind } = mcp;
   const taskNames = new Map<string, string>();
   // Renderer-derived per-task attention (needs input, working, ready, …), pushed
   // from the renderer via Remote_UpdateTaskStatus so the mobile overview can show
   // the same richer status as the desktop. The renderer owns this computation
   // (it depends on reactive terminal/git/steps state), so main just caches it.
   const taskAttention = new Map<string, RemoteAttentionState>();
+  const taskContext = new Map<string, RemoteTaskContext>();
 
   // --- MCP coordinator (lazy — only loaded when coordinator mode is enabled) ---
-  type CoordinatorType = import('../mcp/coordinator.js').Coordinator;
-  let coordinator: CoordinatorType | null = null;
   let coordinatorHandlersRegistered = false;
   let lastMcpConfigPath: string | null = null;
-  // True when the remote server was started by StartMCPServer (not the manual StartRemoteServer).
-  // Used to stop the server automatically when the last MCP coordinator deregisters.
-  let remoteServerStartedForMcp = false;
-  // True when the user has explicitly requested remote access via StartRemoteServer.
-  // Prevents auto-stop when coordinator deregisters even if MCP started the server first.
-  let remoteServerRequestedManually = false;
-  // True when StopRemoteServer was called while a coordinator was active.
-  // The server will be stopped when the last coordinator deregisters.
-  let remoteServerPendingStop = false;
+  ipcMain.handle(IPC.DelegationRequest, (_event, request) => delegation.request(request));
 
   // --- PTY commands ---
-  ipcMain.handle(IPC.SpawnAgent, (_e, args) => {
+  ipcMain.handle(IPC.SpawnAgent, async (_e, args) => {
     assertString(args.command, 'command');
     assertStringArray(args.args, 'args');
     assertString(args.taskId, 'taskId');
@@ -438,38 +672,219 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertOptionalString(args.dockerImage, 'dockerImage');
     assertOptionalBoolean(args.shareDockerAgentAuth, 'shareDockerAgentAuth');
     assertOptionalBoolean(args.attachExisting, 'attachExisting');
-    assertOptionalBoolean(args.stepsEnabled, 'stepsEnabled');
+    assertOptionalBoolean(args.canvasMcp, 'canvasMcp');
+    if (args.managedMcpLaunchArgs !== undefined)
+      assertStringArray(args.managedMcpLaunchArgs, 'managedMcpLaunchArgs');
+    assertOptionalString(args.envFile, 'envFile');
     if (args.cwd) validatePath(args.cwd, 'cwd');
-    if (!args.isShell && args.cwd) {
-      try {
-        ensurePlansDirectory(args.cwd);
-      } catch (err) {
-        console.warn('Failed to set up plans directory:', err);
-      }
-    }
-    const result = spawnAgent(win, args);
-    if (!args.isShell && args.cwd) {
-      try {
-        startPlanWatcher(win, args.taskId, args.cwd);
-      } catch (err) {
-        console.warn('Failed to start plan watcher:', err);
-      }
-      if (args.stepsEnabled) {
+    const attaching = args.attachExisting && getAgentMeta(args.agentId);
+    const releaseAdmission =
+      attaching || args.isShell ? undefined : mcp.coordinator()?.reserveChildRestart(args.taskId);
+    const pending = { sessionInstanceId: crypto.randomUUID() };
+    pendingSpawns.set(args.agentId, pending);
+    const assertPendingSpawn = () => {
+      if (pendingSpawns.get(args.agentId) !== pending || win.isDestroyed())
+        throw new Error('Agent startup was cancelled.');
+    };
+    try {
+      if (!args.isShell && args.cwd) {
         try {
-          startStepsWatcher(win, args.taskId, args.cwd);
+          ensurePlansDirectory(args.cwd);
         } catch (err) {
-          console.warn('Failed to start steps watcher:', err);
+          console.warn('Failed to set up plans directory:', err);
         }
       }
+      const existing = args.attachExisting ? getAgentMeta(args.agentId) : null;
+      // A same-id restart replaces the running session without a PTY exit; drop its stale need.
+      if (!existing) {
+        wideBindAgents.delete(args.agentId);
+        canvasOwners.delete(args.agentId);
+        transport.current()?.unregisterCanvasAgent(args.agentId);
+        removeCanvasConfig(args.agentId);
+        delegation.expireMessages();
+      }
+      let canvasTools = existing?.canvasTools === true;
+      const coordinator = mcp.coordinator();
+      let releaseCanvas: (() => void) | undefined;
+      if (
+        !existing &&
+        !args.isShell &&
+        transport.current() &&
+        canConfigureCanvasMcp(args.command, [])
+      ) {
+        canvasTools = !!(
+          coordinator?.isRegisteredCoordinator(args.taskId) || coordinator?.getTask(args.taskId)
+        );
+      }
+      if (
+        !existing &&
+        !args.isShell &&
+        coordinator?.getTask(args.taskId) &&
+        delegation.getTask(args.taskId)
+      ) {
+        const server = await transport.ensureForMcp(args.dockerMode === true);
+        assertPendingSpawn();
+        canvasOwners.set(args.agentId, pending);
+        const child = coordinator.getTask(args.taskId);
+        let launchArgs: string[] | undefined;
+        if (child?.agentId === args.agentId) {
+          launchArgs = coordinator.refreshSessionMcp(args.taskId, args.command).mcpLaunchArgs;
+        } else {
+          // Split panes have independent launch identities and private credential files.
+          const capabilities = delegation.capabilities(args.taskId);
+          if (!capabilities || !canConfigureCanvasMcp(args.command, []))
+            throw new Error('This child pane cannot use the managed MCP integration.');
+          const token = server.registerCanvasAgent(args.taskId, args.agentId, undefined, {
+            sessionInstanceId: pending.sessionInstanceId,
+            capabilities,
+          });
+          launchArgs = prepareCanvasMcpArgs({
+            ...args,
+            serverPath: hostMcpServerPath(),
+            port: server.port,
+            token,
+            sessionCapabilities: capabilities,
+          });
+        }
+        const oldArgs: string[] = args.managedMcpLaunchArgs ?? [];
+        const nextArgs: string[] = [...args.args];
+        if (oldArgs.length) {
+          const at = nextArgs.findIndex((_arg, index) =>
+            oldArgs.every((arg, offset) => nextArgs[index + offset] === arg),
+          );
+          if (at < 0)
+            throw new Error(
+              'Managed child configuration changed. Reopen this task before restarting.',
+            );
+          nextArgs.splice(at, oldArgs.length, ...(launchArgs ?? []));
+        } else if (launchArgs?.length) {
+          if (!canConfigureCanvasMcp(args.command, nextArgs))
+            throw new Error('Custom MCP configuration cannot be replaced automatically.');
+          const separator = nextArgs.indexOf('--');
+          nextArgs.splice(separator < 0 ? nextArgs.length : separator, 0, ...launchArgs);
+        }
+        args = { ...args, args: nextArgs };
+        canvasTools = true;
+        if (needsWideBind(args.dockerMode === true)) wideBindAgents.add(args.agentId);
+        releaseCanvas = () => {
+          server.unregisterCanvasAgent(args.agentId);
+          wideBindAgents.delete(args.agentId);
+        };
+      }
+      if (
+        args.canvasMcp &&
+        !args.isShell &&
+        !existing &&
+        canConfigureCanvasMcp(args.command, args.args)
+      ) {
+        try {
+          const server = await transport.ensureForMcp(args.dockerMode === true);
+          assertPendingSpawn();
+          const serverPath = hostMcpServerPath();
+          const capabilities = delegation.capabilities(args.taskId);
+          const token = server.registerCanvasAgent(
+            args.taskId,
+            args.agentId,
+            undefined,
+            capabilities
+              ? { sessionInstanceId: pending.sessionInstanceId, capabilities }
+              : undefined,
+          );
+          canvasOwners.set(args.agentId, pending);
+          if (needsWideBind(args.dockerMode === true)) wideBindAgents.add(args.agentId);
+          releaseCanvas = () => {
+            server.unregisterCanvasAgent(args.agentId);
+            wideBindAgents.delete(args.agentId);
+          };
+          const launchArgs = prepareCanvasMcpArgs({
+            ...args,
+            serverPath,
+            port: server.port,
+            token,
+            sessionCapabilities: capabilities,
+          });
+          // Keep options before an explicit end-of-options marker and preserve its prompt.
+          const separator = args.args.indexOf('--');
+          const index = separator < 0 ? args.args.length : separator;
+          args = {
+            ...args,
+            args: [...args.args.slice(0, index), ...launchArgs, ...args.args.slice(index)],
+          };
+          canvasTools = true;
+        } catch (error) {
+          // The token is revoked here, so drop the ownership claim and the config that named it.
+          // The agent still starts, just without canvas tools, and nothing later would clear them.
+          if (canvasOwners.get(args.agentId) === pending) canvasOwners.delete(args.agentId);
+          releaseCanvas?.();
+          releaseCanvas = undefined;
+          removeCanvasConfig(args.agentId);
+          try {
+            assertPendingSpawn();
+          } catch (cancelled) {
+            // The kill arrived while the transport was starting; nothing will register on it.
+            await transport.stopIfIdle();
+            throw cancelled;
+          }
+          console.warn('Canvas MCP unavailable; starting the agent without canvas tools:', error);
+        }
+      }
+      assertPendingSpawn();
+      releaseAdmission?.assertAllowed();
+      try {
+        await spawnAgent(notify, canvasTools ? { ...args, canvasTools: true } : args, () => {
+          assertPendingSpawn();
+          releaseAdmission?.assertAllowed();
+        });
+      } catch (error) {
+        // No PTY exit will ever arrive for this agent, so this is the last chance to revoke.
+        // Skip only when a same-id restart has since minted its own token over ours: tearing
+        // down then would strand it. A kill leaves nobody behind, and we must still clean up.
+        if (canvasOwners.get(args.agentId) === pending) {
+          canvasOwners.delete(args.agentId);
+          releaseCanvas?.();
+          removeCanvasConfig(args.agentId);
+        }
+        throw error;
+      }
+      if (!args.isShell && args.cwd) {
+        try {
+          startPlanWatcher(notify, args.taskId, args.cwd);
+        } catch (err) {
+          console.warn('Failed to start plan watcher:', err);
+        }
+      }
+      const session = transport
+        .current()
+        ?.getSessionAgents()
+        .find((item) => item.agentId === args.agentId);
+      return {
+        canvasTools,
+        sessionInstanceId: session?.sessionInstanceId,
+        capabilities: session?.capabilities,
+      };
+    } catch (error) {
+      if (canvasOwners.get(args.agentId) === pending) {
+        canvasOwners.delete(args.agentId);
+        transport.current()?.unregisterCanvasAgent(args.agentId);
+        wideBindAgents.delete(args.agentId);
+        removeCanvasConfig(args.agentId);
+        delegation.expireMessages();
+      }
+      throw error;
+    } finally {
+      releaseAdmission?.();
+      if (pendingSpawns.get(args.agentId) === pending) pendingSpawns.delete(args.agentId);
     }
-    return result;
   });
   ipcMain.handle(IPC.WriteToAgent, (_e, args) => {
     assertString(args.agentId, 'agentId');
     assertString(args.data, 'data');
+    if (args.automation === true && !delegation.isOrchestrationEnabled()) {
+      throw new Error('Agent orchestration is disabled');
+    }
     if (args.taskId !== undefined) {
       assertString(args.taskId, 'taskId');
-      if (coordinator?.isAutomationWriteInFlight(args.taskId)) return false;
+      if (mcp.coordinator()?.isAutomationWriteInFlight(args.taskId)) return false;
     }
     return writeToAgent(args.agentId, args.data);
   });
@@ -489,10 +904,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.KillAgent, (_e, args) => {
     assertString(args.agentId, 'agentId');
+    pendingSpawns.delete(args.agentId);
     return killAgent(args.agentId);
   });
   ipcMain.handle(IPC.CountRunningAgents, () => countRunningAgents());
-  ipcMain.handle(IPC.KillAllAgents, () => killAllAgents());
+  ipcMain.handle(IPC.KillAllAgents, () => {
+    pendingSpawns.clear();
+    return killAllAgents();
+  });
 
   // --- Agent commands ---
   ipcMain.handle(IPC.ListAgents, () => listAgents());
@@ -508,7 +927,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const buildContext = getOptionalBuildContext(args.buildContext);
     const imageTag = getOptionalImageTag(args.imageTag);
     return buildDockerImage(
-      win,
+      notify,
       args.onOutputChannel,
       dockerfilePath || buildContext || imageTag
         ? { dockerfilePath, buildContext, imageTag }
@@ -524,6 +943,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
       imageTag: projectImageTag(dockerfilePath),
       buildContext: args.projectRoot,
     };
+  });
+  ipcMain.handle(IPC.ReadCheckSources, (_e, args) => {
+    validatePath(args.projectRoot, 'projectRoot');
+    return readCheckSources(args.projectRoot);
   });
 
   // --- Task commands ---
@@ -549,19 +972,51 @@ export function registerAllHandlers(win: BrowserWindow): void {
       });
     return result;
   });
-  ipcMain.handle(IPC.DeleteTask, (_e, args) => {
+  ipcMain.handle(IPC.CreatePrTask, (_e, args) => {
+    assertString(args.name, 'name');
+    validatePath(args.projectRoot, 'projectRoot');
+    assertStringArray(args.symlinkDirs, 'symlinkDirs');
+    assertOptionalString(args.branchPrefix, 'branchPrefix');
+    if (!Number.isInteger(args.prNumber) || args.prNumber <= 0) {
+      throw new Error('prNumber must be a positive integer');
+    }
+    const result = createPrTask(
+      args.projectRoot,
+      args.prNumber,
+      args.symlinkDirs,
+      args.branchPrefix ?? 'task',
+    );
+    result
+      .then((r: { id: string }) => taskNames.set(r.id, args.name))
+      .catch((err: unknown) => {
+        logWarn('tasks', 'createPrTask resolution failed', { err: errMessage(err) });
+      });
+    return result;
+  });
+  ipcMain.handle(IPC.DeleteTask, async (_e, args) => {
     assertStringArray(args.agentIds, 'agentIds');
     validatePath(args.projectRoot, 'projectRoot');
     validateBranchName(args.branchName, 'branchName');
     assertBoolean(args.deleteBranch, 'deleteBranch');
     assertOptionalString(args.taskId, 'taskId');
-    return deleteTask({
+    // A verify run still going would keep writing into the worktree being deleted.
+    if (args.taskId) {
+      verificationRunner.cancel(args.taskId);
+      verificationRunner.cancelPrefix(evidenceKeyPrefix(args.taskId));
+    }
+    const authority = args.taskId ? delegation.getTask(args.taskId) : undefined;
+    if (authority?.delegationParent || authority?.coordinatorMode)
+      return delegation.closeParent(authority.taskId, args.deleteBranch);
+    const result = await deleteTask({
       taskId: args.taskId,
       agentIds: args.agentIds,
       branchName: args.branchName,
       deleteBranch: args.deleteBranch,
       projectRoot: args.projectRoot,
+      worktreePath: optionalWorktreePath(args),
     });
+    if (args.taskId) delegation.unregister(args.taskId);
+    return result;
   });
 
   // --- Git commands ---
@@ -598,10 +1053,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return getFileDiffFromBranch(projectRoot, branchName, args.filePath, optionalBaseBranch(args));
   });
   ipcMain.handle(IPC.GetGitignoredDirs, (_e, args) => {
-    return getGitIgnoredDirs(projectRootArg(args));
+    return getSymlinkCandidates(projectRootArg(args));
   });
   ipcMain.handle(IPC.ListImportableWorktrees, (_e, args) => {
     return listImportableWorktrees(projectRootArg(args));
+  });
+  ipcMain.handle(IPC.GetBranchWorktreePath, (_e, args) => {
+    return getBranchWorktreePath(projectRootArg(args), branchNameArg(args));
   });
   ipcMain.handle(IPC.GetWorktreeStatus, (_e, args) => {
     const worktreePath = worktreePathArg(args);
@@ -619,15 +1077,16 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const worktreePath = worktreePathArg(args);
     return checkMergeStatus(worktreePath, optionalBaseBranch(args));
   });
-  ipcMain.handle(IPC.MergeTask, (_e, args) => {
+  ipcMain.handle(IPC.MergeTask, async (_e, args) => {
     const projectRoot = projectRootArg(args);
     const branchName = branchNameArg(args);
     assertBoolean(args.squash, 'squash');
     assertOptionalString(args.message, 'message');
     assertOptionalBoolean(args.cleanup, 'cleanup');
+    await delegation.assertDirectMergeAllowed(projectRoot, branchName, args.cleanup ?? false);
     const baseBranch = optionalBaseBranch(args);
     const worktreePath = optionalWorktreePath(args);
-    return mergeTask(
+    const result = await mergeTask(
       projectRoot,
       branchName,
       args.squash,
@@ -636,6 +1095,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
       baseBranch,
       worktreePath,
     );
+    // The merge already happened; failing to tell the parent must not report it as failed.
+    await delegation
+      .recordDirectMerge(projectRoot, branchName)
+      .catch((err: unknown) => logWarn('mcp', `Could not record merge: ${errMessage(err)}`));
+    return result;
   });
   ipcMain.handle(IPC.GetBranchLog, (_e, args) => {
     const worktreePath = worktreePathArg(args);
@@ -643,6 +1107,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.GetBranchCommits, (_e, args) => {
     const worktreePath = worktreePathArg(args);
+    if (args.withBody === true)
+      return getBranchCommitMessages(worktreePath, optionalBaseBranch(args));
     const recentFallback =
       typeof args.recentFallback === 'number' && args.recentFallback > 0
         ? args.recentFallback
@@ -669,15 +1135,23 @@ export function registerAllHandlers(win: BrowserWindow): void {
     if (reportPath) validateRelativePath(reportPath, 'reportPath');
     return readCoverageSummary(args.repoRoot, reportPath);
   });
+  ipcMain.handle(IPC.ListSessions, (_e, args) => {
+    validatePath(args.cwd, 'cwd');
+    return listSessionsForCwd(args.cwd);
+  });
   ipcMain.handle(IPC.PushTask, (_e, args) => {
     const projectRoot = projectRootArg(args);
     const branchName = branchNameArg(args);
     assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
-    return pushTask(win, projectRoot, branchName, args.onOutput.__CHANNEL_ID__);
+    return pushTask(notify, projectRoot, branchName, args.onOutput.__CHANNEL_ID__);
   });
   ipcMain.handle(IPC.RebaseTask, (_e, args) => {
     const worktreePath = worktreePathArg(args);
     return rebaseTask(worktreePath, optionalBaseBranch(args));
+  });
+  ipcMain.handle(IPC.MergeBaseIntoTask, (_e, args) => {
+    const worktreePath = worktreePathArg(args);
+    return mergeBaseIntoTask(worktreePath, optionalBaseBranch(args));
   });
   ipcMain.handle(IPC.GetMainBranch, (_e, args) => {
     return getMainBranch(projectRootArg(args));
@@ -714,7 +1188,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       }
       const delay = state.coordinatorNotificationDelayMs;
       if (typeof delay === 'number' && Number.isFinite(delay)) {
-        coordinator?.setNotificationDelayMs(delay);
+        mcp.coordinator()?.setNotificationDelayMs(delay);
       }
     } catch (e) {
       console.warn('Ignoring malformed saved state:', e);
@@ -722,8 +1196,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
   }
   ipcMain.handle(IPC.SaveAppState, (_e, args) => {
     assertString(args.json, 'json');
-    syncTaskNamesFromJson(args.json);
-    return saveAppState(args.json);
+    const json = delegation.normalizeState(args.json);
+    syncTaskNamesFromJson(json);
+    saveAppState(json);
+    settleWorktreeIntents(json);
   });
   ipcMain.handle(IPC.LoadAppState, () => {
     const json = loadAppState();
@@ -744,29 +1220,20 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   // --- Keybindings ---
-  function getKeybindingsDir(): string {
-    let dir = app.getPath('userData');
-    if (!app.isPackaged) {
-      const base = path.basename(dir);
-      dir = path.join(path.dirname(dir), `${base}-dev`);
-    }
-    return dir;
-  }
-
   ipcMain.handle(IPC.LoadKeybindings, () => {
-    return loadKeybindings(getKeybindingsDir());
+    return loadKeybindings(getUserDataDir());
   });
 
   ipcMain.handle(IPC.SaveKeybindings, (_e, args) => {
     assertString(args?.json, 'json');
-    saveKeybindings(getKeybindingsDir(), args.json);
+    saveKeybindings(getUserDataDir(), args.json);
   });
 
   // --- Arena persistence ---
   ipcMain.handle(IPC.SaveArenaData, (_e, args) => {
     assertString(args.filename, 'filename');
     assertString(args.json, 'json');
-    const filePath = path.join(app.getPath('userData'), args.filename);
+    const filePath = path.join(getUserDataDir(), args.filename);
     const basename = path.basename(filePath);
     if (basename !== args.filename) throw new Error('Invalid filename');
     if (!basename.startsWith('arena-') || !basename.endsWith('.json'))
@@ -778,7 +1245,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(IPC.LoadArenaData, (_e, args) => {
     assertString(args.filename, 'filename');
-    const filePath = path.join(app.getPath('userData'), args.filename);
+    const filePath = path.join(getUserDataDir(), args.filename);
     const basename = path.basename(filePath);
     if (basename !== args.filename) throw new Error('Invalid filename');
     if (!basename.startsWith('arena-') || !basename.endsWith('.json'))
@@ -827,12 +1294,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return readPlanForWorktree(args.worktreePath, fileName);
   });
 
-  // --- Steps watcher cleanup ---
-  ipcMain.handle(IPC.StopStepsWatcher, (_e, args) => {
-    assertString(args.taskId, 'taskId');
-    stopStepsWatcher(args.taskId);
-  });
-
   // --- PR CI status watcher ---
   initPrChecks(win);
   ipcMain.handle(IPC.StartPrChecksWatcher, (_e, args) => {
@@ -874,10 +1335,78 @@ export function registerAllHandlers(win: BrowserWindow): void {
     refreshPrChecksWatcher(args.taskId);
   });
 
-  // --- Steps content (one-shot read) ---
-  ipcMain.handle(IPC.ReadStepsContent, (_e, args) => {
+  // --- Local ESLint quality findings ---
+  ipcMain.handle(IPC.GetEslintQualityFindings, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    return readStepsForWorktree(args.worktreePath);
+    assertStringArray(args.filePaths, 'filePaths');
+    for (const filePath of args.filePaths) validateRelativePath(filePath, 'filePath');
+    return loadEslintQualityFindings(args.worktreePath, args.filePaths);
+  });
+
+  // --- Project verify command ---
+  ipcMain.handle(IPC.RunTaskVerification, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    const worktreePath = worktreePathArg(args);
+    validateVerifyCommand(args.command);
+    assertOptionalString(args.branchName, 'branchName');
+    assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
+    assertOptionalBoolean(args.evidence, 'evidence');
+    if (args.evidence) assertString(args.checkId, 'checkId');
+    assertOptionalString(args.expectedHeadSha, 'expectedHeadSha');
+    const channel = `channel:${args.onOutput.__CHANNEL_ID__}`;
+    return verificationRunner.start({
+      // Evidence checks have their own keys so they never cancel a manual run.
+      key: args.evidence ? evidenceRunKey(args.taskId, args.checkId) : args.taskId,
+      expectedHeadSha: args.expectedHeadSha,
+      worktreePath,
+      command: args.command,
+      env: buildVerifyEnv({ taskId: args.taskId, branchName: args.branchName, worktreePath }),
+      onOutput: (chunk) => {
+        if (!win.isDestroyed()) win.webContents.send(channel, chunk);
+      },
+    });
+  });
+  ipcMain.handle(IPC.CancelTaskVerification, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    assertOptionalBoolean(args.evidence, 'evidence');
+    assertOptionalString(args.checkId, 'checkId');
+    if (!args.evidence) return verificationRunner.cancel(args.taskId);
+    // Without a check id, Stop and Rebuild cancel every evidence check of the task.
+    return args.checkId
+      ? verificationRunner.cancel(evidenceRunKey(args.taskId, args.checkId))
+      : verificationRunner.cancelPrefix(evidenceKeyPrefix(args.taskId));
+  });
+  ipcMain.handle(IPC.GetEvidenceScan, (_e, args) => {
+    const worktreePath = worktreePathArg(args);
+    if (args.baseBranch !== undefined) validateBranchName(args.baseBranch, 'baseBranch');
+    return scanEvidence(worktreePath, args.baseBranch);
+  });
+
+  // --- Task-scoped reasoning reports ---
+  const reasoningArgs = (args: IpcArgs): [string, string, string] => {
+    assertString(args.worktreePath, 'worktreePath');
+    assertString(args.taskId, 'taskId');
+    assertString(args.agentId, 'agentId');
+    return [args.worktreePath, args.taskId, args.agentId];
+  };
+  ipcMain.handle(IPC.ReadReasoningFeed, (_e, args) => {
+    const [worktreePath, taskId, agentId] = reasoningArgs(args);
+    assertOptionalString(args.knownStamp, 'knownStamp');
+    return readReasoningFeed({ worktreePath, taskId, agentId }, args.knownStamp);
+  });
+  ipcMain.handle(IPC.RemoveReasoningFeeds, (_e, args) => {
+    assertString(args.worktreePath, 'worktreePath');
+    assertString(args.taskId, 'taskId');
+    removeReasoningFeeds(args.worktreePath, args.taskId);
+  });
+  ipcMain.handle(IPC.PrepareReasoningFeed, (_e, args) => {
+    return prepareReasoningFeed(...reasoningArgs(args));
+  });
+  ipcMain.handle(IPC.AppendReasoningUpdate, (_e, args) => {
+    return appendReasoningUpdate(...reasoningArgs(args), args.update);
+  });
+  ipcMain.handle(IPC.CommitReasoningEdit, (_e, args) => {
+    return appendReasoningUpdate(...reasoningArgs(args), args.update, 'user');
   });
 
   // --- Ask about code ---
@@ -887,20 +1416,29 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.AskAboutCode, (_e, args) => {
+    if (args.purpose !== undefined && !isStructuredPurpose(args.purpose))
+      throw new Error('Invalid code Q&A purpose');
     assertString(args.requestId, 'requestId');
     assertString(args.prompt, 'prompt');
     assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
     validatePath(args.cwd, 'cwd');
-    const provider: string | undefined =
-      typeof args.provider === 'string' ? args.provider : undefined;
-    const model: string | undefined = typeof args.model === 'string' ? args.model : undefined;
+    const provider = askCodeProvider(args.provider);
+    // Only a model the provider offers may become a CLI argument.
+    if (args.model !== undefined && !isAskCodeModel(provider, args.model))
+      throw new Error('Invalid code Q&A model');
+    if (args.effort !== undefined && !isAskCodeEffort(provider, args.effort))
+      throw new Error('Invalid code Q&A reasoning level');
+    assertOptionalString(args.envFile, 'envFile');
     askAboutCode(win, {
+      purpose: args.purpose,
       requestId: args.requestId,
       channelId: args.onOutput.__CHANNEL_ID__,
       prompt: args.prompt,
       cwd: args.cwd,
-      provider: provider === 'minimax' ? 'minimax' : 'claude',
-      model,
+      provider,
+      model: args.model,
+      effort: args.effort,
+      envFile: args.envFile,
     });
   });
 
@@ -909,28 +1447,60 @@ export function registerAllHandlers(win: BrowserWindow): void {
     cancelAskAboutCode(args.requestId);
   });
 
+  ipcMain.handle(IPC.ListCodexModels, () => listCodexModels());
+
+  registerDocumentHandlers(win);
+  registerSuperProductivityHandlers();
+  registerGitHubHandlers();
+
   // --- File links ---
   ipcMain.handle(IPC.OpenPath, (_e, args) => {
-    validatePath(args.filePath, 'filePath');
+    assertString(args.filePath, 'filePath');
+    const filePath = expandHome(args.filePath);
+    validatePath(filePath, 'filePath');
     // Block executable extensions to prevent accidental code execution
     const dangerous = /\.(sh|bash|exe|bat|cmd|app|command|desktop|appimage|run)$/i;
-    if (dangerous.test(args.filePath)) {
+    if (dangerous.test(filePath)) {
       throw new Error('Cannot open executable files');
     }
-    return shell.openPath(args.filePath);
+    return shell.openPath(filePath);
   });
 
   ipcMain.handle(IPC.ReadFileText, async (_e, args) => {
-    validatePath(args.filePath, 'filePath');
-    if (!/\.md$/i.test(args.filePath)) {
+    assertString(args.filePath, 'filePath');
+    const filePath = expandHome(args.filePath);
+    validatePath(filePath, 'filePath');
+    if (!/\.md$/i.test(filePath)) {
       throw new Error('Only .md files can be read');
     }
-    const stat = await fs.promises.stat(args.filePath);
+    const stat = await fs.promises.stat(filePath);
     if (stat.size > 2 * 1024 * 1024) {
       throw new Error('File too large to preview (max 2 MB)');
     }
-    return fs.promises.readFile(args.filePath, 'utf8');
+    return fs.promises.readFile(filePath, 'utf8');
   });
+
+  ipcMain.handle(IPC.ReadFileTourContext, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    assertString(args.filePath, 'filePath');
+    return readFileTourContext(args.worktreePath, args.filePath);
+  });
+
+  ipcMain.handle(IPC.SaveTourFile, (_e, args) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    return saveTourFile(args.worktreePath, args);
+  });
+
+  // --- Kanban board (KANBAN.md at the project root) ---
+  ipcMain.handle(IPC.ReadKanbanBoard, (_e, args) => readKanbanBoard(args?.projectRoot));
+  ipcMain.handle(IPC.WriteKanbanBoard, (_e, args) =>
+    writeKanbanBoard(args?.projectRoot, args?.content, args?.expected),
+  );
+
+  // Tours written outside any task; they save through SaveTourFile into this folder.
+  ipcMain.handle(IPC.ListThinkingTours, () =>
+    listThinkingTours(path.join(getUserDataDir(), 'thinking')),
+  );
 
   // --- Clipboard ---
   const clipboardImagePath = path.join(os.tmpdir(), 'parallel-code-clipboard.png');
@@ -1132,10 +1702,27 @@ export function registerAllHandlers(win: BrowserWindow): void {
     shell.showItemInFolder(args.filePath);
   });
 
-  ipcMain.handle(IPC.ShellOpenFile, (_e, args) => {
+  ipcMain.handle(IPC.ShellOpenFile, async (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
     validateRelativePath(args.filePath, 'filePath');
-    return shell.openPath(path.join(args.worktreePath, args.filePath));
+    const absolute = path.join(args.worktreePath, args.filePath);
+    // Only the configured editor can jump to a line; the OS default app cannot.
+    const line = args.line;
+    if (Number.isInteger(line) && line > 0 && args.editorCommand) {
+      const cmd = validateEditorCommand(args.editorCommand);
+      const gotoArgs = editorGotoArgs(cmd, absolute, line);
+      if (gotoArgs) {
+        try {
+          await spawnDetached(cmd, gotoArgs);
+          return '';
+        } catch (err) {
+          logWarn('shell', 'Editor launch failed; opening with the default app', {
+            error: errMessage(err),
+          });
+        }
+      }
+    }
+    return shell.openPath(absolute);
   });
 
   ipcMain.handle(IPC.ShellOpenExternal, async (_e, args) => {
@@ -1144,33 +1731,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(IPC.ShellOpenInEditor, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
-    if (typeof args.editorCommand !== 'string' || !args.editorCommand.trim()) {
-      throw new Error('editorCommand must be a non-empty string');
-    }
-    const cmd = args.editorCommand.trim();
-    if (/[;&|`$(){}[\]<>\\'"*?!#~]/.test(cmd)) {
-      throw new Error('editorCommand must not contain shell metacharacters');
-    }
-    return new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const child = spawn(cmd, [args.worktreePath], {
-        detached: true,
-        stdio: 'ignore',
-      });
-      child.on('error', (err) => {
-        if (!settled) {
-          settled = true;
-          reject(new Error(`Failed to launch "${cmd}": ${err.message}`));
-        }
-      });
-      child.on('spawn', () => {
-        if (!settled) {
-          settled = true;
-          child.unref();
-          resolve();
-        }
-      });
-    });
+    return spawnDetached(validateEditorCommand(args.editorCommand), [args.worktreePath]);
   });
 
   // --- Mobile task-creation bridge (paired phones) ---
@@ -1217,156 +1778,186 @@ export function registerAllHandlers(win: BrowserWindow): void {
   );
 
   const mobileTaskBridge = {
+    readReasoning: (taskId: string) =>
+      callRenderer<ReasoningDocument>(IPC.MCP_ReadReasoningRequest, { taskId }),
+    updateReasoning: (taskId: string, update: ReasoningUpdate) =>
+      callRenderer<ReasoningDocument>(IPC.MCP_UpdateReasoningRequest, { taskId, update }),
+    readMindMap: (taskId: string) =>
+      callRenderer<MindMapDocument>(IPC.MCP_ReadMindMapRequest, { taskId }),
+    updateMindMap: (taskId: string, update: MindMapUpdate) =>
+      callRenderer<MindMapDocument>(IPC.MCP_UpdateMindMapRequest, { taskId, update }),
+    openCanvas: (taskId: string, view: CanvasView) =>
+      callRenderer<{ ok: boolean }>(IPC.MCP_OpenCanvasRequest, { taskId, view }).then(() => {}),
+    publishTour: (taskId: string, payload: AgentTourPayload) =>
+      callRenderer<{ ok: boolean }>(IPC.MCP_PublishTourRequest, { taskId, payload }),
+    publishConfidence: (taskId: string, payload: ConfidencePayload) =>
+      callRenderer<{ ok: boolean }>(IPC.MCP_PublishConfidenceRequest, { taskId, payload }),
+    publishGitHubList: (taskId: string, list: GitHubCustomList) =>
+      callRenderer<{ ok: boolean }>(IPC.MCP_PublishGitHubListRequest, { taskId, list }),
+    submitEvidence: (taskId: string, payload: EvidenceSubmission) =>
+      callRenderer<unknown>(IPC.MCP_SubmitEvidenceRequest, { taskId, payload }),
+    getEvidence: (taskId: string) => callRenderer<unknown>(IPC.MCP_GetEvidenceRequest, { taskId }),
     getProjects: () => callRenderer<RemoteProject[]>(IPC.Remote_GetProjectsRequest, {}),
-    createTaskFromMobile: (req: { projectId: string; name: string; prompt: string }) =>
+    getAgentChoices: () => callRenderer<RemoteAgentChoice[]>(IPC.Remote_GetAgentsRequest, {}),
+    createTaskFromMobile: (req: MobileTaskRequest) =>
       callRenderer<{ taskId: string }>(IPC.Remote_CreateTaskRequest, req),
     getTaskNotes: (taskId: string) =>
       callRenderer<{ notes: string }>(IPC.Remote_GetNotesRequest, { taskId }).then((r) => r.notes),
     setTaskNotes: (taskId: string, notes: string) =>
       callRenderer<{ ok: boolean }>(IPC.Remote_SetNotesRequest, { taskId, notes }).then(() => {}),
+    closeTaskFromMobile: (taskId: string, force: boolean) =>
+      callRenderer<RemoteCloseResult>(IPC.Remote_CloseTaskRequest, { taskId, force }),
+    getTaskDiff: (taskId: string) =>
+      callRenderer<RemoteTaskDiff>(IPC.Remote_GetDiffRequest, { taskId }),
+    getMergeReadiness: (taskId: string) =>
+      callRenderer<RemoteMergeReadiness>(IPC.Remote_GetMergeReadinessRequest, { taskId }),
+    getFixCiPrompt: (taskId: string) =>
+      callRenderer<{ prompt: string | null }>(IPC.Remote_GetFixCiPromptRequest, { taskId }).then(
+        (r) => r.prompt,
+      ),
+    sendFixCiPrompt: (taskId: string, prompt: string) =>
+      callRenderer<{ ok: boolean }>(IPC.Remote_SendFixCiPromptRequest, { taskId, prompt }).then(
+        () => {},
+      ),
+    mergeTaskFromMobile: (req: { taskId: string; squash: boolean; cleanup: boolean }) =>
+      callRenderer<{ ok: boolean }>(IPC.Remote_MergeTaskRequest, req).then(() => {}),
     getTaskAttention: (taskId: string): RemoteAttentionState => taskAttention.get(taskId) ?? 'idle',
+    getTaskContext: (taskId: string) => taskContext.get(taskId),
+    getCollapsedTaskIds: (): string[] => {
+      const result: string[] = [];
+      for (const [taskId, ctx] of taskContext.entries()) {
+        if (ctx.collapsed) result.push(taskId);
+      }
+      return result;
+    },
   };
 
+  const remoteServerOptions = (): Omit<
+    Parameters<typeof startRemoteServer>[0],
+    'port' | 'host'
+  > => {
+    const thisDir = path.dirname(fileURLToPath(import.meta.url));
+    return {
+      staticDir: path.join(thisDir, '..', '..', 'dist-remote'),
+      getTaskName: (taskId: string) => taskNames.get(taskId) ?? taskId,
+      getAgentStatus: (agentId: string) => ({
+        status: getAgentMeta(agentId) ? ('running' as const) : ('exited' as const),
+        exitCode: null,
+        lastLine: '',
+      }),
+      getCoordinator: () => mcp.coordinator(),
+      callSessionTool: (caller, name, params) => delegation.callTool(caller, name, params),
+      isOrchestrationEnabled: () => delegation.isOrchestrationEnabled(),
+      chats: { list: listTaskChats, find: findAgentChat, onChange: onAgentChatsChanged },
+      ...mobileTaskBridge,
+    };
+  };
   const VALID_ATTENTION: ReadonlySet<RemoteAttentionState> = new Set([
     'idle',
     'active',
+    'shell_busy',
     'needs_input',
     'error',
     'ready',
     'review',
   ]);
+  const VALID_CI: ReadonlySet<RemoteCiStatus> = new Set(['pending', 'failure', 'success']);
 
   // Renderer pushes the full per-task attention snapshot whenever it changes.
   // We replace the cache and re-broadcast the agent list so connected phones
   // update immediately (attention changes don't fire PTY spawn/exit events).
-  ipcMain.handle(IPC.Remote_UpdateTaskStatus, (_e, args: { statuses?: Record<string, string> }) => {
-    const statuses = args?.statuses;
-    if (!statuses || typeof statuses !== 'object') return;
-    taskAttention.clear();
-    for (const [taskId, value] of Object.entries(statuses)) {
-      if (typeof taskId === 'string' && VALID_ATTENTION.has(value as RemoteAttentionState)) {
-        taskAttention.set(taskId, value as RemoteAttentionState);
+  ipcMain.handle(
+    IPC.Remote_UpdateTaskStatus,
+    (
+      _e,
+      args: {
+        statuses?: Record<string, string>;
+        contexts?: Record<
+          string,
+          {
+            projectName?: unknown;
+            projectColor?: unknown;
+            agentName?: unknown;
+            lastLine?: unknown;
+            taskName?: unknown;
+            collapsed?: unknown;
+            ci?: unknown;
+          }
+        >;
+      },
+    ) => {
+      const statuses = args?.statuses;
+      if (!statuses || typeof statuses !== 'object') return;
+      taskAttention.clear();
+      taskContext.clear();
+      if (args.contexts && typeof args.contexts === 'object') {
+        for (const [taskId, context] of Object.entries(args.contexts)) {
+          if (!context || typeof context !== 'object') continue;
+          const taskName =
+            typeof context.taskName === 'string' ? context.taskName.slice(0, 200) : undefined;
+          if (taskName) taskNames.set(taskId, taskName);
+          taskContext.set(taskId, {
+            taskName,
+            collapsed: Boolean(context.collapsed),
+            projectName:
+              typeof context.projectName === 'string' ? context.projectName.slice(0, 200) : '',
+            projectColor:
+              typeof context.projectColor === 'string' ? context.projectColor.slice(0, 200) : '',
+            agentName: typeof context.agentName === 'string' ? context.agentName.slice(0, 200) : '',
+            lastLine: typeof context.lastLine === 'string' ? context.lastLine.slice(0, 300) : '',
+            ci: VALID_CI.has(context.ci as RemoteCiStatus)
+              ? (context.ci as RemoteCiStatus)
+              : undefined,
+          });
+        }
       }
-    }
-    // Only bother rebroadcasting when a phone could be listening.
-    if (remoteServer) notifyAgentListChanged();
-  });
+      for (const [taskId, value] of Object.entries(statuses)) {
+        if (typeof taskId === 'string' && VALID_ATTENTION.has(value as RemoteAttentionState)) {
+          taskAttention.set(taskId, value as RemoteAttentionState);
+        }
+      }
+      // Only bother rebroadcasting when a phone could be listening.
+      if (transport.current()) notifyAgentListChanged();
+    },
+  );
 
   ipcMain.handle(IPC.GeneratePairingPin, () => {
-    if (!remoteServer) throw new Error('Remote server is not running');
-    return remoteServer.generatePairingPin();
+    const server = transport.current();
+    if (!server) throw new Error('Remote server is not running');
+    return server.generatePairingPin();
   });
 
   // --- Remote access ---
-  ipcMain.handle(IPC.StartRemoteServer, async (_e, args: { port?: number }) => {
-    const thisDir = path.dirname(fileURLToPath(import.meta.url));
-    const distRemote = path.join(thisDir, '..', '..', 'dist-remote');
-    const remoteServerOpts = {
-      host: '0.0.0.0' as const,
-      staticDir: distRemote,
-      getTaskName: (taskId: string) => taskNames.get(taskId) ?? taskId,
-      getAgentStatus: (agentId: string) => {
-        const meta = getAgentMeta(agentId);
-        return {
-          status: meta ? ('running' as const) : ('exited' as const),
-          exitCode: null,
-          lastLine: '',
-        };
-      },
-      getCoordinator: () => coordinator,
-      ...mobileTaskBridge,
-    };
+  ipcMain.handle(IPC.StartRemoteServer, (_e, args: { port?: number }) =>
+    transport.startRemoteAccess(args.port),
+  );
 
-    if (remoteServer) {
-      // If server was started for MCP-only (loopback), rebind to 0.0.0.0 so WiFi/Tailscale
-      // clients can reach it. Skip rebind while a coordinator is active — restarting the
-      // server would break ongoing MCP connections.
-      if (remoteServerStartedForMcp && !coordinator?.hasActiveCoordinator()) {
-        const prevPort = remoteServer.port;
-        await remoteServer.stop();
-        remoteServer = null;
-        remoteServerStartedForMcp = false;
-        remoteServer = await startRemoteServer({
-          port: args.port ?? prevPort,
-          ...remoteServerOpts,
-        });
-      }
-      // Loopback-only means the server is MCP-only and inaccessible from other devices.
-      // Return unavailableReason without marking this as a successful manual start.
-      if (remoteServer.bindHost === '127.0.0.1') {
-        return {
-          url: remoteServer.url,
-          wifiUrl: null,
-          tailscaleUrl: null,
-          port: remoteServer.port,
-          unavailableReason: 'coordinator_active' as const,
-        };
-      }
-      remoteServerRequestedManually = true;
-      remoteServerPendingStop = false;
-      return {
-        url: remoteServer.url,
-        wifiUrl: remoteServer.wifiUrl,
-        tailscaleUrl: remoteServer.tailscaleUrl,
-        port: remoteServer.port,
-      };
-    }
-
-    // Remote access is an explicit user action — bind to all interfaces so WiFi/Tailscale clients
-    // can reach the SPA. Coordinator MCP-only mode uses 127.0.0.1 by default.
-    remoteServer = await startRemoteServer({ port: args.port ?? 7777, ...remoteServerOpts });
-    remoteServerRequestedManually = true;
-    remoteServerPendingStop = false;
-    return {
-      url: remoteServer.url,
-      wifiUrl: remoteServer.wifiUrl,
-      tailscaleUrl: remoteServer.tailscaleUrl,
-      port: remoteServer.port,
-    };
-  });
-
-  ipcMain.handle(IPC.StopRemoteServer, async (): Promise<{ stopped: boolean; reason?: string }> => {
-    if (!remoteServer) return { stopped: true };
-    if (coordinator?.hasActiveCoordinator()) {
-      // The coordinator MCP transport shares this HTTP server. Stopping it while
-      // a coordinator is active would break all in-flight MCP tool calls.
-      // Record the pending stop so the last coordinator deregistration will auto-stop.
-      remoteServerPendingStop = true;
-      console.warn(
-        '[Remote] Stop requested but coordinator MCP is active — will stop on last coordinator exit',
-      );
-      return { stopped: false, reason: 'coordinator_active' };
-    }
-    await remoteServer.stop();
-    remoteServer = null;
-    remoteServerRequestedManually = false;
-    return { stopped: true };
-  });
+  ipcMain.handle(IPC.StopRemoteServer, () => transport.stopRemoteAccess());
 
   ipcMain.handle(IPC.GetRemoteStatus, () => {
-    if (!remoteServer || remoteServer.bindHost === '127.0.0.1') {
+    const server = transport.current();
+    if (!server || server.bindHost === '127.0.0.1') {
       return { enabled: false, connectedClients: 0 };
     }
     return {
       enabled: true,
-      connectedClients: remoteServer.connectedClients(),
-      url: remoteServer.url,
-      wifiUrl: remoteServer.wifiUrl,
-      tailscaleUrl: remoteServer.tailscaleUrl,
-      port: remoteServer.port,
+      connectedClients: server.connectedClients(),
+      url: server.url,
+      wifiUrl: server.wifiUrl,
+      tailscaleUrl: server.tailscaleUrl,
+      port: server.port,
     };
   });
 
   // --- MCP server management ---
 
-  // Registers coordinator-specific IPC handlers. Called lazily when coordinator
-  // mode is enabled (either at startup from persisted state, or on first toggle).
+  // Register coordination IPC handlers lazily for ordinary tasks or legacy restoration.
   function registerCoordinatorHandlers(): void {
     if (coordinatorHandlersRegistered) return;
     coordinatorHandlersRegistered = true;
 
     // NOTE: StartMCPServer is registered eagerly (below, outside this function) so the
-    // renderer can call it during restore before enableCoordinatorMode() completes.
+    // renderer can call it during restore before ensureCoordinator() completes.
 
     ipcMain.handle(
       IPC.MCP_ControlChanged,
@@ -1375,7 +1966,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
         if (args.controlledBy !== 'coordinator' && args.controlledBy !== 'human') {
           throw new Error(`Invalid controlledBy: ${String(args.controlledBy)}`);
         }
-        if (!coordinator) throw new Error('coordinator mode not initialized');
+        const coordinator = mcp.coordinator();
+        if (!coordinator) throw new Error('Task coordination is not initialized');
+
         coordinator.setTaskControl(args.taskId, args.controlledBy);
       },
     );
@@ -1389,6 +1982,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
           projectId: string;
           coordinatorBranch?: string;
           worktreePath?: string;
+          verifyCommand?: string;
         },
       ) => {
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
@@ -1396,9 +1990,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
         if (args.coordinatorBranch !== undefined) {
           validateBranchName(args.coordinatorBranch, 'coordinatorBranch');
         }
-        coordinator?.registerCoordinator(args.coordinatorTaskId, args.projectId, {
+        validateOptionalVerifyCommand(args.verifyCommand);
+        mcp.coordinator()?.registerCoordinator(args.coordinatorTaskId, args.projectId, {
           branchName: args.coordinatorBranch,
           worktreePath: args.worktreePath,
+          verifyCommand: args.verifyCommand,
         });
       },
     );
@@ -1406,32 +2002,17 @@ export function registerAllHandlers(win: BrowserWindow): void {
     ipcMain.handle(
       IPC.MCP_CoordinatorDeregistered,
       async (_e, args: { coordinatorTaskId: string }) => {
-        assertString(args.coordinatorTaskId, 'coordinatorTaskId');
-        coordinator?.deregisterCoordinator(args.coordinatorTaskId);
+        // Validate before the ID is joined into a temp path below (traversal).
+        validateUUID(args.coordinatorTaskId, 'coordinatorTaskId');
+        mcp.coordinator()?.deregisterCoordinator(args.coordinatorTaskId);
         // Clean up the host-temp MCP config file written by StartMCPServer (non-Docker only).
-        const tempConfigPath = path.join(
-          app.getPath('temp'),
-          `parallel-code-mcp-${args.coordinatorTaskId}.json`,
+        removeCoordinatorTempConfig(
+          path.join(app.getPath('temp'), `parallel-code-mcp-${args.coordinatorTaskId}.json`),
         );
-        try {
-          fs.unlinkSync(tempConfigPath);
-        } catch {
-          /* file may not exist in Docker mode or after prior cleanup */
-        }
         // Stop the remote server when the last coordinator exits if:
         // - MCP started the server and user hasn't separately requested manual access, OR
         // - the user explicitly requested stop while coordinator was active (pendingStop)
-        if (
-          remoteServer &&
-          !coordinator?.hasActiveCoordinator() &&
-          (remoteServerPendingStop || (remoteServerStartedForMcp && !remoteServerRequestedManually))
-        ) {
-          await remoteServer.stop();
-          remoteServer = null;
-          remoteServerStartedForMcp = false;
-          remoteServerRequestedManually = false;
-          remoteServerPendingStop = false;
-        }
+        await transport.stopIfIdle();
       },
     );
 
@@ -1442,13 +2023,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
       (_e, args: { coordinatorTaskId: string; batchId: string }) => {
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
         assertString(args.batchId, 'batchId');
-        coordinator?.dropNotification(args.coordinatorTaskId, args.batchId);
+        mcp.coordinator()?.dropNotification(args.coordinatorTaskId, args.batchId);
       },
     );
 
     ipcMain.handle(IPC.MCP_CoordinatedTaskPromptDelivered, (_e, args: { taskId: string }) => {
       assertString(args.taskId, 'taskId');
-      coordinator?.markPromptDelivered(args.taskId);
+      mcp.coordinator()?.markPromptDelivered(args.taskId);
     });
 
     ipcMain.handle(
@@ -1456,7 +2037,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       (_e, args: { coordinatorTaskId: string; batchId: string }) => {
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
         assertString(args.batchId, 'batchId');
-        coordinator?.ackNotification(args.coordinatorTaskId, args.batchId);
+        mcp.coordinator()?.ackNotification(args.coordinatorTaskId, args.batchId);
       },
     );
 
@@ -1464,13 +2045,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
       IPC.MCP_CoordinatorRestageAfterUserSend,
       (_e, args: { coordinatorTaskId: string }) => {
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
-        coordinator?.rescheduleRestageTimer(args.coordinatorTaskId);
+        mcp.coordinator()?.rescheduleRestageTimer(args.coordinatorTaskId);
       },
     );
 
     ipcMain.handle(IPC.MCP_TaskLandingReviewCleared, (_e, args: { taskId: string }) => {
       assertString(args.taskId, 'taskId');
-      coordinator?.markTaskReviewed(args.taskId);
+      mcp.coordinator()?.markTaskReviewed(args.taskId);
     });
 
     ipcMain.handle(
@@ -1478,7 +2059,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       (_e, args: { taskId: string; coordinatorTaskId: string }) => {
         assertString(args.taskId, 'taskId');
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
-        coordinator?.removeCoordinatedTask(args.taskId);
+        mcp.coordinator()?.removeCoordinatedTask(args.taskId);
       },
     );
 
@@ -1493,10 +2074,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
           projectRoot: string;
           branchName: string;
           baseBranch?: string;
+          integrationPolicy?: 'review' | 'automatic';
           worktreePath: string;
           coordinatorTaskId: string;
           controlledBy?: 'coordinator' | 'human';
           agentId?: string;
+          completion?: import('../shared/completion-report.js').CompletionRecord;
+          reviewRevision?: number;
           signalDoneAt?: string;
           signalDoneConsumed?: boolean;
           verification?: import('../mcp/types.js').SubtaskVerification;
@@ -1521,7 +2105,26 @@ export function registerAllHandlers(win: BrowserWindow): void {
         validatePath(args.worktreePath, 'worktreePath');
         assertString(args.coordinatorTaskId, 'coordinatorTaskId');
         validateUUID(args.coordinatorTaskId, 'coordinatorTaskId');
-        if (!coordinator) throw new Error('coordinator mode not initialized');
+        const coordinator = mcp.coordinator();
+        if (!coordinator) throw new Error('Task coordination is not initialized');
+        // Startup authority restore fails for a task whose worktree was removed
+        // (e.g. an interrupted merge); name that instead of the generic authority error.
+        if (!fs.existsSync(args.worktreePath))
+          throw new Error(
+            `Task worktree is missing (${args.worktreePath}). Close the task to remove it.`,
+          );
+        const authority = delegation.getTask(args.id);
+        if (
+          !authority ||
+          authority.parentTaskId !== args.coordinatorTaskId ||
+          authority.projectId !== args.projectId ||
+          authority.projectRoot !== fs.realpathSync(args.projectRoot) ||
+          authority.worktreePath !== fs.realpathSync(args.worktreePath) ||
+          authority.branchName !== args.branchName ||
+          authority.integrationPolicy !== args.integrationPolicy ||
+          !delegation.capabilities(args.id)
+        )
+          throw new Error('Task authority was not validated. Restore the task before starting it.');
         if (args.agentCommand !== undefined) assertString(args.agentCommand, 'agentCommand');
         if (args.initialPrompt !== undefined) assertString(args.initialPrompt, 'initialPrompt');
         const result = coordinator.hydrateTask({
@@ -1531,10 +2134,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
           projectRoot: args.projectRoot,
           branchName: args.branchName,
           baseBranch: args.baseBranch,
+          integrationPolicy: args.integrationPolicy,
           worktreePath: args.worktreePath,
           agentId: args.agentId ?? crypto.randomUUID(),
           coordinatorTaskId: args.coordinatorTaskId,
           controlledBy: args.controlledBy,
+          completion: args.completion,
+          reviewRevision: args.reviewRevision,
           signalDoneAt: args.signalDoneAt,
           signalDoneConsumed: args.signalDoneConsumed,
           verification: args.verification,
@@ -1556,39 +2162,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     );
   }
 
-  // Enable coordinator mode: lazily import the Coordinator module and register handlers.
-  // Safe to call multiple times — only initializes once.
-  async function enableCoordinatorMode(): Promise<void> {
-    if (coordinator) return;
-    const { Coordinator } = await import('../mcp/coordinator.js');
-    coordinator = new Coordinator();
-    coordinator.setWindow(win);
-    registerCoordinatorHandlers();
-  }
-
-  // Renderer calls this at startup (if coordinator mode was previously enabled)
-  // and when the user toggles the setting on.
-  ipcMain.handle(IPC.SetCoordinatorModeEnabled, async (_e, args: { enabled: boolean }) => {
-    if (args.enabled) await enableCoordinatorMode();
-  });
-
-  // Eagerly initialize if coordinator mode was enabled in the last saved state,
-  // so the handlers are ready before the renderer finishes loading.
-  (() => {
-    const json = loadAppState();
-    if (!json) return;
-    try {
-      const state = JSON.parse(json) as { coordinatorModeEnabled?: boolean };
-      if (state.coordinatorModeEnabled === true) {
-        void enableCoordinatorMode();
-      }
-    } catch {
-      // ignore malformed state
-    }
-  })();
-
   // StartMCPServer registered eagerly (not inside registerCoordinatorHandlers) so the
-  // renderer can call it during app-restore before enableCoordinatorMode() resolves.
+  // renderer can call it during app-restore before ensureCoordinator() resolves.
   ipcMain.handle(
     IPC.StartMCPServer,
     async (
@@ -1603,8 +2178,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
         propagateSkipPermissions?: boolean;
         agentCommand?: string;
         agentArgs?: string[];
+        agentEnvFile?: string;
         dockerContainerName?: string;
         dockerImage?: string;
+        maxConcurrentTasks?: number;
+        verifyCommand?: string;
       },
     ) => {
       validateStartMCPServerArgs(args as unknown as Record<string, unknown>);
@@ -1635,7 +2213,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
         }
       }
 
-      await enableCoordinatorMode();
+      await mcp.ensureCoordinator();
+      const coordinator = mcp.coordinator();
       if (!coordinator) return;
 
       // Set coordinator's default project + coordinator task ID, and register this coordinator
@@ -1645,50 +2224,22 @@ export function registerAllHandlers(win: BrowserWindow): void {
         branchName: args.coordinatorBranch,
         worktreePath: args.worktreePath,
         skipPermissions: Boolean(args.skipPermissions && args.propagateSkipPermissions),
+        maxConcurrentTasks: args.maxConcurrentTasks,
+        verifyCommand: args.verifyCommand,
       });
 
-      // Start remote server if not running
-      if (!remoteServer) {
-        const thisDir = path.dirname(fileURLToPath(import.meta.url));
-        const distRemote = path.join(thisDir, '..', '..', 'dist-remote');
-        // Docker mode on macOS requires 0.0.0.0: sub-task containers connect via
-        // host.docker.internal which routes through Docker Desktop's virtual network adapter,
-        // so the host must listen on all interfaces.  On Linux, --network host puts containers
-        // in the host's own network namespace, so 127.0.0.1 reaches the host loopback directly.
-        const isLinux = process.platform === 'linux';
-        const bindHost = args.dockerContainerName && !isLinux ? '0.0.0.0' : '127.0.0.1';
-        if (args.dockerContainerName && !isLinux) {
-          console.warn(
-            '[MCP] Docker mode (macOS): coordinator MCP server bound to 0.0.0.0 — reachable from ' +
-              'local network interfaces. Traffic from sub-task containers uses Docker Desktop internal ' +
-              'networking and does not traverse the physical LAN, but the port is reachable from other ' +
-              'LAN hosts. Access is token-protected. Consider firewall rules on untrusted networks.',
-          );
-        }
-        remoteServer = await startRemoteServerOnFreePort(7777, 7800, {
-          host: bindHost,
-          staticDir: distRemote,
-          getTaskName: (taskId: string) => taskNames.get(taskId) ?? taskId,
-          getAgentStatus: (agentId: string) => {
-            const meta = getAgentMeta(agentId);
-            return {
-              status: meta ? ('running' as const) : ('exited' as const),
-              exitCode: null,
-              lastLine: '',
-            };
-          },
-          getCoordinator: () => coordinator,
-          ...mobileTaskBridge,
-        });
-        remoteServerStartedForMcp = true;
-      }
+      await transport.ensureForMcp(!!args.dockerContainerName);
+      const server = transport.current();
+      if (!server) throw new Error('MCP transport unavailable.');
 
-      // Resolve the source MCP server binary path.
-      const thisDir = path.dirname(fileURLToPath(import.meta.url));
-      let hostMcpServerPath = path.join(thisDir, '..', 'mcp-server.cjs');
-      if (hostMcpServerPath.includes('/app.asar/')) {
-        hostMcpServerPath = hostMcpServerPath.replace('/app.asar/', '/app.asar.unpacked/');
-      }
+      const hostServerPath = hostMcpServerPath();
+      // Warn only: the agent CLI spawns this file later, so a missing bundle would
+      // otherwise surface as an opaque "MCP server failed to start" in the agent.
+      if (!fs.existsSync(hostServerPath))
+        logWarn(
+          'mcp',
+          `MCP server bundle not found at ${hostServerPath}; agent MCP tools will fail`,
+        );
 
       // In Docker mode the server is copied into the worktree so the container can reach it.
       // Compute the destination path now (pure, no side effects) so we can build mcpConfig
@@ -1696,9 +2247,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
       const dockerMcpServerPath = args.dockerContainerName
         ? getDockerMcpServerDestPath(args.worktreePath, args.projectRoot)
         : undefined;
-      const mcpServerPath = dockerMcpServerPath ?? hostMcpServerPath;
+      const mcpServerPath = dockerMcpServerPath ?? hostServerPath;
 
-      const serverUrl = getMCPRemoteServerUrl(remoteServer.port, args.dockerContainerName);
+      const serverUrl = getMCPRemoteServerUrl(server.port, args.dockerContainerName);
 
       // Build mcpConfig and mergedMcpJson (pure computation — no filesystem or state side effects).
       // Doing this before any Docker copy or coordinator mutation ensures that if .mcp.json
@@ -1706,7 +2257,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       const mcpConfig = buildCoordinatorMCPConfig({
         mcpServerPath,
         serverUrl,
-        token: remoteServer.token,
+        token: server.coordinatorTokenFor(args.coordinatorTaskId),
         coordinatorTaskId: args.coordinatorTaskId,
         skipPermissions: args.skipPermissions,
         propagateSkipPermissions: args.propagateSkipPermissions,
@@ -1731,7 +2282,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       // Docker filesystem writes, MCP config file writes.
       if (dockerMcpServerPath) {
         fs.mkdirSync(path.dirname(dockerMcpServerPath), { recursive: true });
-        fs.copyFileSync(hostMcpServerPath, dockerMcpServerPath); // nosemgrep: semgrep.copyfilesync-side-effect -- all pure computation (mcpConfig, mergedMcpJson) is done above; this is correctly ordered
+        fs.copyFileSync(hostServerPath, dockerMcpServerPath); // nosemgrep: semgrep.copyfilesync-side-effect -- all pure computation (mcpConfig, mergedMcpJson) is done above; this is correctly ordered
         coordinator.setDockerContainerName(args.coordinatorTaskId, args.dockerContainerName ?? '');
         coordinator.setDockerImage(args.coordinatorTaskId, args.dockerImage ?? null);
         console.warn('[MCP] Docker mode: copied MCP server to', dockerMcpServerPath);
@@ -1751,8 +2302,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       coordinator.setMCPServerInfo(
         args.coordinatorTaskId,
         serverUrl,
-        remoteServer.token,
-        remoteServer.subtaskToken,
+        server.coordinatorTokenFor(args.coordinatorTaskId),
+        server.subtaskToken,
         mcpServerPath,
       );
       coordinator.setCoordinatorSpawnDefaults(
@@ -1760,6 +2311,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         args.agentCommand ?? 'claude',
         args.agentArgs ?? [],
       );
+      coordinator.setCoordinatorAgentEnvFile(args.coordinatorTaskId, args.agentEnvFile);
 
       // In docker mode the coordinator agent auto-discovers .mcp.json in the project root.
       // No host-temp configPath needed.
@@ -1809,7 +2361,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         lastMcpConfigPath = configPath;
         console.warn('[MCP] Config written to:', configPath);
       }
-      const mcpLaunchArgs = buildMcpLaunchArgs(
+      const mcpLaunchArgs = buildCoordinatorLaunchArgs(
         args.agentCommand ?? 'claude',
         configPath,
         mcpConfig,
@@ -1821,7 +2373,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
         configPath,
         mcpLaunchArgs,
         serverUrl,
-        port: remoteServer.port,
+        port: server.port,
       };
     },
   );
@@ -1835,9 +2387,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
     // The MCP server process is spawned by the agent CLI via launch args,
     // not by us. We report whether the remote HTTP server that the MCP
     // server connects to is running — if it's up, MCP tools should work.
+    const server = transport.current();
     return {
-      running: remoteServer !== null,
-      port: remoteServer?.port ?? null,
+      // A phone-only remote server is not MCP: require an active coordinator too.
+      running: server !== null && mcp.coordinator()?.hasActiveCoordinator() === true,
+      port: server?.port ?? null,
       // TODO: Surface this from the coordinator map if the UI needs it.
       coordinatorTaskId: null,
       mcpConfigPath: lastMcpConfigPath ?? null,
@@ -1846,6 +2400,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(IPC.GetMCPLogs, () => getMCPLogs());
 
+  ipcMain.handle(IPC.GetClaudeUsage, () => fetchClaudeUsage());
+  ipcMain.handle(IPC.GetCodexUsage, () => fetchCodexUsage());
+  ipcMain.handle(IPC.GetResourceUsage, () => getResourceSnapshot());
+
   // --- Forward window events to renderer ---
   win.on('focus', () => {
     if (!win.isDestroyed()) win.webContents.send(IPC.WindowFocus);
@@ -1853,6 +2411,15 @@ export function registerAllHandlers(win: BrowserWindow): void {
   win.on('blur', () => {
     if (!win.isDestroyed()) win.webContents.send(IPC.WindowBlur);
   });
+  // backgroundThrottling is off (see main.ts), which per Electron's docs also
+  // affects the renderer's Page Visibility API — so forward the real signal.
+  const forwardVisibility = (visible: boolean) => () => {
+    if (!win.isDestroyed()) win.webContents.send(IPC.WindowVisibilityChanged, visible);
+  };
+  win.on('hide', forwardVisibility(false));
+  win.on('minimize', forwardVisibility(false));
+  win.on('show', forwardVisibility(true));
+  win.on('restore', forwardVisibility(true));
   win.on('resize', createThrottledForwarder(win, IPC.WindowResized, 100));
   win.on('move', createThrottledForwarder(win, IPC.WindowMoved, 100));
   // Fallback timer that force-destroys the window if the renderer never

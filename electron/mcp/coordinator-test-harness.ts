@@ -1,5 +1,6 @@
-import type { BrowserWindow } from 'electron';
+import type { Notify } from '../ipc/notify.js';
 import { vi } from 'vitest';
+import type { AgentHookEventPayload } from '../agent-hooks/status.js';
 
 export type BackendTaskFixture = {
   id: string;
@@ -40,18 +41,25 @@ const mocks = vi.hoisted(() => {
   const mockLogInfo = vi.fn();
   const mockLogWarn = vi.fn();
   const mockOnPtyEvent = vi.fn();
+  const mockOnAgentHookEvent = vi.fn();
   const mockSpawnAgent = vi.fn();
   const mockWriteToAgent = vi.fn();
   const mockKillAgent = vi.fn();
   const mockSubscribeToAgent = vi.fn();
   const mockUnsubscribeFromAgent = vi.fn();
   const mockGetAgentScrollback = vi.fn();
+  const mockGetAgentPromptSnapshot = vi.fn();
+  const mockGetActiveAgentIds = vi.fn();
+  const mockGetAgentMeta = vi.fn();
   const mockGetChangedFiles = vi.fn();
   const mockGetAllFileDiffs = vi.fn();
   const mockGetDiffBaseSha = vi.fn();
   const mockGitMergeTask = vi.fn();
   const mockCreateBackendTask = vi.fn();
   const mockDeleteBackendTask = vi.fn();
+  const mockFsLstat = vi.fn();
+  const mockVerifyStart = vi.fn();
+  const mockVerifyCancel = vi.fn();
 
   return {
     mockExecFile,
@@ -62,6 +70,7 @@ const mocks = vi.hoisted(() => {
     mockMkdirSync,
     mockFsWriteFile,
     mockFsReadFile,
+    mockFsLstat,
     mockFsAccess,
     mockFsUnlink,
     mockFsMkdir,
@@ -71,18 +80,24 @@ const mocks = vi.hoisted(() => {
     mockLogInfo,
     mockLogWarn,
     mockOnPtyEvent,
+    mockOnAgentHookEvent,
     mockSpawnAgent,
     mockWriteToAgent,
     mockKillAgent,
     mockSubscribeToAgent,
     mockUnsubscribeFromAgent,
     mockGetAgentScrollback,
+    mockGetAgentPromptSnapshot,
+    mockGetActiveAgentIds,
+    mockGetAgentMeta,
     mockGetChangedFiles,
     mockGetAllFileDiffs,
     mockGetDiffBaseSha,
     mockGitMergeTask,
     mockCreateBackendTask,
     mockDeleteBackendTask,
+    mockVerifyStart,
+    mockVerifyCancel,
   };
 });
 
@@ -104,6 +119,7 @@ vi.mock('fs/promises', () => ({
   access: mocks.mockFsAccess,
   unlink: mocks.mockFsUnlink,
   mkdir: mocks.mockFsMkdir,
+  lstat: mocks.mockFsLstat,
 }));
 
 vi.mock('./atomic.js', () => ({
@@ -111,7 +127,9 @@ vi.mock('./atomic.js', () => ({
   atomicWriteFile: mocks.mockAtomicWriteFile,
 }));
 
-vi.mock('../shared/prompt-detect.js', () => ({
+vi.mock('../shared/prompt-detect.js', async (importOriginal) => ({
+  cursorRowsToLines: (await importOriginal<typeof import('../shared/prompt-detect.js')>())
+    .cursorRowsToLines,
   stripAnsi: (s: string) =>
     s.replace(
       // eslint-disable-next-line no-control-regex
@@ -139,7 +157,7 @@ vi.mock('../shared/prompt-detect.js', () => ({
       .slice(-1000)
       .split(/\r\n?|\n/)
       .some((line) =>
-        /(?:^|\s)[❯›]\s*$|^\s*--\s*INSERT\s*--\s*$|^\s*>\s*(?:Type your message|$)/i.test(
+        /(?:^|\s)❯\s*$|^\s*❯\s+Try\s+"[^"]*(?:"|…)\s*$|^\s*--\s*INSERT\s*--\s*$|^\s*[›>]\s*(?:Type your message|Ask Codex to do anything|$)/i.test(
           line.trim(),
         ),
       );
@@ -164,7 +182,7 @@ vi.mock('../shared/prompt-detect.js', () => ({
     return tail
       .split(/\r\n?|\n/)
       .some((line) =>
-        /(?:^|\s)[❯›]\s*$|^\s*--\s*INSERT\s*--\s*$|^\s*>\s*(?:Type your message|$)/i.test(
+        /(?:^|\s)❯\s*$|^\s*❯\s+Try\s+"[^"]*(?:"|…)\s*$|^\s*--\s*INSERT\s*--\s*$|^\s*[›>]\s*(?:Type your message|Ask Codex to do anything|$)/i.test(
           line.trim(),
         ),
       );
@@ -178,19 +196,40 @@ vi.mock('../ipc/pty.js', () => ({
   subscribeToAgent: mocks.mockSubscribeToAgent,
   unsubscribeFromAgent: mocks.mockUnsubscribeFromAgent,
   getAgentScrollback: mocks.mockGetAgentScrollback,
+  getAgentPromptSnapshot: mocks.mockGetAgentPromptSnapshot,
+  getActiveAgentIds: mocks.mockGetActiveAgentIds,
+  getAgentMeta: mocks.mockGetAgentMeta,
   onPtyEvent: mocks.mockOnPtyEvent,
+}));
+
+vi.mock('../agent-hooks/events.js', () => ({
+  onAgentHookEvent: mocks.mockOnAgentHookEvent,
 }));
 
 vi.mock('../ipc/git.js', () => ({
   getChangedFiles: mocks.mockGetChangedFiles,
   getAllFileDiffs: mocks.mockGetAllFileDiffs,
   getDiffBaseSha: mocks.mockGetDiffBaseSha,
+  getMainBranch: async () => 'main',
   mergeTask: mocks.mockGitMergeTask,
 }));
 
 vi.mock('../ipc/tasks.js', () => ({
   createTask: mocks.mockCreateBackendTask,
   deleteTask: mocks.mockDeleteBackendTask,
+}));
+
+vi.mock('../ipc/verify.js', () => ({
+  verificationRunner: {
+    start: mocks.mockVerifyStart,
+    cancel: mocks.mockVerifyCancel,
+    isRunning: () => false,
+  },
+  buildVerifyEnv: (args: { taskId: string; branchName?: string; worktreePath: string }) => ({
+    PARALLEL_CODE_TASK_ID: args.taskId,
+    PARALLEL_CODE_BRANCH: args.branchName ?? '',
+    PARALLEL_CODE_WORKTREE: args.worktreePath,
+  }),
 }));
 
 vi.mock('../ipc/channels.js', () => ({
@@ -222,6 +261,7 @@ export const {
   mockFsWriteFile,
   mockFsReadFile,
   mockFsAccess,
+  mockFsLstat,
   mockFsUnlink,
   mockFsMkdir,
   mockAtomicWriteFileSync,
@@ -230,24 +270,27 @@ export const {
   mockLogInfo,
   mockLogWarn,
   mockOnPtyEvent,
+  mockOnAgentHookEvent,
   mockSpawnAgent,
   mockWriteToAgent,
   mockKillAgent,
   mockSubscribeToAgent,
   mockUnsubscribeFromAgent,
   mockGetAgentScrollback,
+  mockGetAgentPromptSnapshot,
+  mockGetActiveAgentIds,
+  mockGetAgentMeta,
   mockGetChangedFiles,
   mockGetAllFileDiffs,
   mockGetDiffBaseSha,
   mockGitMergeTask,
   mockCreateBackendTask,
   mockDeleteBackendTask,
+  mockVerifyStart,
+  mockVerifyCancel,
 } = mocks;
 
-export const mockWin = {
-  isDestroyed: () => false,
-  webContents: { send: mockNotifyRenderer },
-} as unknown as BrowserWindow;
+export const mockNotify: Notify = (channel, payload) => mockNotifyRenderer(channel, payload);
 
 export function createCoordinatorTask(
   overrides: Partial<BackendTaskFixture> = {},
@@ -291,6 +334,8 @@ export function resetCoordinatorMocks(): void {
   mockFsReadFile.mockResolvedValue('# existing\n');
   mockFsAccess.mockReset();
   mockFsAccess.mockRejectedValue(enoent());
+  mockFsLstat.mockReset();
+  mockFsLstat.mockRejectedValue(enoent());
   mockFsUnlink.mockReset();
   mockFsUnlink.mockResolvedValue(undefined);
   mockFsMkdir.mockReset();
@@ -304,14 +349,19 @@ export function resetCoordinatorMocks(): void {
   mockLogInfo.mockReset();
   mockLogWarn.mockReset();
   mockOnPtyEvent.mockReset();
+  mockOnAgentHookEvent.mockReset();
+  mockOnAgentHookEvent.mockReturnValue(() => {});
   mockSpawnAgent.mockReset();
   mockWriteToAgent.mockReset();
   mockWriteToAgent.mockImplementation((agentId: string, data: string) => ({ id: agentId, data }));
   mockKillAgent.mockReset();
   mockSubscribeToAgent.mockReset();
   mockUnsubscribeFromAgent.mockReset();
+  mockGetActiveAgentIds.mockReset().mockReturnValue([]);
+  mockGetAgentMeta.mockReset().mockReturnValue(null);
   mockGetAgentScrollback.mockReset();
   mockGetAgentScrollback.mockReturnValue(null);
+  mockGetAgentPromptSnapshot.mockReset().mockReturnValue(null);
 
   mockGetChangedFiles.mockReset();
   mockGetChangedFiles.mockResolvedValue([]);
@@ -336,7 +386,7 @@ export async function setupCoordinatorHarness(options: CoordinatorHarnessOptions
   return {
     Coordinator,
     coordinator,
-    mockWin,
+    mockNotify,
     resetCoordinatorMocks,
     mockNextTask,
     registerDefaultCoordinator,
@@ -347,6 +397,8 @@ export async function setupCoordinatorHarness(options: CoordinatorHarnessOptions
     getAgentId,
     getSpawnHandler,
     getExitHandler,
+    getInterruptHandler,
+    getHookEventHandler,
     getAgentTextWrites,
     getSubtaskConfigWrites,
     getSettingsLocalWrites,
@@ -364,7 +416,7 @@ export function registerDefaultCoordinator(
     register = false,
   }: CoordinatorHarnessOptions = {},
 ) {
-  coordinator.setWindow(mockWin);
+  coordinator.setNotify(mockNotify);
   coordinator.setDefaultProject(projectId, projectPath);
   if (register) coordinator.registerCoordinator(coordinatorId, projectId);
   return coordinator;
@@ -382,16 +434,34 @@ export function getAgentId(index = 0): string {
   return call[0] as string;
 }
 
-export function getSpawnHandler(): (agentId: string) => void {
+export function getSpawnHandler(): (agentId: string, data?: unknown) => void {
   const call = mockOnPtyEvent.mock.calls.find((c) => c[0] === 'spawn');
   if (!call) throw new Error('spawn handler not registered');
-  return call[1] as (agentId: string) => void;
+  return call[1] as (agentId: string, data?: unknown) => void;
 }
 
 export function getExitHandler(): (agentId: string, data: unknown) => void {
   const call = mockOnPtyEvent.mock.calls.find((c) => c[0] === 'exit');
   if (!call) throw new Error('exit handler not registered');
   return call[1] as (agentId: string, data: unknown) => void;
+}
+
+export function getInterruptHandler(): (agentId: string) => void {
+  const call = mockOnPtyEvent.mock.calls.find((c) => c[0] === 'interrupt');
+  if (!call) throw new Error('interrupt handler not registered');
+  return call[1] as (agentId: string) => void;
+}
+
+export function getPromptSubmittedHandler(): (agentId: string) => void {
+  const call = mockOnPtyEvent.mock.calls.find((c) => c[0] === 'prompt-submitted');
+  if (!call) throw new Error('prompt-submitted handler not registered');
+  return call[1] as (agentId: string) => void;
+}
+
+export function getHookEventHandler(): (evt: AgentHookEventPayload) => void {
+  const call = mockOnAgentHookEvent.mock.calls[0];
+  if (!call) throw new Error('onAgentHookEvent not subscribed');
+  return call[0] as (evt: AgentHookEventPayload) => void;
 }
 
 export function encodeAgentOutput(s: string): string {

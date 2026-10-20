@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-/* global process, setTimeout */
+/* global process, setInterval, setTimeout */
 
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 
 function argValue(name, fallback = '') {
@@ -14,6 +14,9 @@ const capturePath = argValue('--capture');
 const transientReady = process.argv.includes('--transient-ready');
 const minEnterDelayMs = Number(argValue('--min-enter-delay-ms', '0'));
 const bracketedPaste = process.argv.includes('--bracketed-paste');
+// Showcase recordings: print a canned session instead of the test banner.
+const transcriptPath = argValue('--transcript');
+const busyLabel = argValue('--busy');
 
 function write(text) {
   process.stdout.write(text);
@@ -51,7 +54,23 @@ function transientPromptRedraw() {
   }, 250);
 }
 
+function replayTranscript() {
+  write(readFileSync(transcriptPath, 'utf8').replace(/\r?\n/g, '\r\n'));
+  if (!busyLabel) return;
+  const frames = ['·', '✢', '✳', '✶', '✻', '✽'];
+  let frame = 0;
+  // Steady output keeps the app reading the agent as working; silence turns idle.
+  setInterval(() => {
+    write(`\r\x1b[2K\x1b[33m${frames[frame++ % frames.length]}\x1b[0m ${busyLabel}`);
+  }, 150);
+}
+
 function boot() {
+  if (transcriptPath) {
+    replayTranscript();
+    return;
+  }
+
   if (profile === 'codex') {
     write('>_ OpenAI Codex (fake)\r\n› Explain this codebase\r\n');
     setTimeout(transientReady ? transientPromptRedraw : prompt, 100);

@@ -38,5 +38,6 @@ describe('preload ALLOWED_CHANNELS', () => {
   it('packages the preload artifact', () => {
     const packageJson = require('../package.json') as { build?: { files?: string[] } };
     expect(packageJson.build?.files).toContain('electron/preload.cjs');
+    expect(packageJson.build?.files).toContain('electron/browser-preload.cjs');
   });
 });

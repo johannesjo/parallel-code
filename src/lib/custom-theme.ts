@@ -23,6 +23,8 @@ export const CSS_VARS = [
   '--success',
   '--error',
   '--warning',
+  '--review',
+  '--info',
   '--island-bg',
   '--island-border',
   '--island-radius',
@@ -107,6 +109,8 @@ const CSS_VAR_DESCRIPTIONS: Record<CssVar, string> = {
   '--success': 'Success states, positive indicators (usually green-ish)',
   '--error': 'Error states, destructive actions (usually red-ish)',
   '--warning': 'Warning states, caution indicators (usually amber/orange)',
+  '--review': 'Tasks awaiting review — a hue distinct from accent, success and warning',
+  '--info': 'Neutral informational states (investigation steps, sub-task chips)',
   '--island-bg':
     'Background of task column "islands" — typically 1-2 shades darker than bg-elevated',
   '--island-border': 'Border around task column islands',

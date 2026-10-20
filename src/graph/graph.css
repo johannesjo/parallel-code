@@ -1,0 +1,650 @@
+.investigation-graph-wrap {
+  container: graph-canvas / inline-size;
+  position: relative;
+  flex: 1;
+  min-height: 180px;
+  overflow: hidden;
+}
+.investigation-graph {
+  position: absolute;
+  inset: 0;
+}
+.investigation-preview {
+  position: absolute;
+  z-index: 5;
+  width: 260px;
+  max-width: calc(100% - 32px);
+  padding: 12px;
+  pointer-events: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-soft);
+}
+.investigation-preview strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.investigation-preview p {
+  color: var(--fg-muted);
+  font-size: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.investigation-preview small {
+  color: var(--fg-muted);
+  font-size: 10px;
+}
+.investigation-svg {
+  cursor: grab;
+  touch-action: none;
+}
+.investigation-svg:active {
+  cursor: grabbing;
+}
+.investigation-tree-edge {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1.5;
+  transition:
+    stroke 240ms,
+    stroke-width 240ms,
+    opacity 180ms;
+}
+.investigation-tree-edge[data-path='true'] {
+  stroke: color-mix(in srgb, var(--info) 65%, var(--border));
+  stroke-width: 2.5;
+}
+.investigation-evidence-link {
+  pointer-events: none;
+  transition: opacity 180ms;
+}
+/* Cross-links stay barely visible until a linked node is selected or hovered. */
+.investigation-evidence-link[data-active='false'] path {
+  stroke-opacity: 0.12;
+}
+/* Relation labels only read on the links of the selected or hovered note. */
+.investigation-evidence-link[data-active='false'] text {
+  display: none;
+}
+.investigation-evidence-link path {
+  fill: none;
+  stroke: var(--info);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+}
+.investigation-evidence-link[data-kind='challenges'] path {
+  stroke: var(--warning);
+}
+.investigation-evidence-link text {
+  fill: var(--fg);
+  font: 10px var(--font-ui);
+  paint-order: stroke;
+  stroke: var(--task-panel-bg);
+  stroke-width: 5px;
+  text-anchor: middle;
+}
+.investigation-node-shell {
+  position: relative;
+  margin: 26px 8px 0;
+  transition: opacity 180ms;
+}
+/* Hover highlights hand over between notes; a slower fade keeps that motion calm. */
+.investigation-graph-wrap[data-hover-dim='true']
+  :is(.investigation-node-shell, .investigation-tree-edge) {
+  transition-duration: 400ms;
+}
+/* Muted notes are silhouettes for orientation, not readable context. */
+.investigation-node-shell[data-muted='true'] {
+  opacity: 0.18;
+}
+/* The note under the pointer lights up at once; only its surroundings fade. */
+.investigation-node-shell:is(:hover, :focus-within) {
+  opacity: 1;
+  transition-duration: 0ms;
+}
+.investigation-graph-wrap .investigation-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  min-height: inherit;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  cursor: pointer;
+  transition:
+    background 240ms,
+    border-color 240ms,
+    box-shadow 240ms;
+}
+.investigation-node-symbol {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  flex: 0 0 24px;
+  font-size: 23px;
+  color: var(--note-color);
+}
+.investigation-node-copy {
+  display: block;
+  min-width: 0;
+  flex: 1;
+}
+/* Plain notes have no type symbol; an empty symbol column would skew the text to the right. */
+.investigation-node-shell[data-kind='idea'] .investigation-node-symbol {
+  display: none;
+}
+/* Bottom-right, barely visible at rest: the marks are for a closer look, not for scanning. */
+.mindmap-node-marks {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+.mindmap-notes-indicator,
+.mindmap-sources-indicator,
+.mindmap-ownership {
+  display: inline-flex;
+  width: 10px;
+  height: 10px;
+  color: var(--fg-muted);
+  opacity: 0.18;
+  transition: opacity 160ms;
+}
+.mindmap-ownership {
+  pointer-events: auto;
+}
+.mindmap-context-menu {
+  position: fixed;
+  z-index: 1200;
+  width: 220px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-soft);
+  color: var(--fg);
+  font: 12px var(--font-ui);
+  -webkit-app-region: no-drag;
+}
+.mindmap-context-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mindmap-context-menu button:is(:hover, :focus-visible):not(:disabled) {
+  outline: none;
+  background: var(--bg-hover);
+}
+.mindmap-context-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.mindmap-context-menu button[data-danger='true'] {
+  color: var(--error);
+}
+.mindmap-context-menu button > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.mindmap-menu-icon {
+  display: inline-flex;
+  width: 14px;
+  justify-content: center;
+  color: var(--fg-muted);
+}
+.mindmap-context-menu button[data-danger='true'] .mindmap-menu-icon {
+  color: inherit;
+}
+.mindmap-context-menu small {
+  color: var(--fg-muted);
+}
+/* Quick actions under the selected card; the menu button holds everything else. */
+.mindmap-node-actions {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+/* Icon-only; the native title shows the action name on hover. */
+.investigation-graph-wrap .mindmap-node-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  line-height: 1;
+  box-shadow: var(--shadow-soft);
+}
+.mindmap-context-menu hr {
+  margin: 4px 6px;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.mindmap-notes-indicator svg,
+.mindmap-sources-indicator svg,
+.mindmap-ownership svg {
+  width: 100%;
+  height: 100%;
+}
+.investigation-node-shell:not([data-kind='idea'])
+  :is(.mindmap-notes-indicator, .mindmap-sources-indicator) {
+  width: 8px;
+  height: 8px;
+}
+.investigation-node:is(:hover, :focus-visible)
+  :is(.mindmap-notes-indicator, .mindmap-sources-indicator, .mindmap-ownership) {
+  opacity: 0.85;
+}
+/* Arrivals from the agent: a brief outline, static under reduced motion. */
+.investigation-node-shell[data-fresh='true'] .investigation-node {
+  outline: 2px solid color-mix(in srgb, var(--info) 70%, transparent);
+  outline-offset: 2px;
+  animation: mindmap-fresh-pulse 1s ease-in-out 3;
+}
+.investigation-node-shell[data-selected='true'][data-fresh='true'] .investigation-node {
+  outline-offset: 4px;
+}
+@keyframes mindmap-fresh-pulse {
+  50% {
+    outline-color: transparent;
+  }
+}
+.mindmap-collapse-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.mindmap-new-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--info) 18%, var(--bg-elevated));
+  color: var(--info);
+  font: 600 10px var(--font-ui);
+}
+.investigation-node-kind {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--note-color);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.investigation-node-confidence {
+  display: block;
+  margin-top: 4px;
+  font-size: 9px;
+  color: var(--fg-muted);
+  line-height: 1.3;
+}
+.investigation-node-copy strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.investigation-node-shell[data-kind='goal'] .investigation-node {
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  border-left: 2px solid var(--fg-muted);
+  padding: 10px 12px;
+}
+.investigation-node-shell[data-kind='goal'] .investigation-node-symbol {
+  color: var(--fg-muted);
+  font-size: 22px;
+}
+.investigation-node-shell[data-kind='goal'] strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.investigation-node-shell[data-kind='question'] .investigation-node {
+  border: 0;
+  border-bottom: 1px solid var(--fg-muted);
+  border-radius: 0;
+  background: var(--task-panel-bg);
+}
+.investigation-node-shell[data-kind='question'] .investigation-node-symbol {
+  font-size: 26px;
+  font-weight: 300;
+}
+.investigation-node-shell[data-kind='question'] strong {
+  font-size: 14px;
+}
+.investigation-node-shell[data-kind='hypothesis'] .investigation-node {
+  border-top: 3px solid color-mix(in srgb, var(--info) 60%, var(--border));
+}
+.investigation-node-shell[data-kind='option'] .investigation-node {
+  border-top: 3px solid color-mix(in srgb, var(--review) 60%, var(--border));
+}
+.investigation-node-shell[data-kind='observation'] .investigation-node {
+  border-radius: 0;
+  border: 0;
+  border-left: 2px solid var(--fg-muted);
+  background: color-mix(in srgb, var(--fg) 4%, var(--task-panel-bg));
+}
+.investigation-node-shell[data-kind='experiment'] .investigation-node {
+  border-radius: 30px;
+  padding-left: 16px;
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+}
+.investigation-node-shell[data-kind='decision'] .investigation-node {
+  border: 0;
+  background: transparent;
+}
+.investigation-node-shell[data-kind='decision'] .investigation-node-symbol {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+  background: color-mix(in srgb, var(--review) 12%, var(--bg-elevated));
+  transform: rotate(45deg);
+  border: 1px solid var(--review);
+  border-radius: 2px;
+  font-size: 0;
+}
+.investigation-node-shell[data-kind='decision'] .investigation-node-symbol::after {
+  content: '✓';
+  font-size: 18px;
+  transform: rotate(-45deg);
+}
+.investigation-node-shell[data-kind='work'] .investigation-node {
+  border-radius: 3px;
+  border-style: dashed;
+  background: transparent;
+}
+.investigation-node-shell[data-emphasis='settled'] {
+  --note-color: var(--fg-muted) !important;
+}
+.investigation-node-shell[data-emphasis='settled'] .investigation-node {
+  color: var(--fg-muted);
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--fg) 2%, var(--task-panel-bg));
+}
+.investigation-node-shell[data-emphasis='settled'] .investigation-node-symbol {
+  border-color: var(--border);
+  background: transparent;
+}
+/* Selection shares the app-wide focus colour; both canvases inherit it. */
+.investigation-node-shell[data-selected='true'] .investigation-node {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 4px;
+}
+.investigation-node-shell[data-emphasis='working'] .investigation-node {
+  background: color-mix(in srgb, var(--info) 18%, var(--bg-elevated));
+  border: 2px solid var(--info);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--info) 10%, transparent);
+  animation: investigation-card-pulse 1.8s ease-in-out infinite;
+}
+.investigation-node-shell[data-emphasis='working'] strong {
+  font-weight: 700;
+}
+.investigation-working-label {
+  position: absolute;
+  z-index: 1;
+  bottom: calc(100% + 3px);
+  left: 12px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--task-panel-bg);
+  color: var(--success);
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.investigation-working-label i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: investigation-current-pulse 1.8s ease-in-out infinite;
+}
+.investigation-working-label[data-working='false'] {
+  color: var(--fg-muted);
+}
+.investigation-working-label[data-working='true'] {
+  animation: investigation-label-pulse 1.8s ease-in-out infinite;
+}
+.investigation-working-label[data-working='false'] i {
+  background: currentColor;
+  animation: none;
+}
+.investigation-node-assessment {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 12px;
+  font-size: 9px;
+  color: var(--fg-muted);
+  text-transform: capitalize;
+}
+.investigation-node-assessment[data-status='disputed'],
+.investigation-node-assessment[data-status='reopened'] {
+  color: var(--warning);
+}
+.investigation-collapsed-mark {
+  font-size: 18px;
+}
+.investigation-navigation {
+  position: absolute;
+  bottom: 12px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  max-width: calc(100% - 32px);
+  background: var(--bg-elevated);
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-soft);
+}
+.investigation-navigation button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+  min-width: 28px;
+}
+.investigation-navigation-icon {
+  display: none;
+}
+@container graph-canvas (max-width: 520px) {
+  .investigation-navigation-label {
+    display: none;
+  }
+  .investigation-navigation-icon {
+    display: block;
+  }
+  .investigation-navigation button {
+    padding: 4px 6px;
+  }
+}
+.investigation-navigation button[aria-label='Reset zoom to 100 percent'] {
+  min-width: 48px;
+  font-variant-numeric: tabular-nums;
+}
+@keyframes investigation-current-pulse {
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--success) 18%, transparent);
+    opacity: 0.65;
+  }
+}
+@keyframes investigation-label-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+@keyframes investigation-card-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--info) 8%, transparent);
+  }
+  50% {
+    background: color-mix(in srgb, var(--info) 26%, var(--bg-elevated));
+    box-shadow: 0 0 18px 6px color-mix(in srgb, var(--info) 24%, transparent);
+  }
+}
+.investigation-graph-wrap[data-reduced='true'] .investigation-working-label,
+.investigation-graph-wrap[data-reduced='true'] .investigation-working-label i,
+.investigation-graph-wrap[data-reduced='true'] .investigation-node {
+  animation: none;
+}
+.investigation-graph-wrap[data-reduced='true'] .investigation-evidence-link {
+  transition: none;
+}
+.investigation-graph-wrap[data-reduced='true'] .investigation-node-shell {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .investigation-working-label[data-working],
+  .investigation-working-label i,
+  .investigation-graph-wrap .investigation-node {
+    animation: none;
+  }
+  .investigation-graph-wrap .investigation-node,
+  .investigation-node-shell,
+  .investigation-tree-edge {
+    transition: none;
+  }
+}
+
+/* Compact cards change geometry, keeping text at a readable size. */
+.investigation-graph-wrap[data-compact='true'] .investigation-node {
+  padding: 6px 8px;
+}
+.investigation-graph-wrap[data-compact='true'] .investigation-node-symbol {
+  display: none;
+}
+.investigation-graph-wrap[data-compact='true'] .investigation-node-copy strong {
+  font-size: 12px;
+  line-height: 1.25;
+}
+.investigation-graph-wrap[data-compact='true'] .investigation-node-kind {
+  gap: 4px;
+  letter-spacing: 0;
+  line-height: 1.1;
+  margin-bottom: 2px;
+}
+
+.investigation-node-shell:is([data-kind='observation'], [data-kind='experiment'])
+  .investigation-node-symbol {
+  display: grid;
+  width: 14px;
+  flex-basis: 14px;
+  font-size: 14px;
+}
+.investigation-node-shell:is([data-kind='observation'], [data-kind='experiment'])
+  .investigation-node {
+  gap: 6px;
+}
+
+.mindmap-title-editor {
+  overflow: hidden;
+  border: 1px solid var(--border-focus);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 18%, transparent);
+}
+.mindmap-title-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 3lh;
+  max-height: 10lh;
+  field-sizing: content;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  padding: 10px 12px;
+  font: 13px / 1.5 var(--font-ui);
+}
+.mindmap-title-hint {
+  display: block;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--fg-muted);
+  font: 9px / 1.4 var(--font-ui);
+}
+.investigation-graph-wrap .mindmap-collapse {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  cursor: pointer;
+  font: 16px var(--font-ui);
+}
+
+.graph-task-badge {
+  display: block;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.graph-task-badge:disabled {
+  color: var(--fg-muted);
+  cursor: default;
+}

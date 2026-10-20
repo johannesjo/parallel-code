@@ -1,6 +1,16 @@
+import type { VerificationRun } from '../ipc/shared-types.js';
+import type { ActivityEvidence } from '../agent-hooks/status.js';
+import type { CompletionRecord, SubtaskVerification } from '../shared/completion-report.js';
+export type { SubtaskVerification, SubtaskVerificationCheck } from '../shared/completion-report.js';
+
 // Shared types for the MCP coordinating-agent system.
 
+import type { IntegrationPolicy } from '../shared/delegation-types.js';
+import type { PromptDelivery } from './prompt-delivery.js';
+export type { IntegrationPolicy } from '../shared/delegation-types.js';
+
 export interface CoordinatedTask {
+  integrationPolicy?: IntegrationPolicy;
   id: string;
   name: string;
   projectId: string;
@@ -20,13 +30,26 @@ export interface CoordinatedTask {
   preambleFileExistedBefore?: boolean; // true if the preamble file existed before injection (even if empty)
   signalDoneAt?: Date; // set when sub-task explicitly calls signal_done
   signalDoneConsumed?: boolean; // true after wait_for_signal_done returns this task's signal
+  completion?: CompletionRecord;
+  reviewRevision?: number;
   verification?: SubtaskVerification;
+  /** Result of the app running the project's verify command before landing. */
+  verificationRun?: VerificationRun;
   landingState?: LandingState;
   landingReason?: string;
   landingSummary?: string;
   landedMetadata?: LandedMetadata;
   // Coordinator notification lifecycle flags
   assignedPromptDelivered?: boolean;
+  /** A prompt body was typed but its Enter failed; submit it before the next prompt. */
+  unsubmittedPrompt?: boolean;
+  /** Since when the oldest undelivered prompt has waited to be typed. */
+  promptQueuedAt?: number;
+  /** When the latest prompt's Enter was written, and when the agent showed it started. */
+  promptSubmittedAt?: number;
+  promptStartedAt?: number;
+  /** When the agent last wrote output; a rendered prompt counts once output settles. */
+  lastOutputAt?: number;
   // Ignore the prompt that was already visible when a coordinator-delivered prompt was sent.
   suppressIdleUntil?: number;
   lastPromptEchoText?: string;
@@ -42,8 +65,17 @@ export interface WaitForSignalDoneResult {
   name?: string;
   status?: string;
   signalDoneAt?: string; // ISO timestamp
+  completion?: CompletionRecord;
   remaining: number; // unconsumed signals + still-running tasks for this coordinator
   timedOut?: true; // set when no signal arrived before the timeout
+  /** On timeout: children whose prompt has not reached their agent for a while. */
+  stalled?: StalledChild[];
+}
+
+export interface StalledChild {
+  taskId: string;
+  name: string;
+  delivery: PromptDelivery;
 }
 
 export interface PendingNotification {
@@ -59,6 +91,9 @@ export interface PendingNotification {
 export type CoordinatorLifecycle = 'starting' | 'ready' | 'closing' | 'closed';
 
 export interface CoordinatorState {
+  automaticNotifications?: boolean;
+  paused?: boolean;
+  launchEpoch?: number;
   taskId: string;
   lifecycle: CoordinatorLifecycle;
   projectId: string;
@@ -78,6 +113,9 @@ export interface CoordinatorState {
   } | null;
   /** Per-coordinator agent spawn defaults; set when the coordinator registers. */
   spawnDefaults: { command: string; args: string[] };
+  /** Env file the coordinator's own agent uses; sub-tasks inherit it so they
+   *  get the same credentials. Undefined when no env file is configured. */
+  agentEnvFile?: string;
   pendingNotifications: PendingNotification[];
   /** batchId → array of pendingNotification IDs included in that batch */
   stagedBatches: Map<string, string[]>;
@@ -86,6 +124,10 @@ export interface CoordinatorState {
   restageTimer: ReturnType<typeof setTimeout> | null;
   /** Whether to pass skipPermissions to sub-tasks created by this coordinator. */
   propagateSkipPermissions: boolean;
+  /** Enforced ceiling on concurrently in-flight sub-tasks (clamped; default applies when unset). */
+  maxConcurrentSubTasks?: number;
+  /** Project verify command, run in a sub-task's worktree before it is merged. */
+  verifyCommand?: string;
   /** Path to the .mcp.json file written for this coordinator. */
   mcpJsonPath: string;
   /** True if Parallel Code created .mcp.json from scratch; false if it was pre-existing. */
@@ -94,17 +136,6 @@ export interface CoordinatorState {
   previousMcpParallelCode?: unknown;
   /** The value this coordinator wrote into mcpServers["parallel-code"]; used to detect concurrent edits on deregister. */
   writtenMcpParallelCode?: unknown;
-}
-
-export interface SubtaskVerificationCheck {
-  name: string;
-  command: string;
-  result: 'passed' | 'blocked' | 'failed';
-  reason?: string;
-}
-
-export interface SubtaskVerification {
-  checks: SubtaskVerificationCheck[];
 }
 
 export type LandingState =
@@ -136,12 +167,19 @@ export interface LandSelfInput {
 // --- API request/response types ---
 
 export interface ApiTaskSummary {
+  reviewRevision?: number;
+  /** Diagnostic evidence for the primary agent, independent of assignment completion. */
+  activityEvidence?: ActivityEvidence;
+  /** Set while the latest prompt is queued or its receipt is unconfirmed. */
+  delivery?: PromptDelivery;
+  integrationPolicy?: IntegrationPolicy;
   id: string;
   name: string;
   branchName: string;
   status: string;
   coordinatorTaskId: string;
   signalDoneAt?: string; // ISO timestamp, set when sub-task called signal_done
+  completion?: CompletionRecord;
   verification?: SubtaskVerification;
   landingState?: LandingState;
   landingReason?: string;
@@ -176,11 +214,6 @@ export interface ApiMergeResult {
   mainBranch: string;
   linesAdded: number;
   linesRemoved: number;
-}
-
-export interface ApiReviewAndMergeResult {
-  diff: ApiDiffResult;
-  merge: ApiMergeResult;
 }
 
 export interface ApiLandSelfResult extends ApiMergeResult {

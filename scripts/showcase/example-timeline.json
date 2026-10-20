@@ -1,0 +1,86 @@
+{
+  "footage": ".",
+  "work": "work",
+  "output": "parallel-code-showcase.mp4",
+  "clips": [
+    { "file": "03-mcp-raw.mp4", "start": 164, "duration": 7 },
+    {
+      "file": "06-change-tour.mp4",
+      "start": 59,
+      "duration": 4,
+      "transitionAfter": 0,
+      "camera": {
+        "focusX": 0.89,
+        "focusY": 0.28,
+        "moves": [
+          { "at": 1.3, "seconds": 0.8, "zoom": 1.35 },
+          { "at": 3.8, "seconds": 0.8, "zoom": 1 }
+        ]
+      }
+    },
+    {
+      "file": "06-change-tour.mp4",
+      "start": 63,
+      "duration": 5,
+      "camera": {
+        "clockOffset": 4,
+        "focusX": 0.89,
+        "focusY": 0.28,
+        "moves": [
+          { "at": 1.3, "seconds": 0.8, "zoom": 1.35 },
+          { "at": 3.8, "seconds": 0.8, "zoom": 1 },
+          { "at": 5.4, "seconds": 0.9, "zoom": 1.3, "focusX": 0, "focusY": 0 }
+        ]
+      }
+    },
+    {
+      "file": "06-change-tour.mp4",
+      "start": 75.5,
+      "duration": 5.5,
+      "camera": { "startZoom": 1.3, "focusX": 0, "focusY": 0 }
+    },
+    { "file": "02-map-task.mp4", "start": 1, "duration": 3 },
+    {
+      "file": "02-map-task.mp4",
+      "start": 17,
+      "duration": 6,
+      "camera": {
+        "focusX": 0.69,
+        "focusY": 0.56,
+        "moves": [
+          { "at": 0.2, "seconds": 0.8, "zoom": 1.2 },
+          { "at": 2.2, "seconds": 0.8, "zoom": 1 }
+        ]
+      }
+    },
+    { "file": "02-map-task.mp4", "start": 38, "duration": 3.9 },
+    { "file": "02-map-task.mp4", "start": 82, "duration": 3 },
+    { "file": "03-mcp-raw.mp4", "start": 46, "duration": 9 },
+    { "file": "03-mcp-raw.mp4", "start": 172, "duration": 4 }
+  ],
+  "cues": [
+    {
+      "at": [0, 0.35],
+      "until": [1, -0.9],
+      "title": "Parallel Code",
+      "sub": "Run agents side by side"
+    },
+    { "at": [1, 0.4], "until": [2, 2.7], "title": "Review with a guided tour" },
+    { "at": [3, 0.3], "until": [4, -0.4], "title": "Step through each change" },
+    { "at": [4, 0.2], "until": [6, -0.5], "title": "From idea to working task" },
+    { "at": [6, 0.2], "until": [7, -0.4], "title": "Choose an agent. Launch." },
+    { "at": [7, 0.3], "until": [8, -0.3], "title": "Follow it on the map" },
+    {
+      "at": [8, 0.2],
+      "until": [9, -0.2],
+      "title": "Dispatch tasks through MCP",
+      "sub": "Capture note: queued tasks were started manually."
+    },
+    {
+      "at": [9, 0.3],
+      "until": [10, -0.45],
+      "title": "Parallel Code",
+      "sub": "Plan. Build. Understand."
+    }
+  ]
+}

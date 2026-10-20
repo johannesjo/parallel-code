@@ -73,7 +73,7 @@ async function dirFsync(filePath: string): Promise<void> {
  *  Uses fchmod after open to set the exact mode, bypassing the process umask. */
 export function atomicWriteFileSync(
   filePath: string,
-  data: string,
+  data: string | Buffer,
   options?: { mode?: number },
 ): void {
   const mode = resolveMode(filePath, options?.mode);

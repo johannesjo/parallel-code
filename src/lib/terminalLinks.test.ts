@@ -188,6 +188,18 @@ describe('matchTerminalPaths', () => {
     ]);
   });
 
+  it('includes the leading dot in paths that start with a hidden directory', () => {
+    expect(matchTerminalPaths('open .generated/file.html')).toEqual([
+      { index: 5, text: '.generated/file.html' },
+    ]);
+  });
+
+  it('keeps the leading tilde of home-relative paths', () => {
+    expect(matchTerminalPaths('wrote ~/notes/plan.md:3')).toEqual([
+      { index: 6, text: '~/notes/plan.md:3' },
+    ]);
+  });
+
   it('strips trailing punctuation and ignores dot-less directories', () => {
     expect(matchTerminalPaths('at (src/a.ts).')).toEqual([{ index: 4, text: 'src/a.ts' }]);
     expect(matchTerminalPaths('cd src/store/ then')).toEqual([]);

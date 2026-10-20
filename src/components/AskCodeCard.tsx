@@ -3,6 +3,7 @@ import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { Channel, invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
+import { askCodeEnvFile } from '../../electron/shared/ask-code-models';
 import { store } from '../store/store';
 import { warn as logWarn, errMessage } from '../lib/log';
 
@@ -64,7 +65,8 @@ export function AskCodeCard(props: AskCodeCardProps) {
       cwd: props.worktreePath,
       onOutput: channel,
       provider: store.askCodeProvider,
-      model: store.minimaxModel,
+      model: store.askCodeModel || undefined,
+      envFile: askCodeEnvFile(store.askCodeProvider, store.agentEnvFiles),
     }).catch((err: unknown) => {
       setError(errMessage(err));
       setLoading(false);
@@ -91,7 +93,7 @@ export function AskCodeCard(props: AskCodeCardProps) {
         margin: '4px 40px 4px 80px',
         border: `1px solid ${theme.border}`,
         'border-left': `3px solid ${theme.accent}`,
-        'border-radius': '4px',
+        'border-radius': 'var(--radius-xs)',
         background: theme.bgElevated,
         overflow: 'hidden',
       }}
@@ -124,7 +126,7 @@ export function AskCodeCard(props: AskCodeCardProps) {
             color: theme.fgMuted,
             cursor: 'pointer',
             padding: '2px 4px',
-            'border-radius': '3px',
+            'border-radius': 'var(--radius-xs)',
             'font-size': sf(15),
             'line-height': '1',
           }}

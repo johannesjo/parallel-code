@@ -1,15 +1,48 @@
-import type { AgentDef, StepEntry, WorktreeStatus } from '../ipc/types';
+import type {
+  CompletionRecord,
+  SubtaskVerification,
+} from '../../electron/shared/completion-report';
+export type {
+  SubtaskVerification,
+  SubtaskVerificationCheck,
+} from '../../electron/shared/completion-report';
+import type {
+  IntegrationPolicy,
+  SessionCapabilities,
+} from '../../electron/shared/delegation-types';
+import type { AgentTourPayload } from '../../electron/shared/agent-tour';
+import type { CanvasTaskLink, CanvasTaskSource } from '../lib/canvas-task-links';
+import type {
+  AgentDef,
+  CreditUsage,
+  UsageProvider,
+  UsageWindow,
+  VerificationRun,
+  WorktreeStatus,
+} from '../ipc/types';
+import type { ChatPermissionMode, ChatSession } from '../../electron/shared/agent-chat-types';
+import type { AskCodeProvider } from '../../electron/shared/ask-code-models';
+import type { TaskNameModelId } from '../../electron/shared/task-name-model';
+import type { TaskBriefRecord } from '../lib/task-brief';
+import type { TaskConfidence } from '../lib/task-confidence';
+import type {
+  EvidenceModelSettings,
+  EvidencePackage,
+  ProjectCheck,
+} from '../../electron/shared/evidence';
 import type { DockerSource } from '../lib/docker';
 import type { LookPreset, AppearanceMode } from '../lib/look';
 import type { KeyBinding } from '../lib/keybindings';
+import type { FeatureHintId } from '../lib/feature-hints';
 import type { CustomTheme } from '../lib/custom-theme';
+import type { ReasoningProfile } from '../investigation/profiles';
+import type { MindMapDocument } from '../graph/model';
+import type { ReasoningWorkspace } from '../investigation/editing';
 
 /** A user override for a binding: partial key/modifiers to apply, or null to unbind. */
 export type KeybindingOverride = Partial<Pick<KeyBinding, 'key' | 'modifiers'>> | null;
 
 export type GitIsolationMode = 'worktree' | 'direct' | 'none';
-
-export type MinimaxModelId = 'MiniMax-M3' | 'MiniMax-M2.7';
 
 export interface StagedNotification {
   batchId: string;
@@ -18,17 +51,6 @@ export interface StagedNotification {
   autoFireAt: number;
   userEdited: boolean;
   hiddenCompletionCount?: number;
-}
-
-export interface SubtaskVerificationCheck {
-  name: string;
-  command: string;
-  result: 'passed' | 'blocked' | 'failed';
-  reason?: string;
-}
-
-export interface SubtaskVerification {
-  checks: SubtaskVerificationCheck[];
 }
 
 export type LandingState =
@@ -65,6 +87,7 @@ export interface TerminalBookmark {
 }
 
 export interface Project {
+  allowPeerAccess?: boolean;
   id: string;
   name: string;
   path: string;
@@ -75,11 +98,90 @@ export interface Project {
   defaultBaseBranch?: string;
   /** Coverage artifact path relative to the repo root. */
   coverageReportPath?: string;
+  /** Shell command the app runs in a task worktree to verify it (exit 0 = pass).
+   *  Lives in app state on purpose: a repo file could make opening a hostile
+   *  clone run arbitrary commands on the host. */
+  verifyCommand?: string;
+  /** Checks an evidence package runs besides the verify command. App state,
+   *  for the same reason as `verifyCommand`. */
+  evidenceChecks?: ProjectCheck[];
+  /** Model that writes the evidence test summary and findings. */
+  evidenceModel?: EvidenceModelSettings;
+  /** Build evidence in the background after an agent turn that added commits. */
+  evidenceAutoBuild?: boolean;
   terminalBookmarks?: TerminalBookmark[];
   isGitRepo?: boolean; // undefined treated as true for backward compat
+  tasksCollapsed?: boolean; // sidebar task group, defaults to expanded
+  /** Document workspaces (experimental): a project whose surface is one
+   *  rendered document rather than task terminals. Undefined means 'code'. */
+  kind?: ProjectKind;
+  /** Repo-relative path of the document a document project opens. */
+  documentPath?: string;
+  /** Quick edit: the original file this document project's private copy syncs
+   *  to. The project path is then the copy's folder under the app's data. */
+  quickEditSource?: string;
+  /** Last file read in the document workspace, relative to the project. */
+  documentOpenPath?: string;
+  /** Files opened most recently in the document workspace, newest first. */
+  documentRecentPaths?: string[];
+  /** Preview scale; independent of the app and terminal zoom. */
+  documentZoom?: number;
+  /** Keep the agent, notes and files panel out of the reading area until needed. */
+  documentPanelCollapsed?: boolean;
+  /** Agent that owns the project's warm main session. */
+  documentMainAgentId?: string;
+  /** Resumable main sessions per agent id, with the base sha each last saw. */
+  documentSessions?: Record<string, DocumentSessionRef>;
+  /** Model and reasoning level last chosen in the run composer, per agent id
+   *  and candidate slot: the agent's first candidate, its second, and so on. */
+  documentModels?: Record<string, DocumentModelChoice[]>;
+  /** Agent running in the workspace's interactive terminal. */
+  documentTerminalAgentId?: string;
+  /** Super Productivity project that tasks of this project are tracked in. */
+  superProductivityProjectId?: string;
+}
+
+/** The Kanban card a new task was started from; see src/store/kanban.ts. */
+export interface KanbanNewTaskSource {
+  projectId: string;
+  title: string;
+  column: string;
+  ref: { column: number; card: number };
+}
+
+/** A Super Productivity task the New Task form was opened from. */
+export interface SpNewTaskSource {
+  taskId: string;
+  title: string;
+  projectId: string | null;
+}
+
+/** The Super Productivity task a Parallel Code task tracks time on. */
+export interface SuperProductivityLink {
+  taskId: string;
+  /** Last title both apps agreed on — the base for the three-way title sync. */
+  syncedTitle: string;
+}
+
+export interface DocumentModelChoice {
+  model?: string;
+  effort?: string;
+}
+
+export type ProjectKind = 'code' | 'document';
+
+export interface DocumentSessionRef {
+  sessionId: string;
+  lastSha: string;
 }
 
 export interface Agent {
+  capabilities?: SessionCapabilities;
+  sessionInstanceId?: string;
+  requireResumeSuccess?: boolean;
+  /** Runtime launch capability; never inferred from the selected CLI. */
+  canvasTools?: boolean;
+  chatState?: import('../../electron/shared/agent-chat-types').AgentChatState;
   id: string;
   taskId: string;
   def: AgentDef;
@@ -89,11 +191,38 @@ export interface Agent {
   signal: string | null;
   lastOutput: string[];
   generation: number;
+  /** The session generation that already received the canvas tool guidance with a prompt. */
+  canvasGuidanceGeneration?: number;
   spawnDelayMs?: number;
   attachExisting?: boolean;
 }
 
+/** A task side panel can show a worktree document, the browser preview, a mind map, or its reasoning graph. */
+export type CanvasTab =
+  | { kind: 'markdown'; path: string }
+  | { kind: 'browser'; path: 'preview' }
+  | { kind: 'reasoning' }
+  | { kind: 'mindmap' };
+export type CanvasTabKind = CanvasTab['kind'];
+
+export interface PromptHistoryEntry {
+  text: string;
+  sentAt?: number;
+  agentId?: string;
+}
+
 export interface Task {
+  mainAgentView?: 'terminal' | 'chat';
+  codexChatThreadId?: string;
+  codexChatHandoff?: {
+    threadId?: string;
+    model?: string;
+    reasoningEffort?: string;
+  };
+  claudeChatSessionId?: string;
+  chatSessions?: ChatSession[];
+  /** Permission mode chosen in the chat view, overriding the agent's own settings. */
+  chatPermissionMode?: ChatPermissionMode;
   id: string;
   name: string;
   nameIsAutoGenerated?: boolean;
@@ -101,6 +230,11 @@ export interface Task {
   branchName: string;
   worktreePath: string;
   agentIds: string[];
+  /** Session id each agent pane owns, for CLIs that accept one (see
+   *  electron/shared/session-resume.ts). Persisted, because its whole purpose
+   *  is to reattach the right conversation after a restart instead of taking
+   *  whichever session in the worktree happens to be newest. */
+  agentSessionIds?: Record<string, string>;
   selectedAgentId?: string;
   /** Layout for a task's AI terminals when it has more than one agent.
    *  'split' (default) tiles them side by side; 'tabs' shows only the selected
@@ -109,14 +243,26 @@ export interface Task {
   shellAgentIds: string[];
   notes: string;
   lastPrompt: string;
+  promptHistory?: PromptHistoryEntry[];
   promptedAgentIds?: string[];
   initialPrompt?: string; // auto-sends when agent is ready
   savedInitialPrompt?: string;
+  secondOpinionDismissed?: boolean;
   prefillPrompt?: string; // fills prompt input without sending
   closingStatus?: 'closing' | 'removing' | 'error';
   closingError?: string;
   gitIsolation: GitIsolationMode;
   baseBranch?: string;
+  /** Worktree branch the user declined to adopt as the task branch (the
+   *  adoption banner's Undo). Persisted — auto-adoption must not re-apply a
+   *  choice the user reverted, even across restarts while the worktree still
+   *  sits on that branch. */
+  branchOfferDismissed?: string;
+  /** Branch tracked before the app auto-adopted the one the agent switched
+   *  the worktree to (the adopted branch is `branchName` itself — the field
+   *  is cleared on any later branch change). Drives the info banner on the
+   *  task; persisted so a restart doesn't hide that the branch changed. */
+  branchAdoptedFrom?: string;
   externalWorktree?: boolean;
   skipPermissions?: boolean;
   dockerMode?: boolean;
@@ -124,35 +270,90 @@ export interface Task {
   dockerImage?: string;
   githubUrl?: string;
   prUrl?: string;
+  superProductivity?: SuperProductivityLink;
+  /** Absolute return time for a timed snooze, retained across app restarts. */
+  snoozedUntil?: number;
+  /** Backgrounded until the PR checks stop pending, retained across app restarts. */
+  snoozedUntilCi?: boolean;
   collapsed?: boolean;
   savedAgentDef?: AgentDef;
   savedAgentDefs?: AgentDef[];
+  /** Session ownership in savedAgentDefs order while pane IDs are absent. */
+  savedAgentSessionIds?: (string | null)[];
   savedSelectedAgentIndex?: number;
   savedPromptedAgentIndexes?: number[];
   planContent?: string;
   planFileName?: string;
-  stepsEnabled?: boolean;
-  stepsContent?: StepEntry[];
+  /** Worktree-relative path of the plan file, for opening it on the canvas. Not persisted. */
+  planPath?: string;
+  /** What is open in the task's canvas column, one tab each, in strip order. */
+  canvasTabs?: CanvasTab[];
+  /** Key (see canvasTabKey) of the tab in front. */
+  canvasActiveTab?: string;
+  browserUrl?: string;
+  /** Task references are independent of authored graph content and execution state. */
+  canvasTaskLinks?: CanvasTaskLink[];
+  mindMap?: MindMapDocument;
+  /** Runtime-only: a saved map that failed validation, written back as is so nothing is lost. */
+  mindMapUnreadable?: unknown;
+  reasoningProfile?: ReasoningProfile;
+  /** Runtime-only: bypass setup when this agent session opens the graph from chat. */
+  reasoningCanvasRequest?: { agentId: string; generation: number };
+  /**
+   * The tour the agent last published through `tour_publish`. The revision
+   * bumps on every publish so the panel opens the viewer again even when the
+   * payload is unchanged. Only the payload is persisted; a restored tour has
+   * revision 0, so it waits for its button instead of opening at startup.
+   */
+  agentTour?: { revision: number; payload: AgentTourPayload };
+  reasoningWorkspaces?: Record<string, ReasoningWorkspace>;
+  /** Column shown without a tab (the user asked for it). Not persisted. */
+  canvasOpen?: boolean;
   lastInputAt?: string;
   stagedNotification?: StagedNotification;
   userActivityHoldUntil?: number;
   promptDraftActive?: boolean;
+  /** Unsent text sitting in the task's "Send a prompt" box. Persisted so a
+   *  restart (app or machine) doesn't discard what the user typed but never
+   *  sent. Cleared on send. */
+  promptDraft?: string;
   terminalInputPending?: boolean;
   terminalInputPendingFromQuestion?: boolean;
-  // Coordinator fields
+  delegationParent?: boolean;
+  delegationPaused?: boolean;
+  integrationPolicy?: IntegrationPolicy;
+  autoMergeChildren?: boolean;
+  autoSendChildUpdates?: boolean;
+  /** @deprecated Retained to restore tasks created with legacy coordinator transport. */
   coordinatorMode?: boolean;
   propagateSkipPermissions?: boolean;
+  maxConcurrentTasks?: number;
   coordinatedBy?: string;
   controlledBy?: 'coordinator' | 'human';
   automationWriteInFlight?: boolean;
   mcpConfigPath?: string;
   mcpLaunchArgs?: string[];
   preambleFileExistedBefore?: boolean;
+  completion?: CompletionRecord;
+  reviewRevision?: number;
   signalDoneReceived?: boolean;
   signalDoneAt?: string;
   signalDoneConsumed?: boolean;
   needsReview?: boolean;
   verification?: SubtaskVerification;
+  /** Latest app-run verify command result. Distinct from `verification`,
+   *  which is the agent's self-report through land_self. */
+  verificationRun?: VerificationRun;
+  /** Latest evidence package: what the app observed, the agent claimed and a model thought. */
+  evidence?: EvidencePackage;
+  /** Snapshot of the work so far, rewritten by a cheap model after each agent turn. */
+  brief?: TaskBriefRecord;
+  /** Runtime-only: a brief is being written, or the last attempt failed. */
+  briefStatus?: { state: 'generating' } | { state: 'failed'; message: string };
+  /** Runtime-only: newest diff fingerprint read, which ratings are compared against. */
+  codeFingerprint?: { fingerprint: string; at: number };
+  /** Latest rating the agent published through `confidence_publish`. */
+  confidence?: TaskConfidence;
   landingState?: LandingState;
   landingReason?: string;
   landingSummary?: string;
@@ -169,6 +370,16 @@ export interface Terminal {
 }
 
 export interface PersistedTask {
+  mainAgentView?: 'terminal' | 'chat';
+  codexChatThreadId?: string;
+  codexChatHandoff?: {
+    threadId?: string;
+    model?: string;
+    reasoningEffort?: string;
+  };
+  claudeChatSessionId?: string;
+  chatSessions?: ChatSession[];
+  chatPermissionMode?: ChatPermissionMode;
   id: string;
   name: string;
   nameIsAutoGenerated?: boolean;
@@ -176,13 +387,16 @@ export interface PersistedTask {
   branchName: string;
   worktreePath: string;
   notes: string;
+  promptDraft?: string;
   lastPrompt: string;
+  promptHistory?: PromptHistoryEntry[];
   promptedAgentIds?: string[];
   initialPrompt?: string;
   shellCount: number;
   agentDef: AgentDef | null;
   agentDefs?: AgentDef[];
   agentIds?: string[];
+  agentSessionIds?: Record<string, string>;
   selectedAgentId?: string;
   aiTerminalLayout?: 'split' | 'tabs';
   gitIsolation: GitIsolationMode;
@@ -194,24 +408,60 @@ export interface PersistedTask {
   dockerImage?: string;
   githubUrl?: string;
   prUrl?: string;
+  /** Validated on load. */
+  superProductivity?: unknown;
   savedInitialPrompt?: string;
+  secondOpinionDismissed?: boolean;
+  /** Absolute return time for a timed snooze, retained across app restarts. */
+  snoozedUntil?: number;
+  /** Backgrounded until the PR checks stop pending, retained across app restarts. */
+  snoozedUntilCi?: boolean;
   collapsed?: boolean;
+  savedAgentSessionIds?: (string | null)[];
   savedSelectedAgentIndex?: number;
   savedPromptedAgentIndexes?: number[];
   planFileName?: string;
-  stepsEnabled?: boolean;
-  // Coordinator fields
+  /** Before tabs the canvas held one file; read for migration, no longer written. */
+  canvasPath?: string;
+  canvasTabs?: CanvasTab[];
+  canvasActiveTab?: string;
+  browserUrl?: string;
+  canvasTaskLinks?: CanvasTaskLink[];
+  /** Validated on load; an unreadable value is kept and written back unchanged. */
+  mindMap?: unknown;
+  /** The published tour's payload; validated on load, dropped if unreadable. */
+  agentTour?: unknown;
+  reasoningProfile?: ReasoningProfile;
+  reasoningWorkspaces?: Record<string, ReasoningWorkspace>;
+  branchAdoptedFrom?: string;
+  branchOfferDismissed?: string;
+  delegationParent?: boolean;
+  delegationPaused?: boolean;
+  integrationPolicy?: IntegrationPolicy;
+  autoMergeChildren?: boolean;
+  autoSendChildUpdates?: boolean;
+  /** @deprecated Retained to restore tasks created with legacy coordinator transport. */
   coordinatorMode?: boolean;
   propagateSkipPermissions?: boolean;
+  maxConcurrentTasks?: number;
   coordinatedBy?: string;
   controlledBy?: 'coordinator' | 'human';
   mcpConfigPath?: string;
   preambleFileExistedBefore?: boolean;
+  completion?: CompletionRecord;
+  reviewRevision?: number;
   signalDoneReceived?: boolean;
   signalDoneAt?: string;
   signalDoneConsumed?: boolean;
   needsReview?: boolean;
   verification?: SubtaskVerification;
+  verificationRun?: VerificationRun;
+  /** Validated on load. */
+  evidence?: unknown;
+  /** Validated on load. */
+  brief?: unknown;
+  /** Validated on load. */
+  confidence?: unknown;
   landingState?: LandingState;
   landingReason?: string;
   landingSummary?: string;
@@ -248,27 +498,38 @@ export interface PersistedState {
   globalScale?: number;
   completedTaskDate?: string;
   completedTaskCount?: number;
+  countedMergedPrs?: string[];
   mergedLinesAdded?: number;
   mergedLinesRemoved?: number;
   terminalFont?: string;
+  terminalScreenReaderMode?: boolean;
   themePreset?: LookPreset;
   showPromptInput?: boolean;
   fontSmoothing?: boolean;
   windowState?: PersistedWindowState;
   autoTrustFolders?: boolean;
   showPlans?: boolean;
+  modelTaskNames?: boolean;
+  taskNameModel?: TaskNameModelId;
+  taskBriefs?: boolean;
+  confidencePrompt?: string;
   showSidebarTips?: boolean;
   showSidebarProgress?: boolean;
+  sidebarNeedsInputFirst?: boolean;
   projectsCollapsed?: boolean;
   desktopNotificationsEnabled?: boolean;
   inactiveColumnOpacity?: number;
   editorCommand?: string;
   dockerImage?: string;
   shareDockerAgentAuth?: boolean;
-  askCodeProvider?: 'claude' | 'minimax';
-  minimaxModel?: MinimaxModelId;
+  askCodeProvider?: AskCodeProvider;
+  askCodeModel?: string;
+  askCodeEffort?: Partial<Record<AskCodeProvider, string>>;
   customAgents?: AgentDef[];
+  agentEnvFiles?: Record<string, string>;
   keybindingMigrationDismissed?: boolean;
+  featureHintsEnabled?: boolean;
+  seenFeatureHints?: FeatureHintId[];
   focusMode?: boolean;
   verboseLogging?: boolean;
   activeCustomThemeId?: string | null;
@@ -277,12 +538,17 @@ export interface PersistedState {
   lightThemeCustomId?: string | null;
   darkThemePreset?: LookPreset;
   darkThemeCustomId?: string | null;
-  coordinatorModeEnabled?: boolean;
+  mcpOrchestrationEnabled?: boolean;
+  documentWorkspacesEnabled?: boolean;
+  documentFullWidth?: boolean;
   coordinatorNotificationDelayMs?: number;
   coordinatorControlHintDismissed?: boolean;
-  defaultStepsEnabled?: boolean;
+  preferUiMode?: boolean;
+  disableClaudeUiMode?: boolean;
   defaultSkipPermissions?: boolean;
   defaultPropagateSkipPermissions?: boolean;
+  /** Show which canvas nodes the user owns (agents cannot edit them without override). */
+  canvasOwnershipBadges?: boolean;
   autoStartRemoteAccess?: boolean;
 }
 
@@ -293,12 +559,23 @@ export interface MCPStatus {
   mcpConfigPath: string | null;
 }
 
+export interface UsageState {
+  fiveHour: UsageWindow | null;
+  sevenDay: UsageWindow | null;
+  creditUsage?: CreditUsage | null;
+  /** When the current windows were fetched; null until the first success. */
+  fetchedAt: number | null;
+  /** `unavailable` means no subscription login — the bar hides. `error` keeps the last snapshot. */
+  status: 'idle' | 'ok' | 'error' | 'unavailable';
+  error: string | null;
+}
+
 // Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.
 // Shell toolbar buttons use "shell-toolbar:0", "shell-toolbar:1", etc.
 export type PanelId = string;
 
 export interface PendingAction {
-  type: 'close' | 'merge' | 'push';
+  type: 'close' | 'finish';
   taskId: string;
 }
 
@@ -325,7 +602,11 @@ export interface AppStore {
   activeAgentId: string | null;
   availableAgents: AgentDef[];
   customAgents: AgentDef[];
-  showNewTaskDialog: boolean;
+  /** Agent id → path of a `KEY=VALUE` file merged into that agent's environment
+   *  at spawn. Only the path is stored here; secrets stay in the file on disk. */
+  agentEnvFiles: Record<string, string>;
+  showNewTaskPanel: boolean;
+  newTaskPanelFocused: boolean;
   sidebarVisible: boolean;
   /** User-dragged sizes keyed by `${persistKey}:${childId}`. Presence of an
    *  entry means that panel is pinned; absence means it's content-sized or
@@ -346,17 +627,31 @@ export interface AppStore {
   notification: string | null;
   completedTaskDate: string;
   completedTaskCount: number;
+  countedMergedPrs: string[];
   mergedLinesAdded: number;
   mergedLinesRemoved: number;
   terminalFont: string;
+  terminalScreenReaderMode: boolean;
   themePreset: LookPreset;
   showPromptInput: boolean;
   fontSmoothing: boolean;
   windowState: PersistedWindowState | null;
   autoTrustFolders: boolean;
   showPlans: boolean;
+  /** Opt-in: ask a cheap model for a short title when a task is named from its prompt. */
+  modelTaskNames: boolean;
+  taskNameModel: TaskNameModelId;
+  /** Opt-in: write a task brief with the naming model after each agent turn. */
+  taskBriefs: boolean;
+  /** Prompt "Rate confidence" sends; empty uses the built-in audit. */
+  confidencePrompt: string;
   showSidebarTips: boolean;
   showSidebarProgress: boolean;
+  /** Pin tasks that are waiting on an answer to the top of the sidebar task
+   *  list, newest question first. */
+  sidebarNeedsInputFirst: boolean;
+  /** Session-only project filter for task navigation and panels. */
+  taskProjectFilter: string | null;
   projectsCollapsed: boolean;
   desktopNotificationsEnabled: boolean;
   inactiveColumnOpacity: number;
@@ -364,19 +659,43 @@ export interface AppStore {
   dockerImage: string;
   dockerAvailable: boolean;
   shareDockerAgentAuth: boolean;
-  askCodeProvider: 'claude' | 'minimax';
-  minimaxModel: MinimaxModelId;
+  askCodeProvider: AskCodeProvider;
+  /** CLI model alias or slug used for code Q&A and tours; empty lets the CLI choose. */
+  askCodeModel: string;
+  /** Reasoning level per provider for new reviewers; unset runs the CLI's own default. */
+  askCodeEffort: Partial<Record<AskCodeProvider, string>>;
   newTaskDropUrl: string | null;
-  newTaskPrefillPrompt: { prompt: string; projectId: string | null } | null;
+  newTaskPrefillPrompt: {
+    prompt: string;
+    projectId: string | null;
+    name?: string;
+    baseBranch?: string;
+    canvasSource?: CanvasTaskSource;
+    /** null marks a batch without a single issue association. */
+    githubUrl?: string | null;
+    githubPr?: import('../ipc/types').GitHubWorkItem;
+    /** Set when the form was opened from a Super Productivity task. */
+    superProductivity?: SpNewTaskSource;
+    /** Set when the form was opened from a Kanban card. */
+    kanban?: KanbanNewTaskSource;
+  } | null;
   missingProjectIds: Record<string, true>;
   remoteAccess: RemoteAccess;
   /** Persisted: start the remote (Connect Phone) server automatically on launch. */
   autoStartRemoteAccess: boolean;
+  githubIssuesProjectId: string | null;
+  /** Project whose Kanban board occupies the task area. */
+  kanbanProjectId: string | null;
   showArena: boolean;
+  /** The thinking space: how it opens, or null when closed. */
+  thinkingSpace: 'list' | 'new' | null;
   keybindingPreset: string;
   /** Per-preset user overrides. Outer key = preset ID, inner = binding ID → override. */
   keybindingOverridesByPreset: Record<string, Record<string, KeybindingOverride>>;
   keybindingMigrationDismissed: boolean;
+  /** One-time feature tips; on for new installs, off for installs that predate them. */
+  featureHintsEnabled: boolean;
+  seenFeatureHints: FeatureHintId[];
   focusMode: boolean;
   /** Per-task flag: true when the task is rendering its focus-mode two-column layout. */
   taskSplitMode: Record<string, boolean>;
@@ -388,11 +707,20 @@ export interface AppStore {
   lightThemeCustomId: string | null;
   darkThemePreset: LookPreset;
   darkThemeCustomId: string | null;
-  coordinatorModeEnabled: boolean;
+  mcpOrchestrationEnabled: boolean;
+  documentWorkspacesEnabled: boolean;
+  /** Let the rendered document take the whole column instead of a reading width. */
+  documentFullWidth: boolean;
+  /** Project whose document workspace is open in the task area. */
+  activeDocumentProjectId: string | null;
   coordinatorNotificationDelayMs: number;
   coordinatorControlHintDismissed: boolean;
-  defaultStepsEnabled: boolean;
+  preferUiMode: boolean;
+  /** Keep Claude Code out of the chat view; its tasks run in the terminal only. */
+  disableClaudeUiMode: boolean;
   defaultSkipPermissions: boolean;
   defaultPropagateSkipPermissions: boolean;
+  canvasOwnershipBadges: boolean;
   mcpStatus: MCPStatus;
+  usage: Record<UsageProvider, UsageState>;
 }

@@ -1,3 +1,4 @@
+import { documentAgentTaskId } from '../documents/task-id';
 import { batch } from 'solid-js';
 import { produce } from 'solid-js/store';
 import { store, setStore } from './core';
@@ -7,9 +8,11 @@ import type { LookPreset, AppearanceMode } from '../lib/look';
 import { osIsDark } from '../lib/os-appearance';
 import type { CustomTheme } from '../lib/custom-theme';
 import { themeToCss } from '../lib/custom-theme';
-import type { MinimaxModelId, PersistedWindowState, TaskViewportVisibility } from './types';
+import type { PersistedWindowState, TaskViewportVisibility } from './types';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
+import { defaultAskCodeModel, type AskCodeProvider } from '../../electron/shared/ask-code-models';
+import type { TaskNameModelId } from '../../electron/shared/task-name-model';
 
 // Set to true after loadCustomThemes() resolves. Sanitization of persisted slot
 // IDs is skipped until then so the startup reactive effect cannot null them out
@@ -86,6 +89,10 @@ export function setTerminalFont(terminalFont: string): void {
   setStore('terminalFont', terminalFont);
 }
 
+export function setTerminalScreenReaderMode(enabled: boolean): void {
+  setStore('terminalScreenReaderMode', enabled);
+}
+
 export function applyAppearanceMode(): void {
   const isDark = osIsDark();
   const mode = store.appearanceMode;
@@ -158,12 +165,32 @@ export function setShowPlans(showPlans: boolean): void {
   setStore('showPlans', showPlans);
 }
 
+export function setModelTaskNames(enabled: boolean): void {
+  setStore('modelTaskNames', enabled);
+}
+
+export function setTaskNameModel(model: TaskNameModelId): void {
+  setStore('taskNameModel', model);
+}
+
+export function setTaskBriefs(enabled: boolean): void {
+  setStore('taskBriefs', enabled);
+}
+
+export function setConfidencePrompt(prompt: string): void {
+  setStore('confidencePrompt', prompt);
+}
+
 export function setShowSidebarTips(show: boolean): void {
   setStore('showSidebarTips', show);
 }
 
 export function setShowSidebarProgress(show: boolean): void {
   setStore('showSidebarProgress', show);
+}
+
+export function setSidebarNeedsInputFirst(enabled: boolean): void {
+  setStore('sidebarNeedsInputFirst', enabled);
 }
 
 export function setProjectsCollapsed(collapsed: boolean): void {
@@ -175,6 +202,21 @@ export function setProjectsCollapsed(collapsed: boolean): void {
       setStore('sidebarFocusedProjectId', null);
     }
   });
+}
+
+export function setProjectTasksCollapsed(projectId: string, collapsed: boolean): void {
+  setStore(
+    produce((s) => {
+      const project = s.projects.find((entry) => entry.id === projectId);
+      if (!project) return;
+      project.tasksCollapsed = collapsed;
+
+      const focusedTaskId = s.sidebarFocusedTaskId;
+      if (collapsed && focusedTaskId && s.tasks[focusedTaskId]?.projectId === projectId) {
+        s.sidebarFocusedTaskId = null;
+      }
+    }),
+  );
 }
 
 export function setShowPromptInput(show: boolean): void {
@@ -193,19 +235,20 @@ export function setVerboseLogging(enabled: boolean): void {
   setStore('verboseLogging', enabled);
 }
 
-export function setCoordinatorModeEnabled(enabled: boolean): void {
-  setStore('coordinatorModeEnabled', enabled);
-  invoke(IPC.SetCoordinatorModeEnabled, { enabled }).catch((e) =>
-    console.warn('Failed to set coordinator mode backend:', e),
-  );
+export function setPreferUiMode(enabled: boolean): void {
+  setStore('preferUiMode', enabled);
 }
 
-export function setDefaultStepsEnabled(enabled: boolean): void {
-  setStore('defaultStepsEnabled', enabled);
+export function setDisableClaudeUiMode(disabled: boolean): void {
+  setStore('disableClaudeUiMode', disabled);
 }
 
 export function setDefaultSkipPermissions(enabled: boolean): void {
   setStore('defaultSkipPermissions', enabled);
+}
+
+export function setCanvasOwnershipBadges(enabled: boolean): void {
+  setStore('canvasOwnershipBadges', enabled);
 }
 
 export function setDefaultPropagateSkipPermissions(enabled: boolean): void {
@@ -218,7 +261,7 @@ export function setCoordinatorNotificationDelayMs(ms: number): void {
 }
 
 export function setInactiveColumnOpacity(opacity: number): void {
-  setStore('inactiveColumnOpacity', Math.round(Math.max(0.3, Math.min(1.0, opacity)) * 100) / 100);
+  setStore('inactiveColumnOpacity', Math.round(Math.max(0.1, Math.min(1.0, opacity)) * 100) / 100);
 }
 
 export function setEditorCommand(command: string): void {
@@ -229,12 +272,22 @@ export function setDockerImage(image: string): void {
   setStore('dockerImage', image || 'parallel-code-agent:latest');
 }
 
-export function setAskCodeProvider(provider: 'claude' | 'minimax'): void {
+export function setAskCodeProvider(provider: AskCodeProvider): void {
+  if (provider === store.askCodeProvider) return;
   setStore('askCodeProvider', provider);
+  // Model names do not carry across providers — a Claude alias is not a Codex
+  // slug — so the new provider starts on its own default until one is picked.
+  setStore('askCodeModel', defaultAskCodeModel(provider));
 }
 
-export function setMinimaxModel(model: MinimaxModelId): void {
-  setStore('minimaxModel', model);
+export function setAskCodeModel(model: string): void {
+  setStore('askCodeModel', model);
+}
+
+/** Remembers a reasoning level per provider; an empty level returns to the CLI default. */
+export function setAskCodeEffort(provider: AskCodeProvider, effort: string): void {
+  // An undefined value deletes the key, so a cleared level is not saved.
+  setStore('askCodeEffort', provider, effort || undefined);
 }
 
 export function setMinimaxApiKey(key: string): void {
@@ -251,8 +304,22 @@ export function setShareDockerAgentAuth(enabled: boolean): void {
   setStore('shareDockerAgentAuth', enabled);
 }
 
+export function setDocumentWorkspacesEnabled(enabled: boolean): void {
+  setStore('documentWorkspacesEnabled', enabled);
+  if (!enabled) setStore('activeDocumentProjectId', null);
+}
+
+export function setDocumentFullWidth(fullWidth: boolean): void {
+  setStore('documentFullWidth', fullWidth);
+}
+
 export function toggleArena(show?: boolean): void {
   setStore('showArena', show ?? !store.showArena);
+}
+
+/** Opens the thinking space on its list, or on a new blank tour; null closes it. */
+export function openThinkingSpace(mode: 'list' | 'new' | null): void {
+  setStore('thinkingSpace', mode);
 }
 
 export function toggleFocusMode(on?: boolean): void {
@@ -260,7 +327,9 @@ export function toggleFocusMode(on?: boolean): void {
 }
 
 export function toggleTaskFocusMode(taskId: string | null = store.activeTaskId): void {
-  if (!taskId || !store.tasks[taskId]) return;
+  const isDocument =
+    store.activeDocumentProjectId && taskId === documentAgentTaskId(store.activeDocumentProjectId);
+  if (!taskId || (!store.tasks[taskId] && !isDocument)) return;
   const enteringFocusMode = !store.focusMode;
   if (store.activeTaskId !== taskId) setActiveTask(taskId);
   toggleFocusMode();

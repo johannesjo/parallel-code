@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   stripAnsi,
+  cursorRowsToLines,
   chunkContainsAgentPrompt,
   getAgentPromptReadiness,
   PROMPT_PATTERNS,
@@ -17,6 +18,38 @@ import {
   NOT_READY_AGENT_FRAME_FIXTURES,
   READY_AGENT_FRAME_FIXTURES,
 } from './agent-frame-fixtures.js';
+
+// ── cursorRowsToLines ─────────────────────────────────────────────────────────
+
+describe('cursorRowsToLines', () => {
+  it('starts a line on a row change and joins jumps within a row', () => {
+    expect(stripAnsi(cursorRowsToLines('\x1b[2;3Hlogo\x1b[37;1H›\x1b[37;3HAsk Codex'))).toBe(
+      '\nlogo\n› Ask Codex',
+    );
+  });
+
+  it('treats a bare cursor home as row 1', () => {
+    expect(cursorRowsToLines('a\x1b[Hb\x1b[1;5Hc')).toBe('a\nb c');
+  });
+
+  // Trimmed Codex 0.163 first frame: no newlines, composer on row 37.
+  it('lets a cursor-positioned Codex composer read as ready', () => {
+    const frame =
+      '\x1b[2;3H>_ \x1b[1mOpenAI Codex\x1b[22m (v0.163.0)\x1b[3;6Hloading\x1b[12;56H⣀⣤⣤⣤⣀⣀' +
+      '\x1b[37;1H\x1b[1m›\x1b[37;3H\x1b[2mAsk Codex to do anything\x1b[40;3H?\x1b[40;5Hfor\x1b[40;9Hshortcuts';
+    expect(getAgentPromptReadiness(stripAnsi(frame)).ready).toBe(false);
+    expect(getAgentPromptReadiness(stripAnsi(cursorRowsToLines(frame))).reason).toBe('ready');
+  });
+
+  it('keeps a selection cursor on its option row, so a trust dialog stays blocked', () => {
+    const frame =
+      '\x1b[2;1HDo you trust the contents of this directory?' +
+      '\x1b[4;1H›\x1b[4;3H1. Yes, continue\x1b[5;3H2. No, quit\x1b[7;1HPress enter to continue';
+    expect(getAgentPromptReadiness(stripAnsi(cursorRowsToLines(frame))).reason).toBe(
+      'startup_or_dialog',
+    );
+  });
+});
 
 // ── stripAnsi ─────────────────────────────────────────────────────────────────
 
@@ -257,6 +290,21 @@ describe('chunkContainsAgentPrompt', () => {
         'workspace (/directory) branch sandbox /model quota\n > Type your message or @path/to/file',
       ),
     ).toBe(true);
+  });
+
+  it('returns true for Codex CLI 0.154.0 "Ask Codex to do anything" prompt (› prompt char)', () => {
+    expect(chunkContainsAgentPrompt('›  Ask Codex to do anything')).toBe(true);
+  });
+
+  it('returns true for Codex CLI "Ask Codex to do anything" prompt above footer/status text', () => {
+    const footer = '\n\ngpt-5.6-luna high · ~/repo/worktree';
+    expect(chunkContainsAgentPrompt(`›  Ask Codex to do anything${footer}`)).toBe(true);
+  });
+
+  it('returns true for a plain-> variant of the "Ask Codex to do anything" prompt', () => {
+    // Defensive: some agent builds may render the composer with a plain `>`
+    // instead of Codex's usual `›` — both should be recognized as ready.
+    expect(chunkContainsAgentPrompt('> Ask Codex to do anything')).toBe(true);
   });
 
   it('does not treat Codex startup screens as ready', () => {

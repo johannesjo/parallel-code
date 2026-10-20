@@ -7,12 +7,18 @@ interface ConfirmDialogProps {
   title: string;
   message: string | JSX.Element;
   confirmLabel?: string;
+  /** Shown before the confirm label; the loading spinner takes its place. */
+  confirmIcon?: JSX.Element;
   cancelLabel?: string;
   confirmLoading?: boolean;
   danger?: boolean;
   confirmDisabled?: boolean;
   autoFocusCancel?: boolean;
   width?: string;
+  /** Short text at the start of the footer, e.g. why the confirm button is disabled. */
+  footerNote?: string;
+  /** Further buttons between Cancel and the confirm button, e.g. an alternative action. */
+  extraActions?: JSX.Element;
   /** When set, takes precedence over the auto-generated title id. */
   labelledBy?: string;
   describedBy?: string;
@@ -51,6 +57,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       <h2
         id={useGeneratedId() ? generatedTitleId : undefined}
         style={{
+          'flex-shrink': '0',
           margin: '0',
           'font-size': '17px',
           color: theme.fg,
@@ -60,18 +67,48 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         {props.title}
       </h2>
 
-      <div style={{ 'font-size': '14px', color: theme.fgMuted, 'line-height': '1.5' }}>
+      {/* Only the message scrolls; title and buttons stay in view, so a long
+          dialog never hides its actions. */}
+      <div
+        data-dialog-scroll
+        style={{
+          flex: '1 1 auto',
+          'min-height': '0',
+          'overflow-y': 'auto',
+          // Reach into the panel's 28px padding so the scrollbar sits at its
+          // edge while the content keeps its alignment with the title.
+          'margin-right': '-24px',
+          'padding-right': '24px',
+          'font-size': '14px',
+          color: theme.fgMuted,
+          'line-height': '1.5',
+        }}
+      >
         {props.message}
       </div>
 
       <div
         style={{
+          'flex-shrink': '0',
           display: 'flex',
           gap: '8px',
           'justify-content': 'flex-end',
           'padding-top': '4px',
         }}
       >
+        <Show when={props.footerNote}>
+          <span
+            style={{
+              'margin-right': 'auto',
+              'align-self': 'center',
+              'min-width': '0',
+              color: theme.fgMuted,
+              'font-size': '12px',
+            }}
+          >
+            {props.footerNote}
+          </span>
+        </Show>
         <button
           ref={cancelRef}
           type="button"
@@ -81,7 +118,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             padding: '9px 18px',
             background: theme.bgInput,
             border: `1px solid ${theme.border}`,
-            'border-radius': '8px',
+            'border-radius': 'var(--radius-md)',
             color: theme.fgMuted,
             cursor: 'pointer',
             'font-size': '14px',
@@ -89,6 +126,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         >
           {props.cancelLabel ?? 'Cancel'}
         </button>
+        {props.extraActions}
         <button
           type="button"
           class={props.danger ? 'btn-danger' : 'btn-primary'}
@@ -96,10 +134,10 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           onClick={() => props.onConfirm()}
           style={{
             padding: '9px 20px',
-            background: props.danger ? theme.error : theme.accent,
-            border: 'none',
-            'border-radius': '8px',
-            color: props.danger ? '#fff' : theme.accentText,
+            background: props.danger ? theme.error : undefined,
+            border: props.danger ? 'none' : undefined,
+            'border-radius': 'var(--radius-md)',
+            color: props.danger ? '#fff' : undefined,
             cursor: props.confirmDisabled ? 'not-allowed' : 'pointer',
             'font-size': '14px',
             'font-weight': '500',
@@ -109,7 +147,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             gap: '8px',
           }}
         >
-          <Show when={props.confirmLoading}>
+          <Show when={props.confirmLoading} fallback={props.confirmIcon}>
             <span class="inline-spinner" aria-hidden="true" />
           </Show>
           {props.confirmLabel ?? 'Confirm'}

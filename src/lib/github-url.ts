@@ -25,7 +25,17 @@ export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
   } catch {
     return null;
   }
-  if (parsed.hostname !== 'github.com' && parsed.hostname !== 'www.github.com') return null;
+  if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password)
+    return null;
+  // Enterprise hosts can have any name. Recognize their PR path, while keeping
+  // ordinary website URLs out of GitHub task naming.
+  if (
+    parsed.hostname !== 'github.com' &&
+    parsed.hostname !== 'www.github.com' &&
+    (parsed.protocol !== 'https:' ||
+      !/^\/[\w.-]+\/[\w.-]+\/pull\/\d+(?:\/|$)/.test(parsed.pathname))
+  )
+    return null;
 
   const segments = parsed.pathname.split('/').filter(Boolean);
   if (segments.length < 2) return null;
@@ -57,7 +67,24 @@ export function isGitHubUrl(text: string): boolean {
 
 /** Find the first GitHub URL embedded in a string (e.g. a prompt). */
 export function extractGitHubUrl(text: string): string | null {
-  const match = text.match(/https?:\/\/(?:www\.)?github\.com\/[^\s)>\]"']+/i);
-  if (!match) return null;
-  return parseGitHubUrl(match[0]) ? match[0] : null;
+  const matches = text.match(/https?:\/\/[^\s)>\]"']+/gi) ?? [];
+  return matches.find((url) => parseGitHubUrl(url) !== null) ?? null;
+}
+
+/** Issue numbers are only unique within a repository; ignore URL decoration when linking. */
+export function sameGitHubIssue(left: string | undefined, right: string): boolean {
+  if (!left) return false;
+  const a = parseGitHubUrl(left);
+  const b = parseGitHubUrl(right);
+  return (
+    !!a &&
+    !!b &&
+    (a.type === 'issues' || a.type === 'pull') &&
+    a.type === b.type &&
+    !!a.number &&
+    /^\d+$/.test(a.number) &&
+    a.number === b.number &&
+    a.org.toLowerCase() === b.org.toLowerCase() &&
+    a.repo.toLowerCase() === b.repo.toLowerCase()
+  );
 }

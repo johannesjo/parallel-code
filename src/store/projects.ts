@@ -3,14 +3,29 @@ import { openDialog } from '../lib/dialog';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
-import type { Project } from './types';
+import type { Project, Task } from './types';
 import { sanitizeBranchPrefix } from '../lib/branch-name';
+import { projectHiddenAgentTaskIds } from '../documents/task-id';
+import { closeProjectPages } from './project-pages';
+import { forgetBlockEdits } from '../documents/block-edit-state';
+import { forgetGitHubLists } from './github-list-storage';
+import { clearAgentActivity } from './taskStatus';
+import { assignFreshSessionId } from './session-ids';
+import { forgetAgentPrompts } from '../lib/prompt-history';
+import { delegationRequest, registerTaskAuthority } from './delegation';
 
 export const PASTEL_HUES = [0, 30, 60, 120, 180, 210, 260, 300, 330];
 
 export function randomPastelColor(): string {
   const hue = PASTEL_HUES[Math.floor(Math.random() * PASTEL_HUES.length)];
   return `hsl(${hue}, 70%, 75%)`;
+}
+
+const byName = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+
+/** Projects are listed alphabetically everywhere; the store array is that order. */
+export function sortProjects(projects: Project[]): void {
+  projects.sort((a, b) => byName.compare(a.name, b.name));
 }
 
 export function getProject(projectId: string): Project | undefined {
@@ -24,10 +39,71 @@ export function addProject(name: string, path: string, isGitRepo?: boolean): str
   setStore(
     produce((s) => {
       s.projects.push(project);
+      sortProjects(s.projects);
       s.lastProjectId = id;
     }),
   );
   return id;
+}
+
+/** A document project: a git repo plus one document inside it. */
+export function addDocumentProject(name: string, path: string, documentPath: string): string {
+  return pushDocumentProject({ name, path, documentPath });
+}
+
+/** A quick edit: a document project on the private copy of a file that lives elsewhere. */
+export function addQuickEditProject(target: {
+  projectRoot: string;
+  documentPath: string;
+  sourcePath: string;
+}): string {
+  return pushDocumentProject({
+    // `spec.md · docs`: quick edits of same-named files stay apart in the sidebar.
+    name: `${target.documentPath} · ${target.sourcePath.split('/').slice(-2, -1)[0] || '/'}`,
+    path: target.projectRoot,
+    documentPath: target.documentPath,
+    quickEditSource: target.sourcePath,
+  });
+}
+
+function pushDocumentProject(
+  fields: Pick<Project, 'name' | 'path' | 'documentPath' | 'quickEditSource'>,
+): string {
+  const id = crypto.randomUUID();
+  const project: Project = {
+    id,
+    color: randomPastelColor(),
+    isGitRepo: true,
+    kind: 'document',
+    ...fields,
+  };
+  // Not the default for new tasks: a document project has no task flow.
+  setStore(
+    produce((s) => {
+      s.projects.push(project);
+      sortProjects(s.projects);
+    }),
+  );
+  return id;
+}
+
+export function isDocumentProject(project: Project | undefined): boolean {
+  return project?.kind === 'document' && typeof project.documentPath === 'string';
+}
+
+/** Projects that take tasks. Document projects have no task flow, so nothing offers them. */
+export function codeProjects(): Project[] {
+  return store.projects.filter((project) => !isDocumentProject(project));
+}
+
+// A project added later at the same path would otherwise reopen stale editors.
+// Another document project in the same repo still shows them; a code project
+// never does.
+function forgetBlockEditsLeftBy(projectId: string, root: string): void {
+  const kept = store.projects.some(
+    (p) => p.id !== projectId && p.path === root && isDocumentProject(p),
+  );
+  if (!kept) forgetBlockEdits(root);
 }
 
 export function removeProject(projectId: string): void {
@@ -41,6 +117,14 @@ export function removeProject(projectId: string): void {
     return;
   }
 
+  const root = store.projects.find((p) => p.id === projectId)?.path;
+  if (root) forgetBlockEditsLeftBy(projectId, root);
+  const quickEditRoot = store.projects.find((p) => p.id === projectId && p.quickEditSource)?.path;
+  // A removed quick edit stops writing to its original; its copy stays for a later reopen.
+  if (quickEditRoot)
+    invoke(IPC.StopQuickEdit, { projectRoot: quickEditRoot }).catch((err: unknown) =>
+      console.error('Failed to stop quick edit sync:', err),
+    );
   setStore(
     produce((s) => {
       s.projects = s.projects.filter((p) => p.id !== projectId);
@@ -48,8 +132,12 @@ export function removeProject(projectId: string): void {
         s.lastProjectId = s.projects[0]?.id ?? null;
       }
       delete s.missingProjectIds[projectId];
+      // A stale id would keep task shortcuts disabled with no page shown.
+      if (s.githubIssuesProjectId === projectId) s.githubIssuesProjectId = null;
+      if (s.kanbanProjectId === projectId) s.kanbanProjectId = null;
     }),
   );
+  forgetGitHubLists(projectId);
 }
 
 export function updateProject(
@@ -57,6 +145,7 @@ export function updateProject(
   updates: Partial<
     Pick<
       Project,
+      | 'allowPeerAccess'
       | 'name'
       | 'color'
       | 'branchPrefix'
@@ -64,15 +153,30 @@ export function updateProject(
       | 'defaultGitIsolation'
       | 'defaultBaseBranch'
       | 'coverageReportPath'
+      | 'verifyCommand'
+      | 'evidenceChecks'
+      | 'evidenceModel'
+      | 'evidenceAutoBuild'
       | 'terminalBookmarks'
       | 'isGitRepo'
+      | 'documentMainAgentId'
+      | 'documentSessions'
+      | 'documentModels'
+      | 'documentTerminalAgentId'
+      | 'documentOpenPath'
+      | 'documentRecentPaths'
+      | 'documentZoom'
+      | 'documentPanelCollapsed'
     >
   >,
 ): void {
+  const previousVerifyCommand = getProject(projectId)?.verifyCommand;
   setStore(
     produce((s) => {
       const idx = s.projects.findIndex((p) => p.id === projectId);
       if (idx === -1) return;
+      if (updates.allowPeerAccess !== undefined)
+        s.projects[idx].allowPeerAccess = updates.allowPeerAccess;
       if (updates.name !== undefined) s.projects[idx].name = updates.name;
       if (updates.color !== undefined) s.projects[idx].color = updates.color;
       if (updates.branchPrefix !== undefined)
@@ -85,11 +189,69 @@ export function updateProject(
         s.projects[idx].defaultBaseBranch = updates.defaultBaseBranch;
       if (Object.prototype.hasOwnProperty.call(updates, 'coverageReportPath'))
         s.projects[idx].coverageReportPath = updates.coverageReportPath;
+      if (Object.prototype.hasOwnProperty.call(updates, 'verifyCommand'))
+        s.projects[idx].verifyCommand = updates.verifyCommand;
+      if (Object.prototype.hasOwnProperty.call(updates, 'evidenceChecks'))
+        s.projects[idx].evidenceChecks = updates.evidenceChecks;
+      if (Object.prototype.hasOwnProperty.call(updates, 'evidenceModel'))
+        s.projects[idx].evidenceModel = updates.evidenceModel;
+      if (updates.evidenceAutoBuild !== undefined)
+        s.projects[idx].evidenceAutoBuild = updates.evidenceAutoBuild;
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
       if (updates.isGitRepo !== undefined) s.projects[idx].isGitRepo = updates.isGitRepo;
+      if (updates.documentMainAgentId !== undefined)
+        s.projects[idx].documentMainAgentId = updates.documentMainAgentId;
+      if (updates.documentSessions !== undefined)
+        s.projects[idx].documentSessions = updates.documentSessions;
+      if (updates.documentModels !== undefined)
+        s.projects[idx].documentModels = updates.documentModels;
+      if (updates.documentTerminalAgentId !== undefined)
+        s.projects[idx].documentTerminalAgentId = updates.documentTerminalAgentId;
+      if (updates.documentOpenPath !== undefined)
+        s.projects[idx].documentOpenPath = updates.documentOpenPath;
+      if (updates.documentRecentPaths !== undefined)
+        s.projects[idx].documentRecentPaths = updates.documentRecentPaths;
+      if (updates.documentPanelCollapsed !== undefined)
+        s.projects[idx].documentPanelCollapsed = updates.documentPanelCollapsed;
+      if (updates.documentZoom !== undefined) s.projects[idx].documentZoom = updates.documentZoom;
+      if (updates.name !== undefined) sortProjects(s.projects);
     }),
   );
+  if (
+    Object.prototype.hasOwnProperty.call(updates, 'verifyCommand') &&
+    updates.verifyCommand !== previousVerifyCommand
+  ) {
+    syncCoordinatorVerifyCommand(projectId, updates.verifyCommand);
+  }
+}
+
+/** Coordinators cache the verify command in the main process when they
+ *  register, so a change here has to be pushed to the ones already running. */
+function syncCoordinatorVerifyCommand(projectId: string, verifyCommand: string | undefined): void {
+  for (const task of Object.values(store.tasks)) {
+    if (task.projectId !== projectId) continue;
+    if (!task.coordinatorMode) {
+      if (task.delegationParent) {
+        const agent = task.agentIds[0] ? store.agents[task.agentIds[0]]?.def : task.savedAgentDef;
+        void registerTaskAuthority(task, agent).catch((error: unknown) =>
+          console.warn('Could not update delegation verification:', error),
+        );
+      }
+      continue;
+    }
+    if (task.mcpStartupStatus !== 'ready') continue;
+    invoke(IPC.MCP_CoordinatorRegistered, {
+      coordinatorTaskId: task.id,
+      projectId,
+      coordinatorBranch: task.branchName || undefined,
+      worktreePath: task.worktreePath,
+      // An empty string clears the command; JSON serialization drops undefined keys.
+      verifyCommand: verifyCommand ?? '',
+    }).catch((err) => {
+      console.warn('[MCP] Failed to update coordinator verify command:', err);
+    });
+  }
 }
 
 export function getProjectBranchPrefix(projectId: string): string {
@@ -139,16 +301,63 @@ export async function relinkProject(projectId: string): Promise<boolean> {
 
   const isGitRepo = await invoke<boolean>(IPC.CheckIsGitRepo, { path: newPath });
 
+  const exists = await invoke<boolean>(IPC.CheckPathExists, { path: newPath });
+  if (!exists) return false;
+  const project = getProject(projectId);
+  if (!project) return false;
+  if (project.path !== newPath) forgetBlockEditsLeftBy(projectId, project.path);
+  const moved = projectHiddenAgentTaskIds(project)
+    .map((id) => store.tasks[id])
+    .filter((task): task is Task => !!task && task.worktreePath !== newPath);
+  // The board reads its file from the project path it opened with.
+  if (store.kanbanProjectId === projectId && project.path !== newPath) {
+    setStore('kanbanProjectId', null);
+  }
+  if (moved.length) {
+    // Unmount before stopping old PTYs; an attached process cannot change cwd.
+    if (store.activeDocumentProjectId === projectId) setStore('activeDocumentProjectId', null);
+    if (store.githubIssuesProjectId === projectId || store.kanbanProjectId === projectId) {
+      closeProjectPages();
+    }
+    await Promise.all(
+      moved.flatMap((task) =>
+        [...task.agentIds, ...task.shellAgentIds].map((agentId) =>
+          invoke(IPC.KillAgent, { agentId }),
+        ),
+      ),
+    );
+    for (const task of moved) for (const id of task.agentIds) clearAgentActivity(id);
+  }
+
   setStore(
     produce((s) => {
       const idx = s.projects.findIndex((p) => p.id === projectId);
       if (idx === -1) return;
       s.projects[idx].path = newPath;
       s.projects[idx].isGitRepo = isGitRepo;
+      for (const task of moved) {
+        s.tasks[task.id].worktreePath = newPath;
+        for (const id of task.agentIds) {
+          const agent = s.agents[id];
+          if (!agent) continue;
+          // A fresh conversation needs a fresh id: `resumed = false` below means
+          // the relaunch passes `--session-id`, which Claude rejects for a
+          // session that already exists, so reusing this pane's old id would
+          // stop it launching at all after the project moves.
+          assignFreshSessionId(s, task.id, id, agent.def.command);
+          forgetAgentPrompts(s.tasks[task.id], id);
+          agent.resumed = false;
+          agent.attachExisting = false;
+          agent.status = 'running';
+          agent.exitCode = null;
+          agent.signal = null;
+          agent.lastOutput = [];
+          agent.generation++;
+        }
+      }
     }),
   );
 
-  const exists = await invoke<boolean>(IPC.CheckPathExists, { path: newPath });
   if (exists) {
     setStore('missingProjectIds', (prev: Record<string, true>) => {
       const next = { ...prev };
@@ -161,4 +370,16 @@ export async function relinkProject(projectId: string): Promise<boolean> {
 
 export function isProjectMissing(projectId: string): boolean {
   return projectId in store.missingProjectIds;
+}
+
+/** Peer permission changes take effect in the main process before the UI reports success. */
+export async function updateProjectCoordination(
+  projectId: string,
+  allowPeerAccess: boolean,
+): Promise<void> {
+  await delegationRequest({
+    action: 'projectPolicy',
+    policy: { projectId, allowPeerAccess },
+  });
+  updateProject(projectId, { allowPeerAccess });
 }

@@ -28,7 +28,7 @@ export function BranchPrefixField(props: BranchPrefixFieldProps) {
           style={{
             background: theme.bgInput,
             border: `1px solid ${props.error ? theme.error : theme.border}`,
-            'border-radius': '6px',
+            'border-radius': 'var(--radius-sm)',
             padding: '4px 8px',
             color: theme.fg,
             'font-size': '13px',

@@ -12,9 +12,13 @@ export default [
       'dist-electron/**',
       'dist-remote/**',
       'release/**',
+      'android/.gradle/**',
+      'android/**/build/**',
       'node_modules/**',
       '.worktrees/**',
       '.claude/**',
+      // Local scratch space (UI preview harnesses, throwaway scripts) — not source.
+      '.tmp/**',
       // Build config is excluded from electron tsconfig; ignore the config and its test.
       'electron/vite.config.electron.ts',
       'electron/vite.config.electron.test.ts',
@@ -90,6 +94,28 @@ export default [
     files: ['src/store/**/*.ts'],
     rules: {
       '@typescript-eslint/no-dynamic-delete': 'off',
+    },
+  },
+
+  // Showcase and benchmark scripts are command-line tools that report on stdout.
+  {
+    files: ['scripts/showcase/**/*.ts', 'scripts/bench/**/*.ts'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+
+  // The look generator is a command-line tool: it reports what it wrote or why it
+  // refused, which is the whole output of a --check run in CI.
+  {
+    files: ['scripts/generate-android-looks.mjs'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+      },
+    },
+    rules: {
+      'no-console': 'off',
     },
   },
 

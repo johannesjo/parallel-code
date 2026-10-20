@@ -19,7 +19,7 @@ import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { saveArenaPresets } from './persistence';
 import { ProjectSelect } from '../components/ProjectSelect';
-import { CloseIcon } from '../components/icons';
+import { CloseIcon, HistoryIcon, PlusIcon } from '../components/icons';
 import { MAX_COMPETITORS, MIN_COMPETITORS } from './store';
 import type { BattleCompetitor } from './types';
 
@@ -142,11 +142,12 @@ export function ConfigScreen() {
         <For each={TOOL_PRESETS}>
           {(tool) => (
             <button
-              class="arena-tool-preset-btn"
+              class="arena-tool-preset-btn btn-with-icon"
               onClick={() => handleToolPreset(tool)}
               title={tool.command}
             >
-              + {tool.name}
+              <PlusIcon size={12} />
+              {tool.name}
             </button>
           )}
         </For>
@@ -189,8 +190,9 @@ export function ConfigScreen() {
       </div>
 
       <Show when={arenaStore.competitors.length < MAX_COMPETITORS}>
-        <button class="arena-add-btn" onClick={() => addCompetitor()}>
-          + Add Competitor
+        <button class="arena-add-btn btn-with-icon" onClick={() => addCompetitor()}>
+          <PlusIcon size={14} />
+          Add Competitor
         </button>
       </Show>
 
@@ -200,6 +202,7 @@ export function ConfigScreen() {
         value={store.projects.find((p) => p.path === arenaStore.cwd)?.id ?? null}
         onChange={(id) => setCwd(id ? (getProject(id)?.path ?? '') : '')}
         placeholder="Select a project..."
+        showPath
       />
 
       {/* Prompt */}
@@ -286,7 +289,8 @@ export function ConfigScreen() {
       </Show>
 
       {/* History link */}
-      <button class="arena-history-link" onClick={() => setPhase('history')}>
+      <button class="arena-history-link btn-with-icon" onClick={() => setPhase('history')}>
+        <HistoryIcon size={14} />
         View match history
       </button>
     </div>

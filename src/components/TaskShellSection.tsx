@@ -13,10 +13,12 @@ import {
   unregisterFocusFn,
   setActiveTask,
   setTaskFocusedPanel,
+  shellPanelId,
   isPanelFocused,
   isPanelFocusedPrefix,
 } from '../store/store';
 import { TerminalView } from './TerminalView';
+import { editAsDocument } from '../documents/store';
 import { CloseIcon } from './icons';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
@@ -24,18 +26,24 @@ import { mod } from '../lib/platform';
 import { extractLabel, consumePendingShellCommand } from '../lib/bookmarks';
 import type { Task } from '../store/types';
 
-const toolbarBtnStyle = (highlighted: boolean): JSX.CSSProperties => ({
-  background: theme.taskPanelBg,
-  border: `1px solid ${highlighted ? theme.accent : theme.border}`,
-  color: theme.fgMuted,
+/** Outlined terminal launchers retain a clear boundary without a filled bar. */
+const toolbarBtnStyle = (highlighted: boolean, iconOnly = false): JSX.CSSProperties => ({
+  background: 'transparent',
+  border: `1px solid ${highlighted ? theme.borderFocus : theme.border}`,
+  color: highlighted ? theme.fg : theme.fgMuted,
   cursor: 'pointer',
-  'border-radius': '4px',
-  padding: '4px 12px',
-  'font-size': sf(14),
-  'line-height': '1',
+  'border-radius': 'var(--radius-sm)',
+  'box-sizing': 'border-box',
+  height: '26px',
+  width: iconOnly ? '26px' : undefined,
+  padding: iconOnly ? '0' : '0 9px',
+  'font-size': sf(12),
+  'line-height': '16px',
   display: 'flex',
   'align-items': 'center',
-  gap: '4px',
+  'justify-content': 'center',
+  'flex-shrink': '0',
+  gap: '5px',
 });
 
 interface TaskShellSectionProps {
@@ -77,7 +85,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
   const hasShell = () => props.task.shellAgentIds.length > 0;
 
   // Intrinsic height the flex-first panel tree will size this panel to when
-  // it isn't pinned. Empty state collapses to the 28 px toolbar. With agents
+  // it isn't pinned. Empty state collapses to the 35 px toolbar. With agents
   // we pick 140 px as the natural default so the panel stays dragable down to
   // a useful "small terminal" state; focus mode scales up so the terminal has
   // room when it takes over the screen.
@@ -88,7 +96,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
   // the terminal output gets clipped by the wrapper's overflow:hidden. Fall
   // back to 0 in that case and let the wrapper's allocated size drive xterm.
   const intrinsicHeight = () => {
-    if (!hasShell()) return '28px';
+    if (!hasShell()) return '35px';
     if (store.focusMode && store.taskSplitMode[props.task.id]) return '0';
     if (store.focusMode) return 'max(200px, 33vh)';
     return '140px';
@@ -105,8 +113,6 @@ export function TaskShellSection(props: TaskShellSectionProps) {
         display: 'flex',
         'flex-direction': 'column',
         background: 'transparent',
-        'padding-top': hasShell() ? '0' : '6px',
-        'padding-bottom': hasShell() ? '0' : '6px',
       }}
     >
       <div
@@ -146,18 +152,21 @@ export function TaskShellSection(props: TaskShellSectionProps) {
           }
         }}
         style={{
-          height: '28px',
-          'min-height': '28px',
+          height: '35px',
+          'min-height': '35px',
           display: 'flex',
           'align-items': 'center',
-          padding: '0 8px',
+          padding: '4px 5px',
           background: 'transparent',
+          'box-sizing': 'border-box',
           gap: '4px',
+          'overflow-x': 'auto',
+          'overflow-y': 'hidden',
           outline: 'none',
         }}
       >
         <button
-          class="icon-btn"
+          class="shell-toolbar-button"
           onClick={(e) => {
             e.stopPropagation();
             setActiveTask(props.task.id);
@@ -166,15 +175,29 @@ export function TaskShellSection(props: TaskShellSectionProps) {
           }}
           tabIndex={-1}
           title={`Open terminal (${mod}+Shift+T)`}
-          style={toolbarBtnStyle(shellToolbarIdx() === 0 && shellToolbarFocused())}
+          aria-label="Open terminal"
+          style={toolbarBtnStyle(shellToolbarIdx() === 0 && shellToolbarFocused(), true)}
         >
-          <span style={{ 'font-family': 'monospace', 'font-size': sf(14) }}>&gt;_</span>
-          <span>Terminal</span>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.25"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            style={{ 'flex-shrink': '0' }}
+            aria-hidden="true"
+          >
+            <rect x="1.5" y="2.5" width="13" height="11" />
+            <path d="m4 6 2 2-2 2m4 0h3" />
+          </svg>
         </button>
         <For each={projectBookmarks()}>
           {(bookmark, i) => (
             <button
-              class="icon-btn"
+              class="shell-toolbar-button"
               onClick={(e) => {
                 e.stopPropagation();
                 setActiveTask(props.task.id);
@@ -198,8 +221,6 @@ export function TaskShellSection(props: TaskShellSectionProps) {
             display: 'flex',
             overflow: 'hidden',
             background: theme.taskContainerBg,
-            gap: '6px',
-            'margin-top': '2px',
           }}
         >
           <For each={props.task.shellAgentIds}>
@@ -209,7 +230,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
               let registeredKey: string | undefined;
 
               createEffect(() => {
-                const key = `${props.task.id}:shell:${i()}`;
+                const key = `${props.task.id}:${shellPanelId(i())}`;
                 if (registeredKey && registeredKey !== key) unregisterFocusFn(registeredKey);
                 if (shellFocusFn) registerFocusFn(key, shellFocusFn);
                 registeredKey = key;
@@ -218,7 +239,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                 if (registeredKey) unregisterFocusFn(registeredKey);
               });
 
-              const isShellPanelFocused = () => isPanelFocused(props.task.id, `shell:${i()}`);
+              const isShellPanelFocused = () => isPanelFocused(props.task.id, shellPanelId(i()));
 
               return (
                 <div
@@ -230,7 +251,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                     position: 'relative',
                     background: theme.taskPanelBg,
                   }}
-                  onClick={() => setTaskFocusedPanel(props.task.id, `shell:${i()}`)}
+                  onClick={() => setTaskFocusedPanel(props.task.id, shellPanelId(i()))}
                 >
                   <button
                     class="shell-terminal-close"
@@ -244,7 +265,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                       border: `1px solid ${theme.border}`,
                       color: theme.fgMuted,
                       cursor: 'pointer',
-                      'border-radius': '6px',
+                      'border-radius': 'var(--radius-sm)',
                       padding: '2px 6px',
                       'line-height': '1',
                       'font-size': '15px',
@@ -264,7 +285,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                         color: shellExits[shellId]?.exitCode === 0 ? theme.success : theme.error,
                         background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
                         padding: '4px 12px',
-                        'border-radius': '8px',
+                        'border-radius': 'var(--radius-md)',
                         border: `1px solid ${theme.border}`,
                       }}
                     >
@@ -280,6 +301,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                     command={''}
                     args={['-l']}
                     cwd={props.task.worktreePath}
+                    onEditAsDocument={store.documentWorkspacesEnabled ? editAsDocument : undefined}
                     dockerMode={props.task.dockerMode}
                     dockerImage={props.task.dockerImage}
                     initialCommand={initialCommand}

@@ -34,7 +34,7 @@ export function CommitFilesPopover(props: CommitFilesPopoverProps) {
           'z-index': '1000',
           background: theme.bgElevated,
           border: `1px solid ${theme.border}`,
-          'border-radius': '6px',
+          'border-radius': 'var(--radius-sm)',
           'box-shadow': '0 4px 16px rgba(0, 0, 0, 0.3)',
           padding: '6px',
           'font-size': sf(11),
@@ -55,7 +55,7 @@ export function CommitFilesPopover(props: CommitFilesPopoverProps) {
                   'font-weight': '600',
                   'text-transform': 'uppercase',
                   'letter-spacing': '0.05em',
-                  'font-size': sf(10),
+                  'font-size': sf(11),
                   'margin-bottom': '2px',
                 }}
               >
@@ -106,7 +106,7 @@ export function CommitFilesPopover(props: CommitFilesPopoverProps) {
                 )}
               </For>
               <Show when={files().length > MAX_VISIBLE_FILES}>
-                <div style={{ color: theme.fgMuted, 'font-size': sf(10), 'margin-top': '2px' }}>
+                <div style={{ color: theme.fgMuted, 'font-size': sf(11), 'margin-top': '2px' }}>
                   +{files().length - MAX_VISIBLE_FILES} more
                 </div>
               </Show>

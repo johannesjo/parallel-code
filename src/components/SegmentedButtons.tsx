@@ -72,7 +72,7 @@ export function SegmentedButtons<T extends string>(props: SegmentedButtonsProps<
                 flex: '1',
                 padding: '6px 12px',
                 'font-size': '13px',
-                'border-radius': '6px',
+                'border-radius': 'var(--radius-sm)',
                 border: `1px solid ${isActive() ? theme.accent : theme.border}`,
                 background: isActive()
                   ? `color-mix(in srgb, ${theme.accent} 15%, transparent)`

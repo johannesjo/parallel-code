@@ -1,5 +1,6 @@
 import { Show } from 'solid-js';
 import { theme } from '../lib/theme';
+import { SyncIcon } from './icons';
 
 interface TaskClosingOverlayProps {
   closingStatus: string | undefined;
@@ -21,7 +22,7 @@ export function TaskClosingOverlay(props: TaskClosingOverlayProps) {
           'align-items': 'center',
           'justify-content': 'center',
           gap: '12px',
-          'border-radius': '12px',
+          'border-radius': 'var(--radius-lg)',
           color: theme.fg,
         }}
       >
@@ -44,6 +45,7 @@ export function TaskClosingOverlay(props: TaskClosingOverlayProps) {
             {props.closingError}
           </div>
           <button
+            class="btn-with-icon"
             onClick={(e) => {
               e.stopPropagation();
               props.onRetry();
@@ -53,11 +55,12 @@ export function TaskClosingOverlay(props: TaskClosingOverlayProps) {
               border: `1px solid ${theme.border}`,
               color: theme.fg,
               padding: '6px 16px',
-              'border-radius': '6px',
+              'border-radius': 'var(--radius-sm)',
               cursor: 'pointer',
               'font-size': '13px',
             }}
           >
+            <SyncIcon size={14} />
             Retry
           </button>
         </Show>

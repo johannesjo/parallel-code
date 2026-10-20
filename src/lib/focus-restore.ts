@@ -1,4 +1,5 @@
 import { createEffect, onCleanup } from 'solid-js';
+import { getDeepActiveElement } from './dom-focus';
 
 /**
  * Saves the currently focused element when `open` becomes true,
@@ -16,7 +17,7 @@ export function createFocusRestore(open: () => boolean): void {
       // Don't steal focus if the user already clicked on a meaningful target
       // (e.g. clicked a task panel to dismiss the dialog). Only restore if
       // focus is on <body> or no element, which means nothing else claimed it.
-      const current = document.activeElement;
+      const current = getDeepActiveElement();
       if (current && current !== document.body) return;
       if (el.isConnected) el.focus();
     });
@@ -24,7 +25,7 @@ export function createFocusRestore(open: () => boolean): void {
 
   createEffect(() => {
     if (open()) {
-      saved = document.activeElement as HTMLElement | null;
+      saved = getDeepActiveElement() as HTMLElement | null;
     } else {
       restore();
     }

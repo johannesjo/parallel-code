@@ -1,3 +1,4 @@
+import { createSignal } from 'solid-js';
 import { produce } from 'solid-js/store';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
@@ -6,12 +7,31 @@ import type { AgentDef } from '../ipc/types';
 import type { Agent } from './types';
 import { refreshTaskStatus, clearAgentActivity, markAgentSpawned } from './taskStatus';
 import { saveState } from './persistence';
+import { refreshUsage, usageProviderForAgent } from './usage';
+import { assignFreshSessionId } from './session-ids';
+import { widenTaskColumnForAgentPanes } from './task-column';
+import { forgetAgentPrompts } from '../lib/prompt-history';
+
+const [agentsLoaded, setAgentsLoaded] = createSignal(false);
+const [agentsLoadFailed, setAgentsLoadFailed] = createSignal(false);
+
+/** False until the first agent list arrived, so "none installed" is not shown while it is empty. */
+export { agentsLoaded };
+/** The listing failed, so an empty agent list says nothing about what is installed. */
+export { agentsLoadFailed };
 
 export async function loadAgents(): Promise<void> {
-  const defaults = await invoke<AgentDef[]>(IPC.ListAgents);
-  const custom = store.customAgents;
-  const customIds = new Set(custom.map((a) => a.id));
-  setStore('availableAgents', [...defaults.filter((d) => !customIds.has(d.id)), ...custom]);
+  try {
+    const defaults = await invoke<AgentDef[]>(IPC.ListAgents);
+    const custom = store.customAgents;
+    const customIds = new Set(custom.map((a) => a.id));
+    setStore('availableAgents', [...defaults.filter((d) => !customIds.has(d.id)), ...custom]);
+    setAgentsLoaded(true);
+    setAgentsLoadFailed(false);
+  } catch (error) {
+    setAgentsLoadFailed(true);
+    throw error;
+  }
 }
 
 export async function addAgentToTask(taskId: string, agentDef: AgentDef): Promise<string | null> {
@@ -34,12 +54,16 @@ export async function addAgentToTask(taskId: string, agentDef: AgentDef): Promis
   setStore(
     produce((s) => {
       s.agents[agentId] = agent;
+      assignFreshSessionId(s, taskId, agentId, agentDef.command);
       s.tasks[taskId].agentIds.push(agentId);
       s.tasks[taskId].selectedAgentId = agentId;
       s.activeAgentId = agentId;
       s.lastAgentId = agentDef.id;
     }),
   );
+
+  // The new pane splits the task body; keep every pane workable.
+  widenTaskColumnForAgentPanes(taskId);
 
   // Start the agent as "busy" immediately, before any PTY data arrives.
   markAgentSpawned(agentId);
@@ -61,7 +85,15 @@ export async function closeAgentInTask(taskId: string, agentId: string): Promise
 
       const idx = t.agentIds.indexOf(agentId);
       if (idx === -1 || t.agentIds.length <= 1) return;
+      forgetAgentPrompts(t, agentId);
 
+      if (idx === 0) {
+        t.mainAgentView = undefined;
+        t.codexChatThreadId = undefined;
+        t.codexChatHandoff = undefined;
+        t.claudeChatSessionId = undefined;
+        t.chatPermissionMode = undefined;
+      }
       t.agentIds.splice(idx, 1);
       const promptedAgentIds = t.promptedAgentIds?.filter((id) => id !== agentId);
       t.promptedAgentIds =
@@ -91,6 +123,9 @@ export function markAgentExited(
     produce((s) => {
       if (s.agents[agentId]) {
         s.agents[agentId].status = 'exited';
+        s.agents[agentId].canvasTools = undefined;
+        s.agents[agentId].capabilities = undefined;
+        s.agents[agentId].sessionInstanceId = undefined;
         s.agents[agentId].exitCode = exitInfo.exit_code;
         s.agents[agentId].signal = exitInfo.signal;
         s.agents[agentId].lastOutput = exitInfo.last_output;
@@ -100,6 +135,9 @@ export function markAgentExited(
   if (agent) {
     clearAgentActivity(agentId);
     refreshTaskStatus(agent.taskId);
+    // A finished session just moved its agent's meter; the slow poll would lag by minutes.
+    const provider = usageProviderForAgent(agent.def.id);
+    if (provider) void refreshUsage(provider);
   }
 }
 
@@ -108,6 +146,9 @@ export function restartAgent(agentId: string, useResumeArgs: boolean): void {
     produce((s) => {
       if (s.agents[agentId]) {
         s.agents[agentId].status = 'running';
+        s.agents[agentId].canvasTools = undefined;
+        s.agents[agentId].capabilities = undefined;
+        s.agents[agentId].sessionInstanceId = undefined;
         s.agents[agentId].exitCode = null;
         s.agents[agentId].signal = null;
         s.agents[agentId].lastOutput = [];
@@ -115,6 +156,15 @@ export function restartAgent(agentId: string, useResumeArgs: boolean): void {
         s.agents[agentId].spawnDelayMs = undefined;
         s.agents[agentId].attachExisting = false;
         s.agents[agentId].generation += 1;
+        // A resume continues the pane's existing session, so its id stands.
+        // A restart without resume is a new conversation and needs a new one.
+        if (!useResumeArgs) {
+          s.agents[agentId].requireResumeSuccess = undefined;
+          const agent = s.agents[agentId];
+          assignFreshSessionId(s, agent.taskId, agentId, agent.def.command);
+          const task = s.tasks[agent.taskId];
+          if (task) forgetAgentPrompts(task, agentId);
+        }
       }
     }),
   );
@@ -125,8 +175,16 @@ export function switchAgent(agentId: string, newDef: AgentDef): void {
   setStore(
     produce((s) => {
       if (s.agents[agentId]) {
+        // Switching CLI starts a fresh conversation, and the new CLI may not
+        // take an assigned id at all — so re-decide rather than carry over.
+        assignFreshSessionId(s, s.agents[agentId].taskId, agentId, newDef.command);
+        const task = s.tasks[s.agents[agentId].taskId];
+        if (task) forgetAgentPrompts(task, agentId);
         s.agents[agentId].def = newDef;
         s.agents[agentId].status = 'running';
+        s.agents[agentId].canvasTools = undefined;
+        s.agents[agentId].capabilities = undefined;
+        s.agents[agentId].sessionInstanceId = undefined;
         s.agents[agentId].exitCode = null;
         s.agents[agentId].signal = null;
         s.agents[agentId].lastOutput = [];
@@ -153,9 +211,25 @@ export function removeCustomAgent(agentId: string): void {
   setStore(
     produce((s) => {
       s.customAgents = s.customAgents.filter((a) => a.id !== agentId);
+      // Custom agent ids are slugs of the name, so a later agent with the same
+      // name would otherwise silently inherit this one's env file.
+      delete s.agentEnvFiles[agentId];
     }),
   );
   void refreshAvailableAgents();
+}
+
+/** Point an agent at a `KEY=VALUE` env file, or clear it with an empty path.
+ *  Applies to built-in and custom agents alike, and takes effect on the next
+ *  spawn — the file itself is read by the main process, never by the renderer. */
+export function setAgentEnvFile(agentId: string, filePath: string): void {
+  const trimmed = filePath.trim();
+  setStore(
+    produce((s) => {
+      if (trimmed) s.agentEnvFiles[agentId] = trimmed;
+      else delete s.agentEnvFiles[agentId];
+    }),
+  );
 }
 
 /** Rebuild availableAgents from backend defaults + custom agents. */
@@ -164,4 +238,10 @@ async function refreshAvailableAgents(): Promise<void> {
   const custom = store.customAgents;
   const customIds = new Set(custom.map((a) => a.id));
   setStore('availableAgents', [...defaults.filter((d) => !customIds.has(d.id)), ...custom]);
+}
+
+/** Capability comes from the completed launch, including reattachment to an existing PTY. */
+export function setAgentCanvasTools(agentId: string, available: boolean): void {
+  if (store.agents[agentId]?.status === 'running')
+    setStore('agents', agentId, 'canvasTools', available);
 }

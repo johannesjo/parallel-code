@@ -59,6 +59,7 @@ import {
   getFileDiff,
   getUncommittedChangedFiles,
   checkMergeStatus,
+  getBranchWorktreePath,
   listImportableWorktrees,
   mergeTask,
 } from './git.js';
@@ -442,6 +443,7 @@ function uniqueWorktreePath(): string {
  */
 function buildWorktreeMockHandler(opts: {
   mergeBase?: string;
+  mergeBaseTimestamp?: string;
   finalRawNumstat?: string;
   committedRawNumstat?: string;
   uncommittedRawNumstat?: string;
@@ -540,7 +542,7 @@ function buildWorktreeMockHandler(opts: {
     ) {
       const fallback = [opts.committedRawNumstat, opts.uncommittedRawNumstat]
         .filter((part) => part && part.length > 0)
-        .join('\n');
+        .join('');
       cb(null, opts.finalRawNumstat ?? fallback, '');
       return;
     }
@@ -591,6 +593,11 @@ function buildWorktreeMockHandler(opts: {
       return;
     }
 
+    if (cmd === 'show' && args.includes('--format=%cI')) {
+      cb(null, `${opts.mergeBaseTimestamp ?? ''}\n`, '');
+      return;
+    }
+
     // git status --porcelain
     if (cmd === 'status' && args.includes('--porcelain')) {
       cb(null, opts.statusPorcelain ?? '', '');
@@ -604,13 +611,19 @@ function buildWorktreeMockHandler(opts: {
 
 /**
  * Build a raw+numstat combined output string for a single modified file.
- * Format matches `git diff --raw --numstat` output.
+ * Format matches `git diff --raw --numstat -z` output.
  */
 function rawNumstatEntry(filePath: string, added: number, removed: number, status = 'M'): string {
-  return [
-    `:100644 100644 aaa111 bbb222 ${status}\t${filePath}`,
-    `${added}\t${removed}\t${filePath}`,
-  ].join('\n');
+  return `:100644 100644 aaa111 bbb222 ${status}\0${filePath}\0${added}\t${removed}\t${filePath}\0`;
+}
+
+function rawNumstatRenameEntry(
+  previousPath: string,
+  path: string,
+  added: number,
+  removed: number,
+): string {
+  return `:100644 100644 aaa111 bbb222 R100\0${previousPath}\0${path}\0${added}\t${removed}\t\0${previousPath}\0${path}\0`;
 }
 
 // ---------------------------------------------------------------------------
@@ -667,6 +680,75 @@ describe('getChangedFiles (worktree-based, merge-base diff)', () => {
       expect(files[0].status).toBe('A');
     });
 
+    it('should preserve the original path for renamed files', async () => {
+      const calls: string[][] = [];
+      setupMock(
+        calls,
+        buildWorktreeMockHandler({
+          committedRawNumstat: rawNumstatRenameEntry('src/old-name.ts', 'src/new-name.ts', 0, 0),
+        }),
+      );
+
+      const files = await getChangedFiles(uniqueWorktreePath(), 'main');
+
+      expect(files).toEqual([
+        expect.objectContaining({
+          path: 'src/new-name.ts',
+          previous_path: 'src/old-name.ts',
+          status: 'R',
+        }),
+      ]);
+    });
+
+    it.each([
+      ['dir/old => literal.ts', 'dir/new.ts'],
+      ['dir/{old}.ts', 'dir/{new}.ts'],
+    ])('should preserve exact Git paths when renaming %s', async (previousPath, path) => {
+      const calls: string[][] = [];
+      setupMock(
+        calls,
+        buildWorktreeMockHandler({
+          committedRawNumstat: rawNumstatRenameEntry(previousPath, path, 4, 2),
+        }),
+      );
+
+      const files = await getChangedFiles(uniqueWorktreePath(), 'main');
+
+      expect(files).toEqual([
+        expect.objectContaining({
+          path,
+          previous_path: previousPath,
+          lines_added: 4,
+          lines_removed: 2,
+          status: 'R',
+        }),
+      ]);
+      expect(
+        calls.some((args) => args[0] === 'diff' && args.includes('--raw') && args.includes('-z')),
+      ).toBe(true);
+    });
+
+    it('should preserve a literal arrow in an ordinary modified filename', async () => {
+      const calls: string[][] = [];
+      setupMock(
+        calls,
+        buildWorktreeMockHandler({
+          committedRawNumstat: rawNumstatEntry('ordinary => modified.txt', 3, 1),
+        }),
+      );
+
+      const files = await getChangedFiles(uniqueWorktreePath(), 'main');
+
+      expect(files).toEqual([
+        expect.objectContaining({
+          path: 'ordinary => modified.txt',
+          lines_added: 3,
+          lines_removed: 1,
+          status: 'M',
+        }),
+      ]);
+    });
+
     it('should return multiple committed files', async () => {
       const calls: string[][] = [];
       setupMock(
@@ -675,7 +757,7 @@ describe('getChangedFiles (worktree-based, merge-base diff)', () => {
           committedRawNumstat: [
             rawNumstatEntry('file-a.ts', 5, 2),
             rawNumstatEntry('file-b.ts', 3, 1),
-          ].join('\n'),
+          ].join(''),
         }),
       );
 
@@ -1192,7 +1274,7 @@ describe('getUncommittedChangedFiles', () => {
       isFile: () => true,
       size: 100,
     } as unknown as Awaited<ReturnType<typeof fs.promises.stat>>);
-    vi.mocked(fs.promises.readFile).mockResolvedValueOnce('one\ntwo\n');
+    vi.mocked(fs.promises.readFile).mockResolvedValueOnce(Buffer.from('one\ntwo\n'));
 
     const files = await getUncommittedChangedFiles(uniqueWorktreePath());
 
@@ -1391,7 +1473,7 @@ describe('refineDiffBaseWithCherryPick (via getChangedFilesFromBranch)', () => {
     const diffCall = calls.find((a) => a[0] === 'diff');
     expect(diffCall).toBeDefined();
     // Range uses the refined parent SHA against the branch ref (not HEAD).
-    expect(diffCall).toContain(`${PARENT}...feature`);
+    expect(diffCall).toContain(`${PARENT}..feature`);
   });
 });
 
@@ -1416,6 +1498,50 @@ describe('listImportableWorktrees', () => {
 
     await expect(listImportableWorktrees('/home/me/.codex')).resolves.toEqual([]);
     expect(calls).toEqual([['rev-parse', '--show-toplevel']]);
+  });
+});
+
+describe('getBranchWorktreePath', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns only an existing worktree on the requested branch', async () => {
+    const calls: string[][] = [];
+    setupMock(calls, (args, cb) => {
+      if (args[0] === 'worktree' && args[1] === 'list') {
+        return cb(
+          null,
+          [
+            'worktree /repo',
+            'HEAD aaa111',
+            'branch refs/heads/main',
+            '',
+            'worktree /repo-task',
+            'HEAD bbb222',
+            'branch refs/heads/task/coverage',
+            '',
+          ].join('\n'),
+          '',
+        );
+      }
+      if (args[0] === 'show') {
+        return cb(null, '2026-07-25T12:00:00-04:00\n', '');
+      }
+      return cb(new Error(`unexpected git call: ${args.join(' ')}`), '', '');
+    });
+
+    await expect(getBranchWorktreePath('/repo', 'main')).resolves.toEqual({
+      path: '/repo',
+      head: 'aaa111',
+      headCommittedAt: '2026-07-25T16:00:00.000Z',
+    });
+    await expect(getBranchWorktreePath('/repo', 'missing')).resolves.toBeNull();
+    expect(calls).toEqual([
+      ['worktree', 'list', '--porcelain'],
+      ['show', '-s', '--format=%cI', 'aaa111'],
+      ['worktree', 'list', '--porcelain'],
+    ]);
   });
 });
 

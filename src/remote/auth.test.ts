@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { applyConnectionString } from './auth';
+import {
+  applyConnectionString,
+  getToken,
+  getPairedToken,
+  setPairedToken,
+  clearPairedToken,
+  initAuth,
+} from './auth';
 
 interface StubLocation {
   origin: string;
@@ -8,13 +15,23 @@ interface StubLocation {
 
 let storage: Record<string, string>;
 let location: StubLocation;
+let session: Map<string, string>;
 
 beforeEach(() => {
   storage = {};
+  session = new Map();
+  (globalThis as unknown as { sessionStorage: unknown }).sessionStorage = {
+    getItem: (k: string) => session.get(k) ?? null,
+    setItem: (k: string, v: string) => session.set(k, v),
+    removeItem: (k: string) => session.delete(k),
+  };
   location = { origin: 'http://192.168.1.42:7777', href: 'http://192.168.1.42:7777/' };
   (globalThis as unknown as { window: unknown }).window = { location };
   (globalThis as unknown as { localStorage: unknown }).localStorage = {
     getItem: (k: string) => storage[k] ?? null,
+    removeItem: (k: string) => {
+      storage = Object.fromEntries(Object.entries(storage).filter(([key]) => key !== k));
+    },
     setItem: (k: string, v: string) => {
       storage[k] = v;
     },
@@ -22,6 +39,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete (globalThis as unknown as { sessionStorage?: unknown }).sessionStorage;
   delete (globalThis as unknown as { window?: unknown }).window;
   delete (globalThis as unknown as { localStorage?: unknown }).localStorage;
 });
@@ -57,5 +75,31 @@ describe('applyConnectionString', () => {
     expect(applyConnectionString('   ')).toBe('invalid');
     expect(applyConnectionString('hello world')).toBe('invalid');
     expect(applyConnectionString('AbC-123_def456ghi789')).toBe('invalid');
+  });
+});
+
+describe('remembering phone authentication', () => {
+  it('uses a remembered paired token for startup and read requests after the base token expires', () => {
+    storage['parallel-code-token'] = 'expired';
+    setPairedToken('remembered', true);
+    expect(getToken()).toBe('remembered');
+    expect(initAuth()).toBe('remembered');
+    expect(session.size).toBe(0);
+  });
+
+  it('keeps unchecked pairing only for the browser session and removes older persistent access', () => {
+    setPairedToken('old', true);
+    setPairedToken('temporary', false);
+    expect(storage['parallel-code-paired-token']).toBeUndefined();
+    expect(getPairedToken()).toBe('temporary');
+    session.clear();
+    expect(getPairedToken()).toBeNull();
+  });
+
+  it('clears both kinds of credentials on revocation', () => {
+    setPairedToken('temporary', false);
+    storage['parallel-code-paired-token'] = 'remembered';
+    clearPairedToken();
+    expect(getPairedToken()).toBeNull();
   });
 });

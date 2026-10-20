@@ -1,5 +1,6 @@
 import { Show, createSignal, createUniqueId, untrack } from 'solid-js';
 import { Dialog } from '../components/Dialog';
+import { GitMergeIcon } from '../components/icons';
 import { arenaStore } from './store';
 import type { BattleCompetitor } from './types';
 
@@ -58,10 +59,12 @@ export function CommitDialog(props: CommitDialogProps) {
             disabled={!commitMsg().trim()}
             onClick={() => props.onCommitAndMerge(commitMsg())}
           >
+            <GitMergeIcon size={14} />
             Commit &amp; Merge
           </button>
           <Show when={props.hasCommitted}>
             <button class="arena-close-btn" onClick={() => props.onDiscardAndMerge()}>
+              <GitMergeIcon size={14} />
               Discard uncommitted &amp; Merge
             </button>
           </Show>

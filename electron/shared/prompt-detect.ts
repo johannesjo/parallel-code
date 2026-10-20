@@ -8,6 +8,22 @@ export function stripAnsi(text: string): string {
 }
 
 /**
+ * Give cursor-positioned output its row structure before ANSI stripping: a move
+ * to another row starts a line, a jump within the row becomes a space. Codex
+ * 0.163+ draws its whole screen this way without newlines, which otherwise puts
+ * the composer mid-line behind the logo where line-anchored patterns miss it.
+ */
+export function cursorRowsToLines(text: string): string {
+  let row: string | undefined;
+  // eslint-disable-next-line no-control-regex -- CUP/HVP: ESC [ row ; col H|f
+  return text.replace(/\x1b\[(\d*)(?:;\d*)?[Hf]/g, (_match, nextRow: string) => {
+    const sameRow = (nextRow || '1') === row;
+    row = nextRow || '1';
+    return sameRow ? ' ' : '\n';
+  });
+}
+
+/**
  * Patterns that indicate the agent is waiting for user input (i.e. idle).
  * Each regex is tested against the last non-empty line of stripped output.
  */
@@ -28,9 +44,16 @@ export const PROMPT_PATTERNS: RegExp[] = [
  */
 export const AGENT_READY_TAIL_PATTERNS: RegExp[] = [
   /^\s*❯\s*$/,
+  // Claude Code fills an empty input with a dimmed `Try "…"` suggestion (cut
+  // short with … in narrow panes); the dimming is lost with ANSI stripping, so
+  // match the suggestion's wording.
+  /^\s*❯\s+Try\s+"[^"]*(?:"|…)\s*$/,
   /^\s*--\s*INSERT\s*--(?:$|\s|[^\w].*$)/i,
-  /^\s*›\s*$/,
-  /^\s*>\s*(?:Type your message|$)/i,
+  // shortcut: matches Codex's placeholder wording. 0.163 also ships "Ask a
+  // follow-up question", unseen after turns in fresh or resumed sessions —
+  // if it shows up, detect the dimmed placeholder from the mirror's cells
+  // instead of adding wording.
+  /^\s*[›>]\s*(?:Type your message|Ask Codex to do anything|$)/i,
 ];
 
 export const AGENT_READY_TAIL_CHARS = 1000;

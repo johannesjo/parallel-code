@@ -1,5 +1,14 @@
 import type { BrowserWindow } from 'electron';
 import { debug as logDebug } from '../log.js';
+import { ASK_CODE_MODELS } from '../shared/ask-code-models.js';
+import { UNDERSTANDING_MAX_OUTPUT_CHARS } from '../shared/understanding-limits.js';
+import {
+  askCodePromptLimit,
+  askCodeSystemPrompt,
+  askCodeTimeoutMs,
+  isStructuredPurpose,
+  type AskCodePurpose,
+} from './ask-code-purpose.js';
 import {
   AskCodeSession,
   ASK_CODE_MAX_CONCURRENT,
@@ -8,22 +17,24 @@ import {
   assertCanStart,
   assertPromptWithinLimit,
 } from './request-registry.js';
-import {
-  DEFAULT_MINIMAX_MODEL_ID,
-  DEFAULT_MINIMAX_REGION,
-  getMinimaxModel,
-  minimaxChatCompletionsUrl,
-} from './minimax-catalog.js';
 
 interface MinimaxAskCodeRequest {
   requestId: string;
   channelId: string;
   prompt: string;
-  modelId?: string;
+  purpose?: AskCodePurpose;
+  model?: string;
 }
 
-const MINIMAX_API_URL = minimaxChatCompletionsUrl(DEFAULT_MINIMAX_REGION);
-export const MINIMAX_MODEL = DEFAULT_MINIMAX_MODEL_ID;
+const MINIMAX_API_URL = 'https://api.minimax.io/v1/chat/completions';
+/** Inline answers stay short; a tour JSON object with up to 8 cards needs far more room. */
+const MAX_TOKENS_INLINE = 2048;
+/**
+ * Ceiling, not a target: the largest tour the validator accepts, at a
+ * conservative ~3 characters per token so a dense JSON response still fits.
+ */
+const MAX_TOKENS_STRUCTURED = Math.ceil(UNDERSTANDING_MAX_OUTPUT_CHARS / 3);
+export const MINIMAX_MODEL = ASK_CODE_MODELS.minimax;
 
 const activeRequests = new RequestRegistry<AbortController>({
   maxConcurrent: ASK_CODE_MAX_CONCURRENT,
@@ -38,16 +49,17 @@ export function setMinimaxApiKey(key: string): void {
 }
 
 export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequest): void {
-  const { requestId, channelId, prompt, modelId } = args;
+  const { requestId, channelId, prompt } = args;
   const apiKey = storedApiKey;
-  const model =
-    getMinimaxModel(modelId ?? DEFAULT_MINIMAX_MODEL_ID)?.id ?? DEFAULT_MINIMAX_MODEL_ID;
+  const model = args.model ?? MINIMAX_MODEL;
+  const isFlash = model === 'MiniMax-M3.1-Flash';
+  const isM3 = model === 'MiniMax-M3';
 
   if (!apiKey) {
     throw new Error('MiniMax API key is not set. Please configure it in Settings.');
   }
 
-  assertPromptWithinLimit(prompt);
+  assertPromptWithinLimit(prompt, askCodePromptLimit(args.purpose));
   assertCanStart(activeRequests, requestId);
 
   cancelAskAboutCodeMinimax(requestId);
@@ -60,8 +72,13 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
     }
   };
 
-  const session = AskCodeSession.start(activeRequests, requestId, controller, send, (request) =>
-    request.abort(),
+  const session = AskCodeSession.start(
+    activeRequests,
+    requestId,
+    controller,
+    send,
+    (request) => request.abort(),
+    askCodeTimeoutMs(args.purpose),
   );
 
   fetch(MINIMAX_API_URL, {
@@ -72,16 +89,24 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
     },
     body: JSON.stringify({
       model,
+      // Flash always thinks; keep reasoning separate from answers and tour JSON.
+      ...(isFlash
+        ? { thinking: { type: 'adaptive' }, reasoning_effort: 'low', reasoning_split: true }
+        : isM3
+          ? { thinking: { type: 'disabled' }, reasoning_split: true }
+          : {}),
       messages: [
-        {
-          role: 'system',
-          content: 'Answer concisely about the selected code. Use markdown.',
-        },
+        { role: 'system', content: askCodeSystemPrompt(args.purpose) },
         { role: 'user', content: prompt },
       ],
       // MiniMax temperature must be in (0.0, 1.0]
       temperature: 0.3,
-      max_tokens: 2048,
+      // Thinking counts toward the budget. Flash needs room beyond a short answer.
+      max_tokens: isStructuredPurpose(args.purpose)
+        ? MAX_TOKENS_STRUCTURED
+        : isFlash
+          ? 16_384
+          : MAX_TOKENS_INLINE,
       stream: true,
     }),
     signal: controller.signal,
@@ -107,7 +132,7 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
       controller.signal.addEventListener('abort', onAbort, { once: true });
 
       try {
-        while (true) {
+        readStream: while (true) {
           const { done, value } = await reader.read();
           if (done || aborted) break;
           buf += decoder.decode(value, { stream: true });
@@ -115,7 +140,14 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
           buf = lines.pop() ?? '';
           for (const line of lines) {
             const trimmed = line.trim();
-            if (!trimmed || trimmed === 'data: [DONE]') continue;
+            if (trimmed === 'data: [DONE]') {
+              // The protocol is complete even if the HTTP connection stays open.
+              void reader.cancel().catch((err) => {
+                logDebug('askCode.minimax', 'reader.cancel rejected', { err: String(err) });
+              });
+              break readStream;
+            }
+            if (!trimmed) continue;
             if (!trimmed.startsWith('data:')) continue;
             try {
               const json = JSON.parse(trimmed.slice(5).trim()) as {

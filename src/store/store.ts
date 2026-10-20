@@ -8,6 +8,9 @@ export {
   getProjectPath,
   getProjectBranchPrefix,
   pickAndAddProject,
+  addDocumentProject,
+  codeProjects,
+  isDocumentProject,
   validateProjectPaths,
   relinkProject,
   isProjectMissing,
@@ -24,7 +27,26 @@ export {
   switchAgent,
   addCustomAgent,
   removeCustomAgent,
+  setAgentEnvFile,
 } from './agents';
+export { publishAgentTour, referenceTourCard } from './agent-tour';
+export {
+  openCanvasDocument,
+  openCanvasBrowser,
+  setTaskBrowserUrl,
+  appendBrowserReference,
+  markBrowserFocused,
+  openCanvasReasoning,
+  openCanvasMindMap,
+  setTaskMindMap,
+  setTaskReasoningProfile,
+  setTaskReasoningWorkspace,
+  activateCanvasTab,
+  closeCanvasTab,
+  openTaskCanvas,
+  closeTaskCanvas,
+  isTaskCanvasVisible,
+} from './canvas';
 export {
   createTask,
   createImportedTask,
@@ -33,7 +55,6 @@ export {
   mergeTask,
   pushTask,
   updateTaskName,
-  updateTaskBranch,
   updateTaskNotes,
   sendPrompt,
   setLastPrompt,
@@ -54,10 +75,10 @@ export {
   setNewTaskDropUrl,
   setNewTaskPrefillPrompt,
   setPlanContent,
-  setStepsContent,
   toggleAITerminalLayout,
   setTaskLastInputAt,
   markTaskUserActivity,
+  setTaskPromptDraft,
   setTaskPromptDraftActive,
   setTaskTerminalInputPending,
   initMCPListeners,
@@ -70,12 +91,14 @@ export {
   markTaskMcpError,
   retryTaskMcpStartup,
 } from './tasks';
+export { updateTaskBranch, undoBranchAdoption, dismissBranchAdoptionNotice } from './task-branch';
 export {
   setActiveTask,
+  activateTaskFromPointer,
   setActiveAgent,
   moveActiveTask,
   jumpToTask,
-  toggleNewTaskDialog,
+  toggleNewTaskPanel,
 } from './navigation';
 export {
   registerFocusFn,
@@ -86,7 +109,10 @@ export {
   triggerAction,
   getTaskFocusedPanel,
   setTaskFocusedPanel,
+  aiTerminalPanelId,
+  shellPanelId,
   isPanelFocused,
+  isPanelFocusedOrDefault,
   isPanelFocusedPrefix,
   focusSidebar,
   unfocusSidebar,
@@ -113,10 +139,13 @@ export {
   setTaskViewportVisibility,
   toggleSidebar,
   toggleArena,
+  openThinkingSpace,
+  setDocumentWorkspacesEnabled,
   toggleFocusMode,
   toggleTaskFocusMode,
   setTaskSplitMode,
   setTerminalFont,
+  setTerminalScreenReaderMode,
   applyAppearanceMode,
   markCustomThemesReady,
   setAppearanceMode,
@@ -127,8 +156,14 @@ export {
   setAutoTrustFolders,
   setShowPlans,
   setShowPromptInput,
+  setModelTaskNames,
+  setTaskNameModel,
+  setTaskBriefs,
+  setConfidencePrompt,
   setShowSidebarTips,
   setShowSidebarProgress,
+  setSidebarNeedsInputFirst,
+  setProjectTasksCollapsed,
   setProjectsCollapsed,
   setFontSmoothing,
   setDesktopNotificationsEnabled,
@@ -140,12 +175,14 @@ export {
   setDockerAvailable,
   setShareDockerAgentAuth,
   setAskCodeProvider,
-  setMinimaxModel,
+  setAskCodeModel,
+  setAskCodeEffort,
   setMinimaxApiKey,
   setWindowState,
-  setCoordinatorModeEnabled,
-  setDefaultStepsEnabled,
+  setPreferUiMode,
+  setDisableClaudeUiMode,
   setDefaultSkipPermissions,
+  setCanvasOwnershipBadges,
   setDefaultPropagateSkipPermissions,
 } from './ui';
 export {
@@ -166,15 +203,45 @@ export {
   isAutoTrustSettling,
   isAgentAskingQuestion,
   isAgentIdle,
+  getBranchDivergence,
   refreshTaskStatus,
   startTaskStatusPolling,
   stopTaskStatusPolling,
   rescheduleTaskStatusPolling,
 } from './taskStatus';
 export type { TaskAttentionState, TaskDotStatus } from './taskStatus';
+export { getTaskAgentHookStatus, isTaskUnread, noteAgentTerminalInput } from './agentHookStatus';
+export type { TaskAgentHookStatus } from './agentHookStatus';
 export { showNotification, clearNotification } from './notification';
 export { startPrChecksSubscription, getPrChecks, type PrChecksState } from './pr-checks';
-export { getMergedTasksTodayCount, getMergedLineTotals } from './completion';
+export {
+  cancelTaskVerification,
+  getVerificationOutput,
+  getVerifyCommand,
+  runTaskVerification,
+  sendVerificationFailureToAgent,
+} from './verification';
+export {
+  buildEvidence,
+  cancelEvidenceChecks,
+  getEvidenceForAgent,
+  runEvidenceCheck,
+  sendEvidenceToAgent,
+  stopEvidence,
+  submitEvidence,
+} from './evidence';
+export { runEvidenceReview } from './evidence-review';
+export {
+  acceptEvidenceFlag,
+  dismissEvidenceFinding,
+  restoreEvidenceFinding,
+  reopenEvidenceFlag,
+  getEvidenceConfidence,
+  getEvidenceUiState,
+  getTaskChecks,
+  isEvidenceBusy,
+} from './evidence-state';
+export { getMergedTasksTodayCount } from './completion';
 export {
   createTerminal,
   closeTerminal,
@@ -211,3 +278,20 @@ export {
   startMCPStatusPolling,
   stopMCPStatusPolling,
 } from './mcpStatus';
+export { refreshUsage, startUsagePolling, stopUsagePolling, USAGE_PROVIDERS } from './usage';
+
+export { setMcpOrchestrationEnabled } from './delegation';
+export {
+  spConnection,
+  spBanner,
+  refreshSpConnection,
+  connectSuperProductivity,
+  disconnectSuperProductivity,
+  listSpProjects,
+  setProjectSpMapping,
+  trackTaskInSp,
+  dismissSpBanner,
+  armSpCompletion,
+  startSuperProductivitySync,
+} from './superProductivity';
+export { startSpOpenListener } from './superProductivityOpen';

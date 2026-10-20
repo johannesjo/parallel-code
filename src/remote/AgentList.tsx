@@ -1,285 +1,236 @@
-import { For, Show, createMemo } from 'solid-js';
-import { agents, status } from './ws';
-import { agentStatusDisplay } from './attention';
+import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
+import { agents, status, canControl } from './ws';
+import { agentStatusDisplay, needsYou as agentNeedsYou } from './attention';
+import { ConnectionBanner } from './ConnectionBanner';
+import { NotificationSettings } from './NotificationSettings';
+import { readLocal, writeLocal } from './storage';
+import { ProjectSwatch } from '../components/ProjectSwatch';
 import type { RemoteAgent } from '../../electron/remote/protocol';
 
+const ANDROID_APP_GUIDE = 'https://github.com/johannesjo/parallel-code#android-app';
+
 interface AgentListProps {
-  onSelect: (agentId: string, taskName: string) => void;
+  onSelect: (taskId: string) => void;
   onNewTask: () => void;
+  onPair: () => void;
 }
 
-export function AgentList(props: AgentListProps) {
-  const running = createMemo(() => agents().filter((a) => a.status === 'running').length);
-  const total = createMemo(() => agents().length);
-  const needsInput = createMemo(() => agents().filter((a) => a.attention === 'needs_input').length);
+const inStates = (states: string[]) => (agent: RemoteAgent) => states.includes(agent.attention);
 
-  // Surface tasks that want attention at the top; keep original order within a
-  // rank so the list doesn't jump around on unrelated status changes.
-  const ATTENTION_RANK: Record<string, number> = {
-    needs_input: 0,
-    error: 1,
-    review: 2,
-    active: 3,
-    ready: 4,
-    idle: 5,
-  };
-  const sortedAgents = createMemo(() =>
-    agents()
-      .map((a, i) => ({ a, i }))
-      .sort((x, y) => {
-        const rx = ATTENTION_RANK[x.a.attention] ?? 5;
-        const ry = ATTENTION_RANK[y.a.attention] ?? 5;
-        return rx - ry || x.i - y.i;
-      })
-      .map((e) => e.a),
+// A task lands in the first group it matches, so failed CI files under "Needs you".
+const groups = [
+  { name: 'Needs you', matches: agentNeedsYou },
+  { name: 'Working', matches: inStates(['active']) },
+  { name: 'Ready to review', matches: inStates(['review', 'ready']) },
+  { name: 'Other tasks', matches: inStates(['idle', 'shell_busy']) },
+];
+
+const groupOf = (agent: RemoteAgent) => groups.find((group) => group.matches(agent));
+
+export function AgentList(props: AgentListProps) {
+  let searchInput: HTMLInputElement | undefined;
+  const [search, setSearch] = createSignal(readLocal('task-search'));
+  const savedFilter = readLocal('task-filter');
+  const [filter, setFilter] = createSignal(
+    savedFilter === 'attention' || savedFilter === 'review' ? savedFilter : 'all',
   );
+  createEffect(() => writeLocal('task-search', search()));
+  createEffect(() => writeLocal('task-filter', filter()));
+  const needsYou = createMemo(() => agents().filter(agentNeedsYou).length);
+  const matchingSearch = createMemo(() => {
+    const query = search().trim().toLocaleLowerCase();
+    return agents().filter((a) =>
+      `${a.taskName} ${a.projectName ?? ''} ${a.agentName ?? ''}`
+        .toLocaleLowerCase()
+        .includes(query),
+    );
+  });
+  const matchesFilter = (agent: RemoteAgent, id: string) =>
+    id === 'all' ||
+    (id === 'attention' && agentNeedsYou(agent)) ||
+    (id === 'review' && groupOf(agent)?.name === 'Ready to review');
+  const filtered = createMemo(() => matchingSearch().filter((a) => matchesFilter(a, filter())));
+  function clearFilters() {
+    setSearch('');
+    setFilter('all');
+  }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        'flex-direction': 'column',
-        height: '100%',
-        background: '#0b0f14',
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          'align-items': 'center',
-          'justify-content': 'space-between',
-          padding: '14px 16px 12px',
-          'border-bottom': '1px solid #223040',
-          background: '#12181f',
-        }}
-      >
-        <span style={{ 'font-size': '18px', 'font-weight': '600', color: '#d7e4f0' }}>
-          Parallel Code
-        </span>
-        <div style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}>
-          <Show when={needsInput() > 0}>
-            <span
-              style={{
-                display: 'inline-flex',
-                'align-items': 'center',
-                gap: '5px',
-                padding: '3px 9px',
-                'border-radius': '999px',
-                background: '#3a2a0d',
-                color: '#ffc569',
-                'font-size': '12px',
-                'font-weight': '600',
-              }}
-            >
-              <span
-                style={{
-                  width: '7px',
-                  height: '7px',
-                  'border-radius': '50%',
-                  background: '#ffc569',
-                }}
-              />
-              {needsInput()} needs input
-            </span>
-          </Show>
-          <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
-            <div
-              style={{
-                width: '8px',
-                height: '8px',
-                'border-radius': '50%',
-                background:
-                  status() === 'connected'
-                    ? '#2fd198'
-                    : status() === 'connecting'
-                      ? '#ffc569'
-                      : '#ff5f73',
-              }}
-            />
-            <span style={{ 'font-size': '14px', color: '#678197' }}>
-              {running()}/{total()}
-            </span>
-          </div>
-          <button
-            onClick={() => props.onNewTask()}
-            aria-label="New task"
-            style={{
-              display: 'flex',
-              'align-items': 'center',
-              gap: '4px',
-              padding: '6px 12px',
-              background: '#173042',
-              border: '1px solid #2ec8ff55',
-              'border-radius': '8px',
-              color: '#2ec8ff',
-              'font-size': '14px',
-              'font-weight': '600',
-              cursor: 'pointer',
-              'touch-action': 'manipulation',
-            }}
-          >
-            + New
+    <div class="mobile-screen">
+      <header class="mobile-header">
+        <div class="heading">
+          <p class="mobile-eyebrow">Parallel Code</p>
+          <h1>Your tasks</h1>
+          <p>
+            {needsYou()
+              ? `${needsYou()} ${needsYou() === 1 ? 'task needs' : 'tasks need'} your attention`
+              : 'Keep work moving from here'}
+          </p>
+        </div>
+      </header>
+      <ConnectionBanner />
+      <Show when={status() === 'connected' && !canControl()}>
+        <div class="mobile-banner info">
+          <span>View only · authorize this phone to reply.</span>
+          <button class="mobile-button quiet" onClick={() => props.onPair()}>
+            Enable replies
           </button>
         </div>
-      </div>
-
-      {/* Connection status banner */}
-      <Show when={status() !== 'connected'}>
-        <div
-          style={{
-            padding: '8px 16px',
-            background: status() === 'connecting' ? '#78350f' : '#7f1d1d',
-            color: status() === 'connecting' ? '#fde68a' : '#fca5a5',
-            'font-size': '14px',
-            'text-align': 'center',
-            'flex-shrink': '0',
-          }}
-        >
-          {status() === 'connecting' ? 'Reconnecting...' : 'Disconnected — check your network'}
-        </div>
       </Show>
-
-      {/* Agent cards */}
-      <div
-        style={{
-          flex: '1',
-          overflow: 'auto',
-          padding: '12px',
-          display: 'flex',
-          'flex-direction': 'column',
-          gap: '8px',
-          '-webkit-overflow-scrolling': 'touch',
-          'padding-bottom': 'max(12px, env(safe-area-inset-bottom))',
-        }}
-      >
-        <Show when={agents().length === 0}>
-          <div
-            style={{
-              'text-align': 'center',
-              color: '#678197',
-              'padding-top': '60px',
-              'font-size': '15px',
-            }}
-          >
-            <Show when={status() === 'connected'} fallback={<span>Connecting...</span>}>
-              <span>No active agents</span>
-            </Show>
-          </div>
+      <main class="mobile-scroll">
+        <Show when={canControl()}>
+          <NotificationSettings />
         </Show>
-
-        {/* Experimental notice */}
-        <div
-          style={{
-            padding: '8px 12px',
-            background: '#11182080',
-            border: '1px solid #223040',
-            'border-radius': '12px',
-            'font-size': '13px',
-            color: '#9bb0c3',
-            'text-align': 'center',
-            'line-height': '1.5',
-          }}
-        >
-          This is an experimental feature.{' '}
-          <a
-            href="https://github.com/johannesjo/parallel-code/issues"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: '#2ec8ff' }}
-          >
-            Report bugs
-          </a>
-        </div>
-
-        <For each={sortedAgents()}>
-          {(agent: RemoteAgent) => {
-            const display = () => agentStatusDisplay(agent);
-            return (
-              <div
-                onClick={() => props.onSelect(agent.agentId, agent.taskName)}
-                style={{
-                  background: '#0f141b',
-                  border: display().glow ? `1px solid ${display().color}66` : '1px solid #223040',
-                  'border-radius': '12px',
-                  padding: '14px 16px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  'flex-direction': 'column',
-                  gap: '6px',
-                  'touch-action': 'manipulation',
-                  transition: 'background 0.16s ease',
+        <Show when={/Android/i.test(navigator.userAgent)}>
+          <details class="mobile-notifications">
+            <summary>Android app</summary>
+            <p>
+              The Android app notifies you in the background without HTTPS and adds a home-screen
+              widget.{' '}
+              <a href={ANDROID_APP_GUIDE} target="_blank" rel="noreferrer">
+                Install it
+              </a>
+              , then scan the same QR code.
+            </p>
+          </details>
+        </Show>
+        <Show when={agents().length > 0}>
+          <div class="mobile-search-field">
+            <input
+              ref={searchInput}
+              class="mobile-search"
+              type="search"
+              aria-label="Search tasks, projects, or agents"
+              placeholder="Find a task, project, or agent…"
+              value={search()}
+              onInput={(e) => setSearch(e.currentTarget.value)}
+            />
+            <Show when={search()}>
+              <button
+                class="mobile-button quiet"
+                aria-label="Clear search"
+                onClick={() => {
+                  setSearch('');
+                  searchInput?.focus();
                 }}
               >
-                <div
-                  style={{
-                    display: 'flex',
-                    'align-items': 'center',
-                    'justify-content': 'space-between',
-                    gap: '8px',
-                  }}
+                ×
+              </button>
+            </Show>
+          </div>
+          <div class="mobile-filters" role="group" aria-label="Filter tasks">
+            <For
+              each={[
+                { id: 'all', label: 'All' },
+                { id: 'attention', label: 'Needs you' },
+                { id: 'review', label: 'Review' },
+              ]}
+            >
+              {(item) => (
+                <button
+                  class="mobile-filter"
+                  aria-pressed={filter() === item.id}
+                  onClick={() => setFilter(item.id)}
                 >
-                  <div
-                    style={{
-                      display: 'flex',
-                      'align-items': 'center',
-                      gap: '8px',
-                      'min-width': '0',
-                      flex: '1',
+                  {item.label}{' '}
+                  <span>{matchingSearch().filter((a) => matchesFilter(a, item.id)).length}</span>
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+        <Show when={agents().length === 0}>
+          <div class="mobile-empty">
+            <h2>
+              {status() === 'connected' ? 'Start something new' : 'Waiting for your computer'}
+            </h2>
+            <p>
+              {status() === 'connected'
+                ? 'No agents are running. Give an agent a task and follow its progress here.'
+                : 'Keep Parallel Code open on your computer and check that both devices can reach each other.'}
+            </p>
+          </div>
+        </Show>
+        <Show when={agents().length > 0 && filtered().length === 0}>
+          <div class="mobile-empty" role="status">
+            <h2>
+              {search()
+                ? 'No matching tasks'
+                : filter() === 'attention'
+                  ? 'Nothing needs you right now'
+                  : 'Nothing to review yet'}
+            </h2>
+            <p>
+              {search()
+                ? `Try a different name or clear your filters for “${search()}”.`
+                : 'You can check the other tasks while your agents work.'}
+            </p>
+            <button class="mobile-button" onClick={clearFilters}>
+              Show all tasks
+            </button>
+          </div>
+        </Show>
+        <For each={groups}>
+          {(group) => {
+            const items = () => filtered().filter((a) => groupOf(a) === group);
+            return (
+              <Show when={items().length > 0}>
+                <section class="mobile-group" aria-label={group.name}>
+                  <h2>
+                    {group.name} <span>{items().length}</span>
+                  </h2>
+                  <For each={items()}>
+                    {(agent: RemoteAgent) => {
+                      const display = () => agentStatusDisplay(agent);
+                      return (
+                        <button
+                          class="agent-card"
+                          classList={{ attention: group.name === 'Needs you' }}
+                          onClick={() => props.onSelect(agent.taskId)}
+                        >
+                          <div class="agent-card-top">
+                            <strong title={agent.taskName}>{agent.taskName}</strong>
+                            <span class="agent-card-chevron" aria-hidden="true">
+                              ›
+                            </span>
+                          </div>
+                          <div class="agent-card-meta">
+                            <p class="muted">
+                              <Show when={agent.projectColor}>
+                                {(color) => <ProjectSwatch color={color()} size={10} />}
+                              </Show>
+                              {[agent.projectName, agent.agentName].filter(Boolean).join(' · ') ||
+                                'Agent task'}
+                            </p>
+                            <span class="agent-status" style={{ color: display().color }}>
+                              <span class="status-dot" aria-hidden="true" />
+                              {display().label}
+                            </span>
+                          </div>
+                          <Show when={agent.lastLine}>
+                            <p class="agent-preview" title="Recent terminal output">
+                              {agent.lastLine}
+                            </p>
+                          </Show>
+                        </button>
+                      );
                     }}
-                  >
-                    <div
-                      style={{
-                        width: '8px',
-                        height: '8px',
-                        'border-radius': '50%',
-                        background: display().color,
-                        'box-shadow': display().glow ? `0 0 0 3px ${display().color}33` : 'none',
-                        'flex-shrink': '0',
-                      }}
-                    />
-                    <span
-                      style={{
-                        'font-size': '15px',
-                        'font-weight': '500',
-                        color: '#d7e4f0',
-                        overflow: 'hidden',
-                        'text-overflow': 'ellipsis',
-                        'white-space': 'nowrap',
-                      }}
-                    >
-                      {agent.taskName}
-                    </span>
-                  </div>
-                  <span
-                    style={{
-                      'font-size': '13px',
-                      'font-weight': display().glow ? '600' : '400',
-                      color: display().color,
-                      'flex-shrink': '0',
-                    }}
-                  >
-                    {display().label}
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    'font-size': '12px',
-                    'font-family': "'JetBrains Mono', 'Courier New', monospace",
-                    color: '#678197',
-                    'white-space': 'nowrap',
-                    overflow: 'hidden',
-                    'text-overflow': 'ellipsis',
-                  }}
-                >
-                  {agent.agentId}
-                </div>
-              </div>
+                  </For>
+                </section>
+              </Show>
             );
           }}
         </For>
-      </div>
+      </main>
+      <footer class="mobile-footer">
+        <button
+          class="mobile-button primary wide"
+          onClick={() => props.onNewTask()}
+          disabled={status() !== 'connected'}
+        >
+          + New task
+        </button>
+      </footer>
     </div>
   );
 }

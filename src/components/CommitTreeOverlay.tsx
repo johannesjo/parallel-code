@@ -122,7 +122,7 @@ export function CommitTreeOverlay(props: CommitTreeOverlayProps) {
                 'z-index': '999',
                 background: theme.taskPanelBg,
                 border: `1px solid ${theme.border}`,
-                'border-radius': '8px',
+                'border-radius': 'var(--radius-md)',
                 'box-shadow': '0 8px 28px rgba(0, 0, 0, 0.4)',
                 display: 'flex',
                 'flex-direction': 'column',
@@ -172,7 +172,7 @@ function buttonStyle(active: boolean) {
   return {
     ...accentControlColors(active),
     cursor: 'pointer',
-    'border-radius': '4px',
+    'border-radius': 'var(--radius-xs)',
     padding: '0',
     width: '18px',
     height: '18px',

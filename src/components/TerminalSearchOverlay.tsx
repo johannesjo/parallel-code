@@ -22,7 +22,7 @@ const ICON_BUTTON_STYLE: JSX.CSSProperties = {
   'font-size': '13px',
   'line-height': '1',
   padding: '2px 5px',
-  'border-radius': '3px',
+  'border-radius': 'var(--radius-xs)',
 };
 
 /** Browser-style find bar for a single terminal pane. Purely presentational —
@@ -79,7 +79,7 @@ export function TerminalSearchOverlay(props: TerminalSearchOverlayProps): JSX.El
         padding: '4px 6px',
         background: 'var(--bg-elevated)',
         border: '1px solid var(--border)',
-        'border-radius': '6px',
+        'border-radius': 'var(--radius-sm)',
         'box-shadow': '0 2px 8px rgba(0, 0, 0, 0.35)',
         'font-family': 'var(--font-ui)',
       }}
@@ -101,8 +101,8 @@ export function TerminalSearchOverlay(props: TerminalSearchOverlayProps): JSX.El
           padding: '2px 6px',
           background: 'var(--bg-input)',
           border: '1px solid var(--border)',
-          'border-radius': '4px',
-          color: hasNoMatches() ? '#ff6b6b' : 'var(--fg)',
+          'border-radius': 'var(--radius-xs)',
+          color: hasNoMatches() ? 'var(--error)' : 'var(--fg)',
           'font-family': 'var(--font-ui)',
           'font-size': '12px',
           outline: 'none',

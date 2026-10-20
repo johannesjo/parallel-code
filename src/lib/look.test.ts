@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { LOOK_PRESETS, presetsForTone, defaultPresetForTone, isLookPreset } from './look';
+import {
+  LOOK_PRESETS,
+  presetsForTone,
+  defaultPresetForTone,
+  isLightPreset,
+  isLookPreset,
+} from './look';
 
 describe('presetsForTone', () => {
   it('returns only dark presets for tone dark', () => {
@@ -20,19 +26,32 @@ describe('presetsForTone', () => {
     expect(new Set(all.map((p) => p.id)).size).toBe(LOOK_PRESETS.length);
   });
 
-  it('islands-light is the only light preset', () => {
+  it('offers Obsidian Light first, then Islands Light', () => {
     const light = presetsForTone('light');
-    expect(light.map((p) => p.id)).toEqual(['islands-light']);
+    expect(light.map((p) => p.id)).toEqual(['obsidian-light', 'islands-light']);
   });
 });
 
 describe('defaultPresetForTone', () => {
-  it('returns islands-light for light', () => {
-    expect(defaultPresetForTone('light')).toBe('islands-light');
+  it('returns obsidian-light for light', () => {
+    expect(defaultPresetForTone('light')).toBe('obsidian-light');
   });
 
-  it('returns islands-dark for dark', () => {
-    expect(defaultPresetForTone('dark')).toBe('islands-dark');
+  it('returns obsidian for dark', () => {
+    expect(defaultPresetForTone('dark')).toBe('obsidian');
+  });
+});
+
+describe('isLightPreset', () => {
+  it('follows each preset tone', () => {
+    for (const preset of LOOK_PRESETS) {
+      expect(isLightPreset(preset.id)).toBe(preset.tone === 'light');
+    }
+  });
+
+  it('treats unknown or missing ids as dark', () => {
+    expect(isLightPreset('custom')).toBe(false);
+    expect(isLightPreset(undefined)).toBe(false);
   });
 });
 

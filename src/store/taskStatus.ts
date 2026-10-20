@@ -1,12 +1,30 @@
-import { createSignal } from 'solid-js';
+import { createSignal, untrack } from 'solid-js';
+import { createStore } from 'solid-js/store';
+import { isAgentChat } from './agent-chat';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
 import type { WorktreeStatus } from '../ipc/types';
 import type { TaskGitStatusSnapshot } from './types';
-import { warn as logWarn, errMessage } from '../lib/log';
+import {
+  detectBranchDivergence,
+  divergenceKey,
+  trackDivergence,
+  type BranchDivergence,
+  type DivergenceObservation,
+} from '../lib/branch-divergence';
+import { warn as logWarn, info as logInfo, errMessage } from '../lib/log';
+import { adoptTaskBranch } from './task-branch';
+import {
+  clearAgentHookStatus,
+  formatAgentHookTooltip,
+  getAgentActivitySubject,
+  getAgentHookStatus,
+} from './agentHookStatus';
+import { getPrChecks } from './pr-checks-state';
 import {
   chunkContainsAgentPrompt,
+  getAgentPromptReadiness,
   PROMPT_PATTERNS,
   stripAnsi,
 } from '../../electron/mcp/prompt-detect';
@@ -30,6 +48,45 @@ const TRUST_PATTERNS: RegExp[] = [
 const TRUST_EXCLUSION_KEYWORDS =
   /\b(delet|remov|credential|secret|password|key|token|destro|format|drop)/i;
 
+// Auto-trust presses Enter, which picks whatever option the cursor is on.
+// Claude focuses "No, exit" when project settings grant permissions or run
+// hooks, so Enter would quit the agent — leave those dialogs for the user.
+// "noexit" covers TUI-garbled text where the space between words is lost.
+const DECLINE_OPTION = /^(?:\d+\.\s*)?(?:no\b|noexit|don'?t|exit|quit|cancel|deny)/i;
+
+/** `wait` means no option is focused yet (partial frame), so Enter's target is unknown. */
+type TrustDialogVerdict = 'accept' | 'wait' | 'decline';
+
+function trustDialogVerdict(tail: string): TrustDialogVerdict {
+  const visible = stripAnsi(tail);
+  if (TRUST_EXCLUSION_KEYWORDS.test(visible)) return 'decline';
+  // Gemini CLI marks the selected radio option with ●. Copilot also prints ● as
+  // an output bullet, so only a ● before a numbered option counts as a cursor.
+  const focused = visible
+    .split(/[❯›]|●(?=\s*\d+\.)/)
+    .slice(1)
+    .map((line) => (line.split(/\r?\n/, 1)[0] ?? '').trim());
+  // Check older frames too: a redraw focusing "Yes" can land in the same
+  // analysis window as the frame that focused "No, exit".
+  if (focused.some((text) => DECLINE_OPTION.test(text))) return 'decline';
+  return focused.at(-1) ? 'accept' : 'wait';
+}
+
+/** True when a detected trust dialog must not be accepted automatically. */
+function blocksAutoTrust(tail: string): boolean {
+  return trustDialogVerdict(tail) !== 'accept';
+}
+
+/** Agent-aware {@link blocksAutoTrust} that latches a declined dialog until it
+ *  leaves the tail, so a redraw after the user moves the cursor to "Yes" is
+ *  never accepted on their behalf. */
+function blocksAutoTrustFor(state: AgentTrackingState, tail: string): boolean {
+  if (state.autoTrustBlocked) return true;
+  const verdict = trustDialogVerdict(tail);
+  if (verdict === 'decline') state.autoTrustBlocked = true;
+  return verdict !== 'accept';
+}
+
 // --- Consolidated per-agent tracking state ---
 // Groups all per-agent Maps into one to prevent cleanup leaks.
 interface AgentTrackingState {
@@ -38,9 +95,12 @@ interface AgentTrackingState {
   autoTrustCooldown?: ReturnType<typeof setTimeout>;
   lastAutoTrustCheckAt?: number;
   autoTrustAcceptedAt?: number;
+  /** Set once a trust dialog was blocked; cleared when no dialog is in the tail. */
+  autoTrustBlocked?: boolean;
   lastDataAt?: number;
   lastIdleResetAt?: number;
   idleTimer?: ReturnType<typeof setTimeout>;
+  idleConfirmPending?: boolean;
   outputTailBuffer: string;
   decoder: TextDecoder;
   lastAnalysisAt?: number;
@@ -50,6 +110,8 @@ interface AgentTrackingState {
 }
 
 const agentStates = new Map<string, AgentTrackingState>();
+// Tooltips must update even when output leaves the agent's activity unchanged.
+const [lastOutputAt, setLastOutputAt] = createStore<Record<string, number | undefined>>({});
 
 function getAgentState(agentId: string): AgentTrackingState {
   let state = agentStates.get(agentId);
@@ -101,6 +163,7 @@ function clearAutoTrustState(agentId: string): void {
   if (!state) return;
   state.lastAutoTrustCheckAt = undefined;
   state.autoTrustAcceptedAt = undefined;
+  state.autoTrustBlocked = undefined;
   if (state.autoTrustTimer !== undefined) {
     clearTimeout(state.autoTrustTimer);
     state.autoTrustTimer = undefined;
@@ -112,12 +175,30 @@ function clearAutoTrustState(agentId: string): void {
 }
 
 export type TaskDotStatus = 'busy' | 'waiting' | 'ready' | 'review';
-export type TaskAttentionState = 'idle' | 'active' | 'needs_input' | 'error' | 'ready' | 'review';
+/** `active` means an agent is working. `shell_busy` means only a plain terminal
+ *  is producing output — informational, and never counted as needing attention. */
+export type TaskAttentionState =
+  | 'idle'
+  | 'active'
+  | 'shell_busy'
+  | 'needs_input'
+  | 'error'
+  | 'ready'
+  | 'review';
 
 // --- Prompt detection helpers ---
 // stripAnsi lives in the shared prompt-detect module (single source of truth);
 // re-exported here for the store barrel and existing call sites.
 export { stripAnsi };
+
+const CODEX_STATUS_FOOTER_PATTERN = /^gpt-\S+[ \t]+[^\r\n]*[·•][ \t]+(?:\/|~\/)[^\r\n]*$/;
+const CODEX_SHORTCUTS_FOOTER_PATTERN = /^\?\s*for\s*shortcuts(?:\s*\d+%\s*context\s*left)?$/;
+
+/** Codex's empty composer contains a suggestion, with its help footer below it.
+ * Cursor positioning can join these into one line after ANSI stripping. */
+function looksLikeCodexComposer(output: string): boolean {
+  return /›[^\r\n]*(?:\r?\n\s*)*\?\s*for\s*shortcuts(?:\s*\d+%\s*context\s*left)?\s*$/.test(output);
+}
 
 /** Returns true if `line` looks like a prompt waiting for input. */
 function looksLikePrompt(line: string): boolean {
@@ -198,6 +279,20 @@ export function normalizeForComparison(text: string): string {
  * found (regular line-oriented terminal output).
  */
 export function normalizeCurrentFrame(rawTail: string): string {
+  const frameStart = findLastFrameStart(rawTail);
+  if (frameStart >= 0) {
+    return normalizeForComparison(rawTail.slice(frameStart));
+  }
+  // No frame-start marker found (e.g. cursor-up redraws).  Each redraw appends
+  // identical visible content so the full normalized string grows without bound.
+  // Taking a fixed-size suffix stabilises the comparison: once two consecutive
+  // frames have accumulated the last SUFFIX_LEN chars are always the same
+  // repeating frame content.
+  const SUFFIX_LEN = 1000;
+  return normalizeForComparison(rawTail).slice(-SUFFIX_LEN);
+}
+
+function findLastFrameStart(rawTail: string): number {
   // Matches the beginning of a new render cycle:
   //   \x1b[H        — cursor home (row 1, col 1)
   //   \x1b[1;NNH    — cursor to row 1, any column
@@ -210,16 +305,7 @@ export function normalizeCurrentFrame(rawTail: string): string {
   while ((m = frameStartRe.exec(rawTail)) !== null) {
     frameStart = m.index;
   }
-  if (frameStart >= 0) {
-    return normalizeForComparison(rawTail.slice(frameStart));
-  }
-  // No frame-start marker found (e.g. cursor-up redraws).  Each redraw appends
-  // identical visible content so the full normalized string grows without bound.
-  // Taking a fixed-size suffix stabilises the comparison: once two consecutive
-  // frames have accumulated the last SUFFIX_LEN chars are always the same
-  // repeating frame content.
-  const SUFFIX_LEN = 1000;
-  return normalizeForComparison(rawTail).slice(-SUFFIX_LEN);
+  return frameStart;
 }
 
 /** Patterns indicating the terminal is asking a question — do NOT auto-send.
@@ -388,8 +474,8 @@ export function looksLikeQuestion(tail: string): boolean {
 
 function isAutoHandledTrustQuestion(tail: string): boolean {
   if (!looksLikeTrustDialog(tail)) return false;
+  if (blocksAutoTrust(tail)) return false;
   const visible = stripAnsi(tail); // full visible — see looksLikeQuestion for rationale
-  if (TRUST_EXCLUSION_KEYWORDS.test(visible)) return false;
   const lines = visible.split(/\r?\n/).filter((l) => l.trim().length > 0);
   return !lines.some((line) => {
     const trimmed = line.trimEnd();
@@ -414,7 +500,11 @@ export function isTrustQuestionAutoHandled(tail: string): boolean {
 /** Agent-aware variant for coordinator sub-tasks where trust handling can be
  *  forced by the task launch policy even when global auto-trust is disabled. */
 export function isAgentTrustQuestionAutoHandled(agentId: string, tail: string): boolean {
-  return (store.autoTrustFolders || isAutoTrustForced(agentId)) && isAutoHandledTrustQuestion(tail);
+  return (
+    (store.autoTrustFolders || isAutoTrustForced(agentId)) &&
+    !agentStates.get(agentId)?.autoTrustBlocked &&
+    isAutoHandledTrustQuestion(tail)
+  );
 }
 
 /** True when recent output contains a trust or permission dialog. */
@@ -438,6 +528,9 @@ const [questionAgents, setQuestionAgents] = createSignal<Set<string>>(new Set())
 
 /** True when the agent's terminal is showing a question or confirmation dialog. */
 export function isAgentAskingQuestion(agentId: string): boolean {
+  const agent = store.agents[agentId];
+  if (agent && isAgentChat(store.tasks[agent.taskId], agentId))
+    return !!agent.chatState?.requests.length;
   return questionAgents().has(agentId);
 }
 
@@ -446,14 +539,74 @@ export function isAgentBracketedPasteEnabled(agentId: string): boolean {
   return agentStates.get(agentId)?.bracketedPasteEnabled === true;
 }
 
+// When each agent's current question first appeared (epoch ms). Cleared as soon
+// as the question goes away, so an entry only ever describes the open question.
+const questionSinceByAgent = new Map<string, number>();
+
 function updateQuestionState(agentId: string, hasQuestion: boolean): void {
-  setQuestionAgents((prev) => {
-    if (hasQuestion === prev.has(agentId)) return prev;
-    const next = new Set(prev);
-    if (hasQuestion) next.add(agentId);
-    else next.delete(agentId);
-    return next;
-  });
+  const asking = untrack(questionAgents);
+  if (hasQuestion === asking.has(agentId)) return;
+
+  const next = new Set(asking);
+  if (hasQuestion) {
+    next.add(agentId);
+    questionSinceByAgent.set(agentId, Date.now());
+  } else {
+    next.delete(agentId);
+    questionSinceByAgent.delete(agentId);
+  }
+  setQuestionAgents(next);
+}
+
+export interface TaskOpenQuestion {
+  /** The agent whose terminal is showing the question. */
+  agentId: string;
+  /** When the question appeared (epoch ms). */
+  since: number;
+}
+
+/** This task's newest open question — who is asking and since when — or null
+ *  when nothing in the task is asking.
+ *
+ *  Deliberately independent of `getTaskAttentionState`: that function reports a
+ *  single prioritized status, so an exited-non-zero agent (`error`) or a review
+ *  flag hides a question another agent is still blocked on. The sidebar tray
+ *  and mobile status sync read this instead. The desktop-notification watcher
+ *  still classifies `needs_input` from the attention state and inherits that
+ *  masking. */
+export function getTaskOpenQuestion(taskId: string): TaskOpenQuestion | null {
+  return getTaskOpenQuestions(taskId)[0] ?? null;
+}
+
+/** Every unanswered agent, independently of errors, review flags, and other askers. */
+export function getTaskOpenQuestions(taskId: string): TaskOpenQuestion[] {
+  const asking = questionAgents(); // reactive read
+  const task = store.tasks[taskId];
+  if (!task) return [];
+
+  const questions: TaskOpenQuestion[] = [];
+  const runningAgentIds = task.agentIds.filter(
+    (id) => store.agents[id]?.status === 'running' || isAgentChat(task, id),
+  );
+  for (const agentId of new Set([...runningAgentIds, ...task.shellAgentIds])) {
+    const since = agentQuestionSince(agentId, asking);
+    if (since === undefined) continue;
+    questions.push({ agentId, since });
+  }
+  return questions.sort((a, b) => b.since - a.since);
+}
+
+function agentQuestionSince(agentId: string, asking: ReadonlySet<string>): number | undefined {
+  const agent = store.agents[agentId];
+  if (agent && isAgentChat(store.tasks[agent.taskId], agentId))
+    return agent.chatState?.requests.at(-1)?.since;
+  const hook = getAgentHookStatus(agentId);
+  if (hook?.state === 'waiting') return hook.since;
+  if (hook?.state === 'working' || !asking.has(agentId)) return undefined;
+  // The asking set and the onset map are separate structures kept in step by
+  // `updateQuestionState`, their sole writer. This is the one place they meet,
+  // so it is the one place that has to tolerate them drifting apart.
+  return questionSinceByAgent.get(agentId);
 }
 
 // --- Agent activity tracking ---
@@ -464,6 +617,15 @@ const [activeAgents, setActiveAgents] = createSignal<Set<string>>(new Set());
 // AI agents routinely go silent for 10-30s during normal work (thinking,
 // API calls, tool use), so this needs to be long enough to cover those pauses.
 const IDLE_TIMEOUT_MS = 15_000;
+// A visible agent prompt that is not the last line (Claude's input box, Gemini's
+// composer) can stay on screen mid-turn. Working agents keep repainting spinners
+// and elapsed timers (at least once per second), so a prompt followed by this
+// much silence is idle. Mirrors herdr's pending-idle confirmation.
+const PROMPT_IDLE_CONFIRM_MS = 2_000;
+// Gemini and Copilot keep their composer visible beside this hint while working
+// (herdr's working marker for both). Checked per chunk, not in the shared busy
+// patterns, so a hint left in the tail cannot stall auto-send after the turn.
+const WORKING_CANCEL_HINT_PATTERN = /\besc\s+(?:again\s+)?(?:to\s+)?cancel\b/i;
 // Throttle reactive updates while already active.
 const THROTTLE_MS = 1_000;
 
@@ -500,14 +662,16 @@ function removeFromActive(agentId: string): void {
   });
 }
 
-function resetIdleTimer(agentId: string): void {
+function resetIdleTimer(agentId: string, timeoutMs = IDLE_TIMEOUT_MS): void {
   const state = getAgentState(agentId);
   state.lastIdleResetAt = Date.now();
+  state.idleConfirmPending = timeoutMs < IDLE_TIMEOUT_MS;
   if (state.idleTimer !== undefined) clearTimeout(state.idleTimer);
   state.idleTimer = setTimeout(() => {
     removeFromActive(agentId);
     state.idleTimer = undefined;
-  }, IDLE_TIMEOUT_MS);
+    state.idleConfirmPending = false;
+  }, timeoutMs);
 }
 
 function cancelPendingAnalysis(state: AgentTrackingState): void {
@@ -560,6 +724,9 @@ export function markAgentSpawned(agentId: string): void {
   state.lastAnalysisAt = undefined;
   cancelPendingAnalysis(state);
   state.lastDataAt = Date.now();
+  setLastOutputAt(agentId, undefined);
+  // This also runs on reattachment. Main launch lifecycle observations alone
+  // invalidate hook evidence for an actual replacement process.
   addToActive(agentId);
   resetIdleTimer(agentId);
 }
@@ -586,14 +753,18 @@ function tryAutoTrust(agentId: string, rawTail: string): boolean {
   if (!looksLikeTrustDialog(rawTail)) {
     return false;
   }
-  if (TRUST_EXCLUSION_KEYWORDS.test(stripAnsi(rawTail))) {
+  const state = getAgentState(agentId);
+  if (blocksAutoTrustFor(state, rawTail)) {
     return false;
   }
 
-  const state = getAgentState(agentId);
   // Short delay to let the TUI finish rendering before sending Enter.
   state.autoTrustTimer = setTimeout(() => {
     state.autoTrustTimer = undefined;
+    // The dialog may have been redrawn during the delay (e.g. focus moved to
+    // "No, exit"); Enter must only confirm what is focused now.
+    const tail = state.outputTailBuffer;
+    if (!looksLikeTrustDialog(tail) || blocksAutoTrustFor(state, tail)) return;
     // Clear stale trust-dialog content (including ❯ selection cursor) so
     // chunkContainsAgentPrompt only fires on the agent's real prompt.
     state.outputTailBuffer = '';
@@ -640,6 +811,7 @@ function analyzeAgentOutput(agentId: string): void {
   const state = getAgentState(agentId);
   const rawTail = state.outputTailBuffer;
   let hasQuestion = looksLikeQuestion(rawTail);
+  if (state.autoTrustBlocked && !looksLikeTrustDialog(rawTail)) state.autoTrustBlocked = undefined;
 
   // Suppress question state for trust dialogs when auto-trust is enabled —
   // whether we just scheduled auto-trust or it's already pending/in cooldown.
@@ -649,7 +821,7 @@ function analyzeAgentOutput(agentId: string): void {
   // Also force this for coordinator sub-tasks with skipPermissions — they run
   // autonomously and trust dialogs must never block them regardless of the setting.
   if (hasQuestion && (store.autoTrustFolders || isAutoTrustForced(agentId))) {
-    if (looksLikeTrustDialog(rawTail) && !TRUST_EXCLUSION_KEYWORDS.test(stripAnsi(rawTail))) {
+    if (looksLikeTrustDialog(rawTail) && !blocksAutoTrustFor(state, rawTail)) {
       // Auto-trust may not have fired yet if this is the first analysis for
       // an active task that just became visible — trigger it now.
       tryAutoTrust(agentId, rawTail);
@@ -712,23 +884,41 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
     now,
   );
 
-  // Extract last non-empty line from recent output for prompt matching.
-  // This check is UNTHROTTLED — it's cheap (single line, 6 patterns) and
-  // important for responsive idle detection.
-  const tail = combined.slice(-200);
-  let lastLine = '';
-  let searchEnd = tail.length;
-  while (searchEnd > 0) {
-    const nlIdx = tail.lastIndexOf('\n', searchEnd - 1);
-    const candidate = tail.slice(nlIdx + 1, searchEnd).trim();
-    if (candidate.length > 0) {
-      lastLine = candidate;
-      break;
-    }
-    searchEnd = nlIdx >= 0 ? nlIdx : 0;
-  }
+  // Focus, cursor and mode updates are terminal housekeeping, not agent work.
+  // Keep tracking their raw bytes above, but do not change or extend activity.
+  if (!normalizeForComparison(text)) return;
+  // The tooltip shows seconds; writing per chunk re-runs it many times a second.
+  if (now - (lastOutputAt[agentId] ?? 0) >= 1_000) setLastOutputAt(agentId, now);
 
-  if (looksLikePrompt(lastLine)) {
+  const latestOutput = stripAnsi(text.slice(Math.max(0, findLastFrameStart(text))));
+  const frame = stripAnsi(combined.slice(Math.max(0, findLastFrameStart(combined))));
+  const shortcutsFooter = CODEX_SHORTCUTS_FOOTER_PATTERN.test(latestOutput.trim());
+  // The composer and footer may arrive in separate PTY chunks. In that case
+  // keep startup/working indicators from the same frame in the readiness check.
+  const composerOutput = shortcutsFooter ? frame : latestOutput;
+  const codexComposer = looksLikeCodexComposer(composerOutput);
+  const readiness = getAgentPromptReadiness(composerOutput);
+  const canBeIdle = readiness.ready || readiness.reason === 'no_prompt';
+  // A separately delivered footer says nothing about the turn. Preserve both
+  // activity and its timer instead of reinterpreting a prompt from older output.
+  if (
+    CODEX_STATUS_FOOTER_PATTERN.test(latestOutput.trim()) ||
+    (shortcutsFooter && (!codexComposer || !canBeIdle))
+  )
+    return;
+
+  // A payload can contain multiple redraws; only the latest frame is current.
+  // Strip controls before splitting so a cursor-only line cannot hide a prompt.
+  const lines = frame
+    .slice(-1000)
+    .split(/\r\n?|\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  // Codex renders its model/worktree footer below the input. Only skip this
+  // known footer, never arbitrary output that followed an earlier prompt.
+  if (CODEX_STATUS_FOOTER_PATTERN.test(lines.at(-1) ?? '')) lines.pop();
+  const lastLine = lines.at(-1) ?? '';
+  if (canBeIdle && (looksLikePrompt(lastLine) || codexComposer)) {
     // Prompt detected — agent is idle. Remove from active set immediately.
     //
     // NOTE: do NOT cancel pendingAnalysis here.  TUI agents (Copilot CLI,
@@ -760,10 +950,21 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
     return;
   }
 
+  // Plain shells aren't agent composers — a Vim "-- INSERT --" status line or
+  // a Starship "❯" prompt can match AGENT_READY_TAIL_PATTERNS without the
+  // shell being between turns, so they keep the normal 15s idle timeout.
+  const isShellTerminal = !!(taskId && store.tasks[taskId]?.shellAgentIds.includes(agentId));
+  if (readiness.ready && !isShellTerminal && !WORKING_CANCEL_HINT_PATTERN.test(composerOutput)) {
+    addToActive(agentId);
+    resetIdleTimer(agentId, PROMPT_IDLE_CONFIRM_MS);
+    return;
+  }
+
   // Non-prompt output — agent is producing real work.
   if (activeAgents().has(agentId)) {
     const lastReset = state.lastIdleResetAt ?? 0;
-    if (now - lastReset < THROTTLE_MS) return;
+    // A pending prompt confirmation must not survive real work.
+    if (now - lastReset < THROTTLE_MS && !state.idleConfirmPending) return;
     resetIdleTimer(agentId);
     return;
   }
@@ -777,9 +978,13 @@ export function getAgentOutputTail(agentId: string): string {
   return agentStates.get(agentId)?.outputTailBuffer ?? '';
 }
 
-/** True when the agent is NOT producing output (e.g. sitting at a prompt). */
+/** True when the agent is not mid-turn (e.g. sitting at a prompt). Hook state
+ *  wins over output heuristics, as in the task status. */
 export function isAgentIdle(agentId: string): boolean {
-  return !activeAgents().has(agentId);
+  const agent = store.agents[agentId];
+  if (agent && isAgentChat(store.tasks[agent.taskId], agentId))
+    return agent.chatState?.status === 'ready';
+  return !isAgentWorking(agentId, activeAgents());
 }
 
 /** Lightweight busy marker — adds to active set + resets idle timer.
@@ -791,6 +996,7 @@ export function markAgentBusy(agentId: string): void {
 
 /** Clean up timers when an agent exits. */
 export function clearAgentActivity(agentId: string): void {
+  setLastOutputAt(agentId, undefined);
   const state = agentStates.get(agentId);
   if (state) {
     clearAutoTrustState(agentId);
@@ -801,37 +1007,97 @@ export function clearAgentActivity(agentId: string): void {
   agentReadyCallbacks.delete(agentId);
   removeFromActive(agentId);
   updateQuestionState(agentId, false);
+  clearAgentHookStatus(agentId);
 }
 
 // --- Derived status ---
 
 function isTaskReady(taskId: string): boolean {
   const git = store.taskGitStatus[taskId];
+  const prChecks = getPrChecks(taskId);
   return Boolean(
-    isGitStatusUsable(git) && git.has_committed_changes && !git.has_uncommitted_changes,
+    isGitStatusUsable(git) &&
+    git.has_committed_changes &&
+    !git.has_uncommitted_changes &&
+    prChecks?.overall !== 'failure' &&
+    !prChecks?.failing,
   );
 }
 
+/** `ready` only knows nothing failed, so name what the PR checks actually say:
+ *  pending CI is not ready to merge, and without a PR there is nothing to vouch for. */
+export function getReadyLabel(taskId: string): string {
+  const overall = getPrChecks(taskId)?.overall;
+  if (overall === 'success') return 'Ready to merge';
+  if (overall === 'pending') return 'CI running';
+  return 'Ready';
+}
+
+/** An agent exited with an error, or a running one reported that its turn
+ *  failed (API error, rate limit) and stopped working with its process still up. */
 function hasTaskAgentError(taskId: string): boolean {
   const task = store.tasks[taskId];
   if (!task) return false;
   return task.agentIds.some((id) => {
     const agent = store.agents[id];
+    if (agent && isAgentChat(task, id)) return !!agent.chatState?.error;
+    if (agent?.status === 'running') return getAgentHookStatus(id)?.event === 'StopFailure';
     if (agent?.status !== 'exited') return false;
     return agent.exitCode !== 0 || agent.signal !== null;
   });
 }
 
-function hasRunningTaskActivity(taskId: string, predicate: (id: string) => boolean): boolean {
+/** Hook state wins when present: a self-reported turn in flight is not a question,
+ *  however much the screen looks like one. Only once the turn has ended do the
+ *  heuristics get a say — login and trust prompts arrive with no hook at all. */
+function isAgentBlockedOnInput(agentId: string): boolean {
+  const agent = store.agents[agentId];
+  if (agent && isAgentChat(store.tasks[agent.taskId], agentId))
+    return !!agent.chatState?.requests.length;
+  const hook = getAgentHookStatus(agentId);
+  if (hook?.state === 'waiting') return true;
+  if (hook?.state === 'working') return false;
+  return isAgentAskingQuestion(agentId);
+}
+
+/** Same precedence for activity: output still streaming after `Stop` is the
+ *  agent redrawing its prompt, not work, and must not hold the task busy. */
+function isAgentWorking(agentId: string, active: ReadonlySet<string>): boolean {
+  const agent = store.agents[agentId];
+  if (agent && isAgentChat(store.tasks[agent.taskId], agentId))
+    return agent.chatState?.status === 'working' || agent.chatState?.status === 'starting';
+  const hook = getAgentHookStatus(agentId);
+  return hook ? hook.state === 'working' : active.has(agentId);
+}
+
+/** Between turns with nothing asked of the user, by the same hook-first
+ *  precedence as the task status rather than the raw output heuristics. */
+export function isAgentSettled(agentId: string): boolean {
+  return !isAgentWorking(agentId, activeAgents()) && !isAgentBlockedOnInput(agentId);
+}
+
+function hasRunningAgentActivity(taskId: string, predicate: (id: string) => boolean): boolean {
   const task = store.tasks[taskId];
   if (!task) return false;
 
-  return (
-    task.agentIds.some((id) => {
-      const agent = store.agents[id];
-      return agent?.status === 'running' && predicate(id);
-    }) || task.shellAgentIds.some((id) => predicate(id))
-  );
+  return task.agentIds.some((id) => {
+    const agent = store.agents[id];
+    return (agent?.status === 'running' || isAgentChat(task, id)) && predicate(id);
+  });
+}
+
+function hasShellActivity(taskId: string, predicate: (id: string) => boolean): boolean {
+  return store.tasks[taskId]?.shellAgentIds.some((id) => predicate(id)) ?? false;
+}
+
+function hasRunningTaskActivity(taskId: string, predicate: (id: string) => boolean): boolean {
+  return hasRunningAgentActivity(taskId, predicate) || hasShellActivity(taskId, predicate);
+}
+
+/** Working agents can coexist with a question or review in another pane. */
+export function isTaskWorking(taskId: string): boolean {
+  const active = activeAgents();
+  return hasRunningAgentActivity(taskId, (id) => isAgentWorking(id, active));
 }
 
 export function getTaskAttentionState(taskId: string): TaskAttentionState {
@@ -842,21 +1108,48 @@ export function getTaskAttentionState(taskId: string): TaskAttentionState {
 
   if (task.needsReview) return 'review';
 
-  const hasQuestion = hasRunningTaskActivity(taskId, isAgentAskingQuestion);
+  const hasQuestion = hasRunningTaskActivity(taskId, isAgentBlockedOnInput);
   if (hasQuestion) return 'needs_input';
 
-  const steps = task.stepsContent;
-  if (steps && steps.length > 0) {
-    const latest = steps[steps.length - 1];
-    if (latest.status === 'awaiting_review') return 'review';
-  }
-
-  const active = activeAgents(); // reactive read
-  const hasActive = hasRunningTaskActivity(taskId, (id) => active.has(id));
-  if (hasActive) return 'active';
+  if (isTaskWorking(taskId)) return 'active';
 
   if (isTaskReady(taskId)) return 'ready';
+
+  // A plain terminal producing output is not agent work, so it reports itself
+  // separately and ranks below `ready` — otherwise a dev server or watcher
+  // masks a task that is actually finished for as long as it keeps printing.
+  const active = activeAgents(); // reactive read
+  if (hasShellActivity(taskId, (id) => active.has(id))) return 'shell_busy';
   return 'idle';
+}
+
+/** Attention is an aggregate; name the pane supplying its activity evidence. */
+export function getTaskActivityTooltip(taskId: string): string {
+  const task = store.tasks[taskId];
+  if (!task) return 'Activity evidence unavailable';
+  const ids = task.agentIds;
+  const active = activeAgents();
+  const agentId =
+    ids.find(isAgentBlockedOnInput) ??
+    ids.find((id) => isAgentWorking(id, active)) ??
+    ids.find((id) => getAgentHookStatus(id)) ??
+    ids[0];
+  if (!agentId) return 'Activity evidence unavailable';
+  const hook = getAgentHookStatus(agentId);
+  // A terminal question after a finished hook turn belongs to terminal evidence.
+  if (hook && !(hook.state === 'done' && isAgentBlockedOnInput(agentId))) {
+    return formatAgentHookTooltip({ ...hook, agentId });
+  }
+  const outputAt = lastOutputAt[agentId];
+  if (outputAt !== undefined) {
+    const activity = isAgentBlockedOnInput(agentId)
+      ? 'Waiting for input'
+      : isAgentWorking(agentId, active)
+        ? 'Recent terminal activity'
+        : 'No ongoing activity detected';
+    return `${getAgentActivitySubject(agentId)} · ${activity} · Activity inferred from terminal output · observed ${new Date(outputAt).toLocaleString()}`;
+  }
+  return `${getAgentActivitySubject(agentId)} · Activity unknown · process state (${store.agents[agentId]?.status ?? 'unknown'}) · observation time unknown`;
 }
 
 export function taskNeedsAttention(taskId: string): boolean {
@@ -873,15 +1166,10 @@ export function getTaskDotStatus(taskId: string): TaskDotStatus {
   const task = store.tasks[taskId];
   if (!task) return 'waiting';
 
-  const steps = task.stepsContent;
-  if (steps && steps.length > 0) {
-    const latest = steps[steps.length - 1];
-    if (latest.status === 'awaiting_review') return 'review';
-  }
-
   const active = activeAgents(); // reactive read
-  const hasActive = hasRunningTaskActivity(taskId, (id) => active.has(id));
-  if (hasActive) return 'busy';
+  // Shell panes are deliberately excluded: `busy` reads as "the agent is doing
+  // something", which a terminal running a dev server is not.
+  if (hasRunningAgentActivity(taskId, (id) => isAgentWorking(id, active))) return 'busy';
 
   if (task.needsReview) return 'review';
 
@@ -937,9 +1225,52 @@ function scheduleGitStatusStaleTimer(taskId: string, refreshedAt: number): void 
   gitStatusStaleTimers.set(taskId, timer);
 }
 
+// Per-task divergence sightings for the two-snapshot debounce. Not reactive on
+// purpose: entries only change together with a store.taskGitStatus write, so
+// getBranchDivergence stays reactive through the snapshot it reads.
+const divergenceObservations = new Map<string, DivergenceObservation | null>();
+
+/**
+ * Confirmed divergence between the branch a task tracks and the branch the
+ * agent actually put its worktree on. Null until the same divergence has
+ * survived two consecutive git-status snapshots (agents switch branches
+ * transiently mid-rebase).
+ */
+export function getBranchDivergence(taskId: string): BranchDivergence | null {
+  const task = store.tasks[taskId];
+  const snapshot = store.taskGitStatus[taskId];
+  if (!task || !snapshot) return null;
+  const divergence = detectBranchDivergence(task, snapshot);
+  if (!divergence) return null;
+  const obs = divergenceObservations.get(taskId);
+  return obs && obs.key === divergenceKey(divergence) && snapshot.refreshedAt > obs.firstSeenAt
+    ? divergence
+    : null;
+}
+
 export function clearTaskGitStatusTracking(taskId: string): void {
   clearGitStatusStaleTimer(taskId);
   gitRefreshVersions.delete(taskId);
+  divergenceObservations.delete(taskId);
+}
+
+/** Auto-adopt a confirmed divergent branch as the task branch. Runs after
+ *  every successful snapshot write; the two-snapshot debounce inside
+ *  getBranchDivergence keeps transient checkouts (rebases, bisects) from
+ *  adopting. The banner on the task explains what happened and offers undo;
+ *  an undone (dismissed) branch is never re-adopted. */
+function maybeAdoptDivergentBranch(taskId: string): void {
+  const divergence = getBranchDivergence(taskId);
+  if (divergence?.kind !== 'switched' || !divergence.adoptable) return;
+  const task = store.tasks[taskId];
+  // Don't touch branch identity mid-close: cleanup deletes by branch name.
+  if (!task || task.closingStatus) return;
+  logInfo('taskStatus', 'Auto-adopting branch the agent switched the worktree to', {
+    taskId,
+    from: task.branchName,
+    to: divergence.branch,
+  });
+  adoptTaskBranch(taskId, divergence.branch);
 }
 
 async function refreshTaskGitStatus(
@@ -962,6 +1293,7 @@ async function refreshTaskGitStatus(
             has_committed_changes: false,
             has_uncommitted_changes: false,
             current_branch: null,
+            base_branch: null,
             refreshedAt: 0,
             refreshing: true,
           },
@@ -978,9 +1310,30 @@ async function refreshTaskGitStatus(
     const next: TaskGitStatusSnapshot = {
       ...status,
       refreshedAt,
+      // Solid's setStore MERGES objects at a path instead of replacing them,
+      // so flags from earlier snapshots survive any write that omits them. A
+      // single failed refresh (error), 5-minute polling gap (stale), or
+      // invalidateExisting pass (refreshing) would otherwise poison the
+      // snapshot for the rest of the session, permanently suppressing branch
+      // divergence detection and the ready status. `error: undefined` deletes
+      // the key on merge.
+      refreshing: false,
+      stale: false,
+      error: undefined,
     };
+    // Update the divergence debounce before the snapshot write so consumers
+    // reacting to the write read a consistent observation.
+    divergenceObservations.set(
+      taskId,
+      trackDivergence(
+        divergenceObservations.get(taskId) ?? null,
+        detectBranchDivergence(task, next),
+        refreshedAt,
+      ),
+    );
     setStore('taskGitStatus', taskId, next);
     scheduleGitStatusStaleTimer(taskId, refreshedAt);
+    maybeAdoptDivergentBranch(taskId);
   } catch (err) {
     if (!store.tasks[taskId] || !isCurrentGitRefresh(taskId, version)) return;
     clearGitStatusStaleTimer(taskId);
@@ -998,6 +1351,7 @@ async function refreshTaskGitStatus(
             has_committed_changes: false,
             has_uncommitted_changes: false,
             current_branch: null,
+            base_branch: null,
             refreshedAt: 0,
             refreshing: false,
             error: errMessage(err),

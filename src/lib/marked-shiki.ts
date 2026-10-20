@@ -1,7 +1,9 @@
 import DOMPurify from 'dompurify';
-import { Marked, type Tokens } from 'marked';
+import { SANITIZE_UNTRUSTED } from './sanitize';
+import { Marked, type RendererObject, type Tokens } from 'marked';
 import { createSignal, createEffect } from 'solid-js';
 import { highlightLines } from './shiki-highlighter';
+import { tableScrollRenderer } from './marked-table';
 
 /**
  * Render markdown to HTML with Shiki syntax highlighting for fenced code blocks.
@@ -10,7 +12,11 @@ import { highlightLines } from './shiki-highlighter';
  *  1. Walk tokens to collect code blocks, highlight them in parallel via Shiki.
  *  2. Render markdown, substituting highlighted HTML for each code block.
  */
-export async function renderMarkdownWithHighlighting(markdown: string): Promise<string> {
+export async function renderMarkdownWithHighlighting(
+  markdown: string,
+  /** Further overrides; they must not replace `code` or `table`, which this owns. */
+  extraRenderer: RendererObject = {},
+): Promise<string> {
   const marked = new Marked();
 
   // First pass — collect code blocks
@@ -26,6 +32,8 @@ export async function renderMarkdownWithHighlighting(markdown: string): Promise<
   // Second pass — render with a custom renderer that swaps in highlighted HTML
   let blockIndex = 0;
   const renderer = {
+    ...extraRenderer,
+    ...tableScrollRenderer,
     code(token: Tokens.Code): string {
       // Mermaid blocks → render as placeholder for client-side rendering
       if (token.lang === 'mermaid') {
@@ -44,7 +52,7 @@ export async function renderMarkdownWithHighlighting(markdown: string): Promise<
 
   marked.use({ renderer });
   const raw = marked.parser(tokens);
-  return DOMPurify.sanitize(raw, { ADD_ATTR: ['data-lang'] });
+  return DOMPurify.sanitize(raw, SANITIZE_UNTRUSTED);
 }
 
 interface TokenLike {
@@ -112,10 +120,13 @@ export function createHighlightedMarkdown(source: () => string | undefined): () 
       })
       .catch(() => {
         if (thisGen === generation) {
+          const plain = new Marked();
+          plain.use({ renderer: tableScrollRenderer });
           setHtml(
-            DOMPurify.sanitize(new Marked().parse(content, { async: false }) as string, {
-              ADD_ATTR: ['data-lang'],
-            }),
+            DOMPurify.sanitize(
+              plain.parse(content, { async: false }) as string,
+              SANITIZE_UNTRUSTED,
+            ),
           );
         }
       });

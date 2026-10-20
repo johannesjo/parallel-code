@@ -1,11 +1,8 @@
-export const MIN_COORDINATOR_CONCURRENT_TASKS = 1;
-export const MAX_COORDINATOR_CONCURRENT_TASKS = 20;
-export const DEFAULT_COORDINATOR_CONCURRENT_TASKS = 3;
-
-export function clampCoordinatorConcurrentTasks(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_COORDINATOR_CONCURRENT_TASKS;
-  return Math.min(
-    MAX_COORDINATOR_CONCURRENT_TASKS,
-    Math.max(MIN_COORDINATOR_CONCURRENT_TASKS, Math.trunc(value)),
-  );
-}
+// Implementation lives in electron/shared so the main-process coordinator can
+// enforce the same limits it re-exports here for the renderer.
+export {
+  MIN_COORDINATOR_CONCURRENT_TASKS,
+  MAX_COORDINATOR_CONCURRENT_TASKS,
+  DEFAULT_COORDINATOR_CONCURRENT_TASKS,
+  clampCoordinatorConcurrentTasks,
+} from '../../electron/shared/coordinator-limits';

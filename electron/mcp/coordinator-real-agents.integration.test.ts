@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { Coordinator } from './coordinator.js';
+import type { Notify } from '../ipc/notify.js';
 import { writeToAgent } from '../ipc/pty.js';
 
 const RUN_REAL_AGENT_SMOKE = process.env.RUN_REAL_AGENT_SMOKE === '1';
@@ -28,15 +29,10 @@ interface RendererEvent {
   payload: unknown;
 }
 
-function createMockWindow(events: RendererEvent[]): import('electron').BrowserWindow {
-  return {
-    isDestroyed: () => false,
-    webContents: {
-      send: (channel: string, payload: unknown) => {
-        events.push({ channel, payload });
-      },
-    },
-  } as unknown as import('electron').BrowserWindow;
+function createMockNotify(events: RendererEvent[]): Notify {
+  return (channel, payload) => {
+    events.push({ channel, payload });
+  };
 }
 
 function runGit(cwd: string, args: string[]): void {
@@ -63,6 +59,11 @@ function which(command: string): string | null {
   }
 }
 
+// REAL_CODEX_EXTRA_ARGS adds flags, e.g. --no-daemon where its socket can't be created.
+function codexExtraArgs(): string[] {
+  return process.env.REAL_CODEX_EXTRA_ARGS?.split(/\s+/).filter(Boolean) ?? [];
+}
+
 function realAgentProfiles(): RealAgentProfile[] {
   const profiles: RealAgentProfile[] = [];
   const codex = which('codex');
@@ -70,7 +71,7 @@ function realAgentProfiles(): RealAgentProfile[] {
     profiles.push({
       name: 'codex',
       command: codex,
-      args: ['--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen'],
+      args: ['--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen', ...codexExtraArgs()],
     });
   }
 
@@ -174,7 +175,7 @@ describeRealAgents('Coordinator real agent startup smoke', () => {
       }
 
       try {
-        coordinator.setWindow(createMockWindow(rendererEvents));
+        coordinator.setNotify(createMockNotify(rendererEvents));
         coordinator.setDefaultProject('proj-1', repo);
         coordinator.registerCoordinator('coord-1', 'proj-1', {
           branchName: 'main',
@@ -229,4 +230,117 @@ describeRealAgents('Coordinator real agent startup smoke', () => {
   it('has at least one installed real agent when enabled', () => {
     expect(realAgentProfiles().length).toBeGreaterThan(0);
   });
+});
+
+const describeRealCodex =
+  RUN_REAL_AGENT_SMOKE && RUN_REAL_AGENT_DANGEROUS && which('codex') ? describe : describe.skip;
+
+// Codex on the alternate screen, as the app launches it, repaints only changed
+// cells, so a turn ends without its prompt reappearing in the output stream.
+// With an isolated HOME, point CODEX_HOME at an authenticated Codex home.
+describeRealCodex('Coordinator real Codex follow-ups', () => {
+  it('waits for idle after each turn and sends follow-ups', async () => {
+    const repo = createRepo();
+    const tempHome = RUN_REAL_AGENT_HOST_HOME
+      ? undefined
+      : mkdtempSync(join(tmpdir(), 'parallel-code-test-home-'));
+    const origHome = process.env.HOME;
+    if (tempHome) process.env.HOME = tempHome;
+    const coordinator = new Coordinator();
+    let taskId: string | undefined;
+    const reply = (word: string) =>
+      `Do not edit files, run commands or call tools. Reply with exactly ${word} and nothing else.`;
+    try {
+      const events: RendererEvent[] = [];
+      coordinator.setNotify(createMockNotify(events));
+      coordinator.setDefaultProject('proj-1', repo);
+      coordinator.registerCoordinator('coord-1', 'proj-1', {
+        branchName: 'main',
+        worktreePath: repo,
+      });
+      coordinator.setCoordinatorSpawnDefaults('coord-1', which('codex') ?? 'codex', [
+        '--dangerously-bypass-approvals-and-sandbox',
+        ...codexExtraArgs(),
+      ]);
+      const task = await coordinator.createTask({
+        name: 'codex follow-up smoke',
+        prompt: reply('ALPHA_TOKEN'),
+        coordinatorTaskId: 'coord-1',
+      });
+      taskId = task.id;
+      await acceptStartupTrustDialogIfPresent(coordinator, task.id, task.agentId);
+      await waitForInitialPromptDelivery(events, task.id, coordinator);
+
+      for (const word of ['ALPHA_TOKEN', 'BRAVO_TOKEN', 'CHARLIE_TOKEN']) {
+        if (word !== 'ALPHA_TOKEN') {
+          await expect(coordinator.sendPrompt(task.id, reply(word))).resolves.toEqual({
+            queued: false,
+          });
+        }
+        const idle = await coordinator.waitForIdle(task.id, 90_000);
+        expect(idle, `Last output:\n${coordinator.getTaskOutput(task.id).slice(-2048)}`).toEqual({
+          reason: 'idle',
+        });
+        // Readable screen text, with the reply as its own line.
+        expect(coordinator.getTaskOutput(task.id)).toMatch(new RegExp(`^• ${word}$`, 'm'));
+      }
+
+      // A long turn with a tool call, and a follow-up queued while it runs:
+      // the follow-up must reach the screen only after the reply has finished.
+      const seenAt: { reply?: number; followUp?: number } = {};
+      let approvedAt = 0;
+      const poll = setInterval(() => {
+        const output = coordinator.getTaskOutput(task.id);
+        // Where Codex's sandbox cannot start, it asks before running a command.
+        if (
+          /Would you like to run the following command\?/.test(output) &&
+          Date.now() - approvedAt > 2_000
+        ) {
+          approvedAt = Date.now();
+          writeToAgent(task.agentId, 'y');
+        }
+        if (seenAt.reply === undefined && /^\s*EERTKROW\s*$/m.test(output)) {
+          seenAt.reply = Date.now();
+        }
+        if (seenAt.followUp === undefined && output.includes('DELTA_TOKEN')) {
+          seenAt.followUp = Date.now();
+        }
+      }, 100);
+      try {
+        // The command runs silently for a while, as long tool calls do.
+        const long = coordinator.sendPrompt(
+          task.id,
+          'Run `sleep 8; ls` in the shell, then explain git worktrees in about 150 words, then end with a final line containing only the word WORKTREE reversed, in capitals. Do not edit files.',
+        );
+        await expect(coordinator.sendPrompt(task.id, reply('DELTA_TOKEN'))).resolves.toEqual({
+          queued: true,
+        });
+        await expect(long).resolves.toEqual({ queued: false });
+        // The first idle is the end of the long turn, not a pause in it.
+        await expect(coordinator.waitForIdle(task.id, 120_000)).resolves.toEqual({
+          reason: 'idle',
+        });
+        expect(coordinator.getTaskOutput(task.id)).toMatch(/^\s*EERTKROW\s*$/m);
+        for (
+          let turn = 0;
+          turn < 2 && !/^• DELTA_TOKEN$/m.test(coordinator.getTaskOutput(task.id));
+          turn++
+        ) {
+          await expect(coordinator.waitForIdle(task.id, 120_000)).resolves.toEqual({
+            reason: 'idle',
+          });
+        }
+      } finally {
+        clearInterval(poll);
+      }
+      expect(coordinator.getTaskOutput(task.id)).toMatch(/^• DELTA_TOKEN$/m);
+      expect(seenAt.reply, 'long reply finished on screen').toBeDefined();
+      expect(seenAt.followUp).toBeGreaterThan(seenAt.reply ?? Infinity);
+    } finally {
+      process.env.HOME = origHome;
+      if (taskId) await coordinator.closeTask(taskId).catch(() => undefined);
+      rmSync(repo, { recursive: true, force: true });
+      if (tempHome) rmSync(tempHome, { recursive: true, force: true });
+    }
+  }, 600_000);
 });

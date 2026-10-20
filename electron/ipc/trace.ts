@@ -24,6 +24,7 @@ const SAFE_FOR_TRACE: ReadonlySet<string> = new Set<string>([]);
 const NEVER_SAFE: ReadonlySet<string> = new Set<string>([
   IPC.WriteToAgent,
   IPC.SetMinimaxApiKey,
+  IPC.SuperProductivitySetToken,
   IPC.AskAboutCode,
   IPC.SaveAppState,
   IPC.LoadAppState,
@@ -33,6 +34,9 @@ const NEVER_SAFE: ReadonlySet<string> = new Set<string>([
   IPC.LoadKeybindings,
   IPC.ShellOpenInEditor,
   IPC.ShellOpenFile,
+  // Carry the content of KANBAN.md.
+  IPC.ReadKanbanBoard,
+  IPC.WriteKanbanBoard,
   IPC.ShellReveal,
   IPC.ShellOpenExternal,
   IPC.DialogOpen,

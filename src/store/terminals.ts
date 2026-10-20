@@ -1,3 +1,4 @@
+import { matchesTaskProjectFilter } from './task-project-filter';
 import { produce } from 'solid-js/store';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
@@ -7,6 +8,7 @@ import { clearAgentActivity } from './taskStatus';
 import { triggerFocus, getTaskFocusedPanel } from './focused-panel';
 import type { Terminal } from './types';
 import { warn as logWarn } from '../lib/log';
+import { closeProjectPages } from './project-pages';
 
 let terminalCounter = 0;
 let lastCreateTime = 0;
@@ -28,9 +30,11 @@ export function createTerminal(): void {
   setStore('terminals', id, terminal);
   setStore('taskOrder', store.taskOrder.length, id);
   setStore('focusedPanel', id, 'terminal');
+  closeProjectPages();
   setStore('activeTaskId', id);
   setStore('activeAgentId', null);
   setStore('sidebarFocused', false);
+  setStore('newTaskPanelFocused', false);
 
   requestAnimationFrame(() => {
     document
@@ -52,11 +56,11 @@ export async function closeTerminal(terminalId: string): Promise<void> {
   });
   clearAgentActivity(terminal.agentId);
 
-  const idx = store.taskOrder.indexOf(terminalId);
+  const order = store.taskOrder.filter(matchesTaskProjectFilter);
+  const idx = order.indexOf(terminalId);
 
   // Switch active panel to neighbor before animation
   if (store.activeTaskId === terminalId) {
-    const order = store.taskOrder;
     const neighborIdx = idx > 0 ? idx - 1 : idx + 1;
     const neighbor = order[neighborIdx] ?? null;
     setStore('activeTaskId', neighbor);
@@ -76,9 +80,9 @@ export async function closeTerminal(terminalId: string): Promise<void> {
         cleanupPanelEntries(s, terminalId);
 
         if (s.activeTaskId === terminalId) {
-          s.activeTaskId = s.taskOrder[0] ?? null;
+          s.activeTaskId = s.taskOrder.find(matchesTaskProjectFilter) ?? null;
           const firstTask = s.activeTaskId ? s.tasks[s.activeTaskId] : null;
-          s.activeAgentId = firstTask?.agentIds[0] ?? null;
+          s.activeAgentId = firstTask ? effectiveAgentId(firstTask) : null;
         }
       }),
     );

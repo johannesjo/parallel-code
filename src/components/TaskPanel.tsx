@@ -1,47 +1,95 @@
-import { Show, createSignal, createEffect, onMount, onCleanup, batch } from 'solid-js';
+import { DelegationPanel } from './DelegationPanel';
+import { DetachFromParentButton } from './DetachFromParentButton';
+import { canUsePeerComposer, usePeerComposer } from '../store/delegation';
+import {
+  Show,
+  createSignal,
+  createEffect,
+  createMemo,
+  lazy,
+  on,
+  onMount,
+  onCleanup,
+  batch,
+  untrack,
+} from 'solid-js';
 import {
   store,
   retryCloseTask,
-  setActiveTask,
+  activateTaskFromPointer,
+  uncollapseTask,
   setActiveAgent,
   clearInitialPrompt,
   clearPrefillPrompt,
   getProject,
   setTaskFocusedPanel,
-  triggerFocus,
   clearPendingAction,
   showNotification,
   setTaskSplitMode,
+  isTaskCanvasVisible,
+  referenceTourCard,
+  openCanvasDocument,
 } from '../store/store';
+import { markFeatureHintSeen } from '../store/onboarding';
 import { useFocusRegistration } from '../lib/focus-registration';
+import { isTaskColumnHighlighted, scheduleTaskFocus } from '../store/focused-panel';
 import { ResizablePanel, type PanelChild } from './ResizablePanel';
+import { CANVAS_DEFAULT_WIDTH, CANVAS_MIN_WIDTH } from '../lib/layout-sizes';
 import type { EditableTextHandle } from './EditableText';
 import { PromptInput, type PromptInputHandle } from './PromptInput';
 import { CloseTaskDialog } from './CloseTaskDialog';
-import { MergeDialog } from './MergeDialog';
-import { PushDialog } from './PushDialog';
+import { FinishDialog, type FinishAction } from './FinishDialog';
+import { PullRequestDialog } from './PullRequestDialog';
 import { DiffViewerDialog } from './DiffViewerDialog';
 import { PlanViewerDialog } from './PlanViewerDialog';
 import { EditProjectDialog } from './EditProjectDialog';
 import { TaskTitleBar } from './TaskTitleBar';
 import { TaskBranchInfoBar } from './TaskBranchInfoBar';
+import { TaskBranchAdoptionBanner } from './TaskBranchAdoptionBanner';
+import { TaskSuperProductivityBanner } from './TaskSuperProductivityBanner';
 import { TaskNotesBody } from './TaskNotesBody';
 import { TaskChangedFilesSection } from './TaskChangedFilesSection';
 import { isCommitHashSelection, type CommitSelection } from './CommitNavBar';
 import { TaskShellSection } from './TaskShellSection';
-import { TaskStepsSection } from './TaskStepsSection';
-import { TaskCurrentStateLine } from './TaskCurrentStateLine';
+import { TaskCanvasPanel } from './TaskCanvasPanel';
+import { TaskBriefBar } from './TaskBrief';
 import { TaskAITerminal } from './TaskAITerminal';
+import { isAgentChat } from '../store/agent-chat';
 import { TaskClosingOverlay } from './TaskClosingOverlay';
 import { invoke } from '../lib/ipc';
+import { isWindowVisible } from '../lib/windowVisibility';
+import { errMessage } from '../lib/log';
 import { IPC } from '../../electron/ipc/channels';
+import type { DocumentSnapshot } from '../documents/types';
 import { SubTaskStrip } from './SubTaskStrip';
 import { theme } from '../lib/theme';
 import { isMac } from '../lib/platform';
 import type { Task } from '../store/types';
 import type { CommitInfo } from '../ipc/types';
+import type { TranscriptMarks } from '../investigation/transcript';
 import { isLandedTaskState } from '../store/landing';
 import { shouldPollTaskCommits } from './task-commit-polling';
+import { ACTIVE_TASK_SETTLE_MS, createSettledFlag } from '../lib/settled-flag';
+import { devQualityFindingProvider } from './dev-quality-finding-fixture';
+import { createEslintQualityFindingProvider } from '../lib/eslint-quality-findings';
+import { createChangeTour } from '../lib/create-change-tour';
+import {
+  createUnderstandingTour,
+  documentTourKind,
+  planTourSubject,
+  tourInputSubject,
+  type UnderstandingTourInput,
+} from '../lib/create-understanding-tour';
+import { parseAgentTour } from '../lib/understanding-tour';
+import { isTourFilePath, parseTourFile } from '../lib/tour-file';
+import { UnderstandingTourDialog } from './UnderstandingTourDialog';
+import { getTaskDiffBaseBranch } from '../lib/load-task-diff';
+
+// Lazy: d3 and the graph editors only load once a task opens one of these tabs.
+const TaskMindMap = lazy(() => import('./TaskMindMap').then((m) => ({ default: m.TaskMindMap })));
+const TaskReasoningGraphHost = lazy(() =>
+  import('./TaskReasoningGraphHost').then((m) => ({ default: m.TaskReasoningGraphHost })),
+);
 
 interface TaskPanelProps {
   task: Task;
@@ -51,11 +99,29 @@ interface TaskPanelProps {
 // Panels that auto-grow to their content share one ceiling so a long body
 // can't take over the column: never taller than the panel's own px cap, and
 // never taller than 33vh. User drag pins intentionally bypass this.
-const STEPS_PANEL_AUTO_MAX = 'min(240px, 33vh)';
 const CHANGED_FILES_PANEL_AUTO_MAX = 'min(300px, 33vh)';
 const NOTES_PANEL_AUTO_MAX = 'min(400px, 33vh)';
+// Last agent-tour revision shown per task. Collapsing and expanding a task
+// remounts its panel, which must not reopen a tour the user already dismissed.
+const shownAgentTourRevisions = new WeakMap<Task, number>();
 
 export function TaskPanel(props: TaskPanelProps) {
+  const autoSendChildUpdates = () => props.task.autoSendChildUpdates ?? props.task.coordinatorMode;
+  const eslintQualityFindingProvider = createEslintQualityFindingProvider(
+    () => props.task.worktreePath,
+  );
+  // Git checks wait until the task stays active; UI and focus react at once.
+  const isSettledActive = createSettledFlag(() => props.isActive, ACTIVE_TASK_SETTLE_MS);
+  // Alt+Arrow also scrolls tiles past; only one that stays in view polls commits.
+  const shouldPollCommits = createSettledFlag(
+    () =>
+      shouldPollTaskCommits(
+        store.focusMode,
+        props.isActive,
+        store.focusMode ? undefined : store.taskViewportVisibility[props.task.id],
+      ),
+    ACTIVE_TASK_SETTLE_MS,
+  );
   const [showCloseConfirm, setShowCloseConfirm] = createSignal(false);
   const [planFullscreen, setPlanFullscreen] = createSignal(false);
 
@@ -63,9 +129,9 @@ export function TaskPanel(props: TaskPanelProps) {
   const [nowMs, setNowMs] = createSignal(Date.now());
   createEffect(() => {
     const n = props.task.stagedNotification;
-    const hasActiveCountdown = Boolean(n && !n.userEdited);
-    if (!props.task.stepsEnabled && !hasActiveCountdown) return;
-    const id = window.setInterval(() => setNowMs(Date.now()), hasActiveCountdown ? 1_000 : 30_000);
+    const hasActiveCountdown = Boolean(autoSendChildUpdates() && n && !n.userEdited);
+    if (!hasActiveCountdown) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1_000);
     onCleanup(() => clearInterval(id));
   });
   const stagedCountdown = () => {
@@ -78,43 +144,314 @@ export function TaskPanel(props: TaskPanelProps) {
     return remaining > 0 ? `Auto-sending in ${remaining}s` : 'Sending when ready…';
   };
 
-  const [showMergeConfirm, setShowMergeConfirm] = createSignal(false);
-  const [showPushConfirm, setShowPushConfirm] = createSignal(false);
+  // null while the finish dialog is closed; otherwise the option it shows.
+  const [finishAction, setFinishAction] = createSignal<FinishAction | null>(null);
+  const [openPrUrl, setOpenPrUrl] = createSignal<string | null>(null);
   const [pushSuccess, setPushSuccess] = createSignal(false);
   const [pushing, setPushing] = createSignal(false);
   const isLandedTask = () => isLandedTaskState(props.task.landingState);
+  const canFinish = () => props.task.gitIsolation === 'worktree' && !isLandedTask();
+  // A running push is what the reopened dialog should show, whatever opened it.
+  const openFinish = (action: FinishAction) => {
+    if (canFinish()) setFinishAction(pushing() ? 'push' : action);
+  };
   let pushSuccessTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(pushSuccessTimer));
   const [diffScrollTarget, setDiffScrollTarget] = createSignal<string | null>(null);
   const [commitList, setCommitList] = createSignal<CommitInfo[]>([]);
   const [selectedCommit, setSelectedCommit] = createSignal<CommitSelection>(null);
+  const tour = createChangeTour();
+  // Tours generate in the background, so the entry button plus a notification
+  // are the only cues that one finished.
+  const understanding = createUnderstandingTour({
+    onReady: (subject) => showNotification(`Tour ready: ${subject}`),
+    onError: (message) => showNotification(`Tour failed: ${message}`),
+  });
+  const [understandingOpen, setUnderstandingOpen] = createSignal(false);
+  const tourBranchName = () =>
+    store.taskGitStatus[props.task.id]?.current_branch ?? props.task.branchName;
+  const diffBaseBranch = () =>
+    getTaskDiffBaseBranch(props.task.gitIsolation, props.task.baseBranch);
+  const [startTour, setStartTour] = createSignal(false);
+  const generateTour = () =>
+    void tour.generateForTask({
+      taskName: props.task.name,
+      worktreePath: props.task.worktreePath,
+      projectRoot: getProject(props.task.projectId)?.path,
+      branchName: tourBranchName(),
+      baseBranch: diffBaseBranch(),
+      selectedCommit: selectedCommit(),
+    });
+  const openOrGenerateTour = () => {
+    markFeatureHintSeen('change-tour');
+    if (tour.stops().length === 0) return generateTour();
+    setFinishAction(null);
+    setStartTour(true);
+    setDiffScrollTarget('__tour__');
+  };
+  const tourIdentity = createMemo(() =>
+    JSON.stringify([
+      props.task.id,
+      props.task.projectId,
+      props.task.worktreePath,
+      props.task.branchName,
+      diffBaseBranch(),
+      tourBranchName(),
+      selectedCommit(),
+    ]),
+  );
+  createEffect(() => {
+    void tourIdentity();
+    tour.reset();
+    setStartTour(false);
+  });
+  // Understanding tours describe the plan or a file, not a diff, so browsing
+  // commits must not discard them: identity is narrower than tourIdentity.
+  const understandingIdentity = createMemo(() =>
+    JSON.stringify([props.task.id, props.task.projectId, props.task.worktreePath]),
+  );
+  createEffect(() => {
+    void understandingIdentity();
+    understanding.reset();
+    setUnderstandingOpen(false);
+  });
+  /**
+   * Shows the tour the agent published through the tour_publish MCP tool. Card
+   * validation lives in the renderer, so a malformed publish is reported here
+   * rather than reaching the viewer.
+   */
+  const showAgentTour = () => {
+    const payload = props.task.agentTour?.payload;
+    if (!payload) return;
+    try {
+      understanding.publish({
+        subject: payload.subject,
+        tour: parseAgentTour(payload),
+        context: payload.context ?? '',
+        worktreePath: props.task.worktreePath,
+      });
+      setUnderstandingOpen(true);
+    } catch (error: unknown) {
+      showNotification(`Tour rejected: ${errMessage(error)}`);
+    }
+  };
+  /**
+   * Start or open: a finished tour opens, the one being generated cancels, and
+   * anything else starts generation in the background without opening a dialog.
+   */
+  const startOrOpenTour = (input: UnderstandingTourInput) => {
+    const subject = tourInputSubject(input);
+    if (understanding.isLoading(input.kind, subject)) {
+      understanding.cancel();
+      return;
+    }
+    if (understanding.open(input)) {
+      setUnderstandingOpen(true);
+      return;
+    }
+    void understanding.generate(input);
+  };
+  /**
+   * The entry button: reopens the cached tour, or publishes it again when the
+   * cache was cleared. A published tour is never generated.
+   */
+  const openAgentTour = () => {
+    const payload = props.task.agentTour?.payload;
+    if (!payload) return;
+    const opened = understanding.open({
+      kind: 'agent',
+      taskName: props.task.name,
+      worktreePath: props.task.worktreePath,
+      subject: payload.subject,
+    });
+    if (opened) setUnderstandingOpen(true);
+    else showAgentTour();
+  };
+  // Every publish opens the viewer, including a second publish of the same subject.
+  // Revision 0 is a tour restored at startup; it opens from its button only.
+  createEffect(
+    on(
+      () => props.task.agentTour?.revision,
+      (revision) => {
+        if (revision === undefined || revision === 0) {
+          shownAgentTourRevisions.delete(props.task);
+          return;
+        }
+        if (shownAgentTourRevisions.get(props.task) === revision) return;
+        shownAgentTourRevisions.set(props.task, revision);
+        showAgentTour();
+      },
+    ),
+  );
+  const openPlanTour = () =>
+    startOrOpenTour({
+      kind: 'plan',
+      taskName: props.task.name,
+      worktreePath: props.task.worktreePath,
+      planContent: props.task.planContent ?? '',
+      subject: planTourSubject(props.task),
+    });
+  const openFileTour = (filePath: string) =>
+    startOrOpenTour({
+      kind: 'file',
+      taskName: props.task.name,
+      worktreePath: props.task.worktreePath,
+      filePath,
+    });
+  /**
+   * Reopens a tour saved in the worktree, with every answer in it, and reads
+   * the text it explains so follow-ups still have their context.
+   */
+  const openSavedTour = async (path: string) => {
+    const { worktreePath, name: taskName } = props.task;
+    const read = (documentPath: string) =>
+      invoke<DocumentSnapshot>(IPC.ReadDocument, { projectRoot: worktreePath, documentPath });
+    const snapshot = await read(path);
+    if (snapshot.missing) throw new Error('the file is not in the worktree');
+    const file = parseTourFile(snapshot.content);
+    let sourceText: string | undefined;
+    if (file.source && (file.kind === 'plan' || file.kind === 'document')) {
+      const source = await read(file.source).catch(() => undefined);
+      if (source && !source.missing) sourceText = source.content;
+    }
+    await understanding.restore({
+      file,
+      text: snapshot.content,
+      savedPath: path,
+      worktreePath,
+      taskName,
+      sourceText,
+    });
+    setUnderstandingOpen(true);
+  };
+  /**
+   * A document open on the canvas is read fresh, so an edited file gets a new
+   * tour. The task's own plan takes the plan tour with the same text the notes
+   * button sends, so switching between the two never regenerates it. A saved
+   * tour opens as itself, with no provider call.
+   */
+  const openDocumentTour = (path: string) => {
+    if (isTourFilePath(path)) {
+      openSavedTour(path).catch((error: unknown) =>
+        showNotification(`Could not open ${path}: ${errMessage(error)}`),
+      );
+      return;
+    }
+    const kind = documentTourKind(props.task, path);
+    if (kind === 'plan' && props.task.planContent) {
+      openPlanTour();
+      return;
+    }
+    const { worktreePath, name: taskName } = props.task;
+    void invoke<DocumentSnapshot>(IPC.ReadDocument, {
+      projectRoot: worktreePath,
+      documentPath: path,
+    })
+      .then((snapshot) => {
+        if (snapshot.missing) throw new Error('the file is not in the worktree');
+        const content = snapshot.content;
+        startOrOpenTour(
+          kind === 'plan'
+            ? { kind, taskName, worktreePath, planContent: content, subject: path }
+            : { kind, taskName, worktreePath, content, subject: path },
+        );
+      })
+      .catch((error: unknown) => showNotification(`Could not read ${path}: ${errMessage(error)}`));
+  };
   const [editingProjectId, setEditingProjectId] = createSignal<string | null>(null);
-  // Jump-to-step state is a single signal so ↗ can be hidden entirely before
-  // TerminalView is ready (otherwise firstIndex would default to 0, showing ↗
-  // on every step while `jump` is still undefined and every click no-ops).
-  const [stepNav, setStepNav] = createSignal<
-    { jump: (stepIndex: number) => boolean; firstIndex: number } | undefined
-  >();
+  const [editingChecks, setEditingChecks] = createSignal(false);
+  // Per-agent scrollback markers; jumping also brings the terminal into focus.
+  const [transcriptMarks, setTranscriptMarks] = createSignal<ReadonlyMap<string, TranscriptMarks>>(
+    new Map(),
+  );
+  function handleTranscriptMarks(agentId: string, api: TranscriptMarks | undefined) {
+    setTranscriptMarks((prev) => {
+      const next = new Map(prev);
+      if (!api) next.delete(agentId);
+      else
+        next.set(agentId, {
+          mark: api.mark,
+          jump: (key) => {
+            const ok = api.jump(key);
+            if (ok) setTaskFocusedPanel(props.task.id, 'ai-terminal');
+            return ok;
+          },
+        });
+      return next;
+    });
+  }
   let panelRef!: HTMLDivElement;
+  // The area left of the canvas column: what the split-mode threshold measures.
+  let mainRef!: HTMLDivElement;
   let promptRef: HTMLTextAreaElement | undefined;
   let titleEditHandle: EditableTextHandle | undefined;
   let promptHandle: PromptInputHandle | undefined;
 
-  // Two-column focus-mode layout kicks in once the task panel is wide enough.
-  // Hysteresis: enter at >=1200, leave at <1150. A single threshold flickers
-  // when the user drags the window edge across it, and every flip remounts the
-  // xterm terminal inside the left column.
+  const isGitUnavailable = () => props.task.gitIsolation === 'none' || isLandedTask();
+  const [changedFileCount, setChangedFileCount] = createSignal(0);
+  // An empty notes box next to an empty file list still claimed half the
+  // column. Until either has content the strip stays thin and the AI terminal
+  // takes the space; a user drag on the divider pins a size as usual.
+  const topStripEmpty = createMemo(
+    () => !props.task.notes?.trim() && (isGitUnavailable() || changedFileCount() === 0),
+  );
+
+  const [emptySupportExpanded, setEmptySupportExpanded] = createSignal(false);
+  // Hide only genuinely empty support panels. Plans, tours, commit navigation,
+  // and shells are useful content even when the file/notes counts are zero.
+  const canCollapseSupport = createMemo(
+    () =>
+      topStripEmpty() &&
+      !(store.showPlans && props.task.planContent) &&
+      !props.task.agentTour &&
+      props.task.shellAgentIds.length === 0 &&
+      commitList().length === 0 &&
+      selectedCommit() === null &&
+      !tour.loading() &&
+      !tour.error() &&
+      tour.stops().length === 0,
+  );
+  const supportCollapsed = () => canCollapseSupport() && !emptySupportExpanded();
+  createEffect(() => {
+    const panel = store.focusedPanel[props.task.id];
+    if (props.isActive && (panel === 'notes' || panel === 'changed-files')) {
+      // Focus is scheduled after this effect, so shortcuts can still enter a
+      // panel whose DOM was temporarily detached from the compact layout.
+      setEmptySupportExpanded(true);
+    }
+  });
+
+  // Two-column focus-mode layout kicks in once the main column is wide enough.
+  // Hysteresis: enter at >=1080, leave at <1030. A single threshold flickers
+  // when the user drags the window edge across it, repeatedly reparenting the
+  // terminal inside the left column. With a graph tab primary the main
+  // column is about a third of the tile, so the split stays off by design.
   const SPLIT_ENTER_WIDTH = 1080;
   const SPLIT_EXIT_WIDTH = 1030;
   const [panelWidth, setPanelWidth] = createSignal(0);
   const [useSplit, setUseSplit] = createSignal(false);
   createEffect(() => {
-    if (!store.focusMode) {
-      setUseSplit(false);
-      return;
-    }
+    const canSplit = store.focusMode && !supportCollapsed();
     const w = panelWidth();
-    setUseSplit((prev) => (prev ? w >= SPLIT_EXIT_WIDTH : w >= SPLIT_ENTER_WIDTH));
+    const focused = document.activeElement;
+    const ownsFocus = focused instanceof HTMLElement && mainRef?.contains(focused);
+    let changed = false;
+    setUseSplit((prev) => {
+      const next = canSplit && (prev ? w >= SPLIT_EXIT_WIDTH : w >= SPLIT_ENTER_WIDTH);
+      changed = next !== prev;
+      return next;
+    });
+    // New files can reopen the supporting column while a prompt is being typed.
+    // Reparenting preserves the element but Chromium drops its native focus.
+    if (changed && ownsFocus) {
+      queueMicrotask(() =>
+        untrack(() => {
+          if (props.isActive && focused.isConnected && document.activeElement === document.body) {
+            focused.focus({ preventScroll: true });
+          }
+        }),
+      );
+    }
   });
 
   // Mirror split state into the store so keyboard navigation (focus.ts)
@@ -139,8 +476,8 @@ export function TaskPanel(props: TaskPanelProps) {
       const w = entries[0]?.contentRect.width ?? 0;
       setPanelWidth(w);
     });
-    ro.observe(panelRef);
-    setPanelWidth(panelRef.clientWidth);
+    ro.observe(mainRef);
+    setPanelWidth(mainRef.clientWidth);
     onCleanup(() => ro.disconnect());
   });
 
@@ -149,7 +486,7 @@ export function TaskPanel(props: TaskPanelProps) {
     if (!props.isActive) return;
     const panel = store.focusedPanel[props.task.id];
     if (panel) {
-      triggerFocus(`${props.task.id}:${panel}`);
+      scheduleTaskFocus(props.task.id, panel);
     }
   });
 
@@ -165,11 +502,10 @@ export function TaskPanel(props: TaskPanelProps) {
       autoFocusTimer = setTimeout(() => {
         autoFocusTimer = undefined;
         if (!store.focusedPanel[id] && !panelRef.contains(document.activeElement)) {
-          if (store.showPromptInput) {
+          if (store.showPromptInput && !isAgentChat(props.task, firstAgentId())) {
             promptRef?.focus();
           } else {
             setTaskFocusedPanel(id, 'ai-terminal');
-            triggerFocus(`${id}:ai-terminal`);
           }
         }
       }, 0);
@@ -185,11 +521,8 @@ export function TaskPanel(props: TaskPanelProps) {
       case 'close':
         setShowCloseConfirm(true);
         break;
-      case 'merge':
-        if (props.task.gitIsolation === 'worktree' && !isLandedTask()) setShowMergeConfirm(true);
-        break;
-      case 'push':
-        if (props.task.gitIsolation === 'worktree' && !isLandedTask()) setShowPushConfirm(true);
+      case 'finish':
+        openFinish('merge');
         break;
     }
   });
@@ -205,16 +538,7 @@ export function TaskPanel(props: TaskPanelProps) {
     const isolation = props.task.gitIsolation;
     if (isLandedTask()) return;
     if (isolation !== 'worktree' && isolation !== 'direct') return;
-    const focusMode = store.focusMode;
-    if (
-      !shouldPollTaskCommits(
-        focusMode,
-        focusMode ? props.isActive : false,
-        focusMode ? undefined : store.taskViewportVisibility[props.task.id],
-      )
-    ) {
-      return;
-    }
+    if (!shouldPollCommits()) return;
     let cancelled = false;
 
     async function fetchCommits() {
@@ -226,7 +550,15 @@ export function TaskPanel(props: TaskPanelProps) {
         });
         if (cancelled) return;
         batch(() => {
-          setCommitList(result);
+          setCommitList((previous) =>
+            previous.length === result.length &&
+            previous.every(
+              (commit, index) =>
+                commit.hash === result[index].hash && commit.message === result[index].message,
+            )
+              ? previous
+              : result,
+          );
           // Reset selection if the selected commit no longer exists. The
           // sentinel "uncommitted" selection is not a hash, so it is preserved.
           const sel = selectedCommit();
@@ -240,7 +572,10 @@ export function TaskPanel(props: TaskPanelProps) {
     }
 
     void fetchCommits();
-    const timer = setInterval(() => void fetchCommits(), 5000);
+    // UI-only: skip ticks while the window is hidden (next tick catches up).
+    const timer = setInterval(() => {
+      if (isWindowVisible()) void fetchCommits();
+    }, 5000);
     onCleanup(() => {
       cancelled = true;
       clearInterval(timer);
@@ -266,50 +601,126 @@ export function TaskPanel(props: TaskPanelProps) {
   const aiTerminalEl = (
     <div style={{ position: 'relative', height: '100%' }}>
       <TaskAITerminal
+        onReview={
+          props.task.gitIsolation === 'none'
+            ? undefined
+            : (path) => {
+                batch(() => {
+                  setSelectedCommit(null);
+                  setStartTour(false);
+                  setDiffScrollTarget(path ?? '');
+                });
+              }
+        }
+        onOpenTour={openAgentTour}
         task={props.task}
         isActive={props.isActive}
         selectedAgentId={selectedAgentId()}
         onSelectAgent={setActiveAgent}
         promptHandle={promptHandle}
-        onStepJumpReady={(fn, fromIdx) => {
-          setStepNav(fn ? { jump: fn, firstIndex: fromIdx } : undefined);
-        }}
+        onTranscriptMarksReady={handleTranscriptMarks}
+        // Turning briefs off hides the whole card, Rate confidence included; a task
+        // without agents has no one to ask, unless a rating is already there.
+        brief={
+          <Show
+            when={store.taskBriefs && (props.task.agentIds.length > 0 || props.task.confidence)}
+          >
+            <TaskBriefBar
+              task={props.task}
+              onFileClick={(file) => setDiffScrollTarget(file)}
+              onWalkThrough={openOrGenerateTour}
+              walkThroughDisabled={changedFileCount() === 0}
+            />
+          </Show>
+        }
       />
     </div>
   );
   const shellSectionEl = <TaskShellSection task={props.task} isActive={props.isActive} />;
+  const canvasVisible = () => isTaskCanvasVisible(props.task);
+  const mindMapActive = () => props.task.canvasActiveTab === 'mindmap';
+  const graphActive = () => mindMapActive() || props.task.canvasActiveTab === 'reasoning';
+  // A focused tile is the whole window, so a graph tab gets about two thirds
+  // of it. The layout keeps its own pins, leaving the tiling canvas width alone.
+  const graphPrimary = () =>
+    store.focusMode &&
+    props.isActive &&
+    !store.showNewTaskPanel &&
+    canvasVisible() &&
+    graphActive();
+  // Graph hosts mount on first use and then stay, so switching tabs keeps
+  // their held state.
+  const canvasMounted = (kind: 'mindmap' | 'reasoning') => {
+    const [mounted, setMounted] = createSignal(false);
+    createEffect(() => {
+      if (props.task.canvasTabs?.some((tab) => tab.kind === kind)) setMounted(true);
+    });
+    return mounted;
+  };
+  const mindMapMounted = canvasMounted('mindmap');
+  const reasoningMounted = canvasMounted('reasoning');
+  const mindMapEl = createMemo(() =>
+    mindMapMounted() ? (
+      <TaskMindMap
+        task={props.task}
+        visible={mindMapActive() && canvasVisible() && (!store.focusMode || props.isActive)}
+        wide={graphPrimary()}
+      />
+    ) : undefined,
+  );
+  const reasoningGraphEl = createMemo(() =>
+    reasoningMounted() ? (
+      <TaskReasoningGraphHost
+        taskId={props.task.id}
+        transcriptMarks={(agentId) => transcriptMarks().get(agentId)}
+        visible={
+          canvasVisible() &&
+          props.task.canvasActiveTab === 'reasoning' &&
+          (!store.focusMode || props.isActive)
+        }
+        wide={graphPrimary()}
+      />
+    ) : undefined,
+  );
+  const canvasEl = (
+    <TaskCanvasPanel
+      task={props.task}
+      agentId={firstAgentId()}
+      isActive={props.isActive}
+      reasoning={reasoningGraphEl()}
+      mindmap={mindMapEl()}
+      understanding={understanding}
+      onTakeTour={openDocumentTour}
+    />
+  );
   const notesBodyEl = (
     <TaskNotesBody
       task={props.task}
       agentId={firstAgentId()}
       onPlanFullscreen={() => setPlanFullscreen(true)}
+      understanding={understanding}
+      onPlanTour={openPlanTour}
+      onAgentTour={openAgentTour}
     />
   );
   const changedFilesEl = (
     <TaskChangedFilesSection
       task={props.task}
-      isActive={props.isActive}
+      isActive={isSettledActive()}
       commitList={commitList()}
       selectedCommit={selectedCommit()}
       onCommitNavigate={setSelectedCommit}
-      onDiffFileClick={(path) => setDiffScrollTarget(path)}
-    />
-  );
-  const stepsSectionEl = (
-    <TaskStepsSection
-      task={props.task}
-      isActive={props.isActive}
-      onFileClick={(file) => setDiffScrollTarget(file)}
-      firstJumpableIndex={stepNav()?.firstIndex}
-      onJumpToStep={
-        stepNav()
-          ? (idx) => {
-              const ok = stepNav()?.jump(idx) ?? false;
-              if (ok) setTaskFocusedPanel(props.task.id, 'ai-terminal');
-              return ok;
-            }
-          : undefined
-      }
+      onDiffFileClick={(path) => {
+        setStartTour(false);
+        setDiffScrollTarget(path);
+      }}
+      tour={tour}
+      onTourClick={openOrGenerateTour}
+      tourDisabled={changedFileCount() === 0}
+      compact={topStripEmpty()}
+      onFileCountChange={setChangedFileCount}
+      onUnderstandClick={(file) => openFileTour(file.path)}
+      understanding={understanding}
     />
   );
   // Prompt wrapper carries its own intrinsic height so the flex-first panel
@@ -327,7 +738,7 @@ export function TaskPanel(props: TaskPanelProps) {
         taskName={props.task.name}
         agentId={firstAgentId()}
         coordinatedBy={props.task.coordinatedBy}
-        coordinatorMode={props.task.coordinatorMode}
+        autoSendChildUpdates={autoSendChildUpdates()}
         controlledBy={props.task.controlledBy}
         stagedNotification={props.task.stagedNotification}
         nowMs={nowMs}
@@ -347,19 +758,13 @@ export function TaskPanel(props: TaskPanelProps) {
   // what it needs (id, minSize for drag floor); the tree picks one child per
   // ResizablePanel to be the flex absorber via `absorberIds`.
 
-  const stepsSectionChild: PanelChild = {
-    id: 'steps-section',
-    minSize: 28,
-    maxAutoSize: STEPS_PANEL_AUTO_MAX,
-    content: () => stepsSectionEl,
-  };
-
-  // With no terminals open the shell section collapses to its 28 px toolbar.
+  // With no terminals open the shell section collapses to its 35 px toolbar.
   // Mark it noPin so dragging an adjacent handle can't pin it past content
   // size and leave a visible band of empty space above the AI terminal.
   const shellSectionChild: PanelChild = {
     id: 'shell-section',
-    minSize: 28,
+    resizeLabel: 'Resize shell panel',
+    minSize: 35,
     noPin: () => props.task.shellAgentIds.length === 0,
     content: () => shellSectionEl,
   };
@@ -372,17 +777,17 @@ export function TaskPanel(props: TaskPanelProps) {
 
   const promptInputChild: PanelChild = {
     id: 'prompt',
+    resizeLabel: 'Resize prompt input',
     minSize: 54,
     content: () => promptInputEl,
   };
-
-  const isGitUnavailable = () => props.task.gitIsolation === 'none' || isLandedTask();
 
   // Notes and changed-files children reused across stack and split trees.
   // In the stack-mode inner horizontal split, both children absorb (50/50 default).
   // In the split-right vertical tree, both are content-sized and shell absorbs.
   const notesChild: PanelChild = {
     id: 'notes',
+    resizeLabel: 'Resize notes panel',
     minSize: 100,
     maxAutoSize: NOTES_PANEL_AUTO_MAX,
     content: () => notesBodyEl,
@@ -390,20 +795,22 @@ export function TaskPanel(props: TaskPanelProps) {
 
   const changedFilesChild: PanelChild = {
     id: 'changed-files',
+    resizeLabel: 'Resize changed files panel',
     minSize: 100,
     maxAutoSize: CHANGED_FILES_PANEL_AUTO_MAX,
     content: () => changedFilesEl,
   };
 
   // Stack-mode row containing notes (absorbs horizontally) and changed files.
-  // The inline 200 px floor prevents the nested horizontal panel from collapsing
-  // when the outer flex-first tree asks for content-size.
+  // The inline floor prevents the nested horizontal panel from collapsing when
+  // the outer flex-first tree asks for content-size; while both halves are
+  // empty it is also the strip's whole height.
   const notesAndFilesChild: PanelChild = {
     id: 'notes-files',
     minSize: 60,
-    absorberWeight: 0.5,
+    absorberWeight: 0.35,
     content: () => (
-      <div style={{ height: '100%', 'min-height': '200px' }}>
+      <div style={{ height: '100%', 'min-height': topStripEmpty() ? '64px' : '140px' }}>
         {isGitUnavailable() ? (
           notesBodyEl
         ) : (
@@ -418,22 +825,154 @@ export function TaskPanel(props: TaskPanelProps) {
     ),
   };
 
+  // The task body left of the canvas. Created once so toggling the canvas
+  // column reparents it instead of remounting the terminal.
+  const mainEl = (
+    <div
+      ref={mainRef}
+      style={{ height: '100%', 'min-height': '0', display: 'flex', 'flex-direction': 'column' }}
+      onFocusIn={(event) => {
+        if (event.target.closest('.task-notes-body, .task-changed-files-section')) {
+          setEmptySupportExpanded(true);
+        }
+      }}
+    >
+      <Show when={canCollapseSupport()}>
+        <button
+          type="button"
+          class="task-support-toggle"
+          aria-expanded={!supportCollapsed()}
+          onClick={() => {
+            if (supportCollapsed()) {
+              setEmptySupportExpanded(true);
+              setTaskFocusedPanel(props.task.id, 'notes');
+            } else {
+              batch(() => {
+                setTaskFocusedPanel(props.task.id, 'ai-terminal');
+                setEmptySupportExpanded(false);
+              });
+            }
+          }}
+        >
+          <span aria-hidden="true">{supportCollapsed() ? '›' : '⌄'}</span>
+          {supportCollapsed()
+            ? isGitUnavailable()
+              ? 'Notes'
+              : 'Notes & files'
+            : 'Hide empty panels'}
+        </button>
+      </Show>
+      <div style={{ flex: '1', 'min-height': '0' }}>
+        {/* Layout flips swap containers; the terminal, composer, notes, and canvas stay mounted. */}
+        <Show
+          when={useSplit()}
+          fallback={
+            <ResizablePanel
+              direction="vertical"
+              persistKey={`task:${props.task.id}`}
+              absorberIds={topStripEmpty() ? ['ai-terminal'] : ['notes-files', 'ai-terminal']}
+              children={[
+                ...(supportCollapsed() ? [] : [notesAndFilesChild]),
+                shellSectionChild,
+                aiTerminalChild,
+                ...(!isAgentChat(props.task, firstAgentId()) &&
+                (store.showPromptInput || autoSendChildUpdates())
+                  ? [promptInputChild]
+                  : []),
+              ]}
+            />
+          }
+        >
+          <ResizablePanel
+            direction="horizontal"
+            persistKey={`task:${props.task.id}:split-cols`}
+            absorberIds={['left-col']}
+            children={[
+              {
+                id: 'left-col',
+                minSize: 420,
+                content: () => (
+                  <ResizablePanel
+                    direction="vertical"
+                    persistKey={`task:${props.task.id}:split-left`}
+                    absorberIds={['ai-terminal']}
+                    children={[
+                      aiTerminalChild,
+                      ...(!isAgentChat(props.task, firstAgentId()) &&
+                      (store.showPromptInput || autoSendChildUpdates())
+                        ? [promptInputChild]
+                        : []),
+                    ]}
+                  />
+                ),
+              },
+              {
+                id: 'right-col',
+                resizeLabel: 'Resize side panel',
+                minSize: 360,
+                defaultSize: 420,
+                content: () => (
+                  <ResizablePanel
+                    direction="vertical"
+                    persistKey={`task:${props.task.id}:split-right`}
+                    absorberIds={['shell-section']}
+                    // An empty shell is just its toolbar. An auto-height column
+                    // keeps the absorber from claiming the unused column space.
+                    // Vertical pins don't shrink, so pinned or dragged panels can
+                    // outgrow the column; scroll keeps them and their handles reachable.
+                    style={{
+                      height: props.task.shellAgentIds.length > 0 ? '100%' : 'auto',
+                      'max-height': '100%',
+                      overflow: 'auto',
+                    }}
+                    children={[
+                      ...(isGitUnavailable() ? [] : [changedFilesChild]),
+                      notesChild,
+                      shellSectionChild,
+                    ]}
+                  />
+                ),
+              },
+            ]}
+          />
+        </Show>
+      </div>
+    </div>
+  );
+  const mainChild: PanelChild = {
+    id: 'main',
+    // The canvas needs a usable neighbor; a lone body must fit a 300px task tile.
+    get minSize() {
+      return canvasVisible() ? 360 : 0;
+    },
+    content: () => mainEl,
+  };
+  const canvasChild: PanelChild = {
+    id: 'canvas',
+    resizeLabel: 'Resize canvas panel',
+    minSize: CANVAS_MIN_WIDTH,
+    defaultSize: CANVAS_DEFAULT_WIDTH,
+    absorberWeight: 2,
+    content: () => canvasEl,
+  };
+
   return (
     <div
       ref={panelRef}
-      class={`task-column ${props.isActive ? 'active' : ''}${store.focusMode ? ' focus-mode' : ''}`}
+      class={`task-column ${isTaskColumnHighlighted(props.task.id) ? 'active' : ''}${store.focusMode ? ' focus-mode' : ''}`}
       style={{
         display: 'flex',
         'flex-direction': 'column',
         height: '100%',
         background: theme.taskContainerBg,
-        'border-radius': '12px',
+        'border-radius': 'var(--radius-lg)',
         border: `1px solid ${theme.border}`,
+        'border-left': `3px solid ${getProject(props.task.projectId)?.color ?? theme.border}`,
         overflow: 'clip',
         position: 'relative',
       }}
       onClick={() => {
-        setActiveTask(props.task.id);
+        activateTaskFromPointer(props.task.id);
       }}
     >
       <TaskClosingOverlay
@@ -441,7 +980,47 @@ export function TaskPanel(props: TaskPanelProps) {
         closingError={props.task.closingError}
         onRetry={() => retryCloseTask(props.task.id)}
       />
-      <Show when={!!props.task.coordinatedBy || !!props.task.coordinatorMode}>
+      {/* The title sits above the collaboration banners so they never push it
+          to a different height across tasks. */}
+      <div
+        class="task-header-stack"
+        style={{
+          flex: '0 0 96px',
+          display: 'flex',
+          'flex-direction': 'column',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Title + branch bars live outside <Show> so they don't remount on layout flips. */}
+        {/* 68px fits the title bar's two rows: a 30px icon-button row, the 2px
+            row gap, a ~21px badge row, and the bar's 12px vertical padding.
+            The stack total above is this plus the 28px branch bar. */}
+        <div style={{ flex: '0 0 68px', overflow: 'hidden' }}>
+          <TaskTitleBar
+            task={props.task}
+            isActive={isTaskColumnHighlighted(props.task.id)}
+            onClose={() => setShowCloseConfirm(true)}
+            onFinish={() => openFinish('merge')}
+            pushing={pushing()}
+            pushSuccess={pushSuccess()}
+            onTitleEditRef={(h) => (titleEditHandle = h)}
+          />
+        </div>
+        <div style={{ flex: '0 0 28px', overflow: 'hidden' }}>
+          <TaskBranchInfoBar
+            task={props.task}
+            onEditProject={(id) => setEditingProjectId(id)}
+            onOpenPullRequest={setOpenPrUrl}
+            onFinish={canFinish() ? () => openFinish('merge') : undefined}
+          />
+        </div>
+      </div>
+      <Show
+        when={
+          !!props.task.coordinatedBy ||
+          (!!autoSendChildUpdates() && !!props.task.stagedNotification)
+        }
+      >
         <div
           style={{
             background: theme.bgElevated,
@@ -459,13 +1038,35 @@ export function TaskPanel(props: TaskPanelProps) {
               gap: '12px',
             }}
           >
-            <span>
-              {props.task.coordinatorMode ? 'Auto delivery enabled' : 'Coordinated sub-task'}
-            </span>
+            <Show
+              when={props.task.coordinatedBy ? store.tasks[props.task.coordinatedBy] : undefined}
+              fallback={
+                <span>{props.task.coordinatedBy ? 'Subtask' : 'Automatic subtask updates'}</span>
+              }
+            >
+              {(parent) => (
+                <span style={{ display: 'flex', gap: '6px', 'min-width': '0' }}>
+                  <button
+                    class="delegation-button delegation-parent-link"
+                    title={`${parent().collapsed ? 'Resume and open parent' : 'Parent task'}: ${parent().name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (parent().collapsed) uncollapseTask(parent().id);
+                      activateTaskFromPointer(parent().id);
+                    }}
+                  >
+                    {parent().collapsed ? 'Resume and open parent' : 'Parent task'}: {parent().name}
+                  </button>
+                  <DetachFromParentButton taskId={props.task.id} parentName={parent().name} />
+                </span>
+              )}
+            </Show>
             <Show
               when={!!props.task.stagedNotification && !props.task.stagedNotification.userEdited}
             >
-              <span style={{ color: theme.accent, 'font-size': '11px' }}>{stagedCountdown()}</span>
+              <span style={{ color: theme.accent, 'font-size': '11px', 'flex-shrink': '0' }}>
+                {stagedCountdown()}
+              </span>
             </Show>
           </div>
           <Show when={!!props.task.stagedNotification && !props.task.stagedNotification.userEdited}>
@@ -506,99 +1107,37 @@ export function TaskPanel(props: TaskPanelProps) {
           </div>
         </Show>
       </Show>
-      <Show when={props.task.coordinatorMode}>
+      <Show when={props.task.coordinatorMode || props.task.delegationParent}>
         <SubTaskStrip coordinatorTaskId={props.task.id} />
       </Show>
-      <div
-        class="task-header-stack"
-        style={{
-          flex: `0 0 ${props.task.stepsEnabled ? 102 : 78}px`,
-          display: 'flex',
-          'flex-direction': 'column',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Title + branch bars live outside <Show> so they don't remount on layout flips. */}
-        <div style={{ flex: '0 0 50px', overflow: 'hidden' }}>
-          <TaskTitleBar
-            task={props.task}
-            isActive={props.isActive}
-            onClose={() => setShowCloseConfirm(true)}
-            onMerge={() => setShowMergeConfirm(true)}
-            onPush={() => setShowPushConfirm(true)}
-            pushing={pushing()}
-            pushSuccess={pushSuccess()}
-            onTitleEditRef={(h) => (titleEditHandle = h)}
-          />
-        </div>
-        <Show when={props.task.stepsEnabled}>
-          <TaskCurrentStateLine task={props.task} nowMs={nowMs()} variant="card" />
-        </Show>
-        <div style={{ flex: '0 0 28px', overflow: 'hidden' }}>
-          <TaskBranchInfoBar task={props.task} onEditProject={(id) => setEditingProjectId(id)} />
-        </div>
-      </div>
+      <DelegationPanel
+        task={props.task}
+        canUseComposer={(message) =>
+          canUsePeerComposer(
+            props.task,
+            message,
+            promptHandle,
+            store.showPromptInput && !isAgentChat(props.task, firstAgentId()),
+          )
+        }
+        onUseComposer={(message) =>
+          usePeerComposer(
+            props.task,
+            message,
+            promptHandle,
+            store.showPromptInput && !isAgentChat(props.task, firstAgentId()),
+          )
+        }
+      />
+      <TaskBranchAdoptionBanner task={props.task} />
+      <TaskSuperProductivityBanner taskId={props.task.id} />
       <div style={{ flex: '1', 'min-height': '0' }}>
-        <Show
-          when={useSplit()}
-          fallback={
-            <ResizablePanel
-              direction="vertical"
-              persistKey={`task:${props.task.id}`}
-              absorberIds={['notes-files', 'ai-terminal']}
-              children={[
-                notesAndFilesChild,
-                shellSectionChild,
-                aiTerminalChild,
-                ...(props.task.stepsEnabled ? [stepsSectionChild] : []),
-                ...(store.showPromptInput || props.task.coordinatorMode ? [promptInputChild] : []),
-              ]}
-            />
-          }
-        >
-          <ResizablePanel
-            direction="horizontal"
-            persistKey={`task:${props.task.id}:split-cols`}
-            absorberIds={['left-col']}
-            children={[
-              {
-                id: 'left-col',
-                minSize: 420,
-                content: () => (
-                  <ResizablePanel
-                    direction="vertical"
-                    persistKey={`task:${props.task.id}:split-left`}
-                    absorberIds={['ai-terminal']}
-                    children={[
-                      aiTerminalChild,
-                      ...(store.showPromptInput || props.task.coordinatorMode
-                        ? [promptInputChild]
-                        : []),
-                    ]}
-                  />
-                ),
-              },
-              {
-                id: 'right-col',
-                minSize: 360,
-                defaultSize: 420,
-                content: () => (
-                  <ResizablePanel
-                    direction="vertical"
-                    persistKey={`task:${props.task.id}:split-right`}
-                    absorberIds={['shell-section']}
-                    children={[
-                      ...(isGitUnavailable() ? [] : [changedFilesChild]),
-                      notesChild,
-                      ...(props.task.stepsEnabled ? [stepsSectionChild] : []),
-                      shellSectionChild,
-                    ]}
-                  />
-                ),
-              },
-            ]}
-          />
-        </Show>
+        <ResizablePanel
+          direction="horizontal"
+          persistKey={`task:${props.task.id}:${graphPrimary() ? 'canvas-cols-graph' : 'canvas-cols'}`}
+          absorberIds={graphPrimary() ? ['main', 'canvas'] : ['main']}
+          children={canvasVisible() ? [mainChild, canvasChild] : [mainChild]}
+        />
       </div>
       <CloseTaskDialog
         open={showCloseConfirm()}
@@ -606,59 +1145,106 @@ export function TaskPanel(props: TaskPanelProps) {
         onDone={() => setShowCloseConfirm(false)}
       />
       <Show when={props.task.gitIsolation !== 'none' && !isLandedTask()}>
-        <MergeDialog
-          open={showMergeConfirm()}
+        <FinishDialog
+          open={finishAction() !== null}
           task={props.task}
           initialCleanup={
             props.task.externalWorktree
               ? false
               : (getProject(props.task.projectId)?.deleteBranchOnClose ?? true)
           }
-          onDone={() => setShowMergeConfirm(false)}
-          onDiffFileClick={(file) => setDiffScrollTarget(file.path)}
-        />
-        <PushDialog
-          open={showPushConfirm()}
-          task={props.task}
-          onStart={() => {
+          tour={tour}
+          tourDisabled={changedFileCount() === 0}
+          onTourClick={openOrGenerateTour}
+          onRegenerateTour={() => {
+            tour.reset();
+            generateTour();
+          }}
+          onOpenPullRequest={(url) => {
+            setFinishAction(null);
+            setOpenPrUrl(url);
+          }}
+          onCloseTask={() => {
+            setFinishAction(null);
+            setShowCloseConfirm(true);
+          }}
+          onPushStart={() => {
             setPushing(true);
             setPushSuccess(false);
             clearTimeout(pushSuccessTimer);
           }}
-          onClose={() => {
-            setShowPushConfirm(false);
-          }}
-          onDone={(success) => {
-            const wasHidden = !showPushConfirm();
-            setShowPushConfirm(false);
+          onPushDone={(success) => {
+            const wasHidden = finishAction() === null;
             setPushing(false);
             if (success) {
               setPushSuccess(true);
               pushSuccessTimer = setTimeout(() => setPushSuccess(false), 3000);
+              setFinishAction(null);
             }
-            if (wasHidden) {
-              showNotification(success ? 'Push completed' : 'Push failed');
-            }
+            // A failed push keeps the dialog open so its error stays readable.
+            if (wasHidden) showNotification(success ? 'Push completed' : 'Push failed');
           }}
+          onDiffFileClick={(file) => {
+            // Finish reviews the cumulative change, regardless of the last browsed commit.
+            batch(() => {
+              setSelectedCommit(null);
+              setStartTour(false);
+              setDiffScrollTarget(file.path);
+            });
+          }}
+          onConfigureChecks={() => {
+            setFinishAction(null);
+            setEditingChecks(true);
+            setEditingProjectId(props.task.projectId);
+          }}
+          onClose={() => setFinishAction(null)}
         />
+      </Show>
+      <Show when={openPrUrl()}>
+        {(url) => (
+          <PullRequestDialog
+            open
+            task={props.task}
+            prUrl={url()}
+            onClose={() => setOpenPrUrl(null)}
+          />
+        )}
+      </Show>
+      <Show when={props.task.gitIsolation !== 'none'}>
         <DiffViewerDialog
+          tour={tour}
+          startTour={startTour()}
           scrollToFile={diffScrollTarget()}
           taskName={props.task.name}
           worktreePath={props.task.worktreePath}
           coverageReportPath={getProject(props.task.projectId)?.coverageReportPath}
           projectRoot={getProject(props.task.projectId)?.path}
           branchName={props.task.branchName}
-          baseBranch={props.task.baseBranch}
-          onClose={() => setDiffScrollTarget(null)}
+          baseBranch={diffBaseBranch()}
+          onClose={() => {
+            setDiffScrollTarget(null);
+            setStartTour(false);
+          }}
           taskId={props.task.id}
-          agentId={props.task.agentIds[0]}
+          agentId={selectedAgentId()}
           commitList={commitList()}
           selectedCommit={selectedCommit()}
-          onCommitNavigate={setSelectedCommit}
+          onCommitNavigate={(selection) => {
+            setStartTour(false);
+            setSelectedCommit(selection);
+          }}
           gitIsolation={props.task.gitIsolation}
+          findingProvider={devQualityFindingProvider ?? eslintQualityFindingProvider}
         />
       </Show>
-      <EditProjectDialog project={editingProject()} onClose={() => setEditingProjectId(null)} />
+      <EditProjectDialog
+        project={editingProject()}
+        focusChecks={editingChecks()}
+        onClose={() => {
+          setEditingProjectId(null);
+          setEditingChecks(false);
+        }}
+      />
       <PlanViewerDialog
         open={planFullscreen()}
         onClose={() => setPlanFullscreen(false)}
@@ -667,6 +1253,26 @@ export function TaskPanel(props: TaskPanelProps) {
         taskId={props.task.id}
         agentId={props.task.agentIds[0]}
         worktreePath={props.task.worktreePath}
+        onTakeTour={openPlanTour}
+      />
+      {/* Above the plan viewer and a fullscreen canvas, so a tour started from either stacks on top. */}
+      <UnderstandingTourDialog
+        tour={understanding}
+        open={understandingOpen()}
+        onClose={() => setUnderstandingOpen(false)}
+        worktreePath={props.task.worktreePath}
+        onReference={(reference) => {
+          // The prompt sits behind the tour, so the tour steps aside for it;
+          // reopening keeps the reader's place.
+          setUnderstandingOpen(false);
+          referenceTourCard(props.task.id, reference);
+        }}
+        onOpenFile={(path) => {
+          // The file opens on the canvas behind the tour, so the tour steps aside.
+          setUnderstandingOpen(false);
+          openCanvasDocument(props.task.id, path);
+        }}
+        zIndex={1450}
       />
     </div>
   );

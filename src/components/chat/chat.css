@@ -1,0 +1,1248 @@
+.chat-ui {
+  container-type: size;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--fg);
+  background: var(--task-panel-bg, var(--bg-elevated));
+  font: 13px/1.5 var(--font-ui);
+}
+.chat-conversation {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Conversation text carries the meaning, so it reads a step larger and looser
+   than the surrounding chrome, which stays at 11–13px. */
+.chat-markdown.plan-markdown {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--fg);
+}
+.chat-markdown.plan-markdown > :is(p, ul, ol, pre, .chat-code, blockquote, .md-table-scroll) {
+  margin-block: 14px;
+}
+.chat-markdown.plan-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin-block: 28px 12px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+  line-height: 1.35;
+}
+.chat-markdown.plan-markdown h1 {
+  font-size: 20px;
+}
+.chat-markdown.plan-markdown h2 {
+  font-size: 17px;
+}
+.chat-markdown.plan-markdown h3 {
+  font-size: 15px;
+}
+.chat-markdown.plan-markdown :is(h4, h5, h6) {
+  font-size: 13.5px;
+  letter-spacing: -0.01em;
+}
+.chat-markdown.plan-markdown strong {
+  font-weight: 600;
+}
+.chat-markdown.plan-markdown p {
+  text-wrap: pretty;
+}
+.chat-markdown.plan-markdown li::marker {
+  color: var(--fg-muted);
+}
+.chat-markdown.plan-markdown > :first-child {
+  margin-top: 0;
+}
+.chat-markdown.plan-markdown > :last-child {
+  margin-bottom: 0;
+}
+.chat-markdown.plan-markdown :not(pre) > code {
+  background: var(--chat-surface-strong);
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  font-size: 0.875em;
+  font-weight: 400;
+}
+.chat-markdown.plan-markdown pre {
+  padding: 14px 16px;
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.chat-markdown.plan-markdown pre code {
+  font-size: inherit;
+  line-height: inherit;
+}
+.chat-markdown.plan-markdown li {
+  margin-block: 6px;
+}
+.chat-markdown.plan-markdown li > :is(p, ul, ol) {
+  margin-block: 6px;
+}
+.chat-markdown.plan-markdown blockquote {
+  margin-inline: 0;
+  padding: 2px 16px;
+  border-left: 2px solid var(--chat-border);
+  color: var(--fg-muted);
+}
+.chat-markdown.plan-markdown a {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
+  text-underline-offset: 3px;
+}
+.chat-markdown.plan-markdown table {
+  font-size: inherit;
+  line-height: 1.6;
+}
+.chat-markdown.plan-markdown :is(th, td) {
+  padding: 8px 12px;
+}
+
+/* The user's own words sit in a bubble on the right, as typed: line breaks kept,
+   no markdown, so a pasted log reads exactly as it was sent. */
+.chat-user-message {
+  width: fit-content;
+  max-width: 85%;
+  margin: 4px 0 0 auto;
+  padding: 12px 16px;
+  background: var(--chat-surface);
+  border: 1px solid transparent;
+  border-radius: 16px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+/* Copy controls sit in the inter-message space without adding an empty row. */
+.chat-message-actions {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-top: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.chat-answer .chat-message-actions {
+  justify-content: flex-start;
+  right: auto;
+  left: 0;
+}
+/* The phone's always-visible, 44px touch controls need their own layout space. */
+.mobile-chat .chat-message-actions {
+  position: static;
+}
+:is(.chat-user-turn, .chat-answer):is(:hover, :focus-within) .chat-message-actions,
+.chat-message-actions:has([data-copied='true']) {
+  opacity: 1;
+}
+.chat-ui .chat-copy {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.chat-ui .chat-copy[data-copied='true']:enabled {
+  color: var(--success);
+}
+/* The block scrolls sideways, so its copy button sits on a wrapper that does not. */
+.chat-code {
+  position: relative;
+}
+.chat-markdown.plan-markdown .chat-code > pre {
+  margin: 0;
+}
+.chat-ui .chat-code > .chat-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  border: 1px solid var(--chat-border);
+  background: var(--bg-input);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.chat-code:is(:hover, :focus-within) > .chat-copy,
+.chat-ui .chat-code > .chat-copy[data-copied='true'] {
+  opacity: 1;
+}
+
+.chat-ui textarea {
+  color: var(--fg);
+  font-size: 13px;
+}
+.chat-ui textarea::placeholder {
+  color: var(--fg-subtle);
+}
+.chat-send {
+  background: var(--chat-accent);
+  color: var(--accent-text);
+}
+.chat-send:enabled:hover {
+  background: var(--accent-hover);
+}
+.chat-transcript a:focus-visible,
+.chat-ui button:focus-visible,
+.chat-ui summary:focus-visible,
+.chat-ui input:focus-visible,
+.chat-ui select:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* Tool activity reads as one timeline rail rather than a stack of cards — a turn
+   with a dozen reads should not outweigh the prose around it. */
+.chat-tool {
+  border-left: 1px solid var(--chat-border);
+  margin: 0 0 0 6px;
+  font-size: 12px;
+}
+.chat-tool summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 10px 8px 14px;
+}
+.chat-tool summary:hover {
+  background: var(--chat-surface);
+}
+.chat-tool summary::before {
+  content: '›';
+  flex: none;
+  color: var(--fg-muted);
+  transition: transform 120ms ease;
+}
+.chat-tool[open] summary::before {
+  transform: rotate(90deg);
+}
+.chat-tool-type,
+.chat-tool-status {
+  color: var(--fg-muted);
+  font-size: 11px;
+  flex: none;
+}
+.chat-tool-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-tool[data-status='running'] {
+  border-left-color: var(--chat-accent);
+}
+.chat-tool[data-status='running'] .chat-tool-status {
+  color: var(--chat-accent);
+}
+.chat-tool[data-status='failed'] {
+  border-left-color: var(--error);
+}
+.chat-tool[data-status='failed'] .chat-tool-status {
+  color: var(--error);
+}
+.chat-tool pre {
+  margin: 0 8px 8px 10px;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border-radius: var(--radius-sm);
+  background: var(--chat-surface);
+}
+
+/* A command reads like the terminal it ran in: the prompt line, then output. */
+.chat-command-line {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* Diffs: the change itself is the content, so each file gets a framed block with
+   full-width line colour. Signs and numbers are drawn, not text, so copying a
+   diff yields plain code. */
+.chat-diff {
+  margin: 0 8px 8px 10px;
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.chat-diff-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--chat-surface);
+  border-bottom: 1px solid var(--chat-border);
+  font-size: 11px;
+}
+.chat-ui .chat-diff-path {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font-family: var(--font-mono);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.chat-diff-header button:not(.chat-diff-path),
+.chat-diff-more {
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.chat-diff-more {
+  margin: 2px 4px 4px;
+}
+.chat-diff-stat {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.chat-diff-added {
+  color: var(--success);
+}
+.chat-diff-removed {
+  color: var(--error);
+}
+.chat-tool .chat-diff-body {
+  display: grid;
+  grid-template-columns: minmax(100%, max-content);
+  margin: 0;
+  padding: 4px 0;
+  max-height: 480px;
+  border-radius: 0;
+  background: transparent;
+  white-space: pre;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.chat-diff-line[data-kind='add'] {
+  background: var(--diff-add-bg);
+}
+.chat-diff-line[data-kind='del'] {
+  background: var(--diff-remove-bg);
+}
+.chat-diff-line[data-kind='hunk'],
+.chat-diff-line[data-kind='note'] {
+  color: var(--fg-muted);
+}
+.chat-diff-number {
+  display: inline-block;
+  width: 5ch;
+  padding-right: 1ch;
+  text-align: right;
+  color: var(--fg-muted);
+  opacity: 0.7;
+  user-select: none;
+}
+.chat-diff-text {
+  padding-right: 12px;
+}
+.chat-diff-text::before {
+  content: ' ';
+  display: inline-block;
+  width: 2.5ch;
+  text-align: center;
+}
+.chat-diff-line[data-kind='add'] .chat-diff-text::before {
+  content: '+';
+  color: var(--success);
+}
+.chat-diff-line[data-kind='del'] .chat-diff-text::before {
+  content: '−';
+  color: var(--error);
+}
+.chat-tool summary .chat-diff-stat {
+  margin-left: auto;
+}
+
+/* Never a scroll box: a decision that hides its choices below a fold gets missed.
+   The transcript above gives up the room instead. */
+.chat-requests {
+  background: var(--chat-surface);
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+}
+.chat-request {
+  padding: 12px;
+  border-left: 2px solid var(--chat-accent);
+  font-size: 13px;
+}
+/* A card that opens on Decline is the one worth a warning colour. */
+.chat-request[data-default='decline'] {
+  border-left-color: var(--warning);
+}
+.chat-request pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--chat-surface-strong);
+  font-size: 12px;
+}
+/* Monospace because this line often is a shell command: proportional spacing hides
+   the whitespace tricks an approval exists to catch. */
+.chat-request-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  margin: 8px 0;
+}
+.chat-request-note {
+  margin: 0 0 4px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.chat-request-details > summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+/* The one scroll inside a card, kept on purpose: raw arguments can hold a whole file
+   (a Write call), and the user unfolds them only when they want to read them. */
+.chat-request-details pre {
+  font-size: 11px;
+  max-height: 160px;
+  overflow: auto;
+}
+.chat-request-question {
+  margin: 12px 0 0;
+}
+.chat-request input {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  background: var(--chat-surface-strong);
+  color: var(--fg);
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font: inherit;
+}
+.chat-request input::placeholder {
+  color: var(--fg-muted);
+}
+/* Compact so the card fits without scrolling; the phone UI restores 44px targets. */
+.chat-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 0;
+}
+.chat-options button {
+  background: var(--chat-surface-strong);
+  color: var(--fg);
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+.chat-options button:enabled:hover {
+  border-color: var(--chat-accent);
+}
+/* A border alone was easy to miss; the chosen answer has to read at a glance. */
+.chat-options button[aria-pressed='true'] {
+  border-color: var(--chat-accent);
+  background: color-mix(in srgb, var(--chat-accent) 18%, var(--chat-surface-strong));
+}
+.chat-option-description {
+  display: block;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.chat-options button.chat-request-default {
+  background: var(--chat-accent);
+  border-color: var(--chat-accent);
+  color: var(--accent-text);
+}
+/* Only true while the card holds the keyboard — hidden otherwise, because Enter
+   then belongs to whatever does have focus (usually the composer). Hidden with
+   visibility, not display, so the line keeps its space and focus never shifts
+   the card. */
+.chat-request-hint {
+  visibility: hidden;
+  margin: 8px 0 0;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.chat-request:focus-within .chat-request-hint {
+  visibility: visible;
+}
+.chat-ui button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.chat-error,
+.chat-request [role='alert'] {
+  color: var(--error);
+  padding: 8px 14px;
+}
+
+.chat-composer-dock {
+  pointer-events: auto;
+  width: 100%;
+  max-width: 768px;
+  margin: 0 auto;
+  padding: 8px 12px 12px;
+}
+.chat-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 12px 6px 4px;
+  background: var(--chat-surface);
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-lg);
+}
+.chat-composer:focus-within {
+  border-color: color-mix(in srgb, var(--border-focus) 45%, var(--chat-border));
+}
+.chat-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.chat-composer textarea {
+  field-sizing: content;
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  max-height: min(200px, 28cqh);
+  padding: 0 8px 8px;
+  /* The composer box is the field; a second border and fill inside it read as
+     a form inside a form. Its focus ring moves to the box as well. */
+  border: 0;
+  outline: none;
+  background: transparent;
+  resize: none;
+  font: 13px/22px var(--font-ui);
+}
+/* `field-sizing: content` sizes an empty field to its placeholder, so a wrapped
+   hint made the box shrink on the first keystroke. One line keeps it steady. */
+.chat-composer textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-composer :is(.chat-send, .chat-stop) {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  flex: none;
+  font-size: 14px;
+}
+/* An empty composer has nothing to send; a lit button would suggest otherwise. */
+.chat-ui .chat-send:disabled {
+  background: transparent;
+  color: var(--fg-subtle);
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-message-actions {
+    transition: none;
+  }
+}
+
+.chat-ui table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+.chat-ui th,
+.chat-ui td {
+  border: 1px solid var(--chat-border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.chat-ui th {
+  background: var(--chat-surface);
+}
+
+/* Model, reasoning and permissions share one compact control style. */
+.chat-model-settings {
+  min-width: 0;
+  padding-left: 2px;
+}
+.chat-model-selectors {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.chat-model-selectors select + select {
+  flex-shrink: 0;
+}
+.chat-composer-settings select,
+.chat-composer-settings select::picker(select) {
+  appearance: base-select;
+}
+.chat-composer-settings select {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 180px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-subtle);
+  font: 11px/1.5 var(--font-ui);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.chat-composer-settings select::picker-icon {
+  display: none;
+}
+.chat-composer-settings select:enabled:is(:hover, :open) {
+  background: var(--chat-surface-strong);
+  color: var(--fg);
+}
+.chat-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.chat-picker select {
+  padding-left: 21px;
+}
+.chat-picker-icon {
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  translate: 0 -50%;
+  color: var(--fg-subtle);
+  pointer-events: none;
+}
+.chat-picker:has(select:enabled:is(:hover, :open)) .chat-picker-icon {
+  color: var(--fg);
+}
+.chat-composer-settings select:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* The picker renders in the top layer, outside the chat's variables. */
+.chat-composer-settings select::picker(select) {
+  min-width: 160px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 20px #0006;
+}
+.chat-composer-settings option {
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  font-size: 11px;
+}
+.chat-composer-settings option:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+}
+.chat-composer-settings option:checked {
+  color: var(--chat-accent);
+}
+.chat-composer-settings option::checkmark {
+  display: none;
+}
+.chat-model-error {
+  color: var(--error);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  padding: 2px;
+}
+.chat-model-error button {
+  margin-left: 8px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Keep completed turns mounted: search, selections, and disclosure state belong
+   to the reader, even while the next turn streams. */
+.chat-transcript {
+  /* Reading typography stays consistent across the app's decorative look presets. */
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  width: 100%;
+  max-width: 768px;
+  margin-inline: auto;
+  padding: 28px 28px 16px;
+  overflow-wrap: anywhere;
+}
+.chat-answer {
+  position: relative;
+  margin-block: 20px 32px;
+}
+.chat-user-turn {
+  position: relative;
+  margin-block: 40px 32px;
+}
+.chat-user-turn:first-child {
+  margin-top: 0;
+}
+/* Dimmed until the agent confirms it, so a message that fails is not mistaken
+   for one the agent received. */
+.chat-user-sending .chat-user-message {
+  opacity: 0.6;
+}
+.chat-speaker {
+  display: block;
+  text-align: right;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.chat-ui button {
+  font: inherit;
+}
+.chat-toolbar,
+.chat-composer-settings {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chat-toolbar {
+  flex: none;
+  justify-content: space-between;
+  padding: 4px 16px;
+  border-bottom: 1px solid var(--chat-border);
+}
+.chat-toolbar button,
+.chat-search-results button,
+.chat-interrupt,
+.chat-more,
+.chat-review,
+.chat-file button,
+.chat-queue button {
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid transparent;
+}
+/* Mirrors .btn-with-icon in src/styles.css, which the phone UI does not load. */
+.chat-ui .btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.chat-ui button:enabled:hover {
+  background-color: var(--chat-surface-strong);
+  color: var(--fg);
+}
+.chat-search {
+  position: relative;
+}
+/* Without a toolbar the search opens from Ctrl/Cmd+F over the transcript's top
+   corner, above its jump-to-latest pill. */
+.chat-search-floating {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  z-index: 40;
+}
+.chat-search-floating .chat-search-panel {
+  position: static;
+}
+.chat-search-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  width: min(440px, 85cqw);
+  padding: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px #0003;
+}
+.chat-search-results {
+  max-height: 35cqh;
+  overflow: auto;
+}
+.chat-search-results button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.chat-search input,
+.chat-file-picker input {
+  width: 100%;
+  padding: 6px 8px;
+  color: var(--fg);
+  background: var(--chat-surface);
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+.chat-search [role='status'] {
+  display: block;
+  margin-block: 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.chat-activity-group {
+  margin-block: 16px;
+}
+.chat-activity-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  border: 1px solid var(--chat-border);
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.7;
+  border-radius: var(--radius-sm);
+}
+.chat-activity-summary:hover {
+  color: var(--fg);
+  background: var(--chat-surface);
+}
+.chat-activity-summary::-webkit-details-marker {
+  display: none;
+}
+.chat-activity-chevron {
+  display: flex;
+  flex: none;
+  color: var(--fg-muted);
+}
+.chat-activity-group > details[open] .chat-activity-chevron {
+  transform: rotate(90deg);
+}
+.chat-activity-label {
+  flex: 1;
+  min-width: 100px;
+}
+.chat-activity-summary[data-status='running'] .chat-activity-chevron {
+  color: var(--chat-accent);
+}
+.chat-activity-summary[data-status='failed'] {
+  border-color: color-mix(in srgb, var(--error) 45%, var(--chat-border));
+}
+.chat-activity-group > details[open] > .chat-activity-summary {
+  margin-bottom: 8px;
+}
+.chat-activity-summary strong {
+  color: var(--error);
+  font-weight: 500;
+}
+.chat-activity-outcome {
+  /* Declined and stopped calls need no action, unlike failures. */
+  color: var(--fg-muted);
+}
+.chat-current-operation {
+  flex-basis: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--chat-accent);
+  padding-left: 22px;
+}
+.chat-activity-group > .chat-review {
+  margin-top: 6px;
+}
+.chat-file {
+  display: flex;
+  gap: 8px;
+  padding: 4px 10px;
+}
+.chat-file button:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: left;
+  color: var(--link);
+}
+.chat-file button:last-child {
+  flex-shrink: 0;
+}
+.chat-plan {
+  font-size: 12px;
+  margin-bottom: 6px;
+  max-height: 22cqh;
+  overflow: auto;
+}
+.chat-plan summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+.chat-plan ol {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+.chat-plan li {
+  padding: 3px 0;
+}
+.chat-plan li[data-status='completed'] {
+  color: var(--fg-muted);
+}
+.chat-plan li[data-status='in_progress'] {
+  color: var(--chat-accent);
+}
+.chat-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 4px 7px;
+  color: var(--fg-subtle);
+  font-size: 11px;
+}
+.chat-progress .inline-spinner {
+  width: 10px;
+  height: 10px;
+  margin-right: -4px;
+}
+.chat-progress [role='status'] {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-progress time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.chat-send {
+  border-radius: var(--radius-md);
+  padding: 4px 8px;
+  cursor: pointer;
+  border: 0;
+}
+.chat-stop {
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+/* Keep the quiet controls on the bottom edge, with one shared centre line. */
+.chat-composer-settings {
+  flex-wrap: nowrap;
+  gap: 2px;
+  margin-top: auto;
+  padding-top: 4px;
+  color: var(--fg-subtle);
+}
+.chat-composer-settings:has(.chat-model-error) {
+  flex-wrap: wrap;
+}
+.chat-model-settings:has(.chat-model-error) {
+  flex-basis: 100%;
+}
+.chat-composer-status,
+.chat-ui .chat-interrupt {
+  align-self: flex-start;
+  margin: 0 8px 4px;
+  padding: 2px 0;
+  border: 0;
+  color: var(--fg-subtle);
+  font: 11px/1.5 var(--font-ui);
+}
+.chat-session-controls {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.chat-context-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-subtle);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.chat-context-meter-ring {
+  width: 13px;
+  height: 13px;
+  /* The used arc starts at twelve o'clock. */
+  rotate: -90deg;
+  fill: none;
+  stroke-width: 2.5;
+}
+.chat-context-meter-ring circle:first-child {
+  stroke: var(--chat-border);
+}
+.chat-context-meter-ring circle:last-child {
+  stroke: currentColor;
+}
+.chat-context-meter[data-level='high'] {
+  color: var(--warning);
+}
+.chat-context-meter[data-level='full'] {
+  color: var(--error);
+}
+.chat-ui .chat-more {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--fg-subtle);
+}
+.chat-context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 100px;
+  overflow: auto;
+}
+.chat-composer .chat-context-chips:not(:empty) {
+  margin: 0 8px 8px;
+}
+.chat-context-chips button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 3px 6px;
+  color: var(--fg);
+  background: var(--chat-surface-strong);
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  cursor: pointer;
+}
+.chat-context-chips img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 3px;
+}
+.chat-image {
+  max-width: min(240px, 100%);
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  margin: 6px;
+}
+.chat-file-picker {
+  padding: 8px;
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-sm);
+}
+.chat-file-picker > div {
+  max-height: 20cqh;
+  overflow: auto;
+}
+.chat-file-picker button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 4px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.chat-file-picker button[aria-pressed='true'] {
+  color: var(--chat-accent);
+}
+.chat-command-list {
+  max-height: 20cqh;
+  overflow: auto;
+  margin: 0 0 8px;
+  padding: 4px;
+  list-style: none;
+  background: var(--chat-surface);
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.chat-command-list li {
+  display: flex;
+  gap: 12px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.chat-command-list li[aria-selected='true'] {
+  background: var(--bg-hover);
+}
+/* Hover stays lighter than the keyboard highlight, so only one row reads as chosen. */
+.chat-command-list li:hover small {
+  color: var(--fg);
+}
+.chat-command-list span {
+  flex: none;
+  color: var(--fg);
+  font-family: var(--font-mono);
+}
+.chat-command-list small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-queue {
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  max-height: 20cqh;
+  overflow: auto;
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.chat-queue > div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.chat-queue span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.chat-composer-dock {
+  max-height: 65cqh;
+  overflow-y: auto;
+}
+/* A pending decision outranks the transcript, so it takes the room it needs; the
+   dock scrolls only when the requests outgrow the whole panel. */
+.chat-composer-dock:has(.chat-requests) {
+  max-height: none;
+}
+@container (max-width: 440px) {
+  .chat-transcript {
+    padding: 20px 16px 8px;
+  }
+  .chat-composer-dock {
+    padding-inline: 6px;
+  }
+  .chat-toolbar {
+    padding-inline: 8px;
+  }
+  /* Wrap instead of truncating labels, but only when the row really runs out of room. */
+  .chat-composer-settings {
+    flex-wrap: wrap;
+  }
+}
+
+.chat-empty {
+  padding: 32px 8px;
+  color: var(--fg-muted);
+}
+.chat-empty strong {
+  font-size: 17px;
+  color: var(--fg);
+}
+.chat-empty p {
+  margin-top: 8px;
+}
+.chat-scroll-container {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.chat-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  overflow-anchor: none;
+}
+.chat-jump {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--chat-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 2px 8px #0003;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+/* A `!` draft runs as typed, so the box turns into a terminal: its background,
+   and monospace, since spacing and quoting matter in a command. A mode, not an
+   alert, so no accent colour. */
+.chat-composer.chat-composer-shell {
+  background: var(--task-panel-bg, var(--bg-elevated));
+}
+.chat-composer-shell textarea {
+  padding-left: 0;
+  font-family: var(--font-mono);
+}
+/* The prompt sits on the first line, a space before the command. Red, as the
+   terminal agents mark their `!` prompt; the user asked to match them. */
+.chat-shell-prompt {
+  align-self: flex-start;
+  padding-left: 8px;
+  color: var(--error);
+  font: 600 13px/22px var(--font-mono);
+}
+/* The user's own command, so it lines up with their messages, but reads as
+   output: monospace and as wide as the log. */
+.chat-shell-turn .chat-command {
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: var(--radius-sm);
+  background: var(--chat-surface);
+  font: 12px/1.5 var(--font-mono);
+}
+.chat-shell-turn[data-status='failed'] .chat-speaker {
+  color: var(--error);
+}

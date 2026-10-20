@@ -31,7 +31,7 @@ describe('global focus-visible styles', () => {
 
     expect(rule).not.toBeNull();
     expect(rule?.[1].split(',').map((selector) => selector.trim())).toEqual(globalFocusSelectors);
-    expect(rule?.[2]).toMatch(/outline:\s*2px solid var\(--accent\)/);
+    expect(rule?.[2]).toMatch(/outline:\s*2px solid var\(--border-focus\)/);
     expect(css).not.toMatch(/(?:^|\n):is\([\s\S]*?\):focus-visible/);
   });
 

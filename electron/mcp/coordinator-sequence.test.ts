@@ -43,7 +43,7 @@ describe('Coordinator — end-to-end tool sequence smoke', () => {
     const idleResult = await coordinator.waitForIdle('task-1');
     expect(idleResult).toEqual({ reason: 'idle' });
 
-    coordinator.signalDone('task-1');
+    await coordinator.signalDone('task-1');
 
     const signalResult = await coordinator.waitForSignalDone('coord-1', 1000);
     expect(signalResult).toMatchObject({ remaining: 0 });

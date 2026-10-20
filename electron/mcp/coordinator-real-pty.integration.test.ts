@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { Coordinator } from './coordinator.js';
+import type { Notify } from '../ipc/notify.js';
 
 const RUN_REAL_PTY = process.env.RUN_COORDINATOR_PTY_TEST === '1';
 const describeRealPty = RUN_REAL_PTY ? describe : describe.skip;
@@ -25,10 +26,7 @@ interface CaptureRecord {
   at: number;
 }
 
-const mockWin = {
-  isDestroyed: () => false,
-  webContents: { send: () => undefined },
-} as unknown as import('electron').BrowserWindow;
+const ignoreNotifications: Notify = () => undefined;
 
 function runGit(cwd: string, args: string[]): void {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
@@ -81,7 +79,7 @@ async function expectPromptDeliveredOnce(params: {
   const assignment = `Do the ${params.profile}${params.promptSuffix ?? ''} startup assignment.`;
 
   try {
-    coordinator.setWindow(mockWin);
+    coordinator.setNotify(ignoreNotifications);
     coordinator.setDefaultProject('proj-1', repo);
     coordinator.registerCoordinator('coord-1', 'proj-1', {
       branchName: 'main',

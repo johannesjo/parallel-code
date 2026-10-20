@@ -1,26 +1,46 @@
 import { createSignal, createMemo, createEffect, onCleanup, batch, Index, Show } from 'solid-js';
 import { invoke } from '../lib/ipc';
+import { isWindowVisible } from '../lib/windowVisibility';
 import { IPC } from '../../electron/ipc/channels';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { getStatusColor } from '../lib/status-colors';
 import { openFileInEditor } from '../lib/shell';
+import { isMarkdownPath } from '../lib/canvas-tabs';
 import { buildFileTree, flattenVisibleTree } from '../lib/file-tree';
+import {
+  buildCoverageComparison,
+  formatCoverageDelta,
+  isBaselineInformational,
+  type CoverageComparison,
+  type CoverageFileComparison,
+  type CoverageValue,
+} from '../lib/coverage-comparison';
 import {
   type CommitSelection,
   isCommitHashSelection,
   isUncommittedSelection,
 } from './CommitNavBar';
+import type { UnderstandingTourState } from '../lib/create-understanding-tour';
+import { TourHint } from './understanding/TourHint';
 import type { ChangedFile, CoverageFileSummary, CoverageSummary } from '../ipc/types';
 
 interface ChangedFilesListProps {
   worktreePath: string;
+  /** Fixed inventory when viewing a tour's captured diff. */
+  filesOverride?: ChangedFile[];
   isActive?: boolean;
   panelFocused?: boolean;
   onFileClick?: (file: ChangedFile) => void;
   /** Optional path to visually mark as the active/open diff target. */
   activeFilePath?: string | null;
   onOpenInEditorClick?: () => void;
+  /** Opens a Markdown file in the task's canvas column; omit to hide the button. */
+  onOpenMarkdownClick?: (file: ChangedFile) => void;
+  /** Starts a guided tour of the file; omit to hide the button. */
+  onUnderstandClick?: (file: ChangedFile) => void;
+  /** Lets each row's tour button show its own generating/ready state. */
+  understanding?: UnderstandingTourState;
   ref?: (el: HTMLDivElement) => void;
   /** Optional coverage artifact path relative to the repo root. */
   coverageReportPath?: string;
@@ -30,6 +50,10 @@ interface ChangedFilesListProps {
   branchName?: string | null;
   /** Base branch for diff comparison (e.g. 'main', 'develop'). Undefined = auto-detect. */
   baseBranch?: string;
+  /** Reports coverage changes when task or base coverage data refreshes. */
+  onCoverageComparisonChange?: (comparison: CoverageComparison | null) => void;
+  /** Reports the number of listed files whenever the list refreshes. */
+  onFileCountChange?: (count: number) => void;
   /**
    * Selection mode for the file list:
    * - undefined/null: all changes (committed + uncommitted)
@@ -42,12 +66,40 @@ interface ChangedFilesListProps {
 const SOURCE_FILE_RE = /\.(?:[cm]?[jt]sx?)$/i;
 const TEST_FILE_RE = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/i;
 
-export function isCoverageEligible(file: ChangedFile): boolean {
+function isCoverageCandidate(file: ChangedFile): boolean {
   return (
-    file.status !== 'D' &&
-    SOURCE_FILE_RE.test(file.path) &&
-    !TEST_FILE_RE.test(file.path) &&
-    !file.path.endsWith('.d.ts')
+    SOURCE_FILE_RE.test(file.path) && !TEST_FILE_RE.test(file.path) && !file.path.endsWith('.d.ts')
+  );
+}
+
+export function isCoverageEligible(file: ChangedFile): boolean {
+  return file.status !== 'D' && isCoverageCandidate(file);
+}
+
+function sameChangedFiles(left: ChangedFile[] | null, right: ChangedFile[] | null): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((file, index) => {
+    const other = right[index];
+    return (
+      file.path === other.path &&
+      file.previous_path === other.previous_path &&
+      file.lines_added === other.lines_added &&
+      file.lines_removed === other.lines_removed &&
+      file.status === other.status &&
+      file.committed === other.committed
+    );
+  });
+}
+
+function sameCoverageSummary(left: CoverageSummary | null, right: CoverageSummary | null): boolean {
+  return (
+    left === right ||
+    (left !== null &&
+      right !== null &&
+      left.format === right.format &&
+      left.reportPath === right.reportPath &&
+      left.generatedAt === right.generatedAt)
   );
 }
 
@@ -60,16 +112,6 @@ export function coverageFooterLabel(
   if (hasMatchedCoverage && touchedCoveragePct === null) return '◌';
   if (touchedCoveragePct === null) return '∅';
   return `◔ ${touchedCoveragePct}%`;
-}
-
-export function filesFooterLabel(fileCount: number, uncommittedCount: number): string {
-  return uncommittedCount > 0 ? `▤ ${fileCount}·${uncommittedCount}u` : `▤ ${fileCount}`;
-}
-
-export function filesFooterTitle(fileCount: number, uncommittedCount: number): string {
-  return uncommittedCount > 0
-    ? `${fileCount} changed files, ${uncommittedCount} uncommitted.`
-    : `${fileCount} changed files.`;
 }
 
 export function coverageFooterTitle(
@@ -99,25 +141,128 @@ function coverageBadgeTitle(summary: CoverageFileSummary): string {
   return `Lines ${summary.lines.pct}% · Branches ${summary.branches.pct}% · Functions ${summary.functions.pct}% · Statements ${summary.statements.pct}%`;
 }
 
-function FileCoverageBadge(props: {
+function coverageValueLabel(value: CoverageValue): string {
+  if (value.state === 'available') return `${value.pct}%`;
+  if (value.state === 'no-executable-lines') return 'no lines';
+  if (value.state === 'file-not-present') return 'not present';
+  return 'no report';
+}
+
+function deltaColor(delta: number): string {
+  if (delta > 0) return theme.success;
+  if (delta < 0) return theme.error;
+  return theme.fgMuted;
+}
+
+function comparisonBadge(
+  comparison: CoverageFileComparison,
+  baseline: CoverageComparison['baseline'],
+): { label: string; color: string; title: string } | null {
+  const taskLabel = coverageValueLabel(comparison.task);
+  const baseLabel = coverageValueLabel(comparison.base);
+  const baselineInformational = isBaselineInformational(baseline);
+  const baselineBranch = baseline?.baseBranch ?? 'base branch';
+  const baselineDetail = baseline?.taskStale
+    ? ' The task report predates task HEAD, so this delta is informational only.'
+    : baseline?.taskUnanchored
+      ? ' The task report cannot be anchored to task HEAD, so this delta is informational only.'
+      : baseline?.stale
+        ? ` The base report predates ${baselineBranch} as currently checked out, so this delta is informational only.`
+        : baseline?.unanchored
+          ? ` The base report cannot be anchored to ${baselineBranch} as currently checked out, so this delta is informational only.`
+          : '';
+  const renameDetail =
+    comparison.kind === 'renamed' ? ` (${comparison.basePath} → ${comparison.path})` : '';
+
+  if (comparison.kind === 'deleted') {
+    if (comparison.base.state === 'no-report') return null;
+    return {
+      label: comparison.base.state === 'available' ? `del ${baseLabel}` : 'deleted',
+      color: theme.fgMuted,
+      title: `Deleted file${renameDetail}. Base: ${baseLabel}; task: not present.`,
+    };
+  }
+
+  if (comparison.task.state === 'no-executable-lines') {
+    return {
+      label: 'no lines',
+      color: theme.fgMuted,
+      title: `Task: no executable lines; base: ${baseLabel}${renameDetail}.`,
+    };
+  }
+
+  if (comparison.task.state === 'no-report' && comparison.base.state !== 'no-report') {
+    return {
+      label: 'no report',
+      color: theme.fgMuted,
+      title: `No task coverage report; base: ${baseLabel}${renameDetail}.`,
+    };
+  }
+
+  if (comparison.task.state !== 'available') return null;
+
+  if (comparison.delta !== null) {
+    return {
+      label: `${taskLabel} ${formatCoverageDelta(comparison.delta)}`,
+      color: baselineInformational ? theme.fgMuted : deltaColor(comparison.delta),
+      title: `Task: ${taskLabel}; base: ${baseLabel}; delta: ${formatCoverageDelta(comparison.delta)}${renameDetail}.${baselineDetail}`,
+    };
+  }
+
+  const kindLabel =
+    comparison.kind === 'new' ? ' new' : comparison.kind === 'renamed' ? ' renamed' : '';
+  return {
+    label: `${taskLabel}${kindLabel}`,
+    color: coverageColor(comparison.task.pct ?? 0),
+    title: `Task: ${taskLabel}; base: ${baseLabel}${renameDetail}.`,
+  };
+}
+
+export function FileCoverageBadge(props: {
   file: ChangedFile;
   selectedCommit?: CommitSelection;
   summary?: CoverageFileSummary;
+  comparison?: CoverageFileComparison;
+  baseline?: CoverageComparison['baseline'];
   hasCoverageArtifact: boolean;
 }) {
-  const isEligible = () =>
-    !isCommitHashSelection(props.selectedCommit) && isCoverageEligible(props.file);
-  const summary = () => (isEligible() ? props.summary : undefined);
+  const isCandidate = () =>
+    !isCommitHashSelection(props.selectedCommit) && isCoverageCandidate(props.file);
+  const summary = () => (isCandidate() ? props.summary : undefined);
+  const badge = () =>
+    isCandidate() && props.comparison ? comparisonBadge(props.comparison, props.baseline) : null;
 
   return (
     <>
-      <Show when={summary()} keyed>
+      <Show when={badge()} keyed>
+        {(coverageBadge) => (
+          <span
+            title={
+              summary()
+                ? `${coverageBadge.title} ${coverageBadgeTitle(summary() as CoverageFileSummary)}`
+                : coverageBadge.title
+            }
+            style={{
+              color: coverageBadge.color,
+              'font-size': sf(11),
+              'flex-shrink': '0',
+              padding: '1px 5px',
+              'border-radius': '999px',
+              border: `1px solid color-mix(in srgb, ${coverageBadge.color} 30%, transparent)`,
+              background: `color-mix(in srgb, ${coverageBadge.color} 12%, transparent)`,
+            }}
+          >
+            {coverageBadge.label}
+          </span>
+        )}
+      </Show>
+      <Show when={!badge() && summary()} keyed>
         {(coverageSummary) => (
           <span
             title={coverageBadgeTitle(coverageSummary)}
             style={{
               color: coverageColor(coverageSummary.lines.pct),
-              'font-size': sf(10),
+              'font-size': sf(11),
               'flex-shrink': '0',
               padding: '1px 5px',
               'border-radius': '999px',
@@ -129,12 +274,20 @@ function FileCoverageBadge(props: {
           </span>
         )}
       </Show>
-      <Show when={props.hasCoverageArtifact && isEligible() && !props.summary}>
+      <Show
+        when={
+          props.hasCoverageArtifact &&
+          isCandidate() &&
+          props.file.status !== 'D' &&
+          !badge() &&
+          !props.summary
+        }
+      >
         <span
           title="No recent coverage data for this source file. Run npm run test:coverage to populate the radar."
           style={{
             color: theme.error,
-            'font-size': sf(10),
+            'font-size': sf(11),
             'flex-shrink': '0',
             padding: '1px 5px',
             'border-radius': '999px',
@@ -147,6 +300,30 @@ function FileCoverageBadge(props: {
       </Show>
     </>
   );
+}
+
+async function resolveCoverageWorktree(
+  projectRoot: string | undefined,
+  branchName: string,
+): Promise<{ path: string; headCommittedAt: string | null } | null> {
+  if (!projectRoot) return null;
+  return invoke<{
+    path: string;
+    headCommittedAt: string | null;
+  } | null>(IPC.GetBranchWorktreePath, {
+    projectRoot,
+    branchName,
+  }).catch(() => null);
+}
+
+async function resolveBaseCoverageRoot(
+  projectRoot: string | undefined,
+  baseBranch: string,
+  taskRoot: string,
+): Promise<{ path: string; headCommittedAt: string | null } | null> {
+  const baseWorktree = await resolveCoverageWorktree(projectRoot, baseBranch);
+  if (!baseWorktree || baseWorktree.path === taskRoot) return null;
+  return baseWorktree;
 }
 
 function OpenInEditorButton(props: {
@@ -174,7 +351,7 @@ function OpenInEditorButton(props: {
         display: 'flex',
         'align-items': 'center',
         'justify-content': 'center',
-        'border-radius': '4px',
+        'border-radius': 'var(--radius-xs)',
       }}
       title="Open in editor"
       aria-label={`Open ${props.filePath} in editor`}
@@ -186,9 +363,112 @@ function OpenInEditorButton(props: {
   );
 }
 
+function UnderstandFileButton(props: {
+  filePath: string;
+  understanding?: UnderstandingTourState;
+  onUnderstandClick?: () => void;
+}) {
+  const loading = () => props.understanding?.isLoading('file', props.filePath) ?? false;
+  const ready = () => props.understanding?.isReady('file', props.filePath) ?? false;
+
+  return (
+    <TourHint
+      kind="file"
+      subject={props.filePath}
+      tour={props.understanding}
+      class="changed-files-understand-anchor"
+    >
+      {(describedBy) => (
+        <button
+          class="changed-files-understand-btn"
+          aria-describedby={describedBy()}
+          data-ready={ready() ? 'true' : undefined}
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onUnderstandClick?.();
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+          tabIndex={-1}
+          aria-busy={loading()}
+          style={{
+            background: `color-mix(in srgb, ${theme.bgElevated} 92%, transparent)`,
+            border: 'none',
+            color: ready() ? theme.success : theme.fgMuted,
+            cursor: 'pointer',
+            padding: '4px',
+            display: 'flex',
+            'align-items': 'center',
+            'justify-content': 'center',
+            'border-radius': 'var(--radius-xs)',
+          }}
+          aria-label={`Understand ${props.filePath}`}
+        >
+          <Show
+            when={loading()}
+            fallback={
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0ZM1.5 8a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0Zm6.6-3.7c-.9 0-1.5.4-1.9 1a.75.75 0 0 1-1.3-.8c.7-1 1.7-1.7 3.2-1.7 1.7 0 3.1 1.1 3.1 2.7 0 1.2-.7 1.9-1.5 2.4-.6.4-.9.7-.9 1.2a.75.75 0 0 1-1.5 0c0-1.3.8-1.9 1.5-2.4.6-.4.9-.7.9-1.2 0-.7-.7-1.2-1.6-1.2ZM8 11.4a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z" />
+              </svg>
+            }
+          >
+            <span class="inline-spinner" aria-hidden="true" />
+          </Show>
+        </button>
+      )}
+    </TourHint>
+  );
+}
+
+function OpenMarkdownButton(props: { filePath: string; onOpenMarkdownClick?: () => void }) {
+  return (
+    <button
+      class="changed-files-open-canvas-btn"
+      onClick={(e) => {
+        e.stopPropagation();
+        props.onOpenMarkdownClick?.();
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      tabIndex={-1}
+      style={{
+        background: `color-mix(in srgb, ${theme.bgElevated} 92%, transparent)`,
+        border: 'none',
+        color: theme.fgMuted,
+        cursor: 'pointer',
+        padding: '4px',
+        display: 'flex',
+        'align-items': 'center',
+        'justify-content': 'center',
+        'border-radius': 'var(--radius-xs)',
+      }}
+      title="Open in canvas"
+      aria-label={`Open ${props.filePath} in canvas`}
+    >
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+      >
+        <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
+        <path d="M10 2.75v10.5" />
+      </svg>
+    </button>
+  );
+}
+
 export function ChangedFilesList(props: ChangedFilesListProps) {
   const [files, setFiles] = createSignal<ChangedFile[]>([]);
+  createEffect(() => props.onFileCountChange?.(files().length));
+  const [comparisonFiles, setComparisonFiles] = createSignal<ChangedFile[] | null>(null);
   const [coverage, setCoverage] = createSignal<CoverageSummary | null>(null);
+  const [baseCoverage, setBaseCoverage] = createSignal<CoverageSummary | null>(null);
+  const [baseHeadAt, setBaseHeadAt] = createSignal<string | null>(null);
+  const [taskHeadAt, setTaskHeadAt] = createSignal<string | null>(null);
+  const [baseBranchName, setBaseBranchName] = createSignal<string | undefined>();
+  const [comparisonInventoryState, setComparisonInventoryState] =
+    createSignal<NonNullable<CoverageComparison['inventoryState']>>('loading');
   const [canOpenFilesInEditor, setCanOpenFilesInEditor] = createSignal(false);
   const [selectedIndex, setSelectedIndex] = createSignal(-1);
   const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set());
@@ -198,7 +478,45 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
   const visibleRows = createMemo(() => flattenVisibleTree(tree(), collapsed()));
   const coverageFiles = createMemo(() => coverage()?.files ?? {});
   const hasCoverageArtifact = createMemo(() => coverage() !== null);
+  const hasBaseCoverageArtifact = createMemo(() => baseCoverage() !== null);
   const eligibleFiles = createMemo(() => files().filter((file) => isCoverageEligible(file)));
+  const showCoverageFooter = createMemo(
+    () =>
+      !isCommitHashSelection(props.selectedCommit) &&
+      (files().some((file) => isCoverageCandidate(file)) ||
+        hasCoverageArtifact() ||
+        hasBaseCoverageArtifact()),
+  );
+  const coverageComparison = createMemo(() => {
+    const inventory = comparisonFiles();
+    const taskReport = coverage();
+    const baseReport = baseCoverage();
+    if (isCommitHashSelection(props.selectedCommit)) return null;
+    if (!inventory && !taskReport && !baseReport) return null;
+    const comparison = buildCoverageComparison(
+      taskReport,
+      baseReport,
+      inventory ?? [],
+      baseHeadAt(),
+      baseBranchName(),
+      taskHeadAt(),
+    );
+    const inventoryState = inventory ? 'available' : comparisonInventoryState();
+
+    if (!inventory) {
+      return {
+        ...comparison,
+        files: Object.create(null) as Record<string, CoverageFileComparison>,
+        impactedUnchangedFiles: [],
+        inventoryState,
+      };
+    }
+
+    return {
+      ...comparison,
+      inventoryState,
+    };
+  });
   const coveredEligibleFiles = createMemo(() =>
     eligibleFiles().filter((file) => Boolean(coverageFiles()[file.path])),
   );
@@ -223,6 +541,80 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     }
     if (totalLines === 0) return null;
     return Math.round((coveredLines / totalLines) * 100);
+  });
+  const aggregateCoverageLabel = createMemo(() => {
+    const comparison = coverageComparison()?.aggregate;
+    if (!comparison) return null;
+    if (!hasBaseCoverageArtifact()) return null;
+    const delta = comparison.delta === null ? '' : ` (${formatCoverageDelta(comparison.delta)})`;
+    return `base ${coverageValueLabel(comparison.base)} → task ${coverageValueLabel(comparison.task)}${delta}`;
+  });
+  const aggregateCoverageTitle = createMemo(() => {
+    const comparison = coverageComparison();
+    const taskReport = coverage();
+    const baseReport = baseCoverage();
+    if (!baseReport || !comparison) return '';
+    const lines = [
+      `Base: ${coverageValueLabel(comparison.aggregate.base)} (${baseReport.reportPath}, updated ${baseReport.generatedAt ?? 'unknown time'}).`,
+      taskReport
+        ? `Task: ${coverageValueLabel(comparison.aggregate.task)} (${taskReport.reportPath}, updated ${taskReport.generatedAt ?? 'unknown time'}).`
+        : 'Task: no coverage report.',
+    ];
+    if (comparison.aggregate.delta !== null) {
+      lines.push(`Delta: ${formatCoverageDelta(comparison.aggregate.delta)}.`);
+    }
+    if (comparison.inventoryState === 'loading') {
+      lines.push(
+        'The changed-file inventory is still loading, so merge readiness ignores the comparison.',
+      );
+    } else if (comparison.inventoryState === 'failed') {
+      lines.push(
+        'The changed-file inventory is unavailable, so merge readiness ignores the comparison.',
+      );
+    }
+    if (comparison.baseline?.taskUnanchored) {
+      lines.push(
+        'The task report cannot be anchored to task HEAD, so merge readiness ignores the delta.',
+      );
+    } else if (comparison.baseline?.taskStale) {
+      lines.push('The task report predates task HEAD, so merge readiness ignores the delta.');
+    }
+    if (comparison.baseline?.unanchored) {
+      lines.push(
+        `The base report cannot be anchored to ${comparison.baseline.baseBranch ?? 'the base branch'} as currently checked out, so merge readiness ignores the delta.`,
+      );
+    } else if (comparison.baseline?.baseHeadAt) {
+      lines.push(
+        `Baseline: ${comparison.baseline.baseBranch ?? 'base branch'} as currently checked out (${comparison.baseline.baseHeadAt}).`,
+      );
+      lines.push(
+        `This comparison may include changes merged into ${comparison.baseline.baseBranch ?? 'the base branch'} after the task branched.`,
+      );
+      if (comparison.baseline.stale) {
+        lines.push(
+          `The base report predates ${comparison.baseline.baseBranch ?? 'the base branch'} as currently checked out, so merge readiness ignores the delta.`,
+        );
+      }
+    }
+    if (comparison.impactedUnchangedFiles.length > 0) {
+      const impacted = comparison.impactedUnchangedFiles
+        .slice(0, 3)
+        .map((file) =>
+          file.delta === null
+            ? `${file.path} ${coverageValueLabel(file.base)} → ${coverageValueLabel(file.task)}`
+            : `${file.path} ${formatCoverageDelta(file.delta)}`,
+        )
+        .join(', ');
+      lines.push(
+        `${comparison.impactedUnchangedFiles.length} materially impacted unchanged file${comparison.impactedUnchangedFiles.length === 1 ? '' : 's'}: ${impacted}.`,
+      );
+    }
+    return lines.join(' ');
+  });
+
+  createEffect(() => {
+    if (!props.onCoverageComparisonChange) return;
+    props.onCoverageComparisonChange(coverageComparison());
   });
 
   function toggleDir(path: string) {
@@ -331,6 +723,24 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
   // (matching git status) is still gated on isActive to avoid running git
   // pipelines for every off-screen task.
   createEffect(() => {
+    void props.worktreePath;
+    void props.projectRoot;
+    void props.branchName;
+    void props.baseBranch;
+    void props.selectedCommit;
+    batch(() => {
+      setComparisonFiles(null);
+      setComparisonInventoryState('loading');
+    });
+  });
+
+  createEffect(() => {
+    const filesOverride = props.filesOverride;
+    if (filesOverride) {
+      setFiles(filesOverride);
+      setCanOpenFilesInEditor(false);
+      return;
+    }
     const path = props.worktreePath;
     const projectRoot = props.projectRoot;
     const branchName = props.branchName;
@@ -338,6 +748,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     const selection = props.selectedCommit;
     const singleCommitHash = isCommitHashSelection(selection) ? selection : null;
     const uncommittedOnly = isUncommittedSelection(selection);
+    const comparisonEnabled = hasCoverageArtifact() || hasBaseCoverageArtifact();
     let cancelled = false;
     let inFlight = false;
     let usingBranchFallback = false;
@@ -355,7 +766,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
               commitHash: singleCommitHash,
             });
             if (!cancelled) {
-              setFiles(result);
+              setFiles((current) => (sameChangedFiles(current, result) ? current : result));
               setCanOpenFilesInEditor(true);
             }
           } catch {
@@ -368,12 +779,42 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
         }
 
         if (uncommittedOnly && path) {
+          if (!comparisonEnabled && !cancelled) {
+            batch(() => {
+              setComparisonFiles(null);
+              setComparisonInventoryState('loading');
+            });
+          }
+          const comparisonRequest = comparisonEnabled
+            ? invoke<ChangedFile[]>(IPC.GetChangedFiles, {
+                worktreePath: path,
+                baseBranch,
+              })
+                .then((result) => {
+                  if (!cancelled) {
+                    batch(() => {
+                      setComparisonFiles((current) =>
+                        sameChangedFiles(current, result) ? current : result,
+                      );
+                      setComparisonInventoryState('available');
+                    });
+                  }
+                })
+                .catch(() => {
+                  if (!cancelled) {
+                    batch(() => {
+                      setComparisonFiles(null);
+                      setComparisonInventoryState('failed');
+                    });
+                  }
+                })
+            : Promise.resolve();
           try {
             const result = await invoke<ChangedFile[]>(IPC.GetUncommittedChangedFiles, {
               worktreePath: path,
             });
             if (!cancelled) {
-              setFiles(result);
+              setFiles((current) => (sameChangedFiles(current, result) ? current : result));
               setCanOpenFilesInEditor(true);
             }
           } catch {
@@ -382,6 +823,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
               setCanOpenFilesInEditor(false);
             }
           }
+          await comparisonRequest;
           return;
         }
 
@@ -393,12 +835,24 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
               baseBranch,
             });
             if (!cancelled) {
-              setFiles(result);
-              setCanOpenFilesInEditor(true);
+              batch(() => {
+                setFiles((current) => (sameChangedFiles(current, result) ? current : result));
+                setComparisonFiles((current) =>
+                  sameChangedFiles(current, result) ? current : result,
+                );
+                setComparisonInventoryState('available');
+                setCanOpenFilesInEditor(true);
+              });
             }
             return;
           } catch {
-            if (!cancelled) setCanOpenFilesInEditor(false);
+            if (!cancelled) {
+              batch(() => {
+                setComparisonFiles(null);
+                setComparisonInventoryState('failed');
+                setCanOpenFilesInEditor(false);
+              });
+            }
             // Worktree may not exist — try branch fallback below
           }
         }
@@ -413,13 +867,35 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
               baseBranch,
             });
             if (!cancelled) {
-              setFiles(uncommittedOnly ? result.filter((f) => !f.committed) : result);
-              setCanOpenFilesInEditor(false);
+              const displayedFiles = uncommittedOnly
+                ? result.filter((file) => !file.committed)
+                : result;
+              batch(() => {
+                setFiles((current) =>
+                  sameChangedFiles(current, displayedFiles) ? current : displayedFiles,
+                );
+                setComparisonFiles((current) =>
+                  sameChangedFiles(current, result) ? current : result,
+                );
+                setComparisonInventoryState('available');
+                setCanOpenFilesInEditor(false);
+              });
+              return;
             }
           } catch {
-            if (!cancelled) setCanOpenFilesInEditor(false);
+            if (!cancelled) {
+              batch(() => {
+                setComparisonFiles(null);
+                setComparisonInventoryState('failed');
+                setCanOpenFilesInEditor(false);
+              });
+            }
             // Branch may no longer exist
           }
+        }
+
+        if (!cancelled && comparisonEnabled) {
+          setComparisonInventoryState('failed');
         }
       } finally {
         inFlight = false;
@@ -427,12 +903,12 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     }
 
     void refresh();
-    // Polling: skip when inactive (off-screen tasks) and when viewing a single
-    // commit (committed data is immutable).
+    // Polling: skip when inactive (off-screen tasks), when viewing a single
+    // commit (committed data is immutable), and while the window is hidden.
     const shouldPoll = singleCommitHash === null && props.isActive;
     const timer = shouldPoll
       ? setInterval(() => {
-          if (!usingBranchFallback) void refresh();
+          if (!usingBranchFallback && isWindowVisible()) void refresh();
         }, 5000)
       : undefined;
     onCleanup(() => {
@@ -443,33 +919,78 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
 
   createEffect(() => {
     const repoRoot = props.worktreePath;
+    const projectRoot = props.projectRoot;
+    const taskBranch = props.branchName;
+    const baseBranch = props.baseBranch;
     const selection = props.selectedCommit;
-    if (!repoRoot || isCommitHashSelection(selection)) {
-      setCoverage(null);
+    if (props.filesOverride || !repoRoot || isCommitHashSelection(selection)) {
+      batch(() => {
+        setCoverage(null);
+        setBaseCoverage(null);
+        setBaseHeadAt(null);
+        setTaskHeadAt(null);
+        setBaseBranchName(undefined);
+      });
       return;
     }
     if (!props.isActive) return;
     let cancelled = false;
     let inFlight = false;
-
     async function refresh() {
       if (inFlight) return;
       inFlight = true;
       try {
-        const result = await invoke<CoverageSummary | null>(IPC.GetCoverageSummary, {
+        const taskResult = await invoke<CoverageSummary | null>(IPC.GetCoverageSummary, {
           repoRoot,
           reportPath: props.coverageReportPath,
-        });
-        if (!cancelled) setCoverage(result);
-      } catch {
-        if (!cancelled) setCoverage(null);
+        }).catch(() => null);
+        let baseResult: CoverageSummary | null = null;
+        let baseHeadResult: string | null = null;
+        let taskHeadResult: string | null = null;
+        let resolvedBaseBranch: string | null = null;
+        if (taskResult) {
+          const taskWorktree = taskBranch
+            ? await resolveCoverageWorktree(projectRoot, taskBranch)
+            : null;
+          taskHeadResult = taskWorktree?.headCommittedAt ?? null;
+          resolvedBaseBranch = baseBranch
+            ? baseBranch
+            : projectRoot
+              ? await invoke<string>(IPC.GetMainBranch, { projectRoot }).catch(() => null)
+              : null;
+          const baseWorktree = resolvedBaseBranch
+            ? await resolveBaseCoverageRoot(projectRoot, resolvedBaseBranch, repoRoot)
+            : null;
+          if (baseWorktree) {
+            baseHeadResult = baseWorktree.headCommittedAt;
+            baseResult = await invoke<CoverageSummary | null>(IPC.GetCoverageSummary, {
+              repoRoot: baseWorktree.path,
+              reportPath: props.coverageReportPath,
+            }).catch(() => null);
+          }
+        }
+        if (!cancelled) {
+          batch(() => {
+            setCoverage((current) =>
+              sameCoverageSummary(current, taskResult) ? current : taskResult,
+            );
+            setBaseCoverage((current) =>
+              sameCoverageSummary(current, baseResult) ? current : baseResult,
+            );
+            setBaseHeadAt(baseHeadResult);
+            setTaskHeadAt(taskHeadResult);
+            setBaseBranchName(resolvedBaseBranch ?? undefined);
+          });
+        }
       } finally {
         inFlight = false;
       }
     }
 
     void refresh();
-    const timer = setInterval(() => void refresh(), 5000);
+    const timer = setInterval(() => {
+      if (isWindowVisible()) void refresh();
+    }, 5000);
     onCleanup(() => {
       cancelled = true;
       clearInterval(timer);
@@ -478,7 +999,6 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
 
   const totalAdded = createMemo(() => files().reduce((s, f) => s + f.lines_added, 0));
   const totalRemoved = createMemo(() => files().reduce((s, f) => s + f.lines_removed, 0));
-  const uncommittedCount = createMemo(() => files().filter((f) => !f.committed).length);
 
   return (
     <div
@@ -513,7 +1033,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                 'padding-left': `${8 + row().depth * 8}px`,
                 'white-space': 'nowrap',
                 cursor: 'pointer',
-                'border-radius': '3px',
+                'border-radius': 'var(--radius-xs)',
                 opacity:
                   !isCommitHashSelection(props.selectedCommit) &&
                   (row().isDir || row().node.file?.committed)
@@ -523,7 +1043,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                   selectedIndex() === i
                     ? theme.bgHover
                     : row().node.file && row().node.path === props.activeFilePath
-                      ? 'rgba(88, 166, 255, 0.16)'
+                      ? `color-mix(in srgb, ${theme.accent} 16%, transparent)`
                       : 'transparent',
               }}
               onClick={() => {
@@ -544,7 +1064,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                       width: '10px',
                       'text-align': 'center',
                       'flex-shrink': '0',
-                      'font-size': sf(10),
+                      'font-size': sf(11),
                     }}
                   >
                     {collapsed().has(row().node.path) ? '\u25B8' : '\u25BE'}
@@ -610,6 +1130,8 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                         file={file}
                         selectedCommit={props.selectedCommit}
                         summary={coverageFiles()[row().node.path]}
+                        comparison={coverageComparison()?.files[row().node.path]}
+                        baseline={coverageComparison()?.baseline}
                         hasCoverageArtifact={hasCoverageArtifact()}
                       />
                     )}
@@ -632,6 +1154,32 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                       worktreePath={props.worktreePath}
                       filePath={row().node.file?.path ?? row().node.path}
                       onOpenInEditorClick={props.onOpenInEditorClick}
+                    />
+                  </Show>
+                  <Show when={!!props.onUnderstandClick && row().node.file?.status !== 'D'}>
+                    <UnderstandFileButton
+                      filePath={row().node.file?.path ?? row().node.path}
+                      understanding={props.understanding}
+                      onUnderstandClick={() => {
+                        const file = row().node.file;
+                        if (file) props.onUnderstandClick?.(file);
+                      }}
+                    />
+                  </Show>
+                  <Show
+                    when={
+                      canOpenFilesInEditor() &&
+                      !!props.onOpenMarkdownClick &&
+                      row().node.file?.status !== 'D' &&
+                      isMarkdownPath(row().node.path)
+                    }
+                  >
+                    <OpenMarkdownButton
+                      filePath={row().node.file?.path ?? row().node.path}
+                      onOpenMarkdownClick={() => {
+                        const file = row().node.file;
+                        if (file) props.onOpenMarkdownClick?.(file);
+                      }}
                     />
                   </Show>
                 </>
@@ -658,7 +1206,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
               'flex-wrap': 'wrap',
             }}
           >
-            <Show when={!isCommitHashSelection(props.selectedCommit) && eligibleFiles().length > 0}>
+            <Show when={showCoverageFooter()}>
               <div
                 style={{
                   display: 'flex',
@@ -667,6 +1215,23 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                   'margin-right': 'auto',
                 }}
               >
+                <Show when={aggregateCoverageLabel()}>
+                  {(label) => (
+                    <span
+                      title={aggregateCoverageTitle()}
+                      style={{
+                        color:
+                          coverageComparison()?.aggregate.delta === null ||
+                          isBaselineInformational(coverageComparison()?.baseline)
+                            ? theme.fgMuted
+                            : deltaColor(coverageComparison()?.aggregate.delta ?? 0),
+                        'font-weight': '600',
+                      }}
+                    >
+                      {label()}
+                    </span>
+                  )}
+                </Show>
                 <Show when={touchedCoveragePct() !== null}>
                   <span
                     title={coverageFooterTitle(
@@ -717,15 +1282,22 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                     ∅ {missingCoverageCount()}
                   </span>
                 </Show>
+                <Show when={(coverageComparison()?.impactedUnchangedFiles.length ?? 0) > 0}>
+                  <span
+                    title={aggregateCoverageTitle()}
+                    style={{
+                      color: isBaselineInformational(coverageComparison()?.baseline)
+                        ? theme.fgMuted
+                        : theme.warning,
+                      'font-weight': '600',
+                    }}
+                  >
+                    ↕ {coverageComparison()?.impactedUnchangedFiles.length} other
+                  </span>
+                </Show>
               </div>
             </Show>
             <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
-              <span
-                title={filesFooterTitle(files().length, uncommittedCount())}
-                style={{ color: uncommittedCount() > 0 ? theme.warning : theme.fgMuted }}
-              >
-                {filesFooterLabel(files().length, uncommittedCount())}
-              </span>
               <span title={`${totalAdded()} added lines`} style={{ color: theme.success }}>
                 +{totalAdded()}
               </span>

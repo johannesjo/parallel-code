@@ -2,9 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectDefined, type MockStoreHarness } from './test-helpers';
 
 type MockStore = {
+  taskProjectFilter?: string | null;
   activeTaskId: string | null;
+  githubIssuesProjectId: string | null;
+  activeDocumentProjectId: string | null;
   activeAgentId: string | null;
-  tasks: Record<string, { id: string; agentIds: string[]; selectedAgentId?: string }>;
+  tasks: Record<
+    string,
+    { id: string; agentIds: string[]; selectedAgentId?: string; projectId?: string }
+  >;
   terminals: Record<string, unknown>;
   taskOrder: string[];
   collapsedTaskOrder: string[];
@@ -13,6 +19,7 @@ type MockStore = {
   sidebarFocused: boolean;
   sidebarFocusedProjectId: string | null;
   sidebarFocusedTaskId: string | null;
+  newTaskPanelFocused: boolean;
 };
 
 let mockStore: MockStore;
@@ -30,13 +37,24 @@ vi.mock('./focus', () => ({}));
 vi.mock('./notification', () => ({ showNotification: vi.fn() }));
 vi.mock('./projects', () => ({ pickAndAddProject: vi.fn() }));
 vi.mock('./tasks', () => ({ reorderTask: vi.fn() }));
+// DOM focus is exercised in navigation.client.test.tsx; here, where there is no
+// document, only whether focus is requested is observed. The gates stay real.
+vi.mock('./focused-panel', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./focused-panel')>()),
+  scheduleTaskFocus: vi.fn(),
+  setTaskFocusedPanel: vi.fn(),
+}));
 
-import { jumpToTask } from './navigation';
+import { activateTaskFromPointer, jumpToTask, moveActiveTask, setActiveTask } from './navigation';
+import { isPanelFocused, scheduleTaskFocus } from './focused-panel';
+import { reorderTask } from './tasks';
 
 beforeEach(() => {
   const harness = expectDefined(core.harness, 'mock store harness');
   mockStore = harness.reset({
     activeTaskId: null,
+    githubIssuesProjectId: null,
+    activeDocumentProjectId: null,
     activeAgentId: null,
     tasks: {
       'task-1': { id: 'task-1', agentIds: ['agent-a'] },
@@ -51,6 +69,7 @@ beforeEach(() => {
     sidebarFocused: false,
     sidebarFocusedProjectId: null,
     sidebarFocusedTaskId: null,
+    newTaskPanelFocused: false,
   });
 });
 
@@ -58,7 +77,44 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe('moveActiveTask', () => {
+  it.each([
+    ['right', 'task-1', 0, 2],
+    ['left', 'task-3', 2, 0],
+  ] as const)(
+    'moves %s past tasks hidden by the project filter',
+    (direction, activeId, from, to) => {
+      mockStore.projects = [{ id: 'a' }, { id: 'b' }];
+      mockStore.taskProjectFilter = 'a';
+      mockStore.tasks['task-1'].projectId = 'a';
+      mockStore.tasks['task-2'].projectId = 'b';
+      mockStore.tasks['task-3'].projectId = 'a';
+      mockStore.activeTaskId = activeId;
+      moveActiveTask(direction);
+      expect(reorderTask).toHaveBeenCalledWith(from, to);
+    },
+  );
+
+  it('does not reorder the previous task while the new-task panel is focused', () => {
+    mockStore.activeTaskId = 'task-2';
+    mockStore.newTaskPanelFocused = true;
+
+    moveActiveTask('right');
+
+    expect(reorderTask).not.toHaveBeenCalled();
+  });
+});
+
 describe('jumpToTask', () => {
+  it('selects the document after coding panels even with no document agent installed', () => {
+    mockStore.activeDocumentProjectId = 'docs';
+    jumpToTask(3);
+    expect(mockStore.activeTaskId).toBe('doc-agent-docs');
+    expect(mockStore.activeAgentId).toBeNull();
+    jumpToTask(0);
+    expect(mockStore.activeTaskId).toBe('task-1');
+    expect(mockStore.activeDocumentProjectId).toBe('docs');
+  });
   it('switches to the task at the given 0-based index', () => {
     jumpToTask(1);
     expect(mockStore.activeTaskId).toBe('task-2');
@@ -137,5 +193,91 @@ describe('jumpToTask', () => {
     expect(mockStore.activeTaskId).toBe('task-3');
     expect(mockStore.sidebarFocusedTaskId).toBe('task-3');
     expect(mockStore.sidebarFocusedProjectId).toBe(null);
+  });
+});
+
+// `sidebarFocused` gates every panel: while it is set, `isPanelFocused` is false
+// and `scheduleTaskFocus` will not move DOM focus. A click into a column is the
+// user leaving the sidebar; a keyboard jump is not.
+describe('activateTaskFromPointer', () => {
+  const panel = 'ai-terminal:agent-b';
+
+  beforeEach(() => {
+    mockStore.activeTaskId = 'task-1';
+    mockStore.sidebarFocused = true;
+    mockStore.focusedPanel = { 'task-2': panel };
+  });
+
+  it('setActiveTask leaves sidebarFocused set (keyboard jumps rely on it)', () => {
+    setActiveTask('task-2');
+    expect(mockStore.activeTaskId).toBe('task-2');
+    expect(isPanelFocused('task-2', panel)).toBe(false);
+  });
+
+  it('activates the column and hands it focus', () => {
+    activateTaskFromPointer('task-2');
+    expect(mockStore.activeTaskId).toBe('task-2');
+    expect(mockStore.sidebarFocused).toBe(false);
+    expect(isPanelFocused('task-2', panel)).toBe(true);
+  });
+
+  // Nothing about the selection changes here, so no focus effect runs again; the
+  // activation has to request focus itself.
+  it('clears the sidebar gate and requests focus when the column is already active', () => {
+    mockStore.activeTaskId = 'task-2';
+    activateTaskFromPointer('task-2');
+    expect(isPanelFocused('task-2', panel)).toBe(true);
+    expect(scheduleTaskFocus).toHaveBeenCalledWith('task-2', panel);
+  });
+
+  it('requests no focus itself when switching to another column', () => {
+    activateTaskFromPointer('task-2');
+    expect(scheduleTaskFocus).not.toHaveBeenCalled();
+  });
+
+  it('requests no focus when the sidebar did not have it', () => {
+    mockStore.sidebarFocused = false;
+    mockStore.activeTaskId = 'task-2';
+    activateTaskFromPointer('task-2');
+    expect(scheduleTaskFocus).not.toHaveBeenCalled();
+  });
+
+  it('leaves the sidebar focused when the id is not something setActiveTask accepts', () => {
+    activateTaskFromPointer('no-such-task');
+    expect(mockStore.activeTaskId).toBe('task-1');
+    expect(mockStore.sidebarFocused).toBe(true);
+  });
+
+  it('keeps keyboard jumps on the sidebar, as they were', () => {
+    jumpToTask(1);
+    expect(mockStore.sidebarFocused).toBe(true);
+  });
+});
+
+describe('issue page navigation', () => {
+  it('returns to the workspace even when selecting the already active task', () => {
+    mockStore.activeTaskId = 'task-1';
+    mockStore.githubIssuesProjectId = 'project';
+    setActiveTask('task-1');
+    expect(mockStore.githubIssuesProjectId).toBeNull();
+    expect(mockStore.activeTaskId).toBe('task-1');
+  });
+
+  it('keeps the issue page open when its own agent panel selects an agent', () => {
+    mockStore.activeTaskId = 'task-1';
+    mockStore.githubIssuesProjectId = 'project';
+    mockStore.tasks['gh-agent-project'] = {
+      id: 'gh-agent-project',
+      agentIds: ['gh-agent-project'],
+    };
+    setActiveTask('gh-agent-project');
+    expect(mockStore.githubIssuesProjectId).toBe('project');
+    expect(mockStore.activeTaskId).toBe('task-1');
+  });
+
+  it('keeps the issue page open for an invalid task target', () => {
+    mockStore.githubIssuesProjectId = 'project';
+    setActiveTask('missing');
+    expect(mockStore.githubIssuesProjectId).toBe('project');
   });
 });

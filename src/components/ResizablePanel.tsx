@@ -1,4 +1,14 @@
-import { batch, createEffect, createMemo, createSignal, For, onCleanup, type JSX } from 'solid-js';
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  on,
+  onCleanup,
+  onMount,
+  type JSX,
+} from 'solid-js';
 import { getPanelUserSize, setPanelUserSize, deletePanelUserSize } from '../store/store';
 
 export interface PanelChild {
@@ -25,28 +35,58 @@ export interface PanelChild {
    *  Ignored on non-absorbers. Use a smaller value to give an absorber less
    *  space than its siblings, e.g. 0.5 so the AI terminal gets ~2/3. */
   absorberWeight?: number;
+  /** Accessible name for the keyboard-resizable separator that controls this
+   *  child. A handle takes the label of its fixed (non-absorber) neighbour, the
+   *  side the arrow keys resize, so label the pinnable pane, e.g. 'Resize
+   *  agent pane'. Ignored on absorbers and on drag-only handles. */
+  resizeLabel?: string;
 }
 
 interface ResizablePanelProps {
   direction: 'horizontal' | 'vertical';
   children: PanelChild[];
-  /** When set, user-drag pixel sizes persist under `${persistKey}:${childId}`. */
+  /** Persist drag sizes under `${persistKey}:${childId}` (pixels for fixed
+   *  children, relative weights for multiple absorbers). */
   persistKey?: string;
   /** IDs of the children that flex-absorb remaining space. Defaults to the
    *  last child. Multiple entries split remaining space equally via
-   *  `flex: 1 1 0` on each. A user-pinned child always takes its pinned size;
-   *  on drag, absorbers adjacent to non-absorbers are never pinned so they
-   *  keep filling remaining space after release. */
+   *  `flex: 1 1 0` on each. A sole absorber stays flexible; multiple absorbers
+   *  save their proportions together after a drag. */
   absorberIds?: string[];
   class?: string;
   style?: JSX.CSSProperties;
 }
 
+const KEYBOARD_STEP = 24;
+
+const roundOrUndefined = (n: number | undefined) => (n === undefined ? undefined : Math.round(n));
+
 export function ResizablePanel(props: ResizablePanelProps) {
   const [draggingIdx, setDraggingIdx] = createSignal<number | null>(null);
+  // Bumped when sizes may have changed so aria values re-read the layout.
+  const [measureTick, setMeasureTick] = createSignal(0);
+  const refreshMeasures = () => setMeasureTick((n) => n + 1);
+  // Nothing is measurable until the tree is attached; re-read then and whenever
+  // the container resizes (window resize or an ancestor layout change).
+  let rootEl: HTMLDivElement | undefined;
+  onMount(() => {
+    refreshMeasures();
+    if (typeof ResizeObserver === 'undefined' || !rootEl) return;
+    const observer = new ResizeObserver(refreshMeasures);
+    observer.observe(rootEl);
+    onCleanup(() => observer.disconnect());
+  });
   const [dragOverride, setDragOverride] = createSignal<Record<string, number>>({});
   /** Stable per-ID refs so drag measurement survives dynamic children changes. */
   const wrapperRefs = new Map<string, HTMLDivElement>();
+  let cancelDrag: (() => void) | undefined;
+  onCleanup(() => cancelDrag?.());
+  createEffect(
+    on(
+      () => [props.direction, props.persistKey, ...props.children.map((child) => child.id)],
+      () => cancelDrag?.(),
+    ),
+  );
 
   const isHorizontal = () => props.direction === 'horizontal';
 
@@ -68,7 +108,7 @@ export function ResizablePanel(props: ResizablePanelProps) {
    *  and delete so the store self-heals instead of silently diverging from
    *  what the user sees.
    *
-   *  Multi-absorber panels store pin values as flex-grow ratios (both sides
+   *  Multi-absorber panels store pin values as flex-grow ratios (all absorbers
    *  pinned after a drag). If only ONE absorber carries a pin while the others
    *  are unpinned, it's a stale pixel value from before the child was promoted
    *  to absorber status — treat it as stale to prevent a 300:1 ratio that
@@ -127,7 +167,7 @@ export function ResizablePanel(props: ResizablePanelProps) {
         };
       }
       return {
-        flex: `0 0 ${pinned}px`,
+        flex: `0 ${isHorizontal() ? 1 : 0} ${pinned}px`,
         [dim]: `${pinned}px`,
         [minDim]: `${min}px`,
         overflow: 'hidden',
@@ -143,7 +183,7 @@ export function ResizablePanel(props: ResizablePanelProps) {
     }
     if (child.defaultSize !== undefined) {
       return {
-        flex: `0 0 ${child.defaultSize}px`,
+        flex: `0 ${isHorizontal() ? 1 : 0} ${child.defaultSize}px`,
         [dim]: `${child.defaultSize}px`,
         [minDim]: `${min}px`,
         overflow: 'hidden',
@@ -169,6 +209,8 @@ export function ResizablePanel(props: ResizablePanelProps) {
   }
 
   function beginDrag(handleIdx: number, e: MouseEvent) {
+    if (e.button !== 0) return;
+    cancelDrag?.();
     e.preventDefault();
     const leftChild = props.children[handleIdx];
     const rightChild = props.children[handleIdx + 1];
@@ -187,24 +229,30 @@ export function ResizablePanel(props: ResizablePanelProps) {
     const rightMin = rightChild.minSize ?? 0;
     let latestLeft = startLeft;
     let latestRight = startRight;
+    const absorberSizes: Record<string, number> = {};
+    for (const child of props.children) {
+      if (isAbsorber(child.id) && !child.noPin?.()) {
+        absorberSizes[child.id] = measureWrapper(child.id);
+      }
+    }
 
     // When one side is noPin its size stays fixed at content. If the layout
     // absorber is a *separate* child elsewhere in the tree, the freed space
     // flows through it — measure up front so the drag can clamp by its
     // minSize. If the absorber is the noPin side's neighbor (sole-absorber +
-    // noPin in the same child, e.g. split-mode shell-section), absorberPresent
-    // stays false; the drag still works because the neighbor's flex:1 1 0
+    // noPin in the same child, e.g. split-mode shell-section), no rerouted
+    // absorber is needed; the drag still works because the neighbor's flex:1 1 0
     // grows/shrinks naturally and the other side's own minSize covers clamps.
     let absorberStart = 0;
     let absorberMin = 0;
-    let absorberPresent = false;
+    let reroutedAbsorberId: string | undefined;
     if (leftNoPin || rightNoPin) {
       for (const c of props.children) {
         if (c.id === leftChild.id || c.id === rightChild.id) continue;
         if (isAbsorber(c.id)) {
           absorberStart = measureWrapper(c.id);
           absorberMin = c.minSize ?? 0;
-          absorberPresent = true;
+          reroutedAbsorberId = c.id;
           break;
         }
       }
@@ -218,10 +266,10 @@ export function ResizablePanel(props: ResizablePanelProps) {
       // Absorber clamps when noPin reroutes the delta through it. With
       // rightNoPin the absorber gives up `delta`; with leftNoPin it absorbs
       // `-delta`. Either way the absorber must stay above its minSize.
-      if (rightNoPin && absorberPresent && absorberStart - delta < absorberMin) {
+      if (rightNoPin && reroutedAbsorberId && absorberStart - delta < absorberMin) {
         delta = absorberStart - absorberMin;
       }
-      if (leftNoPin && absorberPresent && absorberStart + delta < absorberMin) {
+      if (leftNoPin && reroutedAbsorberId && absorberStart + delta < absorberMin) {
         delta = absorberMin - absorberStart;
       }
       latestLeft = startLeft + delta;
@@ -229,7 +277,12 @@ export function ResizablePanel(props: ResizablePanelProps) {
       // Skip the override on noPin children so they stay content-sized; also
       // skip on a sole absorber adjacent to a noPin sibling, since pinning the
       // absorber temporarily would steal the space the noPin child can't take.
-      const override: Record<string, number> = {};
+      // Freeze every absorber: leaving only a fractional grow weight (e.g.
+      // notes at 0.25) in flex layout would consume only part of the free space.
+      const override: Record<string, number> = soleAbs ? {} : { ...absorberSizes };
+      if (!soleAbs && reroutedAbsorberId) {
+        override[reroutedAbsorberId] = absorberStart + (leftNoPin ? delta : -delta);
+      }
       if (!leftNoPin && !(leftIsAbs && rightNoPin && soleAbs)) {
         override[leftChild.id] = latestLeft;
       }
@@ -238,20 +291,39 @@ export function ResizablePanel(props: ResizablePanelProps) {
       }
       setDragOverride(override);
     };
-    const onUp = () => {
+    const cleanup = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('blur', cancel);
+      cancelDrag = undefined;
       setDraggingIdx(null);
-      // An absorber adjacent to a non-absorber keeps its flex:1 1 0 role on
-      // drag-release (otherwise panels like the AI terminal would stop filling
-      // remaining space after any drag involving their edge). When both sides
-      // are absorbers, pin both so the user's explicit split survives. noPin
-      // children are never pinned regardless of side.
-      const leftKey = leftNoPin || (leftIsAbs && !rightIsAbs) ? null : keyFor(leftChild.id);
-      const rightKey = rightNoPin || (rightIsAbs && !leftIsAbs) ? null : keyFor(rightChild.id);
+      queueMicrotask(refreshMeasures);
+    };
+    const cancel = () => {
+      cleanup();
+      setDragOverride({});
+    };
+    const onUp = () => {
+      cleanup();
+      if (latestLeft === startLeft && latestRight === startRight) {
+        setDragOverride({});
+        return;
+      }
+      const leftKey = leftNoPin || leftIsAbs ? null : keyFor(leftChild.id);
+      const rightKey = rightNoPin || rightIsAbs ? null : keyFor(rightChild.id);
+      // Capture all absorber sizes before changing any styles. Saving only
+      // adjacent absorbers loses the split or mixes old weights with pixels.
+      const absorberPins = soleAbs
+        ? []
+        : props.children
+            .filter((child) => isAbsorber(child.id) && !child.noPin?.())
+            .map((child) => ({ key: keyFor(child.id), size: measureWrapper(child.id) }));
       batch(() => {
         if (leftKey) setPanelUserSize(leftKey, latestLeft);
         if (rightKey) setPanelUserSize(rightKey, latestRight);
+        for (const { key, size } of absorberPins) {
+          if (key && size > 0) setPanelUserSize(key, size);
+        }
         // Clear the drag override in the same batch so there's no frame where
         // both the override and the fresh userSize are absent.
         setDragOverride({});
@@ -260,6 +332,8 @@ export function ResizablePanel(props: ResizablePanelProps) {
 
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    window.addEventListener('blur', cancel);
+    cancelDrag = cancel;
   }
 
   function unpin(handleIdx: number) {
@@ -267,6 +341,64 @@ export function ResizablePanel(props: ResizablePanelProps) {
     const right = props.children[handleIdx + 1];
     if (!left || !right || !props.persistKey) return;
     deletePanelUserSize([`${props.persistKey}:${left.id}`, `${props.persistKey}:${right.id}`]);
+  }
+
+  /** The fixed-size side a keyboard can resize: one pinnable child beside the sole
+   *  absorber. Other layouts stay drag-only rather than guess how to share space. */
+  function keyboardTarget(handleIdx: number) {
+    const left = props.children[handleIdx];
+    const right = props.children[handleIdx + 1];
+    if (!left || !right || !props.persistKey || absorberSet().size !== 1) return null;
+    if (left.noPin?.() === true || right.noPin?.() === true) return null;
+    if (isAbsorber(left.id) === isAbsorber(right.id)) return null;
+    const fixedIsLeft = !isAbsorber(left.id);
+    return fixedIsLeft
+      ? { fixed: left, absorber: right, sign: 1 }
+      : { fixed: right, absorber: left, sign: -1 };
+  }
+
+  /** Measured size and limits of the keyboard-controlled pane, or null when
+   *  nothing meaningful can be measured (the handle then isn't focusable).
+   *  `max` never drops below `current`: an absorber already under its minimum
+   *  must not make a grow key shrink the pane. */
+  function keyboardRange(handleIdx: number) {
+    measureTick();
+    const target = keyboardTarget(handleIdx);
+    if (!target) return null;
+    const current = measureWrapper(target.fixed.id);
+    if (!(current > 0)) return null;
+    const room = measureWrapper(target.absorber.id) - (target.absorber.minSize ?? 0);
+    return { target, current, min: target.fixed.minSize ?? 0, max: current + Math.max(0, room) };
+  }
+
+  function keyboardSize(key: string, range: { current: number; min: number; max: number }) {
+    if (key === 'Home') return range.min;
+    if (key === 'End') return range.max;
+    return undefined;
+  }
+
+  function nudge(handleIdx: number, e: KeyboardEvent) {
+    const range = keyboardRange(handleIdx);
+    if (!range) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      unpin(handleIdx);
+      queueMicrotask(refreshMeasures);
+      return;
+    }
+    const toward = isHorizontal() ? 'ArrowRight' : 'ArrowDown';
+    const away = isHorizontal() ? 'ArrowLeft' : 'ArrowUp';
+    const { fixed, sign } = range.target;
+    let wanted = keyboardSize(e.key, range);
+    if (e.key === toward || e.key === away) {
+      wanted = range.current + (e.key === toward ? sign : -sign) * KEYBOARD_STEP;
+    }
+    if (wanted === undefined) return;
+    e.preventDefault();
+    const size = Math.min(range.max, Math.max(range.min, wanted));
+    const key = keyFor(fixed.id);
+    if (key && size > 0) setPanelUserSize(key, Math.round(size));
+    queueMicrotask(refreshMeasures);
   }
 
   /** Hide handles where the drag can't produce a visible change: when one
@@ -290,38 +422,53 @@ export function ResizablePanel(props: ResizablePanelProps) {
 
   return (
     <div
+      ref={rootEl}
       class={props.class}
       style={{
         display: 'flex',
         'flex-direction': isHorizontal() ? 'row' : 'column',
         width: '100%',
         height: '100%',
-        overflow: 'hidden',
+        // Keep both panes reachable when even their minimum widths cannot fit.
+        overflow: isHorizontal() ? 'auto' : 'hidden',
         ...props.style,
       }}
     >
       <For each={props.children}>
-        {(child, i) => (
-          <>
-            <div
-              class="rp-cell"
-              ref={(el) => {
-                wrapperRefs.set(child.id, el);
-                onCleanup(() => wrapperRefs.delete(child.id));
-              }}
-              style={childStyle(child)}
-            >
-              {child.content()}
-            </div>
-            {i() < props.children.length - 1 && !isHandleInert(i()) && (
+        {(child, i) => {
+          // Measuring reads the layout; share one read among this handle's aria attributes.
+          const range = createMemo(() => keyboardRange(i()));
+          return (
+            <>
               <div
-                class={`resize-handle resize-handle-${isHorizontal() ? 'h' : 'v'} ${draggingIdx() === i() ? 'dragging' : ''}`}
-                onMouseDown={(e) => beginDrag(i(), e)}
-                onDblClick={() => unpin(i())}
-              />
-            )}
-          </>
-        )}
+                class="rp-cell"
+                ref={(el) => {
+                  wrapperRefs.set(child.id, el);
+                  onCleanup(() => wrapperRefs.delete(child.id));
+                }}
+                style={childStyle(child)}
+              >
+                {child.content()}
+              </div>
+              {i() < props.children.length - 1 && !isHandleInert(i()) && (
+                <div
+                  class={`resize-handle resize-handle-${isHorizontal() ? 'h' : 'v'} ${draggingIdx() === i() ? 'dragging' : ''}`}
+                  role="separator"
+                  aria-orientation={isHorizontal() ? 'vertical' : 'horizontal'}
+                  aria-label={range()?.target.fixed.resizeLabel}
+                  aria-valuenow={roundOrUndefined(range()?.current)}
+                  aria-valuemin={roundOrUndefined(range()?.min)}
+                  aria-valuemax={roundOrUndefined(range()?.max)}
+                  tabIndex={range() ? 0 : undefined}
+                  onFocus={refreshMeasures}
+                  onKeyDown={(e) => nudge(i(), e)}
+                  onMouseDown={(e) => beginDrag(i(), e)}
+                  onDblClick={() => unpin(i())}
+                />
+              )}
+            </>
+          );
+        }}
       </For>
     </div>
   );

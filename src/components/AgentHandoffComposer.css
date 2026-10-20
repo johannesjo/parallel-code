@@ -1,0 +1,238 @@
+.agent-handoff {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px;
+  flex: 0 1 auto;
+  max-height: 50%;
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+.agent-handoff h2,
+.agent-handoff p {
+  margin: 0;
+}
+.agent-handoff h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.agent-handoff header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-handoff .handoff-hint {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.agent-handoff .handoff-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-handoff .handoff-label {
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+/* Holds one row of chips while sessions load, so the message box does not move. */
+.agent-handoff .handoff-choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 50px;
+}
+.agent-handoff .handoff-choice {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  box-sizing: border-box;
+  height: 50px;
+  gap: 2px;
+  min-width: 120px;
+  padding: 6px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-handoff .handoff-choice.selected {
+  background: var(--bg-selected);
+  border-color: var(--accent);
+}
+.agent-handoff .handoff-choice-detail {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+/* One height whichever reviewer is picked, so switching never moves the message. */
+.agent-handoff .handoff-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 26px;
+}
+.agent-handoff .handoff-model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-handoff .handoff-model-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  /* A long Codex model name plus a level must not push the header apart; the title shows it whole. */
+  max-width: 240px;
+}
+.agent-handoff .handoff-model-button > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-handoff textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 96px;
+  padding: 10px 12px;
+  resize: vertical;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.agent-handoff [role='alert'] {
+  color: var(--error);
+  font-size: 12px;
+}
+.agent-handoff .handoff-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-handoff .handoff-status {
+  flex: 1;
+  min-width: 0;
+}
+.agent-handoff .handoff-retry {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.agent-handoff .handoff-retry:hover {
+  color: var(--fg);
+}
+.agent-handoff .handoff-choice:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.dialog-overlay .agent-handoff {
+  max-height: none;
+  flex-shrink: 0;
+  gap: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+.dialog-overlay .agent-handoff h2 {
+  font-size: 16px;
+}
+.dialog-overlay .agent-handoff textarea {
+  min-height: 180px;
+}
+.dialog-overlay .agent-handoff .handoff-actions {
+  padding-top: 4px;
+}
+.terminal-second-opinion {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.terminal-second-opinion button,
+.terminal-selection-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 7px;
+  background: transparent;
+  color: var(--fg-muted);
+  border: 0;
+  cursor: pointer;
+  font-size: 11px;
+}
+.terminal-second-opinion button:hover,
+.terminal-selection-trigger:hover {
+  color: var(--fg);
+}
+.terminal-selection-trigger {
+  position: absolute;
+  right: 8px;
+  z-index: 13;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.terminal-selection-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+}
+.terminal-selection-menu {
+  position: fixed;
+  z-index: 1501;
+  padding: 4px;
+  min-width: 180px;
+  max-width: calc(100vw - 8px);
+  max-height: calc(100vh - 8px);
+  overflow: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+}
+.terminal-selection-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+.terminal-selection-menu button:hover,
+.terminal-selection-menu button:focus-visible {
+  background: var(--bg-hover);
+}
+.terminal-selection-menu [role='alert'] {
+  color: var(--error);
+  padding: 4px 10px;
+}

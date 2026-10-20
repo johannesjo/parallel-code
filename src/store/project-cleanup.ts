@@ -1,5 +1,6 @@
 import { store } from './core';
 import { removeProject } from './projects';
+import { disarmSpCompletion } from './superProductivity';
 import { closeTask } from './tasks';
 
 /**
@@ -19,6 +20,9 @@ export async function removeProjectWithTasks(projectId: string): Promise<void> {
   const isCoordinator = (tid: string) => store.tasks[tid]?.coordinatorMode === true;
   const ordered = [...allIds.filter((tid) => !isCoordinator(tid)), ...allIds.filter(isCoordinator)];
   for (const tid of ordered) {
+    // Removing a project never completes linked Super Productivity tasks, even
+    // one whose own close failed earlier and left its completion armed for Retry.
+    disarmSpCompletion(tid);
     // closeTask handles and stores its own errors, so this should not throw.
     await closeTask(tid);
   }

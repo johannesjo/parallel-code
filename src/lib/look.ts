@@ -1,4 +1,8 @@
 export type LookPreset =
+  | 'parallel-code'
+  | 'noir'
+  | 'obsidian'
+  | 'obsidian-light'
   | 'classic'
   | 'graphite'
   | 'midnight'
@@ -22,6 +26,30 @@ export interface LookPresetOption {
 }
 
 export const LOOK_PRESETS: LookPresetOption[] = [
+  {
+    id: 'parallel-code',
+    label: 'Parallel Code',
+    description: 'Website-inspired blue-black surfaces, soft cyan accents, and pale text',
+    tone: 'dark',
+  },
+  {
+    id: 'noir',
+    label: 'Noir',
+    description: 'Ink-dark surfaces, soft lilac, and quiet controls that follow your focus',
+    tone: 'dark',
+  },
+  {
+    id: 'obsidian',
+    label: 'Obsidian',
+    description: 'Neutral charcoal surfaces, warm amber accent, and clean typography',
+    tone: 'dark',
+  },
+  {
+    id: 'obsidian-light',
+    label: 'Obsidian Light',
+    description: 'Obsidian on warm paper neutrals with a bronze accent',
+    tone: 'light',
+  },
   {
     id: 'islands-dark',
     label: 'Islands Dark',
@@ -101,7 +129,12 @@ export function presetsForTone(tone: 'light' | 'dark'): LookPresetOption[] {
 }
 
 export function defaultPresetForTone(tone: 'light' | 'dark'): LookPreset {
-  return tone === 'light' ? 'islands-light' : 'islands-dark';
+  return tone === 'light' ? 'obsidian-light' : 'obsidian';
+}
+
+/** True for built-in presets with a light background; false for unknown ids. */
+export function isLightPreset(id: string | undefined): boolean {
+  return LOOK_PRESETS.find((p) => p.id === id)?.tone === 'light';
 }
 
 const LOOK_PRESET_IDS = new Set<string>(LOOK_PRESETS.map((p) => p.id));

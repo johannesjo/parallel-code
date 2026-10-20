@@ -1,16 +1,36 @@
-import { createSignal, createEffect, For, Show } from 'solid-js';
+import { createSignal, createEffect, For, on, Show } from 'solid-js';
 import { Dialog } from './Dialog';
-import { updateProject, PASTEL_HUES, isProjectMissing, relinkProject } from '../store/store';
+import {
+  updateProject,
+  PASTEL_HUES,
+  isProjectMissing,
+  relinkProject,
+  spConnection,
+  listSpProjects,
+  setProjectSpMapping,
+} from '../store/store';
+import type { SpProject } from '../../electron/shared/super-productivity';
+import {
+  DEFAULT_EVIDENCE_MODEL,
+  parseEvidenceModelSettings,
+} from '../../electron/shared/evidence-settings';
 import { sanitizeBranchPrefix, toBranchName } from '../lib/branch-name';
 import { theme, sectionLabelStyle } from '../lib/theme';
 import type { Project, TerminalBookmark, GitIsolationMode } from '../store/types';
+import { EvidenceSettingsFields, finalizeChecks, type CheckDraft } from './EvidenceSettingsFields';
 import { SegmentedButtons } from './SegmentedButtons';
+import { SuggestChecksButton } from './SuggestChecksButton';
+import { keepCheckIds } from '../lib/check-suggestion';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
-import { CloseIcon } from './icons';
+import { CloseIcon, DownloadIcon, FolderIcon, LinkIcon, PlusIcon, TrashIcon } from './icons';
 import { RemoveProjectConfirm } from './RemoveProjectConfirm';
+import { updateProjectCoordination } from '../store/projects';
+import { isDocumentProject } from '../store/projects';
 
 interface EditProjectDialogProps {
   project: Project | null;
+  /** Opens on the verify command and evidence checks instead of the name. */
+  focusChecks?: boolean;
   onClose: () => void;
 }
 
@@ -20,6 +40,9 @@ function hueFromColor(color: string): number {
 }
 
 export function EditProjectDialog(props: EditProjectDialogProps) {
+  const [allowPeerAccess, setAllowPeerAccess] = createSignal(false);
+  const [saving, setSaving] = createSignal(false);
+  const [saveError, setSaveError] = createSignal('');
   const [name, setName] = createSignal('');
   const [selectedHue, setSelectedHue] = createSignal(0);
   const [branchPrefix, setBranchPrefix] = createSignal('task');
@@ -27,28 +50,66 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   const [defaultGitIsolation, setDefaultGitIsolation] = createSignal<GitIsolationMode>('worktree');
   const [defaultBaseBranch, setDefaultBaseBranch] = createSignal('');
   const [coverageReportPath, setCoverageReportPath] = createSignal('');
+  const [verifyCommand, setVerifyCommand] = createSignal('');
+  const [evidenceChecks, setEvidenceChecks] = createSignal<CheckDraft[]>([]);
+  const [evidenceModel, setEvidenceModel] = createSignal(DEFAULT_EVIDENCE_MODEL);
+  const [evidenceAutoBuild, setEvidenceAutoBuild] = createSignal(false);
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
   const [newCommand, setNewCommand] = createSignal('');
   const [showImportDialog, setShowImportDialog] = createSignal(false);
   const [confirmRemove, setConfirmRemove] = createSignal(false);
+  const [spProjectId, setSpProjectId] = createSignal('');
+  // null until loaded: the mapping is only saved from a list the user saw.
+  const [spProjects, setSpProjects] = createSignal<SpProject[] | null>(null);
+  // Drops a list that arrives after the dialog moved on to another project.
+  let spProjectsLoad = 0;
+  /** Branch and worktree settings only mean something where tasks run. */
+  const isDocument = () => isDocumentProject(props.project ?? undefined);
+  const showsTaskSettings = () => props.project?.isGitRepo !== false && !isDocument();
   let nameRef!: HTMLInputElement;
+  let verifyRef: HTMLInputElement | undefined;
 
-  // Sync signals when project prop changes
-  createEffect(() => {
-    const p = props.project;
-    if (!p) return;
-    setName(p.name);
-    setSelectedHue(hueFromColor(p.color));
-    setBranchPrefix(sanitizeBranchPrefix(p.branchPrefix ?? 'task'));
-    setDeleteBranchOnClose(p.deleteBranchOnClose ?? true);
-    setDefaultGitIsolation(p.defaultGitIsolation ?? 'worktree');
-    setDefaultBaseBranch(p.defaultBaseBranch ?? '');
-    setCoverageReportPath(p.coverageReportPath ?? '');
-    setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
-    setNewCommand('');
-    setConfirmRemove(false);
-    requestAnimationFrame(() => nameRef?.focus());
-  });
+  // Sync signals when a project opens. Keyed on identity, not fields: saving
+  // updates the stored project while a peer-access save is still pending, and a
+  // re-sync then would reset the form and move focus mid-save.
+  createEffect(
+    on(
+      () => props.project,
+      (p) => {
+        if (!p) return;
+        setName(p.name);
+        setAllowPeerAccess(p.allowPeerAccess === true);
+        setSaveError('');
+        setSelectedHue(hueFromColor(p.color));
+        setBranchPrefix(sanitizeBranchPrefix(p.branchPrefix ?? 'task'));
+        setDeleteBranchOnClose(p.deleteBranchOnClose ?? true);
+        setDefaultGitIsolation(p.defaultGitIsolation ?? 'worktree');
+        setDefaultBaseBranch(p.defaultBaseBranch ?? '');
+        setCoverageReportPath(p.coverageReportPath ?? '');
+        setVerifyCommand(p.verifyCommand ?? '');
+        setEvidenceChecks(p.evidenceChecks ? [...p.evidenceChecks] : []);
+        setEvidenceModel(p.evidenceModel ?? DEFAULT_EVIDENCE_MODEL);
+        setEvidenceAutoBuild(p.evidenceAutoBuild === true);
+        setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
+        setNewCommand('');
+        setConfirmRemove(false);
+        setSpProjectId(p.superProductivityProjectId ?? '');
+        setSpProjects(null);
+        // Bumped on every opening, so a list still loading from an earlier one is dropped.
+        const load = ++spProjectsLoad;
+        if (spConnection() !== 'not_configured' && !isDocumentProject(p)) {
+          void listSpProjects().then((list) => {
+            if (load === spProjectsLoad) setSpProjects(list);
+          });
+        }
+        requestAnimationFrame(() => {
+          const target = (props.focusChecks && verifyRef) || nameRef;
+          target?.focus();
+          if (target === verifyRef) target.scrollIntoView({ block: 'center' });
+        });
+      },
+    ),
+  );
 
   function addBookmark() {
     const cmd = newCommand().trim();
@@ -67,21 +128,41 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
   }
 
   const canSave = () => name().trim().length > 0;
+  const saveDisabled = () => !canSave() || saving();
 
-  function handleSave() {
-    if (!canSave() || !props.project) return;
-    const sanitizedPrefix = sanitizeBranchPrefix(branchPrefix());
-    updateProject(props.project.id, {
+  async function handleSave() {
+    if (!canSave() || !props.project || saving()) return;
+    setSaving(true);
+    setSaveError('');
+    const projectId = props.project.id;
+    const peerConsent = allowPeerAccess();
+    const syncPolicy = showsTaskSettings();
+    const updates = {
       name: name().trim(),
       color: `hsl(${selectedHue()}, 70%, 75%)`,
-      branchPrefix: sanitizedPrefix,
+      branchPrefix: sanitizeBranchPrefix(branchPrefix()),
       deleteBranchOnClose: deleteBranchOnClose(),
       defaultGitIsolation: defaultGitIsolation(),
       defaultBaseBranch: defaultBaseBranch() || undefined,
       coverageReportPath: coverageReportPath().trim() || undefined,
+      verifyCommand: verifyCommand().trim() || undefined,
+      evidenceChecks: finalizeChecks(evidenceChecks()),
+      evidenceModel: parseEvidenceModelSettings(evidenceModel()),
+      evidenceAutoBuild: evidenceAutoBuild(),
       terminalBookmarks: bookmarks(),
-    });
-    props.onClose();
+    };
+    // Local fields save first: a failed peer-access update in the main process must
+    // not drop unrelated edits. The dialog stays open to report and retry it.
+    updateProject(projectId, updates);
+    if (spProjects() !== null) setProjectSpMapping(projectId, spProjectId() || undefined);
+    try {
+      if (syncPolicy) await updateProjectCoordination(projectId, peerConsent);
+      props.onClose();
+    } catch (error) {
+      setSaveError(String(error));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -105,6 +186,40 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               Edit Project
             </h2>
 
+            <Show when={showsTaskSettings()}>
+              <fieldset
+                style={{
+                  display: 'grid',
+                  gap: '10px',
+                  border: `1px solid ${theme.border}`,
+                  padding: '12px',
+                }}
+              >
+                <legend>Agent collaboration</legend>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={allowPeerAccess()}
+                    onChange={(e) => setAllowPeerAccess(e.currentTarget.checked)}
+                  />{' '}
+                  Allow peer access between tasks
+                </label>
+                <small>
+                  Allows eligible top-level agents in this project to discover each other, read
+                  output, and send messages held for your review. Messages never type into terminals
+                  automatically.
+                </small>
+                <small>
+                  Existing sessions need a supported restart and resume to acquire newly enabled
+                  tools. Sessions with custom MCP configuration require separate setup.
+                </small>
+              </fieldset>
+            </Show>
+            <Show when={saveError()}>
+              <p role="alert" style={{ color: theme.error }}>
+                {saveError()}
+              </p>
+            </Show>
             {/* Path */}
             <div
               style={{
@@ -127,36 +242,42 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               >
                 {project().path}
               </div>
+              <Show when={!isDocument()}>
+                <button
+                  class="btn-with-icon"
+                  type="button"
+                  onClick={() => setShowImportDialog(true)}
+                  style={{
+                    padding: '3px 10px',
+                    background: theme.bgInput,
+                    border: `1px solid ${theme.border}`,
+                    'border-radius': 'var(--radius-sm)',
+                    color: theme.fgMuted,
+                    cursor: 'pointer',
+                    'font-size': '11px',
+                    'flex-shrink': '0',
+                  }}
+                >
+                  <DownloadIcon size={12} />
+                  Import Worktrees
+                </button>
+              </Show>
               <button
-                type="button"
-                onClick={() => setShowImportDialog(true)}
-                style={{
-                  padding: '3px 10px',
-                  background: theme.bgInput,
-                  border: `1px solid ${theme.border}`,
-                  'border-radius': '6px',
-                  color: theme.fgMuted,
-                  cursor: 'pointer',
-                  'font-size': '11px',
-                  'flex-shrink': '0',
-                }}
-              >
-                Import Worktrees
-              </button>
-              <button
+                class="btn-with-icon"
                 type="button"
                 onClick={() => relinkProject(project().id)}
                 style={{
                   padding: '3px 10px',
                   background: theme.bgInput,
                   border: `1px solid ${theme.border}`,
-                  'border-radius': '6px',
+                  'border-radius': 'var(--radius-sm)',
                   color: theme.fgMuted,
                   cursor: 'pointer',
                   'font-size': '12px',
                   'flex-shrink': '0',
                 }}
               >
+                <FolderIcon size={12} />
                 Change
               </button>
             </div>
@@ -168,7 +289,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   'align-items': 'center',
                   gap: '10px',
                   padding: '10px 14px',
-                  'border-radius': '8px',
+                  'border-radius': 'var(--radius-md)',
                   background: `color-mix(in srgb, ${theme.warning} 10%, transparent)`,
                   border: `1px solid color-mix(in srgb, ${theme.warning} 30%, transparent)`,
                   color: theme.warning,
@@ -177,6 +298,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               >
                 <span style={{ flex: '1' }}>This folder no longer exists.</span>
                 <button
+                  class="btn-with-icon"
                   type="button"
                   onClick={async () => {
                     const ok = await relinkProject(project().id);
@@ -186,29 +308,32 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                     padding: '5px 12px',
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
-                    'border-radius': '6px',
+                    'border-radius': 'var(--radius-sm)',
                     color: theme.fg,
                     cursor: 'pointer',
                     'font-size': '13px',
                     'flex-shrink': '0',
                   }}
                 >
+                  <LinkIcon size={14} />
                   Re-link
                 </button>
                 <button
+                  class="btn-with-icon"
                   type="button"
                   onClick={() => setConfirmRemove(true)}
                   style={{
                     padding: '5px 12px',
                     background: 'transparent',
                     border: `1px solid color-mix(in srgb, ${theme.error} 40%, transparent)`,
-                    'border-radius': '6px',
+                    'border-radius': 'var(--radius-sm)',
                     color: theme.error,
                     cursor: 'pointer',
                     'font-size': '13px',
                     'flex-shrink': '0',
                   }}
                 >
+                  <TrashIcon size={14} />
                   Remove
                 </button>
               </div>
@@ -229,7 +354,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 style={{
                   background: theme.bgInput,
                   border: `1px solid ${theme.border}`,
-                  'border-radius': '8px',
+                  'border-radius': 'var(--radius-md)',
                   padding: '10px 14px',
                   color: theme.fg,
                   'font-size': '14px',
@@ -239,7 +364,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
             </div>
 
             {/* Branch prefix — git projects only */}
-            <Show when={props.project?.isGitRepo !== false}>
+            <Show when={showsTaskSettings()}>
               <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
                 <label style={sectionLabelStyle}>Branch prefix</label>
                 <input
@@ -254,7 +379,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   style={{
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
-                    'border-radius': '8px',
+                    'border-radius': 'var(--radius-md)',
                     padding: '10px 14px',
                     color: theme.fg,
                     'font-size': '14px',
@@ -304,7 +429,9 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                         style={{
                           width: '28px',
                           height: '28px',
-                          'border-radius': '50%',
+                          // Matches ProjectSwatch: the picker previews the
+                          // square mark the project will actually show.
+                          'border-radius': 'var(--radius-sm)',
                           background: color,
                           border: isSelected() ? `2px solid ${theme.fg}` : '2px solid transparent',
                           outline: isSelected() ? `2px solid ${theme.accent}` : 'none',
@@ -322,7 +449,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
             </div>
 
             {/* Git-specific settings — hidden for non-git projects */}
-            <Show when={props.project?.isGitRepo !== false}>
+            <Show when={showsTaskSettings()}>
               {/* Close cleanup preference */}
               <label
                 style={{
@@ -373,7 +500,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   style={{
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
-                    'border-radius': '8px',
+                    'border-radius': 'var(--radius-md)',
                     padding: '10px 14px',
                     color: theme.fg,
                     'font-size': '14px',
@@ -383,138 +510,229 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               </div>
             </Show>
 
-            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label style={sectionLabelStyle}>
-                Coverage report path{' '}
-                <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
-                  (relative to repo root)
-                </span>
-              </label>
-              <input
-                class="input-field"
-                type="text"
-                value={coverageReportPath()}
-                onInput={(e) => setCoverageReportPath(e.currentTarget.value)}
-                placeholder="coverage/coverage-summary.json or coverage/lcov.info"
-                style={{
-                  background: theme.bgInput,
-                  border: `1px solid ${theme.border}`,
-                  'border-radius': '8px',
-                  padding: '10px 14px',
-                  color: theme.fg,
-                  'font-size': '14px',
-                  'font-family': "'JetBrains Mono', monospace",
-                  outline: 'none',
-                }}
-              />
-              <div
-                style={{
-                  'font-size': '12px',
-                  color: theme.fgSubtle,
-                  padding: '2px 2px 0',
-                }}
-              >
-                Leave blank to try <code>coverage/coverage-summary.json</code>, then{' '}
-                <code>coverage/lcov.info</code>.
-              </div>
-            </div>
-
-            {/* Command Bookmarks */}
-            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-              <label style={sectionLabelStyle}>Command Bookmarks</label>
-              <Show when={bookmarks().length > 0}>
-                <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
-                  <For each={bookmarks()}>
-                    {(bookmark) => (
-                      <div
-                        style={{
-                          display: 'flex',
-                          'align-items': 'center',
-                          gap: '8px',
-                          padding: '4px 8px',
-                          background: theme.bgInput,
-                          'border-radius': '6px',
-                          border: `1px solid ${theme.border}`,
-                        }}
-                      >
-                        <span
-                          style={{
-                            flex: '1',
-                            'font-size': '12px',
-                            'font-family': "'JetBrains Mono', monospace",
-                            color: theme.fgSubtle,
-                            overflow: 'hidden',
-                            'text-overflow': 'ellipsis',
-                            'white-space': 'nowrap',
-                          }}
-                        >
-                          {bookmark.command}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeBookmark(bookmark.id)}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: theme.fgSubtle,
-                            cursor: 'pointer',
-                            padding: '2px',
-                            'line-height': '1',
-                            'flex-shrink': '0',
-                          }}
-                          title="Remove bookmark"
-                        >
-                          <CloseIcon size={12} />
-                        </button>
-                      </div>
-                    )}
-                  </For>
+            <Show when={spProjects()}>
+              {(list) => (
+                <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+                  <label style={sectionLabelStyle}>Super Productivity project</label>
+                  <select
+                    class="project-select"
+                    aria-label="Super Productivity project"
+                    value={spProjectId()}
+                    onChange={(e) => setSpProjectId(e.currentTarget.value)}
+                  >
+                    <option value="">Not linked</option>
+                    <For each={list()}>
+                      {(spProject) => <option value={spProject.id}>{spProject.title}</option>}
+                    </For>
+                    <Show when={spProjectId() && !list().some((sp) => sp.id === spProjectId())}>
+                      <option value={spProjectId()}>(archived or deleted project)</option>
+                    </Show>
+                  </select>
+                  <div style={{ 'font-size': '12px', color: theme.fgSubtle, padding: '2px 2px 0' }}>
+                    Tasks you focus here are created and tracked in this project. Without one, they
+                    land in the project open in Super Productivity, or its default project.
+                  </div>
                 </div>
-              </Show>
-              <div style={{ display: 'flex', gap: '6px' }}>
+              )}
+            </Show>
+
+            {/* Worktrees, verification, coverage and terminal bookmarks belong to
+                code tasks; a document project runs none of them. */}
+            <Show when={!isDocument()}>
+              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+                <label style={sectionLabelStyle}>
+                  Verify command{' '}
+                  <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
+                    (runs in the task worktree)
+                  </span>
+                </label>
                 <input
                   class="input-field"
                   type="text"
-                  value={newCommand()}
-                  onInput={(e) => setNewCommand(e.currentTarget.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addBookmark();
-                    }
-                  }}
-                  placeholder="e.g. npm run dev"
+                  ref={verifyRef}
+                  value={verifyCommand()}
+                  onInput={(e) => setVerifyCommand(e.currentTarget.value)}
+                  placeholder="npm run typecheck && npm test"
                   style={{
-                    flex: '1',
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
                     'border-radius': '8px',
-                    padding: '8px 12px',
+                    padding: '10px 14px',
                     color: theme.fg,
-                    'font-size': '13px',
+                    'font-size': '14px',
                     'font-family': "'JetBrains Mono', monospace",
                     outline: 'none',
                   }}
                 />
-                <button
-                  type="button"
-                  onClick={addBookmark}
-                  disabled={!newCommand().trim()}
+                <div
                   style={{
-                    padding: '8px 14px',
-                    background: theme.bgInput,
-                    border: `1px solid ${theme.border}`,
-                    'border-radius': '8px',
-                    color: newCommand().trim() ? theme.fg : theme.fgSubtle,
-                    cursor: newCommand().trim() ? 'pointer' : 'not-allowed',
-                    'font-size': '13px',
-                    'flex-shrink': '0',
+                    'font-size': '12px',
+                    color: theme.fgSubtle,
+                    padding: '2px 2px 0',
                   }}
                 >
-                  Add
-                </button>
+                  Runs from the Finish dialog, when an agent calls <code>land_self</code>, and
+                  before the coordinator merges. A failure is advisory in the Finish dialog, but{' '}
+                  <code>land_self</code> and <code>merge_task</code> refuse to merge until it
+                  passes. <code>PARALLEL_CODE_TASK_ID</code> and <code>PARALLEL_CODE_BRANCH</code>{' '}
+                  are set for namespacing shared resources.
+                </div>
+                <SuggestChecksButton
+                  projectRoot={project().path}
+                  model={evidenceModel()}
+                  onSuggest={(suggestion) => {
+                    // Keep what the user has when the model has nothing for a field.
+                    if (suggestion.verifyCommand) setVerifyCommand(suggestion.verifyCommand);
+                    if (suggestion.checks.length > 0)
+                      setEvidenceChecks(keepCheckIds(evidenceChecks(), suggestion.checks));
+                  }}
+                />
               </div>
-            </div>
+
+              <EvidenceSettingsFields
+                checks={evidenceChecks()}
+                onChecksChange={setEvidenceChecks}
+                model={evidenceModel()}
+                autoBuild={evidenceAutoBuild()}
+                onAutoBuildChange={setEvidenceAutoBuild}
+                onModelChange={setEvidenceModel}
+              />
+
+              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+                <label style={sectionLabelStyle}>
+                  Coverage report path{' '}
+                  <span style={{ opacity: '0.5', 'text-transform': 'none' }}>
+                    (relative to repo root)
+                  </span>
+                </label>
+                <input
+                  class="input-field"
+                  type="text"
+                  value={coverageReportPath()}
+                  onInput={(e) => setCoverageReportPath(e.currentTarget.value)}
+                  placeholder="coverage/coverage-summary.json or coverage/lcov.info"
+                  style={{
+                    background: theme.bgInput,
+                    border: `1px solid ${theme.border}`,
+                    'border-radius': 'var(--radius-md)',
+                    padding: '10px 14px',
+                    color: theme.fg,
+                    'font-size': '14px',
+                    'font-family': "'JetBrains Mono', monospace",
+                    outline: 'none',
+                  }}
+                />
+                <div
+                  style={{
+                    'font-size': '12px',
+                    color: theme.fgSubtle,
+                    padding: '2px 2px 0',
+                  }}
+                >
+                  Leave blank to try <code>coverage/coverage-summary.json</code>, then{' '}
+                  <code>coverage/lcov.info</code>.
+                </div>
+              </div>
+
+              {/* Command Bookmarks */}
+              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+                <label style={sectionLabelStyle}>Command Bookmarks</label>
+                <Show when={bookmarks().length > 0}>
+                  <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
+                    <For each={bookmarks()}>
+                      {(bookmark) => (
+                        <div
+                          style={{
+                            display: 'flex',
+                            'align-items': 'center',
+                            gap: '8px',
+                            padding: '4px 8px',
+                            background: theme.bgInput,
+                            'border-radius': 'var(--radius-sm)',
+                            border: `1px solid ${theme.border}`,
+                          }}
+                        >
+                          <span
+                            style={{
+                              flex: '1',
+                              'font-size': '12px',
+                              'font-family': "'JetBrains Mono', monospace",
+                              color: theme.fgSubtle,
+                              overflow: 'hidden',
+                              'text-overflow': 'ellipsis',
+                              'white-space': 'nowrap',
+                            }}
+                          >
+                            {bookmark.command}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeBookmark(bookmark.id)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: theme.fgSubtle,
+                              cursor: 'pointer',
+                              padding: '2px',
+                              'line-height': '1',
+                              'flex-shrink': '0',
+                            }}
+                            title="Remove bookmark"
+                          >
+                            <CloseIcon size={12} />
+                          </button>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    class="input-field"
+                    type="text"
+                    value={newCommand()}
+                    onInput={(e) => setNewCommand(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addBookmark();
+                      }
+                    }}
+                    placeholder="e.g. npm run dev"
+                    style={{
+                      flex: '1',
+                      background: theme.bgInput,
+                      border: `1px solid ${theme.border}`,
+                      'border-radius': 'var(--radius-md)',
+                      padding: '8px 12px',
+                      color: theme.fg,
+                      'font-size': '13px',
+                      'font-family': "'JetBrains Mono', monospace",
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    class="btn-with-icon"
+                    type="button"
+                    onClick={addBookmark}
+                    disabled={!newCommand().trim()}
+                    style={{
+                      padding: '8px 14px',
+                      background: theme.bgInput,
+                      border: `1px solid ${theme.border}`,
+                      'border-radius': 'var(--radius-md)',
+                      color: newCommand().trim() ? theme.fg : theme.fgSubtle,
+                      cursor: newCommand().trim() ? 'pointer' : 'not-allowed',
+                      'font-size': '13px',
+                      'flex-shrink': '0',
+                    }}
+                  >
+                    <PlusIcon size={14} />
+                    Add
+                  </button>
+                </div>
+              </div>
+            </Show>
 
             {/* Buttons */}
             <div
@@ -533,7 +751,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   padding: '9px 18px',
                   background: theme.bgInput,
                   border: `1px solid ${theme.border}`,
-                  'border-radius': '8px',
+                  'border-radius': 'var(--radius-md)',
                   color: theme.fgMuted,
                   cursor: 'pointer',
                   'font-size': '14px',
@@ -544,21 +762,19 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
               <button
                 type="button"
                 class="btn-primary"
-                disabled={!canSave()}
+                disabled={saveDisabled()}
+                aria-busy={saving()}
                 onClick={handleSave}
                 style={{
                   padding: '9px 20px',
-                  background: theme.accent,
-                  border: 'none',
-                  'border-radius': '8px',
-                  color: theme.accentText,
-                  cursor: canSave() ? 'pointer' : 'not-allowed',
+                  'border-radius': 'var(--radius-md)',
+                  cursor: saveDisabled() ? 'not-allowed' : 'pointer',
                   'font-size': '14px',
                   'font-weight': '500',
-                  opacity: canSave() ? '1' : '0.4',
+                  opacity: saveDisabled() ? '0.4' : '1',
                 }}
               >
-                Save
+                {saving() ? 'Saving…' : 'Save'}
               </button>
             </div>
             <ImportWorktreesDialog

@@ -1,0 +1,1258 @@
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type {
+  PermissionUpdate,
+  Query,
+  Options,
+  SDKUserMessage,
+  SDKSessionInfo,
+  SessionMessage,
+} from '@anthropic-ai/claude-agent-sdk';
+import { ClaudeChat } from './claude.js';
+import type { ChatStartOptions } from './types.js';
+
+/** The ask the CLI sends, typed, so a fixture cannot drift from what it really sends. */
+type AskOptions = Parameters<NonNullable<Options['canUseTool']>>[2];
+const askOptions = (overrides: Partial<AskOptions> = {}): AskOptions => ({
+  signal: new AbortController().signal,
+  requestId: 'request',
+  toolUseID: 'tool',
+  ...overrides,
+});
+
+/** A killed orphan lingers as a zombie where init does not reap it, as in
+ *  some containers, and signal 0 still reaches a zombie. */
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  try {
+    // "pid (comm) state …"; comm may itself contain parentheses.
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return stat.charAt(stat.lastIndexOf(')') + 2) !== 'Z';
+  } catch {
+    return true; // No procfs (macOS); signal 0 is all there is.
+  }
+}
+
+const chats: ClaudeChat[] = [];
+let settingsDir: string;
+beforeEach(() => {
+  // The launch mode now comes from the user's settings, so a test that sets none
+  // must not read the developer's own.
+  settingsDir = mkdtempSync(join(tmpdir(), 'claude-chat-settings-'));
+  vi.stubEnv('CLAUDE_CONFIG_DIR', join(settingsDir, 'config'));
+});
+afterEach(() => {
+  chats.forEach((chat) => chat.stop());
+  chats.length = 0;
+  vi.unstubAllEnvs();
+  rmSync(settingsDir, { recursive: true, force: true });
+});
+
+/** A worktree whose settings tiers say what a test needs them to say. */
+function settingsRoot(tiers: { user?: string; project?: string }): string {
+  const cwd = join(settingsDir, 'worktree');
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  if (tiers.user) {
+    mkdirSync(join(settingsDir, 'config'), { recursive: true });
+    writeFileSync(join(settingsDir, 'config', 'settings.json'), tiers.user);
+  }
+  if (tiers.project) writeFileSync(join(cwd, '.claude', 'settings.json'), tiers.project);
+  return cwd;
+}
+function harness(
+  history: SessionMessage[] = [],
+  threadId?: string,
+  overrides: Partial<ChatStartOptions> = {},
+) {
+  const output = new PassThrough({ objectMode: true });
+  const controls = {
+    initializationResult: vi.fn(async () => ({})),
+    getContextUsage: vi.fn(
+      async (): Promise<{ totalTokens: number; rawMaxTokens: number } | undefined> => undefined,
+    ),
+    supportedModels: vi.fn(async () => [
+      {
+        value: 'sonnet',
+        resolvedModel: 'claude-fixture',
+        displayName: 'Claude Fixture',
+        supportedEffortLevels: ['low', 'high'],
+      },
+    ]),
+    applyFlagSettings: vi.fn(async () => {}),
+    setPermissionMode: vi.fn(async () => {}),
+    interrupt: vi.fn(async () => {}),
+    close: vi.fn(() => output.end()),
+  };
+  const sdk = {
+    query: vi.fn(
+      (_args: { prompt: string | AsyncIterable<SDKUserMessage>; options?: Options }) =>
+        Object.assign(output, controls) as unknown as Query,
+    ),
+    getSessionMessages: vi.fn(async () => history),
+    getSessionInfo: vi.fn(async (sessionId: string) =>
+      sessionId === 'unwritten' ? undefined : ({ sessionId } as SDKSessionInfo),
+    ),
+  };
+  const publish = vi.fn();
+  const chat = new ClaudeChat(
+    sdk,
+    {
+      provider: 'claude',
+      agentId: 'agent',
+      command: '/usr/bin/claude',
+      cwd: '/worktree',
+      env: process.env as Record<string, string>,
+      threadId,
+      ...overrides,
+    },
+    publish,
+  );
+  chats.push(chat);
+  const emit = async (event: unknown) => {
+    output.write(event);
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+  const options = () => sdk.query.mock.calls[0][0].options as Options;
+  async function send(text = 'Fix tests') {
+    const pending = chat.send(text);
+    const prompt = sdk.query.mock.calls[0][0].prompt as AsyncIterable<SDKUserMessage>;
+    const iterator = prompt[Symbol.asyncIterator]();
+    const { value } = await iterator.next();
+    await emit(value);
+    await pending;
+    return value as SDKUserMessage;
+  }
+  return { chat, sdk, controls, emit, options, send, publish, output };
+}
+
+describe('Claude chat adapter', () => {
+  it('loads a context summary on resume and refreshes it after turns and model changes', async () => {
+    const h = harness([], 'saved-session');
+    h.controls.getContextUsage.mockResolvedValue({ totalTokens: 150000, rawMaxTokens: 200000 });
+    await h.chat.start();
+    expect(h.controls.getContextUsage).toHaveBeenCalledWith({ detail: 'summary' });
+    expect(h.chat.state.contextUsage).toEqual({ usedTokens: 150000, maxTokens: 200000 });
+    h.controls.getContextUsage.mockResolvedValue({ totalTokens: 50000, rawMaxTokens: 200000 });
+    await h.emit({ type: 'result', is_error: false });
+    expect(h.chat.state.contextUsage?.usedTokens).toBe(50000);
+    h.controls.getContextUsage.mockResolvedValue({ totalTokens: 50000, rawMaxTokens: 1000000 });
+    await h.chat.selectModel('claude-fixture');
+    expect(h.chat.state.contextUsage?.maxTokens).toBe(1000000);
+    expect(h.controls.getContextUsage).toHaveBeenCalledTimes(3);
+  });
+
+  it('lists the slash commands and skills the CLI reports, and replaces them when they change', async () => {
+    const h = harness();
+    h.controls.initializationResult.mockResolvedValueOnce({
+      commands: [
+        { name: 'review', description: 'Review the diff', argumentHint: '<pr>' },
+        { name: '', description: 'Nameless entries are dropped', argumentHint: '' },
+      ],
+    } as never);
+    await h.chat.start();
+    expect(h.chat.state.commands).toEqual([
+      { name: 'review', description: 'Review the diff', argumentHint: '<pr>' },
+    ]);
+    await h.emit({
+      type: 'system',
+      subtype: 'commands_changed',
+      commands: [{ name: 'deploy', description: 'Ship it' }],
+    });
+    expect(h.chat.state.commands).toEqual([
+      { name: 'deploy', description: 'Ship it', argumentHint: '' },
+    ]);
+    expect(h.publish).toHaveBeenLastCalledWith(
+      expect.objectContaining({ commands: h.chat.state.commands }),
+    );
+  });
+
+  it('ignores stale context responses and reports unavailable summaries without failing chat', async () => {
+    const h = harness();
+    let release = (_value: { totalTokens: number; rawMaxTokens: number }) => {};
+    h.controls.getContextUsage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    await h.chat.start();
+    h.controls.getContextUsage.mockResolvedValue({ totalTokens: 10, rawMaxTokens: 100 });
+    await h.emit({ type: 'result', is_error: false });
+    release({ totalTokens: 90, rawMaxTokens: 100 });
+    await Promise.resolve();
+    expect(h.chat.state.contextUsage?.usedTokens).toBe(10);
+    h.controls.getContextUsage.mockRejectedValueOnce(new Error('Unsupported control request'));
+    await h.emit({ type: 'result', is_error: false });
+    expect(h.chat.state.contextUsage).toBeUndefined();
+    expect(h.chat.state.error).toBeUndefined();
+    expect(h.chat.state.status).toBe('ready');
+    h.controls.getContextUsage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    await h.emit({ type: 'result', is_error: false });
+    h.chat.stop();
+    h.publish.mockClear();
+    release({ totalTokens: 90, rawMaxTokens: 100 });
+    await Promise.resolve();
+    expect(h.publish).not.toHaveBeenCalled();
+  });
+
+  it('replaces cumulative model totals, includes cache tokens, and ignores incomplete usage', async () => {
+    const h = harness();
+    await h.chat.start();
+    expect(h.chat.state.tokenUsage).toBeUndefined();
+    const model = {
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadInputTokens: 800,
+      cacheCreationInputTokens: 200,
+    };
+    const result = { type: 'result', is_error: false, modelUsage: { main: model, helper: model } };
+    await h.emit(result);
+    await h.emit(result);
+    expect(h.chat.state.tokenUsage).toEqual({
+      totalTokens: 2300,
+      inputTokens: 2200,
+      outputTokens: 100,
+      scope: 'connection',
+    });
+    await h.emit({ ...result, modelUsage: { main: { ...model, inputTokens: 2000 } } });
+    expect(h.chat.state.tokenUsage?.totalTokens).toBe(3050);
+    await h.emit({ type: 'result', is_error: false });
+    await h.emit({ ...result, modelUsage: { main: { ...model, outputTokens: -1 } } });
+    expect(h.chat.state.tokenUsage?.totalTokens).toBe(3050);
+  });
+
+  it('tracks permission changes reported after initialization', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.emit({ type: 'system', subtype: 'init', permissionMode: 'plan' });
+    await h.emit({
+      type: 'system',
+      subtype: 'status',
+      status: null,
+      permissionMode: 'acceptEdits',
+    });
+    expect(h.chat.state.permissionMode).toBe('acceptEdits');
+    await h.emit({ type: 'system', subtype: 'status', status: 'compacting' });
+    expect(h.chat.state.permissionMode).toBe('acceptEdits');
+  });
+
+  it('passes the task canvas configuration to the SDK without changing other settings', async () => {
+    const h = harness([], undefined, { mcpArgs: ['--mcp-config', '/tmp/canvas.json'] });
+    await h.chat.start();
+    expect(h.options().extraArgs).toEqual({
+      'replay-user-messages': null,
+      'mcp-config': '/tmp/canvas.json',
+    });
+  });
+
+  it('preserves edit arguments after the result arrives', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.emit({
+      type: 'assistant',
+      message: {
+        id: 'reply',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'edit',
+            name: 'Edit',
+            input: {
+              file_path: '/worktree/app.ts',
+              old_string: 'return false;',
+              new_string: 'return true;',
+            },
+          },
+        ],
+      },
+    });
+    await h.emit({
+      type: 'user',
+      uuid: 'result',
+      message: {
+        content: [{ type: 'tool_result', tool_use_id: 'edit', content: 'Updated successfully.' }],
+      },
+    });
+    expect(h.chat.state.items[0].activity?.diffs).toEqual([
+      { path: '/worktree/app.ts', diff: '-return false;\n+return true;', added: 1, removed: 1 },
+    ]);
+    // The confirmation adds nothing to the diff above it.
+    expect(h.chat.state.items[0].text).toBe('');
+  });
+
+  it('upgrades a proposed edit to the applied patch, with its line numbers', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.emit({
+      type: 'assistant',
+      message: {
+        id: 'reply',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'edit',
+            name: 'Edit',
+            input: { file_path: '/worktree/app.ts', old_string: 'a', new_string: 'b' },
+          },
+        ],
+      },
+    });
+    await h.emit({
+      type: 'user',
+      uuid: 'result',
+      tool_use_result: {
+        filePath: '/worktree/app.ts',
+        structuredPatch: [
+          { oldStart: 3, oldLines: 2, newStart: 3, newLines: 2, lines: [' x', '-a', '+b'] },
+        ],
+      },
+      message: { content: [{ type: 'tool_result', tool_use_id: 'edit', content: 'Updated.' }] },
+    });
+    expect(h.chat.state.items[0].activity?.diffs).toEqual([
+      { path: '/worktree/app.ts', diff: '@@ -3,2 +3,2 @@\n x\n-a\n+b', added: 1, removed: 1 },
+    ]);
+  });
+
+  it('keeps a command apart from its output, and a failed edit shows why', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.emit({
+      type: 'assistant',
+      message: {
+        id: 'reply',
+        content: [
+          { type: 'tool_use', id: 'run', name: 'Bash', input: { command: 'npm test' } },
+          {
+            type: 'tool_use',
+            id: 'edit',
+            name: 'Edit',
+            input: { file_path: '/worktree/app.ts', old_string: 'a', new_string: 'b' },
+          },
+        ],
+      },
+    });
+    await h.emit({
+      type: 'user',
+      uuid: 'result',
+      message: {
+        content: [
+          { type: 'tool_result', tool_use_id: 'run', content: '1 passed' },
+          { type: 'tool_result', tool_use_id: 'edit', content: 'String not found', is_error: true },
+        ],
+      },
+    });
+    const [run, edit] = h.chat.state.items;
+    expect(run).toMatchObject({ text: '1 passed', activity: { command: 'npm test' } });
+    expect(edit).toMatchObject({ text: 'String not found', activity: { status: 'failed' } });
+  });
+
+  it('starts an explicit local session, preserves normal settings, and loads model capabilities', async () => {
+    const h = harness();
+    await h.chat.start();
+    expect(h.options()).toMatchObject({
+      cwd: '/worktree',
+      pathToClaudeCodeExecutable: '/usr/bin/claude',
+      systemPrompt: { preset: 'claude_code' },
+      settingSources: ['user', 'project', 'local'],
+      extraArgs: { 'replay-user-messages': null },
+    });
+    // Auto is the app default when no task or settings file chooses a mode.
+    expect(h.options().permissionMode).toBe('auto');
+    expect(h.options().allowDangerouslySkipPermissions).toBeUndefined();
+    expect(h.options().sessionId).toBe(h.chat.state.threadId);
+    expect(h.chat.state.models?.[0]).toMatchObject({
+      model: 'claude-fixture',
+      supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }],
+    });
+    expect(h.chat.state.model).toBeUndefined(); // Don't guess before Claude reports its model.
+    await h.emit({ type: 'system', subtype: 'init', model: 'claude-fixture' });
+    expect(h.chat.state.model).toBe('claude-fixture');
+  });
+
+  it.each(['default', 'plan', 'acceptEdits'] as const)(
+    'preserves an explicit %s task mode over the Auto default',
+    async (permissionMode) => {
+      const h = harness([], undefined, { permissionMode });
+      await h.chat.start();
+      expect(h.options().permissionMode).toBe(permissionMode);
+    },
+  );
+
+  it.each(['default', 'plan', 'acceptEdits'])(
+    'preserves an explicit %s settings mode over the Auto default',
+    async (mode) => {
+      const root = settingsRoot({ user: JSON.stringify({ permissions: { defaultMode: mode } }) });
+      const h = harness([], undefined, { cwd: root });
+      await h.chat.start();
+      expect(h.options().permissionMode).toBe(mode);
+    },
+  );
+
+  it('bypasses permissions only for a task that opted out', async () => {
+    const h = harness([], undefined, { skipPermissions: true });
+    await h.chat.start();
+    expect(h.options()).toMatchObject({
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+    });
+  });
+
+  it('runs the mode the user picked for this chat, and only then overrides their settings', async () => {
+    const h = harness([], undefined, { permissionMode: 'acceptEdits' });
+    await h.chat.start();
+    expect(h.options().permissionMode).toBe('acceptEdits');
+    expect(h.options().allowDangerouslySkipPermissions).toBeUndefined();
+    expect(h.chat.state.permissionNote).toBeUndefined();
+  });
+
+  it('launches in the mode the user configured, because the CLI never gets to read it', async () => {
+    const root = settingsRoot({ user: '{"permissions":{"defaultMode":"auto"}}' });
+    const h = harness([], undefined, { cwd: root });
+    await h.chat.start();
+    expect(h.options().permissionMode).toBe('auto');
+    expect(h.options().allowDangerouslySkipPermissions).toBeUndefined();
+    expect(h.chat.state.permissionNote).toBeUndefined();
+    await h.chat.setPermissionMode('acceptEdits');
+    expect(h.controls.setPermissionMode).toHaveBeenCalledWith('acceptEdits');
+    expect(h.chat.state.permissionMode).toBe('acceptEdits');
+  });
+
+  it('uses the app default rather than take bypassPermissions from the checkout itself', async () => {
+    // The CLI refuses this too: the worktree holds code the user has not read yet.
+    const root = settingsRoot({ project: '{"permissions":{"defaultMode":"bypassPermissions"}}' });
+    const h = harness([], undefined, { cwd: root });
+    await h.chat.start();
+    expect(h.options().permissionMode).toBe('auto');
+  });
+
+  it('uses Auto rather than adopt a bypassPermissions setting, and says why', async () => {
+    const root = settingsRoot({ user: '{"permissions":{"defaultMode":"bypassPermissions"}}' });
+    const h = harness([], undefined, { cwd: root });
+    await h.chat.start();
+    expect(h.options().permissionMode).toBe('auto');
+    expect(h.options().allowDangerouslySkipPermissions).toBeUndefined();
+    expect(h.chat.state.permissionNote).toContain('bypassPermissions');
+    // The user has now chosen for themselves what the settings could not carry over.
+    await h.chat.setPermissionMode('plan');
+    expect(h.chat.state.permissionNote).toBeUndefined();
+  });
+
+  it('keeps the bypassPermissions note when Claude reports the mode it launched in', async () => {
+    const root = settingsRoot({ user: '{"permissions":{"defaultMode":"bypassPermissions"}}' });
+    const h = harness([], undefined, { cwd: root });
+    await h.chat.start();
+    await h.emit({ type: 'system', subtype: 'init', permissionMode: 'auto' });
+    await h.emit({ type: 'system', subtype: 'status', status: null, permissionMode: 'auto' });
+    expect(h.chat.state.permissionMode).toBe('auto');
+    expect(h.chat.state.permissionNote).toContain('bypassPermissions');
+    // A mode change reported from the CLI side makes the note stale.
+    await h.emit({ type: 'system', subtype: 'status', status: null, permissionMode: 'plan' });
+    expect(h.chat.state.permissionMode).toBe('plan');
+    expect(h.chat.state.permissionNote).toBeUndefined();
+  });
+
+  it('refuses a mode change that the task has already opted out of', async () => {
+    const h = harness([], undefined, { skipPermissions: true });
+    await h.chat.start();
+    await expect(h.chat.setPermissionMode('plan')).rejects.toThrow('skips permissions');
+    expect(h.controls.setPermissionMode).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges prompts and reconciles partial and complete messages without duplicates', async () => {
+    const h = harness();
+    await h.chat.start();
+    const input = await h.send();
+    await h.emit({
+      type: 'stream_event',
+      event: { type: 'message_start', message: { id: 'reply' } },
+    });
+    await h.emit({
+      type: 'stream_event',
+      event: {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text: 'Hello' },
+      },
+    });
+    await h.emit({
+      type: 'assistant',
+      uuid: 'reply-uuid',
+      message: { id: 'reply', content: [{ type: 'text', text: 'Hello world' }] },
+    });
+    await h.emit(input);
+    await h.emit({ type: 'result', subtype: 'success', is_error: false });
+    expect(h.chat.state.items).toEqual([
+      { id: input.uuid, kind: 'user', text: 'Fix tests' },
+      { id: 'reply:0', kind: 'assistant', text: 'Hello world' },
+    ]);
+    expect(h.chat.state.status).toBe('ready');
+  });
+
+  it('matches streamed text to a reply the CLI splits into one message per block', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.send();
+    const delta = (index: number, text: string) =>
+      h.emit({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', index, delta: { type: 'text_delta', text } },
+      });
+    const block = (uuid: string, content: unknown) =>
+      h.emit({ type: 'assistant', uuid, message: { id: 'reply', content: [content] } });
+    await h.emit({
+      type: 'stream_event',
+      event: { type: 'message_start', message: { id: 'reply' } },
+    });
+    await block('thinking', { type: 'thinking', thinking: 'Hmm' });
+    await delta(1, 'Al');
+    await block('first', { type: 'text', text: 'All tests pass.' });
+    // The CLI forwards no message for a blank block, so it cannot be counted on.
+    await delta(2, '');
+    await block('tool', { type: 'tool_use', id: 'tool-1', name: 'Read', input: {} });
+    await delta(4, 'All');
+    // A repeat lands where its block did, not on a later block its text happens to extend.
+    await block('first', { type: 'text', text: 'All tests pass.' });
+    await block('last', { type: 'text', text: 'All done.' });
+    // Unstreamed blocks of one reply, as history replays them, must not replace each other.
+    for (const text of ['Earlier.', 'Later.'])
+      await h.emit({
+        type: 'assistant',
+        uuid: text,
+        message: { id: 'history', content: [{ type: 'text', text }] },
+      });
+    expect(
+      h.chat.state.items
+        .filter((item) => item.kind !== 'assistant' || item.text.trim())
+        .map((item) => (item.kind === 'assistant' ? item.text : item.kind)),
+    ).toEqual(['user', 'All tests pass.', 'tool', 'All done.', 'Earlier.', 'Later.']);
+  });
+
+  it('keeps the words the user sent and cleans up only the turns it did not send', async () => {
+    const h = harness();
+    await h.chat.start();
+    // The CLI replays our own turn back; a user quoting these tags still wrote them.
+    const quoted = 'Why does <system-reminder>this</system-reminder> show up in my prompt?';
+    await h.send(quoted);
+    expect(h.chat.state.items[0].text).toBe(quoted);
+    await h.emit({
+      type: 'user',
+      uuid: 'injected',
+      message: {
+        role: 'user',
+        content: [
+          { type: 'text', text: '<system-reminder>Be careful.</system-reminder>' },
+          {
+            type: 'text',
+            text: '<task-notification><status>completed</status><summary>Build finished</summary></task-notification>',
+          },
+        ],
+      },
+    });
+    expect(h.chat.state.items[1].text).toBe('Build finished');
+  });
+
+  it('shows a slash command and its output instead of the CLI envelope', async () => {
+    const h = harness();
+    await h.chat.start();
+    const user = (uuid: string, content: string) =>
+      h.emit({ type: 'user', uuid, message: { role: 'user', content } });
+    await user('caveat', '<local-command-caveat>Caveat: generated locally.</local-command-caveat>');
+    await user(
+      'command',
+      '<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>claude-fable-5-1</command-args>',
+    );
+    await user(
+      'stdout',
+      '<local-command-stdout>Set model to `claude-fable-5-1`</local-command-stdout>',
+    );
+    expect(h.chat.state.items.map(({ kind, text }) => ({ kind, text }))).toEqual([
+      { kind: 'user', text: '/model claude-fable-5-1' },
+      { kind: 'assistant', text: 'Set model to `claude-fable-5-1`' },
+    ]);
+  });
+
+  it('runs a ! command in the worktree and lets Claude answer its output', async () => {
+    const cwd = mkdtempSync(join(settingsDir, 'shell-'));
+    const h = harness([], undefined, { cwd });
+    await h.chat.start();
+    const running = h.chat.runShell('pwd; echo oops >&2; exit 3');
+    expect(h.chat.state.status).toBe('working');
+    expect(h.chat.state.items[0]).toMatchObject({
+      kind: 'shell',
+      activity: { command: 'pwd; echo oops >&2; exit 3', status: 'running' },
+    });
+    await running;
+    await vi.waitFor(() => expect(h.chat.state.items[0].activity?.status).toBe('failed'));
+    const item = h.chat.state.items[0];
+    expect(item.text).toContain(cwd);
+    expect(item.text).toContain('oops');
+    expect(item.activity).toMatchObject({ status: 'failed', exitCode: 3 });
+    const prompt = h.sdk.query.mock.calls[0][0].prompt as AsyncIterable<SDKUserMessage>;
+    const { value } = await prompt[Symbol.asyncIterator]().next();
+    // The terminal's shell mode starts a turn on the output; Chat does the same.
+    expect(value).toMatchObject({ uuid: item.id, shouldQuery: true });
+    expect(value?.message.content).toBe(
+      `<bash-input>pwd; echo oops >&2; exit 3</bash-input>\n<bash-stdout>${cwd}\n</bash-stdout><bash-stderr>oops\n\nExit code 3</bash-stderr>`,
+    );
+    // The CLI's replay of the entry must not show the command a second time, and
+    // the chat stays busy through Claude's answer, so no prompt can overtake it.
+    await h.emit({ ...value, isReplay: true });
+    expect(h.chat.state.items).toHaveLength(1);
+    await h.emit({
+      type: 'assistant',
+      message: { id: 'reply', content: [{ type: 'text', text: 'It exited with code 3.' }] },
+    });
+    expect(h.chat.state.items[1]).toMatchObject({
+      kind: 'assistant',
+      text: 'It exited with code 3.',
+    });
+    expect(h.chat.state.status).toBe('working');
+    await h.emit({ type: 'result', is_error: false });
+    expect(h.chat.state.status).toBe('ready');
+  });
+
+  it('stops a running ! command and tells the model it was stopped', async () => {
+    const h = harness([], undefined, { cwd: settingsDir });
+    await h.chat.start();
+    // Returns once the command starts, so the composer is free to queue a follow-up.
+    await h.chat.runShell('echo started; sleep 30');
+    expect(h.chat.state.items[0].activity?.status).toBe('running');
+    await vi.waitFor(() => expect(h.chat.state.items[0]?.text).toContain('started'));
+    await h.chat.interrupt();
+    await vi.waitFor(() => expect(h.chat.state.items[0].activity?.status).toBe('interrupted'));
+    expect(h.controls.interrupt).not.toHaveBeenCalled();
+    const prompt = h.sdk.query.mock.calls[0][0].prompt as AsyncIterable<SDKUserMessage>;
+    const { value } = await prompt[Symbol.asyncIterator]().next();
+    expect(value?.message.content).toContain('Stopped by the user.');
+    // Stopping says the user is done with it; Claude reads it with the next message.
+    expect(value).toMatchObject({ shouldQuery: false });
+  });
+
+  it('gives the model command output without terminal colours', async () => {
+    const h = harness([], undefined, { cwd: settingsDir });
+    await h.chat.start();
+    await h.chat.runShell("printf '\\033[31mred\\033[0m'");
+    const prompt = h.sdk.query.mock.calls[0][0].prompt as AsyncIterable<SDKUserMessage>;
+    const { value } = await prompt[Symbol.asyncIterator]().next();
+    expect(value?.message.content).toContain('<bash-stdout>red</bash-stdout>');
+  });
+
+  it('ends background jobs a ! command left behind when the chat closes', async () => {
+    const cwd = mkdtempSync(join(settingsDir, 'shell-'));
+    const h = harness([], undefined, { cwd });
+    await h.chat.start();
+    await h.chat.runShell('(sleep 30 & echo $! > job.pid); echo started');
+    await vi.waitFor(() => expect(h.chat.state.items[0].activity?.status).toBe('completed'));
+    const pid = Number(readFileSync(join(cwd, 'job.pid'), 'utf8'));
+    expect(isRunning(pid)).toBe(true);
+    h.chat.stop();
+    await vi.waitFor(() => expect(isRunning(pid)).toBe(false));
+  });
+
+  it('refuses a ! command while Claude is answering', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.send();
+    await expect(h.chat.runShell('ls')).rejects.toThrow('Wait for Claude to finish');
+  });
+
+  it("shows ! commands from the transcript, including the terminal's two-turn form", async () => {
+    const h = harness(
+      [
+        {
+          type: 'user',
+          uuid: 'terminal-command',
+          message: { role: 'user', content: '<bash-input>git status</bash-input>' },
+        },
+        {
+          type: 'user',
+          uuid: 'terminal-output',
+          message: {
+            role: 'user',
+            content: '<bash-stdout>On branch main</bash-stdout><bash-stderr></bash-stderr>',
+          },
+        },
+        {
+          type: 'user',
+          uuid: 'chat-command',
+          message: {
+            role: 'user',
+            content:
+              '<bash-input>false</bash-input>\n<bash-stdout></bash-stdout><bash-stderr>Exit code 1</bash-stderr>',
+          },
+        },
+        {
+          type: 'user',
+          uuid: 'killed-command',
+          message: {
+            role: 'user',
+            content:
+              '<bash-input>make</bash-input>\n<bash-stdout></bash-stdout><bash-stderr>Exit code unknown</bash-stderr>',
+          },
+        },
+        {
+          type: 'user',
+          uuid: 'stopped-command',
+          message: {
+            role: 'user',
+            content:
+              '<bash-input>npm run dev</bash-input>\n<bash-stdout>\u001b[32mready\u001b[0m\n</bash-stdout><bash-stderr>Stopped by the user.</bash-stderr>',
+          },
+        },
+      ] as unknown as SessionMessage[],
+      'saved-session',
+    );
+    await h.chat.start();
+    expect(
+      h.chat.state.items.map(({ kind, text, activity }) => ({ kind, text, activity })),
+    ).toEqual([
+      {
+        kind: 'shell',
+        text: 'On branch main',
+        activity: {
+          type: 'command',
+          label: 'git status',
+          command: 'git status',
+          status: 'completed',
+        },
+      },
+      // A reload shows a command the way it looked when it ran.
+      {
+        kind: 'shell',
+        text: '',
+        activity: {
+          type: 'command',
+          label: 'false',
+          command: 'false',
+          status: 'failed',
+          exitCode: 1,
+        },
+      },
+      {
+        kind: 'shell',
+        text: '',
+        activity: { type: 'command', label: 'make', command: 'make', status: 'failed' },
+      },
+      {
+        kind: 'shell',
+        text: 'ready',
+        activity: {
+          type: 'command',
+          label: 'npm run dev',
+          command: 'npm run dev',
+          status: 'interrupted',
+        },
+      },
+    ]);
+  });
+
+  it('records tools and their final results, including replay and subagent events', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.send();
+    await h.emit({
+      type: 'assistant',
+      uuid: 'a',
+      message: {
+        content: [{ type: 'tool_use', id: 'tool', name: 'Bash', input: { command: 'npm test' } }],
+      },
+    });
+    expect(h.chat.state.items[h.chat.state.items.length - 1]?.activity).toMatchObject({
+      status: 'running',
+      label: 'npm test',
+    });
+    await h.emit({
+      type: 'assistant',
+      parent_tool_use_id: 'tool',
+      uuid: 'child',
+      message: { content: [{ type: 'text', text: 'Subagent detail' }] },
+    });
+    const result = {
+      type: 'user',
+      uuid: 'result',
+      message: {
+        content: [
+          { type: 'tool_result', tool_use_id: 'tool', content: 'Test failed', is_error: true },
+        ],
+      },
+    };
+    await h.emit(result);
+    await h.emit(result);
+    expect(h.chat.state.items).toHaveLength(2);
+    expect(h.chat.state.items[1].activity?.status).toBe('failed');
+    expect(h.chat.state.items[1].text.match(/Test failed/g)).toHaveLength(1);
+  });
+
+  it('waits for explicit approval, returns the exact input, and clears aborted requests', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.send();
+    const signal = new AbortController();
+    const input = { command: 'npm test' };
+    const pending = h.options().canUseTool?.('Bash', input, {
+      signal: signal.signal,
+      requestId: 'request',
+      toolUseID: 'tool',
+    });
+    expect(h.chat.state.requests).toHaveLength(1);
+    expect(h.chat.state.requests[0].defaultToNo).toBe(false);
+    const id = h.chat.state.requests[0].id;
+    h.chat.respond(id, 'accept');
+    await expect(pending).resolves.toEqual({
+      behavior: 'allow',
+      updatedInput: input,
+      decisionClassification: 'user_temporary',
+    });
+    expect(() => h.chat.respond(id, 'accept')).toThrow('no longer pending');
+    const cancelled = h.options().canUseTool?.('Bash', input, {
+      signal: signal.signal,
+      requestId: 'request',
+      toolUseID: 'tool-2',
+      defaultToNo: true,
+    });
+    expect(h.chat.state.requests[0].defaultToNo).toBe(true);
+    signal.abort();
+    await expect(cancelled).resolves.toMatchObject({ behavior: 'deny' });
+    expect(h.chat.state.requests).toEqual([]);
+  });
+
+  it('shows the prompt the CLI wrote and remembers a decision on request', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.send();
+    const suggestions: PermissionUpdate[] = [
+      {
+        type: 'addRules',
+        rules: [{ toolName: 'Bash', ruleContent: 'npm test:*' }],
+        behavior: 'allow',
+        destination: 'localSettings',
+      },
+    ];
+    const pending = h.options().canUseTool?.(
+      'Bash',
+      { command: 'npm test' },
+      askOptions({
+        title: 'Claude wants to run npm test',
+        displayName: 'Run command',
+        suggestions,
+      }),
+    );
+    const request = h.chat.state.requests[0];
+    expect(request).toMatchObject({ action: 'Run command', canAlwaysAllow: true });
+    expect(request.text).toBe('Claude wants to run npm test');
+    expect(request.details).toContain('"command": "npm test"');
+    // The card has to name the settings file a click would write, not just "always".
+    expect(request.alwaysAllowNote).toBe(
+      'always allow Bash(npm test:*) in this checkout’s local settings',
+    );
+    h.chat.respond(request.id, 'accept-always');
+    await expect(pending).resolves.toEqual({
+      behavior: 'allow',
+      updatedInput: { command: 'npm test' },
+      updatedPermissions: suggestions,
+      decisionClassification: 'user_permanent',
+    });
+  });
+
+  it('describes a call the CLI did not write a prompt for, and never offers to remember it', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.send();
+    const pending = h.options().canUseTool?.(
+      'Bash',
+      { command: 'npm test' },
+      askOptions({
+        suppressAlwaysAllowRule: true,
+        suggestions: [
+          { type: 'setMode', mode: 'acceptEdits', destination: 'session' },
+          {
+            type: 'addRules',
+            rules: [{ toolName: 'Bash' }],
+            behavior: 'allow',
+            destination: 'userSettings',
+          },
+        ],
+      }),
+    );
+    const request = h.chat.state.requests[0];
+    expect(request.text).toBe('Bash: npm test');
+    expect(request).toMatchObject({ canAlwaysAllow: false, alwaysAllowNote: undefined });
+    // Even an "always" from a stale card writes no rule the agent withheld.
+    h.chat.respond(request.id, 'accept-always');
+    await expect(pending).resolves.toEqual({
+      behavior: 'allow',
+      updatedInput: { command: 'npm test' },
+      decisionClassification: 'user_temporary',
+    });
+  });
+
+  it('strips terminal escapes from the sentence the user decides on', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.send();
+    void h
+      .options()
+      .canUseTool?.(
+        'Read',
+        { file_path: '/etc/hosts' },
+        askOptions({ title: '\u001b[31mClaude wants to read /etc/hosts\u001b[0m' }),
+      );
+    expect(h.chat.state.requests[0].text).toBe('Claude wants to read /etc/hosts');
+  });
+
+  it('never treats an unanswered question as approvable, however it is accepted', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.send();
+    const pending = h
+      .options()
+      .canUseTool?.(
+        'AskUserQuestion',
+        { questions: [{ question: 'Which scope?', options: [{ label: 'Narrow' }] }] },
+        askOptions({ suggestions: [{ type: 'setMode', mode: 'plan', destination: 'session' }] }),
+      );
+    const request = h.chat.state.requests[0];
+    // An answer is not a permission: remembering it must not even be offered.
+    expect(request.canAlwaysAllow).toBe(false);
+    expect(() => h.chat.respond(request.id, 'accept-always', {})).toThrow('Answer every question');
+    h.chat.respond(request.id, 'decline');
+    await expect(pending).resolves.toMatchObject({ behavior: 'deny' });
+  });
+
+  it('maps Claude questions and validates answers before returning them', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.send();
+    const questions = [
+      {
+        question: 'Which features?',
+        multiSelect: true,
+        options: [
+          { label: 'A', description: 'First' },
+          { label: 'B', description: 'Second' },
+        ],
+      },
+    ];
+    const pending = h
+      .options()
+      .canUseTool?.(
+        'AskUserQuestion',
+        { questions },
+        { signal: new AbortController().signal, requestId: 'request', toolUseID: 'q' },
+      );
+    const request = h.chat.state.requests[0];
+    expect(request.questions?.[0]).toMatchObject({ id: 'Which features?', multiSelect: true });
+    expect(() => h.chat.respond(request.id, 'accept', {})).toThrow('Answer every question');
+    h.chat.respond(request.id, 'accept', { 'Which features?': 'A, B' });
+    await expect(pending).resolves.toEqual({
+      behavior: 'allow',
+      updatedInput: { questions, answers: { 'Which features?': 'A, B' } },
+      decisionClassification: 'user_temporary',
+    });
+  });
+
+  it('applies model and effort atomically, and keeps the selection on rejection', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.chat.selectModel('claude-fixture', 'high');
+    expect(h.controls.applyFlagSettings).toHaveBeenCalledWith({
+      model: 'claude-fixture',
+      effortLevel: 'high',
+    });
+    await expect(h.chat.selectModel('unknown')).rejects.toThrow('not available');
+    await expect(h.chat.selectModel('claude-fixture', 'max')).rejects.toThrow('not supported');
+    h.controls.applyFlagSettings.mockRejectedValueOnce(new Error('Not supported by this CLI'));
+    await expect(h.chat.selectModel('claude-fixture', 'low')).rejects.toThrow('Not supported');
+    expect(h.chat.state).toMatchObject({
+      model: 'claude-fixture',
+      reasoningEffort: 'high',
+      status: 'ready',
+    });
+    await h.chat.selectModel('claude-fixture');
+    expect(h.controls.applyFlagSettings).toHaveBeenLastCalledWith({
+      model: 'claude-fixture',
+      effortLevel: null,
+    });
+    await h.send();
+    await expect(h.chat.selectModel('claude-fixture')).rejects.toThrow('Wait for Claude');
+  });
+
+  it('names the model and effort the CLI applies instead of its defaults', async () => {
+    const h = harness();
+    const getSettings = vi.fn(
+      async (): Promise<{ applied: { model: string; effort: string | null } }> => ({
+        applied: { model: 'claude-fixture', effort: 'high' },
+      }),
+    );
+    Object.assign(h.controls, { getSettings });
+    h.controls.supportedModels.mockResolvedValueOnce([
+      {
+        value: 'default',
+        resolvedModel: 'claude-fixture',
+        displayName: 'Default (recommended)',
+        supportedEffortLevels: ['low', 'high'],
+      },
+      {
+        value: 'sonnet',
+        resolvedModel: 'claude-fixture',
+        displayName: 'Claude Fixture',
+        supportedEffortLevels: ['low', 'high'],
+      },
+    ]);
+    await h.chat.start();
+    expect(h.chat.state.models?.map((model) => model.displayName)).toEqual(['Claude Fixture']);
+    expect(h.chat.state).toMatchObject({ model: 'claude-fixture', reasoningEffort: 'high' });
+    // Clearing the effort leaves the model's own default, which the CLI then names.
+    getSettings.mockResolvedValueOnce({ applied: { model: 'claude-fixture', effort: 'low' } });
+    await h.chat.selectModel('claude-fixture');
+    expect(h.chat.state.reasoningEffort).toBe('low');
+    getSettings.mockResolvedValueOnce({ applied: { model: 'claude-fixture', effort: null } });
+    await h.chat.selectModel('claude-fixture');
+    expect(h.chat.state.reasoningEffort).toBeUndefined();
+  });
+
+  it('explains a launch failure with the CLI output', async () => {
+    const h = harness();
+    h.controls.initializationResult.mockImplementationOnce(async () => {
+      h.options().stderr?.('claude: command not found\n');
+      throw new Error('Claude Code exited before it was ready.');
+    });
+    await expect(h.chat.start()).rejects.toThrow(
+      /exited before it was ready[\s\S]*command not found/,
+    );
+  });
+
+  it('starts a session under a handed-over id that Claude never wrote', async () => {
+    // A terminal launched with --session-id writes nothing until its first turn, so
+    // resuming the id it hands to Chat would fail with "No conversation found".
+    const h = harness([], 'unwritten');
+    await h.chat.start();
+    expect(h.sdk.getSessionInfo).toHaveBeenCalledWith('unwritten', { dir: '/worktree' });
+    expect(h.options().resume).toBeUndefined();
+    expect(h.options().sessionId).toBe('unwritten');
+    expect(h.chat.state.threadId).toBe('unwritten');
+  });
+
+  it('refuses a task-specific config directory before opening a session', async () => {
+    const h = harness([], undefined, {
+      env: { ...process.env, CLAUDE_CONFIG_DIR: '/task/local' } as Record<string, string>,
+    });
+    await expect(h.chat.start()).rejects.toThrow('task-specific CLAUDE_CONFIG_DIR');
+    expect(h.sdk.query).not.toHaveBeenCalled();
+  });
+
+  it('restores the saved session and its history without starting a replacement conversation', async () => {
+    const h = harness(
+      [
+        {
+          type: 'assistant',
+          uuid: 'old',
+          session_id: 'saved',
+          parent_tool_use_id: null,
+          parent_agent_id: null,
+          message: { id: 'old-message', content: [{ type: 'text', text: 'Earlier answer' }] },
+        },
+      ],
+      'saved',
+    );
+    await h.chat.start();
+    expect(h.sdk.getSessionMessages).toHaveBeenCalledWith('saved', { dir: '/worktree' });
+    expect(h.options().resume).toBe('saved');
+    expect(h.options().sessionId).toBeUndefined();
+    expect(h.chat.state.items[0].text).toBe('Earlier answer');
+  });
+
+  it('publishes a restored history once rather than once per message', async () => {
+    const history = Array.from({ length: 50 }, (_, i) => ({
+      type: 'assistant' as const,
+      uuid: `old-${i}`,
+      session_id: 'saved',
+      parent_tool_use_id: null,
+      parent_agent_id: null,
+      message: { id: `old-message-${i}`, content: [{ type: 'text', text: `Answer ${i}` }] },
+    }));
+    const h = harness(history, 'saved');
+    await h.chat.start();
+    expect(h.chat.state.items).toHaveLength(50);
+    // Every publish sends the whole state, so one per message costs O(n²) on resume.
+    expect(h.publish.mock.calls.length).toBeLessThan(10);
+  });
+
+  it('interrupts an acknowledged turn and waits for its result before accepting another prompt', async () => {
+    const h = harness();
+    await h.chat.start();
+    await h.send();
+    await h.chat.interrupt();
+    expect(h.controls.interrupt).toHaveBeenCalled();
+    await expect(h.chat.send('Another')).rejects.toThrow('Wait for Claude');
+    await h.emit({ type: 'result', subtype: 'success', is_error: false });
+    expect(h.chat.state.status).toBe('ready');
+  });
+
+  it('rejects unacknowledged sends and pending approvals on close, without reviving the session', async () => {
+    const h = harness();
+    await h.chat.start();
+    const sending = h.chat.send('Unconfirmed');
+    h.chat.stop();
+    await expect(sending).rejects.toThrow('stopped');
+    expect(h.chat.state.status).toBe('closed');
+    expect(h.controls.close).toHaveBeenCalled();
+    const other = harness();
+    await other.chat.start();
+    await other.send();
+    const approval = other
+      .options()
+      .canUseTool?.(
+        'Bash',
+        {},
+        { signal: new AbortController().signal, requestId: 'request', toolUseID: 'x' },
+      );
+    other.chat.stop();
+    await expect(approval).resolves.toMatchObject({ behavior: 'deny' });
+    expect(other.chat.state.requests).toEqual([]);
+  });
+
+  it('preserves failed-send feedback and allows catalog retry without closing chat', async () => {
+    const h = harness();
+    await h.chat.start();
+    const sending = h.chat.send('Fail');
+    const rejected = expect(sending).rejects.toThrow('Usage limit');
+    await h.emit({
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      errors: ['Usage limit'],
+    });
+    await rejected;
+    expect(h.chat.state).toMatchObject({ status: 'ready', error: 'Usage limit' });
+    h.controls.supportedModels.mockRejectedValueOnce(new Error('No catalog'));
+    await h.chat.loadModels();
+    expect(h.chat.state.modelsError).toBe('No catalog');
+    await h.chat.loadModels();
+    expect(h.chat.state.modelsError).toBeUndefined();
+    // The picker shows names only; the CLI's "(recommended)" advice is dropped.
+    h.controls.supportedModels.mockResolvedValueOnce([
+      {
+        value: 'default',
+        resolvedModel: 'claude-fixture',
+        displayName: 'Default (recommended)',
+        supportedEffortLevels: [],
+      },
+    ]);
+    await h.chat.loadModels();
+    expect(h.chat.state.models?.[0]?.displayName).toBe('Default');
+  });
+
+  it('reports the cause of a successful-subtype turn that ended on an API error', async () => {
+    const h = harness();
+    await h.chat.start();
+    const sending = h.chat.send('Ask');
+    const rejected = expect(sending).rejects.toThrow('Credit balance is too low');
+    // subtype 'success' with is_error carries the cause in `result`, not in `errors`.
+    await h.emit({
+      type: 'result',
+      subtype: 'success',
+      is_error: true,
+      result: 'Credit balance is too low',
+    });
+    await rejected;
+    expect(h.chat.state).toMatchObject({ status: 'ready', error: 'Credit balance is too low' });
+  });
+
+  describe('handing the session to the terminal', () => {
+    it('reports the session id once the CLI stream has ended', async () => {
+      const h = harness([], 'saved-session');
+      await h.chat.start();
+      await expect(h.chat.release()).resolves.toEqual({ threadId: 'saved-session' });
+      expect(h.controls.close).toHaveBeenCalled();
+      expect(h.chat.state.status).toBe('closed');
+    });
+
+    it('refuses to release a session whose turn is still running', async () => {
+      const h = harness([], 'saved-session');
+      await h.chat.start();
+      void h.chat.send('Keep going').catch(() => {});
+      await expect(h.chat.release()).rejects.toThrow('Finish or stop the response');
+      expect(h.controls.close).not.toHaveBeenCalled();
+    });
+
+    it('keeps waiting when the CLI flushes one more message as it closes', async () => {
+      const h = harness([], 'saved-session');
+      await h.chat.start();
+      // The close call is only a request: what says the CLI has let the
+      // transcript go is the stream ending, not the next message arriving.
+      h.controls.close.mockImplementation(() => {
+        h.output.write({ type: 'stream_event', uuid: 'trailing', event: { type: 'ping' } });
+        return h.output;
+      });
+      const released = h.chat.release();
+      const settled = vi.fn();
+      void released.then(settled, settled);
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(settled).not.toHaveBeenCalled();
+      h.output.end();
+      await expect(released).resolves.toEqual({ threadId: 'saved-session' });
+    });
+
+    it('refuses to release while the CLI is still holding the session open', async () => {
+      const h = harness([], 'saved-session');
+      await h.chat.start();
+      // A close the CLI does not act on: the message stream stays open.
+      h.controls.close.mockImplementation(() => h.output);
+      vi.useFakeTimers();
+      try {
+        const rejected = expect(h.chat.release()).rejects.toThrow('has not stopped yet');
+        await vi.advanceTimersByTimeAsync(5000);
+        await rejected;
+      } finally {
+        vi.useRealTimers();
+        h.output.end();
+      }
+    });
+  });
+});
+
+it('delivers images to Claude and keeps them on the acknowledged user message', async () => {
+  const h = harness();
+  await h.chat.start();
+  const images = [{ name: 'screen.png', mediaType: 'image/png' as const, data: 'aGVsbG8=' }];
+  const sent = h.chat.send('Inspect this', images);
+  const prompts = h.sdk.query.mock.calls[0][0].prompt as AsyncIterable<SDKUserMessage>;
+  const { value } = await prompts[Symbol.asyncIterator]().next();
+  expect(value.message.content).toEqual([
+    { type: 'text', text: 'Inspect this' },
+    { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGVsbG8=' } },
+  ]);
+  await h.emit(value);
+  await sent;
+  expect(h.chat.state.items[0].images).toEqual(images);
+  await h.emit({
+    type: 'assistant',
+    uuid: 'plan-message',
+    message: {
+      id: 'plan-message',
+      content: [
+        {
+          type: 'tool_use',
+          id: 'todo',
+          name: 'TodoWrite',
+          input: { todos: [{ content: 'Inspect the screenshot', status: 'in_progress' }] },
+        },
+      ],
+    },
+  });
+  expect(h.chat.state.plan).toEqual([{ step: 'Inspect the screenshot', status: 'in_progress' }]);
+});

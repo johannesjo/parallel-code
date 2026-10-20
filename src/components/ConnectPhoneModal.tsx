@@ -11,9 +11,14 @@ import {
   generatePairingPin,
 } from '../store/remote';
 import { theme } from '../lib/theme';
+import { invoke } from '../lib/ipc';
+import { IPC } from '../../electron/ipc/channels';
 import type { RemoteAccess } from '../store/types';
+import { CloseIcon, SyncIcon } from './icons';
 
 type NetworkMode = 'wifi' | 'tailscale';
+
+const ANDROID_APP_GUIDE = 'https://github.com/johannesjo/parallel-code#android-app';
 type RemoteAccessUrls = Pick<RemoteAccess, 'enabled' | 'url' | 'wifiUrl' | 'tailscaleUrl'>;
 
 interface ConnectPhoneModalProps {
@@ -45,16 +50,19 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
   const [qrDataUrl, setQrDataUrl] = createSignal<string | null>(null);
   const [qrError, setQrError] = createSignal<string | null>(null);
   const [starting, setStarting] = createSignal(false);
+  const [disconnecting, setDisconnecting] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [copied, setCopied] = createSignal(false);
   const [mode, setMode] = createSignal<NetworkMode>('wifi');
   const [pairingPin, setPairingPin] = createSignal<string | null>(null);
   const [pairingError, setPairingError] = createSignal<string | null>(null);
   const [showRisks, setShowRisks] = createSignal(false);
+  let disconnectRequested = false;
   let stopPolling: (() => void) | undefined;
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
   let pairingTimer: ReturnType<typeof setTimeout> | undefined;
   let qrRequestId = 0;
+  let pairingRequestId = 0;
   onCleanup(() => {
     if (copiedTimer !== undefined) clearTimeout(copiedTimer);
     if (pairingTimer !== undefined) clearTimeout(pairingTimer);
@@ -63,17 +71,37 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
 
   // Clear the displayed PIN once it expires so a stale code isn't left on screen.
   async function handleGeneratePin() {
+    const requestId = ++pairingRequestId;
     setPairingError(null);
     try {
       const { pin, expiresAt } = await generatePairingPin();
+      if (requestId !== pairingRequestId) return;
       setPairingPin(pin);
       if (pairingTimer !== undefined) clearTimeout(pairingTimer);
-      pairingTimer = setTimeout(() => setPairingPin(null), Math.max(0, expiresAt - Date.now()));
+      pairingTimer = setTimeout(
+        () => {
+          setPairingPin(null);
+          void handleGeneratePin();
+        },
+        Math.max(0, expiresAt - Date.now()),
+      );
     } catch (err) {
+      if (requestId !== pairingRequestId) return;
       setPairingPin(null);
       setPairingError(err instanceof Error ? err.message : 'Could not generate a code');
     }
   }
+
+  // Prepare pairing whenever the connection dialog is ready, and refresh expired codes.
+  createEffect(() => {
+    if (!props.open || !store.remoteAccess.enabled) return;
+    void handleGeneratePin();
+    onCleanup(() => {
+      pairingRequestId++;
+      if (pairingTimer !== undefined) clearTimeout(pairingTimer);
+      setPairingPin(null);
+    });
+  });
 
   const activeUrl = createMemo(() => connectionUrlForMode(store.remoteAccess, mode()));
 
@@ -124,9 +152,16 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
 
   // Start server when modal opens
   createEffect(() => {
-    if (!props.open) return;
+    if (!props.open) {
+      disconnectRequested = false;
+      return;
+    }
+    if (!store.remoteAccess.enabled && disconnectRequested) {
+      if (!untrack(disconnecting)) props.onClose();
+      return;
+    }
 
-    if (!store.remoteAccess.enabled && !untrack(starting)) {
+    if (!store.remoteAccess.enabled && !untrack(starting) && !untrack(disconnecting)) {
       setStarting(true);
       setError(null);
       startRemoteAccess()
@@ -166,22 +201,34 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
   });
 
   async function handleDisconnect() {
-    stopPolling?.();
-    // The server's pairing state resets on stop; drop any PIN still on screen
-    // so it can't be entered against the new (empty) state.
-    setPairingPin(null);
-    if (pairingTimer !== undefined) clearTimeout(pairingTimer);
-    const result = await stopRemoteAccess();
-    if (!result.stopped) {
-      if (result.reason === 'coordinator_active') {
-        setError('Cannot disconnect while a coordinator is active. Stop the coordinator first.');
-      } else {
-        setError('Failed to disconnect. Please try again.');
+    if (disconnecting()) return;
+    disconnectRequested = true;
+    setDisconnecting(true);
+    try {
+      const result = await stopRemoteAccess();
+      if (!result.stopped) {
+        disconnectRequested = result.reason === 'coordinator_active';
+        setError(
+          result.reason === 'coordinator_active'
+            ? 'Cannot disconnect while a coordinator is active. Stop the coordinator first.'
+            : result.reason === 'docker_active'
+              ? 'Cannot disconnect while Docker agents use the canvas. Stop those agents first.'
+              : 'Failed to disconnect. Please try again.',
+        );
+        return;
       }
-      return;
+      stopPolling?.();
+      pairingRequestId++;
+      setPairingPin(null);
+      if (pairingTimer !== undefined) clearTimeout(pairingTimer);
+      setQrDataUrl(null);
+      props.onClose();
+    } catch (err) {
+      disconnectRequested = false;
+      setError(err instanceof Error ? err.message : 'Could not disconnect and revoke phone access');
+    } finally {
+      setDisconnecting(false);
     }
-    setQrDataUrl(null);
-    props.onClose();
   }
 
   async function handleCopyUrl() {
@@ -199,7 +246,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
 
   const pillStyle = (active: boolean) => ({
     padding: '6px 14px',
-    'border-radius': '6px',
+    'border-radius': 'var(--radius-sm)',
     border: 'none',
     'font-size': '13px',
     cursor: 'pointer',
@@ -239,7 +286,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             display: 'flex',
             gap: '4px',
             background: theme.bgInput,
-            'border-radius': '8px',
+            'border-radius': 'var(--radius-md)',
             padding: '3px',
           }}
         >
@@ -262,7 +309,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               WiFi
             </button>
             <Show when={!store.remoteAccess.wifiUrl}>
-              <span style={{ 'font-size': '10px', color: theme.fgSubtle }}>Not detected</span>
+              <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>Not detected</span>
             </Show>
           </div>
           <div
@@ -284,17 +331,19 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               Tailscale
             </button>
             <Show when={!store.remoteAccess.tailscaleUrl}>
-              <span style={{ 'font-size': '10px', color: theme.fgSubtle }}>Not detected</span>
+              <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>Not detected</span>
             </Show>
           </div>
         </div>
 
-        {/* QR Code */}
+        {/* QR Code — never shrink: the panel is a height-capped flex column,
+            and a squeezed box would crop the code instead of scrolling. */}
         <div
           style={{
             width: '200px',
             height: '200px',
-            'border-radius': '8px',
+            'flex-shrink': '0',
+            'border-radius': 'var(--radius-md)',
             background: '#ffffff',
             display: 'flex',
             'align-items': 'center',
@@ -334,7 +383,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             width: '100%',
             background: theme.bgInput,
             border: `1px solid ${theme.border}`,
-            'border-radius': '8px',
+            'border-radius': 'var(--radius-md)',
             padding: '10px 12px',
             'font-size': '13px',
             'font-family': "'JetBrains Mono', monospace",
@@ -363,14 +412,35 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             'line-height': '1.5',
           }}
         >
-          Scan the QR code or copy the URL to monitor and interact with your agent terminals from
-          your phone.
+          1. Scan the QR code to view your tasks. 2. Choose Enable replies below and enter the code
+          on your phone before leaving your computer.
           <Show
             when={mode() === 'tailscale'}
             fallback={<> Your phone and this computer must be on the same WiFi network.</>}
           >
             <> Your phone and this computer must be on the same Tailscale network.</>
           </Show>
+        </p>
+        <p
+          style={{
+            'font-size': '13px',
+            color: theme.fgMuted,
+            'text-align': 'center',
+            margin: '0',
+          }}
+        >
+          On Android, the{' '}
+          <a
+            href={ANDROID_APP_GUIDE}
+            style={{ color: theme.accent }}
+            onClick={(e) => {
+              e.preventDefault();
+              void invoke(IPC.ShellOpenExternal, { url: ANDROID_APP_GUIDE });
+            }}
+          >
+            Parallel Code app
+          </a>{' '}
+          also notifies you in the background.
         </p>
 
         {/* Connected clients */}
@@ -461,19 +531,21 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             fallback={
               <>
                 <button
+                  class="btn-with-icon"
                   onClick={handleGeneratePin}
                   style={{
                     padding: '7px 16px',
                     background: theme.bgInput,
                     border: `1px solid ${theme.border}`,
-                    'border-radius': '8px',
+                    'border-radius': 'var(--radius-md)',
                     color: theme.fg,
                     cursor: 'pointer',
                     'font-size': '13px',
                     'font-weight': '500',
                   }}
                 >
-                  Pair a device to create tasks
+                  <SyncIcon size={14} />
+                  Get a new pairing code
                 </button>
                 <Show when={pairingError()}>
                   <span style={{ 'font-size': '12px', color: theme.error }}>{pairingError()}</span>
@@ -484,7 +556,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             {(pin) => (
               <>
                 <span style={{ 'font-size': '12px', color: theme.fgMuted }}>
-                  Enter this code on your phone (valid 5 min):
+                  2. Enter this code on your phone to enable replies (valid 5 min):
                 </span>
                 <span
                   style={{
@@ -498,6 +570,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
                   {pin()}
                 </span>
                 <button
+                  class="btn-with-icon"
                   onClick={handleGeneratePin}
                   style={{
                     padding: '4px 10px',
@@ -508,6 +581,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
                     'font-size': '12px',
                   }}
                 >
+                  <SyncIcon size={12} />
                   Generate a new code
                 </button>
               </>
@@ -538,7 +612,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
                 display: 'inline-block',
                 transform: showRisks() ? 'rotate(90deg)' : 'none',
                 transition: 'transform 0.15s ease',
-                'font-size': '10px',
+                'font-size': '11px',
               }}
             >
               ▶
@@ -560,16 +634,16 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               }}
             >
               <li>
-                Anyone on your network with the link can view your agent terminals and type into
-                running agents.
+                Anyone on your network with the link can watch your agent terminals. Typing into
+                agents, editing notes, and creating tasks require pairing with the code above.
               </li>
               <li>
                 The Wi-Fi connection is unencrypted. Prefer Tailscale, or only connect on a network
                 you trust.
               </li>
               <li>
-                A paired phone can create new tasks, which run code on this computer, until you
-                disconnect.
+                A paired phone can type into agents and create new tasks, which run code on this
+                computer, until you disconnect.
               </li>
               <li>Disconnecting stops the server and revokes every connected and paired device.</li>
             </ul>
@@ -578,18 +652,21 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
 
         {/* Disconnect — always available when server is running */}
         <button
+          class="btn-with-icon"
           onClick={handleDisconnect}
+          disabled={disconnecting()}
           style={{
             padding: '7px 16px',
             background: 'transparent',
             border: 'none',
-            'border-radius': '8px',
+            'border-radius': 'var(--radius-md)',
             color: theme.fgSubtle,
             cursor: 'pointer',
             'font-size': '13px',
             'font-weight': '400',
           }}
         >
+          <CloseIcon size={14} />
           Disconnect
         </button>
       </Show>

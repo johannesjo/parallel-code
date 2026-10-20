@@ -41,6 +41,7 @@ describe('main stylesheet reduced-motion styles', () => {
       block,
       [
         '.task-appearing',
+        '.new-task-appearing',
         '.task-item-appearing',
         '.task-removing',
         '.task-item-removing',
@@ -48,8 +49,6 @@ describe('main stylesheet reduced-motion styles', () => {
       ],
       /animation:\s*none\s*;/,
     );
-    expectRule(block, ['.status-dot-ring'], /outline:\s*1px solid var\(--fg-muted\)\s*;/);
-    expectRule(block, ['.status-dot-ring'], /outline-offset:\s*2px\s*;/);
     expectRule(
       block,
       ['.askcode-loading-pulse', '.keybinding-key'],

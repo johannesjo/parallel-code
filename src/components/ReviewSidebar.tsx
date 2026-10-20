@@ -1,15 +1,24 @@
 import { For, Show, createSignal } from 'solid-js';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
+import type { QualityFinding } from '../lib/quality-findings';
 import type { ReviewAnnotation } from './review-types';
+import { QualityFindingSidebarItem } from './QualityFindingSidebarItem';
+import { SendIcon } from './icons';
 
 interface ReviewSidebarProps {
   annotations: ReviewAnnotation[];
+  findings: QualityFinding[];
+  selectedFindingIds: ReadonlySet<string>;
   canSubmit: boolean;
+  submitting: boolean;
   onDismiss: (id: string) => void;
   onUpdate: (id: string, comment: string) => void;
   onScrollTo: (annotation: ReviewAnnotation) => void;
   onSubmit: () => void;
+  onFindingSelected: (id: string, selected: boolean) => void;
+  onFindingDismiss: (id: string) => void;
+  onFindingScrollTo: (finding: QualityFinding) => void;
 }
 
 function truncate(text: string, max: number): string {
@@ -127,7 +136,7 @@ function SidebarAnnotationItem(props: {
               width: '100%',
               background: theme.bgInput,
               border: `1px solid ${theme.borderSubtle}`,
-              'border-radius': '4px',
+              'border-radius': 'var(--radius-xs)',
               color: theme.fg,
               'font-size': sf(12),
               'font-family': "'JetBrains Mono', monospace",
@@ -157,6 +166,15 @@ function SidebarAnnotationItem(props: {
 }
 
 export function ReviewSidebar(props: ReviewSidebarProps) {
+  const submissionCount = () => props.annotations.length + props.selectedFindingIds.size;
+  const canSend = () => props.canSubmit && submissionCount() > 0;
+  const sendTitle = () => {
+    if (props.submitting) return 'Sending review...';
+    if (!props.canSubmit) return 'No agent available to receive review';
+    if (submissionCount() === 0) return 'Select at least one finding';
+    return undefined;
+  };
+
   return (
     <div
       style={{
@@ -178,7 +196,7 @@ export function ReviewSidebar(props: ReviewSidebarProps) {
           color: theme.fg,
         }}
       >
-        Review Comments ({props.annotations.length})
+        Review ({props.annotations.length + props.findings.length})
       </div>
 
       {/* Scrollable list */}
@@ -189,6 +207,43 @@ export function ReviewSidebar(props: ReviewSidebarProps) {
           padding: '8px',
         }}
       >
+        <Show when={props.findings.length > 0}>
+          <div
+            style={{
+              color: theme.fgMuted,
+              'font-size': sf(11),
+              'font-weight': '700',
+              'text-transform': 'uppercase',
+              'margin-bottom': '6px',
+            }}
+          >
+            Automated findings ({props.findings.length})
+          </div>
+          <For each={props.findings}>
+            {(finding) => (
+              <QualityFindingSidebarItem
+                finding={finding}
+                selected={props.selectedFindingIds.has(finding.id)}
+                onSelected={(selected) => props.onFindingSelected(finding.id, selected)}
+                onDismiss={() => props.onFindingDismiss(finding.id)}
+                onScrollTo={() => props.onFindingScrollTo(finding)}
+              />
+            )}
+          </For>
+        </Show>
+        <Show when={props.annotations.length > 0}>
+          <div
+            style={{
+              color: theme.fgMuted,
+              'font-size': sf(11),
+              'font-weight': '700',
+              'text-transform': 'uppercase',
+              margin: props.findings.length > 0 ? '12px 0 6px' : '0 0 6px',
+            }}
+          >
+            Human comments ({props.annotations.length})
+          </div>
+        </Show>
         <For each={props.annotations}>
           {(annotation) => (
             <SidebarAnnotationItem
@@ -209,22 +264,26 @@ export function ReviewSidebar(props: ReviewSidebarProps) {
         }}
       >
         <button
+          type="button"
+          aria-label="Send review to agent"
+          class="btn-with-icon"
           onClick={() => props.onSubmit()}
-          disabled={!props.canSubmit}
+          disabled={!canSend()}
           style={{
             width: '100%',
-            background: props.canSubmit ? theme.accent : theme.bgHover,
-            color: props.canSubmit ? theme.accentText : theme.fgMuted,
+            background: canSend() ? theme.accent : theme.bgHover,
+            color: canSend() ? theme.accentText : theme.fgMuted,
             border: 'none',
             'font-weight': '600',
-            'font-size': sf(13),
-            padding: '8px 16px',
-            'border-radius': '4px',
-            cursor: props.canSubmit ? 'pointer' : 'default',
+            'font-size': sf(12),
+            padding: '7px 12px',
+            'border-radius': 'var(--radius-xs)',
+            cursor: canSend() ? 'pointer' : 'default',
           }}
-          title={props.canSubmit ? undefined : 'No agent available to receive review'}
+          title={sendTitle()}
         >
-          Send to Agent ({props.annotations.length})
+          <SendIcon size={12} />
+          {props.submitting ? 'Sending...' : `Send to agent (${submissionCount()})`}
         </button>
       </div>
     </div>

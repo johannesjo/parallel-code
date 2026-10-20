@@ -1,4 +1,5 @@
 import { createSignal, onCleanup, onMount } from 'solid-js';
+import { WorkspaceControls } from './WorkspaceControls';
 import { appWindow } from '../lib/window';
 import { FocusModeTaskIndicators } from './FocusModeTaskIndicators';
 
@@ -89,7 +90,7 @@ export function WindowTitleBar() {
           class="window-title-icon"
           viewBox="0 0 56 56"
           fill="none"
-          stroke="#ffffff"
+          stroke="currentColor"
           stroke-width="4"
           stroke-linecap="round"
           stroke-linejoin="round"
@@ -100,6 +101,7 @@ export function WindowTitleBar() {
           <path d="M30 8 H47 V24 H30" />
           <path d="M49 32 H32 V48 H49" />
         </svg>
+        <WorkspaceControls />
       </div>
       <FocusModeTaskIndicators />
       <div class="window-controls">

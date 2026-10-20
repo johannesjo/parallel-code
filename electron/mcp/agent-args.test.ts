@@ -50,6 +50,14 @@ describe('MCP agent launch args', () => {
     expect(override).toContain('"TOKEN.WITH.DOTS" = "token-1"');
   });
 
+  it('emits an empty TOML env table when the launch carries no environment', () => {
+    expect(
+      buildCodexMcpConfigOverride({
+        mcpServers: { 'parallel-code': { command: 'node', args: ['s.js'], env: {} } },
+      }),
+    ).toBe('mcp_servers.parallel-code={ command = "node", args = ["s.js"], env = {} }');
+  });
+
   it('uses --mcp-config for Claude-compatible agents', () => {
     expect(buildMcpLaunchArgs('claude', '/tmp/config.json', config)).toEqual([
       '--mcp-config',

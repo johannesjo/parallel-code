@@ -1,3 +1,5 @@
+import { GitHubIssuesPage } from './components/GitHubIssuesPage';
+import { KanbanPage } from './components/KanbanPage';
 import '@xterm/xterm/css/xterm.css';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
@@ -11,19 +13,31 @@ import '@fontsource/space-grotesk/700.css';
 import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/500.css';
 import './styles.css';
-import { onMount, onCleanup, createEffect, Show, ErrorBoundary, createSignal } from 'solid-js';
+import {
+  onMount,
+  onCleanup,
+  createEffect,
+  Show,
+  ErrorBoundary,
+  createSignal,
+  lazy,
+} from 'solid-js';
 import { invoke } from './lib/ipc';
 import { IPC } from '../electron/ipc/channels';
 import { appWindow } from './lib/window';
+import { startWindowVisibilityTracking } from './lib/windowVisibility';
 import { choice } from './lib/dialog';
 import { CLOSE_DIALOG_BUTTONS, resolveCloseChoice } from './lib/close-decision';
+import { resolvePanelCloseTarget } from './store/close-target';
 import { Sidebar } from './components/Sidebar';
 import { TilingLayout } from './components/TilingLayout';
-import { NewTaskDialog } from './components/NewTaskDialog';
 import { HelpDialog } from './components/HelpDialog';
+import { TaskSwitcher } from './components/TaskSwitcher';
 import { SettingsDialog } from './components/SettingsDialog';
+import { WorkspaceControls } from './components/WorkspaceControls';
 import { WindowTitleBar } from './components/WindowTitleBar';
 import { FocusModeTaskIndicators } from './components/FocusModeTaskIndicators';
+import { UsageStatusBar } from './components/UsageStatusBar';
 import { theme } from './lib/theme';
 import * as log from './lib/log';
 import {
@@ -31,7 +45,7 @@ import {
   loadAgents,
   loadState,
   saveState,
-  toggleNewTaskDialog,
+  toggleNewTaskPanel,
   toggleSidebar,
   toggleArena,
   moveActiveTask,
@@ -40,12 +54,15 @@ import {
   resetGlobalScale,
   startTaskStatusPolling,
   stopTaskStatusPolling,
+  startUsagePolling,
+  stopUsagePolling,
   navigateRow,
   navigateColumn,
   navigateTask,
   setPendingAction,
   toggleHelpDialog,
   toggleSettingsDialog,
+  openThinkingSpace,
   sendActivePrompt,
   spawnShellForTask,
   closeShell,
@@ -56,15 +73,19 @@ import {
   setNewTaskDropUrl,
   validateProjectPaths,
   setPlanContent,
-  setStepsContent,
   setDockerAvailable,
   toggleTaskFocusMode,
+  toggleFocusMode,
   initMCPListeners,
   markTaskMcpPending,
   applyTaskMcpLaunchResult,
   markTaskMcpError,
+  getProject,
+  triggerAction,
 } from './store/store';
 import { isGitHubUrl } from './lib/github-url';
+import { getDeepActiveElement } from './lib/dom-focus';
+import { HoldToQuit } from './components/HoldToQuit';
 import type { PersistedWindowState } from './store/types';
 import {
   initShortcuts,
@@ -77,18 +98,51 @@ import { setupAutosave } from './store/autosave';
 import { buildCustomThemeCss } from './lib/custom-theme';
 import { osIsDark } from './lib/os-appearance';
 import { applyAppearanceMode, markCustomThemesReady, loadCustomThemes } from './store/store';
-import { isMac, mod } from './lib/platform';
+import { isMac } from './lib/platform';
 import { createCtrlWheelZoomHandler } from './lib/wheelZoom';
 import { redrawAllTerminals } from './lib/terminalFitManager';
-import { ArenaOverlay } from './arena/ArenaOverlay';
+import { isDocumentAgentTaskId } from './documents/agent-task';
+import { isHiddenAgentTaskId } from './documents/task-id';
+import {
+  closeDocumentReview,
+  closeDocumentWorkspace,
+  inlineReview,
+  initDocumentListeners,
+  setDocumentComposerDraft,
+  setDocumentSelection,
+} from './documents/store';
+import { closeTopCompareForm, dismissPinnedBubbles, setFilesOpen } from './documents/workspace-ui';
 import { resetForNewMatch } from './arena/store';
 import { startDesktopNotificationWatcher } from './store/desktopNotifications';
+import { startSuperProductivitySync, startSpOpenListener } from './store/store';
+import { startBackgroundTaskWatcher } from './store/background-tasks';
+import { startTaskBriefWatcher } from './store/task-brief';
+import { startKanbanAutomation } from './store/kanban';
 import { startPrChecksSubscription } from './store/pr-checks';
 import { startUpdateSubscription } from './store/updates';
 import { startRemoteTaskHandlers } from './store/remoteTaskHandler';
 import { startRemoteStatusSync } from './store/remoteStatusSync';
+import { startAgentHookStatusListener } from './store/agentHookStatus';
+import { applyPlanContent } from './store/canvas';
+import { startEvidenceAutoBuild } from './store/evidence-auto';
+import type { PlanContentMessage } from './store/canvas';
+import { SyncIcon } from './components/icons';
+
+const ThinkingSpace = lazy(() =>
+  import('./components/thinking/ThinkingSpace').then((m) => ({ default: m.ThinkingSpace })),
+);
+const ArenaOverlay = lazy(() =>
+  import('./arena/ArenaOverlay').then((m) => ({ default: m.ArenaOverlay })),
+);
 
 const MIN_WINDOW_DIMENSION = 100;
+
+/** Whether a project page (GitHub issues or the Kanban board) covers the task area. */
+function projectPageOpen(): boolean {
+  return store.projects.some(
+    (p) => p.id === store.githubIssuesProjectId || p.id === store.kanbanProjectId,
+  );
+}
 
 function DropOverlay() {
   return (
@@ -144,6 +198,8 @@ function App() {
   const [windowFocused, setWindowFocused] = createSignal(true);
   const [windowMaximized, setWindowMaximized] = createSignal(false);
   const [showDropOverlay, setShowDropOverlay] = createSignal(false);
+  const [closeHandlerReady, setCloseHandlerReady] = createSignal(false);
+  const [taskSwitcherOpen, setTaskSwitcherOpen] = createSignal(false);
   let dragCounter = 0;
 
   function closeArena() {
@@ -202,7 +258,7 @@ function App() {
     const url = extractGitHubUrl(e.dataTransfer);
     if (!url) return;
     setNewTaskDropUrl(url);
-    toggleNewTaskDialog(true);
+    toggleNewTaskPanel(true);
   }
 
   let unlistenFocusChanged: (() => void) | null = null;
@@ -325,6 +381,19 @@ function App() {
   });
 
   onMount(async () => {
+    // Before the first await: restored agents start firing hooks as soon as
+    // loadState spawns them, and IPC does not replay what nobody listened to.
+    const stopMCPListeners = initMCPListeners();
+    const stopAgentHookStatusListener = startAgentHookStatusListener();
+    const stopEvidenceAutoBuild = startEvidenceAutoBuild();
+    // Listen for plan content pushed from backend plan watcher
+    const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      applyPlanContent(data as PlanContentMessage);
+    });
+
+    const stopDocumentListeners = initDocumentListeners();
+    const stopWindowVisibilityTracking = startWindowVisibilityTracking();
     void syncWindowFocused();
     void syncWindowMaximized();
 
@@ -414,8 +483,11 @@ function App() {
           worktreePath: task.gitIsolation === 'worktree' ? task.worktreePath : undefined,
           skipPermissions: task.skipPermissions ?? false,
           propagateSkipPermissions: task.propagateSkipPermissions ?? false,
+          maxConcurrentTasks: task.maxConcurrentTasks,
+          verifyCommand: getProject(task.projectId)?.verifyCommand,
           agentCommand: agentDef?.command ?? 'claude',
           agentArgs: agentDef?.args ?? [],
+          agentEnvFile: agentDef ? store.agentEnvFiles[agentDef.id] : undefined,
           dockerContainerName,
           dockerImage: task.dockerMode ? task.dockerImage : undefined,
         })
@@ -446,7 +518,8 @@ function App() {
         continue;
       // Skip if coordinator restore failed — hydrating into a broken coordinator leaves
       // children with stale MCP wiring and misleading 'ready' status.
-      if (store.tasks[task.coordinatedBy]?.mcpStartupStatus !== 'ready') continue;
+      const parent = store.tasks[task.coordinatedBy];
+      if (!parent || (parent.coordinatorMode && parent.mcpStartupStatus !== 'ready')) continue;
       const projectRoot = store.projects.find((p) => p.id === task.projectId)?.path;
       if (!projectRoot) continue;
       markTaskMcpPending(task.id);
@@ -460,8 +533,11 @@ function App() {
           baseBranch: task.baseBranch,
           worktreePath: task.worktreePath,
           coordinatorTaskId: task.coordinatedBy,
+          integrationPolicy: task.integrationPolicy,
           controlledBy: task.controlledBy,
           agentId: task.agentIds[0],
+          completion: task.completion,
+          reviewRevision: task.reviewRevision,
           signalDoneAt: task.signalDoneAt,
           signalDoneConsumed: task.signalDoneConsumed,
           verification: task.verification,
@@ -489,30 +565,15 @@ function App() {
     for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
       const task = store.tasks[taskId];
       if (!task?.worktreePath || !task.planFileName) continue;
-      invoke<{ content: string; fileName: string } | null>(IPC.ReadPlanContent, {
-        worktreePath: task.worktreePath,
-        fileName: task.planFileName,
-      })
+      invoke<{ content: string; fileName: string; relativePath: string } | null>(
+        IPC.ReadPlanContent,
+        { worktreePath: task.worktreePath, fileName: task.planFileName },
+      )
         .then((result) => {
-          if (result) setPlanContent(taskId, result.content, result.fileName);
+          if (result) setPlanContent(taskId, result.content, result.fileName, result.relativePath);
         })
         .catch((err) => {
           console.warn(`Failed to restore plan for task ${taskId}:`, err);
-        });
-    }
-
-    // Restore steps content for tasks that had steps before restart
-    for (const taskId of [...store.taskOrder, ...store.collapsedTaskOrder]) {
-      const task = store.tasks[taskId];
-      if (!task?.worktreePath || !task.stepsEnabled) continue;
-      invoke<unknown[] | null>(IPC.ReadStepsContent, {
-        worktreePath: task.worktreePath,
-      })
-        .then((result) => {
-          if (result) setStepsContent(taskId, result);
-        })
-        .catch((err) => {
-          console.warn(`Failed to restore steps for task ${taskId}:`, err);
         });
     }
 
@@ -521,35 +582,22 @@ function App() {
     await captureWindowState();
     setupAutosave();
     startTaskStatusPolling();
-    const stopMCPListeners = initMCPListeners();
+    startUsagePolling();
+
     const stopNotificationWatcher = startDesktopNotificationWatcher(windowFocused);
+    const stopSuperProductivitySync = startSuperProductivitySync(windowFocused);
+    const stopSpOpenListener = startSpOpenListener();
+    const stopBackgroundTaskWatcher = startBackgroundTaskWatcher();
+    const stopTaskBriefWatcher = startTaskBriefWatcher();
+    const stopKanbanAutomation = startKanbanAutomation();
     const stopPrChecksSubscription = startPrChecksSubscription();
     const stopUpdateSubscription = startUpdateSubscription();
     const stopRemoteTaskHandlers = startRemoteTaskHandlers();
     const stopRemoteStatusSync = startRemoteStatusSync();
 
-    // Listen for plan content pushed from backend plan watcher
-    const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
-      if (!data || typeof data !== 'object') return;
-      const msg = data as { taskId: string; content: string | null; fileName: string | null };
-      if (msg.taskId && store.tasks[msg.taskId]) {
-        setPlanContent(msg.taskId, msg.content, msg.fileName);
-      }
-    });
-
-    // Listen for steps content pushed from backend steps watcher
-    const offStepsContent = window.electron.ipcRenderer.on(IPC.StepsContent, (data: unknown) => {
-      if (!data || typeof data !== 'object') return;
-      const msg = data as { taskId: string; steps: unknown[] | null };
-      log.debug('steps', 'recv', { taskId: msg.taskId, len: msg.steps?.length ?? null });
-      if (msg.taskId && store.tasks[msg.taskId]) {
-        setStepsContent(msg.taskId, msg.steps);
-      }
-    });
-
     const handlePaste = (e: ClipboardEvent) => {
-      if (store.showNewTaskDialog || store.showHelpDialog || store.showSettingsDialog) return;
-      const el = document.activeElement;
+      if (store.showNewTaskPanel || store.showHelpDialog || store.showSettingsDialog) return;
+      const el = getDeepActiveElement();
       if (
         el instanceof HTMLInputElement ||
         el instanceof HTMLTextAreaElement ||
@@ -562,7 +610,7 @@ function App() {
       if (text && isGitHubUrl(text)) {
         e.preventDefault();
         setNewTaskDropUrl(text);
-        toggleNewTaskDialog(true);
+        toggleNewTaskPanel(true);
       }
     };
     document.addEventListener('paste', handlePaste);
@@ -624,6 +672,12 @@ function App() {
         handlingClose = false;
       }
     });
+    setCloseHandlerReady(true);
+
+    // A document workspace's hidden agent task can be the active one; it has
+    // no worktree to close, merge or push and no panel a shell could show in.
+    const listedTask = (id: string) =>
+      !projectPageOpen() && store.tasks[id] !== undefined && !isHiddenAgentTaskId(id);
 
     const actionHandlers: Record<string, (e: KeyboardEvent) => void> = {
       'navigateRow:up': () => navigateRow('up'),
@@ -637,49 +691,77 @@ function App() {
       ...Object.fromEntries(
         Array.from({ length: 9 }, (_, i) => [`jumpToTask:${i + 1}`, () => jumpToTask(i)]),
       ),
-      closeShell: () => {
-        const taskId = store.activeTaskId;
-        if (!taskId) return;
-        const panel = store.focusedPanel[taskId] ?? '';
-        if (panel.startsWith('shell:')) {
-          const idx = parseInt(panel.slice(6), 10);
-          const shellId = store.tasks[taskId]?.shellAgentIds[idx];
-          if (shellId) closeShell(taskId, shellId);
-        }
+      closeShell: (e) => {
+        if (projectPageOpen()) return;
+        // Auto-repeat would walk through adjacent terminals or canvas tabs.
+        if (e.repeat) return;
+        const target = resolvePanelCloseTarget(store);
+        if (!target) return;
+        if (target.kind === 'terminal') closeTerminal(target.terminalId);
+        else if (target.kind === 'shell') closeShell(target.taskId, target.shellId);
+        else triggerAction(`${target.taskId}:close-canvas-active-tab`);
       },
       closeTask: () => {
+        if (projectPageOpen()) return;
         const id = store.activeTaskId;
         if (!id) return;
         if (store.terminals[id]) {
           closeTerminal(id);
           return;
         }
-        if (store.tasks[id]) setPendingAction({ type: 'close', taskId: id });
+        if (isDocumentAgentTaskId(id)) {
+          closeDocumentWorkspace();
+          return;
+        }
+        if (listedTask(id)) setPendingAction({ type: 'close', taskId: id });
       },
-      mergeTask: () => {
+      finishTask: () => {
         const id = store.activeTaskId;
-        if (id && store.tasks[id]) setPendingAction({ type: 'merge', taskId: id });
-      },
-      pushTask: () => {
-        const id = store.activeTaskId;
-        if (id && store.tasks[id]) setPendingAction({ type: 'push', taskId: id });
+        if (id && listedTask(id)) setPendingAction({ type: 'finish', taskId: id });
       },
       spawnShell: () => {
         const id = store.activeTaskId;
-        if (id && store.tasks[id]) spawnShellForTask(id);
+        if (id && listedTask(id)) spawnShellForTask(id);
       },
-      sendPrompt: () => sendActivePrompt(),
+      secondOpinion: (e) => {
+        const id = store.activeTaskId;
+        if (!e.repeat && id && listedTask(id)) triggerAction(`${id}:second-opinion`);
+      },
+      sendPrompt: () => {
+        if (!projectPageOpen()) sendActivePrompt();
+      },
       createTerminal: (e) => {
         if (!e.repeat) createTerminal();
       },
-      newTask: () => toggleNewTaskDialog(true),
+      newTask: () => toggleNewTaskPanel(true),
       toggleSidebar: () => toggleSidebar(),
       toggleFocusMode: () => toggleTaskFocusMode(),
+      switchDocument: () => {
+        if (store.activeDocumentProjectId && isDocumentAgentTaskId(store.activeTaskId))
+          setFilesOpen(true);
+      },
       toggleHelp: () => toggleHelpDialog(),
+      openTaskSwitcher: () => setTaskSwitcherOpen(true),
       toggleSettings: () => toggleSettingsDialog(),
+      newThinkingTour: () => openThinkingSpace('new'),
       closeDialogs: () => {
         if (store.showArena) {
           closeArena();
+          return;
+        }
+        if (store.activeDocumentProjectId && isDocumentAgentTaskId(store.activeTaskId)) {
+          // A pinned note covers the prose and goes first. Then an inline
+          // proposal review, left undecided (its open refine form first).
+          // Then the composer, up with a passage or with a draft opened from
+          // the toolbar or a note. Escape never closes the workspace itself: it is a full
+          // view, and a stray press would throw away the reading position.
+          if (dismissPinnedBubbles()) return;
+          if (inlineReview()) {
+            if (!closeTopCompareForm()) closeDocumentReview();
+            return;
+          }
+          setDocumentSelection(null);
+          setDocumentComposerDraft(null);
           return;
         }
         if (store.showHelpDialog) {
@@ -690,18 +772,23 @@ function App() {
           toggleSettingsDialog(false);
           return;
         }
-        if (store.showNewTaskDialog) {
-          toggleNewTaskDialog(false);
-          return;
+        // Not global, so an Escape typed into the agent terminal still
+        // reaches the agent instead of leaving focus mode. Exits directly:
+        // toggleTaskFocusMode ignores a standalone terminal as the active item.
+        // The new-task panel and project pages hide focus mode; leave it for
+        // when they close rather than flipping it unseen.
+        if (store.focusMode && !store.showNewTaskPanel && !projectPageOpen()) {
+          toggleFocusMode(false);
         }
       },
+      zoomIn: () => adjustGlobalScale(1),
+      zoomOut: () => adjustGlobalScale(-1),
       resetZoom: () => resetGlobalScale(),
       redrawTerminals: () => redrawAllTerminals(),
     };
 
     const cleanupZoomShortcuts = registerZoomShortcuts({
       zoomIn: () => adjustGlobalScale(1),
-      zoomOut: () => adjustGlobalScale(-1),
       resetZoom: () => resetGlobalScale(),
     });
 
@@ -719,14 +806,23 @@ function App() {
       unlistenCloseRequested();
       cleanupShortcuts();
       stopTaskStatusPolling();
+      stopUsagePolling();
       stopMCPListeners();
       stopNotificationWatcher();
+      stopSuperProductivitySync();
+      stopSpOpenListener();
+      stopBackgroundTaskWatcher();
+      stopTaskBriefWatcher();
+      stopKanbanAutomation();
       stopPrChecksSubscription();
       stopUpdateSubscription();
       stopRemoteTaskHandlers();
       stopRemoteStatusSync();
+      stopAgentHookStatusListener();
+      stopEvidenceAutoBuild();
+      stopDocumentListeners();
+      stopWindowVisibilityTracking();
       offPlanContent();
-      offStepsContent();
       unlistenFocusChanged?.();
       unlistenResized?.();
       unlistenMoved?.();
@@ -766,17 +862,19 @@ function App() {
             {String(err)}
           </div>
           <button
+            class="btn-with-icon"
             onClick={reset}
             style={{
               background: theme.bgElevated,
               border: `1px solid ${theme.border}`,
               color: theme.fg,
               padding: '8px 24px',
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               cursor: 'pointer',
               'font-size': '15px',
             }}
           >
+            <SyncIcon size={14} />
             Reload
           </button>
         </div>
@@ -812,6 +910,7 @@ function App() {
         </Show>
         <Show when={isMac}>
           <div class="mac-titlebar-spacer" data-tauri-drag-region>
+            <WorkspaceControls />
             <FocusModeTaskIndicators />
           </div>
         </Show>
@@ -857,52 +956,39 @@ function App() {
           <Show when={store.sidebarVisible}>
             <Sidebar />
           </Show>
-          <Show when={!store.sidebarVisible}>
-            <button
-              class="icon-btn"
-              onClick={() => toggleSidebar()}
-              title={`Show sidebar (${mod}+B)`}
-              style={{
-                width: '24px',
-                'min-width': '24px',
-                height: 'calc(100% - 12px)',
-                margin: '6px 4px 6px 0',
-                display: 'flex',
-                'align-items': 'center',
-                'justify-content': 'center',
-                cursor: 'pointer',
-                color: theme.fgSubtle,
-                background: 'transparent',
-                'border-top': `2px dashed ${theme.border}`,
-                'border-right': `2px dashed ${theme.border}`,
-                'border-bottom': `2px dashed ${theme.border}`,
-                'border-left': 'none',
-                'border-radius': '0 12px 12px 0',
-                'user-select': 'none',
-                'flex-shrink': '0',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z" />
-              </svg>
-            </button>
-          </Show>
-          <TilingLayout />
-          <NewTaskDialog
-            open={store.showNewTaskDialog}
-            onClose={() => toggleNewTaskDialog(false)}
-          />
+          {/* Keep terminals mounted while the issue page occupies the workspace. */}
+          <div
+            class="task-workspace"
+            style={{
+              display: projectPageOpen() ? 'none' : undefined,
+            }}
+          >
+            <TilingLayout />
+          </div>
+          <GitHubIssuesPage />
+          <KanbanPage />
         </main>
+        <UsageStatusBar />
         <HelpDialog open={store.showHelpDialog} onClose={() => toggleHelpDialog(false)} />
+        <TaskSwitcher open={taskSwitcherOpen()} onClose={() => setTaskSwitcherOpen(false)} />
         <SettingsDialog
           open={store.showSettingsDialog}
           onClose={() => toggleSettingsDialog(false)}
         />
+        <Show when={store.thinkingSpace}>
+          {(mode) => <ThinkingSpace mode={mode()} onClose={() => openThinkingSpace(null)} />}
+        </Show>
         <Show when={store.showArena}>
           <ArenaOverlay onClose={closeArena} />
         </Show>
         <Show when={showDropOverlay()}>
           <DropOverlay />
+        </Show>
+        {/* Not before the close handler is listening: Cmd+Q closes the window,
+            and a close nobody answers hits the backend's 5s watchdog, which
+            force-destroys and takes the terminals with it. */}
+        <Show when={isMac && closeHandlerReady()}>
+          <HoldToQuit />
         </Show>
         <Show when={store.notification}>
           <div
@@ -914,7 +1000,7 @@ function App() {
               transform: 'translateX(-50%)',
               background: theme.islandBg,
               border: `1px solid ${theme.border}`,
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               padding: '10px 20px',
               color: theme.fg,
               'font-size': '14px',

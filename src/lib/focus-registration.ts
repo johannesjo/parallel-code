@@ -7,5 +7,7 @@ import { registerFocusFn, unregisterFocusFn } from '../store/store';
  */
 export function useFocusRegistration(key: string, fn: () => void): void {
   registerFocusFn(key, fn);
-  onCleanup(() => unregisterFocusFn(key));
+  // Pass `fn`: when two owners share a key, the departing one must not unregister
+  // the registration its successor already installed.
+  onCleanup(() => unregisterFocusFn(key, fn));
 }

@@ -2,6 +2,7 @@ import { createSignal, onCleanup, onMount } from 'solid-js';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import type { DiffInteractionMode } from './review-types';
+import { CommentIcon } from './icons';
 
 interface InlineInputProps {
   onSubmit: (text: string, mode: DiffInteractionMode) => void;
@@ -57,14 +58,14 @@ export function InlineInput(props: InlineInputProps) {
         background: theme.bgElevated,
         border: `1px solid ${theme.border}`,
         'border-left': `3px solid ${borderColor()}`,
-        'border-radius': '4px',
+        'border-radius': 'var(--radius-xs)',
       }}
     >
       {/* Mode toggle */}
       <div
         style={{
           display: 'flex',
-          'border-radius': '3px',
+          'border-radius': 'var(--radius-xs)',
           overflow: 'hidden',
           border: `1px solid ${theme.borderSubtle}`,
           'flex-shrink': '0',
@@ -111,7 +112,7 @@ export function InlineInput(props: InlineInputProps) {
           flex: '1',
           background: theme.bgInput,
           border: `1px solid ${theme.borderSubtle}`,
-          'border-radius': '4px',
+          'border-radius': 'var(--radius-xs)',
           color: theme.fg,
           'font-size': sf(13),
           'font-family': "'JetBrains Mono', monospace",
@@ -122,6 +123,7 @@ export function InlineInput(props: InlineInputProps) {
 
       {/* Submit button */}
       <button
+        class="btn-with-icon"
         onClick={submit}
         disabled={!text().trim()}
         style={{
@@ -130,11 +132,12 @@ export function InlineInput(props: InlineInputProps) {
           color: text().trim() ? theme.accentText : theme.fgMuted,
           cursor: text().trim() ? 'pointer' : 'default',
           padding: '4px 10px',
-          'border-radius': '4px',
+          'border-radius': 'var(--radius-xs)',
           'font-size': sf(12),
           'font-weight': '600',
         }}
       >
+        <CommentIcon size={12} />
         {mode() === 'review' ? 'Comment' : 'Ask'}
       </button>
 
@@ -149,7 +152,7 @@ export function InlineInput(props: InlineInputProps) {
           color: theme.fgMuted,
           cursor: 'pointer',
           padding: '4px 8px',
-          'border-radius': '4px',
+          'border-radius': 'var(--radius-xs)',
           'font-size': sf(14),
           'line-height': '1',
           'align-self': 'center',

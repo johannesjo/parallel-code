@@ -54,24 +54,16 @@ export function registerShortcut(shortcut: ShortcutRegistration): () => void {
 
 interface ZoomShortcutHandlers {
   zoomIn: () => void;
-  zoomOut: () => void;
   resetZoom: () => void;
 }
 
 export function registerZoomShortcuts(handlers: ZoomShortcutHandlers): () => void {
   const cleanups = [
-    // Zoom in/out: variants for keyboard layouts where matches() needs an
-    // exact shift-state match (so each case needs its own registration).
-    //   key '=' no shift  — Ctrl+= on US/UK keyboards
+    // Zoom in variants for keyboard layouts where matches() needs an exact
+    // shift-state match (so each case needs its own registration). The
+    // canonical Cmd+= and Cmd+- live in the keybindings registry.
     //   key '+' shift     — Ctrl+Shift+= on US/UK keyboards
     //   key '+' no shift  — Ctrl++ on European keyboards and NumPad+
-    registerShortcut({
-      key: '=',
-      modifiers: { cmdOrCtrl: true },
-      global: true,
-      dialogSafe: true,
-      handler: () => handlers.zoomIn(),
-    }),
     registerShortcut({
       key: '+',
       modifiers: { cmdOrCtrl: true, shift: true },
@@ -85,13 +77,6 @@ export function registerZoomShortcuts(handlers: ZoomShortcutHandlers): () => voi
       global: true,
       dialogSafe: true,
       handler: () => handlers.zoomIn(),
-    }),
-    registerShortcut({
-      key: '-',
-      modifiers: { cmdOrCtrl: true },
-      global: true,
-      dialogSafe: true,
-      handler: () => handlers.zoomOut(),
     }),
     // Some layouts require Shift to produce the digit 0, so Ctrl+0 would miss
     // the registry binding's exact shift-state match without this variant.
@@ -144,8 +129,12 @@ export function matchesGlobalShortcut(e: KeyboardEvent): boolean {
 export function initShortcuts(): () => void {
   const handler = (e: KeyboardEvent) => {
     // Don't intercept when typing in input/textarea — unless the shortcut is global
-    const tag = (e.target as HTMLElement)?.tagName;
+    const tag = (e.composedPath()[0] as HTMLElement)?.tagName;
     const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    // A menu or popover that already took this Escape marks it handled (the
+    // same convention Dialog.tsx honours); one press should not also close
+    // dialogs or leave focus mode behind it.
+    if (e.key === 'Escape' && e.defaultPrevented) return;
 
     // Suppress non-dialog-safe shortcuts when a dialog overlay is open
     const dialogOpen = isDialogOpen();

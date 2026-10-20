@@ -180,3 +180,28 @@ describe('detectStaleDockerMCPUrl — stale config detection', () => {
     expect(detectStaleDockerMCPUrl('http://127.0.0.1:3001', 'my-container', 'linux')).toBeNull();
   });
 });
+
+it('composes child session capabilities with existing completion credentials', () => {
+  const config = buildSubTaskMcpConfig({
+    serverPath: '/server.cjs',
+    serverUrl: 'http://localhost:7777',
+    taskId: 'child',
+    subtaskToken: 'session-token',
+    doneToken: 'done-token',
+    sessionCapabilities: { profile: 'child-review', canCreate: false, peers: true },
+  });
+  expect(config.mcpServers['parallel-code'].args).toEqual([
+    '/server.cjs',
+    '--url',
+    'http://localhost:7777',
+    '--task-id',
+    'child',
+    '--session-profile',
+    'child-review',
+    '--peer-tools',
+  ]);
+  expect(config.mcpServers['parallel-code'].env).toEqual({
+    PARALLEL_CODE_MCP_TOKEN: 'session-token',
+    PARALLEL_CODE_MCP_DONE_TOKEN: 'done-token',
+  });
+});

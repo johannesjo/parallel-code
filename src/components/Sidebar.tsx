@@ -1,12 +1,17 @@
+import { taskProjectFilter } from '../store/task-project-filter';
+import { TaskProjectFilter } from './TaskProjectFilter';
+import { createProjectFilterTransition } from '../lib/projectFilterTransition';
 import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
 import type { JSX } from 'solid-js';
+import { GitHubIcon, KanbanIcon } from './icons';
+import { openGitHubIssues } from '../store/github';
+import { openKanban } from '../store/kanban';
 import { errMessage } from '../lib/log';
 import {
   store,
   pickAndAddProject,
-  toggleNewTaskDialog,
+  toggleNewTaskPanel,
   setActiveTask,
-  toggleSidebar,
   reorderTaskVisually,
   getTaskDotStatus,
   getTaskAttentionState,
@@ -19,36 +24,45 @@ import {
   getTaskFocusedPanel,
   getPanelUserSize,
   setPanelUserSize,
-  toggleSettingsDialog,
+  setProjectTasksCollapsed,
   setProjectsCollapsed,
   uncollapseTask,
   isProjectMissing,
   showNotification,
+  getTaskAgentHookStatus,
+  isTaskUnread,
 } from '../store/store';
 import type { Project } from '../store/types';
 import type { TaskAttentionState } from '../store/store';
 import {
+  computeSidebarDraggableTaskOrder,
   computeGroupedTasks,
   getCoordinatorChildren,
-  isCoordinatedChild,
 } from '../store/sidebar-order';
+import { getChildAttentionSummary } from '../store/sidebar-attention';
+import { AttentionTray } from './AttentionTray';
 import { ConnectPhoneModal } from './ConnectPhoneModal';
 import { RemoveProjectConfirm } from './RemoveProjectConfirm';
 import { EditProjectDialog } from './EditProjectDialog';
+import { AddProjectDialog } from '../documents/AddProjectDialog';
+import { openDocumentWorkspace } from '../documents/store';
+import { codeProjects, isDocumentProject } from '../store/projects';
+import { DocumentIcon } from '../documents/DocumentIcon';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { SidebarFooter } from './SidebarFooter';
 import { IconButton } from './IconButton';
-import { UpdateButton } from './UpdateButton';
 import { StatusDot, getDotTooltip } from './StatusDot';
-import { TaskCurrentStateLine } from './TaskCurrentStateLine';
+import { ProjectSwatch } from './ProjectSwatch';
+import { TaskBriefLine } from './TaskBrief';
+import { TaskAgentStatusLine } from './TaskAgentStatusLine';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
-import { mod } from '../lib/platform';
 import { abbreviateHomePath } from '../lib/path';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import type { ImportableWorktree } from '../ipc/types';
 import { shouldAnimateTaskAppearance } from '../lib/reducedMotion';
+import { isTaskBackgrounded } from '../store/background-tasks';
 
 const DRAG_THRESHOLD = 5;
 const SIDEBAR_DEFAULT_WIDTH = 240;
@@ -67,7 +81,7 @@ function getAttentionColor(attention: TaskAttentionState): string | null {
   if (attention === 'active') return theme.accent;
   if (attention === 'needs_input') return theme.warning;
   if (attention === 'error') return theme.error;
-  if (attention === 'review') return '#c084fc';
+  if (attention === 'review') return theme.review;
   return null;
 }
 
@@ -81,7 +95,9 @@ function getOffscreenAttentionInfo(taskId: string): OffscreenAttentionInfo | nul
   const visibility = getTaskViewportVisibility(taskId);
   if (!visibility || visibility === 'visible') return null;
   const attention = getTaskAttentionState(taskId);
-  if (attention === 'idle' || attention === 'ready') return null;
+  // `shell_busy` joins the quiet states: a terminal running off-screen is not a
+  // reason to pull the eye back to it.
+  if (attention === 'idle' || attention === 'ready' || attention === 'shell_busy') return null;
   const color = getAttentionColor(attention) ?? theme.accent;
   const side = visibility === 'offscreen-left' ? 'left' : 'right';
   const prefix = visibility === 'offscreen-left' ? '←' : '→';
@@ -119,19 +135,120 @@ function CoordinatorIcon() {
 function DirectBranchBadge(props: { branchName: string }) {
   return (
     <span
+      title={`Works directly on ${props.branchName}`}
       style={{
-        'font-size': sf(10),
+        'font-size': sf(11),
         'font-weight': '600',
         padding: '1px 5px',
-        'border-radius': '3px',
+        'border-radius': 'var(--radius-xs)',
         background: `color-mix(in srgb, ${theme.warning} 12%, transparent)`,
         color: theme.warning,
         'flex-shrink': '0',
+        'max-width': '45%',
+        overflow: 'hidden',
+        'text-overflow': 'ellipsis',
+        'white-space': 'nowrap',
         'line-height': '1.5',
       }}
     >
       {props.branchName}
     </span>
+  );
+}
+
+/** Task name, wrapping to at most two lines so long names stay readable in a
+ *  narrow sidebar. Full name always available as a tooltip. Bold, not badged,
+ *  when an agent finished while the task was off screen. */
+function TaskName(props: { name: string; unread?: boolean; backgrounded?: boolean }) {
+  return (
+    <>
+      <span
+        class="task-item-name"
+        title={props.name}
+        style={{ 'font-weight': props.unread ? '700' : undefined }}
+      >
+        {props.name}
+      </span>
+      <Show when={props.backgrounded}>
+        <span
+          title="Sent to back until new activity"
+          style={{
+            'font-size': sf(10),
+            color: theme.fgSubtle,
+            'flex-shrink': '0',
+          }}
+        >
+          Background
+        </span>
+      </Show>
+    </>
+  );
+}
+
+export function ProjectTaskGroupToggle(props: {
+  project: Project;
+  taskCount: number;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      class="projects-toggle"
+      onClick={() => props.onToggle()}
+      aria-expanded={!props.collapsed}
+      aria-controls={`sidebar-project-tasks-${props.project.id}`}
+      title={
+        props.collapsed
+          ? `Expand ${props.project.name} tasks`
+          : `Collapse ${props.project.name} tasks`
+      }
+      style={{
+        width: '100%',
+        background: 'transparent',
+        border: 'none',
+        color: theme.fgMuted,
+        cursor: 'pointer',
+        'font-size': sf(12),
+        'font-weight': '600',
+        'font-family': 'inherit',
+        'margin-top': '8px',
+        'margin-bottom': '4px',
+        padding: '2px 2px',
+        display: 'flex',
+        'align-items': 'center',
+        gap: '5px',
+      }}
+    >
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 16 16"
+        fill="currentColor"
+        aria-hidden="true"
+        style={{
+          'flex-shrink': '0',
+          transform: props.collapsed ? 'rotate(-90deg)' : 'none',
+          transition: 'transform 0.15s ease',
+        }}
+      >
+        <path d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" />
+      </svg>
+      <ProjectSwatch color={props.project.color} size={6} />
+      <span
+        style={{
+          overflow: 'hidden',
+          'text-overflow': 'ellipsis',
+          'white-space': 'nowrap',
+          'min-width': '0',
+        }}
+      >
+        {props.project.name}
+      </span>
+      <span style={{ 'flex-shrink': '0', color: theme.fgSubtle, 'font-weight': '400' }}>
+        ({props.taskCount})
+      </span>
+    </button>
   );
 }
 
@@ -185,15 +302,20 @@ export function TaskRowShell(props: {
       class={className()}
       role={props.role}
       tabIndex={props.tabIndex}
+      aria-current={store.activeTaskId === props.taskId ? 'true' : undefined}
+      data-attention={getTaskAttentionState(props.taskId)}
+      data-kbd-focused={
+        store.sidebarFocused && store.sidebarFocusedTaskId === props.taskId ? 'true' : undefined
+      }
       data-task-index={props.taskIndex}
       data-sidebar-task-id={props.sidebarTaskId}
       title={props.title}
       onClick={() => props.onClick()}
       onKeyDown={(event) => props.onKeyDown?.(event)}
       style={{
-        padding: '7px 10px',
+        padding: '2px 10px',
         'padding-left': props.paddingLeft ?? '10px',
-        'border-radius': '6px',
+        'border-radius': 'var(--radius-sm)',
         'font-size': props.fontSize,
         cursor: props.cursor,
         'white-space': 'nowrap',
@@ -202,6 +324,9 @@ export function TaskRowShell(props: {
         opacity: props.opacity,
         display: 'flex',
         'flex-direction': 'column',
+        // The list is a scrolling flex column; without this, rows whose name
+        // wraps to two lines get shrunk and the second line is clipped.
+        'flex-shrink': '0',
         gap: '1px',
         ...props.style,
       }}
@@ -225,6 +350,7 @@ export function Sidebar() {
   const [resizing, setResizing] = createSignal(false);
   const [nowMs, setNowMs] = createSignal(Date.now());
   let taskListRef: HTMLDivElement | undefined;
+  createProjectFilterTransition(taskProjectFilter, () => taskListRef);
 
   const sidebarWidth = () => getPanelUserSize(SIDEBAR_SIZE_KEY) ?? SIDEBAR_DEFAULT_WIDTH;
 
@@ -233,10 +359,8 @@ export function Sidebar() {
   const taskIndexById = createMemo(() => {
     const map = new Map<string, number>();
     let visIdx = 0;
-    for (const taskId of store.taskOrder) {
-      if (!isCoordinatedChild(taskId)) {
-        map.set(taskId, visIdx++);
-      }
+    for (const taskId of computeSidebarDraggableTaskOrder()) {
+      map.set(taskId, visIdx++);
     }
     return map;
   });
@@ -289,7 +413,7 @@ export function Sidebar() {
         if (!target) return;
         const visibleIndex = Number(target.dataset.taskIndex);
         // data-task-index is now the visible draggable index; look up the task ID from the visible order
-        const draggableOrder = store.taskOrder.filter((id) => !isCoordinatedChild(id));
+        const draggableOrder = computeSidebarDraggableTaskOrder();
         const taskId = draggableOrder[visibleIndex];
         if (taskId === undefined || taskId === null) return;
         handleTaskMouseDown(e, taskId, visibleIndex);
@@ -345,10 +469,27 @@ export function Sidebar() {
     });
   });
 
-  async function handleAddProject() {
-    const projectId = await pickAndAddProject();
-    if (!projectId) return;
+  const [showAddProject, setShowAddProject] = createSignal(false);
 
+  /** With one project kind there is nothing to choose, so "+" stays the folder picker. */
+  function handleAddProject() {
+    if (store.documentWorkspacesEnabled) setShowAddProject(true);
+    else void addCodeProject();
+  }
+
+  /** A document project navigates; a code project opens its settings. */
+  function openProjectRow(project: Project): void {
+    if (isDocumentProject(project) && !isProjectMissing(project.id))
+      void openDocumentWorkspace(project.id);
+    else setEditingProject(project);
+  }
+
+  async function addCodeProject() {
+    const projectId = await pickAndAddProject();
+    if (projectId) await offerExistingWorktrees(projectId);
+  }
+
+  async function offerExistingWorktrees(projectId: string) {
     const project = store.projects.find((entry) => entry.id === projectId) ?? null;
     if (!project) return;
     if (project.isGitRepo === false) return;
@@ -458,59 +599,6 @@ export function Sidebar() {
           'user-select': 'none',
         }}
       >
-        {/* Logo + collapse */}
-        <div
-          style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between' }}
-        >
-          <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', padding: '0 2px' }}>
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 56 56"
-              fill="none"
-              stroke={theme.fg}
-              stroke-width="4"
-              style={{ 'flex-shrink': '0' }}
-            >
-              <line x1="10" y1="6" x2="10" y2="50" />
-              <line x1="22" y1="6" x2="22" y2="50" />
-              <path d="M30 8 H47 V24 H30" />
-              <path d="M49 32 H32 V48 H49" />
-            </svg>
-            <span
-              style={{
-                'font-size': sf(15),
-                'font-weight': '600',
-                color: theme.fg,
-                'font-family': "'JetBrains Mono', monospace",
-              }}
-            >
-              ParallelCode
-            </span>
-          </div>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <UpdateButton />
-            <IconButton
-              icon={
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M8 2.25a.75.75 0 0 1 .73.56l.2.72a4.48 4.48 0 0 1 1.04.43l.66-.37a.75.75 0 0 1 .9.13l.75.75a.75.75 0 0 1 .13.9l-.37.66c.17.33.31.68.43 1.04l.72.2a.75.75 0 0 1 .56.73v1.06a.75.75 0 0 1-.56.73l-.72.2a4.48 4.48 0 0 1-.43 1.04l.37.66a.75.75 0 0 1-.13.9l-.75.75a.75.75 0 0 1-.9.13l-.66-.37a4.48 4.48 0 0 1-1.04.43l-.2.72a.75.75 0 0 1-.73.56H6.94a.75.75 0 0 1-.73-.56l-.2-.72a4.48 4.48 0 0 1-1.04-.43l-.66.37a.75.75 0 0 1-.9-.13l-.75-.75a.75.75 0 0 1-.13-.9l.37-.66a4.48 4.48 0 0 1-.43-1.04l-.72-.2a.75.75 0 0 1-.56-.73V7.47a.75.75 0 0 1 .56-.73l.72-.2c.11-.36.26-.71.43-1.04l-.37-.66a.75.75 0 0 1 .13-.9l.75-.75a.75.75 0 0 1 .9-.13l.66.37c.33-.17.68-.31 1.04-.43l.2-.72a.75.75 0 0 1 .73-.56H8Zm-.53 3.22a2.5 2.5 0 1 0 1.06 4.88 2.5 2.5 0 0 0-1.06-4.88Z" />
-                </svg>
-              }
-              onClick={() => toggleSettingsDialog(true)}
-              title={`Settings (${mod}+,)`}
-            />
-            <IconButton
-              icon={
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
-                </svg>
-              }
-              onClick={() => toggleSidebar()}
-              title={`Collapse sidebar (${mod}+B)`}
-            />
-          </div>
-        </div>
-
         {/* Projects section */}
         <div
           style={{
@@ -580,7 +668,7 @@ export function Sidebar() {
                   <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z" />
                 </svg>
               }
-              onClick={() => handleAddProject()}
+              onClick={handleAddProject}
               title="Add project"
               size="sm"
             />
@@ -599,7 +687,7 @@ export function Sidebar() {
                 style={{
                   display: 'flex',
                   'flex-direction': 'column',
-                  gap: '6px',
+                  gap: '2px',
                   'min-height': '0',
                   'max-height': projectListMaxHeight(),
                   'overflow-y': 'auto',
@@ -610,20 +698,28 @@ export function Sidebar() {
                     <div
                       role="button"
                       tabIndex={0}
+                      class="project-row"
                       data-project-id={project.id}
-                      onClick={() => setEditingProject(project)}
+                      onClick={() => openProjectRow(project)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') setEditingProject(project);
+                        if (e.key !== 'Enter') return;
+                        openProjectRow(project);
                       }}
+                      title={
+                        isProjectMissing(project.id)
+                          ? `Folder not found: ${abbreviateHomePath(project.path)}`
+                          : project.quickEditSource
+                            ? `Quick edit: ${abbreviateHomePath(project.quickEditSource)}`
+                            : isDocumentProject(project)
+                              ? `Document workspace: ${project.documentPath} (${abbreviateHomePath(project.path)})`
+                              : abbreviateHomePath(project.path)
+                      }
                       style={{
                         display: 'flex',
                         'align-items': 'center',
-                        gap: '6px',
-                        padding: '4px 6px',
-                        'border-radius': '6px',
-                        background: isProjectMissing(project.id)
-                          ? `color-mix(in srgb, ${theme.warning} 8%, ${theme.bgInput})`
-                          : theme.bgInput,
+                        gap: '8px',
+                        padding: '3px 4px',
+                        'border-radius': 'var(--radius-sm)',
                         'font-size': sf(12),
                         cursor: 'pointer',
                         border:
@@ -633,41 +729,90 @@ export function Sidebar() {
                         'flex-shrink': '0',
                       }}
                     >
-                      <div
+                      <Show
+                        when={isDocumentProject(project)}
+                        fallback={<ProjectSwatch color={project.color} size={8} />}
+                      >
+                        <span style={{ color: project.color, display: 'flex', 'flex-shrink': '0' }}>
+                          <DocumentIcon size={12} />
+                        </span>
+                      </Show>
+                      <span
                         style={{
-                          width: '8px',
-                          height: '8px',
-                          'border-radius': '50%',
-                          background: project.color,
-                          'flex-shrink': '0',
+                          flex: '1',
+                          'min-width': '0',
+                          color: theme.fg,
+                          'font-weight': '500',
+                          'white-space': 'nowrap',
+                          overflow: 'hidden',
+                          'text-overflow': 'ellipsis',
                         }}
-                      />
-                      <div style={{ flex: '1', 'min-width': '0', overflow: 'hidden' }}>
-                        <div
+                      >
+                        {project.name}
+                      </span>
+                      <Show when={isProjectMissing(project.id)}>
+                        <span
                           style={{
-                            color: theme.fg,
-                            'font-weight': '500',
-                            'white-space': 'nowrap',
-                            overflow: 'hidden',
-                            'text-overflow': 'ellipsis',
-                          }}
-                        >
-                          {project.name}
-                        </div>
-                        <div
-                          style={{
-                            color: isProjectMissing(project.id) ? theme.warning : theme.fgSubtle,
+                            color: theme.warning,
                             'font-size': sf(11),
-                            'white-space': 'nowrap',
-                            overflow: 'hidden',
-                            'text-overflow': 'ellipsis',
+                            'flex-shrink': '0',
                           }}
                         >
-                          {isProjectMissing(project.id)
-                            ? 'Folder not found'
-                            : abbreviateHomePath(project.path)}
-                        </div>
-                      </div>
+                          Folder not found
+                        </span>
+                      </Show>
+                      <Show when={!isDocumentProject(project) && !isProjectMissing(project.id)}>
+                        <button
+                          type="button"
+                          class="icon-btn"
+                          title={`Kanban board for ${project.name}`}
+                          aria-label={`Kanban board for ${project.name}`}
+                          aria-pressed={store.kanbanProjectId === project.id}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openKanban(project.id);
+                          }}
+                          style={{
+                            color:
+                              store.kanbanProjectId === project.id ? theme.accent : theme.fgMuted,
+                            display: 'flex',
+                            background: 'transparent',
+                            border: 'none',
+                            padding: '2px',
+                            'flex-shrink': '0',
+                          }}
+                        >
+                          <KanbanIcon size={14} />
+                        </button>
+                      </Show>
+                      <Show when={!isDocumentProject(project) && !isProjectMissing(project.id)}>
+                        <button
+                          type="button"
+                          class="icon-btn"
+                          title={`Browse GitHub issues for ${project.name}`}
+                          aria-label={`Browse GitHub issues for ${project.name}`}
+                          aria-pressed={store.githubIssuesProjectId === project.id}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openGitHubIssues(project.id);
+                          }}
+                          style={{
+                            color:
+                              store.githubIssuesProjectId === project.id
+                                ? theme.accent
+                                : theme.fgMuted,
+                            display: 'flex',
+                            background: 'transparent',
+                            border: 'none',
+                            padding: '2px',
+                            'flex-shrink': '0',
+                          }}
+                        >
+                          <GitHubIcon size={14} />
+                        </button>
+                      </Show>
                       <button
                         class="icon-btn"
                         onClick={(e) => {
@@ -706,15 +851,15 @@ export function Sidebar() {
 
         {/* New task / Link project button */}
         <Show
-          when={store.projects.length > 0}
+          when={codeProjects().length > 0}
           fallback={
             <button
-              class="icon-btn"
-              onClick={() => handleAddProject()}
+              class="icon-btn sidebar-create-btn"
+              onClick={handleAddProject}
               style={{
                 background: 'transparent',
                 border: `1px solid ${theme.border}`,
-                'border-radius': '8px',
+                'border-radius': 'var(--radius-md)',
                 padding: '8px 14px',
                 color: theme.fgMuted,
                 cursor: 'pointer',
@@ -741,12 +886,12 @@ export function Sidebar() {
           }
         >
           <button
-            class="icon-btn"
-            onClick={() => toggleNewTaskDialog(true)}
+            class="icon-btn sidebar-create-btn"
+            onClick={() => toggleNewTaskPanel(true)}
             style={{
               background: 'transparent',
               border: `1px solid ${theme.border}`,
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               padding: '8px 14px',
               color: theme.fgMuted,
               cursor: 'pointer',
@@ -766,6 +911,11 @@ export function Sidebar() {
           </button>
         </Show>
 
+        <TaskProjectFilter />
+
+        {/* Tasks waiting on an answer — pinned here so they never scroll away */}
+        <AttentionTray nowMs={nowMs()} />
+
         {/* Tasks grouped by project */}
         <div
           ref={taskListRef}
@@ -777,7 +927,7 @@ export function Sidebar() {
               const focusedProjectId = store.sidebarFocusedProjectId;
               if (focusedProjectId) {
                 const project = store.projects.find((p) => p.id === focusedProjectId);
-                if (project) setEditingProject(project);
+                if (project) openProjectRow(project);
                 return;
               }
               const taskId = store.sidebarFocusedTaskId;
@@ -795,7 +945,7 @@ export function Sidebar() {
           style={{
             display: 'flex',
             'flex-direction': 'column',
-            gap: '1px',
+            gap: '3px',
             flex: '1',
             'min-height': TASKS_LIST_MIN_HEIGHT,
             overflow: 'auto',
@@ -810,45 +960,40 @@ export function Sidebar() {
               const totalCount = () => activeTasks().length + collapsedTasks().length;
               return (
                 <Show when={totalCount() > 0}>
-                  <span
+                  <ProjectTaskGroupToggle
+                    project={project}
+                    taskCount={totalCount()}
+                    collapsed={project.tasksCollapsed === true}
+                    onToggle={() =>
+                      setProjectTasksCollapsed(project.id, project.tasksCollapsed !== true)
+                    }
+                  />
+                  <div
+                    id={`sidebar-project-tasks-${project.id}`}
+                    aria-hidden={project.tasksCollapsed === true}
                     style={{
-                      'font-size': sf(11),
-                      color: theme.fgSubtle,
-                      'text-transform': 'uppercase',
-                      'letter-spacing': '0.05em',
-                      'margin-top': '8px',
-                      'margin-bottom': '4px',
-                      padding: '0 2px',
-                      display: 'flex',
-                      'align-items': 'center',
-                      gap: '5px',
+                      display: project.tasksCollapsed ? 'none' : 'flex',
+                      'flex-direction': 'column',
+                      gap: '3px',
                     }}
                   >
-                    <div
-                      style={{
-                        width: '6px',
-                        height: '6px',
-                        'border-radius': '50%',
-                        background: project.color,
-                        'flex-shrink': '0',
-                      }}
-                    />
-                    {project.name} ({totalCount()})
-                  </span>
-                  <For each={activeTasks()}>
-                    {(taskId) => (
-                      <TaskEntry
-                        taskId={taskId}
-                        nowMs={nowMs()}
-                        globalIndex={globalIndex}
-                        dragFromIndex={dragFromIndex}
-                        dropTargetIndex={dropTargetIndex}
-                      />
-                    )}
-                  </For>
-                  <For each={collapsedTasks()}>
-                    {(taskId) => <CollapsedTaskEntry taskId={taskId} nowMs={nowMs()} />}
-                  </For>
+                    <Show when={!project.tasksCollapsed}>
+                      <For each={activeTasks()}>
+                        {(taskId) => (
+                          <TaskEntry
+                            taskId={taskId}
+                            nowMs={nowMs()}
+                            globalIndex={globalIndex}
+                            dragFromIndex={dragFromIndex}
+                            dropTargetIndex={dropTargetIndex}
+                          />
+                        )}
+                      </For>
+                      <For each={collapsedTasks()}>
+                        {(taskId) => <CollapsedTaskEntry taskId={taskId} nowMs={nowMs()} />}
+                      </For>
+                    </Show>
+                  </div>
                 </Show>
               );
             }}
@@ -862,13 +1007,12 @@ export function Sidebar() {
           >
             <span
               style={{
-                'font-size': sf(11),
-                color: theme.fgSubtle,
-                'text-transform': 'uppercase',
-                'letter-spacing': '0.05em',
+                'font-size': sf(12),
+                'font-weight': '600',
+                color: theme.fgMuted,
                 'margin-top': '8px',
                 'margin-bottom': '4px',
-                padding: '0 2px',
+                padding: '2px 2px',
               }}
             >
               Other (
@@ -895,52 +1039,16 @@ export function Sidebar() {
           </Show>
         </div>
 
-        {/* Connect / Disconnect Phone button */}
-        {(() => {
-          const connected = () =>
-            store.remoteAccess.enabled && store.remoteAccess.connectedClients > 0;
-          const accent = () => (connected() ? theme.success : theme.fgMuted);
-          return (
-            <button
-              onClick={() => setShowConnectPhone(true)}
-              style={{
-                display: 'flex',
-                'align-items': 'center',
-                gap: '8px',
-                padding: '8px 12px',
-                margin: '4px 8px',
-                background: 'transparent',
-                border: `1px solid ${connected() ? theme.success : theme.border}`,
-                'border-radius': '8px',
-                color: accent(),
-                'font-size': sf(13),
-                cursor: 'pointer',
-                'flex-shrink': '0',
-              }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke={accent()}
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
-                <line x1="12" y1="18" x2="12.01" y2="18" />
-              </svg>
-              {connected() ? 'Phone Connected' : 'Connect Phone'}
-            </button>
-          );
-        })()}
-
-        <SidebarFooter />
+        <SidebarFooter onConnectPhone={() => setShowConnectPhone(true)} />
 
         <ConnectPhoneModal open={showConnectPhone()} onClose={() => setShowConnectPhone(false)} />
 
         <EditProjectDialog project={editingProject()} onClose={() => setEditingProject(null)} />
+        <AddProjectDialog
+          open={showAddProject()}
+          onClose={() => setShowAddProject(false)}
+          onCodeProjectAdded={(id) => void offerExistingWorktrees(id)}
+        />
         <ImportWorktreesDialog
           open={importProject() !== null}
           project={importProject()}
@@ -979,7 +1087,7 @@ interface TaskEntryProps {
 
 function TaskEntry(props: TaskEntryProps) {
   const task = () => store.tasks[props.taskId];
-  const isCoordinator = () => task()?.coordinatorMode ?? false;
+  const isCoordinator = () => Boolean(task()?.coordinatorMode || task()?.delegationParent);
 
   return (
     <Show when={task()}>
@@ -1027,12 +1135,13 @@ function CoordinatorFolder(props: TaskEntryProps) {
           {/* Coordinator row */}
           <TaskRowShell
             taskId={props.taskId}
-            class={`task-item${t().closingStatus === 'removing' ? ' task-item-removing' : ' task-item-appearing'}`}
+            class={`task-item task-item-coordinator${t().closingStatus === 'removing' ? ' task-item-removing' : ' task-item-appearing'}`}
             taskIndex={idx()}
-            title={getDotTooltip(
+            title={`${t().name} — ${getDotTooltip(
               getTaskDotStatus(props.taskId),
               getTaskAttentionState(props.taskId),
-            )}
+              props.taskId,
+            )}`}
             onClick={() => {
               setActiveTask(props.taskId);
               focusSidebar();
@@ -1042,20 +1151,23 @@ function CoordinatorFolder(props: TaskEntryProps) {
             opacity={props.dragFromIndex() === idx() ? '0.4' : '1'}
             style={taskAttentionStyles(props.taskId, offscreenAttention)}
           >
-            <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+            <div class="task-item-head">
               <CoordinatorIcon />
               <StatusDot
                 status={getTaskDotStatus(props.taskId)}
+                taskId={props.taskId}
                 size="sm"
                 attention={getTaskAttentionState(props.taskId)}
               />
-              <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', flex: '1' }}>
-                {t().name}
-              </span>
+              <TaskName
+                name={t().name}
+                unread={isTaskUnread(props.taskId)}
+                backgrounded={isTaskBackgrounded(props.taskId)}
+              />
               <Show when={childCount() > 0}>
                 <span
                   style={{
-                    'font-size': sf(10),
+                    'font-size': sf(11),
                     color: theme.fgSubtle,
                     'flex-shrink': '0',
                   }}
@@ -1064,7 +1176,16 @@ function CoordinatorFolder(props: TaskEntryProps) {
                 </span>
               </Show>
             </div>
-            <TaskCurrentStateLine task={t()} nowMs={props.nowMs} variant="sidebar" />
+            <TaskAgentStatusLine
+              status={getTaskAgentHookStatus(props.taskId)}
+              nowMs={props.nowMs}
+            />
+            <TaskBriefLine task={t()} />
+            <Show when={getChildAttentionSummary(props.taskId)}>
+              {(summary) => (
+                <div style={{ 'font-size': sf(11), color: theme.fgMuted }}>{summary()}</div>
+              )}
+            </Show>
           </TaskRowShell>
 
           {/* Indented active children */}
@@ -1101,7 +1222,8 @@ function CollapsedTaskEntry(props: {
 }) {
   const task = () => store.tasks[props.taskId];
   // Only top-level coordinators render children — indented entries never recurse
-  const isCoordinator = () => !props.indented && (task()?.coordinatorMode ?? false);
+  const isCoordinator = () =>
+    !props.indented && Boolean(task()?.coordinatorMode || task()?.delegationParent);
   const children = createMemo(() =>
     isCoordinator() ? getCoordinatorChildren(props.taskId) : { active: [], collapsed: [] },
   );
@@ -1113,7 +1235,7 @@ function CollapsedTaskEntry(props: {
         <>
           <TaskRowShell
             taskId={props.taskId}
-            class="task-item task-item-appearing"
+            class={`task-item${isCoordinator() ? ' task-item-coordinator' : ''} task-item-appearing`}
             role="button"
             tabIndex={0}
             sidebarTaskId={props.taskId}
@@ -1151,23 +1273,24 @@ function CollapsedTaskEntry(props: {
                   : '1.5px solid transparent',
             }}
           >
-            <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+            <div class="task-item-head">
               <Show when={isCoordinator()}>
                 <CoordinatorIcon />
               </Show>
               <StatusDot
                 status={getTaskDotStatus(props.taskId)}
+                taskId={props.taskId}
                 size="sm"
                 attention={getTaskAttentionState(props.taskId)}
               />
+              <TaskName name={t().name} />
               <Show when={t().gitIsolation === 'direct'}>
                 <DirectBranchBadge branchName={t().branchName} />
               </Show>
-              <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis' }}>{t().name}</span>
               <Show when={isCoordinator() && childCount() > 0}>
                 <span
                   style={{
-                    'font-size': sf(10),
+                    'font-size': sf(11),
                     color: theme.fgSubtle,
                     'flex-shrink': '0',
                   }}
@@ -1176,7 +1299,12 @@ function CollapsedTaskEntry(props: {
                 </span>
               </Show>
             </div>
-            <TaskCurrentStateLine task={t()} nowMs={props.nowMs} variant="sidebar" />
+            <TaskBriefLine task={t()} />
+            <Show when={getChildAttentionSummary(props.taskId)}>
+              {(summary) => (
+                <div style={{ 'font-size': sf(11), color: theme.fgMuted }}>{summary()}</div>
+              )}
+            </Show>
           </TaskRowShell>
 
           {/* If collapsed coordinator, still show children nested */}
@@ -1234,10 +1362,11 @@ function TaskRow(props: TaskRowProps) {
             taskId={props.taskId}
             class={`task-item${t().closingStatus === 'removing' ? ' task-item-removing' : ' task-item-appearing'}`}
             taskIndex={props.indented ? undefined : idx()}
-            title={getDotTooltip(
+            title={`${t().name} — ${getDotTooltip(
               getTaskDotStatus(props.taskId),
               getTaskAttentionState(props.taskId),
-            )}
+              props.taskId,
+            )}`}
             onClick={() => {
               setActiveTask(props.taskId);
               focusSidebar();
@@ -1250,25 +1379,30 @@ function TaskRow(props: TaskRowProps) {
             opacity={!props.indented && props.dragFromIndex() === idx() ? '0.4' : '1'}
             style={taskAttentionStyles(props.taskId, offscreenAttention)}
           >
-            <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+            <div class="task-item-head">
               <StatusDot
                 status={getTaskDotStatus(props.taskId)}
+                taskId={props.taskId}
                 size="sm"
                 attention={getTaskAttentionState(props.taskId)}
+              />
+              <TaskName
+                name={t().name}
+                unread={isTaskUnread(props.taskId)}
+                backgrounded={isTaskBackgrounded(props.taskId)}
               />
               <Show when={t().gitIsolation === 'direct'}>
                 <DirectBranchBadge branchName={t().branchName} />
               </Show>
-              <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis' }}>{t().name}</span>
               <Show when={offscreenAttention.label()}>
                 {(label) => (
                   <span
                     style={{
-                      'font-size': sf(10),
+                      'font-size': sf(11),
                       color: offscreenAttention.color(),
                       background: `color-mix(in srgb, ${offscreenAttention.color()} 12%, transparent)`,
                       padding: '1px 5px',
-                      'border-radius': '3px',
+                      'border-radius': 'var(--radius-xs)',
                       'flex-shrink': '0',
                     }}
                   >
@@ -1277,7 +1411,11 @@ function TaskRow(props: TaskRowProps) {
                 )}
               </Show>
             </div>
-            <TaskCurrentStateLine task={t()} nowMs={props.nowMs} variant="sidebar" />
+            <TaskAgentStatusLine
+              status={getTaskAgentHookStatus(props.taskId)}
+              nowMs={props.nowMs}
+            />
+            <TaskBriefLine task={t()} />
           </TaskRowShell>
         </>
       )}

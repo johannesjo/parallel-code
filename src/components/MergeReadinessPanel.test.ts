@@ -1,6 +1,6 @@
 import { renderToString } from 'solid-js/web';
 import { describe, expect, it } from 'vitest';
-import type { MergeStatus, WorktreeStatus } from '../ipc/types';
+import type { MergeStatus, VerificationRun, WorktreeStatus } from '../ipc/types';
 import type { SubtaskVerification } from '../store/types';
 import { MergeReadinessPanel } from './MergeReadinessPanel';
 import { buildMergeReadiness, type MergeReadinessInput } from './merge-readiness';
@@ -15,6 +15,7 @@ const cleanWorktreeStatus: WorktreeStatus = {
   has_committed_changes: true,
   has_uncommitted_changes: false,
   current_branch: 'task/readiness',
+  base_branch: 'main',
 };
 
 const passedVerification: SubtaskVerification = {
@@ -40,12 +41,26 @@ describe('buildMergeReadiness', () => {
   it('reports ready when merge safety and reported verification pass', () => {
     const readiness = buildMergeReadiness(input());
 
-    expect(readiness.overall).toBe('ready');
     expect(readiness.checks).toEqual([
       expect.objectContaining({ label: 'Merge safety', status: 'pass' }),
-      expect.objectContaining({ label: 'Verification', status: 'pass' }),
+      expect.objectContaining({ label: 'Agent report', status: 'pass' }),
+      expect.objectContaining({ label: 'Coverage', status: 'neutral' }),
       expect.objectContaining({ label: 'PR checks', status: 'neutral' }),
+      expect.objectContaining({ label: 'Evidence', status: 'neutral' }),
     ]);
+  });
+
+  it('treats evidence as advice: low confidence asks for attention, medium stays neutral', () => {
+    const evidence = (level: 'low' | 'medium' | 'high') =>
+      buildMergeReadiness(
+        input({ evidence: { level, reasons: level === 'high' ? [] : [{ level, text: 'Why.' }] } }),
+      );
+    expect(evidence('high').checks[4]).toEqual(
+      expect.objectContaining({ status: 'pass', detail: 'High confidence.' }),
+    );
+    expect(evidence('low').checks[4]?.detail).toBe('Low confidence. Why.');
+    expect(evidence('low').checks[4]?.status).toBe('warning');
+    expect(evidence('medium').checks[4]?.status).toBe('neutral');
   });
 
   it('reports checking while merge data is loading', () => {
@@ -53,7 +68,6 @@ describe('buildMergeReadiness', () => {
       input({ mergeStatus: undefined, mergeStatusLoading: true }),
     );
 
-    expect(readiness.overall).toBe('checking');
     expect(readiness.checks[0]).toEqual(
       expect.objectContaining({ status: 'checking', detail: 'Checking merge safety…' }),
     );
@@ -84,7 +98,6 @@ describe('buildMergeReadiness', () => {
   ])('reports not ready for $name', ({ overrides, detail }) => {
     const readiness = buildMergeReadiness(input(overrides));
 
-    expect(readiness.overall).toBe('blocked');
     expect(readiness.checks[0]).toEqual(expect.objectContaining({ status: 'blocked', detail }));
   });
 
@@ -108,7 +121,6 @@ describe('buildMergeReadiness', () => {
   ])('preserves the known blocker for $name', ({ overrides, detail }) => {
     const readiness = buildMergeReadiness(input(overrides));
 
-    expect(readiness.overall).toBe('blocked');
     expect(readiness.checks[0]).toEqual(expect.objectContaining({ status: 'blocked', detail }));
   });
 
@@ -120,7 +132,6 @@ describe('buildMergeReadiness', () => {
       }),
     );
 
-    expect(readiness.overall).toBe('attention');
     expect(readiness.checks[0]).toEqual(
       expect.objectContaining({
         status: 'warning',
@@ -149,11 +160,10 @@ describe('buildMergeReadiness', () => {
       }),
     );
 
-    expect(readiness.overall).toBe('attention');
     expect(readiness.checks[1]).toEqual(
       expect.objectContaining({ status: 'warning', detail: 'test failed — 2 tests failed' }),
     );
-    expect(readiness.checks[2]).toEqual(
+    expect(readiness.checks[3]).toEqual(
       expect.objectContaining({ status: 'warning', detail: '1 pending, 2 passing.' }),
     );
   });
@@ -165,39 +175,412 @@ describe('buildMergeReadiness', () => {
       }),
     );
 
-    expect(readiness.overall).toBe('attention');
-    expect(readiness.checks[2]).toEqual(
+    expect(readiness.checks[3]).toEqual(
       expect.objectContaining({
         status: 'warning',
         detail: '1 pending, 2 passing, 1 failing.',
       }),
     );
   });
+
+  it('reports attention for aggregate coverage regression and impacted unchanged files', () => {
+    const readiness = buildMergeReadiness(
+      input({
+        coverage: {
+          aggregate: {
+            task: { state: 'available', pct: 78 },
+            base: { state: 'available', pct: 82 },
+            delta: -4,
+          },
+          files: {},
+          impactedUnchangedFiles: [
+            {
+              path: 'src/shared.ts',
+              task: { state: 'available', pct: 70 },
+              base: { state: 'available', pct: 80 },
+              delta: -10,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(readiness.checks[2]).toEqual(
+      expect.objectContaining({
+        label: 'Coverage',
+        status: 'warning',
+        detail: 'Base 82% → task 78% (-4pp). 1 unchanged file also regressed.',
+      }),
+    );
+  });
+
+  it('keeps an unchanged-file regression visible when aggregate coverage improves', () => {
+    const readiness = buildMergeReadiness(
+      input({
+        coverage: {
+          aggregate: {
+            task: { state: 'available', pct: 84 },
+            base: { state: 'available', pct: 82 },
+            delta: 2,
+          },
+          files: {},
+          impactedUnchangedFiles: [
+            {
+              path: 'src/shared.ts',
+              task: { state: 'available', pct: 70 },
+              base: { state: 'available', pct: 80 },
+              delta: -10,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(readiness.checks[2]).toEqual(
+      expect.objectContaining({
+        status: 'warning',
+        detail: 'Base 82% → task 84% (+2pp). 1 unchanged file also regressed.',
+      }),
+    );
+  });
+
+  it('does not attribute base-only covered files to the task', () => {
+    const readiness = buildMergeReadiness(
+      input({
+        coverage: {
+          aggregate: {
+            task: { state: 'available', pct: 82 },
+            base: { state: 'available', pct: 82 },
+            delta: 0,
+          },
+          files: {},
+          impactedUnchangedFiles: [
+            {
+              path: 'src/added-on-base.ts',
+              task: { state: 'file-not-present', pct: null },
+              base: { state: 'available', pct: 80 },
+              delta: null,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(readiness.checks[2]).toEqual(
+      expect.objectContaining({
+        status: 'pass',
+        detail: 'Base 82% → task 82% (0pp).',
+      }),
+    );
+  });
+
+  it('does not warn for aggregate drift below the materiality threshold', () => {
+    const readiness = buildMergeReadiness(
+      input({
+        coverage: {
+          aggregate: {
+            task: { state: 'available', pct: 81.99 },
+            base: { state: 'available', pct: 82 },
+            delta: -0.01,
+          },
+          files: {},
+          impactedUnchangedFiles: [],
+        },
+      }),
+    );
+
+    expect(readiness.checks[2]).toEqual(
+      expect.objectContaining({
+        status: 'pass',
+        detail: 'Base 82% → task 81.99% (-0.01pp).',
+      }),
+    );
+  });
+
+  it('warns when aggregate coverage reaches the materiality threshold', () => {
+    const readiness = buildMergeReadiness(
+      input({
+        coverage: {
+          aggregate: {
+            task: { state: 'available', pct: 81 },
+            base: { state: 'available', pct: 82 },
+            delta: -1,
+          },
+          files: {},
+          impactedUnchangedFiles: [],
+        },
+      }),
+    );
+
+    expect(readiness.checks[2]).toEqual(expect.objectContaining({ status: 'warning' }));
+  });
+
+  it('keeps coverage informational until an ahead base branch is rebased', () => {
+    const readiness = buildMergeReadiness(
+      input({
+        mergeStatus: { ...cleanMergeStatus, main_ahead_count: 2 },
+        coverage: {
+          aggregate: {
+            task: { state: 'available', pct: 78 },
+            base: { state: 'available', pct: 82 },
+            delta: -4,
+          },
+          files: {},
+          impactedUnchangedFiles: [],
+        },
+      }),
+    );
+
+    expect(readiness.checks[2]).toEqual(
+      expect.objectContaining({
+        status: 'neutral',
+        detail: 'main is 2 commits ahead; rebase and regenerate task coverage before comparing.',
+      }),
+    );
+  });
+
+  it('keeps a stale task report neutral even when its delta is negative', () => {
+    const readiness = buildMergeReadiness(
+      input({
+        coverage: {
+          aggregate: {
+            task: { state: 'available', pct: 78 },
+            base: { state: 'available', pct: 82 },
+            delta: -4,
+          },
+          files: {},
+          impactedUnchangedFiles: [],
+          baseline: {
+            baseBranch: 'main',
+            stale: false,
+            taskHeadAt: '2026-07-26T00:00:00.000Z',
+            taskStale: true,
+          },
+        },
+      }),
+    );
+
+    expect(readiness.checks[2]).toEqual(
+      expect.objectContaining({
+        status: 'neutral',
+        detail: 'Task coverage report predates task HEAD; regenerate it before comparing.',
+      }),
+    );
+  });
+
+  it.each([
+    ['loading', 'still loading'],
+    ['failed', 'unavailable'],
+  ] as const)(
+    'keeps task coverage visible but neutral when changed-file inventory is %s',
+    (inventoryState, detailFragment) => {
+      const readiness = buildMergeReadiness(
+        input({
+          coverage: {
+            aggregate: {
+              task: { state: 'available', pct: 78 },
+              base: { state: 'available', pct: 82 },
+              delta: -4,
+            },
+            files: {},
+            impactedUnchangedFiles: [],
+            inventoryState,
+          },
+        }),
+      );
+
+      expect(readiness.checks[2]).toEqual(expect.objectContaining({ status: 'neutral' }));
+      expect(readiness.checks[2].detail).toContain('Task 78%');
+      expect(readiness.checks[2].detail).toContain(detailFragment);
+      expect(readiness.checks[2].detail).not.toContain('No task coverage report');
+    },
+  );
+
+  it('keeps a stale base report neutral even when its delta is negative', () => {
+    const readiness = buildMergeReadiness(
+      input({
+        coverage: {
+          aggregate: {
+            task: { state: 'available', pct: 78 },
+            base: { state: 'available', pct: 82 },
+            delta: -4,
+          },
+          files: {},
+          impactedUnchangedFiles: [],
+          baseline: {
+            baseBranch: 'main',
+            baseHeadAt: '2026-07-26T00:00:00.000Z',
+            stale: true,
+          },
+        },
+      }),
+    );
+
+    expect(readiness.checks[2]).toEqual(
+      expect.objectContaining({
+        status: 'neutral',
+        detail:
+          'Base coverage report predates main as currently checked out; regenerate it before comparing.',
+      }),
+    );
+  });
+
+  it('keeps an unanchored base report neutral even when its delta is positive', () => {
+    const readiness = buildMergeReadiness(
+      input({
+        coverage: {
+          aggregate: {
+            task: { state: 'available', pct: 84 },
+            base: { state: 'available', pct: 82 },
+            delta: 2,
+          },
+          files: {},
+          impactedUnchangedFiles: [],
+          baseline: {
+            baseBranch: 'main',
+            stale: false,
+            unanchored: true,
+          },
+        },
+      }),
+    );
+
+    expect(readiness.checks[2]).toEqual(
+      expect.objectContaining({
+        status: 'neutral',
+        detail:
+          'Base coverage report cannot be anchored to main as currently checked out; comparison is informational only.',
+      }),
+    );
+  });
 });
 
 describe('MergeReadinessPanel', () => {
-  it('renders an accessible textual summary without relying on status color', () => {
-    const readiness = buildMergeReadiness(input());
-    const html = renderToString(() => MergeReadinessPanel({ readiness }));
+  const rows = (overrides: Partial<MergeReadinessInput> = {}) =>
+    renderToString(() =>
+      MergeReadinessPanel({ checks: buildMergeReadiness(input(overrides)).checks }),
+    );
 
-    expect(html).toContain('aria-label="Ready to merge summary"');
-    expect(html).toContain('Ready to merge');
+  it('gives a row of its own only to checks that need a look', () => {
+    const html = rows({
+      worktreeStatus: { ...cleanWorktreeStatus, has_uncommitted_changes: true },
+    });
+    // The warning keeps its detail on screen; passing rows only name themselves.
+    expect(html).toContain('>Uncommitted changes will be excluded.</span>');
+    expect(html).toContain('title="2 checks passed.');
+    expect(html).not.toContain('color:var(--fg-muted)">2 checks passed.');
+    expect(html).toMatch(/class="dialog-sr-only">(<!--\$-->)?Passed(<!--\/-->)?: </);
+  });
+
+  it('never folds the rows away', () => {
+    const html = rows();
+    expect(html).not.toContain('<details');
     expect(html).toContain('Merge safety');
-    expect(html).toContain('Verification');
+  });
+
+  it('names every status in text and keeps details and help reachable without hover', () => {
+    const html = rows();
+    expect(html).toContain('Agent report');
     expect(html).toContain('2 checks passed.');
+    expect(html).toContain('Coverage');
+    expect(html).toContain('No task coverage report.');
     expect(html).toContain('PR checks');
     expect(html).toContain('No PR checks available.');
+    // Quiet rows share a line; each label's hover gives its detail and help.
     expect(html).toContain(
-      'title="Ready means every available check passed. Needs attention means a warning; Not ready means a merge-safety blocker; Checking means merge data is loading. This summary is advisory."',
+      'Checks the task branch for conflicts with its base branch, branch mismatch, committed changes, and local uncommitted changes.',
+    );
+    expect(html).toContain('What the agent reported when it called land_self.');
+    expect(html).toContain(
+      'Uses checks reported for a detected GitHub pull request. Pull requests are optional, and unavailable check data is neutral.',
     );
     expect(html).toContain(
-      'title="Checks the task branch for conflicts with its base branch, branch mismatch, committed changes, and local uncommitted changes."',
+      'Compares existing task and base-branch coverage reports. Opening the dialog never runs tests or modifies either worktree.',
     );
-    expect(html).toContain(
-      'title="Uses structured verification reported by land_self, such as tests or typechecking. Without a report this needs attention; opening the dialog never runs commands."',
+  });
+});
+
+describe('buildMergeReadiness verify command runs', () => {
+  const run = (overrides: Partial<VerificationRun> = {}): VerificationRun => ({
+    command: 'npm test',
+    status: 'passed',
+    exitCode: 0,
+    headSha: 'head-1',
+    dirty: false,
+    startedAt: '2026-09-03T10:00:00.000Z',
+    finishedAt: '2026-09-03T10:01:00.000Z',
+    outputTail: '12 passed\n',
+    ...overrides,
+  });
+  const atHead = (head_sha: string | null): WorktreeStatus => ({
+    ...cleanWorktreeStatus,
+    head_sha,
+  });
+  const verificationOf = (overrides: Partial<MergeReadinessInput>) =>
+    buildMergeReadiness(input({ verifyCommandConfigured: true, ...overrides })).checks[1];
+
+  it('asks for a run when a command is configured but nothing ran, ignoring the self-report', () => {
+    expect(verificationOf({ verification: passedVerification })).toEqual(
+      expect.objectContaining({
+        status: 'warning',
+        detail: expect.stringContaining('Not verified'),
+      }),
     );
-    expect(html).toContain(
-      'title="Uses checks reported for a detected GitHub pull request. Pull requests are optional, and unavailable check data is neutral."',
+  });
+
+  it('passes when the run passed at the current HEAD on a clean tree', () => {
+    expect(verificationOf({ verificationRun: run(), worktreeStatus: atHead('head-1') })).toEqual(
+      expect.objectContaining({ status: 'pass', detail: 'Passed. `npm test` exited 0.' }),
+    );
+  });
+
+  it('warns when HEAD moved since the run', () => {
+    expect(verificationOf({ verificationRun: run(), worktreeStatus: atHead('head-2') })).toEqual(
+      expect.objectContaining({
+        status: 'warning',
+        detail: expect.stringContaining('older commit'),
+      }),
+    );
+  });
+
+  it('warns when the run saw uncommitted changes', () => {
+    expect(
+      verificationOf({ verificationRun: run({ dirty: true }), worktreeStatus: atHead('head-1') }),
+    ).toEqual(
+      expect.objectContaining({
+        status: 'warning',
+        detail: expect.stringContaining('uncommitted changes'),
+      }),
+    );
+  });
+
+  it('reports checking while a run is in flight', () => {
+    expect(
+      verificationOf({ verificationRun: run({ status: 'running', finishedAt: null }) }),
+    ).toEqual(expect.objectContaining({ status: 'checking', detail: 'Running `npm test`…' }));
+  });
+
+  it('warns with the last output line when the run failed', () => {
+    expect(
+      verificationOf({
+        verificationRun: run({
+          status: 'failed',
+          exitCode: 1,
+          outputTail: '11 passed\n1 failed\n',
+        }),
+      }),
+    ).toEqual(expect.objectContaining({ status: 'warning', detail: 'Failed (exit 1). 1 failed' }));
+  });
+
+  it('uses a run even when the command was since removed from the project', () => {
+    expect(
+      buildMergeReadiness(input({ verification: undefined, verificationRun: run() })).checks[1],
+    ).toEqual(expect.objectContaining({ status: 'pass' }));
+  });
+
+  it('keeps the self-report fallback when nothing is configured and nothing ran', () => {
+    expect(buildMergeReadiness(input()).checks[1]).toEqual(
+      expect.objectContaining({ status: 'pass', detail: '2 checks passed.' }),
     );
   });
 });

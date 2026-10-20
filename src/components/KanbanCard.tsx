@@ -1,0 +1,612 @@
+import {
+  For,
+  Show,
+  createMemo,
+  createResource,
+  createEffect,
+  createSignal,
+  createUniqueId,
+  on,
+  onMount,
+  untrack,
+  type JSX,
+} from 'solid-js';
+import { CloseIcon, CopyIcon, ExternalLinkIcon, GitHubIcon, LinkIcon, PencilIcon } from './icons';
+import { invoke } from '../lib/ipc';
+import { IPC } from '../../electron/ipc/channels';
+import { formatRelativeAge } from '../lib/relativeAge';
+import { cardChecklist, cardSummary, parseGitHubIssueUrl, type KanbanCard } from '../lib/kanban';
+import { readGitHubIssue } from '../store/github';
+import { store } from '../store/core';
+import { getAgentHookStatus } from '../store/agentHookStatus';
+import { getPrChecks } from '../store/pr-checks-state';
+import { computeAttentionEntries, jumpToWaitingTask } from '../store/sidebar-attention';
+import { getReadyLabel, getTaskAttentionState } from '../store/taskStatus';
+import { showNotification } from '../store/notification';
+import type { Task } from '../store/types';
+
+/** How a linked task is doing, from the card's point of view. */
+export type CardTaskState = 'needs_input' | 'error' | 'review' | 'active' | 'ready' | 'idle';
+
+const [now, setNow] = createSignal(Date.now());
+let clockUsers = 0;
+let clock: ReturnType<typeof setInterval> | undefined;
+
+/** A minute clock for "working 3m" labels, running only while a board is open. */
+export function useKanbanClock(): () => void {
+  clockUsers++;
+  if (!clock) clock = setInterval(() => setNow(Date.now()), 30_000);
+  return () => {
+    clockUsers--;
+    if (clockUsers === 0 && clock) {
+      clearInterval(clock);
+      clock = undefined;
+    }
+  };
+}
+
+/** The open task of this project working on `branch`, if any. */
+export function linkedTask(projectId: string, branch: string): Task | undefined {
+  // Only worktree tasks own their branch; a direct task works on a shared one.
+  return Object.values(store.tasks).find(
+    (task) =>
+      task?.projectId === projectId &&
+      task.gitIsolation === 'worktree' &&
+      task.branchName === branch,
+  );
+}
+
+export function cardTaskState(task: Task): CardTaskState {
+  const state = getTaskAttentionState(task.id);
+  if (state === 'needs_input' || state === 'error' || state === 'review' || state === 'active') {
+    return state;
+  }
+  if (task.signalDoneReceived || task.landingState === 'landed_pending_review') return 'review';
+  return state === 'ready' ? 'ready' : 'idle';
+}
+
+/** The most urgent state among a card's linked tasks, or null without live tasks. */
+export function cardState(projectId: string, card: KanbanCard): CardTaskState | null {
+  const order: CardTaskState[] = ['needs_input', 'error', 'review', 'active', 'ready', 'idle'];
+  let best: CardTaskState | null = null;
+  for (const branch of card.branches) {
+    const task = linkedTask(projectId, branch);
+    if (!task) continue;
+    const state = cardTaskState(task);
+    if (best === null || order.indexOf(state) < order.indexOf(best)) best = state;
+  }
+  return best;
+}
+
+function stateLabel(task: Task, state: CardTaskState): string {
+  switch (state) {
+    case 'needs_input':
+      return 'Needs input';
+    case 'error':
+      return 'Failed';
+    case 'review':
+      return 'Ready for review';
+    case 'active':
+      return 'Working';
+    case 'ready':
+      return getReadyLabel(task.id);
+    default:
+      return 'Idle';
+  }
+}
+
+function firstLine(text: string | undefined): string {
+  return (
+    (text ?? '')
+      .split('\n')
+      .find((line) => line.trim())
+      ?.trim() ?? ''
+  );
+}
+
+/** One line about what the task's agent is doing or last said. */
+function activityLine(task: Task): { text: string; since?: number } {
+  const hook = task.agentIds.map(getAgentHookStatus).find((status) => status !== null);
+  if (hook?.state === 'working' && hook.toolName) {
+    return {
+      text: [hook.toolName, firstLine(hook.detail)].filter(Boolean).join(' · '),
+      since: hook.since,
+    };
+  }
+  const said = firstLine(hook?.lastAssistantMessage);
+  if (said) return { text: said, since: hook?.since };
+  // Nothing reported yet: name the agent rather than echo the prompt, which
+  // starts with the card's own title.
+  const agent = task.agentIds.map((id) => store.agents[id]?.def?.name).find(Boolean);
+  return { text: agent ?? '', since: hook?.since };
+}
+
+function openTask(task: Task): void {
+  const question = computeAttentionEntries().find(
+    (entry) => entry.taskId === task.id && entry.kind === 'question',
+  );
+  jumpToWaitingTask(task.id, question?.panel ?? null);
+}
+
+function TaskRow(props: { task: Task; tabIndex: number }) {
+  const state = createMemo(() => cardTaskState(props.task));
+  const activity = createMemo(() => activityLine(props.task));
+  const checks = () => getPrChecks(props.task.id)?.overall;
+  const urgent = () => state() === 'needs_input' || state() === 'error';
+  return (
+    <li class={`kanban-task state-${state()}`}>
+      <div class="kanban-task-head">
+        <span class="kanban-dot" aria-hidden="true" />
+        <span class="kanban-task-state">{stateLabel(props.task, state())}</span>
+        <Show when={state() === 'active' && activity().since}>
+          {(since) => <span class="kanban-task-age">{formatRelativeAge(since(), now())}</span>}
+        </Show>
+        <Show when={props.task.prUrl}>
+          {(url) => (
+            <button
+              type="button"
+              tabIndex={props.tabIndex}
+              class={`kanban-chip pr-${checks() ?? 'none'}`}
+              title={`Open pull request${checks() ? ` (checks: ${checks()})` : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                void invoke(IPC.ShellOpenExternal, { url: url() });
+              }}
+            >
+              PR
+              {checks() === 'success'
+                ? ' ✓'
+                : checks() === 'failure'
+                  ? ' ✕'
+                  : checks() === 'pending'
+                    ? ' …'
+                    : ''}
+            </button>
+          )}
+        </Show>
+        <button
+          type="button"
+          tabIndex={props.tabIndex}
+          class="kanban-task-open"
+          classList={{ urgent: urgent() }}
+          title={urgent() ? 'Open the task where the agent waits' : `Open task ${props.task.name}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            openTask(props.task);
+          }}
+        >
+          {state() === 'needs_input' ? 'Answer' : state() === 'error' ? 'Show error' : 'Open'}
+          <ExternalLinkIcon size={10} />
+        </button>
+      </div>
+      {/* Always rendered so a task starting or stopping never changes the card's height. */}
+      <p class="kanban-task-activity" title={activity().text}>
+        {activity().text || ' '}
+      </p>
+    </li>
+  );
+}
+
+function BranchRow(props: { branch: string; tabIndex: number }) {
+  return (
+    <li class="kanban-task state-gone">
+      <div class="kanban-task-head">
+        <span class="kanban-branch" title={`${props.branch}: no open task works on this branch`}>
+          {props.branch}
+        </span>
+        <button
+          type="button"
+          tabIndex={props.tabIndex}
+          class="kanban-icon"
+          title="Copy branch name"
+          aria-label={`Copy branch name ${props.branch}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            void navigator.clipboard
+              ?.writeText(props.branch)
+              .then(() => showNotification('Branch name copied'));
+          }}
+        >
+          <CopyIcon size={11} />
+        </button>
+      </div>
+    </li>
+  );
+}
+
+/** GitHub state per issue URL, shared by every card and kept for a few minutes. */
+const issueStates = new Map<string, { at: number; state: Promise<string | null> }>();
+const ISSUE_STATE_TTL_MS = 5 * 60_000;
+
+function issueState(url: string): Promise<string | null> {
+  const cached = issueStates.get(url);
+  if (cached && Date.now() - cached.at < ISSUE_STATE_TTL_MS) return cached.state;
+  const state = readGitHubIssue(url).then(
+    (issue) => issue.state,
+    () => null,
+  );
+  issueStates.set(url, { at: Date.now(), state });
+  return state;
+}
+
+/** `#12` for the card's GitHub issue or PR, with its state once GitHub answers. */
+function IssueChip(props: { url: string; tabIndex: number }) {
+  const parsed = () => parseGitHubIssueUrl(props.url);
+  const [state] = createResource(() => props.url, issueState);
+  return (
+    <Show when={parsed()}>
+      {(issue) => (
+        <button
+          type="button"
+          class="kanban-chip kanban-issue"
+          classList={{ closed: state() === 'closed' || state() === 'merged' }}
+          tabIndex={props.tabIndex}
+          title={`Open ${issue().kind === 'pr' ? 'pull request' : 'issue'} ${issue().repo}#${issue().number} on GitHub${state() ? ` (${state()})` : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            void invoke(IPC.ShellOpenExternal, { url: props.url });
+          }}
+        >
+          <GitHubIcon size={10} />#{issue().number}
+          <Show when={state() === 'closed' || state() === 'merged'}>
+            <span> · {state()}</span>
+          </Show>
+        </button>
+      )}
+    </Show>
+  );
+}
+
+export interface KanbanCardViewProps {
+  card: KanbanCard;
+  projectId: string;
+  /** Open dependencies (cards on the board that are not done yet). */
+  blockedBy: string[];
+  selected: boolean;
+  tabIndex: number;
+  draggable: boolean;
+  dropBefore: boolean;
+  dragging: boolean;
+  flash: boolean;
+  dataRef: string;
+  onSelect: () => void;
+  onDragStart: (e: DragEvent) => void;
+  onDragEnd: () => void;
+  onDragOver: (e: DragEvent) => void;
+  onDrop: (e: DragEvent) => void;
+  onEdit: () => void;
+  onStart: () => void;
+  onToggleDone: (done: boolean) => void;
+  onToggleChecklist: (line: number) => void;
+}
+
+export function KanbanCardView(props: KanbanCardViewProps) {
+  const titleId = createUniqueId();
+  const describedId = createUniqueId();
+  const checklist = createMemo(() => cardChecklist(props.card));
+  const summary = createMemo(() => cardSummary(props.card));
+  const tasks = createMemo(() =>
+    props.card.branches.map((branch) => ({ branch, task: linkedTask(props.projectId, branch) })),
+  );
+  const state = createMemo(() => cardState(props.projectId, props.card));
+  const checked = () => checklist().filter((item) => item.done).length;
+  // What a screen reader hears after the title: the card's state in words.
+  const description = () =>
+    [
+      props.card.done ? 'Done' : '',
+      state() === 'needs_input'
+        ? 'Needs input'
+        : state() === 'error'
+          ? 'Task failed'
+          : state() === 'active'
+            ? 'Task working'
+            : state() === 'review'
+              ? 'Ready for review'
+              : '',
+      props.blockedBy.length ? `Waits for ${props.blockedBy.join(', ')}` : '',
+      checklist().length ? `Checklist ${checked()} of ${checklist().length}` : '',
+      props.card.issue ? `Linked to #${parseGitHubIssueUrl(props.card.issue)?.number ?? ''}` : '',
+    ]
+      .filter(Boolean)
+      .join('. ');
+  // Inner controls join the tab order only on the selected card.
+  const innerTab = () => (props.selected ? 0 : -1);
+  return (
+    <article
+      class="kanban-card"
+      classList={{
+        done: props.card.done,
+        selected: props.selected,
+        'drop-before': props.dropBefore,
+        dragging: props.dragging,
+        flash: props.flash,
+        asking: state() === 'needs_input',
+        failed: state() === 'error',
+        blocked: props.blockedBy.length > 0,
+      }}
+      data-card={props.dataRef}
+      tabIndex={props.tabIndex}
+      aria-labelledby={titleId}
+      aria-describedby={describedId}
+      role="listitem"
+      draggable={props.draggable}
+      onFocus={(e) => {
+        if (e.target === e.currentTarget) props.onSelect();
+      }}
+      onDragStart={(e) => props.onDragStart(e)}
+      onDragEnd={() => props.onDragEnd()}
+      onDragOver={(e) => props.onDragOver(e)}
+      onDrop={(e) => props.onDrop(e)}
+      onDblClick={(e) => {
+        if (!(e.target as HTMLElement).closest('button, input, a, label')) props.onEdit();
+      }}
+    >
+      <span id={describedId} class="kanban-sr-only">
+        {description()}
+      </span>
+      <div class="kanban-card-title">
+        <label class="kanban-done">
+          <input
+            type="checkbox"
+            checked={props.card.done}
+            tabIndex={innerTab()}
+            aria-label={`Done: ${props.card.title || 'Untitled'}`}
+            onChange={(e) => props.onToggleDone(e.currentTarget.checked)}
+          />
+          <span class="kanban-done-mark" aria-hidden="true" />
+        </label>
+        <span id={titleId} classList={{ untitled: !props.card.title }}>
+          {props.card.title || 'Untitled'}
+        </span>
+      </div>
+      <Show when={summary()}>
+        <p class="kanban-card-body">{summary()}</p>
+      </Show>
+      <Show when={checklist().length}>
+        <ul class="kanban-checklist" aria-label="Checklist">
+          <For each={checklist().slice(0, 5)}>
+            {(item) => (
+              <li classList={{ done: item.done }}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={item.done}
+                    tabIndex={innerTab()}
+                    onChange={() => props.onToggleChecklist(item.line)}
+                  />
+                  <span>{item.text}</span>
+                </label>
+              </li>
+            )}
+          </For>
+          <Show when={checklist().length > 5}>
+            <li class="kanban-more">+{checklist().length - 5} more</li>
+          </Show>
+        </ul>
+      </Show>
+      <Show when={props.blockedBy.length}>
+        <p class="kanban-blocked" title="Cards that have to be done first">
+          <LinkIcon size={11} /> Waits for {props.blockedBy.join(', ')}
+        </p>
+      </Show>
+      <Show when={tasks().length}>
+        <ul class="kanban-tasks" aria-label="Tasks">
+          <For each={tasks()}>
+            {(entry) => (
+              <Show
+                when={entry.task}
+                fallback={<BranchRow branch={entry.branch} tabIndex={innerTab()} />}
+              >
+                {(task) => <TaskRow task={task()} tabIndex={innerTab()} />}
+              </Show>
+            )}
+          </For>
+        </ul>
+      </Show>
+      {/* Always rendered, so ticking a card done never changes its height. */}
+      <div class="kanban-card-footer">
+        <button
+          type="button"
+          class="kanban-start"
+          tabIndex={props.card.done ? -1 : innerTab()}
+          aria-hidden={props.card.done || undefined}
+          style={{ visibility: props.card.done ? 'hidden' : 'visible' }}
+          title={
+            props.blockedBy.length
+              ? `Waits for ${props.blockedBy.join(', ')}; start anyway`
+              : 'Start a task from this card (S)'
+          }
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onStart();
+          }}
+        >
+          {props.card.branches.length ? 'Start another task' : 'Start task'}
+        </button>
+        <span class="kanban-card-meta">
+          <Show when={props.card.issue}>
+            {(url) => <IssueChip url={url()} tabIndex={innerTab()} />}
+          </Show>
+          <Show when={checklist().length}>
+            <span class="kanban-progress" title="Checklist">
+              {checked()}/{checklist().length}
+            </span>
+          </Show>
+          {/* Revealed on hover or selection, in space that is always there. */}
+          <button
+            type="button"
+            class="kanban-icon kanban-card-edit"
+            tabIndex={innerTab()}
+            title="Edit, archive or delete (E)"
+            aria-label={`Edit card ${props.card.title || 'Untitled'}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onEdit();
+            }}
+          >
+            <PencilIcon size={12} />
+          </button>
+        </span>
+      </div>
+    </article>
+  );
+}
+
+/** What the open card editor holds, kept by the board so a re-render cannot drop typed text. */
+export interface EditorDraft {
+  title: string;
+  body: string;
+  depends: string[];
+  column: number;
+}
+
+export function KanbanCardEditor(props: {
+  card: KanbanCard;
+  /** Text typed before the editor was re-created; wins over the card's own. */
+  draft?: EditorDraft | null;
+  onDraft?: (draft: EditorDraft) => void;
+  columns: string[];
+  column: number;
+  /** Titles of the other cards, for dependencies. */
+  otherTitles: string[];
+  onSave: (change: { title: string; body: string; depends: string[] }, column: number) => void;
+  onDelete: () => void;
+  onArchive: () => void;
+  onCancel: () => void;
+}) {
+  const initial = untrack(() => props.card);
+  const saved = untrack(() => props.draft);
+  const [title, setTitle] = createSignal(saved?.title ?? initial.title);
+  const [body, setBody] = createSignal(saved?.body ?? initial.body);
+  const [depends, setDepends] = createSignal<string[]>([...(saved?.depends ?? initial.depends)]);
+  const [column, setColumn] = createSignal(saved?.column ?? untrack(() => props.column));
+  createEffect(
+    on(
+      [title, body, depends, column],
+      ([t, b, d, c]) => props.onDraft?.({ title: t, body: b, depends: d, column: c }),
+      {
+        defer: true,
+      },
+    ),
+  );
+  let titleRef: HTMLInputElement | undefined;
+  let bodyRef: HTMLTextAreaElement | undefined;
+  const grow = () => {
+    if (!bodyRef) return;
+    bodyRef.style.height = 'auto';
+    bodyRef.style.height = `${Math.min(bodyRef.scrollHeight + 2, 360)}px`;
+  };
+  onMount(() => {
+    titleRef?.focus();
+    titleRef?.select();
+    grow();
+  });
+  const save = () => props.onSave({ title: title(), body: body(), depends: depends() }, column());
+  const onKeyDown: JSX.EventHandler<HTMLElement, KeyboardEvent> = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      props.onCancel();
+    } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      save();
+    }
+    e.stopPropagation();
+  };
+  const candidates = () => props.otherTitles.filter((t) => !depends().includes(t));
+  return (
+    <form
+      class="kanban-card kanban-card-editor"
+      aria-label={`Edit card ${initial.title || 'Untitled'}`}
+      onKeyDown={onKeyDown}
+      onSubmit={(e) => {
+        e.preventDefault();
+        save();
+      }}
+    >
+      <input
+        ref={titleRef}
+        class="kanban-editor-title"
+        aria-label="Card title"
+        placeholder="Card title"
+        value={title()}
+        onInput={(e) => setTitle(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
+            e.preventDefault();
+            bodyRef?.focus();
+          }
+        }}
+      />
+      <textarea
+        ref={bodyRef}
+        aria-label="Description"
+        placeholder={
+          'What should the agent do? Markdown.\n- [ ] Acceptance criteria as checklist items'
+        }
+        rows={4}
+        value={body()}
+        onInput={(e) => {
+          setBody(e.currentTarget.value);
+          grow();
+        }}
+      />
+      <div class="kanban-editor-row">
+        <span class="kanban-editor-label">Waits for</span>
+        <div class="kanban-depends">
+          <For each={depends()}>
+            {(dependency) => (
+              <span class="kanban-chip">
+                {dependency}
+                <button
+                  type="button"
+                  class="kanban-chip-remove"
+                  aria-label={`Remove dependency ${dependency}`}
+                  onClick={() => setDepends((list) => list.filter((d) => d !== dependency))}
+                >
+                  <CloseIcon size={9} />
+                </button>
+              </span>
+            )}
+          </For>
+          <Show when={candidates().length}>
+            <select
+              aria-label="Add a dependency"
+              value=""
+              onChange={(e) => {
+                const value = e.currentTarget.value;
+                if (value) setDepends((list) => [...list, value]);
+                e.currentTarget.value = '';
+              }}
+            >
+              <option value="">Add…</option>
+              <For each={candidates()}>{(t) => <option value={t}>{t}</option>}</For>
+            </select>
+          </Show>
+        </div>
+      </div>
+      <label class="kanban-editor-row">
+        <span class="kanban-editor-label">Column</span>
+        <select value={column()} onChange={(e) => setColumn(Number(e.currentTarget.value))}>
+          <For each={props.columns}>{(name, i) => <option value={i()}>{name}</option>}</For>
+        </select>
+      </label>
+      <div class="kanban-editor-actions">
+        <button type="submit" class="kanban-primary" title="Save (Ctrl+Enter)">
+          Save
+        </button>
+        <button type="button" onClick={() => props.onCancel()} title="Cancel (Esc)">
+          Cancel
+        </button>
+      </div>
+      <div class="kanban-editor-actions secondary">
+        <button type="button" class="kanban-quiet" onClick={() => props.onArchive()}>
+          Archive
+        </button>
+        <button type="button" class="kanban-quiet" onClick={() => props.onDelete()}>
+          Delete
+        </button>
+      </div>
+    </form>
+  );
+}

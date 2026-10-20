@@ -1,46 +1,66 @@
-import { createEffect, onCleanup } from 'solid-js';
+import { createEffect } from 'solid-js';
 import { store, saveState } from './store';
+import { hiddenAgentTaskIds } from '../documents/task-id';
 
-/** Build a snapshot string of all persisted fields. Using JSON.stringify
- *  creates a single reactive dependency on the serialized form — the effect
- *  only re-runs when a persisted value actually changes, instead of on every
- *  individual field mutation (cursor moves, panel resizes, etc.). */
-export function persistedSnapshot(): string {
+function persistedTaskIds(): string[] {
+  return [
+    ...store.taskOrder,
+    ...store.collapsedTaskOrder,
+    ...hiddenAgentTaskIds(store.projects),
+  ].filter((id) => store.tasks[id]);
+}
+
+/** Build a snapshot string of all persisted fields except typed text. Using
+ *  JSON.stringify creates a single reactive dependency on the serialized form —
+ *  the effect only re-runs when a persisted value actually changes, instead of
+ *  on every individual field mutation (cursor moves, panel resizes, etc.). */
+function structuralSnapshot(): string {
   return JSON.stringify({
     projects: store.projects,
     lastProjectId: store.lastProjectId,
     lastAgentId: store.lastAgentId,
     taskOrder: store.taskOrder,
     collapsedTaskOrder: store.collapsedTaskOrder,
-    activeTaskId: store.activeTaskId,
     sidebarVisible: store.sidebarVisible,
     panelUserSize: store.panelUserSize,
     globalScale: store.globalScale,
     completedTaskDate: store.completedTaskDate,
     completedTaskCount: store.completedTaskCount,
+    countedMergedPrs: store.countedMergedPrs,
     mergedLinesAdded: store.mergedLinesAdded,
     mergedLinesRemoved: store.mergedLinesRemoved,
     terminalFont: store.terminalFont,
+    terminalScreenReaderMode: store.terminalScreenReaderMode,
     themePreset: store.themePreset,
     windowState: store.windowState,
     autoTrustFolders: store.autoTrustFolders,
     showPlans: store.showPlans,
-    defaultStepsEnabled: store.defaultStepsEnabled,
+    preferUiMode: store.preferUiMode,
+    disableClaudeUiMode: store.disableClaudeUiMode,
     defaultSkipPermissions: store.defaultSkipPermissions,
     defaultPropagateSkipPermissions: store.defaultPropagateSkipPermissions,
+    canvasOwnershipBadges: store.canvasOwnershipBadges,
+    modelTaskNames: store.modelTaskNames,
+    taskNameModel: store.taskNameModel,
+    taskBriefs: store.taskBriefs,
+    confidencePrompt: store.confidencePrompt,
     showSidebarTips: store.showSidebarTips,
     showSidebarProgress: store.showSidebarProgress,
+    sidebarNeedsInputFirst: store.sidebarNeedsInputFirst,
     projectsCollapsed: store.projectsCollapsed,
     desktopNotificationsEnabled: store.desktopNotificationsEnabled,
     inactiveColumnOpacity: store.inactiveColumnOpacity,
     editorCommand: store.editorCommand,
-    askCodeProvider: store.askCodeProvider,
-    minimaxModel: store.minimaxModel,
     customAgents: store.customAgents,
+    agentEnvFiles: store.agentEnvFiles,
+    askCodeEffort: store.askCodeEffort,
     focusMode: store.focusMode,
     coordinatorNotificationDelayMs: store.coordinatorNotificationDelayMs,
-    coordinatorModeEnabled: store.coordinatorModeEnabled,
+    mcpOrchestrationEnabled: store.mcpOrchestrationEnabled,
+    documentWorkspacesEnabled: store.documentWorkspacesEnabled,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed,
+    featureHintsEnabled: store.featureHintsEnabled,
+    seenFeatureHints: store.seenFeatureHints,
     autoStartRemoteAccess: store.autoStartRemoteAccess,
     shareDockerAgentAuth: store.shareDockerAgentAuth,
     appearanceMode: store.appearanceMode,
@@ -49,39 +69,61 @@ export function persistedSnapshot(): string {
     darkThemePreset: store.darkThemePreset,
     darkThemeCustomId: store.darkThemeCustomId,
     tasks: Object.fromEntries(
-      [...store.taskOrder, ...store.collapsedTaskOrder]
-        .filter((id) => store.tasks[id])
-        .map((id) => {
-          const t = store.tasks[id];
-          return [
-            id,
-            {
-              notes: t.notes,
-              lastPrompt: t.lastPrompt,
-              name: t.name,
-              gitIsolation: t.gitIsolation,
-              baseBranch: t.baseBranch,
-              branchName: t.branchName,
-              externalWorktree: t.externalWorktree,
-              savedInitialPrompt: t.savedInitialPrompt,
-              collapsed: t.collapsed,
-              coordinatedBy: t.coordinatedBy,
-              coordinatorMode: t.coordinatorMode,
-              mcpConfigPath: t.mcpConfigPath,
-              preambleFileExistedBefore: t.preambleFileExistedBefore,
-              signalDoneReceived: t.signalDoneReceived,
-              signalDoneAt: t.signalDoneAt,
-              signalDoneConsumed: t.signalDoneConsumed,
-              needsReview: t.needsReview,
-              verification: t.verification,
-              landingState: t.landingState,
-              landingReason: t.landingReason,
-              landingSummary: t.landingSummary,
-              landedMetadata: t.landedMetadata,
-              controlledBy: t.controlledBy,
-            },
-          ];
-        }),
+      persistedTaskIds().map((id) => {
+        const t = store.tasks[id];
+        return [
+          id,
+          {
+            browserUrl: t.browserUrl,
+            mindMap: t.mindMap,
+            agentTour: t.agentTour?.payload,
+            reasoningWorkspaces: t.reasoningWorkspaces,
+            lastPrompt: t.lastPrompt,
+            promptHistory: t.promptHistory,
+            name: t.name,
+            gitIsolation: t.gitIsolation,
+            baseBranch: t.baseBranch,
+            branchName: t.branchName,
+            branchAdoptedFrom: t.branchAdoptedFrom,
+            branchOfferDismissed: t.branchOfferDismissed,
+            externalWorktree: t.externalWorktree,
+            savedInitialPrompt: t.savedInitialPrompt,
+            collapsed: t.collapsed,
+            snoozedUntil: t.snoozedUntil,
+            snoozedUntilCi: t.snoozedUntilCi,
+            agentSessionIds: t.agentSessionIds,
+            savedAgentSessionIds: t.savedAgentSessionIds,
+            coordinatedBy: t.coordinatedBy,
+            coordinatorMode: t.coordinatorMode,
+            autoMergeChildren: t.autoMergeChildren,
+            autoSendChildUpdates: t.autoSendChildUpdates,
+            propagateSkipPermissions: t.propagateSkipPermissions,
+            maxConcurrentTasks: t.maxConcurrentTasks,
+            delegationParent: t.delegationParent,
+            delegationPaused: t.delegationPaused,
+            integrationPolicy: t.integrationPolicy,
+            mcpConfigPath: t.mcpConfigPath,
+            preambleFileExistedBefore: t.preambleFileExistedBefore,
+            completion: t.completion,
+            reviewRevision: t.reviewRevision,
+            signalDoneReceived: t.signalDoneReceived,
+            signalDoneAt: t.signalDoneAt,
+            signalDoneConsumed: t.signalDoneConsumed,
+            needsReview: t.needsReview,
+            verification: t.verification,
+            verificationRun: t.verificationRun,
+            evidence: t.evidence,
+            brief: t.brief,
+            confidence: t.confidence,
+            landingState: t.landingState,
+            landingReason: t.landingReason,
+            landingSummary: t.landingSummary,
+            landedMetadata: t.landedMetadata,
+            controlledBy: t.controlledBy,
+            superProductivity: t.superProductivity,
+          },
+        ];
+      }),
     ),
     terminals: Object.fromEntries(
       store.taskOrder
@@ -91,20 +133,68 @@ export function persistedSnapshot(): string {
   });
 }
 
+/** Prompt drafts and notes change on every keystroke. Tracked apart from the
+ *  structural snapshot so typing re-serializes only this text, not every
+ *  task's canvases and prompt history. */
+function typedTextSnapshot(): string {
+  return JSON.stringify(
+    persistedTaskIds().map((id) => [id, store.tasks[id].notes, store.tasks[id].promptDraft]),
+  );
+}
+
+/** Tracked apart from the structural snapshot so switching tasks (Alt+Arrow
+ *  can switch many times a second) doesn't re-serialize every task. */
+function activeTaskSnapshot(): string {
+  return JSON.stringify(store.activeTaskId);
+}
+
+/** Snapshot string of all persisted fields; changes whenever a save is due. */
+export function persistedSnapshot(): string {
+  return structuralSnapshot() + typedTextSnapshot() + activeTaskSnapshot();
+}
+
+/** Quiet period after the last change before a save is written. */
+export const AUTOSAVE_DEBOUNCE_MS = 1000;
+/** Upper bound on how long a save may be postponed by a continuous stream of
+ *  changes (typing in the notes panel, for example). Without this the trailing
+ *  debounce never fires while the user keeps typing, and a crash or force-quit
+ *  loses the whole session. */
+export const AUTOSAVE_MAX_WAIT_MS = 5000;
+
 export function setupAutosave(): void {
-  let timer: number | undefined;
-  let lastSnapshot: string | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // When the first unsaved change of the current burst happened.
+  let pendingSince: number | undefined;
 
-  createEffect(() => {
-    const snapshot = persistedSnapshot();
+  const flush = () => {
+    timer = undefined;
+    pendingSince = undefined;
+    void saveState();
+  };
 
-    // Skip if nothing actually changed
-    if (snapshot === lastSnapshot) return;
-    lastSnapshot = snapshot;
+  const schedule = () => {
+    const now = Date.now();
+    pendingSince ??= now;
+    if (timer !== undefined) clearTimeout(timer);
+    // Trailing debounce, but never later than MAX_WAIT after the burst began.
+    const delay = Math.max(
+      0,
+      Math.min(AUTOSAVE_DEBOUNCE_MS, pendingSince + AUTOSAVE_MAX_WAIT_MS - now),
+    );
+    timer = setTimeout(flush, delay);
+  };
 
-    clearTimeout(timer);
-    timer = window.setTimeout(() => saveState(), 1000);
-
-    onCleanup(() => clearTimeout(timer));
-  });
+  const watch = (snapshot: () => string) => {
+    let lastSnapshot: string | undefined;
+    createEffect(() => {
+      const next = snapshot();
+      // Skip if nothing actually changed
+      if (next === lastSnapshot) return;
+      lastSnapshot = next;
+      schedule();
+    });
+  };
+  watch(structuralSnapshot);
+  watch(typedTextSnapshot);
+  watch(activeTaskSnapshot);
 }

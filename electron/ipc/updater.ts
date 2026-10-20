@@ -11,6 +11,7 @@ import { app, type BrowserWindow } from 'electron';
 import electronUpdater from 'electron-updater';
 import type { UpdateInfo, ProgressInfo, AppUpdater } from 'electron-updater';
 import { IPC } from './channels.js';
+import type { UpdatePhase, UpdateStatus } from './shared-types.js';
 import { debug, info, warn, error as logError, errMessage } from '../log.js';
 
 // `electronUpdater.autoUpdater` is a lazy getter that instantiates a
@@ -22,28 +23,6 @@ function getAutoUpdater(): AppUpdater {
 }
 
 const LOG = 'updater';
-
-export type UpdatePhase =
-  | 'unsupported'
-  | 'idle'
-  | 'checking'
-  | 'up-to-date'
-  | 'available'
-  | 'downloading'
-  | 'downloaded'
-  | 'error';
-
-export interface UpdateStatus {
-  phase: UpdatePhase;
-  /** Version this app is currently running. */
-  currentVersion: string;
-  /** Version offered by the latest check, when newer than `currentVersion`. */
-  latestVersion: string | null;
-  /** 0–100 while `phase` is `downloading`. */
-  downloadPercent: number;
-  /** Human-readable message when `phase` is `error`. */
-  error: string | null;
-}
 
 // The Linux AppImage runtime sets APPIMAGE to the mounted image path. Its
 // absence on Linux means a non-updatable target (e.g. an installed `.deb`).

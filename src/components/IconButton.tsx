@@ -3,9 +3,11 @@ import { theme } from '../lib/theme';
 
 interface IconButtonProps {
   icon: string | JSX.Element;
-  onClick: (e: MouseEvent) => void;
+  onClick: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
   title?: string;
   size?: 'sm' | 'md';
+  /** Marks the button as a toggle; omit for plain actions. */
+  pressed?: boolean;
 }
 
 export function IconButton(props: IconButtonProps) {
@@ -15,6 +17,8 @@ export function IconButton(props: IconButtonProps) {
     <button
       class="icon-btn"
       title={props.title}
+      aria-label={props.title}
+      aria-pressed={props.pressed}
       onClick={(e) => {
         e.stopPropagation();
         props.onClick(e);
@@ -24,7 +28,7 @@ export function IconButton(props: IconButtonProps) {
         border: `1px solid ${theme.border}`,
         color: theme.fgMuted,
         cursor: 'pointer',
-        'border-radius': '6px',
+        'border-radius': 'var(--radius-sm)',
         padding: isSm() ? '2px' : '4px',
         'font-size': isSm() ? '11px' : '13px',
         'line-height': '1',

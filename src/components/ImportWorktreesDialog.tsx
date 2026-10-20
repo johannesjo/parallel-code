@@ -7,12 +7,17 @@ import { createImportedTask, getProjectPath, loadAgents, store } from '../store/
 import { theme } from '../lib/theme';
 import type { Project } from '../store/types';
 import type { AgentDef, ImportableWorktree } from '../ipc/types';
+import { DownloadIcon } from './icons';
 
 interface ImportWorktreesDialogProps {
   open: boolean;
   project: Project | null;
   initialCandidates?: ImportableWorktree[] | null;
   onClose: () => void;
+}
+
+export function shouldDisableImportClose(importing: boolean): boolean {
+  return importing;
 }
 
 export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
@@ -100,6 +105,13 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
     !!selectedAgent() &&
     visibleCandidates().some((candidate) => selectedPaths().has(candidate.path));
 
+  const closeDisabled = () => shouldDisableImportClose(importing());
+
+  function handleClose(): void {
+    if (closeDisabled()) return;
+    props.onClose();
+  }
+
   async function handleImport(): Promise<void> {
     const project = props.project;
     const agent = selectedAgent();
@@ -127,7 +139,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
   }
 
   return (
-    <Dialog open={props.open} onClose={props.onClose} width="560px" panelStyle={{ gap: '18px' }}>
+    <Dialog open={props.open} onClose={handleClose} width="560px" panelStyle={{ gap: '18px' }}>
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '18px' }}>
         <div>
           <h2
@@ -175,7 +187,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
                 color: theme.fgMuted,
                 background: theme.bgInput,
                 border: `1px solid ${theme.border}`,
-                'border-radius': '8px',
+                'border-radius': 'var(--radius-md)',
               }}
             >
               Scanning for existing worktrees...
@@ -190,7 +202,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
                 color: theme.fgMuted,
                 background: theme.bgInput,
                 border: `1px solid ${theme.border}`,
-                'border-radius': '8px',
+                'border-radius': 'var(--radius-md)',
               }}
             >
               No importable worktrees were found for this project.
@@ -220,7 +232,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
                         border: selected()
                           ? `1px solid ${theme.accent}`
                           : `1px solid ${theme.border}`,
-                        'border-radius': '10px',
+                        'border-radius': 'var(--radius-md)',
                         cursor: 'pointer',
                       }}
                     >
@@ -291,7 +303,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
               color: theme.error,
               background: `color-mix(in srgb, ${theme.error} 8%, transparent)`,
               padding: '8px 12px',
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               border: `1px solid color-mix(in srgb, ${theme.error} 20%, transparent)`,
             }}
           >
@@ -302,20 +314,23 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
         <div style={{ display: 'flex', 'justify-content': 'flex-end', gap: '8px' }}>
           <button
             type="button"
-            onClick={() => props.onClose()}
+            disabled={closeDisabled()}
+            onClick={handleClose}
             style={{
               padding: '9px 18px',
               background: theme.bgInput,
               border: `1px solid ${theme.border}`,
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               color: theme.fgMuted,
-              cursor: 'pointer',
+              cursor: closeDisabled() ? 'not-allowed' : 'pointer',
               'font-size': '13px',
+              opacity: closeDisabled() ? '0.4' : '1',
             }}
           >
             Cancel
           </button>
           <button
+            class="btn-with-icon"
             type="button"
             disabled={!canImport()}
             onClick={() => void handleImport()}
@@ -323,7 +338,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
               padding: '9px 18px',
               background: theme.accent,
               border: 'none',
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               color: theme.accentText,
               cursor: canImport() ? 'pointer' : 'not-allowed',
               'font-size': '13px',
@@ -331,6 +346,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
               opacity: canImport() ? '1' : '0.4',
             }}
           >
+            <DownloadIcon size={14} />
             {importing() ? 'Importing...' : 'Import Selected'}
           </button>
         </div>
@@ -349,7 +365,7 @@ function StatusBadge(props: { label: string; tone: 'accent' | 'warning' | 'muted
   return (
     <span
       style={{
-        'font-size': '10px',
+        'font-size': '11px',
         'font-weight': '600',
         padding: '2px 7px',
         'border-radius': '999px',

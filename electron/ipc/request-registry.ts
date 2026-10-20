@@ -56,6 +56,7 @@ export class RequestRegistry<T> {
     request: T,
     onTimeout: (request: T) => void,
     onCancel?: (request: T) => void,
+    timeoutMs = this.opts.timeoutMs,
   ): RequestHandle<T> {
     this.cancel(requestId);
     if (this.entries.size >= this.opts.maxConcurrent) {
@@ -69,7 +70,7 @@ export class RequestRegistry<T> {
       this.entries.delete(requestId);
       onTimeout(entry.handle.request);
       entry.onCancel?.(entry.handle.request);
-    }, this.opts.timeoutMs);
+    }, timeoutMs);
 
     this.entries.set(requestId, { handle, timer, onCancel });
     return handle;
@@ -113,9 +114,16 @@ export class AskCodeSession<T> {
     request: T,
     send: (msg: unknown) => void,
     onCancel?: (request: T) => void,
+    timeoutMs?: number,
   ): AskCodeSession<T> {
     const ref: { current?: AskCodeSession<T> } = {};
-    const handle = registry.start(requestId, request, () => ref.current?.onTimeout(send), onCancel);
+    const handle = registry.start(
+      requestId,
+      request,
+      () => ref.current?.onTimeout(send, timeoutMs),
+      onCancel,
+      timeoutMs,
+    );
     const session = new AskCodeSession(registry, handle);
     ref.current = session;
     return session;
@@ -139,9 +147,14 @@ export class AskCodeSession<T> {
   }
 
   /** Standard timeout callback: reports the shared timeout message exactly once. */
-  onTimeout(send: (msg: unknown) => void): void {
+  onTimeout(send: (msg: unknown) => void, timeoutMs?: number): void {
     if (!this.complete()) return;
-    send({ type: 'error', text: ASK_CODE_TIMEOUT_MESSAGE });
+    send({
+      type: 'error',
+      text: timeoutMs
+        ? `Request timed out after ${timeoutMs / 60_000} minutes.`
+        : ASK_CODE_TIMEOUT_MESSAGE,
+    });
     send({ type: 'done', exitCode: 1 });
   }
 }

@@ -2,6 +2,7 @@ import { For, Show, createSignal } from 'solid-js';
 import { store, addCustomAgent, removeCustomAgent } from '../store/store';
 import { theme } from '../lib/theme';
 import type { AgentDef } from '../ipc/types';
+import { PlusIcon } from './icons';
 
 export function CustomAgentEditor() {
   const [showForm, setShowForm] = createSignal(false);
@@ -40,7 +41,7 @@ export function CustomAgentEditor() {
     padding: '8px 10px',
     background: theme.bgInput,
     border: `1px solid ${theme.border}`,
-    'border-radius': '6px',
+    'border-radius': 'var(--radius-sm)',
     color: theme.fg,
     'font-size': '13px',
     width: '100%',
@@ -57,7 +58,7 @@ export function CustomAgentEditor() {
               'align-items': 'center',
               'justify-content': 'space-between',
               padding: '8px 12px',
-              'border-radius': '8px',
+              'border-radius': 'var(--radius-md)',
               background: theme.bgInput,
               border: `1px solid ${theme.border}`,
             }}
@@ -94,19 +95,21 @@ export function CustomAgentEditor() {
 
       <Show when={!showForm()}>
         <button
+          class="btn-with-icon"
           type="button"
           onClick={() => setShowForm(true)}
           style={{
             padding: '8px 12px',
             background: 'transparent',
             border: `1px dashed ${theme.border}`,
-            'border-radius': '8px',
+            'border-radius': 'var(--radius-md)',
             color: theme.fgMuted,
             cursor: 'pointer',
             'font-size': '13px',
           }}
         >
-          + Add custom agent
+          <PlusIcon size={14} />
+          Add custom agent
         </button>
       </Show>
 
@@ -117,7 +120,7 @@ export function CustomAgentEditor() {
             'flex-direction': 'column',
             gap: '8px',
             padding: '12px',
-            'border-radius': '8px',
+            'border-radius': 'var(--radius-md)',
             background: theme.bgInput,
             border: `1px solid ${theme.border}`,
           }}
@@ -158,7 +161,7 @@ export function CustomAgentEditor() {
                 padding: '6px 14px',
                 background: 'transparent',
                 border: `1px solid ${theme.border}`,
-                'border-radius': '6px',
+                'border-radius': 'var(--radius-sm)',
                 color: theme.fgMuted,
                 cursor: 'pointer',
                 'font-size': '13px',
@@ -167,19 +170,21 @@ export function CustomAgentEditor() {
               Cancel
             </button>
             <button
+              class="btn-with-icon"
               type="button"
               onClick={handleAdd}
               style={{
                 padding: '6px 14px',
                 background: theme.accent,
                 border: 'none',
-                'border-radius': '6px',
+                'border-radius': 'var(--radius-sm)',
                 color: theme.accentText,
                 cursor: 'pointer',
                 'font-size': '13px',
                 opacity: name().trim() && command().trim() ? 1 : 0.5,
               }}
             >
+              <PlusIcon size={14} />
               Add Agent
             </button>
           </div>

@@ -170,6 +170,31 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   })),
 
+  {
+    id: 'app.nav.task-switcher',
+    layer: 'app',
+    category: 'Navigation',
+    description: 'Switch to task by name',
+    platform: 'mac',
+    key: 'k',
+    modifiers: { meta: true },
+    action: 'openTaskSwitcher',
+    global: true,
+  },
+  {
+    // Not Ctrl+K: a global binding would swallow kill-line in shells and
+    // agent prompts.
+    id: 'app.nav.task-switcher-linux',
+    layer: 'app',
+    category: 'Navigation',
+    description: 'Switch to task by name',
+    platform: 'linux',
+    key: 'J',
+    modifiers: { ctrl: true, shift: true },
+    action: 'openTaskSwitcher',
+    global: true,
+  },
+
   // -------------------------------------------------------------------------
   // App layer — Task actions
   // -------------------------------------------------------------------------
@@ -177,7 +202,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     id: 'app.task.close-shell',
     layer: 'app',
     category: 'Tasks',
-    description: 'Close current shell',
+    description: 'Close current panel or file',
     platform: 'both',
     key: 'w',
     modifiers: { cmdOrCtrl: true },
@@ -196,25 +221,15 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
+    // Keeps the old merge id so users' saved rebindings still apply.
     id: 'app.task.merge',
     layer: 'app',
     category: 'Tasks',
-    description: 'Merge task',
+    description: 'Finish task',
     platform: 'both',
     key: 'M',
     modifiers: { cmdOrCtrl: true, shift: true },
-    action: 'mergeTask',
-    global: true,
-  },
-  {
-    id: 'app.task.push',
-    layer: 'app',
-    category: 'Tasks',
-    description: 'Push task',
-    platform: 'both',
-    key: 'P',
-    modifiers: { cmdOrCtrl: true, shift: true },
-    action: 'pushTask',
+    action: 'finishTask',
     global: true,
   },
   {
@@ -243,6 +258,17 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   // -------------------------------------------------------------------------
   // App layer — App shortcuts
   // -------------------------------------------------------------------------
+  {
+    id: 'app.task.second-opinion',
+    layer: 'app',
+    category: 'Tasks',
+    description: 'Ask for a second opinion',
+    platform: 'both',
+    key: 'O',
+    modifiers: { cmdOrCtrl: true, shift: true },
+    action: 'secondOpinion',
+    global: true,
+  },
   {
     id: 'app.new-terminal',
     layer: 'app',
@@ -299,6 +325,19 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
+    id: 'app.switch-document',
+    layer: 'app',
+    category: 'App',
+    description: 'Switch document (document workspace)',
+    platform: 'both',
+    key: 'P',
+    modifiers: { cmdOrCtrl: true, shift: true },
+    action: 'switchDocument',
+    // Global so it works from the editor and composer. Plain Ctrl+P is not
+    // used: a global binding swallows it, which would break shell history.
+    global: true,
+  },
+  {
     id: 'app.toggle-help',
     layer: 'app',
     category: 'App',
@@ -323,6 +362,18 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     dialogSafe: true,
   },
   {
+    id: 'app.new-thinking-tour',
+    layer: 'app',
+    category: 'App',
+    description: 'New thinking tour',
+    platform: 'both',
+    key: 'K',
+    modifiers: { cmdOrCtrl: true, shift: true },
+    action: 'newThinkingTour',
+    global: true,
+    dialogSafe: true,
+  },
+  {
     id: 'app.toggle-settings',
     layer: 'app',
     category: 'App',
@@ -338,13 +389,38 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     id: 'app.close-dialogs',
     layer: 'app',
     category: 'App',
-    description: 'Close dialogs',
+    description: 'Close dialogs or leave focus mode',
     platform: 'both',
     key: 'Escape',
     modifiers: {},
     action: 'closeDialogs',
     dialogSafe: true,
     // NOT global
+  },
+  {
+    // Shift and numpad '+' variants live in shortcuts.ts (registerZoomShortcuts).
+    id: 'app.zoom-in',
+    layer: 'app',
+    category: 'App',
+    description: 'Zoom in',
+    platform: 'both',
+    key: '=',
+    modifiers: { cmdOrCtrl: true },
+    action: 'zoomIn',
+    global: true,
+    dialogSafe: true,
+  },
+  {
+    id: 'app.zoom-out',
+    layer: 'app',
+    category: 'App',
+    description: 'Zoom out',
+    platform: 'both',
+    key: '-',
+    modifiers: { cmdOrCtrl: true },
+    action: 'zoomOut',
+    global: true,
+    dialogSafe: true,
   },
   {
     id: 'app.reset-zoom',
@@ -362,7 +438,6 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     // The automatic recovery (refocus/foreground repaints) is macOS-only, but
     // this stays cross-platform: it is inert until pressed and works as a
     // general "repaint if something looks off" command on any GPU.
-    // Not Cmd/Ctrl+Shift+R — that is Electron's default Force Reload accelerator.
     id: 'app.redraw-terminals',
     layer: 'app',
     category: 'App',

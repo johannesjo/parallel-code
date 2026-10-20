@@ -1,10 +1,11 @@
 import { createEffect, onCleanup } from 'solid-js';
-import { createStore, produce, unwrap } from 'solid-js/store';
 import { setStore, store } from './core';
 import { fireAndForget, invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { parseGitHubUrl } from '../lib/github-url';
+import { recordRemotePrMerged } from './completion';
 import { saveState } from './persistence';
+import { removePrChecks, setPrChecks } from './pr-checks-state';
 import type {
   BranchPrDetectionResult,
   PrChecksOverall,
@@ -13,37 +14,12 @@ import type {
 } from '../ipc/types';
 import type { Task } from './types';
 
-export interface PrChecksState {
-  overall: PrChecksOverall;
-  passing: number;
-  pending: number;
-  failing: number;
-  checks: PrCheckRun[];
-  checkedAt: string;
-}
-
-// createStore gives fine-grained per-key reactivity: updating one task's state
-// only re-runs accessors that read that task's key, not every PR-aware view.
-const [prChecks, setPrChecksStore] = createStore<Record<string, PrChecksState>>({});
+export { getPrChecks, type PrChecksState } from './pr-checks-state';
 const BRANCH_PR_DETECT_INTERVAL_MS = 60_000;
 const BRANCH_PR_DETECT_RETRY_MS = 2 * 60_000;
-
-export function getPrChecks(taskId: string): PrChecksState | undefined {
-  return prChecks[taskId];
-}
-
-function setPrChecks(taskId: string, next: PrChecksState): void {
-  setPrChecksStore(taskId, next);
-}
-
-function removePrChecks(taskId: string): void {
-  if (!(taskId in unwrap(prChecks))) return;
-  setPrChecksStore(
-    produce((s) => {
-      delete s[taskId];
-    }),
-  );
-}
+// Each probe spawns `git remote` + `gh pr list`; cap them so a startup scan
+// over many tasks doesn't burst dozens of processes and GitHub API calls.
+const MAX_CONCURRENT_BRANCH_PROBES = 4;
 
 function parsePrUrl(url: string | undefined): string | null {
   if (!url) return null;
@@ -127,6 +103,8 @@ export function startPrChecksSubscription(): () => void {
       })
       .finally(() => {
         pendingBranchProbes.delete(taskId);
+        // Hand the freed slot to a task the capped scan skipped.
+        scanForBranchPrs();
       });
   };
 
@@ -150,6 +128,7 @@ export function startPrChecksSubscription(): () => void {
       ) {
         continue;
       }
+      if (pendingBranchProbes.size >= MAX_CONCURRENT_BRANCH_PROBES) continue;
       branchProbeByTaskId.set(taskId, { key: candidate.key, attemptedAt: now });
       detectBranchPr(taskId, candidate);
     }
@@ -164,6 +143,27 @@ export function startPrChecksSubscription(): () => void {
     if (typeof msg.taskId !== 'string') return;
     if (!store.tasks[msg.taskId]) return;
     if (typeof msg.overall !== 'string') return;
+    // A merged PR is final, so keep its bookkeeping: the effect then neither
+    // re-polls it nor misses a later URL change or task removal.
+    if (msg.cleared && msg.merged) {
+      if (
+        typeof msg.prUrl === 'string' &&
+        typeof msg.mergedAt === 'string' &&
+        recordRemotePrMerged(msg.prUrl, msg.mergedAt)
+      ) {
+        void saveState();
+      }
+      setPrChecks(msg.taskId, {
+        overall: 'none',
+        merged: true,
+        passing: 0,
+        pending: 0,
+        failing: 0,
+        checks: [],
+        checkedAt: typeof msg.checkedAt === 'string' ? msg.checkedAt : new Date().toISOString(),
+      });
+      return;
+    }
     // On a `cleared` update the main process has stopped watching — drop our
     // bookkeeping so a later reopen-and-restart goes through.
     if (msg.cleared) {
@@ -173,6 +173,20 @@ export function startPrChecksSubscription(): () => void {
     }
     setPrChecks(msg.taskId, {
       overall: msg.overall as PrChecksOverall,
+      // Explicit: store writes shallow-merge, so an omitted flag would keep a
+      // previous PR's `merged: true`.
+      merged: false,
+      isDraft: msg.isDraft === true,
+      reviewDecision:
+        msg.reviewDecision === 'APPROVED' ||
+        msg.reviewDecision === 'CHANGES_REQUESTED' ||
+        msg.reviewDecision === 'REVIEW_REQUIRED'
+          ? msg.reviewDecision
+          : null,
+      mergeable:
+        msg.mergeable === 'MERGEABLE' || msg.mergeable === 'CONFLICTING'
+          ? msg.mergeable
+          : 'UNKNOWN',
       passing: typeof msg.passing === 'number' ? msg.passing : 0,
       pending: typeof msg.pending === 'number' ? msg.pending : 0,
       failing: typeof msg.failing === 'number' ? msg.failing : 0,

@@ -1,8 +1,10 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import type { BrowserWindow } from 'electron';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createInterface } from 'node:readline';
+import { PassThrough } from 'node:stream';
+import type { Notify } from './notify.js';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 const { mockExecFileSync, mockExecFile, mockChildProcessSpawn, mockPtySpawn, mockLogDebug } =
   vi.hoisted(() => {
@@ -23,9 +25,9 @@ const { mockExecFileSync, mockExecFile, mockChildProcessSpawn, mockPtySpawn, moc
     const mockPtySpawn = vi.fn(
       (_command: string, _args: string[], options: { cols: number; rows: number }) => {
         let onDataHandler: ((data: string) => void) | undefined;
-        let onExitHandler:
-          | ((event: { exitCode: number; signal: number | undefined }) => void)
-          | undefined;
+        const exitHandlers = new Set<
+          (event: { exitCode: number; signal: number | undefined }) => void
+        >();
 
         const proc = {
           cols: options.cols,
@@ -38,21 +40,22 @@ const { mockExecFileSync, mockExecFile, mockChildProcessSpawn, mockPtySpawn, moc
           pause: vi.fn(),
           resume: vi.fn(),
           kill: vi.fn(() => {
-            onExitHandler?.({ exitCode: 0, signal: 15 });
+            for (const handler of exitHandlers) handler({ exitCode: 0, signal: 15 });
           }),
           onData: vi.fn((handler: (data: string) => void) => {
             onDataHandler = handler;
           }),
           onExit: vi.fn(
             (handler: (event: { exitCode: number; signal: number | undefined }) => void) => {
-              onExitHandler = handler;
+              exitHandlers.add(handler);
+              return { dispose: () => exitHandlers.delete(handler) };
             },
           ),
           emitData(data: string) {
             onDataHandler?.(data);
           },
           emitExit(event: { exitCode: number; signal: number | undefined }) {
-            onExitHandler?.(event);
+            for (const handler of exitHandlers) handler(event);
           },
         };
 
@@ -81,33 +84,49 @@ vi.mock('node-pty', () => ({
 
 vi.mock('../log.js', () => ({
   debug: mockLogDebug,
+  warn: vi.fn(),
 }));
 
 import {
+  getAgentActivityEvidence,
+  getAgentActivitySnapshot,
+  observeAgentHook,
+  isCurrentAgentLaunch,
+} from '../agent-hooks/observations.js';
+import {
   buildPtySpawnEnv,
+  handoffCodexTerminal,
+  handoffClaudeTerminal,
   buildDockerImage,
   DOCKER_CONTAINER_HOME,
   dockerImageExists,
   hashDockerfile,
+  getAgentPromptSnapshot,
   isDockerAvailable,
   killAgent,
   killAllAgents,
+  onPtyEvent,
   projectImageTag,
+  resizeAgent,
+  setAgentRemoteSize,
+  setRemoteHistory,
   resolveProjectDockerfile,
+  scrollAgent,
   spawnAgent,
+  setAgentHookRuntime,
+  subscribeToAgent,
+  subscribeToAgentRendered,
   validateCommand,
+  writeToAgent,
+  writeAgentPrompt,
+  getAgentInputBlocker,
 } from './pty.js';
 
 let tempPaths: string[] = [];
 let agentCounter = 0;
 
-function createMockWindow(): BrowserWindow {
-  return {
-    isDestroyed: vi.fn(() => false),
-    webContents: {
-      send: vi.fn(),
-    },
-  } as unknown as BrowserWindow;
+function createMockNotify(): Mock<Notify> {
+  return vi.fn<Notify>();
 }
 
 function nextAgentId(): string {
@@ -199,6 +218,7 @@ beforeEach(() => {
 
 afterEach(() => {
   killAllAgents();
+  setAgentHookRuntime(null);
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   for (const tempPath of tempPaths) {
@@ -214,6 +234,19 @@ describe('DOCKER_CONTAINER_HOME', () => {
 });
 
 describe('buildPtySpawnEnv', () => {
+  it('does not inherit or accept another launch identity from either env source', () => {
+    vi.stubEnv('PARALLEL_CODE_LAUNCH_ID', 'parent-launch');
+    vi.stubEnv('PARALLEL_CODE_AGENT_ID', 'parent-agent');
+    vi.stubEnv('PARALLEL_CODE_HOOK_ENDPOINT', '/parent/endpoint');
+    const env = buildPtySpawnEnv(
+      { PARALLEL_CODE_LAUNCH_ID: 'renderer-launch' },
+      { PARALLEL_CODE_LAUNCH_ID: 'file-launch' },
+    );
+    expect(env.PARALLEL_CODE_LAUNCH_ID).toBeUndefined();
+    expect(env.PARALLEL_CODE_AGENT_ID).toBeUndefined();
+    expect(env.PARALLEL_CODE_HOOK_ENDPOINT).toBeUndefined();
+  });
+
   it('applies safe renderer overrides and clears nested agent markers', () => {
     vi.stubEnv('CLAUDECODE', '1');
     vi.stubEnv('CLAUDE_CODE_SESSION', 'session');
@@ -237,11 +270,44 @@ describe('buildPtySpawnEnv', () => {
     expect(env.CLAUDECODE).toBeUndefined();
     expect(env.CLAUDE_CODE_SESSION).toBeUndefined();
   });
+
+  it('merges agent env file values over the inherited environment', () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'from-login-shell');
+
+    const env = buildPtySpawnEnv(
+      {},
+      {
+        ANTHROPIC_API_KEY: 'from-env-file',
+        ANTHROPIC_CUSTOM_HEADERS: 'x-api-key: abc\nx-tenant: acme',
+      },
+    );
+
+    expect(env.ANTHROPIC_API_KEY).toBe('from-env-file');
+    expect(env.ANTHROPIC_CUSTOM_HEADERS).toBe('x-api-key: abc\nx-tenant: acme');
+  });
+
+  it('keeps the block list authoritative over agent env file values', () => {
+    vi.stubEnv('PARALLEL_CODE_MCP_TOKEN', 'host-token');
+
+    const env = buildPtySpawnEnv(
+      {},
+      { PATH: '/tmp/bad-path', HOME: '/tmp/bad-home', PARALLEL_CODE_MCP_TOKEN: 'file-token' },
+    );
+
+    expect(env.PATH).not.toBe('/tmp/bad-path');
+    expect(env.HOME).not.toBe('/tmp/bad-home');
+    expect(env.PARALLEL_CODE_MCP_TOKEN).toBe('host-token');
+  });
+
+  it('lets per-task renderer env win over the agent env file', () => {
+    const env = buildPtySpawnEnv({ ANTHROPIC_API_KEY: 'per-task' }, { ANTHROPIC_API_KEY: 'file' });
+    expect(env.ANTHROPIC_API_KEY).toBe('per-task');
+  });
 });
 
 describe('spawnAgent docker mode', () => {
-  it('uses --network host (not --add-host, which is incompatible with host networking on Linux)', () => {
-    spawnAgent(createMockWindow(), buildSpawnArgs({ cwd: '/workspace/project' }));
+  it('uses --network host (not --add-host, which is incompatible with host networking on Linux)', async () => {
+    await spawnAgent(createMockNotify(), buildSpawnArgs({ cwd: '/workspace/project' }));
     const { args } = getLastSpawnCall();
     expect(args).toContain('--network');
     const netIdx = args.indexOf('--network');
@@ -250,41 +316,41 @@ describe('spawnAgent docker mode', () => {
     expect(args.join(' ')).not.toContain('--add-host');
   });
 
-  it('sets -w to the worktree cwd so the container starts in the right directory', () => {
+  it('sets -w to the worktree cwd so the container starts in the right directory', async () => {
     const cwd = '/workspace/my-project';
-    spawnAgent(createMockWindow(), buildSpawnArgs({ cwd, dockerMountWorktreeParent: false }));
+    await spawnAgent(createMockNotify(), buildSpawnArgs({ cwd, dockerMountWorktreeParent: false }));
     const { args } = getLastSpawnCall();
     const wIdx = args.indexOf('-w');
     expect(wIdx).toBeGreaterThan(0);
     expect(args[wIdx + 1]).toBe(cwd);
   });
 
-  it('volume-mounts the worktree cwd at the same host path', () => {
+  it('volume-mounts the worktree cwd at the same host path', async () => {
     const cwd = '/workspace/my-project';
-    spawnAgent(createMockWindow(), buildSpawnArgs({ cwd, dockerMountWorktreeParent: false }));
+    await spawnAgent(createMockNotify(), buildSpawnArgs({ cwd, dockerMountWorktreeParent: false }));
     const volumeFlags = getFlagValues(getLastSpawnCall().args, '-v');
     expect(volumeFlags).toContain(`${cwd}:${cwd}`);
   });
 
-  it('injects a per-agent HOME under /tmp into docker run args', () => {
+  it('injects a per-agent HOME under /tmp into docker run args', async () => {
     vi.stubEnv('HOME', '/Users/tester');
 
     const agentId = nextAgentId();
-    spawnAgent(createMockWindow(), buildSpawnArgs({ agentId }));
+    await spawnAgent(createMockNotify(), buildSpawnArgs({ agentId }));
 
     const { command, args } = getLastSpawnCall();
     expect(command).toBe('docker');
     expect(getFlagValues(args, '-e')).toContain(`HOME=${DOCKER_CONTAINER_HOME}/agent-${agentId}`);
   });
 
-  it('does not forward host or renderer HOME as a generic docker env flag', () => {
+  it('does not forward host or renderer HOME as a generic docker env flag', async () => {
     const hostHome = '/Users/host-home';
     const rendererHome = '/Users/renderer-home';
     vi.stubEnv('HOME', hostHome);
 
     const agentId = nextAgentId();
-    spawnAgent(
-      createMockWindow(),
+    await spawnAgent(
+      createMockNotify(),
       buildSpawnArgs({
         agentId,
         env: {
@@ -295,17 +361,33 @@ describe('spawnAgent docker mode', () => {
     );
 
     const envFlags = getFlagValues(getLastSpawnCall().args, '-e');
-    expect(envFlags).toContain('API_KEY=secret');
-    expect(envFlags.filter((value) => value.startsWith('HOME='))).toEqual([
+    expect(envFlags).toContain('API_KEY');
+    // HOME may appear only as the explicit container assignment — never
+    // forwarded by name, and never carrying a host or renderer path.
+    expect(envFlags.filter((value) => value === 'HOME' || value.startsWith('HOME='))).toEqual([
       `HOME=${DOCKER_CONTAINER_HOME}/agent-${agentId}`,
     ]);
     expect(envFlags).not.toContain(`HOME=${hostHome}`);
     expect(envFlags).not.toContain(`HOME=${rendererHome}`);
   });
 
-  it('redacts docker env values in spawn debug logs', () => {
-    spawnAgent(
-      createMockWindow(),
+  it('passes env values through the docker client env, never in argv', async () => {
+    // `-e KEY=VALUE` would expose API keys via ps / /proc/<pid>/cmdline for the
+    // lifetime of the container. Values must reach docker via its own env.
+    await spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({ env: { ANTHROPIC_API_KEY: 'sk-ant-super-secret' } }),
+    );
+
+    const { args, options } = getLastSpawnCall();
+    expect(getFlagValues(args, '-e')).toContain('ANTHROPIC_API_KEY');
+    expect(args.join(' ')).not.toContain('sk-ant-super-secret');
+    expect(options.env.ANTHROPIC_API_KEY).toBe('sk-ant-super-secret');
+  });
+
+  it('redacts docker env values in spawn debug logs', async () => {
+    await spawnAgent(
+      createMockNotify(),
       buildSpawnArgs({
         env: {
           API_KEY: 'secret-api-key',
@@ -318,17 +400,19 @@ describe('spawnAgent docker mode', () => {
     const logged = ctx.args.join(' ');
 
     expect(ctx.command).toBe('docker');
-    expect(getFlagValues(ctx.args, '-e')).toContain('API_KEY=<redacted>');
-    expect(getFlagValues(ctx.args, '-e')).toContain('NO_VALUE=<redacted>');
+    // Name-only flags carry no value, so the name is logged as-is; only the
+    // explicit `HOME=<path>` assignment still needs redacting.
+    expect(getFlagValues(ctx.args, '-e')).toContain('API_KEY');
+    expect(getFlagValues(ctx.args, '-e')).toContain('NO_VALUE');
     expect(getFlagValues(ctx.args, '-e')).toContain(`HOME=<redacted>`);
     expect(logged).not.toContain('secret-api-key');
     expect(logged).not.toContain(`HOME=${DOCKER_CONTAINER_HOME}`);
     expect(logged).toContain('parallel-code-agent:test');
   });
 
-  it('redacts inline docker env values in spawn debug logs', () => {
-    spawnAgent(
-      createMockWindow(),
+  it('redacts inline docker env values in spawn debug logs', async () => {
+    await spawnAgent(
+      createMockNotify(),
       buildSpawnArgs({
         args: ['--env=INLINE_TOKEN=inline-secret', '--env', 'SPLIT_TOKEN=split-secret'],
       }),
@@ -342,9 +426,9 @@ describe('spawnAgent docker mode', () => {
     expect(logged).not.toContain('split-secret');
   });
 
-  it('redacts shell command strings in spawn debug logs', () => {
-    spawnAgent(
-      createMockWindow(),
+  it('redacts shell command strings in spawn debug logs', async () => {
+    await spawnAgent(
+      createMockNotify(),
       buildSpawnArgs({
         command: '/bin/sh',
         args: ['-c', 'codex exec "prompt containing private context"'],
@@ -358,12 +442,12 @@ describe('spawnAgent docker mode', () => {
     expect(ctx.args).toEqual(['-c', '<redacted>']);
   });
 
-  it('redirects credential mounts under per-agent /tmp/agent-<id> inside the container', () => {
+  it('redirects credential mounts under per-agent /tmp/agent-<id> inside the container', async () => {
     const home = makeTempHome(['.ssh/', '.gitconfig', '.config/gh/']);
     vi.stubEnv('HOME', home);
 
     const agentId = nextAgentId();
-    spawnAgent(createMockWindow(), buildSpawnArgs({ agentId }));
+    await spawnAgent(createMockNotify(), buildSpawnArgs({ agentId }));
 
     const containerHome = `${DOCKER_CONTAINER_HOME}/agent-${agentId}`;
     const volumeFlags = getFlagValues(getLastSpawnCall().args, '-v');
@@ -382,13 +466,13 @@ describe('spawnAgent docker mode', () => {
       ['agy', '.gemini/antigravity-cli'],
     ])(
       '%s bind-mounts a user-owned host directory when shareDockerAgentAuth is enabled',
-      (command, relDir) => {
+      async (command, relDir) => {
         const home = makeTempHome([]);
         vi.stubEnv('HOME', home);
 
         const agentId = nextAgentId();
-        spawnAgent(
-          createMockWindow(),
+        await spawnAgent(
+          createMockNotify(),
           buildSpawnArgs({ agentId, command, shareDockerAgentAuth: true }),
         );
 
@@ -399,12 +483,12 @@ describe('spawnAgent docker mode', () => {
       },
     );
 
-    it('creates the host auth directory so it is user-owned before mounting', () => {
+    it('creates the host auth directory so it is user-owned before mounting', async () => {
       const home = makeTempHome([]);
       vi.stubEnv('HOME', home);
 
-      spawnAgent(
-        createMockWindow(),
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({ command: 'claude', shareDockerAgentAuth: true }),
       );
 
@@ -412,13 +496,13 @@ describe('spawnAgent docker mode', () => {
       expect(fs.existsSync(hostDir)).toBe(true);
     });
 
-    it('bind-mounts .claude.json file for claude so auth persists across containers', () => {
+    it('bind-mounts .claude.json file for claude so auth persists across containers', async () => {
       const home = makeTempHome([]);
       vi.stubEnv('HOME', home);
 
       const agentId = nextAgentId();
-      spawnAgent(
-        createMockWindow(),
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({ agentId, command: 'claude', shareDockerAgentAuth: true }),
       );
 
@@ -436,12 +520,12 @@ describe('spawnAgent docker mode', () => {
       });
     });
 
-    it('pre-seeds Claude folder trust for the mounted worktree path', () => {
+    it('pre-seeds Claude folder trust for the mounted worktree path', async () => {
       const home = makeTempHome([]);
       vi.stubEnv('HOME', home);
 
-      spawnAgent(
-        createMockWindow(),
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({
           command: 'claude',
           cwd: '/workspace/project',
@@ -462,7 +546,7 @@ describe('spawnAgent docker mode', () => {
       });
     });
 
-    it('preserves existing Claude project config when pre-seeding folder trust', () => {
+    it('preserves existing Claude project config when pre-seeding folder trust', async () => {
       const home = makeTempHome([]);
       vi.stubEnv('HOME', home);
       const hostFile = `${home}/.parallel-code/agent-auth/claude/.claude.json`;
@@ -480,8 +564,8 @@ describe('spawnAgent docker mode', () => {
         }),
       );
 
-      spawnAgent(
-        createMockWindow(),
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({
           command: 'claude',
           cwd: '/workspace/project',
@@ -508,12 +592,12 @@ describe('spawnAgent docker mode', () => {
       });
     });
 
-    it('does not mount agent auth directory when shareDockerAgentAuth is disabled', () => {
+    it('does not mount agent auth directory when shareDockerAgentAuth is disabled', async () => {
       const home = makeTempHome([]);
       vi.stubEnv('HOME', home);
 
-      spawnAgent(
-        createMockWindow(),
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({ command: 'claude', shareDockerAgentAuth: false }),
       );
 
@@ -521,12 +605,12 @@ describe('spawnAgent docker mode', () => {
       expect(volumeFlags.some((v) => v.includes('.parallel-code/agent-auth'))).toBe(false);
     });
 
-    it('does not mount agent auth directory for an unknown agent command', () => {
+    it('does not mount agent auth directory for an unknown agent command', async () => {
       const home = makeTempHome([]);
       vi.stubEnv('HOME', home);
 
-      spawnAgent(
-        createMockWindow(),
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({ command: 'unknown-agent', shareDockerAgentAuth: true }),
       );
 
@@ -534,23 +618,23 @@ describe('spawnAgent docker mode', () => {
       expect(volumeFlags.some((v) => v.includes('.parallel-code/agent-auth'))).toBe(false);
     });
 
-    it('does not crash spawn when .claude.json contains malformed JSON', () => {
+    it('does not crash spawn when .claude.json contains malformed JSON', async () => {
       const home = makeTempHome([]);
       vi.stubEnv('HOME', home);
       const hostFile = `${home}/.parallel-code/agent-auth/claude/.claude.json`;
       fs.mkdirSync(path.dirname(hostFile), { recursive: true });
       fs.writeFileSync(hostFile, '{invalid json');
 
-      expect(() =>
+      await expect(
         spawnAgent(
-          createMockWindow(),
+          createMockNotify(),
           buildSpawnArgs({ command: 'claude', shareDockerAgentAuth: true }),
         ),
-      ).not.toThrow();
+      ).resolves.toBeUndefined();
       expect(mockPtySpawn).toHaveBeenCalled();
     });
 
-    it('preserves existing project config for other paths after trust seeding', () => {
+    it('preserves existing project config for other paths after trust seeding', async () => {
       const home = makeTempHome([]);
       vi.stubEnv('HOME', home);
       const hostFile = `${home}/.parallel-code/agent-auth/claude/.claude.json`;
@@ -564,8 +648,8 @@ describe('spawnAgent docker mode', () => {
         }),
       );
 
-      spawnAgent(
-        createMockWindow(),
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({
           command: 'claude',
           cwd: '/workspace/project',
@@ -586,12 +670,12 @@ describe('spawnAgent docker mode', () => {
       });
     });
 
-    it('accumulates trust entries for multiple worktree paths', () => {
+    it('accumulates trust entries for multiple worktree paths', async () => {
       const home = makeTempHome([]);
       vi.stubEnv('HOME', home);
 
-      spawnAgent(
-        createMockWindow(),
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({
           command: 'claude',
           cwd: '/workspace/task-one',
@@ -599,8 +683,8 @@ describe('spawnAgent docker mode', () => {
         }),
       );
 
-      spawnAgent(
-        createMockWindow(),
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({
           command: 'claude',
           cwd: '/workspace/task-two',
@@ -625,12 +709,12 @@ describe('spawnAgent docker mode', () => {
       });
     });
 
-    it('does not write .claude.json trust file when shareDockerAgentAuth is disabled', () => {
+    it('does not write .claude.json trust file when shareDockerAgentAuth is disabled', async () => {
       const home = makeTempHome([]);
       vi.stubEnv('HOME', home);
 
-      spawnAgent(
-        createMockWindow(),
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({
           command: 'claude',
           cwd: '/workspace/project',
@@ -642,13 +726,13 @@ describe('spawnAgent docker mode', () => {
       expect(fs.existsSync(hostFile)).toBe(false);
     });
 
-    it('trust entry persists in host .claude.json file between container spawns', () => {
+    it('trust entry persists in host .claude.json file between container spawns', async () => {
       const home = makeTempHome([]);
       vi.stubEnv('HOME', home);
 
       // First container spawn — seeds trust
-      spawnAgent(
-        createMockWindow(),
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({
           command: 'claude',
           cwd: '/workspace/my-project',
@@ -664,8 +748,8 @@ describe('spawnAgent docker mode', () => {
       expect(afterFirst.projects['/workspace/my-project']?.hasTrustDialogAccepted).toBe(true);
 
       // Second container spawn (same auth dir, same worktree path — simulates container B)
-      spawnAgent(
-        createMockWindow(),
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({
           command: 'claude',
           cwd: '/workspace/my-project',
@@ -682,9 +766,9 @@ describe('spawnAgent docker mode', () => {
   });
 
   describe('dockerMountWorktreeParent', () => {
-    it('mounts parent directory when dockerMountWorktreeParent is true', () => {
-      spawnAgent(
-        createMockWindow(),
+    it('mounts parent directory when dockerMountWorktreeParent is true', async () => {
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({
           cwd: '/Users/alice/git/my-repo/.worktrees/task/coordinator-abc',
           dockerMountWorktreeParent: true,
@@ -702,9 +786,9 @@ describe('spawnAgent docker mode', () => {
       );
     });
 
-    it('does not mount parent directory when dockerMountWorktreeParent is false', () => {
-      spawnAgent(
-        createMockWindow(),
+    it('does not mount parent directory when dockerMountWorktreeParent is false', async () => {
+      await spawnAgent(
+        createMockNotify(),
         buildSpawnArgs({
           cwd: '/Users/alice/git/my-repo/.worktrees/task/coordinator-abc',
           dockerMountWorktreeParent: false,
@@ -722,9 +806,150 @@ describe('spawnAgent docker mode', () => {
   });
 });
 
+describe('spawnAgent pending setup', () => {
+  it('rechecks trusted admission after asynchronous sandbox setup', async () => {
+    let allowed = true;
+    const admission = vi.fn(() => {
+      if (!allowed) throw new Error('Launch permission revoked');
+    });
+    const startup = spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({ cwd: makeTempHome([]), dockerMode: false }),
+      admission,
+    );
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+    allowed = false;
+    await expect(startup).rejects.toThrow('Launch permission revoked');
+    expect(admission).toHaveBeenCalledOnce();
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+  });
+
+  it.each(['one', 'all'])('does not launch after stopping %s pending agents', async (mode) => {
+    const agentId = nextAgentId();
+    const startup = spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({ agentId, cwd: makeTempHome([]), dockerMode: false }),
+    );
+
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+    if (mode === 'all') killAllAgents();
+    else killAgent(agentId);
+
+    await expect(startup).rejects.toThrow('Agent startup cancelled');
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+  });
+});
+
+describe('PTY hook launch ownership', () => {
+  it('registers before spawn hooks can arrive and retires on spawn failure', async () => {
+    const agentId = 'agent-hook-failed-spawn';
+    const taskId = 'hook-task';
+    setAgentHookRuntime({
+      claudeSettingsPath: () => '/hook-settings.json',
+      buildPtyEnv: (id, task, launchId) => ({
+        PARALLEL_CODE_AGENT_ID: id,
+        PARALLEL_CODE_TASK_ID: task,
+        PARALLEL_CODE_LAUNCH_ID: launchId,
+      }),
+    });
+    mockPtySpawn.mockImplementationOnce((_command, _args, options) => {
+      const env = (options as unknown as { env: Record<string, string> }).env;
+      expect(isCurrentAgentLaunch(agentId, taskId, env.PARALLEL_CODE_LAUNCH_ID)).toBe(true);
+      observeAgentHook({
+        agentId,
+        taskId,
+        launchId: env.PARALLEL_CODE_LAUNCH_ID,
+        state: 'done',
+        event: 'SessionStart',
+        at: 100,
+      });
+      expect(getAgentActivityEvidence(agentId)?.activity).toBe('ready');
+      throw new Error('spawn failed');
+    });
+    await expect(
+      spawnAgent(
+        createMockNotify(),
+        buildSpawnArgs({ agentId, taskId, command: 'claude', args: [], dockerMode: false }),
+      ),
+    ).rejects.toThrow('spawn failed');
+    expect(getAgentActivityEvidence(agentId)).toBeUndefined();
+  });
+
+  it('preserves launch evidence on reattach and rejects delayed hooks/exits after replacement', async () => {
+    const agentId = 'agent-hook-restart';
+    const taskId = 'hook-task';
+    const args = buildSpawnArgs({
+      agentId,
+      taskId,
+      command: 'claude',
+      args: [],
+      dockerMode: false,
+    });
+    await spawnAgent(createMockNotify(), args);
+    const first = getAgentActivitySnapshot().observations.find((item) => item.agentId === agentId);
+    if (!first) throw new Error('Missing first launch');
+    observeAgentHook({
+      agentId,
+      taskId,
+      launchId: first.launchId,
+      state: 'done',
+      event: 'Stop',
+      at: 100,
+    });
+    const before = getAgentActivitySnapshot();
+    const oldProc = mockPtySpawn.mock.results[0].value as ReturnType<typeof mockPtySpawn>;
+    await spawnAgent(createMockNotify(), { ...args, attachExisting: true });
+    expect(getAgentActivitySnapshot()).toEqual(before);
+    oldProc.kill.mockImplementationOnce(() => {});
+    await spawnAgent(createMockNotify(), { ...args, attachExisting: false });
+    const replacement = getAgentActivityEvidence(agentId);
+    expect(replacement?.launchId).not.toBe(first.launchId);
+    oldProc.emitExit({ exitCode: 0, signal: undefined });
+    expect(getAgentActivityEvidence(agentId)).toEqual(replacement);
+    expect(
+      observeAgentHook({
+        agentId,
+        taskId,
+        launchId: first.launchId,
+        state: 'done',
+        event: 'Stop',
+        at: 200,
+      }),
+    ).toBeUndefined();
+    killAgent(agentId);
+    expect(getAgentActivityEvidence(agentId)).toBeUndefined();
+  });
+
+  it('invalidates finished evidence after submitted input and leaves a draft alone', async () => {
+    const agentId = 'agent-hook-prompt';
+    const taskId = 'hook-task';
+    await spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({ agentId, taskId, command: 'claude', args: [], dockerMode: false }),
+    );
+    const current = getAgentActivityEvidence(agentId);
+    if (!current?.launchId) throw new Error('Missing launch');
+    observeAgentHook({
+      agentId,
+      taskId,
+      launchId: current.launchId,
+      state: 'done',
+      event: 'Stop',
+      at: 100,
+    });
+    writeToAgent(agentId, 'new prompt');
+    expect(getAgentActivityEvidence(agentId)?.activity).toBe('turn_finished');
+    writeToAgent(agentId, '\r');
+    expect(getAgentActivityEvidence(agentId)).toMatchObject({
+      activity: 'unknown',
+      event: 'PromptSubmitted',
+    });
+  });
+});
+
 describe('spawnAgent session reattach', () => {
-  it('reuses an existing PTY session and moves live output to the new channel', () => {
-    const win = createMockWindow();
+  it('reuses an existing PTY session and moves live output to the new channel', async () => {
+    const notify = createMockNotify();
     const agentId = 'agent-reattach';
     const args = buildSpawnArgs({
       agentId,
@@ -734,34 +959,36 @@ describe('spawnAgent session reattach', () => {
       onOutput: { __CHANNEL_ID__: 'channel-1' },
     });
 
-    spawnAgent(win, args);
+    await spawnAgent(notify, args);
     const proc = mockPtySpawn.mock.results[0].value as ReturnType<typeof mockPtySpawn>;
     proc.emitData('before reload');
 
-    spawnAgent(win, {
+    await spawnAgent(notify, {
       ...args,
       cols: 90,
       rows: 30,
       attachExisting: true,
       onOutput: { __CHANNEL_ID__: 'channel-2' },
     });
+    // Let the batch window close so the next chunk goes out immediately.
+    await new Promise((resolve) => setTimeout(resolve, 10));
     proc.emitData('after reload');
 
     expect(mockPtySpawn).toHaveBeenCalledTimes(1);
     expect(proc.resume).toHaveBeenCalled();
     expect(proc.resize).toHaveBeenCalledWith(90, 30);
-    expect(win.webContents.send).toHaveBeenCalledWith('channel:channel-2', {
+    expect(notify).toHaveBeenCalledWith('channel:channel-2', {
       type: 'Data',
-      data: Buffer.from('before reload', 'utf8').toString('base64'),
+      data: new Uint8Array(Buffer.from('before reload', 'utf8')),
     });
-    expect(win.webContents.send).toHaveBeenLastCalledWith('channel:channel-2', {
+    expect(notify).toHaveBeenLastCalledWith('channel:channel-2', {
       type: 'Data',
-      data: Buffer.from('after reload', 'utf8').toString('base64'),
+      data: new Uint8Array(Buffer.from('after reload', 'utf8')),
     });
   });
 
-  it('reattaches before validating the launch command', () => {
-    const win = createMockWindow();
+  it('reattaches before validating the launch command', async () => {
+    const notify = createMockNotify();
     const agentId = 'agent-reattach-missing-command';
     const args = buildSpawnArgs({
       agentId,
@@ -771,21 +998,21 @@ describe('spawnAgent session reattach', () => {
       onOutput: { __CHANNEL_ID__: 'channel-1' },
     });
 
-    spawnAgent(win, args);
+    await spawnAgent(notify, args);
 
-    expect(() =>
-      spawnAgent(win, {
+    await expect(
+      spawnAgent(notify, {
         ...args,
         command: 'nonexistent-binary-xyz',
         attachExisting: true,
         onOutput: { __CHANNEL_ID__: 'channel-2' },
       }),
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
     expect(mockPtySpawn).toHaveBeenCalledTimes(1);
   });
 
-  it('replaces an existing same-id PTY when attachExisting is explicitly false', () => {
-    const win = createMockWindow();
+  it('replaces an existing same-id PTY when attachExisting is explicitly false', async () => {
+    const notify = createMockNotify();
     const agentId = 'agent-replace';
     const args = buildSpawnArgs({
       agentId,
@@ -795,10 +1022,10 @@ describe('spawnAgent session reattach', () => {
       onOutput: { __CHANNEL_ID__: 'channel-1' },
     });
 
-    spawnAgent(win, args);
+    await spawnAgent(notify, args);
     const oldProc = mockPtySpawn.mock.results[0].value as ReturnType<typeof mockPtySpawn>;
 
-    spawnAgent(win, {
+    await spawnAgent(notify, {
       ...args,
       attachExisting: false,
       onOutput: { __CHANNEL_ID__: 'channel-2' },
@@ -806,6 +1033,502 @@ describe('spawnAgent session reattach', () => {
 
     expect(oldProc.kill).toHaveBeenCalled();
     expect(mockPtySpawn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('spawnAgent output batching', () => {
+  function dataMessages(notify: Mock<Notify>): string[] {
+    return vi
+      .mocked(notify)
+      .mock.calls.map(([, message]) => message as { type: string; data?: Uint8Array })
+      .filter((payload) => payload.type === 'Data')
+      .map((payload) => Buffer.from(payload.data ?? []).toString());
+  }
+
+  async function launch(agentId: string) {
+    const notify = createMockNotify();
+    await spawnAgent(
+      notify,
+      buildSpawnArgs({ agentId, command: 'claude', args: [], dockerMode: false }),
+    );
+    const proc = mockPtySpawn.mock.results[mockPtySpawn.mock.results.length - 1]
+      .value as ReturnType<typeof mockPtySpawn>;
+    return { notify, proc };
+  }
+
+  it('sends output after a quiet spell at once and coalesces a burst', async () => {
+    vi.useFakeTimers();
+    try {
+      const { notify, proc } = await launch('agent-batch-burst');
+      proc.emitData('a');
+      expect(dataMessages(notify)).toEqual(['a']);
+
+      proc.emitData('b');
+      proc.emitData('c');
+      expect(dataMessages(notify)).toEqual(['a']);
+
+      await vi.advanceTimersByTimeAsync(8);
+      expect(dataMessages(notify)).toEqual(['a', 'bc']);
+
+      await vi.advanceTimersByTimeAsync(20);
+      proc.emitData('d');
+      expect(dataMessages(notify)).toEqual(['a', 'bc', 'd']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports the last 8 KiB of output on exit', async () => {
+    const { notify, proc } = await launch('agent-batch-tail');
+    const lines = Array.from({ length: 100 }, (_, i) => `line-${i}-`.padEnd(400, 'x'));
+    for (const line of lines) proc.emitData(`${line}\r\n`);
+    proc.emitExit({ exitCode: 1, signal: undefined });
+
+    const exit = vi
+      .mocked(notify)
+      .mock.calls.map(([, message]) => message as { type: string; data?: unknown })
+      .find((payload) => payload.type === 'Exit');
+    const tail = Buffer.from(lines.map((line) => `${line}\r\n`).join(''))
+      .subarray(-8 * 1024)
+      .toString();
+    const expected = tail
+      .split('\n')
+      .map((line) => line.replace(/\r$/, ''))
+      .filter((line) => line.length > 0);
+    expect(exit?.data).toMatchObject({ last_output: expected });
+    expect(expected[expected.length - 1]).toBe(lines[99]);
+  });
+
+  it('sends raw bytes to the window and base64 to subscribers', async () => {
+    const { notify, proc } = await launch('agent-batch-subscriber');
+    const sub = vi.fn();
+    subscribeToAgent('agent-batch-subscriber', sub);
+    proc.emitData('héllo');
+
+    const calls = vi.mocked(notify).mock.calls;
+    const sent = calls[calls.length - 1][1] as { data: Uint8Array };
+    expect(sent.data).toBeInstanceOf(Uint8Array);
+    expect(Buffer.isBuffer(sent.data)).toBe(false);
+    expect(Buffer.from(sent.data).toString()).toBe('héllo');
+    expect(sub).toHaveBeenCalledWith(Buffer.from('héllo').toString('base64'));
+  });
+});
+
+describe('spawnAgent terminal queries', () => {
+  async function launch(agentId: string) {
+    await spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({ agentId, command: 'codex', args: [], dockerMode: false }),
+    );
+    return mockPtySpawn.mock.results[mockPtySpawn.mock.results.length - 1].value as ReturnType<
+      typeof mockPtySpawn
+    >;
+  }
+
+  it('answers a cursor-position query without a renderer view', async () => {
+    const proc = await launch('agent-query-cpr');
+    proc.emitData('hi\x1b[6n');
+    await vi.waitFor(() => expect(proc.write).toHaveBeenCalledWith('\x1b[1;3R'));
+  });
+
+  it('takes a phone size and restores the desktop size, remembering desktop resizes', async () => {
+    const proc = await launch('agent-remote-size');
+    resizeAgent('agent-remote-size', 100, 30);
+    setAgentRemoteSize('agent-remote-size', { cols: 60, rows: 50 });
+    expect(proc.resize).toHaveBeenLastCalledWith(60, 50);
+    // The desktop pane refits while the phone views: remembered, not applied.
+    resizeAgent('agent-remote-size', 110, 32);
+    expect(proc.resize).toHaveBeenLastCalledWith(60, 50);
+    setAgentRemoteSize('agent-remote-size', null);
+    expect(proc.resize).toHaveBeenLastCalledWith(110, 32);
+  });
+
+  it('answers at the size the PTY was resized to', async () => {
+    const proc = await launch('agent-query-resize');
+    proc.emitData('\r\n'.repeat(30));
+    resizeAgent('agent-query-resize', 80, 10);
+    proc.emitData('\x1b[6n');
+    await vi.waitFor(() => expect(proc.write).toHaveBeenCalledWith('\x1b[10;1R'));
+  });
+
+  it('stops answering once the process exits', async () => {
+    const proc = await launch('agent-query-exit');
+    proc.emitExit({ exitCode: 0, signal: undefined });
+    proc.emitData('\x1b[6n');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(proc.write).not.toHaveBeenCalled();
+  });
+});
+
+describe('peer prompt delivery', () => {
+  async function launch(bracketedPaste = true) {
+    const args = buildSpawnArgs({ command: 'codex', args: [], dockerMode: false });
+    await spawnAgent(createMockNotify(), args);
+    const proc = mockPtySpawn.mock.results[mockPtySpawn.mock.results.length - 1]
+      .value as ReturnType<typeof mockPtySpawn>;
+    proc.emitData(`\x1b[2J\x1b[Hready${bracketedPaste ? '\x1b[?2004h' : ''}`);
+    expect(getAgentPromptSnapshot(args.agentId)).toBeNull();
+    await vi.waitFor(() => expect(getAgentPromptSnapshot(args.agentId)?.text).toContain('ready'));
+    vi.useFakeTimers();
+    return { args, proc };
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  it('refuses output that is still being parsed, without writing', async () => {
+    const { args, proc } = await launch();
+    proc.emitData('\r\x1b[2Kworking');
+    const assertCurrent = vi.fn();
+    expect(await writeAgentPrompt(args.agentId, 'hello', assertCurrent)).toBe(false);
+    expect(assertCurrent).not.toHaveBeenCalled();
+    expect(proc.write).not.toHaveBeenCalled();
+    proc.emitExit({ exitCode: 0, signal: undefined });
+    expect(getAgentPromptSnapshot(args.agentId)).toBeNull();
+  });
+
+  it('separates paste from Enter, refuses a competing peer and applies cooldown', async () => {
+    const { args, proc } = await launch();
+    const assertCurrent = vi.fn();
+    const delivery = writeAgentPrompt(args.agentId, 'hello', assertCurrent);
+    expect(proc.write.mock.calls).toEqual([['\x1b[I'], ['\x1b[200~hello\x1b[201~']]);
+    expect(await writeAgentPrompt(args.agentId, 'another', assertCurrent)).toBe(false);
+    await vi.advanceTimersByTimeAsync(49);
+    expect(proc.write).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await delivery).toBe(true);
+    expect(proc.write.mock.lastCall).toEqual(['\r']);
+    expect(assertCurrent).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(await writeAgentPrompt(args.agentId, 'next', assertCurrent)).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const next = writeAgentPrompt(args.agentId, 'next', assertCurrent);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await next).toBe(true);
+  });
+
+  it('delivers after pointer movement over a mouse-tracking TUI', async () => {
+    const { args, proc } = await launch();
+    writeToAgent(args.agentId, '\x1b[<35;10;5M');
+    proc.write.mockClear();
+    const delivery = writeAgentPrompt(args.agentId, 'hello', () => {});
+    expect(proc.write.mock.calls).toEqual([['\x1b[I'], ['\x1b[200~hello\x1b[201~']]);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await delivery).toBe(true);
+  });
+
+  it.each(['\x1b[5~', '\x1b[D', '\x1b[1;5C', '\x1bOH', '\x1b[3~', '\x1b[15~', '\x1bb', '\x1bf'])(
+    'delivers after navigation key %j once input pauses',
+    async (key) => {
+      const { args } = await launch();
+      writeToAgent(args.agentId, key);
+      expect(getAgentInputBlocker(args.agentId)).toBe('recent-input');
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(getAgentInputBlocker(args.agentId)).toBeNull();
+    },
+  );
+
+  it.each(['\x1b[A', '\x1bOB', '\x1b[1;2A', '\x1b[97u', 'x'])(
+    'keeps holding delivery after draft-creating input %j',
+    async (key) => {
+      const { args } = await launch();
+      writeToAgent(args.agentId, key);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(getAgentInputBlocker(args.agentId)).toBe('unsent-input');
+      expect(await writeAgentPrompt(args.agentId, 'hello', () => {})).toBe(false);
+    },
+  );
+
+  it('uses the current mode and caps the multiline submit delay', async () => {
+    const { args, proc } = await launch(false);
+    const prompt = 'line\n'.repeat(40);
+    const delivery = writeAgentPrompt(args.agentId, prompt, () => {});
+    expect(proc.write.mock.calls).toEqual([['\x1b[I'], ['line '.repeat(40)]]);
+    await vi.advanceTimersByTimeAsync(499);
+    expect(proc.write).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await delivery).toBe(true);
+  });
+
+  it.each([false, true])(
+    'submits unbracketed text only through the authorized Enter (cancel: %s)',
+    async (cancel) => {
+      const { args, proc } = await launch(false);
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const completer = vi.fn((line: string): [string[], string] => [[], line]);
+      const editor = createInterface({ input, output, terminal: true, completer });
+      const submitted: string[] = [];
+      editor.on('line', (line) => submitted.push(line));
+      proc.write.mockImplementation((data: string) => {
+        input.write(data);
+      });
+      let current = true;
+      const onSubmitted = vi.fn();
+      try {
+        const delivery = writeAgentPrompt(
+          args.agentId,
+          'Message from agent sender in task sender:\n\nReview\tthis\r\npatch',
+          () => {
+            if (!current) throw new Error('canceled');
+          },
+          onSubmitted,
+        );
+        expect(submitted).toEqual([]);
+        expect(completer).not.toHaveBeenCalled();
+        const outcome = cancel
+          ? expect(delivery).rejects.toThrow('canceled')
+          : expect(delivery).resolves.toBe(true);
+        current = !cancel;
+        await vi.advanceTimersByTimeAsync(500);
+        await outcome;
+        expect(submitted).toEqual(
+          cancel ? [] : ['Message from agent sender in task sender:  Review this patch'],
+        );
+        expect(onSubmitted).toHaveBeenCalledTimes(cancel ? 0 : 1);
+      } finally {
+        editor.close();
+      }
+    },
+  );
+
+  it('scrolls a TUI that reads the wheel without holding back peer prompts', async () => {
+    const { args, proc } = await launch();
+    scrollAgent(args.agentId, -2, 10, 5);
+    expect(proc.write).not.toHaveBeenCalled();
+    proc.emitData('\x1b[?1049h\x1b[?1000;1006h');
+    await vi.waitFor(() => expect(getAgentPromptSnapshot(args.agentId)).not.toBeNull());
+    scrollAgent(args.agentId, -2, 10, 5);
+    expect(proc.write.mock.calls).toEqual([['\x1b[<64;10;5M\x1b[<64;10;5M']]);
+    const delivery = writeAgentPrompt(args.agentId, 'peer', () => {});
+    // A report inside the peer's paste would be typed into the composer.
+    scrollAgent(args.agentId, 1, 10, 5);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await delivery).toBe(true);
+    expect(proc.write.mock.calls.slice(1)).toEqual([
+      ['\x1b[I'],
+      ['\x1b[200~peer\x1b[201~'],
+      ['\r'],
+    ]);
+  });
+
+  it('defers to recent raw input for five seconds', async () => {
+    const { args, proc } = await launch();
+    writeToAgent(args.agentId, 'user submission\r');
+    const assertCurrent = vi.fn();
+    expect(await writeAgentPrompt(args.agentId, 'peer', assertCurrent)).toBe(false);
+    expect(assertCurrent).not.toHaveBeenCalled();
+    expect(proc.write.mock.calls).toEqual([['user submission\r']]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const delivery = writeAgentPrompt(args.agentId, 'peer', assertCurrent);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await delivery).toBe(true);
+  });
+
+  it.each(['phone draft', '\x1b[200~multiline draft\n\x1b[201~', '\x1b[A'])(
+    'holds unsent raw input %j after cooldown until explicitly cleared',
+    async (draft) => {
+      const { args, proc } = await launch();
+      writeToAgent(args.agentId, draft);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await writeAgentPrompt(args.agentId, 'peer', () => {})).toBe(false);
+      expect(proc.write.mock.calls).toEqual([[draft]]);
+      writeToAgent(args.agentId, '\x15');
+      expect(await writeAgentPrompt(args.agentId, 'peer', () => {})).toBe(false);
+      await vi.advanceTimersByTimeAsync(5_000);
+      writeToAgent(args.agentId, '\x1b[I');
+      writeToAgent(args.agentId, '\x1b[1;1R');
+      const delivery = writeAgentPrompt(args.agentId, 'peer', () => {});
+      await vi.advanceTimersByTimeAsync(50);
+      expect(await delivery).toBe(true);
+    },
+  );
+
+  it.each(['\x1b', '\x7f', '\x1b\x1b', '\x7f\x7f', '\x1b\x7f\x1b'])(
+    'keeps only the cooldown when empty input receives %j',
+    async (keys) => {
+      const { args, proc } = await launch();
+      writeToAgent(args.agentId, keys);
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(await writeAgentPrompt(args.agentId, 'peer', () => {})).toBe(false);
+      expect(proc.write.mock.calls).toEqual([[keys]]);
+      await vi.advanceTimersByTimeAsync(1);
+      const delivery = writeAgentPrompt(args.agentId, 'peer', () => {});
+      await vi.advanceTimersByTimeAsync(50);
+      expect(await delivery).toBe(true);
+      expect(proc.write.mock.lastCall).toEqual(['\r']);
+    },
+  );
+
+  it.each(['\x1b', '\x7f', '\x1b\x1b', '\x7f\x7f', '\x1b\x7f\x1b'])(
+    'preserves an existing draft when input receives %j',
+    async (keys) => {
+      const { args, proc } = await launch();
+      writeToAgent(args.agentId, 'unsent draft');
+      writeToAgent(args.agentId, keys);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await writeAgentPrompt(args.agentId, 'peer', () => {})).toBe(false);
+      expect(proc.write.mock.calls).toEqual([['unsent draft'], [keys]]);
+    },
+  );
+
+  it('keeps pending input isolated to its PTY session', async () => {
+    const { args, proc } = await launch();
+    writeToAgent(args.agentId, 'primary draft');
+    const secondaryArgs = buildSpawnArgs({ command: 'codex', args: [], dockerMode: false });
+    await spawnAgent(createMockNotify(), secondaryArgs);
+    const secondary = mockPtySpawn.mock.results[mockPtySpawn.mock.results.length - 1]
+      .value as ReturnType<typeof mockPtySpawn>;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await writeAgentPrompt(args.agentId, 'primary peer', () => {})).toBe(false);
+    const delivery = writeAgentPrompt(secondaryArgs.agentId, 'secondary peer', () => {});
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await delivery).toBe(true);
+    expect(proc.write.mock.calls).toEqual([['primary draft']]);
+    expect(secondary.write.mock.lastCall).toEqual(['\r']);
+  });
+
+  it('serializes competing writes with their spacing and holds the lock while draining', async () => {
+    const { args, proc } = await launch();
+    const prompt = Array.from({ length: 10 }, () => 'line').join('\n');
+    let writeCountAtSubmit: number | undefined;
+    const onSubmitted = vi.fn(() => {
+      writeCountAtSubmit = proc.write.mock.calls.length;
+    });
+    const delivery = writeAgentPrompt(args.agentId, prompt, () => {}, onSubmitted);
+    await vi.advanceTimersByTimeAsync(30);
+    writeToAgent(args.agentId, '\x1b[I');
+    writeToAgent(args.agentId, 'competing body');
+    await vi.advanceTimersByTimeAsync(70);
+    writeToAgent(args.agentId, '\r');
+    expect(proc.write).toHaveBeenCalledTimes(2);
+    expect(onSubmitted).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(onSubmitted).toHaveBeenCalledTimes(1);
+    expect(writeCountAtSubmit).toBe(3);
+    expect(proc.write.mock.calls.slice(2)).toEqual([['\r'], ['\x1b[I'], ['competing body']]);
+    await vi.advanceTimersByTimeAsync(25);
+    writeToAgent(args.agentId, 'during drain');
+    expect(await writeAgentPrompt(args.agentId, 'another peer', () => {})).toBe(false);
+    await vi.advanceTimersByTimeAsync(44);
+    expect(proc.write).toHaveBeenCalledTimes(5);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(proc.write.mock.lastCall).toEqual(['\r']);
+    await vi.advanceTimersByTimeAsync(74);
+    expect(proc.write).toHaveBeenCalledTimes(6);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await delivery).toBe(true);
+    expect(proc.write.mock.lastCall).toEqual(['during drain']);
+    expect(await writeAgentPrompt(args.agentId, 'cooldown', () => {})).toBe(false);
+  });
+
+  it('does not submit or replay queued input into a same-id replacement', async () => {
+    const { args, proc } = await launch();
+    const onSubmitted = vi.fn();
+    const delivery = writeAgentPrompt(args.agentId, 'peer', () => {}, onSubmitted);
+    const rejected = expect(delivery).rejects.toThrow('terminal changed');
+    writeToAgent(args.agentId, 'queued raw');
+    await spawnAgent(createMockNotify(), args);
+    const replacement = mockPtySpawn.mock.results[mockPtySpawn.mock.results.length - 1]
+      .value as ReturnType<typeof mockPtySpawn>;
+    await vi.advanceTimersByTimeAsync(50);
+    await rejected;
+    expect(proc.write).toHaveBeenCalledTimes(2);
+    expect(onSubmitted).not.toHaveBeenCalled();
+    expect(replacement.write).not.toHaveBeenCalled();
+  });
+
+  it('stops draining when a session is replaced between competing body and Enter', async () => {
+    const { args, proc } = await launch();
+    const onSubmitted = vi.fn();
+    const delivery = writeAgentPrompt(args.agentId, 'line\n'.repeat(10), () => {}, onSubmitted);
+    writeToAgent(args.agentId, 'competing body');
+    await vi.advanceTimersByTimeAsync(70);
+    writeToAgent(args.agentId, '\r');
+    await vi.advanceTimersByTimeAsync(95);
+    expect(proc.write.mock.lastCall).toEqual(['competing body']);
+    expect(onSubmitted).toHaveBeenCalledTimes(1);
+    await spawnAgent(createMockNotify(), args);
+    const replacement = mockPtySpawn.mock.results[mockPtySpawn.mock.results.length - 1]
+      .value as ReturnType<typeof mockPtySpawn>;
+    await vi.advanceTimersByTimeAsync(70);
+    expect(await delivery).toBe(true);
+    expect(proc.write.mock.lastCall).toEqual(['competing body']);
+    expect(replacement.write).not.toHaveBeenCalled();
+  });
+
+  it('reports submission even if its callback fails after Enter', async () => {
+    const { args, proc } = await launch();
+    const onSubmitted = vi.fn(() => {
+      throw new Error('receipt failed');
+    });
+    const delivery = writeAgentPrompt(args.agentId, 'peer', () => {}, onSubmitted);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await delivery).toBe(true);
+    expect(onSubmitted).toHaveBeenCalledTimes(1);
+    expect(proc.write.mock.lastCall).toEqual(['\r']);
+  });
+
+  it('cancels before any writes and discards queued Enter after delayed submission is revoked', async () => {
+    const { args, proc } = await launch();
+    await expect(
+      writeAgentPrompt(args.agentId, 'peer', () => {
+        throw new Error('cancelled');
+      }),
+    ).rejects.toThrow('cancelled');
+    expect(proc.write).not.toHaveBeenCalled();
+
+    let current = true;
+    const cancellation = new Error('cancelled');
+    const delivery = writeAgentPrompt(args.agentId, 'peer', () => {
+      if (!current) throw cancellation;
+    });
+    const rejected = expect(delivery).rejects.toMatchObject({
+      message: expect.stringContaining('Queued terminal input was discarded'),
+      cause: cancellation,
+    });
+    writeToAgent(args.agentId, 'user input');
+    writeToAgent(args.agentId, '\r');
+    current = false;
+    await vi.advanceTimersByTimeAsync(50);
+    await rejected;
+    expect(proc.write.mock.calls).toEqual([['\x1b[I'], ['\x1b[200~peer\x1b[201~']]);
+    writeToAgent(args.agentId, 'after cancellation');
+    expect(proc.write.mock.lastCall).toEqual(['after cancellation']);
+  });
+
+  it('keeps a successful submission receipt when replaying queued raw input fails', async () => {
+    const { args, proc } = await launch();
+    proc.write.mockImplementation((data: string) => {
+      if (data === 'competing body') throw new Error('raw input failed');
+    });
+    const delivery = writeAgentPrompt(args.agentId, 'peer', () => {});
+    writeToAgent(args.agentId, 'competing body');
+    writeToAgent(args.agentId, '\r');
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await delivery).toBe(true);
+    expect(proc.write.mock.calls).toEqual([
+      ['\x1b[I'],
+      ['\x1b[200~peer\x1b[201~'],
+      ['\r'],
+      ['competing body'],
+    ]);
+    writeToAgent(args.agentId, 'after replay failure');
+    expect(proc.write.mock.lastCall).toEqual(['after replay failure']);
+  });
+
+  it('releases the writer after a PTY write error without retrying the body', async () => {
+    const { args, proc } = await launch();
+    proc.write
+      .mockImplementationOnce(() => {})
+      .mockImplementationOnce(() => {
+        throw new Error('PTY write failed');
+      });
+    await expect(writeAgentPrompt(args.agentId, 'peer', () => {})).rejects.toThrow(
+      'PTY write failed',
+    );
+    expect(proc.write).toHaveBeenCalledTimes(2);
+    writeToAgent(args.agentId, 'after failure');
+    expect(proc.write.mock.lastCall).toEqual(['after failure']);
   });
 });
 
@@ -939,7 +1662,7 @@ describe('buildDockerImage', () => {
     const dockerfilePath = path.join(dockerDir, 'Dockerfile');
     fs.writeFileSync(dockerfilePath, 'FROM node:20\n');
 
-    buildDockerImage(createMockWindow(), 'channel:build-test', {
+    buildDockerImage(createMockNotify(), 'channel:build-test', {
       dockerfilePath,
       imageTag: 'parallel-code-project:test',
       buildContext: projectRoot,
@@ -953,11 +1676,11 @@ describe('buildDockerImage', () => {
 });
 
 describe('killAgent — Docker container lifecycle', () => {
-  it('calls docker stop with the predictable container name when agent is killed', () => {
+  it('calls docker stop with the predictable container name when agent is killed', async () => {
     const agentId = nextAgentId();
     const containerName = `parallel-code-${agentId.slice(0, 12)}`;
 
-    spawnAgent(createMockWindow(), buildSpawnArgs({ agentId }));
+    await spawnAgent(createMockNotify(), buildSpawnArgs({ agentId }));
     killAgent(agentId);
 
     const stopCall = mockExecFile.mock.calls.find(
@@ -977,9 +1700,9 @@ describe('killAgent — Docker container lifecycle', () => {
     expect(expected.length).toBe(14 + 12); // 'parallel-code-' + 12 chars
   });
 
-  it('does not call docker stop for a non-Docker agent', () => {
+  it('does not call docker stop for a non-Docker agent', async () => {
     const agentId = nextAgentId();
-    spawnAgent(createMockWindow(), buildSpawnArgs({ agentId, dockerMode: false }));
+    await spawnAgent(createMockNotify(), buildSpawnArgs({ agentId, dockerMode: false }));
     mockExecFile.mockClear();
     killAgent(agentId);
 
@@ -991,7 +1714,7 @@ describe('killAgent — Docker container lifecycle', () => {
 });
 
 describe('spawnAgent docker mode — same-path bind mounts', () => {
-  it('workspace cwd and worktree-parent -v mounts use identical host:container paths', () => {
+  it('workspace cwd and worktree-parent -v mounts use identical host:container paths', async () => {
     // Same-path mounts for workspace paths guarantee that absolute paths in MCP config /
     // Claude trust config are valid both on the host and inside the container. Any
     // remapped workspace path would break MCP server invocations and .mcp.json references.
@@ -999,8 +1722,8 @@ describe('spawnAgent docker mode — same-path bind mounts', () => {
     const home = makeTempHome([]);
     vi.stubEnv('HOME', home);
 
-    spawnAgent(
-      createMockWindow(),
+    await spawnAgent(
+      createMockNotify(),
       buildSpawnArgs({
         cwd: '/workspace/project',
         shareDockerAgentAuth: false,
@@ -1024,15 +1747,15 @@ describe('spawnAgent docker mode — same-path bind mounts', () => {
 // ─── Item 3: Concurrent Docker task spawns ────────────────────────────────────
 
 describe('seedClaudeProjectTrust — concurrent spawns', () => {
-  it('two simultaneous spawns both record hasTrustDialogAccepted (last write wins, no data loss)', () => {
+  it('two simultaneous spawns both record hasTrustDialogAccepted (last write wins, no data loss)', async () => {
     // This tests that each spawn independently writes trust for its own worktree path.
     // Since each worktree path is unique, there is no actual conflict — both paths end up
     // in the final .claude.json regardless of spawn order.
     const home = makeTempHome([]);
     vi.stubEnv('HOME', home);
 
-    spawnAgent(
-      createMockWindow(),
+    await spawnAgent(
+      createMockNotify(),
       buildSpawnArgs({
         command: 'claude',
         cwd: '/workspace/task-a',
@@ -1041,8 +1764,8 @@ describe('seedClaudeProjectTrust — concurrent spawns', () => {
       }),
     );
 
-    spawnAgent(
-      createMockWindow(),
+    await spawnAgent(
+      createMockNotify(),
       buildSpawnArgs({
         command: 'claude',
         cwd: '/workspace/task-b',
@@ -1064,13 +1787,13 @@ describe('seedClaudeProjectTrust — concurrent spawns', () => {
 // ─── Item 4: Docker cleanup on failed spawn ───────────────────────────────────
 
 describe('spawnAgent docker mode — PTY spawn failure', () => {
-  it('throws when pty.spawn fails and does not leave a session in the registry', () => {
+  it('throws when pty.spawn fails and does not leave a session in the registry', async () => {
     mockPtySpawn.mockImplementationOnce(() => {
       throw new Error('pty spawn failed: out of file descriptors');
     });
 
     const agentId = nextAgentId();
-    expect(() => spawnAgent(createMockWindow(), buildSpawnArgs({ agentId }))).toThrow();
+    await expect(spawnAgent(createMockNotify(), buildSpawnArgs({ agentId }))).rejects.toThrow();
   });
 });
 
@@ -1082,9 +1805,34 @@ describe('spawnAgent docker mode — PTY spawn failure', () => {
 // ─── Item 8: No credentials leakage in spawn log ─────────────────────────────
 
 describe('spawnAgent docker mode — credential redaction in logs', () => {
-  it('does not log the MCP token when it appears in env vars', () => {
-    spawnAgent(
-      createMockWindow(),
+  it('redacts inline Codex MCP credentials from the Docker banner and console', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const notify = createMockNotify();
+    const secret = 'test-canvas-secret';
+    await spawnAgent(
+      notify,
+      buildSpawnArgs({
+        command: 'codex',
+        args: ['--config', `mcp_servers.parallel-code={env={PARALLEL_CODE_MCP_TOKEN="${secret}"}}`],
+      }),
+    );
+    expect(getLastSpawnCall().args.join(' ')).toContain(secret);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(secret);
+    const messages = vi.mocked(notify).mock.calls;
+    const banner = messages
+      .map(([, message]) => {
+        const payload = message as { type: string; data?: Uint8Array };
+        return payload.type === 'Data' ? Buffer.from(payload.data ?? []).toString() : '';
+      })
+      .join('');
+    expect(banner).toContain('[docker] command: codex --config <redacted MCP config>');
+    expect(banner).not.toContain(secret);
+    warn.mockRestore();
+  });
+
+  it('does not log the MCP token when it appears in env vars', async () => {
+    await spawnAgent(
+      createMockNotify(),
       buildSpawnArgs({
         env: { MCP_TOKEN: 'super-secret-value' },
         cwd: '/workspace/project',
@@ -1099,11 +1847,11 @@ describe('spawnAgent docker mode — credential redaction in logs', () => {
     }
   });
 
-  it('redacts -e KEY=VALUE in spawn command log', () => {
+  it('redacts -e KEY=VALUE in spawn command log', async () => {
     // The redactDockerArgs function should redact -e assignments.
     // Verify by checking the logged spawn command args.
-    spawnAgent(
-      createMockWindow(),
+    await spawnAgent(
+      createMockNotify(),
       buildSpawnArgs({
         env: { ANTHROPIC_API_KEY: 'sk-ant-abc123' },
         cwd: '/workspace/project',
@@ -1155,10 +1903,10 @@ describe('isDockerAvailable', () => {
 // ─── Item 4b: Long path / spaces in worktree path ────────────────────────────
 
 describe('spawnAgent docker mode — path edge cases', () => {
-  it('preserves spaces in worktree path in -v and -w args', () => {
+  it('preserves spaces in worktree path in -v and -w args', async () => {
     const cwd = '/Users/alice bob/my repos/project name/.worktrees/task/coord-abc';
-    spawnAgent(
-      createMockWindow(),
+    await spawnAgent(
+      createMockNotify(),
       buildSpawnArgs({
         cwd,
         dockerMountWorktreeParent: false,
@@ -1173,14 +1921,14 @@ describe('spawnAgent docker mode — path edge cases', () => {
     expect(args[wIdx + 1]).toBe(cwd);
   });
 
-  it('non-Docker agents do not get trust seeding and no .claude.json write occurs', () => {
+  it('non-Docker agents do not get trust seeding and no .claude.json write occurs', async () => {
     // Non-Claude agent (e.g. codex) with shareDockerAgentAuth=true but different command
     // should not invoke seedClaudeProjectTrust. No .claude.json write for unknown commands.
     const home = makeTempHome([]);
     vi.stubEnv('HOME', home);
 
-    spawnAgent(
-      createMockWindow(),
+    await spawnAgent(
+      createMockNotify(),
       buildSpawnArgs({
         command: 'codex',
         dockerMode: false, // non-docker, non-claude
@@ -1197,12 +1945,12 @@ describe('spawnAgent docker mode — path edge cases', () => {
 // ─── Auth file permission mode ────────────────────────────────────────────────
 
 describe('seedClaudeProjectTrust — file permissions', () => {
-  it('.claude.json is written with mode 0o600 (owner r/w only)', () => {
+  it('.claude.json is written with mode 0o600 (owner r/w only)', async () => {
     const home = makeTempHome([]);
     vi.stubEnv('HOME', home);
 
-    spawnAgent(
-      createMockWindow(),
+    await spawnAgent(
+      createMockNotify(),
       buildSpawnArgs({
         command: 'claude',
         cwd: '/workspace/project',
@@ -1221,7 +1969,7 @@ describe('seedClaudeProjectTrust — file permissions', () => {
 // ─── Read-only auth dir warning ───────────────────────────────────────────────
 
 describe('buildDockerCredentialMounts — read-only auth dir', () => {
-  it('emits console.warn and continues when agent auth dir cannot be created', () => {
+  it('emits console.warn and continues when agent auth dir cannot be created', async () => {
     const home = makeTempHome([]);
     vi.stubEnv('HOME', home);
 
@@ -1234,15 +1982,350 @@ describe('buildDockerCredentialMounts — read-only auth dir', () => {
     const warnSpy = vi.spyOn(console, 'warn');
 
     // Should not throw
-    expect(() =>
+    await expect(
       spawnAgent(
-        createMockWindow(),
+        createMockNotify(),
         buildSpawnArgs({ command: 'claude', shareDockerAgentAuth: true }),
       ),
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
 
     // Must have warned about the failure (single string arg — the message itself)
     const warnMessages = warnSpy.mock.calls.map((c) => String(c[0]));
     expect(warnMessages.some((m) => /\[docker-auth\].*Could not/.test(m))).toBe(true);
+  });
+});
+
+describe('writeToAgent — interrupt keystrokes', () => {
+  it('reports submitted agent prompts but not drafts, focus, or shell input', async () => {
+    const submitted: string[] = [];
+    const off = onPtyEvent('prompt-submitted', (agentId) => submitted.push(agentId));
+    try {
+      const agent = buildSpawnArgs({
+        agentId: 'agent-submit',
+        command: 'codex',
+        args: [],
+        dockerMode: false,
+      });
+      const shell = buildSpawnArgs({
+        agentId: 'shell-submit',
+        command: '/bin/sh',
+        args: [],
+        dockerMode: false,
+        isShell: true,
+      });
+      await spawnAgent(createMockNotify(), agent);
+      await spawnAgent(createMockNotify(), shell);
+      writeToAgent(agent.agentId, '\x1b[I');
+      writeToAgent(agent.agentId, '\r');
+      writeToAgent(agent.agentId, 'follow-up');
+      writeToAgent(agent.agentId, '\x1b[I');
+      writeToAgent(shell.agentId, 'echo hello');
+      writeToAgent(shell.agentId, '\r');
+      expect(submitted).toEqual([]);
+      writeToAgent(agent.agentId, '\r');
+      expect(submitted).toEqual([agent.agentId]);
+    } finally {
+      off();
+    }
+  });
+
+  it('emits an interrupt event for a bare Esc or Ctrl+C on agent sessions only', async () => {
+    const interrupted: string[] = [];
+    const off = onPtyEvent('interrupt', (agentId) => interrupted.push(agentId));
+    const agent = buildSpawnArgs({
+      agentId: 'agent-interrupt',
+      command: 'claude',
+      args: [],
+      dockerMode: false,
+    });
+    const shell = buildSpawnArgs({
+      agentId: 'shell-interrupt',
+      command: '/bin/sh',
+      args: [],
+      dockerMode: false,
+      isShell: true,
+    });
+    await spawnAgent(createMockNotify(), agent);
+    await spawnAgent(createMockNotify(), shell);
+
+    writeToAgent(agent.agentId, 'hello');
+    writeToAgent(agent.agentId, '\x1b[A'); // arrow key: an escape sequence, not an interrupt
+    writeToAgent(shell.agentId, '\x03');
+    expect(interrupted).toEqual([]);
+
+    writeToAgent(agent.agentId, '\x1b');
+    writeToAgent(agent.agentId, '\x03');
+    expect(interrupted).toEqual([agent.agentId, agent.agentId]);
+    off();
+  });
+});
+
+/** Everything a window was sent as terminal output, decoded and joined. */
+function channelData(notify: Mock<Notify>): string {
+  return vi
+    .mocked(notify)
+    .mock.calls.map(([, message]) => {
+      const payload = message as { type: string; data?: Uint8Array };
+      return payload.type === 'Data' ? Buffer.from(payload.data ?? []).toString() : '';
+    })
+    .join('');
+}
+
+describe('Codex terminal handoff', () => {
+  const id = '01999999-1234-4321-9876-0123456789ab';
+  function launch() {
+    const args = buildSpawnArgs({ command: 'codex', args: [], dockerMode: false });
+    spawnAgent(createMockNotify(), args);
+    return {
+      agentId: args.agentId,
+      proc: mockPtySpawn.mock.results[mockPtySpawn.mock.results.length - 1].value,
+    };
+  }
+  it('waits for a clean terminal exit and reads its exact final resume footer', async () => {
+    const { agentId, proc } = launch();
+    const promise = handoffCodexTerminal(agentId);
+    expect(proc.write).toHaveBeenCalledWith('\x04');
+    expect(() => writeToAgent(agentId, 'new prompt')).toThrow('view switch');
+    await expect(handoffCodexTerminal(agentId)).rejects.toThrow('already in progress');
+    proc.emitData(`\r\nTo continue this session, run codex resume ${id}\r\n`);
+    proc.emitExit({ exitCode: 0, signal: undefined });
+    await expect(promise).resolves.toBe(id);
+    await expect(handoffCodexTerminal(agentId)).resolves.toBe(id);
+    expect(proc.kill).not.toHaveBeenCalled();
+  });
+  it('hands off an explicitly unsaved session to a fresh chat, including on retry', async () => {
+    const { agentId, proc } = launch();
+    const promise = handoffCodexTerminal(agentId);
+    proc.emitData(`\r\nSession ID: ${id}\r\n`);
+    proc.emitExit({ exitCode: 0, signal: undefined });
+    await expect(promise).resolves.toBeUndefined();
+    await expect(handoffCodexTerminal(agentId)).resolves.toBeUndefined();
+  });
+  it.each([0, 1])(
+    'rejects an unrecognized exit without a resume footer (code %s)',
+    async (exitCode) => {
+      const { agentId, proc } = launch();
+      const promise = handoffCodexTerminal(agentId);
+      proc.emitExit({ exitCode, signal: undefined });
+      await expect(promise).rejects.toThrow('without a resume ID');
+    },
+  );
+  it('rejects an abnormal exit even with an unsaved-session footer', async () => {
+    const { agentId, proc } = launch();
+    const promise = handoffCodexTerminal(agentId);
+    proc.emitData(`\r\nSession ID: ${id}\r\n`);
+    proc.emitExit({ exitCode: 1, signal: undefined });
+    await expect(promise).rejects.toThrow('without a resume ID');
+  });
+  it('replays the pre-handoff output into the relaunched terminal', async () => {
+    const args = buildSpawnArgs({ command: 'codex', args: [], dockerMode: false });
+    void spawnAgent(createMockNotify(), args);
+    const proc = mockPtySpawn.mock.results[mockPtySpawn.mock.results.length - 1].value;
+    proc.emitData('an earlier exchange\r\n');
+    const promise = handoffCodexTerminal(args.agentId);
+    proc.emitData(`\r\nTo continue this session, run codex resume ${id}\r\n`);
+    proc.emitExit({ exitCode: 0, signal: undefined });
+    await promise;
+
+    const next = createMockNotify();
+    void spawnAgent(next, { ...args, command: 'codex', args: [], dockerMode: false });
+    expect(channelData(next)).toContain('an earlier exchange');
+    expect(channelData(next)).toContain('── resumed ──');
+  });
+
+  it('rejects abnormal exits and leaves the final output available', async () => {
+    const { agentId, proc } = launch();
+    const promise = handoffCodexTerminal(agentId);
+    proc.emitData(`\r\nTo continue this session, run codex resume ${id}\r\n`);
+    proc.emitExit({ exitCode: 1, signal: undefined });
+    await expect(promise).rejects.toThrow('without a resume ID');
+  });
+  it('does not force-kill a terminal which refuses to exit, and restores input after timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const { agentId, proc } = launch();
+      const promise = handoffCodexTerminal(agentId);
+      const rejected = expect(promise).rejects.toThrow('has not exited');
+      await vi.advanceTimersByTimeAsync(5000);
+      await rejected;
+      expect(proc.kill).not.toHaveBeenCalled();
+      expect(() => writeToAgent(agentId, 'still here')).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('Claude terminal handoff', () => {
+  function launch(notify: Mock<Notify>, agentId?: string) {
+    const args = buildSpawnArgs({
+      command: 'claude',
+      args: [],
+      dockerMode: false,
+      ...(agentId ? { agentId } : {}),
+    });
+    void spawnAgent(notify, args);
+    return {
+      agentId: args.agentId,
+      proc: mockPtySpawn.mock.results[mockPtySpawn.mock.results.length - 1].value,
+    };
+  }
+  it('confirms the exit with a second Ctrl+D and replays the output into the next launch', async () => {
+    vi.useFakeTimers();
+    try {
+      const notify = createMockNotify();
+      const { agentId, proc } = launch(notify);
+      proc.emitData('an earlier exchange\r\n');
+      const promise = handoffClaudeTerminal(agentId);
+      // The first press only arms Claude's "Press Ctrl-D again to exit".
+      expect(proc.write).toHaveBeenCalledTimes(1);
+      expect(() => writeToAgent(agentId, 'new prompt')).toThrow('view switch');
+      await vi.advanceTimersByTimeAsync(300);
+      expect(proc.write.mock.calls).toEqual([['\x04'], ['\x04']]);
+      proc.emitExit({ exitCode: 0, signal: undefined });
+      await promise;
+      expect(proc.kill).not.toHaveBeenCalled();
+
+      const next = createMockNotify();
+      launch(next, agentId);
+      expect(channelData(next)).toBe(
+        'an earlier exchange\r\n\x1b\\\x1b[0m\r\n\x1b[2m── resumed ──\x1b[0m\r\n',
+      );
+      // Only the launch that follows the handoff inherits it.
+      const third = createMockNotify();
+      launch(third, agentId);
+      expect(channelData(third)).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refuses a handoff while a spawn is still on its way to the session', async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'pty-handoff-'));
+    tempPaths.push(cwd);
+    const args = buildSpawnArgs({ command: 'claude', args: [], dockerMode: false, cwd });
+    // Started but not yet registered: reading that gap as "already exited" would
+    // hand the session to Chat while this CLI is still launching into it.
+    const spawning = spawnAgent(createMockNotify(), args).catch(() => {});
+    await expect(handoffClaudeTerminal(args.agentId)).rejects.toThrow('still starting');
+    await spawning;
+  });
+
+  it('drops the carried output when the agent is killed instead of resumed', async () => {
+    vi.useFakeTimers();
+    try {
+      const notify = createMockNotify();
+      const { agentId, proc } = launch(notify);
+      proc.emitData('an earlier exchange\r\n');
+      const promise = handoffClaudeTerminal(agentId);
+      await vi.advanceTimersByTimeAsync(300);
+      proc.emitExit({ exitCode: 0, signal: undefined });
+      await promise;
+      killAgent(agentId);
+
+      const next = createMockNotify();
+      launch(next, agentId);
+      expect(channelData(next)).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('is a no-op once the CLI has already exited', async () => {
+    const notify = createMockNotify();
+    const { agentId, proc } = launch(notify);
+    proc.emitExit({ exitCode: 0, signal: undefined });
+    await expect(handoffClaudeTerminal(agentId)).resolves.toBeUndefined();
+  });
+
+  it('refuses a terminal that is not running Claude', async () => {
+    const notify = createMockNotify();
+    const args = buildSpawnArgs({ command: 'codex', args: [], dockerMode: false });
+    void spawnAgent(notify, args);
+    await expect(handoffClaudeTerminal(args.agentId)).rejects.toThrow(
+      'does not support Claude conversation handoff',
+    );
+  });
+
+  it('does not force-kill a terminal which refuses to exit, and restores input after timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const notify = createMockNotify();
+      const { agentId, proc } = launch(notify);
+      const promise = handoffClaudeTerminal(agentId);
+      const rejected = expect(promise).rejects.toThrow('has not exited');
+      await vi.advanceTimersByTimeAsync(5000);
+      await rejected;
+      expect(proc.kill).not.toHaveBeenCalled();
+      expect(() => writeToAgent(agentId, 'still here')).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('subscribeToAgentRendered', () => {
+  async function launch(agentId: string) {
+    await spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({ agentId, command: 'claude', args: [], dockerMode: false }),
+    );
+    return mockPtySpawn.mock.results[mockPtySpawn.mock.results.length - 1].value as ReturnType<
+      typeof mockPtySpawn
+    >;
+  }
+
+  const decode = (encoded: string) => Buffer.from(encoded, 'base64').toString();
+
+  it('starts from the rendered screen and sends later output once, after it', async () => {
+    const proc = await launch('agent-rendered');
+    // Repaints of one line: the raw replay keeps every frame, the render only the last.
+    proc.emitData('first\r\nframe 1\rframe 2\rframe 3');
+    const events: string[] = [];
+    const subscriber = subscribeToAgentRendered(
+      'agent-rendered',
+      (snapshot) => events.push(`snapshot:${decode(snapshot?.data ?? '')}`),
+      (encoded) => events.push(`output:${decode(encoded)}`),
+    );
+    expect(subscriber).not.toBeNull();
+    proc.emitData('\r\nlater');
+
+    await vi.waitFor(() => expect(events.some((e) => e === 'output:\r\nlater')).toBe(true));
+    expect(events).toHaveLength(2);
+    expect(events[0]).toContain('first');
+    expect(events[0]).toContain('frame 3');
+    expect(events[0]).not.toContain('frame 1');
+    expect(events[1]).toBe('output:\r\nlater');
+  });
+
+  it('returns null for an unknown agent', () => {
+    expect(subscribeToAgentRendered('missing', vi.fn(), vi.fn())).toBeNull();
+  });
+
+  it('keeps long history in running mirrors only while phones can connect', async () => {
+    const snapshotOf = async (agentId: string) => {
+      let data: string | null = null;
+      subscribeToAgentRendered(
+        agentId,
+        (snapshot) => (data = decode(snapshot?.data ?? '')),
+        vi.fn(),
+      );
+      await vi.waitFor(() => expect(data).not.toBeNull());
+      return data ?? '';
+    };
+    const proc = await launch('agent-history');
+    try {
+      // Raised after launch, so this checks the running session follows, not just new ones.
+      setRemoteHistory(true);
+      for (let i = 0; i < 500; i++) proc.emitData(`line-${String(i).padStart(3, '0')}\r\n`);
+      expect(await snapshotOf('agent-history')).toContain('line-000');
+
+      setRemoteHistory(false);
+      const trimmed = await snapshotOf('agent-history');
+      expect(trimmed).not.toContain('line-000');
+      expect(trimmed).toContain('line-499');
+    } finally {
+      setRemoteHistory(false);
+    }
   });
 });

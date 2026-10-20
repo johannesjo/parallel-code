@@ -1,42 +1,233 @@
 import * as pty from 'node-pty';
+import { codexResumeId, isCodexUnsavedSessionExit } from '../shared/codex-resume.js';
+import {
+  hasTerminalDraftActivity,
+  hasTerminalUserActivity,
+  nextTerminalInputPending,
+} from '../shared/terminal-input.js';
+import { stopAgentChat, stopAllAgentChats, runningAgentChatIds } from '../chat/sessions.js';
 import { execFileSync, execFile, spawn as cpSpawn } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import type { BrowserWindow } from 'electron';
+import type { Notify } from './notify.js';
 import { RingBuffer } from '../remote/ring-buffer.js';
 import { resolveUserShell } from '../user-shell.js';
-import { ensureClaudeSandboxFiles, ensureSandboxExcludes } from './git.js';
-import { debug as logDebug } from '../log.js';
+import {
+  detectRepoRoot,
+  ensureClaudeSandboxFiles,
+  ensureSandboxExcludes,
+  ensureWorktreeContainerExclude,
+  refreshWorktreeNodeModules,
+} from './git.js';
+import { loadEnvFile } from './env-file.js';
+import {
+  createTerminalQueryResponder,
+  MIRROR_SCROLLBACK_LINES,
+  REMOTE_SCROLLBACK_LINES,
+  type TerminalQueryResponder,
+} from './terminal-query-responder.js';
+import {
+  registerAgentLaunch,
+  retireAgentLaunch,
+  invalidateAgentActivity,
+} from '../agent-hooks/observations.js';
+import { HOOK_PTY_ENV_KEYS } from '../agent-hooks/hook-script.js';
+import { isClaudeCommand, withClaudeHookSettings } from '../agent-hooks/launch-args.js';
+import { debug as logDebug, warn as logWarn } from '../log.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 interface PtySession {
   proc: pty.IPty;
+  launchId: string;
+  command: string;
   channelId: string;
   taskId: string;
   agentId: string;
   isShell: boolean;
+  canvasTools?: boolean;
   flushTimer: ReturnType<typeof setTimeout> | null;
   subscribers: Set<(encoded: string) => void>;
   scrollback: RingBuffer;
+  queries: TerminalQueryResponder;
+  lastInputAt: number;
+  inputPending: boolean;
+  /** Present while a peer prompt and any competing input are being written. */
+  peerInputQueue?: { data: string; at: number }[];
   /** Assigned container name when running in Docker mode, null otherwise. */
   containerName: string | null;
+  /** The size the desktop pane asked for; restored when a phone stops overriding it. */
+  desktopSize?: { cols: number; rows: number };
+  /** A viewing phone's size, which the PTY takes while it is set. */
+  remoteSize?: { cols: number; rows: number };
+  /** Send batched output now, so subscribers have everything the mirror has parsed. */
+  flushOutput?: () => void;
 }
 
 const sessions = new Map<string, PtySession>();
+const pendingSpawns = new Map<string, symbol>();
+// null is an explicit unsaved-session footer, distinct from an unrecognized exit.
+const codexExitIds = new Map<string, string | null>();
+const handingOff = new Set<string>();
+const carriedScrollback = new Map<string, string>();
 
-function sendToChannel(win: BrowserWindow, channelId: string, msg: unknown): void {
-  if (!win.isDestroyed()) {
-    win.webContents.send(`channel:${channelId}`, msg);
+/**
+ * Hold on to what the pane showed, so the next spawn can put it back.
+ *
+ * A handoff ends the CLI process and the return trip starts a new one, which
+ * gets a new PTY and an empty scrollback buffer. The conversation is resumed
+ * either way, but without this the user comes back to a blank terminal and the
+ * whole exchange looks lost.
+ */
+function carryScrollback(session: PtySession): void {
+  const data = session.scrollback.toBase64();
+  if (data) carriedScrollback.set(session.agentId, data);
+}
+
+/**
+ * Refuse a handoff while a spawn is between its first await and `sessions.set`.
+ *
+ * There is no session to find in that gap, and reading it as "already exited"
+ * would hand the session id to the other view while a CLI is still on its way
+ * to that exact id — the two-processes-on-one-conversation case this avoids.
+ */
+function assertNoSpawnInFlight(agentId: string): void {
+  if (pendingSpawns.has(agentId))
+    throw new Error('The terminal is still starting. Try switching again in a moment.');
+}
+
+/** Ask an idle Codex TUI to exit; undefined means an explicitly unsaved session. */
+export async function handoffCodexTerminal(agentId: string): Promise<string | undefined> {
+  if (handingOff.has(agentId)) throw new Error('A view switch is already in progress.');
+  assertNoSpawnInFlight(agentId);
+  const session = sessions.get(agentId);
+  if (!session) {
+    const id = codexExitIds.get(agentId);
+    if (id !== undefined) return id ?? undefined;
+    throw new Error(
+      'No Codex resume ID was found. Exit Codex normally with /quit, then try Chat again.',
+    );
+  }
+  if (session.isShell || session.containerName || path.basename(session.command) !== 'codex')
+    throw new Error('This terminal does not support Codex conversation handoff.');
+  handingOff.add(agentId);
+  try {
+    return await new Promise<string | undefined>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        exit.dispose();
+        reject(
+          new Error(
+            'Codex has not exited. Finish the response, clear the terminal input, then try again.',
+          ),
+        );
+      }, 5000);
+      const exit = session.proc.onExit(({ exitCode, signal }) => {
+        clearTimeout(timer);
+        exit.dispose();
+        const id = codexExitIds.get(agentId);
+        if (exitCode === 0 && !signal && id !== undefined) {
+          carryScrollback(session);
+          resolve(id ?? undefined);
+        } else
+          reject(new Error('Codex exited without a resume ID. The terminal output is preserved.'));
+      });
+      // Ctrl+D exits an empty Codex composer without submitting a prompt.
+      try {
+        session.proc.write('\x04');
+      } catch (error) {
+        clearTimeout(timer);
+        exit.dispose();
+        reject(error);
+      }
+    });
+  } finally {
+    handingOff.delete(agentId);
   }
 }
 
-// --- PTY event bus for spawn/exit notifications ---
+/** How long Claude's "Press Ctrl-D again to exit" prompt stays armed, as seen
+ *  in the CLI: the second press has to land inside it or the first is forgotten. */
+const CLAUDE_EXIT_CONFIRM_MS = 300;
 
-type PtyEventType = 'spawn' | 'exit' | 'list-changed';
+/**
+ * Ask an idle Claude Code TUI to exit, so the chat view can resume its session.
+ *
+ * Claude needs Ctrl+D twice — the first press only arms "Press Ctrl-D again to
+ * exit" — where Codex goes on one. No resume footer to read: the pane already
+ * knows its session id, because it launched the CLI with `--session-id`.
+ */
+export async function handoffClaudeTerminal(agentId: string): Promise<void> {
+  if (handingOff.has(agentId)) throw new Error('A view switch is already in progress.');
+  assertNoSpawnInFlight(agentId);
+  const session = sessions.get(agentId);
+  // Already exited — the transcript is on disk and nothing is holding it open.
+  if (!session) return;
+  if (session.isShell || session.containerName || !isClaudeCommand(session.command))
+    throw new Error('This terminal does not support Claude conversation handoff.');
+  handingOff.add(agentId);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let confirm: ReturnType<typeof setTimeout> | undefined;
+      const stopWaiting = () => {
+        clearTimeout(timer);
+        if (confirm) clearTimeout(confirm);
+        exit.dispose();
+      };
+      const timer = setTimeout(() => {
+        stopWaiting();
+        reject(
+          new Error(
+            'Claude has not exited. Finish the response, clear the terminal input, then try again.',
+          ),
+        );
+      }, 5000);
+      // Any exit frees the session: an abnormal one still leaves a transcript
+      // that `--resume` reads, and refusing here would strand the user in a
+      // terminal whose CLI is already gone.
+      const exit = session.proc.onExit(() => {
+        stopWaiting();
+        carryScrollback(session);
+        resolve();
+      });
+      try {
+        session.proc.write('\x04');
+        confirm = setTimeout(() => {
+          try {
+            session.proc.write('\x04');
+          } catch (error) {
+            // Claude quit on the first press; the exit handler above resolves.
+            logDebug('pty', `claude handoff confirm write failed ${agentId}`, { error });
+          }
+        }, CLAUDE_EXIT_CONFIRM_MS);
+      } catch (error) {
+        stopWaiting();
+        reject(error);
+      }
+    });
+  } finally {
+    handingOff.delete(agentId);
+  }
+}
+
+/**
+ * Copy terminal bytes into an exact-sized array for IPC. Small Buffers are
+ * slices of Node's shared allocation pool; a copy guarantees only this view's
+ * bytes cross the process boundary, never the rest of that pool.
+ */
+function toIpcBytes(buf: Buffer): Uint8Array {
+  return new Uint8Array(buf);
+}
+
+function sendToChannel(notify: Notify, channelId: string, msg: unknown): void {
+  notify(`channel:${channelId}`, msg);
+}
+
+// --- PTY event bus for spawn/exit/interrupt notifications ---
+
+type PtyEventType = 'spawn' | 'exit' | 'list-changed' | 'interrupt' | 'prompt-submitted';
 type PtyEventListener = (agentId: string, data?: unknown) => void;
 const eventListeners = new Map<PtyEventType, Set<PtyEventListener>>();
 
@@ -69,26 +260,78 @@ const BATCH_MAX = 64 * 1024;
 const BATCH_INTERVAL = 8; // ms
 const TAIL_CAP = 8 * 1024;
 const MAX_LINES = 50;
-const ENV_BLOCK_LIST = new Set([
+// Vars an env source must never set: each one turns "supply a credential" into
+// "run arbitrary code in every process the agent starts", or redirects the
+// agent's traffic. Now that a file on disk is a first-class env source, anyone
+// who can write that file would otherwise inherit the agent's privileges.
+export const ENV_BLOCK_LIST = new Set([
+  // Hook status is attributed by these; a task env file must not be able to
+  // impersonate another agent or point the hook script at a foreign endpoint.
+  ...HOOK_PTY_ENV_KEYS,
   'PATH',
   'HOME',
   'USER',
   'SHELL',
   'LD_PRELOAD',
   'LD_LIBRARY_PATH',
+  'LD_AUDIT',
   'DYLD_INSERT_LIBRARIES',
+  'DYLD_LIBRARY_PATH',
+  'DYLD_FRAMEWORK_PATH',
+  'DYLD_FALLBACK_LIBRARY_PATH',
   'NODE_OPTIONS',
+  // Node reads this for TLS trust; an attacker CA plus a *_BASE_URL override
+  // would silently MITM the agent's API traffic, key included.
+  'NODE_EXTRA_CA_CERTS',
+  // bash sources BASH_ENV for non-interactive shells — i.e. every `bash -c`
+  // an agent runs for its own tool calls. ENV is the POSIX sh equivalent.
+  'BASH_ENV',
+  'ENV',
+  // git runs these as commands, and agents run git constantly. The config
+  // overrides are supersets that can set core.sshCommand, core.pager,
+  // diff.external or credential.helper directly, so blocking only the named
+  // vars would leave the guard trivially routed around. GIT_CONFIG_COUNT is
+  // the gate for GIT_CONFIG_KEY_n/VALUE_n — git ignores those without it.
+  'GIT_SSH_COMMAND',
+  'GIT_EXTERNAL_DIFF',
+  'GIT_PAGER',
+  'GIT_CONFIG_COUNT',
+  'GIT_CONFIG_GLOBAL',
+  'GIT_CONFIG_SYSTEM',
+  'PERL5OPT',
+  'PERL5LIB',
+  'RUBYOPT',
+  'RUBYLIB',
+  'PYTHONSTARTUP',
+  'PYTHONPATH',
+  // NODE_TLS_REJECT_UNAUTHORIZED=0 plus a proxy achieves the same MITM that
+  // blocking NODE_EXTRA_CA_CERTS above is meant to prevent.
+  'NODE_TLS_REJECT_UNAUTHORIZED',
   'ELECTRON_RUN_AS_NODE',
   'PARALLEL_CODE_MCP_TOKEN',
+  // Docker mode spawns the docker client with this env so `-e KEY` can pick up
+  // values without exposing them in argv. These would redirect that client at
+  // another daemon, so only the real process environment may set them.
+  'DOCKER_HOST',
+  'DOCKER_CONTEXT',
+  'DOCKER_CONFIG',
+  'DOCKER_CERT_PATH',
+  'DOCKER_TLS_VERIFY',
+  'DOCKER_API_VERSION',
 ]);
 
 export interface SpawnAgentArgs {
+  /** Set by the main process after configuring the session's canvas tools. */
+  canvasTools?: boolean;
   taskId: string;
   agentId: string;
   command: string;
   args: string[];
   cwd: string;
   env: Record<string, string>;
+  /** Optional path to a `KEY=VALUE` file whose contents are merged into the
+   *  spawn environment. Re-read on every spawn so edits need no app restart. */
+  envFile?: string;
   cols: number;
   rows: number;
   isShell?: boolean;
@@ -107,7 +350,9 @@ function redactedSpawnArgs(command: string, args: string[]): string[] {
   if (command === 'docker') {
     return redactDockerArgs(args);
   }
-  return args;
+  return args.map((arg) =>
+    arg.includes('PARALLEL_CODE_MCP_TOKEN') ? '<redacted MCP config>' : arg,
+  );
 }
 
 function redactDockerArgs(args: string[]): string[] {
@@ -132,7 +377,7 @@ function redactDockerArgs(args: string[]): string[] {
       continue;
     }
 
-    redacted.push(arg);
+    redacted.push(arg.includes('PARALLEL_CODE_MCP_TOKEN') ? '<redacted MCP config>' : arg);
   }
 
   return redacted;
@@ -140,7 +385,9 @@ function redactDockerArgs(args: string[]): string[] {
 
 function redactEnvAssignment(value: string): string {
   const eqIdx = value.indexOf('=');
-  if (eqIdx <= 0) return '<redacted>';
+  // Name-only `-e KEY` carries no value to leak, and the name aids debugging.
+  if (eqIdx < 0) return value;
+  if (eqIdx === 0) return '<redacted>';
   return `${value.slice(0, eqIdx)}=<redacted>`;
 }
 
@@ -173,19 +420,26 @@ export function validateCommand(command: string): void {
 function copyProcessEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined) env[k] = v;
+    // Hook ownership belongs to this PTY launch, never the app's parent process.
+    if (v !== undefined && !HOOK_PTY_ENV_KEYS.some((key) => key === k)) env[k] = v;
   }
   return env;
 }
 
-export function buildPtySpawnEnv(rendererEnv: Record<string, string> = {}): Record<string, string> {
+export function buildPtySpawnEnv(
+  rendererEnv: Record<string, string> = {},
+  fileEnv: Record<string, string> = {},
+): Record<string, string> {
   const spawnEnv: Record<string, string> = {
     ...copyProcessEnv(),
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
   };
 
-  for (const [key, value] of Object.entries(rendererEnv)) {
+  // Both override the inherited login-shell environment, per-task env winning
+  // over the file, and both stay subject to ENV_BLOCK_LIST so the main process
+  // remains authoritative over PATH/HOME/SHELL and the MCP token.
+  for (const [key, value] of Object.entries({ ...fileEnv, ...rendererEnv })) {
     if (!ENV_BLOCK_LIST.has(key)) spawnEnv[key] = value;
   }
 
@@ -242,7 +496,6 @@ function buildPtySpawnSpec(
   command: string,
   cwd: string,
   spawnEnv: Record<string, string>,
-  filteredEnv: Record<string, string>,
 ): PtySpawnSpec {
   const containerName = args.dockerMode ? `parallel-code-${args.agentId.slice(0, 12)}` : null;
 
@@ -301,21 +554,44 @@ function buildPtySpawnSpec(
       ...args.args,
     ],
     cwd: undefined,
-    env: filteredEnv,
+    // The docker client needs the same env the `-e KEY` flags name, so it can
+    // read those values from its own environment instead of from argv.
+    env: spawnEnv,
     containerName,
   };
+}
+
+/**
+ * Put the pre-handoff output back at the top of a fresh PTY, above a divider so
+ * the relaunch is visible rather than looking like one continuous run. Written
+ * to the new session's buffer too, so a renderer reload keeps it.
+ */
+function replayCarriedScrollback(notify: Notify, session: PtySession): void {
+  const carried = carriedScrollback.get(session.agentId);
+  if (!carried) return;
+  carriedScrollback.delete(session.agentId);
+  // The ring buffer drops its oldest bytes mid-escape-sequence, so terminate
+  // whatever the first line started (ST) and reset the attributes before the
+  // divider — otherwise a half-eaten sequence can swallow it and the first of
+  // the new CLI's output.
+  const divider = Buffer.from('\x1b\\\x1b[0m\r\n\x1b[2m── resumed ──\x1b[0m\r\n', 'utf8');
+  const replay = Buffer.concat([Buffer.from(carried, 'base64'), divider]);
+  session.scrollback.write(replay);
+  session.queries.feedDisplayOnly(replay.toString('utf8'));
+  sendToChannel(notify, session.channelId, { type: 'Data', data: toIpcBytes(replay) });
 }
 
 function cleanupExistingSession(agentId: string, existing: PtySession | undefined): void {
   if (!existing) return;
   if (existing.flushTimer) clearTimeout(existing.flushTimer);
   existing.subscribers.clear();
+  retireAgentLaunch(agentId, existing.launchId);
   existing.proc.kill();
   sessions.delete(agentId);
 }
 
 function attachPtyOutputHandlers(
-  win: BrowserWindow,
+  notify: Notify,
   session: PtySession,
   args: SpawnAgentArgs,
   command: string,
@@ -327,29 +603,37 @@ function attachPtyOutputHandlers(
   const containerName = session.containerName;
 
   const send = (msg: unknown) => {
-    sendToChannel(win, session.channelId, msg);
+    sendToChannel(notify, session.channelId, msg);
   };
 
   if (args.dockerMode) {
     const image = args.dockerImage || DOCKER_DEFAULT_IMAGE;
-    const innerCmd = [command, ...args.args].join(' ');
+    const innerCmd = [command, ...redactedSpawnArgs(command, args.args)].join(' ');
     const banner =
       `\x1b[2m[docker] container: ${containerName}\r\n` +
       `[docker] image: ${image}\r\n` +
       `[docker] command: ${innerCmd}\r\n` +
       `[docker] waiting for container to start…\x1b[0m\r\n\r\n`;
     console.warn(`[docker] spawning container ${containerName} — image=${image} cmd=${innerCmd}`);
-    send({ type: 'Data', data: Buffer.from(banner, 'utf8').toString('base64') });
+    session.queries.feedDisplayOnly(banner);
+    send({ type: 'Data', data: toIpcBytes(Buffer.from(banner, 'utf8')) });
   }
+
+  let lastFlushAt = 0;
 
   const flush = () => {
     if (batchSize === 0) return;
+    lastFlushAt = Date.now();
     const batch = Buffer.concat(batchChunks);
-    const encoded = batch.toString('base64');
-    send({ type: 'Data', data: encoded });
+    // The renderer takes raw bytes; only the remote and coordinator
+    // subscribers still consume base64, so encode just when one is listening.
+    send({ type: 'Data', data: toIpcBytes(batch) });
     session.scrollback.write(batch);
-    for (const sub of session.subscribers) {
-      sub(encoded);
+    if (session.subscribers.size > 0) {
+      const encoded = batch.toString('base64');
+      for (const sub of session.subscribers) {
+        sub(encoded);
+      }
     }
     batchChunks = [];
     batchSize = 0;
@@ -359,12 +643,17 @@ function attachPtyOutputHandlers(
     }
   };
 
+  session.flushOutput = flush;
+
   session.proc.onData((data: string) => {
+    session.queries.feed(data);
     const chunk = Buffer.from(data, 'utf8');
 
     tailChunks.push(chunk);
     tailSize += chunk.length;
-    if (tailSize > TAIL_CAP) {
+    // Trim only at twice the cap: compacting on every chunk past the cap would
+    // copy the whole tail per chunk. Exit slices it back to TAIL_CAP.
+    if (tailSize > 2 * TAIL_CAP) {
       const combined = Buffer.concat(tailChunks);
       const trimmed = combined.subarray(combined.length - TAIL_CAP);
       tailChunks = [trimmed];
@@ -374,7 +663,14 @@ function attachPtyOutputHandlers(
     batchChunks.push(chunk);
     batchSize += chunk.length;
 
-    if (batchSize >= BATCH_MAX || chunk.length < 1024) {
+    // Leading edge: output after a quiet spell (keystroke echo, a prompt) goes
+    // out at once. Anything arriving within BATCH_INTERVAL of the last send is
+    // coalesced — agent TUIs stream many tiny chunks, and one IPC message per
+    // chunk costs far more than the few ms of delay.
+    if (
+      batchSize >= BATCH_MAX ||
+      (!session.flushTimer && Date.now() - lastFlushAt >= BATCH_INTERVAL)
+    ) {
       flush();
       return;
     }
@@ -385,6 +681,8 @@ function attachPtyOutputHandlers(
   });
 
   session.proc.onExit(({ exitCode, signal }) => {
+    session.queries.dispose();
+    retireAgentLaunch(args.agentId, session.launchId);
     if (sessions.get(args.agentId) !== session) return;
 
     if (containerName) {
@@ -395,8 +693,13 @@ function attachPtyOutputHandlers(
 
     flush();
 
-    const tailBuf = Buffer.concat(tailChunks);
+    const tailBuf = Buffer.concat(tailChunks).subarray(-TAIL_CAP);
     const tailStr = tailBuf.toString('utf8');
+    if (path.basename(command) === 'codex' && exitCode === 0 && !signal) {
+      const id = codexResumeId(tailStr);
+      if (id) codexExitIds.set(args.agentId, id);
+      else if (isCodexUnsavedSessionExit(tailStr)) codexExitIds.set(args.agentId, null);
+    }
     const lines = tailStr
       .split('\n')
       .map((l) => l.replace(/\r$/, ''))
@@ -417,7 +720,50 @@ function attachPtyOutputHandlers(
   });
 }
 
-export function spawnAgent(win: BrowserWindow, args: SpawnAgentArgs): void {
+/** What a Claude launch needs to self-report status; null until the hook server is up. */
+export interface AgentHookRuntime {
+  /** The `--settings` file for a launch in `cwd`: the hooks, plus the usage
+   *  status line wrapped around whatever status line the user runs there. */
+  claudeSettingsPath(cwd: string, env: Record<string, string>): string;
+  buildPtyEnv(agentId: string, taskId: string, launchId: string): Record<string, string>;
+}
+
+let agentHookRuntime: AgentHookRuntime | null = null;
+
+export function setAgentHookRuntime(runtime: AgentHookRuntime | null): void {
+  agentHookRuntime = runtime;
+}
+
+/**
+ * Adds hook identity env and `--settings` so a Claude Code agent reports its
+ * own status. Shells get nothing (the user runs whatever they like there),
+ * Docker gets nothing because the loopback port is not reachable from inside,
+ * and other agents get nothing because they could only ever forge with it.
+ */
+export function applyAgentHookLaunch(
+  args: Pick<SpawnAgentArgs, 'agentId' | 'taskId' | 'args' | 'isShell' | 'dockerMode'>,
+  command: string,
+  cwd: string,
+  spawnEnv: Record<string, string>,
+  launchId: string,
+): string[] {
+  if (!agentHookRuntime || args.isShell || args.dockerMode || !isClaudeCommand(command)) {
+    return args.args;
+  }
+  Object.assign(spawnEnv, agentHookRuntime.buildPtyEnv(args.agentId, args.taskId, launchId));
+  return withClaudeHookSettings(
+    command,
+    args.args,
+    agentHookRuntime.claudeSettingsPath(cwd, spawnEnv),
+  );
+}
+
+export async function spawnAgent(
+  notify: Notify,
+  args: SpawnAgentArgs,
+  beforeSpawn?: () => void,
+): Promise<void> {
+  if (handingOff.has(args.agentId)) throw new Error('Wait for the view switch to finish.');
   const channelId = args.onOutput.__CHANNEL_ID__;
   const command = args.command || resolveUserShell();
   const cwd = args.cwd || process.env.HOME || '/';
@@ -431,14 +777,14 @@ export function spawnAgent(win: BrowserWindow, args: SpawnAgentArgs): void {
     existing.taskId = args.taskId;
     existing.isShell = args.isShell ?? existing.isShell;
     existing.proc.resume();
-    if (args.cols > 0 && args.rows > 0) {
-      existing.proc.resize(args.cols, args.rows);
+    if (args.cols > 0 && args.rows > 0) resizeDesktopView(existing, args.cols, args.rows);
+    if (existing.scrollback.length > 0) {
+      sendToChannel(notify, channelId, {
+        type: 'Data',
+        data: toIpcBytes(existing.scrollback.read()),
+      });
     }
-    const scrollback = existing.scrollback.toBase64();
-    if (scrollback) {
-      sendToChannel(win, channelId, { type: 'Data', data: scrollback });
-    }
-    emitPtyEvent('spawn', args.agentId);
+    emitPtyEvent('spawn', args.agentId, { reattached: true });
     return;
   }
 
@@ -456,19 +802,44 @@ export function spawnAgent(win: BrowserWindow, args: SpawnAgentArgs): void {
     validateCommand('docker');
   }
 
-  cleanupExistingSession(args.agentId, existing);
+  // Load before cleanupExistingSession so a bad env file path surfaces as a
+  // spawn error instead of killing the running session it was meant to replace.
+  const fileEnv = args.envFile?.trim() ? loadEnvFile(args.envFile) : {};
 
-  const filteredEnv = copyProcessEnv();
-  const spawnEnv = buildPtySpawnEnv(args.env);
+  pendingSpawns.delete(args.agentId);
+  cleanupExistingSession(args.agentId, existing);
+  codexExitIds.delete(args.agentId);
+
+  const spawnEnv = buildPtySpawnEnv(args.env, fileEnv);
+  const launchId = crypto.randomUUID();
 
   // Backfill sandbox placeholders for pre-existing worktrees (and anywhere
   // Claude Code may launch). See ensureClaudeSandboxFiles for the why.
   if (!args.dockerMode && fs.existsSync(cwd)) {
-    ensureClaudeSandboxFiles(cwd);
+    // Resolve the repo root once — each helper would otherwise spawn its own
+    // `git rev-parse` subprocess.
+    const repoRoot = detectRepoRoot(cwd);
+    const pending = Symbol();
+    pendingSpawns.set(args.agentId, pending);
+    try {
+      await ensureClaudeSandboxFiles(cwd, repoRoot);
+      if (pendingSpawns.get(args.agentId) !== pending) {
+        throw new Error('Agent startup cancelled');
+      }
+    } finally {
+      if (pendingSpawns.get(args.agentId) === pending) pendingSpawns.delete(args.agentId);
+    }
     ensureSandboxExcludes(cwd);
+    ensureWorktreeContainerExclude(cwd);
+    // Migrate legacy whole-dir node_modules symlinks and pick up packages
+    // installed in the main checkout since worktree creation.
+    refreshWorktreeNodeModules(cwd, repoRoot);
   }
 
-  const spawnSpec = buildPtySpawnSpec(args, command, cwd, spawnEnv, filteredEnv);
+  // After the seeding above: the user's status line can live in the worktree's
+  // `.claude/` settings, which only exist once they are copied in.
+  const launchArgs = applyAgentHookLaunch(args, command, cwd, spawnEnv, launchId);
+  const spawnSpec = buildPtySpawnSpec({ ...args, args: launchArgs }, command, cwd, spawnEnv);
 
   logDebug('pty', `spawn command ${args.agentId}`, {
     taskId: args.taskId,
@@ -478,41 +849,264 @@ export function spawnAgent(win: BrowserWindow, args: SpawnAgentArgs): void {
     dockerMode: args.dockerMode === true,
   });
 
-  const proc = pty.spawn(spawnSpec.spawnCommand, spawnSpec.spawnArgs, {
-    name: 'xterm-256color',
-    cols: args.cols,
-    rows: args.rows,
-    cwd: spawnSpec.cwd,
-    env: spawnSpec.env,
-  });
+  // Trusted main-process admission runs after asynchronous setup, immediately before launch.
+  beforeSpawn?.();
+  registerAgentLaunch(args.agentId, args.taskId, launchId);
+  let proc: pty.IPty;
+  try {
+    proc = pty.spawn(spawnSpec.spawnCommand, spawnSpec.spawnArgs, {
+      name: 'xterm-256color',
+      cols: args.cols,
+      rows: args.rows,
+      cwd: spawnSpec.cwd,
+      env: spawnSpec.env,
+    });
+  } catch (err) {
+    retireAgentLaunch(args.agentId, launchId);
+    throw err;
+  }
 
   const session: PtySession = {
     proc,
+    launchId,
+    command,
     channelId,
     taskId: args.taskId,
     agentId: args.agentId,
     isShell: args.isShell ?? false,
+    canvasTools: args.canvasTools,
     flushTimer: null,
     subscribers: new Set(),
     scrollback: new RingBuffer(),
+    lastInputAt: -Infinity,
+    inputPending: false,
+    queries: createTerminalQueryResponder({
+      cols: args.cols,
+      rows: args.rows,
+      reply: (data) => proc.write(data),
+      scrollback: mirrorScrollback,
+    }),
     containerName: spawnSpec.containerName,
   };
   sessions.set(args.agentId, session);
-  attachPtyOutputHandlers(win, session, args, command);
+  replayCarriedScrollback(notify, session);
+  attachPtyOutputHandlers(notify, session, args, command);
 
   emitPtyEvent('spawn', args.agentId);
 }
 
+// A bare Escape or Ctrl+C keystroke (xterm sends each as a single-byte chunk;
+// escape sequences like arrow keys arrive longer).
+const INTERRUPT_KEYSTROKES = new Set(['\x1b', '\x03']);
+
 export function writeToAgent(agentId: string, data: string): void {
+  if (handingOff.has(agentId)) throw new Error('Wait for the view switch to finish.');
   const session = sessions.get(agentId);
   if (!session) throw new Error(`Agent not found: ${agentId}`);
-  session.proc.write(data);
+  const at = Date.now();
+  if (hasTerminalUserActivity(data)) session.lastInputAt = at;
+  if (session.peerInputQueue) {
+    session.peerInputQueue.push({ data, at });
+    return;
+  }
+  writeSessionInput(session, data);
 }
 
+/**
+ * Turn the mouse wheel over the agent's screen, as the desktop pane does. A
+ * full-screen TUI keeps its transcript out of the terminal's history, so this
+ * is the only way a phone can scroll it. Does nothing unless the TUI reads the wheel.
+ */
+export function scrollAgent(agentId: string, lines: number, col: number, row: number): void {
+  const session = sessions.get(agentId);
+  // Inside a peer prompt's paste, a report would be typed into the composer.
+  if (!session || session.peerInputQueue || handingOff.has(agentId)) return;
+  const report = session.queries.wheelReport(lines, col, row);
+  // Not through writeSessionInput: a scroll is not a draft that holds back peer prompts.
+  if (report) session.proc.write(report);
+}
+
+function writeSessionInput(session: PtySession, data: string): void {
+  const userActivity = hasTerminalUserActivity(data);
+  if (userActivity) session.lastInputAt = Date.now();
+  session.proc.write(data);
+  if (
+    session.inputPending &&
+    (data === '\r' ||
+      data === '\n' ||
+      data === '\r\n' ||
+      data === '\x1b[13u' ||
+      data === '\x1b[13;1u')
+  ) {
+    invalidateAgentActivity(session.agentId, session.launchId);
+    if (!session.isShell) emitPtyEvent('prompt-submitted', session.agentId);
+  }
+  // History recall can populate a draft without printable input. Cursor,
+  // editing and function keys, Escape and Backspace preserve a draft but
+  // cannot create one on an empty line.
+  const draftActivity = userActivity && hasTerminalDraftActivity(data);
+  session.inputPending = nextTerminalInputPending(session.inputPending || draftActivity, data);
+  // Claude Code fires no Stop hook for a user interrupt, so consumers that
+  // trust hook state (the coordinator) need to hear about the keystroke.
+  if (!session.isShell && INTERRUPT_KEYSTROKES.has(data))
+    emitPtyEvent('interrupt', session.agentId);
+}
+
+export function getAgentPromptSnapshot(
+  agentId: string,
+  options?: { parsedSoFar?: boolean },
+): { text: string; bracketedPaste: boolean; alternateScreen: boolean } | null {
+  return sessions.get(agentId)?.queries.snapshot(options) ?? null;
+}
+
+/** Why a peer prompt cannot be pasted into the agent's terminal right now, if anything. */
+export function getAgentInputBlocker(
+  agentId: string,
+): 'busy' | 'unsent-input' | 'recent-input' | null {
+  const session = sessions.get(agentId);
+  if (!session || handingOff.has(agentId) || session.peerInputQueue) return 'busy';
+  if (session.inputPending) return 'unsent-input';
+  if (Date.now() - session.lastInputAt < 5_000) return 'recent-input';
+  return null;
+}
+
+/**
+ * Paste and submit one peer prompt without interleaving other terminal input.
+ * `onSubmitted` runs immediately after Enter, before queued raw input is replayed.
+ */
+export async function writeAgentPrompt(
+  agentId: string,
+  prompt: string,
+  assertCurrent: () => void,
+  onSubmitted?: () => void,
+): Promise<boolean> {
+  const session = sessions.get(agentId);
+  if (!session || getAgentInputBlocker(agentId)) return false;
+  const snapshot = session.queries.snapshot();
+  if (!snapshot) return false;
+
+  const queue: { data: string; at: number }[] = [];
+  session.peerInputQueue = queue;
+  const isCurrentSession = () => sessions.get(agentId) === session && !handingOff.has(agentId);
+  const assertSession = () => {
+    if (!isCurrentSession()) throw new Error('Agent terminal changed during prompt delivery');
+  };
+  try {
+    try {
+      assertCurrent();
+      assertSession();
+      writeSessionInput(session, '\x1b[I');
+      assertCurrent();
+      assertSession();
+      // Without bracketed paste, newlines submit and tabs invoke completion.
+      // Keep the fallback on one line until the authorized Enter below.
+      const body = snapshot.bracketedPaste
+        ? `\x1b[200~${prompt}\x1b[201~`
+        : prompt.replace(/\r\n?|\n|\t/g, ' ');
+      writeSessionInput(session, body);
+      const delay = Math.min(500, Math.max(50, prompt.split('\n').length * 15));
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      assertCurrent();
+      assertSession();
+      writeSessionInput(session, '\r');
+    } catch (err) {
+      // Queued Enter or escape sequences could submit a canceled pasted body.
+      // No queued input is safe to replay after a failed peer delivery.
+      if (queue.length > 0) {
+        const detail = err instanceof Error ? err.message : String(err);
+        throw Object.assign(
+          new Error(`${detail}. Queued terminal input was discarded after failed prompt delivery.`),
+          { cause: err },
+        );
+      }
+      throw err;
+    }
+
+    try {
+      onSubmitted?.();
+    } catch {
+      logWarn('pty', 'peer prompt submission callback failed after Enter', { agentId });
+    }
+
+    // Shift the original arrival timeline after submission, preserving the gap
+    // between a competing writer's paste and Enter even if both were queued.
+    const firstArrivalAt = queue[0]?.at ?? 0;
+    const replayStartedAt = Date.now();
+    try {
+      while (queue.length > 0 && isCurrentSession()) {
+        const input = queue[0];
+        const delay = replayStartedAt + input.at - firstArrivalAt - Date.now();
+        if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+        if (!isCurrentSession()) break;
+        writeSessionInput(session, input.data);
+        queue.shift();
+      }
+    } catch {
+      // The peer was submitted successfully: a later raw-input error must not
+      // turn its receipt into a failed delivery that could be retried.
+      logWarn('pty', 'queued terminal input discarded after submitted peer prompt', {
+        agentId,
+        queuedWrites: queue.length,
+      });
+    }
+    return true;
+  } finally {
+    delete session.peerInputQueue;
+  }
+}
+
+// shortcut: the long history is kept for every PTY while Remote Access is on —
+// per-agent growth if desktops with many long-running agents need the memory.
+let mirrorScrollback = MIRROR_SCROLLBACK_LINES;
+
+/**
+ * Keep the full history in each PTY's mirror while phones can connect, so a
+ * phone opening a terminal sees what the desktop shows; desktop-only use keeps
+ * the short mirror.
+ */
+export function setRemoteHistory(enabled: boolean): void {
+  mirrorScrollback = enabled ? REMOTE_SCROLLBACK_LINES : MIRROR_SCROLLBACK_LINES;
+  for (const session of sessions.values()) session.queries.setScrollback(mirrorScrollback);
+}
+
+function applySize(session: PtySession, cols: number, rows: number): void {
+  if (session.proc.cols === cols && session.proc.rows === rows) return;
+  session.proc.resize(cols, rows);
+  session.queries.resize(cols, rows);
+}
+
+function resizeDesktopView(session: PtySession, cols: number, rows: number): void {
+  session.desktopSize = { cols, rows };
+  if (!session.remoteSize) applySize(session, cols, rows);
+}
+
+/** Resize for the desktop pane. While a phone overrides the size, it is remembered instead. */
 export function resizeAgent(agentId: string, cols: number, rows: number): void {
   const session = sessions.get(agentId);
   if (!session) throw new Error(`Agent not found: ${agentId}`);
-  session.proc.resize(cols, rows);
+  resizeDesktopView(session, cols, rows);
+}
+
+/**
+ * Give the PTY a viewing phone's size, so a full-screen TUI fills the phone, or
+ * pass null to hand it back to the desktop pane's last size.
+ */
+export function setAgentRemoteSize(
+  agentId: string,
+  size: { cols: number; rows: number } | null,
+): void {
+  const session = sessions.get(agentId);
+  if (!session) throw new Error(`Agent not found: ${agentId}`);
+  if (size) {
+    session.desktopSize ??= { cols: session.proc.cols, rows: session.proc.rows };
+    session.remoteSize = size;
+    applySize(session, size.cols, size.rows);
+    return;
+  }
+  if (!session.remoteSize) return;
+  session.remoteSize = undefined;
+  const desktop = session.desktopSize;
+  if (desktop) applySize(session, desktop.cols, desktop.rows);
 }
 
 export function pauseAgent(agentId: string): void {
@@ -528,6 +1122,10 @@ export function resumeAgent(agentId: string): void {
 }
 
 export function killAgent(agentId: string): void {
+  pendingSpawns.delete(agentId);
+  codexExitIds.delete(agentId);
+  carriedScrollback.delete(agentId);
+  stopAgentChat(agentId);
   const session = sessions.get(agentId);
   if (session) {
     if (session.flushTimer) {
@@ -549,10 +1147,15 @@ export function killAgent(agentId: string): void {
 }
 
 export function countRunningAgents(): number {
-  return sessions.size;
+  return new Set([...sessions.keys(), ...runningAgentChatIds()]).size;
 }
 
 export function killAllAgents(): void {
+  pendingSpawns.clear();
+  codexExitIds.clear();
+  carriedScrollback.clear();
+  // Only called on shutdown, so detached chat process groups must die now, not on a timer.
+  stopAllAgentChats(true);
   for (const [, session] of sessions) {
     if (session.flushTimer) clearTimeout(session.flushTimer);
     session.subscribers.clear();
@@ -581,6 +1184,41 @@ export function subscribeToAgent(agentId: string, cb: (encoded: string) => void)
   return true;
 }
 
+/**
+ * Subscribe starting from a rendered snapshot: the screen and the history the
+ * main-process mirror keeps (10k lines while Remote Access is on, see setRemoteHistory), as ANSI text, instead of the raw
+ * byte replay, which redraw-heavy TUIs fill with repaints of one screen.
+ * Output already in the snapshot is not sent again; later output reaches `cb`
+ * after `onSnapshot`. The snapshot is null when the mirror is gone (the process
+ * exited), so the caller can fall back to the raw replay. Returns the
+ * subscriber to pass to unsubscribeFromAgent, or null for an unknown agent.
+ */
+export function subscribeToAgentRendered(
+  agentId: string,
+  onSnapshot: (snapshot: { data: string; cols: number; rows: number } | null) => void,
+  cb: (encoded: string) => void,
+): ((encoded: string) => void) | null {
+  const session = sessions.get(agentId);
+  if (!session) return null;
+  // The mirror parses output as it arrives but subscribers get it in batches:
+  // flush, so what the snapshot will contain has all been sent already.
+  session.flushOutput?.();
+  const { cols, rows } = session.proc;
+  let queued: string[] | null = [];
+  const subscriber = (encoded: string) => {
+    if (queued) queued.push(encoded);
+    else cb(encoded);
+  };
+  session.subscribers.add(subscriber);
+  void session.queries.serialize().then((text) => {
+    const later = queued ?? [];
+    queued = null;
+    onSnapshot(text === null ? null : { data: Buffer.from(text).toString('base64'), cols, rows });
+    for (const encoded of later) cb(encoded);
+  });
+  return subscriber;
+}
+
 /** Remove a previously registered output subscriber. */
 export function unsubscribeFromAgent(agentId: string, cb: (encoded: string) => void): void {
   sessions.get(agentId)?.subscribers.delete(cb);
@@ -596,18 +1234,43 @@ export function getActiveAgentIds(): string[] {
   return Array.from(sessions.keys());
 }
 
+/**
+ * The local root process of every live PTY. In Docker mode this is the
+ * `docker run` client; the container's own load is not visible from here.
+ */
+export function getPtyProcessRoots(): {
+  agentId: string;
+  taskId: string;
+  isShell: boolean;
+  pid: number;
+}[] {
+  return Array.from(sessions.values(), (s) => ({
+    agentId: s.agentId,
+    taskId: s.taskId,
+    isShell: s.isShell,
+    pid: s.proc.pid,
+  }));
+}
+
 /** Return metadata for a specific agent, or null if not found. */
 export function getAgentMeta(
   agentId: string,
-): { taskId: string; agentId: string; isShell: boolean } | null {
+): { taskId: string; agentId: string; isShell: boolean; canvasTools?: boolean } | null {
   const s = sessions.get(agentId);
-  return s ? { taskId: s.taskId, agentId: s.agentId, isShell: s.isShell } : null;
+  return s
+    ? { taskId: s.taskId, agentId: s.agentId, isShell: s.isShell, canvasTools: s.canvasTools }
+    : null;
 }
 
 /** Return the current column width of an agent's PTY. */
 export function getAgentCols(agentId: string): number {
   const s = sessions.get(agentId);
   return s ? s.proc.cols : 80;
+}
+
+/** Return the current row count so remote clients can parse TUI cursor movement correctly. */
+export function getAgentRows(agentId: string): number {
+  return sessions.get(agentId)?.proc.rows ?? 24;
 }
 
 // --- Docker mode helpers ---
@@ -696,11 +1359,16 @@ function isBlockedDockerEnvKey(key: string): boolean {
   return false;
 }
 
+/** Emits the name-only `-e KEY` form, which tells docker to read the value from
+ *  its own environment. The `-e KEY=VALUE` form would put API keys in the
+ *  `docker run` argv, which any local user can read via `ps` or /proc/<pid>/cmdline
+ *  for as long as the container runs. Callers must therefore spawn the docker
+ *  client with the same env these names come from. */
 function buildDockerEnvFlags(env: Record<string, string>): string[] {
   const flags: string[] = [];
   for (const [key, value] of Object.entries(env)) {
     if (!isBlockedDockerEnvKey(key) && value !== undefined) {
-      flags.push('-e', `${key}=${value}`);
+      flags.push('-e', key);
     }
   }
   return flags;
@@ -979,7 +1647,7 @@ let activeBuild: Promise<{ ok: boolean; error?: string }> | null = null;
  * in-flight promise; custom builds are never deduplicated.
  */
 export function buildDockerImage(
-  win: BrowserWindow,
+  notify: Notify,
   onOutputChannel: string,
   opts?: { dockerfilePath?: string; buildContext?: string; imageTag?: string },
 ): Promise<{ ok: boolean; error?: string }> {
@@ -1007,11 +1675,7 @@ export function buildDockerImage(
     const hash = hashDockerfile(resolvedDockerfilePath) ?? 'unknown';
     const imageTag = opts?.imageTag ?? DOCKER_DEFAULT_IMAGE;
 
-    const send = (text: string) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send(onOutputChannel, text);
-      }
-    };
+    const send = (text: string) => notify(onOutputChannel, text);
 
     const proc = cpSpawn(
       'docker',

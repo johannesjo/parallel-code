@@ -5,17 +5,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import http from 'http';
 import type { Coordinator } from '../mcp/coordinator.js';
 import type { ApiTaskSummary, ApiTaskDetail } from '../mcp/types.js';
+import type { CompletionRecord, CompletionReport } from '../shared/completion-report.js';
 
 vi.mock('../ipc/pty.js', () => ({
   writeToAgent: vi.fn(),
   resizeAgent: vi.fn(),
   killAgent: vi.fn(),
   subscribeToAgent: vi.fn(),
+  subscribeToAgentRendered: vi.fn(() => null),
   unsubscribeFromAgent: vi.fn(),
   getAgentScrollback: vi.fn(() => null),
   getActiveAgentIds: vi.fn(() => []),
   getAgentMeta: vi.fn(() => null),
   getAgentCols: vi.fn(() => 80),
+  getAgentRows: vi.fn(() => 24),
   onPtyEvent: vi.fn(() => vi.fn()), // returns an unsubscribe fn
 }));
 
@@ -29,6 +32,19 @@ const { startRemoteServer } = await import('./server.js');
 
 const COORD_A = 'coordinator-a';
 const COORD_B = 'coordinator-b';
+const completion: CompletionRecord = {
+  id: 'completion-1',
+  completedAt: '2026-09-26T12:00:00.000Z',
+  reviewRevision: 1,
+  sourceCommit: 'a'.repeat(40),
+  snapshotState: 'clean',
+};
+const completionReport: CompletionReport = {
+  summary: 'Finished the assigned change.',
+  verification: { checks: [{ name: 'tests', command: 'npm test', result: 'passed' }] },
+  artifacts: [{ path: 'src/main.ts', label: 'Updated module' }],
+  unresolvedIssues: ['Native smoke test unavailable.'],
+};
 
 const taskA: ApiTaskDetail = {
   id: 'task-a-1',
@@ -114,7 +130,7 @@ function makeMockCoordinator(): Coordinator {
       merge: { mainBranch: 'main', linesAdded: 0, linesRemoved: 0 },
     }),
     createTask: vi.fn().mockResolvedValue(taskA),
-    signalDone: vi.fn().mockReturnValue(true),
+    signalDone: vi.fn().mockResolvedValue({ ok: true, completion }),
     waitForSignalDone: vi.fn().mockResolvedValue({
       taskId: taskA.id,
       name: taskA.name,
@@ -131,7 +147,7 @@ let serverToken = '';
 let serverPort = 0;
 let serverStop: () => Promise<void>;
 
-async function startServer(coordinator: Coordinator) {
+async function startServer(coordinator: Coordinator, isOrchestrationEnabled = () => true) {
   const srv = await startRemoteServer({
     port: 0, // random port
     host: '0.0.0.0',
@@ -139,6 +155,7 @@ async function startServer(coordinator: Coordinator) {
     getTaskName: (id) => id,
     getAgentStatus: () => ({ status: 'exited', exitCode: null, lastLine: '' }),
     getCoordinator: () => coordinator,
+    isOrchestrationEnabled,
   });
   serverToken = srv.token;
   serverPort = srv.port;
@@ -151,9 +168,10 @@ function httpRequest(
   path: string,
   body?: unknown,
   coordinatorId?: string,
+  rawBody?: string,
 ): Promise<{ status: number; json: () => Promise<unknown> }> {
   return new Promise((resolve, reject) => {
-    const bodyStr = body !== undefined ? JSON.stringify(body) : undefined;
+    const bodyStr = rawBody ?? (body !== undefined ? JSON.stringify(body) : undefined);
     const headers: Record<string, string> = {
       Authorization: `Bearer ${serverToken}`,
       'Content-Type': 'application/json',
@@ -633,6 +651,28 @@ describe('coordinator scoping', () => {
 
 // ─── Subtask token access control ────────────────────────────────────────────
 
+describe('coordinator agent token — bound to its own coordinator', () => {
+  afterEach(async () => {
+    await serverStop();
+  });
+
+  it('reaches only its own tasks and never the app-wide agent routes', async () => {
+    const srv = await startServer(makeMockCoordinator());
+    const agentToken = srv.coordinatorTokenFor(COORD_A);
+    const call = (path: string, coordinatorId: string) =>
+      fetch(`http://127.0.0.1:${serverPort}${path}`, {
+        headers: { Authorization: `Bearer ${agentToken}`, 'X-Coordinator-Id': coordinatorId },
+      });
+    const own = await call('/api/tasks', COORD_A);
+    expect(own.status).toBe(200);
+    expect(((await own.json()) as ApiTaskSummary[]).map((task) => task.id)).toEqual([taskA.id]);
+    expect((await call('/api/tasks', COORD_B)).status).toBe(401);
+    expect((await call(`/api/tasks/${taskB.id}`, COORD_B)).status).toBe(401);
+    expect((await call('/api/agents', COORD_A)).status).toBe(403);
+    expect((await call('/api/agents/agent-b', COORD_A)).status).toBe(403);
+  });
+});
+
 describe('subtask token — restricted to sub-task terminal tools', () => {
   let subtaskToken = '';
   let stop: () => Promise<void>;
@@ -797,6 +837,14 @@ describe('subtask token — restricted to sub-task terminal tools', () => {
     expect(res.status).toBe(400);
   });
 
+  it.each(['done', 'land'])(
+    'POST /api/tasks/{id}/%s rejects a malformed task id escape with 400',
+    async (route) => {
+      const res = await subtaskRequest('POST', `/api/tasks/%/${route}`, {}, DONE_TOKENS[taskA.id]);
+      expect(res.status).toBe(400);
+    },
+  );
+
   it('GET /api/tasks returns 403 with subtaskToken', async () => {
     const res = await subtaskRequest('GET', '/api/tasks');
     expect(res.status).toBe(403);
@@ -891,5 +939,303 @@ describe('mobile token — restricted to agent routes only', () => {
   it('POST /api/tasks returns 403', async () => {
     const res = await mobileRequest('POST', '/api/tasks');
     expect(res.status).toBe(403);
+  });
+});
+
+describe('legacy HTTP completion handoffs', () => {
+  let coord: Coordinator;
+  let srv: Awaited<ReturnType<typeof startRemoteServer>>;
+  beforeEach(async () => {
+    coord = makeMockCoordinator();
+    srv = await startServer(coord);
+  });
+  afterEach(async () => {
+    await srv.stop();
+  });
+
+  const childDone = (taskId: string, body: unknown, doneToken: string) =>
+    fetch(`http://127.0.0.1:${serverPort}/api/tasks/${taskId}/done`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${srv.subtaskToken}`,
+        'Content-Type': 'application/json',
+        'X-Done-Token': doneToken,
+      },
+      body: JSON.stringify(body),
+    });
+
+  it('returns the capture and parses structured reports for the owning task', async () => {
+    vi.mocked(coord.signalDone).mockResolvedValueOnce({
+      ok: true,
+      completion: { ...completion, result: completionReport },
+    });
+    const response = await childDone(taskA.id, { result: completionReport }, DONE_TOKENS[taskA.id]);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      completion: { ...completion, result: completionReport },
+    });
+    expect(coord.signalDone).toHaveBeenCalledExactlyOnceWith(
+      taskA.id,
+      { result: completionReport },
+      expect.any(Function),
+    );
+  });
+
+  it('keeps empty legacy calls valid and scopes coordinator reports to their children', async () => {
+    const own = await post(`/api/tasks/${taskA.id}/done`, {}, COORD_A);
+    expect(own.status).toBe(200);
+    expect(await own.json()).toEqual({ ok: true, completion });
+    expect(
+      (await post(`/api/tasks/${taskB.id}/done`, { result: completionReport }, COORD_A)).status,
+    ).toBe(403);
+    expect(
+      (await childDone(taskA.id, { result: completionReport }, DONE_TOKENS[taskB.id])).status,
+    ).toBe(403);
+    expect(coord.signalDone).toHaveBeenCalledExactlyOnceWith(taskA.id, {}, expect.any(Function));
+  });
+
+  it.each([
+    { result: { summary: '' } },
+    { result: { summary: 'x', artifacts: [{ path: '../outside' }] } },
+    { result: { summary: 'x', artifacts: [{ path: '/absolute' }] } },
+    { result: { summary: 'x', verification: { checks: [] }, extra: true } },
+    { result: { summary: 'x'.repeat(4097) } },
+  ])('rejects malformed reports before capture: %j', async (body) => {
+    const response = await post(`/api/tasks/${taskA.id}/done`, body, COORD_A);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toHaveProperty('error');
+    expect(coord.signalDone).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed JSON rather than treating it as an empty completion', async () => {
+    const response = await httpRequest(
+      'POST',
+      `/api/tasks/${taskA.id}/done`,
+      undefined,
+      COORD_A,
+      '{"result":',
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining('Invalid JSON') });
+    expect(coord.signalDone).not.toHaveBeenCalled();
+  });
+
+  it.each(['merge', 'review-merge'])('rejects malformed JSON on %s', async (action) => {
+    const response = await httpRequest(
+      'POST',
+      `/api/tasks/${taskA.id}/${action}`,
+      undefined,
+      COORD_A,
+      '{"squash":',
+    );
+    expect(response.status).toBe(400);
+    expect(coord.mergeTask).not.toHaveBeenCalled();
+  });
+
+  it.each(['null', '[]', '42'])('rejects non-object JSON body %s on wait routes', async (body) => {
+    for (const path of ['/api/wait-signal', `/api/tasks/${taskA.id}/wait`]) {
+      const response = await httpRequest('POST', path, undefined, COORD_A, body);
+      expect(response.status).toBe(400);
+    }
+    expect(coord.waitForSignalDone).not.toHaveBeenCalled();
+    expect(coord.waitForIdle).not.toHaveBeenCalled();
+  });
+
+  it.each([0, -5, 'soon'])('rejects timeoutMs=%j on wait routes', async (timeoutMs) => {
+    for (const path of ['/api/wait-signal', `/api/tasks/${taskA.id}/wait`]) {
+      const response = await post(path, { timeoutMs }, COORD_A);
+      expect(response.status).toBe(400);
+    }
+    expect(coord.waitForSignalDone).not.toHaveBeenCalled();
+    expect(coord.waitForIdle).not.toHaveBeenCalled();
+  });
+
+  it('caps oversized timeoutMs on wait routes', async () => {
+    const response = await post('/api/wait-signal', { timeoutMs: 1e15 }, COORD_A);
+    expect(response.status).toBe(200);
+    expect(coord.waitForSignalDone).toHaveBeenCalledWith(COORD_A, 2 ** 31 - 1, undefined);
+  });
+
+  it('rejects a coordinator agent token passed in the query string', async () => {
+    const response = await new Promise<number>((resolve, reject) => {
+      http
+        .get(
+          { hostname: '127.0.0.1', port: serverPort, path: `/api/tasks?token=${serverToken}` },
+          (res) => {
+            res.resume();
+            resolve(res.statusCode ?? 0);
+          },
+        )
+        .on('error', reject);
+    });
+    expect(response).toBe(401);
+  });
+
+  it('denies publication if the done token changes during capture', async () => {
+    const doneToken = vi.spyOn(coord, 'getTaskDoneToken');
+    const publish = vi.fn();
+    vi.mocked(coord.signalDone).mockImplementationOnce(async (_id, _input, assertCurrent) => {
+      assertCurrent?.();
+      await Promise.resolve();
+      doneToken.mockReturnValue('replacement-token');
+      assertCurrent?.();
+      publish();
+      return { ok: true, completion };
+    });
+    const response = await childDone(taskA.id, { result: completionReport }, DONE_TOKENS[taskA.id]);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'forbidden' });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('rechecks done ownership after reading a delayed request body', async () => {
+    const doneToken = vi.spyOn(coord, 'getTaskDoneToken');
+    const body = JSON.stringify({ result: completionReport });
+    const pending = http.request({
+      hostname: '127.0.0.1',
+      port: srv.port,
+      path: `/api/tasks/${taskA.id}/done`,
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${srv.subtaskToken}`,
+        'X-Done-Token': DONE_TOKENS[taskA.id],
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        Expect: '100-continue',
+      },
+    });
+    const response = new Promise<number>((resolve, reject) => {
+      pending.on('error', reject);
+      pending.on('response', (res) => {
+        res.resume();
+        res.on('end', () => resolve(res.statusCode ?? 0));
+      });
+    });
+    const accepted = new Promise<void>((resolve) => pending.once('continue', resolve));
+    pending.flushHeaders();
+    await accepted;
+    pending.write(body.slice(0, -1));
+    doneToken.mockReturnValue('replacement-token');
+    pending.end(body.slice(-1));
+    expect(await response).toBe(403);
+    expect(coord.signalDone).not.toHaveBeenCalled();
+  });
+});
+
+// The global agent gate does not revoke manual phone access or completion reports.
+describe('global orchestration policy on legacy HTTP routes', () => {
+  let enabled: boolean;
+  let coord: Coordinator;
+  let srv: Awaited<ReturnType<typeof startRemoteServer>>;
+
+  beforeEach(async () => {
+    enabled = true;
+    coord = makeMockCoordinator();
+    srv = await startServer(coord, () => enabled);
+  });
+
+  afterEach(async () => {
+    await srv.stop();
+  });
+
+  it.each([
+    ['GET', '/api/tasks'],
+    ['GET', `/api/tasks/${taskA.id}`],
+    ['GET', `/api/tasks/${taskA.id}/diff`],
+    ['GET', `/api/tasks/${taskA.id}/output`],
+    ['POST', '/api/tasks'],
+    ['POST', '/api/wait-signal'],
+    ['POST', `/api/tasks/${taskA.id}/prompt`],
+    ['POST', `/api/tasks/${taskA.id}/merge`],
+    ['POST', `/api/tasks/${taskA.id}/review-merge`],
+    ['DELETE', `/api/tasks/${taskA.id}`],
+  ])('blocks coordinator %s %s after disabling orchestration', async (method, path) => {
+    expect((await get('/api/tasks', COORD_A)).status).toBe(200);
+    enabled = false;
+    const response = await httpRequest(
+      method,
+      path,
+      method === 'POST' ? { name: 'child', prompt: 'Continue' } : undefined,
+      COORD_A,
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: 'Agent orchestration is disabled in Settings > MCP.',
+    });
+    for (const operation of [coord.createTask, coord.sendPrompt, coord.mergeTask, coord.closeTask])
+      expect(operation).not.toHaveBeenCalled();
+  });
+
+  it('rechecks the policy after reading an in-flight coordinator request body', async () => {
+    const body = JSON.stringify({ name: 'child', prompt: 'Continue' });
+    const pending = http.request({
+      hostname: '127.0.0.1',
+      port: srv.port,
+      path: '/api/tasks',
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${srv.token}`,
+        'X-Coordinator-Id': COORD_A,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        Expect: '100-continue',
+      },
+    });
+    const response = new Promise<number>((resolve, reject) => {
+      pending.on('error', reject);
+      pending.on('response', (res) => {
+        res.resume();
+        res.on('end', () => resolve(res.statusCode ?? 0));
+      });
+    });
+    const accepted = new Promise<void>((resolve) => pending.once('continue', resolve));
+    pending.flushHeaders();
+    await accepted;
+    pending.write(body.slice(0, -1));
+    enabled = false;
+    pending.end(body.slice(-1));
+    expect(await response).toBe(403);
+    expect(coord.createTask).not.toHaveBeenCalled();
+  });
+
+  it('blocks child landing but permits only authenticated completion reports', async () => {
+    enabled = false;
+    const childRequest = (route: string, doneToken?: string) =>
+      fetch(`http://127.0.0.1:${srv.port}/api/tasks/${taskA.id}/${route}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${srv.subtaskToken}`,
+          'Content-Type': 'application/json',
+          ...(doneToken === undefined ? {} : { 'X-Done-Token': doneToken }),
+        },
+        body: JSON.stringify(
+          route === 'done'
+            ? { result: completionReport }
+            : { verification: completionReport.verification },
+        ),
+      });
+    expect((await childRequest('land', DONE_TOKENS[taskA.id])).status).toBe(403);
+    expect(coord.landSelf).not.toHaveBeenCalled();
+    expect((await childRequest('done')).status).toBe(403);
+    expect((await childRequest('done', DONE_TOKENS[taskB.id])).status).toBe(403);
+    expect(coord.signalDone).not.toHaveBeenCalled();
+    expect((await childRequest('done', DONE_TOKENS[taskA.id])).status).toBe(200);
+    expect(coord.signalDone).toHaveBeenCalledExactlyOnceWith(
+      taskA.id,
+      { result: completionReport },
+      expect.any(Function),
+    );
+    expect((await post(`/api/tasks/${taskA.id}/done`, {}, COORD_A)).status).toBe(200);
+    expect((await post(`/api/tasks/${taskB.id}/done`, {}, COORD_A)).status).toBe(403);
+  });
+
+  it('keeps trusted phone agent access available while orchestration is disabled', async () => {
+    enabled = false;
+    const response = await fetch(`http://127.0.0.1:${srv.port}/api/agents`, {
+      headers: { Authorization: `Bearer ${srv.mobileToken}` },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
   });
 });

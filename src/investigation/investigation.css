@@ -1,0 +1,757 @@
+.investigation {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  color: var(--fg);
+  background: var(--task-panel-bg);
+  font: 13px/1.5 var(--font-ui);
+}
+.investigation button,
+.investigation select {
+  color: var(--fg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 9px;
+  font: inherit;
+  cursor: pointer;
+}
+.investigation button:hover {
+  background: var(--bg-hover);
+}
+.investigation button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.investigation button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.investigation :is(button, select, input):focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 3px;
+}
+.investigation-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.investigation-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--fg-muted);
+}
+.investigation h1 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 4px 0;
+}
+.investigation h2 {
+  font-size: 20px;
+  line-height: 1.35;
+  margin: 12px 0;
+}
+.investigation h3 {
+  margin: 24px 0 10px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.investigation p {
+  margin: 8px 0;
+}
+.investigation-heading p {
+  color: var(--fg-muted);
+  margin: 0;
+}
+.investigation-settings,
+.investigation-toolbar,
+.investigation-playback {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.investigation-settings label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.investigation-toolbar {
+  padding: 7px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.investigation .investigation-primary {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.investigation-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+.investigation-mode {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.investigation-workspace {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.investigation-stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.investigation .investigation-hint {
+  padding: 6px 16px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.investigation-inspector {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 36px;
+  z-index: 4;
+  width: 300px;
+  flex-shrink: 0;
+  padding: 20px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--task-panel-bg);
+  box-shadow: var(--shadow-soft);
+}
+.investigation-inspector-heading,
+.investigation-note-type {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.investigation-note-type {
+  font-size: 10px;
+  font-weight: 600;
+}
+.investigation-note-type span {
+  color: var(--fg-muted);
+  font-weight: 400;
+  text-transform: capitalize;
+}
+.investigation-inspector-heading button {
+  border: 0;
+  padding: 0 5px;
+  font-size: 20px;
+}
+.investigation-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 12px 0 20px;
+}
+.investigation-breadcrumbs button {
+  font-size: 10px;
+  border: 0;
+  padding: 2px;
+  color: var(--fg-muted);
+  background: transparent;
+}
+.investigation-breadcrumbs button:not(:last-child)::after {
+  content: ' ›';
+  padding-left: 4px;
+}
+.investigation-note-history {
+  margin-top: 24px;
+  font-size: 12px;
+}
+.investigation-note-history summary {
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.investigation-map-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 20px;
+}
+.investigation-browser {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.investigation-browser select {
+  max-width: 230px;
+  font-size: 11px;
+  padding: 4px 8px;
+}
+.investigation-key,
+.investigation-demo-settings {
+  position: relative;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.investigation-key summary,
+.investigation-demo-settings summary {
+  cursor: pointer;
+  padding: 4px;
+}
+.investigation-key > div,
+.investigation-demo-settings > div {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  padding: 16px;
+  min-width: 230px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-soft);
+}
+.investigation-key > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.investigation-relation {
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+  margin: 12px 0;
+}
+.investigation-relation button {
+  font-size: 11px;
+}
+.investigation-relation p,
+.investigation-history {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.investigation-history {
+  list-style: none;
+  padding: 0;
+}
+.investigation-history li {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  margin: 10px 0;
+}
+.investigation-history button {
+  padding: 2px 6px;
+}
+.investigation-disclosure {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.investigation-footer {
+  border-top: 1px solid var(--border);
+  padding: 6px 20px;
+}
+.investigation-playback {
+  margin: 6px 0 4px;
+}
+.investigation-playback label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.investigation-playback input {
+  flex: 1;
+  min-width: 80px;
+  accent-color: var(--accent);
+}
+.investigation-footer small {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.investigation-unseen {
+  color: var(--warning);
+  font-size: 12px;
+}
+.reasoning-graph {
+  height: 100%;
+}
+.reasoning-graph-toolbar {
+  container: reasoning-toolbar / inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.reasoning-graph-status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reasoning-graph-actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.reasoning-graph-extra {
+  display: contents;
+}
+/* A cramped toolbar drops its optional controls rather than wrapping onto a second
+   row: find first, then the host's own actions. Both return when the pane widens. */
+@container reasoning-toolbar (max-width: 560px) {
+  .reasoning-graph-search {
+    display: none;
+  }
+}
+@container reasoning-toolbar (max-width: 460px) {
+  .reasoning-graph-extra {
+    display: none;
+  }
+}
+.reasoning-graph-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+  min-height: 28px;
+}
+.reasoning-graph-toolbar button {
+  padding: 4px 6px;
+  border-color: transparent;
+  background: transparent;
+}
+.reasoning-graph-toolbar button[aria-pressed='true'] {
+  border-color: transparent;
+}
+.reasoning-graph-body,
+.reasoning-graph-frame {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  isolation: isolate;
+}
+.reasoning-graph-frame {
+  z-index: 0;
+}
+/* An agent-opened graph stays strongly muted while the agent writes its first nodes.
+   The waiting text, spinner and messages sit outside the workspace and keep full strength. */
+.reasoning-graph .investigation-workspace {
+  transition: opacity 240ms;
+}
+.reasoning-graph[data-drafting='true'] .investigation-workspace {
+  opacity: 0.2;
+  filter: grayscale(1);
+}
+.reasoning-node-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 3px 12px 5px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--fg-muted);
+  background: var(--bg-elevated);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  pointer-events: none;
+}
+.reasoning-node-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  pointer-events: auto;
+  cursor: default;
+  white-space: nowrap;
+}
+.reasoning-graph-update {
+  color: var(--warning) !important;
+}
+.reasoning-graph-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--fg-muted);
+}
+@media (max-width: 850px) {
+  .investigation-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+  .investigation-inspector {
+    width: 250px;
+    padding: 12px;
+  }
+}
+@media (max-width: 600px) {
+  .investigation {
+    overflow-y: auto;
+  }
+  .investigation-workspace {
+    flex-direction: column;
+    flex: none;
+  }
+  .investigation-stage {
+    height: 460px;
+    flex: none;
+  }
+  .investigation-inspector {
+    width: auto;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    max-height: 400px;
+  }
+  .investigation-heading,
+  .investigation-toolbar,
+  .investigation-footer {
+    padding: 12px;
+  }
+}
+.investigation-current-work {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 7px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--task-panel-bg);
+}
+.investigation-current-work strong {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.investigation-current-work small {
+  margin-left: auto;
+  color: var(--fg-muted);
+}
+.investigation-work-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+}
+.investigation-current-work[data-active='true'] .investigation-work-dot {
+  background: var(--info);
+  animation: investigation-current-pulse 1.8s ease-in-out infinite;
+}
+.investigation-current-work[data-reduced='true'] .investigation-work-dot {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .investigation-current-work .investigation-work-dot {
+    animation: none;
+  }
+}
+
+/* The map uses typography and silhouettes for type; blue is reserved for activity. */
+.investigation-sources {
+  padding: 0;
+  list-style: none;
+}
+.investigation-sources li {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  overflow-wrap: anywhere;
+}
+.investigation-sources code {
+  white-space: pre-wrap;
+  font-size: 11px;
+}
+.investigation-confidence-bare {
+  opacity: 0.6;
+}
+.investigation-source-missing {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--danger, #b42318);
+}
+.investigation-source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.investigation-qa-list {
+  padding: 0;
+  list-style: none;
+}
+.investigation-qa-list li {
+  margin-bottom: 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+.investigation-qa-list p {
+  margin: 4px 0 6px;
+}
+.investigation-comparison {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+.investigation-comparison-group {
+  margin-bottom: 24px;
+}
+.investigation-comparison table {
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+.investigation-comparison caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 12px;
+}
+.investigation-comparison :is(th, td) {
+  width: 180px;
+  padding: 12px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  text-align: left;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.investigation-comparison th {
+  background: var(--bg-elevated);
+}
+.investigation-comparison tr > :first-child {
+  width: 140px;
+  min-width: 140px;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+.investigation-comparison-status {
+  display: block;
+  margin-top: 6px;
+  color: var(--fg-muted);
+  text-transform: capitalize;
+  font-weight: 400;
+}
+.investigation-comparison-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+.investigation-comparison-missing {
+  color: var(--fg-muted);
+}
+.investigation-inspector dd {
+  margin: 4px 0 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.investigation .investigation-note-editor {
+  box-sizing: border-box;
+  right: auto;
+  bottom: auto;
+  padding: 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.investigation-note-editor .investigation-inspector-heading {
+  margin-bottom: 12px;
+}
+.investigation-note-editor .investigation-inspector-heading button {
+  font-size: 12px;
+}
+.investigation-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.investigation-editor-field :is(input, textarea) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  background: var(--bg-elevated);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.investigation-editor-field textarea {
+  resize: vertical;
+}
+.investigation-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0;
+}
+.investigation-note-editor details {
+  margin: 12px 0;
+}
+.investigation-note-editor summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+.investigation-note-editor :is(p, strong) {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.investigation-note-editor :is(input, textarea):focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+.investigation-edit-conflict {
+  padding: 8px;
+  border-left: 2px solid var(--warning);
+  background: var(--bg-elevated);
+}
+.investigation-note-question {
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+.investigation-note-question button {
+  margin-top: 8px;
+}
+/* Embedded panes use their available height, including narrow windows. */
+.reasoning-graph .investigation-workspace {
+  flex: 1;
+}
+/* Note details dock beside the graph and follow the selection. */
+.reasoning-graph .investigation-inspector {
+  position: static;
+  flex: 0 0 clamp(240px, 40%, 360px);
+  max-height: none;
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+}
+.reasoning-graph .investigation-stage {
+  height: auto;
+  flex: 1;
+}
+
+.investigation-note-editor .investigation-breadcrumbs button {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.investigation-save-actions:empty {
+  display: none;
+}
+.investigation-note-editor .investigation-breadcrumbs {
+  margin: 8px 0 12px;
+}
+
+.reasoning-inline-message {
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.reasoning-inline-message {
+  color: var(--warning);
+}
+.reasoning-graph-search {
+  position: relative;
+}
+.reasoning-graph-search input {
+  width: 132px;
+  padding: 4px 6px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.reasoning-graph-search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 3;
+  min-width: 240px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-soft);
+}
+.reasoning-graph-search-results button {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  white-space: normal;
+}
+.reasoning-graph-search-title {
+  overflow-wrap: anywhere;
+}
+.reasoning-graph-search-results button[aria-selected='true'] {
+  background: var(--bg-selected);
+}
+.reasoning-graph-search-results small {
+  color: var(--fg-muted);
+}
+.reasoning-graph-search-empty {
+  margin: 0;
+  padding: 4px 6px;
+  color: var(--fg-muted);
+}
+/* The focused branch names its way back; the map root is the "Whole map" button. */
+.reasoning-graph-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.reasoning-graph-breadcrumb button {
+  padding: 2px 6px;
+  border-color: transparent;
+  background: transparent;
+}
+.reasoning-graph-breadcrumb [aria-current] {
+  color: var(--fg);
+  font-weight: 600;
+}
