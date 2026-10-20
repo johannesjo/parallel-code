@@ -52,7 +52,7 @@
 - **See every session in one place** — switch context without losing momentum.
 - **Control everything keyboard-first** — every action has a shortcut, mouse optional.
 - **Monitor progress from your phone** — scan a QR code, watch agents work over Wi-Fi or Tailscale.
-- **Ask about code with any LLM** — the inline code Q&A feature supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (default) or [MiniMax](https://www.minimax.io/) M2.7 (204K context) — configurable in Settings.
+- **Ask about code with any LLM** — the inline code Q&A feature supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (default) or [MiniMax](https://www.minimax.io/) — configurable in Settings. MiniMax offers M3.1-Flash (default for new selections) and M3 through the global API for text-only questions, with a 50,000-character inline prompt limit. Saved MiniMax selections are preserved; older MiniMax installations without a saved model keep M2.7 until a new model is selected.
 
 <details>
 <summary><strong>How does it compare?</strong></summary>

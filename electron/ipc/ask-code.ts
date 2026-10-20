@@ -77,7 +77,13 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
   // Route to MiniMax backend when configured
   if (provider === 'minimax') {
     activeRequests.cancel(requestId);
-    askAboutCodeMinimax(win, { requestId, channelId, prompt, purpose: args.purpose });
+    askAboutCodeMinimax(win, {
+      requestId,
+      channelId,
+      prompt,
+      purpose: args.purpose,
+      model: args.model,
+    });
     return;
   }
 

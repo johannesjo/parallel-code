@@ -3,6 +3,7 @@ import type { JSX } from 'solid-js';
 import { Dialog } from './Dialog';
 import {
   ASK_CODE_CLAUDE_MODELS,
+  ASK_CODE_MINIMAX_MODELS,
   type AskCodeProvider,
 } from '../../electron/shared/ask-code-models';
 import { codexModels, loadCodexModels } from '../lib/codex-models';
@@ -84,7 +85,7 @@ const ASK_CODE_PROVIDER_HINTS: Record<AskCodeProvider, string> = {
   codex:
     'Uses the codex CLI (codex exec, read-only sandbox) to answer questions about selected code. Requires Codex to be installed.',
   minimax:
-    'Uses MiniMax M2.7 (204K context) via the OpenAI-compatible API — no Claude Code CLI required.',
+    'Uses the selected MiniMax model for text-only code Q&A through the global API. Inline prompts are limited to 50,000 characters.',
 };
 
 type SettingsTab = 'general' | 'themes' | 'mcp' | 'experimental';
@@ -780,43 +781,59 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 >
                   <option value="claude">Claude Code (claude CLI)</option>
                   <option value="codex">Codex (codex CLI)</option>
-                  <option value="minimax">MiniMax (M2.7)</option>
+                  <option value="minimax">MiniMax</option>
                 </select>
               </label>
-              <Show when={store.askCodeProvider !== 'minimax'}>
-                <label style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}>
-                  <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
-                    Model
-                  </span>
-                  <select
-                    value={modelToRun(store.askCodeProvider, store.askCodeModel)}
-                    onChange={(e) => setAskCodeModel(e.currentTarget.value)}
-                    style={{
-                      flex: '1',
-                      background: theme.taskPanelBg,
-                      border: `1px solid ${theme.border}`,
-                      'border-radius': 'var(--radius-sm)',
-                      padding: '6px 10px',
-                      color: theme.fg,
-                      'font-size': '13px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <Show
-                      when={store.askCodeProvider === 'codex'}
-                      fallback={
-                        <For each={ASK_CODE_CLAUDE_MODELS}>
+              <label style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}>
+                <span style={{ 'font-size': '13px', color: theme.fg, 'white-space': 'nowrap' }}>
+                  Model
+                </span>
+                <select
+                  value={modelToRun(store.askCodeProvider, store.askCodeModel)}
+                  onChange={(e) => setAskCodeModel(e.currentTarget.value)}
+                  style={{
+                    flex: '1',
+                    background: theme.taskPanelBg,
+                    border: `1px solid ${theme.border}`,
+                    'border-radius': 'var(--radius-sm)',
+                    padding: '6px 10px',
+                    color: theme.fg,
+                    'font-size': '13px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Show
+                    when={store.askCodeProvider === 'codex'}
+                    fallback={
+                      <>
+                        <For
+                          each={
+                            store.askCodeProvider === 'minimax'
+                              ? ASK_CODE_MINIMAX_MODELS
+                              : ASK_CODE_CLAUDE_MODELS
+                          }
+                        >
                           {(model) => <option value={model}>{model}</option>}
                         </For>
-                      }
-                    >
-                      <For each={codexModels()}>
-                        {(model) => <option value={model.slug}>{model.displayName}</option>}
-                      </For>
-                    </Show>
-                  </select>
-                </label>
-              </Show>
+                        <Show
+                          when={
+                            store.askCodeProvider === 'minimax' &&
+                            !(ASK_CODE_MINIMAX_MODELS as readonly string[]).includes(
+                              store.askCodeModel,
+                            )
+                          }
+                        >
+                          <option value={store.askCodeModel}>{store.askCodeModel} (saved)</option>
+                        </Show>
+                      </>
+                    }
+                  >
+                    <For each={codexModels()}>
+                      {(model) => <option value={model.slug}>{model.displayName}</option>}
+                    </For>
+                  </Show>
+                </select>
+              </label>
               <Show when={store.askCodeProvider === 'minimax'}>
                 <label
                   style={{

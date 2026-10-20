@@ -23,6 +23,7 @@ interface MinimaxAskCodeRequest {
   channelId: string;
   prompt: string;
   purpose?: AskCodePurpose;
+  model?: string;
 }
 
 const MINIMAX_API_URL = 'https://api.minimax.io/v1/chat/completions';
@@ -50,6 +51,9 @@ export function setMinimaxApiKey(key: string): void {
 export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequest): void {
   const { requestId, channelId, prompt } = args;
   const apiKey = storedApiKey;
+  const model = args.model ?? MINIMAX_MODEL;
+  const isFlash = model === 'MiniMax-M3.1-Flash';
+  const isM3 = model === 'MiniMax-M3';
 
   if (!apiKey) {
     throw new Error('MiniMax API key is not set. Please configure it in Settings.');
@@ -84,14 +88,25 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: MINIMAX_MODEL,
+      model,
+      // Flash always thinks; keep reasoning separate from answers and tour JSON.
+      ...(isFlash
+        ? { thinking: { type: 'adaptive' }, reasoning_effort: 'low', reasoning_split: true }
+        : isM3
+          ? { thinking: { type: 'disabled' }, reasoning_split: true }
+          : {}),
       messages: [
         { role: 'system', content: askCodeSystemPrompt(args.purpose) },
         { role: 'user', content: prompt },
       ],
       // MiniMax temperature must be in (0.0, 1.0]
       temperature: 0.3,
-      max_tokens: isStructuredPurpose(args.purpose) ? MAX_TOKENS_STRUCTURED : MAX_TOKENS_INLINE,
+      // Thinking counts toward the budget. Flash needs room beyond a short answer.
+      max_tokens: isStructuredPurpose(args.purpose)
+        ? MAX_TOKENS_STRUCTURED
+        : isFlash
+          ? 16_384
+          : MAX_TOKENS_INLINE,
       stream: true,
     }),
     signal: controller.signal,

@@ -1,7 +1,10 @@
 import { documentAgentSupport } from '../documents/shared.js';
 
 /** Shared with the renderer so tour help describes the actual requested model. */
-export const ASK_CODE_MODELS = { claude: 'sonnet', minimax: 'MiniMax-M2.7' } as const;
+export const ASK_CODE_MODELS = { claude: 'sonnet', minimax: 'MiniMax-M3.1-Flash' } as const;
+
+/** Ordinary MiniMax choices; saved legacy/custom API model ids remain valid. */
+export const ASK_CODE_MINIMAX_MODELS = ['MiniMax-M3.1-Flash', 'MiniMax-M3'] as const;
 
 /** Which CLI or API answers code questions and generates tours. */
 export type AskCodeProvider = 'claude' | 'minimax' | 'codex';
@@ -31,7 +34,11 @@ export interface CodexModelChoice {
 export function isAskCodeModel(provider: AskCodeProvider, value: unknown): value is string {
   if (typeof value !== 'string') return false;
   if (provider === 'codex') return CODEX_MODEL_PATTERN.test(value);
-  if (provider === 'minimax') return value === ASK_CODE_MODELS.minimax;
+  // This is a JSON API field, not a CLI argument. Keep explicit saved/custom
+  // model ids without putting them in the ordinary model picker.
+  if (provider === 'minimax') {
+    return value === value.trim() && /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(value);
+  }
   return (ASK_CODE_CLAUDE_MODELS as readonly string[]).includes(value);
 }
 

@@ -434,6 +434,7 @@ export async function saveState(): Promise<void> {
     dockerImage: store.dockerImage !== 'parallel-code-agent:latest' ? store.dockerImage : undefined,
     askCodeProvider: store.askCodeProvider !== 'claude' ? store.askCodeProvider : undefined,
     askCodeModel:
+      store.askCodeProvider === 'minimax' ||
       store.askCodeModel !== defaultAskCodeModel(store.askCodeProvider)
         ? store.askCodeModel
         : undefined,
@@ -641,6 +642,7 @@ interface LegacyPersistedState {
   dockerImage?: unknown;
   askCodeProvider?: unknown;
   askCodeModel?: unknown;
+  minimaxModel?: unknown;
   askCodeEffort?: unknown;
   minimaxApiKey?: unknown;
   customAgents?: unknown;
@@ -993,9 +995,13 @@ export async function loadState(): Promise<void> {
           ? raw.askCodeProvider
           : 'claude';
       s.askCodeProvider = provider;
-      s.askCodeModel = isAskCodeModel(provider, raw.askCodeModel)
-        ? raw.askCodeModel
-        : defaultAskCodeModel(provider);
+      const savedModel =
+        raw.askCodeModel ?? (provider === 'minimax' ? raw.minimaxModel : undefined);
+      s.askCodeModel = isAskCodeModel(provider, savedModel)
+        ? savedModel
+        : provider === 'minimax'
+          ? 'MiniMax-M2.7' // Older saves omitted the previous default; do not switch it silently.
+          : defaultAskCodeModel(provider);
       s.askCodeEffort = loadAskCodeEffort(raw.askCodeEffort);
 
       // Restore custom agents

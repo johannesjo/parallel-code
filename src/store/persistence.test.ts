@@ -1713,6 +1713,44 @@ describe('code Q&A model persistence', () => {
     expect((await lastSaved()).askCodeModel).toBeUndefined();
   });
 
+  it.each(['MiniMax-M3.1-Flash', 'MiniMax-M3', 'MiniMax-M2.7', 'custom/model-v1'])(
+    'round-trips the explicit MiniMax model %s',
+    async (model) => {
+      mockInvoke.mockResolvedValueOnce(
+        stateJson({ askCodeProvider: 'minimax', askCodeModel: model }),
+      );
+      await loadState();
+      expect(store.askCodeModel).toBe(model);
+      expect((await lastSaved()).askCodeModel).toBe(model);
+    },
+  );
+
+  it('preserves the previous default for existing MiniMax users without a model', async () => {
+    mockInvoke.mockResolvedValueOnce(stateJson({ askCodeProvider: 'minimax' }));
+    await loadState();
+    expect(store.askCodeModel).toBe('MiniMax-M2.7');
+    expect((await lastSaved()).askCodeModel).toBe('MiniMax-M2.7');
+  });
+
+  it('restores the earlier MiniMax-only setting into the shared model field', async () => {
+    mockInvoke.mockResolvedValueOnce(
+      stateJson({ askCodeProvider: 'minimax', minimaxModel: 'MiniMax-M3' }),
+    );
+    await loadState();
+    expect(store.askCodeModel).toBe('MiniMax-M3');
+    const saved = await lastSaved();
+    expect(saved.askCodeModel).toBe('MiniMax-M3');
+    expect(saved).not.toHaveProperty('minimaxModel');
+  });
+
+  it('uses Flash when newly switching to MiniMax', async () => {
+    mockInvoke.mockResolvedValueOnce(stateJson({ askCodeProvider: 'claude' }));
+    await loadState();
+    setAskCodeProvider('minimax');
+    expect(store.askCodeModel).toBe('MiniMax-M3.1-Flash');
+    expect((await lastSaved()).askCodeModel).toBe('MiniMax-M3.1-Flash');
+  });
+
   it('round-trips a Codex provider with its model slug', async () => {
     mockInvoke.mockResolvedValueOnce(
       stateJson({ askCodeProvider: 'codex', askCodeModel: 'gpt-5.6-luna' }),
