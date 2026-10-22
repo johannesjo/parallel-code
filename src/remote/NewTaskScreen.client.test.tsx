@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { NewTaskScreen } from './NewTaskScreen';
-import { fetchProjects, createTask, ApiError } from './api';
+import { fetchProjects, fetchAgents, createTask, ApiError } from './api';
 
 vi.mock('./api', () => ({
   fetchProjects: vi.fn(),
+  fetchAgents: vi.fn(),
   createTask: vi.fn(),
   ApiError: class extends Error {
     constructor(
@@ -28,6 +29,7 @@ beforeEach(() => {
     { id: 'p1', name: 'First project' },
     { id: 'p2', name: 'Second project', agentName: 'Agent B' },
   ]);
+  vi.mocked(fetchAgents).mockResolvedValue([]);
 });
 afterEach(() => {
   dispose?.();
@@ -131,5 +133,29 @@ describe('creating a task from the phone', () => {
     await Promise.resolve();
     expect(onCreated).not.toHaveBeenCalled();
     expect(localStorage.getItem('parallel-mobile:new-prompt')).toBe('A different task');
+  });
+  it('allows choosing an agent and passes agentId to createTask', async () => {
+    vi.mocked(fetchAgents).mockResolvedValue([
+      { id: 'claude', name: 'Claude Code', available: true, isDefault: true },
+      { id: 'codex', name: 'Codex CLI', available: true, isDefault: false },
+    ]);
+    vi.mocked(createTask).mockResolvedValue('task-with-agent');
+    const { onCreated } = mount();
+    await vi.waitFor(() => expect(host.querySelectorAll('select').length).toBe(2));
+    const agentSelect = host.querySelectorAll('select')[1];
+    expect(agentSelect.value).toBe('claude');
+    agentSelect.value = 'codex';
+    agentSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    type('textarea', 'A task for codex');
+    submit();
+    await vi.waitFor(() =>
+      expect(createTask).toHaveBeenCalledWith({
+        projectId: 'p1',
+        name: 'A task for codex',
+        prompt: 'A task for codex',
+        agentId: 'codex',
+      }),
+    );
+    expect(onCreated).toHaveBeenCalledWith('task-with-agent', 'A task for codex');
   });
 });

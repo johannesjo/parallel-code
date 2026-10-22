@@ -75,6 +75,7 @@ import { readCoverageSummary } from './coverage.js';
 import { loadEslintQualityFindings } from './eslint-quality-findings.js';
 import { buildVerifyEnv, validateVerifyCommand, verificationRunner } from './verify.js';
 import { scanEvidence } from './evidence-scan.js';
+import { createProjectFolder } from '../remote/project-create.js';
 import {
   startRemoteServer,
   getMCPLogs,
@@ -90,6 +91,7 @@ import type {
   RemoteTaskContext,
   RemoteTaskDiff,
 } from '../remote/protocol.js';
+import type { UsageProvider, UsageState } from './shared-types.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
 import { getUserDataDir } from '../user-data-dir.js';
 import {
@@ -1801,6 +1803,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
     getAgentChoices: () => callRenderer<RemoteAgentChoice[]>(IPC.Remote_GetAgentsRequest, {}),
     createTaskFromMobile: (req: MobileTaskRequest) =>
       callRenderer<{ taskId: string }>(IPC.Remote_CreateTaskRequest, req),
+    createProjectFromMobile: async (req: { parentDir: string; name: string }) => {
+      const projectPath = await createProjectFolder(req.parentDir, req.name);
+      return callRenderer<RemoteProject>(IPC.Remote_AddProjectRequest, {
+        name: path.basename(projectPath),
+        path: projectPath,
+      });
+    },
     getTaskNotes: (taskId: string) =>
       callRenderer<{ notes: string }>(IPC.Remote_GetNotesRequest, { taskId }).then((r) => r.notes),
     setTaskNotes: (taskId: string, notes: string) =>
@@ -1821,6 +1830,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       ),
     mergeTaskFromMobile: (req: { taskId: string; squash: boolean; cleanup: boolean }) =>
       callRenderer<{ ok: boolean }>(IPC.Remote_MergeTaskRequest, req).then(() => {}),
+    getUsage: () => callRenderer<Record<UsageProvider, UsageState>>(IPC.Remote_GetUsageRequest, {}),
     getTaskAttention: (taskId: string): RemoteAttentionState => taskAttention.get(taskId) ?? 'idle',
     getTaskContext: (taskId: string) => taskContext.get(taskId),
     getCollapsedTaskIds: (): string[] => {

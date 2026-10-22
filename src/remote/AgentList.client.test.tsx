@@ -4,6 +4,9 @@ import { AgentList } from './AgentList';
 import { connect, reconnect } from './ws';
 import type { RemoteAgent } from '../../electron/remote/protocol';
 
+// Usage meters poll over HTTP; they have their own tests.
+vi.mock('./UsageStrip', () => ({ UsageStrip: () => null }));
+
 class Socket {
   static OPEN = 1;
   static CONNECTING = 0;

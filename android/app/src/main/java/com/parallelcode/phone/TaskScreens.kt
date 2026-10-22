@@ -10,17 +10,20 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -74,6 +77,9 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
     var prompt by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var addingProject by rememberSaveable { mutableStateOf(false) }
+    var newProjectName by rememberSaveable { mutableStateOf("") }
+    var newProjectParent by rememberSaveable { mutableStateOf("") }
     // Same default title as the phone web UI: the start of the prompt.
     val title = name.trim().ifEmpty { prompt.trim().replace(Regex("\\s+"), " ").take(80) }
 
@@ -141,6 +147,12 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            Text(
+                "PROJECT",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = AppTheme.extra.textMuted,
+            )
             val loaded = projects
             when {
                 loaded == null -> Text("Loading projects…", color = AppTheme.extra.textMuted)
@@ -193,6 +205,61 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
                         }
                     }
                 }
+            }
+            if (addingProject) {
+                OutlinedTextField(
+                    value = newProjectName,
+                    onValueChange = { newProjectName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("New project name") },
+                    singleLine = true,
+                    enabled = !busy,
+                    shape = MaterialTheme.shapes.large,
+                )
+                OutlinedTextField(
+                    value = newProjectParent,
+                    onValueChange = { newProjectParent = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Folder on your computer") },
+                    supportingText = { Text("A new git repository is created inside it.") },
+                    singleLine = true,
+                    enabled = !busy,
+                    shape = MaterialTheme.shapes.large,
+                )
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !busy && newProjectName.isNotBlank() && newProjectParent.isNotBlank(),
+                    shape = MaterialTheme.shapes.large,
+                    onClick = {
+                        busy = true
+                        error = null
+                        scope.launch {
+                            try {
+                                val created = client.createProject(newProjectName.trim(), newProjectParent.trim())
+                                projects = (projects ?: emptyList()) + created
+                                projectId = created.id
+                                newProjectName = ""
+                                addingProject = false
+                            } catch (e: ApiException) {
+                                failed(e)
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                ) { Text(if (busy) "Creating…" else "Create project", fontWeight = FontWeight.Bold) }
+            } else if (projects != null) {
+                TextButton(
+                    onClick = {
+                        if (newProjectParent.isEmpty()) {
+                            // Suggest the folder the existing projects already live in.
+                            newProjectParent = projects?.firstNotNullOfOrNull { it.path }
+                                ?.substringBeforeLast('/', "").orEmpty()
+                        }
+                        addingProject = true
+                    },
+                    enabled = !busy,
+                ) { Text("New project…") }
             }
             OutlinedTextField(
                 value = prompt,

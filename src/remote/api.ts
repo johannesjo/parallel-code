@@ -1,8 +1,9 @@
 // REST helpers for the mobile SPA. Data flows over the WebSocket (see ws.ts);
-// these cover the request/response actions: pairing, task creation, and
-// reading/saving task notes.
+// these cover the request/response actions: pairing, task creation, task
+// notes, and the subscription usage meters.
 
 import { getToken, getPairedToken } from './auth';
+import type { UsageProvider, UsageState } from '../../electron/ipc/shared-types';
 
 export class ApiError extends Error {
   status: number;
@@ -60,6 +61,14 @@ export interface MobileProject {
   agentName?: string;
 }
 
+export interface MobileAgent {
+  id: string;
+  name: string;
+  description?: string;
+  available?: boolean;
+  isDefault?: boolean;
+}
+
 /** List projects the New Task screen can target. Requires a paired token. */
 export function fetchProjects(): Promise<MobileProject[]> {
   const token = getPairedToken();
@@ -67,11 +76,19 @@ export function fetchProjects(): Promise<MobileProject[]> {
   return request<MobileProject[]>('/api/mobile/projects', { token });
 }
 
+/** List agents the New Task screen can target. Requires a paired token. */
+export function fetchAgents(): Promise<MobileAgent[]> {
+  const token = getPairedToken();
+  if (!token) throw new ApiError('Not paired', 401);
+  return request<MobileAgent[]>('/api/mobile/agents', { token });
+}
+
 /** Create a top-level task. Requires a paired token. Returns the new task id. */
 export async function createTask(input: {
   projectId: string;
   name: string;
   prompt: string;
+  agentId?: string;
 }): Promise<string> {
   const token = getPairedToken();
   if (!token) throw new ApiError('Not paired', 401);
@@ -190,6 +207,13 @@ export async function saveNotes(taskId: string, notes: string): Promise<void> {
     body: { notes },
     token,
   });
+}
+
+/** The desktop's agent-subscription usage. Works with the base connection token. */
+export function fetchUsage(): Promise<Record<UsageProvider, UsageState>> {
+  const token = getToken();
+  if (!token) throw new ApiError('Not connected', 401);
+  return request<Record<UsageProvider, UsageState>>('/api/mobile/usage', { token });
 }
 
 /** Notification delivery is owned by this paired phone, independently of its live socket. */

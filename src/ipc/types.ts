@@ -41,6 +41,7 @@ export type {
   CreditUsage,
   UsageProvider,
   UsageResult,
+  UsageState,
   UsageWindow,
   VerificationRun,
   VerificationRunStatus,
