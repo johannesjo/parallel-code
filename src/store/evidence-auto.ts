@@ -41,9 +41,10 @@ function backgroundWork(taskId: string): 'evidence' | 'verify' | undefined {
 
 /** A failed background verify is worth a note; the title bar shows the rest. */
 async function verifyInBackground(taskId: string): Promise<void> {
-  const run = await runBackgroundVerify(taskId);
+  const run = await runBackgroundVerify(taskId, () => getTaskDotStatus(taskId) !== 'busy');
   const task = store.tasks[taskId];
-  if (!task || !run || !FAILED.has(run.status)) return;
+  // An `error` run (say, a missing worktree) is not the code failing.
+  if (!task || (run?.status !== 'failed' && run?.status !== 'timed_out')) return;
   showNotification(`${task.name}: verify failed · open Finish to hand it to the agent`, {
     durationMs: NOTIFICATION_ERROR_MS,
   });
@@ -110,7 +111,7 @@ export function startBackgroundChecks(): () => void {
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
     const cancel = (taskId: string) => {
       // Its result would describe a tree the agent is about to change.
-      untrack(() => cancelBackgroundVerify(taskId));
+      untrack(() => void cancelBackgroundVerify(taskId));
       clearTimeout(timers.get(taskId));
       timers.delete(taskId);
       const queued = queue.indexOf(taskId);

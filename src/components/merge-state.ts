@@ -10,6 +10,7 @@ import {
   getEvidenceConfidence,
   getPrChecks,
   getProject,
+  getTaskDotStatus,
   getVerifyCommand,
   mergeTask,
   runBackgroundVerify,
@@ -186,10 +187,12 @@ export function createMergeState(props: MergeStateProps) {
         buildEvidence(props.task.id, { trigger: 'auto' }).catch((err) => {
           console.error('Evidence build after base sync failed:', err);
         });
-      else if (backgroundVerifyEnabled(props.task.id))
-        runBackgroundVerify(props.task.id).catch((err) => {
+      else if (backgroundVerifyEnabled(props.task.id)) {
+        const taskId = props.task.id;
+        runBackgroundVerify(taskId, () => getTaskDotStatus(taskId) !== 'busy').catch((err) => {
           console.error('Verify after base sync failed:', err);
         });
+      }
     } catch (err) {
       setSyncError(errMessage(err));
     } finally {

@@ -337,7 +337,11 @@ function mockInvoke(answer: (channel: string) => unknown) {
   onTestFinished(() => {
     if (original) vi.mocked(invoke).mockImplementation(original);
   });
-  vi.mocked(invoke).mockImplementation(async (channel: string) => answer(channel));
+  vi.mocked(invoke).mockImplementation(async (channel: string) => {
+    const value = answer(channel);
+    // The branch commit list is always an array; answers written for other channels are not.
+    return channel === IPC.GetBranchCommits && !Array.isArray(value) ? [] : value;
+  });
 }
 
 describe('FinishDialog base sync', () => {
@@ -364,7 +368,7 @@ describe('FinishDialog base sync', () => {
     );
     // Where the new base commits meet this branch, checks here never saw them.
     expect(document.body.textContent).toContain(
-      'They also change 1 file this branch changed: src/a.ts.',
+      'They also change 1 file this branch changed: src/a.ts. Test again after bringing in main.',
     );
     expect(button('Rebase onto main')).toBeDefined();
     expect(confirmButton()?.textContent).toBe('Merge into main');

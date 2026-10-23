@@ -19,6 +19,7 @@ vi.mock('../store/store', () => ({
   cancelTaskVerification: vi.fn(async () => true),
   getBackgroundVerifyHold: vi.fn(() => undefined),
   getEvidenceUiState: vi.fn(() => ({})),
+  getProject: vi.fn(() => undefined),
   getTaskChecks: vi.fn(() => VERIFY),
   isEvidenceBusy: (pkg: { assembling?: boolean }) => Boolean(pkg.assembling),
   runTaskVerification: vi.fn(async () => undefined),
@@ -40,7 +41,7 @@ const button = (text: string) =>
   [...document.querySelectorAll('button')].find((candidate) => candidate.textContent === text);
 const toggle = () => document.querySelector<HTMLButtonElement>('[aria-expanded]');
 const body = () => document.querySelector<HTMLElement>('[data-testid="body"]')?.parentElement;
-const status = () => document.querySelector('[role="status"]')?.textContent ?? '';
+const status = () => document.querySelector('section')?.textContent ?? '';
 
 function run(overrides: Partial<VerificationRun> = {}): VerificationRun {
   return {
@@ -84,6 +85,8 @@ describe('ReadinessSection', () => {
     mount({ verificationRun: run() });
     expect(status()).toContain('Verify passed');
     expect(status()).toContain('on aaaaaaa');
+    // The live region holds the outcome only, not the ticking age or the button.
+    expect(document.querySelector('[role="status"]')?.textContent).toBe('Verify passed');
     expect(button('Re-run')).toBeDefined();
   });
 

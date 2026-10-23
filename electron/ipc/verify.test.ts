@@ -65,9 +65,8 @@ describe('verification runner', () => {
     const run = await runner().start({
       key: 'nice',
       worktreePath: tmpDir(),
-      // The forked `sh` reports its own niceness, inherited from the shell. The
-      // sleep keeps the fork after the runner lowered the shell's priority.
-      command: `sleep 0.2; sh -c 'ps -o nice= -p $$'`,
+      // The forked `sh` reports its own niceness, inherited from the shell.
+      command: `sh -c 'ps -o nice= -p $$'`,
       lowPriority: true,
     });
 

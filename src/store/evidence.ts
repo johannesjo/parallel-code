@@ -37,7 +37,11 @@ import {
 import { saveState } from './persistence';
 import { getProject } from './projects';
 import { sendPrompt } from './tasks';
-import { adoptVerificationRun, showVerificationInEvidence } from './verification';
+import {
+  adoptVerificationRun,
+  cancelBackgroundVerify,
+  showVerificationInEvidence,
+} from './verification';
 import type { Task } from './types';
 
 const LIVE_OUTPUT_MAX_CHARS = 64 * 1024;
@@ -196,6 +200,9 @@ export async function buildEvidence(
     return;
   const isCurrent = nextGeneration(taskId);
   cancelEvidenceReview(taskId);
+  // The build runs verify itself; two copies in one worktree collide.
+  await cancelBackgroundVerify(taskId);
+  if (!isCurrent()) return;
   if (task.evidence?.assembling || task.evidence?.checks.some((r) => r.status === 'running'))
     await cancelEvidenceChecks(taskId);
   const scan = await scanTask(task);

@@ -109,6 +109,16 @@ describe('readinessLine', () => {
     );
   });
 
+  it('explains a hold on this commit even when an older run exists', () => {
+    const hold = { headSha: HEAD, reason: 'execution-surface' as const };
+    expect(line({ run: run({ headSha: 'b'.repeat(40) }), hold }).detail).toBe(
+      'Background run held back because the change touches how checks run · passed on bbbbbbb · 4m ago',
+    );
+    expect(
+      line({ run: run({ status: 'failed', exitCode: 1, headSha: 'b'.repeat(40) }), hold }).detail,
+    ).toContain('Background run held back because the change touches how checks run');
+  });
+
   it('treats a cancelled run as not tested', () => {
     expect(line({ run: run({ status: 'cancelled', exitCode: null }) }).text).toBe(
       'Not tested on this commit',
@@ -156,7 +166,7 @@ describe('overlapText', () => {
 
   it('names the shared files, a few at most', () => {
     expect(overlapText(['a.ts'], 'main')).toBe(
-      "They also change 1 file this branch changed: a.ts. Checks here ran without main's version.",
+      'They also change 1 file this branch changed: a.ts. Test again after bringing in main.',
     );
     expect(overlapText(['a', 'b', 'c', 'd', 'e'], 'dev')).toContain('a, b, c and 2 more');
   });

@@ -1,10 +1,9 @@
 import { execFile, spawn } from 'child_process';
 import { existsSync } from 'fs';
-import { setPriority } from 'os';
 import { promisify } from 'util';
 import { resolveUserShell } from '../user-shell.js';
 import { stripAnsi } from '../shared/prompt-detect.js';
-import { pendingVerificationRun } from '../shared/verification-run.js';
+import { HELD_RUN_MESSAGE, pendingVerificationRun } from '../shared/verification-run.js';
 import type { VerificationRun, VerificationRunStatus } from './shared-types.js';
 
 export const VERIFY_TIMEOUT_MS = 10 * 60_000;
@@ -13,7 +12,7 @@ export const VERIFY_MAX_CONCURRENT = 2;
 export const VERIFY_OUTPUT_TAIL_CHARS = 32 * 1024;
 export const VERIFY_COMMAND_MAX_LENGTH = 4096;
 const KILL_GRACE_MS = 3_000;
-/** Niceness for background runs; children the shell forks inherit it. */
+/** Niceness added to background runs; everything the shell forks inherits it. */
 export const VERIFY_LOW_PRIORITY = 10;
 
 export interface VerifyRequest {
@@ -141,21 +140,20 @@ function exitOutcome(code: number | null, signal: NodeJS.Signals | null): EndRea
 }
 
 function spawnCommand(request: VerifyRequest, deps: SpawnDeps): Child {
-  const child = deps.spawnImpl(deps.shell, ['-c', request.command], {
+  const shellArgs = [deps.shell, '-c', request.command];
+  // Started under `nice` rather than reniced after spawn, so nothing the shell
+  // forks early runs at full priority. Both desktop targets ship `nice`.
+  const [file, ...args] =
+    request.lowPriority && process.platform !== 'win32'
+      ? ['nice', '-n', String(VERIFY_LOW_PRIORITY), ...shellArgs]
+      : shellArgs;
+  return deps.spawnImpl(file, args, {
     cwd: request.worktreePath,
     env: { ...process.env, ...request.env, NO_COLOR: '1', FORCE_COLOR: '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
     // Own process group so `npm test` and every child it forks die together.
     detached: process.platform !== 'win32',
   });
-  if (request.lowPriority && child.pid) {
-    try {
-      setPriority(child.pid, VERIFY_LOW_PRIORITY);
-    } catch {
-      /* already exited, or not permitted; the run still counts */
-    }
-  }
-  return child;
 }
 
 /** Streams output and settles once the child exits, is cancelled, or times out. */
@@ -245,8 +243,7 @@ async function execute(
       status: 'cancelled',
       exitCode: null,
       outputTail: '',
-      message:
-        'Automatic check held: the worktree changed since the evidence scan. Rebuild or run this check explicitly.',
+      message: HELD_RUN_MESSAGE,
     };
   }
   const outcome = await runCommand(request, signal, deps);

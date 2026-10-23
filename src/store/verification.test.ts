@@ -33,6 +33,7 @@ vi.mock('./staged-prompt', () => ({ stageTaskPrompt: mockStagePrompt }));
 
 import { setStore, store } from './core';
 import type { EvidenceScan } from '../../electron/shared/evidence';
+import { HELD_RUN_MESSAGE } from '../../electron/shared/verification-run';
 import type { Project } from './types';
 import {
   cancelBackgroundVerify,
@@ -340,6 +341,33 @@ describe('runBackgroundVerify', () => {
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 
+  it('asks again whether the agent is idle once the scan is back', async () => {
+    let idle = true;
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel !== IPC.GetEvidenceScan) return Promise.resolve(finishedRun());
+      idle = false;
+      return Promise.resolve(scan());
+    });
+    expect(await runBackgroundVerify('t1', () => idle)).toBeUndefined();
+    expect(mockInvoke).not.toHaveBeenCalledWith(IPC.RunTaskVerification, expect.anything());
+  });
+
+  it('records a hold when the runner finds uncommitted changes at start', async () => {
+    mockBackground(
+      scan(),
+      finishedRun({
+        status: 'cancelled',
+        exitCode: null,
+        headSha: 'head',
+        dirty: true,
+        outputTail: '',
+        message: HELD_RUN_MESSAGE,
+      }),
+    );
+    await runBackgroundVerify('t1');
+    expect(getBackgroundVerifyHold('t1')).toEqual({ headSha: 'head', reason: 'dirty' });
+  });
+
   it('never starts over a run already in flight', async () => {
     setStore('tasks', 't1', 'verificationRun', finishedRun({ status: 'running' }));
     mockBackground(scan());
@@ -359,17 +387,36 @@ describe('runBackgroundVerify', () => {
 });
 
 describe('cancelBackgroundVerify', () => {
-  it('stops a background run', async () => {
+  it('stops a background run and keeps the result it replaced', async () => {
+    setStore('tasks', 't1', 'verificationRun', finishedRun({ headSha: 'older' }));
     let finish: (run: VerificationRun) => void = () => {};
     mockBackground(scan(), new Promise<VerificationRun>((resolve) => (finish = resolve)));
     const pending = runBackgroundVerify('t1');
     await flush();
 
-    cancelBackgroundVerify('t1');
+    await cancelBackgroundVerify('t1');
 
     expect(mockInvoke).toHaveBeenCalledWith(IPC.CancelTaskVerification, { taskId: 't1' });
     finish(finishedRun({ status: 'cancelled', exitCode: null }));
     await pending;
+    expect(store.tasks.t1.verificationRun).toMatchObject({ status: 'passed', headSha: 'older' });
+  });
+
+  it('keeps a run from starting when cancelled during the scan', async () => {
+    let answer: (value: EvidenceScan) => void = () => {};
+    mockInvoke.mockImplementation((channel: string) =>
+      channel === IPC.GetEvidenceScan
+        ? new Promise<EvidenceScan>((resolve) => (answer = resolve))
+        : Promise.resolve(finishedRun()),
+    );
+    const pending = runBackgroundVerify('t1');
+    await flush();
+
+    await cancelBackgroundVerify('t1');
+    answer(scan());
+
+    expect(await pending).toBeUndefined();
+    expect(mockInvoke).not.toHaveBeenCalledWith(IPC.RunTaskVerification, expect.anything());
   });
 
   it('leaves a run the user started alone', async () => {

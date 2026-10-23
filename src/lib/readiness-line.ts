@@ -33,7 +33,8 @@ export interface ReadinessLineInput {
   lastPass?: VerifyPassRecord;
   /** Full hashes of the branch's commits, oldest first. */
   branchCommits?: readonly string[];
-  /** Whether the project runs verify in the background after agent turns. */
+  /** Whether verify runs in the background after agent turns, on its own or
+   *  as part of a background evidence build. */
   autoRun: boolean;
   now: number;
 }
@@ -102,13 +103,17 @@ export function readinessLine(input: ReadinessLineInput): ReadinessLine {
     return reportedLine(input.verification);
   const run = input.run;
   const command = run?.command ?? input.verifyCommand ?? '';
+  // Only a hold on this very commit explains why this commit is untested.
+  const held =
+    input.hold && input.hold.headSha === input.headSha
+      ? `Background run ${skipReasonText(input.hold.reason)}`
+      : '';
   if (!run || run.status === 'cancelled') {
-    const held = input.hold && input.hold.headSha === input.headSha ? input.hold : undefined;
     return {
       tone: 'neutral',
       text: 'Not tested on this commit',
       detail: held
-        ? `Background run ${skipReasonText(held.reason)}.`
+        ? `${held}.`
         : input.autoRun
           ? `\`${command}\` runs in the background after the agent's next turn.`
           : `\`${command}\``,
@@ -136,7 +141,7 @@ export function readinessLine(input: ReadinessLineInput): ReadinessLine {
       return {
         tone: 'neutral',
         text: 'Not tested on this commit',
-        detail: joined(sha && `passed on ${sha}`, ago(run.finishedAt, input.now)),
+        detail: joined(held, sha && `passed on ${sha}`, ago(run.finishedAt, input.now)),
         action: 'run',
       };
     case 'dirty':
@@ -146,14 +151,20 @@ export function readinessLine(input: ReadinessLineInput): ReadinessLine {
         detail: 'Those changes are not part of the merge; commit and run again.',
         action: 'run',
       };
-    case 'failed':
+    case 'failed': {
+      // A failure on an older commit may be fixed already; run it again first.
+      const stale = isVerificationStale(run, input.headSha);
       return {
         tone: 'failed',
         text: `Verify ${summary.label.charAt(0).toLowerCase()}${summary.label.slice(1)}`,
-        detail: joined(summary.detail, lastPassText(run, input.lastPass, input.branchCommits)),
-        // A failure on an older commit may be fixed already; run it again first.
-        action: isVerificationStale(run, input.headSha) ? 'run' : 'stage',
+        detail: joined(
+          stale ? held : '',
+          summary.detail,
+          lastPassText(run, input.lastPass, input.branchCommits),
+        ),
+        action: stale ? 'run' : 'stage',
       };
+    }
     case 'unavailable':
     case 'none':
       return { tone: 'neutral', text: summary.label, detail: summary.detail, action: 'run' };
@@ -164,9 +175,9 @@ const OVERLAP_NAMES = 3;
 
 /** Under "base has N new commits": whether those commits touch this branch's files. */
 export function overlapText(files: readonly string[], base: string): string {
-  if (files.length === 0) return `None of them touch files this branch changed.`;
+  if (files.length === 0) return 'None of them touch files this branch changed.';
   const names = files.slice(0, OVERLAP_NAMES).join(', ');
   const more = files.length > OVERLAP_NAMES ? ` and ${files.length - OVERLAP_NAMES} more` : '';
   const noun = files.length === 1 ? 'file this branch changed' : 'files this branch changed';
-  return `They also change ${files.length} ${noun}: ${names}${more}. Checks here ran without ${base}'s version.`;
+  return `They also change ${files.length} ${noun}: ${names}${more}. Test again after bringing in ${base}.`;
 }

@@ -46,10 +46,10 @@ export function ProjectVerificationSection(props: ProjectVerificationSectionProp
         label="Run it in the background after each agent turn"
         description={
           <>
-            Once an agent goes idle with a new commit, the app runs the command at low priority, one
-            task at a time, so the Finish dialog already has the result. It skips Docker tasks,
-            uncommitted changes and changes to how checks run, and stops when the agent starts
-            working again.
+            Once an agent goes idle with a new commit, the app runs the command at low priority, so
+            the Finish dialog already has the result. It skips Docker tasks, uncommitted changes and
+            changes to how checks run, and stops when the agent starts working again. Background
+            evidence builds, when on, run it as part of the build instead.
           </>
         }
         checked={form().verifyAutoRun()}

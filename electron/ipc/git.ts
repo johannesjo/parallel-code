@@ -2391,14 +2391,18 @@ export async function checkMergeStatus(
   };
 }
 
-/** Paths both sides changed since they diverged, minus the conflicting ones. */
+/**
+ * Paths both sides changed since they diverged, minus the conflicting ones.
+ * The base side counts only commits `main_ahead_count` counts: one already
+ * cherry-picked from this branch changes nothing this branch has not seen.
+ */
 async function overlappingFiles(
   worktreePath: string,
   mainBranch: string,
   conflictingFiles: string[],
 ): Promise<string[]> {
-  const changed = async (range: string): Promise<string[]> => {
-    const { stdout } = await exec('git', ['diff', '--name-only', '--no-renames', range, '--'], {
+  const lines = async (args: string[]): Promise<string[]> => {
+    const { stdout } = await exec('git', args, {
       cwd: worktreePath,
       maxBuffer: 8 * 1024 * 1024,
     });
@@ -2406,8 +2410,17 @@ async function overlappingFiles(
   };
   try {
     const [ours, theirs] = await Promise.all([
-      changed(`${mainBranch}...HEAD`),
-      changed(`HEAD...${mainBranch}`),
+      lines(['diff', '--name-only', '--no-renames', `${mainBranch}...HEAD`, '--']),
+      lines([
+        'log',
+        '--format=',
+        '--name-only',
+        '--no-renames',
+        '--cherry-pick',
+        '--right-only',
+        `HEAD...${mainBranch}`,
+        '--',
+      ]),
     ]);
     const conflicting = new Set(conflictingFiles);
     const theirSet = new Set(theirs);

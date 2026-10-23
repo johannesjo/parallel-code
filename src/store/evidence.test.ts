@@ -37,7 +37,7 @@ import {
   getEvidenceUiState,
 } from './evidence-state';
 import { cancelEvidenceChecks } from './evidence';
-import { runTaskVerification } from './verification';
+import { runBackgroundVerify, runTaskVerification } from './verification';
 
 const HEAD = 'a'.repeat(40);
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -186,6 +186,43 @@ describe('buildEvidence', () => {
       );
     },
   );
+
+  it('stops a background verify first, since the build runs verify itself', async () => {
+    let finishBackground: ((run: VerificationRun) => void) | undefined;
+    mockInvoke.mockImplementation(async (channel: string, args: { evidence?: boolean }) => {
+      if (channel === IPC.GetEvidenceScan)
+        return scan({
+          files: [{ path: 'a.ts', status: 'M', added: 1, removed: 0, role: 'source' }],
+        });
+      if (channel === IPC.RunTaskVerification && !args.evidence)
+        return new Promise<VerificationRun>((resolve) => (finishBackground = resolve));
+      if (channel === IPC.RunTaskVerification) return finished('npm run check');
+      if (channel === IPC.CancelTaskVerification && !args.evidence) {
+        finishBackground?.(finished('npm run check', { status: 'cancelled', exitCode: null }));
+        return true;
+      }
+      return undefined;
+    });
+    const background = runBackgroundVerify('t1');
+    await flush();
+    expect(finishBackground).toBeDefined();
+
+    await buildEvidence('t1', { trigger: 'manual' });
+    await background;
+
+    const channels = mockInvoke.mock.calls.map(([channel, args]) => [
+      channel,
+      Boolean((args as { evidence?: boolean }).evidence),
+    ]);
+    const cancelled = channels.findIndex(
+      ([channel, evidence]) => channel === IPC.CancelTaskVerification && !evidence,
+    );
+    const buildRun = channels.findIndex(
+      ([channel, evidence]) => channel === IPC.RunTaskVerification && evidence,
+    );
+    expect(cancelled).toBeGreaterThan(-1);
+    expect(cancelled).toBeLessThan(buildRun);
+  });
 
   it('runs auto checks one after another on the evidence key and skips on-demand ones', async () => {
     answer(scan());

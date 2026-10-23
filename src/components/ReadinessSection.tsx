@@ -8,6 +8,7 @@ import {
   cancelTaskVerification,
   getBackgroundVerifyHold,
   getEvidenceUiState,
+  getProject,
   getTaskChecks,
   isEvidenceBusy,
   runTaskVerification,
@@ -92,7 +93,9 @@ export function ReadinessSection(props: ReadinessSectionProps) {
       hold: getBackgroundVerifyHold(props.task.id),
       lastPass: props.task.lastVerifyPass,
       branchCommits: props.branchCommits,
-      autoRun: backgroundVerifyEnabled(props.task.id),
+      autoRun:
+        backgroundVerifyEnabled(props.task.id) ||
+        Boolean(getProject(props.task.projectId)?.evidenceAutoBuild),
       now: now(),
     });
   // A build restarts verify itself, so a click would only cancel its run.
@@ -133,8 +136,10 @@ export function ReadinessSection(props: ReadinessSectionProps) {
 
   return (
     <section aria-label="Readiness and checks" style={{ margin: '20px 0', 'font-size': '13px' }}>
-      <div style={rowStyle} role="status">
+      <div style={rowStyle}>
+        {/* Only the outcome is announced, not ages and button labels as they tick. */}
         <span
+          role="status"
           style={{
             color: line().tone === 'failed' ? theme.error : theme.fg,
             'white-space': 'nowrap',

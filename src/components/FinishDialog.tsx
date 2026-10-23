@@ -16,7 +16,7 @@ import { ReadinessSection } from './ReadinessSection';
 import { createMergeState } from './merge-state';
 import { PR_MERGE_ACTIONS, createFinishPr, taskPrUrl } from './pr-actions';
 import { createPushRun } from './push-run';
-import { getProject, getTaskChecks } from '../store/store';
+import { backgroundVerifyEnabled, getProject, getTaskChecks } from '../store/store';
 import { markFeatureHintSeen } from '../store/onboarding';
 import { showNotification } from '../store/notification';
 import { dialogButtonStyle, theme } from '../lib/theme';
@@ -248,8 +248,12 @@ export function FinishDialog(props: FinishDialogProps) {
                     [{ label: 'Configure checks', run: props.onConfigureChecks, quiet: true }]
               }
             >
-              Readiness says whether the verify command passed on this commit. It runs in the
-              background after each agent turn; Details holds the full evidence.
+              Readiness says whether the verify command passed on this commit; Details holds the
+              full evidence.
+              <Show when={backgroundVerifyEnabled(props.task.id)}>
+                {' '}
+                It runs in the background after agent turns.
+              </Show>
               <Show when={!hasChecks()}> Add a verify command to have your tests run.</Show>
             </FeatureHint>
             <FinishPrSection

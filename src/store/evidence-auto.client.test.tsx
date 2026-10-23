@@ -177,8 +177,13 @@ describe('startBackgroundChecks', () => {
     setStore('projects', 0, 'evidenceAutoBuild', undefined);
     verify.enabled.mockReturnValue(true);
     await finishTurn('t1');
-    expect(verify.run).toHaveBeenCalledWith('t1');
+    expect(verify.run).toHaveBeenCalledWith('t1', expect.any(Function));
     expect(mockBuild).not.toHaveBeenCalled();
+    // The run asks again once its scan is back; a busy agent stops it.
+    const stillIdle = verify.run.mock.calls[0]?.[1] as () => boolean;
+    expect(stillIdle()).toBe(true);
+    setStatus({ t1: 'busy' });
+    expect(stillIdle()).toBe(false);
   });
 
   it('prefers a full evidence build, which runs verify first', async () => {

@@ -6,7 +6,7 @@ import {
   changedDuringRun,
   compileVerificationFailurePrompt,
 } from '../lib/verification-run';
-import { pendingVerificationRun } from '../../electron/shared/verification-run';
+import { HELD_RUN_MESSAGE, pendingVerificationRun } from '../../electron/shared/verification-run';
 import {
   VERIFY_CHECK_ID,
   type EvidenceScan,
@@ -33,6 +33,8 @@ const generations = new Map<string, number>();
 // The generation of each task's background run, so only those are cancelled
 // when the agent starts working again.
 const backgroundGenerations = new Map<string, number>();
+// Background runs between their start and the command: a cancel lands here.
+const scanning = new Map<string, symbol>();
 
 /** Why the background run skipped the task's current commit. */
 export interface BackgroundVerifyHold {
@@ -173,30 +175,36 @@ export function backgroundVerifyEnabled(taskId: string): boolean {
  * Runs the verify command once per commit after an agent turn, through the
  * same execution gate as evidence builds. Resolves with the finished run, or
  * undefined when nothing ran: no new commit, already covered, held, or busy.
+ * `stillIdle` is asked again right before the command starts, since the agent
+ * may pick work back up while the change is scanned.
  */
-export async function runBackgroundVerify(taskId: string): Promise<VerificationRun | undefined> {
+export async function runBackgroundVerify(
+  taskId: string,
+  stillIdle: () => boolean = () => true,
+): Promise<VerificationRun | undefined> {
   const task = store.tasks[taskId];
   const check = getTaskChecks(taskId).find((c) => c.id === VERIFY_CHECK_ID);
   if (!task || !check || !backgroundVerifyEnabled(taskId)) return undefined;
   const idle = () => {
     const current = store.tasks[taskId];
     return (
+      stillIdle() &&
       current?.verificationRun?.status !== 'running' &&
       !(current?.evidence && isEvidenceBusy(current.evidence))
     );
   };
   if (!idle()) return undefined;
-  let scan: EvidenceScan;
-  try {
-    scan = await invoke<EvidenceScan>(IPC.GetEvidenceScan, {
-      worktreePath: task.worktreePath,
-      baseBranch: task.baseBranch,
-    });
-  } catch {
-    return undefined;
-  }
+  // Claimed before the scan, so cancelling during it stops the run from starting.
+  const claim = Symbol('background verify');
+  scanning.set(taskId, claim);
+  const scan = await invoke<EvidenceScan>(IPC.GetEvidenceScan, {
+    worktreePath: task.worktreePath,
+    baseBranch: task.baseBranch,
+  }).catch(() => undefined);
+  const claimed = scanning.get(taskId) === claim;
+  if (claimed) scanning.delete(taskId);
   const current = store.tasks[taskId];
-  if (!current || !idle()) return undefined;
+  if (!claimed || !scan || !current || !idle()) return undefined;
   if (scan.files.length === 0 || reusableVerifyRun(current.verificationRun, check, scan.headSha)) {
     setHolds(taskId, undefined);
     return undefined;
@@ -212,15 +220,24 @@ export async function runBackgroundVerify(taskId: string): Promise<VerificationR
   const held = plan.skipped[0];
   setHolds(taskId, held ? { headSha: scan.headSha, reason: held.reason } : undefined);
   if (held) return undefined;
-  return runTaskVerification(taskId, { background: true, expectedHeadSha: scan.headSha });
+  const run = await runTaskVerification(taskId, {
+    background: true,
+    expectedHeadSha: scan.headSha,
+  });
+  // The runner found uncommitted changes when the command was about to start.
+  if (run?.status === 'cancelled' && run.message === HELD_RUN_MESSAGE && run.dirty && run.headSha)
+    setHolds(taskId, { headSha: run.headSha, reason: 'dirty' });
+  return run;
 }
 
-/** Stops the task's background run, if one is in flight; a clicked run keeps going. */
-export function cancelBackgroundVerify(taskId: string): void {
+/** Stops the task's background run, or keeps a scanning one from starting;
+ *  a clicked run keeps going. */
+export async function cancelBackgroundVerify(taskId: string): Promise<void> {
+  scanning.delete(taskId);
   const generation = backgroundGenerations.get(taskId);
   if (generation === undefined || generation !== generations.get(taskId)) return;
   if (store.tasks[taskId]?.verificationRun?.status !== 'running') return;
-  void cancelTaskVerification(taskId);
+  await cancelTaskVerification(taskId);
 }
 
 /** Puts a manual run into the evidence package of the same commit, so the
