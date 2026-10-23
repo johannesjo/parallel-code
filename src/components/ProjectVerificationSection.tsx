@@ -1,7 +1,7 @@
 import { keepCheckIds } from '../lib/check-suggestion';
 import { EvidenceSettingsFields } from './EvidenceSettingsFields';
 import { SuggestChecksButton } from './SuggestChecksButton';
-import { ProjectField, projectMonoInputStyle } from './ProjectDialogParts';
+import { ProjectCheckbox, ProjectField, projectMonoInputStyle } from './ProjectDialogParts';
 import type { ProjectSettingsForm } from './project-settings-form';
 
 interface ProjectVerificationSectionProps {
@@ -21,11 +21,11 @@ export function ProjectVerificationSection(props: ProjectVerificationSectionProp
         aside="runs in the task worktree"
         hint={
           <>
-            Runs from the Finish dialog, when an agent calls <code>land_self</code>, and before the
-            coordinator merges. A failure is advisory in the Finish dialog, but{' '}
-            <code>land_self</code> and <code>merge_task</code> refuse to merge until it passes.{' '}
-            <code>PARALLEL_CODE_TASK_ID</code> and <code>PARALLEL_CODE_BRANCH</code> are set for
-            namespacing shared resources.
+            Runs in the background after agent turns, from the Finish dialog, when an agent calls{' '}
+            <code>land_self</code>, and before the coordinator merges. A failure is advisory in the
+            Finish dialog, but <code>land_self</code> and <code>merge_task</code> refuse to merge
+            until it passes. <code>PARALLEL_CODE_TASK_ID</code> and{' '}
+            <code>PARALLEL_CODE_BRANCH</code> are set for namespacing shared resources.
           </>
         }
       >
@@ -42,6 +42,19 @@ export function ProjectVerificationSection(props: ProjectVerificationSectionProp
           />
         )}
       </ProjectField>
+      <ProjectCheckbox
+        label="Run it in the background after each agent turn"
+        description={
+          <>
+            Once an agent goes idle with a new commit, the app runs the command at low priority, one
+            task at a time, so the Finish dialog already has the result. It skips Docker tasks,
+            uncommitted changes and changes to how checks run, and stops when the agent starts
+            working again.
+          </>
+        }
+        checked={form().verifyAutoRun()}
+        onChange={(checked) => form().setVerifyAutoRun(checked)}
+      />
       <SuggestChecksButton
         projectRoot={props.projectRoot}
         model={form().evidenceModel()}

@@ -1625,6 +1625,37 @@ describe('checkMergeStatus (cherry-pick filtered ahead count)', () => {
     expect(mergeTreeCall).toContain('main');
     expect(result.conflicting_files).toEqual(['src/foo.ts', 'src/bar.ts']);
   });
+
+  it('lists files both sides changed, leaving out the conflicting ones', async () => {
+    const calls: string[][] = [];
+    setupMock(calls, (args, cb) => {
+      const [cmd] = args;
+      if (cmd === 'rev-list' && args.includes('--count')) return cb(null, '3\n', '');
+      if (cmd === 'merge-tree')
+        return cb(new Error('CONFLICT (content): Merge conflict in c.ts'), '', '');
+      if (cmd === 'diff' && args.includes('main...HEAD')) return cb(null, 'a.ts\nb.ts\nc.ts\n', '');
+      if (cmd === 'diff' && args.includes('HEAD...main')) return cb(null, 'b.ts\nc.ts\nd.ts\n', '');
+      return cb(null, '', '');
+    });
+
+    const result = await checkMergeStatus(uniqueWorktreePath(), 'main');
+
+    expect(result.conflicting_files).toEqual(['c.ts']);
+    expect(result.overlapping_files).toEqual(['b.ts']);
+  });
+
+  it('reports no overlap when a diff fails', async () => {
+    setupMock([], (args, cb) => {
+      const [cmd] = args;
+      if (cmd === 'rev-list' && args.includes('--count')) return cb(null, '1\n', '');
+      if (cmd === 'diff') return cb(new Error('bad revision'), '', '');
+      return cb(null, '', '');
+    });
+
+    const result = await checkMergeStatus(uniqueWorktreePath(), 'main');
+
+    expect(result.overlapping_files).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------

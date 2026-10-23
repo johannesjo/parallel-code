@@ -1364,11 +1364,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertOptionalBoolean(args.evidence, 'evidence');
     if (args.evidence) assertString(args.checkId, 'checkId');
     assertOptionalString(args.expectedHeadSha, 'expectedHeadSha');
+    assertOptionalBoolean(args.lowPriority, 'lowPriority');
     const channel = `channel:${args.onOutput.__CHANNEL_ID__}`;
     return verificationRunner.start({
       // Evidence checks have their own keys so they never cancel a manual run.
       key: args.evidence ? evidenceRunKey(args.taskId, args.checkId) : args.taskId,
       expectedHeadSha: args.expectedHeadSha,
+      lowPriority: args.lowPriority === true,
       worktreePath,
       command: args.command,
       env: buildVerifyEnv({ taskId: args.taskId, branchName: args.branchName, worktreePath }),

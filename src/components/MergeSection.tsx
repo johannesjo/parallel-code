@@ -1,5 +1,10 @@
 import { Show, type JSX } from 'solid-js';
-import { getProject, getTaskChecks, updateTaskBranch } from '../store/store';
+import {
+  backgroundVerifyEnabled,
+  getProject,
+  getTaskChecks,
+  updateTaskBranch,
+} from '../store/store';
 import { bannerStyle, theme } from '../lib/theme';
 import type { Task } from '../store/types';
 import type { ChangedFile } from '../ipc/types';
@@ -130,7 +135,8 @@ export function MergeBlockers(props: MergeSectionProps) {
               ? `Merged ${props.state.baseBranchName()} into this branch.`
               : `Rebased onto ${props.state.baseBranchName()}.`}
             <Show when={getTaskChecks(props.task.id).length > 0}>
-              {getProject(props.task.projectId)?.evidenceAutoBuild
+              {getProject(props.task.projectId)?.evidenceAutoBuild ||
+              backgroundVerifyEnabled(props.task.id)
                 ? ' Re-running the checks.'
                 : ' Refresh the checks to cover the new commits.'}
             </Show>

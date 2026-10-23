@@ -12,9 +12,8 @@ import {
   workItemTaskName,
 } from '../lib/github-prompts';
 import { setStore, store } from './core';
-import { setPrefillPrompt, setTaskPromptDraftActive } from './tasks';
 import { toggleNewTaskPanel } from './navigation';
-import { setTaskFocusedPanel } from './focused-panel';
+import { stageTaskPrompt } from './staged-prompt';
 import type {
   GitHubIssueDetails,
   GitHubIssueSummary,
@@ -101,18 +100,8 @@ export async function stageReviewFeedbackPrompt(
 }
 
 // Prefilled rather than sent: GitHub content is untrusted, so the user reads
-// and edits it before the agent sees it. Appended so an unsent draft survives.
-function stagePrompt(taskId: string, text: string): void {
-  const task = store.tasks[taskId];
-  if (!task) return;
-  const draft = task.prefillPrompt ?? task.promptDraft ?? '';
-  setTaskPromptDraftActive(taskId, true);
-  setStore('showPromptInput', true);
-  setPrefillPrompt(taskId, [draft, text].filter(Boolean).join('\n\n'));
-  queueMicrotask(() => {
-    if (store.tasks[taskId]) setTaskFocusedPanel(taskId, 'prompt');
-  });
-}
+// and edits it before the agent sees it.
+const stagePrompt = stageTaskPrompt;
 
 /** Browser state is separate from the task composer and survives task handoff. */
 export function openGitHubIssues(projectId: string | null): void {

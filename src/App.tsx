@@ -147,7 +147,7 @@ import { startRemoteTaskHandlers } from './store/remoteTaskHandler';
 import { startRemoteStatusSync } from './store/remoteStatusSync';
 import { startAgentHookStatusListener } from './store/agentHookStatus';
 import { applyPlanContent } from './store/canvas';
-import { startEvidenceAutoBuild } from './store/evidence-auto';
+import { startBackgroundChecks } from './store/evidence-auto';
 import type { PlanContentMessage } from './store/canvas';
 import { SyncIcon } from './components/icons';
 
@@ -417,7 +417,7 @@ function App() {
     // loadState spawns them, and IPC does not replay what nobody listened to.
     const stopMCPListeners = initMCPListeners();
     const stopAgentHookStatusListener = startAgentHookStatusListener();
-    const stopEvidenceAutoBuild = startEvidenceAutoBuild();
+    const stopBackgroundChecks = startBackgroundChecks();
     // Listen for plan content pushed from backend plan watcher
     const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
       if (!data || typeof data !== 'object') return;
@@ -892,7 +892,7 @@ function App() {
       stopRemoteTaskHandlers();
       stopRemoteStatusSync();
       stopAgentHookStatusListener();
-      stopEvidenceAutoBuild();
+      stopBackgroundChecks();
       stopDocumentListeners();
       stopWindowVisibilityTracking();
       offPlanContent();

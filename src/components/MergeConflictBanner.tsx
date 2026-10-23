@@ -2,6 +2,7 @@ import { For, Show } from 'solid-js';
 import { sendPrompt, store } from '../store/store';
 import { bannerStyle, theme } from '../lib/theme';
 import type { Task } from '../store/types';
+import { overlapText } from '../lib/readiness-line';
 import type { MergeState } from './merge-state';
 import { GitBranchIcon, GitMergeIcon, SparkleIcon } from './icons';
 
@@ -75,6 +76,14 @@ export function MergeConflictBanner(props: { task: Task; state: MergeState; onDo
               >
                 <For each={status().conflicting_files}>{(f) => <li>{f}</li>}</For>
               </ul>
+            </Show>
+            {/* Checks on this branch never saw those commits; overlap is where that matters. */}
+            <Show when={!props.state.hasConflicts() && status().overlapping_files}>
+              {(files) => (
+                <div style={{ 'margin-top': '4px', color: theme.fgMuted }}>
+                  {overlapText(files(), base())}
+                </div>
+              )}
             </Show>
             <div
               style={{

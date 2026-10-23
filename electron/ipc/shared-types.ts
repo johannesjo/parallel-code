@@ -121,6 +121,10 @@ export interface MergeStatus {
   main_ahead_count: number;
   conflicting_files: string[];
   base_branch: string;
+  /** Files both this branch and the base's newer commits changed, without a
+   *  conflict. The branch's checks never ran against those base changes.
+   *  Absent from older senders. */
+  overlapping_files?: string[];
 }
 
 export interface MergeResult {

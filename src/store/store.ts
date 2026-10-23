@@ -223,12 +223,17 @@ export type { TaskAgentHookStatus } from './agentHookStatus';
 export { showNotification, clearNotification } from './notification';
 export { startPrChecksSubscription, getPrChecks, type PrChecksState } from './pr-checks';
 export {
+  backgroundVerifyEnabled,
   cancelTaskVerification,
+  getBackgroundVerifyHold,
   getVerificationOutput,
   getVerifyCommand,
+  runBackgroundVerify,
   runTaskVerification,
   sendVerificationFailureToAgent,
+  stageVerificationFailurePrompt,
 } from './verification';
+export type { BackgroundVerifyHold } from './verification';
 export {
   buildEvidence,
   cancelEvidenceChecks,

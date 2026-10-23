@@ -28,6 +28,7 @@ import type {
   CommitInfo,
   FileDiffResult,
   GitIgnoredEntry,
+  MergeStatus,
   WorktreeStatus,
 } from './shared-types.js';
 
@@ -2342,7 +2343,7 @@ export async function discardUncommitted(worktreePath: string): Promise<void> {
 export async function checkMergeStatus(
   worktreePath: string,
   baseBranch?: string,
-): Promise<{ main_ahead_count: number; conflicting_files: string[]; base_branch: string }> {
+): Promise<MergeStatus> {
   const mainBranch = baseBranch ?? (await detectMainBranch(worktreePath));
 
   // Count main commits not in HEAD, excluding patch-equivalents already
@@ -2386,7 +2387,34 @@ export async function checkMergeStatus(
     main_ahead_count: mainAheadCount,
     conflicting_files: conflictingFiles,
     base_branch: mainBranch,
+    overlapping_files: await overlappingFiles(worktreePath, mainBranch, conflictingFiles),
   };
+}
+
+/** Paths both sides changed since they diverged, minus the conflicting ones. */
+async function overlappingFiles(
+  worktreePath: string,
+  mainBranch: string,
+  conflictingFiles: string[],
+): Promise<string[]> {
+  const changed = async (range: string): Promise<string[]> => {
+    const { stdout } = await exec('git', ['diff', '--name-only', '--no-renames', range, '--'], {
+      cwd: worktreePath,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    return stdout.split('\n').filter(Boolean);
+  };
+  try {
+    const [ours, theirs] = await Promise.all([
+      changed(`${mainBranch}...HEAD`),
+      changed(`HEAD...${mainBranch}`),
+    ]);
+    const conflicting = new Set(conflictingFiles);
+    const theirSet = new Set(theirs);
+    return ours.filter((file) => theirSet.has(file) && !conflicting.has(file));
+  } catch {
+    return [];
+  }
 }
 
 export async function mergeTask(

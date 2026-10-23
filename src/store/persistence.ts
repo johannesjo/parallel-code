@@ -74,6 +74,7 @@ import type {
   SuperProductivityLink,
   PersistedWindowState,
   Project,
+  VerifyPassRecord,
 } from './types';
 import type { AgentDef } from '../ipc/types';
 import { inferDockerSource } from '../lib/docker';
@@ -381,6 +382,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     needsReview: task.needsReview,
     verification: task.verification,
     verificationRun: task.verificationRun,
+    lastVerifyPass: task.lastVerifyPass,
     evidence: persistedEvidence(task.evidence),
     brief: task.brief,
     confidence: task.confidence,
@@ -398,6 +400,14 @@ function restoredVerificationRun(
 ): PersistedTask['verificationRun'] {
   if (!run || run.status === 'running') return undefined;
   return run;
+}
+
+function restoredVerifyPass(value: unknown): VerifyPassRecord | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { command, headSha, finishedAt } = value as Record<string, unknown>;
+  if (typeof command !== 'string' || typeof headSha !== 'string' || typeof finishedAt !== 'string')
+    return undefined;
+  return { command, headSha, finishedAt };
 }
 
 // The renderer can receive input while startup IPC waits for the login shell.
@@ -749,6 +759,7 @@ export async function loadState(): Promise<void> {
     p.evidenceChecks = parseProjectChecks(p.evidenceChecks);
     p.evidenceModel = parseEvidenceModelSettings(p.evidenceModel);
     p.evidenceAutoBuild = p.evidenceAutoBuild === true ? true : undefined;
+    p.verifyAutoRun = p.verifyAutoRun === false ? false : undefined;
     p.superProductivityProjectId = isValidSpId(p.superProductivityProjectId)
       ? p.superProductivityProjectId
       : undefined;
@@ -1176,6 +1187,7 @@ export async function loadState(): Promise<void> {
           needsReview: pt.needsReview,
           verification: pt.verification,
           verificationRun: restoredVerificationRun(pt.verificationRun),
+          lastVerifyPass: restoredVerifyPass(pt.lastVerifyPass),
           evidence: restoredEvidence(pt.evidence),
           brief: restoreTaskBriefRecord(pt.brief),
           confidence: restoreTaskConfidence(pt.confidence),
@@ -1331,6 +1343,7 @@ export async function loadState(): Promise<void> {
           needsReview: pt.needsReview,
           verification: pt.verification,
           verificationRun: restoredVerificationRun(pt.verificationRun),
+          lastVerifyPass: restoredVerifyPass(pt.lastVerifyPass),
           evidence: restoredEvidence(pt.evidence),
           brief: restoreTaskBriefRecord(pt.brief),
           confidence: restoreTaskConfidence(pt.confidence),

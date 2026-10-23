@@ -60,6 +60,21 @@ describe('verification runner', () => {
     expect(run.finishedAt).not.toBeNull();
   });
 
+  it('runs a low-priority command, and the processes it forks, at a lower priority', async () => {
+    const base = os.getPriority();
+    const run = await runner().start({
+      key: 'nice',
+      worktreePath: tmpDir(),
+      // The forked `sh` reports its own niceness, inherited from the shell. The
+      // sleep keeps the fork after the runner lowered the shell's priority.
+      command: `sleep 0.2; sh -c 'ps -o nice= -p $$'`,
+      lowPriority: true,
+    });
+
+    expect(run.status).toBe('passed');
+    expect(Number(run.outputTail.trim())).toBeGreaterThan(base);
+  });
+
   it.each(['dirty', 'new-head'] as const)(
     'holds queued automatic checks when the tree becomes %s',
     async (change) => {

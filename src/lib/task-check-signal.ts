@@ -4,7 +4,9 @@ import type { VerificationRun } from '../ipc/types';
 import type { EvidencePackage } from '../../electron/shared/evidence';
 import { EVIDENCE_LEVEL, evidenceSummary, openEvidenceFlags } from './evidence-display';
 import { theme } from './theme';
+import type { VerifyPassRecord } from '../store/types';
 import {
+  earlierPass,
   summarizeVerificationRun,
   usesVerificationRun,
   type VerificationSummaryKind,
@@ -24,16 +26,18 @@ export interface CheckSignalInput {
   verification?: SubtaskVerification;
   verifyCommandConfigured: boolean;
   headSha?: string | null;
+  lastVerifyPass?: VerifyPassRecord;
 }
 
 // A native tooltip; the Finish dialog lists every flag.
 const MAX_TITLE_FLAGS = 5;
 
 // Kinds without an entry stay silent: a configured-but-never-run command on
-// every task would be noise, and cancelled runs carry no signal.
+// every task would be noise, and cancelled runs carry no signal. A pass is
+// muted: verify runs in the background, so most tasks show one.
 const RUN_SIGNAL: Partial<Record<VerificationSummaryKind, { label: string; color: string }>> = {
   running: { label: 'verifying…', color: theme.fgMuted },
-  passed: { label: 'verified', color: theme.success },
+  passed: { label: 'verified', color: theme.fgMuted },
   stale: { label: 'verify stale', color: theme.warning },
   dirty: { label: 'verify (dirty)', color: theme.warning },
   failed: { label: 'verify failed', color: theme.error },
@@ -46,7 +50,7 @@ function reportedSignal(verification?: SubtaskVerification): CheckSignal | undef
   if (!failed)
     return {
       label: 'verified',
-      color: theme.success,
+      color: theme.fgMuted,
       title: checks.map((check) => `${check.name}: ${check.command}`).join('\n'),
     };
   return {
@@ -81,5 +85,11 @@ export function taskCheckSignal(input: CheckSignalInput): CheckSignal | undefine
     return reportedSignal(input.verification);
   const summary = summarizeVerificationRun(input.verificationRun, input.headSha);
   const signal = RUN_SIGNAL[summary.kind];
-  return signal ? { ...signal, title: `${summary.label}. ${summary.detail}` } : undefined;
+  if (!signal) return undefined;
+  const pass =
+    summary.kind === 'failed' && input.verificationRun
+      ? earlierPass(input.verificationRun, input.lastVerifyPass)
+      : undefined;
+  const lastPass = pass ? `\nLast passed at ${pass.headSha.slice(0, 7)}.` : '';
+  return { ...signal, title: `${summary.label}. ${summary.detail}${lastPass}` };
 }

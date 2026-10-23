@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EvidencePackage } from '../../electron/shared/evidence';
 
-const { statusHolder, mockBuild, mockNotify } = vi.hoisted(() => ({
+const { statusHolder, mockBuild, mockNotify, verify } = vi.hoisted(() => ({
   statusHolder: { set: (_status: Record<string, string>): void => undefined },
   mockBuild: vi.fn(),
   mockNotify: vi.fn(),
+  verify: { enabled: vi.fn(), run: vi.fn(), cancel: vi.fn() },
 }));
 
 vi.mock('./taskStatus', async () => {
@@ -14,10 +15,15 @@ vi.mock('./taskStatus', async () => {
   return { getTaskDotStatus: (id: string) => status()[id] ?? 'waiting' };
 });
 vi.mock('./evidence', () => ({ buildEvidence: mockBuild }));
+vi.mock('./verification', () => ({
+  backgroundVerifyEnabled: verify.enabled,
+  runBackgroundVerify: verify.run,
+  cancelBackgroundVerify: verify.cancel,
+}));
 vi.mock('./notification', () => ({ showNotification: mockNotify, NOTIFICATION_ERROR_MS: 10_000 }));
 
 import { setStore, store } from './core';
-import { AUTO_BUILD_SETTLE_MS, startEvidenceAutoBuild } from './evidence-auto';
+import { AUTO_BUILD_SETTLE_MS, startBackgroundChecks } from './evidence-auto';
 import type { Project, Task } from './types';
 
 let stop: (() => void) | undefined;
@@ -76,13 +82,15 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   mockBuild.mockResolvedValue(undefined);
+  verify.enabled.mockReturnValue(false);
+  verify.run.mockResolvedValue(undefined);
   status = {};
   statusHolder.set({});
   setStore('projects', [
     { id: 'p1', name: 'Repo', path: '/repo', color: '', evidenceAutoBuild: true } as Project,
   ]);
   setStore('tasks', { t1: task('t1'), t2: task('t2') });
-  stop = startEvidenceAutoBuild();
+  stop = startBackgroundChecks();
 });
 
 afterEach(() => {
@@ -90,7 +98,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('startEvidenceAutoBuild', () => {
+describe('startBackgroundChecks', () => {
   it('builds once a task has stayed idle after a turn', async () => {
     setStatus({ t1: 'busy' });
     setStatus({ t1: 'ready' });
@@ -163,5 +171,39 @@ describe('startEvidenceAutoBuild', () => {
     expect(mockNotify).not.toHaveBeenCalled();
     await finishTurn('t1');
     expect(mockNotify).toHaveBeenCalledWith(expect.stringContaining('Task t1'), expect.anything());
+  });
+
+  it('runs verify on its own where the project builds no evidence', async () => {
+    setStore('projects', 0, 'evidenceAutoBuild', undefined);
+    verify.enabled.mockReturnValue(true);
+    await finishTurn('t1');
+    expect(verify.run).toHaveBeenCalledWith('t1');
+    expect(mockBuild).not.toHaveBeenCalled();
+  });
+
+  it('prefers a full evidence build, which runs verify first', async () => {
+    verify.enabled.mockReturnValue(true);
+    await finishTurn('t1');
+    expect(mockBuild).toHaveBeenCalledWith('t1', { trigger: 'auto' });
+    expect(verify.run).not.toHaveBeenCalled();
+  });
+
+  it('stops a background verify when the agent starts working again', async () => {
+    setStatus({ t1: 'busy' });
+    expect(verify.cancel).toHaveBeenCalledWith('t1');
+  });
+
+  it('notifies when a background verify fails', async () => {
+    setStore('projects', 0, 'evidenceAutoBuild', undefined);
+    verify.enabled.mockReturnValue(true);
+    verify.run.mockResolvedValueOnce({ status: 'passed' });
+    await finishTurn('t1');
+    expect(mockNotify).not.toHaveBeenCalled();
+    verify.run.mockResolvedValueOnce({ status: 'failed' });
+    await finishTurn('t1');
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.stringContaining('Task t1: verify failed'),
+      expect.anything(),
+    );
   });
 });

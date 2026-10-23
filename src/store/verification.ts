@@ -1,15 +1,25 @@
 import { createStore, produce } from 'solid-js/store';
 import { IPC } from '../../electron/ipc/channels';
 import { Channel, invoke } from '../lib/ipc';
-import { asStoreVerificationRun, compileVerificationFailurePrompt } from '../lib/verification-run';
+import {
+  asStoreVerificationRun,
+  changedDuringRun,
+  compileVerificationFailurePrompt,
+} from '../lib/verification-run';
 import { pendingVerificationRun } from '../../electron/shared/verification-run';
-import { VERIFY_CHECK_ID } from '../../electron/shared/evidence';
-import { reusableVerifyRun } from '../lib/evidence-plan';
+import {
+  VERIFY_CHECK_ID,
+  type EvidenceScan,
+  type EvidenceSkipReason,
+} from '../../electron/shared/evidence';
+import { planChecks, reusableVerifyRun } from '../lib/evidence-plan';
 import type { VerificationRun } from '../ipc/types';
 import { setStore, store } from './core';
 import { getTaskChecks, isEvidenceBusy, putCheck } from './evidence-state';
+import { isLandedTaskState } from './landing';
 import { saveState } from './persistence';
 import { getProject } from './projects';
+import { stageTaskPrompt } from './staged-prompt';
 import { sendPrompt } from './tasks';
 import type { Task } from './types';
 
@@ -20,6 +30,20 @@ const [liveOutput, setLiveOutput] = createStore<Record<string, string>>({});
 // Starting a run cancels the previous one for the same task. The cancelled
 // run still resolves, and its late result must not overwrite the newer run.
 const generations = new Map<string, number>();
+// The generation of each task's background run, so only those are cancelled
+// when the agent starts working again.
+const backgroundGenerations = new Map<string, number>();
+
+/** Why the background run skipped the task's current commit. */
+export interface BackgroundVerifyHold {
+  headSha: string;
+  reason: EvidenceSkipReason;
+}
+const [holds, setHolds] = createStore<Record<string, BackgroundVerifyHold | undefined>>({});
+
+export function getBackgroundVerifyHold(taskId: string): BackgroundVerifyHold | undefined {
+  return holds[taskId];
+}
 
 export function getVerifyCommand(taskId: string): string | undefined {
   const task = store.tasks[taskId];
@@ -45,16 +69,37 @@ function clearLiveOutput(taskId: string): void {
   );
 }
 
-function setRun(taskId: string, run: VerificationRun): void {
+function setRun(taskId: string, run: VerificationRun | undefined): void {
   // The task may have been deleted while the run was in flight.
   if (!store.tasks[taskId]) return;
-  setStore('tasks', taskId, 'verificationRun', asStoreVerificationRun(run));
+  setStore('tasks', taskId, 'verificationRun', run && asStoreVerificationRun(run));
+  if (
+    run?.status === 'passed' &&
+    run.headSha &&
+    run.finishedAt &&
+    !run.dirty &&
+    !changedDuringRun(run)
+  )
+    setStore('tasks', taskId, 'lastVerifyPass', {
+      command: run.command,
+      headSha: run.headSha,
+      finishedAt: run.finishedAt,
+    });
+}
+
+export interface VerificationRunOptions {
+  /** Started by the app after an agent turn, not by a click: it runs at low
+   *  priority, yields when the agent works again, and leaves no trace if held. */
+  background?: boolean;
+  /** Hold the run unless this HEAD is checked out on a clean tree. */
+  expectedHeadSha?: string;
 }
 
 async function invokeRun(
   task: Task,
   pending: VerificationRun,
   channel: Channel<string>,
+  options: VerificationRunOptions,
 ): Promise<VerificationRun> {
   try {
     return await invoke<VerificationRun>(IPC.RunTaskVerification, {
@@ -62,6 +107,8 @@ async function invokeRun(
       worktreePath: task.worktreePath,
       command: pending.command,
       branchName: task.branchName,
+      ...(options.expectedHeadSha ? { expectedHeadSha: options.expectedHeadSha } : {}),
+      ...(options.background ? { lowPriority: true } : {}),
       onOutput: channel,
     });
   } catch (err) {
@@ -74,13 +121,20 @@ async function invokeRun(
 
 /** Runs the project's verify command in the task worktree. Resolves with the
  *  finished run, or undefined when the task has no command to run. */
-export async function runTaskVerification(taskId: string): Promise<VerificationRun | undefined> {
+export async function runTaskVerification(
+  taskId: string,
+  options: VerificationRunOptions = {},
+): Promise<VerificationRun | undefined> {
   const task = store.tasks[taskId];
   const command = getVerifyCommand(taskId);
   if (!task || !command) return undefined;
   const generation = (generations.get(taskId) ?? 0) + 1;
   generations.set(taskId, generation);
+  if (options.background) backgroundGenerations.set(taskId, generation);
+  else backgroundGenerations.delete(taskId);
   const isCurrent = () => generations.get(taskId) === generation;
+  // A copy: the store merges the pending run into the same object.
+  const previous = task.verificationRun && { ...task.verificationRun };
 
   const pending = pendingVerificationRun(command);
   setLiveOutput(taskId, '');
@@ -90,13 +144,83 @@ export async function runTaskVerification(taskId: string): Promise<VerificationR
     if (isCurrent()) appendLiveOutput(taskId, chunk);
   };
 
-  const run = await invokeRun(task, pending, channel);
+  const run = await invokeRun(task, pending, channel, options);
   if (!isCurrent()) return run;
+  backgroundGenerations.delete(taskId);
   clearLiveOutput(taskId);
-  setRun(taskId, run);
+  // A background run that was held or stopped says nothing about the code.
+  setRun(taskId, options.background && run.status === 'cancelled' ? previous : run);
   showVerificationInEvidence(taskId);
   void saveState();
   return run;
+}
+
+/** Background runs follow the project setting; unset means on. */
+export function backgroundVerifyEnabled(taskId: string): boolean {
+  const task = store.tasks[taskId];
+  const project = task && getProject(task.projectId);
+  return Boolean(
+    task &&
+    project?.verifyCommand &&
+    project.verifyAutoRun !== false &&
+    task.gitIsolation === 'worktree' &&
+    !task.dockerMode &&
+    !isLandedTaskState(task.landingState),
+  );
+}
+
+/**
+ * Runs the verify command once per commit after an agent turn, through the
+ * same execution gate as evidence builds. Resolves with the finished run, or
+ * undefined when nothing ran: no new commit, already covered, held, or busy.
+ */
+export async function runBackgroundVerify(taskId: string): Promise<VerificationRun | undefined> {
+  const task = store.tasks[taskId];
+  const check = getTaskChecks(taskId).find((c) => c.id === VERIFY_CHECK_ID);
+  if (!task || !check || !backgroundVerifyEnabled(taskId)) return undefined;
+  const idle = () => {
+    const current = store.tasks[taskId];
+    return (
+      current?.verificationRun?.status !== 'running' &&
+      !(current?.evidence && isEvidenceBusy(current.evidence))
+    );
+  };
+  if (!idle()) return undefined;
+  let scan: EvidenceScan;
+  try {
+    scan = await invoke<EvidenceScan>(IPC.GetEvidenceScan, {
+      worktreePath: task.worktreePath,
+      baseBranch: task.baseBranch,
+    });
+  } catch {
+    return undefined;
+  }
+  const current = store.tasks[taskId];
+  if (!current || !idle()) return undefined;
+  if (scan.files.length === 0 || reusableVerifyRun(current.verificationRun, check, scan.headSha)) {
+    setHolds(taskId, undefined);
+    return undefined;
+  }
+  const plan = planChecks({
+    checks: [check],
+    dockerMode: Boolean(current.dockerMode),
+    dirty: scan.dirty,
+    truncated: scan.truncated,
+    flags: scan.flags,
+    acceptedFlags: current.evidence?.acceptedFlags ?? {},
+  });
+  const held = plan.skipped[0];
+  setHolds(taskId, held ? { headSha: scan.headSha, reason: held.reason } : undefined);
+  if (held) return undefined;
+  return runTaskVerification(taskId, { background: true, expectedHeadSha: scan.headSha });
+}
+
+/** Stops the task's background run, if one is in flight; a clicked run keeps going. */
+export function cancelBackgroundVerify(taskId: string): void {
+  const generation = backgroundGenerations.get(taskId);
+  if (generation === undefined || generation !== generations.get(taskId)) return;
+  if (store.tasks[taskId]?.verificationRun?.status !== 'running') return;
+  void cancelTaskVerification(taskId);
 }
 
 /** Puts a manual run into the evidence package of the same commit, so the
@@ -131,8 +255,23 @@ export async function sendVerificationFailureToAgent(
   taskId: string,
   agentId: string,
 ): Promise<boolean> {
-  const run = store.tasks[taskId]?.verificationRun;
-  if (!run || run.status === 'running' || run.status === 'passed') return false;
-  await sendPrompt(taskId, agentId, compileVerificationFailurePrompt(run));
+  const prompt = verificationFailurePrompt(taskId);
+  if (!prompt) return false;
+  await sendPrompt(taskId, agentId, prompt);
   return true;
+}
+
+/** Puts the same prompt in the task's input instead, for the user to send. */
+export function stageVerificationFailurePrompt(taskId: string): boolean {
+  const prompt = verificationFailurePrompt(taskId);
+  if (!prompt) return false;
+  stageTaskPrompt(taskId, prompt);
+  return true;
+}
+
+function verificationFailurePrompt(taskId: string): string | undefined {
+  const task = store.tasks[taskId];
+  const run = task?.verificationRun;
+  if (!run || run.status === 'running' || run.status === 'passed') return undefined;
+  return compileVerificationFailurePrompt(run, task.lastVerifyPass);
 }

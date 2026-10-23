@@ -1,6 +1,6 @@
 # Evidence packages — concept
 
-Status: MVP implemented. Revision 5, 2026-10-06. Revision 2 added practitioner and research findings (§3); revision 3 added three adversarial reviews (§14); revision 4 corrected the design against the code (§16); revision 5 records what was built (§17). Where §16 or §17 differ from earlier sections, the later section wins.
+Status: MVP implemented. Revision 6, 2026-10-23. Revision 2 added practitioner and research findings (§3); revision 3 added three adversarial reviews (§14); revision 4 corrected the design against the code (§16); revision 5 records what was built (§17); revision 6 moves verification out of the user's wait (§18). Where a later section differs from an earlier one, the later section wins.
 
 An **evidence package** is a reviewer-facing bundle attached to a task when its agent hands off. It answers one question before merge: _why should I believe this change is correct, and what has nobody checked?_
 
@@ -410,3 +410,30 @@ Rejected or deferred:
 - A model review is not cancelled when its task closes; it ends at its own 10-minute timeout and its result is dropped.
 - Repeated `submit_evidence` calls restart the checks each time. There is no rate limit.
 - Checks run with the verify environment (app environment plus task variables), not the agent's env file. The model call uses its provider's agent env file, like tours do.
+
+## 18. Background verify and the readiness line (revision 6)
+
+The Finish dialog's checks went unused: agents already test while they work, the app re-ran the same commands on request, and the user waited in the dialog for the result. Revision 6 runs verify before the dialog opens and shrinks what the dialog shows.
+
+### Behaviour
+
+- **Background verify, on by default.** When a task's agent goes idle for 15 s, the app runs the project's verify command once for the new commit, at low priority, through the same queue as background evidence builds (one at a time). It runs only for host-mode worktree tasks with a committed change, and the execution gate (§8) still applies: uncommitted changes, an incomplete scan or an unaccepted execution-surface change hold it back, and the line says which. A result on the commit, pass or fail, is not repeated. The run stops when the agent starts working again; a held or stopped run leaves the previous result in place. Projects with `evidenceAutoBuild` keep the full build, which runs verify first. `Project.verifyAutoRun = false` turns it off.
+- **The readiness line.** One fixed-height line states what ran on the current commit, when, and offers one action: Run, Re-run, Cancel, Stage fix prompt or Configure checks. A pass on an older commit or with uncommitted changes reads "Not tested on this commit" or names the uncommitted changes. Only failures are coloured. An evidence check other than verify that failed, and an unaccepted test-weakened flag, each get a line of their own; everything else (confidence, flags, checks, AI review) moved behind Details.
+- **Last pass.** The task keeps its latest clean verify pass (`Task.lastVerifyPass`). A failure names it ("last passed 2 commits ago"), the staged fix prompt asks the agent to compare with `git diff <sha>`, and the title bar tooltip shows it.
+- **Staging, not sending.** Stage fix prompt puts the failure in the task's input for the user to send. Background failures only notify; nothing is typed into a prompt unasked.
+- **Base overlap.** When the base branch has newer commits, the "bring them in" banner says whether they touch files this branch changed. The branch's checks never ran with those changes, so an overlap is where a pass means less.
+
+### Considered and dropped
+
+An adversarial review (three independent reviewers) rejected recording results from outside the app:
+
+- **A git hook shim** (`core.hooksPath` set through `GIT_CONFIG_COUNT` in the agent's environment). A missing shim folder makes git skip the repo's hooks silently, which Docker tasks would hit. The override also reaches every repo the agent touches, hook managers react to it (`pre-commit install` refuses; lefthook writes into it), it replaces inherited `GIT_CONFIG_*` entries, and `HUSKY=0`, `SKIP=` and `LEFTHOOK=0` turn a skipped hook into a pass.
+- **Observing the agent's own test commands.** Hook events can be forged by the agent (one token per app process, readable from its environment), `npm test | tail` exits 0 on failure, background Bash runs report at launch, and only host-mode Claude agents send events.
+- **Matching results by tree hash.** Merges exclude uncommitted changes, so a clean-HEAD result is exactly what merges; tree keys would only help the rare amend.
+- **A local "merge when it passes".** It would write to the main checkout in the background. For pull requests, GitHub's own auto-merge already exists.
+
+### Known limits
+
+- The title bar shows verify status but not base overlap; that needs merge status for every task, which only the Finish dialog loads today.
+- Background runs use the verify environment, like manual runs (§17).
+- Stage fix prompt is offered for failures on the current commit only; a failure on an older commit offers Run instead.

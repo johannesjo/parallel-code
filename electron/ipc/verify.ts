@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'child_process';
 import { existsSync } from 'fs';
+import { setPriority } from 'os';
 import { promisify } from 'util';
 import { resolveUserShell } from '../user-shell.js';
 import { stripAnsi } from '../shared/prompt-detect.js';
@@ -12,6 +13,8 @@ export const VERIFY_MAX_CONCURRENT = 2;
 export const VERIFY_OUTPUT_TAIL_CHARS = 32 * 1024;
 export const VERIFY_COMMAND_MAX_LENGTH = 4096;
 const KILL_GRACE_MS = 3_000;
+/** Niceness for background runs; children the shell forks inherit it. */
+export const VERIFY_LOW_PRIORITY = 10;
 
 export interface VerifyRequest {
   /** Cancel handle and "one run per task" key: starting a run with a key that
@@ -23,6 +26,8 @@ export interface VerifyRequest {
   expectedHeadSha?: string;
   /** Extra variables visible to the command (task id, branch, …). */
   env?: Record<string, string>;
+  /** Background runs yield the CPU to the agents and the app. */
+  lowPriority?: boolean;
   timeoutMs?: number;
   onOutput?: (chunk: string) => void;
 }
@@ -136,13 +141,21 @@ function exitOutcome(code: number | null, signal: NodeJS.Signals | null): EndRea
 }
 
 function spawnCommand(request: VerifyRequest, deps: SpawnDeps): Child {
-  return deps.spawnImpl(deps.shell, ['-c', request.command], {
+  const child = deps.spawnImpl(deps.shell, ['-c', request.command], {
     cwd: request.worktreePath,
     env: { ...process.env, ...request.env, NO_COLOR: '1', FORCE_COLOR: '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
     // Own process group so `npm test` and every child it forks die together.
     detached: process.platform !== 'win32',
   });
+  if (request.lowPriority && child.pid) {
+    try {
+      setPriority(child.pid, VERIFY_LOW_PRIORITY);
+    } catch {
+      /* already exited, or not permitted; the run still counts */
+    }
+  }
+  return child;
 }
 
 /** Streams output and settles once the child exits, is cancelled, or times out. */

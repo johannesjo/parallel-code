@@ -295,6 +295,61 @@ describe('landing state persistence', () => {
   });
 });
 
+describe('background verify persistence', () => {
+  function stateWith(project: Record<string, unknown>, tasks: Record<string, unknown>): string {
+    return JSON.stringify({
+      projects: [
+        { id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)', ...project },
+      ],
+      lastProjectId: 'project-1',
+      lastAgentId: null,
+      taskOrder: Object.keys(tasks),
+      collapsedTaskOrder: [],
+      tasks,
+      activeTaskId: 'task-1',
+      sidebarVisible: true,
+    });
+  }
+
+  it('round-trips the last verify pass and drops a malformed one', async () => {
+    const def = agentDef();
+    const pass = { command: 'npm test', headSha: 'abc123', finishedAt: '2026-09-03T10:01:00Z' };
+    mockInvoke.mockResolvedValueOnce(
+      stateWith(
+        {},
+        {
+          'task-1': { ...persistedTask(def), lastVerifyPass: pass },
+          'task-2': {
+            ...persistedTask(def),
+            id: 'task-2',
+            branchName: 'task/task-2',
+            worktreePath: '/repo/.worktrees/task-2',
+            lastVerifyPass: { command: 'npm test', headSha: 7 },
+          },
+        },
+      ),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].lastVerifyPass).toEqual(pass);
+    expect(store.tasks['task-2'].lastVerifyPass).toBeUndefined();
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    expect(JSON.parse(lastCall[1].json).tasks['task-1'].lastVerifyPass).toEqual(pass);
+  });
+
+  it.each([
+    [false, false],
+    [true, undefined],
+    ['yes', undefined],
+  ])('keeps verifyAutoRun only when it is off: %j', async (stored, loaded) => {
+    mockInvoke.mockResolvedValueOnce(stateWith({ verifyAutoRun: stored }, {}));
+    await loadState();
+    expect(store.projects[0].verifyAutoRun).toBe(loaded);
+  });
+});
+
 describe('completion report persistence', () => {
   const completion = {
     id: '11111111-1111-4111-8111-111111111111',

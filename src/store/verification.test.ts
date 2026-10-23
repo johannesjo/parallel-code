@@ -2,21 +2,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC } from '../../electron/ipc/channels';
 import type { VerificationRun } from '../ipc/types';
 
-const { mockInvoke, mockSaveState, mockSendPrompt, FakeChannel } = vi.hoisted(() => {
-  class FakeChannel {
-    onmessage: ((msg: string) => void) | null = null;
-    dispose = vi.fn();
-    toJSON() {
-      return { __CHANNEL_ID__: 'fake' };
+const { mockInvoke, mockSaveState, mockSendPrompt, mockStagePrompt, FakeChannel } = vi.hoisted(
+  () => {
+    class FakeChannel {
+      onmessage: ((msg: string) => void) | null = null;
+      dispose = vi.fn();
+      toJSON() {
+        return { __CHANNEL_ID__: 'fake' };
+      }
     }
-  }
-  return {
-    mockInvoke: vi.fn(),
-    mockSaveState: vi.fn(),
-    mockSendPrompt: vi.fn(),
-    FakeChannel,
-  };
-});
+    return {
+      mockInvoke: vi.fn(),
+      mockSaveState: vi.fn(),
+      mockSendPrompt: vi.fn(),
+      mockStagePrompt: vi.fn(),
+      FakeChannel,
+    };
+  },
+);
 type FakeChannel = InstanceType<typeof FakeChannel>;
 
 vi.mock('../lib/ipc', () => ({
@@ -26,14 +29,20 @@ vi.mock('../lib/ipc', () => ({
 }));
 vi.mock('./persistence', () => ({ saveState: mockSaveState }));
 vi.mock('./tasks', () => ({ sendPrompt: mockSendPrompt }));
+vi.mock('./staged-prompt', () => ({ stageTaskPrompt: mockStagePrompt }));
 
 import { setStore, store } from './core';
+import type { EvidenceScan } from '../../electron/shared/evidence';
 import type { Project } from './types';
 import {
+  cancelBackgroundVerify,
+  getBackgroundVerifyHold,
   getVerificationOutput,
   getVerifyCommand,
+  runBackgroundVerify,
   runTaskVerification,
   sendVerificationFailureToAgent,
+  stageVerificationFailurePrompt,
 } from './verification';
 
 function finishedRun(overrides: Partial<VerificationRun> = {}): VerificationRun {
@@ -207,5 +216,172 @@ describe('sendVerificationFailureToAgent', () => {
     expect(await sendVerificationFailureToAgent('t1', 'agent-1')).toBe(false);
     expect(await sendVerificationFailureToAgent('t2', 'agent-1')).toBe(false);
     expect(mockSendPrompt).not.toHaveBeenCalled();
+  });
+});
+
+describe('last pass', () => {
+  it('remembers a clean pass, and not one with uncommitted changes', async () => {
+    mockInvoke.mockResolvedValueOnce(finishedRun({ headSha: 'good' }));
+    await runTaskVerification('t1');
+    mockInvoke.mockResolvedValueOnce(finishedRun({ headSha: 'dirty', dirty: true }));
+    await runTaskVerification('t1');
+
+    expect(store.tasks.t1.lastVerifyPass).toEqual({
+      command: 'npm test',
+      headSha: 'good',
+      finishedAt: '2026-09-03T10:01:00.000Z',
+    });
+  });
+
+  it('points the staged fix prompt at the last passing commit', () => {
+    setStore('tasks', 't1', 'lastVerifyPass', {
+      command: 'npm test',
+      headSha: 'good',
+      finishedAt: 'x',
+    });
+    setStore('tasks', 't1', 'verificationRun', finishedRun({ status: 'failed', exitCode: 1 }));
+
+    expect(stageVerificationFailurePrompt('t1')).toBe(true);
+    const prompt = mockStagePrompt.mock.calls[0]?.[1] as string;
+    expect(prompt).toContain('last passed at commit good');
+    expect(prompt).toContain('`git diff good`');
+  });
+
+  it('stages nothing while a run passes', () => {
+    setStore('tasks', 't1', 'verificationRun', finishedRun());
+    expect(stageVerificationFailurePrompt('t1')).toBe(false);
+    expect(mockStagePrompt).not.toHaveBeenCalled();
+  });
+});
+
+function scan(overrides: Partial<EvidenceScan> = {}): EvidenceScan {
+  return {
+    headSha: 'head',
+    baseSha: 'base',
+    dirty: false,
+    files: [{ path: 'src/a.ts', status: 'M', added: 1, removed: 0, role: 'source' }],
+    flags: [],
+    tests: [],
+    coveringTests: [],
+    sourceWithoutTests: [],
+    ...overrides,
+  };
+}
+
+/** Answers the evidence scan, and the verify run with `run` (or holds it open). */
+function mockBackground(next: EvidenceScan, run?: VerificationRun | Promise<VerificationRun>) {
+  mockInvoke.mockImplementation((channel: string) => {
+    if (channel === IPC.GetEvidenceScan) return Promise.resolve(next);
+    if (channel === IPC.RunTaskVerification) return Promise.resolve(run ?? finishedRun());
+    return Promise.resolve(true);
+  });
+}
+
+describe('runBackgroundVerify', () => {
+  it('runs at low priority, pinned to the scanned commit', async () => {
+    mockBackground(scan(), finishedRun({ headSha: 'head' }));
+
+    const run = await runBackgroundVerify('t1');
+
+    expect(run?.status).toBe('passed');
+    expect(mockInvoke).toHaveBeenCalledWith(
+      IPC.RunTaskVerification,
+      expect.objectContaining({ expectedHeadSha: 'head', lowPriority: true }),
+    );
+  });
+
+  it('runs once per commit: a result on this commit, pass or fail, is enough', async () => {
+    setStore(
+      'tasks',
+      't1',
+      'verificationRun',
+      finishedRun({ status: 'failed', exitCode: 1, headSha: 'head' }),
+    );
+    mockBackground(scan());
+
+    expect(await runBackgroundVerify('t1')).toBeUndefined();
+    expect(mockInvoke).not.toHaveBeenCalledWith(IPC.RunTaskVerification, expect.anything());
+  });
+
+  it('skips a branch without changes', async () => {
+    mockBackground(scan({ files: [] }));
+    expect(await runBackgroundVerify('t1')).toBeUndefined();
+    expect(mockInvoke).not.toHaveBeenCalledWith(IPC.RunTaskVerification, expect.anything());
+  });
+
+  it('holds uncommitted work back and says why', async () => {
+    mockBackground(scan({ dirty: true }));
+
+    expect(await runBackgroundVerify('t1')).toBeUndefined();
+    expect(mockInvoke).not.toHaveBeenCalledWith(IPC.RunTaskVerification, expect.anything());
+    expect(getBackgroundVerifyHold('t1')).toEqual({ headSha: 'head', reason: 'dirty' });
+  });
+
+  it('holds a change to how checks run until the reviewer accepts it', async () => {
+    const flag = {
+      id: 'surface-1',
+      category: 'needs-decision' as const,
+      rule: 'execution-surface-changed',
+      file: 'package.json',
+      detail: 'changed',
+    };
+    mockBackground(scan({ flags: [flag] }));
+    expect(await runBackgroundVerify('t1')).toBeUndefined();
+    expect(getBackgroundVerifyHold('t1')?.reason).toBe('execution-surface');
+  });
+
+  it('is off for Docker tasks and when the project turned it off', async () => {
+    mockBackground(scan());
+    setStore('tasks', 't1', 'dockerMode', true);
+    expect(await runBackgroundVerify('t1')).toBeUndefined();
+    setStore('tasks', 't1', 'dockerMode', false);
+    setStore('projects', 0, 'verifyAutoRun', false);
+    expect(await runBackgroundVerify('t1')).toBeUndefined();
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('never starts over a run already in flight', async () => {
+    setStore('tasks', 't1', 'verificationRun', finishedRun({ status: 'running' }));
+    mockBackground(scan());
+    expect(await runBackgroundVerify('t1')).toBeUndefined();
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('leaves the previous result in place when the run is held at start', async () => {
+    const previous = finishedRun({ headSha: 'older' });
+    setStore('tasks', 't1', 'verificationRun', previous);
+    mockBackground(scan(), finishedRun({ status: 'cancelled', exitCode: null, headSha: 'moved' }));
+
+    await runBackgroundVerify('t1');
+
+    expect(store.tasks.t1.verificationRun).toMatchObject({ status: 'passed', headSha: 'older' });
+  });
+});
+
+describe('cancelBackgroundVerify', () => {
+  it('stops a background run', async () => {
+    let finish: (run: VerificationRun) => void = () => {};
+    mockBackground(scan(), new Promise<VerificationRun>((resolve) => (finish = resolve)));
+    const pending = runBackgroundVerify('t1');
+    await flush();
+
+    cancelBackgroundVerify('t1');
+
+    expect(mockInvoke).toHaveBeenCalledWith(IPC.CancelTaskVerification, { taskId: 't1' });
+    finish(finishedRun({ status: 'cancelled', exitCode: null }));
+    await pending;
+  });
+
+  it('leaves a run the user started alone', async () => {
+    let finish: (run: VerificationRun) => void = () => {};
+    mockInvoke.mockReturnValueOnce(new Promise<VerificationRun>((resolve) => (finish = resolve)));
+    const pending = runTaskVerification('t1');
+    await flush();
+
+    cancelBackgroundVerify('t1');
+
+    expect(mockInvoke).not.toHaveBeenCalledWith(IPC.CancelTaskVerification, expect.anything());
+    finish(finishedRun());
+    await pending;
   });
 });

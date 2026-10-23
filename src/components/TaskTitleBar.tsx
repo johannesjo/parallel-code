@@ -95,6 +95,7 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
       verification: props.task.verification,
       verifyCommandConfigured: Boolean(getVerifyCommand(props.task.id)),
       headSha: git?.head_sha,
+      lastVerifyPass: props.task.lastVerifyPass,
     });
   };
   const titleLabel = () => {

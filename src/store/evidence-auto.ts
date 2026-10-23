@@ -1,4 +1,4 @@
-import { createEffect, createRoot, onCleanup } from 'solid-js';
+import { createEffect, createRoot, onCleanup, untrack } from 'solid-js';
 import { computeEvidenceConfidence } from '../../electron/shared/evidence-confidence';
 import { EVIDENCE_LEVEL } from '../lib/evidence-display';
 import { store } from './core';
@@ -7,6 +7,11 @@ import { isLandedTaskState } from './landing';
 import { NOTIFICATION_ERROR_MS, showNotification } from './notification';
 import { getProject } from './projects';
 import { getTaskDotStatus } from './taskStatus';
+import {
+  backgroundVerifyEnabled,
+  cancelBackgroundVerify,
+  runBackgroundVerify,
+} from './verification';
 
 /** How long a task must stay idle first: agents pause between tool calls. */
 export const AUTO_BUILD_SETTLE_MS = 15_000;
@@ -26,6 +31,22 @@ function autoBuildEnabled(taskId: string): boolean {
     !isLandedTaskState(task.landingState) &&
     getProject(task.projectId)?.evidenceAutoBuild,
   );
+}
+
+/** A full evidence build, which runs verify first, or verify on its own. */
+function backgroundWork(taskId: string): 'evidence' | 'verify' | undefined {
+  if (autoBuildEnabled(taskId)) return 'evidence';
+  return backgroundVerifyEnabled(taskId) ? 'verify' : undefined;
+}
+
+/** A failed background verify is worth a note; the title bar shows the rest. */
+async function verifyInBackground(taskId: string): Promise<void> {
+  const run = await runBackgroundVerify(taskId);
+  const task = store.tasks[taskId];
+  if (!task || !run || !FAILED.has(run.status)) return;
+  showNotification(`${task.name}: verify failed · open Finish to hand it to the agent`, {
+    durationMs: NOTIFICATION_ERROR_MS,
+  });
 }
 
 /**
@@ -55,13 +76,17 @@ async function drain(): Promise<void> {
   draining = true;
   try {
     for (let taskId = queue.shift(); taskId !== undefined; taskId = queue.shift()) {
-      if (!autoBuildEnabled(taskId) || getTaskDotStatus(taskId) === 'busy') continue;
+      const work = backgroundWork(taskId);
+      if (!work || getTaskDotStatus(taskId) === 'busy') continue;
       const previousId = store.tasks[taskId]?.evidence?.id;
       try {
-        await buildEvidence(taskId, { trigger: 'auto' });
-        reportProblems(taskId, previousId);
+        if (work === 'verify') await verifyInBackground(taskId);
+        else {
+          await buildEvidence(taskId, { trigger: 'auto' });
+          reportProblems(taskId, previousId);
+        }
       } catch (err) {
-        console.error('Background evidence build failed:', err);
+        console.error('Background check failed:', err);
       }
     }
   } finally {
@@ -75,14 +100,17 @@ function queueBuild(taskId: string): void {
 }
 
 /**
- * Builds evidence in the background once an agent's turn ends, for projects
- * that turned it on. The build itself skips commits it already covered.
+ * Checks each task in the background once an agent's turn ends: a full
+ * evidence build for projects that turned it on, otherwise the verify command
+ * unless the project turned that off. Both skip commits they already covered.
  */
-export function startEvidenceAutoBuild(): () => void {
+export function startBackgroundChecks(): () => void {
   return createRoot((dispose) => {
     const wasBusy = new Map<string, boolean>();
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
     const cancel = (taskId: string) => {
+      // Its result would describe a tree the agent is about to change.
+      untrack(() => cancelBackgroundVerify(taskId));
       clearTimeout(timers.get(taskId));
       timers.delete(taskId);
       const queued = queue.indexOf(taskId);

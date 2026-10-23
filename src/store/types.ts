@@ -83,6 +83,12 @@ export interface TaskGitStatusSnapshot extends WorktreeStatus {
 
 export type TaskViewportVisibility = 'visible' | 'offscreen-left' | 'offscreen-right';
 
+export interface VerifyPassRecord {
+  command: string;
+  headSha: string;
+  finishedAt: string;
+}
+
 export interface TerminalBookmark {
   id: string;
   command: string;
@@ -113,6 +119,9 @@ export interface Project {
   evidenceModel?: EvidenceModelSettings;
   /** Build evidence in the background after an agent turn that added commits. */
   evidenceAutoBuild?: boolean;
+  /** Run the verify command in the background after an agent turn that added
+   *  commits. Only `false` is stored; unset means on. */
+  verifyAutoRun?: boolean;
   terminalBookmarks?: TerminalBookmark[];
   isGitRepo?: boolean; // undefined treated as true for backward compat
   tasksCollapsed?: boolean; // sidebar task group, defaults to expanded
@@ -349,6 +358,8 @@ export interface Task {
   /** Latest app-run verify command result. Distinct from `verification`,
    *  which is the agent's self-report through land_self. */
   verificationRun?: VerificationRun;
+  /** Latest app-run verify pass on a clean commit; a later failure points back to it. */
+  lastVerifyPass?: VerifyPassRecord;
   /** Latest evidence package: what the app observed, the agent claimed and a model thought. */
   evidence?: EvidencePackage;
   /** Snapshot of the work so far, rewritten by a cheap model after each agent turn. */
@@ -462,6 +473,8 @@ export interface PersistedTask {
   needsReview?: boolean;
   verification?: SubtaskVerification;
   verificationRun?: VerificationRun;
+  /** Validated on load. */
+  lastVerifyPass?: unknown;
   /** Validated on load. */
   evidence?: unknown;
   /** Validated on load. */

@@ -135,6 +135,18 @@ describe('taskCheckSignal', () => {
     expect(runSignal({ dirty: true })?.label).toBe('verify (dirty)');
   });
 
+  it('keeps a pass quiet and points a failure at the last pass', () => {
+    expect(runSignal({})?.color).toBe(theme.fgMuted);
+    const signal = taskCheckSignal({
+      verificationRun: run({ status: 'failed', exitCode: 1 }),
+      verifyCommandConfigured: true,
+      headSha: HEAD,
+      lastVerifyPass: { command: run().command, headSha: 'c'.repeat(40), finishedAt: 'x' },
+    });
+    expect(signal?.color).toBe(theme.error);
+    expect(signal?.title).toContain('\nLast passed at ccccccc.');
+  });
+
   it('stays silent for a cancelled run', () => {
     expect(runSignal({ status: 'cancelled', exitCode: null })).toBeUndefined();
   });

@@ -170,6 +170,7 @@ export function updateProject(
       | 'evidenceChecks'
       | 'evidenceModel'
       | 'evidenceAutoBuild'
+      | 'verifyAutoRun'
       | 'terminalBookmarks'
       | 'isGitRepo'
       | 'documentMainAgentId'
@@ -212,6 +213,9 @@ export function updateProject(
         s.projects[idx].evidenceModel = updates.evidenceModel;
       if (updates.evidenceAutoBuild !== undefined)
         s.projects[idx].evidenceAutoBuild = updates.evidenceAutoBuild;
+      // Stored only when off, matching how persistence normalizes it.
+      if (updates.verifyAutoRun !== undefined)
+        s.projects[idx].verifyAutoRun = updates.verifyAutoRun ? undefined : false;
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
       if (updates.isGitRepo !== undefined) s.projects[idx].isGitRepo = updates.isGitRepo;

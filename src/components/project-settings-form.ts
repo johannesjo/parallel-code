@@ -23,6 +23,7 @@ export function createProjectSettingsForm() {
   const [evidenceChecks, setEvidenceChecks] = createSignal<CheckDraft[]>([]);
   const [evidenceModel, setEvidenceModel] = createSignal(DEFAULT_EVIDENCE_MODEL);
   const [evidenceAutoBuild, setEvidenceAutoBuild] = createSignal(false);
+  const [verifyAutoRun, setVerifyAutoRun] = createSignal(true);
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
 
   function load(p: Project) {
@@ -39,6 +40,7 @@ export function createProjectSettingsForm() {
     setEvidenceChecks(p.evidenceChecks ? [...p.evidenceChecks] : []);
     setEvidenceModel(p.evidenceModel ?? DEFAULT_EVIDENCE_MODEL);
     setEvidenceAutoBuild(p.evidenceAutoBuild === true);
+    setVerifyAutoRun(p.verifyAutoRun !== false);
     setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
   }
 
@@ -57,6 +59,7 @@ export function createProjectSettingsForm() {
       evidenceChecks: finalizeChecks(evidenceChecks()),
       evidenceModel: parseEvidenceModelSettings(evidenceModel()),
       evidenceAutoBuild: evidenceAutoBuild(),
+      verifyAutoRun: verifyAutoRun(),
       terminalBookmarks: bookmarks(),
     };
   }
@@ -88,6 +91,8 @@ export function createProjectSettingsForm() {
     setEvidenceModel,
     evidenceAutoBuild,
     setEvidenceAutoBuild,
+    verifyAutoRun,
+    setVerifyAutoRun,
     bookmarks,
     setBookmarks,
     load,

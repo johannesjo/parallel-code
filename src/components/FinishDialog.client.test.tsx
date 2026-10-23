@@ -18,6 +18,12 @@ import type { Task } from '../store/types';
 
 vi.mock('../store/store', () => ({
   store: { agents: {} },
+  backgroundVerifyEnabled: () => false,
+  cancelTaskVerification: vi.fn(async () => true),
+  getBackgroundVerifyHold: () => undefined,
+  runBackgroundVerify: vi.fn(async () => undefined),
+  runTaskVerification: vi.fn(async () => undefined),
+  stageVerificationFailurePrompt: vi.fn(() => false),
   getProject: () => undefined,
   getPrChecks: vi.fn(() => undefined),
   getVerifyCommand: () => undefined,
@@ -340,7 +346,11 @@ describe('FinishDialog base sync', () => {
     mockInvoke((channel) => {
       if (channel === IPC.GetBranchLog) return '';
       if (channel === IPC.CheckMergeStatus)
-        return { conflicting_files: [], main_ahead_count: synced ? 0 : 2 };
+        return {
+          conflicting_files: [],
+          main_ahead_count: synced ? 0 : 2,
+          overlapping_files: ['src/a.ts'],
+        };
       if (channel === IPC.MergeBaseIntoTask) {
         synced = true;
         return undefined;
@@ -351,6 +361,10 @@ describe('FinishDialog base sync', () => {
     await flush();
     expect(document.body.textContent?.indexOf('main has 2 new commits')).toBeLessThan(
       document.body.textContent?.indexOf('Commits and changed files') ?? 0,
+    );
+    // Where the new base commits meet this branch, checks here never saw them.
+    expect(document.body.textContent).toContain(
+      'They also change 1 file this branch changed: src/a.ts.',
     );
     expect(button('Rebase onto main')).toBeDefined();
     expect(confirmButton()?.textContent).toBe('Merge into main');
