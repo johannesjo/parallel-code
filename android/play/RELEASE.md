@@ -154,19 +154,27 @@ full-access attestation; do not tick it merely because demo instructions can be 
 ## Open release items
 
 - Install the exact Play build on a real device, run the smoke checks and record
-  the foreground-service video. Upload the store assets.
+  the foreground-service video. Upload the phone screenshots; the icon and feature
+  graphic were uploaded to Play Console on 2026-10-24.
+- Android run `40017824793` failed because `LookPalettes.kt` was stale. Regenerating
+  it locally fixes the failure; Android unit tests, debug assembly, release lint
+  and bundle generation passed on 2026-10-24, as did `npm run check`. The fix still
+  needs to reach `main` before creating the signed Play candidate.
 - Signed `0.2.0 (56)` at `c0df1d19` is in **internal testing only** and contains the
   earlier, limited demo. The expanded offline demo needs a new signed build that is
   installed and tested before the reviewer instructions above can be submitted.
   Play's full-feature-access attestation remains unresolved.
 - Play App access completion gates target-audience and location declarations;
   target audience then gates Data safety submission.
-- Play app pricing is **Free**. Production countries are unset; selecting all
-  countries awaits explicit worldwide approval.
-- IARC online-content severity answers remain unresolved; support case
-  **8-3703000041808** awaits a human answer. Google's help excludes user-imported
-  material, but the form explicitly includes AI output. Do not guess a severity
-  rating for unrestricted coding-agent content. See the
+- Play app pricing is **Free**. Production countries are unset; the planned
+  submission selects all available countries.
+- Google replied to support case **8-3703000041808**: it does not provide
+  pre-compliance checks or questionnaire selections, and recommends IARC for
+  classification edge cases. The user authorized proceeding with submission
+  using an honest assessment rather than waiting for IARC. The questionnaire is
+  still incomplete; the user authorized accepting IARC's terms. Google's
+  help excludes user-imported material, but the form explicitly includes AI output.
+  See the
   [official content-rating guidance](https://support.google.com/googleplay/android-developer/answer/11070055).
 - The Data safety draft includes messages, other user content, app interactions,
   diagnostics, and identifiers, without a universal encryption claim. Keep it in
