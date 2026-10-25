@@ -1,18 +1,24 @@
 import { render } from 'solid-js/web';
-import { createStore } from 'solid-js/store';
+import { createStore, type SetStoreFunction } from 'solid-js/store';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { mockDismiss, mockKeep, mockRate, mockRestore, mockStage } = vi.hoisted(() => ({
-  mockDismiss: vi.fn(),
-  mockKeep: vi.fn(),
-  mockRate: vi.fn(),
-  mockRestore: vi.fn(),
-  mockStage: vi.fn(() => true),
-}));
+const { mockDismiss, mockKeep, mockRate, mockRefreshCode, mockRestore, mockStage } = vi.hoisted(
+  () => ({
+    mockDismiss: vi.fn(),
+    mockKeep: vi.fn(),
+    mockRate: vi.fn(() => Promise.resolve()),
+    mockRefreshCode: vi.fn(),
+    mockRestore: vi.fn(),
+    mockStage: vi.fn(() => true),
+  }),
+);
 
 vi.mock('../store/task-brief', () => ({
+  briefTargetAgentName: () => undefined,
   keepBriefDecision: mockKeep,
+  refreshCodeFingerprint: mockRefreshCode,
   refreshTaskBrief: vi.fn(),
+  reopenBriefDecision: vi.fn(),
   requestConfidenceRating: mockRate,
 }));
 
@@ -34,6 +40,8 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+const OPEN = 'Remember-me path not handled.';
+
 function baseTask(overrides: Partial<Task> = {}): Task {
   return {
     id: 'task',
@@ -53,7 +61,7 @@ function baseTask(overrides: Partial<Task> = {}): Task {
         unbacked: [],
         changed: [{ text: 'Sign-in lands on the requested page.' }],
         extra: [{ text: 'Renamed parseNext.' }],
-        open: [{ text: 'Remember-me path not handled.' }],
+        open: [{ text: OPEN }],
         decided: [{ text: 'Cookie lasts 5 minutes.' }],
       },
       generatedAt: 2_000,
@@ -64,7 +72,7 @@ function baseTask(overrides: Partial<Task> = {}): Task {
     confidence: {
       scores: [
         { label: 'Correctness', score: 88, why: 'Tested.' },
-        { label: 'Completeness', score: 64, why: 'Misses remember-me.' },
+        { label: 'Completeness', score: 50, why: 'Misses remember-me.' },
       ],
       findings: [],
       publishedAt: 3_000,
@@ -74,98 +82,137 @@ function baseTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function mount(task: Task, failingChecks = 0) {
-  const [state] = createStore(task);
+function mount(task: Task, verifyFailed = false) {
+  const [state, setState] = createStore(task);
   const onReworkStaged = vi.fn();
   const root = document.createElement('div');
   document.body.append(root);
   dispose = render(
     () => (
-      <ReviewSection task={state} failingChecks={failingChecks} onReworkStaged={onReworkStaged} />
+      <ReviewSection task={state} verifyFailed={verifyFailed} onReworkStaged={onReworkStaged} />
     ),
     root,
   );
-  return { root, onReworkStaged };
+  return { root, setState, onReworkStaged };
 }
 
-const button = (root: HTMLElement, label: string) => {
-  const found = Array.from(root.querySelectorAll('button')).find(
-    (b) => b.textContent?.trim() === label,
-  );
-  if (!found) throw new Error(`Missing button ${label}`);
+const buttons = (root: HTMLElement) => Array.from(root.querySelectorAll('button'));
+const button = (root: HTMLElement, label: string | RegExp) => {
+  const found = buttons(root).find((b) => {
+    const text = b.textContent?.replace('✓', '').trim() ?? '';
+    return typeof label === 'string' ? text === label : label.test(text);
+  });
+  if (!found) throw new Error(`Missing button ${String(label)}`);
   return found;
 };
 
+function dismiss(setState: SetStoreFunction<Task>, text: string, reason = '') {
+  setState('reviewDismissed', { [reviewItemId('risk', text)]: { text, reason } });
+}
+
 describe('ReviewSection', () => {
   it('leads with the verdict, the ask and the low score with its reason', () => {
-    const { root } = mount(baseTask(), 1);
-    expect(root.querySelector('h3')?.textContent).toBe('1 open risk · 1 check failing');
+    const { root } = mount(baseTask(), true);
+    expect(root.querySelector('h3')?.textContent).toBe('Verify failed · 1 open risk');
     expect(root.textContent).toContain('Asked: Send people back after sign-in.');
-    expect(root.textContent).toContain('Completeness 64 · Misses remember-me.');
-    expect(root.textContent).toContain('Correctness 88 look fine');
+    expect(root.textContent).toContain('Completeness 50 · Misses remember-me.');
+    expect(root.textContent).toContain('Correctness 88 looks fine');
     expect(root.textContent).toContain('Sign-in lands on the requested page.');
-    // A current rating needs no new one.
-    expect(Array.from(root.querySelectorAll('button')).map((b) => b.textContent)).not.toContain(
-      'Rate confidence',
-    );
+    // A current rating needs no new one, but is checked against the code as it is now.
+    expect(buttons(root).some((b) => /Rate confidence/.test(b.textContent ?? ''))).toBe(false);
+    expect(mockRefreshCode).toHaveBeenCalledWith('task');
   });
 
   it('collects picks into one staged rework prompt', () => {
     const { root, onReworkStaged } = mount(baseTask());
-    const rework = button(root, 'Rework (0)');
-    expect(rework.disabled).toBe(true);
+    expect(button(root, 'Rework (0)').disabled).toBe(true);
 
     button(root, 'Add to rework').click();
     button(root, 'Ask to revert').click();
-    expect(button(root, 'Rework (2)').disabled).toBe(false);
     expect(root.querySelectorAll('[aria-pressed="true"]')).toHaveLength(2);
+    // The label stays put; only the pressed state and the tick change.
+    expect(button(root, 'Add to rework').getAttribute('aria-pressed')).toBe('true');
 
     button(root, 'Rework (2)').click();
-    expect(mockStage).toHaveBeenCalledWith(
-      'task',
-      [
-        expect.objectContaining({ text: 'Remember-me path not handled.' }),
-        expect.objectContaining({ text: 'Renamed parseNext.' }),
-      ],
-      '',
-    );
+    expect(mockStage).toHaveBeenCalledWith('task', [
+      expect.objectContaining({ text: OPEN }),
+      expect.objectContaining({ text: 'Renamed parseNext.' }),
+    ]);
     expect(onReworkStaged).toHaveBeenCalled();
   });
 
-  it('dismisses a risk and keeps a decision through the store', () => {
-    const { root } = mount(baseTask());
+  it('keeps a dismissed risk in place with its reason field, and drops its pick', () => {
+    const { root, setState } = mount(baseTask());
+    button(root, 'Add to rework').click();
+    expect(button(root, 'Rework (1)')).toBeTruthy();
+
     button(root, 'Not needed').click();
     expect(mockDismiss).toHaveBeenCalledWith(
       'task',
-      expect.objectContaining({ id: reviewItemId('risk', 'Remember-me path not handled.') }),
+      expect.objectContaining({ id: reviewItemId('risk', OPEN) }),
     );
+    dismiss(setState, OPEN);
+    expect(root.querySelector('h3')?.textContent).toBe('No open risks');
+    expect(root.textContent).toContain(OPEN);
+    expect(button(root, 'Rework (0)').disabled).toBe(true);
+    expect(root.textContent).not.toContain('Dismissed earlier');
+
+    const input = root.querySelector<HTMLInputElement>('input[type="text"]');
+    if (!input) throw new Error('Missing reason field');
+    input.focus();
+    // A store update while typing must not rebuild the field under the cursor.
+    dismiss(setState, OPEN, 'Gone soon');
+    expect(root.querySelector('input[type="text"]')).toBe(input);
+    expect(document.activeElement).toBe(input);
+
+    button(root, 'Undo').click();
+    expect(mockRestore).toHaveBeenCalledWith('task', reviewItemId('risk', OPEN));
+  });
+
+  it('folds risks dismissed before the dialog opened', () => {
+    const task = baseTask({
+      reviewDismissed: { [reviewItemId('risk', OPEN)]: { text: OPEN, reason: 'Gone soon' } },
+    });
+    const { root } = mount(task);
+    expect(root.textContent).toContain('Nothing open.');
+    expect(root.textContent).not.toContain(OPEN);
+    button(root, 'Dismissed earlier (1)').click();
+    expect(root.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Gone soon');
+  });
+
+  it('keeps a kept decision on screen with an undo', () => {
+    const { root, setState } = mount(baseTask());
     button(root, 'Keep').click();
     expect(mockKeep).toHaveBeenCalledWith('task', 'Cookie lasts 5 minutes.');
+    setState('brief', 'decisions', { 'Cookie lasts 5 minutes.': 'kept' });
+    expect(root.textContent).toContain('Cookie lasts 5 minutes. · kept');
+    expect(button(root, 'Undo')).toBeTruthy();
   });
 
-  it('lists dismissed risks with their reason and an undo', () => {
-    const id = reviewItemId('risk', 'Remember-me path not handled.');
-    const { root } = mount(
-      baseTask({
-        reviewDismissed: { [id]: { text: 'Remember-me path not handled.', reason: 'Gone soon' } },
-      }),
-    );
-    expect(root.querySelector('h3')?.textContent).toBe('No open risks');
-    expect(root.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Gone soon');
-    button(root, 'Undo').click();
-    expect(mockRestore).toHaveBeenCalledWith('task', id);
-  });
-
-  it('offers a new rating once the code moved past the old one', () => {
+  it('folds long lists behind a show-more button', () => {
     const task = baseTask();
     const brief = task.brief;
     if (!brief) throw new Error('Missing brief');
-    const { root } = mount({
-      ...task,
-      brief: { ...brief, fingerprint: 'newer', generatedAt: 4_000 },
-    });
+    const extra = Array.from({ length: 7 }, (_, i) => ({ text: `Extra ${i}.` }));
+    const { root } = mount({ ...task, brief: { ...brief, brief: { ...brief.brief, extra } } });
+    expect(buttons(root).filter((b) => b.textContent?.includes('Ask to revert'))).toHaveLength(5);
+    button(root, 'Show 2 more').click();
+    expect(buttons(root).filter((b) => b.textContent?.includes('Ask to revert'))).toHaveLength(7);
+  });
+
+  it('offers a new rating once the code moved past the old one, once', async () => {
+    const { root } = mount(baseTask({ codeFingerprint: { fingerprint: 'newer', at: 4_000 } }));
     expect(root.textContent).toContain('the code changed since this rating');
     button(root, 'Rate confidence again').click();
     expect(mockRate).toHaveBeenCalledWith('task');
+    await vi.waitFor(() =>
+      expect(button(root, /^Rating asked for/).hasAttribute('disabled')).toBe(true),
+    );
+  });
+
+  it('shows no rework footer when there is nothing to pick', () => {
+    const { root } = mount(baseTask({ brief: undefined, confidence: undefined }));
+    expect(root.querySelector('h3')?.textContent).toBe('Not reviewed yet');
+    expect(buttons(root).some((b) => b.textContent?.startsWith('Rework'))).toBe(false);
   });
 });

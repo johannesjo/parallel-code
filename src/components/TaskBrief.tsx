@@ -5,7 +5,8 @@ import { sf } from '../lib/fontScale';
 import { createAnchorEffect, placeBelow } from '../lib/floating';
 import { formatRelativeAge } from '../lib/relativeAge';
 import { errMessage } from '../lib/log';
-import { isConfidenceStale } from '../lib/task-confidence';
+import { LOW_CONFIDENCE_SCORE, isConfidenceOutdated } from '../lib/task-confidence';
+import { isRiskDismissed } from '../lib/review-summary';
 import type { BriefItem } from '../lib/task-brief';
 import type { ConfidenceFinding } from '../../electron/shared/task-confidence';
 import {
@@ -33,7 +34,7 @@ import {
 } from './icons';
 
 /** Scores below this are the one score colour on the card; sections colour only their icons. */
-const LOW_SCORE = 60;
+const LOW_SCORE = LOW_CONFIDENCE_SCORE;
 const CARD_WIDTH = 480;
 const MONO = "'JetBrains Mono', monospace";
 
@@ -48,10 +49,19 @@ function findingItems(findings: readonly ConfidenceFinding[], kinds: string[]): 
     .map((f) => ({ text: f.text, ...(f.file && { file: f.file }), fromRating: true }));
 }
 
-/** Open questions plus the rating's gaps and risks, as the card lists them. */
+/** Open questions plus the rating's gaps and risks, minus those set aside in a review. */
 function openItems(task: Task): CardItem[] {
   const findings = task.confidence?.findings ?? [];
-  return [...(task.brief?.brief?.open ?? []), ...findingItems(findings, ['gap', 'risk'])];
+  return [...(task.brief?.brief?.open ?? []), ...findingItems(findings, ['gap', 'risk'])].filter(
+    (item) => !isRiskDismissed(task.reviewDismissed, item.text),
+  );
+}
+
+/** Claims the diff does not back, minus those set aside in a review. */
+function unbackedItems(task: Task): BriefItem[] {
+  return (task.brief?.brief?.unbacked ?? []).filter(
+    (item) => !isRiskDismissed(task.reviewDismissed, item.text),
+  );
 }
 
 // Decisions the user has kept or changed no longer need their attention.
@@ -122,12 +132,8 @@ const linkButton: JSX.CSSProperties = {
 function useConfidenceView(task: () => Task) {
   const stale = createMemo(() => {
     const confidence = task().confidence;
-    if (!confidence) return false;
     // The newest code read wins: a brief, or a check made when the card opened.
-    const code = task().codeFingerprint;
-    const brief = task().brief;
-    const latest = code ? { generatedAt: code.at, fingerprint: code.fingerprint } : brief;
-    return isConfidenceStale(confidence, latest);
+    return !!confidence && isConfidenceOutdated(confidence, task().codeFingerprint, task().brief);
   });
   return { stale };
 }
@@ -202,7 +208,7 @@ export function TaskBriefBar(props: TaskBriefBarProps) {
     if (open() && props.task.brief?.unread) markBriefRead(props.task.id);
   });
   // Routine briefs stay quiet; a claim the diff does not back needs a look now.
-  const urgent = () => !!props.task.brief?.brief.unbacked.length;
+  const urgent = () => unbackedItems(props.task).length > 0;
   const unread = () => !!props.task.brief?.unread;
 
   const headline = () => {
@@ -396,7 +402,7 @@ function BriefCounts(props: { task: Task }) {
     const brief = props.task.brief?.brief;
     if (!brief) return [];
     const all = [
-      { kind: 'unbacked', count: brief.unbacked.length },
+      { kind: 'unbacked', count: unbackedItems(props.task).length },
       { kind: 'changed', count: brief.changed.length },
       { kind: 'open', count: openItems(props.task).length },
       { kind: 'decided', count: brief.decided.length },
@@ -861,9 +867,9 @@ function TaskBriefCard(props: {
               gap: '14px',
             }}
           >
-            <Show when={b().unbacked.length}>
-              <Section kind="unbacked" count={b().unbacked.length}>
-                <ItemList items={b().unbacked} onFileClick={props.onFileClick} />
+            <Show when={unbackedItems(props.task).length}>
+              <Section kind="unbacked" count={unbackedItems(props.task).length}>
+                <ItemList items={unbackedItems(props.task)} onFileClick={props.onFileClick} />
               </Section>
             </Show>
             <Show when={open().length}>

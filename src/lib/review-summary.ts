@@ -12,8 +12,8 @@ import type {
   EvidenceTestKind,
 } from '../../electron/shared/evidence';
 import { countLabel } from './plural';
-import type { BriefItem, TaskBriefRecord } from './task-brief';
-import { isConfidenceStale, type TaskConfidence } from './task-confidence';
+import type { BriefDecisionState, BriefItem, TaskBriefRecord } from './task-brief';
+import { LOW_CONFIDENCE_SCORE, isConfidenceOutdated, type TaskConfidence } from './task-confidence';
 
 export type ReviewItemKind = 'risk' | 'decision' | 'extra';
 
@@ -27,6 +27,17 @@ export interface ReviewItem {
   file?: string;
   /** The line the rework prompt sends for it. */
   ask: string;
+}
+
+export interface ReviewRisk extends ReviewItem {
+  /** A claim the diff does not back: the one kind of risk that is marked. */
+  urgent: boolean;
+  dismissed: boolean;
+}
+
+export interface ReviewDecision extends ReviewItem {
+  /** What the user already did with it, in the brief. */
+  state?: BriefDecisionState;
 }
 
 /** A risk the user decided needs no work, with the reason they gave. */
@@ -59,16 +70,18 @@ export interface ReviewTestGroup {
 
 export interface ReviewTests {
   groups: ReviewTestGroup[];
-  /** Weakened tests (skip, only, loosened assertions) not yet accepted. */
-  weakened: number;
+  /** The scan saw an older commit than the one being finished. */
+  outdated: boolean;
 }
 
 export interface ReviewSummary {
   goal?: string;
   changes: BriefItem[];
-  risks: ReviewItem[];
-  dismissed: ReviewItem[];
-  decisions: ReviewItem[];
+  /** Every risk, dismissed ones included, in a stable order. */
+  risks: ReviewRisk[];
+  openRisks: number;
+  /** Every decision, handled ones included. */
+  decisions: ReviewDecision[];
   extras: ReviewItem[];
   scores?: ReviewScores;
   tests?: ReviewTests;
@@ -79,15 +92,24 @@ export interface ReviewSummaryInput {
   confidence?: TaskConfidence;
   evidence?: EvidencePackage;
   dismissed?: Record<string, ReviewDismissal>;
+  /** Newest diff fingerprint read, which ratings are compared against. */
+  codeFingerprint?: { fingerprint: string; at: number };
+  /** HEAD of the worktree being finished, to tell an outdated scan. */
+  headSha?: string | null;
 }
-
-/** Scores under this read as a reason to look; the rest fold into one line. */
-export const LOW_SCORE = 75;
 
 const TEST_KIND_ORDER: EvidenceTestKind[] = ['unit', 'e2e'];
 
 export function reviewItemId(kind: ReviewItemKind, text: string): string {
   return `${kind}:${text.replace(/\s+/g, ' ').trim().toLowerCase()}`;
+}
+
+/** Whether a brief or rating item was set aside in the review. */
+export function isRiskDismissed(
+  dismissed: Record<string, ReviewDismissal> | undefined,
+  text: string,
+): boolean {
+  return !!dismissed && Object.hasOwn(dismissed, reviewItemId('risk', text));
 }
 
 function item(
@@ -100,27 +122,27 @@ function item(
   return { id: reviewItemId(kind, text), kind, text, source, ask, ...(file && { file }) };
 }
 
-function dedupe(items: ReviewItem[]): ReviewItem[] {
+function dedupe<T extends ReviewItem>(items: T[]): T[] {
   const seen = new Set<string>();
   return items.filter((entry) => !seen.has(entry.id) && !!seen.add(entry.id));
 }
 
-function scoresOf(confidence: TaskConfidence, brief: TaskBriefRecord | undefined): ReviewScores {
+function scoresOf(input: ReviewSummaryInput, confidence: TaskConfidence): ReviewScores {
   const scores = confidence.scores.map(({ label, score, why }) => ({ label, score, why }));
   return {
-    low: scores.filter((entry) => entry.score < LOW_SCORE),
-    fine: scores.filter((entry) => entry.score >= LOW_SCORE),
+    low: scores.filter((entry) => entry.score < LOW_CONFIDENCE_SCORE),
+    fine: scores.filter((entry) => entry.score >= LOW_CONFIDENCE_SCORE),
     ...(confidence.source && { source: confidence.source }),
-    stale: isConfidenceStale(confidence, brief),
+    stale: isConfidenceOutdated(confidence, input.codeFingerprint, input.brief),
   };
 }
 
-function testsOf(evidence: EvidencePackage): ReviewTests | undefined {
-  const { tests, flags } = evidence.scan;
-  const weakened = flags.filter(
-    (flag) => flag.category === 'test-weakened' && !Object.hasOwn(evidence.acceptedFlags, flag.id),
-  ).length;
-  if (tests.length === 0 && weakened === 0) return undefined;
+function testsOf(
+  evidence: EvidencePackage,
+  headSha: string | null | undefined,
+): ReviewTests | undefined {
+  const { tests } = evidence.scan;
+  if (tests.length === 0) return undefined;
   const groups = TEST_KIND_ORDER.map((kind) => {
     const ofKind = tests.filter((test) => test.kind === kind);
     return {
@@ -130,66 +152,83 @@ function testsOf(evidence: EvidencePackage): ReviewTests | undefined {
       removed: ofKind.filter((test) => test.change === 'removed'),
     };
   }).filter((group) => group.added.length + group.changed.length + group.removed.length > 0);
-  return { groups, weakened };
+  return { groups, outdated: !!headSha && evidence.scan.headSha !== headSha };
 }
 
 export function buildReviewSummary(input: ReviewSummaryInput): ReviewSummary {
   const brief = input.brief?.brief;
   const findings = input.confidence?.findings ?? [];
+  const dismissed = input.dismissed;
+  const risk = (entry: ReviewItem, urgent: boolean): ReviewRisk => ({
+    ...entry,
+    urgent,
+    dismissed: !!dismissed && Object.hasOwn(dismissed, entry.id),
+  });
   const risks = dedupe([
     ...(brief?.unbacked ?? []).map((entry) =>
-      item(
-        'risk',
-        entry.text,
-        'The agent says so, but the diff doesn’t show it',
-        `Back up or correct this claim: ${entry.text}`,
-        entry.file,
+      risk(
+        item(
+          'risk',
+          entry.text,
+          'The agent says so, but the diff doesn’t show it',
+          `Back up or correct this claim: ${entry.text}`,
+          entry.file,
+        ),
+        true,
       ),
     ),
     ...findings
       .filter((finding) => finding.kind === 'risk' || finding.kind === 'gap')
       .map((finding) =>
-        item(
-          'risk',
-          finding.text,
-          finding.kind === 'gap'
-            ? 'Gap found by the confidence check'
-            : 'From the confidence check',
-          finding.kind === 'gap'
-            ? `Fill this gap: ${finding.text}`
-            : `Address this risk: ${finding.text}`,
-          finding.file,
+        risk(
+          item(
+            'risk',
+            finding.text,
+            finding.kind === 'gap'
+              ? 'Gap found by the confidence check'
+              : 'From the confidence check',
+            finding.kind === 'gap'
+              ? `Fill this gap: ${finding.text}`
+              : `Address this risk: ${finding.text}`,
+            finding.file,
+          ),
+          false,
         ),
       ),
     ...(brief?.open ?? []).map((entry) =>
-      item(
-        'risk',
-        entry.text,
-        'Still open, from the brief',
-        `Finish this: ${entry.text}`,
-        entry.file,
+      risk(
+        item(
+          'risk',
+          entry.text,
+          'Still open, from the brief',
+          `Finish this: ${entry.text}`,
+          entry.file,
+        ),
+        false,
       ),
     ),
   ]);
-  const dismissedIds = input.dismissed ?? {};
   const decisionStates = input.brief?.decisions ?? {};
   return {
     ...(brief?.goal && { goal: brief.goal }),
     changes: brief?.changed ?? [],
-    risks: risks.filter((risk) => !Object.hasOwn(dismissedIds, risk.id)),
-    dismissed: risks.filter((risk) => Object.hasOwn(dismissedIds, risk.id)),
-    // A decision the user kept or already corrected needs nothing more.
-    decisions: (brief?.decided ?? [])
-      .filter((entry) => !decisionStates[entry.text])
-      .map((entry) =>
-        item(
-          'decision',
-          entry.text,
-          'Decided by the agent without asking',
-          `Reconsider this decision: ${entry.text}`,
-          entry.file,
-        ),
-      ),
+    risks,
+    openRisks: risks.filter((entry) => !entry.dismissed).length,
+    decisions: dedupe(
+      (brief?.decided ?? []).map((entry) => {
+        const state = decisionStates[entry.text];
+        return {
+          ...item(
+            'decision',
+            entry.text,
+            'Decided by the agent without asking',
+            `Reconsider this decision: ${entry.text}`,
+            entry.file,
+          ),
+          ...(state && { state }),
+        };
+      }),
+    ),
     extras: dedupe([
       ...(brief?.extra ?? []).map((entry) =>
         item(
@@ -212,8 +251,8 @@ export function buildReviewSummary(input: ReviewSummaryInput): ReviewSummary {
           ),
         ),
     ]),
-    ...(input.confidence && { scores: scoresOf(input.confidence, input.brief) }),
-    ...(input.evidence && { tests: testsOf(input.evidence) }),
+    ...(input.confidence && { scores: scoresOf(input, input.confidence) }),
+    ...(input.evidence && { tests: testsOf(input.evidence, input.headSha) }),
   };
 }
 
@@ -221,7 +260,7 @@ export function hasReviewContent(summary: ReviewSummary): boolean {
   return (
     !!summary.goal ||
     summary.changes.length > 0 ||
-    summary.risks.length + summary.dismissed.length > 0 ||
+    summary.risks.length > 0 ||
     summary.decisions.length + summary.extras.length > 0 ||
     !!summary.scores ||
     !!summary.tests
@@ -229,21 +268,18 @@ export function hasReviewContent(summary: ReviewSummary): boolean {
 }
 
 /** The one line that heads the review. */
-export function reviewVerdict(summary: ReviewSummary, failingChecks: number): string {
-  const failing = failingChecks > 0 ? countLabel(failingChecks, 'check') + ' failing' : '';
-  if (!hasReviewContent(summary)) return failing || 'Not reviewed yet';
-  const risks = summary.risks.length;
+export function reviewVerdict(summary: ReviewSummary, verifyFailed: boolean): string {
+  const failed = verifyFailed ? 'Verify failed' : '';
+  if (!hasReviewContent(summary)) return failed || 'Not reviewed yet';
+  const risks = summary.openRisks;
   const head = risks === 0 ? 'No open risks' : countLabel(risks, 'open risk');
-  return failing ? `${head} · ${failing}` : head;
+  return failed ? `${failed} · ${head.charAt(0).toLowerCase()}${head.slice(1)}` : head;
 }
 
-/** One line per selected item, then the user's own note. */
-export function buildReworkPrompt(items: ReviewItem[], note: string): string {
+/** One line per selected item. */
+export function buildReworkPrompt(items: ReviewItem[]): string {
   const lines = items.map((entry) => `- ${entry.ask}${entry.file ? ` (${entry.file})` : ''}`);
-  const extra = note.trim();
-  return ['Please rework this task based on my review:', lines.join('\n'), extra]
-    .filter(Boolean)
-    .join('\n\n');
+  return ['Please rework this task based on my review:', lines.join('\n')].join('\n\n');
 }
 
 /**
@@ -260,16 +296,27 @@ export function withReviewNotes(prompt: string, dismissed: ReviewDismissal[]): s
   ].join('\n\n');
 }
 
-const DISMISSAL_LIMITS = { entries: 50, text: 240, reason: 300 } as const;
+const DISMISSAL_LIMITS = { entries: 50, id: 300, text: 240, reason: 300 } as const;
 
-/** Keeps only well-formed dismissals from a saved state. */
+export const REVIEW_REASON_MAX = DISMISSAL_LIMITS.reason;
+
+/** Keeps the newest dismissals within the cap; insertion order is age order. */
+export function capReviewDismissals(
+  record: Record<string, ReviewDismissal>,
+): Record<string, ReviewDismissal> {
+  const entries = Object.entries(record);
+  if (entries.length <= DISMISSAL_LIMITS.entries) return record;
+  return Object.fromEntries(entries.slice(-DISMISSAL_LIMITS.entries));
+}
+
+/** Keeps only well-formed dismissals from a saved state, newest first to survive the cap. */
 export function restoreReviewDismissed(
   value: unknown,
 ): Record<string, ReviewDismissal> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const out: Record<string, ReviewDismissal> = {};
   for (const [id, entry] of Object.entries(value as Record<string, unknown>)) {
-    if (Object.keys(out).length === DISMISSAL_LIMITS.entries) break;
+    if (!id.startsWith('risk:') || id.length > DISMISSAL_LIMITS.id) continue;
     if (!entry || typeof entry !== 'object') continue;
     const { text, reason } = entry as Record<string, unknown>;
     if (typeof text !== 'string' || !text.trim()) continue;
@@ -278,7 +325,6 @@ export function restoreReviewDismissed(
       reason: typeof reason === 'string' ? reason.slice(0, DISMISSAL_LIMITS.reason) : '',
     };
   }
-  return Object.keys(out).length > 0 ? out : undefined;
+  const capped = capReviewDismissals(out);
+  return Object.keys(capped).length > 0 ? capped : undefined;
 }
-
-export const REVIEW_REASON_MAX = DISMISSAL_LIMITS.reason;

@@ -2,17 +2,25 @@ import { produce } from 'solid-js/store';
 import {
   REVIEW_REASON_MAX,
   buildReworkPrompt,
+  capReviewDismissals,
   type ReviewDismissal,
   type ReviewItem,
 } from '../lib/review-summary';
 import { setStore, store } from './core';
 import { stageTaskPrompt } from './staged-prompt';
 
-/** Sets a review risk aside; it moves to the dismissed list with its reason. */
+/** Sets a review risk aside, with an optional reason the user can add later. */
 export function dismissReviewItem(taskId: string, item: ReviewItem, reason = ''): void {
   if (!store.tasks[taskId]) return;
   const entry: ReviewDismissal = { text: item.text, reason: reason.slice(0, REVIEW_REASON_MAX) };
-  setStore('tasks', taskId, 'reviewDismissed', (prev) => ({ ...prev, [item.id]: entry }));
+  // Reworded items leave old ids behind, so the record is capped to the newest.
+  const next = capReviewDismissals({ ...store.tasks[taskId].reviewDismissed, [item.id]: entry });
+  setStore(
+    produce((s) => {
+      const task = s.tasks[taskId];
+      if (task) task.reviewDismissed = next;
+    }),
+  );
 }
 
 export function setReviewDismissReason(taskId: string, id: string, reason: string): void {
@@ -41,10 +49,21 @@ export function getReviewDismissals(taskId: string): ReviewDismissal[] {
 
 /**
  * Puts the rework prompt in the task input for the user to read and send,
- * like the other prompts this dialog stages.
+ * like the other prompts the finish dialog stages. Decisions it asks about
+ * count as handled, as a correction sent from the brief card does.
  */
-export function stageRework(taskId: string, items: ReviewItem[], note: string): boolean {
-  if (items.length === 0 && !note.trim()) return false;
-  stageTaskPrompt(taskId, buildReworkPrompt(items, note));
+export function stageRework(taskId: string, items: ReviewItem[]): boolean {
+  if (items.length === 0 || !store.tasks[taskId]) return false;
+  stageTaskPrompt(taskId, buildReworkPrompt(items));
+  const decisions = items.filter((entry) => entry.kind === 'decision');
+  if (decisions.length > 0 && store.tasks[taskId].brief) {
+    setStore(
+      produce((s) => {
+        const brief = s.tasks[taskId]?.brief;
+        if (!brief) return;
+        for (const entry of decisions) brief.decisions[entry.text] = 'sent';
+      }),
+    );
+  }
   return true;
 }

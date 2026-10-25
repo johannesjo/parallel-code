@@ -1,4 +1,5 @@
 import { createEffect, createRoot, untrack } from 'solid-js';
+import { produce } from 'solid-js/store';
 import { TASK_NAME_MODELS } from '../../electron/shared/task-name-model';
 import { parseConfidencePayload } from '../../electron/shared/task-confidence';
 import { startEvidenceModelRequest } from '../lib/evidence-model-request';
@@ -389,7 +390,13 @@ export function publishTaskConfidence(taskId: string, input: unknown): void {
   if (!Object.hasOwn(store.tasks, taskId) || !task || task.closingStatus)
     throw new Error('Task not available.');
   const publishedAt = Date.now();
-  setStore('tasks', taskId, 'confidence', { ...payload, publishedAt });
+  // Replaced, not merged: a field the new rating leaves out must not survive from the old one.
+  setStore(
+    produce((s) => {
+      const target = s.tasks[taskId];
+      if (target) target.confidence = { ...payload, publishedAt };
+    }),
+  );
   void readTaskDiff(task).then((rawDiff) => {
     // Unread code cannot be compared later, so the rating keeps no fingerprint.
     if (rawDiff === undefined) return;

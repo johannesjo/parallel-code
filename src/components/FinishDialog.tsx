@@ -24,6 +24,7 @@ import { backgroundVerifyEnabled, getProject, getTaskChecks } from '../store/sto
 import { markFeatureHintSeen } from '../store/onboarding';
 import { showNotification } from '../store/notification';
 import { dialogButtonStyle, theme } from '../lib/theme';
+import { isVerificationStale, summarizeVerificationRun } from '../lib/verification-run';
 import { GitMergeIcon, SyncIcon, UploadIcon } from './icons';
 
 export type FinishAction = 'merge' | 'push';
@@ -95,6 +96,13 @@ export function FinishDialog(props: FinishDialogProps) {
     headSha: () => (merge.worktreeStatus.error ? null : merge.worktreeStatus()?.head_sha),
   });
   const prMerging = () => pr.busy() === 'merge';
+  // Only a failure on the current commit counts; an older run is said in readiness below.
+  const verifyFailed = () => {
+    const run = props.task.verificationRun;
+    if (!run || merge.worktreeStatus.error) return false;
+    const head = merge.worktreeStatus()?.head_sha;
+    return summarizeVerificationRun(run, head).kind === 'failed' && !isVerificationStale(run, head);
+  };
   // Not the local cleanup flag: that follows deleteBranchOnClose, which closeTask applies itself.
   const [closeAfterPrMerge, setCloseAfterPrMerge] = createSignal(true);
 
@@ -196,13 +204,8 @@ export function FinishDialog(props: FinishDialogProps) {
             {/* What the change does and what is still open comes before how to merge it. */}
             <ReviewSection
               task={props.task}
-              failingChecks={
-                merge
-                  .mergeReadiness()
-                  .checks.filter(
-                    (check) => check.status === 'blocked' || check.status === 'warning',
-                  ).length
-              }
+              headSha={merge.worktreeStatus.error ? null : merge.worktreeStatus()?.head_sha}
+              verifyFailed={verifyFailed()}
               onReworkStaged={() => {
                 showNotification('Rework prompt staged in the task input. Review it, then send.');
                 props.onClose();

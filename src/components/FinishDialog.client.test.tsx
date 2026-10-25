@@ -5,6 +5,7 @@ import { closeTaskNow } from './CloseTaskDialog';
 import { FinishDialog } from './FinishDialog';
 import { invoke } from '../lib/ipc';
 import { setStore } from '../store/core';
+import { showNotification } from '../store/notification';
 import { getPrChecks, getTaskChecks, mergeTask, pushTask } from '../store/store';
 import {
   getPullRequestDetails,
@@ -82,7 +83,18 @@ vi.mock('./ChangeTourButton', () => ({
 }));
 vi.mock('./ChangedFilesList', () => ({ ChangedFilesList: () => null }));
 // Covered by its own tests; its store imports reach past this file's mocks.
-vi.mock('./ReviewSection', () => ({ ReviewSection: () => null }));
+const reviewProps = vi.hoisted(() => ({
+  current: undefined as
+    | { verifyFailed: boolean; headSha?: string | null; onReworkStaged: () => void }
+    | undefined,
+}));
+vi.mock('./ReviewSection', () => ({
+  ReviewSection: (props: NonNullable<typeof reviewProps.current>) => {
+    // eslint-disable-next-line solid/reactivity -- keeps the live props proxy for the test to read
+    reviewProps.current = props;
+    return null;
+  },
+}));
 vi.mock('./MergeReadinessPanel', () => ({
   MergeReadinessPanel: (props: { children?: JSX.Element }) => <div>{props.children}</div>,
 }));
@@ -883,5 +895,51 @@ describe('FinishDialog with an open PR', () => {
     expect(document.body.textContent).toContain('commits that are not in PR #42');
     button('Merge locally instead')?.click();
     expect(confirmButton()?.textContent).toBe('Merge into main');
+  });
+});
+
+describe('FinishDialog review', () => {
+  it('passes the head and a failed verify to the review, and closes once rework is staged', async () => {
+    const handlers = mount({
+      task: task({
+        verificationRun: {
+          command: 'npm run check',
+          status: 'failed',
+          exitCode: 1,
+          headSha: 'local',
+          dirty: false,
+          startedAt: '2026-10-25T00:00:00Z',
+          finishedAt: '2026-10-25T00:01:00Z',
+          outputTail: '',
+        },
+      }),
+    });
+    await flush();
+    expect(reviewProps.current?.headSha).toBe('local');
+    expect(reviewProps.current?.verifyFailed).toBe(true);
+    reviewProps.current?.onReworkStaged();
+    expect(showNotification).toHaveBeenCalledWith(
+      'Rework prompt staged in the task input. Review it, then send.',
+    );
+    expect(handlers.onClose).toHaveBeenCalled();
+  });
+
+  it('does not count a verify failure from an older commit', async () => {
+    mount({
+      task: task({
+        verificationRun: {
+          command: 'npm run check',
+          status: 'failed',
+          exitCode: 1,
+          headSha: 'older',
+          dirty: false,
+          startedAt: '2026-10-25T00:00:00Z',
+          finishedAt: '2026-10-25T00:01:00Z',
+          outputTail: '',
+        },
+      }),
+    });
+    await flush();
+    expect(reviewProps.current?.verifyFailed).toBe(false);
   });
 });

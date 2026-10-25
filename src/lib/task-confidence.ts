@@ -39,6 +39,24 @@ export function isConfidenceStale(
   return brief.generatedAt > confidence.publishedAt && brief.fingerprint !== confidence.fingerprint;
 }
 
+/** Scores below this are the ones worth reading; the rest need no attention. */
+export const LOW_CONFIDENCE_SCORE = 60;
+
+/**
+ * Whether the code moved on since the rating, judged by the newest code read:
+ * the task's latest diff fingerprint when one was taken, otherwise its brief.
+ */
+export function isConfidenceOutdated(
+  confidence: Pick<TaskConfidence, 'publishedAt' | 'fingerprint'>,
+  codeFingerprint: { fingerprint: string; at: number } | undefined,
+  brief: Pick<TaskBriefRecord, 'generatedAt' | 'fingerprint'> | undefined,
+): boolean {
+  const latest = codeFingerprint
+    ? { generatedAt: codeFingerprint.at, fingerprint: codeFingerprint.fingerprint }
+    : brief;
+  return isConfidenceStale(confidence, latest);
+}
+
 // An agent rating its own work from memory scores high, so the default asks for
 // an audit by a fresh sub-agent where the agent supports one, and for scores
 // grounded in the diff and test runs either way.

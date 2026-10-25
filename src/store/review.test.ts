@@ -65,11 +65,47 @@ describe('review dismissals', () => {
 
 describe('stageRework', () => {
   it('stages one prompt in the task input and refuses an empty one', () => {
-    expect(stageRework('t1', [], '  ')).toBe(false);
-    expect(stageRework('t1', [risk('No real provider.')], '')).toBe(true);
+    expect(stageRework('t1', [])).toBe(false);
+    expect(stageRework('t1', [risk('No real provider.')])).toBe(true);
     expect(store.tasks.t1.prefillPrompt).toBe(
       'Please rework this task based on my review:\n\n- Address this risk: No real provider.',
     );
     expect(store.showPromptInput).toBe(true);
+  });
+
+  it('marks decisions it asks about as handled in the brief', () => {
+    setStore('tasks', 't1', 'brief', {
+      brief: {
+        goal: '',
+        headline: '',
+        unbacked: [],
+        changed: [],
+        extra: [],
+        open: [],
+        decided: [{ text: 'Used X.' }],
+      },
+      generatedAt: 1,
+      fingerprint: 'f',
+      turns: [],
+      decisions: {},
+    });
+    const decision: ReviewItem = {
+      id: reviewItemId('decision', 'Used X.'),
+      kind: 'decision',
+      text: 'Used X.',
+      source: '',
+      ask: 'Reconsider this decision: Used X.',
+    };
+    stageRework('t1', [decision]);
+    expect(store.tasks.t1.brief?.decisions).toEqual({ 'Used X.': 'sent' });
+  });
+});
+
+describe('dismissal cap', () => {
+  it('drops the oldest dismissals past the cap', () => {
+    for (let i = 0; i < 52; i++) dismissReviewItem('t1', risk(`Risk ${i}.`));
+    const ids = Object.keys(store.tasks.t1.reviewDismissed ?? {});
+    expect(ids).toHaveLength(50);
+    expect(ids[0]).toBe(reviewItemId('risk', 'Risk 2.'));
   });
 });
