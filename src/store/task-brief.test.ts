@@ -328,6 +328,21 @@ describe('decisions and ratings', () => {
     expect(mockSendPrompt).toHaveBeenLastCalledWith('t1', 'agent-1', 'Run my /confidence skill');
   });
 
+  it('tells the rating which review risks the user already set aside', async () => {
+    setStore('confidencePrompt', 'Rate it');
+    setStore('tasks', 't1', 'reviewDismissed', {
+      'risk:no real provider.': { text: 'No real provider.', reason: 'CI covers it' },
+    });
+    await requestConfidenceRating('t1');
+    expect(mockSendPrompt).toHaveBeenLastCalledWith(
+      't1',
+      'agent-1',
+      expect.stringMatching(
+        /^Rate it\n\nI already reviewed these.*\n\n- No real provider\. \(CI covers it\)$/s,
+      ),
+    );
+  });
+
   it('names the agent that ratings and corrections go to only when there are several', () => {
     expect(briefTargetAgentName(task())).toBeUndefined();
     const agent = (name: string) => ({ def: { name } });

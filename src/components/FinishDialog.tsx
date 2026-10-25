@@ -16,6 +16,7 @@ import { CleanupOption, MergeBlockers, MergeChanges, MergeOptions } from './Merg
 import { closeTaskNow } from './CloseTaskDialog';
 import { PushSection } from './PushSection';
 import { ReadinessSection } from './ReadinessSection';
+import { ReviewSection } from './ReviewSection';
 import { createMergeState } from './merge-state';
 import { PR_MERGE_ACTIONS, createFinishPr, taskPrUrl } from './pr-actions';
 import { createPushRun } from './push-run';
@@ -52,7 +53,8 @@ const SHOWN_ELSEWHERE = new Set(['Merge safety', 'Verify command', 'Evidence', '
 
 /**
  * One place to wrap up a task. Reads top to bottom: what blocks the merge,
- * what changed, whether the checks back it, then how to merge. Merge and push
+ * the review (what changed, open risks, decisions, tests), the changed files,
+ * whether the checks back it, then how to merge. Merge and push
  * are both footer actions, since pushing does not exclude merging later.
  */
 export function FinishDialog(props: FinishDialogProps) {
@@ -190,6 +192,21 @@ export function FinishDialog(props: FinishDialogProps) {
               open={props.open}
               onDone={() => props.onClose()}
               onDiffFileClick={props.onDiffFileClick}
+            />
+            {/* What the change does and what is still open comes before how to merge it. */}
+            <ReviewSection
+              task={props.task}
+              failingChecks={
+                merge
+                  .mergeReadiness()
+                  .checks.filter(
+                    (check) => check.status === 'blocked' || check.status === 'warning',
+                  ).length
+              }
+              onReworkStaged={() => {
+                showNotification('Rework prompt staged in the task input. Review it, then send.');
+                props.onClose();
+              }}
             />
             <MergeChanges
               task={props.task}

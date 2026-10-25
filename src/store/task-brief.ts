@@ -13,11 +13,13 @@ import {
   parseTaskBriefResponse,
   type BriefDecisionState,
 } from '../lib/task-brief';
+import { withReviewNotes } from '../lib/review-summary';
 import { DEFAULT_CONFIDENCE_PROMPT } from '../lib/task-confidence';
 import { isAgentChat } from './agent-chat';
 import { getAgentHookStatus } from './agentHookStatus';
 import { store, setStore } from './core';
 import { getProjectPath } from './projects';
+import { getReviewDismissals } from './review';
 import { getAgentOutputTail, isTaskWorking, normalizeCurrentFrame } from './taskStatus';
 import { sendPrompt } from './tasks';
 import type { Task } from './types';
@@ -373,7 +375,8 @@ export async function requestConfidenceRating(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
   const agentId = task && mainAgentId(task);
   if (!agentId) throw new Error('This task has no agent to ask.');
-  await sendPrompt(taskId, agentId, store.confidencePrompt.trim() || DEFAULT_CONFIDENCE_PROMPT);
+  const prompt = store.confidencePrompt.trim() || DEFAULT_CONFIDENCE_PROMPT;
+  await sendPrompt(taskId, agentId, withReviewNotes(prompt, getReviewDismissals(taskId)));
 }
 
 /**

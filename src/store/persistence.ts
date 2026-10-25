@@ -2,6 +2,7 @@ import { parseCompletionRecord } from '../../electron/shared/completion-report';
 import { persistedEvidence, restoredEvidence } from '../lib/evidence-package';
 import { restoreTaskBriefRecord } from '../lib/task-brief';
 import { restoreTaskConfidence } from '../lib/task-confidence';
+import { restoreReviewDismissed } from '../lib/review-summary';
 import type { PrBabysit } from '../lib/pr-babysit';
 import {
   parseEvidenceModelSettings,
@@ -408,6 +409,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     evidence: persistedEvidence(task.evidence),
     brief: task.brief,
     confidence: task.confidence,
+    reviewDismissed: task.reviewDismissed,
     landingState: task.landingState,
     landingReason: task.landingReason,
     landingSummary: task.landingSummary,
@@ -1232,6 +1234,7 @@ export async function loadState(): Promise<void> {
           evidence: restoredEvidence(pt.evidence),
           brief: restoreTaskBriefRecord(pt.brief),
           confidence: restoreTaskConfidence(pt.confidence),
+          reviewDismissed: restoreReviewDismissed(pt.reviewDismissed),
           landingState: pt.landingState,
           landingReason: pt.landingReason,
           landingSummary: pt.landingSummary,
@@ -1388,6 +1391,7 @@ export async function loadState(): Promise<void> {
           evidence: restoredEvidence(pt.evidence),
           brief: restoreTaskBriefRecord(pt.brief),
           confidence: restoreTaskConfidence(pt.confidence),
+          reviewDismissed: restoreReviewDismissed(pt.reviewDismissed),
           landingState: pt.landingState,
           landingReason: pt.landingReason,
           landingSummary: pt.landingSummary,

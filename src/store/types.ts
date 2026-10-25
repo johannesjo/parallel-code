@@ -27,6 +27,7 @@ import type { AskCodeProvider } from '../../electron/shared/ask-code-models';
 import type { TaskNameModelId } from '../../electron/shared/task-name-model';
 import type { TaskBriefRecord } from '../lib/task-brief';
 import type { TaskConfidence } from '../lib/task-confidence';
+import type { ReviewDismissal } from '../lib/review-summary';
 import type {
   EvidenceModelSettings,
   EvidencePackage,
@@ -371,6 +372,8 @@ export interface Task {
   codeFingerprint?: { fingerprint: string; at: number };
   /** Latest rating the agent published through `confidence_publish`. */
   confidence?: TaskConfidence;
+  /** Review risks the user set aside, keyed by review item id, with their reason. */
+  reviewDismissed?: Record<string, ReviewDismissal>;
   landingState?: LandingState;
   landingReason?: string;
   landingSummary?: string;
@@ -482,6 +485,8 @@ export interface PersistedTask {
   brief?: unknown;
   /** Validated on load. */
   confidence?: unknown;
+  /** Validated on load. */
+  reviewDismissed?: unknown;
   landingState?: LandingState;
   landingReason?: string;
   landingSummary?: string;

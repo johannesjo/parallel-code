@@ -121,6 +121,7 @@ function structuralSnapshot(): string {
             evidence: t.evidence,
             brief: t.brief,
             confidence: t.confidence,
+            reviewDismissed: t.reviewDismissed,
             landingState: t.landingState,
             landingReason: t.landingReason,
             landingSummary: t.landingSummary,

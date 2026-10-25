@@ -81,6 +81,8 @@ vi.mock('./ChangeTourButton', () => ({
   ChangeTourButton: (props: { children?: JSX.Element }) => <span>tour{props.children}</span>,
 }));
 vi.mock('./ChangedFilesList', () => ({ ChangedFilesList: () => null }));
+// Covered by its own tests; its store imports reach past this file's mocks.
+vi.mock('./ReviewSection', () => ({ ReviewSection: () => null }));
 vi.mock('./MergeReadinessPanel', () => ({
   MergeReadinessPanel: (props: { children?: JSX.Element }) => <div>{props.children}</div>,
 }));
