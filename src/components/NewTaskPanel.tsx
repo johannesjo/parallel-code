@@ -1638,6 +1638,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                   branchPreview={branchPreview()}
                   error={branchPrefixError()}
                   projectPath={selectedProjectPath()}
+                  worktreeFolder={getProject(selectedProjectId() ?? '')?.worktreeFolder}
                   onPrefixChange={setBranchPrefix}
                 />
               </Show>

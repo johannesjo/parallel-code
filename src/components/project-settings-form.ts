@@ -8,6 +8,15 @@ import type { ProjectIconId } from '../lib/project-icon';
 import type { GitIsolationMode, Project, TerminalBookmark } from '../store/types';
 import { finalizeChecks, type CheckDraft } from './EvidenceSettingsFields';
 
+/** Why a worktree folder can't be used, for paths the main process would
+ *  reject anyway; blank is fine. The main process checks the rest. */
+export function worktreeFolderError(value: string): string | undefined {
+  const folder = value.trim();
+  if (!folder || folder === '~' || folder.startsWith('~/') || folder.startsWith('/'))
+    return undefined;
+  return 'Use an absolute path or one starting with ~/';
+}
+
 /** Editable copy of a project's settings, saved only when the dialog saves. */
 export function createProjectSettingsForm() {
   const [name, setName] = createSignal('');
@@ -15,6 +24,7 @@ export function createProjectSettingsForm() {
   const [icon, setIcon] = createSignal<ProjectIconId | undefined>();
   const [allowPeerAccess, setAllowPeerAccess] = createSignal(false);
   const [branchPrefix, setBranchPrefix] = createSignal('task');
+  const [worktreeFolder, setWorktreeFolder] = createSignal('');
   const [deleteBranchOnClose, setDeleteBranchOnClose] = createSignal(true);
   const [defaultGitIsolation, setDefaultGitIsolation] = createSignal<GitIsolationMode>('worktree');
   const [defaultBaseBranch, setDefaultBaseBranch] = createSignal('');
@@ -32,6 +42,7 @@ export function createProjectSettingsForm() {
     setIcon(p.icon);
     setAllowPeerAccess(p.allowPeerAccess === true);
     setBranchPrefix(sanitizeBranchPrefix(p.branchPrefix ?? 'task'));
+    setWorktreeFolder(p.worktreeFolder ?? '');
     setDeleteBranchOnClose(p.deleteBranchOnClose ?? true);
     setDefaultGitIsolation(p.defaultGitIsolation ?? 'worktree');
     setDefaultBaseBranch(p.defaultBaseBranch ?? '');
@@ -51,6 +62,7 @@ export function createProjectSettingsForm() {
       color: color(),
       icon: icon(),
       branchPrefix: sanitizeBranchPrefix(branchPrefix()),
+      worktreeFolder: worktreeFolder().trim() || undefined,
       deleteBranchOnClose: deleteBranchOnClose(),
       defaultGitIsolation: defaultGitIsolation(),
       defaultBaseBranch: defaultBaseBranch() || undefined,
@@ -75,6 +87,9 @@ export function createProjectSettingsForm() {
     setAllowPeerAccess,
     branchPrefix,
     setBranchPrefix,
+    worktreeFolder,
+    setWorktreeFolder,
+    worktreeFolderError: () => worktreeFolderError(worktreeFolder()),
     deleteBranchOnClose,
     setDeleteBranchOnClose,
     defaultGitIsolation,

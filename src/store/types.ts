@@ -104,6 +104,9 @@ export interface Project {
   /** Optional glyph shown instead of the color square, tinted with `color`. */
   icon?: ProjectIconId;
   branchPrefix?: string; // default "task" if unset
+  /** Folder new task worktrees go in; unset means `<path>/.worktrees`. App
+   *  state, not a repo file, for the same reason as `verifyCommand`. */
+  worktreeFolder?: string;
   deleteBranchOnClose?: boolean; // default true if unset
   defaultGitIsolation?: GitIsolationMode;
   defaultBaseBranch?: string;

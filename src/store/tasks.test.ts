@@ -187,7 +187,7 @@ import { recordMergedLines, recordTaskMerged } from './completion';
 import { markAgentSpawned, rescheduleTaskStatusPolling } from './taskStatus';
 import { saveState } from './persistence';
 import { MAX_PROMPT_HISTORY } from '../lib/prompt-history';
-import { getProjectBranchPrefix, getProjectPath, isProjectMissing } from './projects';
+import { getProject, getProjectBranchPrefix, getProjectPath, isProjectMissing } from './projects';
 const mockSetStore = expectDefined(core.harness, 'mock store harness').setStore;
 
 // ─── Coordinator listener setup ───────────────────────────────────────────────
@@ -1187,6 +1187,10 @@ describe('createTask initial agent state', () => {
     });
   });
 
+  afterEach(() => {
+    vi.mocked(getProject).mockReset();
+  });
+
   async function createWith(command: string) {
     await createTask({
       name: 'My Task',
@@ -1267,6 +1271,56 @@ describe('createTask initial agent state', () => {
       harness.store.preferUiMode = false;
       harness.store.disableClaudeUiMode = false;
     }
+  });
+
+  it("passes the project's worktree folder to the backend", async () => {
+    vi.mocked(getProject).mockReturnValue({
+      id: 'proj-1',
+      name: 'Repo',
+      path: '/repo',
+      color: '',
+      worktreeFolder: '~/worktrees/repo',
+    });
+    await createWith('claude');
+    expect(mockInvoke).toHaveBeenCalledWith(
+      IPC.CreateTask,
+      expect.objectContaining({ worktreeFolder: '~/worktrees/repo' }),
+    );
+  });
+
+  it("passes the project's worktree folder for a pull request task", async () => {
+    vi.mocked(getProject).mockReturnValue({
+      id: 'proj-1',
+      name: 'Repo',
+      path: '/repo',
+      color: '',
+      worktreeFolder: '/wt',
+    });
+    const original = mockInvoke.getMockImplementation();
+    mockInvoke.mockImplementation((channel: string, args: unknown) => {
+      if (channel === IPC.CreatePrTask)
+        return Promise.resolve({
+          id: 'task-1',
+          branch_name: 'feature/x',
+          worktree_path: '/wt/feature/x',
+          pr_url: 'https://github.com/o/r/pull/5',
+          base_branch: 'main',
+        });
+      return original?.(channel, args);
+    });
+    await createTask({
+      name: 'PR 5',
+      agentDef: agentDef('claude'),
+      projectId: 'proj-1',
+      gitIsolation: 'worktree',
+      baseBranch: 'main',
+      pullRequestNumber: 5,
+    });
+    expect(mockInvoke).toHaveBeenCalledWith(
+      IPC.CreatePrTask,
+      expect.objectContaining({ worktreeFolder: '/wt', prNumber: 5 }),
+    );
+    expect(mockTasks['task-1']?.worktreePath).toBe('/wt/feature/x');
   });
 
   it('gives the first Claude pane an id of its own', async () => {

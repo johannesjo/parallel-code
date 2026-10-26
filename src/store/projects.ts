@@ -164,6 +164,7 @@ export function updateProject(
       | 'color'
       | 'icon'
       | 'branchPrefix'
+      | 'worktreeFolder'
       | 'deleteBranchOnClose'
       | 'defaultGitIsolation'
       | 'defaultBaseBranch'
@@ -199,6 +200,8 @@ export function updateProject(
         s.projects[idx].icon = sanitizeProjectIcon(updates.icon);
       if (updates.branchPrefix !== undefined)
         s.projects[idx].branchPrefix = sanitizeBranchPrefix(updates.branchPrefix);
+      if (Object.prototype.hasOwnProperty.call(updates, 'worktreeFolder'))
+        s.projects[idx].worktreeFolder = updates.worktreeFolder;
       if (updates.deleteBranchOnClose !== undefined)
         s.projects[idx].deleteBranchOnClose = updates.deleteBranchOnClose;
       if (updates.defaultGitIsolation !== undefined)

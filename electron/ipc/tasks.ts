@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { createWorktree, removeWorktree, worktreePathFor } from './git.js';
+import { createWorktree, removeWorktree, resolveWorktreeFolder, worktreePathFor } from './git.js';
 import { killAgent, notifyAgentListChanged } from './pty.js';
 import { stopPlanWatcher } from './plans.js';
 import { recordWorktreeIntent } from './worktree-intents.js';
@@ -39,13 +39,15 @@ export async function createTask(
   branchPrefix: string,
   baseBranch?: string,
   snapshotCommit?: string,
+  worktreeFolder?: string,
 ): Promise<{ id: string; branch_name: string; worktree_path: string }> {
+  const folder = await resolveWorktreeFolder(projectRoot, worktreeFolder);
   const id = randomUUID();
   const prefix = sanitizeBranchPrefix(branchPrefix);
   const branchName = `${prefix}/${slug(name)}-${id.slice(0, 6)}`;
   // Before provisioning, so a crash before the task is saved leaves a trace.
   recordWorktreeIntent({
-    worktreePath: worktreePathFor(projectRoot, branchName),
+    worktreePath: worktreePathFor(projectRoot, branchName, folder),
     branchName,
     projectRoot,
   });
@@ -54,6 +56,8 @@ export async function createTask(
     branchName,
     symlinkDirs,
     snapshotCommit ?? baseBranch,
+    false,
+    folder,
   );
   return {
     id,
@@ -68,7 +72,9 @@ export async function createPrTask(
   prNumber: number,
   symlinkDirs: string[],
   branchPrefix: string,
+  worktreeFolder?: string,
 ): Promise<CreatePrTaskResult> {
+  const folder = await resolveWorktreeFolder(projectRoot, worktreeFolder);
   const pr = await resolvePrCheckout(projectRoot, prNumber);
   const id = randomUUID();
   // Same-repo PRs reuse the PR branch so a push updates the PR. Otherwise the
@@ -83,11 +89,18 @@ export async function createPrTask(
     ? head
     : `${sanitizeBranchPrefix(branchPrefix)}/pr-${prNumber}-${id.slice(0, 6)}`;
   recordWorktreeIntent({
-    worktreePath: worktreePathFor(projectRoot, branchName),
+    worktreePath: worktreePathFor(projectRoot, branchName, folder),
     branchName,
     projectRoot,
   });
-  const worktree = await createWorktree(projectRoot, branchName, symlinkDirs, pr.headSha);
+  const worktree = await createWorktree(
+    projectRoot,
+    branchName,
+    symlinkDirs,
+    pr.headSha,
+    false,
+    folder,
+  );
   return {
     id,
     branch_name: worktree.branch,

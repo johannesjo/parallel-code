@@ -783,6 +783,10 @@ export async function loadState(): Promise<void> {
     } else {
       p.coverageReportPath = undefined;
     }
+    p.worktreeFolder =
+      typeof p.worktreeFolder === 'string' && p.worktreeFolder.trim()
+        ? p.worktreeFolder.trim()
+        : undefined;
     p.tasksCollapsed = typeof p.tasksCollapsed === 'boolean' ? p.tasksCollapsed : undefined;
     p.quickEditSource = typeof p.quickEditSource === 'string' ? p.quickEditSource : undefined;
     p.evidenceChecks = parseProjectChecks(p.evidenceChecks);

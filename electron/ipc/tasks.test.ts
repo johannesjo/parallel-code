@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   createWorktree: vi.fn(),
+  resolveWorktreeFolder: vi.fn(async (_root: string, raw?: string) => raw?.trim() || undefined),
   resolvePrCheckout: vi.fn(),
   localBranchExists: vi.fn(),
 }));
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./git.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./git.js')>()),
   createWorktree: mocks.createWorktree,
+  resolveWorktreeFolder: mocks.resolveWorktreeFolder,
 }));
 vi.mock('./pty.js', () => ({ killAgent: vi.fn(), notifyAgentListChanged: vi.fn() }));
 vi.mock('./plans.js', () => ({ stopPlanWatcher: vi.fn() }));
@@ -58,6 +60,47 @@ describe('createTask', () => {
   });
 });
 
+describe('createTask with a worktree folder', () => {
+  it('journals and creates the worktree in the folder', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-tasks-'));
+    tempDirs.push(root);
+    const journal = path.join(root, 'worktree-intents.json');
+    const projectRoot = path.join(root, 'repo');
+    reconcileWorktreeIntents(journal, null);
+    mocks.createWorktree.mockImplementation(
+      async (_repoRoot: string, branch: string, ...rest: unknown[]) => ({
+        path: path.join(String(rest[3]), branch),
+        branch,
+      }),
+    );
+
+    const task = await createTask('Fix login', projectRoot, [], 'task', 'main', undefined, '/wt');
+
+    expect(mocks.resolveWorktreeFolder).toHaveBeenCalledWith(projectRoot, '/wt');
+    expect(mocks.createWorktree).toHaveBeenCalledWith(
+      projectRoot,
+      task.branch_name,
+      [],
+      'main',
+      false,
+      '/wt',
+    );
+    expect(task.worktree_path).toBe(`/wt/${task.branch_name}`);
+    const intents = JSON.parse(fs.readFileSync(journal, 'utf8')).intents;
+    expect(intents).toEqual([expect.objectContaining({ worktreePath: task.worktree_path })]);
+  });
+
+  it('fails before creating anything when the folder is rejected', async () => {
+    mocks.createWorktree.mockReset();
+    mocks.resolveWorktreeFolder.mockRejectedValueOnce(new Error('bad folder'));
+
+    await expect(createTask('Fix', '/repo', [], 'task', undefined, undefined, 'x')).rejects.toThrow(
+      'bad folder',
+    );
+    expect(mocks.createWorktree).not.toHaveBeenCalled();
+  });
+});
+
 describe('createPrTask', () => {
   const pr = {
     headSha: 'abc123',
@@ -95,7 +138,14 @@ describe('createPrTask', () => {
   it('reuses the PR branch for same-repo PRs so a push updates the PR', async () => {
     const projectRoot = setup();
     const task = await createPrTask(projectRoot, 5, [], 'task');
-    expect(mocks.createWorktree).toHaveBeenCalledWith(projectRoot, 'feature/login', [], 'abc123');
+    expect(mocks.createWorktree).toHaveBeenCalledWith(
+      projectRoot,
+      'feature/login',
+      [],
+      'abc123',
+      false,
+      undefined,
+    );
     expect(task).toMatchObject({
       branch_name: 'feature/login',
       pr_url: pr.url,
@@ -131,5 +181,26 @@ describe('createPrTask', () => {
     const projectRoot = setup({ pr: { headRefName: null } });
     const task = await createPrTask(projectRoot, 5, [], 'task');
     expect(task.branch_name).toMatch(/^task\/pr-5-[0-9a-f]{6}$/);
+  });
+
+  it('creates the PR worktree in the worktree folder', async () => {
+    const projectRoot = setup();
+    await createPrTask(projectRoot, 5, [], 'task', '/wt');
+    expect(mocks.createWorktree).toHaveBeenCalledWith(
+      projectRoot,
+      'feature/login',
+      [],
+      'abc123',
+      false,
+      '/wt',
+    );
+  });
+
+  it('refuses a PR head ref that would leave the worktree folder', async () => {
+    const projectRoot = setup({ pr: { headRefName: '../escape' } });
+    await expect(createPrTask(projectRoot, 5, [], 'task', '/wt')).rejects.toThrow(
+      'outside the worktree folder',
+    );
+    expect(mocks.createWorktree).not.toHaveBeenCalled();
   });
 });

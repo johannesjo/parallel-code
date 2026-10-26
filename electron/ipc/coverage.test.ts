@@ -14,6 +14,7 @@ vi.mock('fs', async () => {
         stat: vi.fn(),
       },
       existsSync: vi.fn(),
+      readFileSync: vi.fn(),
     },
   };
 });
@@ -198,6 +199,33 @@ describe('readCoverageSummary', () => {
     const summary = await readCoverageSummary('/home/me/repo/.worktrees/task/w1');
 
     expect(summary?.files['src/lib/file.ts']?.lines.pct).toBe(100);
+  });
+
+  it('maps LCOV paths from the main checkout when the worktree lives outside the repo', async () => {
+    mockNoNestedCoverageDir();
+    mockFileExists('/home/me/worktrees/task/w2/src/lib/file.ts');
+    vi.mocked(fs.readFileSync).mockImplementation((filePath) => {
+      if (String(filePath) === '/home/me/worktrees/task/w2/.git')
+        return 'gitdir: /home/me/repo/.git/worktrees/w2\n';
+      throw new Error('missing');
+    });
+    vi.mocked(fs.promises.readFile).mockImplementation(async (filePath) => {
+      if (String(filePath).endsWith('coverage-summary.json')) {
+        const err = new Error('missing') as NodeJS.ErrnoException;
+        err.code = 'ENOENT';
+        throw err;
+      }
+      return ['TN:', 'SF:/home/me/repo/src/lib/file.ts', 'DA:1,1', 'DA:2,0', 'end_of_record'].join(
+        '\n',
+      );
+    });
+    vi.mocked(fs.promises.stat).mockResolvedValue({
+      mtime: new Date('2026-04-23T10:05:00.000Z'),
+    } as fs.Stats);
+
+    const summary = await readCoverageSummary('/home/me/worktrees/task/w2');
+
+    expect(summary?.files['src/lib/file.ts']?.lines.pct).toBe(50);
   });
 
   it('maps webpack-style source URLs back to repo-relative files', async () => {

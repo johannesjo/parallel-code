@@ -327,6 +327,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
       projectRoot,
       symlinkDirs,
       branchPrefix: opts.branchPrefixOverride ?? getProjectBranchPrefix(projectId),
+      worktreeFolder: getProject(projectId)?.worktreeFolder,
       prNumber: opts.pullRequestNumber,
     });
     taskId = result.id;
@@ -341,6 +342,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
       projectRoot,
       symlinkDirs,
       branchPrefix,
+      worktreeFolder: getProject(projectId)?.worktreeFolder,
       baseBranch: baseBranch || undefined,
     });
     taskId = result.id;

@@ -44,6 +44,24 @@ function stripSourcePathPrefix(value: string): string {
   return value.replace(/^file:\/+/i, '/').replace(/^[a-zA-Z][a-zA-Z\d+.-]*:\/\/+/, '/');
 }
 
+const mainCheckoutNames = new Map<string, string | undefined>();
+
+/** Folder name of the main checkout a linked worktree belongs to, read from its
+ *  `.git` file, so a worktree outside the repo still maps the repo's paths. */
+function mainCheckoutName(repoRoot: string): string | undefined {
+  if (mainCheckoutNames.has(repoRoot)) return mainCheckoutNames.get(repoRoot);
+  let name: string | undefined;
+  try {
+    const gitFile = fs.readFileSync(path.join(repoRoot, '.git'), 'utf8');
+    const match = gitFile.match(/^gitdir:\s*(.+?)[\\/]\.git[\\/]worktrees[\\/][^\\/]+\s*$/m);
+    if (match) name = path.basename(normalizeSlashes(match[1]));
+  } catch {
+    // Not a linked worktree: a `.git` directory or no git at all.
+  }
+  mainCheckoutNames.set(repoRoot, name);
+  return name;
+}
+
 function repoIdentityCandidates(repoRoot: string): string[] {
   const segments = normalizeSlashes(repoRoot).split('/').filter(Boolean);
   const candidates: string[] = [];
@@ -52,6 +70,7 @@ function repoIdentityCandidates(repoRoot: string): string[] {
   };
 
   pushCandidate(segments[segments.length - 1]);
+  pushCandidate(mainCheckoutName(repoRoot));
   const worktreesIndex = segments.lastIndexOf('.worktrees');
   if (worktreesIndex > 0) pushCandidate(segments[worktreesIndex - 1]);
 

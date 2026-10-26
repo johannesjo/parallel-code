@@ -1,5 +1,5 @@
 import { sanitizeBranchPrefix, toBranchName } from '../lib/branch-name';
-import { sectionLabelStyle } from '../lib/theme';
+import { sectionLabelStyle, theme } from '../lib/theme';
 import { DownloadIcon } from './icons';
 import { SegmentedButtons } from './SegmentedButtons';
 import {
@@ -45,6 +45,38 @@ export function ProjectTaskSection(props: ProjectTaskSectionProps) {
               }}
             >
               {sanitizeBranchPrefix(form().branchPrefix())}/{toBranchName('example-branch-name')}
+            </div>
+          </>
+        )}
+      </ProjectField>
+
+      <ProjectField label="Worktree folder" aside="blank = .worktrees in the project">
+        {(id) => (
+          <>
+            <input
+              id={id}
+              class="input-field"
+              type="text"
+              value={form().worktreeFolder()}
+              onInput={(e) => form().setWorktreeFolder(e.currentTarget.value)}
+              onKeyDown={(e) => props.onEnter(e)}
+              placeholder="~/worktrees/project"
+              style={projectMonoInputStyle}
+            />
+            {/* Hidden, not removed, so clearing the folder doesn't shift the form. */}
+            <div
+              style={{
+                ...projectHintStyle,
+                'font-family': "'JetBrains Mono', monospace",
+                'overflow-wrap': 'anywhere',
+                ...(form().worktreeFolderError() ? { color: theme.error } : {}),
+                visibility: form().worktreeFolder().trim() ? 'visible' : 'hidden',
+              }}
+            >
+              {form().worktreeFolderError() ??
+                `${form().worktreeFolder().trim().replace(/\/+$/, '')}/${sanitizeBranchPrefix(
+                  form().branchPrefix(),
+                )}/${toBranchName('example-branch-name')}`}
             </div>
           </>
         )}

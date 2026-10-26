@@ -2,6 +2,7 @@ import { execFile, execFileSync as _execFileSync, spawn } from 'child_process';
 import { createHash } from 'crypto';
 import { promisify } from 'util';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import type { Notify } from './notify.js';
 import { KANBAN_FILE } from './kanban.js';
@@ -1272,9 +1273,102 @@ async function removeDirWithRetries(dirPath: string): Promise<unknown> {
 
 // --- Public functions (used by tasks.ts and register.ts) ---
 
-/** Where `createWorktree` puts the worktree for a branch. */
-export function worktreePathFor(repoRoot: string, branchName: string): string {
-  return `${repoRoot}/.worktrees/${branchName}`;
+function isPathInside(parent: string, child: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+}
+
+/** Where `createWorktree` puts the worktree for a branch. `worktreeFolder` is
+ *  a folder already checked by `resolveWorktreeFolder`. */
+export function worktreePathFor(
+  repoRoot: string,
+  branchName: string,
+  worktreeFolder?: string,
+): string {
+  if (!worktreeFolder) return `${repoRoot}/.worktrees/${branchName}`;
+  const worktreePath = path.resolve(worktreeFolder, branchName);
+  if (worktreePath === path.resolve(worktreeFolder) || !isPathInside(worktreeFolder, worktreePath))
+    throw new Error(`Branch "${branchName}" would put the worktree outside the worktree folder`);
+  // A folder that holds the repo, with a branch named like the repo's folder,
+  // would put the worktree in the main checkout, where nothing excludes it.
+  const realRoot = realpathAllowMissing(repoRoot);
+  if (
+    isPathInside(realRoot, realpathAllowMissing(worktreePath)) &&
+    !isPathInside(realRoot, realpathAllowMissing(worktreeFolder))
+  )
+    throw new Error(`Branch "${branchName}" would put the worktree inside the project folder`);
+  return worktreePath;
+}
+
+/** Canonical realpath of `p` where it exists, so a folder that is not created
+ *  yet compares like the folder it will become, symlinked parents included.
+ *  `.native` returns the on-disk letter case, so a differently cased path on a
+ *  case-insensitive filesystem can't slip past a comparison. */
+function realpathAllowMissing(p: string): string {
+  let existing = p;
+  const rest: string[] = [];
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) return p;
+    rest.unshift(path.basename(existing));
+    existing = parent;
+  }
+  return path.join(fs.realpathSync.native(existing), ...rest);
+}
+
+/**
+ * Checks a project's worktree folder setting and creates the folder. Blank
+ * means the default `<repo>/.worktrees`. The folder must be absolute after
+ * `~` expansion and may be neither the repo root nor inside its git dir; all
+ * checks run before anything is created. A folder inside the repo gets its own
+ * `.git/info/exclude` entry, as `.worktrees/` does.
+ */
+export async function resolveWorktreeFolder(
+  repoRoot: string,
+  raw: string | undefined,
+): Promise<string | undefined> {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  if (/[\r\n]/.test(trimmed)) throw new Error('Worktree folder must be a single line');
+  const expanded =
+    trimmed === '~'
+      ? os.homedir()
+      : trimmed.startsWith('~/')
+        ? path.join(os.homedir(), trimmed.slice(2))
+        : trimmed;
+  if (!path.isAbsolute(expanded))
+    throw new Error(`Worktree folder must be an absolute path or start with ~/: ${trimmed}`);
+  const folder = path.resolve(expanded);
+
+  const { stdout } = await exec('git', ['rev-parse', '--show-toplevel', '--git-common-dir'], {
+    cwd: repoRoot,
+  });
+  const [topLevel = repoRoot, commonDir = '.git'] = stdout.trim().split('\n');
+  const realFolder = realpathAllowMissing(folder);
+  const realRoot = realpathAllowMissing(repoRoot);
+  const realTop = realpathAllowMissing(topLevel);
+  if (realFolder === realRoot || realFolder === realTop)
+    throw new Error('Worktree folder cannot be the project folder itself');
+  const gitDirs = [
+    path.join(realTop, '.git'),
+    realpathAllowMissing(path.resolve(repoRoot, commonDir)),
+  ];
+  if (gitDirs.some((dir) => isPathInside(dir, realFolder)))
+    throw new Error('Worktree folder cannot be inside the .git directory');
+
+  fs.mkdirSync(folder, { recursive: true });
+
+  if (isPathInside(realTop, realFolder)) {
+    const rel = path.relative(realTop, realFolder).split(path.sep).map(escapeGitignoreLiteral);
+    const pattern = `/${rel.join('/')}/`;
+    appendGitInfoExcludeBlock(
+      repoRoot,
+      pattern,
+      `${WORKTREE_CONTAINER_EXCLUDE_HEADER}\n${pattern}\n`,
+      (err) => console.warn(`Failed to git-exclude ${pattern}:`, err),
+    );
+  }
+  return folder;
 }
 
 export async function createWorktree(
@@ -1283,8 +1377,16 @@ export async function createWorktree(
   symlinkDirs: string[],
   baseBranch?: string,
   forceClean = false,
+  worktreeFolder?: string,
 ): Promise<{ path: string; branch: string }> {
-  const worktreePath = worktreePathFor(repoRoot, branchName);
+  const worktreePath = worktreePathFor(repoRoot, branchName, worktreeFolder);
+  // A worktree folder inside the repo must not be linked into the worktrees it holds.
+  const realRoot = realpathAllowMissing(repoRoot);
+  const realFolder = worktreeFolder ? realpathAllowMissing(worktreeFolder) : undefined;
+  const folderTopName =
+    realFolder && isPathInside(realRoot, realFolder)
+      ? path.relative(realRoot, realFolder).split(path.sep)[0]
+      : undefined;
 
   if (forceClean) {
     // Clean up stale worktree/branch from a previous session that wasn't properly removed
@@ -1353,6 +1455,11 @@ export async function createWorktree(
     // into .git/info/exclude
     if (!isValidSymlinkName(name)) continue;
     if (isReservedSymlinkName(name, ignoreCase)) continue;
+    if (
+      folderTopName !== undefined &&
+      (ignoreCase ? name.toLowerCase() === folderTopName.toLowerCase() : name === folderTopName)
+    )
+      continue;
     const source = path.join(repoRoot, name);
     const target = path.join(worktreePath, name);
     try {
@@ -2449,8 +2556,9 @@ export async function mergeTask(
     // AI agents sometimes check out a different branch (or detach HEAD),
     // and merging the original branch would silently discard their work.
     // For imported/external worktrees, the caller passes the real path; for
-    // managed ones we fall back to the conventional .worktrees/<branch> layout.
-    const checkWorktreePath = worktreePath ?? path.join(projectRoot, '.worktrees', branchName);
+    // managed ones we fall back to the default .worktrees/<branch> layout.
+    // Tasks in a custom worktree folder always pass their saved path.
+    const checkWorktreePath = worktreePath ?? worktreePathFor(projectRoot, branchName);
     if (fs.existsSync(checkWorktreePath)) {
       const actualBranch = await getCurrentBranchName(checkWorktreePath).catch(() => null);
       if (actualBranch === null) {
