@@ -159,3 +159,44 @@ it('saves the chosen icon and clears it with "No icon"', async () => {
   button('Save').click();
   await vi.waitFor(() => expect(store.projects[0].icon).toBeUndefined());
 });
+
+it('saves a worktree folder, blocks save on a relative path and clears it', async () => {
+  setStore('projects', [{ id: 'project', name: 'App', path: '/repo', color: 'hsl(0, 70%, 75%)' }]);
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  const onClose = vi.fn();
+  const host = document.createElement('div');
+  document.body.append(host);
+  dispose = render(() => <EditProjectDialog project={store.projects[0]} onClose={onClose} />, host);
+  const label = [...document.querySelectorAll('label')].find((l) =>
+    l.textContent?.startsWith('Worktree folder'),
+  );
+  const input = document.getElementById(label?.htmlFor ?? '') as HTMLInputElement | null;
+  if (!input) throw new Error('Missing worktree folder input');
+  const hint = input.nextElementSibling as HTMLElement;
+  const save = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+    (b) => b.textContent?.trim() === 'Save',
+  );
+  if (!save) throw new Error('Missing Save button');
+  const type = (value: string) => {
+    input.value = value;
+    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  };
+
+  expect(hint.style.visibility).toBe('hidden');
+  type('worktrees');
+  expect(hint.textContent).toContain('absolute path');
+  expect(save.disabled).toBe(true);
+  expect(save.title).toBe('Fix the worktree folder to save');
+
+  type(' ~/worktrees/app/ ');
+  expect(hint.style.visibility).toBe('visible');
+  expect(hint.textContent).toBe('~/worktrees/app/task/example-branch-name');
+  expect(save.disabled).toBe(false);
+  save.click();
+  await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(store.projects[0].worktreeFolder).toBe('~/worktrees/app/');
+
+  type('');
+  save.click();
+  await vi.waitFor(() => expect(store.projects[0].worktreeFolder).toBeUndefined());
+});

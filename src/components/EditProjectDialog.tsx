@@ -89,7 +89,12 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
     ),
   );
 
-  const canSave = () => form.name().trim().length > 0;
+  const saveBlocker = () => {
+    if (!form.name().trim()) return 'Enter a project name to save';
+    if (form.worktreeFolderError()) return 'Fix the worktree folder to save';
+    return undefined;
+  };
+  const canSave = () => saveBlocker() === undefined;
   const saveDisabled = () => !canSave() || saving();
   const saveOnEnter = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && canSave()) void handleSave();
@@ -296,7 +301,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 type="button"
                 class="btn-primary"
                 disabled={saveDisabled()}
-                title={canSave() ? undefined : 'Enter a project name to save'}
+                title={saveBlocker()}
                 aria-busy={saving()}
                 onClick={handleSave}
               >

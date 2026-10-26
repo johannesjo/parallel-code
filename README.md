@@ -77,7 +77,7 @@
 When you create a task, Parallel Code:
 
 1. Creates a new git branch from your main branch
-2. Sets up a [git worktree](https://git-scm.com/docs/git-worktree) so the agent works in a separate directory
+2. Sets up a [git worktree](https://git-scm.com/docs/git-worktree) so the agent works in a separate directory. Worktrees go in `.worktrees/` inside the project unless you set a worktree folder in the project's settings, which keeps them out of tools that scan the project folder.
 3. Symlinks `node_modules` and other gitignored directories into the worktree
 4. Spawns the AI agent in that worktree
 

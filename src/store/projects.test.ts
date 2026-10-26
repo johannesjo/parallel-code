@@ -288,6 +288,19 @@ describe('updateProject', () => {
     expect(store.projects[0]?.defaultBaseBranch).toBeUndefined();
   });
 
+  it('sets the worktree folder and clears it when undefined is provided', () => {
+    setStore('projects', [{ id: 'p1', name: 'Project', path: '/repo', color: 'hsl(0, 70%, 75%)' }]);
+
+    updateProject('p1', { worktreeFolder: '~/worktrees/repo' });
+    expect(store.projects[0]?.worktreeFolder).toBe('~/worktrees/repo');
+
+    updateProject('p1', { name: 'Renamed' });
+    expect(store.projects[0]?.worktreeFolder).toBe('~/worktrees/repo');
+
+    updateProject('p1', { worktreeFolder: undefined });
+    expect(store.projects[0]?.worktreeFolder).toBeUndefined();
+  });
+
   it('sets an icon and clears it when undefined is provided', () => {
     setStore('projects', [{ id: 'p1', name: 'Project', path: '/repo', color: 'hsl(0, 70%, 75%)' }]);
 

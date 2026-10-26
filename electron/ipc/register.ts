@@ -965,6 +965,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertStringArray(args.symlinkDirs, 'symlinkDirs');
     assertOptionalString(args.branchPrefix, 'branchPrefix');
     assertOptionalString(args.baseBranch, 'baseBranch');
+    assertOptionalString(args.worktreeFolder, 'worktreeFolder');
     const baseBranch = args.baseBranch || undefined;
     if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
     const result = createTask(
@@ -973,6 +974,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       args.symlinkDirs,
       args.branchPrefix ?? 'task',
       baseBranch,
+      undefined,
+      args.worktreeFolder || undefined,
     );
     result
       .then((r: { id: string }) => taskNames.set(r.id, args.name))
@@ -986,6 +989,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.projectRoot, 'projectRoot');
     assertStringArray(args.symlinkDirs, 'symlinkDirs');
     assertOptionalString(args.branchPrefix, 'branchPrefix');
+    assertOptionalString(args.worktreeFolder, 'worktreeFolder');
     if (!Number.isInteger(args.prNumber) || args.prNumber <= 0) {
       throw new Error('prNumber must be a positive integer');
     }
@@ -994,6 +998,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       args.prNumber,
       args.symlinkDirs,
       args.branchPrefix ?? 'task',
+      args.worktreeFolder || undefined,
     );
     result
       .then((r: { id: string }) => taskNames.set(r.id, args.name))

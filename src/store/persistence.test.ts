@@ -348,6 +348,25 @@ describe('background verify persistence', () => {
     await loadState();
     expect(store.projects[0].verifyAutoRun).toBe(loaded);
   });
+
+  it.each([
+    ['  ~/worktrees/repo  ', '~/worktrees/repo'],
+    ['   ', undefined],
+    [42, undefined],
+  ])('normalizes the worktree folder %j', async (stored, loaded) => {
+    mockInvoke.mockResolvedValueOnce(stateWith({ worktreeFolder: stored }, {}));
+    await loadState();
+    expect(store.projects[0].worktreeFolder).toBe(loaded);
+  });
+
+  it('saves the worktree folder with the project', async () => {
+    mockInvoke.mockResolvedValueOnce(stateWith({ worktreeFolder: '/wt/repo' }, {}));
+    await loadState();
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    expect(JSON.parse(lastCall[1].json).projects[0].worktreeFolder).toBe('/wt/repo');
+  });
 });
 
 describe('completion report persistence', () => {
