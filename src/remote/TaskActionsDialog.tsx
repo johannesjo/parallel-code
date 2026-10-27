@@ -1,4 +1,5 @@
-import { createSignal, createResource, For, Show } from 'solid-js';
+import { createSignal, createResource, For, Show, type JSX } from 'solid-js';
+import { CheckIcon, CloseIcon } from '../components/icons';
 import {
   fetchMergeReadiness,
   mergeTask as mergeTaskRequest,
@@ -27,12 +28,16 @@ const OVERALL_COPY: Record<string, { title: string; detail: string }> = {
   checking: { title: 'Checking', detail: 'Waiting for merge status.' },
 };
 
-const SYMBOL: Record<ReadinessCheck['status'], string> = {
-  pass: '✓',
-  warning: '!',
-  blocked: '×',
-  checking: '…',
-  neutral: '—',
+/** Per-status symbol factories: every readiness row calls one and builds its
+ *  own DOM node. A shared JSX element at module level would be MOVED between
+ *  `<For>` rows by Solid's reconciliation — with three rows, only the last row
+ *  kept its icon. */
+const SYMBOL: Record<ReadinessCheck['status'], () => JSX.Element> = {
+  pass: () => <CheckIcon size={12} />,
+  warning: () => '!',
+  blocked: () => <CloseIcon size={12} />,
+  checking: () => '…',
+  neutral: () => '—',
 };
 
 function statusClass(status: ReadinessCheck['status'] | string): string {
@@ -167,7 +172,7 @@ export function TaskActionsDialog(props: TaskActionsDialogProps) {
                         class={`mobile-readiness-row mobile-readiness-${statusClass(check.status)}`}
                       >
                         <span class="mobile-readiness-symbol" aria-hidden="true">
-                          {SYMBOL[check.status]}
+                          {SYMBOL[check.status]()}
                         </span>
                         <span>
                           <strong>{check.label}</strong>

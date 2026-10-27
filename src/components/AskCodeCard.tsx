@@ -7,6 +7,7 @@ import { askCodeEnvFile } from '../../electron/shared/ask-code-models';
 import { store } from '../store/store';
 import { projectIdForPath } from '../store/project-path';
 import { warn as logWarn, errMessage } from '../lib/log';
+import { CloseIcon } from './icons';
 
 interface AskCodeCardProps {
   requestId: string;
@@ -134,7 +135,7 @@ export function AskCodeCard(props: AskCodeCardProps) {
           }}
           title="Dismiss"
         >
-          ×
+          <CloseIcon size={12} />
         </button>
       </div>
 
