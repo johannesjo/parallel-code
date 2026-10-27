@@ -1,8 +1,7 @@
 import { createSignal, For, onMount, Show, untrack } from 'solid-js';
 import type { JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { CopyIcon, EyeIcon, SendIcon } from './icons';
-import { DocumentIcon } from '../documents/DocumentIcon';
+import { CopyIcon, DocumentIcon, EyeIcon, SendIcon } from './icons';
 
 /** An entry of a clicked link's menu; the menu closes after `run`. */
 export interface TerminalLinkAction {

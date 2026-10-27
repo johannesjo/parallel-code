@@ -1,7 +1,8 @@
+import { DocumentIcon } from './icons';
 import { Show, createSignal, onCleanup } from 'solid-js';
 import type { JSX } from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
-import { DocumentIcon } from '../documents/DocumentIcon';
+
 import { editAsDocument } from '../documents/store';
 import { isEditableDocumentPath } from '../lib/document-path';
 import { sf } from '../lib/fontScale';

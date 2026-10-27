@@ -8,9 +8,15 @@ import { isDocumentProject } from '../store/projects';
 import { isProjectMissing, showNotification, startProjectTask, store } from '../store/store';
 import type { Project } from '../store/types';
 import { ContextMenu, type MoreMenuItem } from './chat/MoreMenu';
-import { DocumentIcon } from '../documents/DocumentIcon';
-import { FolderIcon, GitHubIcon, PencilIcon, PlanIcon, PlusIcon, TrashIcon } from './icons';
-
+import {
+  DocumentIcon,
+  FolderIcon,
+  GitHubIcon,
+  PencilIcon,
+  PlanIcon,
+  PlusIcon,
+  TrashIcon,
+} from './icons';
 /** Dialogs the menu opens; whoever renders the menu owns them. */
 export interface ProjectMenuDialogs {
   editSettings: (project: Project) => void;
