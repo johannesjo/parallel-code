@@ -5,6 +5,7 @@ import {
   type TaskDotStatus,
 } from '../store/taskStatus';
 import { getCiGlyphState, type CiGlyphState } from '../store/pr-checks-state';
+import { StatusCheckIcon } from './icons';
 import { theme } from '../lib/theme';
 
 const SIZES = { sm: 6, md: 8 } as const;
@@ -200,20 +201,7 @@ export function StatusDot(props: {
           }}
         />
       ) : glyph() === 'ready' ? (
-        <svg
-          class="status-glyph-ready"
-          width={SPINNERS[size()]}
-          height={SPINNERS[size()]}
-          viewBox="0 0 12 12"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M2.5 6.3 4.9 8.7 9.6 3.5" />
-        </svg>
+        <StatusCheckIcon class="status-glyph-ready" size={SPINNERS[size()]} />
       ) : glyph() === 'waiting' ? (
         <span
           class="status-glyph-waiting"

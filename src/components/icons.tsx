@@ -1172,3 +1172,90 @@ export function QuestionAltIcon(props: IconProps): JSX.Element {
 }
 
 /** Stroke-drawn padlock: a mind-map node the user has edited. */
+/** Stroke-drawn history: the prompt-history trigger; HistoryIcon above is the filled one. */
+export function HistoryAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M2 7a6 6 0 1 1 1.5 5M2 3v4h4M8 4.5V8l2.5 1.5" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Compact prompt-style terminal for the shell toolbar; see also TerminalIcon above. */
+export function TerminalSmallIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.25" roundCaps roundJoins>
+      <rect x="1.5" y="2.5" width="13" height="11" />
+      <path d="m4 6 2 2-2 2m4 0h3" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** The chat composer's send arrow; ArrowUpIcon is the prompt bar's compact variant. */
+export function ArrowUpAltIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="1.5" roundCaps roundJoins>
+      <path d="M8 12V4M4 8l4-4 4 4" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Compact stop square: the chat composer's stop button. */
+export function StopSmallIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <rect x="4.5" y="4.5" width="7" height="7" rx="1" />
+    </SvgIcon>
+  );
+}
+
+/** Tiny outlined file, 9x11: marks a ref chip as a place in the codebase. */
+export function FileIcon(props: IconProps & { height?: number | string }): JSX.Element {
+  const width = () => props.size ?? 16;
+  const height = () => props.height ?? props.size ?? 16;
+
+  return (
+    <svg
+      width={width()}
+      height={height()}
+      viewBox="0 0 9 11"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1"
+      stroke-linejoin="round"
+      class={props.class}
+      style={props.style}
+      aria-hidden={props.title ? undefined : 'true'}
+      role={props.title ? 'img' : undefined}
+    >
+      {props.title ? <title>{props.title}</title> : null}
+      <path d="M1 0.5h4L8 3.5v7H1z" />
+    </svg>
+  );
+}
+/** Single horizontal bar: the collapsed-task affordance in the later menu. */
+export function MinusIcon(props: IconProps): JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2 8a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8Z" />
+    </SvgIcon>
+  );
+}
+
+/** Fat round chevron for small click targets; see also ChevronRightThinIcon above. */
+export function ChevronRightSmallIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} strokeWidth="2" roundCaps roundJoins>
+      <path d="M6 3l5 5-5 5" />
+    </StrokeSvgIcon>
+  );
+}
+
+/** Fat stroke check in a 12 box: the status dot's ready glyph. */
+export function StatusCheckIcon(props: IconProps): JSX.Element {
+  return (
+    <StrokeSvgIcon {...props} viewBox="0 0 12 12" strokeWidth="2" roundCaps roundJoins>
+      <path d="M2.5 6.3 4.9 8.7 9.6 3.5" />
+    </StrokeSvgIcon>
+  );
+}

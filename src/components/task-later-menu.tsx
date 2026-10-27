@@ -10,7 +10,15 @@ import {
 import { collapseTask } from '../store/tasks';
 import type { Task } from '../store/types';
 import type { MenuAction, MoreMenuItem } from './chat/MoreMenu';
-import { ActivityIcon, CheckIcon, ClockIcon, PlayIcon, StopIcon, UndoIcon } from './icons';
+import {
+  ActivityIcon,
+  CheckIcon,
+  ClockIcon,
+  MinusIcon,
+  PlayIcon,
+  StopIcon,
+  UndoIcon,
+} from './icons';
 
 function presetLabel(hours: number): string {
   if (hours < 1) return `${hours * 60} minutes`;
@@ -44,11 +52,7 @@ function canStopAgents(task: Task): boolean {
   return !task.coordinatorMode && !task.delegationParent && !task.coordinatedBy;
 }
 
-const minimizeIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-    <path d="M2 8a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8Z" />
-  </svg>
-);
+const minimizeIcon = () => <MinusIcon size={14} />;
 
 /** Ways to set a task aside for later: snoozes, restoring a snoozed task, and minimizing. */
 export function laterMenuItems(task: Task): MoreMenuItem[] {
