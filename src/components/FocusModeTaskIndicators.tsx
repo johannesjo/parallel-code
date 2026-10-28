@@ -7,6 +7,7 @@ import {
   store,
 } from '../store/store';
 import { openItemName, openPanelOrder } from '../store/navigation';
+import { documentAgentTaskId } from '../documents/task-id';
 import { StatusDot } from './StatusDot';
 
 /** Title-bar switcher: one named pill per open item. The active pill is

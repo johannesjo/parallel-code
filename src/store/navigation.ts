@@ -12,7 +12,7 @@ import {
 } from './focused-panel';
 import { showNotification } from './notification';
 import { isPlannableProject, pickAndAddProject } from './projects';
-import { matchProject, reorderTask, reorderTaskInTileOrder } from './tasks';
+import { matchProject, reorderTaskInTileOrder } from './tasks';
 import { closeProjectPages } from './project-pages';
 import { restoreFailedDraft } from './task-creation';
 import { computeTileOrder } from './sidebar-order';

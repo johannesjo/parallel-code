@@ -30,7 +30,6 @@ import { taskScreens } from '../store/task-screens';
 import { withViewTransition } from '../lib/viewTransition';
 import { handleDragReorder } from '../lib/dragReorder';
 import { computeTileOrder } from '../store/sidebar-order';
-import { getTaskDockerBadgeLabel } from '../lib/docker';
 import { displayTaskNameFromPrompt, shouldUsePromptDerivedTaskName } from '../lib/clean-task-name';
 import type { Task } from '../store/types';
 import { isLandedTaskState } from '../store/landing';
