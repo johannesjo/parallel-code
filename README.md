@@ -94,7 +94,7 @@ That is the core loop. Everything else is optional and stays out of the way unti
 
 1. **Download** the latest release from the [releases page](https://github.com/johannesjo/parallel-code/releases/latest):
    - **macOS** — `.dmg` (universal, signed and notarized)
-   - **Linux** — `.AppImage` or `.deb`
+   - **Linux** — `.AppImage`, `.deb` or `.rpm`
 2. **Install at least one agent CLI** — Claude Code, Codex CLI, OpenCode, Copilot CLI or Antigravity CLI. The welcome screen shows which ones it found.
 3. **Open Parallel Code**, choose a folder with your code (a git repository works best), and start a task.
 
