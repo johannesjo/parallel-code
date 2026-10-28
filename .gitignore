@@ -32,6 +32,7 @@ docs/*
 !docs/kanban.md
 !docs/features.md
 !docs/phone.md
+!docs/market/
 
 # Sandbox bind-mount artifacts from user home (not project files).
 # Root-anchored so legitimate nested files with these names are still tracked.
