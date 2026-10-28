@@ -32,19 +32,25 @@ merge what's good, with any agent CLI, free and local.**
 ## Competitor set
 
 Keep the set fixed between refreshes so results stay comparable; change it only
-here. There are four groups, one scorecard section each:
+here. There are five groups, one scorecard section each:
 
 - **Parallel-agent apps**, scored on every dimension: apps built for exactly
   PC's job, and the closest alternatives for someone who already wants it.
-  Conductor, Emdash, Superset, Vibe Kanban.
+  Conductor, Emdash, Paradev (formerly Superset), Orchestrator (formerly
+  Composio's agent-orchestrator).
 - **Vendor apps**, scored on every dimension: what most people use instead of PC,
-  because it comes with the agent or the editor they already pay for. OpenAI's
-  Codex app, Claude Code desktop, Cursor, and GitHub Copilot in VS Code.
+  because it comes with the agent or the editor they already pay for. The Codex
+  app (the Codex mode of the ChatGPT desktop app), Claude Code desktop, Cursor, and
+  GitHub Copilot (VS Code's Agents window and the Copilot app).
 - **Terminal tools**, scored on the must-be-best dimensions plus Isolation and
-  setup: what keyboard-heavy users use instead of a GUI. Claude Squad, cmux.
+  setup: what keyboard-heavy users use instead of a GUI. cmux, Warp, herdr.
 - **Cloud agents**, not scored: context for the won't-compete Cloud execution
   dimension. Codex cloud, Claude Code on the web, Cursor cloud agents, Copilot
-  coding agent, Jules, Devin.
+  cloud agent, Jules, Devin.
+- **Watch list**, not scored: apps that shut down, are in preview, or sit just
+  outside PC's job. The refresh checks their status only and proposes moving one
+  into the set. Vibe Kanban, JetBrains Air, Google Antigravity, Xum, Nimbalyst,
+  Claude Squad, Sculptor, Happy.
 
 ## Dimensions
 
@@ -110,7 +116,8 @@ when its changelog says the job changed.
 ## Monthly refresh
 
 A scheduled Claude Code session runs this procedure early each month. It edits
-only `scorecard.md`, never this page.
+only `scorecard.md`, never this page. It stops without changes when the snapshot
+is less than three weeks old.
 
 The snapshot line under the scorecard's title names the month, the latest PC
 release and the `main` commit that was read. It is the starting point of the
@@ -130,14 +137,20 @@ next run.
      "Unreleased on main" has shipped too: move it into the baseline. Don't carry
      a PC fact forward from memory.
 3. **Competitor side.** For each app, read its changelog or release notes, pricing
-   page, docs and, for open-source apps, its repository (stars and releases from
-   the GitHub API) for changes since the snapshot. Run subagents in parallel: one
-   for PC and one per competitor group (parallel-agent apps, vendor apps, terminal
-   tools and cloud agents together). The parallel-agent subagent also looks for
-   new apps for running coding agents in parallel that gained real traction since
-   the snapshot; list them as proposed additions in the PR description, never add
-   them to the set. If a host is blocked, use search snippets, mark them
+   page, docs and, for open-source apps, its repository (stars and releases) for
+   changes since the snapshot. Run subagents in parallel: one for PC and one per
+   competitor group (parallel-agent apps, vendor apps, and terminal tools together
+   with cloud agents and the watch list). The parallel-agent subagent also looks
+   for new apps for running coding agents in parallel that gained real traction
+   since the snapshot; list them as proposed additions in the PR description,
+   never add them to the set. If a host is blocked, use search snippets, mark them
    **snippet** and name the host in the PR. Never fill a number from memory.
+   - Vendor sites are often blocked in the research environment. GitHub pages,
+     `raw.githubusercontent.com` (READMEs, docs folders, changelogs, Homebrew
+     casks) and the GitHub search API
+     (`api.github.com/search/repositories?q=repo:OWNER/NAME`, for stars) usually
+     work. The open docs repositories of VS Code (`microsoft/vscode-docs`), GitHub
+     (`github/docs`) and Warp (`warpdotdev/docs`) count as **read**.
 4. **Update the scorecard.**
    - Change only the cells and facts that moved. Set the month on the Sources
      line of each section you re-checked.
