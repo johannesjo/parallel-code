@@ -22,12 +22,12 @@ merge what's good, with any agent CLI, free and local.**
 
 "Best" is judged per group, not across every feature:
 
-| Group                   | Meaning                                                                                      | Dimensions                                                                                                                                     |
-| ----------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Must be best**        | Better than every app in the competitor set: the claims in the README's "Why Parallel Code?" | Agent choice · Overview and attention · Review · Keyboard workflow · Price and licence · Privacy and local                                     |
-| **Must not lose badly** | Close to the best app, because users who give up here never reach the strengths above        | Isolation and setup · Starting tasks · Merge and pull requests · Running and previewing · Phone and remote · Speed and reliability · First run |
-| **Won't compete**       | A recorded decision; the refresh only reports new evidence against it                        | Cloud execution (README: not for agents that keep working while the laptop is off) · Windows (AGENTS.md: macOS and Linux only)                 |
-| **Tracked**             | Recorded for context, no target                                                              | Planning and orchestration · Integrations · Team features · Customization                                                                      |
+| Group                   | Meaning                                                                                                                                                                                                                           | Dimensions                                                                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Must be best**        | Better than every scored app. These are the main promises of the README's "Why Parallel Code?" and "Where it fits"; isolation and phone access, which it also claims, sit one group lower because most competitors now match them | Agent choice · Overview and attention · Review · Keyboard workflow · Price and licence · Privacy and local                                                 |
+| **Must not lose badly** | Close to the best app, because users who give up here never reach the strengths above                                                                                                                                             | Isolation and setup · Starting tasks · Merge and pull requests · Running and previewing · Phone and remote · Platforms · Speed and reliability · First run |
+| **Won't compete**       | A recorded decision; the refresh only reports new evidence against it                                                                                                                                                             | Cloud execution (README: not for agents that keep working while the laptop is off) · Windows (AGENTS.md: macOS and Linux only)                             |
+| **Tracked**             | Recorded for context, no target                                                                                                                                                                                                   | Planning and orchestration · Integrations · Team features · Customization                                                                                  |
 
 ## Competitor set
 
@@ -116,8 +116,9 @@ when its changelog says the job changed.
 ## Monthly refresh
 
 A scheduled Claude Code session runs this procedure early each month. It edits
-only `scorecard.md`, never this page. It stops without changes when the snapshot
-is less than three weeks old.
+only `scorecard.md`, never this page. It stops without changes if the snapshot
+line already names the current month, or if the `main` commit it names is less
+than three weeks old.
 
 The snapshot line under the scorecard's title names the month, the latest PC
 release and the `main` commit that was read. It is the starting point of the
@@ -129,13 +130,18 @@ next run.
    - If `git rev-parse --is-shallow-repository` prints `true`, run
      `git fetch --unshallow --tags`; otherwise `git fetch --tags`.
    - List the changes since the snapshot with
-     `git log --oneline <snapshot commit>..origin/main`. The releases among them
-     are `git tag --contains <snapshot commit>`.
+     `git log --oneline <snapshot commit>..origin/main`. If
+     `git merge-base --is-ancestor <snapshot commit> origin/main` fails because
+     history was rewritten, use `git log --oneline --since=<snapshot date> origin/main`
+     instead. The desktop releases among the changes are
+     `git tag --contains <snapshot commit> --list 'v[0-9]*' | grep -v -- -`.
    - Re-check every dimension those changes touch against the code. Released
      changes go into the PC baseline, the rest under "Unreleased on main". If a
      new release contains the snapshot commit, everything already listed under
-     "Unreleased on main" has shipped too: move it into the baseline. Don't carry
-     a PC fact forward from memory.
+     "Unreleased on main" has shipped too: move it into the baseline. Changes to
+     the Android app (under `android/`) ship with `android-v*` tags instead; list
+     them as Android app items and move them when such a tag contains them. Don't
+     carry a PC fact forward from memory.
 3. **Competitor side.** For each app, read its changelog or release notes, pricing
    page, docs and, for open-source apps, its repository (stars and releases) for
    changes since the snapshot. Run subagents in parallel: one for PC and one per
@@ -156,22 +162,30 @@ next run.
      line of each section you re-checked.
    - Keep the summary and the gap list in step with the tables.
    - The gap list has one row per gap where PC misses its group's bar: not better
-     on a must-be-best dimension, or worse on a must-not-lose-badly one. Each row
-     links its open issues or says "none". For a gap without an issue, search
-     closed issues first (a declined idea needs new evidence), then list it under
-     "proposed issues" in the PR description. Don't create issues.
-   - A row's status is the furthest step its linked work has reached, with the
-     link: **—** (nothing beyond the issue), **Proposal** (a plan or design doc),
-     **PR open**, **On main** (merged, not released) or **Released vX.Y.Z**.
-     Prefix "Partly" when the work covers only part of the row. Re-check every
-     linked issue and PR. Once a release closes a gap, re-score the dimension and
-     remove the row.
-   - Update the snapshot line.
+     on a must-be-best dimension, or worse (slightly worse included) on a
+     must-not-lose-badly one. Mixed counts as not better, but on a
+     must-not-lose-badly dimension it is not a gap by itself. A tie at the ceiling
+     on price (free with an OSI licence) or privacy (no account, telemetry or
+     server of its own) is not a gap.
+   - Each row links its open issues or says "none". Write issue and PR numbers as
+     reference links (`[#123]`) and keep the link definitions at the end of the
+     scorecard in step; bare `#123` doesn't link in a repository file. For a gap
+     without an issue, search closed issues first (a declined idea needs new
+     evidence), then list it under "proposed issues" in the PR description. Don't
+     create issues.
+   - A row's status is the furthest step its work has reached, with the link:
+     **—** (no work yet), **Proposal** (a plan or design doc), **PR open**, **On
+     main** (merged, not released) or **Released vX.Y.Z**. Prefix "Partly" when
+     the work covers only part of the row. Re-check every linked issue and PR.
+     Once a release closes a gap, re-score the dimension and remove the row.
+   - Update the snapshot line, the version in the "PC baseline" heading and the
+     "Merged after" line under "Unreleased on main".
 5. **Public claims.** Compare the README's "Why Parallel Code?" and "Where it
    fits" sections, and [parallelcode.app](https://parallelcode.app) if reachable,
    against the scorecard and list contradictions in the PR description.
-6. **Format and open the PR.** Run
-   `npx prettier --write docs/market/scorecard.md`, then open one PR against
+6. **Format and open the PR.** Run `npm ci` so Prettier and the git hooks use the
+   pinned versions, then `npx prettier --write docs/market/scorecard.md`, then
+   open one PR against
    `main` titled `docs(market): scorecard refresh YYYY-MM`. Its description lists:
    - verdict changes
    - notable competitor releases and price changes

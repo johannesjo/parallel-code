@@ -19,9 +19,9 @@ How this snapshot was gathered:
 
 ## Summary
 
-- **Must be best:** PC is better than every app on price and on privacy, with one
-  tie on price (Emdash, also free and open source). It is not yet best on the other
-  four:
+- **Must be best:** PC is better than every scored app on price and on privacy,
+  apart from ties on price with Emdash, Orchestrator and herdr, which are also free
+  and open source. It is not yet best on the other four:
   - **Agent choice:** better than every vendor app, but Emdash (37 agent CLIs),
     Orchestrator (36), herdr (about 28), Paradev (21 plus any CLI), Warp (16) and
     cmux (14) detect more agents than PC's five built-in ones plus custom agents.
@@ -29,19 +29,20 @@ How this snapshot was gathered:
     lanes also follow PR, CI and review state (In review, Ready to merge). A tie
     with Conductor, Paradev, GitHub Copilot, cmux, Warp and herdr: jumping to the
     next waiting agent and a board by state are now common.
-  - **Review:** better than the other parallel-agent apps and the terminals; a tie
+  - **Review:** better than Conductor, Emdash, Paradev and the terminals; a tie
     with the Codex app, Claude Code desktop and GitHub Copilot; mixed against
     Orchestrator's reviewer agent; worse than Cursor's PR review and Bugbot.
   - **Keyboard workflow:** a tie with nearly everyone. Almost every competitor has
     a command palette; PC has a task switcher.
 - **Must not lose badly:** PC loses on phone and remote access to all four vendor
-  apps and Orchestrator, on starting tasks to Emdash, Paradev and Cursor, and on
-  the PR flow to GitHub Copilot and Orchestrator, which send failing CI, review
-  comments and conflicts back to the agent on their own. Most other losses are
-  slight.
+  apps and Orchestrator; on starting tasks to Emdash, Paradev and Cursor; on
+  running and previewing to Paradev, Claude Code and Cursor; and on the PR flow to
+  GitHub Copilot and Orchestrator, which send failing CI, review comments and
+  conflicts back to the agent on their own. Most other losses are slight.
 - **Won't compete, new evidence:**
   - **Cloud execution:** every vendor app, Conductor, Paradev, Orchestrator and
-    cmux shipped it in 2026, usually together with an official phone app.
+    cmux offer it, most of them with an official phone app; the last four shipped
+    it in 2026.
   - **Windows:** every vendor app, Emdash, Orchestrator, Warp and herdr run on it.
 - **Tracked, worth a look:** scheduled or event-triggered automations
   (Conductor, Emdash, Paradev, Orchestrator, Codex, Claude Code, Cursor, Copilot,
@@ -51,20 +52,20 @@ How this snapshot was gathered:
   - Superset renamed itself Paradev on 2026-10-26 with an $11.5M seed.
   - Composio's agent-orchestrator moved to Orchestrator.inc and was renamed
     Orchestrator (v0.14.0, 10-14).
-  - Conductor raised a $22M Series A in March; herdr reached 46k stars in seven
-    months and reportedly raised a $6M seed (snippet).
+  - Conductor reportedly raised a $22M Series A in March, and herdr, which reached
+    46k stars in seven months, a $6M seed (both snippet).
   - The Codex app became the Codex mode of the ChatGPT desktop app in July.
 
-| Competitor     | Suits better than PC                                             | PC clearly better                             | PC worse where it must not lose badly ("slightly" in brackets)  |
-| -------------- | ---------------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------- |
-| Conductor      | Mac users who want cloud workspaces, an iOS app or multiplayer   | Agent choice, planning, Linux, price, privacy | (Starting tasks, PR flow, first run)                            |
-| Emdash         | Linear, Jira or GitLab users; SSH remote projects; Windows       | Review                                        | Starting tasks; (PR flow, Linux packaging)                      |
-| Paradev        | Teams; Mac users who want automations, cloud and an iOS app      | Linux, price, privacy (by far)                | Starting tasks, running and previewing; (PR flow)               |
-| Orchestrator   | Users who want the PR loop closed automatically and store apps   | Privacy                                       | PR flow, phone and remote; (overview, Linux packaging)          |
-| Codex app      | OpenAI-only users who want cloud tasks and the ChatGPT phone app | Agent choice (by far), price, privacy         | Phone and remote; (running and previewing, first run)           |
-| Claude Code    | Claude-only users who want cloud sessions and PR auto-fix        | Agent choice, price, privacy (all by far)     | Phone and remote, running and previewing; (PR flow, first run)  |
-| Cursor         | IDE users who want cloud agents and Bugbot                       | Agent choice, price, privacy (by far)         | Starting tasks, phone and remote, running; (first run)          |
-| GitHub Copilot | GitHub-centred teams who want the PR loop automated              | Price, privacy                                | PR flow, phone and remote; (starting tasks, isolation, running) |
+| Competitor     | Suits better than PC                                             | PC clearly better                             | PC worse where it must not lose badly ("slightly" in brackets)          |
+| -------------- | ---------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------- |
+| Conductor      | Mac users who want cloud workspaces, an iOS app or multiplayer   | Agent choice, planning, Linux, price, privacy | (Starting tasks, PR flow, first run)                                    |
+| Emdash         | Linear, Jira or GitLab users; SSH remote projects; Windows       | Review                                        | Starting tasks; (PR flow, Linux packaging)                              |
+| Paradev        | Teams; Mac users who want automations, cloud and an iOS app      | Linux, price, privacy (by far)                | Starting tasks, running and previewing; (PR flow)                       |
+| Orchestrator   | Users who want the PR loop closed automatically and store apps   | Privacy                                       | PR flow, phone and remote; (Linux packaging)                            |
+| Codex app      | OpenAI-only users who want cloud tasks and the ChatGPT phone app | Agent choice (by far), price, privacy         | Phone and remote; (running and previewing, first run)                   |
+| Claude Code    | Claude-only users who want cloud sessions and PR auto-fix        | Agent choice, price, privacy (all by far)     | Phone and remote, running and previewing; (PR flow, first run)          |
+| Cursor         | IDE users who want cloud agents and Bugbot                       | Agent choice, price, privacy (by far)         | Starting tasks, phone and remote, running; (first run, Linux packaging) |
+| GitHub Copilot | GitHub-centred teams who want the PR loop automated              | Price, privacy                                | PR flow, phone and remote; (starting tasks, isolation, running)         |
 
 ## Parallel-agent apps
 
@@ -91,7 +92,7 @@ section below gives the reasons.
 | 16  | First run                  | Must not lose | Slightly worse  | Tie             | Mixed           | Tie            |
 | 17  | Keyboard workflow          | Must be best  | Tie             | Tie             | Tie             | Tie            |
 | 18  | Team features              | Tracked       | Worse, by far   | Tie             | Worse, by far   | Slightly worse |
-| 19  | Customization              | Tracked       | Tie             | —               | Slightly worse  | Slightly worse |
+| 19  | Customization              | Tracked       | Slightly better | —               | Slightly worse  | Tie            |
 
 ### PC baseline (v5.1.0, read from code)
 
@@ -101,30 +102,35 @@ section below gives the reasons.
      Custom agents.
    - Each runs as its own CLI with the user's own login and plan, side by side on
      one board. Agent env files supply credentials the login shell doesn't export.
-   - Open requests: Kimi CLI (#109), OrcaRouter (#269), different Claude accounts
-     per task (#244), the agent's plan mode as a prompt-box control (#256).
+   - Open requests: Kimi CLI ([#109]), different Claude accounts per task
+     ([#244]), the agent's plan mode as a prompt-box control ([#256]), and the
+     OrcaRouter model-routing provider ([#269]).
 2. **Isolation and setup:**
-   - A branch and a git worktree per task, with a per-project branch prefix;
-     `node_modules` and other git-ignored directories are linked into the worktree.
-   - Optional per-project Docker container (`.parallel-code/Dockerfile`), direct
-     mode on the main checkout, folders without git, imported worktrees.
+   - A branch and a git worktree per task, with a per-project branch prefix.
+     Root-level git-ignored files and folders picked per task under "Symlink into
+     worktree" are linked in; `node_modules`, `.env` and agent folders are
+     preselected (`getSymlinkCandidates` in `electron/ipc/git.ts`).
+   - An optional Docker container per task ("Run in Docker container"), with the
+     bundled image or the project's `.parallel-code/Dockerfile`; direct mode on the
+     main checkout, folders without git, imported worktrees.
    - No setup, run or teardown script per worktree and no port allocation.
-     Worktrees always live in `.worktrees/` (#324); which ignored files come along
-     is not configurable (#231).
+     Worktrees always live in `.worktrees/` ([#324]). Ignored files are only
+     symlinked from the repository root and picked again for each task; nothing is
+     copied, saved as a list or carried back on merge ([#231]).
 3. **Starting tasks:**
    - New task dialog (`Ctrl+N`); images and files pasted into the agent's terminal.
    - GitHub issues and PRs browsed and started as tasks (`electron/github/`),
      project-plan cards, Super Productivity's "Start in Parallel Code", and agents
      creating tasks through MCP.
-   - GitHub only (#316); no GitLab, Linear or Jira. Several tasks on the current
-     branch (#93).
+   - GitHub only ([#316]); no GitLab, Linear or Jira. Several tasks on the
+     current branch ([#93]).
 4. **Overview and attention:**
    - Board lanes by what each task needs (Needs you, Stopped, Working, In pull
      request, Snoozed); `Ctrl+Tab` to the next task waiting for you; tiles and
      focus layouts.
-   - Status from agent hooks (`electron/agent-hooks/`); desktop notifications;
-     opt-in per-turn task briefs.
-   - Bug: the "waiting for you" tray never appears for one Claude Code user (#259).
+   - Claude Code's status comes from its hooks (`electron/agent-hooks/`); the
+     other agents' from their terminal output (`src/store/taskStatus.ts`). Desktop
+     notifications; opt-in per-turn task briefs.
 5. **Review:**
    - Diff viewer with inline comments sent back to the agent, per-commit
      navigation, coverage badges.
@@ -138,7 +144,9 @@ section below gives the reasons.
    - For a GitHub PR: CI status watcher with notifications, merge (squash, merge,
      rebase), mark ready, and failed checks with log tails or unresolved review
      threads turned into a prompt for the agent.
-   - Merge conflicts block the local merge and are listed file by file.
+   - Merge conflicts block the local merge and are listed file by file; the Finish
+     dialog brings the base in by rebase or a merge commit, or asks the agent to
+     rebase and resolve them.
 7. **Running and previewing:** shell terminals per task, saved terminal commands
    per project, a browser preview pane with element picking for prompts.
 8. **Planning and orchestration:** project plan as a Kanban board in `KANBAN.md`
@@ -148,66 +156,75 @@ section below gives the reasons.
 9. **Integrations:** GitHub through `gh`; Super Productivity; an MCP server for
    agents; opens files in the configured editor. No Slack, Linear, Jira or GitLab.
 10. **Phone and remote:**
-    - QR pairing, a phone web UI over Wi-Fi or Tailscale, web push for "needs
-      input" (needs HTTPS, for example Tailscale Serve), and a sideloaded Android
-      app with notifications, a widget and voice input. Traffic goes straight
-      between phone and computer, with no relay.
-    - No iOS app. No agents on remote or SSH machines. Telegram proposal (#126).
+    - QR pairing and a phone web UI over Wi-Fi or Tailscale that follows, answers
+      and starts tasks. A sideloaded Android app (not in the Play Store) adds
+      notifications, a widget, voice input, each task's diff and PR checks, a "Fix
+      CI" prompt from failed checks, and several linked computers.
+    - Web push for "needs input" needs HTTPS, for example Tailscale Serve.
+      Terminal output and replies go straight between phone and computer; push
+      carries only the task name and ID through the browser's push service.
+    - No iOS app. No agents on remote or SSH machines. Telegram proposal ([#126]).
 11. **Cloud execution:** none; agents run only on the user's computer.
 12. **Platforms:** macOS universal `.dmg`, signed and notarized; Linux x64
     `.AppImage` and `.deb`. No Linux ARM64 or RPM. No Windows build; WSL users
-    report it works with rough edges (#9, closed).
+    report it works with rough edges ([#9], closed).
 13. **Price and licence:** free, MIT, no paid tier.
 14. **Privacy and local:** no account, analytics, telemetry or crash reporting, and
     no server of its own ([PRIVACY.md](../../PRIVACY.md)).
 15. **Speed and reliability:** tasks and layout persist across restarts. Open bugs:
-    occasional terminal rendering issue (#121), copying from a Claude Code session
-    (#326). Restoring tasks without resuming their agents (#293).
-16. **First run:** a welcome screen shows which agent CLIs it found, links the
-    first project and starts on the Board. Agents must be installed separately;
-    guidance when none is installed (#213).
-17. **Keyboard workflow:** every action has a shortcut, configurable, with
-    per-agent presets; `hjkl` and `Alt+Arrows` on the board; a task switcher
-    (`Cmd+K` on macOS, `Ctrl+Shift+J` on Linux) but no command palette. Gaps
-    (#210).
+    occasional terminal rendering issue ([#121]), copying from a Claude Code
+    session ([#326]). Open request: restore tasks without resuming their agents
+    ([#293]).
+16. **First run:** a welcome screen shows which agent CLIs it found, or that it
+    found none, links the first project and starts on the Board. Agents must be
+    installed separately; [#213] asks for more guidance when none is installed.
+17. **Keyboard workflow:** most actions have configurable shortcuts, with a
+    Default and a Claude Code preset; `hjkl` and `Alt+Arrows` on the board; a task
+    switcher (`Cmd+K` on macOS, `Ctrl+Shift+J` on Linux) but no command palette.
+    Panel resizing is mouse-only and some click targets can't be reached by
+    keyboard ([#210]).
 18. **Team features:** none.
-19. **Customization:** 10 themes, configurable shortcuts.
+19. **Customization:** 16 built-in looks with separate dark and light picks that
+    follow the system, custom themes, Focus, Tiles and Board layouts, configurable
+    shortcuts. (The README and features.md still say 10 themes.)
 
 ### Unreleased on main
 
 Merged after v5.1.0, up to `f49c16c` (2026-10-28):
 
-- **Phone:** a more compact task composer, terminal rows that no longer wrap on
-  Android phones, and scrolling full-screen agents one notch per three rows.
+- **Phone:** a more compact task composer, and scrolling full-screen agents one
+  notch per three rows.
+- **Android app** (ships with `android-v*` releases): terminal rows that no longer
+  wrap on phones.
 
 ### Conductor
 
-| #   | PC is           | Why                                                                                                                                                  |
-| --- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Better          | Bundles Claude Code, Codex and OpenCode, and reaches Cursor through its API; any other CLI only in the experimental Big Terminal Mode                |
-| 2   | Mixed           | Conductor: setup, run and archive scripts, a block of 10 ports per workspace, a local secrets file. PC: ignored folders linked automatically, Docker |
-| 3   | Slightly worse  | GitHub issues, PRs and branches, plus Linear issues                                                                                                  |
-| 4   | Tie             | Sidebar states for needs input, permission and plan approval; ⌘⌥L jumps to the next workspace that needs you; a status matrix                        |
-| 5   | Slightly better | Inline comments to the agent, an agent review guided by per-repo preferences, GitHub review threads in the app, per-turn checkpoints                 |
-| 6   | Slightly worse  | Create PR (⌘⇧P) with an agent-drafted description; a Checks tab treats CI, deployments, review comments and todos as merge blockers; merge in-app    |
-| 7   | Tie             | Run tab and scripts, terminal, experimental in-app browser                                                                                           |
-| 8   | Better          | Routines (cron or GitHub events, cloud only, paid), an API and MCP for workspaces; no plan board and no agent comparison                             |
-| 9   | Slightly worse  | Linear and an API besides GitHub, MCP and open-in-editor                                                                                             |
-| 10  | Mixed           | Native iOS app (Pro) since 10-02, experimental remote control of local Mac workspaces since 10-23; no Android                                        |
-| 11  | Worse, by far   | Conductor Cloud microVMs keep running with the laptop closed                                                                                         |
-| 12  | Better          | macOS only; Windows and Linux "not available yet"                                                                                                    |
-| 13  | Better          | Free locally; Pro $50/mo, Teams $60/user/mo; closed source                                                                                           |
-| 14  | Better          | PostHog analytics and crash logs; account for cloud and mobile                                                                                       |
-| 16  | Slightly worse  | Agents come bundled; a setup check lists missing tools                                                                                               |
-| 17  | Tie             | ⌘K command palette, ⌘/ shortcut list, rebindable shortcuts since 0.92.0                                                                              |
-| 18  | Worse, by far   | Multiplayer workspaces with presence, reassigning work, Teams admin portal                                                                           |
-| 19  | Tie             | Light, dark and accessible themes; layered settings files                                                                                            |
+| #   | PC is           | Why                                                                                                                                                |
+| --- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Better          | Bundles Claude Code, Codex and OpenCode, and reaches Cursor through its API; any other CLI only in the experimental Big Terminal Mode              |
+| 2   | Mixed           | Conductor: setup, run and archive scripts, a block of 10 ports per workspace, a local secrets file. PC: ignored entries symlinked per task, Docker |
+| 3   | Slightly worse  | GitHub issues, PRs and branches, plus Linear issues                                                                                                |
+| 4   | Tie             | Sidebar states for needs input, permission and plan approval; ⌘⌥L jumps to the next workspace that needs you; a status matrix                      |
+| 5   | Slightly better | Inline comments to the agent, an agent review guided by per-repo preferences, GitHub review threads in the app, per-turn checkpoints               |
+| 6   | Slightly worse  | Create PR (⌘⇧P) with an agent-drafted description; a Checks tab treats CI, deployments, review comments and todos as merge blockers; merge in-app  |
+| 7   | Tie             | Run tab and scripts, terminal, experimental in-app browser                                                                                         |
+| 8   | Better          | Routines (cron or GitHub events, cloud only, paid), an API and MCP for workspaces; no plan board and no agent comparison                           |
+| 9   | Slightly worse  | Linear and an API besides GitHub, MCP and open-in-editor                                                                                           |
+| 10  | Mixed           | Native iOS app (Pro) since 10-02, experimental remote control of local Mac workspaces since 10-23; no Android                                      |
+| 11  | Worse, by far   | Conductor Cloud microVMs keep running with the laptop closed                                                                                       |
+| 12  | Better          | macOS only; Windows and Linux "not available yet"                                                                                                  |
+| 13  | Better          | Free locally; Pro $50/mo, Teams $60/user/mo; closed source                                                                                         |
+| 14  | Better          | PostHog analytics and crash logs; account for cloud and mobile                                                                                     |
+| 16  | Slightly worse  | Agents come bundled; a setup check lists missing tools                                                                                             |
+| 17  | Tie             | ⌘K command palette, ⌘/ shortcut list, rebindable shortcuts since 0.92.0                                                                            |
+| 18  | Worse, by far   | Multiplayer workspaces with presence, reassigning work, Teams admin portal                                                                         |
+| 19  | Slightly better | Light, dark and accessible themes; layered settings files                                                                                          |
 
 - **Price:** Free (local workspaces, own subscriptions); Pro $50/mo (cloud, API,
   iOS app, multiplayer with up to five Pro users); Teams $60/user/mo; Enterprise.
   Cloud compute is free for now.
 - **Traction:** $22M Series A led by Spark and Matrix (2026-03-30); YC S24;
-  self-reported tenfold user growth from January to March.
+  self-reported tenfold user growth from January to March (all snippet).
 - **2026 releases:**
   - GitHub issues in the create dialog, Linear issues (Feb).
   - Command palette and jump to the next workspace needing attention (0.39.0).
@@ -308,26 +325,26 @@ Merged after v5.1.0, up to `f49c16c` (2026-10-28):
 
 ### Orchestrator (formerly agent-orchestrator)
 
-| #   | PC is          | Why                                                                                                                                                    |
-| --- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | Slightly worse | 36 agent harnesses, agent and model chosen per task, switching agents mid-session (v0.14.6), each on its own subscription                              |
-| 2   | Mixed          | Setup and cleanup scripts (`postCreate`, `preRemove`), symlinks such as `.env`, projects without git, cloud sandboxes; no Docker found                 |
-| 3   | Tie            | New task in the app, `ao spawn --issue`, GitHub and GitLab issue intake behind a flag, an orchestrator agent that spawns workers                       |
-| 4   | Slightly worse | Board lanes Working, Needs you, In review and Ready to merge, derived from agent, PR, CI and review state; dock badge; phone push                      |
-| 5   | Mixed          | A reviewer agent runs on each PR and posts inline GitHub comments; no inline comments of your own on the local diff                                    |
-| 6   | Worse          | Failing CI, review comments and merge conflicts go back to the worker on their own until the PR is approved; merge; GitHub and GitLab                  |
-| 7   | Tie            | A browser per worker with DevTools and annotations sent to chat; a terminal per session                                                                |
-| 8   | Mixed          | An orchestrator agent plans and spawns workers; recurring automations; no plan board or agent comparison                                               |
-| 9   | Slightly worse | GitHub and GitLab, self-managed included                                                                                                               |
-| 10  | Worse          | iOS and Android store apps paired by QR code: push, replies, approvals, starting workers, PR review, voice; over LAN, Tailscale or a Cloudflare tunnel |
-| 11  | Worse          | AO Cloud sandboxes keep working with the laptop closed (early preview, paid)                                                                           |
-| 12  | Slightly worse | Linux x64 as AppImage, deb and RPM; also Windows                                                                                                       |
-| 13  | Tie            | Free locally, Apache-2.0; AO Cloud is paid                                                                                                             |
-| 14  | Better         | PostHog telemetry on by default (installation ID and GitHub user name) with an opt-out; phone traffic can run through Cloudflare                       |
-| 16  | Tie            | Self-updating app with its daemon bundled; needs `gh` sign-in                                                                                          |
-| 17  | Tie            | Command palette; the whole app keyboard-navigable since v0.14.0                                                                                        |
-| 18  | Slightly worse | Shareable cloud sessions; Teams on a waitlist                                                                                                          |
-| 19  | Slightly worse | 20 themes, eight UI languages                                                                                                                          |
+| #   | PC is          | Why                                                                                                                                                                                                    |
+| --- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Slightly worse | 36 agent harnesses, agent and model chosen per task, switching agents mid-session (v0.14.6), each on its own subscription                                                                              |
+| 2   | Mixed          | Setup and cleanup scripts (`postCreate`, `preRemove`), symlinks such as `.env`, projects without git, cloud sandboxes; no Docker found                                                                 |
+| 3   | Tie            | New task in the app, `ao spawn --issue`, GitHub and GitLab issue intake behind a flag, an orchestrator agent that spawns workers                                                                       |
+| 4   | Slightly worse | Board lanes Working, Needs you, In review and Ready to merge, derived from agent, PR, CI and review state; dock badge; phone push                                                                      |
+| 5   | Mixed          | A reviewer agent runs on each PR and posts inline GitHub comments; no inline comments of your own on the local diff                                                                                    |
+| 6   | Worse          | Failing CI, review comments and merge conflicts go back to the worker on their own until the PR is approved; merge; GitHub and GitLab                                                                  |
+| 7   | Tie            | A browser per worker with DevTools and annotations sent to chat; a terminal per session                                                                                                                |
+| 8   | Mixed          | An orchestrator agent plans and spawns workers; recurring automations; no plan board or agent comparison                                                                                               |
+| 9   | Slightly worse | GitHub and GitLab, self-managed included                                                                                                                                                               |
+| 10  | Worse          | iOS and Android store apps paired by QR code: push, replies, approvals, starting workers, PR review, voice; over LAN, Tailscale or a Cloudflare tunnel. PC has no iOS app and a sideloaded Android one |
+| 11  | Worse          | AO Cloud sandboxes keep working with the laptop closed (early preview, paid)                                                                                                                           |
+| 12  | Slightly worse | Linux x64 as AppImage, deb and RPM; also Windows                                                                                                                                                       |
+| 13  | Tie            | Free locally, Apache-2.0; AO Cloud is paid                                                                                                                                                             |
+| 14  | Better         | PostHog telemetry on by default (installation ID and GitHub user name) with an opt-out; phone traffic can run through Cloudflare                                                                       |
+| 16  | Tie            | Self-updating app with its daemon bundled; needs `gh` sign-in                                                                                                                                          |
+| 17  | Tie            | Command palette; the whole app keyboard-navigable since v0.14.0                                                                                                                                        |
+| 18  | Slightly worse | Shareable cloud sessions; Teams on a waitlist                                                                                                                                                          |
+| 19  | Tie            | 20 themes and eight UI languages, against PC's 16 looks and custom themes                                                                                                                              |
 
 - **History:** launched by Composio in February as an npm CLI with a web dashboard;
   the repository moved to Orchestrator.inc and v0.14.0 (10-14) renamed it.
@@ -361,7 +378,7 @@ Merged after v5.1.0, up to `f49c16c` (2026-10-28):
 | 9   | Integrations               | Tracked       | Worse           | Worse           | Worse           | Worse           |
 | 10  | Phone and remote           | Must not lose | Worse           | Worse           | Worse           | Worse           |
 | 11  | Cloud execution            | Won't compete | Worse, by far   | Worse, by far   | Worse, by far   | Worse, by far   |
-| 12  | Platforms                  | Must not lose | Slightly better | Slightly better | Tie             | Tie             |
+| 12  | Platforms                  | Must not lose | Slightly better | Slightly better | Slightly worse  | Tie             |
 | 13  | Price and licence          | Must be best  | Better          | Better, by far  | Better          | Better          |
 | 14  | Privacy and local          | Must be best  | Better          | Better, by far  | Better, by far  | Better          |
 | 15  | Speed and reliability      | Must not lose | —               | —               | —               | —               |
@@ -370,8 +387,8 @@ Merged after v5.1.0, up to `f49c16c` (2026-10-28):
 | 18  | Team features              | Tracked       | Worse           | Worse           | Worse           | Worse           |
 | 19  | Customization              | Tracked       | Tie             | —               | Worse           | Worse           |
 
-All four are proprietary and run on Windows too, which PC records under won't
-compete.
+The agents and services of all four are proprietary (VS Code itself is MIT), and
+all four run on Windows too, which PC records under won't compete.
 
 ### Codex app (Codex mode of the ChatGPT desktop app)
 
@@ -461,7 +478,7 @@ compete.
 | 9   | Worse           | GitHub, GitLab, Slack, Linear, PagerDuty, MCP, a plugin marketplace, VS Code extensions                                               |
 | 10  | Worse           | iOS app (beta) and Remote Control of local agents, whose agent loop runs in Cursor's cloud; SSH                                       |
 | 11  | Worse, by far   | Cloud Agents in VMs with handoff both ways                                                                                            |
-| 12  | Tie             | macOS and Linux (deb, RPM, AppImage, x64 and ARM64)                                                                                   |
+| 12  | Slightly worse  | macOS and Linux (deb, RPM, AppImage, x64 and ARM64)                                                                                   |
 | 13  | Better          | Free tier without cloud agents, paid plans $8–200/mo (snippet)                                                                        |
 | 14  | Better, by far  | Account; Privacy Mode; the agent loop runs in Cursor's cloud even for Remote Control                                                  |
 | 16  | Slightly worse  | One-click import of VS Code settings and extensions                                                                                   |
@@ -534,7 +551,7 @@ Scored on the must-be-best dimensions plus isolation and setup.
 | 4   | Overview and attention | Must be best  | Tie             | Tie             | Tie            |
 | 5   | Review                 | Must be best  | Better          | Slightly better | Better, by far |
 | 13  | Price and licence      | Must be best  | Slightly better | Slightly better | Tie            |
-| 14  | Privacy and local      | Must be best  | Better          | Better          | Tie            |
+| 14  | Privacy and local      | Must be best  | Better          | Better          | —              |
 | 17  | Keyboard workflow      | Must be best  | Tie             | Tie             | Tie            |
 
 ### cmux
@@ -577,7 +594,8 @@ A terminal with its own agent that also runs other agent CLIs; open source
 
 - **Beyond the scored dimensions:** macOS, Windows and Linux; Remote Control turns
   any CLI agent session into a link to watch or steer from a phone browser; cloud
-  agents (Oz) and Factories; team session sharing.
+  agents (Oz) and Factories, triggered from Slack, Linear, GitHub Actions or a
+  schedule; team session sharing.
 - **Sources** (2026-10, read unless marked):
   [repository](https://github.com/warpdotdev/warp) ·
   [docs repository](https://github.com/warpdotdev/docs): CLI agents, Remote Control,
@@ -599,7 +617,7 @@ release on 2026-03-27, with 2,700 issues and 600 merged PRs from many authors.
 | 4   | Tie            | State rolled up per pane, tab and workspace; sounds and OS notifications; a picker filtered by state; next agent |
 | 5   | Better, by far | No diff viewer and no review                                                                                     |
 | 13  | Tie            | Free, Apache-2.0                                                                                                 |
-| 14  | Tie            | No account; telemetry not documented                                                                             |
+| 14  | —              | No account; telemetry not documented, so not scored                                                              |
 | 17  | Tie            | tmux-style prefix keys, everything rebindable, a Go To navigator                                                 |
 
 - **Beyond the scored dimensions:** macOS, Linux and Windows; sessions survive the
@@ -616,14 +634,14 @@ release on 2026-03-27, with 2,700 issues and 600 merged PRs from many authors.
 Context for the won't-compete dimension: agents that keep working while the laptop
 is off.
 
-| Product                | Entry price                    | Phone app             |
-| ---------------------- | ------------------------------ | --------------------- |
-| Codex cloud            | ChatGPT Plus $20/mo (snippet)  | ChatGPT app           |
-| Claude Code on the web | Claude Pro $20/mo (read)       | Claude app (read)     |
-| Cursor cloud agents    | Paid plans; tier unclear       | iOS beta (unverified) |
-| Copilot cloud agent    | Copilot Pro $10/mo (read)      | GitHub Mobile (read)  |
-| Google Jules           | Free, 15 tasks a day (snippet) | None found            |
-| Devin                  | Free, then $20/mo (snippet)    | None found            |
+| Product                | Entry price                    | Phone app            |
+| ---------------------- | ------------------------------ | -------------------- |
+| Codex cloud            | ChatGPT Plus $20/mo (snippet)  | ChatGPT app          |
+| Claude Code on the web | Claude Pro $20/mo (read)       | Claude app (read)    |
+| Cursor cloud agents    | Paid plans; tier unclear       | iOS beta (snippet)   |
+| Copilot cloud agent    | Copilot Pro $10/mo (read)      | GitHub Mobile (read) |
+| Google Jules           | Free, 15 tasks a day (snippet) | None found           |
+| Devin                  | Free, then $20/mo (snippet)    | None found           |
 
 ## Watch list
 
@@ -647,22 +665,39 @@ Gaps where PC misses its group's bar, roughly in order of how many competitors a
 ahead. A row is a prompt, not a plan. Status values are defined in
 [README.md](README.md#monthly-refresh) (step 4).
 
-| Gap                                                                         | #    | Who has it                                                                      | Issue      | Status (2026-10) |
-| --------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------- | ---------- | ---------------- |
-| Native phone apps with push, iOS included; easier push setup than HTTPS     | 10   | Codex, Claude Code, Cursor, Copilot, Orchestrator, Conductor, Paradev, cmux     | #191, #192 | —                |
-| Agents on remote or SSH machines                                            | 10   | Codex, Claude Code, Cursor, Copilot, Emdash, Paradev, Orchestrator, cmux, herdr | none       | —                |
-| Create a PR from the app, with a drafted description                        | 6    | Conductor, Emdash, Paradev, Orchestrator, Codex, Claude Code, Cursor, Copilot   | none       | —                |
-| Auto-fix failing CI and review comments; merge when ready                   | 6    | Orchestrator, Claude Code, Copilot (Agent Merge), Cursor (Bugbot Autofix)       | none       | —                |
-| Issues from Linear, Jira and GitLab; non-GitHub repositories                | 3    | Emdash, Paradev, Conductor (Linear), Codex, Cursor                              | #316       | —                |
-| Setup, run and teardown scripts per worktree; a port block per worktree     | 2, 7 | Conductor, Emdash, Paradev, Orchestrator, Codex, Claude Code, Cursor, Copilot   | #231, #324 | —                |
-| Agent-driven browser checks (screenshots, clicks) and persistent terminals  | 7    | Claude Code, Cursor, Paradev, Codex                                             | none       | —                |
-| Command palette                                                             | 17   | Conductor, Emdash, Paradev, Orchestrator, Codex, Cursor, Copilot, cmux, Warp    | #210, #203 | —                |
-| More built-in agents with status hooks (Gemini CLI, Amp, Cursor CLI, Kimi)  | 1    | Emdash, Orchestrator, herdr, Paradev, Warp, cmux                                | #109, #269 | —                |
-| Board lanes that follow PR, CI and review state; a badge for waiting agents | 4    | Orchestrator; ties: Conductor, Paradev, Copilot, cmux, Warp, herdr              | #259       | —                |
-| Review: hunk staging and revert, per-turn checkpoints, PR review in the app | 5    | Codex, Conductor, Warp, Cursor                                                  | none       | —                |
-| Agents installed with the app, or installed from the welcome screen         | 16   | Conductor, Codex, Claude Code, Cursor                                           | #213       | —                |
-| Linux ARM64 and RPM builds                                                  | 12   | Emdash, Orchestrator (RPM), Codex, Cursor                                       | none       | —                |
+| Gap                                                                                                   | #    | Who has it                                                                      | Issue               | Status (2026-10) |
+| ----------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------- | ------------------- | ---------------- |
+| Native phone apps with push, iOS included; easier push setup than HTTPS                               | 10   | Codex, Claude Code, Cursor, Copilot, Orchestrator, Conductor, Paradev, cmux     | [#192] (push setup) | —                |
+| Agents on remote or SSH machines                                                                      | 10   | Codex, Claude Code, Cursor, Copilot, Emdash, Paradev, Orchestrator, cmux, herdr | none                | —                |
+| Create a PR from the app, with a drafted description                                                  | 6    | Conductor, Emdash, Paradev, Orchestrator, Codex, Claude Code, Cursor, Copilot   | none                | —                |
+| Auto-fix failing CI and review comments; merge when ready                                             | 6    | Orchestrator, Claude Code, Copilot (Agent Merge), Cursor (Bugbot Autofix)       | none                | —                |
+| Issues from Linear, Jira and GitLab; non-GitHub repositories                                          | 3    | Emdash, Paradev, Conductor (Linear), Codex, Cursor                              | [#316]              | —                |
+| Setup, run and teardown scripts per worktree; a port block per worktree                               | 2, 7 | Conductor, Emdash, Paradev, Orchestrator, Codex, Claude Code, Cursor, Copilot   | [#231], [#324]      | —                |
+| Agent-driven browser checks (screenshots, clicks) and persistent terminals                            | 7    | Claude Code, Cursor, Paradev, Codex, Copilot                                    | none                | —                |
+| Command palette                                                                                       | 17   | Conductor, Emdash, Paradev, Orchestrator, Codex, Cursor, Copilot, cmux, Warp    | none                | —                |
+| More built-in agents (Amp, Cursor CLI, Droid, Kimi) and hook-based status beyond Claude Code          | 1    | Emdash, Orchestrator, herdr, Paradev, Warp, cmux                                | [#109]              | —                |
+| Board lanes that follow PR, CI and review state; a badge for waiting agents                           | 4    | Orchestrator; ties: Conductor, Paradev, Copilot, cmux, Warp, herdr              | none                | —                |
+| Review: PR review in the app, a reviewer agent on each PR, cloud and GitHub code review, hunk staging | 5    | Cursor; Orchestrator (mixed); ties: Codex, Claude Code, Copilot                 | none                | —                |
+| Agents installed with the app, or installed from the welcome screen                                   | 16   | Conductor, Codex, Claude Code, Cursor                                           | [#213]              | —                |
+| Linux ARM64 and RPM builds                                                                            | 12   | Emdash, Orchestrator (RPM), Codex, Cursor                                       | none                | —                |
 
 ## Speed benchmark
 
 Not measured yet. The jobs are defined in [README.md](README.md#speed-benchmark).
+
+[#9]: https://github.com/johannesjo/parallel-code/issues/9
+[#93]: https://github.com/johannesjo/parallel-code/issues/93
+[#109]: https://github.com/johannesjo/parallel-code/issues/109
+[#121]: https://github.com/johannesjo/parallel-code/issues/121
+[#126]: https://github.com/johannesjo/parallel-code/issues/126
+[#192]: https://github.com/johannesjo/parallel-code/issues/192
+[#210]: https://github.com/johannesjo/parallel-code/issues/210
+[#213]: https://github.com/johannesjo/parallel-code/issues/213
+[#231]: https://github.com/johannesjo/parallel-code/issues/231
+[#244]: https://github.com/johannesjo/parallel-code/issues/244
+[#256]: https://github.com/johannesjo/parallel-code/issues/256
+[#269]: https://github.com/johannesjo/parallel-code/issues/269
+[#293]: https://github.com/johannesjo/parallel-code/issues/293
+[#316]: https://github.com/johannesjo/parallel-code/issues/316
+[#324]: https://github.com/johannesjo/parallel-code/issues/324
+[#326]: https://github.com/johannesjo/parallel-code/issues/326
