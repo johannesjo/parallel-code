@@ -179,6 +179,7 @@
         "rpm"
       ],
       "category": "Development",
+      "icon": "build/icons",
       "syncDesktopName": true,
       "desktop": {
         "entry": {
