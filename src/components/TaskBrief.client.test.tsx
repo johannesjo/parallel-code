@@ -8,6 +8,7 @@ const [working, setWorking] = createSignal(false);
 vi.mock('../store/taskStatus', () => ({ isTaskWorking: () => working() }));
 
 import type { Task } from '../store/types';
+import type { BriefBarFields } from '../lib/task-brief';
 import { TaskBriefBar, TaskBriefLine } from './TaskBrief';
 
 let dispose: (() => void) | undefined;
@@ -53,12 +54,24 @@ function baseTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function mount(task: Task, questionInPrompt = false) {
+const QUESTION = 'Deduplicate by event ID or invoice ID?';
+const DEFAULT_FIELDS: BriefBarFields = { goal: true, now: false, needsYou: true };
+
+function mount(
+  task: Task,
+  { fields = DEFAULT_FIELDS, questionInPrompt = false } = {} as {
+    fields?: BriefBarFields;
+    questionInPrompt?: boolean;
+  },
+) {
   const [state, setState] = createStore(task);
   lastSetState = setState;
   const root = document.createElement('div');
   document.body.append(root);
-  dispose = render(() => <TaskBriefBar task={state} questionInPrompt={questionInPrompt} />, root);
+  dispose = render(
+    () => <TaskBriefBar task={state} fields={fields} questionInPrompt={questionInPrompt} />,
+    root,
+  );
   const bar = root.querySelector<HTMLButtonElement>('.task-brief-bar');
   if (!bar) throw new Error('Missing brief bar');
   return { bar };
@@ -67,15 +80,50 @@ function mount(task: Task, questionInPrompt = false) {
 const card = () => document.querySelector<HTMLElement>('[role="dialog"][aria-label="Task brief"]');
 const button = (label: string) =>
   Array.from(card()?.querySelectorAll('button') ?? []).find((b) => b.textContent === label);
+const cardTerms = () =>
+  Array.from(card()?.querySelectorAll('dt') ?? []).map((dt) => dt.textContent);
 
 describe('TaskBriefBar', () => {
-  it('stays quiet while nothing needs the user: the title carries the goal', () => {
+  it('shows the goal by default, leaving the current step to the card', () => {
     const { bar } = mount(baseTask());
-    expect(bar.textContent).not.toContain('Stop webhook timeouts.');
+    expect(bar.textContent).toContain('Goal');
+    expect(bar.textContent).toContain('Stop webhook timeouts.');
+    expect(bar.textContent).not.toContain('Now');
     expect(bar.textContent).not.toContain('Two events queued');
-    // Labelled, so the line still reads as the way into the brief.
-    expect(bar.textContent).toContain('Brief');
+    expect(bar.hasAttribute('data-urgent')).toBe(false);
     expect(bar.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('shows a labelled line for each chosen field', () => {
+    const { bar } = mount(baseTask(), { fields: { goal: true, now: true, needsYou: true } });
+    expect(bar.textContent).toContain('Goal');
+    expect(bar.textContent).toContain('Stop webhook timeouts.');
+    expect(bar.textContent).toContain('Now');
+    expect(bar.textContent).toContain('Two events queued; moving the other nine next.');
+  });
+
+  it('skips a chosen field the brief leaves empty', () => {
+    const task = baseTask();
+    const { bar } = mount(
+      {
+        ...task,
+        brief: { generatedAt: 2_000, fingerprint: 'new', brief: { goal: '', now: 'Step' } },
+      },
+      { fields: { goal: true, now: true, needsYou: true } },
+    );
+    expect(bar.textContent).not.toContain('Goal');
+    expect(bar.textContent).toContain('Step');
+  });
+
+  it('keeps a quiet label that opens the card when every field is off', () => {
+    const { bar } = mount(baseTask(), { fields: { goal: false, now: false, needsYou: false } });
+    lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
+    expect(bar.textContent).toContain('Brief');
+    expect(bar.textContent).not.toContain('Stop webhook timeouts.');
+    expect(bar.textContent).not.toContain('Deduplicate');
+    expect(bar.hasAttribute('data-urgent')).toBe(false);
+    bar.click();
+    expect(cardTerms()).toEqual(['Goal', 'Now', 'Needs you']);
   });
 
   it('opens the goal and the current step, and leaves ratings to the Finish review', () => {
@@ -85,8 +133,7 @@ describe('TaskBriefBar', () => {
     expect(bar.textContent).not.toContain('out of date');
     bar.click();
     expect(bar.getAttribute('aria-expanded')).toBe('true');
-    const terms = Array.from(card()?.querySelectorAll('dt') ?? []).map((dt) => dt.textContent);
-    expect(terms).toEqual(['Goal', 'Now']);
+    expect(cardTerms()).toEqual(['Goal', 'Now']);
     const text = card()?.textContent ?? '';
     expect(text).toContain('Stop webhook timeouts.');
     expect(text).toContain('Two events queued; moving the other nine next.');
@@ -95,39 +142,48 @@ describe('TaskBriefBar', () => {
     expect(button('Review again')).toBeUndefined();
   });
 
-  it('leads with what the agent needs and flags it on the bar', () => {
-    const { bar } = mount(baseTask());
+  it('puts what the agent needs on the top line and flags the bar', () => {
+    const { bar } = mount(baseTask(), { fields: { goal: true, now: true, needsYou: true } });
     expect(bar.textContent).not.toContain('Needs you');
-    lastSetState?.('brief', 'brief', 'needsYou', 'Deduplicate by event ID or invoice ID?');
+    lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
+    expect(bar.hasAttribute('data-urgent')).toBe(true);
     expect(bar.textContent).toContain('Needs you');
-    expect(bar.textContent).toContain('Deduplicate by event ID or invoice ID?');
+    expect(bar.textContent).toContain(QUESTION);
+    // Replaces the top line rather than adding one, so the header keeps its height.
     expect(bar.textContent).not.toContain('Stop webhook timeouts.');
+    expect(bar.textContent).toContain('Two events queued');
     bar.click();
-    const terms = Array.from(card()?.querySelectorAll('dt') ?? []).map((dt) => dt.textContent);
-    expect(terms).toEqual(['Goal', 'Now', 'Needs you']);
+    expect(cardTerms()).toEqual(['Goal', 'Now', 'Needs you']);
   });
 
-  it('stays quiet when the prompt box shows the question', () => {
-    const { bar } = mount(baseTask(), true);
-    lastSetState?.('brief', 'brief', 'needsYou', 'Deduplicate by event ID or invoice ID?');
+  it('leaves the question to the card when Needs you is off', () => {
+    const { bar } = mount(baseTask(), { fields: { goal: true, now: false, needsYou: false } });
+    lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
     expect(bar.hasAttribute('data-urgent')).toBe(false);
     expect(bar.textContent).not.toContain('Deduplicate');
-    expect(bar.textContent).not.toContain('Stop webhook timeouts.');
+    expect(bar.textContent).toContain('Stop webhook timeouts.');
+  });
+
+  it('keeps to the other fields when the prompt box shows the question', () => {
+    const { bar } = mount(baseTask(), { questionInPrompt: true });
+    lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
+    expect(bar.hasAttribute('data-urgent')).toBe(false);
+    expect(bar.textContent).not.toContain('Deduplicate');
+    expect(bar.textContent).toContain('Stop webhook timeouts.');
     bar.click();
-    const terms = Array.from(card()?.querySelectorAll('dt') ?? []).map((dt) => dt.textContent);
-    expect(terms).toEqual(['Goal', 'Now', 'Needs you']);
+    expect(cardTerms()).toEqual(['Goal', 'Now', 'Needs you']);
   });
 
   it('drops a question the agent has moved past while it works on the answer', () => {
     const { bar } = mount(baseTask());
-    lastSetState?.('brief', 'brief', 'needsYou', 'Deduplicate by event ID or invoice ID?');
+    lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
     setWorking(true);
     expect(bar.hasAttribute('data-urgent')).toBe(false);
     expect(bar.textContent).not.toContain('Needs you');
     expect(bar.textContent).not.toContain('Deduplicate');
+    expect(bar.textContent).toContain('Stop webhook timeouts.');
     bar.click();
-    const terms = Array.from(card()?.querySelectorAll('dt') ?? []).map((dt) => dt.textContent);
-    expect(terms).toEqual(['Goal', 'Now']);
+    expect(cardTerms()).toEqual(['Goal', 'Now']);
   });
 
   it('closes on Escape', () => {

@@ -11,11 +11,13 @@ import {
   type TaskNameModelId,
 } from '../../../electron/shared/task-name-model';
 import { theme } from '../../lib/theme';
+import type { BriefBarFields } from '../../lib/task-brief';
 import {
   store,
   setModelTaskNames,
   setTaskNameModel,
   setTaskBriefs,
+  setBriefBarField,
   setBriefModel,
   setFinishReview,
   setReviewGuidance,
@@ -70,6 +72,12 @@ function ModelSelect(props: {
   );
 }
 
+const BRIEF_BAR_FIELD_CHOICES: { field: keyof BriefBarFields; label: string }[] = [
+  { field: 'goal', label: 'Goal' },
+  { field: 'now', label: 'Now' },
+  { field: 'needsYou', label: 'Needs you' },
+];
+
 export function AiAssistSettings() {
   // The Codex model select is filled from the CLI's cache, read on first need.
   createEffect(() => {
@@ -106,6 +114,37 @@ export function AiAssistSettings() {
             choices={BRIEF_MODELS}
             onChange={(id) => setBriefModel(id as BriefModelId)}
           />
+          <SettingsCard>
+            <span style={{ 'font-size': '13px', color: theme.fg }}>Show in the task header</span>
+            <span style={{ 'font-size': '12px', color: theme.fgMuted }}>
+              Clicking the header line opens every field. A question takes the top line while the
+              agent waits on you.
+            </span>
+            <div style={{ display: 'flex', gap: '16px', 'flex-wrap': 'wrap' }}>
+              <For each={BRIEF_BAR_FIELD_CHOICES}>
+                {(choice) => (
+                  <label
+                    style={{
+                      display: 'flex',
+                      'align-items': 'center',
+                      gap: '6px',
+                      'font-size': '13px',
+                      color: theme.fg,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={store.briefBarFields[choice.field]}
+                      onChange={(e) => setBriefBarField(choice.field, e.currentTarget.checked)}
+                      style={{ 'accent-color': theme.accent, cursor: 'inherit' }}
+                    />
+                    {choice.label}
+                  </label>
+                )}
+              </For>
+            </div>
+          </SettingsCard>
         </Show>
       </SettingsSection>
       <SettingsSection title="Review">

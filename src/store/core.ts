@@ -1,6 +1,7 @@
 import { createStore } from 'solid-js/store';
 import { DEFAULT_TERMINAL_FONT } from '../lib/fonts';
 import { getLocalDateKey } from '../lib/date';
+import { DEFAULT_BRIEF_BAR_FIELDS } from '../lib/task-brief';
 import { defaultPresetForTone } from '../lib/look';
 import {
   DEFAULT_BRIEF_MODEL,
@@ -76,6 +77,7 @@ export const [store, setStore] = createStore<AppStore>({
   modelTaskNames: false,
   taskNameModel: DEFAULT_TASK_NAME_MODEL,
   taskBriefs: false,
+  briefBarFields: { ...DEFAULT_BRIEF_BAR_FIELDS },
   briefModel: DEFAULT_BRIEF_MODEL,
   reviewGuidance: '',
   showSidebarTips: true,

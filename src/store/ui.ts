@@ -10,6 +10,7 @@ import { osIsDark } from '../lib/os-appearance';
 import type { CustomTheme } from '../lib/custom-theme';
 import { themeToCss } from '../lib/custom-theme';
 import type { ReviewModelSettings } from '../lib/task-review';
+import type { BriefBarFields } from '../lib/task-brief';
 import type { PersistedWindowState, TaskViewportVisibility } from './types';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
@@ -183,6 +184,10 @@ export function setTaskNameModel(model: TaskNameModelId): void {
 
 export function setTaskBriefs(enabled: boolean): void {
   setStore('taskBriefs', enabled);
+}
+
+export function setBriefBarField(field: keyof BriefBarFields, shown: boolean): void {
+  setStore('briefBarFields', field, shown);
 }
 
 export function setBriefModel(model: BriefModelId): void {

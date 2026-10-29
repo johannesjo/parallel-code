@@ -1744,6 +1744,17 @@ describe('task brief settings', () => {
     await loadState();
     expect(store.taskBriefs).toBe(false);
   });
+
+  it('restores the header fields, keeping the default for any missing or malformed one', async () => {
+    mockInvoke.mockResolvedValueOnce(basePayload());
+    await loadState();
+    expect(store.briefBarFields).toEqual({ goal: true, now: false, needsYou: true });
+    mockInvoke.mockResolvedValueOnce(
+      basePayload({ briefBarFields: { goal: false, now: true, needsYou: 'no' } }),
+    );
+    await loadState();
+    expect(store.briefBarFields).toEqual({ goal: false, now: true, needsYou: true });
+  });
 });
 
 describe('finish review setting', () => {

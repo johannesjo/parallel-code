@@ -27,6 +27,27 @@ export interface TaskBriefRecord {
   messageFingerprint?: string;
 }
 
+/** Which brief fields the task header shows; the popup card always shows all of them. */
+export interface BriefBarFields {
+  goal: boolean;
+  now: boolean;
+  needsYou: boolean;
+}
+
+// The title is often written from the first brief, but the goal still says more
+// than a few words can; the current step mostly repeats the chat.
+export const DEFAULT_BRIEF_BAR_FIELDS: BriefBarFields = { goal: true, now: false, needsYou: true };
+
+/** Restores the persisted choice; a missing or malformed field keeps its default. */
+export function restoreBriefBarFields(value: unknown): BriefBarFields {
+  const raw = isRecord(value) ? value : {};
+  const pick = (key: keyof BriefBarFields) => {
+    const field = raw[key];
+    return typeof field === 'boolean' ? field : DEFAULT_BRIEF_BAR_FIELDS[key];
+  };
+  return { goal: pick('goal'), now: pick('now'), needsYou: pick('needsYou') };
+}
+
 export const BRIEF_LIMITS = {
   line: 200,
   diffChars: 20_000,

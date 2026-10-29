@@ -999,6 +999,7 @@ export function TaskPanel(props: TaskPanelProps) {
           <div style={{ flex: '0 0 auto' }}>
             <TaskBriefBar
               task={props.task}
+              fields={store.briefBarFields}
               onWalkThrough={openOrGenerateTour}
               walkThroughDisabled={changedFileCount() === 0}
               questionInPrompt={promptBoxShown()}

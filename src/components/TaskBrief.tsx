@@ -1,9 +1,10 @@
-import { Show, createSignal, onCleanup, type JSX } from 'solid-js';
+import { For, Show, createSignal, onCleanup, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { createAnchorEffect, placeBelow } from '../lib/floating';
 import { formatRelativeAge } from '../lib/relativeAge';
+import type { BriefBarFields } from '../lib/task-brief';
 import { refreshTaskBrief } from '../store/task-brief';
 import { isTaskWorking } from '../store/taskStatus';
 import type { Task } from '../store/types';
@@ -30,6 +31,30 @@ const cardButton: JSX.CSSProperties = {
   cursor: 'pointer',
 };
 
+function barLabel(urgent = false): JSX.CSSProperties {
+  return {
+    ...sectionLabel,
+    color: urgent ? theme.warning : theme.fgMuted,
+    'padding-top': '0',
+    'flex-shrink': '0',
+    opacity: urgent ? '1' : '0.6',
+  };
+}
+
+/** Up to `lines` lines, so a 15-word brief fits even in narrow columns. */
+function clampedText(lines: number): JSX.CSSProperties {
+  return {
+    flex: '1',
+    'min-width': '0',
+    overflow: 'hidden',
+    'white-space': 'normal',
+    'overflow-wrap': 'anywhere',
+    display: '-webkit-box',
+    '-webkit-line-clamp': String(lines),
+    '-webkit-box-orient': 'vertical',
+  };
+}
+
 /**
  * The brief's question for the user, or '' once the agent is working again:
  * briefs are only rewritten after a turn, so the last one still asks a
@@ -42,16 +67,23 @@ export function needsYouNow(task: Task): string {
 
 interface TaskBriefBarProps {
   task: Task;
+  /** The fields the user chose to show in the header. */
+  fields: BriefBarFields;
   onWalkThrough?: () => void;
   walkThroughDisabled?: boolean;
-  /** The prompt box shows the brief's question, so the bar keeps to the goal. */
+  /** The prompt box shows the brief's question, so the bar keeps to the other fields. */
   questionInPrompt?: boolean;
 }
 
+interface BriefLine {
+  label: string;
+  text: string;
+  urgent?: boolean;
+}
+
 /**
- * The task brief under the task title: up to three lines of the goal, or of
- * what the agent needs from the user, that open the goal and current step in
- * a card below it.
+ * The task brief under the task title: a labelled line for each field the user
+ * chose, that opens every field in a card below it.
  */
 export function TaskBriefBar(props: TaskBriefBarProps) {
   let anchor: HTMLButtonElement | undefined;
@@ -105,20 +137,25 @@ export function TaskBriefBar(props: TaskBriefBarProps) {
     document.removeEventListener('keydown', onKeyDown, true);
   });
   // Routine briefs stay quiet; an agent waiting on the user needs a look now.
-  const question = () => (props.questionInPrompt ? '' : needsYouNow(props.task));
+  const question = () =>
+    props.fields.needsYou && !props.questionInPrompt ? needsYouNow(props.task) : '';
   const urgent = () => question() !== '';
 
-  // Only a question earns the header: the title carries the goal, and the chat
-  // below shows the latest step. The card still holds every field.
-  const headline = () => {
-    if (props.task.brief) return question();
-    if (props.task.briefStatus?.state === 'generating') return 'Writing the brief…';
-    return 'The brief appears after the agent finishes a turn';
+  const lines = (): BriefLine[] => {
+    const brief = props.task.brief?.brief;
+    if (!brief) return [];
+    const routine: BriefLine[] = [];
+    if (props.fields.goal && brief.goal) routine.push({ label: 'Goal', text: brief.goal });
+    if (props.fields.now && brief.now) routine.push({ label: 'Now', text: brief.now });
+    // The question takes the top line rather than adding one, so the header
+    // keeps its height when the agent starts waiting.
+    if (!urgent()) return routine;
+    return [{ label: 'Needs you', text: question(), urgent: true }, ...routine.slice(1)];
   };
-  const headlineLabel = () => {
-    if (!props.task.brief) return '';
-    return urgent() ? 'Needs you' : 'Brief';
-  };
+  const placeholder = () =>
+    props.task.briefStatus?.state === 'generating'
+      ? 'Writing the brief…'
+      : 'The brief appears after the agent finishes a turn';
   const statusNote = () => {
     const status = props.task.briefStatus;
     if (status?.state === 'generating' && props.task.brief) return 'updating';
@@ -155,11 +192,8 @@ export function TaskBriefBar(props: TaskBriefBarProps) {
           'min-width': '0',
           padding: '5px 12px 5px 16px',
           border: 'none',
-          // Full-strength text for a question: it is read at a glance, so it must
-          // not be faint. Otherwise the line is only the way into the brief, so it recedes.
-          color: urgent() ? theme.fg : theme.fgSubtle,
-          'font-size': urgent() ? sf(13) : sf(11),
-          opacity: urgent() ? '1' : '0.6',
+          color: theme.fgSubtle,
+          'font-size': sf(11),
           'line-height': '1.4',
           'font-family': 'inherit',
           'text-align': 'left',
@@ -168,36 +202,52 @@ export function TaskBriefBar(props: TaskBriefBarProps) {
           'white-space': 'nowrap',
         }}
       >
-        {/* Names the line, so it reads as Needs you or as the way into the brief. */}
-        <Show when={headlineLabel()}>
-          <span
-            style={{
-              ...sectionLabel,
-              color: urgent() ? theme.warning : theme.fgMuted,
-              'padding-top': '0',
-              'flex-shrink': '0',
-            }}
-          >
-            {headlineLabel()}
-          </span>
-        </Show>
-        {/* Up to three lines, so a 15-word brief fits even in narrow columns. */}
-        <span
-          style={{
-            flex: '1',
-            'min-width': '0',
-            overflow: 'hidden',
-            'white-space': 'normal',
-            'overflow-wrap': 'anywhere',
-            display: '-webkit-box',
-            '-webkit-line-clamp': '3',
-            '-webkit-box-orient': 'vertical',
-          }}
+        <Show
+          when={props.task.brief}
+          fallback={<span style={{ ...clampedText(3), opacity: '0.6' }}>{placeholder()}</span>}
         >
-          {headline()}
-        </span>
+          {/* With every field off, a quiet label still opens the card. */}
+          <Show
+            when={lines().length > 0}
+            fallback={<span style={{ ...barLabel(), flex: '1' }}>Brief</span>}
+          >
+            <div
+              style={{
+                flex: '1',
+                'min-width': '0',
+                display: 'grid',
+                'grid-template-columns': 'auto minmax(0, 1fr)',
+                gap: '2px 8px',
+                'align-items': 'baseline',
+              }}
+            >
+              <For each={lines()}>
+                {(line) => (
+                  <>
+                    {/* Labelled, so each line reads as Goal, Now or Needs you at a glance. */}
+                    <span style={barLabel(line.urgent)}>{line.label}</span>
+                    {/* Full-strength text for a question: it is read at a glance, so it
+                        must not be faint. A routine line recedes. */}
+                    <span
+                      style={{
+                        ...clampedText(lines().length > 1 ? 2 : 3),
+                        color: line.urgent ? theme.fg : theme.fgSubtle,
+                        'font-size': line.urgent ? sf(13) : sf(11),
+                        opacity: line.urgent ? '1' : '0.6',
+                      }}
+                    >
+                      {line.text}
+                    </span>
+                  </>
+                )}
+              </For>
+            </div>
+          </Show>
+        </Show>
         <Show when={statusNote()}>
-          <span style={{ 'flex-shrink': '0', color: theme.fgSubtle }}>{statusNote()}</span>
+          <span style={{ 'flex-shrink': '0', color: theme.fgSubtle, opacity: '0.6' }}>
+            {statusNote()}
+          </span>
         </Show>
         <span
           class="task-brief-chevron"

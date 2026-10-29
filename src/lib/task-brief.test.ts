@@ -5,6 +5,7 @@ import {
   diffFingerprint,
   parseTaskBriefResponse,
   prepareDiffForBrief,
+  restoreBriefBarFields,
   restoreTaskBriefRecord,
 } from './task-brief';
 
@@ -204,5 +205,20 @@ describe('restoreTaskBriefRecord', () => {
     expect(restoreTaskBriefRecord(undefined)).toBeUndefined();
     expect(restoreTaskBriefRecord({ brief: { goal: '', now: '' } })).toBeUndefined();
     expect(restoreTaskBriefRecord({ brief: { headline: 'only a headline' } })).toBeUndefined();
+  });
+});
+
+describe('restoreBriefBarFields', () => {
+  it('shows the goal and any question by default', () => {
+    expect(restoreBriefBarFields(undefined)).toEqual({ goal: true, now: false, needsYou: true });
+    expect(restoreBriefBarFields(['goal'])).toEqual({ goal: true, now: false, needsYou: true });
+  });
+
+  it('keeps each saved choice and defaults the malformed ones', () => {
+    expect(restoreBriefBarFields({ goal: false, now: true, needsYou: 1 })).toEqual({
+      goal: false,
+      now: true,
+      needsYou: true,
+    });
   });
 });

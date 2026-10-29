@@ -26,7 +26,7 @@ import type {
 import type { ChatPermissionMode, ChatSession } from '../../electron/shared/agent-chat-types';
 import type { AskCodeProvider } from '../../electron/shared/ask-code-models';
 import type { BriefModelId, TaskNameModelId } from '../../electron/shared/task-name-model';
-import type { TaskBriefRecord } from '../lib/task-brief';
+import type { BriefBarFields, TaskBriefRecord } from '../lib/task-brief';
 import type { TaskConfidence } from '../lib/task-confidence';
 import type { ReviewDismissal } from '../lib/review-summary';
 import type { ReviewModelSettings } from '../lib/task-review';
@@ -565,6 +565,7 @@ export interface PersistedState {
   modelTaskNames?: boolean;
   taskNameModel?: TaskNameModelId;
   taskBriefs?: boolean;
+  briefBarFields?: BriefBarFields;
   briefModel?: BriefModelId;
   reviewGuidance?: string;
   showSidebarTips?: boolean;
@@ -718,6 +719,7 @@ export interface AppStore {
   taskNameModel: TaskNameModelId;
   /** Opt-in: write a task brief after each agent turn. */
   taskBriefs: boolean;
+  briefBarFields: BriefBarFields;
   briefModel: BriefModelId;
   /** The user's own notes for the task reviewer, added to its instructions. */
   reviewGuidance: string;

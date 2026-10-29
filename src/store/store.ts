@@ -169,6 +169,7 @@ export {
   setModelTaskNames,
   setTaskNameModel,
   setTaskBriefs,
+  setBriefBarField,
   setBriefModel,
   setReviewGuidance,
   setShowSidebarTips,

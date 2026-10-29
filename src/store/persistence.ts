@@ -1,6 +1,6 @@
 import { parseCompletionRecord } from '../../electron/shared/completion-report';
 import { persistedCheckSuite, restoredCheckSuite } from '../lib/check-suite-storage';
-import { restoreTaskBriefRecord } from '../lib/task-brief';
+import { restoreBriefBarFields, restoreTaskBriefRecord } from '../lib/task-brief';
 import { restoreReviewChecks } from '../lib/review-checks';
 import { restoreTaskConfidence } from '../lib/task-confidence';
 import { restoreReviewDismissed } from '../lib/review-summary';
@@ -483,6 +483,7 @@ export async function saveState(): Promise<void> {
     modelTaskNames: store.modelTaskNames,
     taskNameModel: store.taskNameModel,
     taskBriefs: store.taskBriefs || undefined,
+    briefBarFields: { ...store.briefBarFields },
     briefModel: store.briefModel,
     reviewGuidance: store.reviewGuidance.trim() || undefined,
     showSidebarTips: store.showSidebarTips,
@@ -701,6 +702,7 @@ interface LegacyPersistedState {
   modelTaskNames?: unknown;
   taskNameModel?: unknown;
   taskBriefs?: unknown;
+  briefBarFields?: unknown;
   briefModel?: unknown;
   reviewGuidance?: unknown;
   showSidebarTips?: unknown;
@@ -980,6 +982,7 @@ export async function loadState(): Promise<void> {
         ? raw.taskNameModel
         : DEFAULT_TASK_NAME_MODEL;
       s.taskBriefs = raw.taskBriefs === true;
+      s.briefBarFields = restoreBriefBarFields(raw.briefBarFields);
       // Briefs used to follow the naming model, with Claude upgraded to Sonnet.
       s.briefModel = isBriefModelId(raw.briefModel)
         ? raw.briefModel
