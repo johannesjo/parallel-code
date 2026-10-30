@@ -1,6 +1,6 @@
 # Parallel Code
 
-Electron desktop app for running coding agents in isolated Git worktrees. Desktop releases target **macOS and Linux only**. The phone UI is a separate web frontend.
+Electron desktop app for running coding agents in isolated Git worktrees. Desktop releases target **macOS, Linux and Windows**. The phone UI is a separate web frontend.
 
 - **Frontend:** SolidJS, strict TypeScript, Vite.
 - **Backend:** Node.js, Electron, node-pty.

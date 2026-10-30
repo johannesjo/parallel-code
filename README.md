@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Electron-47848F?logo=electron&logoColor=white" alt="Electron">
   <img src="https://img.shields.io/badge/SolidJS-2C4F7C?logo=solid&logoColor=white" alt="SolidJS">
   <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
-  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-lightgrey" alt="macOS | Linux">
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="macOS | Linux | Windows">
   <img src="https://img.shields.io/github/license/johannesjo/parallel-code" alt="License">
 </p>
 
@@ -70,13 +70,13 @@ That is the core loop. Everything else is optional and stays out of the way unti
 
 ### Where it fits
 
-| If you use…                                           | Parallel Code adds                                                                                                                                               |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Several terminals or tmux**                         | Worktrees, branches and merges handled for you, and one board that shows which agent is waiting for you                                                          |
-| **One vendor's desktop app** (Claude, Codex, Copilot) | Agents from different vendors on the same board, the same review flow for all of them, and an arena to compare them on one task                                  |
-| **Another parallel-agent app**                        | Free and MIT licensed with no paid tier, macOS and Linux, a review loop you can send back to the agent, and phone access that connects straight to your computer |
+| If you use…                                           | Parallel Code adds                                                                                                                                                        |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Several terminals or tmux**                         | Worktrees, branches and merges handled for you, and one board that shows which agent is waiting for you                                                                   |
+| **One vendor's desktop app** (Claude, Codex, Copilot) | Agents from different vendors on the same board, the same review flow for all of them, and an arena to compare them on one task                                           |
+| **Another parallel-agent app**                        | Free and MIT licensed with no paid tier, macOS, Linux and Windows, a review loop you can send back to the agent, and phone access that connects straight to your computer |
 
-**When something else fits better:** Parallel Code runs agents on your computer, so it is not for agents that keep working in the cloud while your laptop is off. There is no Windows build.
+**When something else fits better:** Parallel Code runs agents on your computer, so it is not for agents that keep working in the cloud while your laptop is off.
 
 ## Demo
 
@@ -95,6 +95,7 @@ That is the core loop. Everything else is optional and stays out of the way unti
 1. **Download** the latest release from the [releases page](https://github.com/johannesjo/parallel-code/releases/latest):
    - **macOS** — `.dmg` (universal, signed and notarized)
    - **Linux** — `.AppImage` or `.deb`
+   - **Windows** — `Setup.exe` installer (unsigned, so SmartScreen warns on first launch)
 2. **Install at least one agent CLI** — Claude Code, Codex CLI, OpenCode, Copilot CLI or Antigravity CLI. The welcome screen shows which ones it found.
 3. **Open Parallel Code**, choose a folder with your code (a git repository works best), and start a task.
 
