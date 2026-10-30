@@ -95,7 +95,6 @@ That is the core loop. Everything else is optional and stays out of the way unti
 1. **Download** the latest release from the [releases page](https://github.com/johannesjo/parallel-code/releases/latest):
    - **macOS** — `.dmg` (universal, signed and notarized)
    - **Linux** — `.AppImage` or `.deb`
-   - **Windows** — `Setup.exe` installer (unsigned, so SmartScreen warns on first launch)
 2. **Install at least one agent CLI** — Claude Code, Codex CLI, OpenCode, Copilot CLI or Antigravity CLI. The welcome screen shows which ones it found.
 3. **Open Parallel Code**, choose a folder with your code (a git repository works best), and start a task.
 
@@ -109,7 +108,7 @@ npm install
 npm run dev
 ```
 
-Requires [Node.js](https://nodejs.org/) 22.12 or later.
+Requires [Node.js](https://nodejs.org/) 22.12 or later. On Windows, the npm scripts use POSIX shell syntax, so run them through Git Bash: `npm config set script-shell "C:\Program Files\Git\bin\bash.exe" --location project`.
 
 Phone access uses port `8777` in development (`npm run dev`) and `7777` in the installed app, so both can run together. Run `npm run build:remote` after changing the mobile UI, then use **Connect Phone** in the development app to get its connection link or QR code.
 
