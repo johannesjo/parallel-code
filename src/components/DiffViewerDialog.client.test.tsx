@@ -389,7 +389,12 @@ it.each(['old', 'new'] as const)(
   'scrolls to and highlights the cited %s-side line',
   async (side) => {
     // happy-dom rejects color-mix backgrounds; inspect the applied declaration.
-    const setProperty = vi.spyOn(CSSStyleDeclaration.prototype, 'setProperty');
+    // Element styles don't use the global CSSStyleDeclaration prototype, so spy
+    // on the one they do.
+    const styleProto = Object.getPrototypeOf(
+      document.createElement('div').style,
+    ) as CSSStyleDeclaration;
+    const setProperty = vi.spyOn(styleProto, 'setProperty');
     const raw =
       'diff --git a/first.ts b/first.ts\n' +
       (side === 'old'
@@ -413,22 +418,19 @@ it.each(['old', 'new'] as const)(
     host.querySelector('button')?.click();
     await vi.waitFor(() => expect(host.querySelectorAll('[data-line-type]')).toHaveLength(2));
     const rows = host.querySelectorAll<HTMLElement>('[data-line-type]');
-    expect(
-      setProperty.mock.calls.some(
-        (args, index) =>
-          setProperty.mock.contexts[index] === rows[1].style &&
-          args[0] === 'background' &&
-          args[1]?.includes('var(--search-match-active)'),
-      ),
-    ).toBe(true);
-    expect(
-      setProperty.mock.calls.some(
-        (args, index) =>
-          setProperty.mock.contexts[index] === rows[0].style &&
-          args[0] === 'background' &&
-          args[1]?.includes('var(--search-match-active)'),
-      ),
-    ).toBe(false);
+    const highlighted = setProperty.mock.contexts.filter(
+      (_, index) =>
+        setProperty.mock.calls[index][0] === 'background' &&
+        setProperty.mock.calls[index][1]?.includes('var(--search-match-active)'),
+    );
+    // `style` is a proxy that runs its methods on an inner declaration, so a
+    // probe write reveals which declaration belongs to each row.
+    const styleOf = (row: HTMLElement) => {
+      row.style.setProperty('--style-probe', '1');
+      return setProperty.mock.contexts.at(-1);
+    };
+    expect(highlighted).toContain(styleOf(rows[1]));
+    expect(highlighted).not.toContain(styleOf(rows[0]));
     await vi.waitFor(() =>
       expect(host.querySelector('[data-testid="diff-target"]')?.firstElementChild?.scrollTop).toBe(
         320,

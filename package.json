@@ -80,7 +80,7 @@
     "parse5": "^7.3.0",
     "qrcode": "^1.5.4",
     "shiki": "^4.0.2",
-    "solid-js": "^1.9.16",
+    "solid-js": "^1.9.18",
     "web-push": "^3.6.7",
     "ws": "^8.21.0"
   },
@@ -104,7 +104,7 @@
     "eslint": "^9.39.3",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-solid": "^0.14.5",
-    "happy-dom": "^20.11.1",
+    "happy-dom": "^21.0.4",
     "husky": "^9.1.7",
     "knip": "^6.12.2",
     "lint-staged": "^16.2.7",
