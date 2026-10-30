@@ -4,6 +4,7 @@ import { store } from '../store/core';
 import { closeBoardSidePanel } from '../store/project-pages';
 import { deletePanelUserSize, getPanelUserSize, setPanelUserSize } from '../store/ui';
 import { focusBoardCard } from './task-board-keys';
+import { ChevronRightSmallIcon } from './icons';
 
 const WIDTH_KEY = 'board:side-panel';
 const MIN_WIDTH = 360;
@@ -52,22 +53,10 @@ export function BoardSidePanelClose() {
         onClick={() => closeSidePanel()}
       >
         {/* Points the way the panel leaves: towards its own edge of the window. */}
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
+        <ChevronRightSmallIcon
+          size={10}
           style={{ transform: store.boardSidePanelLeft ? 'scaleX(-1)' : undefined }}
-        >
-          <path
-            d="M6 3l5 5-5 5"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
+        />
       </button>
     </Show>
   );
