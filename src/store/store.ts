@@ -181,6 +181,7 @@ export {
   setDesktopNotificationsEnabled,
   setVerboseLogging,
   setCoordinatorNotificationDelayMs,
+  setMaxIndependentTasksPerCreator,
   setInactiveColumnOpacity,
   setEditorCommand,
   setDockerImage,

@@ -1206,6 +1206,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       const state = JSON.parse(json) as {
         tasks?: Record<string, { id: string; name: string }>;
         coordinatorNotificationDelayMs?: unknown;
+        maxIndependentTasksPerCreator?: unknown;
       };
       if (state.tasks) {
         for (const t of Object.values(state.tasks)) {
@@ -1216,6 +1217,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
       if (typeof delay === 'number' && Number.isFinite(delay)) {
         mcp.coordinator()?.setNotificationDelayMs(delay);
       }
+      const independentLimit = state.maxIndependentTasksPerCreator;
+      delegation.setMaxIndependentPerCreator(
+        typeof independentLimit === 'number' ? independentLimit : Number.NaN,
+      );
     } catch (e) {
       console.warn('Ignoring malformed saved state:', e);
     }

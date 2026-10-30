@@ -27,7 +27,11 @@ import { startRemoteAccess } from './remote';
 import { effectiveAgentId } from './agent-select';
 import { randomPastelColor, sortProjects } from './projects';
 import { markAgentSpawned } from './taskStatus';
-import { clampCoordinatorConcurrentTasks } from '../lib/coordinator-limits';
+import {
+  clampCoordinatorConcurrentTasks,
+  clampIndependentTasksPerCreator,
+  DEFAULT_INDEPENDENT_TASKS_PER_CREATOR,
+} from '../lib/coordinator-limits';
 import { MAX_PROMPT_HISTORY } from '../lib/prompt-history';
 import { isFeatureHintId } from '../lib/feature-hints';
 import { isShellLayoutMode } from '../lib/shellLayout';
@@ -519,6 +523,10 @@ export async function saveState(): Promise<void> {
       store.coordinatorNotificationDelayMs !== 60_000
         ? store.coordinatorNotificationDelayMs
         : undefined,
+    maxIndependentTasksPerCreator:
+      store.maxIndependentTasksPerCreator !== DEFAULT_INDEPENDENT_TASKS_PER_CREATOR
+        ? store.maxIndependentTasksPerCreator
+        : undefined,
     shareDockerAgentAuth: store.shareDockerAgentAuth || undefined,
     activeCustomThemeId: store.activeCustomThemeId ?? undefined,
     appearanceMode: store.appearanceMode !== 'dark' ? store.appearanceMode : undefined,
@@ -730,6 +738,7 @@ interface LegacyPersistedState {
   boardSidePanelLeft?: unknown;
   verboseLogging?: unknown;
   coordinatorNotificationDelayMs?: unknown;
+  maxIndependentTasksPerCreator?: unknown;
   shareDockerAgentAuth?: unknown;
   customThemes?: unknown;
   activeCustomThemeId?: unknown;
@@ -1029,6 +1038,11 @@ export async function loadState(): Promise<void> {
         rawDelay <= 300_000
           ? Math.round(rawDelay)
           : 60_000;
+
+      const rawIndependentLimit = raw.maxIndependentTasksPerCreator;
+      s.maxIndependentTasksPerCreator = clampIndependentTasksPerCreator(
+        typeof rawIndependentLimit === 'number' ? rawIndependentLimit : Number.NaN,
+      );
 
       s.shareDockerAgentAuth = raw.shareDockerAgentAuth === true;
 

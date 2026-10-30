@@ -601,6 +601,7 @@ export interface PersistedState {
   documentWorkspacesEnabled?: boolean;
   documentFullWidth?: boolean;
   coordinatorNotificationDelayMs?: number;
+  maxIndependentTasksPerCreator?: number;
   coordinatorControlHintDismissed?: boolean;
   preferUiMode?: boolean;
   disableClaudeUiMode?: boolean;
@@ -811,6 +812,8 @@ export interface AppStore {
   /** Project whose document workspace is open in the task area. */
   activeDocumentProjectId: string | null;
   coordinatorNotificationDelayMs: number;
+  /** How many independent tasks one task may keep open at once. */
+  maxIndependentTasksPerCreator: number;
   coordinatorControlHintDismissed: boolean;
   preferUiMode: boolean;
   /** Keep Claude Code out of the chat view; its tasks run in the terminal only. */

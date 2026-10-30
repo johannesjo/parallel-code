@@ -11,3 +11,17 @@ export function clampCoordinatorConcurrentTasks(value: number): number {
     Math.max(MIN_COORDINATOR_CONCURRENT_TASKS, Math.trunc(value)),
   );
 }
+
+// Independent tasks have no supervising parent; this caps how many one task may keep
+// open, so a looping agent cannot start worktrees without end.
+export const MIN_INDEPENDENT_TASKS_PER_CREATOR = 1;
+export const MAX_INDEPENDENT_TASKS_PER_CREATOR = 100;
+export const DEFAULT_INDEPENDENT_TASKS_PER_CREATOR = 12;
+
+export function clampIndependentTasksPerCreator(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_INDEPENDENT_TASKS_PER_CREATOR;
+  return Math.min(
+    MAX_INDEPENDENT_TASKS_PER_CREATOR,
+    Math.max(MIN_INDEPENDENT_TASKS_PER_CREATOR, Math.trunc(value)),
+  );
+}

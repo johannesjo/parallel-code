@@ -15,6 +15,8 @@ import {
 import { canConfigureCanvasMcp } from './canvas-config.js';
 import { validateBranchName } from './validation.js';
 import {
+  clampIndependentTasksPerCreator,
+  DEFAULT_INDEPENDENT_TASKS_PER_CREATOR,
   MAX_COORDINATOR_CONCURRENT_TASKS,
   MIN_COORDINATOR_CONCURRENT_TASKS,
 } from '../shared/coordinator-limits.js';
@@ -55,10 +57,6 @@ const MAX_WAITING_PER_SENDER = 500;
 const MAX_REQUESTS_PER_SENDER = 2000;
 const MAX_TOTAL_MESSAGES = 2000;
 const MAX_TOTAL_REQUESTS = 20000;
-// Independent tasks are neither supervised nor counted against the child limit, so a
-// looping agent could otherwise start worktrees without end.
-// shortcut: fixed cap on open tasks per creator — make it a setting if creators need more
-const MAX_INDEPENDENT_PER_CREATOR = 10;
 const ID = /^[a-zA-Z0-9_-]{1,128}$/;
 // Shown on a queued message, so a delivery that cannot happen yet says why.
 const WAITING_FOR_PROMPT: Record<AgentPromptReadinessReason, string | undefined> = {
@@ -170,6 +168,9 @@ export class DelegationService {
    * that still counts against its creator's cap; a close or failed launch frees the slot.
    */
   private readonly openIndependent = new Map<string, string | undefined>();
+  // Independent tasks are neither supervised nor counted against the child limit, so a
+  // looping agent could otherwise start worktrees without end. Set in Settings > Agents.
+  private maxIndependentPerCreator = DEFAULT_INDEPENDENT_TASKS_PER_CREATOR;
   /** launchId → recheck, live while the renderer builds an independent task's worktree. */
   private readonly independentLaunches = new Map<string, () => void>();
   private readonly attempts = new Map<string, DelegationAttempt>();
@@ -200,6 +201,11 @@ export class DelegationService {
     },
   ) {
     this.orchestrationEnabled = options.orchestrationEnabled ?? true;
+  }
+
+  /** Applies the saved per-creator cap; tasks already open past a lowered cap stay open. */
+  setMaxIndependentPerCreator(limit: number): void {
+    this.maxIndependentPerCreator = clampIndependentTasksPerCreator(limit);
   }
 
   isOrchestrationEnabled(): boolean {
@@ -529,9 +535,9 @@ export class DelegationService {
     }
     const prefix = `${creatorTaskId}:`;
     const open = [...this.openIndependent.keys()].filter((k) => k.startsWith(prefix));
-    if (open.length >= MAX_INDEPENDENT_PER_CREATOR)
+    if (open.length >= this.maxIndependentPerCreator)
       throw new DelegationError(
-        `Independent task limit reached: this task may have ${MAX_INDEPENDENT_PER_CREATOR} open; close or merge some first`,
+        `Independent task limit reached: ${open.length} independent tasks created by this task are still open, and each task may keep ${this.maxIndependentPerCreator} open. Close or merge one of them in the sidebar, or raise the limit in Settings > Agents`,
       );
     // Building the worktree can take a while; a pause or disable meanwhile must still
     // stop the agent from starting, as the child path's launch guard does.

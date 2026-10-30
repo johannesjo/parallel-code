@@ -64,6 +64,7 @@ function structuralSnapshot(): string {
     boardView: store.boardView,
     boardSidePanelLeft: store.boardSidePanelLeft,
     coordinatorNotificationDelayMs: store.coordinatorNotificationDelayMs,
+    maxIndependentTasksPerCreator: store.maxIndependentTasksPerCreator,
     mcpOrchestrationEnabled: store.mcpOrchestrationEnabled,
     documentWorkspacesEnabled: store.documentWorkspacesEnabled,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed,

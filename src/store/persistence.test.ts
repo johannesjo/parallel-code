@@ -1,6 +1,10 @@
 import { getLocalDateKey } from '../lib/date';
 import { reconcile } from 'solid-js/store';
 import { createMindMap } from '../graph/model';
+import {
+  DEFAULT_INDEPENDENT_TASKS_PER_CREATOR,
+  MAX_INDEPENDENT_TASKS_PER_CREATOR,
+} from '../lib/coordinator-limits';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentDef } from '../ipc/types';
 import type { PersistedTask } from './types';
@@ -1686,6 +1690,34 @@ describe('new task defaults persistence', () => {
     mockInvoke.mockResolvedValueOnce(basePayload({ defaultSkipPermissions: value }));
     await loadState();
     expect(store.defaultSkipPermissions).toBe(false);
+  });
+
+  // --- maxIndependentTasksPerCreator ---
+
+  it('restores maxIndependentTasksPerCreator and clamps it into range', async () => {
+    mockInvoke.mockResolvedValueOnce(basePayload({ maxIndependentTasksPerCreator: 30 }));
+    await loadState();
+    expect(store.maxIndependentTasksPerCreator).toBe(30);
+    mockInvoke.mockResolvedValueOnce(basePayload({ maxIndependentTasksPerCreator: 1000 }));
+    await loadState();
+    expect(store.maxIndependentTasksPerCreator).toBe(MAX_INDEPENDENT_TASKS_PER_CREATOR);
+    mockInvoke.mockResolvedValueOnce(basePayload({ maxIndependentTasksPerCreator: 'many' }));
+    await loadState();
+    expect(store.maxIndependentTasksPerCreator).toBe(DEFAULT_INDEPENDENT_TASKS_PER_CREATOR);
+  });
+
+  it('persists maxIndependentTasksPerCreator only when changed from the default', async () => {
+    setStore('maxIndependentTasksPerCreator', DEFAULT_INDEPENDENT_TASKS_PER_CREATOR);
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    expect(JSON.parse(mockInvoke.mock.calls[0][1].json).maxIndependentTasksPerCreator).toBe(
+      undefined,
+    );
+    mockInvoke.mockClear();
+    setStore('maxIndependentTasksPerCreator', 25);
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    expect(JSON.parse(mockInvoke.mock.calls[0][1].json).maxIndependentTasksPerCreator).toBe(25);
   });
 
   // --- defaultPropagateSkipPermissions ---

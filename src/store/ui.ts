@@ -14,6 +14,7 @@ import type { BriefBarFields } from '../lib/task-brief';
 import type { PersistedWindowState, TaskViewportVisibility } from './types';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
+import { clampIndependentTasksPerCreator } from '../lib/coordinator-limits';
 import { defaultAskCodeModel, type AskCodeProvider } from '../../electron/shared/ask-code-models';
 import type { BriefModelId, TaskNameModelId } from '../../electron/shared/task-name-model';
 
@@ -284,6 +285,10 @@ export function setDefaultPropagateSkipPermissions(enabled: boolean): void {
 export function setCoordinatorNotificationDelayMs(ms: number): void {
   const clamped = Math.max(5_000, Math.min(300_000, Math.round(ms)));
   setStore('coordinatorNotificationDelayMs', clamped);
+}
+
+export function setMaxIndependentTasksPerCreator(limit: number): void {
+  setStore('maxIndependentTasksPerCreator', clampIndependentTasksPerCreator(limit));
 }
 
 export function setInactiveColumnOpacity(opacity: number): void {

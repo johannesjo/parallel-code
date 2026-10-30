@@ -8,6 +8,7 @@ import {
   DEFAULT_TASK_NAME_MODEL,
 } from '../../electron/shared/task-name-model';
 import { DEFAULT_REVIEW_MODEL } from '../lib/task-review';
+import { DEFAULT_INDEPENDENT_TASKS_PER_CREATOR } from '../lib/coordinator-limits';
 import type { AppStore, UsageState } from './types';
 
 const EMPTY_USAGE: UsageState = {
@@ -130,6 +131,7 @@ export const [store, setStore] = createStore<AppStore>({
   documentFullWidth: false,
   activeDocumentProjectId: null,
   coordinatorNotificationDelayMs: 60_000,
+  maxIndependentTasksPerCreator: DEFAULT_INDEPENDENT_TASKS_PER_CREATOR,
   coordinatorControlHintDismissed: false,
   preferUiMode: false,
   disableClaudeUiMode: false,

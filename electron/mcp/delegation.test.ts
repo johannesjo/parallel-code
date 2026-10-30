@@ -11,6 +11,7 @@ import type {
   SessionCaller,
   TaskAuthorityInput,
 } from '../shared/delegation-types.js';
+import { DEFAULT_INDEPENDENT_TASKS_PER_CREATOR } from '../shared/coordinator-limits.js';
 
 const mocks = vi.hoisted(() => ({
   git: vi.fn(),
@@ -490,11 +491,32 @@ describe('delegation authority and creation', () => {
         name: 'Task',
         prompt: 'Do it',
       });
-    for (let i = 0; i < 10; i++) await create(`r${i}`);
+    for (let i = 0; i < DEFAULT_INDEPENDENT_TASKS_PER_CREATOR; i++) await create(`r${i}`);
     await expect(create('one-too-many')).rejects.toThrow('Independent task limit reached');
     // A replay of an earlier request still answers; it starts nothing new.
     await expect(create('r0')).resolves.toMatchObject({ relation: 'independent' });
-    expect(createIndependent).toHaveBeenCalledTimes(10);
+    expect(createIndependent).toHaveBeenCalledTimes(DEFAULT_INDEPENDENT_TASKS_PER_CREATOR);
+  });
+
+  it('applies the configured independent task cap to the next launch', async () => {
+    await register('parent');
+    const caller = session('parent');
+    const create = (requestId: string) =>
+      service.callTool(caller, 'create_task', {
+        requestId,
+        relation: 'independent',
+        name: 'Task',
+        prompt: 'Do it',
+      });
+    service.setMaxIndependentPerCreator(2);
+    await create('r0');
+    await create('r1');
+    await expect(create('r2')).rejects.toThrow('2 independent tasks created by this task');
+    service.setMaxIndependentPerCreator(3);
+    await expect(create('r2')).resolves.toMatchObject({ relation: 'independent' });
+    // Out-of-range values clamp instead of disabling the guard.
+    service.setMaxIndependentPerCreator(0);
+    await expect(create('r3')).rejects.toThrow('Independent task limit reached');
   });
 
   it('frees an independent slot when its task closes or its launch fails', async () => {
@@ -509,11 +531,11 @@ describe('delegation authority and creation', () => {
         name: 'Task',
         prompt: 'Do it',
       });
-    for (let i = 0; i < 10; i++) await create(`r${i}`);
+    for (let i = 0; i < DEFAULT_INDEPENDENT_TASKS_PER_CREATOR; i++) await create(`r${i}`);
     await expect(create('full')).rejects.toThrow('Independent task limit reached');
     await service.request({ action: 'unregister', taskId: 't3' });
     await expect(create('after-close')).resolves.toEqual({
-      taskId: 't10',
+      taskId: `t${DEFAULT_INDEPENDENT_TASKS_PER_CREATOR}`,
       relation: 'independent',
     });
     await expect(create('full-again')).rejects.toThrow('Independent task limit reached');
@@ -521,7 +543,9 @@ describe('delegation authority and creation', () => {
     await service.request({ action: 'unregister', taskId: 't4' });
     createIndependent.mockRejectedValueOnce(new Error('worktree failed'));
     await expect(create('fails')).rejects.toThrow('worktree failed');
-    await expect(create('after-failure')).resolves.toMatchObject({ taskId: 't11' });
+    await expect(create('after-failure')).resolves.toMatchObject({
+      taskId: `t${DEFAULT_INDEPENDENT_TASKS_PER_CREATOR + 1}`,
+    });
   });
 
   it('frees an independent slot when its task closes as a parent or during launch', async () => {
@@ -536,7 +560,7 @@ describe('delegation authority and creation', () => {
         name: 'Task',
         prompt: 'Do it',
       });
-    for (let i = 0; i < 10; i++) await create(`r${i}`);
+    for (let i = 0; i < DEFAULT_INDEPENDENT_TASKS_PER_CREATOR; i++) await create(`r${i}`);
     // A created task that delegated in turn closes through closeParent, not unregister.
     await register('t0');
     await service.closeParent('t0', false);
@@ -547,7 +571,9 @@ describe('delegation authority and creation', () => {
       return { taskId: 'early' };
     });
     await expect(create('early')).resolves.toMatchObject({ taskId: 'early' });
-    await expect(create('last')).resolves.toMatchObject({ taskId: 't10' });
+    await expect(create('last')).resolves.toMatchObject({
+      taskId: `t${DEFAULT_INDEPENDENT_TASKS_PER_CREATOR}`,
+    });
     await expect(create('full')).rejects.toThrow('Independent task limit reached');
   });
 

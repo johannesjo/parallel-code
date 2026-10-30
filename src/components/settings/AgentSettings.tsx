@@ -6,6 +6,7 @@ import {
   setShareDockerAgentAuth,
   setMcpOrchestrationEnabled,
   setCoordinatorNotificationDelayMs,
+  setMaxIndependentTasksPerCreator,
   setPreferUiMode,
   setDisableClaudeUiMode,
   setDefaultSkipPermissions,
@@ -13,7 +14,12 @@ import {
 } from '../../store/store';
 import { CustomAgentEditor } from '../CustomAgentEditor';
 import { AgentEnvFileEditor } from '../AgentEnvFileEditor';
-import { DEFAULT_COORDINATOR_CONCURRENT_TASKS } from '../../lib/coordinator-limits';
+import {
+  DEFAULT_COORDINATOR_CONCURRENT_TASKS,
+  DEFAULT_INDEPENDENT_TASKS_PER_CREATOR,
+  MAX_INDEPENDENT_TASKS_PER_CREATOR,
+  MIN_INDEPENDENT_TASKS_PER_CREATOR,
+} from '../../lib/coordinator-limits';
 import { DEFAULT_DOCKER_IMAGE, PROJECT_DOCKERFILE_RELATIVE_PATH } from '../../lib/docker';
 import {
   SettingsCard,
@@ -125,6 +131,42 @@ export function AgentSettings() {
           <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
             How long to wait before automatically sending an update after a child task completes.
             Default: 60s. Failed sub-tasks use max(10s, delay ÷ 4).
+          </span>
+        </SettingsCard>
+        <SettingsCard>
+          <label
+            style={{
+              display: 'flex',
+              'align-items': 'center',
+              gap: '10px',
+            }}
+          >
+            <span style={{ 'font-size': '14px', color: theme.fg, 'white-space': 'nowrap' }}>
+              Open independent tasks per task
+            </span>
+            <input
+              type="number"
+              min={MIN_INDEPENDENT_TASKS_PER_CREATOR}
+              max={MAX_INDEPENDENT_TASKS_PER_CREATOR}
+              step="1"
+              value={store.maxIndependentTasksPerCreator}
+              onInput={(e) => {
+                const limit = Number(e.currentTarget.value);
+                if (Number.isFinite(limit) && limit > 0) setMaxIndependentTasksPerCreator(limit);
+              }}
+              style={{
+                width: '80px',
+                ...settingsFieldStyle,
+                'font-size': '14px',
+                'font-family': "'JetBrains Mono', monospace",
+                'text-align': 'right',
+              }}
+            />
+          </label>
+          <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>
+            How many independent tasks one agent may keep open at once. Closing or merging one frees
+            a slot. Guards against an agent starting worktrees in a loop. Default:{' '}
+            {DEFAULT_INDEPENDENT_TASKS_PER_CREATOR}.
           </span>
         </SettingsCard>
       </SettingsSection>
