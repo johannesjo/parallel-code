@@ -9,5 +9,5 @@
   <text x="76" y="246" fill="#f5f6f7" font-family="DejaVu Sans, sans-serif" font-size="48" font-weight="bold">Your agents, within reach.</text>
   <text x="78" y="309" fill="#bcc3cf" font-family="DejaVu Sans, sans-serif" font-size="27">Follow progress. Review changes. Send replies.</text>
   <path d="M78 366 H946" stroke="#343943"/>
-  <text x="78" y="414" fill="#bcc3cf" font-family="DejaVu Sans, sans-serif" font-size="22">Android companion for Parallel Code on macOS, Linux and Windows</text>
+  <text x="78" y="414" fill="#bcc3cf" font-family="DejaVu Sans, sans-serif" font-size="22">Android companion for Parallel Code on macOS and Linux</text>
 </svg>
