@@ -400,35 +400,3 @@ function BriefRow(props: { label: string; text: string | undefined; color?: stri
     </Show>
   );
 }
-
-/**
- * One quiet line for the sidebar row: what the agent needs, else its current
- * step, which a row scanned without its chat cannot show otherwise.
- */
-export function TaskBriefLine(props: { task: Task }) {
-  const line = () => {
-    const brief = props.task.brief?.brief;
-    return needsYouNow(props.task) || brief?.now || brief?.goal;
-  };
-  return (
-    <Show when={line()}>
-      {(headline) => (
-        <div
-          class="task-brief-line"
-          title={headline()}
-          style={{
-            color: theme.fgSubtle,
-            'font-size': sf(11),
-            'line-height': '1.4',
-            overflow: 'hidden',
-            'text-overflow': 'ellipsis',
-            'white-space': 'nowrap',
-            'min-width': '0',
-          }}
-        >
-          {headline()}
-        </div>
-      )}
-    </Show>
-  );
-}
