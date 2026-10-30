@@ -161,7 +161,10 @@ const DEFAULT_SYMLINK_CANDIDATES = new Set(SYMLINK_CANDIDATES);
  * `.claude/` into new worktrees (per-worktree-local state).
  */
 // `steps.json` belonged to the retired Steps panel; old worktrees may still hold one.
-const CLAUDE_DIR_EXCLUDE = new Set(['plans', 'steps.json']);
+// `worktrees` holds Claude Code's nested worktree checkouts. Their `.git` gitlink
+// files survive the copy, so git commands in a seeded copy would write to the
+// original worktree's index.
+const CLAUDE_DIR_EXCLUDE = new Set(['plans', 'steps.json', 'worktrees']);
 
 /**
  * Files Claude Code's sandbox (bwrap) read-only-binds on startup. They must
