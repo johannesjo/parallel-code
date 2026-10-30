@@ -19,7 +19,11 @@ function runStep(name) {
   const started = Date.now();
   return new Promise((resolve) => {
     // --silent drops npm's script banners; the step name is printed instead.
-    const child = spawn('npm', ['run', '--silent', name], { stdio: ['ignore', 'pipe', 'pipe'] });
+    // Windows resolves `npm` to npm.cmd only through a shell; the arguments are fixed.
+    const child = spawn('npm', ['run', '--silent', name], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
+    });
     children.add(child);
     let output = '';
     child.stdout.on('data', (chunk) => (output += chunk));
