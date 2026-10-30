@@ -248,7 +248,9 @@ export function computeVisualReorder(
   if (insertBeforeId && taskVisualGroupKey(insertBeforeId) === group) {
     rawInsertAt = rawRemaining.indexOf(insertBeforeId);
   } else if (previousId && taskVisualGroupKey(previousId) === group) {
-    rawInsertAt = rawRemaining.indexOf(previousId) + 1;
+    // After the neighbour's whole block: an uncollapsed coordinator is appended,
+    // so its child can be stored before it.
+    rawInsertAt = Math.max(...reorderBlock(previousId).map((id) => rawRemaining.indexOf(id))) + 1;
   } else {
     return null;
   }

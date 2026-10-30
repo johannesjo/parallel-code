@@ -304,6 +304,22 @@ describe('visual reorder', () => {
     ]);
   });
 
+  it('drops after the whole last block when its child is stored before its coordinator', () => {
+    mockStore.projects = [{ id: 'one' }];
+    mockStore.tasks = {
+      coord: { projectId: 'one', coordinatorMode: true },
+      child: { projectId: 'one', coordinatedBy: 'coord' },
+      a: { projectId: 'one' },
+      b: { projectId: 'one' },
+    };
+    // An uncollapsed coordinator is appended, so it can follow its own child.
+    mockStore.taskOrder = ['child', 'a', 'b', 'coord'];
+
+    const next = computeVisualReorder(['a', 'b', 'coord', 'child'], 'a', 3);
+    mockStore.taskOrder = next ?? [];
+    expect(computeVisibleTaskOrder()).toEqual(['b', 'coord', 'child', 'a']);
+  });
+
   it('keeps terminals grouped after tasks when reordering', () => {
     mockStore.projects = [{ id: 'one' }];
     mockStore.tasks = { a: { projectId: 'one' } };
