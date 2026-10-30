@@ -7,6 +7,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { unlinkSync, readFileSync, existsSync } from 'fs';
 import { unlink as fsUnlink } from 'fs/promises';
+import { dirname } from 'path';
 import {
   buildSubTaskMcpConfig,
   getSubTaskMcpConfigPath,
@@ -1593,10 +1594,11 @@ export class Coordinator {
             ? {
                 dockerMode: true,
                 dockerImage: coordinatorState.dockerImage ?? undefined,
-                // Mount parent dir so the sub-task can reach the coordinator's
-                // .parallel-code/ dir (which holds the per-sub-task MCP config).
                 // resolveWorktreeGitDirMount adds the main .git dir mount.
                 dockerMountWorktreeParent: true,
+                // The coordinator's .parallel-code/ holds the MCP server and this
+                // sub-task's config; its worktree need not share the child's parent.
+                dockerReadOnlyMounts: this.getDockerMcpMounts(task.id),
               }
             : {}),
           onOutput: { __CHANNEL_ID__: channelId },
@@ -2919,6 +2921,18 @@ export class Coordinator {
 
   getTask(taskId: string): CoordinatedTask | undefined {
     return this.tasks.get(taskId);
+  }
+
+  /**
+   * Dirs a Docker sub-task container must mount to start the coordinator's MCP
+   * server: its copy of mcp-server.cjs and the per-sub-task config sit together
+   * in the coordinator's `.parallel-code/`, wherever that worktree lives.
+   */
+  getDockerMcpMounts(taskId: string): string[] | undefined {
+    const task = this.tasks.get(taskId);
+    const state = task && this.coordinators.get(task.coordinatorTaskId);
+    if (!state?.dockerContainerName || !state.mcpServerInfo) return undefined;
+    return [dirname(state.mcpServerInfo.serverPath)];
   }
 
   hydrateTask(opts: {

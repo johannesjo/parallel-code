@@ -345,6 +345,9 @@ export interface SpawnAgentArgs {
   shareDockerAgentAuth?: boolean;
   attachExisting?: boolean;
   dockerMountWorktreeParent?: boolean;
+  /** Host dirs mounted read-only at the same path. Main-process only: the
+   *  SpawnAgent handler derives them and never trusts a renderer value. */
+  dockerReadOnlyMounts?: string[];
   onOutput: { __CHANNEL_ID__: string };
 }
 
@@ -539,6 +542,7 @@ function buildPtySpawnSpec(
       ...(args.dockerMountWorktreeParent
         ? ['-v', `${path.dirname(cwd)}:${path.dirname(cwd)}`, ...resolveWorktreeGitDirMount(cwd)]
         : []),
+      ...(args.dockerReadOnlyMounts ?? []).flatMap((dir) => ['-v', `${dir}:${dir}:ro`]),
       '-v',
       `${cwd}:${cwd}`,
       '-w',

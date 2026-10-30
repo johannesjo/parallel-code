@@ -844,6 +844,22 @@ describe('spawnAgent docker mode', () => {
       );
     });
 
+    it('mounts dockerReadOnlyMounts read-only', async () => {
+      await spawnAgent(
+        createMockNotify(),
+        buildSpawnArgs({
+          cwd: '/repo/.worktrees/task/child',
+          dockerMountWorktreeParent: true,
+          dockerReadOnlyMounts: ['/repo/.worktrees/feat/coord/.parallel-code'],
+        }),
+      );
+
+      const volumeFlags = getFlagValues(getLastSpawnCall().args, '-v');
+      expect(volumeFlags).toContain(
+        '/repo/.worktrees/feat/coord/.parallel-code:/repo/.worktrees/feat/coord/.parallel-code:ro',
+      );
+    });
+
     it('does not mount parent directory when dockerMountWorktreeParent is false', async () => {
       await spawnAgent(
         createMockNotify(),

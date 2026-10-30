@@ -696,6 +696,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertOptionalString(args.envFile, 'envFile');
     assertOptionalString(args.projectId, 'projectId');
     if (args.cwd) validatePath(args.cwd, 'cwd');
+    // Restarted Docker sub-tasks need the coordinator's MCP dir too; derive it
+    // here so the renderer cannot choose host paths to mount.
+    args = {
+      ...args,
+      dockerReadOnlyMounts: args.dockerMode
+        ? mcp.coordinator()?.getDockerMcpMounts(args.taskId)
+        : undefined,
+    };
     const attaching = args.attachExisting && getAgentMeta(args.agentId);
     const releaseAdmission =
       attaching || args.isShell ? undefined : mcp.coordinator()?.reserveChildRestart(args.taskId);

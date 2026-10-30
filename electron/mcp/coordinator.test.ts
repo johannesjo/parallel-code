@@ -5738,6 +5738,31 @@ describe('Coordinator Docker mode — per-container sub-tasks', () => {
     expect(spawnCall.dockerMountWorktreeParent).toBe(true);
   });
 
+  it('createTask mounts the coordinator MCP dir when its worktree is outside the child parent', async () => {
+    coordinator.registerCoordinator('coord-feat', 'proj-1', {
+      worktreePath: '/tmp/project/.worktrees/feat/coord',
+    });
+    coordinator.setDockerContainerName('coord-feat', 'parallel-code-feat123456');
+    coordinator.setCoordinatorSpawnDefaults('coord-feat', 'claude', []);
+    coordinator.setMCPServerInfo(
+      'coord-feat',
+      'http://127.0.0.1:1',
+      'coord-token',
+      'sub-token',
+      '/tmp/project/.worktrees/feat/coord/.parallel-code/mcp-server.cjs',
+    );
+
+    await coordinator.createTask({ name: 'docker-sub-task', coordinatorTaskId: 'coord-feat' });
+
+    const spawnCall = mockSpawnAgent.mock.calls[0][1];
+    expect(spawnCall.dockerReadOnlyMounts).toEqual([
+      '/tmp/project/.worktrees/feat/coord/.parallel-code',
+    ]);
+    expect(coordinator.getDockerMcpMounts('task-docker-1')).toEqual([
+      '/tmp/project/.worktrees/feat/coord/.parallel-code',
+    ]);
+  });
+
   it('createTask in non-Docker mode does not set dockerMode on spawnAgent', async () => {
     coordinator.registerCoordinator('coord-host', 'proj-1');
     coordinator.setCoordinatorSpawnDefaults('coord-host', 'claude', []);
