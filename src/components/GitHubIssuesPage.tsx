@@ -199,7 +199,9 @@ function IssueBrowser(props: {
       })
       .catch((err: unknown) => {
         if (disposed || id !== requestId) return;
-        setError(errMessage(err));
+        setError(
+          errMessage(err).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''),
+        );
         setLoading(false);
       });
   });

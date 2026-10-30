@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { describeGhError, parsePrRef } from './gh.js';
+import { describeGhError, parsePrRef, runGh } from './gh.js';
+
+describe('runGh', () => {
+  it('blames a missing project folder, not gh, when the cwd is gone', async () => {
+    // Node reports a missing cwd as `spawn gh ENOENT`, exactly like a missing gh.
+    await expect(runGh(['--version'], '/nonexistent/parallel-code-316')).rejects.toThrow(
+      'Project folder not found: /nonexistent/parallel-code-316',
+    );
+  });
+});
 
 describe('describeGhError', () => {
   it('explains a missing gh binary', () => {
@@ -8,7 +17,10 @@ describe('describeGhError', () => {
       path: 'gh',
       syscall: 'spawn gh',
     });
-    expect(describeGhError(err)).toMatch(/not found.*gh auth login/);
+    const message = describeGhError(err);
+    expect(message).toMatch(/not found on the app's PATH/);
+    // gh may be installed where the app's PATH does not reach (#316).
+    expect(message).toMatch(/already installed.*restart Parallel Code/);
   });
 
   it('does not blame gh for a missing working directory', () => {
@@ -18,6 +30,14 @@ describe('describeGhError', () => {
 
   it('explains a project without a GitHub remote', () => {
     expect(describeGhError({ stderr: 'no git remotes found' })).toMatch(/no GitHub remote/);
+  });
+
+  it('explains missing auth when gh has no account at all', () => {
+    const stderr =
+      'To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.\n';
+    expect(describeGhError({ stderr, code: 4 })).toBe(
+      'GitHub CLI is not logged in. Run "gh auth login" in a terminal.',
+    );
   });
 
   it('explains missing auth', () => {
