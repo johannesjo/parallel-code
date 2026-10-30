@@ -121,6 +121,7 @@ import {
   writeAgentPrompt,
   getAgentInputBlocker,
 } from './pty.js';
+import { setProjectAgentEnv } from './project-env.js';
 
 let tempPaths: string[] = [];
 let agentCounter = 0;
@@ -302,6 +303,63 @@ describe('buildPtySpawnEnv', () => {
   it('lets per-task renderer env win over the agent env file', () => {
     const env = buildPtySpawnEnv({ ANTHROPIC_API_KEY: 'per-task' }, { ANTHROPIC_API_KEY: 'file' });
     expect(env.ANTHROPIC_API_KEY).toBe('per-task');
+  });
+
+  it('layers project env between the agent env file and per-task env', () => {
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '/login-shell');
+    const env = buildPtySpawnEnv(
+      { TASK_ONLY: 'task', SHARED: 'task' },
+      { CLAUDE_CONFIG_DIR: '/file', FILE_ONLY: 'file', SHARED: 'file' },
+      { CLAUDE_CONFIG_DIR: '/project', SHARED: 'project' },
+    );
+    expect(env.CLAUDE_CONFIG_DIR).toBe('/project');
+    expect(env.FILE_ONLY).toBe('file');
+    expect(env.SHARED).toBe('task');
+  });
+
+  it('keeps the block list authoritative over project env values', () => {
+    vi.stubEnv('PARALLEL_CODE_MCP_TOKEN', 'host-token');
+    const env = buildPtySpawnEnv({}, {}, { PATH: '/bad', PARALLEL_CODE_MCP_TOKEN: 'project' });
+    expect(env.PATH).not.toBe('/bad');
+    expect(env.PARALLEL_CODE_MCP_TOKEN).toBe('host-token');
+  });
+});
+
+describe('spawnAgent project env', () => {
+  afterEach(() => setProjectAgentEnv('project-1', undefined));
+
+  it('applies the project env, with ~ expanded, without logging the values', async () => {
+    setProjectAgentEnv('project-1', {
+      CLAUDE_CONFIG_DIR: '~/.claude-work',
+      PROJECT_SECRET: 'project-secret-value',
+    });
+    await spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({ cwd: makeTempHome([]), dockerMode: false, projectId: 'project-1' }),
+    );
+    const { env } = getLastSpawnCall().options;
+    expect(env.CLAUDE_CONFIG_DIR).toBe(path.join(os.homedir(), '.claude-work'));
+    expect(env.PROJECT_SECRET).toBe('project-secret-value');
+    for (const call of mockLogDebug.mock.calls) {
+      expect(JSON.stringify(call)).not.toContain('project-secret-value');
+    }
+  });
+
+  it('applies nothing without a project id', async () => {
+    setProjectAgentEnv('project-1', { PROJECT_SECRET: 'x' });
+    await spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({ cwd: makeTempHome([]), dockerMode: false }),
+    );
+    expect(getLastSpawnCall().options.env.PROJECT_SECRET).toBeUndefined();
+  });
+
+  it('skips the project env in Docker mode', async () => {
+    setProjectAgentEnv('project-1', { PROJECT_SECRET: 'x' });
+    await spawnAgent(createMockNotify(), buildSpawnArgs({ projectId: 'project-1' }));
+    const { args, options } = getLastSpawnCall();
+    expect(options.env.PROJECT_SECRET).toBeUndefined();
+    expect(getFlagValues(args, '-e')).not.toContain('PROJECT_SECRET');
   });
 });
 

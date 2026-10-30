@@ -1571,6 +1571,7 @@ export class Coordinator {
           cwd: result.worktree_path,
           env: {},
           envFile: opts.agentEnvFile ?? coordinatorState.agentEnvFile,
+          projectId: projId,
           cols: 120,
           rows: 40,
           ...(dockerContainerName

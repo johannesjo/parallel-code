@@ -1317,6 +1317,8 @@ export function TerminalView(props: TerminalViewProps) {
         cwd: props.cwd,
         env: props.env ?? {},
         envFile: props.envFile,
+        // The main process looks up the project's env vars; values stay out of this call.
+        projectId: store.tasks[taskId]?.projectId,
         cols: term.cols,
         rows: term.rows,
         isShell: props.isShell,

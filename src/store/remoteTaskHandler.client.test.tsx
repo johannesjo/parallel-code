@@ -380,6 +380,15 @@ async function phoneRequest(channel: string, payload: Record<string, unknown>) {
   return reply?.[1] as { ok: boolean; data?: unknown; error?: string };
 }
 
+it('keeps project env vars, which may be secrets, out of the phone project list', async () => {
+  mockPhoneTaskIpc();
+  setStore('projects', 0, 'agentEnv', { ANTHROPIC_API_KEY: 'phone-must-not-see' });
+  const reply = await phoneRequest(IPC.Remote_GetProjectsRequest, {});
+  expect(reply.ok).toBe(true);
+  expect(JSON.stringify(reply.data)).not.toContain('phone-must-not-see');
+  expect(reply.data).toEqual([expect.not.objectContaining({ agentEnv: expect.anything() })]);
+});
+
 it('lists available agents with the models a phone may pick', async () => {
   mockPhoneTaskIpc();
   const reply = await phoneRequest(IPC.Remote_GetAgentsRequest, {});

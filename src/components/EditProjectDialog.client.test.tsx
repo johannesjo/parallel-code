@@ -1,5 +1,6 @@
 import { render } from 'solid-js/web';
 import { afterEach, expect, it, vi } from 'vitest';
+import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { setStore, store } from '../store/core';
 import type { Project } from '../store/types';
@@ -87,9 +88,9 @@ it.each([
   [
     {},
     ['General', 'Tasks', 'Verification'],
-    ['Branches and worktrees', 'Agent collaboration', 'Terminal'],
+    ['Branches and worktrees', 'Agent collaboration', 'Environment', 'Terminal'],
   ],
-  [{ isGitRepo: false }, ['General', 'Tasks', 'Verification'], ['Terminal']],
+  [{ isGitRepo: false }, ['General', 'Tasks', 'Verification'], ['Environment', 'Terminal']],
   [{ kind: 'document', documentPath: 'doc.md' }, [], []],
 ] as const)('shows only the tabs and sections a %o project uses', (extra, tabs, sections) => {
   renderDialog(extra);
@@ -158,4 +159,50 @@ it('saves the chosen icon and clears it with "No icon"', async () => {
   expect(terminal.getAttribute('aria-pressed')).toBe('false');
   button('Save').click();
   await vi.waitFor(() => expect(store.projects[0].icon).toBeUndefined());
+});
+
+it('saves project env vars and blocks save on an invalid name', async () => {
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  const project: Project = { id: 'p', name: 'P', path: '/repo', color: 'hsl(0, 70%, 75%)' };
+  setStore('projects', [project]);
+  const host = document.createElement('div');
+  document.body.append(host);
+  const onClose = vi.fn();
+  dispose = render(() => <EditProjectDialog project={store.projects[0]} onClose={onClose} />, host);
+
+  const add = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+    (button) => button.textContent?.trim() === 'Add variable',
+  );
+  if (!add) throw new Error('Missing Add variable button');
+  add.click();
+  const key = document.querySelector<HTMLInputElement>('input[aria-label="Variable name"]');
+  if (!key) throw new Error('Missing variable name input');
+  const type = (input: HTMLInputElement, value: string) => {
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const save = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+    (button) => button.textContent?.trim() === 'Save',
+  );
+  if (!save) throw new Error('Missing Save button');
+
+  type(key, 'BAD-NAME');
+  expect(save.disabled).toBe(true);
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('"BAD-NAME"');
+
+  type(key, 'CLAUDE_CONFIG_DIR');
+  const value = document.querySelector<HTMLInputElement>(
+    'input[aria-label="Value of CLAUDE_CONFIG_DIR"]',
+  );
+  if (!value) throw new Error('Missing value input');
+  type(value, '~/.claude-work');
+  expect(save.disabled).toBe(false);
+  save.click();
+
+  await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(store.projects[0].agentEnv).toEqual({ CLAUDE_CONFIG_DIR: '~/.claude-work' });
+  expect(invoke).toHaveBeenCalledWith(IPC.SetProjectAgentEnv, {
+    projectId: 'p',
+    env: { CLAUDE_CONFIG_DIR: '~/.claude-work' },
+  });
 });

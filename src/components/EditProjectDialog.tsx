@@ -16,6 +16,7 @@ import {
   projectInputStyle,
 } from './ProjectDialogParts';
 import { ProjectBookmarksField } from './ProjectBookmarksField';
+import { ProjectEnvVarsField } from './ProjectEnvVarsField';
 import { ProjectColorPicker } from './ProjectColorPicker';
 import { ProjectIconField } from './ProjectIconField';
 import { ProjectFolderField } from './ProjectFolderField';
@@ -89,8 +90,14 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
     ),
   );
 
-  const canSave = () => form.name().trim().length > 0;
+  const canSave = () => form.name().trim().length > 0 && !form.agentEnvError();
   const saveDisabled = () => !canSave() || saving();
+  const saveBlockedReason = () => {
+    if (!form.name().trim()) return 'Enter a project name to save';
+    // The env rows sit on the Tasks tab, so the reason has to show here too.
+    if (form.agentEnvError()) return 'Fix the environment variables on the Tasks tab to save';
+    return undefined;
+  };
   const saveOnEnter = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && canSave()) void handleSave();
   };
@@ -263,6 +270,14 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                   </ProjectSection>
                 </Show>
 
+                <ProjectSection title="Environment">
+                  <ProjectEnvVarsField
+                    drafts={form.agentEnv()}
+                    error={form.agentEnvError()}
+                    onChange={form.setAgentEnv}
+                  />
+                </ProjectSection>
+
                 <ProjectSection title="Terminal">
                   <ProjectBookmarksField
                     bookmarks={form.bookmarks()}
@@ -296,7 +311,7 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                 type="button"
                 class="btn-primary"
                 disabled={saveDisabled()}
-                title={canSave() ? undefined : 'Enter a project name to save'}
+                title={saveBlockedReason()}
                 aria-busy={saving()}
                 onClick={handleSave}
               >

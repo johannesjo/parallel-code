@@ -3,6 +3,12 @@ import { sanitizeBranchPrefix } from '../lib/branch-name';
 import type { ProjectIconId } from '../lib/project-icon';
 import type { GitIsolationMode, Project, TerminalBookmark } from '../store/types';
 import { finalizeChecks, type CheckDraft } from './ProjectChecksFields';
+import {
+  envDraftsFrom,
+  envDraftsError,
+  finalizeEnvDrafts,
+  type EnvDraft,
+} from './project-env-drafts';
 
 /** Editable copy of a project's settings, saved only when the dialog saves. */
 export function createProjectSettingsForm() {
@@ -19,6 +25,7 @@ export function createProjectSettingsForm() {
   const [evidenceChecks, setEvidenceChecks] = createSignal<CheckDraft[]>([]);
   const [verifyAutoRun, setVerifyAutoRun] = createSignal(true);
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
+  const [agentEnv, setAgentEnv] = createSignal<EnvDraft[]>([]);
 
   function load(p: Project) {
     setName(p.name);
@@ -34,6 +41,7 @@ export function createProjectSettingsForm() {
     setEvidenceChecks(p.evidenceChecks ? [...p.evidenceChecks] : []);
     setVerifyAutoRun(p.verifyAutoRun !== false);
     setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
+    setAgentEnv(envDraftsFrom(p.agentEnv));
   }
 
   /** The fields `updateProject` stores; peer access saves separately. */
@@ -51,6 +59,7 @@ export function createProjectSettingsForm() {
       evidenceChecks: finalizeChecks(evidenceChecks()),
       verifyAutoRun: verifyAutoRun(),
       terminalBookmarks: bookmarks(),
+      agentEnv: finalizeEnvDrafts(agentEnv()),
     };
   }
 
@@ -81,6 +90,10 @@ export function createProjectSettingsForm() {
     setVerifyAutoRun,
     bookmarks,
     setBookmarks,
+    agentEnv,
+    setAgentEnv,
+    /** Why the env rows can't be saved yet, or '' when they can. */
+    agentEnvError: () => envDraftsError(agentEnv()),
     load,
     updates,
   };

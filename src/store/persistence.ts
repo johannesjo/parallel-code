@@ -25,7 +25,8 @@ import {
 import { store, setStore } from './core';
 import { startRemoteAccess } from './remote';
 import { effectiveAgentId } from './agent-select';
-import { randomPastelColor, sortProjects } from './projects';
+import { randomPastelColor, sortProjects, syncProjectAgentEnv } from './projects';
+import { sanitizeEnvVars } from '../../electron/shared/env-vars';
 import { markAgentSpawned } from './taskStatus';
 import {
   clampCoordinatorConcurrentTasks,
@@ -813,6 +814,7 @@ export async function loadState(): Promise<void> {
     p.tasksCollapsed = typeof p.tasksCollapsed === 'boolean' ? p.tasksCollapsed : undefined;
     p.quickEditSource = typeof p.quickEditSource === 'string' ? p.quickEditSource : undefined;
     p.evidenceChecks = parseProjectChecks(p.evidenceChecks);
+    p.agentEnv = sanitizeEnvVars(p.agentEnv);
     // Background evidence builds and the evidence review model are gone; drop
     // their old settings. Check suggestions use the review model instead.
     delete (p as unknown as Record<string, unknown>).evidenceAutoBuild;
@@ -874,6 +876,8 @@ export async function loadState(): Promise<void> {
         allowPeerAccess: project.allowPeerAccess === true,
       },
     }).catch((error: unknown) => console.warn('Could not restore project permissions:', error));
+    // Before store insertion too: terminals spawn as soon as their tasks mount.
+    await syncProjectAgentEnv(project.id, project.agentEnv);
   }
   const detachedRestores: string[] = [];
   for (const task of Object.values(raw.tasks)) {

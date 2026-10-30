@@ -124,6 +124,7 @@
   "ApproveTaskScreens": "approve_task_screens",
   "TaskScreensProgress": "task_screens_progress",
   "SetMinimaxApiKey": "set_minimax_api_key",
+  "SetProjectAgentEnv": "set_project_agent_env",
   "ListCodexModels": "list_codex_models",
   "CheckDockerAvailable": "check_docker_available",
   "CheckDockerImageExists": "check_docker_image_exists",

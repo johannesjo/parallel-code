@@ -22,6 +22,7 @@ import {
   refreshWorktreeNodeModules,
 } from './git.js';
 import { loadEnvFile } from './env-file.js';
+import { projectAgentEnv } from './project-env.js';
 import {
   createTerminalQueryResponder,
   MIRROR_SCROLLBACK_LINES,
@@ -334,6 +335,8 @@ export interface SpawnAgentArgs {
   /** Optional path to a `KEY=VALUE` file whose contents are merged into the
    *  spawn environment. Re-read on every spawn so edits need no app restart. */
   envFile?: string;
+  /** Project whose agent env vars apply; the main process holds the values. */
+  projectId?: string;
   cols: number;
   rows: number;
   isShell?: boolean;
@@ -431,6 +434,7 @@ function copyProcessEnv(): Record<string, string> {
 export function buildPtySpawnEnv(
   rendererEnv: Record<string, string> = {},
   fileEnv: Record<string, string> = {},
+  projectEnv: Record<string, string> = {},
 ): Record<string, string> {
   const spawnEnv: Record<string, string> = {
     ...copyProcessEnv(),
@@ -438,10 +442,11 @@ export function buildPtySpawnEnv(
     COLORTERM: 'truecolor',
   };
 
-  // Both override the inherited login-shell environment, per-task env winning
-  // over the file, and both stay subject to ENV_BLOCK_LIST so the main process
-  // remains authoritative over PATH/HOME/SHELL and the MCP token.
-  for (const [key, value] of Object.entries({ ...fileEnv, ...rendererEnv })) {
+  // All override the inherited login-shell environment: per-task env wins over
+  // the project's variables, which win over the agent's file, so one agent file
+  // can serve every project. All stay subject to ENV_BLOCK_LIST so the main
+  // process remains authoritative over PATH/HOME/SHELL and the MCP token.
+  for (const [key, value] of Object.entries({ ...fileEnv, ...projectEnv, ...rendererEnv })) {
     if (!ENV_BLOCK_LIST.has(key)) spawnEnv[key] = value;
   }
 
@@ -813,7 +818,10 @@ export async function spawnAgent(
   cleanupExistingSession(args.agentId, existing);
   codexExitIds.delete(args.agentId);
 
-  const spawnEnv = buildPtySpawnEnv(args.env, fileEnv);
+  // Docker skips project variables: values such as `~/.claude-work` name host
+  // paths the container does not mount.
+  const projectEnv = args.dockerMode ? {} : projectAgentEnv(args.projectId);
+  const spawnEnv = buildPtySpawnEnv(args.env, fileEnv, projectEnv);
   const launchId = crypto.randomUUID();
 
   // Backfill sandbox placeholders for pre-existing worktrees (and anywhere

@@ -1,5 +1,5 @@
 import { getLocalDateKey } from '../lib/date';
-import { reconcile } from 'solid-js/store';
+import { produce, reconcile } from 'solid-js/store';
 import { createMindMap } from '../graph/model';
 import {
   DEFAULT_INDEPENDENT_TASKS_PER_CREATOR,
@@ -2760,5 +2760,70 @@ describe('board layout persistence', () => {
     mockInvoke.mockResolvedValueOnce(stateWith({}));
     await loadState();
     expect(store.boardSidePanelLeft).toBe(false);
+  });
+});
+
+describe('project agent env persistence', () => {
+  function stateWith(project: Record<string, unknown>): string {
+    return JSON.stringify({
+      projects: [
+        { id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)', ...project },
+      ],
+      lastProjectId: 'project-1',
+      lastAgentId: null,
+      taskOrder: ['task-1'],
+      collapsedTaskOrder: [],
+      tasks: { 'task-1': persistedTask(agentDef()) },
+      activeTaskId: 'task-1',
+      sidebarVisible: true,
+    });
+  }
+
+  async function savedProject(): Promise<Record<string, unknown>> {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const saved = mockInvoke.mock.calls.findLast(([channel]) => channel === IPC.SaveAppState);
+    return JSON.parse(saved?.[1].json).projects[0];
+  }
+
+  it('loads older state without the field unchanged and pushes an empty env', async () => {
+    mockInvoke.mockResolvedValueOnce(stateWith({}));
+    await loadState();
+    expect(store.projects[0].agentEnv).toBeUndefined();
+    expect(mockInvoke).toHaveBeenCalledWith(IPC.SetProjectAgentEnv, {
+      projectId: 'project-1',
+      env: {},
+    });
+    expect(await savedProject()).not.toHaveProperty('agentEnv');
+  });
+
+  it('round-trips the env and drops invalid entries', async () => {
+    mockInvoke.mockResolvedValueOnce(
+      stateWith({ agentEnv: { CLAUDE_CONFIG_DIR: '~/.claude-work', 'BAD-KEY': 'x', NUM: 1 } }),
+    );
+    await loadState();
+    expect(store.projects[0].agentEnv).toEqual({ CLAUDE_CONFIG_DIR: '~/.claude-work' });
+    expect((await savedProject()).agentEnv).toEqual({ CLAUDE_CONFIG_DIR: '~/.claude-work' });
+  });
+
+  it('hands the env to the main process before tasks restore', async () => {
+    // setStore('tasks', {}) merges, so the shared reset leaves earlier tests' tasks behind.
+    setStore(
+      produce((s) => {
+        s.tasks = {};
+      }),
+    );
+    let tasksAtPush = -1;
+    mockInvoke.mockImplementation(async (channel) => {
+      if (channel === IPC.LoadAppState) return stateWith({ agentEnv: { A: '1' } });
+      if (channel === IPC.SetProjectAgentEnv) tasksAtPush = Object.keys(store.tasks).length;
+    });
+    await loadState();
+    expect(tasksAtPush).toBe(0);
+    expect(store.tasks['task-1']).toBeDefined();
+    expect(mockInvoke).toHaveBeenCalledWith(IPC.SetProjectAgentEnv, {
+      projectId: 'project-1',
+      env: { A: '1' },
+    });
   });
 });

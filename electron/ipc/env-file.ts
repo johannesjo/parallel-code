@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { parseEnv } from 'util';
+import { isValidEnvKey } from '../shared/env-vars.js';
 
 /**
  * Agent env files let users supply credentials (ANTHROPIC_API_KEY, CODEX_API_KEY,
@@ -9,8 +10,6 @@ import { parseEnv } from 'util';
  * app never has to store secrets in its own settings JSON. The file is re-read on
  * every spawn — editing it takes effect on the next terminal, with no app restart.
  */
-
-const VALID_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** Refuse to read anything larger than this — an env file holds a handful of
  *  credentials, so a big file means the path is wrong, and parsing it would
@@ -32,7 +31,7 @@ export function parseEnvFile(content: string): Record<string, string> {
   const env: Record<string, string> = {};
   // Strip a UTF-8 BOM; parseEnv would otherwise fold it into the first key.
   for (const [key, value] of Object.entries(parseEnv(content.replace(/^\uFEFF/, '')))) {
-    if (value !== undefined && VALID_KEY.test(key)) env[key] = value;
+    if (value !== undefined && isValidEnvKey(key)) env[key] = value;
   }
   return env;
 }

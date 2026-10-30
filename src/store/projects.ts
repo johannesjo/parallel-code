@@ -152,6 +152,8 @@ export function removeProject(projectId: string): void {
     }),
   );
   forgetGitHubLists(projectId);
+  // The main process would otherwise keep a removed project's secrets until restart.
+  void syncProjectAgentEnv(projectId, undefined);
 }
 
 export function updateProject(
@@ -169,6 +171,7 @@ export function updateProject(
       | 'defaultBaseBranch'
       | 'coverageReportPath'
       | 'verifyCommand'
+      | 'agentEnv'
       | 'evidenceChecks'
       | 'verifyAutoRun'
       | 'reviewChecks'
@@ -208,6 +211,8 @@ export function updateProject(
         s.projects[idx].coverageReportPath = updates.coverageReportPath;
       if (Object.prototype.hasOwnProperty.call(updates, 'verifyCommand'))
         s.projects[idx].verifyCommand = updates.verifyCommand;
+      if (Object.prototype.hasOwnProperty.call(updates, 'agentEnv'))
+        s.projects[idx].agentEnv = updates.agentEnv;
       if (Object.prototype.hasOwnProperty.call(updates, 'evidenceChecks'))
         s.projects[idx].evidenceChecks = updates.evidenceChecks;
       // Stored only when off, matching how persistence normalizes it.
@@ -241,6 +246,22 @@ export function updateProject(
     updates.verifyCommand !== previousVerifyCommand
   ) {
     syncCoordinatorVerifyCommand(projectId, updates.verifyCommand);
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'agentEnv')) {
+    void syncProjectAgentEnv(projectId, updates.agentEnv);
+  }
+}
+
+/** Hands the project's agent env vars to the main process, which applies them
+ *  at spawn. Never rejects; the warning leaves the values out. */
+export async function syncProjectAgentEnv(
+  projectId: string,
+  env: Record<string, string> | undefined,
+): Promise<void> {
+  try {
+    await invoke(IPC.SetProjectAgentEnv, { projectId, env: env ?? {} });
+  } catch (error) {
+    console.warn('Could not apply project environment variables:', String(error));
   }
 }
 

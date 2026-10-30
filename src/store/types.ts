@@ -112,6 +112,11 @@ export interface Project {
    *  Lives in app state on purpose: a repo file could make opening a hostile
    *  clone run arbitrary commands on the host. */
   verifyCommand?: string;
+  /** Env vars for agents and shells in this project's tasks, sub-tasks
+   *  included, but not Docker tasks. Values may be secrets: they stay out of
+   *  logs and the phone API, and reach the main process only through
+   *  `SetProjectAgentEnv`. Unset when the project has none. */
+  agentEnv?: Record<string, string>;
   /** Checks the check suite runs besides the verify command. App state,
    *  for the same reason as `verifyCommand`. Named `evidence*` from before the
    *  rename; kept so saved projects load without a migration. */

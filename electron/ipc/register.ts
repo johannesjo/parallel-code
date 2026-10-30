@@ -23,6 +23,7 @@ import {
   handoffClaudeTerminal,
 } from './pty.js';
 import { loadEnvFile } from './env-file.js';
+import { setProjectAgentEnv } from './project-env.js';
 import { getResourceSnapshot } from './resources.js';
 import { editorLineArgs, spawnDetached, validateEditorCommand } from './open-file.js';
 import { isExecutablePath } from '../shared/executable-path.js';
@@ -688,6 +689,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     if (args.managedMcpLaunchArgs !== undefined)
       assertStringArray(args.managedMcpLaunchArgs, 'managedMcpLaunchArgs');
     assertOptionalString(args.envFile, 'envFile');
+    assertOptionalString(args.projectId, 'projectId');
     if (args.cwd) validatePath(args.cwd, 'cwd');
     const attaching = args.attachExisting && getAgentMeta(args.agentId);
     const releaseAdmission =
@@ -1449,6 +1451,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   // --- Ask about code ---
+  ipcMain.handle(IPC.SetProjectAgentEnv, (_e, args) => {
+    assertString(args.projectId, 'projectId');
+    setProjectAgentEnv(args.projectId, args.env);
+  });
+
   ipcMain.handle(IPC.SetMinimaxApiKey, (_e, args) => {
     assertString(args.key, 'key');
     setMinimaxApiKey(args.key);
