@@ -193,6 +193,18 @@ describe('visual tile order', () => {
     expect(sortByProjectGroup(['coord', 'a', 'child'])).toEqual(['coord', 'child', 'a']);
   });
 
+  it('keeps a child in another project in its own group, as the tiles show it', () => {
+    mockStore.projects = [{ id: 'one' }, { id: 'two' }];
+    mockStore.tasks = {
+      coord: { projectId: 'one', coordinatorMode: true },
+      a: { projectId: 'one' },
+      b: { projectId: 'two' },
+      child: { projectId: 'two', coordinatedBy: 'coord' },
+    };
+    mockStore.taskOrder = ['coord', 'a', 'b', 'child'];
+    expect(sortByProjectGroup(mockStore.taskOrder)).toEqual(computeVisibleTaskOrder());
+  });
+
   it('sorts any id list into project groups, then orphans, then terminals', () => {
     mockStore.projects = [{ id: 'one' }, { id: 'two' }];
     mockStore.tasks = {
@@ -264,6 +276,34 @@ describe('visual reorder', () => {
 
     const next = computeVisualReorder(['other', 'coord', 'child'], 'coord', 0);
     expect(next).toEqual(['coord', 'child', 'other']);
+  });
+
+  it('moves a child on its own when its coordinator is not a tile beside it', () => {
+    mockStore.projects = [{ id: 'one' }, { id: 'two' }];
+    mockStore.tasks = {
+      coord: { projectId: 'one', coordinatorMode: true },
+      hidden: { projectId: 'two', collapsed: true },
+      a: { projectId: 'two' },
+      child: { projectId: 'two', coordinatedBy: 'coord' },
+      orphanChild: { projectId: 'two', coordinatedBy: 'hidden' },
+    };
+    mockStore.collapsedTaskOrder = ['hidden'];
+    mockStore.taskOrder = ['coord', 'a', 'child', 'orphanChild'];
+
+    // A coordinator in another project: the child is a tile of its own group.
+    expect(computeVisualReorder(['coord', 'a', 'child', 'orphanChild'], 'child', 1)).toEqual([
+      'coord',
+      'child',
+      'a',
+      'orphanChild',
+    ]);
+    // A collapsed coordinator is no tile, so it must not join the move.
+    expect(computeVisualReorder(['coord', 'a', 'child', 'orphanChild'], 'orphanChild', 1)).toEqual([
+      'coord',
+      'orphanChild',
+      'a',
+      'child',
+    ]);
   });
 
   it('drops a dragged coordinator block where its tile was released', () => {

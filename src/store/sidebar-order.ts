@@ -141,7 +141,17 @@ export function sortByProjectGroup(ids: readonly string[]): string[] {
     if (group === null) return projectRank.size + 1;
     return projectRank.get(group) ?? projectRank.size;
   };
-  return nestCoordinatedChildren([...ids].sort((a, b) => rank(a) - rank(b)));
+  const groups = new Map<number, string[]>();
+  for (const id of ids) {
+    const group = groups.get(rank(id));
+    if (group) group.push(id);
+    else groups.set(rank(id), [id]);
+  }
+  // Nest within each group only, as the tiles do: a child in another project
+  // than its coordinator stays a tile of its own project.
+  return [...groups.entries()]
+    .sort(([a], [b]) => a - b)
+    .flatMap(([, group]) => nestCoordinatedChildren(group));
 }
 
 /** Order a project's active tasks so each coordinator's children follow it,
@@ -209,12 +219,16 @@ export function computeTileOrder(): string[] {
   return [...tasks, ...terminals];
 }
 
-/** Tiles that move as one: the task's coordinator (or the task itself) and its
- *  active children. */
+/** Tiles that move as one: the task's coordinator (or the task itself) and the
+ *  active children the tile strip nests after it. */
 export function reorderBlock(taskId: string): string[] {
+  // A collapsed coordinator or one in another project is no tile beside the child.
+  const isNestedTile = (childId: string, parentId: string): boolean =>
+    store.taskOrder.includes(parentId) &&
+    taskVisualGroupKey(childId) === taskVisualGroupKey(parentId);
   const parentId = store.tasks[taskId]?.coordinatedBy;
-  const owner = parentId && store.tasks[parentId] ? parentId : taskId;
-  return [owner, ...getCoordinatorChildren(owner).active];
+  const owner = parentId && isNestedTile(taskId, parentId) ? parentId : taskId;
+  return [owner, ...getCoordinatorChildren(owner).active.filter((id) => isNestedTile(id, owner))];
 }
 
 /** New taskOrder after moving `movedId`'s block (a coordinator plus its active
