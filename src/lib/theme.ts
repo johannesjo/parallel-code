@@ -160,7 +160,26 @@ const NOIR_TERMINAL_THEME = {
  * white-ish bright ANSI palette) so plain output stays readable.
  */
 export function getTerminalTheme(preset: LookPreset) {
-  const background = readCssVarsForPreset(preset)['--task-panel-bg'] ?? '#000000';
+  // Every open terminal asks at once when the theme changes, and each read
+  // forces a full-document style recalc (it swaps data-look on <html>). With
+  // many tasks open that stalls the renderer for seconds. Preset CSS is static,
+  // so read it once per preset.
+  const cached = terminalThemeCache.get(preset);
+  if (cached) return cached;
+  const panelBg = readCssVarsForPreset(preset)['--task-panel-bg'];
+  const result = buildTerminalTheme(preset, panelBg ?? '#000000');
+  // Leave a miss uncached: it means the preset stylesheet was not applied yet.
+  if (panelBg) terminalThemeCache.set(preset, result);
+  return result;
+}
+
+const terminalThemeCache = new Map<LookPreset, ReturnType<typeof buildTerminalTheme>>();
+
+export function resetTerminalThemeCacheForTest(): void {
+  terminalThemeCache.clear();
+}
+
+function buildTerminalTheme(preset: LookPreset, background: string) {
   if (preset === 'parallel-code') {
     return { background, ...PARALLEL_CODE_TERMINAL_THEME };
   }
