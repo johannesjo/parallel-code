@@ -110,11 +110,15 @@ describe('loadEnvFile', () => {
     expect(() => loadEnvFile(dir)).toThrow(/directory, not a file/);
   });
 
-  it('refuses a FIFO instead of blocking the main process forever', () => {
-    const fifo = path.join(dir, 'pipe');
-    execFileSync('mkfifo', [fifo]);
-    expect(() => loadEnvFile(fifo)).toThrow(/not a regular file/);
-  });
+  // Windows has no FIFOs (mkfifo); the regular-file guard is POSIX-only.
+  it.skipIf(process.platform === 'win32')(
+    'refuses a FIFO instead of blocking the main process forever',
+    () => {
+      const fifo = path.join(dir, 'pipe');
+      execFileSync('mkfifo', [fifo]);
+      expect(() => loadEnvFile(fifo)).toThrow(/not a regular file/);
+    },
+  );
 
   it('refuses an oversized file', () => {
     const big = path.join(dir, 'big.env');

@@ -2036,7 +2036,8 @@ describe('seedClaudeProjectTrust — file permissions', () => {
     expect(fs.existsSync(hostFile)).toBe(true);
     const stat = fs.statSync(hostFile);
     // mode & 0o777 strips file-type bits; 0o600 = owner r/w, no group/other access
-    expect(stat.mode & 0o777).toBe(0o600);
+    // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+    if (process.platform !== 'win32') expect(stat.mode & 0o777).toBe(0o600);
   });
 });
 

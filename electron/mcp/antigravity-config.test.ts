@@ -35,7 +35,8 @@ describe('writeAntigravityMcpConfig', () => {
     writeAntigravityMcpConfig(repo, config);
 
     expect(JSON.parse(fs.readFileSync(configFile(), 'utf8'))).toEqual(config);
-    expect(fs.statSync(configFile()).mode & 0o777).toBe(0o600);
+    // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+    if (process.platform !== 'win32') expect(fs.statSync(configFile()).mode & 0o777).toBe(0o600);
     expect(git('status', '--porcelain')).toBe('');
   });
 
