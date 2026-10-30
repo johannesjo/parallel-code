@@ -156,6 +156,14 @@ describe('TaskBriefBar', () => {
     expect(cardTerms()).toEqual(['Goal', 'Now', 'Needs you']);
   });
 
+  it('puts the question in place of the current step when it is the only line', () => {
+    const { bar } = mount(baseTask(), { fields: { goal: false, now: true, needsYou: true } });
+    lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
+    expect(bar.textContent).toContain(QUESTION);
+    expect(bar.textContent).not.toContain('Two events queued');
+    expect(bar.textContent).not.toContain('Stop webhook timeouts.');
+  });
+
   it('leaves the question to the card when Needs you is off', () => {
     const { bar } = mount(baseTask(), { fields: { goal: true, now: false, needsYou: false } });
     lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
