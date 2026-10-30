@@ -146,12 +146,15 @@ select:focus-visible {
   min-width: 44px;
   padding-inline: 10px;
 }
+/* Two lines: one line beside the back and next buttons left a phone about 20 characters. */
 .mobile-task-header h1 {
   letter-spacing: -0.01em;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   font-size: 16px;
+  line-height: 1.3;
 }
 .mobile-task-meta {
   display: flex;
@@ -367,12 +370,6 @@ textarea.mobile-input {
   border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
   background: color-mix(in srgb, var(--warning) 6%, var(--island-bg));
 }
-.agent-card-top {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  justify-content: space-between;
-}
 .agent-card strong {
   font-size: 16px;
   font-weight: 600;
@@ -383,13 +380,7 @@ textarea.mobile-input {
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-.agent-card-chevron {
-  color: var(--fg-subtle);
-  font-size: 24px;
-  line-height: 1;
-  flex-shrink: 0;
+  -webkit-line-clamp: 3;
 }
 .agent-card-meta {
   display: flex;

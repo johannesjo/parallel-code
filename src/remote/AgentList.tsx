@@ -202,12 +202,7 @@ export function AgentList(props: AgentListProps) {
                           classList={{ attention: needsAttention(agent) }}
                           onClick={() => props.onSelect(agent.taskId)}
                         >
-                          <div class="agent-card-top">
-                            <strong title={agent.taskName}>{agent.taskName}</strong>
-                            <span class="agent-card-chevron" aria-hidden="true">
-                              ›
-                            </span>
-                          </div>
+                          <strong title={agent.taskName}>{agent.taskName}</strong>
                           <div class="agent-card-meta">
                             <p class="muted">
                               <Show when={agent.projectColor}>
