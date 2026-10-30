@@ -101,10 +101,18 @@ jobs:
           rm -f "$RUNNER_TEMP/build_certificate.p12" 2>/dev/null || true
 
   # Unsigned NSIS installer; no Windows signing certificate is configured.
+  # Disabled until the app-side Windows support (#278) lands: the app cannot
+  # start agents on Windows yet, so a published installer would not work.
   build-windows:
+    if: false
     needs: create-release
     runs-on: windows-latest
     steps:
+      # Git for Windows checks text out with CRLF by default; keep the packaged
+      # resources (such as docker/Dockerfile) byte-identical to the other builds.
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
