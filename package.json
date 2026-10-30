@@ -177,6 +177,7 @@
         "deb"
       ],
       "category": "Development",
+      "icon": "build/icons",
       "desktop": {
         "entry": {
           "StartupWMClass": "parallel-code",
