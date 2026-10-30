@@ -3,7 +3,7 @@ import { WorkspaceControls } from './WorkspaceControls';
 import { appWindow } from '../lib/window';
 import { FocusModeTaskIndicators } from './FocusModeTaskIndicators';
 import { TaskBoardControls } from './TaskBoardControls';
-import { AppLogo } from './icons';
+import { AppLogo, CloseThinIcon, MaximizeIcon, MinimizeIcon, RestoreIcon } from './icons';
 
 /** `bare` keeps only the window's own controls, for the welcome screen. */
 export function WindowTitleBar(props: { bare?: boolean }) {
@@ -109,9 +109,7 @@ export function WindowTitleBar(props: { bare?: boolean }) {
           aria-label="Minimize window"
           title="Minimize"
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-            <path d="M1 5h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-          </svg>
+          <MinimizeIcon size={10} />
         </button>
         <button
           class="window-control-btn"
@@ -119,16 +117,7 @@ export function WindowTitleBar(props: { bare?: boolean }) {
           aria-label={isMaximized() ? 'Restore window' : 'Maximize window'}
           title={isMaximized() ? 'Restore' : 'Maximize'}
         >
-          {isMaximized() ? (
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-              <path d="M2 1.5h6v6H2z" stroke="currentColor" stroke-width="1.1" />
-              <path d="M1 3.5v5h5" stroke="currentColor" stroke-width="1.1" />
-            </svg>
-          ) : (
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-              <rect x="1.5" y="1.5" width="7" height="7" stroke="currentColor" stroke-width="1.1" />
-            </svg>
-          )}
+          {isMaximized() ? <RestoreIcon size={10} /> : <MaximizeIcon size={10} />}
         </button>
         <button
           class="window-control-btn close"
@@ -140,14 +129,7 @@ export function WindowTitleBar(props: { bare?: boolean }) {
           aria-label="Close window"
           title="Close"
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-            <path
-              d="M2 2l6 6M8 2 2 8"
-              stroke="currentColor"
-              stroke-width="1.2"
-              stroke-linecap="round"
-            />
-          </svg>
+          <CloseThinIcon size={10} />
         </button>
       </div>
     </div>

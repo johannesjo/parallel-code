@@ -18,7 +18,16 @@ import { EditableText, type EditableTextHandle } from './EditableText';
 import { IconButton } from './IconButton';
 import { MoreMenu } from './chat/MoreMenu';
 import { StatusDot, getDotTooltip } from './StatusDot';
-import { ClockIcon, CloseIcon, ImageIcon, ReviewIcon, TourIcon } from './icons';
+import {
+  CheckCircleIcon,
+  ClockIcon,
+  CloseIcon,
+  CollapseAltIcon,
+  ImageIcon,
+  PanelRightIcon,
+  ReviewIcon,
+  TourIcon,
+} from './icons';
 import {
   finishReports,
   finishReportsTitle,
@@ -181,9 +190,7 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
                   />
                 }
               >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm1.5 0a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm10.28-1.72-4.5 4.5a.75.75 0 0 1-1.06 0l-2-2a.75.75 0 0 1 1.06-1.06L6.75 9.19l3.97-3.97a.75.75 0 0 1 1.06 1.06Z" />
-                </svg>
+                <CheckCircleIcon size={14} />
               </Show>
               {props.pushing ? 'Pushing…' : props.pushSuccess ? 'Pushed' : 'Finish'}
               <Show when={!props.pushing && (reports().length > 0 || generating().length > 0)}>
@@ -213,19 +220,7 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
         </div>
         <div class="task-action-group" role="group" aria-label="View actions">
           <IconButton
-            icon={
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-              >
-                <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
-                <path d="M10 2.75v10.5" />
-              </svg>
-            }
+            icon={<PanelRightIcon />}
             onClick={() =>
               isTaskCanvasVisible(props.task)
                 ? closeTaskCanvas(props.task.id)
@@ -235,11 +230,7 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
             pressed={isTaskCanvasVisible(props.task)}
           />
           <IconButton
-            icon={
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M2.75 5.5A.75.75 0 0 0 3.5 4.75V3.5h1.25a.75.75 0 0 0 0-1.5H2.5a.5.5 0 0 0-.5.5v2.25c0 .414.336.75.75.75ZM12.5 4.75a.75.75 0 0 0 1.5 0V2.5a.5.5 0 0 0-.5-.5h-2.25a.75.75 0 0 0 0 1.5h1.25v1.25ZM3.5 11.25a.75.75 0 0 0-1.5 0V13.5a.5.5 0 0 0 .5.5h2.25a.75.75 0 0 0 0-1.5H3.5v-1.25ZM13.25 10.5a.75.75 0 0 0-.75.75v1.25h-1.25a.75.75 0 0 0 0 1.5H13.5a.5.5 0 0 0 .5-.5v-2.25a.75.75 0 0 0-.75-.75Z" />
-              </svg>
-            }
+            icon={<CollapseAltIcon />}
             onClick={() => {
               const taskId = props.task.id;
               // The button bypasses the title bar's tap-to-activate; activate before the

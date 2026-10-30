@@ -46,7 +46,7 @@ import { mod } from '../lib/platform';
 import { createCtrlShiftWheelResizeHandler } from '../lib/wheelZoom';
 import { prefersMotion } from '../lib/reducedMotion';
 import { TASK_TILE_DEFAULT_WIDTH, TASK_TILE_MIN_WIDTH } from '../lib/layout-sizes';
-import { SyncIcon } from './icons';
+import { FolderIcon, SyncIcon } from './icons';
 
 // Lazy: the document workspace (CodeMirror, parse5) loads when its panel opens.
 const DocumentWorkspacePanel = lazy(() =>
@@ -664,15 +664,7 @@ export function TilingLayout() {
                           color: theme.fgSubtle,
                         }}
                       >
-                        <svg
-                          width="24"
-                          height="24"
-                          viewBox="0 0 16 16"
-                          fill="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
-                        </svg>
+                        <FolderIcon size={24} />
                       </div>
                       <div style={{ 'text-align': 'center' }}>
                         <div
@@ -694,15 +686,7 @@ export function TilingLayout() {
                         onClick={() => pickAndAddProject()}
                         style={emptyStateButtonStyle()}
                       >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 16 16"
-                          fill="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
-                        </svg>
+                        <FolderIcon size={14} />
                         Add project
                       </button>
                     </>
