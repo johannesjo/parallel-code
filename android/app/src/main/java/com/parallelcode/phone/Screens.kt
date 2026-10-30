@@ -147,6 +147,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1341,7 +1342,7 @@ private fun TerminalText(
         val paddingPx = with(density) { (TERMINAL_PADDING_H * 2).roundToPx() }
         val textWidthPx = constraints.maxWidth - paddingPx
         val charPxAt10 = remember(measurer) {
-            measurer.measure("0".repeat(10), TextStyle(fontFamily = AppFonts.mono, fontSize = 10.sp)).size.width / 10f
+            measurer.measure("0".repeat(10), terminalTextStyle(10.sp)).size.width / 10f
         }
         val autoFont = fittedTerminalFont(textWidthPx, cols, charPxAt10).sp
         val phoneFont = TERMINAL_FONT
@@ -1355,10 +1356,7 @@ private fun TerminalText(
             pan = clampPan(pan, zoom, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
         }
         LaunchedEffect(textWidthPx, viewHeightPx, phoneFont, density) {
-            val probe = measurer.measure(
-                "0".repeat(10),
-                TextStyle(fontFamily = AppFonts.mono, fontSize = phoneFont, lineHeight = phoneFont * 1.27f),
-            )
+            val probe = measurer.measure("0".repeat(10), terminalTextStyle(phoneFont))
             val viewCols = (textWidthPx / (probe.size.width / 10f)).toInt()
             val viewRows = ((viewHeightPx - viewPaddingPx) / probe.size.height.toFloat()).toInt()
             if (viewCols > 0 && viewRows > 0) onViewSize(viewCols.coerceAtMost(500), viewRows.coerceAtMost(500))
@@ -1389,9 +1387,7 @@ private fun TerminalText(
                 Text(
                     text = text,
                     color = Color(palette.foreground),
-                    fontFamily = AppFonts.mono,
-                    fontSize = fontSize,
-                    lineHeight = fontSize * 1.27f,
+                    style = terminalTextStyle(fontSize),
                     softWrap = false,
                 )
             }
@@ -1503,6 +1499,14 @@ private val TERMINAL_PADDING_H = 12.dp
 private val TERMINAL_FONT = 11.sp
 
 /**
+ * The terminal's whole text style, measured and drawn alike. A Text left to inherit the theme's
+ * body style picks up its 0.5sp letter spacing, which the font fit never measured, so wide rows ran
+ * past the right edge.
+ */
+private fun terminalTextStyle(fontSize: TextUnit) =
+    TextStyle(fontFamily = AppFonts.mono, fontSize = fontSize, lineHeight = fontSize * 1.27f)
+
+/**
  * Lines and characters for the selectable snapshot. One Text lays it all out, and Compose clips a
  * layout much past 262,000 px tall. At the default font both caps bound it to about 4,000
  * soft-wrapped rows on a narrow phone: blank lines cost a row each, long ones about one per 50
@@ -1551,9 +1555,7 @@ private fun TerminalSelectableText(text: String, modifier: Modifier, bottomInset
                 text,
                 Modifier.padding(start = TERMINAL_PADDING_H, end = TERMINAL_PADDING_H, top = 8.dp, bottom = 8.dp + bottomInset),
                 color = Color(palette.foreground),
-                fontFamily = AppFonts.mono,
-                fontSize = TERMINAL_FONT,
-                lineHeight = TERMINAL_FONT * 1.27f,
+                style = terminalTextStyle(TERMINAL_FONT),
             )
         }
     }
