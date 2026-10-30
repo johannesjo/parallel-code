@@ -147,7 +147,8 @@ describe('Layer 3 — MCP startup pipeline (no Electron, real FS)', () => {
     fs.writeFileSync(p, JSON.stringify(cfg), { mode: 0o600 });
     const stat = fs.statSync(p);
     // mode & 0o777 masks off file-type bits; 0o600 = owner r/w only
-    expect(stat.mode & 0o777).toBe(0o600);
+    // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+    if (process.platform !== 'win32') expect(stat.mode & 0o777).toBe(0o600);
   });
 
   it('non-Docker path: no copy, .mcp.json still written to worktree', () => {

@@ -35,14 +35,18 @@ describe('listThinkingTours', () => {
     ]);
   });
 
-  // Root reads any file, so the unreadable one cannot be made there.
-  it.skipIf(process.getuid?.() === 0)('skips a tour it cannot read and lists the rest', () => {
-    fs.mkdirSync(dir);
-    fs.writeFileSync(path.join(dir, 'locked.tour.md'), 'locked');
-    fs.chmodSync(path.join(dir, 'locked.tour.md'), 0o000);
-    fs.writeFileSync(path.join(dir, 'open.tour.md'), 'open');
-    expect(listThinkingTours(dir).tours.map((tour) => tour.path)).toEqual(['open.tour.md']);
-  });
+  // Root reads any file, and Windows chmod only toggles read-only, so the
+  // unreadable one cannot be made there.
+  it.skipIf(process.getuid?.() === 0 || process.platform === 'win32')(
+    'skips a tour it cannot read and lists the rest',
+    () => {
+      fs.mkdirSync(dir);
+      fs.writeFileSync(path.join(dir, 'locked.tour.md'), 'locked');
+      fs.chmodSync(path.join(dir, 'locked.tour.md'), 0o000);
+      fs.writeFileSync(path.join(dir, 'open.tour.md'), 'open');
+      expect(listThinkingTours(dir).tours.map((tour) => tour.path)).toEqual(['open.tour.md']);
+    },
+  );
 
   it('skips other files, folders, symlinks and files too large to be tours', () => {
     fs.mkdirSync(dir);

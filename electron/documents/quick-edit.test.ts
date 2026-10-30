@@ -211,44 +211,48 @@ describe('openQuickEdit', () => {
     onQuickEditWarning(() => {});
   });
 
-  it('reports a failing sync once until it works again, even as the error changes', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
-    const { spec } = codeRepo();
-    const target = await openQuickEdit(tmpFolder(), spec);
-    const record = `${target.projectRoot}.synced`;
-    const heard = vi.fn();
-    onQuickEditWarning(heard);
-    const unreadable = () => fs.chmodSync(spec, 0o000);
-    const readable = () => fs.chmodSync(spec, 0o644);
-    const recordIsFolder = () => {
-      fs.rmSync(record);
-      fs.mkdirSync(record);
-    };
-    const recordIsFile = () => {
-      fs.rmdirSync(record);
-      fs.writeFileSync(record, '# Spec\n');
-    };
-    try {
-      unreadable();
-      vi.advanceTimersByTime(700);
-      readable();
-      recordIsFolder();
-      vi.advanceTimersByTime(700);
-      recordIsFile();
-      unreadable();
-      vi.advanceTimersByTime(700);
-      expect(heard).toHaveBeenCalledTimes(1);
-      readable();
-      vi.advanceTimersByTime(700);
-      unreadable();
-      vi.advanceTimersByTime(700);
-      expect(heard).toHaveBeenCalledTimes(2);
-    } finally {
-      readable();
-      onQuickEditWarning(() => {});
-      vi.useRealTimers();
-    }
-  });
+  // Windows chmod only toggles read-only, so the spec cannot be made unreadable.
+  it.skipIf(process.platform === 'win32')(
+    'reports a failing sync once until it works again, even as the error changes',
+    async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      const { spec } = codeRepo();
+      const target = await openQuickEdit(tmpFolder(), spec);
+      const record = `${target.projectRoot}.synced`;
+      const heard = vi.fn();
+      onQuickEditWarning(heard);
+      const unreadable = () => fs.chmodSync(spec, 0o000);
+      const readable = () => fs.chmodSync(spec, 0o644);
+      const recordIsFolder = () => {
+        fs.rmSync(record);
+        fs.mkdirSync(record);
+      };
+      const recordIsFile = () => {
+        fs.rmdirSync(record);
+        fs.writeFileSync(record, '# Spec\n');
+      };
+      try {
+        unreadable();
+        vi.advanceTimersByTime(700);
+        readable();
+        recordIsFolder();
+        vi.advanceTimersByTime(700);
+        recordIsFile();
+        unreadable();
+        vi.advanceTimersByTime(700);
+        expect(heard).toHaveBeenCalledTimes(1);
+        readable();
+        vi.advanceTimersByTime(700);
+        unreadable();
+        vi.advanceTimersByTime(700);
+        expect(heard).toHaveBeenCalledTimes(2);
+      } finally {
+        readable();
+        onQuickEditWarning(() => {});
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it(
     'writes the original in place, so hard links to it see the edit',

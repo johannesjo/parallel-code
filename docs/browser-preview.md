@@ -29,6 +29,6 @@ npx vitest run electron/shared/browser.test.ts electron/ipc/browser.test.ts elec
 npx vitest run --config vitest.client.config.ts src/components/TaskBrowserPanel.client.test.tsx src/components/TaskCanvasPanel.client.test.tsx src/store/canvas.client.test.tsx
 ```
 
-For a native smoke check on macOS/Linux, use a local page with a button, link, and form field. Verify navigation/back/reload, hover/click/Escape picking, draft preservation, tab switching, dialogs, resizing/zoom, failed loads and recovery, and cleanup when the tab or window closes. DOM-only test environments cannot render a native `WebContentsView`.
+For a native smoke check on macOS, Linux or Windows, use a local page with a button, link, and form field. Verify navigation/back/reload, hover/click/Escape picking, draft preservation, tab switching, dialogs, resizing/zoom, failed loads and recovery, and cleanup when the tab or window closes. DOM-only test environments cannot render a native `WebContentsView`.
 
 Also open/close a task's preview at least 15 times: its session should be reused without `MaxListenersExceededWarning`. Set a cookie in one task and confirm another task cannot see it. Reopen the original task's preview and confirm cookies and local storage are empty.

@@ -661,7 +661,9 @@ describe('mobile SPA static responses', () => {
     expect(await res.text()).toBe('Not found');
   });
 
-  it.skipIf(process.getuid?.() === 0)(
+  // Root reads any file, and Windows chmod only toggles read-only, so the
+  // unreadable file cannot be made there.
+  it.skipIf(process.getuid?.() === 0 || process.platform === 'win32')(
     'returns an uncached error when an existing file cannot be read',
     async () => {
       chmodSync(join(staticDir, 'assets', 'index-test.js'), 0o000);

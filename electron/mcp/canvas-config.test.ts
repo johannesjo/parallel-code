@@ -67,7 +67,8 @@ it('configures a task-scoped MCP without changing project config and restricts c
     'task-1',
     '--canvas-only',
   ]);
-  expect(fs.statSync(args[1]).mode & 0o777).toBe(0o600);
+  // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+  if (process.platform !== 'win32') expect(fs.statSync(args[1]).mode & 0o777).toBe(0o600);
   expect(fs.readFileSync(path.join(directory, '.mcp.json'), 'utf8')).toBe('{"existing":true}');
   expect(prepareCanvasMcpArgs({ ...options(), command: 'codex' })[0]).toBe('--config');
   expect(prepareCanvasMcpArgs({ ...options(), command: 'copilot' })[0]).toBe(

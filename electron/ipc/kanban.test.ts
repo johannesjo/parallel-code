@@ -64,7 +64,8 @@ describe('kanban board file', () => {
 });
 
 describe('kanban board file hardening', () => {
-  it('refuses a FIFO without blocking', () => {
+  // Windows has no FIFOs (mkfifo); the regular-file guard is POSIX-only.
+  it.skipIf(process.platform === 'win32')('refuses a FIFO without blocking', () => {
     execFileSync('mkfifo', [board()]);
     expect(() => readKanbanBoard(project)).toThrow(/not a regular file/);
   });

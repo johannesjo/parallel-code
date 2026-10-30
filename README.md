@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Electron-47848F?logo=electron&logoColor=white" alt="Electron">
   <img src="https://img.shields.io/badge/SolidJS-2C4F7C?logo=solid&logoColor=white" alt="SolidJS">
   <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
-  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-lightgrey" alt="macOS | Linux">
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="macOS | Linux | Windows">
   <img src="https://img.shields.io/github/license/johannesjo/parallel-code" alt="License">
 </p>
 
@@ -70,13 +70,13 @@ That is the core loop. Everything else is optional and stays out of the way unti
 
 ### Where it fits
 
-| If you use…                                           | Parallel Code adds                                                                                                                                               |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Several terminals or tmux**                         | Worktrees, branches and merges handled for you, and one board that shows which agent is waiting for you                                                          |
-| **One vendor's desktop app** (Claude, Codex, Copilot) | Agents from different vendors on the same board, the same review flow for all of them, and an arena to compare them on one task                                  |
-| **Another parallel-agent app**                        | Free and MIT licensed with no paid tier, macOS and Linux, a review loop you can send back to the agent, and phone access that connects straight to your computer |
+| If you use…                                           | Parallel Code adds                                                                                                                                                        |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Several terminals or tmux**                         | Worktrees, branches and merges handled for you, and one board that shows which agent is waiting for you                                                                   |
+| **One vendor's desktop app** (Claude, Codex, Copilot) | Agents from different vendors on the same board, the same review flow for all of them, and an arena to compare them on one task                                           |
+| **Another parallel-agent app**                        | Free and MIT licensed with no paid tier, macOS, Linux and Windows, a review loop you can send back to the agent, and phone access that connects straight to your computer |
 
-**When something else fits better:** Parallel Code runs agents on your computer, so it is not for agents that keep working in the cloud while your laptop is off. There is no Windows build.
+**When something else fits better:** Parallel Code runs agents on your computer, so it is not for agents that keep working in the cloud while your laptop is off.
 
 ## Demo
 
@@ -108,7 +108,7 @@ npm install
 npm run dev
 ```
 
-Requires [Node.js](https://nodejs.org/) 22.12 or later.
+Requires [Node.js](https://nodejs.org/) 22.12 or later. On Windows, the npm scripts use POSIX shell syntax, so run them through Git Bash: `npm config set script-shell "C:\Program Files\Git\bin\bash.exe" --location project`.
 
 Phone access uses port `8777` in development (`npm run dev`) and `7777` in the installed app, so both can run together. Run `npm run build:remote` after changing the mobile UI, then use **Connect Phone** in the development app to get its connection link or QR code.
 
