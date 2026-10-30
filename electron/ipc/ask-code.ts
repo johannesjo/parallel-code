@@ -5,6 +5,7 @@ import { join } from 'path';
 import type { BrowserWindow } from 'electron';
 import { validateCommand, ENV_BLOCK_LIST } from './pty.js';
 import { loadEnvFile } from './env-file.js';
+import { projectAgentEnv } from './project-env.js';
 import { warn as logWarn } from '../log.js';
 import { defaultCodexEffort, defaultCodexModel, listCodexModels } from './codex-models.js';
 import {
@@ -46,6 +47,8 @@ interface AskCodeRequest {
   effort?: string;
   /** Env file configured for the agent behind the chosen provider, if any. */
   envFile?: string;
+  /** Project whose agent env vars apply, as set with `SetProjectAgentEnv`. */
+  projectId?: string;
 }
 
 const activeRequests = new RequestRegistry<ChildProcess>({
@@ -56,17 +59,17 @@ const activeRequests = new RequestRegistry<ChildProcess>({
 /**
  * The environment an ask-code CLI runs in. It is the same CLI an agent
  * terminal runs, so it needs the same credentials — otherwise configuring an
- * env file fixes the terminals and leaves this silently broken.
+ * env file fixes the terminals and leaves this silently broken. Project env
+ * vars override the file, as they do for agent terminals.
  */
-export function askCodeEnv(envFile?: string): Record<string, string> {
+export function askCodeEnv(envFile?: string, projectId?: string): Record<string, string> {
   const filtered: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (v !== undefined) filtered[k] = v;
   }
-  if (envFile?.trim()) {
-    for (const [k, v] of Object.entries(loadEnvFile(envFile))) {
-      if (!ENV_BLOCK_LIST.has(k)) filtered[k] = v;
-    }
+  const fileEnv = envFile?.trim() ? loadEnvFile(envFile) : {};
+  for (const [k, v] of Object.entries({ ...fileEnv, ...projectAgentEnv(projectId) })) {
+    if (!ENV_BLOCK_LIST.has(k)) filtered[k] = v;
   }
   // Clear env vars that prevent nested agent sessions
   delete filtered.CLAUDECODE;
@@ -153,7 +156,7 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
   }
 
   validateCommand('claude');
-  const baseEnv = askCodeEnv(envFile);
+  const baseEnv = askCodeEnv(envFile, args.projectId);
   const login = args.purpose === 'review' ? reviewLogin(baseEnv) : { args: [], env: baseEnv };
 
   const proc = spawn(
@@ -318,7 +321,11 @@ function askAboutCodeCodex(args: AskCodeRequest, send: (msg: unknown) => void): 
       ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : []),
       '-',
     ],
-    { cwd: args.cwd, env: askCodeEnv(args.envFile), stdio: ['pipe', 'pipe', 'pipe'] },
+    {
+      cwd: args.cwd,
+      env: askCodeEnv(args.envFile, args.projectId),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
   );
 
   const session = AskCodeSession.start(

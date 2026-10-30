@@ -13,8 +13,11 @@ import {
 } from '../shared/understanding-limits.js';
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }));
-vi.mock('./pty.js', () => ({ validateCommand: vi.fn(), ENV_BLOCK_LIST: new Set<string>() }));
-vi.mock('./env-file.js', () => ({ loadEnvFile: vi.fn(() => ({})) }));
+vi.mock('./pty.js', () => ({ validateCommand: vi.fn(), ENV_BLOCK_LIST: new Set(['PATH']) }));
+vi.mock('./env-file.js', () => ({
+  loadEnvFile: vi.fn(() => ({})),
+  expandHome: (value: string) => value,
+}));
 vi.mock('./codex-models.js', () => ({
   listCodexModels: () => [],
   defaultCodexModel: () => 'gpt-6-astra',
@@ -25,9 +28,10 @@ vi.mock('./ask-code-minimax.js', () => ({
   cancelAskAboutCodeMinimax: vi.fn(),
   isMinimaxRequestActive: () => false,
 }));
-import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
+import { askAboutCode, askCodeEnv, cancelAskAboutCode } from './ask-code.js';
 import { isStructuredPurpose } from './ask-code-purpose.js';
 import { loadEnvFile } from './env-file.js';
+import { setProjectAgentEnv } from './project-env.js';
 
 /** Every purpose, with the system prompt, deadline and prompt budget it must get. */
 const PURPOSES = [
@@ -269,6 +273,46 @@ describe('Claude code Q&A model', () => {
   it('falls back to sonnet when no model is chosen', () => {
     const args = spawnArgs();
     expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
+  });
+});
+
+describe('askCodeEnv', () => {
+  afterEach(() => {
+    setProjectAgentEnv('project-1', {});
+    vi.mocked(loadEnvFile).mockReturnValue({});
+  });
+
+  it("layers the project's env vars over the agent env file", () => {
+    vi.mocked(loadEnvFile).mockReturnValue({ CLAUDE_CONFIG_DIR: '/file', FROM_FILE: '1' });
+    setProjectAgentEnv('project-1', { CLAUDE_CONFIG_DIR: '/work', PATH: '/evil' });
+    const env = askCodeEnv('/agent.env', 'project-1');
+    expect(env.CLAUDE_CONFIG_DIR).toBe('/work');
+    expect(env.FROM_FILE).toBe('1');
+    // Blocked keys keep the app's own value, as they do for agent terminals.
+    expect(env.PATH).toBe(process.env.PATH);
+  });
+
+  it('adds nothing for an unknown or missing project', () => {
+    setProjectAgentEnv('project-1', { ONLY_HERE: '1' });
+    expect(askCodeEnv(undefined, 'other').ONLY_HERE).toBeUndefined();
+    expect(askCodeEnv().ONLY_HERE).toBeUndefined();
+  });
+
+  it('reaches the Codex CLI too', () => {
+    setProjectAgentEnv('project-1', { CODEX_HOME: '/work-codex' });
+    mockProc();
+    const win = { isDestroyed: () => false, webContents: { send: vi.fn() } };
+    askAboutCode(win as unknown as BrowserWindow, {
+      requestId: 'codex-project-env',
+      channelId: 'test',
+      prompt: 'Explain this code',
+      cwd: '/tmp',
+      provider: 'codex',
+      projectId: 'project-1',
+    });
+    cancelAskAboutCode('codex-project-env');
+    const options = vi.mocked(spawn).mock.calls[0][2] as { env: Record<string, string> };
+    expect(options.env.CODEX_HOME).toBe('/work-codex');
   });
 });
 

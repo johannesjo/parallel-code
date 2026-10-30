@@ -168,6 +168,7 @@ export async function captureTaskScreens(taskId: string): Promise<void> {
       worktreePath: task.worktreePath,
       baseBranch: getTaskDiffBaseBranch(task.gitIsolation, task.baseBranch),
       envFile: askCodeEnvFile('claude', store.agentEnvFiles),
+      projectId: task.projectId,
     });
     const rawDiff = await code;
     const fingerprint = rawDiff === undefined ? undefined : diffFingerprint(rawDiff);

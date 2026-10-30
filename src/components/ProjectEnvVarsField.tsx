@@ -21,9 +21,11 @@ export function ProjectEnvVarsField(props: ProjectEnvVarsFieldProps) {
       hint={
         <>
           Set for agents and shells started in this project's tasks and sub-tasks after you save,
-          for example <code>CLAUDE_CONFIG_DIR=~/.claude-work</code> to use another Claude account. A
-          leading ~ expands to your home folder. Not applied to Docker tasks. Values are stored
-          unencrypted in the app's settings; PATH, HOME and SHELL can't be changed here.
+          and for the app's own agent calls there, such as briefs, reviews and tours. For example,{' '}
+          <code>CLAUDE_CONFIG_DIR=~/.claude-work</code> uses another Claude account. A leading ~
+          expands to your home folder. Not passed into Docker containers. PATH, HOME and SHELL can't
+          be changed here. Values are stored unencrypted in the app's settings, so put API keys in
+          an env file under Settings, Agent environment.
         </>
       }
     >

@@ -101,7 +101,12 @@ describe('captureTaskScreens', () => {
     await captureTaskScreens('t1');
     expect(mockInvoke).toHaveBeenCalledWith(
       IPC.CaptureTaskScreens,
-      expect.objectContaining({ taskId: 't1', worktreePath: '/wt', baseBranch: 'main' }),
+      expect.objectContaining({
+        taskId: 't1',
+        worktreePath: '/wt',
+        baseBranch: 'main',
+        projectId: 'p1',
+      }),
     );
     expect(view.querySelector('img[alt="Login page, before"]')).not.toBeNull();
     expect(view.querySelector('img[alt="Login page, after"]')).not.toBeNull();

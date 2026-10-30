@@ -137,6 +137,7 @@ export async function startTaskReview(
       cwd: task.worktreePath,
       settings: { ...settings, model: model || undefined },
       agentEnvFiles: store.agentEnvFiles,
+      projectId: task.projectId,
       purpose: 'review',
     });
     cancelRequest = request.cancel;

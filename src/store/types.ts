@@ -113,9 +113,11 @@ export interface Project {
    *  clone run arbitrary commands on the host. */
   verifyCommand?: string;
   /** Env vars for agents and shells in this project's tasks, sub-tasks
-   *  included, but not Docker tasks. Values may be secrets: they stay out of
-   *  logs and the phone API, and reach the main process only through
-   *  `SetProjectAgentEnv`. Unset when the project has none. */
+   *  included, and for the app's one-off agent calls there (briefs, reviews,
+   *  tours, code questions, task screens, chat), but not inside Docker
+   *  containers. Values may be secrets: they stay out of logs and the phone
+   *  API, and reach the main process only through `SetProjectAgentEnv`.
+   *  Unset when the project has none. */
   agentEnv?: Record<string, string>;
   /** Checks the check suite runs besides the verify command. App state,
    *  for the same reason as `verifyCommand`. Named `evidence*` from before the

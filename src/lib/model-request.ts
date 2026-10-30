@@ -32,6 +32,8 @@ export function startModelRequest(options: {
   cwd: string;
   settings: Pick<CheckModelSettings, 'provider' | 'model' | 'effort'>;
   agentEnvFiles: Record<string, string>;
+  /** Whose project env vars the call runs with. */
+  projectId: string | undefined;
   purpose: 'checks' | 'task-name' | 'brief' | 'review';
 }): ModelRequest {
   const requestId = crypto.randomUUID();
@@ -91,6 +93,7 @@ export function startModelRequest(options: {
     model,
     effort,
     envFile: askCodeEnvFile(provider, options.agentEnvFiles),
+    projectId: options.projectId,
   }).catch((error: unknown) => {
     if (end()) settle.reject(error instanceof Error ? error : new Error(String(error)));
   });

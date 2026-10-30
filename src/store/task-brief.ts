@@ -152,6 +152,7 @@ export async function refreshTaskBrief(
       cwd: task.worktreePath,
       settings: BRIEF_MODELS[store.briefModel],
       agentEnvFiles: store.agentEnvFiles,
+      projectId: task.projectId,
       purpose: 'brief',
     });
     handle.cancel = () => {

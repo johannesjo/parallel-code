@@ -23,7 +23,7 @@ import {
   handoffClaudeTerminal,
 } from './pty.js';
 import { loadEnvFile } from './env-file.js';
-import { setProjectAgentEnv } from './project-env.js';
+import { projectAgentEnv, setProjectAgentEnv } from './project-env.js';
 import { getResourceSnapshot } from './resources.js';
 import { editorLineArgs, spawnDetached, validateEditorCommand } from './open-file.js';
 import { isExecutablePath } from '../shared/executable-path.js';
@@ -549,6 +549,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       validateCommand(args.command);
       validatePath(args.cwd, 'cwd');
       assertOptionalString(args.envFile, 'envFile');
+      assertOptionalString(args.projectId, 'projectId');
       assertOptionalString(args.threadId, 'threadId');
       assertOptionalBoolean(args.skipPermissions, 'skipPermissions');
       if (args.permissionMode !== undefined && !isChatPermissionMode(args.permissionMode))
@@ -570,7 +571,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
           threadId: args.threadId,
           skipPermissions: args.skipPermissions,
           permissionMode: args.permissionMode,
-          env: buildPtySpawnEnv({}, args.envFile ? loadEnvFile(args.envFile) : {}),
+          env: buildPtySpawnEnv(
+            {},
+            args.envFile ? loadEnvFile(args.envFile) : {},
+            projectAgentEnv(args.projectId),
+          ),
         },
         (state) => {
           if (!win.isDestroyed()) win.webContents.send(channel, state);
@@ -1475,6 +1480,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     if (args.effort !== undefined && !isAskCodeEffort(provider, args.effort))
       throw new Error('Invalid code Q&A reasoning level');
     assertOptionalString(args.envFile, 'envFile');
+    assertOptionalString(args.projectId, 'projectId');
     askAboutCode(win, {
       purpose: args.purpose,
       requestId: args.requestId,
@@ -1485,6 +1491,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       model: args.model,
       effort: args.effort,
       envFile: args.envFile,
+      projectId: args.projectId,
     });
   });
 
@@ -1498,11 +1505,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validatePath(args.worktreePath, 'worktreePath');
     assertOptionalString(args.baseBranch, 'baseBranch');
     assertOptionalString(args.envFile, 'envFile');
+    assertOptionalString(args.projectId, 'projectId');
     return captureTaskScreens({
       taskId: args.taskId,
       worktreePath: args.worktreePath,
       baseBranch: args.baseBranch,
       envFile: args.envFile,
+      projectId: args.projectId,
       onStep: (step) => notify(IPC.TaskScreensProgress, { taskId: args.taskId, step }),
       onAsk: (commands) => notify(IPC.TaskScreensProgress, { taskId: args.taskId, commands }),
     });

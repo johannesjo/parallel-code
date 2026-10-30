@@ -253,6 +253,7 @@ interface CaptureArgs {
   worktreePath: string;
   baseBranch?: string;
   envFile?: string;
+  projectId?: string;
   /** Called with each step of the run, for progress in the UI. */
   onStep: (step: string) => void;
   /** Called with the commands to serve the task, which wait for approveTaskScreens. */
@@ -312,6 +313,7 @@ async function captureWithBase(
       prompt: buildScreensPrompt({ worktree, base, baseSha, ports }),
       systemPrompt: SYSTEM_PROMPT,
       envFile: args.envFile,
+      projectId: args.projectId,
       onStep: args.onStep,
     });
     run.stop = capture.stop;

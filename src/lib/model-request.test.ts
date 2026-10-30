@@ -19,6 +19,7 @@ vi.mock('./ipc', () => ({
   },
 }));
 
+import { invoke } from './ipc';
 import { startModelRequest } from './model-request';
 
 function start() {
@@ -27,6 +28,7 @@ function start() {
     cwd: '/tmp',
     settings: { provider: 'claude', model: 'haiku' },
     agentEnvFiles: {},
+    projectId: 'project-1',
     purpose: 'brief',
   });
   const channel = channels.at(-1);
@@ -39,6 +41,14 @@ afterEach(() => {
 });
 
 describe('startModelRequest', () => {
+  it("passes the project id so the call runs with the project's env vars", () => {
+    start();
+    expect(invoke).toHaveBeenCalledWith(
+      'ask_about_code',
+      expect.objectContaining({ projectId: 'project-1' }),
+    );
+  });
+
   it('resolves with the streamed response on success', async () => {
     const { request, send } = start();
     send({ type: 'chunk', text: '{"a":' });

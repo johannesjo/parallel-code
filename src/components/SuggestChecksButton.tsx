@@ -11,6 +11,7 @@ import { invoke } from '../lib/ipc';
 import { errMessage } from '../lib/log';
 import { theme } from '../lib/theme';
 import { store } from '../store/core';
+import { projectIdForPath } from '../store/project-path';
 import { SparkleIcon } from './icons';
 
 interface SuggestChecksButtonProps {
@@ -55,6 +56,7 @@ export function SuggestChecksButton(props: SuggestChecksButtonProps) {
         cwd: props.projectRoot,
         settings: props.model,
         agentEnvFiles: store.agentEnvFiles,
+        projectId: projectIdForPath(props.projectRoot),
         purpose: 'checks',
       });
       const suggestion = parseCheckSuggestion(await request.result);

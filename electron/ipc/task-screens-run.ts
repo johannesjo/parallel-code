@@ -159,11 +159,12 @@ export function startCapture(opts: {
   prompt: string;
   systemPrompt: string;
   envFile?: string;
+  projectId?: string;
   /** Called with each step the model takes, for progress in the UI. */
   onStep: (step: string) => void;
 }): CaptureProcess {
   const tag = randomUUID();
-  const env = { ...askCodeEnv(opts.envFile), [RUN_TAG_ENV]: tag };
+  const env = { ...askCodeEnv(opts.envFile, opts.projectId), [RUN_TAG_ENV]: tag };
   const proc = spawnClaude({ ...opts, env });
   liveRuns.set(tag, () => signalRun(tag, proc, 'SIGKILL'));
   let ended = false;

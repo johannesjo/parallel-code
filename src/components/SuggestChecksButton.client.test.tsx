@@ -7,7 +7,9 @@ import type { CheckSuggestion } from '../lib/check-suggestion';
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn() }));
 vi.mock('../lib/model-request', () => ({ startModelRequest: vi.fn() }));
-vi.mock('../store/core', () => ({ store: { agentEnvFiles: {} } }));
+vi.mock('../store/core', () => ({
+  store: { agentEnvFiles: {}, tasks: {}, projects: [{ id: 'p1', path: '/repo' }] },
+}));
 
 let dispose: (() => void) | undefined;
 afterEach(() => {
@@ -58,6 +60,7 @@ describe('SuggestChecksButton', () => {
     });
     expect(vi.mocked(startModelRequest).mock.calls[0][0]).toMatchObject({
       cwd: '/repo',
+      projectId: 'p1',
       purpose: 'checks',
     });
     expect(document.querySelector('[role="status"]')?.textContent).toBe(

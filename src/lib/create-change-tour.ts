@@ -4,6 +4,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { askCodeEnvFile } from '../../electron/shared/ask-code-models';
 import { CHANGE_TOUR_TIMEOUT_MS } from '../../electron/shared/change-tour-limits';
 import { store } from '../store/store';
+import { projectIdForPath } from '../store/project-path';
 import { errMessage, info as logInfo, warn as logWarn } from './log';
 import { PROVIDER_ERROR_CHARS, providerFailureMessage } from './provider-error';
 import {
@@ -282,6 +283,7 @@ export function createChangeTour() {
         provider,
         model,
         envFile,
+        projectId: projectIdForPath(worktreePath),
       }).catch((error) => {
         if (!active) return;
         active = false;

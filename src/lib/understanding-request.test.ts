@@ -21,7 +21,11 @@ vi.mock('./ipc', () => ({
 vi.mock('../store/store', () => ({
   store: { askCodeProvider: 'claude', askCodeModel: 'sonnet', agentEnvFiles: {} },
 }));
+vi.mock('../store/project-path', () => ({
+  projectIdForPath: (path: string) => (path === '/tmp' ? 'project-1' : undefined),
+}));
 
+import { invoke } from './ipc';
 import { startUnderstandingRequest } from './understanding-request';
 
 function start() {
@@ -40,6 +44,16 @@ function start() {
 
 afterEach(() => {
   channels.length = 0;
+});
+
+describe('startUnderstandingRequest', () => {
+  it('runs with the env vars of the project the folder belongs to', () => {
+    start();
+    expect(invoke).toHaveBeenCalledWith(
+      'ask_about_code',
+      expect.objectContaining({ cwd: '/tmp', projectId: 'project-1' }),
+    );
+  });
 });
 
 describe('startUnderstandingRequest failures', () => {

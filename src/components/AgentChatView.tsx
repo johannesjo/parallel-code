@@ -121,6 +121,7 @@ export function AgentChatView(props: {
         command: agent.def.command,
         cwd: props.task.worktreePath,
         envFile: store.agentEnvFiles[agent.def.id],
+        projectId: props.task.projectId,
         threadId: props.task[sessionKey()],
         skipPermissions: props.task.skipPermissions,
         permissionMode: props.task.chatPermissionMode,

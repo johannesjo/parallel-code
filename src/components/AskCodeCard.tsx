@@ -5,6 +5,7 @@ import { Channel, invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { askCodeEnvFile } from '../../electron/shared/ask-code-models';
 import { store } from '../store/store';
+import { projectIdForPath } from '../store/project-path';
 import { warn as logWarn, errMessage } from '../lib/log';
 
 interface AskCodeCardProps {
@@ -67,6 +68,7 @@ export function AskCodeCard(props: AskCodeCardProps) {
       provider: store.askCodeProvider,
       model: store.askCodeModel || undefined,
       envFile: askCodeEnvFile(store.askCodeProvider, store.agentEnvFiles),
+      projectId: projectIdForPath(props.worktreePath),
     }).catch((err: unknown) => {
       setError(errMessage(err));
       setLoading(false);

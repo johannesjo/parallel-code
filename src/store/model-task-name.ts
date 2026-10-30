@@ -29,6 +29,7 @@ export async function nameTaskWithModel(taskId: string, prompt: string): Promise
       cwd: task.worktreePath,
       settings: TASK_NAME_MODELS[store.taskNameModel],
       agentEnvFiles: store.agentEnvFiles,
+      projectId: task.projectId,
       purpose: 'task-name',
     }).result;
     const name = parseModelTaskName(reply);
