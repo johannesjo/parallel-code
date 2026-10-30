@@ -56,7 +56,7 @@ export function describeGhError(err: unknown): string {
   if (
     /no git remotes found|none of the git remotes .* point to a known github host/i.test(stderr)
   ) {
-    return 'This project has no GitHub remote. For GitHub Enterprise, run "gh auth login --hostname <host>".';
+    return 'This project has no GitHub remote.';
   }
   if (/not logged into|authentication required|gh auth login/i.test(stderr)) {
     return 'GitHub CLI is not logged in. Run "gh auth login" in a terminal.';

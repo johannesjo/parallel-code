@@ -44,10 +44,7 @@ describe('describeGhError', () => {
     // Real gh wording (2.101-2.103) for a logged-in user with a non-GitHub remote.
     const stderr =
       'none of the git remotes configured for this repository point to a known GitHub host. To tell gh about a new GitHub host, please use `gh auth login`';
-    const message = describeGhError({ stderr });
-    expect(message).toMatch(/no GitHub remote/);
-    // A GitHub Enterprise host gh has no login for fails the same way.
-    expect(message).toMatch(/gh auth login --hostname/);
+    expect(describeGhError({ stderr })).toBe('This project has no GitHub remote.');
   });
 
   it('explains missing auth', () => {
