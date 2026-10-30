@@ -18,7 +18,12 @@ import {
   startBackgroundTaskWatcher,
 } from '../store/background-tasks';
 import { collapseTask, createTask } from '../store/tasks';
-import { deletePanelUserSize, getPanelUserSize, setPanelUserSize } from '../store/ui';
+import {
+  deletePanelUserSize,
+  getPanelUserSize,
+  getTaskViewportVisibility,
+  setPanelUserSize,
+} from '../store/ui';
 import { TilingLayout } from './TilingLayout';
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn() }));
@@ -134,6 +139,50 @@ it('keeps the active tile visible when a background task returns ahead of it', a
     bringTaskToFront('returning');
     currentScroll.mockRestore();
     returningScroll.mockRestore();
+  }
+});
+
+it('recomputes which tiles are on screen when the project order changes', async () => {
+  setStore('projects', [
+    { id: 'project', name: 'Project', path: '/repo', color: '#abc' },
+    { id: 'other', name: 'Other', path: '/other', color: '#def' },
+  ]);
+  for (const [id, projectId] of [
+    ['first', 'project'],
+    ['second', 'other'],
+  ] as const) {
+    setStore('tasks', id, {
+      id,
+      name: id,
+      projectId,
+      branchName: id,
+      worktreePath: `/repo/${id}`,
+      gitIsolation: 'worktree',
+      agentIds: [],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+    });
+  }
+  setStore('taskOrder', ['first', 'second']);
+  // One 100px tile fits; each tile sits at its DOM position.
+  const rect = vi
+    .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    .mockImplementation(function (this: HTMLElement) {
+      const tiles = [...container.querySelectorAll('[data-task-id]')];
+      const left = this.dataset.taskId ? tiles.indexOf(this) * 100 : 0;
+      return DOMRect.fromRect({ x: left, y: 0, width: 100, height: 100 });
+    });
+  try {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(getTaskViewportVisibility('second')).toBe('offscreen-right');
+
+    setStore('projects', (projects) => [...projects].reverse());
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(getTaskViewportVisibility('second')).toBe('visible');
+    expect(getTaskViewportVisibility('first')).toBe('offscreen-right');
+  } finally {
+    rect.mockRestore();
   }
 });
 

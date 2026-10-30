@@ -1,4 +1,5 @@
 import { matchesTaskProjectFilter } from './task-project-filter';
+import { sortByProjectGroup } from './sidebar-order';
 import { produce } from 'solid-js/store';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
@@ -68,7 +69,7 @@ export async function closeTerminal(terminalId: string): Promise<void> {
   });
   clearAgentActivity(terminal.agentId);
 
-  const order = store.taskOrder.filter(matchesTaskProjectFilter);
+  const order = sortByProjectGroup(store.taskOrder.filter(matchesTaskProjectFilter));
   const idx = order.indexOf(terminalId);
 
   // Switch active panel to neighbor before animation

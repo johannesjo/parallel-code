@@ -7,7 +7,7 @@ import { scrollTaskIntoView } from './focused-panel';
 import { setActiveTask } from './navigation';
 import { collapseTask, uncollapseTask } from './tasks';
 import { getPrChecks } from './pr-checks-state';
-import { getCoordinatorChildren, groupInsertIndex } from './sidebar-order';
+import { getCoordinatorChildren, sortByProjectGroup } from './sidebar-order';
 import { getTaskOpenQuestions, isAgentIdle, type TaskOpenQuestion } from './taskStatus';
 
 // Activity baselines are session-only. Timed snoozes are also saved on the task.
@@ -139,11 +139,9 @@ function activityChange(
 
 /** Nearest foreground task, preferring the left neighbor as closing a task does. */
 function foregroundNeighbor(taskId: string, block: readonly string[]): string | undefined {
-  const index = store.taskOrder.indexOf(taskId);
-  const candidates = [
-    ...store.taskOrder.slice(0, index).reverse(),
-    ...store.taskOrder.slice(index + 1),
-  ];
+  const order = sortByProjectGroup(store.taskOrder);
+  const index = order.indexOf(taskId);
+  const candidates = [...order.slice(0, index).reverse(), ...order.slice(index + 1)];
   return candidates.find(
     (id) => !block.includes(id) && !isTaskBackgrounded(id) && matchesTaskProjectFilter(id),
   );
@@ -223,10 +221,7 @@ function moveTaskToBack(
     });
     setStore('tasks', taskId, 'snoozedUntil', snapshot.snoozedUntil);
     setStore('tasks', taskId, 'snoozedUntilCi', snapshot.untilCi);
-    // Snoozing parks the block at the end of its own project group instead of
-    // the very end of the strip, so grouped tile order is preserved.
-    const at = groupInsertIndex(store.taskOrder, block, 'end');
-    setStore('taskOrder', [...remaining.slice(0, at), ...block, ...remaining.slice(at)]);
+    setStore('taskOrder', [...remaining, ...block]);
     if (store.activeTaskId && block.includes(store.activeTaskId)) {
       if (neighbor) setActiveTask(neighbor);
       else {
@@ -258,11 +253,7 @@ export function bringTaskToFront(taskId: string): void {
     if (!store.taskOrder.includes(owner)) return;
     const block = taskBlock(owner);
     keepFocusAcrossReorder();
-    // Restore to the front of the block's own project group, not the very front
-    // of the strip, so grouped tile order is preserved.
-    const at = groupInsertIndex(store.taskOrder, block, 'start');
-    const remaining = store.taskOrder.filter((id) => !block.includes(id));
-    setStore('taskOrder', [...remaining.slice(0, at), ...block, ...remaining.slice(at)]);
+    setStore('taskOrder', [...block, ...store.taskOrder.filter((id) => !block.includes(id))]);
     // Reordering can push the active tile offscreen without changing selection.
     // The helper waits for the DOM update and respects draft focus and focus mode.
     if (store.activeTaskId) scrollTaskIntoView(store.activeTaskId, 'instant');

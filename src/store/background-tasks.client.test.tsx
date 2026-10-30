@@ -9,7 +9,7 @@ import { clearAgentActivity, getTaskAttentionState, markAgentBusy } from './task
 import { invoke } from '../lib/ipc';
 import { info } from '../lib/log';
 import { IPC } from '../../electron/ipc/channels';
-import { collapseTask, uncollapseTask } from './tasks';
+import { collapseTask, forgetTask, uncollapseTask } from './tasks';
 import { setActiveTask } from './navigation';
 import { removePrChecks, setPrChecks, type PrChecksState } from './pr-checks-state';
 import { computeAttentionEntries } from './sidebar-attention';
@@ -435,11 +435,40 @@ it('parks a snoozed task at the end of its own project group', () => {
   setStore('taskOrder', ['one', 'two', 'three']);
 
   sendTaskToBack('one');
-  // End of the 'project' group (after three), not the global end.
-  expect(store.taskOrder).toEqual(['two', 'three', 'one']);
+  // Last of its own group on screen, ahead of the other project's tiles.
+  expect(computeVisibleTaskOrder()).toEqual(['three', 'one', 'two']);
   bringTaskToFront('one');
   // Front of its own group in the visual order: [one, three] before [two].
   expect(computeVisibleTaskOrder()).toEqual(['one', 'three', 'two']);
+});
+
+function splitAcrossProjects() {
+  setStore('projects', [
+    { id: 'project', name: 'Project', path: '/project', color: '#abc' },
+    { id: 'other', name: 'Other', path: '/other', color: '#def' },
+  ]);
+  setStore('tasks', 'two', 'projectId', 'other');
+  // Raw order [one, two, three] shows as [one, three, two].
+  setActiveTask('three');
+}
+
+it('hands selection to the visual neighbor when sending a task to the back', () => {
+  splitAcrossProjects();
+  sendTaskToBack('three');
+  expect(store.activeTaskId).toBe('one');
+});
+
+it('hands selection to the visual neighbor when minimizing a task', async () => {
+  splitAcrossProjects();
+  await collapseTask('three');
+  expect(store.activeTaskId).toBe('one');
+});
+
+it('hands selection to the visual neighbor when removing a task', () => {
+  splitAcrossProjects();
+  forgetTask('three', ['three-agent']);
+  expect(store.activeTaskId).toBe('one');
+  setStore('tasks', 'three', task('three')); // afterEach expects all three
 });
 
 it('keeps timed snooze through new activity and restores at its deadline without taking focus', () => {

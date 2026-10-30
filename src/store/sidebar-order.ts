@@ -130,7 +130,8 @@ export function taskVisualGroupKey(taskId: string): string | null {
 }
 
 /** Stable sort of any id list into the tile grouping: projects in
- *  `store.projects` order, then orphaned tasks, then terminals and other ids.
+ *  `store.projects` order, then orphaned tasks, then terminals and other ids,
+ *  with coordinated children right after their coordinator.
  *  For lists the tile order does not cover, such as all projects in the quick
  *  switcher or minimized tasks on the board. */
 export function sortByProjectGroup(ids: readonly string[]): string[] {
@@ -140,7 +141,7 @@ export function sortByProjectGroup(ids: readonly string[]): string[] {
     if (group === null) return projectRank.size + 1;
     return projectRank.get(group) ?? projectRank.size;
   };
-  return [...ids].sort((a, b) => rank(a) - rank(b));
+  return nestCoordinatedChildren([...ids].sort((a, b) => rank(a) - rank(b)));
 }
 
 /** Order a project's active tasks so each coordinator's children follow it,
@@ -208,27 +209,12 @@ export function computeTileOrder(): string[] {
   return [...tasks, ...terminals];
 }
 
-/** Index in `order` (with `block` removed) where `block` belongs to stay inside
- *  its own visual group: before the group's first task (`start`) or after its
- *  last (`end`). Falls back to the end when the group has no other members. */
-export function groupInsertIndex(
-  order: readonly string[],
-  block: readonly string[],
-  position: 'start' | 'end',
-): number {
-  const group = taskVisualGroupKey(block[0] ?? '');
-  const removed = new Set(block);
-  const remaining = order.filter((id) => !removed.has(id));
-  if (position === 'start') {
-    for (let index = 0; index < remaining.length; index++) {
-      if (taskVisualGroupKey(remaining[index]) === group) return index;
-    }
-    return remaining.length;
-  }
-  for (let index = remaining.length - 1; index >= 0; index--) {
-    if (taskVisualGroupKey(remaining[index]) === group) return index + 1;
-  }
-  return remaining.length;
+/** Tiles that move as one: the task's coordinator (or the task itself) and its
+ *  active children. */
+export function reorderBlock(taskId: string): string[] {
+  const parentId = store.tasks[taskId]?.coordinatedBy;
+  const owner = parentId && store.tasks[parentId] ? parentId : taskId;
+  return [owner, ...getCoordinatorChildren(owner).active];
 }
 
 /** New taskOrder after moving `movedId`'s block (a coordinator plus its active
@@ -239,14 +225,22 @@ export function computeVisualReorder(
   movedId: string,
   targetIndex: number,
 ): string[] | null {
-  const parentId = store.tasks[movedId]?.coordinatedBy;
-  const owner = parentId && store.tasks[parentId] ? parentId : movedId;
-  const block = [owner, ...getCoordinatorChildren(owner).active];
+  const block = reorderBlock(movedId);
+  const owner = block[0];
   const removed = new Set(block);
-  const remaining = order.filter((id) => !removed.has(id));
-  const clamped = Math.max(0, Math.min(targetIndex, remaining.length));
-  const insertBeforeId = remaining[clamped] ?? null;
-  const previousId = clamped > 0 ? remaining[clamped - 1] : null;
+  // Callers count the target with only the moved tile removed; the rest of its
+  // block may still sit on either side of it.
+  const withoutMoved = order.filter((id) => id !== movedId);
+  const clamped = Math.max(0, Math.min(targetIndex, withoutMoved.length));
+  const nextId = withoutMoved.slice(clamped).find((id) => !removed.has(id)) ?? null;
+  // A child renders right after its coordinator, so a drop before the child
+  // goes before the whole block; otherwise the tile would snap back.
+  const insertBeforeId = nextId ? (reorderBlock(nextId)[0] ?? nextId) : null;
+  const previousId =
+    withoutMoved
+      .slice(0, clamped)
+      .reverse()
+      .find((id) => !removed.has(id)) ?? null;
   const group = taskVisualGroupKey(owner);
   const rawRemaining = store.taskOrder.filter((id) => !removed.has(id));
 

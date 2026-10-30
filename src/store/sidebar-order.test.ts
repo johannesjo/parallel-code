@@ -40,7 +40,6 @@ import {
   computeVisibleTaskOrder,
   computeVisualReorder,
   getCoordinatorChildren,
-  groupInsertIndex,
   sortByProjectGroup,
   taskVisualGroupKey,
 } from './sidebar-order';
@@ -183,6 +182,17 @@ describe('visual tile order', () => {
     expect(computeTileOrder()).toEqual(['c', 'a', 'b']);
   });
 
+  it('sorts a coordinated child next to its coordinator, as the tiles show it', () => {
+    mockStore.projects = [{ id: 'one' }];
+    mockStore.tasks = {
+      coord: { projectId: 'one', coordinatorMode: true },
+      a: { projectId: 'one' },
+      child: { projectId: 'one', coordinatedBy: 'coord' },
+    };
+    // Spawned children are appended to the raw order.
+    expect(sortByProjectGroup(['coord', 'a', 'child'])).toEqual(['coord', 'child', 'a']);
+  });
+
   it('sorts any id list into project groups, then orphans, then terminals', () => {
     mockStore.projects = [{ id: 'one' }, { id: 'two' }];
     mockStore.tasks = {
@@ -256,6 +266,44 @@ describe('visual reorder', () => {
     expect(next).toEqual(['coord', 'child', 'other']);
   });
 
+  it('drops a dragged coordinator block where its tile was released', () => {
+    mockStore.projects = [{ id: 'one' }];
+    mockStore.tasks = {
+      coord: { projectId: 'one', coordinatorMode: true },
+      child: { projectId: 'one', coordinatedBy: 'coord' },
+      a: { projectId: 'one' },
+      b: { projectId: 'one' },
+    };
+    mockStore.taskOrder = ['coord', 'child', 'a', 'b'];
+
+    // Released between a and b; the drag counts the target with only coord removed.
+    expect(computeVisualReorder(['coord', 'child', 'a', 'b'], 'coord', 2)).toEqual([
+      'a',
+      'coord',
+      'child',
+      'b',
+    ]);
+  });
+
+  it('moves a task in front of a coordinator block, not between it and its child', () => {
+    mockStore.projects = [{ id: 'one' }];
+    mockStore.tasks = {
+      coord: { projectId: 'one', coordinatorMode: true },
+      child: { projectId: 'one', coordinatedBy: 'coord' },
+      a: { projectId: 'one' },
+      b: { projectId: 'one' },
+    };
+    mockStore.taskOrder = ['coord', 'child', 'a', 'b'];
+
+    // Moving a left lands its target on the child; the whole block must step aside.
+    expect(computeVisualReorder(['coord', 'child', 'a', 'b'], 'a', 1)).toEqual([
+      'a',
+      'coord',
+      'child',
+      'b',
+    ]);
+  });
+
   it('keeps terminals grouped after tasks when reordering', () => {
     mockStore.projects = [{ id: 'one' }];
     mockStore.tasks = { a: { projectId: 'one' } };
@@ -280,20 +328,5 @@ describe('group helpers', () => {
     expect(taskVisualGroupKey('a')).toBe('one');
     expect(taskVisualGroupKey('orphan')).toBe('__orphan__');
     expect(taskVisualGroupKey('term')).toBeNull();
-  });
-
-  it('groupInsertIndex anchors a block to its group', () => {
-    mockStore.projects = [{ id: 'one' }, { id: 'two' }];
-    mockStore.tasks = {
-      a: { projectId: 'one' },
-      b: { projectId: 'two' },
-      c: { projectId: 'one' },
-    };
-    mockStore.taskOrder = ['a', 'b', 'c'];
-
-    expect(groupInsertIndex(mockStore.taskOrder, ['c'], 'end')).toBe(1);
-    expect(groupInsertIndex(mockStore.taskOrder, ['c'], 'start')).toBe(0);
-    expect(groupInsertIndex(mockStore.taskOrder, ['b'], 'start')).toBe(2);
-    expect(groupInsertIndex(mockStore.taskOrder, ['b'], 'end')).toBe(2);
   });
 });

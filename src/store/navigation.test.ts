@@ -9,7 +9,13 @@ type MockStore = {
   activeAgentId: string | null;
   tasks: Record<
     string,
-    { id: string; agentIds: string[]; selectedAgentId?: string; projectId?: string }
+    {
+      id: string;
+      agentIds: string[];
+      selectedAgentId?: string;
+      projectId?: string;
+      coordinatedBy?: string;
+    }
   >;
   terminals: Record<string, unknown>;
   taskOrder: string[];
@@ -94,6 +100,29 @@ describe('moveActiveTask', () => {
       expect(reorderTaskInTileOrder).toHaveBeenCalledWith(movedId, target);
     },
   );
+
+  it('moves a coordinated child with its block past the neighbouring tile', () => {
+    mockStore.tasks['task-3'].coordinatedBy = 'task-2';
+    mockStore.activeTaskId = 'task-3';
+    moveActiveTask('left');
+    // Before task-1, counted with only the active child removed.
+    expect(reorderTaskInTileOrder).toHaveBeenCalledWith('task-3', 0);
+  });
+
+  it('moves a task right past a whole coordinator block', () => {
+    mockStore.tasks['task-3'].coordinatedBy = 'task-2';
+    mockStore.activeTaskId = 'task-1';
+    moveActiveTask('right');
+    // After task-3, the block's last tile, counted with task-1 removed.
+    expect(reorderTaskInTileOrder).toHaveBeenCalledWith('task-1', 2);
+  });
+
+  it('does not move a coordinator block that already ends the row', () => {
+    mockStore.tasks['task-3'].coordinatedBy = 'task-2';
+    mockStore.activeTaskId = 'task-2';
+    moveActiveTask('right');
+    expect(reorderTaskInTileOrder).not.toHaveBeenCalled();
+  });
 
   it('does not reorder the previous task while the new-task panel is focused', () => {
     mockStore.activeTaskId = 'task-2';

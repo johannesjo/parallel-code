@@ -15,7 +15,7 @@ import { isPlannableProject, pickAndAddProject } from './projects';
 import { matchProject, reorderTaskInTileOrder } from './tasks';
 import { closeProjectPages } from './project-pages';
 import { restoreFailedDraft } from './task-creation';
-import { computeTileOrder } from './sidebar-order';
+import { computeTileOrder, reorderBlock } from './sidebar-order';
 
 const AI_TERMINAL_PREFIX = 'ai-terminal:';
 
@@ -122,10 +122,21 @@ export function moveActiveTask(direction: 'left' | 'right'): void {
   if (!activeTaskId) return;
   const visibleOrder = computeTileOrder();
   if (visibleOrder.length < 2) return;
-  const idx = visibleOrder.indexOf(activeTaskId);
-  if (idx === -1) return;
-  const target = direction === 'left' ? idx - 1 : idx + 1;
-  if (target < 0 || target >= visibleOrder.length) return;
+  if (!visibleOrder.includes(activeTaskId)) return;
+  // A coordinator moves with its children, so step past the whole block.
+  const block = new Set(reorderBlock(activeTaskId));
+  const members = visibleOrder.filter((id) => block.has(id));
+  const neighbor =
+    direction === 'left'
+      ? visibleOrder[visibleOrder.indexOf(members[0] ?? activeTaskId) - 1]
+      : visibleOrder[visibleOrder.indexOf(members.at(-1) ?? activeTaskId) + 1];
+  if (!neighbor) return;
+  // Step past the neighbour's whole block too, not into it.
+  const neighborBlock = new Set(reorderBlock(neighbor));
+  const span = visibleOrder.filter((id) => neighborBlock.has(id));
+  const anchor = (direction === 'left' ? span[0] : span.at(-1)) ?? neighbor;
+  const withoutMoved = visibleOrder.filter((id) => id !== activeTaskId);
+  const target = withoutMoved.indexOf(anchor) + (direction === 'left' ? 0 : 1);
   reorderTaskInTileOrder(activeTaskId, target);
   // Re-focus the moved task and scroll it into view (DOM node move loses focus)
   setTaskFocusedPanel(activeTaskId, getTaskFocusedPanel(activeTaskId));

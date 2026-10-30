@@ -239,7 +239,8 @@ export function TilingLayout() {
 
   // Recompute viewport state when panel order/structure changes.
   createEffect(() => {
-    void store.taskOrder.join('|');
+    // The tile order, not the raw one: reordering projects moves tiles too.
+    void computeTileOrder().join('|');
     void store.taskOrder.filter(isTaskBackgrounded).join('|');
     void taskProjectFilter();
     void documentTaskId();

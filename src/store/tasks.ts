@@ -57,6 +57,7 @@ import {
   computeTileOrder,
   computeVisualReorder,
   getCoordinatorChildren,
+  sortByProjectGroup,
 } from './sidebar-order';
 import { isLandedTaskState } from './landing';
 import { cleanPasteText } from '../lib/paste-text';
@@ -130,16 +131,19 @@ function removeTaskDraftEntries(
   agentIds: readonly string[],
   activeAgentForTask: (task: Task) => string | null,
 ): void {
-  delete s.tasks[taskId];
-  delete s.taskGitStatus[taskId];
-
+  // Before the task is deleted: its project decides where it sits on screen.
   const neighborId =
     s.activeTaskId === taskId
       ? selectActiveNeighborAfterRemoval(
-          s.taskOrder.filter((id) => id === taskId || matchesTaskProjectFilter(id)),
+          sortByProjectGroup(
+            s.taskOrder.filter((id) => id === taskId || matchesTaskProjectFilter(id)),
+          ),
           taskId,
         )
       : null;
+
+  delete s.tasks[taskId];
+  delete s.taskGitStatus[taskId];
 
   cleanupPanelEntries(s, taskId);
 
@@ -946,8 +950,8 @@ export function setStagedNotificationUserEdited(taskId: string): void {
 
 /**
  * Reorder a task in the visual tile order (project-grouped, terminals last).
- * Cross-project drops are ignored. `taskIndex` targets the slot in the visual
- * order with the moved block removed.
+ * Cross-project drops are ignored. `targetIndex` targets the slot in the visual
+ * order with only the moved tile removed, as a drag reports it.
  */
 export function reorderTaskInTileOrder(movedId: string, targetIndex: number): void {
   const next = computeVisualReorder(computeTileOrder(), movedId, targetIndex);
@@ -1109,7 +1113,7 @@ export async function collapseTask(taskId: string): Promise<void> {
       // Switch active task to neighbor
       if (s.activeTaskId === taskId) {
         const neighbor = selectActiveNeighborAfterRemoval(
-          originalOrder.filter(matchesTaskProjectFilter),
+          sortByProjectGroup(originalOrder.filter(matchesTaskProjectFilter)),
           taskId,
         );
         s.activeTaskId = neighbor;
