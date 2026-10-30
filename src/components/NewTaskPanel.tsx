@@ -64,6 +64,7 @@ import { parseClaudeSessionUrl } from '../lib/claude-session-url';
 import { sessionAgentForCommand } from '../../electron/shared/session-record';
 import { buildIssuePrompt, buildPrTaskPrompt, workItemTaskName } from '../lib/github-prompts';
 import { getGitHubIssue } from '../store/github';
+import { linkTaskToIssueReference } from '../store/github-issue-link';
 import { GitHubItemPicker } from './GitHubItemPicker';
 import {
   createSymlinkCandidateState,
@@ -1334,6 +1335,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
           if (card) void linkNewTaskToKanbanCard(taskId, card, projectId);
           if (idea) removeTaskIdea(idea);
           if (!manualName && p) void nameTaskWithModel(taskId, p);
+          // A prefill decided the link itself (null = deliberately none).
+          const root = getProjectPath(projectId);
+          if (!ghUrl && prefill?.githubUrl === undefined && p && !isFromDrop && root)
+            void linkTaskToIssueReference(taskId, root, p);
         },
         draft: {
           prefill: {

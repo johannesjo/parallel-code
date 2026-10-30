@@ -4,6 +4,7 @@ import {
   extractGitHubUrl,
   sameGitHubIssue,
   taskNameFromGitHubUrl,
+  extractIssueReference,
 } from './github-url';
 
 describe('enterprise PR URLs', () => {
@@ -50,5 +51,29 @@ describe('issue task identity', () => {
     'https://evil.test/owner/repo/issues/7',
   ])('does not link %s to another issue', (url) => {
     expect(sameGitHubIssue(url, 'https://github.com/owner/repo/issues/7')).toBe(false);
+  });
+});
+
+describe('issue references in prompts', () => {
+  it.each([
+    ['fix #123', 123],
+    ['#7 crashes on start', 7],
+    ['work on issue 42 please', 42],
+    ['Issue #42: login fails', 42],
+    ['see #5 and also #5 again', 5],
+  ])('finds the issue in %j', (text, number) => {
+    expect(extractIssueReference(text)).toBe(number);
+  });
+
+  it.each([
+    ['no reference here'],
+    ['fix #12 and #13'],
+    ['color &#123; entity'],
+    ['anchor page#3 link'],
+    ['#0 is not an issue'],
+    ['set color: #333 on the label'],
+    ['make this #1 priority'],
+  ])('finds no single issue in %j', (text) => {
+    expect(extractIssueReference(text)).toBeNull();
   });
 });

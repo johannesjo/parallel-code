@@ -7,6 +7,7 @@
 import { publishAgentTour } from './agent-tour';
 import { publishTaskConfidence } from './task-brief';
 import { publishGitHubList } from './github-lists';
+import { linkTaskToIssueReference } from './github-issue-link';
 import { getTaskMindMap, updateTaskMindMapFromAgent } from './canvas';
 import { openCanvasViewFromAgent } from './canvas-agent';
 import { getTaskReasoning, updateTaskReasoningFromAgent } from './reasoning';
@@ -219,6 +220,7 @@ async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
       // Someone at the desktop may be mid-task; only they decide what gets focus.
       activate: false,
     });
+    void linkTaskToIssueReference(taskId, project.path, req.prompt);
     reply(req.reqId, true, { taskId });
   } catch (err) {
     reply(req.reqId, false, undefined, errMessage(err));
@@ -254,6 +256,7 @@ async function handleCreateIndependentTask(req: CreateIndependentTaskRequest): P
         await delegationRequest({ action: 'assertIndependentLaunch', launchId: req.launchId });
       },
     });
+    void linkTaskToIssueReference(taskId, project.path, req.prompt);
     reply(req.reqId, true, { taskId });
   } catch (err) {
     reply(req.reqId, false, undefined, errMessage(err));

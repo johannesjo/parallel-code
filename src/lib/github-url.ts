@@ -88,3 +88,18 @@ export function sameGitHubIssue(left: string | undefined, right: string): boolea
     a.repo.toLowerCase() === b.repo.toLowerCase()
   );
 }
+
+// `#123` not glued to a word, `&` (HTML entity) or `/` (URL fragment), nor after
+// a colon (CSS `color: #333`) or before "priority" (an ordinal); or "issue 123".
+const ISSUE_REFERENCE_RE = /(?<!:\s*)(?:^|[^\w&/:])#(\d+)\b(?!\s+priority\b)|\bissue\s+#?(\d+)\b/gi;
+
+/**
+ * The one issue number a prompt refers to in shorthand (`#123`, "issue 123"),
+ * or null when it names none or several: the task can link to a single issue only.
+ */
+export function extractIssueReference(text: string): number | null {
+  const numbers = new Set(
+    [...text.matchAll(ISSUE_REFERENCE_RE)].map((m) => Number(m[1] ?? m[2])).filter((n) => n > 0),
+  );
+  return numbers.size === 1 ? [...numbers][0] : null;
+}

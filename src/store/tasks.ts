@@ -46,6 +46,7 @@ import type {
   MergeResult,
 } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
+import { linkTaskToIssueReference } from './github-issue-link';
 import type { Agent, Task, GitIsolationMode, AppStore } from './types';
 import type { DockerSource } from '../lib/docker';
 import {
@@ -1340,6 +1341,9 @@ export function initMCPListeners(): () => void {
       if (created) {
         markAgentSpawned(evt.agentId);
         rescheduleTaskStatusPolling();
+        const projectRoot = getProjectPath(evt.projectId);
+        if (projectRoot && evt.prompt)
+          void linkTaskToIssueReference(evt.taskId, projectRoot, evt.prompt);
       }
     }),
   );
