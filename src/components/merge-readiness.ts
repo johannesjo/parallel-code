@@ -122,8 +122,18 @@ const RUN_KIND_STATUS: Record<VerificationSummaryKind, MergeReadinessCheckStatus
 function verificationRunCheck(
   run: VerificationRun | undefined,
   headSha: string | null | undefined,
+  mergeStatus: MergeStatus | undefined,
 ): MergeReadinessCheck {
   const summary = summarizeVerificationRun(run, headSha);
+  // Merging replays the task onto the base, so the run did not cover the
+  // commits the base gained since; reads like a stale run, not a pass.
+  if (summary.kind === 'passed' && mergeStatus && mergeStatus.main_ahead_count > 0) {
+    return {
+      label: 'Verify command',
+      status: 'warning',
+      detail: `Passed before integration. ${mergeStatus.base_branch} is ${countLabel(mergeStatus.main_ahead_count, 'commit')} ahead; rebase and re-run to check the combined code.`,
+    };
+  }
   return {
     label: 'Verify command',
     status: RUN_KIND_STATUS[summary.kind],
@@ -133,7 +143,11 @@ function verificationRunCheck(
 
 function verificationCheck(input: MergeReadinessInput): MergeReadinessCheck {
   if (usesVerificationRun(input.verificationRun, Boolean(input.verifyCommandConfigured))) {
-    return verificationRunCheck(input.verificationRun, input.worktreeStatus?.head_sha);
+    return verificationRunCheck(
+      input.verificationRun,
+      input.worktreeStatus?.head_sha,
+      input.mergeStatus,
+    );
   }
   return reportedVerificationCheck(input.verification);
 }

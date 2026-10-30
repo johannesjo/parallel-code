@@ -529,6 +529,21 @@ describe('buildMergeReadiness verify command runs', () => {
     );
   });
 
+  it('warns that a passing run does not cover commits the base gained since', () => {
+    expect(
+      verificationOf({
+        verificationRun: run(),
+        worktreeStatus: atHead('head-1'),
+        mergeStatus: { ...cleanMergeStatus, main_ahead_count: 2 },
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        status: 'warning',
+        detail: expect.stringContaining('main is 2 commits ahead'),
+      }),
+    );
+  });
+
   it('warns when the run saw uncommitted changes', () => {
     expect(
       verificationOf({ verificationRun: run({ dirty: true }), worktreeStatus: atHead('head-1') }),

@@ -64,6 +64,7 @@ import {
   getDiffBaseSha,
   getMainBranch,
   mergeTask as gitMergeTask,
+  rebaseTask,
 } from '../ipc/git.js';
 import {
   stripAnsi,
@@ -121,6 +122,8 @@ function clampWaitTimeoutMs(timeoutMs: number): number {
 }
 const PROMPT_WRITE_DELAY_MS = 50;
 const GIT_LOCK_RETRY_DELAY_MS = 2_000;
+/** Rebase-and-verify rounds before a base that other landings keep moving escalates. */
+const LANDING_VERIFY_ATTEMPTS = 3;
 const INITIAL_PROMPT_READY_DELAY_MS = 1_500;
 const MAX_PENDING_PROMPTS = 32;
 const MAX_PROMPT_BYTES = 64 * 1024;
@@ -212,6 +215,18 @@ function parsePorcelainPaths(statusOut: string): string[] {
 function execStdout(result: Awaited<ReturnType<typeof execAsync>>): string {
   const stdout = typeof result === 'string' ? result : result.stdout;
   return typeof stdout === 'string' ? stdout : stdout.toString('utf8');
+}
+
+/** Whether `worktreePath`'s HEAD already contains every commit of `branch`. */
+async function containsBranch(worktreePath: string, branch: string): Promise<boolean> {
+  try {
+    await execAsync('git', ['merge-base', '--is-ancestor', branch, 'HEAD'], { cwd: worktreePath });
+    return true;
+  } catch (err) {
+    // Exit 1 is git's "no"; anything else is a real failure.
+    if ((err as { code?: unknown }).code === 1) return false;
+    throw err;
+  }
 }
 
 export class Coordinator {
@@ -2201,6 +2216,43 @@ export class Coordinator {
     const command = this.coordinators.get(task.coordinatorTaskId)?.verifyCommand;
     const worktreePath = task.worktreePath;
     if (!command || !worktreePath) return;
+    // The merge replays the task onto its base, so a pass on the branch alone
+    // says nothing about what lands. Verify the rebased branch instead; the
+    // merge's own rebase is then a no-op and fast-forwards to the checked HEAD.
+    // shortcut: a landing between the last check and the merge goes unverified —
+    // pass the checked base into gitMergeTask if that window ever matters.
+    const baseBranch = task.baseBranch ?? (await getMainBranch(task.projectRoot));
+    for (let attempt = 1; attempt <= LANDING_VERIFY_ATTEMPTS; attempt++) {
+      await this.escalateOnError(task, () => rebaseTask(worktreePath, baseBranch));
+      await this.runLandingVerification(task, worktreePath, command);
+      const settled = await this.escalateOnError(task, () =>
+        containsBranch(worktreePath, baseBranch),
+      );
+      if (settled) return;
+    }
+    const reason = `${baseBranch} kept moving while \`${command}\` ran; land again once it settles.`;
+    this.escalateLanding(task, 'landing_escalated', reason);
+    throw new Error(reason);
+  }
+
+  private async escalateOnError<T>(task: CoordinatedTask, run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (err) {
+      this.escalateLanding(
+        task,
+        'landing_escalated',
+        err instanceof Error ? err.message : String(err),
+      );
+      throw err;
+    }
+  }
+
+  private async runLandingVerification(
+    task: CoordinatedTask,
+    worktreePath: string,
+    command: string,
+  ): Promise<void> {
     const pending = pendingVerificationRun(command);
     this.syncVerificationRun(task, pending);
     const run = await verificationRunner

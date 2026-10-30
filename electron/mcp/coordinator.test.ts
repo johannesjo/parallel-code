@@ -36,6 +36,7 @@ import {
   mockGetAllFileDiffs,
   mockGetDiffBaseSha,
   mockGitMergeTask,
+  mockRebaseTask,
   mockCreateBackendTask,
   mockVerifyStart,
   mockVerifyCancel,
@@ -1672,6 +1673,79 @@ describe('Coordinator land_self', () => {
         )
         .filter(Boolean);
       expect(syncedStatuses.slice(0, 2)).toEqual(['running', 'passed']);
+    });
+
+    /** Answers `merge-base --is-ancestor` with the given results in turn: false = base moved. */
+    function mockBaseContained(...results: boolean[]) {
+      const base = mockExecFile.getMockImplementation();
+      mockExecFile.mockImplementation(
+        (
+          cmd: string,
+          args: string[],
+          opts: unknown,
+          cb: (err: Error | null, stdout: string, stderr: string) => void,
+        ) => {
+          if (args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+            const contained = results.length > 1 ? results.shift() : results[0];
+            cb(contained ? null : Object.assign(new Error('not ancestor'), { code: 1 }), '', '');
+            return;
+          }
+          base?.(cmd, args, opts, cb);
+        },
+      );
+    }
+
+    it('verifies the task rebased onto its base, not the branch alone', async () => {
+      coordinator.registerCoordinator('coord-1', 'proj-1', { verifyCommand: 'npm test' });
+      mockVerifyStart.mockResolvedValueOnce(passedRun);
+
+      await coordinator.landSelf('task-1', { verification, summary: 'done' });
+
+      expect(mockRebaseTask).toHaveBeenCalledWith('/tmp/test', 'main');
+      expect(mockRebaseTask.mock.invocationCallOrder[0]).toBeLessThan(
+        mockVerifyStart.mock.invocationCallOrder[0] ?? 0,
+      );
+      expect(vi.mocked(mergeTask)).toHaveBeenCalled();
+    });
+
+    it('rebases and verifies again when the base moves during the run', async () => {
+      coordinator.registerCoordinator('coord-1', 'proj-1', { verifyCommand: 'npm test' });
+      mockVerifyStart.mockResolvedValue(passedRun);
+      mockBaseContained(false, true);
+
+      await coordinator.landSelf('task-1', { verification, summary: 'done' });
+
+      expect(mockRebaseTask).toHaveBeenCalledTimes(2);
+      expect(mockVerifyStart).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(mergeTask)).toHaveBeenCalled();
+    });
+
+    it('escalates instead of landing untested code when the base keeps moving', async () => {
+      coordinator.registerCoordinator('coord-1', 'proj-1', { verifyCommand: 'npm test' });
+      mockVerifyStart.mockResolvedValue(passedRun);
+      mockBaseContained(false);
+
+      await expect(coordinator.landSelf('task-1', { verification })).rejects.toThrow('kept moving');
+
+      expect(mockVerifyStart).toHaveBeenCalledTimes(3);
+      expect(vi.mocked(mergeTask)).not.toHaveBeenCalled();
+      expect(coordinator.getTask('task-1')?.landingState).toBe('landing_escalated');
+    });
+
+    it('escalates without running the command when the rebase conflicts', async () => {
+      coordinator.registerCoordinator('coord-1', 'proj-1', { verifyCommand: 'npm test' });
+      mockRebaseTask.mockRejectedValueOnce(new Error('Rebase stopped on conflicts in a.ts'));
+
+      await expect(coordinator.landSelf('task-1', { verification })).rejects.toThrow(
+        'Rebase stopped on conflicts in a.ts',
+      );
+
+      expect(mockVerifyStart).not.toHaveBeenCalled();
+      expect(vi.mocked(mergeTask)).not.toHaveBeenCalled();
+      expect(coordinator.getTask('task-1')).toMatchObject({
+        landingState: 'landing_escalated',
+        landingReason: expect.stringContaining('conflicts in a.ts'),
+      });
     });
 
     it('escalates with the output tail and refuses to merge when it fails', async () => {

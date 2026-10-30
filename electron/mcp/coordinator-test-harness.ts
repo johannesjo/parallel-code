@@ -55,6 +55,7 @@ const mocks = vi.hoisted(() => {
   const mockGetAllFileDiffs = vi.fn();
   const mockGetDiffBaseSha = vi.fn();
   const mockGitMergeTask = vi.fn();
+  const mockRebaseTask = vi.fn();
   const mockCreateBackendTask = vi.fn();
   const mockDeleteBackendTask = vi.fn();
   const mockFsLstat = vi.fn();
@@ -94,6 +95,7 @@ const mocks = vi.hoisted(() => {
     mockGetAllFileDiffs,
     mockGetDiffBaseSha,
     mockGitMergeTask,
+    mockRebaseTask,
     mockCreateBackendTask,
     mockDeleteBackendTask,
     mockVerifyStart,
@@ -212,6 +214,7 @@ vi.mock('../ipc/git.js', () => ({
   getDiffBaseSha: mocks.mockGetDiffBaseSha,
   getMainBranch: async () => 'main',
   mergeTask: mocks.mockGitMergeTask,
+  rebaseTask: mocks.mockRebaseTask,
 }));
 
 vi.mock('../ipc/tasks.js', () => ({
@@ -284,6 +287,7 @@ export const {
   mockGetAllFileDiffs,
   mockGetDiffBaseSha,
   mockGitMergeTask,
+  mockRebaseTask,
   mockCreateBackendTask,
   mockDeleteBackendTask,
   mockVerifyStart,
@@ -370,6 +374,8 @@ export function resetCoordinatorMocks(): void {
   mockGetDiffBaseSha.mockReset();
   mockGetDiffBaseSha.mockResolvedValue('abc123sha');
   mockGitMergeTask.mockReset();
+  mockRebaseTask.mockReset();
+  mockRebaseTask.mockResolvedValue(undefined);
   mockGitMergeTask.mockResolvedValue({ main_branch: 'main', lines_added: 10, lines_removed: 5 });
 
   mockCreateBackendTask.mockReset();
