@@ -52,7 +52,13 @@ import {
   clampCoordinatorConcurrentTasks,
   DEFAULT_COORDINATOR_CONCURRENT_TASKS,
 } from '../lib/coordinator-limits';
-import { computeSidebarDraggableTaskOrder, getCoordinatorChildren } from './sidebar-order';
+import {
+  computeSidebarDraggableTaskOrder,
+  computeTileOrder,
+  computeVisualReorder,
+  getCoordinatorChildren,
+  sortByProjectGroup,
+} from './sidebar-order';
 import { isLandedTaskState } from './landing';
 import { cleanPasteText } from '../lib/paste-text';
 import { forgetAgentPublication } from './reasoning-activity';
@@ -125,16 +131,19 @@ function removeTaskDraftEntries(
   agentIds: readonly string[],
   activeAgentForTask: (task: Task) => string | null,
 ): void {
-  delete s.tasks[taskId];
-  delete s.taskGitStatus[taskId];
-
+  // Before the task is deleted: its project decides where it sits on screen.
   const neighborId =
     s.activeTaskId === taskId
       ? selectActiveNeighborAfterRemoval(
-          s.taskOrder.filter((id) => id === taskId || matchesTaskProjectFilter(id)),
+          sortByProjectGroup(
+            s.taskOrder.filter((id) => id === taskId || matchesTaskProjectFilter(id)),
+          ),
           taskId,
         )
       : null;
+
+  delete s.tasks[taskId];
+  delete s.taskGitStatus[taskId];
 
   cleanupPanelEntries(s, taskId);
 
@@ -939,58 +948,27 @@ export function setStagedNotificationUserEdited(taskId: string): void {
   );
 }
 
-export function reorderTask(fromIndex: number, toIndex: number): void {
-  if (fromIndex === toIndex) return;
-  setStore(
-    produce((s) => {
-      const len = s.taskOrder.length;
-      if (fromIndex < 0 || fromIndex >= len || toIndex < 0 || toIndex >= len) return;
-      const [moved] = s.taskOrder.splice(fromIndex, 1);
-      s.taskOrder.splice(toIndex, 0, moved);
-    }),
-  );
+/**
+ * Reorder a task in the visual tile order (project-grouped, terminals last).
+ * Cross-project drops are ignored. `targetIndex` targets the slot in the visual
+ * order with only the moved tile removed, as a drag reports it.
+ */
+export function reorderTaskInTileOrder(movedId: string, targetIndex: number): void {
+  const next = computeVisualReorder(computeTileOrder(), movedId, targetIndex);
+  if (next) setStore('taskOrder', next);
 }
 
 /**
  * Reorder a task using visible sidebar indices (excluding hidden coordinated children).
- * Keeps coordinator+children blocks contiguous in taskOrder.
+ * Keeps coordinator+children blocks contiguous in taskOrder and inside the
+ * task's own project group; cross-group drops are ignored.
  *
  * @param movedId - ID of the task being dragged
  * @param targetVisibleIdx - target position in the visible draggable order (after removal of movedId)
  */
 export function reorderTaskVisually(movedId: string, targetVisibleIdx: number): void {
-  // Visible draggable order: active tasks excluding coordinated children
-  const draggableOrder = computeSidebarDraggableTaskOrder();
-
-  // After removing the moved item, find what task should come after it
-  const remainingDraggable = draggableOrder.filter((id) => id !== movedId);
-  const insertBeforeId = remainingDraggable[targetVisibleIdx] ?? null;
-
-  // Build the block to move: movedId + its active children in taskOrder sequence
-  const { active: activeChildren } = getCoordinatorChildren(movedId);
-  const childSet = new Set(activeChildren);
-  const block = [movedId, ...store.taskOrder.filter((id) => childSet.has(id))];
-
-  // Remove the block from taskOrder
-  const blockSet = new Set(block);
-  const remaining = store.taskOrder.filter((id) => !blockSet.has(id));
-
-  // Find where to insert in the remaining raw order
-  const rawInsertAt =
-    insertBeforeId !== null ? remaining.indexOf(insertBeforeId) : remaining.length;
-  const finalInsertAt = rawInsertAt === -1 ? remaining.length : rawInsertAt;
-
-  const newOrder = [
-    ...remaining.slice(0, finalInsertAt),
-    ...block,
-    ...remaining.slice(finalInsertAt),
-  ];
-
-  setStore(
-    produce((s) => {
-      s.taskOrder = newOrder;
-    }),
-  );
+  const next = computeVisualReorder(computeSidebarDraggableTaskOrder(), movedId, targetVisibleIdx);
+  if (next) setStore('taskOrder', next);
 }
 
 export function spawnShellForTask(taskId: string, initialCommand?: string): string {
@@ -1135,7 +1113,7 @@ export async function collapseTask(taskId: string): Promise<void> {
       // Switch active task to neighbor
       if (s.activeTaskId === taskId) {
         const neighbor = selectActiveNeighborAfterRemoval(
-          originalOrder.filter(matchesTaskProjectFilter),
+          sortByProjectGroup(originalOrder.filter(matchesTaskProjectFilter)),
           taskId,
         );
         s.activeTaskId = neighbor;

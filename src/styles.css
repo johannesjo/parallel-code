@@ -843,12 +843,6 @@ html[data-look='parallel-code'] .task-item-name {
   letter-spacing: -0.015em;
 }
 
-html[data-look='parallel-code'] .task-item :is(.task-agent-status, .task-brief-line) {
-  font-family: var(--font-ui);
-  font-variant-numeric: tabular-nums;
-  opacity: 1;
-}
-
 html[data-look='parallel-code'] :is(.prompt-textarea, .task-notes-body textarea) {
   font-family: var(--font-ui) !important;
   font-size: 14px !important;
@@ -2758,9 +2752,6 @@ textarea::placeholder {
 }
 
 .task-item {
-  /* Detail lines indent past the row's leading glyphs — a 12px glyph lane plus
-     the 6px head gap each — so they start under the title text, not the dot. */
-  --task-row-indent: 18px;
   transition:
     background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
@@ -2822,11 +2813,6 @@ textarea::placeholder {
   height: 1.35em;
 }
 
-/* Coordinator rows carry a bot icon in front of the status glyph. */
-.task-item-coordinator {
-  --task-row-indent: 36px;
-}
-
 /* The brief line is routine: it shows its fill and chevron only when hovered or
    open. The chevron fades rather than appearing, so the text never shifts. */
 .task-brief-bar {
@@ -2869,34 +2855,13 @@ textarea::placeholder {
   line-height: 1.35;
 }
 
-/* Status lines under a task name are reference detail, not the row's identity:
-   keep them quiet and give them air so the sidebar scans as a list of names.
-   Hovering a row is the signal that its detail is wanted. A mono face sets them
-   apart from the name as machine-reported state rather than a second title. */
-.task-item .task-agent-status,
-.task-item .task-brief-line {
-  margin-top: 4px;
-  padding-left: var(--task-row-indent);
-  font-family: var(--font-mono);
-  opacity: 0.6;
-  transition: opacity var(--motion-fast) var(--ease-out);
-}
-
-/* The two status lines belong together — only the pair is offset from the title. */
-.task-item .task-agent-status + .task-brief-line {
-  margin-top: 1px;
-}
-
-.task-item:is(
-    :hover,
-    [data-kbd-focused='true'],
-    [aria-current='true'],
-    [data-attention='needs_input'],
-    [data-attention='error'],
-    [data-attention='review']
-  )
-  :is(.task-agent-status, .task-brief-line) {
-  opacity: 1;
+/* The task list keeps each name to one line, so every row is the same height
+   and the list scans as names; the full name is in the row's tooltip. The
+   attention tray still wraps: its few rows are there to be read. */
+.task-item:not(.sidebar-attention-row) .task-item-name {
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .sidebar-attention-tray {

@@ -300,6 +300,16 @@ it('lists finished work above idle tasks in the stopped lane', () => {
   expect(lane('Stopped')?.querySelector('.task-board-card')?.classList).toContain('state-ready');
 });
 
+it("keeps the sidebar's project grouping inside a lane", () => {
+  setStore('projects', [
+    { id: 'api', name: 'API', path: '/api', color: '#fa0' },
+    { id: 'web', name: 'Website', path: '/repo', color: '#0af' },
+  ]);
+  setStore('tasks', 'cache', task('cache', 'Cache tokens', { projectId: 'api' }));
+  setStore('taskOrder', ['review', 'pr', 'idle', 'cache']);
+  expect(cardNames('Stopped')).toEqual(['Cache tokens', 'Update docs']);
+});
+
 it('groups subtasks under their coordinator, naming it once in other lanes', () => {
   const headings = (title: string) =>
     [...(lane(title)?.querySelectorAll('.task-board-family') ?? [])].map((el) => el.textContent);

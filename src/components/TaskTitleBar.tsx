@@ -2,7 +2,7 @@ import { For, Show, createSignal, onCleanup, onMount } from 'solid-js';
 import { Dynamic, Portal } from 'solid-js/web';
 import {
   store,
-  reorderTask,
+  reorderTaskInTileOrder,
   activateTaskFromPointer,
   updateTaskName,
   getTaskDotStatus,
@@ -28,6 +28,7 @@ import {
 import { taskScreens } from '../store/task-screens';
 import { withViewTransition } from '../lib/viewTransition';
 import { handleDragReorder } from '../lib/dragReorder';
+import { computeTileOrder } from '../store/sidebar-order';
 import { displayTaskNameFromPrompt, shouldUsePromptDerivedTaskName } from '../lib/clean-task-name';
 import type { Task } from '../store/types';
 import { isLandedTaskState } from '../store/landing';
@@ -132,8 +133,8 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
   function handleTitleMouseDown(e: MouseEvent) {
     handleDragReorder(e, {
       itemId: props.task.id,
-      getTaskOrder: () => store.taskOrder,
-      onReorder: reorderTask,
+      getTaskOrder: () => computeTileOrder(),
+      onReorder: (_fromIdx, toIdx) => reorderTaskInTileOrder(props.task.id, toIdx),
       onTap: () => activateTaskFromPointer(props.task.id),
     });
   }

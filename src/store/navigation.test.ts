@@ -9,7 +9,13 @@ type MockStore = {
   activeAgentId: string | null;
   tasks: Record<
     string,
-    { id: string; agentIds: string[]; selectedAgentId?: string; projectId?: string }
+    {
+      id: string;
+      agentIds: string[];
+      selectedAgentId?: string;
+      projectId?: string;
+      coordinatedBy?: string;
+    }
   >;
   terminals: Record<string, unknown>;
   taskOrder: string[];
@@ -36,7 +42,7 @@ vi.mock('./core', async () => {
 vi.mock('./focus', () => ({}));
 vi.mock('./notification', () => ({ showNotification: vi.fn() }));
 vi.mock('./projects', () => ({ pickAndAddProject: vi.fn() }));
-vi.mock('./tasks', () => ({ reorderTask: vi.fn() }));
+vi.mock('./tasks', () => ({ reorderTaskInTileOrder: vi.fn() }));
 // DOM focus is exercised in navigation.client.test.tsx; here, where there is no
 // document, only whether focus is requested is observed. The gates stay real.
 vi.mock('./focused-panel', async (importOriginal) => ({
@@ -47,7 +53,7 @@ vi.mock('./focused-panel', async (importOriginal) => ({
 
 import { activateTaskFromPointer, jumpToTask, moveActiveTask, setActiveTask } from './navigation';
 import { isPanelFocused, scheduleTaskFocus } from './focused-panel';
-import { reorderTask } from './tasks';
+import { reorderTaskInTileOrder } from './tasks';
 
 beforeEach(() => {
   const harness = expectDefined(core.harness, 'mock store harness');
@@ -79,11 +85,11 @@ afterEach(() => {
 
 describe('moveActiveTask', () => {
   it.each([
-    ['right', 'task-1', 0, 2],
-    ['left', 'task-3', 2, 0],
+    ['right', 'task-1', 'task-1', 1],
+    ['left', 'task-3', 'task-3', 0],
   ] as const)(
     'moves %s past tasks hidden by the project filter',
-    (direction, activeId, from, to) => {
+    (direction, activeId, movedId, target) => {
       mockStore.projects = [{ id: 'a' }, { id: 'b' }];
       mockStore.taskProjectFilter = 'a';
       mockStore.tasks['task-1'].projectId = 'a';
@@ -91,9 +97,32 @@ describe('moveActiveTask', () => {
       mockStore.tasks['task-3'].projectId = 'a';
       mockStore.activeTaskId = activeId;
       moveActiveTask(direction);
-      expect(reorderTask).toHaveBeenCalledWith(from, to);
+      expect(reorderTaskInTileOrder).toHaveBeenCalledWith(movedId, target);
     },
   );
+
+  it('moves a coordinated child with its block past the neighbouring tile', () => {
+    mockStore.tasks['task-3'].coordinatedBy = 'task-2';
+    mockStore.activeTaskId = 'task-3';
+    moveActiveTask('left');
+    // Before task-1, counted with only the active child removed.
+    expect(reorderTaskInTileOrder).toHaveBeenCalledWith('task-3', 0);
+  });
+
+  it('moves a task right past a whole coordinator block', () => {
+    mockStore.tasks['task-3'].coordinatedBy = 'task-2';
+    mockStore.activeTaskId = 'task-1';
+    moveActiveTask('right');
+    // After task-3, the block's last tile, counted with task-1 removed.
+    expect(reorderTaskInTileOrder).toHaveBeenCalledWith('task-1', 2);
+  });
+
+  it('does not move a coordinator block that already ends the row', () => {
+    mockStore.tasks['task-3'].coordinatedBy = 'task-2';
+    mockStore.activeTaskId = 'task-2';
+    moveActiveTask('right');
+    expect(reorderTaskInTileOrder).not.toHaveBeenCalled();
+  });
 
   it('does not reorder the previous task while the new-task panel is focused', () => {
     mockStore.activeTaskId = 'task-2';
@@ -101,7 +130,7 @@ describe('moveActiveTask', () => {
 
     moveActiveTask('right');
 
-    expect(reorderTask).not.toHaveBeenCalled();
+    expect(reorderTaskInTileOrder).not.toHaveBeenCalled();
   });
 });
 

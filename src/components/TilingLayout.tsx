@@ -35,6 +35,7 @@ import { isTaskBackgrounded } from '../store/background-tasks';
 import { codeProjects } from '../store/projects';
 import { closeTask } from '../store/tasks';
 import { autoTaskColumnWidth } from '../store/task-column';
+import { computeTileOrder } from '../store/sidebar-order';
 import { TaskPanel } from './TaskPanel';
 import { TerminalPanel } from './TerminalPanel';
 import { NewTaskPanel } from './NewTaskPanel';
@@ -238,7 +239,8 @@ export function TilingLayout() {
 
   // Recompute viewport state when panel order/structure changes.
   createEffect(() => {
-    void store.taskOrder.join('|');
+    // The tile order, not the raw one: reordering projects moves tiles too.
+    void computeTileOrder().join('|');
     void store.taskOrder.filter(isTaskBackgrounded).join('|');
     void taskProjectFilter();
     void documentTaskId();
@@ -328,7 +330,16 @@ export function TilingLayout() {
       if (!currentIds.has(key)) panelCache.delete(key);
     }
 
-    const panels: TileChild[] = store.taskOrder.map((panelId) => {
+    // Grouped visual order first; tasks hidden by the project filter stay
+    // mounted (and display:none) so their terminals survive, but trail the
+    // visible tiles so drag indices stay aligned with the visible order.
+    const visibleIds = computeTileOrder();
+    const visibleSet = new Set(visibleIds);
+    const hiddenIds = store.taskOrder.filter(
+      (id) => !visibleSet.has(id) && (!!store.tasks[id] || !!store.terminals[id]),
+    );
+
+    const panels: TileChild[] = [...visibleIds, ...hiddenIds].map((panelId) => {
       let cached = panelCache.get(panelId);
       if (!cached) {
         cached = {

@@ -9,7 +9,7 @@ vi.mock('../store/taskStatus', () => ({ isTaskWorking: () => working() }));
 
 import type { Task } from '../store/types';
 import type { BriefBarFields } from '../lib/task-brief';
-import { TaskBriefBar, TaskBriefLine } from './TaskBrief';
+import { TaskBriefBar } from './TaskBrief';
 
 let dispose: (() => void) | undefined;
 let lastSetState: SetStoreFunction<Task> | undefined;
@@ -222,32 +222,5 @@ describe('TaskBriefBar', () => {
   it('explains the empty state before the first brief', () => {
     const { bar } = mount(baseTask({ brief: undefined }));
     expect(bar.textContent).toContain('The brief appears after the agent finishes a turn');
-  });
-});
-
-describe('TaskBriefLine', () => {
-  it('shows what the agent needs, else the current step, and nothing without a brief', () => {
-    const root = document.createElement('div');
-    document.body.append(root);
-    dispose = render(
-      () => (
-        <>
-          <TaskBriefLine task={baseTask()} />
-          <TaskBriefLine task={baseTask({ brief: undefined })} />
-          <TaskBriefLine
-            task={baseTask({
-              brief: {
-                brief: { goal: 'g', now: 'n', needsYou: 'Which queue?' },
-                generatedAt: 0,
-                fingerprint: '',
-              },
-            })}
-          />
-        </>
-      ),
-      root,
-    );
-    const lines = Array.from(root.querySelectorAll('.task-brief-line'), (el) => el.textContent);
-    expect(lines).toEqual(['Two events queued; moving the other nine next.', 'Which queue?']);
   });
 });
