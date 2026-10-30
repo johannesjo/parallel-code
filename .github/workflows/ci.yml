@@ -61,9 +61,6 @@ jobs:
   # source. Client tests, the coverage floor and the real-pty test stay on Linux.
   windows:
     runs-on: windows-latest
-    # Many tests fail until the app-side Windows support (#278) lands; report
-    # them without blocking PRs. Remove once #278 is merged.
-    continue-on-error: true
     steps:
       # Git for Windows checks text out with CRLF by default, which fails the
       # LF-only format check and tests that compare file contents byte for byte.
@@ -87,5 +84,45 @@ jobs:
       - name: Check (typecheck + lint + format)
         run: npm run check
 
+      # These files fail on Windows until the app-side support (#278) lands:
+      # /bin/sh and process groups, POSIX paths, short temp paths, file locks.
+      # The rest run strictly, so a Windows regression elsewhere fails CI.
+      # Delete the list once #278 is merged and fix what still fails.
+      # Windows spawns git and node several times slower, so allow longer tests.
       - name: Test (unit)
-        run: npm run test:unit
+        shell: bash
+        run: >-
+          npm run test:unit --
+          --testTimeout=20000
+          --exclude electron/agent-hooks/server.test.ts
+          --exclude electron/chat/claude.integration.test.ts
+          --exclude electron/chat/claude.test.ts
+          --exclude electron/chat/shell-command.test.ts
+          --exclude electron/documents/annotations.test.ts
+          --exclude electron/documents/merge.integration.test.ts
+          --exclude electron/documents/quick-edit.test.ts
+          --exclude electron/documents/refinement.integration.test.ts
+          --exclude electron/documents/runs.integration.test.ts
+          --exclude electron/documents/setup.test.ts
+          --exclude electron/ipc/coverage.test.ts
+          --exclude electron/ipc/docker-config.test.ts
+          --exclude electron/ipc/git-base-upstream.integration.test.ts
+          --exclude electron/ipc/git-helpers.test.ts
+          --exclude electron/ipc/git-merge-dirty-target.integration.test.ts
+          --exclude electron/ipc/git-subtask-diff.integration.test.ts
+          --exclude electron/ipc/git-symlink-excludes.test.ts
+          --exclude electron/ipc/kanban.test.ts
+          --exclude electron/ipc/nested-repos.test.ts
+          --exclude electron/ipc/pty.test.ts
+          --exclude electron/ipc/reasoning.test.ts
+          --exclude electron/ipc/register-mcp.test.ts
+          --exclude electron/ipc/task-prs.test.ts
+          --exclude electron/ipc/task-screens-run.test.ts
+          --exclude electron/ipc/task-screens-serve.test.ts
+          --exclude electron/ipc/verify.test.ts
+          --exclude electron/ipc/worktree-cleanup.test.ts
+          --exclude electron/mcp/config.test.ts
+          --exclude electron/mcp/docker.integration.test.ts
+          --exclude electron/remote/mindmap-route.test.ts
+          --exclude electron/test-env.test.ts
+          --exclude scripts/showcase/pinned-agent.test.mjs
