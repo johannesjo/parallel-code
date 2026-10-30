@@ -36,7 +36,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -63,12 +62,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -961,19 +958,12 @@ fun AgentScreen(
                                 Icon(Icons.Filled.Fullscreen, contentDescription = "Expand terminal")
                             }
                         }
-                        if (agent != null && state.canControl && agent.ci == "failure") {
-                            // Red like the desktop's Fix CI button: a failed check is urgent.
-                            TextButton(onClick = { fixingCiTask = agent.taskId }) {
-                                Text("Fix CI", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
                         if (agent != null && state.canControl) {
-                            TextButton(onClick = { merging = true }) {
-                                Text("Merge", fontWeight = FontWeight.SemiBold)
-                            }
-                            TextButton(onClick = { closing = true }) {
-                                Text("Close", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
-                            }
+                            TaskActionsMenu(
+                                onFixCi = if (agent.ci == "failure") ({ fixingCiTask = agent.taskId }) else null,
+                                onMerge = { merging = true },
+                                onClose = { closing = true },
+                            )
                         }
                     },
                 )
@@ -1702,7 +1692,6 @@ private fun ReplyBox(
     sendKey: suspend (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val haptic = LocalHapticFeedback.current
     // The TextFieldValue overload: the String one skips an edit that repeats one it was refused,
     // so a second `!` (re-entering shell mode, or `!!`) would be dropped.
     var field by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
@@ -1729,15 +1718,28 @@ private fun ReplyBox(
             }
         }
     }
+    // A quick reply is for the agent, sent straight away or not: one that starts the draft leaves
+    // shell mode, so Send cannot run it as a shell command.
+    fun pickQuickReply(reply: String) {
+        if (sendQuickReplies) {
+            run { send(reply, false) }
+        } else {
+            if (draft.isBlank()) shellMode = false
+            setDraft(appendToDraft(draft, reply))
+        }
+    }
     Surface(
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, AppTheme.extra.border),
     ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (!compact) Row(
                 Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Saved replies sit with the keys: both put canned input into the terminal.
+                QuickRepliesButton(quickReplies, enabled = !busy, onPick = ::pickQuickReply)
                 QUICK_KEYS.forEach { (label, data) ->
                     val arrow = arrowKeyFor(label)
                     QuickKeyButton(busy = busy, onSend = { run { sendKey(data) } }) {
@@ -1763,7 +1765,7 @@ private fun ReplyBox(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
                 OutlinedTextField(
                     value = field,
                     onValueChange = {
@@ -1775,7 +1777,7 @@ private fun ReplyBox(
                             field = it
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.weight(1f),
                     placeholder = {
                         Text(
                             when {
@@ -1795,7 +1797,18 @@ private fun ReplyBox(
                             ) { Text("!", fontFamily = AppFonts.mono, fontWeight = FontWeight.Bold) }
                         }
                     } else null,
-                    minLines = if (compact) 1 else 2,
+                    trailingIcon = {
+                        Row {
+                            // The key row holding it is hidden in the expanded terminal.
+                            if (compact) QuickRepliesButton(quickReplies, enabled = !busy, onPick = ::pickQuickReply)
+                            if (promptHistory != null) {
+                                PromptHistoryButton(
+                                    enabled = !busy && promptHistory.history(agentId).isNotEmpty(),
+                                ) { showHistory = true }
+                            }
+                            VoiceInputButton(enabled = !busy) { setDraft(appendToDraft(draft, it)) }
+                        }
+                    },
                     maxLines = if (compact) 3 else 6,
                     enabled = !busy,
                     shape = MaterialTheme.shapes.large,
@@ -1806,84 +1819,23 @@ private fun ReplyBox(
                         unfocusedBorderColor = AppTheme.extra.border,
                     ),
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    VoiceInputButton(
-                        enabled = !busy,
-                        modifier = Modifier.fillMaxHeight(),
-                    ) { setDraft(appendToDraft(draft, it)) }
-                    // Behind a button rather than a row of chips, so the terminal keeps its room.
-                    QuickRepliesButton(
-                        quickReplies,
-                        enabled = !busy,
-                        modifier = Modifier.fillMaxHeight(),
-                    ) {
-                        // A quick reply is for the agent, sent straight away or not: one that starts the
-                        // draft leaves shell mode, so Send cannot run it as a shell command.
-                        if (sendQuickReplies) {
-                            run { send(it, false) }
-                        } else {
-                            if (draft.isBlank()) shellMode = false
-                            setDraft(appendToDraft(draft, it))
+                ComposerSendButton(
+                    stop = working && draft.isBlank(),
+                    enabled = !busy && (draft.isNotBlank() || working),
+                    // Stop interrupts the running command, like the Ctrl+C quick key.
+                    onStop = { run { sendKey(3.toChar().toString()) } },
+                    onSend = {
+                        val text = draft
+                        val shell = shellMode
+                        run {
+                            send(text, shell)
+                            promptHistory?.record(agentId, text)
+                            setDraft("")
+                            shellMode = false
                         }
-                    }
-                    if (promptHistory != null) {
-                        OutlinedButton(
-                            onClick = { showHistory = true },
-                            enabled = !busy && promptHistory.history(agentId).isNotEmpty(),
-                            shape = MaterialTheme.shapes.large,
-                            modifier = Modifier.fillMaxHeight(),
-                        ) {
-                            Icon(Icons.Filled.History, contentDescription = "Recent messages")
-                        }
-                    }
-                    if (working && draft.isBlank()) {
-                        OutlinedButton(
-                            // Interrupts the running command, like the Ctrl+C quick key.
-                            onClick = { run { sendKey(3.toChar().toString()) } },
-                            enabled = !busy,
-                            shape = MaterialTheme.shapes.large,
-                            modifier = Modifier.fillMaxHeight(),
-                        ) { Icon(Icons.Filled.Stop, contentDescription = "Stop") }
-                    } else {
-                        val sendInteraction = remember { MutableInteractionSource() }
-                        val sendPressed by sendInteraction.collectIsPressedAsState()
-                        val sendScale by animateFloatAsState(
-                            targetValue = if (sendPressed) 0.94f else 1f,
-                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                            label = "sendButtonScale",
-                        )
-                        Button(
-                            enabled = draft.isNotBlank() && !busy,
-                            shape = MaterialTheme.shapes.large,
-                            interactionSource = sendInteraction,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                            ),
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .graphicsLayer {
-                                    scaleX = sendScale
-                                    scaleY = sendScale
-                                },
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                val text = draft
-                                val shell = shellMode
-                                run {
-                                    send(text, shell)
-                                    promptHistory?.record(agentId, text)
-                                    setDraft("")
-                                    shellMode = false
-                                }
-                            },
-                        ) { Text("Send", fontWeight = FontWeight.Bold) }
-                    }
-                }
+                    },
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
             }
             if (showHistory) {
                 val history = remember(showHistory) { promptHistory?.history(agentId).orEmpty() }

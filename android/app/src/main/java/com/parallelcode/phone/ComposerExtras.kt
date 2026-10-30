@@ -7,8 +7,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,8 +30,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -77,12 +88,7 @@ fun QuickRepliesButton(
     var open by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     Box {
-        OutlinedButton(
-            onClick = { open = true },
-            enabled = enabled,
-            modifier = modifier,
-            shape = MaterialTheme.shapes.large,
-        ) {
+        IconButton(onClick = { open = true }, enabled = enabled, modifier = modifier) {
             Icon(Icons.Filled.Star, contentDescription = "Quick replies")
         }
         DropdownMenu(expanded = open && enabled, onDismissRequest = { open = false }) {
@@ -152,7 +158,7 @@ fun PromptHistoryDialog(
 @Composable
 fun VoiceInputButton(enabled: Boolean, modifier: Modifier = Modifier, onText: (String) -> Unit) {
     if (LocalDemoMode.current) {
-        OutlinedButton(onClick = { onText("Demo dictation: review the sample changes") }, enabled = enabled, modifier = modifier) {
+        IconButton(onClick = { onText("Demo dictation: review the sample changes") }, enabled = enabled, modifier = modifier) {
             Icon(Icons.Filled.Mic, contentDescription = "Simulate dictation (no microphone)")
         }
         return
@@ -169,12 +175,57 @@ fun VoiceInputButton(enabled: Boolean, modifier: Modifier = Modifier, onText: (S
         result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(onText)
     }
     if (!available) return
-    OutlinedButton(
-        onClick = { launcher.launch(intent) },
-        enabled = enabled,
-        modifier = modifier,
-        shape = MaterialTheme.shapes.large,
-    ) {
+    IconButton(onClick = { launcher.launch(intent) }, enabled = enabled, modifier = modifier) {
         Icon(Icons.Filled.Mic, contentDescription = "Dictate a reply")
+    }
+}
+
+/** Opens the agent's recent messages. Disabled rather than hidden while there are none, so the field doesn't shift. */
+@Composable
+fun PromptHistoryButton(enabled: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick, enabled = enabled) {
+        Icon(Icons.Filled.History, contentDescription = "Recent messages")
+    }
+}
+
+/**
+ * The reply box's one main action beside the field: Stop while the agent works and the draft is
+ * empty, otherwise Send.
+ */
+@Composable
+fun ComposerSendButton(
+    stop: Boolean,
+    enabled: Boolean,
+    onSend: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (stop) {
+        OutlinedIconButton(onClick = onStop, enabled = enabled, modifier = modifier) {
+            Icon(Icons.Filled.Stop, contentDescription = "Stop")
+        }
+        return
+    }
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "sendButtonScale",
+    )
+    FilledIconButton(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onSend()
+        },
+        enabled = enabled,
+        interactionSource = interaction,
+        modifier = modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        },
+    ) {
+        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
     }
 }
