@@ -20,6 +20,9 @@ export interface AgentDef {
   prompt_ready_delay_ms?: number;
   /** CLI flag used to pass an MCP config path to this agent. Omit when unsupported. */
   mcp_config_flag?: string;
+  /** Flags one pane adds to every launch, set by "Resume with flags…". Only
+   *  ever set on a pane's own copy of the def, never on the shared defaults. */
+  extra_args?: string[];
 }
 
 export interface CreateTaskResult {

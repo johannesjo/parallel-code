@@ -204,6 +204,20 @@ describe('loadState agent definition migrations', () => {
     expect(restored.skip_permissions_args).toEqual(['--full-auto']);
   });
 
+  it('keeps the extra flags of a pane across a restart', async () => {
+    const restored = await loadPersistedAgent(agentDef({ extra_args: ['--chrome'] }));
+
+    expect(restored.extra_args).toEqual(['--chrome']);
+  });
+
+  it('drops malformed extra flags instead of passing them to the CLI', async () => {
+    const restored = await loadPersistedAgent(
+      agentDef({ extra_args: ['--chrome', 42] as unknown as string[] }),
+    );
+
+    expect(restored).not.toHaveProperty('extra_args');
+  });
+
   it('leaves current Codex skip-permissions args unchanged', async () => {
     const restored = await loadPersistedAgent(
       agentDef({

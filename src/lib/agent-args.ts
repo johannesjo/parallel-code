@@ -213,6 +213,7 @@ export function buildTaskAgentArgs(
   }
   return [
     ...args,
+    ...(agentDef.extra_args ?? []),
     // Resolved, not read straight off the def: a def restored from an older
     // profile or synthesised from a bare command carries no skip args, and
     // reading the field directly downgrades an explicit opt-in to a launch

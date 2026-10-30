@@ -35,6 +35,7 @@ import { findBareFile } from '../lib/find-bare-file';
 import { parseTeleportRepoMismatch } from '../lib/claude-session-url';
 import { createMarkdownViewer } from './MarkdownViewerDialog';
 import { SessionPicker } from './SessionPicker';
+import { createResumeWithFlags } from './resume-with-flags';
 import { AgentChatView } from './AgentChatView';
 import { isAgentChat, agentChatProvider, agentChatUnavailableReason } from '../store/agent-chat';
 import { agentViewHandsOff, agentViewSwitchCost, switchMainAgentView } from '../store/agent-view';
@@ -732,6 +733,7 @@ function AgentTerminalPane(props: {
 
   const dockerOverlayLabel = () => getTaskDockerOverlayLabel(props.task.dockerSource);
   const agent = () => store.agents[props.agentId];
+  const resumeWithFlags = createResumeWithFlags(() => props.agentId);
   const [terminalOpened, setTerminalOpened] = createSignal(
     untrack(() => !isAgentChat(props.task, props.agentId)),
   );
@@ -797,6 +799,7 @@ function AgentTerminalPane(props: {
           <span title={props.task.dockerImage}>{dockerOverlayLabel()}</span>
         </div>
       </Show>
+      <resumeWithFlags.Dialog />
       <Show when={agent()}>
         {(a) => (
           <>
@@ -983,6 +986,15 @@ function AgentTerminalPane(props: {
                     fileLinkMenu={props.fileLinkMenu}
                     findBareFile={props.findBareFile}
                     onEditAsDocument={props.onEditAsDocument}
+                    paneActions={[
+                      {
+                        label: 'Resume with flags…',
+                        icon: () => <SyncIcon size={14} />,
+                        title:
+                          'Restart this agent and continue its conversation with extra CLI flags.',
+                        run: resumeWithFlags.open,
+                      },
+                    ]}
                     onPromptDetected={(text) => setLastPrompt(props.task.id, text, props.agentId)}
                     onReady={(focusFn) => {
                       terminalFocus = focusFn;

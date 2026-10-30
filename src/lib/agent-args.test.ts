@@ -49,6 +49,25 @@ const copilotAgent = {
   skip_permissions_args: ['--yolo'],
 };
 
+describe('buildTaskAgentArgs with pane flags', () => {
+  const SESSION = 'fb4f2bc6-62d9-4b29-a795-240caf2fc459';
+  const claudeWithFlags = { ...claudeAgent, extra_args: ['--chrome'] };
+
+  it('adds the flags when resuming the pane session', () => {
+    expect(
+      buildTaskAgentArgs(claudeWithFlags, { skipPermissions: true }, true, undefined, SESSION),
+    ).toEqual(['--resume', SESSION, '--chrome', '--dangerously-skip-permissions']);
+  });
+
+  it('keeps the flags on a fresh launch', () => {
+    expect(buildTaskAgentArgs(claudeWithFlags, {}, false, undefined, SESSION)).toEqual([
+      '--session-id',
+      SESSION,
+      '--chrome',
+    ]);
+  });
+});
+
 describe('buildTaskAgentArgs with a session id', () => {
   const SESSION = 'fb4f2bc6-62d9-4b29-a795-240caf2fc459';
   const claudeWithContinue = { ...claudeAgent, resume_args: ['--continue'] };

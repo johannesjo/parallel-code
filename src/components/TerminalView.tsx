@@ -176,6 +176,8 @@ interface TerminalViewProps {
   onPromptDetected?: (text: string) => void;
   /** Present: right-clicking a Markdown or HTML path offers to edit it as a document. */
   onEditAsDocument?: (filePath: string) => void;
+  /** Right-click menu entries that act on this terminal's process, such as relaunching it. */
+  paneActions?: TerminalLinkAction[];
   /** Present: plain-clicking a path opens its menu, and Cmd/Ctrl+click runs its `open`.
    *  Absent: Cmd/Ctrl+click opens the path with the default app. */
   fileLinkMenu?: (filePath: string, line: number | undefined) => FileLinkMenu;
@@ -261,7 +263,8 @@ export function TerminalView(props: TerminalViewProps) {
       props.onEditAsDocument && hoveredPath && isEditableDocumentPath(hoveredPath)
         ? hoveredPath
         : undefined;
-    if (!props.onSendSelection && !props.onSecondOpinion && !documentPath) return;
+    if (!props.onSendSelection && !props.onSecondOpinion && !documentPath && !props.paneActions)
+      return;
     event.preventDefault();
     event.stopPropagation();
     setSelectionMenu({
@@ -1515,6 +1518,7 @@ export function TerminalView(props: TerminalViewProps) {
             recipients={props.handoffRecipients ?? []}
             onSend={(text, id) => props.onSendSelection?.(text, id)}
             onOpinion={selection.actions ? undefined : props.onSecondOpinion}
+            paneActions={selection.actions ? undefined : props.paneActions}
             onDoubleClick={selection.linkRange && selectLinkInstead(selection.linkRange)}
             onEditAsDocument={props.onEditAsDocument}
             onClose={(restoreFocus = true) => {

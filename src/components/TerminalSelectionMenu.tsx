@@ -29,6 +29,8 @@ export function TerminalSelectionMenu(props: {
   onEditAsDocument?: (filePath: string) => void;
   /** Present when a link was clicked: the places it can open. */
   actions?: TerminalLinkAction[];
+  /** Actions on the terminal's own process, listed last. */
+  paneActions?: TerminalLinkAction[];
   /** A second click right after the one that opened the menu: the user meant a double-click. */
   onDoubleClick?: () => void;
   onClose: (restoreFocus?: boolean) => void;
@@ -167,6 +169,21 @@ export function TerminalSelectionMenu(props: {
             Second opinion…
           </button>
         </Show>
+        <For each={props.paneActions}>
+          {(action) => (
+            <button
+              role="menuitem"
+              title={action.title}
+              onClick={() => {
+                action.run();
+                props.onClose(false);
+              }}
+            >
+              {action.icon?.()}
+              {action.label}
+            </button>
+          )}
+        </For>
         <Show when={error()}>
           <p role="alert">{error()}</p>
         </Show>

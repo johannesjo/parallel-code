@@ -198,6 +198,27 @@ export function restartAgent(agentId: string, useResumeArgs: boolean): void {
   markAgentSpawned(agentId);
 }
 
+/**
+ * Relaunch a pane, running or exited, with `extraArgs` added to this and every
+ * later launch of it (an empty list clears them). It resumes the pane's
+ * conversation, because CLI flags such as Claude's `--chrome` only take effect
+ * at startup and the point is to keep the history.
+ */
+export function resumeAgentWithFlags(agentId: string, extraArgs: string[]): void {
+  if (!store.agents[agentId]) return;
+  setStore(
+    produce((s) => {
+      // A fresh object: the pane's def may be the shared default's object, and
+      // assigning (not merging) is what lets an empty list remove the flags.
+      const def: AgentDef = { ...s.agents[agentId].def, extra_args: extraArgs };
+      if (!extraArgs.length) delete def.extra_args;
+      s.agents[agentId].def = def;
+    }),
+  );
+  restartAgent(agentId, true);
+  void saveState();
+}
+
 export function switchAgent(agentId: string, newDef: AgentDef): void {
   setStore(
     produce((s) => {

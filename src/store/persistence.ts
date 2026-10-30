@@ -161,6 +161,11 @@ export async function loadCustomThemes(): Promise<boolean> {
 /** Enrich an agent def with resume/skip-permissions args from fresh defaults. */
 function enrichAgentDef(agentDef: AgentDef | null | undefined, availableAgents: AgentDef[]): void {
   if (!agentDef) return;
+  // The profile is a file on disk and these end up as arguments to a spawned CLI.
+  const extra: unknown = agentDef.extra_args;
+  if (!Array.isArray(extra) || !extra.every((arg) => typeof arg === 'string' && arg)) {
+    delete agentDef.extra_args;
+  }
   const fresh = availableAgents.find((a) => a.id === agentDef.id);
   if (fresh) {
     if (!agentDef.resume_args) agentDef.resume_args = fresh.resume_args;

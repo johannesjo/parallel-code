@@ -48,6 +48,7 @@ interface AgentDefLike {
   resume_args: string[];
   skip_permissions_args: string[];
   description: string;
+  extra_args?: string[];
 }
 
 vi.mock('./core', async () => {
@@ -89,6 +90,7 @@ import {
   closeAgentInTask,
   markAgentExited,
   restartAgent,
+  resumeAgentWithFlags,
   switchAgent,
 } from './agents';
 
@@ -170,6 +172,29 @@ describe('restartAgent', () => {
     });
     expect(mockAgents['agent-1'].spawnDelayMs).toBeUndefined();
     expect(mockMarkAgentSpawned).toHaveBeenCalledWith('agent-1');
+  });
+});
+
+describe('resumeAgentWithFlags', () => {
+  it('resumes the pane with the flags on its own def copy', () => {
+    resumeAgentWithFlags('agent-1', ['--chrome']);
+
+    expect(mockAgents['agent-1']).toMatchObject({
+      def: { ...codexDef, extra_args: ['--chrome'] },
+      status: 'running',
+      resumed: true,
+      generation: 3,
+    });
+    expect(codexDef.extra_args).toBeUndefined();
+    expect(mockMarkAgentSpawned).toHaveBeenCalledWith('agent-1');
+  });
+
+  it('removes the flags when given none', () => {
+    resumeAgentWithFlags('agent-1', ['--chrome']);
+    resumeAgentWithFlags('agent-1', []);
+
+    expect(mockAgents['agent-1'].def).not.toHaveProperty('extra_args');
+    expect(mockAgents['agent-1'].resumed).toBe(true);
   });
 });
 

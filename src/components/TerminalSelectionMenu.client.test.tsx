@@ -177,3 +177,26 @@ it('reports a quick second press as a double-click, and a later one as a dismiss
   expect(onClose).toHaveBeenCalledOnce();
   vi.useRealTimers();
 });
+it('offers actions on the terminal process even without a selection', () => {
+  const run = vi.fn();
+  const onClose = vi.fn();
+  const host = document.createElement('div');
+  document.body.append(host);
+  dispose = render(
+    () => (
+      <TerminalSelectionMenu
+        x={20}
+        y={30}
+        text=""
+        recipients={[]}
+        onSend={vi.fn()}
+        onClose={onClose}
+        paneActions={[{ label: 'Resume with flags…', run }]}
+      />
+    ),
+    host,
+  );
+  button('Resume with flags…').click();
+  expect(run).toHaveBeenCalled();
+  expect(onClose).toHaveBeenCalledWith(false);
+});
