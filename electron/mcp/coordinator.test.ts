@@ -6291,17 +6291,8 @@ describe('preload.cjs MCP channel allowlist', () => {
   it('contains all MCP coordinator IPC channels', async () => {
     const { readFileSync } = await vi.importActual<typeof import('fs')>('fs');
     const path = await import('node:path');
-    const preloadPath = path.join(
-      path.dirname(new URL(import.meta.url).pathname),
-      '..',
-      'preload.cjs',
-    );
-    const manifestPath = path.join(
-      path.dirname(new URL(import.meta.url).pathname),
-      '..',
-      'ipc',
-      'channel-manifest.json',
-    );
+    const preloadPath = path.join(import.meta.dirname, '..', 'preload.cjs');
+    const manifestPath = path.join(import.meta.dirname, '..', 'ipc', 'channel-manifest.json');
     const preload = readFileSync(preloadPath, 'utf8') as string;
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8') as string) as Record<
       string,

@@ -742,7 +742,7 @@ describeDocker('Layer 9 — Project Dockerfile image MCP smoke test', () => {
     const mcpDir = join(worktree, '.parallel-code');
     mkdirSync(mcpDir, { recursive: true });
 
-    const mcpServerSrc = join(dirname(new URL(import.meta.url).pathname), '..', 'mcp-server.cjs');
+    const mcpServerSrc = join(import.meta.dirname, '..', 'mcp-server.cjs');
     const destPath = join(mcpDir, 'mcp-server.cjs');
     copyFileSync(mcpServerSrc, destPath);
 
