@@ -54,3 +54,38 @@ jobs:
       # env locally because it takes ~20s and needs a working shell.
       - name: Test (coordinator against a real pty)
         run: npm run test:coordinator-pty
+
+  # Windows is a release target, so it gets the same type checks, lint, format
+  # check and unit tests. node-pty ships win32 prebuilds, so no native build is
+  # needed; windows-latest has the MSVC tools if a rebuild ever falls back to
+  # source. Client tests, the coverage floor and the real-pty test stay on Linux.
+  windows:
+    runs-on: windows-latest
+    steps:
+      # Git for Windows checks text out with CRLF by default, which fails the
+      # LF-only format check and tests that compare file contents byte for byte.
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Give Git an identity
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # scripts/check.mjs spawns `npm` without a shell, which Windows cannot
+      # resolve to npm.cmd, so run its steps one by one.
+      - run: npm run typecheck:electron
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+
+      - run: npm run test:unit
