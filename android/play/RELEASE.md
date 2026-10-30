@@ -62,7 +62,7 @@ Short description: Monitor coding agents on your computer and respond from your 
 
 Full description:
 
-Parallel Code is the Android companion for Parallel Code on macOS, Linux and Windows.
+Parallel Code is the Android companion for Parallel Code on macOS and Linux.
 Keep up with your coding agents, review their progress, and respond when they need you.
 
 • See which agents are working, need input, or have changes ready to review.

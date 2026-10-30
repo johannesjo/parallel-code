@@ -86,7 +86,7 @@ A few features hand short pieces of data to your operating system itself:
 
 ## Local storage locations
 
-Configuration and state are kept in standard per-OS application directories — on macOS under `~/Library/Application Support/Parallel Code`, on Linux under `~/.config/Parallel Code`, on Windows under `%APPDATA%\Parallel Code`. Files in those directories include:
+Configuration and state are kept in standard per-OS application directories — on macOS under `~/Library/Application Support/Parallel Code`, on Linux under `~/.config/Parallel Code`. Files in those directories include:
 
 - `state.json` and a rolling `state.json.bak` (overwritten on the next save) so a corrupted write does not lose your tasks.
 - `keybindings.json` and `keybindings.json.bak` for custom keybindings.
