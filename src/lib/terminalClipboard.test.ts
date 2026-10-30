@@ -37,15 +37,23 @@ describe('parseOsc52Write', () => {
     // atob throws on some of these (e.g. `AB=`); an exception inside xterm's
     // parser stalls the pane for good.
     const alphabet = 'AB+/=';
+    // Collect throwers and assert once: an expect per payload made ~100k calls
+    // that hit the 5s timeout on loaded or Windows runners.
+    const throwing: string[] = [];
     for (let length = 1; length <= 7; length++) {
       for (let n = 0; n < alphabet.length ** length; n++) {
         let payload = '';
         for (let rest = n, i = 0; i < length; i++, rest = Math.floor(rest / alphabet.length)) {
           payload += alphabet[rest % alphabet.length];
         }
-        expect(() => parseOsc52Write(`c;${payload}`), payload).not.toThrow();
+        try {
+          parseOsc52Write(`c;${payload}`);
+        } catch {
+          throwing.push(payload);
+        }
       }
     }
+    expect(throwing).toEqual([]);
   });
 
   it('ignores payloads over the size cap', () => {
