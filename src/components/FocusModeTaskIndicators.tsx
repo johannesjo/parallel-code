@@ -1,35 +1,17 @@
 import { For, Show } from 'solid-js';
 import {
-  getProject,
   getTaskAttentionState,
   getTaskDotStatus,
   activateTaskFromPointer,
   store,
 } from '../store/store';
 import { openItemName, openPanelOrder } from '../store/navigation';
-import { documentAgentTaskId } from '../documents/task-id';
 import { StatusDot } from './StatusDot';
 
 /** Title-bar switcher: one named pill per open item. The active pill is
  *  accent-tinted; task pills carry the same status glyph as the sidebar so
- *  the bar doubles as an at-a-glance overview. Each pill is ringed in its
- *  project's colour so tabs from the same project read as a group. */
+ *  the bar doubles as an at-a-glance overview. */
 export function FocusModeTaskIndicators() {
-  const itemProjectId = (id: string): string | undefined => {
-    if (
-      store.activeDocumentProjectId &&
-      id === documentAgentTaskId(store.activeDocumentProjectId)
-    ) {
-      return store.activeDocumentProjectId;
-    }
-    return store.tasks[id]?.projectId;
-  };
-
-  const projectColor = (id: string): string | undefined => {
-    const projectId = itemProjectId(id);
-    return projectId ? getProject(projectId)?.color : undefined;
-  };
-
   const items = () =>
     openPanelOrder().map((id) => ({
       id,
@@ -48,7 +30,6 @@ export function FocusModeTaskIndicators() {
               <button
                 type="button"
                 class={`focus-mode-task-indicator${isActive() ? ' active' : ''}`}
-                style={{ '--tab-project-color': projectColor(item.id) }}
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={() => activateTaskFromPointer(item.id)}
                 title={isActive() ? `${item.name} (current)` : `Switch to ${item.name}`}

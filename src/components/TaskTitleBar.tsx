@@ -2,7 +2,6 @@ import { For, Show, createSignal, onCleanup, onMount } from 'solid-js';
 import { Dynamic, Portal } from 'solid-js/web';
 import {
   store,
-  getProject,
   reorderTaskInTileOrder,
   activateTaskFromPointer,
   updateTaskName,
@@ -140,9 +139,6 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
     });
   }
 
-  // No project colour (orphan task) → no frame; the column border still frames it.
-  const projectColor = () => getProject(props.task.projectId)?.color;
-
   return (
     <div
       ref={barRef}
@@ -150,7 +146,6 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
       data-active={props.isActive}
       // A push in progress or just done stays visible in every column.
       data-actions-pinned={props.pushing || props.pushSuccess}
-      style={{ '--task-project-color': projectColor() }}
       onMouseDown={handleTitleMouseDown}
     >
       <TaskStatusGlyph taskId={props.task.id} />

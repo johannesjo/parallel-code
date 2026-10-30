@@ -189,21 +189,6 @@ body.font-smoothing {
   box-sizing: border-box;
 }
 
-/* Project identity frame on each tile's title bar: a thin, low-saturation
-   outline echoes the column's left rail, so a task's project is readable
-   across the strip at a glance. Stronger when the tile is active, but it stays
-   a frame and never competes with the accent or status colours reserved for
-   urgency. */
-.task-title-bar {
-  outline: 1px solid color-mix(in srgb, var(--task-project-color, transparent) 28%, transparent);
-  outline-offset: -1px;
-}
-
-.task-title-bar[data-active='true'] {
-  outline-width: 2px;
-  outline-color: color-mix(in srgb, var(--task-project-color, transparent) 58%, transparent);
-}
-
 .task-title-bar > .editable-text {
   grid-column: 2;
   font-size: inherit;
@@ -4549,14 +4534,6 @@ html[data-look='islands-light'] .window-title-icon {
     opacity var(--motion-fast) var(--ease-out);
 }
 
-/* Project identity ring: each title-bar tab is outlined in its project's
-   colour, so tabs from the same project read as one group and a neighbour from
-   another project stands apart. It stays a thin ring, never a fill, so it does
-   not compete with the accent background that marks the current item. */
-.focus-mode-task-indicator {
-  border-color: color-mix(in srgb, var(--tab-project-color, transparent) 55%, transparent);
-}
-
 .focus-mode-task-indicator-name {
   min-width: 0;
   overflow: hidden;
@@ -4574,9 +4551,7 @@ html[data-look='islands-light'] .window-title-icon {
   opacity: 1;
   color: var(--fg);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
-  /* Stronger project ring on the current tab; projectless items keep the
-     accent ring. */
-  border-color: color-mix(in srgb, var(--tab-project-color, var(--accent)) 85%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .focus-mode-task-indicator:focus-visible {
