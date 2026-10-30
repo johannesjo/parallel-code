@@ -152,8 +152,8 @@ function DirectBranchBadge(props: { branchName: string }) {
   );
 }
 
-/** Task name on one line, so every row is the same height. Full name always
- *  available as a tooltip. Bold, not badged, when an agent finished while the
+/** Task name on one line, so every row is the same height. The row's tooltip
+ *  starts with the full name, so the name sets none that would hide the status. Bold, not badged, when an agent finished while the
  *  task was off screen. */
 function TaskName(props: {
   name: string;
@@ -163,11 +163,7 @@ function TaskName(props: {
 }) {
   return (
     <>
-      <span
-        class="task-item-name"
-        title={props.name}
-        style={{ 'font-weight': props.unread ? '700' : undefined }}
-      >
+      <span class="task-item-name" style={{ 'font-weight': props.unread ? '700' : undefined }}>
         {props.name}
       </span>
       <Show when={props.backgrounded}>
@@ -1215,7 +1211,7 @@ function CollapsedTaskEntry(props: { taskId: string; indented?: boolean; coordin
                 }
               }
             }}
-            title="Click to restore"
+            title={`${t().name} — Click to restore`}
             paddingLeft={props.indented ? '22px' : '10px'}
             fontSize={sf(12)}
             cursor="pointer"

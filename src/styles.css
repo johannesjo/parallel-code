@@ -2752,9 +2752,6 @@ textarea::placeholder {
 }
 
 .task-item {
-  /* Detail lines indent past the row's leading glyphs — a 12px glyph lane plus
-     the 6px head gap each — so they start under the title text, not the dot. */
-  --task-row-indent: 18px;
   transition:
     background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
@@ -2814,11 +2811,6 @@ textarea::placeholder {
 .task-item-head > .status-glyph,
 .task-item-head > svg {
   height: 1.35em;
-}
-
-/* Coordinator rows carry a bot icon in front of the status glyph. */
-.task-item-coordinator {
-  --task-row-indent: 36px;
 }
 
 /* The brief line is routine: it shows its fill and chevron only when hovered or
