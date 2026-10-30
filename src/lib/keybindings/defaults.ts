@@ -281,6 +281,18 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
+    // Shift+P is taken by switchDocument; the app registers no reload role for R.
+    id: 'app.task.createPr',
+    layer: 'app',
+    category: 'Tasks',
+    description: 'Create pull request',
+    platform: 'both',
+    key: 'R',
+    modifiers: { cmdOrCtrl: true, shift: true },
+    action: 'createPullRequest',
+    global: true,
+  },
+  {
     id: 'app.task.new-shell',
     layer: 'app',
     category: 'Tasks',

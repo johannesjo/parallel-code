@@ -4,6 +4,7 @@ import { CANVAS_INSTRUCTIONS, canvasViews } from '../shared/canvas-view.js';
 import { AGENT_TOUR_LIMITS } from '../shared/agent-tour.js';
 import { CONFIDENCE_LIMITS } from '../shared/task-confidence.js';
 import { GITHUB_LIST_LIMITS, isGitHubAgentTaskId } from '../shared/github-list.js';
+import { PR_DRAFT_LIMITS } from '../shared/pr-draft.js';
 import { TOUR_CARD_LIMITS, TOUR_FORMS, TOUR_TONES } from '../shared/understanding-limits.js';
 import { semanticNodeKinds, reasoningStatuses } from '../shared/graph.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
@@ -188,6 +189,24 @@ export const TOUR_TOOLS: ToolDef[] = [
         context: { type: 'string', maxLength: AGENT_TOUR_LIMITS.context },
       },
       required: ['subject', 'gist', 'cards'],
+    },
+  },
+];
+
+export const PR_DRAFT_TOOLS: ToolDef[] = [
+  {
+    name: 'pr_draft_publish',
+    description:
+      "Publish a pull request title and description you drafted for your task's branch. The app fills its Create pull request dialog with them; the user reviews, edits and creates the PR there. This tool never pushes or creates anything, and you should not either. " +
+      'Use it when the app or the user asks you to draft the pull request. ' +
+      `title is one line under 70 characters if you can, at most ${PR_DRAFT_LIMITS.title}; follow the style of the commit subjects. body is GitHub Markdown of at most ${PR_DRAFT_LIMITS.body} characters: why the change is needed, what changed, and how it was verified, claiming only checks you actually saw pass. If the repository has a pull request template, fill in its sections and keep its headings and checklists. No closing note about how the text was written.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', maxLength: PR_DRAFT_LIMITS.title },
+        body: { type: 'string', maxLength: PR_DRAFT_LIMITS.body },
+      },
+      required: ['title', 'body'],
     },
   },
 ];
@@ -663,6 +682,8 @@ export function selectTools(
     ...CANVAS_VIEW_TOOLS,
     ...TOUR_TOOLS,
     ...CONFIDENCE_TOOLS,
+    // A branch PR needs a task; coordinators and the GitHub page's agent have none.
+    ...(taskId && !isGitHubAgentTaskId(taskId) ? PR_DRAFT_TOOLS : []),
     // Publishing opens the GitHub page's list picker; other tasks have no page to publish to.
     ...(isGitHubAgentTaskId(taskId) ? GITHUB_LIST_TOOLS : []),
   ];

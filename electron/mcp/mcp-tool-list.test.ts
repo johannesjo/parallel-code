@@ -15,6 +15,7 @@ import {
   CANVAS_INSTRUCTIONS,
   TOUR_TOOLS,
   CONFIDENCE_TOOLS,
+  PR_DRAFT_TOOLS,
   GITHUB_LIST_TOOLS,
   hasCanvasTools,
   APP_TASK_INSTRUCTIONS,
@@ -34,6 +35,7 @@ describe('selectTools — role-based tool list', () => {
       ...CANVAS_VIEW_TOOLS,
       ...TOUR_TOOLS,
       ...CONFIDENCE_TOOLS,
+      ...PR_DRAFT_TOOLS,
     ]);
     expect(tools.map((t: ToolDef) => t.name)).toStrictEqual([
       'land_self',
@@ -45,6 +47,7 @@ describe('selectTools — role-based tool list', () => {
       'canvas_open',
       'tour_publish',
       'confidence_publish',
+      'pr_draft_publish',
     ]);
   });
 
@@ -155,6 +158,7 @@ it('ordinary canvas sessions advertise only map tools', () => {
     ...CANVAS_VIEW_TOOLS,
     ...TOUR_TOOLS,
     ...CONFIDENCE_TOOLS,
+    ...PR_DRAFT_TOOLS,
   ]);
 });
 
@@ -273,6 +277,7 @@ describe('session capability tool sets', () => {
     'canvas_open',
     'tour_publish',
     'confidence_publish',
+    'pr_draft_publish',
   ];
   const supervision = [
     'list_tasks',

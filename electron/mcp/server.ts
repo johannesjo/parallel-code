@@ -12,6 +12,7 @@ import { parseReasoningUpdate } from '../shared/reasoning-feed.js';
 import { parseCanvasRequest } from '../shared/canvas-view.js';
 import { parseAgentTourPayload } from '../shared/agent-tour.js';
 import { parseConfidencePayload } from '../shared/task-confidence.js';
+import { parsePrDraft } from '../shared/pr-draft.js';
 import { isGitHubAgentTaskId, parseGitHubList } from '../shared/github-list.js';
 import {
   LEGACY_WAIT_DEFAULT_MS,
@@ -106,6 +107,7 @@ export async function handleMCPToolCall(
     'canvas_open',
     'tour_publish',
     'confidence_publish',
+    'pr_draft_publish',
     'github_list_publish',
   ].includes(name);
   if (
@@ -186,6 +188,11 @@ export async function handleMCPToolCall(
         const id = taskId || coordinatorId;
         if (!id) throw new Error('A task-scoped MCP session is required.');
         const result = await client.publishConfidence(id, parseConfidencePayload(params));
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+      case 'pr_draft_publish': {
+        if (!taskId) throw new Error('A task-scoped MCP session is required.');
+        const result = await client.publishPrDraft(taskId, parsePrDraft(params));
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       case 'github_list_publish': {

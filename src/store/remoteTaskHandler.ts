@@ -6,6 +6,7 @@
 
 import { publishAgentTour } from './agent-tour';
 import { publishTaskConfidence } from './task-brief';
+import { publishAgentPrDraft } from './pr-draft';
 import { publishGitHubList } from './github-lists';
 import { linkTaskToIssueReference } from './github-issue-link';
 import { getTaskMindMap, updateTaskMindMapFromAgent } from './canvas';
@@ -651,6 +652,19 @@ export function startRemoteTaskHandlers(): () => void {
       }
     },
   );
+  const offPublishPrDraft = window.electron.ipcRenderer.on(
+    IPC.MCP_PublishPrDraftRequest,
+    (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const req = data as GetNotesRequest & { draft: unknown };
+      try {
+        publishAgentPrDraft(req.taskId, req.draft);
+        reply(req.reqId, true, { ok: true });
+      } catch (error) {
+        reply(req.reqId, false, undefined, errMessage(error));
+      }
+    },
+  );
   const offPublishGitHubList = window.electron.ipcRenderer.on(
     IPC.MCP_PublishGitHubListRequest,
     (data: unknown) => {
@@ -671,6 +685,7 @@ export function startRemoteTaskHandlers(): () => void {
     offOpenCanvas();
     offPublishTour();
     offPublishConfidence();
+    offPublishPrDraft();
     offPublishGitHubList();
     offProjects();
     offCreate();

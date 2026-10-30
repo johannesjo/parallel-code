@@ -31,7 +31,7 @@ const optionStyle = {
   'font-size': '13px',
   color: theme.fg,
 };
-const messageFieldStyle = {
+export const messageFieldStyle = {
   width: '100%',
   background: theme.bgInput,
   border: `1px solid ${theme.border}`,

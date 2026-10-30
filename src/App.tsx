@@ -789,6 +789,10 @@ function App() {
         const id = store.activeTaskId;
         if (id && listedTask(id)) setPendingAction({ type: 'finish', taskId: id });
       },
+      createPullRequest: () => {
+        const id = store.activeTaskId;
+        if (id && listedTask(id)) setPendingAction({ type: 'create-pr', taskId: id });
+      },
       spawnShell: () => {
         const id = store.activeTaskId;
         if (id && listedTask(id)) spawnShellForTask(id);

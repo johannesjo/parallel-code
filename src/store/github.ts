@@ -13,6 +13,7 @@ import {
   workItemTaskName,
 } from '../lib/github-prompts';
 import { setStore, store } from './core';
+import { saveState } from './persistence';
 import { toggleNewTaskPanel } from './navigation';
 import { stageTaskPrompt } from './staged-prompt';
 import type {
@@ -59,6 +60,34 @@ export async function mergePullRequestForTask(
 export async function markPullRequestReadyForTask(taskId: string, prUrl: string): Promise<void> {
   await invoke(IPC.MarkPullRequestReady, { prUrl });
   // The PR chip shows Draft until the watcher polls again.
+  refreshPrChecks(taskId);
+}
+
+/**
+ * Opens a PR for the task's pushed branch and links it to the task, as a
+ * printed `gh pr create` link would. `existed` means the branch already had
+ * one, which is linked instead.
+ */
+export async function createPullRequestForTask(
+  taskId: string,
+  pr: { base: string; title: string; body: string; draft: boolean },
+): Promise<{ url: string; existed: boolean }> {
+  const task = store.tasks[taskId];
+  if (!task) throw new Error('Task no longer exists');
+  const created = await invoke<{ url: string; existed: boolean }>(IPC.CreatePullRequest, {
+    worktreePath: task.worktreePath,
+    head: task.branchName,
+    ...pr,
+  });
+  linkPullRequestToTask(taskId, created.url);
+  return created;
+}
+
+/** Makes `url` the task's PR, so Finish, the board and the checks watcher follow it. */
+export function linkPullRequestToTask(taskId: string, url: string): void {
+  if (!store.tasks[taskId]) return;
+  setStore('tasks', taskId, 'prUrl', url);
+  void saveState();
   refreshPrChecks(taskId);
 }
 

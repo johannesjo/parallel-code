@@ -646,7 +646,7 @@ export interface UsageState {
 export type PanelId = string;
 
 export interface PendingAction {
-  type: 'close' | 'finish';
+  type: 'close' | 'finish' | 'create-pr';
   taskId: string;
   /** Finish with "delete branch and worktree after merge" pre-checked. */
   closeAfter?: boolean;

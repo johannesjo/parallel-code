@@ -85,6 +85,7 @@ it('offers the task menu on a sidebar row, without the board-only side switch', 
     'Snooze · stop agents',
     'Minimize (stop agents)',
     'Finish and close',
+    'Create pull request…',
     'Close',
   ]);
 });

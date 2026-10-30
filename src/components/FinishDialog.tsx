@@ -7,9 +7,11 @@ import { invoke } from '../lib/ipc';
 import { ChangeTourButton } from './ChangeTourButton';
 import { CompletionReport } from './CompletionReport';
 import { ConfirmDialog } from './ConfirmDialog';
+import { CreatePrDialog } from './CreatePrDialog';
 import { DiffViewerDialog } from './DiffViewerDialog';
 import { FeatureHint } from './FeatureHint';
 import { MergeReadinessPanel } from './MergeReadinessPanel';
+import { CreatePrEntry } from './CreatePrEntry';
 import { FinishPrSection, PrMergeRoute } from './FinishPrSection';
 import { CleanupOption, MergeBlockers, MergeChanges, MergeOptions } from './MergeSection';
 import { closeTaskNow } from './CloseTaskDialog';
@@ -32,15 +34,18 @@ import { sf } from '../lib/fontScale';
 import { isVerificationStale, summarizeVerificationRun } from '../lib/verification-run';
 import { isTourOutdated } from '../lib/finish-reports';
 import { errMessage, warn as logWarn } from '../lib/log';
+import { parseGitHubUrl } from '../lib/github-url';
 import { refreshCodeFingerprint } from '../store/task-brief';
 import { GitMergeIcon, SyncIcon, UploadIcon } from './icons';
 
-export type FinishAction = 'merge' | 'push';
+export type FinishAction = 'merge' | 'push' | 'create-pr';
 
 interface FinishDialogProps {
   open: boolean;
   task: Task;
   initialCleanup: boolean;
+  /** Opens Create pull request on top, as the shortcut and the task menu do. */
+  initialCreatePr: boolean;
   tour: ChangeTourController;
   /** Opens a ready tour, or starts generating one, like the Changed Files button. */
   onTourClick: () => void;
@@ -49,7 +54,8 @@ interface FinishDialogProps {
   /** Starts closing the task, once its PR merged on GitHub. */
   onCloseTask: () => void;
   onPushStart: () => void;
-  onPushDone: (success: boolean) => void;
+  /** `keepOpen`: the push was the first step of creating a PR, which continues here. */
+  onPushDone: (success: boolean, keepOpen: boolean) => void;
   onDiffFileClick: (file: ChangedFile) => void;
   /** Opens the project settings at the verify command and evidence checks. */
   onConfigureChecks: () => void;
@@ -107,9 +113,10 @@ export function FinishDialog(props: FinishDialogProps) {
         merge.refetchAll();
         void pr.refetch();
       }
-      props.onPushDone(success);
+      props.onPushDone(success, createPrOpen());
     },
   });
+  const [createPrOpen, setCreatePrOpen] = createSignal(false);
   const pr = createFinishPr({
     get open() {
       return props.open;
@@ -152,6 +159,7 @@ export function FinishDialog(props: FinishDialogProps) {
         if (!open) return;
         push.reset();
         setCloseAfterPrMerge(true);
+        setCreatePrOpen(props.initialCreatePr);
       },
     ),
   );
@@ -163,6 +171,24 @@ export function FinishDialog(props: FinishDialogProps) {
   // A local merge uses local commits, so pushing is only on offer, never required.
   const offerPush = () =>
     pr.mode() === 'local' && (remote() === 'unpushed' || remote() === 'differs');
+  // Undefined while loading; a loaded status without a remote means there is no origin.
+  const createPrRemote = () =>
+    merge.mergeStatus.loading || merge.mergeStatus.error || !merge.mergeStatus()
+      ? undefined
+      : (remote() ?? 'none');
+  const prCreated = (created: { url: string; existed: boolean; draft: boolean }) => {
+    setCreatePrOpen(false);
+    const number = parseGitHubUrl(created.url)?.number;
+    const what = created.existed ? 'Linked' : created.draft ? 'Created draft' : 'Created';
+    showNotification(`${what} pull request #${number}`, {
+      tone: 'success',
+      action: {
+        label: 'Open on GitHub',
+        run: () => void invoke(IPC.ShellOpenExternal, { url: created.url }),
+      },
+    });
+    void pr.refetch();
+  };
 
   const confirmLabel = () => {
     if (pushFirst()) return push.pushing() ? 'Pushing…' : 'Push';
@@ -242,7 +268,7 @@ export function FinishDialog(props: FinishDialogProps) {
     void pr.refetch();
   };
   const confirm = () => {
-    if (pushFirst()) push.start();
+    if (pushFirst()) void push.start();
     else if (pr.mode() === 'merged') {
       props.onClose();
       props.onCloseTask();
@@ -405,8 +431,19 @@ export function FinishDialog(props: FinishDialogProps) {
               </Show>
               {retroBox()}
             </FollowUps>
-            {/* Without a PR the section would only say so; local merging needs no word on PRs. */}
-            <Show when={taskPrUrl(props.task)}>
+            {/* Without a PR the section only offers one, where the PR shows once it exists;
+                without an origin, local merging needs no word on PRs. */}
+            <Show
+              when={taskPrUrl(props.task)}
+              fallback={
+                <Show when={remote()}>
+                  <CreatePrEntry
+                    disabled={push.pushing() || merge.merging()}
+                    onCreate={() => setCreatePrOpen(true)}
+                  />
+                </Show>
+              }
+            >
               <FinishPrSection
                 task={props.task}
                 pr={pr}
@@ -480,7 +517,7 @@ export function FinishDialog(props: FinishDialogProps) {
                 class="btn-secondary btn-with-icon"
                 disabled={pushDisabled() || !!pushBlocker()}
                 title={pushBlocker() ?? `Push ${props.task.branchName} to origin without merging`}
-                onClick={() => push.start()}
+                onClick={() => void push.start()}
               >
                 <UploadIcon size={12} />
                 {push.pushing() ? 'Pushing…' : 'Push'}
@@ -491,6 +528,16 @@ export function FinishDialog(props: FinishDialogProps) {
         cancelLabel={push.pushing() ? 'Close' : 'Cancel'}
         onConfirm={confirm}
         onCancel={() => props.onClose()}
+      />
+      <CreatePrDialog
+        open={props.open && createPrOpen()}
+        task={props.task}
+        base={merge.baseBranchName()}
+        remote={createPrRemote()}
+        commits={merge.branchCommits.error ? undefined : merge.branchCommits()}
+        push={push}
+        onCreated={prCreated}
+        onClose={() => setCreatePrOpen(false)}
       />
       {/* Keep the review provider alive so returning to Finish preserves draft comments. */}
       <DiffViewerDialog

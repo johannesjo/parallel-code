@@ -34,6 +34,7 @@ export type {
   PrReviewFeedback,
   PullRequestDetails,
   PtyOutput,
+  RemoteBranchState,
   ResourceGroup,
   ResourceProcess,
   ResourceSnapshot,

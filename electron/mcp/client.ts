@@ -5,6 +5,7 @@ import type { MindMapDocument, MindMapUpdate } from '../shared/mindmap.js';
 import type { CanvasRequest } from '../shared/canvas-view.js';
 import type { AgentTourPayload } from '../shared/agent-tour.js';
 import type { ConfidencePayload } from '../shared/task-confidence.js';
+import type { PrDraft } from '../shared/pr-draft.js';
 import type { GitHubCustomList } from '../shared/github-list.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
@@ -180,6 +181,10 @@ export class MCPClient {
     payload: ConfidencePayload,
   ): Promise<{ ok: true; scores: number }> {
     return this.taskOwnerRequest('POST', `/api/confidence/${encodeURIComponent(taskId)}`, payload);
+  }
+
+  async publishPrDraft(taskId: string, draft: PrDraft): Promise<{ ok: true; title: string }> {
+    return this.taskOwnerRequest('POST', `/api/pr-drafts/${encodeURIComponent(taskId)}`, draft);
   }
 
   async publishGitHubList(

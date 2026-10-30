@@ -4,10 +4,18 @@
  */
 import { ipcMain } from 'electron';
 import { IPC } from '../ipc/channels.js';
-import { assertInt, assertOptionalString, assertString, validatePath } from '../ipc/validate.js';
+import {
+  assertBoolean,
+  assertInt,
+  assertOptionalString,
+  assertString,
+  validatePath,
+} from '../ipc/validate.js';
+import { validateBranchName } from '../mcp/validation.js';
 import type { GitHubIssueChange, PrMergeMethod } from '../ipc/shared-types.js';
 import { TRIAGE_KINDS, TRIAGE_SORTS } from '../shared/github-triage.js';
 import type { TriageKind, TriageSort } from '../shared/github-triage.js';
+import { createPullRequest } from './create-pull-request.js';
 import { parsePrRef } from './gh.js';
 import {
   browseGitHubIssues,
@@ -26,6 +34,9 @@ import {
 } from './pull-requests.js';
 
 const MAX_SEARCH_LENGTH = 200;
+// GitHub's own limits: 256 characters for a title, 65536 for a body.
+const MAX_PR_TITLE_LENGTH = 256;
+const MAX_PR_BODY_LENGTH = 65_536;
 const MERGE_METHODS: readonly PrMergeMethod[] = ['squash', 'merge', 'rebase'];
 
 type IpcArgs = Record<string, unknown>;
@@ -139,6 +150,25 @@ export function registerGitHubHandlers(): void {
   ipcMain.handle(IPC.MarkPullRequestReady, (_e, args: IpcArgs) =>
     markPullRequestReady(prUrlArg(args)),
   );
+
+  ipcMain.handle(IPC.CreatePullRequest, (_e, args: IpcArgs) => {
+    validatePath(args.worktreePath, 'worktreePath');
+    assertString(args.title, 'title');
+    const title = args.title.trim();
+    if (!title || title.length > MAX_PR_TITLE_LENGTH)
+      throw new Error('title must be 1-256 characters');
+    assertString(args.body, 'body');
+    if (args.body.length > MAX_PR_BODY_LENGTH) throw new Error('body is too long');
+    assertBoolean(args.draft, 'draft');
+    return createPullRequest({
+      worktreePath: args.worktreePath as string,
+      head: validateBranchName(args.head, 'head'),
+      base: validateBranchName(args.base, 'base'),
+      title,
+      body: args.body,
+      draft: args.draft,
+    });
+  });
 
   ipcMain.handle(IPC.MergePullRequest, (_e, args: IpcArgs) => {
     const prUrl = prUrlArg(args);

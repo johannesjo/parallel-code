@@ -67,6 +67,7 @@ it('opens a context menu on right-click that snoozes the task', () => {
     'Snooze · stop agents',
     'Minimize (stop agents)',
     'Finish and close',
+    'Create pull request…',
     'Close',
   ]);
   menuItem('Snooze until new activity')?.click();
@@ -87,6 +88,7 @@ it('offers only restore for a minimized task', () => {
     'Open on the left',
     'Restore (start agents)',
     'Finish and close',
+    'Create pull request…',
     'Close',
   ]);
   menuItem('Restore (start agents)')?.click();
@@ -123,6 +125,14 @@ it('opens the pull request in the browser from its menu', () => {
   expect(invoke).toHaveBeenCalledWith(IPC.ShellOpenExternal, {
     url: 'https://github.com/o/r/pull/7',
   });
+  expect(labels()).not.toContain('Create pull request…');
+});
+
+it('opens Finish on Create pull request from its menu', () => {
+  rightClick();
+  menuItem('Create pull request…')?.click();
+  expect(store.pendingAction).toEqual({ type: 'create-pr', taskId: 'one' });
+  setStore('pendingAction', null);
 });
 
 it('offers no Finish for a task without its own worktree', () => {

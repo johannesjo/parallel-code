@@ -106,6 +106,7 @@ import type { MindMapDocument, MindMapUpdate } from '../shared/mindmap.js';
 import type { CanvasRequest } from '../shared/canvas-view.js';
 import type { AgentTourPayload } from '../shared/agent-tour.js';
 import type { ConfidencePayload } from '../shared/task-confidence.js';
+import type { PrDraft } from '../shared/pr-draft.js';
 import type { GitHubCustomList } from '../shared/github-list.js';
 import {
   buildMcpLaunchArgs,
@@ -1895,6 +1896,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishTourRequest, { taskId, payload }),
     publishConfidence: (taskId: string, payload: ConfidencePayload) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishConfidenceRequest, { taskId, payload }),
+    publishPrDraft: (taskId: string, draft: PrDraft) =>
+      callRenderer<{ ok: boolean }>(IPC.MCP_PublishPrDraftRequest, { taskId, draft }),
     publishGitHubList: (taskId: string, list: GitHubCustomList) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishGitHubListRequest, { taskId, list }),
     getProjects: () => callRenderer<RemoteProject[]>(IPC.Remote_GetProjectsRequest, {}),

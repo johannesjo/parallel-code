@@ -13,6 +13,8 @@ interface ModelMenuChoice {
   value: string;
   label: string;
   title?: string;
+  /** Why the choice cannot be picked now; the row shows it greyed out. */
+  disabledReason?: string;
 }
 interface ModelMenuGroup {
   heading: string;
@@ -72,6 +74,7 @@ function MenuRow(props: { choice: ModelMenuChoice; checked: boolean; onPick: () 
       type="button"
       role="menuitemradio"
       aria-checked={props.checked}
+      disabled={!!props.choice.disabledReason}
       title={props.choice.title}
       onClick={(e) => {
         e.stopPropagation();
@@ -85,13 +88,15 @@ function MenuRow(props: { choice: ModelMenuChoice; checked: boolean; onPick: () 
         background: 'transparent',
         border: 'none',
         'border-radius': 'var(--radius-sm)',
-        color: theme.fg,
-        cursor: 'pointer',
+        color: props.choice.disabledReason ? theme.fgMuted : theme.fg,
+        cursor: props.choice.disabledReason ? 'default' : 'pointer',
         'text-align': 'left',
         font: 'inherit',
         'font-size': sf(12),
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = theme.bgHover)}
+      onMouseEnter={(e) => {
+        if (!props.choice.disabledReason) e.currentTarget.style.background = theme.bgHover;
+      }}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       {/* The space is reserved on every row, so the labels line up. */}
@@ -108,7 +113,14 @@ function MenuRow(props: { choice: ModelMenuChoice; checked: boolean; onPick: () 
           <CheckIcon size={12} />
         </Show>
       </span>
-      <span>{props.choice.label}</span>
+      <span style={{ display: 'flex', 'flex-direction': 'column' }}>
+        {props.choice.label}
+        <Show when={props.choice.disabledReason}>
+          {(reason) => (
+            <span style={{ 'font-size': sf(11), color: theme.fgSubtle }}>{reason()}</span>
+          )}
+        </Show>
+      </span>
     </button>
   );
 }
@@ -122,7 +134,9 @@ function ModelList(
 ) {
   let menu: HTMLDivElement | undefined;
   const items = () =>
-    Array.from(menu?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? []);
+    Array.from(
+      menu?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]:not(:disabled)') ?? [],
+    );
 
   // Before the first paint, and again when choices arrive while open (Codex
   // models load on open): a menu that opens upwards must end at the trigger.

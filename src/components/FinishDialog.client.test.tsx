@@ -244,6 +244,7 @@ function mount(
         open
         task={options.task ?? task()}
         initialCleanup={options.initialCleanup ?? true}
+        initialCreatePr={false}
         tour={options.tour ?? tour()}
         onTourClick={() => {}}
         onPushStart={() => {}}
@@ -421,7 +422,7 @@ describe('FinishDialog push', () => {
     button('Push')?.click();
     expect(pushTask).toHaveBeenCalledWith('parent', expect.anything());
     await flush();
-    expect(handlers.onPushDone).toHaveBeenCalledWith(false);
+    expect(handlers.onPushDone).toHaveBeenCalledWith(false, false);
     expect(handlers.onClose).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain('rejected: non-fast-forward');
   });

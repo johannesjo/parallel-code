@@ -69,6 +69,7 @@ const updateReasoning = vi.fn(async (taskId: string, update: ReasoningUpdate) =>
 const openCanvas = vi.fn(async (_taskId: string, _request: CanvasRequest) => {});
 const publishTour = vi.fn(async (_taskId: string, _payload: AgentTourPayload) => ({ ok: true }));
 const publishConfidence = vi.fn(async (_taskId: string, _payload: unknown) => ({ ok: true }));
+const publishPrDraft = vi.fn(async (_taskId: string, _draft: unknown) => ({ ok: true }));
 const publishGitHubList = vi.fn(async (_taskId: string, _list: unknown) => ({ ok: true }));
 const read = vi.fn(async (_taskId: string) => structuredClone(map));
 const update = vi.fn(
@@ -101,6 +102,7 @@ beforeEach(async () => {
     openCanvas,
     publishTour,
     publishConfidence,
+    publishPrDraft,
     publishGitHubList,
   });
   token = server.registerCanvasAgent('task-1', 'agent-1');
@@ -219,6 +221,23 @@ it('publishes a confidence rating for the owning task only and validates it', as
   });
   expect(malformed.status).toBe(400);
   expect(publishConfidence).toHaveBeenCalledTimes(1);
+});
+
+it('publishes a pull request draft for the owning task only and validates it', async () => {
+  const draft = { title: 'fix(git): keep the base', body: '## Why\n\nIt moved.' };
+  await expect(client.publishPrDraft('task-1', draft)).resolves.toEqual({
+    ok: true,
+    title: draft.title,
+  });
+  expect(publishPrDraft).toHaveBeenCalledWith('task-1', draft);
+  await expect(client.publishPrDraft('task-2', draft)).rejects.toThrow('403');
+  const untitled = await fetch(`http://127.0.0.1:${server.port}/api/pr-drafts/task-1`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: '  ', body: 'x' }),
+  });
+  expect(untitled.status).toBe(400);
+  expect(publishPrDraft).toHaveBeenCalledTimes(1);
 });
 
 it('publishes a tour for the owning task only and validates the payload', async () => {
@@ -358,6 +377,7 @@ it('serves discoverable tools over real MCP stdio and reflects subsequent manual
       'canvas_open',
       'tour_publish',
       'confidence_publish',
+      'pr_draft_publish',
     ]);
     const opened = await mcp.callTool({ name: 'canvas_open', arguments: { view: 'mindmap' } });
     expect(opened.isError).not.toBe(true);

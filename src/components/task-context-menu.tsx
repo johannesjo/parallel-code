@@ -8,7 +8,8 @@ import { uncollapseTask } from '../store/tasks';
 import type { Task } from '../store/types';
 import { ContextMenu, type MoreMenuItem } from './chat/MoreMenu';
 import { CloseTaskDialog } from './CloseTaskDialog';
-import { CloseIcon, ExternalLinkIcon, GitMergeIcon, UndoIcon } from './icons';
+import { CloseIcon, ExternalLinkIcon, GitMergeIcon, GitPullRequestIcon, UndoIcon } from './icons';
+import { taskPrUrl } from './pr-actions';
 import { laterMenuItems } from './task-later-menu';
 
 interface TaskMenuActions {
@@ -36,8 +37,18 @@ function endMenuItems(task: Task, actions: TaskMenuActions): MoreMenuItem[] {
       setPendingAction({ type: 'finish', taskId: task.id, closeAfter });
     },
   };
+  // Opens Finish too, with Create pull request on top, so it lands back there.
+  const createPr = {
+    label: 'Create pull request…',
+    icon: <GitPullRequestIcon size={14} />,
+    run: () => {
+      actions.open();
+      setPendingAction({ type: 'create-pr', taskId: task.id });
+    },
+  };
   return [
     ...(canFinish ? [finish] : []),
+    ...(canFinish && !taskPrUrl(task) ? [createPr] : []),
     { label: 'Close', icon: <CloseIcon size={14} />, run: actions.confirmClose },
   ];
 }

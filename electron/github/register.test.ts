@@ -61,3 +61,31 @@ describe('resolve_github_repository handler', () => {
     await expect(resolve({ projectRoot: '/project' })).rejects.toThrow(/github\.com repositories/);
   });
 });
+
+describe('create_pull_request handler', () => {
+  const valid = {
+    worktreePath: '/repo/wt',
+    head: 'task/fix-login',
+    base: 'main',
+    title: 'Fix login',
+    body: '',
+    draft: true,
+  };
+  function create(args: unknown): unknown {
+    const handler = handlers.get(IPC.CreatePullRequest);
+    if (!handler) throw new Error('handler not registered');
+    return handler({}, args);
+  }
+
+  it.each([
+    ['a relative worktree path', { worktreePath: 'wt' }, /worktreePath/],
+    ['an option-like head', { head: '--web' }, /head/],
+    ['an empty base', { base: '' }, /base/],
+    ['a blank title', { title: '   ' }, /title/],
+    ['an overlong title', { title: 'x'.repeat(257) }, /title/],
+    ['a non-string body', { body: 1 }, /body/],
+    ['a missing draft flag', { draft: undefined }, /draft/],
+  ])('rejects %s', (_label, change, error) => {
+    expect(() => create({ ...valid, ...change })).toThrow(error);
+  });
+});

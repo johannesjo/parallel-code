@@ -29,6 +29,7 @@ export const ACTION_INFO: Record<string, ActionInfo> = {
   createTerminal: { keywords: 'shell console' },
   spawnShell: { keywords: 'terminal console', scope: 'task' },
   finishTask: { keywords: 'merge push done complete land', scope: 'task' },
+  createPullRequest: { keywords: 'pr github open draft', scope: 'task' },
   closeTask: { keywords: 'delete remove discard', scope: 'item' },
   secondOpinion: { keywords: 'review compare another agent', scope: 'task' },
   sendPrompt: { keywords: 'submit run', scope: 'prompt' },

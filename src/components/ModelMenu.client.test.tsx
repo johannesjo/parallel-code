@@ -4,7 +4,9 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { ModelMenu } from './ModelMenu';
 
 let dispose: (() => void) | undefined;
-const [choices, setChoices] = createSignal([{ value: 'sonnet', label: 'sonnet' }]);
+const [choices, setChoices] = createSignal<
+  { value: string; label: string; disabledReason?: string }[]
+>([{ value: 'sonnet', label: 'sonnet' }]);
 
 afterEach(() => {
   setChoices([{ value: 'sonnet', label: 'sonnet' }]);
@@ -81,4 +83,15 @@ it('labels each set of choices as its own group', () => {
   expect(groups.map((group) => group.querySelectorAll('[aria-checked="true"]').length)).toEqual([
     1, 1,
   ]);
+});
+
+it('shows why a disabled choice cannot be picked and keeps it unselectable', () => {
+  setChoices([
+    { value: 'sonnet', label: 'sonnet' },
+    { value: 'agent', label: 'Claude Code', disabledReason: 'Busy with a turn' },
+  ]);
+  mount(false).click();
+  const rows = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
+  expect(rows.map((row) => row.disabled)).toEqual([false, true]);
+  expect(rows[1].textContent).toContain('Busy with a turn');
 });

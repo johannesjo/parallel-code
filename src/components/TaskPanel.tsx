@@ -534,6 +534,9 @@ export function TaskPanel(props: TaskPanelProps) {
       case 'finish':
         openFinish('merge', action.closeAfter);
         break;
+      case 'create-pr':
+        openFinish('create-pr');
+        break;
     }
   });
 
@@ -1155,6 +1158,7 @@ export function TaskPanel(props: TaskPanelProps) {
         <FinishDialog
           open={finishAction() !== null}
           task={props.task}
+          initialCreatePr={finishAction() === 'create-pr'}
           initialCleanup={
             props.task.externalWorktree
               ? false
@@ -1179,13 +1183,13 @@ export function TaskPanel(props: TaskPanelProps) {
             setPushSuccess(false);
             clearTimeout(pushSuccessTimer);
           }}
-          onPushDone={(success) => {
+          onPushDone={(success, keepOpen) => {
             const wasHidden = finishAction() === null;
             setPushing(false);
             if (success) {
               setPushSuccess(true);
               pushSuccessTimer = setTimeout(() => setPushSuccess(false), 3000);
-              setFinishAction(null);
+              if (!keepOpen) setFinishAction(null);
             }
             // A failed push keeps the dialog open so its error stays readable.
             if (wasHidden) showNotification(success ? 'Push completed' : 'Push failed');

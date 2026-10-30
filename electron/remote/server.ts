@@ -51,6 +51,7 @@ import {
   type ConfidencePayload,
 } from '../shared/task-confidence.js';
 import { parseGitHubList, type GitHubCustomList } from '../shared/github-list.js';
+import { PR_DRAFT_LIMITS, parsePrDraft, type PrDraft } from '../shared/pr-draft.js';
 import type { SessionCaller, SessionCapabilities } from '../shared/delegation-types.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
@@ -433,9 +434,17 @@ type CanvasOps = Pick<
   | 'openCanvas'
   | 'publishTour'
   | 'publishConfidence'
+  | 'publishPrDraft'
   | 'publishGitHubList'
 >;
-type CanvasRoute = 'mindmaps' | 'reasoning' | 'canvas' | 'tours' | 'confidence' | 'github-lists';
+type CanvasRoute =
+  | 'mindmaps'
+  | 'reasoning'
+  | 'canvas'
+  | 'tours'
+  | 'confidence'
+  | 'pr-drafts'
+  | 'github-lists';
 /** A published tour inlines its own context; the shared parser caps it again. */
 const TOUR_MAX_BODY_BYTES = 256 * 1024;
 /** 100 items with full-length titles and reasons, plus JSON overhead. */
@@ -488,6 +497,13 @@ async function canvasRequest(
     const payload = parseConfidencePayload(await readJsonBody(req, CONFIDENCE_LIMITS.payloadBytes));
     await ops.publishConfidence(taskId, payload);
     return { ok: true, scores: payload.scores.length };
+  }
+  if (route === 'pr-drafts') {
+    if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
+    if (!ops.publishPrDraft) throw httpError(503, 'Pull request drafts unavailable');
+    const draft = parsePrDraft(await readJsonBody(req, PR_DRAFT_LIMITS.payloadBytes));
+    await ops.publishPrDraft(taskId, draft);
+    return { ok: true, title: draft.title };
   }
   if (route === 'github-lists') {
     if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
@@ -1011,6 +1027,8 @@ export function startRemoteServer(opts: {
   publishTour?: (taskId: string, payload: AgentTourPayload) => Promise<unknown>;
   /** Show a confidence rating the agent published for its own task (renderer-backed). */
   publishConfidence?: (taskId: string, payload: ConfidencePayload) => Promise<unknown>;
+  /** Fill the Create pull request dialog with a draft the agent wrote for its own task (renderer-backed). */
+  publishPrDraft?: (taskId: string, draft: PrDraft) => Promise<unknown>;
   /** Show an issue list the agent ordered and grouped on its project's GitHub page. */
   publishGitHubList?: (taskId: string, list: GitHubCustomList) => Promise<unknown>;
   /** Read a task's notes (renderer-backed). */
@@ -1309,7 +1327,7 @@ export function startRemoteServer(opts: {
       };
 
       const mapMatch = url.pathname.match(
-        /^\/api\/(mindmaps|reasoning|canvas|tours|confidence|github-lists)\/([^/]+)$/,
+        /^\/api\/(mindmaps|reasoning|canvas|tours|confidence|pr-drafts|github-lists)\/([^/]+)$/,
       );
       if (mapMatch) {
         const route = mapMatch[1] as CanvasRoute;

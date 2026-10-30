@@ -22,8 +22,9 @@ export interface ModelRequest {
 /**
  * One structured call with the project's provider, model and reasoning level:
  * (`purpose: 'checks'`) a suggested check setup, (`purpose: 'task-name'`) a
- * short task title, (`purpose: 'brief'`) a task brief, or (`purpose: 'review'`)
- * an independent rating of a task's work.
+ * short task title, (`purpose: 'brief'`) a task brief, (`purpose: 'review'`)
+ * an independent rating of a task's work, or (`purpose: 'pr-description'`) a
+ * pull request title and description.
  * Resolves with the response text; rejects on provider failure, a runaway
  * response, or the client deadline.
  */
@@ -34,7 +35,7 @@ export function startModelRequest(options: {
   agentEnvFiles: Record<string, string>;
   /** Whose project env vars the call runs with. */
   projectId: string | undefined;
-  purpose: 'checks' | 'task-name' | 'brief' | 'review';
+  purpose: 'checks' | 'task-name' | 'brief' | 'review' | 'pr-description';
 }): ModelRequest {
   const requestId = crypto.randomUUID();
   const channel = new Channel<AskMessage>();

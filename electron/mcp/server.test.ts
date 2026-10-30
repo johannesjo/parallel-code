@@ -710,6 +710,32 @@ describe('mind map tools', () => {
     expect(client.publishConfidence).toHaveBeenCalledTimes(1);
   });
 
+  it('publishes a pull request draft only for a task session and rejects one without a title', async () => {
+    const client = {
+      publishPrDraft: vi.fn().mockResolvedValue({ ok: true, title: 'Fix' }),
+    } as unknown as MCPClient;
+    const context = { client, taskId: 'own-task', coordinatorId: '', canvasOnly: true };
+    expect(
+      await handleMCPToolCall(context, 'pr_draft_publish', {
+        title: 'Fix\nthe  base',
+        body: ' Why. ',
+        taskId: 'other',
+      }),
+    ).not.toHaveProperty('isError');
+    expect(client.publishPrDraft).toHaveBeenCalledWith('own-task', {
+      title: 'Fix the base',
+      body: 'Why.',
+    });
+    expect(
+      await handleMCPToolCall(context, 'pr_draft_publish', { title: ' ', body: 'x' }),
+    ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('no title') }] });
+    const coordinator = { ...context, taskId: '', coordinatorId: 'coord-1', canvasOnly: false };
+    expect(
+      await handleMCPToolCall(coordinator, 'pr_draft_publish', { title: 'Fix', body: '' }),
+    ).toMatchObject({ isError: true });
+    expect(client.publishPrDraft).toHaveBeenCalledTimes(1);
+  });
+
   it('publishes a GitHub list for the session task and rejects a malformed one before transport', async () => {
     const client = {
       publishGitHubList: vi.fn().mockResolvedValue({ ok: true, name: 'This week' }),
