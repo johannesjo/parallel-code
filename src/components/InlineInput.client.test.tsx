@@ -68,7 +68,9 @@ describe('InlineInput image attachment', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
-    expect(onSubmit).toHaveBeenCalledWith('why is this here?', 'review', undefined);
+    await vi.waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith('why is this here?', 'review', undefined);
+    });
   });
 
   it('keeps the pasted image across a switch to Ask mode and sends it', async () => {
@@ -87,7 +89,9 @@ describe('InlineInput image attachment', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
-    expect(onSubmit).toHaveBeenCalledWith('what does this show?', 'ask', ['/tmp/shot.png']);
+    await vi.waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith('what does this show?', 'ask', ['/tmp/shot.png']);
+    });
   });
 
   it('waits for an in-flight paste before submitting', async () => {
@@ -114,9 +118,8 @@ describe('InlineInput image attachment', () => {
     expect(onSubmit).not.toHaveBeenCalled();
 
     resolvePaste({ kind: 'image', path: '/tmp/shot.png' });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(onSubmit).toHaveBeenCalledWith('what does this show?', 'ask', ['/tmp/shot.png']);
+    await vi.waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith('what does this show?', 'ask', ['/tmp/shot.png']);
+    });
   });
 });
