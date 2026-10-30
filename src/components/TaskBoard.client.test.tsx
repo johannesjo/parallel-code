@@ -17,7 +17,7 @@ import { openNextAttentionTask, openPreviousAttentionTask } from './next-attenti
 import { retryCloseTask } from '../store/tasks';
 import { setTaskProjectFilter } from '../store/navigation';
 import type { AttentionEntry } from '../store/sidebar-attention';
-import type { Task } from '../store/types';
+import type { Agent, Task } from '../store/types';
 import { BoardSidePanelClose } from './BoardSidePanel';
 import { FocusModeTaskIndicators } from './FocusModeTaskIndicators';
 import { TaskBoard } from './TaskBoard';
@@ -162,6 +162,23 @@ it('moves a pull request by what it waits for', () => {
   // Babysit hands CI failures to the agent, so the task waits on it, not on you.
   setStore('tasks', 'pr', 'prBabysit', { attempts: 1 });
   expect(at()).toBe('In pull request');
+  // An agent that stopped without pushing a fix leaves the failure to you.
+  setStore('tasks', 'pr', 'prBabysit', { attempts: 1, stalled: true });
+  expect(at()).toBe('Needs you');
+  expect(lane('Needs you')?.textContent).toContain('CI failed · Babysit stuck');
+  // A cleanly exited agent is no failure, but nobody is left to take the CI failures.
+  setStore('tasks', 'pr', 'prBabysit', reconcile({ attempts: 1 }));
+  expect(at()).toBe('In pull request');
+  setStore('agents', 'pr-agent', {
+    id: 'pr-agent',
+    taskId: 'pr',
+    status: 'exited',
+    exitCode: 0,
+    signal: null,
+  } as Agent);
+  setStore('tasks', 'pr', 'agentIds', ['pr-agent']);
+  expect(at()).toBe('Needs you');
+  setStore('tasks', 'pr', 'agentIds', []);
   setPrChecks('pr', checksFromUpdate({ overall: 'success', reviewDecision: 'CHANGES_REQUESTED' }));
   expect(at()).toBe('Needs you');
   setStore('tasks', 'pr', 'prBabysit', undefined);

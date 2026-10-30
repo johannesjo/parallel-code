@@ -1,7 +1,7 @@
 import { isHiddenAgentTaskId } from '../documents/task-id';
 import { store } from '../store/core';
 import { isTaskBackgrounded } from '../store/background-tasks';
-import { getPrBabysit } from '../store/pr-babysit';
+import { getPrBabysit, isPrBabysitStuck } from '../store/pr-babysit';
 import { getPrChecks, isPrReadyToMerge } from '../store/pr-checks-state';
 import { getProject } from '../store/projects';
 import { sortByProjectGroup } from '../store/sidebar-order';
@@ -71,14 +71,15 @@ export function boardLaneOf(task: Task): BoardLaneId {
 
 /** A pull request waits on you when GitHub says it cannot merge as it is, or
  *  when it can; otherwise on CI or reviewers. Babysit sends CI failures back to
- *  the agent, so those wait on it until Babysit gives up and stops. */
+ *  the agent, so those wait on it until Babysit gives up or gets stuck. */
 function pullRequestLane(taskId: string): BoardLaneId {
   const checks = getPrChecks(taskId);
   if (!checks || checks.merged) return 'pr';
   if (isPrReadyToMerge(checks)) return 'ready';
   if (checks.mergeable === 'CONFLICTING' || checks.reviewDecision === 'CHANGES_REQUESTED')
     return 'needs';
-  if (checks.overall === 'failure' && !getPrBabysit(taskId)) return 'needs';
+  if (checks.overall === 'failure' && (!getPrBabysit(taskId) || isPrBabysitStuck(taskId)))
+    return 'needs';
   return 'pr';
 }
 

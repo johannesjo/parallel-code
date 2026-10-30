@@ -147,10 +147,77 @@ it('tells the user when a failing commit has nothing to send', async () => {
   stop = startPrBabysitWatcher();
   await tick();
   expect(sendPrompt).not.toHaveBeenCalled();
-  expect(store.tasks['task-1']?.prBabysit).toEqual({ attempts: 0, lastSentSha: 'a' });
+  // Babysit cannot act on this commit, so it is the user's at once.
+  expect(store.tasks['task-1']?.prBabysit).toEqual({
+    attempts: 0,
+    lastSentSha: 'a',
+    stalled: true,
+  });
   expect(showNotification).toHaveBeenCalledWith(
     expect.stringContaining('could not load a failing check'),
   );
+});
+
+it('hands the failure back when the agent stops without pushing a fix', async () => {
+  setPrChecks('task-1', failing('a'));
+  stop = startPrBabysitWatcher();
+  await tick();
+  expect(sendPrompt).toHaveBeenCalledTimes(1);
+  // A push the local origin ref misses still shows at the 5-minute refresh.
+  await vi.advanceTimersByTimeAsync(5.5 * 60_000);
+  expect(store.tasks['task-1']?.prBabysit?.stalled).toBeUndefined();
+
+  await vi.advanceTimersByTimeAsync(40_000);
+  expect(store.tasks['task-1']?.prBabysit).toEqual({
+    attempts: 1,
+    lastSentSha: 'a',
+    stalled: true,
+  });
+  expect(prBabysitStatus('task-1')).toBe('Stuck: CI still fails and no fix was pushed');
+  expect(showNotification).toHaveBeenLastCalledWith(expect.stringContaining('no fix was pushed'));
+
+  // A push from anywhere, such as the user's own terminal, resumes babysitting.
+  setPrChecks('task-1', { ...failing('b'), overall: 'pending' });
+  await tick();
+  expect(store.tasks['task-1']?.prBabysit).toEqual({ attempts: 1, lastSentSha: 'a' });
+});
+
+it('starts over once CI passes', async () => {
+  setStore('tasks', 'task-1', 'prBabysit', { attempts: 2, lastSentSha: 'a', stalled: true });
+  setPrChecks('task-1', { ...failing('b'), overall: 'success' });
+  stop = startPrBabysitWatcher();
+  await tick();
+  expect(store.tasks['task-1']?.prBabysit).toStrictEqual({ attempts: 0 });
+});
+
+it('gives a nudged agent a fresh chance to push', async () => {
+  setStore('tasks', 'task-1', 'prBabysit', { attempts: 1, lastSentSha: 'a', stalled: true });
+  setPrChecks('task-1', failing('a'));
+  stop = startPrBabysitWatcher();
+  vi.mocked(isAgentIdle).mockReturnValue(false);
+  await tick();
+  expect(store.tasks['task-1']?.prBabysit).toStrictEqual({ attempts: 1, lastSentSha: 'a' });
+  expect(prBabysitStatus('task-1')).toBe('Waiting for a new push');
+});
+
+it('does not count a paused task as stuck', async () => {
+  setStore('tasks', 'task-1', 'prBabysit', { attempts: 1, lastSentSha: 'a' });
+  setStore('tasks', 'task-1', 'delegationPaused', true);
+  setPrChecks('task-1', failing('a'));
+  stop = startPrBabysitWatcher();
+  await vi.advanceTimersByTimeAsync(10 * 60_000);
+  expect(store.tasks['task-1']?.prBabysit?.stalled).toBeUndefined();
+});
+
+it('does not call a working agent stuck', async () => {
+  vi.mocked(sendPrompt).mockImplementationOnce(() => {
+    vi.mocked(isAgentIdle).mockReturnValue(false);
+    return Promise.resolve();
+  });
+  setPrChecks('task-1', failing('a'));
+  stop = startPrBabysitWatcher();
+  await vi.advanceTimersByTimeAsync(10 * 60_000);
+  expect(store.tasks['task-1']?.prBabysit?.stalled).toBeUndefined();
 });
 
 it('stops and tells the user after the last attempt fails', async () => {

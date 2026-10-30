@@ -14,6 +14,7 @@ import {
 import { setOpenDraftAside } from '../../store/task-creation';
 import { getTaskAttentionState, getTaskDotStatus } from '../../store/taskStatus';
 import type { Task } from '../../store/types';
+import { isPrBabysitStuck } from '../../store/pr-babysit';
 import { BabysitButton } from '../BabysitButton';
 import { CheckIcon, GitMergeIcon, GitPullRequestIcon, IssueOpenedIcon } from '../icons';
 import { StatusDot } from '../StatusDot';
@@ -89,7 +90,11 @@ export function TaskPr(props: { taskId: string; url: string }) {
   const checks = () => getPrChecks(props.taskId);
   const status = () => prBoardStatus(checks());
   const kind = () => status()?.kind;
-  const label = () => status()?.label ?? 'Pull request open';
+  // A stalled Babysit is why a failed PR is back in Needs you, so say so.
+  const label = () =>
+    kind() === 'failed' && isPrBabysitStuck(props.taskId)
+      ? 'CI failed · Babysit stuck'
+      : (status()?.label ?? 'Pull request open');
   return (
     <div class="task-board-ask">
       <span

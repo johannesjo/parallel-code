@@ -988,7 +988,10 @@ describe('PR URL persistence', () => {
         taskOrder: ['task-1', 'task-2', 'task-3'],
         collapsedTaskOrder: [],
         tasks: {
-          'task-1': { ...persistedTask(def), prBabysit: { attempts: 2, lastSentSha: 'abc' } },
+          'task-1': {
+            ...persistedTask(def),
+            prBabysit: { attempts: 2, lastSentSha: 'abc', stalled: true },
+          },
           'task-2': { ...persistedTask(def), id: 'task-2', prBabysit: { attempts: 'x' } },
           'task-3': { ...persistedTask(def), id: 'task-3' },
         },
@@ -999,7 +1002,11 @@ describe('PR URL persistence', () => {
 
     await loadState();
 
-    expect(store.tasks['task-1'].prBabysit).toEqual({ attempts: 2, lastSentSha: 'abc' });
+    expect(store.tasks['task-1'].prBabysit).toEqual({
+      attempts: 2,
+      lastSentSha: 'abc',
+      stalled: true,
+    });
     expect(store.tasks['task-2'].prBabysit).toEqual({ attempts: 0 });
     expect(store.tasks['task-3'].prBabysit).toBeUndefined();
   });

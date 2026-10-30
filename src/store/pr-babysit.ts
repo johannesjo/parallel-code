@@ -1,9 +1,11 @@
 /** PR babysitting: sends a task's failing PR checks to its agent until CI passes. */
+import { reconcile } from 'solid-js/store';
 import { errMessage, warn as logWarn } from '../lib/log';
 import { parseGitHubUrl } from '../lib/github-url';
 import {
   MAX_BABYSIT_ATTEMPTS,
   babysitCiWaitReason,
+  isAwaitingFixPush,
   nextBabysitStep,
   type PrBabysit,
 } from '../lib/pr-babysit';
@@ -23,6 +25,11 @@ import { sendPrompt } from './tasks';
 const BABYSIT_TICK_MS = 5_000;
 // An agent starts a turn within a second or two of Enter; fixing CI takes far longer.
 const START_CHECK_MS = 10_000;
+// An agent's push usually shows within one 30s PR-checks tick, and any push by
+// the 5-minute settled refresh; idle past that with no push means it stopped,
+// often on a command it could not run.
+const STALL_MS = 6 * 60_000;
+const STALLED_STATUS = 'Stuck: CI still fails and no fix was pushed';
 
 export function getPrBabysit(taskId: string): PrBabysit | undefined {
   return store.tasks[taskId]?.prBabysit;
@@ -56,9 +63,24 @@ export function stopPrBabysit(taskId: string): void {
 }
 
 function setPrBabysit(taskId: string, next: PrBabysit | undefined): void {
-  // Replace rather than merge, so a reset drops `lastSentSha` cleanly.
-  setStore('tasks', taskId, 'prBabysit', next === undefined ? undefined : { ...next });
+  // Replace rather than merge, so a reset drops `lastSentSha` and `stalled`
+  // cleanly; a plain object would be merged into the stored one.
+  setStore('tasks', taskId, 'prBabysit', next === undefined ? undefined : reconcile({ ...next }));
   void saveState();
+}
+
+/**
+ * True when babysitting cannot move on by itself, so the failing PR is the
+ * user's: it stalled, or its agent exited. A crash already reads as a failure;
+ * a clean exit would otherwise leave the task waiting on nobody.
+ */
+export function isPrBabysitStuck(taskId: string): boolean {
+  const task = store.tasks[taskId];
+  if (!task?.prBabysit) return false;
+  if (task.prBabysit.stalled) return true;
+  const agentId = task.agentIds[0];
+  // Closing stops the agents on purpose.
+  return !task.closingStatus && !!agentId && store.agents[agentId]?.status === 'exited';
 }
 
 /** Why the task's first agent cannot take an automatic prompt now; null when it can. */
@@ -86,6 +108,7 @@ function readyAgentId(taskId: string): string | null {
 export function prBabysitStatus(taskId: string): string | null {
   const babysit = getPrBabysit(taskId);
   if (!babysit) return null;
+  if (babysit.stalled) return STALLED_STATUS;
   const ciReason = babysitCiWaitReason(babysit, getPrChecks(taskId));
   if (ciReason) return ciReason;
   const blocker = babysitAgentBlocker(taskId);
@@ -103,9 +126,9 @@ async function deliverFailures(taskId: string, headSha: string): Promise<void> {
   if (!babysit || getPrChecks(taskId)?.headSha !== headSha) return;
   if (prompt === null) {
     // Nothing the agent can act on, such as only a merge conflict; skip this commit.
-    setPrBabysit(taskId, { ...babysit, lastSentSha: headSha });
+    setPrBabysit(taskId, { ...babysit, lastSentSha: headSha, stalled: true });
     showNotification(
-      'Babysit could not load a failing check to send (a merge conflict alone has none). It waits for the next push.',
+      'Babysit could not load a failing check to send (a merge conflict alone has none). It is back with you until the next push.',
     );
     return;
   }
@@ -127,15 +150,55 @@ async function deliverFailures(taskId: string, headSha: string): Promise<void> {
   }
 }
 
+/**
+ * Flags a babysat task whose agent sat idle past STALL_MS while CI kept
+ * failing on the commit it was sent, and clears the flag once a push arrives.
+ * `idleSince` is the watcher's per-task memory of when the idle spell began.
+ */
+function trackStall(taskId: string, babysit: PrBabysit, idleSince: Map<string, number>): void {
+  const clearStall = (): void => {
+    const { attempts, lastSentSha } = babysit;
+    setPrBabysit(taskId, lastSentSha ? { attempts, lastSentSha } : { attempts });
+  };
+  if (!isAwaitingFixPush(babysit, getPrChecks(taskId))) {
+    idleSince.delete(taskId);
+    if (babysit.stalled) clearStall();
+    return;
+  }
+  if (babysit.stalled) {
+    // Nudged back to work, the agent gets a fresh STALL_MS to push its fix.
+    const agentId = store.tasks[taskId]?.agentIds[0];
+    if (agentId && store.agents[agentId]?.status === 'running' && !isAgentIdle(agentId))
+      clearStall();
+    return;
+  }
+  // Only a ready agent counts: a question or a paused task already says why it waits.
+  if (babysitAgentBlocker(taskId) !== null) {
+    idleSince.delete(taskId);
+    return;
+  }
+  const since = idleSince.get(taskId) ?? Date.now();
+  idleSince.set(taskId, since);
+  if (Date.now() - since < STALL_MS) return;
+  idleSince.delete(taskId);
+  setPrBabysit(taskId, { ...babysit, stalled: true });
+  const name = store.tasks[taskId]?.name ?? 'the task';
+  showNotification(
+    `Babysit is stuck on “${name}”: the agent stopped and no fix was pushed. It may have hit a command it could not run.`,
+  );
+}
+
 /** Watches babysat tasks; returns a stop function. */
 export function startPrBabysitWatcher(): () => void {
   const inFlight = new Set<string>();
+  const idleSince = new Map<string, number>();
 
   const tick = (): void => {
     for (const [taskId, task] of Object.entries(store.tasks)) {
       const babysit = task?.prBabysit;
       if (!babysit || inFlight.has(taskId)) continue;
       const step = nextBabysitStep(babysit, getPrChecks(taskId));
+      trackStall(taskId, babysit, idleSince);
       if (step.kind === 'done') stopPrBabysit(taskId);
       else if (step.kind === 'reset') setPrBabysit(taskId, { attempts: 0 });
       else if (step.kind === 'give-up') {

@@ -10,6 +10,9 @@ export interface PrBabysit {
   attempts: number;
   /** Head commit whose failures were last sent, so each failing commit is sent once. */
   lastSentSha?: string;
+  /** CI still fails on `lastSentSha` and nobody is pushing a fix, often because
+   *  the agent could not run a command it needed; the failure is the user's. */
+  stalled?: true;
 }
 
 /** The parts of a PR's checks state that babysitting reacts to. */
@@ -41,6 +44,16 @@ export function nextBabysitStep(
   if (checks.headSha === babysit.lastSentSha) return { kind: 'wait' };
   if (babysit.attempts >= MAX_BABYSIT_ATTEMPTS) return { kind: 'give-up' };
   return { kind: 'send', headSha: checks.headSha };
+}
+
+/** CI still fails on the commit whose failures were last handled, so only a
+ *  new push can move babysitting on. */
+export function isAwaitingFixPush(babysit: PrBabysit, checks: BabysitChecks | undefined): boolean {
+  return (
+    checks?.overall === 'failure' &&
+    checks.headSha !== undefined &&
+    checks.headSha === babysit.lastSentSha
+  );
 }
 
 /** Why babysitting is waiting on CI itself, as shown on its toggle; null when

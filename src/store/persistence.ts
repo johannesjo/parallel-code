@@ -306,11 +306,12 @@ function validBranch(value: unknown, exclude?: string): string | undefined {
 
 function restoredPrBabysit(value: unknown): PrBabysit | undefined {
   if (!value || typeof value !== 'object') return undefined;
-  const { attempts, lastSentSha } = value as Record<string, unknown>;
+  const { attempts, lastSentSha, stalled } = value as Record<string, unknown>;
   return {
     attempts:
       typeof attempts === 'number' && Number.isInteger(attempts) && attempts > 0 ? attempts : 0,
     ...(typeof lastSentSha === 'string' && lastSentSha ? { lastSentSha } : {}),
+    ...(stalled === true ? { stalled } : {}),
   };
 }
 
