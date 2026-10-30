@@ -11,7 +11,7 @@ import {
 } from '../lib/floating';
 import { store } from '../store/store';
 import { activeFeatureHint } from '../store/onboarding';
-import { CloseIcon, TourIcon } from './icons';
+import { ArrowRightThinIcon, CloseIcon, TourIcon } from './icons';
 import { askCodeLabel } from './understanding/ask-code-label';
 import { TourModelMenu } from './understanding/TourModelMenu';
 
@@ -195,21 +195,11 @@ export function ChangeTourButton(props: {
                 </Show>
               </span>
               {/* Hidden, not removed, so the label keeps its width while the tour generates. */}
-              <svg
+              <ArrowRightThinIcon
+                size={14}
                 class="change-tour-arrow"
                 style={{ visibility: props.tour.loading() ? 'hidden' : undefined }}
-                width="14"
-                height="14"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M3 8h10m-4-4 4 4-4 4" />
-              </svg>
+              />
             </button>
           </div>
           {props.children}

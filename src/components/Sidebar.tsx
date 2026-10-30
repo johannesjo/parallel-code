@@ -3,7 +3,14 @@ import { TaskProjectFilter } from './TaskProjectFilter';
 import { createProjectFilterTransition } from '../lib/projectFilterTransition';
 import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
 import type { JSX } from 'solid-js';
-import { BotIcon, ChevronDownAltIcon, ClockIcon, FolderIcon, PlusLargeIcon } from './icons';
+import {
+  BotIcon,
+  ChevronDownAltIcon,
+  ClockIcon,
+  DocumentIcon,
+  FolderIcon,
+  PlusLargeIcon,
+} from './icons';
 import { createTaskContextMenu } from './task-context-menu';
 import { errMessage } from '../lib/log';
 import {
@@ -45,7 +52,6 @@ import { EditProjectDialog } from './EditProjectDialog';
 import { AddProjectDialog } from '../documents/AddProjectDialog';
 import { openDocumentWorkspace } from '../documents/store';
 import { codeProjects, isDocumentProject } from '../store/projects';
-import { DocumentIcon } from '../documents/DocumentIcon';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { SidebarFooter } from './SidebarFooter';
 import { IconButton } from './IconButton';

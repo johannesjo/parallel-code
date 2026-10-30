@@ -1,7 +1,8 @@
+import { DocumentIcon } from './icons';
 import { IPC } from '../../electron/ipc/channels';
 import { isExecutablePath } from '../../electron/shared/executable-path';
 import { editAsDocument } from '../documents/store';
-import { DocumentIcon } from '../documents/DocumentIcon';
+
 import { isMarkdownPath } from '../lib/canvas-tabs';
 import { invoke } from '../lib/ipc';
 import { errMessage } from '../lib/log';
