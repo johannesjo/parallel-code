@@ -52,17 +52,18 @@ export function describeGhError(err: unknown): string {
     return "GitHub CLI (gh) was not found on the app's PATH. Install it from https://cli.github.com, or if it is already installed, add its folder to PATH in your shell profile and restart Parallel Code.";
   }
   const stderr = typeof e.stderr === 'string' ? e.stderr.trim() : '';
+  // Before the auth check: gh's unknown-host error also suggests `gh auth login`.
+  if (
+    /no git remotes found|none of the git remotes .* point to a known github host/i.test(stderr)
+  ) {
+    return 'This project has no GitHub remote. For GitHub Enterprise, run "gh auth login --hostname <host>".';
+  }
   if (/not logged into|authentication required|gh auth login/i.test(stderr)) {
     return 'GitHub CLI is not logged in. Run "gh auth login" in a terminal.';
   }
   // With several remotes and no default, gh refuses to guess the repository.
   if (/gh repo set-default/i.test(stderr)) {
     return 'GitHub CLI does not know which repository to use. Run "gh repo set-default" in the project folder.';
-  }
-  if (
-    /no git remotes found|none of the git remotes .* point to a known github host/i.test(stderr)
-  ) {
-    return 'This project has no GitHub remote, so there are no GitHub issues to show.';
   }
   if (/rate limit/i.test(stderr)) {
     return 'GitHub API rate limit reached. Try again in a few minutes.';

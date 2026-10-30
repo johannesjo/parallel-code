@@ -220,6 +220,19 @@ describe('GitHub issue workflow', () => {
     expect(document.body.textContent).toContain('Other issue');
     expect(document.body.textContent).not.toContain('Fix broken save');
   });
+  it('shows the gh error without the IPC wrapper', async () => {
+    vi.mocked(browseGitHubIssues).mockRejectedValue(
+      new Error(
+        "Error invoking remote method 'browse_github_issues': Error: GitHub CLI is not logged in.",
+      ),
+    );
+    mount();
+    await flush();
+    expect(host.querySelector('[role="alert"] span')?.textContent).toBe(
+      'GitHub CLI is not logged in.',
+    );
+  });
+
   it('keeps failed metadata edits available for retry', async () => {
     vi.mocked(updateGitHubIssue).mockRejectedValue(new Error('Permission denied'));
     mount();
