@@ -671,17 +671,21 @@ describe('refreshWorktreeNodeModules', () => {
 });
 
 describe('ensureSymlinkExcludes', () => {
-  it('escapes gitignore wildcards so similarly-named files stay visible', async () => {
-    const root = initRepository();
-    fs.writeFileSync(path.join(root, 'star*file'), 'a\n', 'utf8');
-    fs.writeFileSync(path.join(root, 'starZZfile'), 'b\n', 'utf8');
+  // Windows filenames cannot contain `*`, so the wildcard file cannot exist there.
+  it.skipIf(process.platform === 'win32')(
+    'escapes gitignore wildcards so similarly-named files stay visible',
+    async () => {
+      const root = initRepository();
+      fs.writeFileSync(path.join(root, 'star*file'), 'a\n', 'utf8');
+      fs.writeFileSync(path.join(root, 'starZZfile'), 'b\n', 'utf8');
 
-    ensureSymlinkExcludes(root, ['star*file']);
+      ensureSymlinkExcludes(root, ['star*file']);
 
-    const status = git(root, ['status', '--porcelain']);
-    expect(status).not.toContain('star*file');
-    expect(status).toContain('starZZfile');
-  });
+      const status = git(root, ['status', '--porcelain']);
+      expect(status).not.toContain('star*file');
+      expect(status).toContain('starZZfile');
+    },
+  );
 });
 
 describe('ensureClaudeSandboxFiles', () => {
