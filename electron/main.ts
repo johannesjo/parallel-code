@@ -224,6 +224,14 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
+  // Without these a renderer crash or hang leaves no trace, so reports like
+  // "the app crashed" can't tell a freeze from an OOM or a GPU failure.
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    logWarn('window', 'renderer process gone', { ...details });
+  });
+  mainWindow.on('unresponsive', () => logWarn('window', 'window unresponsive'));
+  mainWindow.on('responsive', () => logWarn('window', 'window responsive again'));
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -344,6 +352,11 @@ app.on('will-quit', () => {
 // icon is a dead end and the only way back is attempting to quit. `show()` alone
 // left a minimized or buried window where it was — see restoreWindow.
 app.on('activate', () => restoreWindow(mainWindow));
+
+// Covers the GPU process, whose crash blanks every WebGL terminal at once.
+app.on('child-process-gone', (_event, details) => {
+  logWarn('app', 'child process gone', { ...details });
+});
 
 app.on('window-all-closed', () => {
   app.quit();
