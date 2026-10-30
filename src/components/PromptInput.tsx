@@ -60,7 +60,8 @@ import {
 import { hasUserPromptDraftText } from './prompt-draft';
 import { pollUntilPromptAppearsInOutput } from './prompt-verify';
 import type { StagedNotification } from '../store/types';
-import { debug, warn as logWarn } from '../lib/log';
+import { debug, errMessage, warn as logWarn } from '../lib/log';
+import { NOTIFICATION_ERROR_MS } from '../store/notification';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { taskAgentOpensSessionPicker } from '../lib/agent-args';
@@ -928,6 +929,12 @@ export function PromptInput(props: PromptInputProps) {
       setText('');
     } catch (e) {
       console.error('Failed to send prompt:', e);
+      // The text stays in the field for a retry; without a notice the agent just looks like it ignored the prompt.
+      const reason = errMessage(e).replace(
+        /^Error invoking remote method '[^']+': (?:Error: )?/,
+        '',
+      );
+      showNotification(`Couldn't send prompt: ${reason}`, { durationMs: NOTIFICATION_ERROR_MS });
     } finally {
       setSending(false);
     }
