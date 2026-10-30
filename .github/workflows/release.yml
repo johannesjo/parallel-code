@@ -36,6 +36,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Install rpm tooling for electron-builder
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
       - name: Build and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
