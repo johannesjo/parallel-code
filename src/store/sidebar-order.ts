@@ -129,6 +129,20 @@ export function taskVisualGroupKey(taskId: string): string | null {
     : '__orphan__';
 }
 
+/** Stable sort of any id list into the tile grouping: projects in
+ *  `store.projects` order, then orphaned tasks, then terminals and other ids.
+ *  For lists the tile order does not cover, such as all projects in the quick
+ *  switcher or minimized tasks on the board. */
+export function sortByProjectGroup(ids: readonly string[]): string[] {
+  const projectRank = new Map(store.projects.map((project, index) => [project.id, index]));
+  const rank = (id: string): number => {
+    const group = taskVisualGroupKey(id);
+    if (group === null) return projectRank.size + 1;
+    return projectRank.get(group) ?? projectRank.size;
+  };
+  return [...ids].sort((a, b) => rank(a) - rank(b));
+}
+
 /** Order a project's active tasks so each coordinator's children follow it,
  *  keeping their taskOrder order. A child whose coordinator is not in the list
  *  stays as a standalone entry. */

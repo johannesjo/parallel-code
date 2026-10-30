@@ -112,6 +112,18 @@ it('lists open tasks with their project and branch, then actions with their shor
   ]);
 });
 
+it('lists tasks grouped by project, like the sidebar and the tiles', () => {
+  dispose();
+  setStore('projects', [
+    { id: 'web', name: 'web', path: '/web', color: '#fff' },
+    { id: 'api', name: 'api', path: '/api', color: '#fff' },
+  ]);
+  setStore('tasks', 'other', task('other', 'Other web task', 'web'));
+  setStore('taskOrder', ['dark', 'login', 'other', 'copy']);
+  mount();
+  expect(names().slice(0, 4)).toEqual(['Dark mode', 'Other web task', 'Login copy', 'Fix login']);
+});
+
 it('runs an action on Enter after closing, and finds actions by name only', async () => {
   type('ctrl');
   expect(options()).toHaveLength(0);

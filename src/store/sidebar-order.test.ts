@@ -41,6 +41,7 @@ import {
   computeVisualReorder,
   getCoordinatorChildren,
   groupInsertIndex,
+  sortByProjectGroup,
   taskVisualGroupKey,
 } from './sidebar-order';
 
@@ -172,6 +173,33 @@ describe('visual tile order', () => {
     mockStore.terminals = { 'term-1': {}, 'term-2': {} };
 
     expect(computeTileOrder()).toEqual(['a', 'term-1', 'term-2']);
+  });
+
+  it("leaves a single project's tile order exactly as stored", () => {
+    mockStore.projects = [{ id: 'one' }];
+    mockStore.tasks = { a: { projectId: 'one' }, b: { projectId: 'one' }, c: { projectId: 'one' } };
+    mockStore.taskOrder = ['c', 'a', 'b'];
+
+    expect(computeTileOrder()).toEqual(['c', 'a', 'b']);
+  });
+
+  it('sorts any id list into project groups, then orphans, then terminals', () => {
+    mockStore.projects = [{ id: 'one' }, { id: 'two' }];
+    mockStore.tasks = {
+      a: { projectId: 'two' },
+      b: { projectId: 'one' },
+      orphan: {},
+      c: { projectId: 'one' },
+    };
+    mockStore.terminals = { term: {} };
+
+    expect(sortByProjectGroup(['term', 'a', 'orphan', 'b', 'c'])).toEqual([
+      'b',
+      'c',
+      'a',
+      'orphan',
+      'term',
+    ]);
   });
 
   it('keeps tasks of a collapsed project group in the tile order', () => {

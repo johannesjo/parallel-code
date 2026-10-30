@@ -4,6 +4,7 @@ import { isTaskBackgrounded } from '../store/background-tasks';
 import { getPrBabysit } from '../store/pr-babysit';
 import { getPrChecks, isPrReadyToMerge } from '../store/pr-checks-state';
 import { getProject } from '../store/projects';
+import { sortByProjectGroup } from '../store/sidebar-order';
 import { matchesTaskProjectFilter } from '../store/task-project-filter';
 import { getTaskOpenQuestion } from '../store/taskStatus';
 import type { Task } from '../store/types';
@@ -89,9 +90,9 @@ function matchesQuery(task: Task, query: string): boolean {
   return haystack.includes(query);
 }
 
-/** Open tasks in sidebar order, honouring the sidebar's project filter. */
+/** Open tasks in sidebar order (grouped by project), honouring the sidebar's project filter. */
 function openTasks(): Task[] {
-  return [...new Set([...store.taskOrder, ...store.collapsedTaskOrder])]
+  return sortByProjectGroup([...new Set([...store.taskOrder, ...store.collapsedTaskOrder])])
     .filter((id) => !isHiddenAgentTaskId(id) && matchesTaskProjectFilter(id))
     .map((id) => store.tasks[id])
     .filter((task): task is Task => task !== undefined);

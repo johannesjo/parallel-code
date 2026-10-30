@@ -9,6 +9,7 @@ import {
   store,
 } from '../store/store';
 import { openItemName } from '../store/navigation';
+import { sortByProjectGroup } from '../store/sidebar-order';
 import { Dialog } from './Dialog';
 import { StatusDot } from './StatusDot';
 
@@ -16,9 +17,10 @@ import { StatusDot } from './StatusDot';
  *  because reopening one restarts its agents. */
 function switcherItems(): SwitcherItem[] {
   const documentProjectId = store.activeDocumentProjectId;
+  const taskOrder = sortByProjectGroup(store.taskOrder);
   const ids = documentProjectId
-    ? [...store.taskOrder, documentAgentTaskId(documentProjectId)]
-    : store.taskOrder;
+    ? [...taskOrder, documentAgentTaskId(documentProjectId)]
+    : taskOrder;
   return ids.map((id) => {
     const task = store.tasks[id];
     const project = task && store.projects.find((p) => p.id === task.projectId);
