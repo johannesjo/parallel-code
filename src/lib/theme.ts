@@ -168,7 +168,7 @@ export function getTerminalTheme(preset: LookPreset) {
   if (cached) return cached;
   const panelBg = readCssVarsForPreset(preset)['--task-panel-bg'];
   const result = buildTerminalTheme(preset, panelBg ?? '#000000');
-  // Leave a miss uncached: it means the preset stylesheet was not applied yet.
+  // Leave a miss uncached: it means the app stylesheet was not loaded yet.
   if (panelBg) terminalThemeCache.set(preset, result);
   return result;
 }

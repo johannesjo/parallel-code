@@ -355,6 +355,8 @@ app.on('activate', () => restoreWindow(mainWindow));
 
 // Covers the GPU process, whose crash blanks every WebGL terminal at once.
 app.on('child-process-gone', (_event, details) => {
+  // Helpers exit cleanly at quit; only failures are worth a warning.
+  if (details.reason === 'clean-exit') return;
   logWarn('app', 'child process gone', { ...details });
 });
 
