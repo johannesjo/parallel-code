@@ -1501,3 +1501,57 @@ describe('FinishDialog review', () => {
     expect(steps.indexOf('Open review finding')).toBeLessThan(steps.indexOf('tour'));
   });
 });
+
+describe('FinishDialog base upstream', () => {
+  it('explains a base that diverged from origin and resets it on confirm', async () => {
+    let diverged = true;
+    const head = 'b'.repeat(40);
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus)
+        return {
+          conflicting_files: diverged ? ['guide.md'] : [],
+          main_ahead_count: diverged ? 1 : 0,
+          ...(diverged && {
+            base_upstream: {
+              upstream: 'origin/main',
+              head,
+              behind: 3,
+              local_count: 1,
+              local_commits: [{ hash: 'e1ff6d7', subject: 'docs: add guide' }],
+              differing_files: ['guide.md'],
+            },
+          }),
+        };
+      if (channel === IPC.ResetBaseToUpstream) {
+        diverged = false;
+        return head;
+      }
+      return { current_branch: 'task/parent', has_committed_changes: true };
+    });
+    mount({ task: task({ baseBranch: 'main' }) });
+    await flush();
+    const text = () => document.body.textContent ?? '';
+    expect(text()).toContain(
+      'Local main has 1 commit not on origin/main and is 3 behind it. ' +
+        'That is the likely cause of the conflicts in guide.md.',
+    );
+    expect(text()).toContain('e1ff6d7 docs: add guide');
+
+    button('Reset main to origin/main…')?.click();
+    await flush();
+    // The confirm names what the reset loses before it runs.
+    expect(text()).toContain("guide.md will take origin/main's version");
+    expect(invoke).not.toHaveBeenCalledWith(IPC.ResetBaseToUpstream, expect.anything());
+    button('Drop 1 commit')?.click();
+    await flush();
+    await flush();
+    expect(invoke).toHaveBeenCalledWith(IPC.ResetBaseToUpstream, {
+      projectRoot: '/repo',
+      baseBranch: 'main',
+      expectedHead: head,
+    });
+    expect(document.querySelector('[data-testid="base-upstream"]')).toBeNull();
+    expect(text()).toContain('Reset main to its upstream. It was at bbbbbbbbbb.');
+  });
+});

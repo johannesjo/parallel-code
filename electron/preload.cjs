@@ -36,6 +36,7 @@ const ALLOWED_CHANNELS = new Set([
   'push_task',
   'rebase_task',
   'merge_base_into_task',
+  'reset_base_to_upstream',
   'get_main_branch',
   'get_current_branch',
   'checkout_branch',

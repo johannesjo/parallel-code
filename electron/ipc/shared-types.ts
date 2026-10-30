@@ -141,6 +141,22 @@ export interface MergeStatus {
    *  the merge changes too. A merge sets the first aside and refuses the
    *  second. Absent when that checkout is clean or was not asked about. */
   target_uncommitted?: MergeTargetChanges;
+  /** The base has commits on neither its upstream nor this branch, and is
+   *  behind its upstream. Absent otherwise and from older senders. */
+  base_upstream?: BaseUpstreamDivergence;
+}
+
+export interface BaseUpstreamDivergence {
+  /** e.g. `origin/main`, as of the last fetch. */
+  upstream: string;
+  /** The base's commit when checked; a reset refuses if it moved since. */
+  head: string;
+  behind: number;
+  local_count: number;
+  /** The newest of the local commits, at most ten. */
+  local_commits: { hash: string; subject: string }[];
+  /** Files those commits touched whose content differs on the upstream. */
+  differing_files: string[];
 }
 
 export interface MergeTargetChanges {

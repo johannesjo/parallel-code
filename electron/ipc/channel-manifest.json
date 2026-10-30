@@ -29,6 +29,7 @@
   "PushTask": "push_task",
   "RebaseTask": "rebase_task",
   "MergeBaseIntoTask": "merge_base_into_task",
+  "ResetBaseToUpstream": "reset_base_to_upstream",
   "GetMainBranch": "get_main_branch",
   "GetCurrentBranch": "get_current_branch",
   "CheckoutBranch": "checkout_branch",

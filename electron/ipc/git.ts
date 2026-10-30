@@ -7,6 +7,7 @@ import type { Notify } from './notify.js';
 import { KANBAN_FILE } from './kanban.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
 import { debug as logDebug } from '../log.js';
+import { baseUpstreamDivergence, conflictSourcesNote, upstreamOf } from './git-base-upstream.js';
 import {
   appendGitInfoExcludeBlock,
   appendGitInfoExcludeBlockAtPath,
@@ -2557,14 +2558,20 @@ export async function checkMergeStatus(
 ): Promise<MergeStatus> {
   const remote = remoteBranchState(worktreePath);
   const status = await checkBaseStatus(worktreePath, baseBranch);
-  const target = projectRoot
-    ? await mergeTargetChanges(projectRoot, worktreePath, status.base_branch)
-    : undefined;
+  const [target, divergence] = await Promise.all([
+    projectRoot ? mergeTargetChanges(projectRoot, worktreePath, status.base_branch) : undefined,
+    baseUpstreamDivergence(worktreePath, status.base_branch).catch((err: unknown) => {
+      // The merge does not depend on it; a missing notice must not hide the rest.
+      logDebug('git', `baseUpstreamDivergence failed for ${worktreePath}: ${err}`);
+      return undefined;
+    }),
+  ]);
   const state = await remote;
   return {
     ...status,
     ...(state && { remote: state }),
     ...(target && { target_uncommitted: target }),
+    ...(divergence && { base_upstream: divergence }),
   };
 }
 
@@ -2618,8 +2625,10 @@ async function checkBaseStatus(worktreePath: string, baseBranch?: string): Promi
   try {
     await exec('git', ['merge-tree', '--write-tree', 'HEAD', mainBranch], { cwd: worktreePath });
   } catch (e: unknown) {
-    // merge-tree outputs conflict info on failure
-    const output = String(e);
+    // merge-tree prints its conflict messages to stdout, which Node keeps on
+    // the error rather than in its message.
+    const stdout = typeof e === 'object' && e !== null ? (e as { stdout?: unknown }).stdout : null;
+    const output = `${String(e)}\n${typeof stdout === 'string' ? stdout : ''}`;
     for (const line of output.split('\n')) {
       const p = parseConflictPath(line);
       if (p) conflictingFiles.push(p);
@@ -2780,6 +2789,9 @@ export async function mergeTask(
         }
       };
 
+      const conflictSources = (files: string[]) =>
+        conflictSourcesNote(mergeRoot, { mainBranch, branch: branchName }, files);
+
       if (squash) {
         try {
           await exec('git', ['merge', '--squash', '--', branchName], { cwd: mergeRoot });
@@ -2789,7 +2801,7 @@ export async function mergeTask(
             console.warn('git reset --hard failed during squash recovery:', recoverErr),
           );
           await restoreBranch();
-          throw mergeFailure('Squash merge', conflicts, e);
+          throw mergeFailure('Squash merge', conflicts, e, await conflictSources(conflicts));
         }
         const msg = message ?? 'Squash merge';
         try {
@@ -2816,7 +2828,12 @@ export async function mergeTask(
           }
           if (failed) {
             await restoreBranch();
-            throw mergeFailure('Merge', failed.conflicts, failed.error);
+            throw mergeFailure(
+              'Merge',
+              failed.conflicts,
+              failed.error,
+              await conflictSources(failed.conflicts),
+            );
           }
         }
         try {
@@ -2828,7 +2845,7 @@ export async function mergeTask(
             console.warn('git merge --abort failed:', recoverErr),
           );
           await restoreBranch();
-          throw mergeFailure('Merge', conflicts, e);
+          throw mergeFailure('Merge', conflicts, e, await conflictSources(conflicts));
         }
       }
 
@@ -2855,10 +2872,11 @@ export async function mergeTask(
   });
 }
 
-function mergeFailure(operation: string, conflicts: string[], e: unknown): Error {
+/** `sources` names the base commits behind the conflicts; see `conflictSourcesNote`. */
+function mergeFailure(operation: string, conflicts: string[], e: unknown, sources = ''): Error {
   return new Error(
     conflicts.length
-      ? `${operation} stopped on conflicts in ${fileList(conflicts)}; nothing was merged.`
+      ? `${operation} stopped on conflicts in ${fileList(conflicts)}; nothing was merged.${sources}`
       : `${operation} failed: ${gitErrorText(e)}`,
   );
 }
@@ -3015,9 +3033,14 @@ async function syncWithBase(
     const failed = await syncWithBaseUnlocked(worktreePath, mainBranch, operation);
     if (!failed) return;
     const label = operation === 'merge' ? 'Merge' : 'Rebase';
+    const sources = await conflictSourcesNote(
+      worktreePath,
+      { mainBranch, branch: 'HEAD' },
+      failed.conflicts,
+    );
     throw new Error(
       failed.conflicts.length
-        ? `${label} stopped on conflicts in ${fileList(failed.conflicts)} and was undone; the branch is unchanged.`
+        ? `${label} stopped on conflicts in ${fileList(failed.conflicts)} and was undone; the branch is unchanged.${sources}`
         : `${label} failed: ${gitErrorText(failed.error)}`,
     );
   });
@@ -3054,6 +3077,42 @@ async function syncWithBaseUnlocked(
   }
   invalidateDiffBaseCache();
   return null;
+}
+
+/**
+ * Points the base branch at its upstream, dropping local commits the
+ * upstream lacks; for a base whose local work already landed upstream in
+ * another form. Refuses when the base moved since `expectedHead` was read.
+ * Uses `reset --keep` in the base's checkout, so uncommitted changes and
+ * untracked files survive or the reset stops. Resolves to the old commit.
+ */
+export async function resetBaseToUpstream(
+  projectRoot: string,
+  mainBranch: string,
+  expectedHead: string,
+): Promise<string> {
+  const lockKey = await detectRepoLockKey(projectRoot).catch(() => projectRoot);
+  return withWorktreeLock(lockKey, async () => {
+    const upstream = await upstreamOf(projectRoot, mainBranch);
+    if (!upstream) throw new Error(`${mainBranch} does not track a remote branch.`);
+    const { stdout } = await exec('git', ['rev-parse', `refs/heads/${mainBranch}`], {
+      cwd: projectRoot,
+    });
+    const head = stdout.trim();
+    if (head !== expectedHead)
+      throw new Error(`${mainBranch} changed since it was checked. Review it again first.`);
+    const checkout = await getBranchWorktreePath(projectRoot, mainBranch);
+    try {
+      // `branch -f` itself refuses a branch another worktree is rebasing.
+      await (checkout
+        ? exec('git', ['reset', '--keep', upstream], { cwd: checkout.path })
+        : exec('git', ['branch', '-f', mainBranch, upstream], { cwd: projectRoot }));
+    } catch (e) {
+      throw new Error(`Could not reset ${mainBranch} to ${upstream}: ${gitErrorText(e)}`);
+    }
+    invalidateDiffBaseCache();
+    return head;
+  });
 }
 
 export function rebaseTask(worktreePath: string, baseBranch?: string): Promise<void> {

@@ -11,6 +11,7 @@ import type { Task } from '../store/types';
 import type { ChangedFile } from '../ipc/types';
 import { ChangedFilesList } from './ChangedFilesList';
 import { MergeCommitList } from './MergeCommitList';
+import { BaseUpstreamNotice } from './BaseUpstreamNotice';
 import { MergeConflictBanner } from './MergeConflictBanner';
 import type { MergeState } from './merge-state';
 
@@ -150,6 +151,8 @@ export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean
           {props.state.baseBranchName()}.
         </div>
       </Show>
+      {/* Before the conflict banner: it explains conflicts that banner lists. */}
+      <BaseUpstreamNotice task={props.task} state={props.state} />
       <Show when={props.showBaseSync}>
         <MergeConflictBanner task={props.task} state={props.state} onDone={props.onDone} />
       </Show>

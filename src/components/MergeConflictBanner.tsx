@@ -8,7 +8,7 @@ import { GitBranchIcon, GitMergeIcon, SparkleIcon } from './icons';
 
 // Neutral even with conflicts: the banner carries the urgency, and full-strength
 // text, not an accent fill, marks the suggested route.
-const buttonStyle = (suggested: boolean, disabled = false) => ({
+export const buttonStyle = (suggested: boolean, disabled = false) => ({
   padding: '5px 12px',
   background: theme.bgInput,
   border: `1px solid ${theme.border}`,

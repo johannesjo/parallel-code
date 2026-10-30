@@ -131,6 +131,7 @@ import {
   getBranchCommitMessages,
   pushTask,
   rebaseTask,
+  resetBaseToUpstream,
   mergeBaseIntoTask,
   createWorktree,
   removeWorktree,
@@ -1170,6 +1171,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.MergeBaseIntoTask, (_e, args) => {
     const worktreePath = worktreePathArg(args);
     return mergeBaseIntoTask(worktreePath, optionalBaseBranch(args));
+  });
+  ipcMain.handle(IPC.ResetBaseToUpstream, (_e, args) => {
+    const projectRoot = projectRootArg(args);
+    const baseBranch = validateBranchName(args.baseBranch, 'baseBranch');
+    assertString(args.expectedHead, 'expectedHead');
+    if (!/^[0-9a-f]{40,64}$/.test(args.expectedHead)) throw new Error('Invalid expectedHead');
+    return resetBaseToUpstream(projectRoot, baseBranch, args.expectedHead);
   });
   ipcMain.handle(IPC.GetMainBranch, (_e, args) => {
     return getMainBranch(projectRootArg(args));
