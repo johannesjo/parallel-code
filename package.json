@@ -75,7 +75,7 @@
     "dompurify": "^3.4.17",
     "electron-updater": "^6.8.9",
     "marked": "^17.0.3",
-    "mermaid": "^11.17.2",
+    "mermaid": "^12.2.0",
     "node-pty": "^1.1.0",
     "parse5": "^7.3.0",
     "qrcode": "^1.5.4",
