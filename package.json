@@ -185,6 +185,11 @@
         }
       }
     },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
     "mac": {
       "target": [
         "dmg",
