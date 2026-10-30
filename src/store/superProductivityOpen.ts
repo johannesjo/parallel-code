@@ -17,7 +17,12 @@ import {
   type SpResult,
   type SpTaskDetail,
 } from '../../electron/shared/super-productivity';
-import { onTaskRenamed, setProjectSpMapping, setSpLink } from './superProductivity';
+import {
+  onTaskRenamed,
+  setProjectSpMapping,
+  setSpLink,
+  trackTaskStartedFromSp,
+} from './superProductivity';
 import type { SpNewTaskSource } from './types';
 
 function failureMessage(reason: SpFailureReason): string {
@@ -128,12 +133,13 @@ export function linkNewTaskToSp(taskId: string, source: SpNewTaskSource, project
     // agreed title: the next sync then sees only Super Productivity's title
     // as changed and copies it here, instead of sending the made-up name.
     setSpLink(taskId, source.taskId, toSpTitle(task.name));
-    return;
+  } else {
+    const title = toSpTitle(source.title);
+    setSpLink(taskId, source.taskId, title);
+    // A name edited in the form wins, like any other rename.
+    if (toSpTitle(task.name) !== title) onTaskRenamed(taskId);
   }
-  const title = toSpTitle(source.title);
-  setSpLink(taskId, source.taskId, title);
-  // A name edited in the form wins, like any other rename.
-  if (toSpTitle(task.name) !== title) onTaskRenamed(taskId);
+  void trackTaskStartedFromSp(taskId);
 }
 
 export function startSpOpenListener(): () => void {

@@ -42,6 +42,10 @@ describe('open a Super Productivity task in Parallel Code', () => {
           : { ok: false, reason: 'not_found' };
       }
       if (channel === IPC.SuperProductivityRenameTask) return { ok: true, value: null };
+      if (channel === IPC.SuperProductivityGetTracking) {
+        return { ok: true, value: { current: null, isBreak: false } };
+      }
+      if (channel === IPC.SuperProductivityStartTracking) return { ok: true, value: null };
       if (channel === IPC.SuperProductivityGetState) return 'connected';
       throw new Error(`unexpected channel ${channel}`);
     });
@@ -134,12 +138,17 @@ describe('open a Super Productivity task in Parallel Code', () => {
     expect(store.showNewTaskPanel).toBe(false);
   });
 
-  it('links the created task and learns the project pairing', () => {
+  it('links the created task, learns the project pairing and tracks it', async () => {
     setStore('tasks', 'b', { id: 'b', name: 'Fix login' } as Task);
     linkNewTaskToSp('b', { taskId: 'sp-9', title: 'Fix login', projectId: 'sp-other' }, 'other');
     expect(store.tasks.b.superProductivity).toEqual({ taskId: 'sp-9', syncedTitle: 'Fix login' });
     expect(store.projects.find((p) => p.id === 'other')?.superProductivityProjectId).toBe(
       'sp-other',
+    );
+    await vi.waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith(IPC.SuperProductivityStartTracking, {
+        taskId: 'sp-9',
+      }),
     );
   });
 

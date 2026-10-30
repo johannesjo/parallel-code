@@ -379,10 +379,12 @@ async function evaluateFocus(taskId: string): Promise<void> {
  * Start tracking time on this task in Super Productivity (the banner's
  * button, too). `onlyWhileActive` drops the start when the user moved on, or
  * the task started closing, while its Super Productivity task was created.
+ * `keepMissing` leaves a link to a task gone over there alone instead of
+ * replacing it, so focusing the task asks first (the "missing" banner).
  */
 export async function trackTaskInSp(
   taskId: string,
-  opts: { onlyWhileActive?: boolean } = {},
+  opts: { onlyWhileActive?: boolean; keepMissing?: boolean } = {},
 ): Promise<boolean> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const spTaskId = await ensureSpLink(taskId);
@@ -400,10 +402,27 @@ export async function trackTaskInSp(
       return true;
     }
     // Archived or deleted over there since it was linked: link a fresh task and retry once.
-    if (res.reason !== 'not_found') return false;
+    if (res.reason !== 'not_found' || opts.keepMissing) return false;
     clearSpLink(taskId);
   }
   return false;
+}
+
+/**
+ * Track a task just started from Super Productivity ("Start in Parallel
+ * Code"). Starting it there asked for it, so this neither waits for focus to
+ * settle on it here — a slow creation never takes focus, and the user often
+ * goes straight back — nor defers to other work tracked there.
+ */
+export async function trackTaskStartedFromSp(taskId: string): Promise<void> {
+  const spTaskId = store.tasks[taskId]?.superProductivity?.taskId;
+  if (!spTaskId) return;
+  const tracking = await callSp<SpTrackingState>(IPC.SuperProductivityGetTracking);
+  if (!tracking.ok) return;
+  // Already on it, or on one of its subtasks: starting it again would jump to its first open subtask.
+  const current = tracking.value.current;
+  if (current && (current.id === spTaskId || current.parentId === spTaskId)) return;
+  await trackTaskInSp(taskId, { keepMissing: true });
 }
 
 export function dismissSpBanner(): void {
