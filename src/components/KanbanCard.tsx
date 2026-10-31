@@ -24,6 +24,8 @@ import {
 } from '../lib/kanban';
 import { readGitHubIssue } from '../store/github';
 import { store } from '../store/core';
+import { setPendingAction } from '../store/focus';
+import { isLandedTaskState } from '../store/landing';
 import { showNotification } from '../store/notification';
 import type { Task } from '../store/types';
 import {
@@ -76,6 +78,13 @@ function TaskRow(props: { task: Task }) {
   const fromAgent = () => !activity().text || activity().text === agentName(props.task);
   const activityText = () => (fromAgent() ? props.task.branchName : activity().text);
   const ask = () => ASK_ACTION[state()];
+  // Finish runs in the task's panel, so Merge opens it beside the board with Finish requested.
+  const canFinish = () =>
+    props.task.gitIsolation === 'worktree' && !isLandedTaskState(props.task.landingState);
+  const merge = () => {
+    openBeside(props.task);
+    setPendingAction({ type: 'finish', taskId: props.task.id });
+  };
   const menu = createTaskContextMenu({
     task: () => props.task,
     open: () => openBeside(props.task),
@@ -114,7 +123,11 @@ function TaskRow(props: { task: Task }) {
         classList={{ branch: fromAgent() }}
         prUrl={props.task.prUrl}
       />
-      <Show when={props.task.prUrl}>{(url) => <TaskPr taskId={props.task.id} url={url()} />}</Show>
+      <Show when={props.task.prUrl}>
+        {(url) => (
+          <TaskPr taskId={props.task.id} url={url()} onMerge={canFinish() ? merge : undefined} />
+        )}
+      </Show>
       <menu.Menu />
     </li>
   );

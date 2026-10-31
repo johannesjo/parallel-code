@@ -85,8 +85,11 @@ function prTone(kind: PrBoardStatusKind | undefined, conflicting: boolean): stri
   return 'muted';
 }
 
-/** The PR's state as one label, toned by urgency, with Babysit; the link sits in the task's line. */
-export function TaskPr(props: { taskId: string; url: string }) {
+/**
+ * The PR's state as one label, toned by urgency, with Babysit; the link sits in
+ * the task's line. `onMerge` adds a Merge button once the PR is ready to merge.
+ */
+export function TaskPr(props: { taskId: string; url: string; onMerge?: () => void }) {
   const checks = () => getPrChecks(props.taskId);
   const status = () => prBoardStatus(checks());
   const kind = () => status()?.kind;
@@ -116,6 +119,19 @@ export function TaskPr(props: { taskId: string; url: string }) {
       <span class="task-board-actions">
         <Show when={checks() && !checks()?.merged}>
           <BabysitButton taskId={props.taskId} class="task-board-chip" />
+        </Show>
+        <Show when={kind() === 'ready' && props.onMerge}>
+          {(merge) => (
+            <button
+              type="button"
+              class="task-board-chip"
+              title="CI passed — open Finish to merge"
+              onClick={() => merge()()}
+            >
+              <GitMergeIcon size={11} />
+              Merge
+            </button>
+          )}
         </Show>
       </span>
     </div>
