@@ -21,6 +21,7 @@ import {
   formatAgentHookTooltip,
   getAgentActivitySubject,
   getAgentHookStatus,
+  noteAgentPromptSent,
 } from './agentHookStatus';
 import { getPrChecks } from './pr-checks-state';
 import {
@@ -1018,11 +1019,13 @@ export function isAgentIdle(agentId: string): boolean {
   return !isAgentWorking(agentId, activeAgents());
 }
 
-/** Lightweight busy marker — adds to active set + resets idle timer.
+/** Lightweight busy marker for input the app just submitted — adds to active
+ *  set + resets idle timer, and shows a hooked agent's new turn at once.
  *  Unlike markAgentSpawned this preserves the output tail buffer. */
 export function markAgentBusy(agentId: string): void {
   addToActive(agentId);
   resetIdleTimer(agentId);
+  noteAgentPromptSent(agentId);
 }
 
 /** Clean up timers when an agent exits. */

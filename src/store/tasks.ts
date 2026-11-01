@@ -864,6 +864,7 @@ export async function sendPrompt(
   );
   await new Promise((r) => setTimeout(r, pasteDelayMs(body)));
   await writeToAgentWhenReady(taskId, agentId, '\r', options.signal);
+  markAgentBusy(agentId);
   // App sends bypass xterm's onData handler, which normally clears this flag on Enter.
   if (agentId === task?.agentIds[0]) setTaskTerminalInputPending(taskId, false);
   if (withGuidance) markCanvasGuided(agentId, guidedGeneration);
