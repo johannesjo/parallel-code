@@ -56,6 +56,11 @@ const execFileSync: typeof _execFileSync = ((cmd: string, args: string[], option
   return (_execFileSync as unknown as (...a: unknown[]) => unknown)(cmd, args, options);
 }) as typeof _execFileSync;
 
+// `git diff` against the working tree refreshes stat-only changes by rewriting
+// the index, which takes index.lock; an agent committing in the same worktree
+// then fails with "index.lock: File exists". --no-optional-locks doesn't cover it.
+const NO_INDEX_REFRESH = ['-c', 'diff.autoRefreshIndex=false'];
+
 // --- TTL Caches ---
 
 interface CacheEntry {
@@ -962,6 +967,7 @@ function parseDiffRawNumstat(output: string): {
   const statusMap = new Map<string, string>();
   const numstatMap = new Map<string, [number, number]>();
   const previousPathMap = new Map<string, string>();
+  const numstatPaths = new Set<string>();
 
   const fields = output.split('\0');
   for (let index = 0; index < fields.length; index++) {
@@ -987,10 +993,6 @@ function parseDiffRawNumstat(output: string): {
     const secondTab = firstTab < 0 ? -1 : field.indexOf('\t', firstTab + 1);
     if (secondTab < 0) continue;
 
-    const added = Number.parseInt(field.slice(0, firstTab), 10);
-    const removed = Number.parseInt(field.slice(firstTab + 1, secondTab), 10);
-    if (!Number.isFinite(added) || !Number.isFinite(removed)) continue;
-
     let destinationPath = field.slice(secondTab + 1);
     if (!destinationPath) {
       const previousPath = fields[++index] ?? '';
@@ -999,7 +1001,24 @@ function parseDiffRawNumstat(output: string): {
         previousPathMap.set(destinationPath, previousPath);
       }
     }
-    if (destinationPath) numstatMap.set(destinationPath, [added, removed]);
+    if (!destinationPath) continue;
+    numstatPaths.add(destinationPath);
+
+    // Binary files report `-\t-`; they keep their raw status without line counts.
+    const added = Number.parseInt(field.slice(0, firstTab), 10);
+    const removed = Number.parseInt(field.slice(firstTab + 1, secondTab), 10);
+    if (Number.isFinite(added) && Number.isFinite(removed)) {
+      numstatMap.set(destinationPath, [added, removed]);
+    }
+  }
+
+  // Without the index refresh (NO_INDEX_REFRESH), --raw also lists files whose
+  // stat changed but content didn't; --numstat compares content and omits them.
+  for (const p of statusMap.keys()) {
+    if (!numstatPaths.has(p)) {
+      statusMap.delete(p);
+      previousPathMap.delete(p);
+    }
   }
 
   return { statusMap, numstatMap, previousPathMap };
@@ -1588,7 +1607,11 @@ async function uncommittedOverlap(
   to: string,
 ): Promise<{ files: string[]; overlap: string[]; porcelain: string }> {
   // Every untracked file, not just its directory, so paths compare one to one.
-  const { stdout: porcelain } = await exec('git', ['status', '--porcelain', '-uall'], { cwd });
+  const { stdout: porcelain } = await exec(
+    'git',
+    ['--no-optional-locks', 'status', '--porcelain', '-uall'],
+    { cwd },
+  );
   const files = statusPaths(blockingStatusLines(porcelain));
   if (!files.length) return { files, overlap: [], porcelain };
   // -z: unquoted paths, as statusPaths returns them.
@@ -1935,10 +1958,14 @@ export async function getChangedFiles(
 
   let finalDiffStr = '';
   try {
-    const { stdout } = await exec('git', ['diff', '--raw', '--numstat', '-z', diffBase.sha], {
-      cwd: worktreePath,
-      maxBuffer: MAX_BUFFER,
-    });
+    const { stdout } = await exec(
+      'git',
+      [...NO_INDEX_REFRESH, 'diff', '--raw', '--numstat', '-z', diffBase.sha],
+      {
+        cwd: worktreePath,
+        maxBuffer: MAX_BUFFER,
+      },
+    );
     finalDiffStr = stdout;
   } catch {
     /* empty */
@@ -1951,12 +1978,11 @@ export async function getChangedFiles(
   } = parseDiffRawNumstat(finalDiffStr);
 
   // git diff --raw --numstat <headHash> — tracked uncommitted changes (HEAD vs working tree).
-  // Compares HEAD tree directly to the working tree, so it does not need the index
-  // write lock and works reliably even while an agent holds it.
+  // NO_INDEX_REFRESH keeps it from taking index.lock while an agent commits.
   // git ls-files --others --exclude-standard — untracked files (no index lock needed).
   // Both commands run in parallel since they are independent.
   const [uncommittedResult, untrackedResult] = await Promise.all([
-    exec('git', ['diff', '--raw', '--numstat', '-z', headHash], {
+    exec('git', [...NO_INDEX_REFRESH, 'diff', '--raw', '--numstat', '-z', headHash], {
       cwd: worktreePath,
       maxBuffer: MAX_BUFFER,
     }).catch(() => ({ stdout: '' })),
@@ -2107,7 +2133,7 @@ export async function getAllFileDiffs(
   try {
     const { stdout } = await exec(
       'git',
-      ['diff', '-U3', ...diffPathPrefixArgs(pathPrefix), diffBase.sha],
+      [...NO_INDEX_REFRESH, 'diff', '-U3', ...diffPathPrefixArgs(pathPrefix), diffBase.sha],
       { cwd: worktreePath, maxBuffer: MAX_BUFFER },
     );
     combinedDiff = stdout;
@@ -2127,13 +2153,13 @@ export async function getUncommittedFileDiffs(
   const headHash = await pinHead(worktreePath);
 
   // Diff against HEAD captures only tracked uncommitted changes (working tree
-  // vs HEAD), excluding committed work. Uses the HEAD SHA directly so it does
-  // not need the index lock and works while an agent holds it.
+  // vs HEAD), excluding committed work. NO_INDEX_REFRESH keeps it from taking
+  // index.lock while an agent commits.
   let combinedDiff = '';
   try {
     const { stdout } = await exec(
       'git',
-      ['diff', '-U3', ...diffPathPrefixArgs(pathPrefix), headHash],
+      [...NO_INDEX_REFRESH, 'diff', '-U3', ...diffPathPrefixArgs(pathPrefix), headHash],
       { cwd: worktreePath, maxBuffer: MAX_BUFFER },
     );
     combinedDiff = stdout;
@@ -2150,10 +2176,14 @@ export async function getUncommittedChangedFiles(worktreePath: string): Promise<
   const headHash = await pinHead(worktreePath);
   let diffStr = '';
   try {
-    const { stdout } = await exec('git', ['diff', '--raw', '--numstat', '-z', headHash], {
-      cwd: worktreePath,
-      maxBuffer: MAX_BUFFER,
-    });
+    const { stdout } = await exec(
+      'git',
+      [...NO_INDEX_REFRESH, 'diff', '--raw', '--numstat', '-z', headHash],
+      {
+        cwd: worktreePath,
+        maxBuffer: MAX_BUFFER,
+      },
+    );
     diffStr = stdout;
   } catch {
     /* empty */

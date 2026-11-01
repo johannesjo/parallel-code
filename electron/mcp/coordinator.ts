@@ -2170,7 +2170,9 @@ export class Coordinator {
   }
 
   private async statusPaths(worktreePath: string): Promise<string[]> {
-    const result = await execAsync('git', ['status', '--porcelain'], { cwd: worktreePath });
+    const result = await execAsync('git', ['--no-optional-locks', 'status', '--porcelain'], {
+      cwd: worktreePath,
+    });
     return parsePorcelainPaths(execStdout(result));
   }
 
@@ -2720,9 +2722,13 @@ export class Coordinator {
         });
       } catch {
         // Commit failed — check if uncommitted changes still exist
-        const { stdout: statusOut } = await execAsync('git', ['status', '--porcelain'], {
-          cwd: task.worktreePath,
-        });
+        const { stdout: statusOut } = await execAsync(
+          'git',
+          ['--no-optional-locks', 'status', '--porcelain'],
+          {
+            cwd: task.worktreePath,
+          },
+        );
         if (statusOut.trim()) {
           throw new Error(
             `Auto-commit failed and the task worktree still has uncommitted changes. ` +
@@ -3526,7 +3532,11 @@ export class Coordinator {
         return sha;
       };
       sourceCommit = await readHead();
-      const { stdout } = await execAsync('git', ['status', '--porcelain', '-z'], options);
+      const { stdout } = await execAsync(
+        'git',
+        ['--no-optional-locks', 'status', '--porcelain', '-z'],
+        options,
+      );
       snapshotState = stdout ? 'dirty' : 'clean';
       if ((await readHead()) !== sourceCommit)
         throw new Error(

@@ -22,7 +22,7 @@ async function git(cwd: string, args: string[]): Promise<string> {
 
 async function isDirty(cwd: string): Promise<boolean> {
   // A status failure (index.lock while the agent commits) counts as dirty, as in verify.ts.
-  return git(cwd, ['status', '--porcelain']).then(
+  return git(cwd, ['--no-optional-locks', 'status', '--porcelain']).then(
     (out) => out.trim().length > 0,
     () => true,
   );

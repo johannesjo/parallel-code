@@ -36,7 +36,7 @@ function gitResults(dirty = '') {
     ) => {
       const output = args.includes('--abbrev-ref')
         ? 'parent'
-        : args[0] === 'status'
+        : args.includes('status')
           ? dirty
           : opts.cwd === '/parent'
             ? targetSha

@@ -3,6 +3,14 @@ import { promisify } from 'util';
 
 vi.mock('child_process', () => {
   const mockExecFile = vi.fn();
+  // Handlers dispatch on the subcommand, so drop leading global options such as
+  // `-c diff.autoRefreshIndex=false` and `--no-optional-locks`.
+  const subcommandFirst = (args: unknown): unknown => {
+    if (!Array.isArray(args)) return args;
+    let i = 0;
+    while (args[i] === '-c' || args[i] === '--no-optional-locks') i += args[i] === '-c' ? 2 : 1;
+    return args.slice(i);
+  };
   // Attach custom promisify handler so promisify(execFile) resolves with
   // { stdout, stderr } rather than just the first callback argument.
   (mockExecFile as unknown as Record<symbol, unknown>)[promisify.custom] = (
@@ -11,7 +19,8 @@ vi.mock('child_process', () => {
     opts: unknown,
   ): Promise<{ stdout: string; stderr: string }> =>
     new Promise((resolve, reject) => {
-      mockExecFile(file, args, opts, (err: Error | null, stdout: string, stderr: string) => {
+      const forward = subcommandFirst(args);
+      mockExecFile(file, forward, opts, (err: Error | null, stdout: string, stderr: string) => {
         if (err) reject(err);
         else resolve({ stdout, stderr });
       });
