@@ -21,7 +21,7 @@ describe('decideSpFocusAction', () => {
   it('tracks when nothing is being tracked', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: null, isBreak: false },
+        tracking: { current: null, isBreak: false, otherDevice: null },
         ownSpTaskId: 'own',
         ownSpTaskIsDone: false,
         linkedSpTaskIds: linked,
@@ -32,7 +32,7 @@ describe('decideSpFocusAction', () => {
   it('tracks a not-yet-linked task (it will be created) when nothing is tracked', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: null, isBreak: false },
+        tracking: { current: null, isBreak: false, otherDevice: null },
         ownSpTaskId: null,
         ownSpTaskIsDone: false,
         linkedSpTaskIds: linked,
@@ -43,7 +43,7 @@ describe('decideSpFocusAction', () => {
   it('switches away from another Parallel Code task', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: spTask('other-pc'), isBreak: false },
+        tracking: { current: spTask('other-pc'), isBreak: false, otherDevice: null },
         ownSpTaskId: 'own',
         ownSpTaskIsDone: false,
         linkedSpTaskIds: linked,
@@ -54,7 +54,11 @@ describe('decideSpFocusAction', () => {
   it('treats a subtask of a linked task as Parallel Code work', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: spTask('sub', { parentId: 'other-pc' }), isBreak: false },
+        tracking: {
+          current: spTask('sub', { parentId: 'other-pc' }),
+          isBreak: false,
+          otherDevice: null,
+        },
         ownSpTaskId: 'own',
         ownSpTaskIsDone: false,
         linkedSpTaskIds: linked,
@@ -66,7 +70,7 @@ describe('decideSpFocusAction', () => {
     for (const current of [spTask('own'), spTask('sub', { parentId: 'own' })]) {
       expect(
         decideSpFocusAction({
-          tracking: { current, isBreak: false },
+          tracking: { current, isBreak: false, otherDevice: null },
           ownSpTaskId: 'own',
           ownSpTaskIsDone: false,
           linkedSpTaskIds: linked,
@@ -78,7 +82,11 @@ describe('decideSpFocusAction', () => {
   it('never takes over a task that is not Parallel Code work', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: spTask('email', { title: 'Answer email' }), isBreak: false },
+        tracking: {
+          current: spTask('email', { title: 'Answer email' }),
+          isBreak: false,
+          otherDevice: null,
+        },
         ownSpTaskId: 'own',
         ownSpTaskIsDone: false,
         linkedSpTaskIds: linked,
@@ -89,7 +97,40 @@ describe('decideSpFocusAction', () => {
   it('asks instead of starting during a break', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: null, isBreak: true },
+        tracking: { current: null, isBreak: true, otherDevice: null },
+        ownSpTaskId: 'own',
+        ownSpTaskIsDone: false,
+        linkedSpTaskIds: linked,
+      }),
+    ).toEqual({ kind: 'banner', reason: 'break' });
+  });
+
+  it('asks instead of taking over tracking on another device', () => {
+    expect(
+      decideSpFocusAction({
+        tracking: { current: null, isBreak: false, otherDevice: 'Android' },
+        ownSpTaskId: 'own',
+        ownSpTaskIsDone: false,
+        linkedSpTaskIds: linked,
+      }),
+    ).toEqual({ kind: 'banner', reason: 'other_device', trackingTitle: 'Android' });
+  });
+
+  it('leaves its own task alone even while another device tracks', () => {
+    expect(
+      decideSpFocusAction({
+        tracking: { current: spTask('own'), isBreak: false, otherDevice: 'Android' },
+        ownSpTaskId: 'own',
+        ownSpTaskIsDone: false,
+        linkedSpTaskIds: linked,
+      }),
+    ).toEqual({ kind: 'none' });
+  });
+
+  it('reports a break before another device', () => {
+    expect(
+      decideSpFocusAction({
+        tracking: { current: null, isBreak: true, otherDevice: 'Android' },
         ownSpTaskId: 'own',
         ownSpTaskIsDone: false,
         linkedSpTaskIds: linked,
@@ -100,7 +141,7 @@ describe('decideSpFocusAction', () => {
   it('asks instead of starting a duplicate when the linked task is gone', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: null, isBreak: false },
+        tracking: { current: null, isBreak: false, otherDevice: null },
         ownSpTaskId: null,
         ownSpTaskIsDone: false,
         ownSpTaskMissing: true,
@@ -112,7 +153,7 @@ describe('decideSpFocusAction', () => {
   it('asks instead of reopening a task completed in Super Productivity', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: null, isBreak: false },
+        tracking: { current: null, isBreak: false, otherDevice: null },
         ownSpTaskId: 'own',
         ownSpTaskIsDone: true,
         linkedSpTaskIds: linked,

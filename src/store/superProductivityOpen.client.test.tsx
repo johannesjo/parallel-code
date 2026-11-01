@@ -43,7 +43,7 @@ describe('open a Super Productivity task in Parallel Code', () => {
       }
       if (channel === IPC.SuperProductivityRenameTask) return { ok: true, value: null };
       if (channel === IPC.SuperProductivityGetTracking) {
-        return { ok: true, value: { current: null, isBreak: false } };
+        return { ok: true, value: { current: null, isBreak: false, otherDevice: null } };
       }
       if (channel === IPC.SuperProductivityStartTracking) return { ok: true, value: null };
       if (channel === IPC.SuperProductivityGetState) return 'connected';

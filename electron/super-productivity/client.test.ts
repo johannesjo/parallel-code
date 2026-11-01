@@ -102,8 +102,55 @@ describe('createSpClient', () => {
       value: {
         current: { id: 't1', title: 'Fix', isDone: false, projectId: null, parentId: 'parent' },
         isBreak: true,
+        otherDevice: null,
       },
     });
+  });
+
+  it('reads which other device is tracking from /status', async () => {
+    const client = createSpClient({
+      getToken: () => 'tok',
+      fetchImpl: fakeFetch((_m, path) => {
+        if (path === '/status') {
+          return ok({
+            currentTask: null,
+            currentTaskId: null,
+            taskCount: 3,
+            trackingOnOtherDevice: { taskId: 't9', deviceLabel: 'Android', sinceTs: 1_700_000_000 },
+          });
+        }
+        return path === '/focus' ? ok({ timer: null }) : ok(null);
+      }),
+    });
+    expect(await client.getTracking()).toEqual({
+      ok: true,
+      value: { current: null, isBreak: false, otherDevice: 'Android' },
+    });
+  });
+
+  it('treats a missing, malformed or failed /status as no other device', async () => {
+    const statuses: { status: number; json: unknown }[] = [
+      ok({ currentTask: null, currentTaskId: null, taskCount: 0 }),
+      ok({ trackingOnOtherDevice: null }),
+      ok({ trackingOnOtherDevice: { taskId: 't9', deviceLabel: '', sinceTs: 1 } }),
+      ok({ trackingOnOtherDevice: { taskId: 't9', deviceLabel: 42, sinceTs: 1 } }),
+      ok({ trackingOnOtherDevice: 'Android' }),
+      ok('nonsense'),
+      { status: 500, json: { ok: false, error: { code: 'INTERNAL', message: 'x' } } },
+    ];
+    for (const status of statuses) {
+      const client = createSpClient({
+        getToken: () => 'tok',
+        fetchImpl: fakeFetch((_m, path) => {
+          if (path === '/status') return status;
+          return path === '/focus' ? ok({ timer: null }) : ok(null);
+        }),
+      });
+      expect(await client.getTracking()).toEqual({
+        ok: true,
+        value: { current: null, isBreak: false, otherDevice: null },
+      });
+    }
   });
 
   it('asks for literal titles on create and rename', async () => {
