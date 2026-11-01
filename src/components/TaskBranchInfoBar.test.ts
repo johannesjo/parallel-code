@@ -198,7 +198,20 @@ describe('TaskBranchInfoBar GitHub actions', () => {
 });
 
 describe('TaskBranchInfoBar source link', () => {
-  it('renders a compact issue number without removing the full accessible label', () => {
+  it.each([
+    ['https://github.com/acme/app', 'app'],
+    ['https://github.com/acme/app/discussions/42', '#42'],
+    ['https://example.com/task', 'Source'],
+  ])('uses a concise label for %s', (githubUrl, label) => {
+    const html = renderToString(() =>
+      TaskBranchInfoBar({ task: { ...task, githubUrl }, onEditProject: vi.fn() }),
+    );
+
+    expect(html).toContain(`class="task-branch-source-label">${label}</span>`);
+    expect(html).toContain(`class="task-branch-source-compact-label">${label}</span>`);
+  });
+
+  it('renders the issue number at every width while preserving the full URL', () => {
     const issueTask: Task = {
       ...task,
       githubUrl: 'https://github.com/acme/app/issues/249',
@@ -208,7 +221,9 @@ describe('TaskBranchInfoBar source link', () => {
       TaskBranchInfoBar({ task: issueTask, onEditProject: vi.fn() }),
     );
 
+    expect(html).toContain('class="task-branch-source-label">#249</span>');
     expect(html).toContain('class="task-branch-source-compact-label">#249</span>');
+    expect(html).toContain('title="https://github.com/acme/app/issues/249"');
     expect(html).toContain('aria-label="Source: acme/app/issues/249"');
   });
 });

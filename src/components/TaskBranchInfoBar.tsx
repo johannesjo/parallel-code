@@ -132,7 +132,7 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
     return parsed?.type === 'pull' && !!parsed.number;
   };
   const githubLabel = (url: string): string => url.replace(/^https?:\/\/(www\.)?github\.com\//, '');
-  const compactSourceLabel = (url: string): string => {
+  const sourceLabel = (url: string): string => {
     const parsed = parseGitHubUrl(url);
     return parsed?.number ? `#${parsed.number}` : (parsed?.repo ?? 'Source');
   };
@@ -323,8 +323,8 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
               Source
             </span>
             <GitHubMarkIcon size={12} style={{ 'flex-shrink': '0' }} />
-            <span class="task-branch-source-label">{githubLabel(url())}</span>
-            <span class="task-branch-source-compact-label">{compactSourceLabel(url())}</span>
+            <span class="task-branch-source-label">{sourceLabel(url())}</span>
+            <span class="task-branch-source-compact-label">{sourceLabel(url())}</span>
           </button>
         )}
       </Show>
