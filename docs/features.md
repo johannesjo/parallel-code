@@ -83,6 +83,7 @@ The bundled image still ships the `agy` binary, and `~/.gemini/antigravity-cli` 
 | `Ctrl+B`               | Toggle sidebar                     |
 | `Ctrl+Shift+F`         | Toggle focus mode                  |
 | `Ctrl+Shift+G`         | Toggle the board of running tasks  |
+| `Ctrl+Shift+E`         | Toggle GitHub issues               |
 | `Ctrl+Tab`             | Next waiting task (Ctrl on macOS)  |
 | `Ctrl+Shift+Tab`       | Previous waiting task              |
 | **Terminals**          |                                    |

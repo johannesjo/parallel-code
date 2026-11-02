@@ -37,6 +37,7 @@ export const ACTION_INFO: Record<string, ActionInfo> = {
   toggleSidebar: { keywords: 'hide show' },
   toggleFocusMode: { keywords: 'zen maximize tiles layout' },
   toggleBoardView: { keywords: 'kanban overview' },
+  toggleGitHubIssues: { keywords: 'github issues pull requests pr' },
   openNextAttentionTask: { keywords: 'attention waiting blocked question' },
   openPreviousAttentionTask: { keywords: 'attention waiting blocked question' },
   toggleHelp: { keywords: 'shortcuts keyboard keys' },

@@ -1,6 +1,7 @@
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setStore, store } from '../store/core';
+import { toggleGitHubIssues } from '../store/github-issues-target';
 import { openKanban } from '../store/kanban';
 import { setTaskProjectFilter } from '../store/navigation';
 import { TaskBoardControls } from './TaskBoardControls';
@@ -62,7 +63,6 @@ describe('TaskBoardControls', () => {
   it("toggles between the running tasks and the selected project's plan", () => {
     const host = mount();
     expect(host.querySelector('[aria-label="Board page"]')).toBeNull();
-    expect(host.querySelector('[aria-label="GitHub issues"]')).toBeNull();
 
     setTaskProjectFilter('p1');
     planToggle(host).click();
@@ -81,7 +81,6 @@ describe('TaskBoardControls', () => {
     // Activating another project's task clears the filter and leaves the plan open.
     setStore('taskProjectFilter', null);
     expect(planToggle(host).getAttribute('aria-pressed')).toBe('true');
-    expect(host.querySelector('[aria-label="GitHub issues"]')).toBeNull();
   });
 
   it('offers ideas on the running tasks only, where their lane is', () => {
@@ -113,6 +112,20 @@ describe('TaskBoardControls', () => {
     expect(
       resolveRepository.mock.calls.filter(([, a]) => a.projectRoot === '/github-repo'),
     ).toHaveLength(1);
+  });
+
+  it("with all projects, offers the active task's project, disabled without a task", async () => {
+    setStore('projects', 1, { id: 'p2', name: 'api', color: '#def', path: '/github-repo' });
+    setStore('tasks', { t1: { id: 't1', projectId: 'p2' } as never });
+    const host = mount();
+    expect(githubButton(host).disabled).toBe(true);
+    expect(githubButton(host).title).toBe('Select a project or task to see its GitHub issues');
+
+    setStore('activeTaskId', 't1');
+    await settle();
+    expect(githubButton(host).disabled).toBe(false);
+    githubButton(host).click();
+    expect(store.githubIssuesProjectId).toBe('p2');
   });
 
   it('checks again later after a failed check, without blaming the project', async () => {
@@ -149,5 +162,48 @@ describe('TaskBoardControls', () => {
     setTaskProjectFilter(null);
     expect(store.kanbanProjectId).toBeNull();
     expect(store.boardView).toBe(true);
+  });
+});
+
+describe('toggleGitHubIssues', () => {
+  it('opens the project in context, prefers the selected one, and closes again', () => {
+    setStore('projects', 1, { id: 'p2', name: 'api', color: '#def', path: '/github-repo' });
+    setStore('tasks', {
+      t1: { id: 't1', projectId: 'p2' },
+      t2: { id: 't2', projectId: 'p1' },
+    } as never);
+    setStore('activeTaskId', 't1');
+    toggleGitHubIssues();
+    expect(store.githubIssuesProjectId).toBe('p2');
+    toggleGitHubIssues();
+    expect(store.githubIssuesProjectId).toBeNull();
+
+    // The selected project wins over the active task's.
+    setStore('activeTaskId', 't2');
+    setTaskProjectFilter('p2');
+    toggleGitHubIssues();
+    expect(store.githubIssuesProjectId).toBe('p2');
+  });
+
+  it("prefers an open plan's project, and refuses a known non-GitHub project", async () => {
+    setStore('projects', 1, { id: 'p2', name: 'api', color: '#def', path: '/github-repo' });
+    openKanban('p2');
+    // Activating another project's task clears the filter; the plan still names p2.
+    setStore('taskProjectFilter', null);
+    toggleGitHubIssues();
+    expect(store.githubIssuesProjectId).toBe('p2');
+
+    setStore('githubIssuesProjectId', null);
+    setStore('kanbanProjectId', null);
+    setTaskProjectFilter('p1');
+    mount();
+    await settle(); // the button's check learns /w is not on GitHub
+    toggleGitHubIssues();
+    expect(store.githubIssuesProjectId).toBeNull();
+  });
+
+  it('stays closed without a project or task', () => {
+    toggleGitHubIssues();
+    expect(store.githubIssuesProjectId).toBeNull();
   });
 });

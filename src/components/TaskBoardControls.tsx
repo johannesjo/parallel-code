@@ -2,6 +2,10 @@ import { Show } from 'solid-js';
 import { withViewTransition } from '../lib/viewTransition';
 import { store } from '../store/core';
 import { isGitHubProject, openGitHubIssues } from '../store/github';
+import {
+  githubIssuesTargetProjectId,
+  NO_GITHUB_ISSUES_TARGET,
+} from '../store/github-issues-target';
 import { openKanban, openPlanView, planViewProjectId } from '../store/kanban';
 import { toggleNewTaskPanel } from '../store/navigation';
 import { boardShown } from '../store/project-pages';
@@ -32,18 +36,20 @@ function PlanToggle() {
 }
 
 /**
- * Opens the selected project's GitHub issues, which cover the board until
- * closed. Disabled, not hidden, while gh is asked or says no: appearing a
- * moment after the project pick would shift the row with nothing to cause it.
+ * Opens the GitHub issues of the project in context (see
+ * githubIssuesTargetProjectId), which cover the board until closed. Always
+ * there, disabled while there is no project, gh is asked or says no: appearing
+ * on a project or task pick would shift the row with nothing to cause it.
  */
 function GitHubIssuesButton() {
-  const project = () => store.projects.find((p) => p.id === planViewProjectId());
+  const project = () => store.projects.find((p) => p.id === githubIssuesTargetProjectId());
   const onGitHub = () => {
     const path = project()?.path;
     return path === undefined ? undefined : isGitHubProject(path);
   };
   const title = () => {
     const name = project()?.name;
+    if (name === undefined) return NO_GITHUB_ISSUES_TARGET;
     if (onGitHub() === undefined) return `Checking ${name} for a GitHub repository`;
     if (onGitHub() === false) return `GitHub issues unavailable for ${name}`;
     return `GitHub issues in ${name}`;
@@ -68,8 +74,8 @@ function GitHubIssuesButton() {
 /**
  * The board's actions in the title bar's middle slot, which the task pills
  * leave empty while the board shows: a new task, the sidebar's project filter
- * while the sidebar is hidden, the text filter, and the plan toggle and GitHub
- * issues for that project. The plan's own tools sit in its heading row.
+ * while the sidebar is hidden, the text filter, the plan toggle for that
+ * project, and GitHub issues. The plan's own tools sit in its heading row.
  */
 export function TaskBoardControls() {
   return (
@@ -102,9 +108,7 @@ export function TaskBoardControls() {
         <Show when={planViewProjectId() || store.kanbanProjectId}>
           <PlanToggle />
         </Show>
-        <Show when={planViewProjectId()}>
-          <GitHubIssuesButton />
-        </Show>
+        <GitHubIssuesButton />
       </div>
     </Show>
   );
