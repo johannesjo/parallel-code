@@ -931,15 +931,26 @@
 .chat-progress {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  /* Reserve the row between turns so the transcript and composer stay put. */
+  min-height: 30px;
+  box-sizing: border-box;
   padding: 3px 4px 7px;
-  color: var(--fg-subtle);
-  font-size: 11px;
+  color: var(--fg);
+  font-size: 13px;
+}
+.chat-progress-indicator {
+  display: flex;
+  flex: none;
+  width: 14px;
 }
 .chat-progress .inline-spinner {
-  width: 10px;
-  height: 10px;
-  margin-right: -4px;
+  width: 14px;
+  height: 14px;
+}
+.chat-progress-detail,
+.chat-progress time {
+  color: var(--fg-muted);
 }
 .chat-progress [role='status'] {
   min-width: 0;
