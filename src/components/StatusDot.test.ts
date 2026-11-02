@@ -69,12 +69,32 @@ describe('status glyph shapes', () => {
     expect(asking).not.toContain('status-glyph-spinner');
   });
 
-  it('rests as a plain dot when idle, errored, or under review', () => {
-    for (const attention of ['idle', 'error', 'review', 'ready'] as const) {
-      const html = renderToString(() => StatusDot({ status: 'busy', attention }));
-      expect(html, attention).not.toContain('status-glyph-spinner');
-      expect(html, attention).not.toContain('status-glyph-question');
-    }
+  // Without labels in the task header, shape alone has to separate these states.
+  it('gives error, review, and ready their own shapes', () => {
+    const error = renderToString(() => StatusDot({ status: 'busy', attention: 'error' }));
+    expect(error).toContain('status-glyph-question');
+    expect(error).toContain('!');
+    expect(renderToString(() => StatusDot({ status: 'busy', attention: 'review' }))).toContain(
+      'status-glyph-review',
+    );
+    expect(renderToString(() => StatusDot({ status: 'review' }))).toContain('status-glyph-review');
+    expect(renderToString(() => StatusDot({ status: 'busy', attention: 'ready' }))).toContain(
+      'status-glyph-ready',
+    );
+    expect(renderToString(() => StatusDot({ status: 'ready', attention: 'idle' }))).toContain(
+      'status-glyph-ready',
+    );
+  });
+
+  it('shows waiting as a hollow ring', () => {
+    expect(renderToString(() => StatusDot({ status: 'waiting', attention: 'idle' }))).toContain(
+      'status-glyph-waiting',
+    );
+  });
+
+  it('rests as a plain dot when idle with a busy terminal status', () => {
+    const html = renderToString(() => StatusDot({ status: 'busy', attention: 'idle' }));
+    expect(html).not.toMatch(/status-glyph-(spinner|question|review|ready|waiting)/);
   });
 });
 
@@ -101,7 +121,7 @@ describe('CI glyphs', () => {
   it('yields to a working, blocked, or errored agent', () => {
     expect(getStatusGlyph('busy', 'active', 'failed')).toBe('spinner');
     expect(getStatusGlyph('busy', 'needs_input', 'failed')).toBe('question');
-    expect(getStatusGlyph('busy', 'error', 'running')).toBe('dot');
+    expect(getStatusGlyph('busy', 'error', 'running')).toBe('error');
     expect(getStatusGlyph('busy', 'shell_busy', 'running')).toBe('ci_running');
     expect(getStatusGlyph('review', 'review', 'failed')).toBe('ci_failed');
   });

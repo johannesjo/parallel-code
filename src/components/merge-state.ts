@@ -5,12 +5,13 @@ import type { CoverageComparison } from '../lib/coverage-comparison';
 import { invoke } from '../lib/ipc';
 import { errMessage } from '../lib/log';
 import {
-  buildEvidence,
-  getEvidenceConfidence,
+  backgroundVerifyEnabled,
   getPrChecks,
-  getProject,
+  getProjectPath,
+  getTaskDotStatus,
   getVerifyCommand,
   mergeTask,
+  runBackgroundVerify,
   store,
 } from '../store/store';
 import type { Task } from '../store/types';
@@ -39,12 +40,20 @@ export function createMergeState(props: MergeStateProps) {
   const [syncing, setSyncing] = createSignal<BaseSync | null>(null);
   const [syncError, setSyncError] = createSignal('');
   const [syncDone, setSyncDone] = createSignal<BaseSync | null>(null);
+  // Which sync stopped on conflicts, for the banner to offer another route.
+  const [syncConflict, setSyncConflict] = createSignal<BaseSync | null>(null);
   const [coverageComparison, setCoverageComparison] = createSignal<CoverageComparison | null>(null);
   const requiresSeparateClose = () =>
     Boolean(props.task.delegationParent || props.task.coordinatorMode);
 
   const resourceSource = () =>
-    props.open ? { path: props.task.worktreePath, baseBranch: props.task.baseBranch } : null;
+    props.open
+      ? {
+          path: props.task.worktreePath,
+          baseBranch: props.task.baseBranch,
+          projectRoot: getProjectPath(props.task.projectId),
+        }
+      : null;
   const [branchLog, { refetch: refetchBranchLog, mutate: mutateBranchLog }] = createResource(
     resourceSource,
     (src) =>
@@ -71,6 +80,8 @@ export function createMergeState(props: MergeStateProps) {
       invoke<MergeStatus>(IPC.CheckMergeStatus, {
         worktreePath: src.path,
         baseBranch: src.baseBranch,
+        // Also reports uncommitted changes where the merge would land.
+        projectRoot: src.projectRoot,
       }),
   );
   const refetchAll = () => {
@@ -82,6 +93,10 @@ export function createMergeState(props: MergeStateProps) {
 
   const commitCount = () => (branchLog() ?? '').split('\n').filter((line) => line.trim()).length;
   const hasConflicts = () => (mergeStatus()?.conflicting_files.length ?? 0) > 0;
+  /** Uncommitted changes in the base checkout; the merge sets them aside. */
+  const targetUncommitted = () => mergeStatus()?.target_uncommitted;
+  /** The task's uncommitted files the base changed too: they block bringing it in. */
+  const uncommittedOverlap = () => mergeStatus()?.uncommitted_overlap ?? [];
   const hasCommittedChangesToMerge = () => worktreeStatus()?.has_committed_changes ?? false;
   const baseBranchName = () => props.task.baseBranch ?? mergeStatus()?.base_branch ?? 'main';
   const selectedAgentId = () => {
@@ -127,14 +142,18 @@ export function createMergeState(props: MergeStateProps) {
       verifyCommandConfigured: Boolean(getVerifyCommand(props.task.id)),
       prChecks: getPrChecks(props.task.id),
       coverage: coverageComparison(),
-      evidence: getEvidenceConfidence(props.task, worktreeStatus()),
     });
   /** Why Merge is unavailable, in the order the notices above it explain. */
   const mergeBlocker = (): string | undefined => {
     if (!worktreeStatus()) return 'Checking the branch…';
     if (hasBranchMismatch()) return "The worktree is not on this task's branch.";
-    if (!hasCommittedChangesToMerge()) return 'Nothing to merge yet.';
+    if (!hasCommittedChangesToMerge())
+      return worktreeStatus()?.has_uncommitted_changes
+        ? 'Commit the changes to merge them.'
+        : 'No commits on this branch yet.';
     if (hasConflicts()) return `Resolve the conflicts with ${baseBranchName()} first.`;
+    if (targetUncommitted()?.overlap.length)
+      return `Commit or stash the changes in ${baseBranchName()} that this merge touches.`;
     if (squash() && !squashTitle().trim()) return 'Add a commit title.';
     return undefined;
   };
@@ -149,6 +168,7 @@ export function createMergeState(props: MergeStateProps) {
       setMergeError('');
       setSyncError('');
       setSyncDone(null);
+      setSyncConflict(null);
       setMerging(false);
       setSyncing(null);
       setCoverageComparison(null);
@@ -172,6 +192,7 @@ export function createMergeState(props: MergeStateProps) {
     setSyncing(kind);
     setSyncError('');
     setSyncDone(null);
+    setSyncConflict(null);
     try {
       await invoke(kind === 'merge' ? IPC.MergeBaseIntoTask : IPC.RebaseTask, {
         worktreePath: props.task.worktreePath,
@@ -179,13 +200,21 @@ export function createMergeState(props: MergeStateProps) {
       });
       setSyncDone(kind);
       refetchAll();
-      // New commits outdate the checks; rebuild where the project builds on its own.
-      if (getProject(props.task.projectId)?.evidenceAutoBuild)
-        buildEvidence(props.task.id, { trigger: 'auto' }).catch((err) => {
-          console.error('Evidence build after base sync failed:', err);
+      // New commits outdate the checks; re-run where the project runs them on its own.
+      if (backgroundVerifyEnabled(props.task.id)) {
+        const taskId = props.task.id;
+        runBackgroundVerify(taskId, () => getTaskDotStatus(taskId) !== 'busy').catch((err) => {
+          console.error('Verify after base sync failed:', err);
         });
+      }
     } catch (err) {
-      setSyncError(errMessage(err));
+      const message = errMessage(err).replace(
+        /^Error invoking remote method '[^']+': (?:Error: )?/,
+        '',
+      );
+      setSyncError(message);
+      // Worded by `syncWithBase` in electron/ipc/git.ts; other failures are not conflicts.
+      if (message.includes('stopped on conflicts')) setSyncConflict(kind);
     } finally {
       setSyncing(null);
     }
@@ -216,6 +245,8 @@ export function createMergeState(props: MergeStateProps) {
           ? formatSquashMessage({ title: squashTitle(), body: squashBody() })
           : undefined,
         cleanup: !requiresSeparateClose() && cleanupAfterMerge(),
+        // The dialog warned about them; the backend refuses if the merge touches them.
+        allowDirtyTarget: true,
       });
       void advanceKanbanCard(projectId, branchName, 'done');
       return true;
@@ -230,10 +261,13 @@ export function createMergeState(props: MergeStateProps) {
   return {
     branchLog,
     worktreeStatus,
+    branchCommits,
     mergeStatus,
     refetchAll,
     commitCount,
     hasConflicts,
+    targetUncommitted,
+    uncommittedOverlap,
     hasCommittedChangesToMerge,
     baseBranchName,
     selectedAgentId,
@@ -255,6 +289,7 @@ export function createMergeState(props: MergeStateProps) {
     setCleanupAfterMerge,
     syncing,
     syncError,
+    syncConflict,
     syncDone,
     syncWithBase,
     setCoverageComparison,

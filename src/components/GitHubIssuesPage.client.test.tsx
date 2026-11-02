@@ -220,6 +220,19 @@ describe('GitHub issue workflow', () => {
     expect(document.body.textContent).toContain('Other issue');
     expect(document.body.textContent).not.toContain('Fix broken save');
   });
+  it('shows the gh error without the IPC wrapper', async () => {
+    vi.mocked(browseGitHubIssues).mockRejectedValue(
+      new Error(
+        "Error invoking remote method 'browse_github_issues': Error: GitHub CLI is not logged in.",
+      ),
+    );
+    mount();
+    await flush();
+    expect(host.querySelector('[role="alert"] span')?.textContent).toBe(
+      'GitHub CLI is not logged in.',
+    );
+  });
+
   it('keeps failed metadata edits available for retry', async () => {
     vi.mocked(updateGitHubIssue).mockRejectedValue(new Error('Permission denied'));
     mount();
@@ -281,6 +294,64 @@ describe('GitHub issue workflow', () => {
     expect(document.body.textContent).toContain('Rate limit reached');
     expect(button('Retry activity')).toBeDefined();
   });
+  it('appends activity pages with Load more', async () => {
+    const activityItem = (author: string) => ({
+      id: author,
+      author,
+      event: 'commented',
+      body: `Comment by ${author}`,
+      createdAt: '2026-10-02T10:00:00Z',
+    });
+    vi.mocked(readGitHubIssueActivity)
+      .mockResolvedValueOnce({ items: [activityItem('bob')], hasMore: true })
+      .mockResolvedValueOnce({ items: [activityItem('carol')], hasMore: false });
+    mount();
+    await flush();
+    selectIssue();
+    await flush();
+    button('Load more activity').click();
+    await flush();
+    expect(readGitHubIssueActivity).toHaveBeenLastCalledWith(issue.url, 2);
+    expect(document.body.textContent).toContain('Comment by bob');
+    expect(document.body.textContent).toContain('Comment by carol');
+    expect(() => button('Load more activity')).toThrow();
+  });
+  it('starts activity again from page 1 when the page is refreshed', async () => {
+    const activityItem = (author: string) => ({
+      id: author,
+      author,
+      event: 'commented',
+      body: `Comment by ${author}`,
+      createdAt: '2026-10-02T10:00:00Z',
+    });
+    vi.mocked(readGitHubIssueActivity)
+      .mockResolvedValueOnce({ items: [activityItem('bob')], hasMore: true })
+      .mockResolvedValueOnce({ items: [activityItem('carol')], hasMore: false })
+      .mockResolvedValueOnce({ items: [activityItem('dave')], hasMore: true });
+    mount();
+    await flush();
+    selectIssue();
+    await flush();
+    button('Load more activity').click();
+    await flush();
+    button('Refresh').click();
+    await flush();
+    expect(readGitHubIssueActivity).toHaveBeenLastCalledWith(issue.url, 1);
+    expect(document.body.textContent).toContain('Comment by dave');
+    expect(document.body.textContent).not.toContain('Comment by bob');
+    expect(document.body.textContent).not.toContain('Comment by carol');
+  });
+  it('reloads the open item when the page is refreshed', async () => {
+    mount();
+    await flush();
+    selectIssue();
+    await flush();
+    const reads = vi.mocked(readGitHubIssue).mock.calls.length;
+    button('Refresh').click();
+    await flush();
+    expect(readGitHubIssue).toHaveBeenCalledTimes(reads + 1);
+    expect(readGitHubIssueActivity).toHaveBeenLastCalledWith(issue.url, 1);
+  });
   it('shows an unreadable issue inline and recovers on retry', async () => {
     vi.mocked(readGitHubIssue).mockRejectedValueOnce(new Error('Issue not found'));
     mount();
@@ -340,6 +411,18 @@ it('filters and sorts the repository immediately, resets pagination, and debounc
     '/repo',
     expect.objectContaining({ kind: 'all', search: '', sort: 'updated-desc', page: 1 }),
   );
+});
+
+it('offers Reset only once a filter is set', async () => {
+  mount();
+  await flush();
+  expect(button('Reset').style.visibility).toBe('hidden');
+  const state = document.querySelector<HTMLSelectElement>('[aria-label="Issue state"]');
+  if (!state) throw new Error('Missing state filter');
+  state.value = 'closed';
+  state.dispatchEvent(new Event('change', { bubbles: true }));
+  await flush();
+  expect(button('Reset').style.visibility).toBe('');
 });
 
 it('shows distinct classifications and keeps a selection across pages for agent triage', async () => {

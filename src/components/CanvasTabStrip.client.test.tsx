@@ -50,3 +50,14 @@ it('offers no document editing for a tour or a file that is not a document', () 
   renderWith('notes.txt');
   expect(editButton()).toBeNull();
 });
+
+it('returns focus to the + button when the canvas menu closes from the keyboard', () => {
+  renderWith('notes.txt');
+  const plus = document.querySelector<HTMLButtonElement>('[title="Open another canvas"]');
+  plus?.click();
+  const item = document.querySelector<HTMLButtonElement>('[role="menuitem"]');
+  item?.focus();
+  item?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  expect(document.activeElement).toBe(plus);
+});

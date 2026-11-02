@@ -22,7 +22,7 @@ test('first task: create a task and watch its agent start', async () => {
     // The cursor installs through an init script, which needs a fresh load.
     await installCursor(page);
     await page.reload();
-    const newTask = page.getByRole('button', { name: 'New Task' });
+    const newTask = page.getByRole('button', { name: 'New Task', exact: true });
     await expect(newTask).toBeVisible();
 
     await recordScene(page, OUTPUT, async () => {

@@ -23,11 +23,13 @@ import {
   setTaskBrowserUrl,
   markBrowserFocused,
   openCanvasReasoning,
-  openCanvasViewFromAgent,
   openTaskCanvas,
   setTaskReasoningWorkspace,
 } from './canvas';
+import { openCanvasViewFromAgent } from './canvas-agent';
+import { createMindMap } from '../graph/model';
 import { deletePanelUserSize, getPanelUserSize, setPanelUserSize } from './ui';
+import { autoTaskColumnWidth } from './task-column';
 import { saveState } from './persistence';
 import { registerFocusFn, unregisterFocusFn } from './focused-panel';
 import type { Agent, Task } from './types';
@@ -282,21 +284,22 @@ describe('canvas tabs', () => {
 describe('task column width with the canvas', () => {
   const columnWidth = () => getPanelUserSize('tiling:task-1');
 
-  it('grows the column by the canvas when it opens and gives it back on close', () => {
+  it('makes room for the canvas while it is open without pinning the column', () => {
     openCanvasDocument('task-1', 'docs/a.md');
-    expect(columnWidth()).toBe(520 + 400);
+    expect(autoTaskColumnWidth('task-1')).toBe(520 + 400);
 
     // More tabs or re-opening must not grow it again.
     openCanvasDocument('task-1', 'docs/b.md');
     openTaskCanvas('task-1');
-    expect(columnWidth()).toBe(520 + 400);
+    expect(autoTaskColumnWidth('task-1')).toBe(520 + 400);
 
     closeCanvasTab('task-1', 'markdown:docs/a.md');
-    expect(columnWidth()).toBe(520 + 400);
+    expect(autoTaskColumnWidth('task-1')).toBe(520 + 400);
     closeCanvasTab('task-1', 'markdown:docs/b.md');
-    expect(columnWidth()).toBe(520);
+    expect(autoTaskColumnWidth('task-1')).toBe(520);
     closeTaskCanvas('task-1');
-    expect(columnWidth()).toBe(520);
+    expect(autoTaskColumnWidth('task-1')).toBe(520);
+    expect(columnWidth()).toBeUndefined();
   });
 
   it('uses the width the user dragged the canvas to', () => {
@@ -317,29 +320,55 @@ describe('task column width with the canvas', () => {
   });
 });
 
-it('lets agents open either canvas view for a live task without touching content', () => {
+it('lets agents open either canvas view for a live task without touching content', async () => {
   setStore('agents', 'agent-1', agentFor('codex'));
-  openCanvasViewFromAgent('task-1', { view: 'reasoning' });
+  await openCanvasViewFromAgent('task-1', { view: 'reasoning' });
   expect(store.tasks['task-1'].canvasActiveTab).toBe('reasoning');
   expect(store.tasks['task-1'].reasoningCanvasRequest).toEqual({
     agentId: 'agent-1',
     generation: 0,
   });
-  openCanvasViewFromAgent('task-1', { view: 'mindmap' });
+  await openCanvasViewFromAgent('task-1', { view: 'mindmap' });
   expect(store.tasks['task-1'].canvasTabs).toEqual([{ kind: 'reasoning' }, { kind: 'mindmap' }]);
   expect(store.tasks['task-1'].canvasActiveTab).toBe('mindmap');
   expect(store.tasks['task-1'].mindMap).toBeUndefined();
-  expect(() => openCanvasViewFromAgent('task-1', { view: 'browser' })).toThrow(
+  expect(store.tasks['task-1'].canvasFocusRequest).toBeUndefined();
+  await expect(openCanvasViewFromAgent('task-1', { view: 'browser' })).rejects.toThrow(
     'mindmap, reasoning',
   );
-  expect(() => openCanvasViewFromAgent('missing', { view: 'mindmap' })).toThrow(
+  await expect(openCanvasViewFromAgent('missing', { view: 'mindmap' })).rejects.toThrow(
     'Task not available',
   );
   setStore('tasks', 'task-1', 'closingStatus', 'closing');
-  expect(() => openCanvasViewFromAgent('task-1', { view: 'mindmap' })).toThrow(
+  await expect(openCanvasViewFromAgent('task-1', { view: 'mindmap' })).rejects.toThrow(
     'Task not available',
   );
   setStore('tasks', 'task-1', 'closingStatus', undefined);
+});
+
+it('points the canvas at a node the agent names and rejects unknown ids untouched', async () => {
+  const map = createMindMap();
+  setStore('tasks', 'task-1', 'mindMap', map);
+  const rootId = map.records[0].id;
+  await openCanvasViewFromAgent('task-1', { view: 'mindmap', focusId: rootId });
+  expect(store.tasks['task-1'].canvasFocusRequest).toMatchObject({
+    view: 'mindmap',
+    nodeId: rootId,
+  });
+  const firstSeq = store.tasks['task-1'].canvasFocusRequest?.seq ?? 0;
+  expect(store.tasks['task-1'].canvasActiveTab).toBe('mindmap');
+  // Pointing at the same node again must show it again.
+  await openCanvasViewFromAgent('task-1', { view: 'mindmap', focusId: rootId });
+  expect(store.tasks['task-1'].canvasFocusRequest?.seq).toBeGreaterThan(firstSeq);
+  await expect(
+    openCanvasViewFromAgent('task-1', { view: 'mindmap', focusId: 'missing' }),
+  ).rejects.toThrow('No node "missing" in the mindmap canvas');
+  // An empty reasoning feed holds no nodes; the view stays where the user left it.
+  await expect(
+    openCanvasViewFromAgent('task-1', { view: 'reasoning', focusId: rootId }),
+  ).rejects.toThrow('No node');
+  expect(store.tasks['task-1'].canvasActiveTab).toBe('mindmap');
+  expect(store.tasks['task-1'].canvasFocusRequest?.view).toBe('mindmap');
 });
 
 it('opens one reasoning tab alongside documents and returns to the document when closed', () => {

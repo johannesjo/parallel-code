@@ -170,6 +170,27 @@ it.each(['transport', 'configuration'])(
   },
 );
 
+it('ignores Docker mounts chosen by the renderer', async () => {
+  registerAllHandlers({
+    on: vi.fn(),
+    isDestroyed: () => false,
+    webContents: { send: vi.fn() },
+  } as unknown as BrowserWindow);
+  await handlers.get(IPC.SpawnAgent)?.(undefined, {
+    command: 'bash',
+    isShell: true,
+    args: [],
+    taskId: 'task',
+    agentId: 'agent',
+    cols: 80,
+    rows: 24,
+    cwd: os.tmpdir(),
+    dockerMode: true,
+    dockerReadOnlyMounts: ['/home'],
+  });
+  expect(spawnAgent.mock.lastCall?.[1].dockerReadOnlyMounts).toBeUndefined();
+});
+
 it.each([
   { command: 'bash', isShell: true, canvasMcp: true, args: [] },
   { command: 'custom-agent', canvasMcp: true, args: [] },

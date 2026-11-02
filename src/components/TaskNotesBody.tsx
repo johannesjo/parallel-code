@@ -11,6 +11,8 @@ import {
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { useFocusRegistration } from '../lib/focus-registration';
+import { ArrowDownIcon } from './icons';
+import { SUPPORT_PANE_MIN_HEIGHT } from '../lib/layout-sizes';
 import { UnderstandButton } from './understanding/UnderstandButton';
 import { HoverHint } from './understanding/HoverHint';
 import {
@@ -42,6 +44,20 @@ const sendButtonStyle: JSX.CSSProperties = {
 /** What the footer bar adds: `.change-tour-action` min-height plus its border-top. */
 const TOUR_FOOTER_HEIGHT = 31;
 
+/** Whether the plan/tour action bar shows under the notes editor. */
+function hasTourFooter(task: Task): boolean {
+  return !!(store.showPlans && task.planContent) || !!task.agentTour;
+}
+
+/**
+ * Height the notes pane needs. Panels that host it use this as their floor:
+ * a host shorter than the pane clips its bottom edge, focus ring included.
+ */
+export function notesMinHeight(task: Task): number {
+  const editor = store.focusMode ? 240 : SUPPORT_PANE_MIN_HEIGHT;
+  return editor + (hasTourFooter(task) ? TOUR_FOOTER_HEIGHT : 0);
+}
+
 export function TaskNotesBody(props: TaskNotesBodyProps) {
   const [sendingNotes, setSendingNotes] = createSignal(false);
 
@@ -71,16 +87,11 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
     useFocusRegistration(`${props.task.id}:notes`, () => notesRef?.focus());
   });
 
-  // Keep empty notes compact; plans open in the viewer from the button.
+  // Keep notes visible and stable while typing; plans open in the viewer.
   const isEmpty = () => !props.task.notes?.trim();
   const showPlanActions = () => !!(store.showPlans && props.task.planContent);
   /** Worktree-relative, so the hint shows which of the plan folders it came from. */
   const planFile = () => props.task.planPath ?? props.task.planFileName ?? 'plan.md';
-  const showTourFooter = () => showPlanActions() || !!props.task.agentTour;
-  const intrinsicHeight = () => {
-    const editor = isEmpty() ? 56 : store.focusMode ? 240 : 140;
-    return `${editor + (showTourFooter() ? TOUR_FOOTER_HEIGHT : 0)}px`;
-  };
 
   return (
     <div
@@ -90,12 +101,15 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
       style={{
         width: '100%',
         height: '100%',
-        'min-height': intrinsicHeight(),
+        'min-height': `${notesMinHeight(props.task)}px`,
         display: 'flex',
         'flex-direction': 'column',
       }}
-      onClick={() => setTaskFocusedPanel(props.task.id, 'notes')}
+      onPointerDown={() => setTaskFocusedPanel(props.task.id, 'notes')}
     >
+      <div class="task-pane-heading" style={{ 'font-size': sf(11) }}>
+        Notes
+      </div>
       <div
         style={{
           flex: '1',
@@ -116,7 +130,7 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
             flex: '1',
             background: theme.taskPanelBg,
             border: 'none',
-            padding: '6px 8px',
+            padding: '8px 12px 32px',
             color: theme.fg,
             'font-size': sf(12),
             'font-family': "'JetBrains Mono', monospace",
@@ -139,29 +153,21 @@ export function TaskNotesBody(props: TaskNotesBodyProps) {
               display: 'flex',
               'align-items': 'center',
               'justify-content': 'center',
-              background: `color-mix(in srgb, ${theme.accent} 12%, ${theme.bgInput})`,
+              background: theme.bgInput,
               color: theme.fg,
-              border: `1px solid color-mix(in srgb, ${theme.accent} 25%, ${theme.border})`,
+              border: `1px solid ${theme.border}`,
               'border-radius': '50%',
               cursor: canSendNotes() ? 'pointer' : 'default',
               opacity: canSendNotes() ? '1' : '0.4',
             }}
           >
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-              <path
-                d="M7 2V12M7 12L3 8M7 12l4 -4"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
+            <ArrowDownIcon size={12} />
           </button>
         </div>
       </div>
       {/* The same flat bar the Changed Files panel uses for its Change Tour, so
           these actions sit beside the note instead of covering the text in it. */}
-      <Show when={showTourFooter()}>
+      <Show when={hasTourFooter(props.task)}>
         <div class="change-tour-footer notes-tour-footer">
           <div class="change-tour-row">
             <Show when={showPlanActions()}>

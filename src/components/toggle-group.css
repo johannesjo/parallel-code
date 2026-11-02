@@ -1,0 +1,50 @@
+/* Same height, border and radius as the neighbouring icon buttons; the
+   pressed button shows state with a subtle fill only. */
+.toggle-group {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* An icon button comes out 28px wide; a text button grows with its text. */
+.toggle-group button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 28px;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toggle-group button + button {
+  border-left: 1px solid var(--border);
+}
+
+.toggle-group button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.toggle-group button[aria-pressed='true'] {
+  background: var(--bg-selected-subtle);
+  color: var(--fg);
+}
+
+.toggle-group button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.toggle-group button:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -2px;
+}

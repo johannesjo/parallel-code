@@ -151,14 +151,17 @@ describe('buildSpDoneNote / appendSpNote', () => {
       }),
     ).toBe('Merged `task/fix-abc123` into `main` in Parallel Code (+12 −3).');
   });
-  it('describes a close with its PR', () => {
+  it('keeps only the PR link for a close', () => {
     expect(
       buildSpDoneNote({
         kind: 'closed',
         branchName: 'task/fix',
         prUrl: 'https://github.com/o/r/pull/1',
       }),
-    ).toBe('Closed in Parallel Code (branch `task/fix`). PR: https://github.com/o/r/pull/1');
+    ).toBe('PR: https://github.com/o/r/pull/1');
+  });
+  it('leaves no note for a close without a PR', () => {
+    expect(buildSpDoneNote({ kind: 'closed', branchName: 'task/fix' })).toBeUndefined();
   });
   it('appends below existing notes', () => {
     expect(appendSpNote('', 'x')).toBe('x');

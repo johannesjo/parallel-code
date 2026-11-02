@@ -1161,7 +1161,7 @@ describe('global orchestration policy on legacy HTTP routes', () => {
     );
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
-      error: 'Agent orchestration is disabled in Settings > MCP.',
+      error: 'Agent orchestration is disabled in Settings > Agents.',
     });
     for (const operation of [coord.createTask, coord.sendPrompt, coord.mergeTask, coord.closeTask])
       expect(operation).not.toHaveBeenCalled();

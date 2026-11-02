@@ -2,15 +2,15 @@
 // Used by the MCP server to delegate tool calls to the Electron app.
 
 import type { MindMapDocument, MindMapUpdate } from '../shared/mindmap.js';
-import type { CanvasView } from '../shared/canvas-view.js';
+import type { CanvasRequest } from '../shared/canvas-view.js';
 import type { AgentTourPayload } from '../shared/agent-tour.js';
 import type { ConfidencePayload } from '../shared/task-confidence.js';
+import type { PrDraft } from '../shared/pr-draft.js';
 import type { GitHubCustomList } from '../shared/github-list.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import { randomUUID } from 'crypto';
 import type { SignalDoneInput, SignalDoneResult } from '../shared/completion-report.js';
-import type { EvidenceSubmission } from '../shared/evidence.js';
 import type {
   ApiTaskSummary,
   ApiTaskDetail,
@@ -165,8 +165,8 @@ export class MCPClient {
     return this.taskOwnerRequest('POST', `/api/mindmaps/${encodeURIComponent(taskId)}`, update);
   }
 
-  async openCanvas(taskId: string, view: CanvasView): Promise<{ ok: true; view: CanvasView }> {
-    return this.taskOwnerRequest('POST', `/api/canvas/${encodeURIComponent(taskId)}`, { view });
+  async openCanvas(taskId: string, request: CanvasRequest): Promise<{ ok: true } & CanvasRequest> {
+    return this.taskOwnerRequest('POST', `/api/canvas/${encodeURIComponent(taskId)}`, request);
   }
 
   async publishTour(
@@ -183,19 +183,15 @@ export class MCPClient {
     return this.taskOwnerRequest('POST', `/api/confidence/${encodeURIComponent(taskId)}`, payload);
   }
 
+  async publishPrDraft(taskId: string, draft: PrDraft): Promise<{ ok: true; title: string }> {
+    return this.taskOwnerRequest('POST', `/api/pr-drafts/${encodeURIComponent(taskId)}`, draft);
+  }
+
   async publishGitHubList(
     taskId: string,
     list: GitHubCustomList,
   ): Promise<{ ok: true; name: string }> {
     return this.taskOwnerRequest('POST', `/api/github-lists/${encodeURIComponent(taskId)}`, list);
-  }
-
-  async submitEvidence(taskId: string, submission: EvidenceSubmission): Promise<unknown> {
-    return this.taskOwnerRequest('POST', `/api/evidence/${encodeURIComponent(taskId)}`, submission);
-  }
-
-  async getEvidence(taskId: string): Promise<unknown> {
-    return this.taskOwnerRequest('GET', `/api/evidence/${encodeURIComponent(taskId)}`);
   }
 
   async signalDone(taskId: string, input: SignalDoneInput): Promise<SignalDoneResult> {

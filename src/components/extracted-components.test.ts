@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { presetsForTone } from '../lib/look';
 import { setStore } from '../store/core';
 import { CheckboxOption, InlineBanner } from './NewTaskPanel';
-import { PresetThemeCard, SettingsCheckboxRow } from './SettingsDialog';
+import { SettingsCheckboxRow } from './settings/settings-ui';
+import { PresetThemeCard } from './settings/ThemeCards';
 import { TaskRowShell } from './Sidebar';
 
 function renderRowShell(taskId: string): string {
@@ -58,6 +59,20 @@ describe('extracted component helpers', () => {
     expect(html).toContain(preset.label);
     expect(html).toContain(preset.description);
     expect(html).toContain('title="Clone as custom theme"');
+  });
+
+  it('labels only the default preset of each tone', () => {
+    const render = (preset: ReturnType<typeof presetsForTone>[number]) =>
+      renderToString(() =>
+        PresetThemeCard({ preset, active: false, onSelect: vi.fn(), onClone: vi.fn() }),
+      );
+    const labelled = (tone: 'light' | 'dark') =>
+      presetsForTone(tone)
+        .filter((preset) => render(preset).includes('class="settings-theme-default">Default<'))
+        .map((preset) => preset.id);
+
+    expect(labelled('dark')).toEqual(['parallel-code']);
+    expect(labelled('light')).toEqual(['obsidian-light']);
   });
 
   it('renders new-task checkbox options with disabled state and title', () => {

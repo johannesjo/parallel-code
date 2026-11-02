@@ -32,6 +32,16 @@ describe('isTerminalPaneOnScreen', () => {
     ).toBe(true);
   });
 
+  it('a covered workspace hides every task pane, even the focused one', () => {
+    expect(isTerminalPaneOnScreen({ ...base, workspaceCovered: true })).toBe(false);
+    expect(isTerminalPaneOnScreen({ ...base, workspaceCovered: true, focusMode: true })).toBe(
+      false,
+    );
+    expect(isTerminalPaneOnScreen({ ...base, workspaceCovered: true, standalone: true })).toBe(
+      true,
+    );
+  });
+
   it('a standalone pane (arena overlay) ignores task-level focus and tiling state', () => {
     expect(
       isTerminalPaneOnScreen({ ...base, standalone: true, focusMode: true, activeTaskId: 'other' }),

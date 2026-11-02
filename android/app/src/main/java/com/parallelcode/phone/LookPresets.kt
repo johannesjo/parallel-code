@@ -12,7 +12,7 @@ object LookPresets {
     /**
      * Placeholder fallback for the two default lookups, which would otherwise
      * recurse through [byId]'s default argument. A generated palette always
-     * contains both Obsidian ids and LookPalettesTest asserts it, so reaching
+     * contains both default ids and LookPalettesTest asserts it, so reaching
      * this would mean the generated file is broken; the caller still gets a
      * usable value instead of a throw.
      */
@@ -28,13 +28,13 @@ object LookPresets {
     val all: List<LookPalette> = ALL_LOOK_PALETTES
 
     /**
-     * The desktop's default for a tone, and this app's: Obsidian in both light
-     * and dark, matching `defaultPresetForTone` on the desktop.
+     * The desktop's default for a tone, and this app's: Parallel Code in dark and
+     * Obsidian Light in light, matching `defaultPresetForTone` on the desktop.
      *
      * [byId] defaults to the dark default, so the light default passes its own
      * fallback rather than relying on that.
      */
-    fun defaultForDark(): LookPalette = byId(PRESET_OBSIDIAN, MISSING)
+    fun defaultForDark(): LookPalette = byId(PRESET_PARALLEL_CODE, MISSING)
 
     fun defaultForLight(): LookPalette = byId(PRESET_OBSIDIAN_LIGHT, MISSING)
 
@@ -63,6 +63,7 @@ object LookPresets {
     /** True when [id] names a preset this build knows. */
     fun isKnown(id: String?): Boolean = id != null && ALL_LOOK_PALETTES.any { it.id == id }
 
+    const val PRESET_PARALLEL_CODE = "parallel-code"
     const val PRESET_OBSIDIAN = "obsidian"
     const val PRESET_OBSIDIAN_LIGHT = "obsidian-light"
 }

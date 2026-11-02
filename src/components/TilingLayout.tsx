@@ -1,4 +1,5 @@
 import { createProjectFilterTransition } from '../lib/projectFilterTransition';
+import { withViewTransition } from '../lib/viewTransition';
 import { matchesTaskProjectFilter, taskProjectFilter } from '../store/task-project-filter';
 import {
   batch,
@@ -29,8 +30,12 @@ import {
 } from '../store/store';
 import { documentAgentTaskId } from '../documents/task-id';
 import { scrollTaskIntoView } from '../store/focused-panel';
+import { boardSidePanelOpen } from '../store/project-pages';
+import { isTaskBackgrounded } from '../store/background-tasks';
 import { codeProjects } from '../store/projects';
 import { closeTask } from '../store/tasks';
+import { autoTaskColumnWidth } from '../store/task-column';
+import { computeTileOrder } from '../store/sidebar-order';
 import { TaskPanel } from './TaskPanel';
 import { TerminalPanel } from './TerminalPanel';
 import { NewTaskPanel } from './NewTaskPanel';
@@ -39,9 +44,9 @@ import { markDirty } from '../lib/terminalFitManager';
 import { theme } from '../lib/theme';
 import { mod } from '../lib/platform';
 import { createCtrlShiftWheelResizeHandler } from '../lib/wheelZoom';
-import { shouldAnimateTaskAppearance } from '../lib/reducedMotion';
+import { prefersMotion } from '../lib/reducedMotion';
 import { TASK_TILE_DEFAULT_WIDTH, TASK_TILE_MIN_WIDTH } from '../lib/layout-sizes';
-import { SyncIcon } from './icons';
+import { FolderIcon, SyncIcon } from './icons';
 
 // Lazy: the document workspace (CodeMirror, parse5) loads when its panel opens.
 const DocumentWorkspacePanel = lazy(() =>
@@ -65,11 +70,35 @@ interface TileChild {
   content: () => JSX.Element;
 }
 
+/** The empty workspace's one action: neutral, as routine actions are. */
+const emptyStateButtonStyle = (): JSX.CSSProperties => ({
+  background: theme.bgElevated,
+  border: `1px solid ${theme.border}`,
+  'border-radius': 'var(--radius-md)',
+  padding: '8px 20px',
+  color: theme.fg,
+  cursor: 'pointer',
+  'font-size': '14px',
+  'font-weight': '500',
+  display: 'flex',
+  'align-items': 'center',
+  gap: '6px',
+});
+
 export function TilingLayout() {
   const documentTaskId = () =>
     store.activeDocumentProjectId ? documentAgentTaskId(store.activeDocumentProjectId) : null;
-  const hasPanels = () => store.taskOrder.some(matchesTaskProjectFilter) || !!documentTaskId();
-  const focusMode = () => store.focusMode && hasPanels() && !store.showNewTaskPanel;
+  // Snoozed tiles stay mounted, like filtered-out ones, so running agents keep
+  // their terminals; hiding them means no click into one can end its snooze.
+  const isHiddenTask = (id: string) => !matchesTaskProjectFilter(id) || isTaskBackgrounded(id);
+  const hasPanels = () => store.taskOrder.some((id) => !isHiddenTask(id)) || !!documentTaskId();
+  const hasSnoozedTasks = () =>
+    [...store.taskOrder, ...store.collapsedTaskOrder].some(
+      (id) => matchesTaskProjectFilter(id) && isTaskBackgrounded(id),
+    );
+  // Focus mode and the board's side panel show one item, the draft while there is one.
+  const focusMode = () => boardSidePanelOpen() || (store.focusMode && hasPanels());
+  const shownId = () => (store.showNewTaskPanel ? '__new-task' : store.activeTaskId);
   let containerRef: HTMLDivElement | undefined;
   createProjectFilterTransition(taskProjectFilter, () => containerRef);
   let previousProjectFilter = taskProjectFilter();
@@ -128,7 +157,7 @@ export function TilingLayout() {
     for (const el of taskEls) {
       const taskId = el.dataset.taskId;
       if (!taskId || (!store.tasks[taskId] && taskId !== documentTaskId())) continue;
-      if (store.tasks[taskId] && !matchesTaskProjectFilter(taskId)) continue;
+      if (store.tasks[taskId] && isHiddenTask(taskId)) continue;
       const rect = el.getBoundingClientRect();
       if (rect.right <= containerRect.left + VIEWPORT_EPSILON_PX) {
         nextVisibility[taskId] = 'offscreen-left';
@@ -210,7 +239,9 @@ export function TilingLayout() {
 
   // Recompute viewport state when panel order/structure changes.
   createEffect(() => {
-    void store.taskOrder.join('|');
+    // The tile order, not the raw one: reordering projects moves tiles too.
+    void computeTileOrder().join('|');
+    void store.taskOrder.filter(isTaskBackgrounded).join('|');
     void taskProjectFilter();
     void documentTaskId();
     requestAnimationFrame(() => updateViewportState());
@@ -243,10 +274,7 @@ export function TilingLayout() {
       // The draft is opened at the far end of the strip. Returning across a
       // long task list must not turn a synchronous Cancel into a long pan.
       const behavior: ScrollBehavior =
-        isFirstActiveTaskScroll ||
-        returningFromNewTask ||
-        filterChanged ||
-        !shouldAnimateTaskAppearance()
+        isFirstActiveTaskScroll || returningFromNewTask || filterChanged || !prefersMotion()
           ? 'instant'
           : 'smooth';
       isFirstActiveTaskScroll = false;
@@ -284,7 +312,14 @@ export function TilingLayout() {
   // and doesn't unmount/remount panels when taskOrder changes.
   const panelCache = new Map<string, TileChild>();
 
+  // Solid re-inserts a kept panel when every neighbour changes at once (the
+  // first task arriving beside an open draft), and a moved node loses focus.
+  let focusBeforePanelUpdate: HTMLElement | null = null;
+
   const panelChildren = createMemo((): TileChild[] => {
+    const focused = document.activeElement;
+    focusBeforePanelUpdate =
+      focused instanceof HTMLElement && containerRef?.contains(focused) ? focused : null;
     const currentIds = new Set<string>(store.taskOrder);
     if (hasPanels()) currentIds.add('__placeholder');
     if (documentTaskId()) currentIds.add('__document-workspace');
@@ -295,17 +330,29 @@ export function TilingLayout() {
       if (!currentIds.has(key)) panelCache.delete(key);
     }
 
-    const panels: TileChild[] = store.taskOrder.map((panelId) => {
+    // Grouped visual order first; tasks hidden by the project filter stay
+    // mounted (and display:none) so their terminals survive, but trail the
+    // visible tiles so drag indices stay aligned with the visible order.
+    const visibleIds = computeTileOrder();
+    const visibleSet = new Set(visibleIds);
+    const hiddenIds = store.taskOrder.filter(
+      (id) => !visibleSet.has(id) && (!!store.tasks[id] || !!store.terminals[id]),
+    );
+
+    const panels: TileChild[] = [...visibleIds, ...hiddenIds].map((panelId) => {
       let cached = panelCache.get(panelId);
       if (!cached) {
         cached = {
           id: panelId,
-          initialSize: TASK_TILE_DEFAULT_WIDTH,
+          // Reactive, so an undragged column follows its panes and canvas.
+          get initialSize() {
+            return autoTaskColumnWidth(panelId);
+          },
           minSize: TASK_TILE_MIN_WIDTH,
           content: () => {
             const task = store.tasks[panelId];
             const terminal = store.terminals[panelId];
-            const appearanceClass = shouldAnimateTaskAppearance() ? 'task-appearing' : undefined;
+            const appearanceClass = prefersMotion() ? 'task-appearing' : undefined;
             // eslint-disable-next-line solid/components-return-once
             if (!task && !terminal) return <div />;
             return (
@@ -465,7 +512,10 @@ export function TilingLayout() {
           initialSize: TASK_TILE_DEFAULT_WIDTH,
           minSize: TASK_TILE_MIN_WIDTH,
           content: () => (
-            <NewTaskPanel open={store.showNewTaskPanel} onClose={() => toggleNewTaskPanel(false)} />
+            <NewTaskPanel
+              open={store.showNewTaskPanel}
+              onClose={() => withViewTransition(() => toggleNewTaskPanel(false))}
+            />
           ),
         };
         panelCache.set('__new-task', draft);
@@ -496,6 +546,15 @@ export function TilingLayout() {
       () => cancelDrag?.(),
     ),
   );
+
+  // Runs after the list update: give focus back so typing is not interrupted.
+  createEffect(() => {
+    panelChildren();
+    const el = focusBeforePanelUpdate;
+    focusBeforePanelUpdate = null;
+    if (el?.isConnected && document.activeElement === document.body)
+      el.focus({ preventScroll: true });
+  });
 
   function handleDragStart(index: number, e: MouseEvent) {
     if (e.button !== 0) return;
@@ -569,7 +628,7 @@ export function TilingLayout() {
               }}
             >
               <Show
-                when={store.collapsedTaskOrder.length === 0}
+                when={store.collapsedTaskOrder.length === 0 && !hasSnoozedTasks()}
                 fallback={
                   <div style={{ 'text-align': 'center' }}>
                     <div
@@ -580,7 +639,7 @@ export function TilingLayout() {
                         'margin-bottom': '6px',
                       }}
                     >
-                      All tasks are collapsed
+                      {hasSnoozedTasks() ? 'All tasks are snoozed' : 'All tasks are collapsed'}
                     </div>
                     <div style={{ 'font-size': '13px', color: theme.fgSubtle }}>
                       Click a task in the sidebar to restore it
@@ -605,15 +664,7 @@ export function TilingLayout() {
                           color: theme.fgSubtle,
                         }}
                       >
-                        <svg
-                          width="24"
-                          height="24"
-                          viewBox="0 0 16 16"
-                          fill="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
-                        </svg>
+                        <FolderIcon size={24} />
                       </div>
                       <div style={{ 'text-align': 'center' }}>
                         <div
@@ -624,38 +675,19 @@ export function TilingLayout() {
                             'margin-bottom': '6px',
                           }}
                         >
-                          Link your first project to get started
+                          Add your first project to get started
                         </div>
                         <div style={{ 'font-size': '13px', color: theme.fgSubtle }}>
                           A project is a local folder with your code
                         </div>
                       </div>
                       <button
+                        type="button"
                         onClick={() => pickAndAddProject()}
-                        style={{
-                          background: theme.bgElevated,
-                          border: `1px solid ${theme.border}`,
-                          'border-radius': 'var(--radius-md)',
-                          padding: '8px 20px',
-                          color: theme.fg,
-                          cursor: 'pointer',
-                          'font-size': '14px',
-                          'font-weight': '500',
-                          display: 'flex',
-                          'align-items': 'center',
-                          gap: '6px',
-                        }}
+                        style={emptyStateButtonStyle()}
                       >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 16 16"
-                          fill="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.22.78 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
-                        </svg>
-                        Link Project
+                        <FolderIcon size={14} />
+                        Add project
                       </button>
                     </>
                   }
@@ -671,8 +703,15 @@ export function TilingLayout() {
                     >
                       No tasks yet
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => withViewTransition(() => toggleNewTaskPanel(true))}
+                      style={{ ...emptyStateButtonStyle(), margin: '10px auto' }}
+                    >
+                      New task
+                    </button>
                     <div style={{ 'font-size': '13px', color: theme.fgSubtle }}>
-                      Press{' '}
+                      or press{' '}
                       <kbd
                         style={{
                           background: theme.bgElevated,
@@ -684,8 +723,7 @@ export function TilingLayout() {
                         }}
                       >
                         {mod}+N
-                      </kbd>{' '}
-                      to create a new task
+                      </kbd>
                     </div>
                   </div>
                 </Show>
@@ -695,14 +733,15 @@ export function TilingLayout() {
           <For each={panelChildren()}>
             {(child, i) => {
               const filteredOut = () =>
-                store.taskOrder.includes(child.id) && !matchesTaskProjectFilter(child.id);
+                store.taskOrder.includes(child.id) && isHiddenTask(child.id);
+              const isShown = () =>
+                (child.id === '__document-workspace' ? documentTaskId() : child.id) === shownId();
               const wrapperStyle = createMemo((): JSX.CSSProperties => {
                 if (filteredOut()) return { display: 'none' };
                 const isPlaceholder = child.id === '__placeholder';
                 if (focusMode()) {
                   if (isPlaceholder) return { display: 'none' };
-                  const id = child.id === '__document-workspace' ? documentTaskId() : child.id;
-                  const isActive = id === store.activeTaskId;
+                  const isActive = isShown();
                   return {
                     position: 'absolute',
                     inset: store.themePreset.startsWith('islands-') ? '0 4px 0 0' : '0',
@@ -734,17 +773,14 @@ export function TilingLayout() {
                 <>
                   <div
                     style={wrapperStyle()}
-                    inert={
-                      focusMode() &&
-                      (child.id === '__document-workspace' ? documentTaskId() : child.id) !==
-                        store.activeTaskId
-                    }
+                    classList={{ 'tiling-panel-shown': isShown() }}
+                    inert={focusMode() && !isShown()}
                   >
                     {child.content()}
                   </div>
                   <Show when={showHandle()}>
                     <div
-                      class={`resize-handle resize-handle-h ${dragging() === i() ? 'dragging' : ''}`}
+                      class={`resize-handle resize-handle-h tiling-strip-handle ${dragging() === i() ? 'dragging' : ''}`}
                       onMouseDown={(e) => handleDragStart(i(), e)}
                       onDblClick={() => {
                         if (dragging() !== null) return;
@@ -754,8 +790,7 @@ export function TilingLayout() {
                           .slice(i() + 1)
                           .find(
                             (panel) =>
-                              !store.taskOrder.includes(panel.id) ||
-                              matchesTaskProjectFilter(panel.id),
+                              !store.taskOrder.includes(panel.id) || !isHiddenTask(panel.id),
                           );
                         if (!left || !right) return;
                         deletePanelUserSize([`tiling:${left.id}`, `tiling:${right.id}`]);

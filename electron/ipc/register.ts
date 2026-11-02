@@ -23,8 +23,10 @@ import {
   handoffClaudeTerminal,
 } from './pty.js';
 import { loadEnvFile } from './env-file.js';
+import { projectAgentEnv, setProjectAgentEnv } from './project-env.js';
 import { getResourceSnapshot } from './resources.js';
-import { editorGotoArgs, spawnDetached, validateEditorCommand } from './open-file.js';
+import { editorLineArgs, spawnDetached, validateEditorCommand } from './open-file.js';
+import { isExecutablePath } from '../shared/executable-path.js';
 import { appendGitInfoExcludeBlock } from './git-exclude.js';
 import {
   spawnAgent,
@@ -65,24 +67,28 @@ import {
   initPrChecks,
   startPrChecksWatcher,
   stopPrChecksWatcher,
-  detectPrUrlForBranch,
   refreshPrChecksWatcher,
+  isGhAuthError,
+  isGhMissingError,
   isPrUrl,
 } from './pr-checks.js';
+import { detectTaskPrs } from './task-prs.js';
 import { readCoverageSummary } from './coverage.js';
 import { loadEslintQualityFindings } from './eslint-quality-findings.js';
 import { buildVerifyEnv, validateVerifyCommand, verificationRunner } from './verify.js';
-import { scanEvidence } from './evidence-scan.js';
 import { createProjectFolder } from '../remote/project-create.js';
+import { scanChange } from './change-scan.js';
 import {
   startRemoteServer,
   getMCPLogs,
   type MobileTaskRequest,
   type RemoteProject,
 } from '../remote/server.js';
+import { sanitizeRemotePr } from '../remote/task-context.js';
 import type {
   RemoteAgentChoice,
   RemoteAttentionState,
+  RemoteBoardLane,
   RemoteCiStatus,
   RemoteCloseResult,
   RemoteMergeReadiness,
@@ -90,6 +96,7 @@ import type {
   RemoteTaskDiff,
 } from '../remote/protocol.js';
 import type { UsageProvider, UsageState } from './shared-types.js';
+import { REMOTE_BOARD_LANES } from '../remote/protocol.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
 import { getUserDataDir } from '../user-data-dir.js';
 import {
@@ -98,25 +105,24 @@ import {
   removeCanvasConfig,
 } from '../mcp/canvas-config.js';
 import type { MindMapDocument, MindMapUpdate } from '../shared/mindmap.js';
-import type { CanvasView } from '../shared/canvas-view.js';
+import type { CanvasRequest } from '../shared/canvas-view.js';
 import type { AgentTourPayload } from '../shared/agent-tour.js';
 import type { ConfidencePayload } from '../shared/task-confidence.js';
+import type { PrDraft } from '../shared/pr-draft.js';
 import type { GitHubCustomList } from '../shared/github-list.js';
-import type { EvidenceSubmission } from '../shared/evidence.js';
 import {
   buildMcpLaunchArgs,
+  isAntigravityCommand,
   isCodexCommand,
   type ParallelCodeMcpConfig,
 } from '../mcp/agent-args.js';
+import { ANTIGRAVITY_MCP_CONFIG, prepareAntigravityConfigDir } from '../mcp/antigravity-config.js';
 import {
   getSymlinkCandidates,
   getMainBranch,
   getCurrentBranch,
-  getChangedFiles,
   getChangedFilesFromBranch,
-  getAllFileDiffs,
   getAllFileDiffsFromBranch,
-  getFileDiff,
   getFileDiffFromBranch,
   getWorktreeStatus,
   listImportableWorktrees,
@@ -129,6 +135,7 @@ import {
   getBranchCommitMessages,
   pushTask,
   rebaseTask,
+  resetBaseToUpstream,
   mergeBaseIntoTask,
   createWorktree,
   removeWorktree,
@@ -138,9 +145,15 @@ import {
   getBranchCommits,
   getCommitChangedFiles,
   getCommitDiffs,
-  getUncommittedChangedFiles,
-  getUncommittedFileDiffs,
 } from './git.js';
+import {
+  findNestedRepos,
+  getAllFileDiffsWithNested,
+  getChangedFilesWithNested,
+  getFileDiffWithNested,
+  getUncommittedChangedFilesWithNested,
+  getUncommittedFileDiffsWithNested,
+} from './nested-repos.js';
 import { createPrTask, createTask, deleteTask } from './tasks.js';
 import { settleWorktreeIntents } from './worktree-intents.js';
 import { windowNotifier } from './window-notifier.js';
@@ -163,6 +176,7 @@ import {
   quitAndInstallUpdate,
 } from './updater.js';
 import { askAboutCode, cancelAskAboutCode } from './ask-code.js';
+import { approveTaskScreens, cancelTaskScreens, captureTaskScreens } from './task-screens.js';
 import { setMinimaxApiKey } from './ask-code-minimax.js';
 import { isStructuredPurpose } from './ask-code-purpose.js';
 import { readCheckSources } from './check-sources.js';
@@ -197,6 +211,11 @@ import { redactServerUrl } from '../remote/server.js';
 
 export function selectMcpJsonDir(worktreePath: string | undefined, projectRoot: string): string {
   return worktreePath ?? projectRoot;
+}
+
+/** Workspace MCP file the coordinator's agent discovers; agy has no `--mcp-config` flag. */
+export function selectMcpJsonFile(agentCommand: string | undefined): string {
+  return agentCommand && isAntigravityCommand(agentCommand) ? ANTIGRAVITY_MCP_CONFIG : '.mcp.json';
 }
 
 export interface CoordinatorMCPConfigOpts {
@@ -236,13 +255,6 @@ export function buildCoordinatorMCPConfig(opts: CoordinatorMCPConfigOpts): {
       },
     },
   };
-}
-
-function isMissingCommandError(err: unknown, command: string): boolean {
-  const e = err as { path?: unknown; syscall?: unknown };
-  return (
-    e.path === command || (typeof e.syscall === 'string' && e.syscall.includes(`spawn ${command}`))
-  );
 }
 
 /** The file is absent in Docker mode or after a prior cleanup; any other failure is logged. */
@@ -356,13 +368,13 @@ export function projectRootArg(args: IpcArgs): string {
   return absolutePathArg(args, 'projectRoot');
 }
 
-function evidenceKeyPrefix(taskId: string): string {
-  return `${taskId}:evidence:`;
+function suiteKeyPrefix(taskId: string): string {
+  return `${taskId}:suite:`;
 }
 
 /** One key per check, so different checks can run side by side. */
-function evidenceRunKey(taskId: string, checkId: string): string {
-  return `${evidenceKeyPrefix(taskId)}${checkId}`;
+function suiteRunKey(taskId: string, checkId: string): string {
+  return `${suiteKeyPrefix(taskId)}${checkId}`;
 }
 
 export function worktreePathArg(args: IpcArgs): string {
@@ -540,6 +552,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       validateCommand(args.command);
       validatePath(args.cwd, 'cwd');
       assertOptionalString(args.envFile, 'envFile');
+      assertOptionalString(args.projectId, 'projectId');
       assertOptionalString(args.threadId, 'threadId');
       assertOptionalBoolean(args.skipPermissions, 'skipPermissions');
       if (args.permissionMode !== undefined && !isChatPermissionMode(args.permissionMode))
@@ -561,7 +574,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
           threadId: args.threadId,
           skipPermissions: args.skipPermissions,
           permissionMode: args.permissionMode,
-          env: buildPtySpawnEnv({}, args.envFile ? loadEnvFile(args.envFile) : {}),
+          env: buildPtySpawnEnv(
+            {},
+            args.envFile ? loadEnvFile(args.envFile) : {},
+            projectAgentEnv(args.projectId),
+          ),
         },
         (state) => {
           if (!win.isDestroyed()) win.webContents.send(channel, state);
@@ -647,6 +664,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     serverOptions: () => remoteServerOptions(),
     rememberedDevicesPath: () => path.join(getUserDataDir(), 'paired-phones.json'),
     onCoordinatorLoaded: () => registerCoordinatorHandlers(),
+    createIndependentTask: (request) =>
+      callRenderer<{ taskId: string }>(IPC.MCP_CreateIndependentTaskRequest, { ...request }),
   });
   const { transport, delegation, pendingSpawns, canvasOwners, wideBindAgents, needsWideBind } = mcp;
   const taskNames = new Map<string, string>();
@@ -678,7 +697,16 @@ export function registerAllHandlers(win: BrowserWindow): void {
     if (args.managedMcpLaunchArgs !== undefined)
       assertStringArray(args.managedMcpLaunchArgs, 'managedMcpLaunchArgs');
     assertOptionalString(args.envFile, 'envFile');
+    assertOptionalString(args.projectId, 'projectId');
     if (args.cwd) validatePath(args.cwd, 'cwd');
+    // Restarted Docker sub-tasks need the coordinator's MCP dir too; derive it
+    // here so the renderer cannot choose host paths to mount.
+    args = {
+      ...args,
+      dockerReadOnlyMounts: args.dockerMode
+        ? mcp.coordinator()?.getDockerMcpMounts(args.taskId)
+        : undefined,
+    };
     const attaching = args.attachExisting && getAgentMeta(args.agentId);
     const releaseAdmission =
       attaching || args.isShell ? undefined : mcp.coordinator()?.reserveChildRestart(args.taskId);
@@ -1004,7 +1032,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     // A verify run still going would keep writing into the worktree being deleted.
     if (args.taskId) {
       verificationRunner.cancel(args.taskId);
-      verificationRunner.cancelPrefix(evidenceKeyPrefix(args.taskId));
+      verificationRunner.cancelPrefix(suiteKeyPrefix(args.taskId));
     }
     const authority = args.taskId ? delegation.getTask(args.taskId) : undefined;
     if (authority?.delegationParent || authority?.coordinatorMode)
@@ -1024,7 +1052,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // --- Git commands ---
   ipcMain.handle(IPC.GetChangedFiles, (_e, args) => {
     const worktreePath = worktreePathArg(args);
-    return getChangedFiles(worktreePath, optionalBaseBranch(args));
+    return getChangedFilesWithNested(worktreePath, optionalBaseBranch(args));
   });
   ipcMain.handle(IPC.GetChangedFilesFromBranch, (_e, args) => {
     const projectRoot = projectRootArg(args);
@@ -1033,10 +1061,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.GetAllFileDiffs, (_e, args) => {
     const worktreePath = worktreePathArg(args);
-    return getAllFileDiffs(worktreePath, optionalBaseBranch(args));
+    return getAllFileDiffsWithNested(worktreePath, optionalBaseBranch(args));
   });
   ipcMain.handle(IPC.GetUncommittedChangedFiles, (_e, args) => {
-    return getUncommittedChangedFiles(worktreePathArg(args));
+    return getUncommittedChangedFilesWithNested(worktreePathArg(args));
   });
   ipcMain.handle(IPC.GetAllFileDiffsFromBranch, (_e, args) => {
     const projectRoot = projectRootArg(args);
@@ -1046,7 +1074,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.GetFileDiff, (_e, args) => {
     const worktreePath = worktreePathArg(args);
     validateRelativePath(args.filePath, 'filePath');
-    return getFileDiff(worktreePath, args.filePath, optionalBaseBranch(args));
+    return getFileDiffWithNested(worktreePath, args.filePath, optionalBaseBranch(args));
   });
   ipcMain.handle(IPC.GetFileDiffFromBranch, (_e, args) => {
     const projectRoot = projectRootArg(args);
@@ -1077,7 +1105,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.CheckMergeStatus, (_e, args) => {
     const worktreePath = worktreePathArg(args);
-    return checkMergeStatus(worktreePath, optionalBaseBranch(args));
+    const projectRoot = args.projectRoot ? projectRootArg(args) : undefined;
+    return checkMergeStatus(worktreePath, optionalBaseBranch(args), projectRoot);
   });
   ipcMain.handle(IPC.MergeTask, async (_e, args) => {
     const projectRoot = projectRootArg(args);
@@ -1085,6 +1114,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertBoolean(args.squash, 'squash');
     assertOptionalString(args.message, 'message');
     assertOptionalBoolean(args.cleanup, 'cleanup');
+    assertOptionalBoolean(args.allowDirtyTarget, 'allowDirtyTarget');
     await delegation.assertDirectMergeAllowed(projectRoot, branchName, args.cleanup ?? false);
     const baseBranch = optionalBaseBranch(args);
     const worktreePath = optionalWorktreePath(args);
@@ -1096,6 +1126,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       args.cleanup ?? false,
       baseBranch,
       worktreePath,
+      undefined,
+      args.allowDirtyTarget ?? false,
     );
     // The merge already happened; failing to tell the parent must not report it as failed.
     await delegation
@@ -1128,7 +1160,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return getCommitDiffs(worktreePath, args.commitHash);
   });
   ipcMain.handle(IPC.GetUncommittedFileDiffs, (_e, args) => {
-    return getUncommittedFileDiffs(worktreePathArg(args));
+    return getUncommittedFileDiffsWithNested(worktreePathArg(args));
+  });
+  ipcMain.handle(IPC.GetNestedRepos, (_e, args) => {
+    return findNestedRepos(worktreePathArg(args));
   });
   ipcMain.handle(IPC.GetCoverageSummary, (_e, args) => {
     validatePath(args.repoRoot, 'repoRoot');
@@ -1154,6 +1189,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.MergeBaseIntoTask, (_e, args) => {
     const worktreePath = worktreePathArg(args);
     return mergeBaseIntoTask(worktreePath, optionalBaseBranch(args));
+  });
+  ipcMain.handle(IPC.ResetBaseToUpstream, (_e, args) => {
+    const projectRoot = projectRootArg(args);
+    const baseBranch = validateBranchName(args.baseBranch, 'baseBranch');
+    assertString(args.expectedHead, 'expectedHead');
+    if (!/^[0-9a-f]{40,64}$/.test(args.expectedHead)) throw new Error('Invalid expectedHead');
+    return resetBaseToUpstream(projectRoot, baseBranch, args.expectedHead);
   });
   ipcMain.handle(IPC.GetMainBranch, (_e, args) => {
     return getMainBranch(projectRootArg(args));
@@ -1182,6 +1224,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       const state = JSON.parse(json) as {
         tasks?: Record<string, { id: string; name: string }>;
         coordinatorNotificationDelayMs?: unknown;
+        maxIndependentTasksPerCreator?: unknown;
       };
       if (state.tasks) {
         for (const t of Object.values(state.tasks)) {
@@ -1192,6 +1235,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
       if (typeof delay === 'number' && Number.isFinite(delay)) {
         mcp.coordinator()?.setNotificationDelayMs(delay);
       }
+      const independentLimit = state.maxIndependentTasksPerCreator;
+      delegation.setMaxIndependentPerCreator(
+        typeof independentLimit === 'number' ? independentLimit : Number.NaN,
+      );
     } catch (e) {
       console.warn('Ignoring malformed saved state:', e);
     }
@@ -1302,35 +1349,41 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertString(args.taskId, 'taskId');
     assertString(args.prUrl, 'prUrl');
     assertString(args.taskName, 'taskName');
+    assertString(args.watchId, 'watchId');
     if (!isPrUrl(args.prUrl)) return; // defense in depth — also re-checked downstream
+    const branch = args.branch ?? null;
+    if (branch !== null) {
+      validatePath(branch.worktreePath, 'branch.worktreePath');
+      validateBranchName(branch.branchName, 'branch.branchName');
+    }
     startPrChecksWatcher({
       taskId: args.taskId,
       prUrl: args.prUrl,
       taskName: args.taskName,
+      watchId: args.watchId,
+      babysit: args.babysit === true,
+      branch: branch && { worktreePath: branch.worktreePath, branchName: branch.branchName },
     });
   });
   ipcMain.handle(IPC.StopPrChecksWatcher, (_e, args) => {
-    assertString(args.taskId, 'taskId');
-    stopPrChecksWatcher(args.taskId);
+    assertString(args.watchId, 'watchId');
+    stopPrChecksWatcher(args.watchId);
   });
   ipcMain.handle(IPC.DetectPrForBranch, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
     validateBranchName(args.branchName, 'branchName');
-    return detectPrUrlForBranch(args.worktreePath, args.branchName)
-      .then((url) => ({ url }))
-      .catch((err: unknown) => {
-        const code = (err as NodeJS.ErrnoException)?.code;
-        const stderr = (err as { stderr?: string })?.stderr ?? '';
-        if (code === 'ENOENT' && isMissingCommandError(err, 'gh')) {
-          return { url: null, unavailable: 'missing' };
-        }
-        if (code === 'ENOENT') return { url: null };
-        if (/not logged into|authentication required/i.test(stderr)) {
-          return { url: null, unavailable: 'auth' };
-        }
-        console.warn('[pr-checks] branch PR detection failed:', (err as Error)?.message ?? err);
-        return { url: null };
-      });
+    return detectTaskPrs(args.worktreePath, args.branchName).catch((err: unknown) => {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (isGhMissingError(err)) {
+        return { url: null, unavailable: 'missing' };
+      }
+      if (code === 'ENOENT') return { url: null };
+      if (isGhAuthError(err)) {
+        return { url: null, unavailable: 'auth' };
+      }
+      console.warn('[pr-checks] branch PR detection failed:', (err as Error)?.message ?? err);
+      return { url: null };
+    });
   });
   ipcMain.handle(IPC.RefreshPrChecksWatcher, (_e, args) => {
     assertString(args.taskId, 'taskId');
@@ -1352,14 +1405,16 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validateVerifyCommand(args.command);
     assertOptionalString(args.branchName, 'branchName');
     assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
-    assertOptionalBoolean(args.evidence, 'evidence');
-    if (args.evidence) assertString(args.checkId, 'checkId');
+    assertOptionalBoolean(args.checkSuite, 'checkSuite');
+    if (args.checkSuite) assertString(args.checkId, 'checkId');
     assertOptionalString(args.expectedHeadSha, 'expectedHeadSha');
+    assertOptionalBoolean(args.lowPriority, 'lowPriority');
     const channel = `channel:${args.onOutput.__CHANNEL_ID__}`;
     return verificationRunner.start({
-      // Evidence checks have their own keys so they never cancel a manual run.
-      key: args.evidence ? evidenceRunKey(args.taskId, args.checkId) : args.taskId,
+      // Check-suite checks have their own keys so they never cancel a manual run.
+      key: args.checkSuite ? suiteRunKey(args.taskId, args.checkId) : args.taskId,
       expectedHeadSha: args.expectedHeadSha,
+      lowPriority: args.lowPriority === true,
       worktreePath,
       command: args.command,
       env: buildVerifyEnv({ taskId: args.taskId, branchName: args.branchName, worktreePath }),
@@ -1370,18 +1425,18 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.CancelTaskVerification, (_e, args) => {
     assertString(args.taskId, 'taskId');
-    assertOptionalBoolean(args.evidence, 'evidence');
+    assertOptionalBoolean(args.checkSuite, 'checkSuite');
     assertOptionalString(args.checkId, 'checkId');
-    if (!args.evidence) return verificationRunner.cancel(args.taskId);
-    // Without a check id, Stop and Rebuild cancel every evidence check of the task.
+    if (!args.checkSuite) return verificationRunner.cancel(args.taskId);
+    // Without a check id, Stop and Rebuild cancel every suite check of the task.
     return args.checkId
-      ? verificationRunner.cancel(evidenceRunKey(args.taskId, args.checkId))
-      : verificationRunner.cancelPrefix(evidenceKeyPrefix(args.taskId));
+      ? verificationRunner.cancel(suiteRunKey(args.taskId, args.checkId))
+      : verificationRunner.cancelPrefix(suiteKeyPrefix(args.taskId));
   });
-  ipcMain.handle(IPC.GetEvidenceScan, (_e, args) => {
+  ipcMain.handle(IPC.GetChangeScan, (_e, args) => {
     const worktreePath = worktreePathArg(args);
     if (args.baseBranch !== undefined) validateBranchName(args.baseBranch, 'baseBranch');
-    return scanEvidence(worktreePath, args.baseBranch);
+    return scanChange(worktreePath, args.baseBranch);
   });
 
   // --- Task-scoped reasoning reports ---
@@ -1412,6 +1467,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   // --- Ask about code ---
+  ipcMain.handle(IPC.SetProjectAgentEnv, (_e, args) => {
+    assertString(args.projectId, 'projectId');
+    setProjectAgentEnv(args.projectId, args.env);
+  });
+
   ipcMain.handle(IPC.SetMinimaxApiKey, (_e, args) => {
     assertString(args.key, 'key');
     setMinimaxApiKey(args.key);
@@ -1431,6 +1491,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     if (args.effort !== undefined && !isAskCodeEffort(provider, args.effort))
       throw new Error('Invalid code Q&A reasoning level');
     assertOptionalString(args.envFile, 'envFile');
+    assertOptionalString(args.projectId, 'projectId');
     askAboutCode(win, {
       purpose: args.purpose,
       requestId: args.requestId,
@@ -1441,12 +1502,42 @@ export function registerAllHandlers(win: BrowserWindow): void {
       model: args.model,
       effort: args.effort,
       envFile: args.envFile,
+      projectId: args.projectId,
     });
   });
 
   ipcMain.handle(IPC.CancelAskAboutCode, (_e, args) => {
     assertString(args.requestId, 'requestId');
     cancelAskAboutCode(args.requestId);
+  });
+
+  ipcMain.handle(IPC.CaptureTaskScreens, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    validatePath(args.worktreePath, 'worktreePath');
+    assertOptionalString(args.baseBranch, 'baseBranch');
+    assertOptionalString(args.envFile, 'envFile');
+    assertOptionalString(args.projectId, 'projectId');
+    return captureTaskScreens({
+      taskId: args.taskId,
+      worktreePath: args.worktreePath,
+      baseBranch: args.baseBranch,
+      envFile: args.envFile,
+      projectId: args.projectId,
+      onStep: (step) => notify(IPC.TaskScreensProgress, { taskId: args.taskId, step }),
+      onAsk: (commands) => notify(IPC.TaskScreensProgress, { taskId: args.taskId, commands }),
+    });
+  });
+
+  ipcMain.handle(IPC.CancelTaskScreens, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    cancelTaskScreens(args.taskId);
+  });
+
+  ipcMain.handle(IPC.ApproveTaskScreens, (_e, args) => {
+    assertString(args.taskId, 'taskId');
+    assertString(args.after, 'after');
+    assertOptionalString(args.before, 'before');
+    approveTaskScreens(args.taskId, { after: args.after, before: args.before });
   });
 
   ipcMain.handle(IPC.ListCodexModels, () => listCodexModels());
@@ -1461,8 +1552,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const filePath = expandHome(args.filePath);
     validatePath(filePath, 'filePath');
     // Block executable extensions to prevent accidental code execution
-    const dangerous = /\.(sh|bash|exe|bat|cmd|app|command|desktop|appimage|run)$/i;
-    if (dangerous.test(filePath)) {
+    if (isExecutablePath(filePath)) {
       throw new Error('Cannot open executable files');
     }
     return shell.openPath(filePath);
@@ -1472,8 +1562,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertString(args.filePath, 'filePath');
     const filePath = expandHome(args.filePath);
     validatePath(filePath, 'filePath');
-    if (!/\.md$/i.test(filePath)) {
-      throw new Error('Only .md files can be read');
+    if (!/\.(md|markdown)$/i.test(filePath)) {
+      throw new Error('Only Markdown files can be read');
     }
     const stat = await fs.promises.stat(filePath);
     if (stat.size > 2 * 1024 * 1024) {
@@ -1566,6 +1656,15 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.CheckForUpdates, () => checkForUpdates());
   ipcMain.handle(IPC.DownloadUpdate, () => downloadUpdate());
   ipcMain.handle(IPC.QuitAndInstallUpdate, () => quitAndInstallUpdate());
+  // The quit still goes through the window's close prompt about running
+  // terminals. shortcut: Electron cannot unregister a relaunch, so cancelling
+  // that prompt, or keeping terminals in the background, leaves the next quit
+  // relaunching too — clear a flag from the prompt's cancel path and relaunch
+  // in `will-quit` if that surprises anyone.
+  ipcMain.handle(IPC.RestartApp, () => {
+    app.relaunch();
+    app.quit();
+  });
 
   // --- Notifications (fire-and-forget via ipcMain.on) ---
   const activeNotifications = new Set<Notification>();
@@ -1700,8 +1799,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   // --- Shell/Opener ---
   ipcMain.handle(IPC.ShellReveal, (_e, args) => {
-    validatePath(args.filePath, 'filePath');
-    shell.showItemInFolder(args.filePath);
+    assertString(args.filePath, 'filePath');
+    const filePath = expandHome(args.filePath);
+    validatePath(filePath, 'filePath');
+    shell.showItemInFolder(filePath);
   });
 
   ipcMain.handle(IPC.ShellOpenFile, async (_e, args) => {
@@ -1712,18 +1813,17 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const line = args.line;
     if (Number.isInteger(line) && line > 0 && args.editorCommand) {
       const cmd = validateEditorCommand(args.editorCommand);
-      const gotoArgs = editorGotoArgs(cmd, absolute, line);
-      if (gotoArgs) {
-        try {
-          await spawnDetached(cmd, gotoArgs);
-          return '';
-        } catch (err) {
-          logWarn('shell', 'Editor launch failed; opening with the default app', {
-            error: errMessage(err),
-          });
-        }
+      try {
+        await spawnDetached(cmd, editorLineArgs(cmd, absolute, line));
+        return '';
+      } catch (err) {
+        logWarn('shell', 'Editor launch failed; opening with the default app', {
+          error: errMessage(err),
+        });
       }
     }
+    // The default app would run a script instead of showing it.
+    if (isExecutablePath(absolute)) return 'Cannot open executable files';
     return shell.openPath(absolute);
   });
 
@@ -1732,8 +1832,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.ShellOpenInEditor, (_e, args) => {
-    validatePath(args.worktreePath, 'worktreePath');
-    return spawnDetached(validateEditorCommand(args.editorCommand), [args.worktreePath]);
+    assertString(args.worktreePath, 'worktreePath');
+    const target = expandHome(args.worktreePath);
+    validatePath(target, 'worktreePath');
+    return spawnDetached(validateEditorCommand(args.editorCommand), [target]);
   });
 
   // --- Mobile task-creation bridge (paired phones) ---
@@ -1788,17 +1890,18 @@ export function registerAllHandlers(win: BrowserWindow): void {
       callRenderer<MindMapDocument>(IPC.MCP_ReadMindMapRequest, { taskId }),
     updateMindMap: (taskId: string, update: MindMapUpdate) =>
       callRenderer<MindMapDocument>(IPC.MCP_UpdateMindMapRequest, { taskId, update }),
-    openCanvas: (taskId: string, view: CanvasView) =>
-      callRenderer<{ ok: boolean }>(IPC.MCP_OpenCanvasRequest, { taskId, view }).then(() => {}),
+    openCanvas: (taskId: string, request: CanvasRequest) =>
+      callRenderer<{ ok: boolean }>(IPC.MCP_OpenCanvasRequest, { taskId, ...request }).then(
+        () => {},
+      ),
     publishTour: (taskId: string, payload: AgentTourPayload) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishTourRequest, { taskId, payload }),
     publishConfidence: (taskId: string, payload: ConfidencePayload) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishConfidenceRequest, { taskId, payload }),
+    publishPrDraft: (taskId: string, draft: PrDraft) =>
+      callRenderer<{ ok: boolean }>(IPC.MCP_PublishPrDraftRequest, { taskId, draft }),
     publishGitHubList: (taskId: string, list: GitHubCustomList) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishGitHubListRequest, { taskId, list }),
-    submitEvidence: (taskId: string, payload: EvidenceSubmission) =>
-      callRenderer<unknown>(IPC.MCP_SubmitEvidenceRequest, { taskId, payload }),
-    getEvidence: (taskId: string) => callRenderer<unknown>(IPC.MCP_GetEvidenceRequest, { taskId }),
     getProjects: () => callRenderer<RemoteProject[]>(IPC.Remote_GetProjectsRequest, {}),
     getAgentChoices: () => callRenderer<RemoteAgentChoice[]>(IPC.Remote_GetAgentsRequest, {}),
     createTaskFromMobile: (req: MobileTaskRequest) =>
@@ -1872,6 +1975,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     'review',
   ]);
   const VALID_CI: ReadonlySet<RemoteCiStatus> = new Set(['pending', 'failure', 'success']);
+  const VALID_LANE: ReadonlySet<RemoteBoardLane> = new Set(REMOTE_BOARD_LANES);
 
   // Renderer pushes the full per-task attention snapshot whenever it changes.
   // We replace the cache and re-broadcast the agent list so connected phones
@@ -1887,11 +1991,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
           {
             projectName?: unknown;
             projectColor?: unknown;
+            projectIcon?: unknown;
             agentName?: unknown;
             lastLine?: unknown;
             taskName?: unknown;
             collapsed?: unknown;
             ci?: unknown;
+            lane?: unknown;
+            pr?: unknown;
           }
         >;
       },
@@ -1913,11 +2020,17 @@ export function registerAllHandlers(win: BrowserWindow): void {
               typeof context.projectName === 'string' ? context.projectName.slice(0, 200) : '',
             projectColor:
               typeof context.projectColor === 'string' ? context.projectColor.slice(0, 200) : '',
+            projectIcon:
+              typeof context.projectIcon === 'string' ? context.projectIcon.slice(0, 64) : '',
             agentName: typeof context.agentName === 'string' ? context.agentName.slice(0, 200) : '',
             lastLine: typeof context.lastLine === 'string' ? context.lastLine.slice(0, 300) : '',
             ci: VALID_CI.has(context.ci as RemoteCiStatus)
               ? (context.ci as RemoteCiStatus)
               : undefined,
+            lane: VALID_LANE.has(context.lane as RemoteBoardLane)
+              ? (context.lane as RemoteBoardLane)
+              : undefined,
+            pr: sanitizeRemotePr(context.pr),
           });
         }
       }
@@ -2200,11 +2313,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
       // Fail fast on malformed .mcp.json BEFORE any coordinator state mutations.
       // Only the read/parse happens here; the merge step (which needs mcpConfig) runs later.
       const mcpJsonDir = selectMcpJsonDir(args.worktreePath, args.projectRoot);
+      const mcpJsonFile = selectMcpJsonFile(args.agentCommand);
       let worktreeMcpPath: string | undefined;
       let mcpFileExistedBefore = false;
       let existingMcpContent: Record<string, unknown> = {};
       if (mcpJsonDir) {
-        worktreeMcpPath = path.join(mcpJsonDir, '.mcp.json');
+        // Before the read: a linked `.agents` would put the token in another checkout.
+        if (mcpJsonFile === ANTIGRAVITY_MCP_CONFIG) prepareAntigravityConfigDir(mcpJsonDir);
+        worktreeMcpPath = path.join(mcpJsonDir, mcpJsonFile);
         mcpFileExistedBefore = fs.existsSync(worktreeMcpPath);
         if (mcpFileExistedBefore) {
           let rawContent: string;
@@ -2349,14 +2465,15 @@ export function registerAllHandlers(win: BrowserWindow): void {
         );
 
         // Append to .git/info/exclude (local-only gitignore, not committed)
-        appendGitInfoExcludeBlock(
-          mcpJsonDir,
-          '.mcp.json',
-          '# Parallel Code MCP config (contains ephemeral token)\n.mcp.json\n',
-          (err) => console.warn('[MCP] Could not git-exclude .mcp.json:', err),
-        );
+        if (mcpJsonFile === '.mcp.json')
+          appendGitInfoExcludeBlock(
+            mcpJsonDir,
+            '.mcp.json',
+            '# Parallel Code MCP config (contains ephemeral token)\n.mcp.json\n',
+            (err) => console.warn('[MCP] Could not git-exclude .mcp.json:', err),
+          );
 
-        console.warn('[MCP] .mcp.json written to:', worktreeMcpPath);
+        console.warn('[MCP] MCP config written to:', worktreeMcpPath);
 
         const staleWarning = detectStaleDockerMCPUrl(serverUrl, args.dockerContainerName);
         if (staleWarning) {

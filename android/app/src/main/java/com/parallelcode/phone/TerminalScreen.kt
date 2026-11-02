@@ -7,6 +7,9 @@ import java.nio.charset.CodingErrorAction
 /** A run of characters sharing one [CellStyle]-encoded style. */
 data class StyledSpan(val text: String, val style: Long)
 
+/** A row scrolled into history: its style runs, whether it continues the row above, and its width. */
+private class PastLine(val spans: List<StyledSpan>, val wrapped: Boolean, val width: Int)
+
 /**
  * VT100 screen for an agent's PTY stream. Agent TUIs redraw with cursor movement, so stripping
  * escape codes would garble them; this keeps a character grid and applies the movement, erase,
@@ -33,6 +36,9 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
         val chars = CharArray(cols) { ' ' }
         val styles = LongArray(cols) { style }
 
+        /** Continues the row above: autowrap filled that one, no line break ended it. */
+        var wrapped = false
+
         fun fill(from: Int, to: Int, style: Long) {
             chars.fill(' ', from, to)
             styles.fill(style, from, to)
@@ -43,7 +49,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
     private var savedMainGrid: Array<Line>? = null
     // Lines that scrolled off never change again, so they are kept already split into style runs:
     // rendering then only has to split the screen's rows.
-    private val history = LineHistory<List<StyledSpan>>(MAX_HISTORY)
+    private val history = LineHistory<PastLine>(MAX_HISTORY)
     private var row = 0
     private var col = 0
     private var wrapPending = false
@@ -98,7 +104,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
         val shift = (row + 1 - newRows).coerceAtLeast(0)
         if (savedMainGrid == null) {
             for (r in 0 until shift) {
-                history.add(spans(grid[r]))
+                history.add(pastLine(grid[r]))
             }
         }
         fun refit(old: Array<Line>, from: Int) = Array(newRows) { r ->
@@ -107,6 +113,8 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
                 val n = minOf(newCols, src.chars.size)
                 src.chars.copyInto(line.chars, 0, 0, n)
                 src.styles.copyInto(line.styles, 0, 0, n)
+                // Without reflow, a row of another width no longer continues the one above.
+                line.wrapped = src.wrapped && src.chars.size == newCols
             }
             line
         }
@@ -143,7 +151,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
         val past = if (alternateScreen) emptyList() else history.snapshot()
         val screen = grid.map(::spans)
         var count = past.size + screen.size
-        fun line(i: Int) = if (i < past.size) past[i] else screen[i - past.size]
+        fun line(i: Int) = if (i < past.size) past[i].spans else screen[i - past.size]
         while (count > 0 && line(count - 1).isEmpty()) count--
         val total = count
         return object : AbstractList<List<StyledSpan>>() {
@@ -155,6 +163,28 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
             }
         }
     }
+
+    /**
+     * The newest [maxLines] lines, at most [maxChars] characters, of history then screen as plain
+     * text to copy from, with rows the terminal wrapped joined back into their line, so a long URL
+     * or command copies whole.
+     */
+    fun copyText(maxLines: Int, maxChars: Int): String {
+        val rows = (if (alternateScreen) emptyList() else history.snapshot()) + grid.map(::pastLine)
+        val lines = ArrayList<StringBuilder>()
+        rows.forEachIndexed { i, row ->
+            val text = row.spans.joinToString("") { it.text }
+            // A row the next one continues keeps its trailing blanks: they sit between two words.
+            val cell = if (rows.getOrNull(i + 1)?.wrapped == true) text.padEnd(row.width) else text.trimEnd()
+            if (row.wrapped && lines.isNotEmpty()) lines.last().append(cell) else lines.add(StringBuilder(cell))
+        }
+        while (lines.lastOrNull()?.isBlank() == true) lines.removeAt(lines.lastIndex)
+        val text = lines.takeLast(maxLines).joinToString("\n").trimEnd().takeLast(maxChars)
+        // The cut may fall inside a surrogate pair; its lone half would show as a broken glyph.
+        return if (text.firstOrNull()?.isLowSurrogate() == true) text.drop(1) else text
+    }
+
+    private fun pastLine(line: Line) = PastLine(spans(line), line.wrapped, line.chars.size)
 
     private fun spans(line: Line): List<StyledSpan> {
         // Trailing blanks only matter when they are painted with a background color.
@@ -240,6 +270,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
         if (wrapPending) {
             carriageReturn()
             lineFeed()
+            grid[row].wrapped = true
         }
         grid[row].chars[col] = c
         grid[row].styles[col] = style
@@ -254,6 +285,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
     private fun lineFeed() {
         wrapPending = false
         if (row == scrollBottom) scrollUp(1) else if (row < rows - 1) row++
+        grid[row].wrapped = false
     }
 
     private fun reverseIndex() {
@@ -265,7 +297,7 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
         repeat(n.coerceAtMost(scrollBottom - scrollTop + 1)) {
             // Lines scrolling off the top row move into history so agent TUIs with pinned status bars can be scrolled.
             if (scrollTop == 0 && savedMainGrid == null) {
-                history.add(spans(grid[0]))
+                history.add(pastLine(grid[0]))
             }
             for (r in scrollTop until scrollBottom) grid[r] = grid[r + 1]
             grid[scrollBottom] = blankLine()
@@ -401,6 +433,9 @@ class TerminalScreen(cols: Int = 80, rows: Int = 24) {
             1 -> grid[row].fill(0, col + 1, erase)
             2 -> grid[row].fill(0, cols, erase)
         }
+        // A row erased whole no longer holds the rest of the line above; as in xterm.js, erasing
+        // only up to the cursor leaves the rest of the row continuing it.
+        if (mode == 2 || (mode == 0 && col == 0)) grid[row].wrapped = false
     }
 
     private fun insertLines(n: Int) {

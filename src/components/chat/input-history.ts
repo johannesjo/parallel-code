@@ -19,6 +19,8 @@ interface Browsing {
   shown: string;
   /** A send grows the list, which would leave `index` pointing at the wrong entry. */
   count: number;
+  /** Where we put the caret; once the user moves it, the edge step applies again. */
+  caret: number;
 }
 
 /** Measure soft wraps using the same text layout as the textarea. */
@@ -65,7 +67,8 @@ function onVisualEdge(area: HTMLTextAreaElement, up: boolean): boolean {
 /**
  * Shell-style recall of earlier messages with ArrowUp / ArrowDown. Arrows only
  * recall while the caret is on the first / last line, so multi-line drafts
- * still move the caret normally.
+ * still move the caret normally; on that line the first press moves the caret
+ * to the start / end of the text.
  */
 export function createInputHistory(options: InputHistoryOptions): InputHistory {
   let browsing: Browsing | undefined;
@@ -79,6 +82,7 @@ export function createInputHistory(options: InputHistoryOptions): InputHistory {
         stash: options.draft(),
         shown: '',
         count: entries.length,
+        caret: 0,
       };
     }
     const next = browsing.index + direction;
@@ -110,7 +114,18 @@ export function createInputHistory(options: InputHistoryOptions): InputHistory {
     const onEdge = up
       ? !area.value.slice(0, caret).includes('\n')
       : !area.value.slice(caret).includes('\n');
-    if (!onEdge || (up && !entries.length) || !onVisualEdge(area, up)) return false;
+    if (!onEdge || !onVisualEdge(area, up)) return false;
+    // Reach the start / end of the text before leaving it. A caret we placed
+    // while browsing keeps stepping, so changing direction needs no extra press.
+    const edge = up ? 0 : area.value.length;
+    if (caret !== edge && caret !== browsing?.caret) {
+      event.preventDefault();
+      event.stopPropagation();
+      area.setSelectionRange(edge, edge);
+      if (browsing) browsing.caret = edge;
+      return true;
+    }
+    if (up && !entries.length) return false;
     const text = step(up ? -1 : 1, entries);
     if (text === undefined) return false;
     event.preventDefault();
@@ -118,6 +133,7 @@ export function createInputHistory(options: InputHistoryOptions): InputHistory {
     // Up leaves the caret on the first line so the next Up keeps recalling,
     // even after a multi-line message; the textarea takes its new value first.
     const position = up ? 0 : text.length;
+    if (browsing) browsing.caret = position;
     queueMicrotask(() => area.setSelectionRange(position, position));
     return true;
   }

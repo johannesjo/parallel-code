@@ -2,6 +2,7 @@ import type { AgentDef } from '../ipc/types';
 import type { GitIsolationMode } from '../store/types';
 import { getTaskDiffBaseBranch } from './load-task-diff';
 import { isEffortArg, isModelArg } from './agent-args';
+import { cleanPasteText } from './paste-text';
 
 const REVIEW_ASK =
   'Report defects with file locations, impact and evidence; list optional suggestions separately. ' +
@@ -35,20 +36,12 @@ export function secondOpinionText(input: {
 }
 
 /**
- * Strip controls that could end the bracketed paste early and run the rest as
- * keystrokes, and invisible characters that would hide text from the reader.
- * Peer message markers, which the queue rejects so a body cannot fake one, get
- * a visible dot ("peer·message").
+ * Strip what a paste must not carry (see cleanPasteText). Peer message markers,
+ * which the queue rejects so a body cannot fake one, get a visible dot
+ * ("peer·message").
  */
 export function cleanHandoffText(text: string): string {
-  return text
-    .replace(/\r\n?/g, '\n')
-    .replace(
-      // eslint-disable-next-line no-control-regex
-      /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g,
-      '',
-    )
-    .replace(/((?:begin|end)[\s_-]*peer)[\s_-]*(message)/gi, '$1·$2');
+  return cleanPasteText(text).replace(/((?:begin|end)[\s_-]*peer)[\s_-]*(message)/gi, '$1·$2');
 }
 
 function effortArgs(command: string | undefined, effort: string): string[] {

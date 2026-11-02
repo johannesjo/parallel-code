@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
+import { parseArgs } from './server.js';
 import {
   canConfigureCanvasMcp,
   prepareCanvasMcpArgs,
@@ -66,7 +67,8 @@ it('configures a task-scoped MCP without changing project config and restricts c
     'task-1',
     '--canvas-only',
   ]);
-  expect(fs.statSync(args[1]).mode & 0o777).toBe(0o600);
+  // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+  if (process.platform !== 'win32') expect(fs.statSync(args[1]).mode & 0o777).toBe(0o600);
   expect(fs.readFileSync(path.join(directory, '.mcp.json'), 'utf8')).toBe('{"existing":true}');
   expect(prepareCanvasMcpArgs({ ...options(), command: 'codex' })[0]).toBe('--config');
   expect(prepareCanvasMcpArgs({ ...options(), command: 'copilot' })[0]).toBe(
@@ -154,4 +156,12 @@ it('launches ordinary session tools without the legacy canvas-only restriction',
     '--peer-tools',
   ]);
   expect(config.mcpServers['parallel-code'].env.PARALLEL_CODE_MCP_TOKEN).toBe('test-token');
+});
+
+it('launches a page agent with arguments the MCP server reads back as the page profile', () => {
+  const sessionCapabilities = { profile: 'page' as const, canCreate: true, peers: false };
+  const args = prepareCanvasMcpArgs({ ...options(), sessionCapabilities });
+  const config = JSON.parse(fs.readFileSync(args[1], 'utf8'));
+  const [, ...serverArgs] = config.mcpServers['parallel-code'].args as string[];
+  expect(parseArgs(serverArgs)).toMatchObject({ canvasOnly: false, sessionCapabilities });
 });

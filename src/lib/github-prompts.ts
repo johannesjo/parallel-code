@@ -18,6 +18,8 @@ const MAX_COMMENT_CHARS = 4000;
 interface PrRefLike {
   number: number;
   url: string;
+  /** Nested repository folder the PR belongs to, when it isn't the task's own repo. */
+  repo?: string;
 }
 
 export function buildIssuePrompt(issue: GitHubIssueDetails): string {
@@ -51,6 +53,9 @@ export function buildFailedChecksPrompt(pr: PrRefLike, checks: PrFailedCheck[]):
   );
   return [
     `CI failed on pull request #${pr.number} (${pr.url}).`,
+    ...(pr.repo
+      ? [`The pull request is in the nested repository \`${pr.repo}/\`; fix and commit there.`]
+      : []),
     'Find the root cause of each failing check, fix it, and run the relevant checks locally before committing.',
     '',
     UNTRUSTED_NOTE,

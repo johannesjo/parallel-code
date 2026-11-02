@@ -19,8 +19,9 @@ export function FocusModeTaskIndicators() {
       name: openItemName(id),
     }));
 
+  // The board's cards carry the same glyphs, so the pills would only repeat them.
   return (
-    <Show when={items().length > 0}>
+    <Show when={items().length > 0 && !store.boardView}>
       <div class="focus-mode-task-indicators">
         <For each={items()}>
           {(item) => {

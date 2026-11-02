@@ -1,30 +1,24 @@
 import { expectDefined } from '../store/test-helpers';
-import {
-  For,
-  Show,
-  createEffect,
-  createSignal,
-  onCleanup,
-  type ComponentProps,
-  type JSX,
-} from 'solid-js';
+import { For, Show, createEffect, createSignal, onCleanup, type ComponentProps } from 'solid-js';
 import { render } from 'solid-js/web';
 import { createStore } from 'solid-js/store';
-import { afterEach, beforeAll, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, expect, it, onTestFinished, vi } from 'vitest';
 import { TaskPanel } from './TaskPanel';
 import { IPC } from '../../electron/ipc/channels';
-import type { CommitInfo } from '../ipc/types';
+import type { ChangedFile, CommitInfo } from '../ipc/types';
 import { invoke } from '../lib/ipc';
 import {
   store,
   uncollapseTask,
   openCanvasReasoning,
   openCanvasMindMap,
+  openCanvasDocument,
   activateCanvasTab,
   showNotification,
   toggleFocusMode,
   setTaskFocusedPanel,
   setTaskBriefs,
+  setActiveTask,
 } from '../store/store';
 import { GIST_LABEL } from '../lib/understanding-tour';
 import type { Task } from '../store/types';
@@ -43,6 +37,8 @@ const fileInventory = vi.hoisted(() => ({
 }));
 
 const parentNavigation = vi.hoisted(() => ({ setCollapsed: (_value: boolean) => {} }));
+const pending = vi.hoisted(() => ({ set: (_action: unknown) => {} }));
+const projectStub = vi.hoisted(() => ({ value: undefined as unknown }));
 const viewport = vi.hoisted(() => ({ set: (_taskId: string, _visibility: string) => {} }));
 
 const channels = vi.hoisted(
@@ -58,6 +54,7 @@ vi.mock('../store/store', () => {
     activeTaskId: 'other-task',
     tasks: { parent: { id: 'parent', name: 'Parent task', collapsed: false } },
     focusMode: false,
+    taskSplitMode: {} as Record<string, unknown>,
     themePreset: 'obsidian',
     showPlans: true,
     focusedPanel: { task: 'prompt' },
@@ -67,18 +64,21 @@ vi.mock('../store/store', () => {
     askCodeProvider: 'minimax',
     agentEnvFiles: {},
     taskBriefs: true,
+    pendingAction: null as unknown,
   });
+  pending.set = (action: unknown) => setStore('pendingAction', action);
   parentNavigation.setCollapsed = (value: boolean) =>
     setStore('tasks', 'parent', 'collapsed', value);
   viewport.set = (taskId: string, visibility: string) =>
     setStore('taskViewportVisibility', taskId, visibility);
   return {
     store,
-    getProject: () => undefined,
+    getProject: () => projectStub.value,
     isPanelFocused: () => false,
     openCanvasReasoning: vi.fn(),
     openCanvasMindMap: vi.fn(),
     openCanvasBrowser: vi.fn(),
+    openCanvasDocument: vi.fn(),
     showNotification: vi.fn(),
     registerAction: vi.fn(),
     unregisterAction: vi.fn(),
@@ -98,6 +98,7 @@ vi.mock('../store/store', () => {
     setActiveTask: (id: string) => setStore('activeTaskId', id),
     activateTaskFromPointer: (id: string) => setStore('activeTaskId', id),
     uncollapseTask: vi.fn(),
+    clearPendingAction: () => setStore('pendingAction', null),
     toggleFocusMode: (on?: boolean) => setStore('focusMode', on ?? !store.focusMode),
     setTaskBriefs: (on: boolean) => setStore('taskBriefs', on),
   };
@@ -114,9 +115,12 @@ vi.mock('../lib/ipc', () => ({
   },
 }));
 vi.mock('./TaskAITerminal', () => ({
-  TaskAITerminal: (props: { onReview?: (path?: string) => void; brief?: JSX.Element }) => (
+  TaskAITerminal: (props: {
+    onReview?: (path?: string) => void;
+    onOpenInSidePanel?: (path: string) => void;
+  }) => (
     <div class="test-terminal">
-      {props.brief}
+      <button class="test-side-panel" onClick={() => props.onOpenInSidePanel?.('docs/plan.md')} />
       Scrollback
       <button
         class="test-chat-review"
@@ -139,6 +143,7 @@ vi.mock('./CloseTaskDialog', () => ({ CloseTaskDialog: () => null }));
 vi.mock('./FinishDialog', () => ({
   FinishDialog: (props: ComponentProps<typeof FinishDialog>) => (
     <Show when={props.open}>
+      <output class="test-finish-cleanup">{String(props.initialCleanup)}</output>
       <button
         class="test-evidence-review"
         onClick={() => {
@@ -192,7 +197,8 @@ vi.mock('./TaskTitleBar', () => ({
 vi.mock('./TaskBranchInfoBar', () => ({ TaskBranchInfoBar: () => null }));
 vi.mock('./TaskBranchAdoptionBanner', () => ({ TaskBranchAdoptionBanner: () => null }));
 vi.mock('./TaskSuperProductivityBanner', () => ({ TaskSuperProductivityBanner: () => null }));
-vi.mock('./TaskNotesBody', () => ({
+vi.mock('./TaskNotesBody', async (importOriginal) => ({
+  notesMinHeight: (await importOriginal<typeof import('./TaskNotesBody')>()).notesMinHeight,
   TaskNotesBody: (props: ComponentProps<typeof TaskNotesBody>) => (
     <div>
       <textarea class="test-notes" />
@@ -224,13 +230,23 @@ vi.mock('./UnderstandingTourDialog', () => ({
 }));
 vi.mock('./TaskChangedFilesSection', () => ({
   TaskChangedFilesSection: (props: {
-    onFileCountChange?: (count: number) => void;
+    onFilesChange?: (files: ChangedFile[]) => void;
     commitList: CommitInfo[];
     isActive: boolean;
   }) => {
     fileInventory.mounts++;
     createEffect(() => {
-      fileInventory.report = props.onFileCountChange ?? (() => {});
+      const report = props.onFilesChange;
+      fileInventory.report = (count) =>
+        report?.(
+          Array.from({ length: count }, (_, i) => ({
+            path: `file-${i}.ts`,
+            lines_added: 1,
+            lines_removed: 0,
+            status: 'M',
+            committed: true,
+          })),
+        );
     });
     createEffect(() => {
       const active = props.isActive;
@@ -246,7 +262,11 @@ vi.mock('./TaskChangedFilesSection', () => ({
     );
   },
 }));
-vi.mock('./TaskShellSection', () => ({ TaskShellSection: () => null }));
+vi.mock('./TaskShellSection', async (importOriginal) => ({
+  shellSectionMinHeight: (await importOriginal<typeof import('./TaskShellSection')>())
+    .shellSectionMinHeight,
+  TaskShellSection: () => <div class="test-shells" />,
+}));
 vi.mock('./CanvasFilePicker', () => ({ CanvasFilePicker: () => null }));
 vi.mock('./TaskCanvasDocument', () => ({
   TaskCanvasDocument: () => <textarea class="test-canvas" />,
@@ -280,7 +300,39 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it('hides the brief bar, and with it Rate confidence, while briefs are off', () => {
+it('opens a terminal Markdown link in the side panel and moves focus there', async () => {
+  const task: Task = {
+    id: 'task',
+    name: 'Task',
+    projectId: 'project',
+    agentIds: ['agent'],
+    shellAgentIds: [],
+    notes: '',
+    gitIsolation: 'none',
+    branchName: '',
+    worktreePath: '/tmp/task',
+    lastPrompt: '',
+  };
+  const container = document.createElement('div');
+  document.body.append(container);
+  dispose = render(() => <TaskPanel task={task} isActive />, container);
+  vi.mocked(setTaskFocusedPanel).mockClear();
+  container.querySelector<HTMLButtonElement>('.test-side-panel')?.click();
+  expect(openCanvasDocument).toHaveBeenCalledWith('task', 'docs/plan.md');
+  // Queued so the clicked agent pane, which selects itself as the click bubbles, does not win.
+  expect(setTaskFocusedPanel).not.toHaveBeenCalledWith('task', 'canvas');
+  await Promise.resolve();
+  expect(setTaskFocusedPanel).toHaveBeenLastCalledWith('task', 'canvas');
+
+  // A task switch before the microtask leaves the newly active task's focus alone.
+  vi.mocked(setTaskFocusedPanel).mockClear();
+  container.querySelector<HTMLButtonElement>('.test-side-panel')?.click();
+  setActiveTask('other-task');
+  await Promise.resolve();
+  expect(setTaskFocusedPanel).not.toHaveBeenCalledWith('task', 'canvas');
+});
+
+it('hides the brief line while briefs are off', () => {
   const task: Task = {
     id: 'task',
     name: 'Task',
@@ -372,7 +424,7 @@ it.each(['reasoning', 'mindmap'] as const)(
       projectId: 'project',
       agentIds: ['agent'],
       shellAgentIds: [],
-      // Saved notes keep the support panel open; empty ones would collapse it.
+      // Exercise the pane with an existing note.
       notes: 'Saved notes',
       gitIsolation: 'none',
       branchName: '',
@@ -639,7 +691,7 @@ function mountEmptyTask() {
   return { container, setTask };
 }
 
-it('sizes the focus support column to content until a shell opens, preserving its panels', () => {
+it('gives the focus support column height to changed files until a shell opens, preserving its panels', () => {
   const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
   try {
     toggleFocusMode(true);
@@ -648,19 +700,26 @@ it('sizes the focus support column to content until a shell opens, preserving it
     const notes = expectDefined(container.querySelector('.test-notes'));
     const terminal = container.querySelector('.test-terminal');
     const notesCell = expectDefined(notes.closest<HTMLElement>('.rp-cell'));
+    const filesCell = expectDefined(
+      container.querySelector('.test-files')?.closest<HTMLElement>('.rp-cell'),
+    );
     const column = expectDefined(notesCell.parentElement);
 
-    expect(column.style.height).toBe('auto');
+    expect(column.style.height).toBe('100%');
     // Oversized pins must scroll inside the column instead of being clipped.
     expect(column.style.maxHeight).toBe('100%');
     expect(column.style.overflow).toBe('auto');
-    expect(notesCell.style.minHeight).toBe('100px');
+    // Focus-mode notes are 240px tall; a shorter cell would clip their bottom edge.
+    expect(notesCell.style.minHeight).toBe('240px');
+    // Without shells the changed files fill the column instead of stopping at their cap.
+    expect(filesCell.style.flex).toBe('1 1 0px');
+    expect(filesCell.style.maxHeight).toBe('');
     setTask('shellAgentIds', ['shell']);
-    expect(column.style.height).toBe('100%');
+    expect(filesCell.style.flex).toBe('0 0 auto');
     expect(container.querySelector('.test-notes')).toBe(notes);
     expect(container.querySelector('.test-terminal')).toBe(terminal);
     setTask('shellAgentIds', []);
-    expect(column.style.height).toBe('auto');
+    expect(filesCell.style.flex).toBe('1 1 0px');
   } finally {
     width.mockRestore();
   }
@@ -764,65 +823,63 @@ it('starts commit polling only once a tile stays scrolled into view', async () =
   viewport.set('task', 'visible');
 });
 
-it('collapses empty support panels without disposing file watching or terminal state', () => {
+it('keeps empty notes and files mounted as content arrives without replacing the terminal', () => {
   const mounts = fileInventory.mounts;
   const disposals = fileInventory.disposals;
-  const { container } = mountEmptyTask();
+  const { container, setTask } = mountEmptyTask();
   const terminal = expectDefined(container.querySelector('.test-terminal'));
   const prompt = expectDefined(container.querySelector<HTMLTextAreaElement>('.test-prompt'));
-  prompt.value = 'Unsent prompt';
-  const toggle = () =>
-    expectDefined(container.querySelector<HTMLButtonElement>('.task-support-toggle'));
-  expect(toggle().getAttribute('aria-expanded')).toBe('false');
-  expect(container.querySelector('.test-notes')).toBeNull();
-  expect(fileInventory.mounts).toBe(mounts + 1);
-  expect(fileInventory.disposals).toBe(disposals);
-  toggle().click();
   const notes = expectDefined(container.querySelector('.test-notes'));
-  expect(toggle().getAttribute('aria-expanded')).toBe('true');
-  toggle().click();
-  expect(container.querySelector('.test-notes')).toBeNull();
-  fileInventory.report(2);
-  expect(container.querySelector('.test-notes')).toBe(notes);
-  expect(container.querySelector('.test-files')).not.toBeNull();
-  expect(container.querySelector('.task-support-toggle')).toBeNull();
-  expect(container.querySelector('.test-terminal')).toBe(terminal);
-  expect(container.querySelector('.test-prompt')).toBe(prompt);
-  expect(prompt.value).toBe('Unsent prompt');
+  const files = expectDefined(container.querySelector('.test-files'));
+  prompt.value = 'Unsent prompt';
+  for (const text of ['Keep the wording consistent.', '']) {
+    setTask('notes', text);
+    fileInventory.report(text ? 2 : 0);
+    expect(container.querySelector('.test-notes')).toBe(notes);
+    expect(container.querySelector('.test-files')).toBe(files);
+    expect(container.querySelector('.test-terminal')).toBe(terminal);
+    expect(container.querySelector('.test-prompt')).toBe(prompt);
+    expect(prompt.value).toBe('Unsent prompt');
+  }
   expect(fileInventory.mounts).toBe(mounts + 1);
   expect(fileInventory.disposals).toBe(disposals);
 });
 
 it.each(['notes', 'changed-files'])(
-  'reveals compact support when keyboard navigation targets %s',
+  'keeps support panes mounted when keyboard navigation targets %s',
   (panel) => {
     const { container } = mountEmptyTask();
-    expect(container.querySelector('.test-notes')).toBeNull();
+    const notes = expectDefined(container.querySelector('.test-notes'));
+    const files = expectDefined(container.querySelector('.test-files'));
     setTaskFocusedPanel('task', panel);
-    expect(container.querySelector('.test-notes')).not.toBeNull();
-    expect(container.querySelector('.task-support-toggle')?.getAttribute('aria-expanded')).toBe(
-      'true',
-    );
+    expect(container.querySelector('.test-notes')).toBe(notes);
+    expect(container.querySelector('.test-files')).toBe(files);
   },
 );
 
-it('keeps plans and shells visible even with no notes or files', () => {
+it('never sizes the notes row below the notes pane, so its bottom edge stays visible', () => {
   const { container, setTask } = mountEmptyTask();
-  const isCollapsed = () =>
-    container.querySelector('.task-support-toggle')?.getAttribute('aria-expanded') === 'false';
-  expect(isCollapsed()).toBe(true);
-  setTask('planContent', '# Plan');
-  expect(isCollapsed()).toBe(false);
-  expect(container.querySelector('.test-notes')).not.toBeNull();
-  setTask('planContent', undefined);
-  expect(isCollapsed()).toBe(true);
-  setTask('shellAgentIds', ['shell']);
-  expect(isCollapsed()).toBe(false);
-  setTask('shellAgentIds', []);
-  expect(isCollapsed()).toBe(true);
+  const notesRow = () =>
+    expectDefined(
+      container.querySelector<HTMLElement>('.test-notes')?.closest('.rp-cell'),
+    ).parentElement?.closest<HTMLElement>('.rp-cell');
+  expect(notesRow()?.style.minHeight).toBe('100px');
+  const card = { label: 'KEY DECISION', title: 'One idea', body: 'Body text.' };
+  const payload = { subject: 'notes', gist: card, cards: [card], context: 'Context.' };
+  setTask('agentTour', { revision: 1, payload });
+  expect(notesRow()?.style.minHeight).toBe('131px');
 });
 
-it('keeps prompt focus when incoming files reopen the supporting column', async () => {
+it('never sizes the shell row below its open terminals, so their bottom edge stays visible', () => {
+  const { container, setTask } = mountEmptyTask();
+  const shellRow = () =>
+    container.querySelector<HTMLElement>('.test-shells')?.closest<HTMLElement>('.rp-cell');
+  expect(shellRow()?.style.minHeight).toBe('35px');
+  setTask('shellAgentIds', ['shell-1']);
+  expect(shellRow()?.style.minHeight).toBe('140px');
+});
+
+it('keeps prompt focus when files arrive in the supporting column', async () => {
   const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
   try {
     toggleFocusMode(true);
@@ -887,4 +944,32 @@ it.each([false, true])('labels parent navigation explicitly when collapsed=%s', 
   expect(store.activeTaskId).toBe('parent');
   if (collapsed) expect(uncollapseTask).toHaveBeenCalledWith('parent');
   else expect(uncollapseTask).not.toHaveBeenCalled();
+});
+
+it('keeps an open Finish as it is when Finish is asked for again', () => {
+  const task: Task = {
+    id: 'task',
+    name: 'Task',
+    projectId: 'project',
+    agentIds: ['agent'],
+    shellAgentIds: [],
+    notes: '',
+    gitIsolation: 'worktree',
+    branchName: 'task/x',
+    worktreePath: '/tmp/task',
+    lastPrompt: '',
+  };
+  projectStub.value = { id: 'project', deleteBranchOnClose: false };
+  onTestFinished(() => {
+    projectStub.value = undefined;
+  });
+  const container = document.createElement('div');
+  document.body.append(container);
+  dispose = render(() => <TaskPanel task={task} isActive />, container);
+  const cleanup = () => container.querySelector('.test-finish-cleanup')?.textContent;
+  pending.set({ type: 'finish', taskId: 'task', closeAfter: true });
+  expect(cleanup()).toBe('true');
+  // Such as "Open review" on a review notice: the dialog keeps what the user set in it.
+  pending.set({ type: 'finish', taskId: 'task' });
+  expect(cleanup()).toBe('true');
 });

@@ -1,4 +1,5 @@
 import { matchesTaskProjectFilter } from './task-project-filter';
+import { sortByProjectGroup } from './sidebar-order';
 import { produce } from 'solid-js/store';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
@@ -8,12 +9,21 @@ import { clearAgentActivity } from './taskStatus';
 import { triggerFocus, getTaskFocusedPanel } from './focused-panel';
 import type { Terminal } from './types';
 import { warn as logWarn } from '../lib/log';
-import { closeProjectPages } from './project-pages';
+import { prefersMotion } from '../lib/reducedMotion';
+import {
+  boardCoversWorkspace,
+  boardSidePanelOpen,
+  closeBoardSidePanel,
+  closeProjectPages,
+} from './project-pages';
 
 let terminalCounter = 0;
 let lastCreateTime = 0;
 
-const REMOVE_ANIMATION_MS = 300;
+// Matches the `.task-removing` and `.task-item-removing` animations in styles.css.
+const REMOVE_ANIMATION_MS = 160;
+// Under reduced motion nothing animates, so a closed task need not linger.
+const removeDelayMs = () => (prefersMotion() ? REMOVE_ANIMATION_MS : 0);
 
 export function createTerminal(): void {
   const now = Date.now();
@@ -50,13 +60,16 @@ export async function closeTerminal(terminalId: string): Promise<void> {
 
   // Set closing status synchronously to prevent concurrent close calls
   setStore('terminals', terminalId, 'closingStatus', 'closing');
+  // As for a closed task, the board's side panel goes at once: it was opened
+  // for this terminal and must not land on an unrelated neighbour.
+  if (boardSidePanelOpen() && store.activeTaskId === terminalId) closeBoardSidePanel();
 
   await invoke(IPC.KillAgent, { agentId: terminal.agentId }).catch((err) => {
     logWarn('terminals.close', 'KillAgent failed', { err });
   });
   clearAgentActivity(terminal.agentId);
 
-  const order = store.taskOrder.filter(matchesTaskProjectFilter);
+  const order = sortByProjectGroup(store.taskOrder.filter(matchesTaskProjectFilter));
   const idx = order.indexOf(terminalId);
 
   // Switch active panel to neighbor before animation
@@ -66,6 +79,8 @@ export async function closeTerminal(terminalId: string): Promise<void> {
     setStore('activeTaskId', neighbor);
     const neighborTask = neighbor ? store.tasks[neighbor] : null;
     setStore('activeAgentId', neighborTask ? effectiveAgentId(neighborTask) : null);
+    // The closed panel took the keyboard with it; the board's cards get it back.
+    if (boardCoversWorkspace()) triggerFocus('task-board');
   }
 
   // Phase 1: mark as removing so UI can animate
@@ -88,11 +103,12 @@ export async function closeTerminal(terminalId: string): Promise<void> {
     );
 
     const activeId = store.activeTaskId;
-    if (activeId) {
+    // Behind the board the neighbour's panel is hidden and must not take the keyboard.
+    if (activeId && !boardCoversWorkspace()) {
       const panel = getTaskFocusedPanel(activeId);
       requestAnimationFrame(() => triggerFocus(`${activeId}:${panel}`));
     }
-  }, REMOVE_ANIMATION_MS);
+  }, removeDelayMs());
 }
 
 export function updateTerminalName(terminalId: string, name: string): void {

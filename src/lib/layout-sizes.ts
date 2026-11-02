@@ -13,3 +13,6 @@ export const AGENT_PANE_MIN_WIDTH = 420;
 export const CANVAS_DEFAULT_WIDTH = 400;
 /** Narrowest a canvas column can be dragged. */
 export const CANVAS_MIN_WIDTH = 320;
+/** Fixed floor of the notes and changed-files row, empty or not, so content
+ *  arriving never resizes the terminal below; a divider drag still pins more. */
+export const SUPPORT_PANE_MIN_HEIGHT = 100;

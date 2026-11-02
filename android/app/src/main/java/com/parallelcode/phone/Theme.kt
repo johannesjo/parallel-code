@@ -217,6 +217,7 @@ fun ParallelCodeTheme(
         MaterialTheme(
             colorScheme = colorSchemeFor(palette),
             shapes = shapesFor(palette),
+            typography = typographyFor(palette),
             content = content,
         )
     }

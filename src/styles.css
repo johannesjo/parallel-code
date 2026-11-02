@@ -8,6 +8,12 @@
     'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
     monospace;
 
+  /* Motion timing; see the Motion section in AGENTS.md. Fast is direct
+     feedback (hover, press, focus); enter animates what appears. */
+  --motion-fast: 120ms;
+  --motion-enter: 180ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+
   --bg: radial-gradient(120% 120% at 20% 0%, #253848 0%, #151d26 55%, #101418 100%);
   --bg-elevated: #1c2630;
   --bg-input: #1a232e;
@@ -21,7 +27,7 @@
 
   --fg: #d7e4f0;
   --fg-muted: #9bb0c3;
-  --fg-subtle: #678197;
+  --fg-subtle: #7990a4;
 
   --accent: #2ec8ff;
   --accent-hover: #59d7ff;
@@ -47,17 +53,35 @@
   --task-container-bg: #151e28;
   --task-panel-bg: #1c2630;
 
+  /* A thin line with a soft inner glow marks the focused pane without the
+     weight of a 2px frame. Both are inset shadows, so the pane's own clip
+     never cuts them, and the small radius keeps the corners from reading as
+     a box drawn on top. Square looks override both. */
+  --pane-focus-ring:
+    inset 0 0 0 1.5px var(--border-focus),
+    inset 0 0 14px -6px color-mix(in srgb, var(--border-focus) 55%, transparent);
+  --pane-focus-radius: 4px;
+
   --shadow-soft: 0 14px 30px rgba(0, 0, 0, 0.28);
   --shadow-pop:
     0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent),
     0 14px 36px color-mix(in srgb, var(--accent) 16%, transparent);
 
-  /* Corner radius scale. Every rounded control picks one of these four so
+  /* Corner radius scale. Every rounded control picks one of these so
      badges, buttons, cards and panels read as one family. */
   --radius-xs: 4px; /* badges, chips, kbd, inline markers */
   --radius-sm: 6px; /* icon buttons, small controls, list rows */
   --radius-md: 8px; /* buttons, inputs, cards */
   --radius-lg: 12px; /* panels, columns, dialogs */
+  --radius-pill: 999px; /* fully rounded: pills, dots, toggles; not overridden by looks */
+
+  /* Stacking layers for anything that floats above the workspace. Pick a
+     layer; use calc(layer + 1) only to lift a menu over its own backdrop. */
+  --z-modal: 1000; /* dialogs and anchored popovers */
+  --z-popover: 1200; /* menus that can open from inside a dialog */
+  --z-floating: 1500; /* menus over fullscreen canvases and side spaces */
+  --z-overlay: 2000; /* full-window takeovers and guided hints */
+  --z-top: 3000; /* lightboxes over everything */
 }
 
 html,
@@ -67,14 +91,29 @@ body,
   height: 100%;
   margin: 0;
   overflow: hidden;
-  /* Painted before data-look is applied; matches the default Obsidian --bg
-     and the BrowserWindow backgroundColor in electron/main.ts. */
-  background: #171717;
+  /* Painted before data-look is applied; matches the default Parallel Code
+     --bg and the BrowserWindow backgroundColor in electron/main.ts. */
+  background: #080c10;
 }
 
 body {
   font-family: var(--font-ui);
   color: var(--fg);
+}
+
+/* Proportional digits make diff counts and timers jitter as they update. */
+:is(.info-bar, .changed-files-list-panel, .sidebar-footer) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Native-app feel: dragging or double-clicking sidebar rows must not select
+   their text. Fields stay selectable. */
+.sidebar-panel {
+  user-select: none;
+}
+
+.sidebar-panel :is(input, textarea, [contenteditable='true']) {
+  user-select: text;
 }
 
 body.font-smoothing {
@@ -111,6 +150,12 @@ body.font-smoothing {
   outline-offset: 2px;
 }
 
+/* Dialog.tsx focuses the panel itself on open so keys stop reaching the
+   terminal behind it; the panel is a container, not a control, so no ring. */
+.dialog-panel:focus {
+  outline: none;
+}
+
 /* Visually-hidden utility for accessible dialog titles
    (DiffViewerDialog uses this for its programmatic heading). Clip pattern
    keeps the node in the accessibility tree, unlike display:none. */
@@ -126,16 +171,17 @@ body.font-smoothing {
   border: 0;
 }
 
-/* Full-width task titles; status and grouped actions share the second row.
-   The two rows fit the existing 68px header used by panel sizing. */
+/* One row: status icon, title, grouped actions. Status text, badges and the
+   branch share the branch bar below, so the header is two rows in all. */
 .task-title-bar {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   height: 100%;
-  grid-template-rows: 26px 28px;
-  padding: 6px 16px;
-  gap: 2px 8px;
+  grid-template-rows: 30px;
+  padding: 4px 8px 4px 16px;
+  gap: 8px;
   font-size: 16px;
   font-weight: 600;
   user-select: none;
@@ -144,20 +190,53 @@ body.font-smoothing {
 }
 
 .task-title-bar > .editable-text {
-  grid-column: 1 / -1;
+  grid-column: 2;
   font-size: inherit;
   letter-spacing: -0.025em;
 }
 
+/* Overlaid rather than a grid column, so columns you are not working in show
+   the whole title. They appear on the active column, on hovering anywhere in
+   the task column (not only its title bar) and on keyboard
+   focus; nothing moves, the title's end fades out beneath them instead. */
 .task-title-actions {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 1px 2px;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--bg-input) 65%, transparent);
-  grid-column: 2;
-  grid-row: 2;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+/* Transparent rather than hidden: Tab still reaches the buttons, and focusing
+   one reveals the group through :focus-within. */
+.task-column:not(:hover)
+  .task-title-bar:not([data-active='true']):not([data-actions-pinned='true']):not(
+    :focus-within
+  ):not(:has([aria-expanded='true']))
+  .task-title-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.task-title-bar:is(
+    [data-active='true'],
+    [data-actions-pinned='true'],
+    .task-column:hover *,
+    :focus-within,
+    :has([aria-expanded='true'])
+  )
+  > .editable-text {
+  mask-image: linear-gradient(
+    to left,
+    transparent calc(var(--title-actions-width, 0px) + 8px),
+    #000 calc(var(--title-actions-width, 0px) + 32px)
+  );
 }
 
 .task-action-group {
@@ -177,7 +256,7 @@ body.font-smoothing {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xs);
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--fg);
   font: inherit;
   font-size: 12px;
   font-weight: 500;
@@ -191,47 +270,85 @@ body.font-smoothing {
   color: var(--fg);
 }
 
+.task-finish-reports {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+  color: var(--fg-subtle);
+}
+
+/* Faded rather than hidden: the report exists, but describes older code. */
+.task-finish-reports > .task-finish-report-outdated {
+  opacity: 0.45;
+}
+
+/* Glyph-sized, so a running review or capture reads as background work, not as Finish loading. */
+.task-finish-reports > .task-finish-generating {
+  width: 9px;
+  height: 9px;
+  border-width: 1.5px;
+}
+
 .task-finish-btn[data-state='pushed'] {
   color: var(--success);
-}
-
-.task-title-details {
-  grid-column: 1;
-  font-weight: 400;
-  grid-row: 2;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  font-size: 11px;
-  color: var(--fg-muted);
-}
-
-.task-title-details > * {
-  flex-shrink: 0;
 }
 
 .task-title-status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  white-space: nowrap;
 }
 
-/* The lane centres glyphs for sidebar columns; here the glyph's left edge has
-   to meet the title's, and the fixed lane width still keeps the label steady. */
+/* The lane centres glyphs for sidebar columns; here the glyph's left edge
+   lines up with the branch bar, and the fixed lane keeps every title in place. */
 .task-title-status > .status-glyph {
   justify-content: flex-start;
 }
 
-.task-status-explanation {
-  display: none;
+/* Names the header's status icon on hover. Overlaid, so nothing moves. */
+.task-status-hint {
+  position: fixed;
+  z-index: var(--z-overlay);
+  padding: 4px 8px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
-/* Reads as the status text it extends; the underline on hover shows it opens Finish. */
+/* Status text and badges in the branch bar: attention items lead and hold
+   their width; routine ones close the row and give way first. */
+.task-header-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  font-family: var(--font-ui);
+  font-size: 11px;
+}
+
+.task-header-badges:not(:empty) {
+  margin-right: 8px;
+}
+
+.task-header-badges--routine {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.task-header-badges--routine:not(:empty) {
+  margin: 0 0 0 8px;
+}
+
+/* Reads as the status text it extends; the pointer cursor shows it opens Finish. */
 .task-check-signal {
   padding: 0;
   border: 0;
@@ -241,7 +358,13 @@ body.font-smoothing {
   cursor: pointer;
 }
 
-.task-check-signal:hover {
+/* A neutral badge that acts; only hover reveals it is clickable. */
+.task-badge-action {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.task-badge-action:hover {
   text-decoration: underline;
 }
 
@@ -258,18 +381,6 @@ body.font-smoothing {
 
 .task-title-bar .task-title-actions .icon-btn:not(:hover) {
   border-color: transparent !important;
-}
-
-/* Quiet the icon controls in columns you are not working in; pressed toggles
-   stay full strength because they show state. */
-.task-title-bar .task-title-actions .icon-btn {
-  transition: opacity 0.12s ease;
-}
-
-.task-title-bar:not([data-active='true']):not(:hover):not(:focus-within)
-  .task-title-actions
-  .icon-btn:not([aria-pressed='true']) {
-  opacity: 0.45;
 }
 
 .task-title-bar .task-title-actions .icon-btn[aria-pressed='true'] {
@@ -438,29 +549,49 @@ body.font-smoothing {
   flex: 0 0 auto;
 }
 
-/* Neutral like Finish: merging is routine, so only hover adds emphasis. */
+/* Neutral like the board's chips: a faint fill marks a button in a row of text,
+   but merging is routine, so only hover adds emphasis. */
 .task-pr-merge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
+  box-sizing: border-box;
+  height: 18px;
   margin-right: 8px;
   padding: 0 6px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid transparent;
   border-radius: var(--radius-xs);
-  background: transparent;
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
   color: var(--fg-muted);
   font: inherit;
   font-size: 11px;
   font-weight: 600;
+  line-height: 1;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .task-pr-merge:hover {
-  background: var(--bg-hover);
-  border-color: var(--border);
+  background: color-mix(in srgb, var(--fg) 11%, transparent);
   color: var(--fg);
+}
+
+/* A pressed toggle may show its state in accent, as on the board's chip; the
+   label stays put and the border is always there, so the bar does not shift. */
+.task-pr-babysit[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+
+.task-pr-babysit[aria-pressed='true']:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.task-pr-babysit:disabled {
+  cursor: progress;
+  opacity: 0.7;
 }
 
 .task-pr-label,
@@ -484,8 +615,7 @@ body.font-smoothing {
 
 .task-branch-project-label,
 .task-branch-source-label,
-.task-branch-name-label,
-.task-branch-path-label {
+.task-branch-name-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -496,6 +626,15 @@ body.font-smoothing {
   flex: 0 0 auto;
 }
 
+.task-branch-source {
+  max-width: min(32ch, 30%);
+}
+
+/* Routine link: neutral like the rest of the bar, emphasis on hover only. */
+.task-branch-source:hover {
+  color: var(--fg);
+}
+
 .task-branch-source-compact-label,
 .task-branch-project-compact-label {
   display: none;
@@ -503,8 +642,8 @@ body.font-smoothing {
 }
 
 .task-branch-path {
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
+  margin-right: auto;
 }
 
 .task-branch-existing-worktree {
@@ -545,6 +684,11 @@ body.font-smoothing {
 
   .task-branch-project-compact-label {
     display: inline;
+  }
+
+  /* With one project the initials tell nothing apart, so the name gives its room to the branch. */
+  .task-branch-info-bar--single-project .task-branch-project {
+    display: none;
   }
 }
 
@@ -603,7 +747,7 @@ body::after {
   pointer-events: none;
   z-index: 2147483647;
   border: 1px solid transparent;
-  transition: border-color 0.16s ease;
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 
 .app-shell::before {
@@ -637,51 +781,25 @@ body:has(
   border-color: color-mix(in srgb, var(--fg-subtle) 26%, transparent);
 }
 
-/* Shown in place of empty notes and changed files. */
-.task-support-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-height: 30px;
-  padding: 4px 12px;
-  border: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-size: 11px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.task-support-toggle:hover {
-  background: var(--bg-hover);
-  color: var(--fg);
-}
-
-.task-support-toggle:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: -2px;
-}
-
 /* Parallel Code website palette: parallelcode.app. */
 html[data-look='parallel-code'] {
   color-scheme: dark;
   --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: 'Sora', var(--font-ui);
   --bg: #080c10;
-  --bg-elevated: #10161c;
+  /* Menus and dialogs sit a step above the #10161c panels so they lift off them. */
+  --bg-elevated: #161e26;
   --bg-input: #0c1218;
-  --bg-hover: #151e26;
+  --bg-hover: #1b252f;
   --bg-selected: #18343e;
   --bg-selected-subtle: #11232c;
-  --border: #29343d;
-  --border-subtle: #1e272f;
+  --border: #394752;
+  --border-subtle: #2b3741;
   --border-focus: #67d9ed;
   --fg: #f0f4f7;
-  --fg-muted: #9aa9b6;
-  --fg-subtle: #8193a2;
+  --fg-muted: #c5ced7;
+  /* Secondary labels remain readable without needing hover or focus. */
+  --fg-subtle: #a0afbd;
   --accent: #67d9ed;
   --accent-hover: #91e5f3;
   --accent-text: #080c10;
@@ -690,7 +808,8 @@ html[data-look='parallel-code'] {
   --error: #f08f8a;
   --warning: #dfba83;
   --review: #c1b0e8;
-  --info: #8fbddd;
+  /* Periwinkle rather than cyan, so info never reads as the accent. */
+  --info: #9db3e6;
   --diff-add-bg: rgba(152, 201, 174, 0.12);
   --diff-remove-bg: rgba(240, 143, 138, 0.12);
   --search-match: #dfba83;
@@ -698,10 +817,10 @@ html[data-look='parallel-code'] {
   --island-bg: #10161c;
   --island-border: #29343d;
   --island-radius: 12px;
-  --task-container-bg: #0c1218;
-  --task-panel-bg: #10161c;
+  --task-container-bg: #0e141a;
+  --task-panel-bg: #13191f;
   --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.16);
-  --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.45);
 }
 
 .app-shell[data-look='parallel-code']::before {
@@ -724,28 +843,14 @@ html[data-look='parallel-code'] .task-item-name {
   letter-spacing: -0.015em;
 }
 
-html[data-look='parallel-code'] .task-item :is(.task-agent-status, .task-brief-line) {
-  font-family: var(--font-ui);
-  font-variant-numeric: tabular-nums;
-  opacity: 1;
-}
-
 html[data-look='parallel-code'] :is(.prompt-textarea, .task-notes-body textarea) {
   font-family: var(--font-ui) !important;
-  line-height: 1.6;
-}
-
-html[data-look='parallel-code'] :is(.prompt-textarea, .task-notes-body textarea)::placeholder {
-  color: var(--fg-subtle);
-  opacity: 1;
+  font-size: 14px !important;
+  line-height: 1.65;
 }
 
 html[data-look='parallel-code'] :is(.info-bar, .changed-files-list-panel) {
   font-family: var(--font-ui) !important;
-}
-
-html[data-look='parallel-code'] :is(.info-bar, .changed-files-list-panel, .sidebar-footer) {
-  font-variant-numeric: tabular-nums;
 }
 
 html[data-look='parallel-code'] .settings-theme-desc {
@@ -765,18 +870,51 @@ html[data-look='parallel-code'] .task-branch-info-bar {
   border-color: var(--border-subtle);
 }
 
-html[data-look='parallel-code'] .task-column.active {
-  box-shadow: none;
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--border)) !important;
+html[data-look='parallel-code'] .task-notes-body textarea {
+  padding: 10px 14px 32px !important;
 }
 
-html[data-look='parallel-code'] .task-notes-body textarea {
-  padding: 12px 14px !important;
+html[data-look='parallel-code'] .task-notes-body textarea::placeholder {
+  color: var(--fg-subtle);
+}
+
+/* Pane labels orient without competing with the notes and files beneath them. */
+html[data-look='parallel-code'] .task-pane-heading {
+  min-height: 32px;
+  font-size: 12px !important;
+}
+
+html[data-look='parallel-code'] .task-title-bar {
+  font-size: 17px;
+}
+
+/* Board cards one step up, so their text reads at the size of the 13px
+   terminal beside them; Inter at the base sizes looked a size smaller. */
+html[data-look='parallel-code'] .task-board-card {
+  font-size: 14px;
+}
+
+html[data-look='parallel-code']
+  :is(
+    .task-board-meta,
+    .task-board-ask,
+    .task-board-card .task-board-act,
+    .plan-card-body,
+    .kanban-checklist,
+    .kanban-blocked,
+    .plan-task-open
+  ) {
+  font-size: 13px;
+}
+
+html[data-look='parallel-code']
+  :is(.task-board-activity, .task-board-row, .task-board-chip, .kanban-progress, .kanban-chip) {
+  font-size: 12px;
 }
 
 html[data-look='parallel-code'] :is(.prompt-textarea, .input-field, .project-select):focus {
   border-color: var(--border-focus) !important;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 html[data-look='parallel-code'] .settings-theme-card.active {
@@ -789,8 +927,7 @@ html[data-look='parallel-code'] :is(.btn-primary, .btn-danger):hover:not(:disabl
   box-shadow: none;
 }
 
-html[data-look='parallel-code'] :is(.btn-primary, .btn-danger):active:not(:disabled),
-html[data-look='parallel-code'] .prompt-send-btn:hover:not(:disabled) {
+html[data-look='parallel-code'] :is(.btn-primary, .btn-danger):active:not(:disabled) {
   transform: none;
 }
 
@@ -872,10 +1009,6 @@ html[data-look='noir'] .task-column {
   box-shadow: none;
 }
 
-html[data-look='noir'] .task-column.active {
-  box-shadow: none;
-}
-
 html[data-look='noir'] .task-title-bar {
   background: var(--island-bg);
 }
@@ -897,27 +1030,22 @@ html[data-look='noir'] :is(.info-bar, .changed-files-list-panel, .task-notes-bod
   font-family: var(--font-ui) !important;
 }
 
-html[data-look='noir'] :is(.info-bar, .changed-files-list-panel, .sidebar-footer) {
-  font-variant-numeric: tabular-nums;
-}
-
 html[data-look='noir'] .info-bar button:not(:hover):not(:focus-visible) {
   border-color: transparent !important;
 }
 
 html[data-look='noir'] .prompt-textarea {
   font-family: var(--font-ui) !important;
-  box-shadow: none !important;
 }
 
 /* One quiet focus halo for every text field, replacing the default glow. */
-html[data-look='noir'] :is(.prompt-textarea, .input-field, .project-select):focus {
+html[data-look='noir'] :is(.input-field, .project-select):focus {
   border-color: var(--border-focus) !important;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent) !important;
 }
 
 html[data-look='noir'] .task-notes-body textarea {
-  padding: 12px 14px !important;
+  padding: 12px 14px 32px !important;
   font-size: 13px !important;
   line-height: 1.65;
 }
@@ -1043,6 +1171,12 @@ html[data-look='obsidian-light'] {
   background: none;
 }
 
+/* Flat and square: the focus ring keeps its line but drops the glow. */
+html[data-look^='obsidian'] {
+  --pane-focus-ring: inset 0 0 0 1.5px var(--border-focus);
+  --pane-focus-radius: 0px;
+}
+
 html[data-look^='obsidian'] .sidebar-shell {
   padding: 0 4px 8px;
 }
@@ -1109,12 +1243,6 @@ html[data-look^='obsidian'] textarea::placeholder {
   color: var(--fg-subtle);
 }
 
-html[data-look='obsidian'] .prompt-textarea::placeholder,
-html[data-look='islands-dark'] .prompt-textarea::placeholder {
-  color: var(--fg-subtle);
-  opacity: 1;
-}
-
 html[data-look^='obsidian'] .prompt-send-btn {
   border-radius: var(--radius-sm) !important;
 }
@@ -1133,13 +1261,8 @@ html[data-look^='obsidian'] :is(.info-bar, .changed-files-list-panel, .task-note
   font-family: var(--font-ui) !important;
 }
 
-/* Inter's proportional digits make diff counts jitter as they update. */
-html[data-look^='obsidian'] :is(.info-bar, .changed-files-list-panel, .sidebar-footer) {
-  font-variant-numeric: tabular-nums;
-}
-
 html[data-look^='obsidian'] .task-notes-body textarea {
-  padding: 12px 14px !important;
+  padding: 12px 14px 32px !important;
   font-size: 13px !important;
   line-height: 1.65;
 }
@@ -1180,7 +1303,9 @@ html[data-look^='obsidian'] .info-bar button {
 html[data-look^='obsidian'] .focusable-panel[data-panel-focused='true']::after,
 html[data-look^='obsidian'] .prompt-input-panel:focus-within::after {
   content: '';
-  border-width: 2px;
+  border: none;
+  border-radius: 0;
+  box-shadow: var(--pane-focus-ring);
 }
 
 /* The file list sits inside an already outlined focusable section. */
@@ -1201,8 +1326,8 @@ html[data-look='classic'] {
   --border-subtle: #2d2e32;
   --border-focus: #4267ff;
   --fg: #cccdd2;
-  --fg-muted: #8b8d93;
-  --fg-subtle: #767980;
+  --fg-muted: #a6a8ad;
+  --fg-subtle: #94979c;
   --accent: #4267ff;
   --accent-hover: #3a5bff;
   --accent-text: #ffffff;
@@ -1242,7 +1367,7 @@ html[data-look='midnight'] {
   --border-focus: #2ec8ff;
   --fg: #d7e4f0;
   --fg-muted: #9bb0c3;
-  --fg-subtle: #678197;
+  --fg-subtle: #7990a4;
   --accent: #2ec8ff;
   --accent-hover: #59d7ff;
   --accent-text: #031018;
@@ -1296,7 +1421,7 @@ html[data-look='ember'] {
   --border-focus: #ff944d;
   --fg: #f2ddd1;
   --fg-muted: #d5ab94;
-  --fg-subtle: #9f7561;
+  --fg-subtle: #a47c69;
   --accent: #ff944d;
   --accent-hover: #ffac73;
   --accent-text: #201006;
@@ -1385,7 +1510,7 @@ html[data-look='zenburnesque'] {
   --border-focus: #cc9393;
   --fg: #dcdccc;
   --fg-muted: #a0a090;
-  --fg-subtle: #7f8f7f;
+  --fg-subtle: #8b9a8b;
   --accent: #cc9393;
   --accent-hover: #d8a8a8;
   --accent-text: #1a0e0e;
@@ -1415,7 +1540,7 @@ html[data-look='catppuccin-mocha'] {
   --border-focus: #cba6f7;
   --fg: #cdd6f4;
   --fg-muted: #a6adc8;
-  --fg-subtle: #7f849c;
+  --fg-subtle: #82879e;
   --accent: #cba6f7;
   --accent-hover: #d6b8fa;
   --accent-text: #1e1e2e;
@@ -1458,7 +1583,7 @@ html[data-look='islands-dark'] {
   --border-focus: #286cf5;
   --fg: #bcbec4;
   --fg-muted: #9a9da4;
-  --fg-subtle: #7a7e85;
+  --fg-subtle: #81848b;
   --accent: #286cf5;
   --accent-hover: #6d9df8;
   --accent-hover-bg: #2468f2;
@@ -1489,7 +1614,7 @@ html[data-look='islands-light'] {
   --border-focus: #2c6def;
   --fg: #1f2329;
   --fg-muted: #5e6066;
-  --fg-subtle: #8d9199;
+  --fg-subtle: #70757e;
   --accent: #2c6def;
   --accent-hover: #5a8dff;
   --accent-text: #ffffff;
@@ -1600,8 +1725,9 @@ html[data-look^='islands-'] .prompt-input-panel[data-panel-focused='true']::afte
   content: '';
   position: absolute;
   inset: 0;
+  border: none;
   border-radius: inherit;
-  border: 2px solid var(--border-focus);
+  box-shadow: var(--pane-focus-ring);
   pointer-events: none;
   z-index: 10;
 }
@@ -1660,7 +1786,7 @@ html[data-look^='islands-']
   position: absolute;
   inset: 0;
   border-radius: var(--radius-md);
-  border: 2px solid var(--border-focus);
+  box-shadow: var(--pane-focus-ring);
   pointer-events: none;
   z-index: 10;
 }
@@ -1784,7 +1910,7 @@ html[data-look='workbench'] {
   --border-focus: #0078d4;
   --fg: #cccccc;
   --fg-muted: #969696;
-  --fg-subtle: #6c6c6c;
+  --fg-subtle: #8d8d8d;
   --accent: #0078d4;
   --accent-hover: #1e90e0;
   --accent-text: #ffffff;
@@ -1799,6 +1925,9 @@ html[data-look='workbench'] {
      into the panel surface (islands-style). Only the 1px hairline reads. */
   --task-container-bg: #1f1f1f;
   --task-panel-bg: #1f1f1f;
+  /* VS Code's 1px focus border: square, without a glow. */
+  --pane-focus-ring: inset 0 0 0 1px var(--border-focus);
+  --pane-focus-radius: 0px;
 }
 
 .app-shell[data-look='workbench']::before {
@@ -1860,8 +1989,9 @@ html[data-look='workbench'] .prompt-input-panel[data-panel-focused='true']::afte
   content: '';
   position: absolute;
   inset: 0;
+  border: none;
   border-radius: 0;
-  border: 2px solid var(--border-focus);
+  box-shadow: var(--pane-focus-ring);
   pointer-events: none;
   z-index: 10;
 }
@@ -1908,6 +2038,227 @@ html[data-look='workbench'] .resize-handle-h::before {
   pointer-events: none;
 }
 
+/* The divider still spans the columns; only the strip handle's hit area stops
+   short of the scrollbar. */
+html[data-look='workbench'] .tiling-strip-handle::before,
+html[data-look^='islands-'] .tiling-strip-handle::before {
+  bottom: -8px;
+}
+
+/* Pane layout first built for Parallel Code and shared by every look.
+   Obsidian, Islands and Workbench bring their own seams and composer, and
+   Noir's hairline dividers live with theirs.
+   Notes, files and the agent's history bar sit on the task surface; only
+   terminals keep the panel fill as the working surface. In looks where the
+   two differ, a stray strip of container would show in every 6px divider,
+   so these looks draw a rule there and let stacked panes meet edge to edge. */
+.task-column
+  :is(
+    .task-notes-body,
+    .task-notes-body textarea,
+    .task-changed-files-section,
+    .changed-files-list-panel,
+    .shell-terminal-container:has(> .info-bar)
+  ) {
+  background: transparent !important;
+}
+
+/* An image, so the handle's hover colour still shows behind the rule. */
+html:not(
+    [data-look^='obsidian'],
+    [data-look^='islands-'],
+    [data-look='workbench'],
+    [data-look='noir']
+  )
+  .task-column
+  .resize-handle {
+  background-image: linear-gradient(var(--border-subtle), var(--border-subtle));
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+html:not(
+    [data-look^='obsidian'],
+    [data-look^='islands-'],
+    [data-look='workbench'],
+    [data-look='noir']
+  )
+  .task-column
+  .resize-handle-h {
+  background-size: 1px 100%;
+}
+
+/* The handle straddles the seam, keeping its grab area while taking no layout
+   space. The flex absorber takes up the reclaimed pixels. */
+html:not(
+    [data-look^='obsidian'],
+    [data-look^='islands-'],
+    [data-look='workbench'],
+    [data-look='noir']
+  )
+  .task-column
+  .resize-handle-v {
+  background-size: 100% 1px;
+  margin: -3px 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* In the side column the seams between changed files, notes and shells
+   would read like the hairlines inside each section, so they become a
+   visible gutter with a grip and take real space. */
+html:not(
+    [data-look^='obsidian'],
+    [data-look^='islands-'],
+    [data-look='workbench'],
+    [data-look='noir']
+  )
+  .task-column
+  .task-side-stack
+  > .resize-handle-v {
+  height: 7px;
+  margin: 0;
+  box-sizing: border-box;
+  border-block: 1px solid var(--border);
+  background: var(--task-container-bg);
+  /* The grip draws in currentColor so hover can keep it visible on the accent. */
+  color: var(--border);
+}
+
+html:not(
+    [data-look^='obsidian'],
+    [data-look^='islands-'],
+    [data-look='workbench'],
+    [data-look='noir']
+  )
+  .task-column
+  .task-side-stack
+  > .resize-handle-v::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 50%;
+  width: 28px;
+  height: 3px;
+  margin-left: -14px;
+  border-radius: 2px;
+  background: currentColor;
+  pointer-events: none;
+}
+
+html:not(
+    [data-look^='obsidian'],
+    [data-look^='islands-'],
+    [data-look='workbench'],
+    [data-look='noir']
+  )
+  .task-column
+  .task-side-stack
+  > :is(.resize-handle-v:hover, .resize-handle-v.dragging) {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  color: var(--fg);
+}
+
+/* The focused pane's ring already marks the active task; a column glow too
+   would double the signal. Shadowed looks keep their resting shadow. */
+html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench'])
+  .task-column.active {
+  box-shadow: var(--task-column-shadow, none);
+}
+
+/* Tasks keep the same 6px gutter above the status bar as at the strip's edge,
+   so their bottom border doesn't sit on the bar's rule. Shadowed looks
+   keep their wider gutter. */
+html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench'])
+  .tiling-layout-strip {
+  padding-bottom: max(6px, var(--task-shadow-gutter, 0px));
+}
+
+/* The prompt sits flush under the agent terminal's rule, like the notes
+   textarea, instead of as a boxed field. Islands, Obsidian and Workbench
+   style their own flush composer. */
+html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench'])
+  .prompt-input-panel {
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench'])
+  :is(.prompt-textarea, .prompt-textarea:focus) {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench'])
+  .prompt-textarea {
+  padding: 10px 44px 10px 14px !important;
+}
+
+/* Clears the Needs you / staged label overlaid on the textarea's top edge.
+   html body outranks every look's !important padding above.
+   shortcut: the labels push the text down a line when they appear — reserve the line if that jars. */
+html body .prompt-textarea.prompt-textarea--labelled {
+  padding-top: 30px !important;
+}
+
+/* Start the Needs you line where the typed text starts, which each look sets
+   through the textarea's left border and padding. */
+.prompt-needs-you {
+  left: 11px;
+}
+
+html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench'])
+  .prompt-needs-you {
+  left: 14px;
+}
+
+html:is([data-look^='islands-'], [data-look='workbench']) .prompt-needs-you {
+  left: 8px;
+}
+
+/* The html prefix outranks the faint base placeholder further down. */
+html .prompt-textarea::placeholder {
+  color: var(--fg-subtle);
+  opacity: 1;
+}
+
+/* Without its own border, the textarea needs the panel-level focus ring back.
+   The prompt fills the task's bottom corners, so the ring follows the
+   task's curve just inside its 1px border. */
+html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench'])
+  .prompt-input-panel:is(:focus-within, [data-panel-focused='true'])::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: none;
+  border-radius: var(--pane-focus-radius) var(--pane-focus-radius) calc(var(--radius-lg) - 1px)
+    calc(var(--radius-lg) - 1px);
+  box-shadow: var(--pane-focus-ring);
+  pointer-events: none;
+  z-index: 10;
+}
+
+html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench'])
+  .prompt-send-btn {
+  background: var(--bg-input) !important;
+  color: var(--fg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench'])
+  .prompt-send-btn:disabled {
+  color: var(--fg-subtle) !important;
+}
+
+html:not([data-look^='obsidian'], [data-look^='islands-'], [data-look='workbench'])
+  .prompt-send-btn:hover:not(:disabled) {
+  background: var(--bg-hover) !important;
+  transform: none;
+}
+
 * {
   box-sizing: border-box;
   scrollbar-width: thin;
@@ -1925,7 +2276,7 @@ html[data-look='workbench'] .resize-handle-h::before {
 
 ::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--fg-subtle) 50%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -1935,11 +2286,11 @@ html[data-look='workbench'] .resize-handle-h::before {
 button {
   font-family: inherit;
   transition:
-    background 0.16s ease,
-    border-color 0.16s ease,
-    color 0.16s ease,
-    transform 0.16s ease,
-    box-shadow 0.16s ease;
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
 /* The change tour beside the diff: the understanding tour's card and threads,
@@ -2040,9 +2391,9 @@ button {
   font-size: 14px;
 }
 
+/* Routine step: full-strength text ranks it above Back, without an accent fill. */
 .change-tour-nav > .change-tour-next {
-  background: var(--accent);
-  color: var(--accent-text);
+  color: var(--fg);
   font-weight: 600;
 }
 
@@ -2128,9 +2479,14 @@ button {
   cursor: pointer;
 }
 
-.change-tour-model:hover {
+.change-tour-model:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--fg);
+}
+
+.change-tour-model:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .change-tour-action {
@@ -2149,9 +2505,15 @@ button {
   cursor: pointer;
 }
 
-.change-tour-action:hover:not(:disabled) {
+/* A running action (review, tour, capture) only shows progress; the × segment
+   beside it stops it. */
+.change-tour-action:hover:not(:disabled, [aria-busy='true']) {
   background: var(--bg-hover);
   color: var(--fg);
+}
+
+.change-tour-action[aria-busy='true'] {
+  cursor: default;
 }
 
 .change-tour-action:disabled {
@@ -2167,6 +2529,203 @@ button {
 
 .change-tour-action > :is(svg, .inline-spinner) {
   flex-shrink: 0;
+}
+
+/* Finish's captured screens: plain framed thumbnails that open full size. */
+.screens-frame {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  cursor: zoom-in;
+  overflow: hidden;
+}
+
+.screens-frame:hover {
+  border-color: var(--fg-subtle);
+}
+
+.screens-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Full-window screenshot viewer: a toolbar over a stage the image fits,
+   zooms and pans in. Zoom follows the wheel at once, without transitions. */
+.screen-viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.screen-viewer-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screen-viewer-count {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.screen-viewer-spacer {
+  flex: 1;
+}
+
+.screen-viewer-zoom {
+  min-width: 52px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.screen-viewer-zoom:hover {
+  background: var(--bg-hover);
+}
+
+.screen-viewer-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  cursor: zoom-in;
+  touch-action: none;
+}
+
+.screen-viewer-stage[data-zoomed] {
+  cursor: grab;
+}
+
+.screen-viewer-stage[data-zoomed]:active {
+  cursor: grabbing;
+}
+
+.screen-viewer-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: center;
+  user-select: none;
+}
+
+.screen-viewer-hint {
+  margin: 0;
+  color: var(--fg-subtle);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* Finish dialog follow-ups: regular dialog buttons, each split off from its
+   model chevron, one per line and all the same width, each with its result
+   at full width below it. The width is fixed, so a running step's progress
+   text never resizes its box. */
+.finish-followups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.finish-followup {
+  width: min(100%, 24rem);
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-input);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.finish-followup .change-tour-footer {
+  border-top: 0;
+  font-size: inherit;
+}
+
+.finish-followup .change-tour-action {
+  min-height: 32px;
+  padding: 6px 14px;
+  color: var(--fg);
+}
+
+/* One line, so "out of date" arriving after the code is re-read cannot grow the
+   row; the button's tooltip carries the full text. */
+.finish-followup .change-tour-action-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* An optional extra about the session, not the change, so it sits a step below
+   the steps that check the work; hover brings it to full strength. */
+.finish-followup-quiet {
+  border-style: dashed;
+  border-color: var(--border-subtle);
+  background: transparent;
+}
+
+.finish-followup-quiet .change-tour-action {
+  color: var(--fg-subtle);
+  font-weight: 400;
+}
+
+.screens-progress {
+  display: block;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* As buttons beside Run review, the tour reads like one: no trailing arrow. */
+.finish-followup .change-tour-arrow {
+  display: none;
+}
+
+.finish-followup .change-tour-model {
+  padding: 0 9px;
+  border-left-color: var(--border);
+}
+
+.review-rows > li {
+  padding: 12px 0;
+}
+
+.review-rows > li:first-child {
+  padding-top: 0;
+}
+
+.review-rows > li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* A follow-up's result, under its button. flow-root keeps the result's top margin
+   inside, so the height ease measures it. */
+.finish-followup-below {
+  display: flow-root;
+}
+
+.finish-followup-below[data-resizing] {
+  overflow: hidden;
+}
+
+.finish-followup-below > * {
+  animation: fadeIn var(--motion-enter) var(--ease-out);
 }
 
 .review-control {
@@ -2193,13 +2752,10 @@ textarea::placeholder {
 }
 
 .task-item {
-  /* Detail lines indent past the row's leading glyphs — a 12px glyph lane plus
-     the 6px head gap each — so they start under the title text, not the dot. */
-  --task-row-indent: 18px;
   transition:
-    background 0.13s ease,
-    color 0.13s ease,
-    border-color 0.13s ease;
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
 }
 
 .task-item:hover:not([aria-current='true']) {
@@ -2257,12 +2813,8 @@ textarea::placeholder {
   height: 1.35em;
 }
 
-/* Coordinator rows carry a bot icon in front of the status glyph. */
-.task-item-coordinator {
-  --task-row-indent: 36px;
-}
-
-/* The brief card is routine, so it is filled only when hovered or open. */
+/* The brief line is routine: it shows its fill and chevron only when hovered or
+   open. The chevron fades rather than appearing, so the text never shifts. */
 .task-brief-bar {
   background: transparent;
 }
@@ -2270,40 +2822,22 @@ textarea::placeholder {
 .task-brief-bar[aria-expanded='true'] {
   background: var(--bg-elevated);
 }
-
-/* File chips repeat what the changed-files list shows and crowd the text, so
-   they float over the row's right edge on hover or keyboard focus. Taken out of
-   flow so revealing them never reflows the card; transparent rather than
-   display:none so they stay focusable. */
-.brief-item {
-  position: relative;
+/* Tinted only when the agent waits on the user; hover still darkens it. */
+.task-brief-bar[data-urgent] {
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
 }
-.brief-item .brief-item-file {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 1;
-  background: var(--bg-elevated) !important; /* beats the chip's inline transparent */
+.task-brief-bar[data-urgent]:hover,
+.task-brief-bar[data-urgent][aria-expanded='true'] {
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+}
+.task-brief-chevron {
   opacity: 0;
-  pointer-events: none;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
-.brief-item:is(:hover, :focus-within) .brief-item-file {
+.task-brief-bar:hover .task-brief-chevron,
+.task-brief-bar:focus-visible .task-brief-chevron,
+.task-brief-bar[aria-expanded='true'] .task-brief-chevron {
   opacity: 1;
-  pointer-events: auto;
-}
-
-/* Decision Keep/Change buttons appear the same way, so open decisions read as
-   text rather than a wall of buttons. They stay in flow, unlike the chips: an
-   overlay would cover the decision being judged, and swapping it for the
-   shorter "Kept" line would pull the rows below up by a whole row. */
-.brief-item .brief-item-actions {
-  opacity: 0;
-  pointer-events: none;
-}
-.brief-item:is(:hover, :focus-within) .brief-item-actions {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 /* Task names wrap to two lines rather than being cut mid-word — at sidebar
@@ -2321,34 +2855,13 @@ textarea::placeholder {
   line-height: 1.35;
 }
 
-/* Status lines under a task name are reference detail, not the row's identity:
-   keep them quiet and give them air so the sidebar scans as a list of names.
-   Hovering a row is the signal that its detail is wanted. A mono face sets them
-   apart from the name as machine-reported state rather than a second title. */
-.task-item .task-agent-status,
-.task-item .task-brief-line {
-  margin-top: 4px;
-  padding-left: var(--task-row-indent);
-  font-family: var(--font-mono);
-  opacity: 0.6;
-  transition: opacity 0.13s ease;
-}
-
-/* The two status lines belong together — only the pair is offset from the title. */
-.task-item .task-agent-status + .task-brief-line {
-  margin-top: 1px;
-}
-
-.task-item:is(
-    :hover,
-    [data-kbd-focused='true'],
-    [aria-current='true'],
-    [data-attention='needs_input'],
-    [data-attention='error'],
-    [data-attention='review']
-  )
-  :is(.task-agent-status, .task-brief-line) {
-  opacity: 1;
+/* The task list keeps each name to one line, so every row is the same height
+   and the list scans as names; the full name is in the row's tooltip. The
+   attention tray still wraps: its few rows are there to be read. */
+.task-item:not(.sidebar-attention-row) .task-item-name {
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .sidebar-attention-tray {
@@ -2386,7 +2899,7 @@ textarea::placeholder {
   justify-content: center;
   min-width: 0;
   padding: 1px 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 11px;
   font-weight: 600;
   line-height: 1.4;
@@ -2414,8 +2927,8 @@ textarea::placeholder {
 .projects-toggle {
   border-radius: var(--radius-xs);
   transition:
-    background-color 0.12s ease,
-    color 0.12s ease;
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .projects-toggle:hover {
@@ -2429,37 +2942,31 @@ textarea::placeholder {
 }
 
 .project-row {
-  transition: background-color 0.12s ease;
+  transition: background-color var(--motion-fast) var(--ease-out);
 }
 
 .project-row:hover {
   background: var(--bg-hover);
 }
 
-.project-row .icon-btn {
-  opacity: 0.5;
-  transition: opacity 0.12s ease;
-}
-
-.project-row:is(:hover, :focus-within) .icon-btn {
-  opacity: 1;
-}
-
-/* Give empty notes a visible input boundary instead of a floating prompt.
-   Keep the textarea mounted and directly editable in every theme. */
-.task-notes-body[data-empty='true'] textarea {
+/* Persistent pane headings share a baseline without hiding any content. */
+.task-pane-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-height: 30px;
   box-sizing: border-box;
-  width: calc(100% - 16px) !important;
-  min-height: 40px;
-  margin: 8px;
-  padding: 10px 12px !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius-sm);
-  background: var(--bg-input) !important;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--fg-muted);
+  font-weight: 500;
 }
 
-.task-notes-body[data-empty='true'] textarea:focus {
-  border-color: var(--border-focus) !important;
+/* The editor geometry must stay the same when the first character is entered. */
+.task-notes-body textarea {
+  box-sizing: border-box;
+  min-height: 0;
 }
 
 .task-notes-body .send-notes-btn:disabled {
@@ -2481,7 +2988,7 @@ textarea::placeholder {
   opacity: 1;
   transition:
     grid-template-rows 0.18s ease,
-    opacity 0.15s ease;
+    opacity var(--motion-fast) var(--ease-out);
 }
 
 .projects-collapser.is-collapsed {
@@ -2536,6 +3043,15 @@ html:is(
      neighbor visible, and edge clamping snaps the first/last task flush.
      Keep in sync with TASK_CLICKABLE_PREVIEW_PX in src/store/focused-panel.ts. */
   scroll-padding-inline: 64px;
+  /* The scrollbar is the strip's only drag-to-scroll target; the global thin
+     one leaves a ~6px thumb that is hard to hit (#255). */
+  scrollbar-width: auto;
+}
+
+/* Stop column handles short of the scrollbar so a near miss above it does not
+   land on a col-resize handle (#255). */
+.tiling-strip-handle {
+  margin-bottom: 8px;
 }
 
 .tiling-layout-scroll-affordance {
@@ -2676,6 +3192,101 @@ html:is(
   transform: scale(0.98);
 }
 
+/* One footer for dialog actions (DialogFooter.tsx). Its leading slot is always
+   there, so an error appearing beside the buttons never pushes them. */
+.dialog-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* The basis keeps text readable: when wide buttons leave less room, the slot
+   takes its own row above them instead of shrinking to a letter per line.
+   The wrap depends on the buttons, not the text, so a note never moves them. */
+.dialog-footer-lead {
+  flex: 1 1 120px;
+  min-width: 0;
+  /* Paths and URLs in errors have no break points; wrap rather than run under the buttons. */
+  overflow-wrap: anywhere;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.dialog-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dialog-footer-error {
+  color: var(--error);
+  font-size: 13px;
+}
+
+.dialog-footer :is(.btn-primary, .btn-secondary, .btn-danger) {
+  display: inline-flex;
+  flex-shrink: 0;
+  white-space: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.dialog-footer .btn-secondary {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+
+.dialog-footer :is(.btn-primary, .btn-danger) {
+  font-weight: 500;
+}
+
+/* Destructive confirmations are the one filled action: they need attention now. */
+.dialog-footer .btn-danger {
+  background: var(--error);
+  border: none;
+  color: #fff;
+}
+
+.dialog-footer :is(.btn-primary, .btn-secondary, .btn-danger):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Neutral until hovered: closing is routine, not urgent. */
+.dialog-close {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.dialog-close:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.dialog-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .github-item-option:hover,
 .github-item-option:focus-visible {
   background: var(--bg-hover) !important;
@@ -2733,7 +3344,7 @@ html:is(
 
 .project-select::picker-icon {
   color: var(--fg-muted);
-  transition: rotate 0.14s ease;
+  transition: rotate var(--motion-fast) var(--ease-out);
 }
 
 .project-select:open::picker-icon {
@@ -2822,11 +3433,11 @@ html:is(
 }
 
 .task-appearing {
-  animation: taskAppear 0.24s ease;
+  animation: taskAppear var(--motion-enter) var(--ease-out);
 }
 
 .new-task-appearing {
-  animation: taskAppear 0.16s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: taskAppear 0.16s var(--ease-out);
 }
 
 /* No max-height here: rows whose name wraps to two lines are taller than any
@@ -2843,7 +3454,41 @@ html:is(
 }
 
 .task-item-appearing {
-  animation: taskItemAppear 0.25s ease;
+  animation: taskItemAppear var(--motion-enter) var(--ease-out);
+}
+
+/* Notices rise in so a confirmation is noticed; `translate` leaves the inline
+   centring transform alone. */
+@keyframes noticeEnter {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+/* The island colour matches the panels behind it, so the notice blended in.
+   Mixing in the foreground raises it a step in every look, light or dark,
+   without borrowing an accent colour reserved for urgency. */
+.app-notice {
+  border: 1px solid color-mix(in srgb, var(--fg) 28%, var(--island-bg));
+  background: color-mix(in srgb, var(--fg) 12%, var(--island-bg));
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.25),
+    0 10px 32px rgba(0, 0, 0, 0.45);
+  animation: noticeEnter var(--motion-enter) var(--ease-out);
+}
+
+/* A finished merge earns a brief success colour; the check settles as the notice lands. */
+@keyframes noticeCheck {
+  from {
+    scale: 0.6;
+  }
+}
+
+.app-notice-check {
+  display: inline-flex;
+  color: var(--success);
+  animation: noticeCheck var(--motion-enter) var(--ease-out);
 }
 
 @keyframes taskRemove {
@@ -2858,7 +3503,7 @@ html:is(
 }
 
 .task-removing {
-  animation: taskRemove 0.24s ease forwards;
+  animation: taskRemove 0.16s var(--ease-out) forwards;
   pointer-events: none;
 }
 
@@ -2877,7 +3522,7 @@ html:is(
 }
 
 .task-item-removing {
-  animation: taskItemRemove 0.24s ease forwards;
+  animation: taskItemRemove 0.16s var(--ease-out) forwards;
   overflow: hidden;
   pointer-events: none;
 }
@@ -2895,22 +3540,24 @@ html:is(
   opacity: 1;
 }
 
+/* A column shown alone skips the active ring but stays undimmed. */
+.task-column.solo {
+  opacity: 1;
+}
+
 .focusable-panel {
   position: relative;
 }
 
-/* Match terminal dimming: actual keyboard/mouse focus brightens the panel,
-   independently of the setting that dims entire inactive task columns. */
-:is(.task-canvas-panel, .task-notes-body, .task-changed-files-section, .diff-task-notes) {
+/* Actual keyboard/mouse focus brightens the panel, independently of the
+   setting that dims entire inactive task columns. Notes, changed files and
+   terminals stay at full strength: supporting information must remain
+   readable while another pane has keyboard focus. */
+:is(.task-canvas-panel, .diff-task-notes) {
   opacity: 0.8;
 }
 
-:is(
-  .task-canvas-panel,
-  .task-notes-body,
-  .task-changed-files-section,
-  .diff-task-notes
-):focus-within,
+:is(.task-canvas-panel, .diff-task-notes):focus-within,
 .task-canvas-panel[data-panel-focused='true'] {
   opacity: 1;
 }
@@ -2921,6 +3568,30 @@ html:is(
 .shell-toolbar-button:hover {
   background: var(--bg-hover) !important;
   color: var(--fg) !important;
+}
+
+/* A setting, not a launcher: no outline, unlike the toolbar's terminal buttons.
+   The right margin mirrors the toolbar's padding. */
+.shell-layout-button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  margin-right: 5px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.shell-layout-button[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--fg);
 }
 
 .shell-toolbar-panel::-webkit-scrollbar {
@@ -3031,7 +3702,7 @@ html:is(
 
 .prompt-history-popover {
   position: fixed;
-  z-index: 1500;
+  z-index: var(--z-floating);
   box-sizing: border-box;
   width: min(420px, calc(100vw - 24px));
   overflow: auto;
@@ -3097,6 +3768,24 @@ html:is(
   z-index: 10;
 }
 
+.task-column
+  .focusable-panel:not(.prompt-input-panel):is(:focus-within, [data-panel-focused='true'])::after {
+  border: none;
+  border-radius: var(--pane-focus-radius);
+  box-shadow: var(--pane-focus-ring);
+}
+
+/* The title editor and board cards share the panes' focus ring. */
+.task-title-bar .editable-text-input {
+  border-color: transparent !important;
+  border-radius: var(--pane-focus-radius) !important;
+  box-shadow: var(--pane-focus-ring);
+}
+
+.task-board-card:has(.task-board-title:focus) {
+  box-shadow: var(--pane-focus-ring);
+}
+
 .agent-terminal-pane:focus-within::after {
   content: none;
 }
@@ -3118,17 +3807,25 @@ html:is(
 }
 
 .dialog-overlay {
-  animation: fadeIn 0.16s ease;
+  animation: fadeIn var(--motion-fast) var(--ease-out);
   backdrop-filter: saturate(1.15);
 }
 
 .dialog-overlay > form,
 .dialog-overlay > .dialog-content {
-  animation: slideUp 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: slideUp 0.16s var(--ease-out);
 }
 
 .new-task-panel-form {
+  container: new-task-panel / inline-size;
   user-select: none;
+}
+
+/* A narrow tile keeps Cancel and Create Task on one line; the shortcut still works. */
+@container new-task-panel (max-width: 400px) {
+  .new-task-submit-kbd {
+    display: none;
+  }
 }
 
 .new-task-panel-form :is(input, textarea) {
@@ -3152,9 +3849,9 @@ html:is(
   opacity: 0;
   pointer-events: none;
   transition:
-    opacity 0.12s ease,
-    color 0.12s ease,
-    background 0.12s ease;
+    opacity var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
 }
 
 /* The canvas button sits left of the editor button when both are revealed;
@@ -3189,7 +3886,7 @@ html:is(
   transform: translateY(-50%);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.12s ease;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .file-row:has(.changed-files-open-editor-btn:not(:disabled)) .changed-files-understand-anchor,
@@ -3232,7 +3929,7 @@ html:is(
 
 /* A one-time tip fades in over the page; it never pushes content aside. */
 .feature-hint {
-  animation: fadeIn 0.18s ease;
+  animation: fadeIn var(--motion-enter) var(--ease-out);
 }
 
 @keyframes fadeIn {
@@ -3266,7 +3963,7 @@ html:is(
 .status-glyph-spinner {
   display: inline-block;
   box-sizing: border-box;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
   border-top-color: currentColor;
   animation: spinnerSpin 0.9s linear infinite;
@@ -3279,7 +3976,7 @@ html:is(
   position: relative;
   display: inline-block;
   box-sizing: border-box;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   /* The padding gap keeps the wedge from merging into the ring as it fills. */
   padding: 2px;
   background: conic-gradient(currentColor var(--ci-sweep), transparent 0) content-box;
@@ -3289,15 +3986,40 @@ html:is(
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px dashed currentColor;
   animation: spinnerSpin 2.4s linear infinite;
+}
+
+/* Review: a ring with a pupil, "look at this", kept apart from Ready by shape. */
+.status-glyph-waiting {
+  display: inline-block;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+  border-radius: var(--radius-pill);
+}
+
+.status-glyph-review {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+  border-radius: var(--radius-pill);
+}
+
+.status-glyph-review::after {
+  content: '';
+  width: 3px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
 }
 
 .status-glyph-question {
   display: inline-block;
   box-sizing: border-box;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-weight: 700;
   text-align: center;
 }
@@ -3308,7 +4030,7 @@ html:is(
   box-sizing: border-box;
   width: 12px;
   height: 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 2px solid color-mix(in srgb, currentColor 32%, transparent);
   border-top-color: currentColor;
   animation: spinnerSpin 0.75s linear infinite;
@@ -3328,7 +4050,7 @@ html:is(
 
 .exit-badge {
   backdrop-filter: blur(10px);
-  animation: fadeIn 0.2s ease;
+  animation: fadeIn var(--motion-enter) var(--ease-out);
 }
 
 .empty-state {
@@ -3342,7 +4064,7 @@ html:is(
 .resize-handle {
   flex-shrink: 0;
   background: transparent;
-  transition: background 0.12s ease;
+  transition: background var(--motion-fast) var(--ease-out);
 }
 
 .resize-handle:hover,
@@ -3367,9 +4089,9 @@ html:is(
 
 .new-task-placeholder {
   transition:
-    border-color 0.15s ease,
-    color 0.15s ease,
-    background 0.15s ease;
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
 }
 
 .new-task-placeholder:hover {
@@ -3387,9 +4109,9 @@ html:is(
 .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
   width: 6px !important;
   left: 2px !important;
-  border-radius: 999px !important;
+  border-radius: var(--radius-pill) !important;
   background: color-mix(in srgb, var(--fg-subtle) 50%, transparent) !important;
-  transition: background 120ms ease;
+  transition: background var(--motion-fast) var(--ease-out);
 }
 
 .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider:hover,
@@ -3418,7 +4140,7 @@ html:is(
 .drop-indicator {
   height: 2px;
   background: var(--accent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   margin: 0 2px;
   box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 45%, transparent);
 }
@@ -3427,8 +4149,8 @@ html:is(
   position: fixed;
   width: 2px;
   background: var(--accent);
-  border-radius: 999px;
-  z-index: 1000;
+  border-radius: var(--radius-pill);
+  z-index: var(--z-modal);
   pointer-events: none;
   box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
 }
@@ -3461,12 +4183,22 @@ body.dragging-task * {
   border-bottom: 1px solid var(--border);
 }
 
+/* Inside a task, the divider rule below already edges the toolbar; its own
+   border would double it. Open shells take over that edge instead, like the
+   agent terminal row's top border. Islands frames each pane on its own. */
+html:not([data-look^='islands-']) .task-column .shell-toolbar-panel {
+  border-bottom: none;
+}
+
+html:not([data-look^='islands-']) .task-column .shell-terminals-row {
+  border-top: 1px solid var(--border);
+}
+
 .shell-terminal-container.focusable-panel {
   box-sizing: border-box;
 }
 
-.agent-terminal-row:not(.agent-terminal-row-tabs) > .agent-terminal-pane + .agent-terminal-pane,
-.shell-terminals-row > .shell-terminal-container + .shell-terminal-container {
+.agent-terminal-row:not(.agent-terminal-row-tabs) > .agent-terminal-pane + .agent-terminal-pane {
   border-left: 1px solid var(--border);
 }
 
@@ -3477,20 +4209,12 @@ body.dragging-task * {
   z-index: 10;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .shell-terminal-container:hover .shell-terminal-close {
   opacity: 1;
   pointer-events: auto;
-}
-
-.shell-terminal-container .xterm {
-  opacity: 0.8;
-}
-
-.shell-terminal-container:focus-within .xterm {
-  opacity: 1;
 }
 
 .prompt-textarea {
@@ -3499,7 +4223,7 @@ body.dragging-task * {
 
 .prompt-textarea::placeholder {
   opacity: 0.35;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .prompt-textarea:focus::placeholder {
@@ -3561,6 +4285,15 @@ body.dragging-task * {
   color: var(--fg-muted);
   font-size: 12px;
   line-height: 1.4;
+}
+
+.settings-theme-default {
+  margin-left: 2px;
+  color: var(--fg-subtle);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: normal;
 }
 
 @media (max-width: 720px) {
@@ -3625,7 +4358,7 @@ body.dragging-task * {
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .window-titlebar.unfocused {
@@ -3698,8 +4431,8 @@ html[data-look='islands-light'] .window-title-icon {
   color: var(--fg-muted);
   cursor: pointer;
   transition:
-    background 0.12s ease,
-    color 0.12s ease;
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .window-control-btn:hover {
@@ -3725,13 +4458,14 @@ html[data-look='islands-light'] .window-title-icon {
   z-index: 1;
 }
 
+/* Left padding keeps the centred pills clear of the workspace controls. */
 .window-titlebar > .focus-mode-task-indicators {
-  padding: 0 140px 0 180px;
+  padding: 0 140px 0 270px;
 }
 
 /* Keep clear of the macOS traffic lights. */
 .mac-titlebar-spacer > .focus-mode-task-indicators {
-  padding: 0 24px 0 230px;
+  padding: 0 24px 0 320px;
 }
 
 .focus-mode-task-indicator {
@@ -3744,7 +4478,7 @@ html[data-look='islands-light'] .window-title-icon {
   flex: 0 1 auto;
   padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--fg-muted);
   font-family: inherit;
@@ -3759,10 +4493,10 @@ html[data-look='islands-light'] .window-title-icon {
      can't reach them and the drag region swallows the click. */
   -webkit-app-region: no-drag;
   transition:
-    background 0.15s ease,
-    color 0.15s ease,
-    border-color 0.15s ease,
-    opacity 0.15s ease;
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
 }
 
 .focus-mode-task-indicator-name {
@@ -3811,7 +4545,7 @@ html[data-look='islands-light'] .window-title-icon {
 
 .task-switcher-option {
   display: grid;
-  grid-template-columns: 14px minmax(0, auto) minmax(0, 1fr);
+  grid-template-columns: 14px minmax(0, auto) minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 7px 8px;
@@ -3842,7 +4576,29 @@ html[data-look='islands-light'] .window-title-icon {
   margin: 4px 8px;
 }
 
-/* macOS native titlebar spacer (overlay style) */
+.task-switcher-group {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-switcher-heading {
+  padding: 8px 8px 4px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+/* Shown to teach the key, so it reads as a plain hint, not a control. */
+.task-switcher-shortcut {
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* macOS native titlebar spacer (overlay style). Its height is mirrored by
+   trafficLightPosition in electron/main.ts, which centres the traffic lights
+   on this row. */
 .mac-titlebar-spacer {
   padding-left: 90px;
   height: 32px;
@@ -3860,7 +4616,7 @@ html[data-look='islands-light'] .window-title-icon {
   position: fixed;
   top: 46px;
   left: 50%;
-  z-index: 1900;
+  z-index: calc(var(--z-overlay) - 100);
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -3916,7 +4672,7 @@ html[data-look='islands-light'] .window-title-icon {
   position: fixed;
   bottom: 24px;
   left: 50%;
-  z-index: 2100;
+  z-index: calc(var(--z-overlay) + 100);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -4271,7 +5027,7 @@ html[data-look='islands-light'] .window-title-icon {
   color: var(--fg-muted);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .mermaid-block:hover .mermaid-enlarge,
@@ -4288,7 +5044,7 @@ html[data-look='islands-light'] .window-title-icon {
 .mermaid-lightbox {
   position: fixed;
   inset: 0;
-  z-index: 3000;
+  z-index: var(--z-top);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4320,7 +5076,7 @@ html[data-look='islands-light'] .window-title-icon {
   height: 34px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg-elevated);
   color: var(--fg);
   cursor: pointer;
@@ -4573,8 +5329,8 @@ html[data-look='islands-light'] .window-title-icon {
   field-sizing: content;
   resize: none;
   transition:
-    border-color 120ms ease,
-    background 120ms ease;
+    border-color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
 }
 
 /* Room in the bottom-right corner, so text never runs under the send button. */
@@ -4679,7 +5435,7 @@ button.tour-outline-twisty:hover {
 }
 
 .tour-outline-twisty svg {
-  transition: transform 120ms ease;
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 .tour-outline-twisty:is([aria-expanded='true'], [data-open]) svg {
@@ -4814,7 +5570,7 @@ span.tour-outline-twisty[data-open] {
   min-width: 60px;
   gap: 4px;
   opacity: 0.35;
-  transition: opacity 120ms ease;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .understanding-segments:hover,
@@ -4926,7 +5682,7 @@ span.tour-outline-twisty[data-open] {
 .understanding-stack-item:not([aria-current]) {
   cursor: pointer;
   opacity: 0.5;
-  transition: opacity 120ms ease-out;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .understanding-stack-item:not([aria-current]):hover {
@@ -5623,7 +6379,7 @@ button.tour-save-state:not(:disabled):hover {
 
 .tour-hint {
   position: fixed;
-  z-index: 2000;
+  z-index: var(--z-overlay);
   box-sizing: border-box;
   max-width: calc(100vw - 24px);
   padding: 10px 12px;
@@ -5663,6 +6419,7 @@ button.tour-save-state:not(:disabled):hover {
 
 /* Keep reduced-motion overrides last so class-based rules win by source order. */
 @media (prefers-reduced-motion: reduce) {
+  .task-brief-chevron,
   .projects-collapser {
     transition: none;
   }
@@ -5671,6 +6428,16 @@ button.tour-save-state:not(:disabled):hover {
     animation: none;
   }
 
+  .dialog-overlay,
+  .dialog-overlay > form,
+  .dialog-overlay > .dialog-content,
+  .exit-badge {
+    animation: none;
+  }
+
+  .finish-followup-below > *,
+  .app-notice,
+  .app-notice-check,
   .task-appearing,
   .new-task-appearing,
   .task-item-appearing,

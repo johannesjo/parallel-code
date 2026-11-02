@@ -1,4 +1,5 @@
 import { onCleanup } from 'solid-js';
+import { EASE_OUT, prefersMotion } from '../../lib/reducedMotion';
 
 const DURATION_MS = 180;
 /** Heights reported this soon after a window resize follow the drag, unanimated. */
@@ -11,7 +12,6 @@ const RESIZE_SETTLE_MS = 100;
  * a running ease at once, for code that must measure the settled layout.
  */
 export function createHeightTransition(element: HTMLElement): () => void {
-  const motion = matchMedia('(prefers-reduced-motion: reduce)');
   let shown: number | undefined;
   let resizedAt = -Infinity;
   let running: Animation | undefined;
@@ -27,11 +27,11 @@ export function createHeightTransition(element: HTMLElement): () => void {
     // A window resize moves the height cap and rewraps the text; easing that
     // would lag the drag.
     const resizing = performance.now() - resizedAt < RESIZE_SETTLE_MS;
-    if (from === undefined || from === shown || resizing || motion.matches) return;
+    if (from === undefined || from === shown || resizing || !prefersMotion()) return;
     element.dataset.resizing = '';
     const animation = element.animate([{ height: `${from}px` }, { height: `${shown}px` }], {
       duration: DURATION_MS,
-      easing: 'ease-out',
+      easing: EASE_OUT,
     });
     const settle = () => {
       running = undefined;

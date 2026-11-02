@@ -12,6 +12,8 @@ interface SegmentedButtonsProps<T extends string> {
   options: SegmentedOption<T>[];
   value: T;
   onChange: (value: T) => void;
+  /** Id of the visible label naming the group. */
+  labelledBy?: string;
 }
 
 /**
@@ -53,7 +55,11 @@ export function SegmentedButtons<T extends string>(props: SegmentedButtonsProps<
   }
 
   return (
-    <div role="radiogroup" style={{ display: 'flex', gap: '4px' }}>
+    <div
+      role="radiogroup"
+      aria-labelledby={props.labelledBy}
+      style={{ display: 'flex', gap: '4px' }}
+    >
       <For each={props.options}>
         {(opt, i) => {
           const isActive = () => props.value === opt.value;

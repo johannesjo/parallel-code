@@ -40,6 +40,8 @@ export interface AgentHookStatus {
   unread: boolean;
   launchId?: string;
   source?: 'hook' | 'terminal';
+  /** A background sub-agent or workflow runs while the lead sits at its prompt. */
+  background?: boolean;
 }
 
 export interface TaskAgentHookStatus extends AgentHookStatus {
@@ -196,7 +198,7 @@ export function applyAgentActivitySnapshot(snapshot: AgentActivitySnapshot): voi
 export function noteAgentTerminalInput(agentId: string, data: string): void {
   const current = statuses().get(agentId);
   if (!current) return;
-  if (current.state === 'working' && (data === ESC || data === CTRL_C)) {
+  if (current.state === 'working' && !current.background && (data === ESC || data === CTRL_C)) {
     scheduleInterrupt(agentId, current.updatedAt);
     return;
   }

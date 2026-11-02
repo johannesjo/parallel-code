@@ -17,7 +17,7 @@
   padding: 12px;
   pointer-events: none;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bg-elevated);
   box-shadow: var(--shadow-soft);
 }
@@ -117,7 +117,7 @@
   padding: 10px 12px;
   text-align: left;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   color: var(--fg);
   cursor: pointer;
@@ -160,14 +160,14 @@
   height: 10px;
   color: var(--fg-muted);
   opacity: 0.18;
-  transition: opacity 160ms;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 .mindmap-ownership {
   pointer-events: auto;
 }
 .mindmap-context-menu {
   position: fixed;
-  z-index: 1200;
+  z-index: var(--z-popover);
   width: 220px;
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
@@ -285,7 +285,7 @@
 }
 .mindmap-new-badge {
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--info) 18%, var(--bg-elevated));
   color: var(--info);
   font: 600 10px var(--font-ui);
@@ -325,7 +325,7 @@
   background: var(--bg-elevated);
   color: var(--fg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   border-left: 2px solid var(--fg-muted);
   padding: 10px 12px;
 }
@@ -423,7 +423,7 @@
   bottom: calc(100% + 3px);
   left: 12px;
   padding: 2px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--task-panel-bg);
   color: var(--success);
   font-size: 9px;
@@ -480,7 +480,7 @@
   background: var(--bg-elevated);
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-soft);
 }
 .investigation-navigation button {
@@ -587,7 +587,7 @@
 .mindmap-title-editor {
   overflow: hidden;
   border: 1px solid var(--border-focus);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 18%, transparent);
 }
@@ -634,7 +634,7 @@
   margin-top: 6px;
   padding: 3px 6px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--bg-input);
   color: var(--fg);
   font: inherit;

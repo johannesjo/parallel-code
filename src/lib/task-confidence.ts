@@ -39,18 +39,20 @@ export function isConfidenceStale(
   return brief.generatedAt > confidence.publishedAt && brief.fingerprint !== confidence.fingerprint;
 }
 
-// An agent rating its own work from memory scores high, so the default asks for
-// an audit by a fresh sub-agent where the agent supports one, and for scores
-// grounded in the diff and test runs either way.
-export const DEFAULT_CONFIDENCE_PROMPT =
-  'Rate the current changes on this task without changing any code. ' +
-  'Judge the diff against what I asked for, not against your own account of the work. ' +
-  'The diff is everything on this branch since it left the base branch, committed or not. ' +
-  'If you can start a sub-agent, have one that cannot see this conversation do the audit: ' +
-  'quote it every request I made verbatim, later corrections included, and have it read the diff and run the tests covering the changed files. ' +
-  'Otherwise re-read my requests, read the full diff and run those tests yourself. Do not update snapshots. ' +
-  'Score Correct, Complete and Minimal from 0 to 100, each with a one-line reason naming what keeps it from being higher; ' +
-  'count only what was verified. Add findings for gaps, changes I did not ask for, and risks. ' +
-  'Publish the rating with the confidence_publish tool of the parallel-code MCP server, ' +
-  'with source "sub-agent audit" or "self-check" for whichever ran. ' +
-  'If that tool is not available, say so and give the rating here instead.';
+/** Scores below this are the ones worth reading; the rest need no attention. */
+export const LOW_CONFIDENCE_SCORE = 60;
+
+/**
+ * Whether the code moved on since the rating, judged by the newest code read:
+ * the task's latest diff fingerprint when one was taken, otherwise its brief.
+ */
+export function isConfidenceOutdated(
+  confidence: Pick<TaskConfidence, 'publishedAt' | 'fingerprint'>,
+  codeFingerprint: { fingerprint: string; at: number } | undefined,
+  brief: Pick<TaskBriefRecord, 'generatedAt' | 'fingerprint'> | undefined,
+): boolean {
+  const latest = codeFingerprint
+    ? { generatedAt: codeFingerprint.at, fingerprint: codeFingerprint.fingerprint }
+    : brief;
+  return isConfidenceStale(confidence, latest);
+}

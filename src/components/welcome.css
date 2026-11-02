@@ -1,0 +1,143 @@
+/* The first-run screen: one column in the middle of an otherwise empty window. */
+.welcome {
+  flex: 1;
+  display: flex;
+  overflow: auto;
+  padding: 32px 24px;
+}
+
+.welcome-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 600px;
+  /* Centres the column, and still scrolls from the top when the window is too short. */
+  margin: auto;
+  /* Sits a little above centre, where the eye lands first. */
+  padding-bottom: 4vh;
+  text-align: center;
+}
+
+.welcome-logo {
+  width: 48px;
+  height: 48px;
+  color: var(--accent);
+}
+
+.welcome h1 {
+  margin: 20px 0 10px;
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  color: var(--fg);
+}
+
+.welcome-lead {
+  max-width: 440px;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--fg-muted);
+  text-wrap: balance;
+}
+
+/* Neutral like every routine action; full-strength text marks it as the one to take. */
+.welcome-action {
+  min-width: 220px;
+  margin-top: 32px;
+  padding: 10px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.welcome-action:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.welcome-action:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.welcome-action:disabled {
+  color: var(--fg-muted);
+  cursor: default;
+}
+
+.welcome-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--fg-subtle);
+}
+
+/* How it works: three columns, or one under the other in a narrow window. */
+.welcome-steps {
+  counter-reset: welcome-step;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px 28px;
+  width: 100%;
+  margin: 48px 0 0;
+  padding: 24px 0 0;
+  border-top: 1px solid var(--border-subtle);
+  list-style: none;
+  text-align: left;
+}
+
+.welcome-steps li {
+  counter-increment: welcome-step;
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  /* Lines the steps up at the top when one wraps to more lines than another. */
+  align-content: start;
+  column-gap: 10px;
+  row-gap: 3px;
+}
+
+.welcome-steps li::before {
+  content: counter(welcome-step);
+  grid-row: span 2;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+.welcome-steps strong {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--fg);
+}
+
+.welcome-steps span {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg-subtle);
+}
+
+.welcome-agents {
+  min-height: 1.5em;
+  margin: 28px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-subtle);
+}
+
+.welcome-agents.pending {
+  visibility: hidden;
+}

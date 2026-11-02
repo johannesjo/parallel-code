@@ -27,7 +27,7 @@ class SettingsStore(private val prefs: SharedPreferences) {
             prefs.edit { putString(KEY_THEME_MODE, value) }
         }
 
-    /** Preset drawn while in dark mode; unknown or wrong-tone ids read back as Obsidian. */
+    /** Preset drawn while in dark mode; unknown or wrong-tone ids read back as Parallel Code. */
     var darkThemePreset: String
         get() = LookPresets.forTone(dark = true, id = prefs.getString(KEY_DARK_THEME_PRESET, null)).id
         set(value) {
@@ -118,6 +118,14 @@ class SettingsStore(private val prefs: SharedPreferences) {
             prefs.edit { if (ssid == null) remove(KEY_HOME_WIFI_SSID) else putString(KEY_HOME_WIFI_SSID, ssid) }
         }
 
+    /**
+     * The project this phone last created a task in, so New task starts there. One for all
+     * computers: another computer's id is not in its list, so New task falls back to its lastUsed.
+     */
+    var lastProjectId: String?
+        get() = prefs.getString(KEY_LAST_PROJECT, null)
+        set(value) = prefs.edit { if (value == null) remove(KEY_LAST_PROJECT) else putString(KEY_LAST_PROJECT, value) }
+
     fun notifiesFor(event: AgentEvent): Boolean = when (event) {
         AgentEvent.NEEDS_INPUT -> notifyNeedsInput
         AgentEvent.ERROR -> notifyErrors
@@ -145,6 +153,7 @@ class SettingsStore(private val prefs: SharedPreferences) {
         const val KEY_NOTIFY_FINISHED = "notifyFinished"
         const val KEY_WIDGET_TRANSPARENCY = "widgetTransparency"
         const val KEY_WIDGET_PALETTE = "widgetPalette"
+        const val KEY_LAST_PROJECT = "lastProjectId"
 
         const val THEME_SYSTEM = "system"
         const val THEME_DARK = "dark"

@@ -3,7 +3,11 @@ import { createCanvasTask, validateCanvasTaskSource } from '../store/canvas-task
 import type { AppStore, KanbanNewTaskSource, SpNewTaskSource } from '../store/types';
 import { linkNewTaskToSp } from '../store/superProductivityOpen';
 import { linkNewTaskToKanbanCard } from '../store/kanban';
+import { removeTaskIdea } from '../store/ideas';
 import { nameTaskWithModel } from '../store/model-task-name';
+import { activeFeatureHint, markFeatureHintSeen } from '../store/onboarding';
+import { createTaskInBackground, registerOpenDraft } from '../store/task-creation';
+import type { CreateTaskOptions } from '../store/tasks';
 import {
   createSignal,
   createEffect,
@@ -20,10 +24,20 @@ import { createFocusRestore } from '../lib/focus-restore';
 import { topDialog } from '../lib/dialog-stack';
 import { registerFocusFn, unregisterFocusFn } from '../store/focused-panel';
 import { setStore } from '../store/core';
-import { ContainerIcon, FolderIcon, GitBranchIcon, GitHubIcon, PlusIcon, SyncIcon } from './icons';
+import {
+  ChevronRightThinIcon,
+  ContainerIcon,
+  FolderIcon,
+  GitBranchIcon,
+  GitHubIcon,
+  PlusIcon,
+  SyncIcon,
+} from './icons';
 import { ConfirmDialog } from './ConfirmDialog';
 import { errMessage } from '../lib/log';
+import { withViewTransition } from '../lib/viewTransition';
 import { invoke } from '../lib/ipc';
+import { dataTransferToShellArgs } from '../lib/terminalDrop';
 import { IPC } from '../../electron/ipc/channels';
 import { resolveSkipPermissionsArgs } from '../../electron/shared/skip-permissions';
 import {
@@ -54,8 +68,11 @@ import { SegmentedButtons } from './SegmentedButtons';
 import { autoTaskNameFromPrompt, nextDefaultTaskName } from '../lib/clean-task-name';
 import { isAgentInstalled, pickDefaultAgent } from '../lib/default-agent';
 import { extractGitHubUrl } from '../lib/github-url';
+import { parseClaudeSessionUrl } from '../lib/claude-session-url';
+import { sessionAgentForCommand } from '../../electron/shared/session-record';
 import { buildIssuePrompt, buildPrTaskPrompt, workItemTaskName } from '../lib/github-prompts';
 import { getGitHubIssue } from '../store/github';
+import { linkTaskToIssueReference } from '../store/github-issue-link';
 import { GitHubItemPicker } from './GitHubItemPicker';
 import {
   createSymlinkCandidateState,
@@ -65,6 +82,8 @@ import {
 import { theme, sectionLabelStyle, bannerStyle } from '../lib/theme';
 import { isMac } from '../lib/platform';
 import { AgentSelector } from './AgentSelector';
+import { NewTaskModelPicker, modelProvider } from './NewTaskModelPicker';
+import { reviewerWithModel } from '../lib/agent-handoff';
 import { FeatureHint } from './FeatureHint';
 import { BranchPrefixField } from './BranchPrefixField';
 import { BranchCombobox } from './BranchCombobox';
@@ -80,11 +99,15 @@ import {
   MIN_COORDINATOR_CONCURRENT_TASKS,
 } from '../lib/coordinator-limits';
 
-/** Ends with a cue for the user's own goal, so the cursor lands where they type it. */
-const DELEGATION_EXAMPLE_PROMPT =
-  'Split the work below into independent parts. Start a Parallel Code task for each, with a ' +
-  'prompt that stands on its own. Wait for them to finish, then summarize what each one ' +
-  'changed.\n\nThe work: ';
+/** Follows the user's prompt, so their own description of the work stays first. */
+const DELEGATION_REQUEST =
+  '\n\nSplit this work into independent parts. Start a Parallel Code task for each, with a ' +
+  'prompt that stands on its own. Wait for them to finish, then summarize what each one changed.';
+// shortcut: prompt length as a proxy for "several changes" — ask the naming model if it misfires
+/** A prompt this long likely describes enough work to be worth splitting. */
+const SPLIT_TIP_MIN_PROMPT = 80;
+/** The split tip waits for typing to stop this long, so it never interrupts a sentence. */
+const SPLIT_TIP_PAUSE_MS = 1500;
 
 interface NewTaskPanelProps {
   open: boolean;
@@ -145,6 +168,28 @@ interface ProjectDockerfileInfo {
   dockerfilePath: string;
   imageTag: string;
   buildContext: string;
+}
+
+const isClaudeCommand = (command: string) => sessionAgentForCommand(command) === 'claude';
+
+const isInstalledClaude = (agent: AgentDef) =>
+  isAgentInstalled(agent) && isClaudeCommand(agent.command);
+
+/**
+ * Project of the last teleport, if it still exists. A Claude link doesn't name
+ * its repo, so with no remembered project the user picks one rather than
+ * teleporting into whatever project happened to be last.
+ */
+function teleportProjectId(): string | null {
+  return codeProjects().some((p) => p.id === store.lastTeleportProjectId)
+    ? store.lastTeleportProjectId
+    : null;
+}
+
+/** `session_011CUabcd…` → "Teleport 011CUabc": short, and the branch is
+ *  replaced by the session's own once teleport checks it out. */
+function teleportTaskName(sessionId: string): string {
+  return `Teleport ${sessionId.replace(/^session_/, '').slice(0, 8)}`;
 }
 
 function DockerTaskOptions(props: {
@@ -399,6 +444,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
   const [canvasPrefill, setCanvasPrefill] = createSignal<AppStore['newTaskPrefillPrompt']>(null);
   const [spSource, setSpSource] = createSignal<SpNewTaskSource | null>(null);
   const [kanbanSource, setKanbanSource] = createSignal<KanbanNewTaskSource | null>(null);
+  const [ideaId, setIdeaId] = createSignal<string | null>(null);
   const [prompt, setPrompt] = createSignal('');
   const [githubPickerOpen, setGithubPickerOpen] = createSignal(false);
   /** Open PR the task will check out instead of branching from the base branch. */
@@ -413,7 +459,18 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
   const [initialName, setInitialName] = createSignal('');
   const [confirmDiscard, setConfirmDiscard] = createSignal(false);
   const [name, setName] = createSignal('');
-  const [selectedAgent, setSelectedAgent] = createSignal<AgentDef | null>(null);
+  const [selectedAgent, setSelectedAgentSignal] = createSignal<AgentDef | null>(null);
+  // Empty runs the agent's own default; another agent's model would not apply.
+  const [taskModel, setTaskModel] = createSignal({ model: '', effort: '' });
+  const modelChoice = createMemo(() => {
+    const agent = selectedAgent();
+    const provider = agent && modelProvider(agent);
+    return agent && provider ? { agent, provider } : undefined;
+  });
+  const setSelectedAgent = (agent: AgentDef | null) => {
+    if (agent?.id !== selectedAgent()?.id) setTaskModel({ model: '', effort: '' });
+    setSelectedAgentSignal(agent);
+  };
   const [selectedProjectId, setSelectedProjectId] = createSignal<string | null>(null);
   const [error, setError] = createSignal('');
   const [loading, setLoading] = createSignal(false);
@@ -457,9 +514,58 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
   );
   const [branchPrefix, setBranchPrefix] = createSignal('');
   let promptRef!: HTMLTextAreaElement;
+  let submitRef: HTMLButtonElement | undefined;
   const hasOtherTasks = () => store.taskOrder.length + store.collapsedTaskOrder.length > 0;
-  function applyDelegationExample(): void {
-    setPrompt(DELEGATION_EXAMPLE_PROMPT);
+  const [promptPaused, setPromptPaused] = createSignal(false);
+  let promptPauseTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(promptPauseTimer));
+  function handlePromptInput(value: string): void {
+    setPrompt(value);
+    // Typing on past the split tip counts as having seen it, so it never comes back.
+    if (activeFeatureHint() === 'delegate-subtasks') markFeatureHintSeen('delegate-subtasks');
+    setPromptPaused(false);
+    clearTimeout(promptPauseTimer);
+    promptPauseTimer = setTimeout(() => setPromptPaused(true), SPLIT_TIP_PAUSE_MS);
+  }
+  // Dropped files become paths in the prompt, as on the terminal, so the agent can open
+  // them; images from a browser have no path and are saved to a temp file first.
+  function handleFileDragOver(e: DragEvent): void {
+    if (loading() || !e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }
+  function handleFileDrop(e: DragEvent): void {
+    const dt = e.dataTransfer;
+    if (loading() || !dt?.files.length) return;
+    // Stops the textarea's default of inserting only the file name, and the app's
+    // GitHub link drop from reading a browser image's URL.
+    e.preventDefault();
+    e.stopPropagation();
+    void insertDroppedPaths(dt);
+  }
+  async function insertDroppedPaths(dt: DataTransfer): Promise<void> {
+    const paths = await dataTransferToShellArgs(dt);
+    if (!paths) {
+      setError('Could not attach the dropped files.');
+      return;
+    }
+    // Read the caret after resolving: saving a browser image takes a moment to type through.
+    const before = prompt().slice(0, promptRef.selectionStart);
+    const after = prompt().slice(promptRef.selectionEnd);
+    const lead = before && !/\s$/.test(before) ? ' ' : '';
+    const trail = after && !/^\s/.test(after) ? ' ' : '';
+    handlePromptInput(`${before}${lead}${paths}${trail}${after}`);
+    const caret = before.length + lead.length + paths.length;
+    promptRef.focus();
+    promptRef.setSelectionRange(caret, caret);
+  }
+  const wantsSplitTip = () =>
+    orchestrationEnabled() &&
+    hasOtherTasks() &&
+    promptPaused() &&
+    prompt().trim().length >= SPLIT_TIP_MIN_PROMPT;
+  function addDelegationRequest(): void {
+    setPrompt(prompt().trimEnd() + DELEGATION_REQUEST);
     promptRef.focus();
     promptRef.setSelectionRange(promptRef.value.length, promptRef.value.length);
   }
@@ -468,6 +574,8 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
   const advancedOptionsId = createUniqueId();
   const promptInputId = createUniqueId();
   const nameInputId = createUniqueId();
+  const projectSelectId = createUniqueId();
+  const isolationLabelId = createUniqueId();
   let panelRef!: HTMLElement;
   let formRef!: HTMLFormElement;
   let buildOutputRef!: HTMLPreElement;
@@ -538,6 +646,32 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     ),
   );
 
+  // A link dropped while the panel is already open: the open effect below ran
+  // before it arrived, and reopening is a no-op. Fill only the text that is
+  // still empty so a drop never discards what the user typed. A teleport does
+  // replace the project and agent: it only runs in Claude, and a project chosen
+  // for an unrelated draft would teleport into the wrong repo.
+  createEffect(
+    on(
+      () => store.newTaskDropUrl,
+      (dropUrl) => {
+        if (!dropUrl || !untrack(() => props.open)) return;
+        untrack(() => {
+          const teleportId = parseClaudeSessionUrl(dropUrl);
+          const defaults = teleportId ? null : getGitHubDropDefaults(dropUrl);
+          if (!teleportId && !prompt().trim()) setPrompt(`review ${dropUrl}`);
+          const dropName = teleportId ? teleportTaskName(teleportId) : defaults?.name;
+          if (dropName && !name().trim()) setName(dropName);
+          if (teleportId) setSelectedProjectId(teleportProjectId());
+          else if (defaults?.projectId) setSelectedProjectId(defaults.projectId);
+          const claude = teleportId ? store.availableAgents.find(isInstalledClaude) : undefined;
+          if (claude) setSelectedAgent(claude);
+        });
+      },
+      { defer: true },
+    ),
+  );
+
   // Initialize remaining state each time the panel opens.  Same on()+untrack
   // guard as the effect above: fire only on the props.open *transition* and
   // untrack the body, so no store read — nor the prompt/name snapshot below —
@@ -593,25 +727,37 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
               targets.find((p) => p.id === store.lastProjectId)?.id ??
               targets[0]?.id ??
               null;
-            const defaults = dropUrl ? getGitHubDropDefaults(dropUrl) : null;
+            const teleportId = dropUrl ? parseClaudeSessionUrl(dropUrl) : null;
+            const defaults = dropUrl && !teleportId ? getGitHubDropDefaults(dropUrl) : null;
 
-            if (dropUrl) setPrompt(`review ${dropUrl}`);
+            if (dropUrl && !teleportId) setPrompt(`review ${dropUrl}`);
             if (defaults) setName(defaults.name);
-            setSelectedProjectId(defaults?.projectId ?? fallbackProjectId);
+            if (teleportId) setName(teleportTaskName(teleportId));
+            setSelectedProjectId(
+              teleportId ? teleportProjectId() : (defaults?.projectId ?? fallbackProjectId),
+            );
 
             // Pre-fill from an arena comparison or canvas branch.
             const prefill = store.newTaskPrefillPrompt;
             setSpSource(prefill?.superProductivity ?? null);
             setKanbanSource(prefill?.kanban ?? null);
+            setIdeaId(prefill?.ideaId ?? null);
             if (prefill) {
               setPrompt(prefill.prompt);
               setName(prefill.name ?? 'Compare arena results');
-              if (prefill.canvasSource) setCanvasPrefill(prefill);
+              // Holds any prefill: a retried draft also brings its branch and isolation.
+              setCanvasPrefill(prefill);
               if (prefill.projectId) setSelectedProjectId(prefill.projectId);
+              if (prefill.dockerMode) setDockerMode(true);
+              if (prefill.skipPermissions !== undefined)
+                setSkipPermissions(prefill.skipPermissions);
             }
             // Snapshot the post-prefill values as the close-guard baseline.
-            setInitialPrompt(prompt());
-            setInitialName(name());
+            // A retried draft (only it carries agentId) has no other copy, so
+            // closing it must ask first.
+            const retried = prefill?.agentId !== undefined;
+            setInitialPrompt(retried ? '' : prompt());
+            setInitialName(retried ? '' : name());
 
             // Re-detect while nothing is installed, so a CLI installed after
             // launch shows up on the next open instead of after a restart.
@@ -619,7 +765,11 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
               await loadAgents();
             }
             if (cancelled) return;
-            setSelectedAgent(pickDefaultAgent(store.availableAgents, store.lastAgentId));
+            setSelectedAgent(
+              store.availableAgents.find((a) => a.id === prefill?.agentId) ??
+                (teleportId ? store.availableAgents.find(isInstalledClaude) : undefined) ??
+                pickDefaultAgent(store.availableAgents, store.lastAgentId),
+            );
           })().catch((err) => {
             if (!cancelled) setError(errMessage(err));
           });
@@ -770,6 +920,11 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
       setGitIsolation('worktree');
       return;
     }
+    const retried = canvasPrefill();
+    if (retried?.gitIsolation && retried.projectId === pid) {
+      setGitIsolation(retried.gitIsolation);
+      return;
+    }
     const proj = getProject(pid);
     setGitIsolation(proj?.defaultGitIsolation ?? 'worktree');
   });
@@ -903,6 +1058,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
   const resolvedName = () =>
     effectiveName() || nextDefaultTaskName(Object.values(store.tasks).map((t) => t.name));
 
+  /** Web session a dropped claude.ai link teleports into this task, if any. */
+  const teleportSessionId = () =>
+    store.newTaskDropUrl ? parseClaudeSessionUrl(store.newTaskDropUrl) : null;
+
   /** A same-repo PR is checked out on its own head branch; forks get a prefixed branch. */
   const prUsesHeadBranch = () => !!githubPr() && !githubPr()?.isCrossRepository;
 
@@ -962,6 +1121,8 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     const next = rest ? `${text}\n\n${rest}` : text;
     picked.prompt = text;
     setPrompt(next);
+    // The split tip waits for a pause after the user's own typing, not after a pick.
+    setPromptPaused(false);
     return next;
   }
 
@@ -1021,26 +1182,37 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     return !!agent && resolveSkipPermissionsArgs(agent).length > 0;
   };
 
-  const canSubmit = () => {
+  // Why Create Task is disabled, shown beside it so a greyed-out button is
+  // never unexplained. Empty when the form can be submitted.
+  const submitBlockedReason = () => {
     // No name/prompt requirement — an empty task defaults to "Task N".
+    if (!selectedProjectId()) return 'Select a project';
     // Block submit while branches load — and require a resolved base branch
     // for git projects — so a task can't be created with a stale or empty
     // base branch (e.g. after a failed branch fetch).
+    if (branchesLoading()) return 'Loading branches…';
+    // Block submit until the symlink candidate list for THIS project has
+    // resolved — otherwise stale checkmarks could be submitted against a
+    // project whose candidates haven't loaded yet. Direct-mode submits
+    // never send symlinkDirs, so a pending probe doesn't block them.
+    if (symlinkProbeBlocksSubmit(gitIsolation(), symlinkCandidates.loading())) {
+      return 'Checking ignored folders…';
+    }
     // A PR task takes its base from the PR, so it does not need the picker's.
-    const branchOk = isNonGitProject() || !!githubPr() || (!!baseBranch() && !branchesError());
-    return (
-      !!selectedProjectId() &&
-      !loading() &&
-      !branchesLoading() &&
-      // Block submit until the symlink candidate list for THIS project has
-      // resolved — otherwise stale checkmarks could be submitted against a
-      // project whose candidates haven't loaded yet. Direct-mode submits
-      // never send symlinkDirs, so a pending probe doesn't block them.
-      !symlinkProbeBlocksSubmit(gitIsolation(), symlinkCandidates.loading()) &&
-      branchOk &&
-      !branchPrefixConflict()
-    );
+    if (!isNonGitProject() && !githubPr()) {
+      if (branchesError()) return "Couldn't load branches";
+      if (!baseBranch()) return 'Select a base branch';
+    }
+    if (branchPrefixConflict()) return 'Fix the branch prefix';
+    return '';
   };
+
+  const canSubmit = () => !loading() && !submitBlockedReason();
+
+  // Only a direct task waits before the panel closes (it switches branches);
+  // a worktree task closes at once, and dimming it would flash in the
+  // view transition's captured frame.
+  const showBusy = () => loading() && gitIsolation() === 'direct';
 
   async function handleSubmit(e: Event) {
     e.preventDefault();
@@ -1062,6 +1234,11 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
 
     const p = prompt().trim() || undefined;
     const isFromDrop = !!store.newTaskDropUrl;
+    const teleportId = teleportSessionId() ?? undefined;
+    if (teleportId && !isClaudeCommand(agent.command)) {
+      setError('Teleporting a web session needs Claude Code');
+      return;
+    }
     const prefix = sanitizeBranchPrefix(branchPrefix());
     const prefixConflict = branchPrefixConflict();
     if (prefixConflict) {
@@ -1076,10 +1253,12 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
         ? prefill.projectId === projectId
           ? (prefill.githubUrl ?? undefined)
           : undefined
-        : ((p ? extractGitHubUrl(p) : null) ?? store.newTaskDropUrl ?? undefined);
+        : ((p ? extractGitHubUrl(p) : null) ??
+          (teleportId ? undefined : (store.newTaskDropUrl ?? undefined)));
 
     setLoading(true);
     setError('');
+    let closing = false;
 
     try {
       const canvasSource = canvasPrefill()?.canvasSource;
@@ -1113,10 +1292,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
       const create = canvasSource
         ? (options: Parameters<typeof createTask>[0]) => createCanvasTask(canvasSource, options)
         : createTask;
-      const taskId = await create({
+      const options: CreateTaskOptions = {
         name: n,
         nameIsAutoGenerated: !manualName,
-        agentDef: agent,
+        agentDef: reviewerWithModel(agent, taskModel().model, taskModel().effort),
         projectId,
         gitIsolation: gitIsolation(),
         baseBranch: baseBranch(),
@@ -1125,6 +1304,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
         initialPrompt: isFromDrop ? undefined : p,
         githubUrl: ghUrl,
         pullRequestNumber: githubPr()?.number,
+        teleportSessionId: teleportId,
         skipPermissions: agentSupportsSkipPermissions() && skipPermissions(),
         dockerMode: dockerMode() || undefined,
         dockerSource: dockerMode()
@@ -1146,34 +1326,94 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
         maxConcurrentTasks: orchestrationEnabled()
           ? clampCoordinatorConcurrentTasks(maxConcurrentTasks())
           : undefined,
-      });
-      // Drop flow: prefill prompt without auto-sending
-      if (isFromDrop && p) {
-        setPrefillPrompt(taskId, p);
-      }
+      };
       const source = spSource();
-      if (source) linkNewTaskToSp(taskId, source, projectId);
       const card = kanbanSource();
-      if (card) void linkNewTaskToKanbanCard(taskId, card, projectId);
-      if (!manualName && p) void nameTaskWithModel(taskId, p);
-      toggleNewTaskPanel(false);
+      const idea = ideaId();
+      // The panel closes before creation finishes so the next draft can start.
+      void createTaskInBackground({
+        name: n,
+        create: (quick) => create({ ...options, activate: quick }),
+        onCreated: (taskId) => {
+          // Drop flow: prefill prompt without auto-sending
+          if (isFromDrop && p) {
+            setPrefillPrompt(taskId, p);
+          }
+          if (source) linkNewTaskToSp(taskId, source, projectId);
+          if (card) void linkNewTaskToKanbanCard(taskId, card, projectId);
+          if (idea) removeTaskIdea(idea);
+          if (!manualName && p) void nameTaskWithModel(taskId, p);
+          // A prefill decided the link itself (null = deliberately none).
+          const root = getProjectPath(projectId);
+          if (!ghUrl && prefill?.githubUrl === undefined && p && !isFromDrop && root)
+            void linkTaskToIssueReference(taskId, root, p);
+        },
+        draft: {
+          prefill: {
+            ...prefill,
+            // Keep the link decision made for this project: null, not undefined,
+            // so a retry doesn't fall back to a URL found in the prompt.
+            ...(prefill?.githubUrl !== undefined && { githubUrl: ghUrl ?? null }),
+            prompt: prompt(),
+            name: manualName,
+            projectId,
+            agentId: agent.id,
+            gitIsolation: gitIsolation(),
+            baseBranch: baseBranch() || undefined,
+            dockerMode: dockerMode(),
+            skipPermissions: skipPermissions(),
+            githubPr: githubPr() ?? undefined,
+          },
+          dropUrl: store.newTaskDropUrl,
+        },
+      });
+      // Loading lasts until the deferred close lands, so a second Enter can't
+      // create the task twice.
+      closing = true;
+      withViewTransition(() => {
+        setLoading(false);
+        toggleNewTaskPanel(false);
+      });
     } catch (err) {
       setError(String(err));
     } finally {
-      setLoading(false);
+      if (!closing) setLoading(false);
     }
+  }
+
+  function isDirty(): boolean {
+    return prompt().trim() !== initialPrompt().trim() || name().trim() !== initialName().trim();
   }
 
   // Preserve typed drafts until the user explicitly discards them.
   function requestClose() {
     if (loading()) return;
-    const dirty =
-      prompt().trim() !== initialPrompt().trim() || name().trim() !== initialName().trim();
-    if (dirty) {
+    if (isDirty()) {
       setConfirmDiscard(true);
     } else {
       props.onClose();
     }
+  }
+
+  // Opening a task from the board closes the panel; this is what it keeps.
+  // A creation under way already holds its own draft for a retry.
+  function openDraft() {
+    if (!props.open || loading() || !isDirty()) return null;
+    return {
+      prefill: {
+        ...store.newTaskPrefillPrompt,
+        prompt: prompt(),
+        name: name(),
+        projectId: selectedProjectId(),
+        agentId: selectedAgent()?.id,
+        gitIsolation: gitIsolation(),
+        baseBranch: baseBranch() || undefined,
+        dockerMode: dockerMode(),
+        skipPermissions: skipPermissions(),
+        githubPr: githubPr() ?? undefined,
+      },
+      dropUrl: store.newTaskDropUrl,
+    };
   }
 
   createFocusRestore(() => props.open);
@@ -1181,6 +1421,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     promptRef?.focus();
     registerFocusFn('new-task', () => promptRef?.focus());
     onCleanup(() => unregisterFocusFn('new-task'));
+    onCleanup(registerOpenDraft(openDraft));
   });
   createEffect(() => {
     if (!props.open) return;
@@ -1199,6 +1440,8 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
       aria-labelledby={titleId}
       data-new-task-panel
       class="new-task-appearing"
+      onDragOver={handleFileDragOver}
+      onDrop={handleFileDrop}
       onFocusIn={() => setStore('newTaskPanelFocused', true)}
       onFocusOut={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -1224,7 +1467,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
         inert={loading()}
         aria-busy={loading()}
         style={{
-          opacity: loading() ? '0.4' : '1',
+          opacity: showBusy() ? '0.4' : '1',
           display: 'flex',
           'flex-direction': 'column',
           'min-height': '0',
@@ -1275,7 +1518,9 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                   title="Start from an open GitHub issue or pull request (uses the gh CLI)"
                   style={{
                     'margin-left': 'auto',
-                    padding: '2px 10px',
+                    'flex-shrink': '0',
+                    'white-space': 'nowrap',
+                    padding: '4px 12px',
                     background: 'transparent',
                     border: `1px solid ${theme.border}`,
                     'border-radius': 'var(--radius-sm)',
@@ -1330,12 +1575,44 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                 </InlineBanner>
               )}
             </Show>
+            <Show when={teleportSessionId()}>
+              {(id) => (
+                <InlineBanner color={theme.accent}>
+                  <span style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+                    <span style={{ flex: '1' }}>
+                      Teleports Claude web session {id()}: Claude Code continues it here and checks
+                      out its branch.
+                    </span>
+                    <button
+                      type="button"
+                      class="btn-secondary"
+                      onClick={() => {
+                        // The generated name describes the teleport; one the user typed stays.
+                        if (name() === teleportTaskName(id())) setName('');
+                        setStore('newTaskDropUrl', null);
+                      }}
+                      style={{
+                        padding: '2px 8px',
+                        background: 'transparent',
+                        border: `1px solid ${theme.border}`,
+                        'border-radius': 'var(--radius-sm)',
+                        color: theme.fgMuted,
+                        'font-size': '12px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Don't teleport
+                    </button>
+                  </span>
+                </InlineBanner>
+              )}
+            </Show>
             <textarea
               ref={promptRef}
               id={promptInputId}
               class="input-field"
               value={prompt()}
-              onInput={(e) => setPrompt(e.currentTarget.value)}
+              onInput={(e) => handlePromptInput(e.currentTarget.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
@@ -1343,7 +1620,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                   if (canSubmit()) handleSubmit(e);
                 }
               }}
-              placeholder="What should the agent work on?"
+              placeholder="What should the agent work on? Drop files or images to add their paths."
               rows={6}
               style={{
                 background: theme.bgInput,
@@ -1357,16 +1634,17 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                 resize: 'vertical',
               }}
             />
+            {/* Points at Create Task, the decision it informs, so the card sits
+            over the footer instead of the fields still being filled in. */}
             <FeatureHint
               id="delegate-subtasks"
-              when={orchestrationEnabled() && !prompt().trim() && hasOtherTasks()}
-              anchor={() => promptRef}
-              title="Let one agent split the work"
-              actions={[{ label: 'Use example prompt', run: applyDelegationExample }]}
+              when={wantsSplitTip()}
+              anchor={() => submitRef}
+              title="Big change? Let the agent split it"
+              actions={[{ label: 'Add split request', run: addDelegationRequest }]}
             >
-              {selectedAgent()?.name ?? 'This agent'} can start its own sub-tasks. Ask it to split a
-              change into parts: each part runs as its own task in its own worktree, and the agent
-              keeps track of them.
+              {selectedAgent()?.name ?? 'The agent'} can run each part as its own task in its own
+              worktree and keep track of them.
               <Show when={!autoMergeChildren()}> You review each result before it merges.</Show>
             </FeatureHint>
           </div>
@@ -1376,12 +1654,18 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             data-nav-field="project"
             style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
           >
-            <label style={sectionLabelStyle}>Project</label>
+            <label for={projectSelectId} style={sectionLabelStyle}>
+              Project
+            </label>
             <Show
               when={!canvasPrefill()?.canvasSource}
               fallback={<span>{getProject(selectedProjectId() ?? '')?.name}</span>}
             >
-              <ProjectSelect value={selectedProjectId()} onChange={setSelectedProjectId} />
+              <ProjectSelect
+                id={projectSelectId}
+                value={selectedProjectId()}
+                onChange={setSelectedProjectId}
+              />
             </Show>
           </div>
 
@@ -1389,6 +1673,19 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             agents={store.availableAgents}
             selectedAgent={selectedAgent()}
             onSelect={setSelectedAgent}
+            action={
+              <Show when={modelChoice()}>
+                {(choice) => (
+                  <NewTaskModelPicker
+                    agent={choice().agent}
+                    provider={choice().provider}
+                    model={taskModel().model}
+                    effort={taskModel().effort}
+                    onChange={(model, effort) => setTaskModel({ model, effort })}
+                  />
+                )}
+              </Show>
+            }
           />
           <Show when={selectedAgent()?.available === false ? selectedAgent() : undefined}>
             {(agent) => (
@@ -1398,8 +1695,8 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                   fallback={
                     <>
                       No coding agent CLI found on this machine. Install one, such as Claude Code (
-                      <code>claude</code>), Codex CLI (<code>codex</code>) or Gemini CLI (
-                      <code>gemini</code>), then reopen this panel.
+                      <code>claude</code>), Codex CLI (<code>codex</code>) or Antigravity CLI (
+                      <code>agy</code>), then reopen this panel.
                     </>
                   }
                 >
@@ -1408,18 +1705,6 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                 </Show>
               </InlineBanner>
             )}
-          </Show>
-
-          <Show when={gitIsolation() === 'direct' && !isNonGitProject()}>
-            <InlineBanner color={theme.warning}>
-              Changes will be made on the selected branch without worktree isolation.
-            </InlineBanner>
-          </Show>
-          <Show when={agentSupportsSkipPermissions() && skipPermissions()}>
-            <InlineBanner color={theme.warning}>
-              The agent will run without asking for confirmation. It can read, write, and delete
-              files, and execute commands without your approval.
-            </InlineBanner>
           </Show>
 
           <div
@@ -1445,16 +1730,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                 cursor: 'pointer',
               }}
             >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 16 16"
-                fill="none"
-                aria-hidden="true"
+              <ChevronRightThinIcon
+                size={12}
                 style={{ transform: advancedOpen() ? 'rotate(90deg)' : undefined }}
-              >
-                <path d="m6 3 5 5-5 5" stroke="currentColor" stroke-width="1.5" />
-              </svg>
+              />
               Advanced options
             </button>
           </div>
@@ -1494,9 +1773,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                   when={gitIsolation() === 'direct' && !isNonGitProject() && selectedProjectPath()}
                 >
                   <div
+                    data-direct-target
                     style={{
                       'font-size': '12px',
-                      'font-family': "'JetBrains Mono', monospace",
+                      'font-family': 'var(--font-mono)',
                       color: theme.fgSubtle,
                       display: 'flex',
                       'flex-direction': 'column',
@@ -1506,7 +1786,9 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                   >
                     <span style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
                       <GitBranchIcon size={11} style={{ 'flex-shrink': '0' }} />
-                      main branch (detected on create)
+                      {/* Submit checks out this branch before the agent starts. */}
+                      {baseBranch() ||
+                        (branchesLoading() ? 'Loading branches…' : 'No branch selected')}
                     </span>
                     <span style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
                       <FolderIcon size={11} style={{ 'flex-shrink': '0' }} />
@@ -1532,8 +1814,11 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                   data-nav-field="git-isolation"
                   style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
                 >
-                  <label style={sectionLabelStyle}>Git Isolation</label>
+                  <span id={isolationLabelId} style={sectionLabelStyle}>
+                    Git Isolation
+                  </span>
                   <SegmentedButtons
+                    labelledBy={isolationLabelId}
                     options={[
                       {
                         value: 'worktree',
@@ -1700,8 +1985,23 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             </div>
           </Show>
 
+          {/* Below the options that cause them, so a warning appearing never
+          pushes the clicked control out from under the pointer. */}
+          <Show when={gitIsolation() === 'direct' && !isNonGitProject()}>
+            <InlineBanner color={theme.warning}>
+              Changes will be made on the selected branch without worktree isolation.
+            </InlineBanner>
+          </Show>
+          <Show when={agentSupportsSkipPermissions() && skipPermissions()}>
+            <InlineBanner color={theme.warning}>
+              The agent will run without asking for confirmation. It can read, write, and delete
+              files, and execute commands without your approval.
+            </InlineBanner>
+          </Show>
+
           <Show when={error()}>
             <div
+              role="alert"
               style={{
                 ...bannerStyle(theme.error),
                 'font-size': '13px',
@@ -1724,6 +2024,24 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             'flex-shrink': '0',
           }}
         >
+          {/* Space stays reserved so the reason coming and going never moves the buttons. */}
+          <span
+            data-submit-reason
+            aria-live="polite"
+            style={{
+              'margin-right': 'auto',
+              'align-self': 'center',
+              'min-width': '0',
+              overflow: 'hidden',
+              'text-overflow': 'ellipsis',
+              'white-space': 'nowrap',
+              'font-size': '12px',
+              color: theme.fgSubtle,
+              visibility: submitBlockedReason() && !loading() ? 'visible' : 'hidden',
+            }}
+          >
+            {submitBlockedReason()}
+          </span>
           <button
             type="button"
             class="btn-secondary"
@@ -1742,9 +2060,11 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             Cancel
           </button>
           <button
+            ref={submitRef}
             type="submit"
             class="btn-primary"
             disabled={!canSubmit()}
+            aria-keyshortcuts={isMac ? 'Meta+Enter' : 'Control+Enter'}
             style={{
               padding: '9px 20px',
               'border-radius': 'var(--radius-md)',
@@ -1752,6 +2072,8 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
               'font-size': '14px',
               'font-weight': '500',
               opacity: !canSubmit() ? '0.4' : '1',
+              'white-space': 'nowrap',
+              'flex-shrink': '0',
               display: 'inline-flex',
               'align-items': 'center',
               gap: '8px',
@@ -1759,10 +2081,17 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
           >
             <PlusIcon size={14} />
             Create Task
+            <kbd
+              class="new-task-submit-kbd"
+              aria-hidden="true"
+              style={{ font: 'inherit', 'font-size': '11px', color: theme.fgSubtle }}
+            >
+              {isMac ? '⌘↵' : 'Ctrl+Enter'}
+            </kbd>
           </button>
         </div>
       </form>
-      <Show when={loading()}>
+      <Show when={showBusy()}>
         <div
           role="status"
           style={{
@@ -1787,7 +2116,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             }}
           >
             <span class="inline-spinner" aria-hidden="true" />
-            Creating task...
+            Creating task…
           </span>
         </div>
       </Show>

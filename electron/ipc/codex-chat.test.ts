@@ -505,6 +505,100 @@ describe('Codex chat app-server protocol', () => {
     h.chat.stop();
   });
 
+  it('asks before an MCP tool call and answers in the elicitation shape', async () => {
+    const h = harness();
+    await h.start();
+    h.receive({
+      id: 80,
+      method: 'mcpServer/elicitation/request',
+      params: {
+        threadId: 'thread-1',
+        serverName: 'parallel-code',
+        mode: 'form',
+        message: 'Allow the parallel-code MCP server to run tool "create_task"?',
+        requestedSchema: { type: 'object', properties: {} },
+        _meta: { codex_approval_kind: 'mcp_tool_call', tool_params: { name: 'x' } },
+      },
+    });
+    expect(h.chat.state.error).toBeUndefined();
+    expect(h.chat.state.requests[0]).toMatchObject({
+      id: 80,
+      kind: 'approval',
+      action: 'MCP parallel-code',
+      text: expect.stringContaining('create_task'),
+      details: expect.stringContaining('"name": "x"'),
+    });
+    h.chat.respond(80, 'accept');
+    expect(h.messages[h.messages.length - 1]).toEqual({
+      id: 80,
+      result: { action: 'accept', content: {} },
+    });
+    h.chat.stop();
+  });
+
+  it('approves MCP tool calls sent in the OpenAI form mode and drops answered state with the turn', async () => {
+    const h = harness();
+    await h.start();
+    const elicit = (id: number) =>
+      h.receive({
+        id,
+        method: 'mcpServer/elicitation/request',
+        params: {
+          serverName: 'parallel-code',
+          mode: 'openai/form',
+          message: 'Allow tool?',
+          requestedSchema: { type: 'object', properties: {} },
+        },
+      });
+    elicit(84);
+    expect(h.chat.state.requests[0]).toMatchObject({ id: 84, kind: 'approval' });
+    h.receive({ method: 'serverRequest/resolved', params: { requestId: 84 } });
+    expect(h.chat.state.requests).toEqual([]);
+    elicit(85);
+    h.receive({ method: 'turn/completed', params: { turn: { status: 'completed' } } });
+    expect(h.chat.state.requests).toEqual([]);
+    // A stale card cannot answer an elicitation Codex already settled.
+    expect(() => h.chat.respond(85, 'accept')).toThrow('no longer pending');
+    // A later ordinary request reusing the id is answered in its own shape.
+    h.receive({
+      id: 85,
+      method: 'item/commandExecution/requestApproval',
+      params: { command: 'ls' },
+    });
+    h.chat.respond(85, 'accept');
+    expect(h.messages[h.messages.length - 1]).toEqual({ id: 85, result: { decision: 'accept' } });
+    h.chat.stop();
+  });
+
+  it('cancels MCP forms with fields and URL elicitations instead of erroring them', async () => {
+    const h = harness();
+    await h.start();
+    h.receive({
+      id: 83,
+      method: 'mcpServer/elicitation/request',
+      params: {
+        serverName: 'tags',
+        mode: 'form',
+        message: 'Pick tags',
+        requestedSchema: {
+          type: 'object',
+          properties: { tags: { type: 'array', items: { type: 'string', enum: ['a', 'b'] } } },
+        },
+      },
+    });
+    expect(h.messages[h.messages.length - 1]).toEqual({ id: 83, result: { action: 'cancel' } });
+    expect(h.chat.state.requests).toEqual([]);
+    expect(h.chat.state.error).toContain('tags');
+    // Accepting a URL elicitation means the link was opened, which the chat cannot do.
+    h.receive({
+      id: 86,
+      method: 'mcpServer/elicitation/request',
+      params: { serverName: 's', mode: 'url', message: 'Sign in', url: 'https://example.com' },
+    });
+    expect(h.messages[h.messages.length - 1]).toEqual({ id: 86, result: { action: 'cancel' } });
+    h.chat.stop();
+  });
+
   it('rejects unsupported server requests instead of hanging or approving them', async () => {
     const h = harness();
     await h.start();

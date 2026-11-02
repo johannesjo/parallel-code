@@ -8,6 +8,9 @@ interface IconButtonProps {
   size?: 'sm' | 'md';
   /** Marks the button as a toggle; omit for plain actions. */
   pressed?: boolean;
+  /** Set when the button opens a menu: whether that menu is open. */
+  menuOpen?: boolean;
+  ref?: (el: HTMLButtonElement) => void;
 }
 
 export function IconButton(props: IconButtonProps) {
@@ -15,10 +18,13 @@ export function IconButton(props: IconButtonProps) {
 
   return (
     <button
+      ref={props.ref}
       class="icon-btn"
       title={props.title}
       aria-label={props.title}
       aria-pressed={props.pressed}
+      aria-haspopup={props.menuOpen === undefined ? undefined : 'menu'}
+      aria-expanded={props.menuOpen}
       onClick={(e) => {
         e.stopPropagation();
         props.onClick(e);

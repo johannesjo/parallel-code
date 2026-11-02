@@ -28,6 +28,9 @@ export interface AgentHookStatusUpdate {
   detail?: string;
   /** Claude's final text for the turn; only present on turn boundaries. */
   lastAssistantMessage?: string;
+  /** A background sub-agent or workflow is still running, so the lead may sit at
+   *  its prompt while `working`: Esc there interrupts nothing. */
+  background?: boolean;
 }
 
 /** Posted by the main process to the renderer for every accepted hook event. */
@@ -90,6 +93,7 @@ export function isAgentHookEventPayload(value: unknown): value is AgentHookEvent
     HOOK_STATES.has(v.state) &&
     Number.isFinite(v.at) &&
     (v.prompt === undefined || v.prompt === 'permission' || v.prompt === 'question') &&
+    (v.background === undefined || typeof v.background === 'boolean') &&
     ['toolName', 'toolUseId', 'detail', 'lastAssistantMessage'].every(
       (key) => v[key] === undefined || typeof v[key] === 'string',
     )
@@ -115,6 +119,19 @@ function summarizeToolInput(toolInput: unknown): string | undefined {
     if (value) return clip(value, DETAIL_MAX_CHARS);
   }
   return undefined;
+}
+
+/** Background shell commands still running as the turn ends; the lead is not
+ *  held `working` for them (a dev server never ends), so the card names them. */
+function summarizeBackgroundShells(tasks: unknown): string | undefined {
+  if (!Array.isArray(tasks)) return undefined;
+  const running = tasks
+    .map(asRecord)
+    .filter((task) => task?.type === 'shell' && task.status === 'running');
+  if (running.length === 0) return undefined;
+  const first = asString(running[0]?.description) ?? asString(running[0]?.command) ?? 'command';
+  const more = running.length > 1 ? ` +${running.length - 1}` : '';
+  return clip(`background: ${first}${more}`, DETAIL_MAX_CHARS);
 }
 
 /** First question text of an AskUserQuestion input, if any. */
@@ -188,20 +205,21 @@ export function mapClaudeHookPayload(payload: unknown): AgentHookStatusUpdate | 
     case 'Notification':
       return mapNotification(body);
     case 'Stop':
-    case 'StopFailure':
+    case 'StopFailure': {
+      const detail =
+        event === 'StopFailure'
+          ? clip(
+              [asString(body.error), asString(body.error_details)].filter(Boolean).join(': '),
+              DETAIL_MAX_CHARS,
+            )
+          : summarizeBackgroundShells(body.background_tasks);
       return {
         state: 'done',
         event,
-        ...(event === 'StopFailure'
-          ? {
-              detail: clip(
-                [asString(body.error), asString(body.error_details)].filter(Boolean).join(': '),
-                DETAIL_MAX_CHARS,
-              ),
-            }
-          : {}),
+        ...(event === 'StopFailure' || detail ? { detail } : {}),
         lastAssistantMessage: clip(asString(body.last_assistant_message), LAST_MESSAGE_MAX_CHARS),
       };
+    }
     default:
       return null;
   }
@@ -228,19 +246,26 @@ export interface ReducedAgentHookStatus extends AgentHookStatusUpdate {
   updatedAt: number;
 }
 
+/** A parallel sibling's tool result, which must not dismiss another tool's human prompt. */
+export function isSiblingResult(
+  previous: AgentHookStatusUpdate,
+  event: AgentHookStatusUpdate,
+): boolean {
+  return (
+    previous.state === 'waiting' &&
+    (event.event === 'PostToolUse' || event.event === 'PostToolUseFailure') &&
+    previous.toolUseId !== undefined &&
+    event.toolUseId !== undefined &&
+    previous.toolUseId !== event.toolUseId
+  );
+}
+
 /** Parallel sibling results do not dismiss another tool's human prompt. */
 export function transitionAgentHookStatus(
   previous: ReducedAgentHookStatus | undefined,
   event: AgentHookStatusUpdate & { at: number },
 ): ReducedAgentHookStatus {
-  if (
-    previous?.state === 'waiting' &&
-    (event.event === 'PostToolUse' || event.event === 'PostToolUseFailure') &&
-    previous.toolUseId !== undefined &&
-    event.toolUseId !== undefined &&
-    previous.toolUseId !== event.toolUseId
-  )
-    return previous;
+  if (previous && isSiblingResult(previous, event)) return previous;
   // Claude's idle reminder re-reports a finished turn. After a failed turn it
   // says nothing new, and the failure must stay visible until a new turn starts.
   if (previous?.event === 'StopFailure' && event.state === 'done' && event.event === 'Notification')
@@ -262,6 +287,7 @@ export function transitionAgentHookStatus(
     lastAssistantMessage:
       event.lastAssistantMessage ??
       (sameState && event.state === 'done' ? previous.lastAssistantMessage : undefined),
+    ...(event.background ? { background: true } : {}),
   };
 }
 

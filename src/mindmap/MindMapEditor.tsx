@@ -24,7 +24,7 @@ import {
 import { createInlineEditing } from '../graph/inlineEditing';
 import type { BranchIntent, BranchRequest } from '../graph/agentActions';
 import { createEditHistory } from '../graph/editHistory';
-import { createReducedMotion } from '../graph/reducedMotion';
+import { createReducedMotion } from '../lib/reducedMotion';
 import { focusRecord } from '../graph/focus';
 import type { MapOrientation } from '../graph/layout';
 import { NodeContextMenu, type NodeAction } from '../graph/NodeContextMenu';
@@ -45,6 +45,8 @@ export interface ChangeDelivery {
 interface Props {
   document: MindMapDocument;
   visible: boolean;
+  /** An idea the agent pointed at; each new seq shows it once. */
+  focusRequest?: { nodeId: string; seq: number };
   defaultZoom?: number;
   /** Session layout direction shared by every editor of the same map. */
   orientation?: MapOrientation;
@@ -166,6 +168,19 @@ export function MindMapEditor(props: Props) {
       return next;
     });
   }
+  let shownFocus = 0;
+  createEffect(() => {
+    const request = props.focusRequest;
+    if (!request || request.seq === shownFocus) return;
+    if (!props.document.records.some((record) => record.id === request.nodeId)) return;
+    shownFocus = request.seq;
+    // Selected and centred only: the user may be typing in the chat beside the map.
+    untrack(() => {
+      reveal(request.nodeId);
+      select(request.nodeId);
+      setLocateRequest((value) => value + 1);
+    });
+  });
   const inline = createInlineEditing({
     label: 'Idea title',
     visible: () => props.visible,

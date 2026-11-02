@@ -163,3 +163,13 @@ it('opens failure context without dismissing it or submitting terminal input', (
   expect(rows()).toHaveLength(1);
   expect(invoke).not.toHaveBeenCalled();
 });
+
+it('offers the shared task menu on a row, whose Open acts like a click on it', () => {
+  setStore('tasks', 'child', 'needsReview', true);
+  rows()[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 9, clientY: 9 }));
+  const items = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+  const labels = items.map((item) => item.textContent?.trim());
+  expect(labels).toEqual(expect.arrayContaining(['Open', 'Finish and close', 'Close']));
+  items.find((item) => item.textContent?.trim() === 'Open')?.click();
+  expect(store.activeTaskId).toBe('child');
+});

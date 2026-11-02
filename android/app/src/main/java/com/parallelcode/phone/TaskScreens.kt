@@ -63,7 +63,12 @@ private const val MAX_NOTES_BYTES = 100 * 1024
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -> Unit) {
+fun NewTaskScreen(
+    client: PhoneClient,
+    settings: SettingsStore,
+    onDone: () -> Unit,
+    onNeedsPairing: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     var projects by remember { mutableStateOf<List<MobileProject>?>(null) }
     var loadAttempt by remember { mutableIntStateOf(0) }
@@ -93,7 +98,7 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
         try {
             val list = client.fetchProjects()
             projects = list
-            if (list.none { it.id == projectId }) projectId = list.firstOrNull()?.id.orEmpty()
+            projectId = initialProjectId(list, projectId, settings.lastProjectId)
         } catch (e: ApiException) {
             projects = emptyList()
             failed(e)
@@ -169,6 +174,7 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
                         options = loaded,
                         selected = loaded.find { it.id == projectId },
                         optionLabel = { it.name },
+                        optionLeading = { ProjectMark(parseCssColor(it.color) ?: AppTheme.extra.textMuted, it.icon) },
                         onSelect = { projectId = it.id },
                         enabled = !busy,
                     )
@@ -333,6 +339,7 @@ fun NewTaskScreen(client: RemoteClient, onDone: () -> Unit, onNeedsPairing: () -
                                 agentId.ifEmpty { null },
                                 modelId.ifEmpty { null },
                             )
+                            settings.lastProjectId = projectId
                             onDone()
                         } catch (e: ApiException) {
                             failed(
@@ -359,6 +366,7 @@ private fun <T> SelectField(
     optionLabel: (T) -> String,
     onSelect: (T) -> Unit,
     enabled: Boolean,
+    optionLeading: (@Composable (T) -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(
@@ -372,6 +380,11 @@ private fun <T> SelectField(
             singleLine = true,
             enabled = enabled,
             label = { Text(label) },
+            leadingIcon = if (optionLeading != null && selected != null) {
+                { optionLeading(selected) }
+            } else {
+                null
+            },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded && enabled) },
             shape = MaterialTheme.shapes.large,
             colors = OutlinedTextFieldDefaults.colors(
@@ -397,6 +410,7 @@ private fun <T> SelectField(
                         onSelect(option)
                         expanded = false
                     },
+                    leadingIcon = optionLeading?.let { { it(option) } },
                     contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
                 )
             }
@@ -406,7 +420,7 @@ private fun <T> SelectField(
 
 /** The task's notes panel from the desktop; editable once the phone is paired. */
 @Composable
-fun NotesPane(taskId: String, canEdit: Boolean, client: RemoteClient, modifier: Modifier) {
+fun NotesPane(taskId: String, canEdit: Boolean, client: PhoneClient, modifier: Modifier) {
     val scope = rememberCoroutineScope()
     var notes by rememberSaveable(taskId) { mutableStateOf("") }
     var dirty by rememberSaveable(taskId) { mutableStateOf(false) }

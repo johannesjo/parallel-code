@@ -14,6 +14,8 @@ export interface ReasoningWorkspace {
   drafts: Record<string, NoteDraft>;
   /** Digest of the manual changes last sent to the agent, so unchanged edits are not resent. */
   sentChanges?: string;
+  /** Sequence of the report update the user last saw; marks agent changes made after it. */
+  seenSequence?: number;
 }
 const maxSentChanges = 100_000;
 export const emptyWorkspace = (): ReasoningWorkspace => ({ drafts: {} });
@@ -96,6 +98,9 @@ function validText(value: unknown): value is NoteText {
     value.detail.length <= 8000
   );
 }
+function validSeenSequence(value: unknown): value is number | undefined {
+  return value === undefined || (Number.isSafeInteger(value) && (value as number) >= -1);
+}
 function validSentChanges(value: unknown): value is string | undefined {
   return value === undefined || (typeof value === 'string' && value.length <= maxSentChanges);
 }
@@ -108,14 +113,18 @@ export function restoreReasoningWorkspaces(
     if (
       !key ||
       !graphObject(candidate) ||
-      Object.keys(candidate).some((field) => field !== 'drafts' && field !== 'sentChanges') ||
+      Object.keys(candidate).some(
+        (field) => !['drafts', 'sentChanges', 'seenSequence'].includes(field),
+      ) ||
       !graphObject(candidate.drafts) ||
       Object.keys(candidate.drafts).length > 200 ||
-      !validSentChanges(candidate.sentChanges)
+      !validSentChanges(candidate.sentChanges) ||
+      !validSeenSequence(candidate.seenSequence)
     )
       continue;
     const workspace = emptyWorkspace();
     if (candidate.sentChanges) workspace.sentChanges = candidate.sentChanges;
+    if (candidate.seenSequence !== undefined) workspace.seenSequence = candidate.seenSequence;
     let valid = true;
     for (const [id, draft] of Object.entries(candidate.drafts)) {
       if (

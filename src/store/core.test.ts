@@ -18,6 +18,7 @@ function makeSlice(
     taskOrder,
     collapsedTaskOrder: [],
     taskSplitMode: {},
+    taskShellAutoLayout: {},
   };
 }
 

@@ -1,4 +1,4 @@
-import { Match, Show, Switch, createMemo, createSignal, type JSX } from 'solid-js';
+import { For, Show, createMemo, createSignal, type JSX } from 'solid-js';
 import { errMessage } from '../lib/log';
 import {
   store,
@@ -9,16 +9,23 @@ import {
 } from '../store/store';
 import { stageFailedChecksPrompt } from '../store/github';
 import { sameDivergence } from '../lib/branch-divergence';
-import { badgeStyle } from '../lib/badgeStyle';
+import { badgeStyle, rowChipBox } from '../lib/badgeStyle';
 import { revealItemInDir, openInEditor } from '../lib/shell';
 import { InfoBar } from './InfoBar';
+import { ProjectSwatch } from './ProjectSwatch';
 import { theme } from '../lib/theme';
 import { isMac } from '../lib/platform';
 import { parseGitHubUrl } from '../lib/github-url';
 import { abbreviateHomePath } from '../lib/path';
 import { projectInitials } from '../lib/project-initials';
 import type { Task } from '../store/types';
-import { AlertIcon, CheckIcon, GitMergeIcon, PencilIcon, PersonIcon, ToolsIcon } from './icons';
+import { FolderIcon, GitBranchIcon, GitMergeIcon, GitHubMarkIcon, ToolsIcon } from './icons';
+import { PrChip } from './PrChip';
+import { menuPointFor, ProjectMenu } from './project-menu';
+import { RemoveProjectConfirm } from './RemoveProjectConfirm';
+import { codeProjects } from '../store/projects';
+import { BabysitButton } from './BabysitButton';
+import { extraPrWatchId, getTaskExtraPrs, isPrReadyToMerge } from '../store/pr-checks-state';
 
 const infoBarBtnStyle: JSX.CSSProperties = {
   'align-self': 'stretch',
@@ -31,59 +38,16 @@ const infoBarBtnStyle: JSX.CSSProperties = {
   'font-size': 'inherit',
 };
 
+const prChipStyle: JSX.CSSProperties = {
+  ...infoBarBtnStyle,
+  'margin-right': '8px',
+  color: theme.accent,
+};
+
 const warningChipStyle: JSX.CSSProperties = {
   ...badgeStyle(theme.warning),
-  'font-size': '11px',
-  padding: '1px 6px',
+  ...rowChipBox,
 };
-
-type ReviewStatusKind = 'approved' | 'changes-requested' | 'review-needed' | 'draft' | 'merged';
-
-/** GitHub's own "merged" purple, so the state reads the same as on github.com. */
-const GITHUB_MERGED_COLOR = '#8957e5';
-
-/** Solid pill like GitHub's merged label: a finished PR is the one state worth a full badge. */
-const mergedBadgeStyle: JSX.CSSProperties = {
-  'font-size': '11px',
-  'font-weight': '600',
-  padding: '1px 6px',
-  gap: '4px',
-  'border-radius': 'var(--radius-xs)',
-  background: GITHUB_MERGED_COLOR,
-  // Fixed white, not a theme token: the fill is theme-independent too.
-  color: '#fff',
-  'white-space': 'nowrap',
-};
-
-interface ReviewStatus {
-  kind: ReviewStatusKind;
-  label: string;
-  accessibleLabel: string;
-  title: string;
-  color: string;
-}
-
-function ReviewStatusIcon(props: { kind: ReviewStatusKind }) {
-  return (
-    <Switch>
-      <Match when={props.kind === 'approved'}>
-        <CheckIcon size={12} />
-      </Match>
-      <Match when={props.kind === 'changes-requested'}>
-        <AlertIcon size={12} />
-      </Match>
-      <Match when={props.kind === 'review-needed'}>
-        <PersonIcon size={12} />
-      </Match>
-      <Match when={props.kind === 'draft'}>
-        <PencilIcon size={12} />
-      </Match>
-      <Match when={props.kind === 'merged'}>
-        <GitMergeIcon size={12} />
-      </Match>
-    </Switch>
-  );
-}
 
 /** Red because a failed PR check is the kind of urgency the fill is reserved for. */
 const fixCiBtnStyle: JSX.CSSProperties = {
@@ -91,21 +55,18 @@ const fixCiBtnStyle: JSX.CSSProperties = {
   color: '#fff',
   border: 'none',
   'border-radius': 'var(--radius-xs)',
-  padding: '1px 8px',
+  ...rowChipBox,
   'margin-right': '8px',
   'font-family': 'inherit',
-  'font-size': '11px',
   'font-weight': '600',
   cursor: 'pointer',
   'white-space': 'nowrap',
   'flex-shrink': '0',
-  display: 'inline-flex',
-  'align-items': 'center',
   gap: '4px',
 };
 
 /** Stages the failed checks and their log tails as a prompt in the task input. */
-function FixCiButton(props: { taskId: string; prUrl: string; prNumber: number }) {
+function FixCiButton(props: { taskId: string; prUrl: string; prNumber: number; repo?: string }) {
   const [busy, setBusy] = createSignal(false);
   const fix = async () => {
     setBusy(true);
@@ -113,6 +74,7 @@ function FixCiButton(props: { taskId: string; prUrl: string; prNumber: number })
       const staged = await stageFailedChecksPrompt(props.taskId, {
         number: props.prNumber,
         url: props.prUrl,
+        repo: props.repo,
       });
       showNotification(
         staged
@@ -148,14 +110,21 @@ interface TaskBranchInfoBarProps {
   onOpenPullRequest?: (prUrl: string) => void;
   /** Opens the finish dialog; without it there is no Merge shortcut. */
   onFinish?: () => void;
+  /** Attention items placed right after the project, ahead of the PR and branch. */
+  afterProject?: JSX.Element;
+  /** Routine items closing the row; the first to be cut when the column is narrow. */
+  trailing?: JSX.Element;
 }
 
 export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
   const project = () => getProject(props.task.projectId);
-  // Keep project color separate from the status indicators above the bar.
+  const [projectMenuAt, setProjectMenuAt] = createSignal<{ x: number; y: number } | null>(null);
+  const [confirmRemove, setConfirmRemove] = createSignal<string | null>(null);
+  // Keep project color separate from the status indicators above the bar. A
+  // project icon carries the color itself, so it replaces the stripe.
   const projectStripe = () => {
-    const color = project()?.color;
-    return color ? { 'border-left': `3px solid ${color}` } : undefined;
+    const p = project();
+    return p?.color && !p.icon ? { 'border-left': `3px solid ${p.color}` } : undefined;
   };
   const mod = isMac ? 'Cmd' : 'Ctrl';
   const isPrUrl = (url: string | undefined): boolean => {
@@ -226,208 +195,75 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
   };
 
   return (
-    <InfoBar class="task-branch-info-bar" style={projectStripe()}>
+    <InfoBar
+      class={`task-branch-info-bar${codeProjects().length === 1 ? ' task-branch-info-bar--single-project' : ''}`}
+      style={projectStripe()}
+    >
       <Show when={project()}>
         {(p) => (
-          <button
-            type="button"
-            class="task-branch-info-button task-branch-project"
-            onClick={() => props.onEditProject(p().id)}
-            title={`${p().name} · Project settings`}
-            aria-label={`Project: ${p().name} · Project settings`}
-            style={{ ...infoBarBtnStyle, margin: '0 8px 0 0' }}
-          >
-            <span class="task-branch-project-label">{p().name}</span>
-            <span class="task-branch-project-compact-label" aria-hidden="true">
-              {projectInitials(p().name)}
-            </span>
-          </button>
+          <>
+            <button
+              type="button"
+              class="task-branch-info-button task-branch-project"
+              onClick={(e) => setProjectMenuAt(menuPointFor(e, e.currentTarget))}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setProjectMenuAt(menuPointFor(e, e.currentTarget));
+              }}
+              aria-haspopup="menu"
+              aria-expanded={projectMenuAt() !== null}
+              title={`${p().name} · Project actions`}
+              aria-label={`Project: ${p().name} · Project actions`}
+              style={{ ...infoBarBtnStyle, margin: '0 8px 0 0' }}
+            >
+              <Show when={p().icon}>
+                {(icon) => <ProjectSwatch color={p().color} icon={icon()} size={8} />}
+              </Show>
+              <span class="task-branch-project-label">{p().name}</span>
+              <span class="task-branch-project-compact-label" aria-hidden="true">
+                {projectInitials(p().name)}
+              </span>
+            </button>
+            <Show when={projectMenuAt()}>
+              {(at) => (
+                <ProjectMenu
+                  project={p()}
+                  at={at()}
+                  dialogs={{
+                    editSettings: (edited) => props.onEditProject(edited.id),
+                    remove: setConfirmRemove,
+                  }}
+                  onClose={() => setProjectMenuAt(null)}
+                />
+              )}
+            </Show>
+          </>
         )}
       </Show>
+      <RemoveProjectConfirm projectId={confirmRemove()} onDone={() => setConfirmRemove(null)} />
+      {props.afterProject}
       <Show when={prLinkUrl()}>
         {(url) => {
           const pr = () => getPrChecks(props.task.id);
-          const reviewStatus = (): ReviewStatus | null => {
-            const c = pr();
-            if (!c) return null;
-            if (c.merged) {
-              return {
-                kind: 'merged',
-                label: 'Merged',
-                accessibleLabel: 'Merged',
-                title: 'Pull request merged',
-                color: GITHUB_MERGED_COLOR,
-              };
-            }
-            if (c.isDraft) {
-              return {
-                kind: 'draft',
-                label: 'Draft',
-                accessibleLabel: 'Draft',
-                title: 'Draft pull request',
-                color: theme.fgMuted,
-              };
-            }
-            switch (c.reviewDecision) {
-              case 'CHANGES_REQUESTED':
-                return {
-                  kind: 'changes-requested',
-                  label: 'Changes',
-                  accessibleLabel: 'Changes requested',
-                  title: 'Review: changes requested',
-                  color: theme.warning,
-                };
-              case 'APPROVED':
-                return {
-                  kind: 'approved',
-                  label: 'Approved',
-                  accessibleLabel: 'Approved',
-                  title: 'Review: approved',
-                  color: theme.success,
-                };
-              case 'REVIEW_REQUIRED':
-                return {
-                  kind: 'review-needed',
-                  label: 'Review',
-                  accessibleLabel: 'Review needed',
-                  title: 'Review required',
-                  color: theme.accent,
-                };
-              default:
-                return null;
-            }
-          };
-          const ciStatus = (): { label: string; title: string; color: string } | null => {
-            const c = pr();
-            if (!c || c.overall === 'none') return null;
-            if (c.overall === 'pending') {
-              return {
-                label: 'CI running',
-                title: `CI running — ${c.pending} pending, ${c.passing} passing${c.failing ? `, ${c.failing} failing` : ''}`,
-                color: theme.warning,
-              };
-            }
-            if (c.overall === 'success') {
-              return {
-                label: 'CI passed',
-                title: `CI passed — ${c.passing} check${c.passing === 1 ? '' : 's'}`,
-                color: theme.success,
-              };
-            }
-            return {
-              label: 'CI failed',
-              title: `CI failed — ${c.failing} failing, ${c.passing} passing${c.pending ? `, ${c.pending} pending` : ''}`,
-              color: theme.error,
-            };
-          };
-          const hasConflicts = () => pr()?.mergeable === 'CONFLICTING';
-          const buttonTitle = () =>
-            [
-              reviewStatus()?.title,
-              ciStatus()?.title,
-              hasConflicts() ? 'Merge conflicts with the base branch' : null,
-              url(),
-              props.onOpenPullRequest ? `${mod}+Click to open on GitHub` : null,
-            ]
-              .filter(Boolean)
-              .join('\n');
-          const buttonLabel = () =>
-            [
-              `PR #${prNumber()}`,
-              reviewStatus()?.accessibleLabel,
-              ciStatus()?.label,
-              hasConflicts() ? 'Conflicts' : null,
-            ]
-              .filter(Boolean)
-              .join(', ');
-          const openPr = (e: MouseEvent) => {
-            if (props.onOpenPullRequest && !(e.metaKey || e.ctrlKey)) {
-              props.onOpenPullRequest(url());
-            } else {
-              window.open(url(), '_blank');
-            }
-          };
-          const prButton = (
-            <button
-              type="button"
-              class="task-branch-info-button task-pr-link"
-              onClick={openPr}
-              title={buttonTitle()}
-              aria-label={buttonLabel()}
-              style={{ ...infoBarBtnStyle, 'margin-right': '8px', color: theme.accent }}
-            >
-              <Show when={ciStatus()}>
-                {(ci) => (
-                  <span class="task-pr-ci-state">
-                    <Show
-                      when={pr()?.overall === 'pending'}
-                      fallback={
-                        <span
-                          style={{
-                            width: '7px',
-                            height: '7px',
-                            'border-radius': '50%',
-                            background: ci().color,
-                          }}
-                        />
-                      }
-                    >
-                      <span
-                        class="inline-spinner"
-                        style={{ width: '10px', height: '10px', color: ci().color }}
-                      />
-                    </Show>
-                  </span>
-                )}
-              </Show>
-              <span class="task-pr-label" style={{ color: theme.fgMuted, 'font-weight': '600' }}>
-                <span class="task-pr-prefix">PR </span>
-                <span class="task-pr-number">#{prNumber()}</span>
-              </span>
-              <Show when={reviewStatus()}>
-                {(review) => (
-                  <span
-                    class="task-pr-review-status"
-                    style={
-                      review().kind === 'merged' ? mergedBadgeStyle : { color: review().color }
-                    }
-                  >
-                    <span class="task-pr-review-label">{review().label}</span>
-                    <span class={`task-pr-review-icon task-pr-review-icon--${review().kind}`}>
-                      <ReviewStatusIcon kind={review().kind} />
-                    </span>
-                  </span>
-                )}
-              </Show>
-              <Show when={hasConflicts()}>
-                <span class="task-pr-conflicts" style={{ color: theme.error }}>
-                  Conflicts
-                </span>
-              </Show>
-            </button>
-          );
           const ciFailed = () => pr()?.overall === 'failure' && !pr()?.merged;
           // Hide Merge when the PR state already rules a merge out; the finish dialog
           // still decides the route (GitHub or local) and any remaining protection.
-          const readyToMerge = () => {
-            const c = pr();
-            return (
-              !!c &&
-              c.overall === 'success' &&
-              !c.merged &&
-              !c.isDraft &&
-              !hasConflicts() &&
-              c.reviewDecision !== 'CHANGES_REQUESTED' &&
-              c.reviewDecision !== 'REVIEW_REQUIRED'
-            );
-          };
+          const readyToMerge = () => isPrReadyToMerge(pr());
           return (
             <>
-              {prButton}
+              <PrChip
+                url={url()}
+                checks={pr()}
+                style={prChipStyle}
+                onOpenPullRequest={props.onOpenPullRequest}
+              />
               <Show when={ciFailed() && prNumber()}>
                 {(number) => (
                   <FixCiButton taskId={props.task.id} prUrl={url()} prNumber={Number(number())} />
                 )}
+              </Show>
+              <Show when={pr() && !pr()?.merged}>
+                <BabysitButton taskId={props.task.id} />
               </Show>
               <Show when={readyToMerge() && props.onFinish}>
                 {(finish) => (
@@ -446,6 +282,30 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
           );
         }}
       </Show>
+      <For each={getTaskExtraPrs(props.task.id)}>
+        {(extra) => {
+          // The in-app PR panel and Merge belong to the task's own PR, so an
+          // additional PR opens on GitHub and only offers Fix CI.
+          const checks = () => getPrChecks(extraPrWatchId(props.task.id, extra.url));
+          const prNumber = () => parseGitHubUrl(extra.url)?.number;
+          const ciFailed = () => checks()?.overall === 'failure' && !checks()?.merged;
+          return (
+            <>
+              <PrChip url={extra.url} repo={extra.repo} checks={checks()} style={prChipStyle} />
+              <Show when={ciFailed() && prNumber()}>
+                {(number) => (
+                  <FixCiButton
+                    taskId={props.task.id}
+                    prUrl={extra.url}
+                    prNumber={Number(number())}
+                    repo={extra.repo}
+                  />
+                )}
+              </Show>
+            </>
+          );
+        }}
+      </For>
       <Show when={sourceLinkUrl()}>
         {(url) => (
           <button
@@ -454,7 +314,7 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
             onClick={() => window.open(url(), '_blank')}
             title={url()}
             aria-label={`Source: ${githubLabel(url())}`}
-            style={{ ...infoBarBtnStyle, 'margin-right': '8px', color: theme.accent }}
+            style={{ ...infoBarBtnStyle, 'margin-right': '8px' }}
           >
             <span
               class="task-branch-source-prefix"
@@ -462,15 +322,7 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
             >
               Source
             </span>
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 16 16"
-              fill="currentColor"
-              style={{ 'flex-shrink': '0' }}
-            >
-              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-            </svg>
+            <GitHubMarkIcon size={12} style={{ 'flex-shrink': '0' }} />
             <span class="task-branch-source-label">{githubLabel(url())}</span>
             <span class="task-branch-source-compact-label">{compactSourceLabel(url())}</span>
           </button>
@@ -484,15 +336,7 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
           onClick={handleOpenInEditor}
           style={{ ...infoBarBtnStyle, 'margin-right': '12px' }}
         >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 16 16"
-            fill="currentColor"
-            style={{ 'flex-shrink': '0' }}
-          >
-            <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6.25 7.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 7.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 0h5.5a2.5 2.5 0 0 0 2.5-2.5v-.5a.75.75 0 0 0-1.5 0v.5a1 1 0 0 1-1 1H5a3.25 3.25 0 1 0 0 6.5h6.25a.75.75 0 0 0 0-1.5H5a1.75 1.75 0 1 1 0-3.5Z" />
-          </svg>
+          <GitBranchIcon size={12} style={{ 'flex-shrink': '0' }} />
           <Show when={props.task.gitIsolation !== 'direct'}>
             <span class="task-branch-name-label">{props.task.branchName}</span>
           </Show>
@@ -532,28 +376,11 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
         class="task-branch-info-button task-branch-path"
         title={worktreeTitle()}
         onClick={handleOpenInEditor}
-        style={{ ...infoBarBtnStyle, opacity: 0.6, 'min-width': '0', overflow: 'hidden' }}
+        // The branch already names the worktree; the full path is in the tooltip.
+        aria-label={`Worktree folder: ${abbreviateHomePath(props.task.worktreePath)}`}
+        style={{ ...infoBarBtnStyle, opacity: 0.6 }}
       >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 16 16"
-          fill="currentColor"
-          style={{ 'flex-shrink': '0' }}
-        >
-          <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z" />
-        </svg>
-        <span
-          class="task-branch-path-label"
-          style={{
-            overflow: 'hidden',
-            'text-overflow': 'ellipsis',
-            'white-space': 'nowrap',
-            'min-width': '0',
-          }}
-        >
-          {abbreviateHomePath(props.task.worktreePath)}
-        </span>
+        <FolderIcon size={12} style={{ 'flex-shrink': '0' }} />
       </button>
       <Show when={props.task.externalWorktree}>
         <span
@@ -567,6 +394,7 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
           Existing worktree
         </span>
       </Show>
+      {props.trailing}
     </InfoBar>
   );
 }

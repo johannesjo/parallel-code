@@ -13,6 +13,8 @@ import { cleanHandoffText } from './agent-handoff';
  *     Description lines, indented under the card.
  *     - [ ] An acceptance criterion
  *     depends: Another card's title
+ *     group: A theme
+ *     related: Another card's title
  *     issue: https://github.com/owner/repo/issues/12
  *     branch: `task/branch-name`
  *
@@ -23,7 +25,9 @@ import { cleanHandoffText } from './agent-handoff';
  * Each `##` heading is a column, each top-level list item a card, and the
  * indented lines under it the card's description. `- [ ]` items in a
  * description are the card's checklist. A `depends:` line names a card that
- * has to be done first, an `issue:` line the GitHub issue or pull request the
+ * has to be done first, a `group:` line the theme the card belongs to when
+ * the plan is drawn as a mind map, a `related:` line a card it belongs with
+ * without waiting for it, an `issue:` line the GitHub issue or pull request the
  * card tracks, and a `branch:` line links the card to the Parallel Code task
  * working on that branch. Anything else inside a column (a
  * paragraph, a sub-heading) is kept as the column's notes, and Obsidian
@@ -40,6 +44,10 @@ export interface KanbanCard {
   branches: string[];
   /** Titles of the cards this one waits for. */
   depends: string[];
+  /** The theme the card is clustered under in the map; absent when none. */
+  group?: string;
+  /** Titles of cards this one belongs with, without waiting for them. */
+  related?: string[];
   /** The GitHub issue or pull request the card tracks, as a URL; empty when none. */
   issue: string;
   /** Further `issue:` lines, kept in order after the first. */
@@ -111,6 +119,8 @@ const FOOTER_RE = /^%%\s*kanban:settings/;
 // The app writes these exactly; prose that merely starts with "Branch:" stays prose.
 const BRANCH_RE = /^branch:[ \t]*`([^`\s]+)`[ \t]*$/;
 const DEPENDS_RE = /^depends:[ \t]*(\S.*?)[ \t]*$/;
+const GROUP_RE = /^group:[ \t]*(\S.*?)[ \t]*$/;
+const RELATED_RE = /^related:[ \t]*(\S.*?)[ \t]*$/;
 const ISSUE_RE = /^issue:[ \t]*(https:\/\/github\.com\/\S+)[ \t]*$/;
 const CHECKLIST_RE = /^([ \t]*[-*+][ \t]+\[)([ xX])(\][ \t]+)(.*)$/;
 const NEGATED_RE = /\b(not|un)[ \t-]*(started|done|finished|complete[d]?)\b/i;
@@ -223,12 +233,17 @@ function splitFrontmatter(lines: string[]): { frontmatter: string[]; rest: strin
 /** Splits a card's raw lines into description and metadata. */
 function readCardBody(
   raw: string[],
-): Pick<KanbanCard, 'body' | 'branches' | 'depends' | 'issue' | 'extraIssues'> {
+): Pick<
+  KanbanCard,
+  'body' | 'branches' | 'depends' | 'group' | 'related' | 'issue' | 'extraIssues'
+> {
   const lines = trimBlankLines(raw.map(stripCardIndent));
   const top = Math.min(...lines.filter((l) => l.trim()).map(indentOf), Infinity);
   const literal = new Literal();
   const branches: string[] = [];
   const depends: string[] = [];
+  let group = '';
+  const related: string[] = [];
   let issue = '';
   const extraIssues: string[] = [];
   const body: string[] = [];
@@ -238,12 +253,24 @@ function readCardBody(
       const branch = BRANCH_RE.exec(text);
       const dependency = DEPENDS_RE.exec(text);
       const linked = ISSUE_RE.exec(text);
+      const theme = GROUP_RE.exec(text);
+      const relation = RELATED_RE.exec(text);
       if (branch) {
         if (!branches.includes(branch[1])) branches.push(branch[1]);
         continue;
       }
       if (dependency) {
         if (!depends.includes(dependency[1])) depends.push(dependency[1]);
+        continue;
+      }
+      // A card has one theme; the last line wins, so a re-added line replaces
+      // the old one and clearing the theme never brings an earlier one back.
+      if (theme) {
+        group = theme[1];
+        continue;
+      }
+      if (relation) {
+        if (!related.includes(relation[1])) related.push(relation[1]);
         continue;
       }
       if (linked) {
@@ -259,6 +286,8 @@ function readCardBody(
     body: trimBlankLines(body).join('\n'),
     branches,
     depends,
+    ...(group ? { group } : {}),
+    ...(related.length ? { related } : {}),
     issue,
     ...(extraIssues.length ? { extraIssues } : {}),
   };
@@ -419,6 +448,8 @@ function serializeCard(card: KanbanCard): string {
   if (card.issue) lines.push(`  issue: ${card.issue}`);
   for (const url of card.extraIssues ?? []) lines.push(`  issue: ${url}`);
   for (const dependency of card.depends) lines.push(`  depends: ${singleLine(dependency)}`);
+  if (card.group?.trim()) lines.push(`  group: ${singleLine(card.group)}`);
+  for (const title of card.related ?? []) lines.push(`  related: ${singleLine(title)}`);
   for (const branch of card.branches) lines.push(`  branch: \`${branch}\``);
   return lines.join('\n');
 }
@@ -449,7 +480,12 @@ export function serializeKanban(board: KanbanBoard): string {
 }
 
 function cloneCard(card: KanbanCard): KanbanCard {
-  return { ...card, branches: [...card.branches], depends: [...card.depends] };
+  return {
+    ...card,
+    branches: [...card.branches],
+    depends: [...card.depends],
+    ...(card.related ? { related: [...card.related] } : {}),
+  };
 }
 
 function clone(board: KanbanBoard): KanbanBoard {
@@ -643,7 +679,7 @@ export function insertCard(board: KanbanBoard, ref: KanbanCardRef, card: KanbanC
 export function updateCard(
   board: KanbanBoard,
   ref: KanbanCardRef,
-  change: Partial<Pick<KanbanCard, 'title' | 'body' | 'done' | 'depends' | 'issue'>>,
+  change: Partial<Pick<KanbanCard, 'title' | 'body' | 'done' | 'depends' | 'group' | 'issue'>>,
 ): KanbanBoard {
   const next = clone(board);
   const card = next.columns[ref.column]?.cards[ref.card];
@@ -655,6 +691,11 @@ export function updateCard(
   if (change.done !== undefined) card.done = change.done;
   if (change.depends !== undefined) {
     card.depends = [...new Set(change.depends.map(singleLine).filter(Boolean))];
+  }
+  if (change.group !== undefined) {
+    const group = singleLine(change.group);
+    if (group) card.group = group;
+    else delete card.group;
   }
   return next;
 }
@@ -737,7 +778,15 @@ export function archiveCard(board: KanbanBoard, ref: KanbanCardRef): KanbanBoard
  * checkmark is left out, since ticking a card must not make it unfindable.
  */
 export function cardFingerprint(card: KanbanCard): string {
-  return JSON.stringify([card.title, card.body, card.depends, card.issue, card.branches]);
+  return JSON.stringify([
+    card.title,
+    card.body,
+    card.depends,
+    card.group ?? '',
+    card.related ?? [],
+    card.issue,
+    card.branches,
+  ]);
 }
 
 /**
@@ -927,8 +976,23 @@ export function buildKanbanPlanPrompt(goal: string): string {
       '- `## Heading` lines are columns and `- [ ] Title` lines are cards. Add the new cards to the first column (Backlog); keep every existing card and column as it is.',
       "- Indent a card's description by two spaces under it. Write it so an agent can implement the card on its own in a separate git worktree: what to change, where, and why.",
       '- Add acceptance criteria as indented `- [ ]` items, and `depends: <other card title>` lines (indented) where a card needs another one done first.',
+      '- Give each card an indented `group: <theme>` line naming the part of the goal it belongs to, reusing the themes already on the board where they fit.',
       '- Prefer small cards that touch separate files, so several can run in parallel without conflicts.',
       'Do not implement anything yet. Finish with a short summary of the plan.',
+    ].join('\n'),
+  ].join('\n\n');
+}
+
+/** Asks the board's planning agent to sort the cards into themes for the map. */
+export function buildKanbanClusterPrompt(): string {
+  return [
+    "Sort the cards on the project's Kanban board, KANBAN.md in the project root, into logical clusters for its mind map.",
+    [
+      'Read the cards (and the code they touch where a title is unclear). Then edit KANBAN.md directly:',
+      '- Give every card one indented `group: <theme>` line, replacing any it has. Use a handful of short themes such as a feature, area or goal, not statuses; reuse the same spelling for the same theme.',
+      '- Where two cards belong together across themes but neither waits for the other, add an indented `related: <other card title>` line to one of them, using the exact title.',
+      '- Change nothing else: keep every card, column, description, checklist and `depends:` line as it is.',
+      'Finish with the themes you chose and one line on what each holds.',
     ].join('\n'),
   ].join('\n\n');
 }

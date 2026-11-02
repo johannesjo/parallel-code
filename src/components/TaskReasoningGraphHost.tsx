@@ -7,6 +7,7 @@ import { reasoningPrompt } from '../investigation/feed';
 import { recordTrail } from '../investigation/presentation';
 import type { InvestigationRecord, Snapshot } from '../investigation/state';
 import { normalizeReasoningProfile } from '../investigation/profiles';
+import { changesSince, followSeen } from '../investigation/seen';
 import { emptyWorkspace, getDraft, updateDraft } from '../investigation/editing';
 import {
   store,
@@ -255,6 +256,47 @@ export function TaskReasoningGraphHost(props: Props) {
   }
   const graphKey = () => `${props.taskId}:${source()?.agentId ?? ''}:${live.runId() ?? ''}`;
   const workspace = () => store.tasks[props.taskId]?.reasoningWorkspaces?.[graphKey()];
+  function setSeen(sequence: number) {
+    const current = workspace();
+    if (current?.seenSequence === sequence) return;
+    setTaskReasoningWorkspace(props.taskId, graphKey(), {
+      ...(current ?? emptyWorkspace()),
+      seenSequence: sequence,
+    });
+  }
+  // Only an on-screen graph moves the baseline; see followSeen for when it holds.
+  createEffect(() => {
+    if (!props.visible || !live.loaded() || !live.runId()) return;
+    const next = followSeen(
+      workspace()?.seenSequence,
+      live.updates().length - 1,
+      live.jumpableFrom(),
+    );
+    untrack(() => setSeen(next));
+  });
+  const unseen = createMemo(() => {
+    const seen = workspace()?.seenSequence;
+    return seen === undefined ? undefined : changesSince(live.history(), seen);
+  });
+  const unseenSummary = () => {
+    const changes = unseen();
+    if (!changes) return '';
+    const counts = { new: 0, changed: 0 };
+    for (const mark of changes.marks.values()) counts[mark]++;
+    return [
+      counts.new && `${counts.new} new`,
+      counts.changed && `${counts.changed} changed`,
+      changes.removed.length && `${changes.removed.length} removed`,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  };
+  /** A short list; the full one is in the tooltip. */
+  const removedTitles = () => {
+    const titles = unseen()?.removed.map((record) => record.title || 'Untitled') ?? [];
+    const shown = titles.slice(0, 3).join(', ');
+    return { shown: titles.length > 3 ? `${shown} +${titles.length - 3} more` : shown, titles };
+  };
   /** Requests queue behind a busy agent; only a session that cannot take them is a blocker. */
   const requestBlocker = () => {
     if (sending() || request()) return 'Wait for the current request to finish.';
@@ -405,6 +447,10 @@ export function TaskReasoningGraphHost(props: Props) {
     });
   }
 
+  const focusRequest = () => {
+    const request = store.tasks[props.taskId]?.canvasFocusRequest;
+    return request?.view === 'reasoning' ? request : undefined;
+  };
   const openedByAgent = () => {
     const request = store.tasks[props.taskId]?.reasoningCanvasRequest;
     return (
@@ -502,6 +548,7 @@ export function TaskReasoningGraphHost(props: Props) {
       <ReasoningGraph
         taskActions={taskControls.actions}
         renderTaskBadge={taskControls.renderBadge}
+        changeMark={(id) => unseen()?.marks.get(id)}
         controls={
           // The live region wraps the pill so label changes announce even while closed.
           <span role="status">
@@ -545,6 +592,7 @@ export function TaskReasoningGraphHost(props: Props) {
             when={
               !setupVisible() &&
               ((live.snapshot() && !connected()) ||
+                unseenSummary() ||
                 changesToSend() ||
                 request() ||
                 live.pending() ||
@@ -569,6 +617,20 @@ export function TaskReasoningGraphHost(props: Props) {
                   <span>Queued until the agent is ready.</span>
                   <button onClick={cancelSetup}>Cancel</button>
                 </Show>
+              </Show>
+              <Show when={unseenSummary()}>
+                <span>{unseenSummary()} since you last looked</span>
+                <Show when={removedTitles().titles.length}>
+                  <span title={removedTitles().titles.join('\n')}>
+                    Removed: {removedTitles().shown}
+                  </span>
+                </Show>
+                <button
+                  title="Clear the change marks"
+                  onClick={() => setSeen(live.updates().length - 1)}
+                >
+                  Mark as seen
+                </button>
               </Show>
               <Show when={changesToSend()}>
                 <button
@@ -652,6 +714,7 @@ export function TaskReasoningGraphHost(props: Props) {
         snapshot={live.snapshot()}
         sessionWorking={sessionWorking()}
         drafting={draftingInitial()}
+        focusRequest={focusRequest()}
         visible={props.visible}
       />
       <ConfirmDialog

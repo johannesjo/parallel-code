@@ -11,6 +11,7 @@ interface PanelCloseState {
   sidebarFocused: boolean;
   placeholderFocused: boolean;
   newTaskPanelFocused: boolean;
+  boardFocused: boolean;
   terminals: Record<string, unknown>;
   tasks: Record<string, { shellAgentIds: string[] }>;
   focusedPanel: Record<string, string>;
@@ -20,7 +21,14 @@ export function resolvePanelCloseTarget(state: PanelCloseState): PanelCloseTarge
   // Focus can sit outside the active slot while `activeTaskId` still points at
   // it — the same reason `isPanelFocused` consults these flags. Killing a
   // live pty from a shortcut aimed outside that slot would be unrecoverable.
-  if (state.sidebarFocused || state.placeholderFocused || state.newTaskPanelFocused) return null;
+  if (
+    state.sidebarFocused ||
+    state.placeholderFocused ||
+    state.newTaskPanelFocused ||
+    state.boardFocused
+  ) {
+    return null;
+  }
 
   const id = state.activeTaskId;
   if (!id) return null;

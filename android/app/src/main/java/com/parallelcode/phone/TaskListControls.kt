@@ -85,9 +85,9 @@ internal fun TaskSearchAndFilters(
     }
 }
 
-/** A section title such as "Needs you 2". */
+/** A lane title such as "Needs you 2", set in the look's display face like the desktop board's. */
 @Composable
-internal fun TaskGroupHeader(group: TaskGroup, count: Int, modifier: Modifier = Modifier) {
+internal fun TaskLaneHeader(lane: TaskLane, count: Int, modifier: Modifier = Modifier) {
     Row(
         modifier
             .fillMaxWidth()
@@ -97,10 +97,10 @@ internal fun TaskGroupHeader(group: TaskGroup, count: Int, modifier: Modifier = 
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
-            group.label,
-            style = MaterialTheme.typography.labelLarge,
+            lane.label,
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
-            color = if (group == TaskGroup.NEEDS_YOU) AppTheme.extra.warningText else AppTheme.extra.textMuted,
+            color = if (lane == TaskLane.NEEDS_YOU) AppTheme.extra.warningText else AppTheme.extra.textMuted,
         )
         Text(
             count.toString(),
@@ -123,7 +123,7 @@ internal fun NoMatchingTasks(search: String, filter: TaskFilter, onShowAll: () -
             when {
                 search.isNotBlank() -> "No matching tasks"
                 filter == TaskFilter.NEEDS_YOU -> "Nothing needs you right now"
-                else -> "Nothing to review yet"
+                else -> "No stopped tasks"
             },
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,

@@ -4,11 +4,13 @@ import {
   closeTerminal,
   updateTerminalName,
   activateTaskFromPointer,
-  reorderTask,
+  reorderTaskInTileOrder,
   registerFocusFn,
   unregisterFocusFn,
   setTaskFocusedPanel,
   isPanelFocused,
+  markAgentOutput,
+  clearAgentActivity,
 } from '../store/store';
 import { EditableText, type EditableTextHandle } from './EditableText';
 import { IconButton } from './IconButton';
@@ -16,6 +18,7 @@ import { TerminalView } from './TerminalView';
 import { CloseIcon } from './icons';
 import { theme } from '../lib/theme';
 import { handleDragReorder } from '../lib/dragReorder';
+import { computeTileOrder } from '../store/sidebar-order';
 import type { Terminal } from '../store/types';
 import { isTaskColumnHighlighted, scheduleTaskFocus } from '../store/focused-panel';
 
@@ -49,8 +52,8 @@ export function TerminalPanel(props: TerminalPanelProps) {
   function handleTitleMouseDown(e: MouseEvent) {
     handleDragReorder(e, {
       itemId: props.terminal.id,
-      getTaskOrder: () => store.taskOrder,
-      onReorder: reorderTask,
+      getTaskOrder: () => computeTileOrder(),
+      onReorder: (_fromIdx, toIdx) => reorderTaskInTileOrder(props.terminal.id, toIdx),
       onTap: () => activateTaskFromPointer(props.terminal.id),
     });
   }
@@ -144,6 +147,10 @@ export function TerminalPanel(props: TerminalPanelProps) {
           command=""
           args={['-l']}
           cwd=""
+          // Feeds the board's Running label. The terminal id makes it a shell, and
+          // background terminals use the slower analysis cadence.
+          onData={(data) => markAgentOutput(props.terminal.agentId, data, props.terminal.id)}
+          onExit={() => clearAgentActivity(props.terminal.agentId)}
           onReady={(focusFn) => registerFocusFn(`${props.terminal.id}:terminal`, focusFn)}
           autoFocus
         />

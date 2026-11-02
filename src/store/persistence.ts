@@ -1,16 +1,17 @@
 import { parseCompletionRecord } from '../../electron/shared/completion-report';
-import { persistedEvidence, restoredEvidence } from '../lib/evidence-package';
-import { restoreTaskBriefRecord } from '../lib/task-brief';
+import { persistedCheckSuite, restoredCheckSuite } from '../lib/check-suite-storage';
+import { restoreBriefBarFields, restoreTaskBriefRecord } from '../lib/task-brief';
+import { restoreReviewChecks } from '../lib/review-checks';
 import { restoreTaskConfidence } from '../lib/task-confidence';
-import {
-  parseEvidenceModelSettings,
-  parseProjectChecks,
-} from '../../electron/shared/evidence-settings';
+import { restoreReviewDismissed } from '../lib/review-summary';
+import type { PrBabysit } from '../lib/pr-babysit';
+import { parseProjectChecks } from '../../electron/shared/check-settings';
 import { delegationRequest, taskAuthorityInput } from './delegation';
 import { restoreCanvasTaskLinks } from '../lib/canvas-task-links';
 import { restoreMindMap } from '../graph/model';
 import { produce } from 'solid-js/store';
 import { invoke } from '../lib/ipc';
+import { sanitizeProjectIcon } from '../lib/project-icon';
 import { IPC } from '../../electron/ipc/channels';
 import { isChatPermissionMode, restoreChatSessions } from '../../electron/shared/agent-chat-types';
 import { reopenClaudeChatInTerminal } from './agent-chat';
@@ -24,16 +25,27 @@ import {
 import { store, setStore } from './core';
 import { startRemoteAccess } from './remote';
 import { effectiveAgentId } from './agent-select';
-import { randomPastelColor, sortProjects } from './projects';
+import { randomPastelColor, sortProjects, syncProjectAgentEnv } from './projects';
+import { sanitizeEnvVars } from '../../electron/shared/env-vars';
 import { markAgentSpawned } from './taskStatus';
-import { clampCoordinatorConcurrentTasks } from '../lib/coordinator-limits';
+import {
+  clampCoordinatorConcurrentTasks,
+  clampIndependentTasksPerCreator,
+  DEFAULT_INDEPENDENT_TASKS_PER_CREATOR,
+} from '../lib/coordinator-limits';
 import { MAX_PROMPT_HISTORY } from '../lib/prompt-history';
 import { isFeatureHintId } from '../lib/feature-hints';
+import { isShellLayoutMode } from '../lib/shellLayout';
 import { normalizeReasoningProfile } from '../investigation/profiles';
 import { restoreReasoningWorkspaces } from '../investigation/editing';
 import { isValidSpId } from '../../electron/shared/super-productivity';
 import { parseAgentTourPayload } from '../../electron/shared/agent-tour';
-import { DEFAULT_TASK_NAME_MODEL, isTaskNameModelId } from '../../electron/shared/task-name-model';
+import {
+  DEFAULT_BRIEF_MODEL,
+  DEFAULT_TASK_NAME_MODEL,
+  isBriefModelId,
+  isTaskNameModelId,
+} from '../../electron/shared/task-name-model';
 
 /** A map that fails validation is kept aside rather than crashing load or being overwritten
  *  by the next save; the user is told once. */
@@ -72,6 +84,8 @@ import type {
   SuperProductivityLink,
   PersistedWindowState,
   Project,
+  VerifyPassRecord,
+  TaskIdea,
 } from './types';
 import type { AgentDef } from '../ipc/types';
 import { inferDockerSource } from '../lib/docker';
@@ -83,7 +97,12 @@ import { syncTerminalCounter } from './terminals';
 import { showNotification, NOTIFICATION_ERROR_MS } from './notification';
 import { errMessage, warn as logWarn } from '../lib/log';
 import { canvasTabKey } from '../lib/canvas-tabs';
-import { hiddenAgentTaskIds, isHiddenAgentTaskId } from '../documents/task-id';
+import { restoreReviewModel } from '../lib/task-review';
+import {
+  hiddenAgentTaskIds,
+  isHiddenAgentTaskId,
+  isProjectPageAgentTaskId,
+} from '../documents/task-id';
 
 /** Reasoning levels per provider, each one the CLI accepts; anything else is dropped. */
 function loadAskCodeEffort(value: unknown): Partial<Record<AskCodeProvider, string>> {
@@ -142,6 +161,11 @@ export async function loadCustomThemes(): Promise<boolean> {
 /** Enrich an agent def with resume/skip-permissions args from fresh defaults. */
 function enrichAgentDef(agentDef: AgentDef | null | undefined, availableAgents: AgentDef[]): void {
   if (!agentDef) return;
+  // The profile is a file on disk and these end up as arguments to a spawned CLI.
+  const extra: unknown = agentDef.extra_args;
+  if (!Array.isArray(extra) || !extra.every((arg) => typeof arg === 'string' && arg)) {
+    delete agentDef.extra_args;
+  }
   const fresh = availableAgents.find((a) => a.id === agentDef.id);
   if (fresh) {
     if (!agentDef.resume_args) agentDef.resume_args = fresh.resume_args;
@@ -280,6 +304,33 @@ function validBranch(value: unknown, exclude?: string): string | undefined {
   return typeof value === 'string' && value.length > 0 && value !== exclude ? value : undefined;
 }
 
+function restoredPrBabysit(value: unknown): PrBabysit | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { attempts, lastSentSha, stalled } = value as Record<string, unknown>;
+  return {
+    attempts:
+      typeof attempts === 'number' && Number.isInteger(attempts) && attempts > 0 ? attempts : 0,
+    ...(typeof lastSentSha === 'string' && lastSentSha ? { lastSentSha } : {}),
+    ...(stalled === true ? { stalled } : {}),
+  };
+}
+
+function isTaskIdea(value: unknown): value is TaskIdea {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.id === 'string' &&
+    typeof v.text === 'string' &&
+    v.text.trim() !== '' &&
+    (v.projectId === null || typeof v.projectId === 'string') &&
+    typeof v.createdAt === 'number'
+  );
+}
+
+function restoreTaskIdeas(value: unknown): TaskIdea[] {
+  return Array.isArray(value) ? value.filter(isTaskIdea) : [];
+}
+
 function restoredSnoozedUntil(value: unknown): number | undefined {
   return typeof value === 'number' &&
     Number.isFinite(value) &&
@@ -299,6 +350,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     id: task.id,
     name: task.name,
     nameIsAutoGenerated: task.nameIsAutoGenerated,
+    nameFromModel: task.nameFromModel || undefined,
     projectId: task.projectId,
     branchName: task.branchName,
     worktreePath: task.worktreePath,
@@ -332,7 +384,6 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     prUrl: task.prUrl,
     superProductivity: task.superProductivity,
     savedInitialPrompt: task.savedInitialPrompt,
-    secondOpinionDismissed: task.secondOpinionDismissed || undefined,
     savedSelectedAgentIndex: task.savedSelectedAgentIndex,
     savedAgentSessionIds: task.savedAgentSessionIds,
     savedPromptedAgentIndexes: task.savedPromptedAgentIndexes,
@@ -349,6 +400,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     branchOfferDismissed: task.branchOfferDismissed,
     snoozedUntil: task.snoozedUntil,
     snoozedUntilCi: task.snoozedUntilCi,
+    prBabysit: task.prBabysit,
     ...(collapsed ? { collapsed: true } : {}),
     delegationParent: task.delegationParent,
     delegationPaused: task.delegationPaused,
@@ -369,9 +421,12 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     needsReview: task.needsReview,
     verification: task.verification,
     verificationRun: task.verificationRun,
-    evidence: persistedEvidence(task.evidence),
+    lastVerifyPass: task.lastVerifyPass,
+    evidence: persistedCheckSuite(task.evidence),
     brief: task.brief,
     confidence: task.confidence,
+    reviewDismissed: task.reviewDismissed,
+    reviewModel: task.reviewModel,
     landingState: task.landingState,
     landingReason: task.landingReason,
     landingSummary: task.landingSummary,
@@ -388,9 +443,22 @@ function restoredVerificationRun(
   return run;
 }
 
+function restoredVerifyPass(value: unknown): VerifyPassRecord | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { command, headSha, finishedAt } = value as Record<string, unknown>;
+  if (typeof command !== 'string' || typeof headSha !== 'string' || typeof finishedAt !== 'string')
+    return undefined;
+  return { command, headSha, finishedAt };
+}
+
 // The renderer can receive input while startup IPC waits for the login shell.
 // Never serialize its initial empty store over a session we have not restored.
 let stateLoaded = false;
+
+/** Whether the saved state was restored, or none existed; false after an unreadable one. */
+export function isStateLoaded(): boolean {
+  return stateLoaded;
+}
 
 export async function saveState(): Promise<void> {
   if (!stateLoaded) return;
@@ -398,6 +466,7 @@ export async function saveState(): Promise<void> {
   const persisted: PersistedState = {
     projects: store.projects.map((p) => ({ ...p })),
     lastProjectId: store.lastProjectId,
+    lastTeleportProjectId: store.lastTeleportProjectId,
     lastAgentId: store.lastAgentId,
     taskOrder: [...store.taskOrder],
     collapsedTaskOrder: [...store.collapsedTaskOrder],
@@ -416,14 +485,18 @@ export async function saveState(): Promise<void> {
     terminalScreenReaderMode: store.terminalScreenReaderMode || undefined,
     themePreset: store.themePreset,
     showPromptInput: store.showPromptInput,
+    shellLayoutOverride: store.shellLayoutOverride ?? undefined,
     fontSmoothing: store.fontSmoothing,
     windowState: store.windowState ? { ...store.windowState } : undefined,
     autoTrustFolders: store.autoTrustFolders,
     showPlans: store.showPlans,
+    kanbanHideDetails: store.kanbanHideDetails || undefined,
     modelTaskNames: store.modelTaskNames,
     taskNameModel: store.taskNameModel,
     taskBriefs: store.taskBriefs || undefined,
-    confidencePrompt: store.confidencePrompt.trim() || undefined,
+    briefBarFields: { ...store.briefBarFields },
+    briefModel: store.briefModel,
+    reviewGuidance: store.reviewGuidance.trim() || undefined,
     showSidebarTips: store.showSidebarTips,
     showSidebarProgress: store.showSidebarProgress,
     sidebarNeedsInputFirst: store.sidebarNeedsInputFirst,
@@ -446,11 +519,20 @@ export async function saveState(): Promise<void> {
     // Always stored: a missing value marks an install that predates the tips.
     featureHintsEnabled: store.featureHintsEnabled,
     seenFeatureHints: store.seenFeatureHints.length > 0 ? [...store.seenFeatureHints] : undefined,
+    taskIdeas:
+      store.taskIdeas.length > 0 ? store.taskIdeas.map((idea) => ({ ...idea })) : undefined,
+    lastIdeaProjectId: store.lastIdeaProjectId ?? undefined,
     focusMode: store.focusMode || undefined,
+    boardView: store.boardView || undefined,
+    boardSidePanelLeft: store.boardSidePanelLeft || undefined,
     verboseLogging: store.verboseLogging || undefined,
     coordinatorNotificationDelayMs:
       store.coordinatorNotificationDelayMs !== 60_000
         ? store.coordinatorNotificationDelayMs
+        : undefined,
+    maxIndependentTasksPerCreator:
+      store.maxIndependentTasksPerCreator !== DEFAULT_INDEPENDENT_TASKS_PER_CREATOR
+        ? store.maxIndependentTasksPerCreator
         : undefined,
     shareDockerAgentAuth: store.shareDockerAgentAuth || undefined,
     activeCustomThemeId: store.activeCustomThemeId ?? undefined,
@@ -469,6 +551,8 @@ export async function saveState(): Promise<void> {
     defaultPropagateSkipPermissions: store.defaultPropagateSkipPermissions || undefined,
     // Default on: only an explicit opt-out is stored.
     canvasOwnershipBadges: store.canvasOwnershipBadges ? undefined : false,
+    finishReview: store.finishReview ? undefined : false,
+    reviewModel: store.reviewModel,
     autoStartRemoteAccess: store.autoStartRemoteAccess || undefined,
   };
 
@@ -602,6 +686,7 @@ interface LegacyPersistedState {
   projectRoot?: string;
   projects?: Project[];
   lastProjectId?: string | null;
+  lastTeleportProjectId?: string | null;
   lastAgentId?: string | null;
   taskOrder: string[];
   collapsedTaskOrder?: string[];
@@ -623,14 +708,18 @@ interface LegacyPersistedState {
   terminalScreenReaderMode?: unknown;
   themePreset?: unknown;
   showPromptInput?: unknown;
+  shellLayoutOverride?: unknown;
   fontSmoothing?: unknown;
   windowState?: unknown;
   autoTrustFolders?: unknown;
   showPlans?: unknown;
+  kanbanHideDetails?: unknown;
   modelTaskNames?: unknown;
   taskNameModel?: unknown;
   taskBriefs?: unknown;
-  confidencePrompt?: unknown;
+  briefBarFields?: unknown;
+  briefModel?: unknown;
+  reviewGuidance?: unknown;
   showSidebarTips?: unknown;
   showSidebarProgress?: unknown;
   sidebarNeedsInputFirst?: unknown;
@@ -649,9 +738,14 @@ interface LegacyPersistedState {
   keybindingMigrationDismissed?: unknown;
   featureHintsEnabled?: unknown;
   seenFeatureHints?: unknown;
+  taskIdeas?: unknown;
+  lastIdeaProjectId?: unknown;
   focusMode?: unknown;
+  boardView?: unknown;
+  boardSidePanelLeft?: unknown;
   verboseLogging?: unknown;
   coordinatorNotificationDelayMs?: unknown;
+  maxIndependentTasksPerCreator?: unknown;
   shareDockerAgentAuth?: unknown;
   customThemes?: unknown;
   activeCustomThemeId?: unknown;
@@ -669,6 +763,8 @@ interface LegacyPersistedState {
   defaultSkipPermissions?: unknown;
   defaultPropagateSkipPermissions?: unknown;
   canvasOwnershipBadges?: unknown;
+  finishReview?: unknown;
+  reviewModel?: unknown;
   autoStartRemoteAccess?: unknown;
 }
 
@@ -678,6 +774,8 @@ export async function loadState(): Promise<void> {
   if (!json) {
     // A new install has no shortcuts to migrate.
     setStore('keybindingMigrationDismissed', true);
+    // New installs start on the board; its empty state shows the first-run steps.
+    setStore('boardView', true);
     await delegationRequest({ action: 'orchestrationSetting', enabled: true });
     stateLoaded = true;
     return;
@@ -711,6 +809,7 @@ export async function loadState(): Promise<void> {
   // Also migrate defaultDirectMode -> defaultGitIsolation
   for (const p of projects) {
     if (!p.color) p.color = randomPastelColor();
+    p.icon = sanitizeProjectIcon(p.icon);
     p.allowPeerAccess = p.allowPeerAccess === true;
     if (typeof p.coverageReportPath === 'string') {
       const trimmed = p.coverageReportPath.trim();
@@ -721,8 +820,13 @@ export async function loadState(): Promise<void> {
     p.tasksCollapsed = typeof p.tasksCollapsed === 'boolean' ? p.tasksCollapsed : undefined;
     p.quickEditSource = typeof p.quickEditSource === 'string' ? p.quickEditSource : undefined;
     p.evidenceChecks = parseProjectChecks(p.evidenceChecks);
-    p.evidenceModel = parseEvidenceModelSettings(p.evidenceModel);
-    p.evidenceAutoBuild = p.evidenceAutoBuild === true ? true : undefined;
+    p.agentEnv = sanitizeEnvVars(p.agentEnv);
+    // Background evidence builds and the evidence review model are gone; drop
+    // their old settings. Check suggestions use the review model instead.
+    delete (p as unknown as Record<string, unknown>).evidenceAutoBuild;
+    delete (p as unknown as Record<string, unknown>).evidenceModel;
+    p.verifyAutoRun = p.verifyAutoRun === false ? false : undefined;
+    p.reviewChecks = restoreReviewChecks(p.reviewChecks);
     p.superProductivityProjectId = isValidSpId(p.superProductivityProjectId)
       ? p.superProductivityProjectId
       : undefined;
@@ -778,6 +882,8 @@ export async function loadState(): Promise<void> {
         allowPeerAccess: project.allowPeerAccess === true,
       },
     }).catch((error: unknown) => console.warn('Could not restore project permissions:', error));
+    // Before store insertion too: terminals spawn as soon as their tasks mount.
+    await syncProjectAgentEnv(project.id, project.agentEnv);
   }
   const detachedRestores: string[] = [];
   for (const task of Object.values(raw.tasks)) {
@@ -797,7 +903,13 @@ export async function loadState(): Promise<void> {
   );
   for (const task of authorityTasks) {
     const project = projects.find((p) => p.id === task.projectId);
-    if (!project || project.kind === 'document' || isHiddenAgentTaskId(task.id)) continue;
+    // Page agents register so they can create independent tasks; document agents cannot.
+    if (
+      !project ||
+      project.kind === 'document' ||
+      (isHiddenAgentTaskId(task.id) && !isProjectPageAgentTaskId(task.id))
+    )
+      continue;
     const agent = task.agentDefs?.[0] ?? task.agentDef ?? undefined;
     try {
       await delegationRequest({
@@ -829,6 +941,7 @@ export async function loadState(): Promise<void> {
       s.projects = projects;
       sortProjects(s.projects);
       s.lastProjectId = lastProjectId;
+      s.lastTeleportProjectId = raw.lastTeleportProjectId ?? null;
       s.lastAgentId = lastAgentId;
       s.taskOrder = raw.taskOrder;
       s.activeTaskId = raw.activeTaskId;
@@ -875,17 +988,29 @@ export async function loadState(): Promise<void> {
         typeof raw.terminalScreenReaderMode === 'boolean' ? raw.terminalScreenReaderMode : false;
       s.themePreset = isLookPreset(raw.themePreset) ? raw.themePreset : 'minimal';
       s.showPromptInput = typeof raw.showPromptInput === 'boolean' ? raw.showPromptInput : true;
+      s.shellLayoutOverride = isShellLayoutMode(raw.shellLayoutOverride)
+        ? raw.shellLayoutOverride
+        : null;
       s.fontSmoothing = typeof raw.fontSmoothing === 'boolean' ? raw.fontSmoothing : true;
       s.windowState = parsePersistedWindowState(raw.windowState);
       s.autoTrustFolders = typeof raw.autoTrustFolders === 'boolean' ? raw.autoTrustFolders : false;
       s.showPlans = typeof raw.showPlans === 'boolean' ? raw.showPlans : true;
+      s.kanbanHideDetails = raw.kanbanHideDetails === true;
       s.modelTaskNames = raw.modelTaskNames === true;
       s.taskNameModel = isTaskNameModelId(raw.taskNameModel)
         ? raw.taskNameModel
         : DEFAULT_TASK_NAME_MODEL;
       s.taskBriefs = raw.taskBriefs === true;
-      s.confidencePrompt =
-        typeof raw.confidencePrompt === 'string' ? raw.confidencePrompt.slice(0, 4_000) : '';
+      s.briefBarFields = restoreBriefBarFields(raw.briefBarFields);
+      // Briefs used to follow the naming model, with Claude upgraded to Sonnet.
+      s.briefModel = isBriefModelId(raw.briefModel)
+        ? raw.briefModel
+        : raw.taskNameModel === 'luna'
+          ? 'luna'
+          : DEFAULT_BRIEF_MODEL;
+      // Its predecessor confidencePrompt was an instruction to the task's agent, so it is not carried over.
+      s.reviewGuidance =
+        typeof raw.reviewGuidance === 'string' ? raw.reviewGuidance.slice(0, 4_000) : '';
       s.showSidebarTips = typeof raw.showSidebarTips === 'boolean' ? raw.showSidebarTips : true;
       s.showSidebarProgress =
         typeof raw.showSidebarProgress === 'boolean' ? raw.showSidebarProgress : true;
@@ -910,6 +1035,8 @@ export async function loadState(): Promise<void> {
       s.editorCommand = typeof rawEditorCommand === 'string' ? rawEditorCommand.trim() : '';
 
       s.focusMode = raw.focusMode === true;
+      s.boardView = raw.boardView === true;
+      s.boardSidePanelLeft = raw.boardSidePanelLeft === true;
 
       s.verboseLogging = typeof raw.verboseLogging === 'boolean' ? raw.verboseLogging : false;
 
@@ -921,6 +1048,11 @@ export async function loadState(): Promise<void> {
         rawDelay <= 300_000
           ? Math.round(rawDelay)
           : 60_000;
+
+      const rawIndependentLimit = raw.maxIndependentTasksPerCreator;
+      s.maxIndependentTasksPerCreator = clampIndependentTasksPerCreator(
+        typeof rawIndependentLimit === 'number' ? rawIndependentLimit : Number.NaN,
+      );
 
       s.shareDockerAgentAuth = raw.shareDockerAgentAuth === true;
 
@@ -979,6 +1111,8 @@ export async function loadState(): Promise<void> {
       s.defaultSkipPermissions = raw.defaultSkipPermissions === true;
       s.defaultPropagateSkipPermissions = raw.defaultPropagateSkipPermissions === true;
       s.canvasOwnershipBadges = raw.canvasOwnershipBadges !== false;
+      s.finishReview = raw.finishReview !== false;
+      s.reviewModel = restoreReviewModel(raw.reviewModel);
 
       s.autoStartRemoteAccess = raw.autoStartRemoteAccess === true;
 
@@ -1028,6 +1162,9 @@ export async function loadState(): Promise<void> {
       s.seenFeatureHints = Array.isArray(raw.seenFeatureHints)
         ? raw.seenFeatureHints.filter(isFeatureHintId)
         : [];
+      s.taskIdeas = restoreTaskIdeas(raw.taskIdeas);
+      s.lastIdeaProjectId =
+        typeof raw.lastIdeaProjectId === 'string' ? raw.lastIdeaProjectId : null;
 
       // Make custom agents findable during task restoration
       for (const ca of s.customAgents) {
@@ -1059,6 +1196,7 @@ export async function loadState(): Promise<void> {
               : pt.nameIsAutoGenerated === false
                 ? false
                 : undefined,
+          nameFromModel: pt.nameFromModel === true || undefined,
           projectId: pt.projectId ?? '',
           branchName: pt.branchName,
           worktreePath: hiddenTaskIds.includes(taskId)
@@ -1081,6 +1219,7 @@ export async function loadState(): Promise<void> {
           shellAgentIds,
           snoozedUntil: restoredSnoozedUntil(pt.snoozedUntil),
           snoozedUntilCi: pt.snoozedUntilCi === true ? true : undefined,
+          prBabysit: restoredPrBabysit(pt.prBabysit),
           notes: pt.notes,
           promptDraft: typeof pt.promptDraft === 'string' ? pt.promptDraft : undefined,
           browserUrl: typeof pt.browserUrl === 'string' ? pt.browserUrl : undefined,
@@ -1103,7 +1242,6 @@ export async function loadState(): Promise<void> {
           prUrl: pt.prUrl,
           superProductivity: restoreSuperProductivityLink(pt.superProductivity),
           savedInitialPrompt: pt.savedInitialPrompt,
-          secondOpinionDismissed: pt.secondOpinionDismissed === true || undefined,
           savedSelectedAgentIndex: validAgentIndex(pt.savedSelectedAgentIndex),
           savedPromptedAgentIndexes: validPromptedAgentIndexes(pt.savedPromptedAgentIndexes),
           planFileName: pt.planFileName,
@@ -1147,9 +1285,13 @@ export async function loadState(): Promise<void> {
           needsReview: pt.needsReview,
           verification: pt.verification,
           verificationRun: restoredVerificationRun(pt.verificationRun),
-          evidence: restoredEvidence(pt.evidence),
+          lastVerifyPass: restoredVerifyPass(pt.lastVerifyPass),
+          evidence: restoredCheckSuite(pt.evidence),
           brief: restoreTaskBriefRecord(pt.brief),
           confidence: restoreTaskConfidence(pt.confidence),
+          reviewDismissed: restoreReviewDismissed(pt.reviewDismissed),
+          reviewModel:
+            pt.reviewModel === undefined ? undefined : restoreReviewModel(pt.reviewModel),
           landingState: pt.landingState,
           landingReason: pt.landingReason,
           landingSummary: pt.landingSummary,
@@ -1211,6 +1353,7 @@ export async function loadState(): Promise<void> {
               : pt.nameIsAutoGenerated === false
                 ? false
                 : undefined,
+          nameFromModel: pt.nameFromModel === true || undefined,
           projectId: pt.projectId ?? '',
           branchName: pt.branchName,
           worktreePath: pt.worktreePath,
@@ -1251,7 +1394,6 @@ export async function loadState(): Promise<void> {
           prUrl: pt.prUrl,
           superProductivity: restoreSuperProductivityLink(pt.superProductivity),
           savedInitialPrompt: pt.savedInitialPrompt,
-          secondOpinionDismissed: pt.secondOpinionDismissed === true || undefined,
           savedSelectedAgentIndex: validAgentIndex(pt.savedSelectedAgentIndex),
           savedPromptedAgentIndexes: validPromptedAgentIndexes(pt.savedPromptedAgentIndexes),
           planFileName: pt.planFileName,
@@ -1303,9 +1445,13 @@ export async function loadState(): Promise<void> {
           needsReview: pt.needsReview,
           verification: pt.verification,
           verificationRun: restoredVerificationRun(pt.verificationRun),
-          evidence: restoredEvidence(pt.evidence),
+          lastVerifyPass: restoredVerifyPass(pt.lastVerifyPass),
+          evidence: restoredCheckSuite(pt.evidence),
           brief: restoreTaskBriefRecord(pt.brief),
           confidence: restoreTaskConfidence(pt.confidence),
+          reviewDismissed: restoreReviewDismissed(pt.reviewDismissed),
+          reviewModel:
+            pt.reviewModel === undefined ? undefined : restoreReviewModel(pt.reviewModel),
           landingState: pt.landingState,
           landingReason: pt.landingReason,
           landingSummary: pt.landingSummary,

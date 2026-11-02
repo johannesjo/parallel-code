@@ -11,9 +11,11 @@ import type { FileDiff, Hunk, DiffLine } from '../lib/unified-diff-parser';
 import { debug as logDebug, warn as logWarn } from '../lib/log';
 import type { FileDiffResult } from '../ipc/types';
 import { getDiffSelection } from '../lib/diff-selection';
+import { prefersMotion } from '../lib/reducedMotion';
 import { getContextGapLineCount, type ContextGapRange } from '../lib/diff-context-gaps';
 import { countFileSearchMatches, getInitialCollapsedFiles } from '../lib/diff-collapse';
 import { AskCodeCard } from './AskCodeCard';
+import { ExternalLinkIcon } from './icons';
 import { ReviewCommentCard } from './ReviewCommentCard';
 import { QualityFindingCard } from './QualityFindingCard';
 import { InlineInput } from './InlineInput';
@@ -502,7 +504,8 @@ function FileSection(props: {
         overflow: 'hidden',
         background: theme.bgElevated,
         opacity: props.dimmed ? '0.25' : '0.9',
-        transition: 'opacity 5s ease-out',
+        // Dims at once; only the return to full strength fades.
+        transition: props.dimmed ? 'none' : 'opacity 400ms ease-out',
       }}
     >
       {/* Sticky file header */}
@@ -624,9 +627,7 @@ function FileSection(props: {
           }}
           title="Open in editor"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-3a.75.75 0 0 1 1.5 0v3A3 3 0 0 1 12.5 16h-9A3 3 0 0 1 0 12.5v-9A3 3 0 0 1 3.5 0h3a.75.75 0 0 1 0 1.5h-3ZM10 .75a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0V2.56L8.53 8.53a.75.75 0 0 1-1.06-1.06L13.44 1.5H10.75A.75.75 0 0 1 10 .75Z" />
-          </svg>
+          <ExternalLinkIcon />
         </button>
       </div>
 
@@ -884,9 +885,17 @@ export function ScrollingDiffView(props: ScrollingDiffViewProps) {
     const target = props.scrollToPath;
     if (!target) return;
     expandFile(target);
-    setDimOthers(true);
-    // Start fade-in on next frame so the browser registers the dimmed state first
-    requestAnimationFrame(() => setDimOthers(false));
+    if (prefersMotion()) {
+      setDimOthers(true);
+      // Undim a frame after the dimmed state is painted, or there is nothing to fade from.
+      let undimFrame = requestAnimationFrame(() => {
+        undimFrame = requestAnimationFrame(() => setDimOthers(false));
+      });
+      onCleanup(() => {
+        cancelAnimationFrame(undimFrame);
+        setDimOthers(false);
+      });
+    }
     // Wait for DOM to settle before scrolling
     requestAnimationFrame(() => {
       const el = sectionRefs.get(target);

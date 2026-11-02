@@ -17,10 +17,9 @@ export interface DocumentAgentSupport {
 /**
  * Only CLIs whose headless mode can be kept away from the canonical checkout
  * are listed: Claude Code runs with file tools only, Codex inside its
- * workspace-write sandbox (writes outside the worktree are blocked), Gemini
- * with edits auto-approved and shell commands needing an approval that a
- * non-interactive run cannot give. OpenCode and Copilot expose a full shell
- * in print mode and stay out until they can be restricted.
+ * workspace-write sandbox (writes outside the worktree are blocked). OpenCode
+ * and Copilot expose a full shell in print mode and stay out until they can be
+ * restricted.
  */
 export const DOCUMENT_AGENT_SUPPORT: Record<string, DocumentAgentSupport> = {
   'claude-code': {
@@ -37,7 +36,6 @@ export const DOCUMENT_AGENT_SUPPORT: Record<string, DocumentAgentSupport> = {
     // Which of these a model takes varies by model; the CLI rejects the rest.
     efforts: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
   },
-  gemini: { headless: true, resume: false, models: [], efforts: [] },
 };
 
 const NO_SUPPORT: DocumentAgentSupport = {

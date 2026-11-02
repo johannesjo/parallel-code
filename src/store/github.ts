@@ -1,4 +1,5 @@
 /** Renderer side of the GitHub integration: issue/PR lookups and PR actions for tasks. */
+import { createSignal } from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { warn as logWarn } from '../lib/log';
@@ -12,9 +13,9 @@ import {
   workItemTaskName,
 } from '../lib/github-prompts';
 import { setStore, store } from './core';
-import { setPrefillPrompt, setTaskPromptDraftActive } from './tasks';
+import { saveState } from './persistence';
 import { toggleNewTaskPanel } from './navigation';
-import { setTaskFocusedPanel } from './focused-panel';
+import { stageTaskPrompt } from './staged-prompt';
 import type {
   GitHubIssueDetails,
   GitHubIssueSummary,
@@ -62,6 +63,34 @@ export async function markPullRequestReadyForTask(taskId: string, prUrl: string)
   refreshPrChecks(taskId);
 }
 
+/**
+ * Opens a PR for the task's pushed branch and links it to the task, as a
+ * printed `gh pr create` link would. `existed` means the branch already had
+ * one, which is linked instead.
+ */
+export async function createPullRequestForTask(
+  taskId: string,
+  pr: { base: string; title: string; body: string; draft: boolean },
+): Promise<{ url: string; existed: boolean }> {
+  const task = store.tasks[taskId];
+  if (!task) throw new Error('Task no longer exists');
+  const created = await invoke<{ url: string; existed: boolean }>(IPC.CreatePullRequest, {
+    worktreePath: task.worktreePath,
+    head: task.branchName,
+    ...pr,
+  });
+  linkPullRequestToTask(taskId, created.url);
+  return created;
+}
+
+/** Makes `url` the task's PR, so Finish, the board and the checks watcher follow it. */
+export function linkPullRequestToTask(taskId: string, url: string): void {
+  if (!store.tasks[taskId]) return;
+  setStore('tasks', taskId, 'prUrl', url);
+  void saveState();
+  refreshPrChecks(taskId);
+}
+
 function refreshPrChecks(taskId: string): void {
   void invoke(IPC.RefreshPrChecksWatcher, { taskId }).catch((err: unknown) =>
     logWarn('github', 'Failed to refresh PR checks', { err: String(err) }),
@@ -72,6 +101,7 @@ function refreshPrChecks(taskId: string): void {
 export async function loadFailedChecksPrompt(pr: {
   number: number;
   url: string;
+  repo?: string;
 }): Promise<string | null> {
   const checks = await invoke<PrFailedCheck[]>(IPC.GetPrFailedChecks, { prUrl: pr.url });
   return checks.length === 0 ? null : buildFailedChecksPrompt(pr, checks);
@@ -80,7 +110,7 @@ export async function loadFailedChecksPrompt(pr: {
 /** Stages a "fix CI" prompt in the task's prompt input. Returns false when nothing failed. */
 export async function stageFailedChecksPrompt(
   taskId: string,
-  pr: { number: number; url: string },
+  pr: { number: number; url: string; repo?: string },
 ): Promise<boolean> {
   const prompt = await loadFailedChecksPrompt(pr);
   if (prompt === null) return false;
@@ -100,28 +130,49 @@ export async function stageReviewFeedbackPrompt(
 }
 
 // Prefilled rather than sent: GitHub content is untrusted, so the user reads
-// and edits it before the agent sees it. Appended so an unsent draft survives.
-function stagePrompt(taskId: string, text: string): void {
-  const task = store.tasks[taskId];
-  if (!task) return;
-  const draft = task.prefillPrompt ?? task.promptDraft ?? '';
-  setTaskPromptDraftActive(taskId, true);
-  setStore('showPromptInput', true);
-  setPrefillPrompt(taskId, [draft, text].filter(Boolean).join('\n\n'));
-  queueMicrotask(() => {
-    if (store.tasks[taskId]) setTaskFocusedPanel(taskId, 'prompt');
-  });
-}
+// and edits it before the agent sees it.
+const stagePrompt = stageTaskPrompt;
 
 /** Browser state is separate from the task composer and survives task handoff. */
 export function openGitHubIssues(projectId: string | null): void {
-  if (projectId) setStore('kanbanProjectId', null);
   setStore('githubIssuesProjectId', projectId);
 }
 
 /** The project's github.com repository (`owner/name`) as the GitHub CLI resolves it. */
 export function resolveGitHubRepository(projectRoot: string): Promise<string> {
   return invoke<string>(IPC.ResolveGitHubRepository, { projectRoot });
+}
+
+// A failed check may be passing trouble (offline, gh logged out), so it is
+// asked again once this old, on the next read.
+const RECHECK_FAILED_MS = 60_000;
+// shortcut: a success is kept until restart, as a project's remote seldom
+// changes and each check runs gh — invalidate per project if remotes get edited in the app.
+// Per folder: true, or when its check last failed.
+const [repositoryChecks, setRepositoryChecks] = createSignal<Record<string, true | number>>({});
+const pendingRepositoryChecks = new Set<string>();
+
+function recordRepositoryCheck(projectRoot: string, result: true | number): void {
+  pendingRepositoryChecks.delete(projectRoot);
+  setRepositoryChecks((checks) => ({ ...checks, [projectRoot]: result }));
+}
+
+/**
+ * Whether the folder is a github.com repository, as gh answers; undefined
+ * while it is asked.
+ */
+export function isGitHubProject(projectRoot: string): boolean | undefined {
+  const known = repositoryChecks()[projectRoot];
+  if (known === true) return true;
+  if (pendingRepositoryChecks.has(projectRoot)) return known === undefined ? undefined : false;
+  if (known !== undefined && Date.now() - known < RECHECK_FAILED_MS) return false;
+  pendingRepositoryChecks.add(projectRoot);
+  // A failure is an answer too: no gh, no remote, offline, or not github.com.
+  void resolveGitHubRepository(projectRoot).then(
+    () => recordRepositoryCheck(projectRoot, true),
+    () => recordRepositoryCheck(projectRoot, Date.now()),
+  );
+  return known === undefined ? undefined : false;
 }
 
 export function browseGitHubIssues(

@@ -1,4 +1,5 @@
 import { render } from 'solid-js/web';
+import type { FileLinkMenu } from './file-link-menu';
 import type { ComponentProps } from 'solid-js';
 import type { Terminal } from '@xterm/xterm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -194,6 +195,179 @@ describe('TerminalView', () => {
   });
 });
 
+it('opens a file link menu on a plain click and its open action on a modified one', async () => {
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(256);
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(16);
+  const run = vi.fn(),
+    open = vi.fn();
+  const fileLinkMenu = vi.fn(
+    (): FileLinkMenu => ({ actions: [{ label: 'Copy path', run }], open }),
+  );
+  const term = mountTerminal(undefined, undefined, { fileLinkMenu });
+  await new Promise<void>((resolve) => term.write('src/a.ts:7', resolve));
+  const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+  if (!screen) throw new Error('Missing terminal screen');
+  screen.style.padding = '0px';
+  const click = (init: MouseEventInit = {}) => {
+    for (const type of ['mousemove', 'mousedown', 'mouseup'])
+      screen.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: 4,
+          clientY: 8,
+          buttons: type === 'mousedown' ? 1 : 0,
+          ...init,
+        }),
+      );
+  };
+  const opens = () => invoke.mock.calls.filter(([cmd]) => cmd === IPC.OpenPath);
+
+  click();
+  expect(fileLinkMenu).toHaveBeenLastCalledWith('/tmp/src/a.ts', 7);
+  const item = document.querySelector<HTMLButtonElement>('[role="menuitem"]');
+  expect(item?.textContent).toBe('Copy path');
+  item?.click();
+  expect(run).toHaveBeenCalledOnce();
+  expect(open).not.toHaveBeenCalled();
+
+  click({ ctrlKey: true, metaKey: true });
+  expect(open).toHaveBeenCalledOnce();
+  expect(opens()).toEqual([]);
+
+  // A file with nowhere to open on its own offers its menu on Cmd/Ctrl+click.
+  fileLinkMenu.mockReturnValueOnce({ actions: [{ label: 'Copy path', run }], open: undefined });
+  click({ ctrlKey: true, metaKey: true });
+  expect(document.querySelector('[role="menuitem"]')?.textContent).toBe('Copy path');
+  document
+    .querySelector('.terminal-selection-backdrop')
+    ?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+
+  // Shift asks for the default app, bypassing the menu's own open.
+  click({ ctrlKey: true, metaKey: true, shiftKey: true });
+  expect(open).toHaveBeenCalledOnce();
+  expect(opens()).toEqual([[IPC.OpenPath, { filePath: '/tmp/src/a.ts' }]]);
+});
+
+it('links a bare file name only once the terminal finds the file', async () => {
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(256);
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(16);
+  const fileLinkMenu = vi.fn(
+    (): FileLinkMenu => ({ actions: [{ label: 'Copy path', run: vi.fn() }] }),
+  );
+  const findBareFile = vi.fn((name: string) =>
+    Promise.resolve(name === 'notes.md' ? '/repo/docs/notes.md' : undefined),
+  );
+  const term = mountTerminal(undefined, undefined, { fileLinkMenu, findBareFile });
+  await new Promise<void>((resolve) => term.write('see notes.md:3\r\nsee other.md', resolve));
+  const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+  if (!screen) throw new Error('Missing terminal screen');
+  screen.style.padding = '0px';
+  const click = async (clientY: number) => {
+    const fire = (type: string) =>
+      screen.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: 44,
+          clientY,
+          buttons: type === 'mousedown' ? 1 : 0,
+        }),
+      );
+    fire('mousemove');
+    // The provider answers once the lookup settles.
+    await vi.waitFor(() => expect(findBareFile).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve));
+    fire('mousedown');
+    fire('mouseup');
+  };
+
+  await click(8);
+  expect(findBareFile).toHaveBeenLastCalledWith('notes.md');
+  expect(fileLinkMenu).toHaveBeenLastCalledWith('/repo/docs/notes.md', 3);
+  document
+    .querySelector('.terminal-selection-backdrop')
+    ?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+
+  fileLinkMenu.mockClear();
+  findBareFile.mockClear();
+  await click(24);
+  expect(findBareFile).toHaveBeenLastCalledWith('other.md');
+  expect(fileLinkMenu).not.toHaveBeenCalled();
+});
+
+it('keeps bare file names plain where the terminal cannot look them up', async () => {
+  const fileLinkMenu = vi.fn((): FileLinkMenu => ({ actions: [] }));
+  const term = mountTerminal(undefined, undefined, { fileLinkMenu });
+  await new Promise<void>((resolve) => term.write('see notes.md', resolve));
+  const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+  if (!screen) throw new Error('Missing terminal screen');
+  screen.style.padding = '0px';
+  for (const type of ['mousemove', 'mousedown', 'mouseup'])
+    screen.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: 44, clientY: 8 }));
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(fileLinkMenu).not.toHaveBeenCalled();
+});
+
+it('keeps selecting text inside a file link free of its menu', async () => {
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(256);
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(16);
+  const fileLinkMenu = vi.fn(() => ({
+    actions: [{ label: 'Copy path', run: vi.fn() }],
+    open: vi.fn(),
+  }));
+  const term = mountTerminal(undefined, undefined, { fileLinkMenu });
+  await new Promise<void>((resolve) => term.write('src/a.ts:7', resolve));
+  const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+  if (!screen) throw new Error('Missing terminal screen');
+  screen.style.padding = '0px';
+  const fire = (type: string, clientX: number, buttons: number) =>
+    screen.dispatchEvent(
+      new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY: 8, buttons }),
+    );
+  fire('mousemove', 4, 0);
+  fire('mousedown', 4, 1);
+  // xterm tracks drags on the document once the button is down.
+  for (const x of [20, 40])
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: 8, buttons: 1 }));
+  term.select(0, 0, 5);
+  fire('mouseup', 40, 0);
+  expect(document.querySelector('[role="menuitem"]')).toBeNull();
+});
+
+it('selects a double-clicked file link instead of keeping its menu open', async () => {
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(256);
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(16);
+  const fileLinkMenu = vi.fn(() => ({
+    actions: [{ label: 'Copy path', run: vi.fn() }],
+    open: vi.fn(),
+  }));
+  const term = mountTerminal(undefined, undefined, { fileLinkMenu });
+  await new Promise<void>((resolve) => term.write('see src/a.ts:7 now', resolve));
+  const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+  if (!screen) throw new Error('Missing terminal screen');
+  screen.style.padding = '0px';
+  for (const type of ['mousemove', 'mousedown', 'mouseup'])
+    screen.dispatchEvent(
+      new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: 60,
+        clientY: 8,
+        buttons: type === 'mousedown' ? 1 : 0,
+      }),
+    );
+  // The menu sits off the pointer, so the second press can't land on it.
+  const menu = document.querySelector<HTMLElement>('.terminal-selection-menu');
+  expect([menu?.style.left, menu?.style.top]).toEqual(['64px', '12px']);
+  const backdrop = document.querySelector('.terminal-selection-backdrop');
+  expect(backdrop).not.toBeNull();
+  // The double-click's second press lands on the menu's backdrop, not on xterm.
+  backdrop?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  expect(document.querySelector('[role="menuitem"]')).toBeNull();
+  expect(term.getSelection()).toBe('src/a.ts:7');
+});
+
 it('offers a selection context menu and preserves the captured text for the named recipient', async () => {
   const onSendSelection = vi.fn();
   const term = mountTerminal(undefined, undefined, {
@@ -207,7 +381,6 @@ it('offers a selection context menu and preserves the captured text for the name
     '[aria-label="Actions for selected text"]',
   );
   expect(trigger).not.toBeNull();
-  expect(document.querySelector('.terminal-second-opinion')).toBeNull();
   trigger?.click();
   term.clearSelection();
   const send = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) =>
@@ -217,10 +390,9 @@ it('offers a selection context menu and preserves the captured text for the name
   expect(onSendSelection).toHaveBeenCalledWith('Review this finding', 'other');
 });
 
-it('keeps Second opinion on right-click without an overlay button', () => {
+it('keeps Second opinion on right-click', () => {
   const onSecondOpinion = vi.fn();
   const term = mountTerminal(undefined, undefined, { onSecondOpinion });
-  expect(document.querySelector('.terminal-second-opinion')).toBeNull();
   term.element?.dispatchEvent(
     new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 30, clientY: 40 }),
   );
@@ -229,4 +401,49 @@ it('keeps Second opinion on right-click without an overlay button', () => {
   );
   item?.click();
   expect(onSecondOpinion).toHaveBeenCalledOnce();
+});
+
+describe('OSC 52 clipboard writes', () => {
+  // Claude Code's fullscreen mode captures the mouse, keeps the selection
+  // itself, and copies it with OSC 52; xterm.js then has no selection to copy.
+  const copySequence = (text: string) =>
+    `\x1b]52;c;${Buffer.from(text, 'utf8').toString('base64')}\x07`;
+  const write = (term: Terminal, data: string) =>
+    new Promise<void>((resolve) => term.write(data, resolve));
+
+  it('copies the text a program sends right after the user selects in the pane', async () => {
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    const term = mountTerminal();
+    const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+    if (!screen) throw new Error('Missing terminal screen');
+    screen.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, buttons: 1 }));
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+
+    await write(term, copySequence('selected in Claude ✓'));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('selected in Claude ✓');
+  });
+
+  it('copies after a long drag that started in the pane ends outside it', async () => {
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    let now = 1_000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const term = mountTerminal();
+    const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+    if (!screen) throw new Error('Missing terminal screen');
+    screen.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, buttons: 1 }));
+    now += 10_000;
+    document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+
+    await write(term, copySequence('long drag'));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('long drag');
+  });
+
+  it('ignores copies replayed or sent without user input', async () => {
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    const term = mountTerminal();
+    // A click elsewhere in the app must not arm this pane.
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    await write(term, copySequence('stale selection from scrollback'));
+    expect(writeText).not.toHaveBeenCalled();
+  });
 });

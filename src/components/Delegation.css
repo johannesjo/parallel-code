@@ -30,11 +30,6 @@
   border-color: var(--accent);
 }
 
-.delegation-surface .btn-primary {
-  background: var(--accent);
-  color: var(--accent-text);
-}
-
 .delegation-surface button:disabled {
   opacity: 0.5;
   cursor: not-allowed;

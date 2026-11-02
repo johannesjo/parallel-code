@@ -36,6 +36,7 @@ import {
   mockGetAllFileDiffs,
   mockGetDiffBaseSha,
   mockGitMergeTask,
+  mockRebaseTask,
   mockCreateBackendTask,
   mockVerifyStart,
   mockVerifyCancel,
@@ -51,6 +52,11 @@ import {
   encodeAgentBytes as encodeBytes,
   emitWorkThenIdle,
 } from './coordinator-test-harness.js';
+
+const mockWriteAntigravityMcpConfig = vi.hoisted(() => vi.fn());
+vi.mock('./antigravity-config.js', () => ({
+  writeAntigravityMcpConfig: mockWriteAntigravityMcpConfig,
+}));
 
 const { Coordinator } = await setupCoordinatorHarness();
 const { removePreambleBlock } = await import('./preamble.js');
@@ -1667,6 +1673,79 @@ describe('Coordinator land_self', () => {
         )
         .filter(Boolean);
       expect(syncedStatuses.slice(0, 2)).toEqual(['running', 'passed']);
+    });
+
+    /** Answers `merge-base --is-ancestor` with the given results in turn: false = base moved. */
+    function mockBaseContained(...results: boolean[]) {
+      const base = mockExecFile.getMockImplementation();
+      mockExecFile.mockImplementation(
+        (
+          cmd: string,
+          args: string[],
+          opts: unknown,
+          cb: (err: Error | null, stdout: string, stderr: string) => void,
+        ) => {
+          if (args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+            const contained = results.length > 1 ? results.shift() : results[0];
+            cb(contained ? null : Object.assign(new Error('not ancestor'), { code: 1 }), '', '');
+            return;
+          }
+          base?.(cmd, args, opts, cb);
+        },
+      );
+    }
+
+    it('verifies the task rebased onto its base, not the branch alone', async () => {
+      coordinator.registerCoordinator('coord-1', 'proj-1', { verifyCommand: 'npm test' });
+      mockVerifyStart.mockResolvedValueOnce(passedRun);
+
+      await coordinator.landSelf('task-1', { verification, summary: 'done' });
+
+      expect(mockRebaseTask).toHaveBeenCalledWith('/tmp/test', 'main');
+      expect(mockRebaseTask.mock.invocationCallOrder[0]).toBeLessThan(
+        mockVerifyStart.mock.invocationCallOrder[0] ?? 0,
+      );
+      expect(vi.mocked(mergeTask)).toHaveBeenCalled();
+    });
+
+    it('rebases and verifies again when the base moves during the run', async () => {
+      coordinator.registerCoordinator('coord-1', 'proj-1', { verifyCommand: 'npm test' });
+      mockVerifyStart.mockResolvedValue(passedRun);
+      mockBaseContained(false, true);
+
+      await coordinator.landSelf('task-1', { verification, summary: 'done' });
+
+      expect(mockRebaseTask).toHaveBeenCalledTimes(2);
+      expect(mockVerifyStart).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(mergeTask)).toHaveBeenCalled();
+    });
+
+    it('escalates instead of landing untested code when the base keeps moving', async () => {
+      coordinator.registerCoordinator('coord-1', 'proj-1', { verifyCommand: 'npm test' });
+      mockVerifyStart.mockResolvedValue(passedRun);
+      mockBaseContained(false);
+
+      await expect(coordinator.landSelf('task-1', { verification })).rejects.toThrow('kept moving');
+
+      expect(mockVerifyStart).toHaveBeenCalledTimes(3);
+      expect(vi.mocked(mergeTask)).not.toHaveBeenCalled();
+      expect(coordinator.getTask('task-1')?.landingState).toBe('landing_escalated');
+    });
+
+    it('escalates without running the command when the rebase conflicts', async () => {
+      coordinator.registerCoordinator('coord-1', 'proj-1', { verifyCommand: 'npm test' });
+      mockRebaseTask.mockRejectedValueOnce(new Error('Rebase stopped on conflicts in a.ts'));
+
+      await expect(coordinator.landSelf('task-1', { verification })).rejects.toThrow(
+        'Rebase stopped on conflicts in a.ts',
+      );
+
+      expect(mockVerifyStart).not.toHaveBeenCalled();
+      expect(vi.mocked(mergeTask)).not.toHaveBeenCalled();
+      expect(coordinator.getTask('task-1')).toMatchObject({
+        landingState: 'landing_escalated',
+        landingReason: expect.stringContaining('conflicts in a.ts'),
+      });
     });
 
     it('escalates with the output tail and refuses to merge when it fails', async () => {
@@ -3414,6 +3493,142 @@ describe('Coordinator MCP config restart rewrite', () => {
     coordinator.setNotify(mockNotify);
     coordinator.setDefaultProject('proj-1', '/tmp/project');
     coordinator.registerCoordinator('coord-1', 'proj-1');
+  });
+
+  it('gives an Antigravity child its server in the worktree, and refreshes it on restart', async () => {
+    coordinator.setMCPServerInfo('coord-1', 'http://localhost:3001', 'old', 'old', '/srv.js');
+    await coordinator.createTask({
+      name: 'test',
+      prompt: 'do',
+      coordinatorTaskId: 'coord-1',
+      agentCommand: 'agy',
+    });
+
+    expect(mockWriteAntigravityMcpConfig).toHaveBeenCalledWith(
+      '/tmp/test',
+      expect.objectContaining({ mcpServers: { 'parallel-code': expect.anything() } }),
+    );
+
+    mockWriteAntigravityMcpConfig.mockClear();
+    mockExistsSync.mockReturnValue(true);
+    coordinator.setMCPServerInfo('coord-1', 'http://localhost:3002', 'new', 'new', '/srv.js');
+
+    const rewritten = mockWriteAntigravityMcpConfig.mock.calls[0]?.[1] as {
+      mcpServers: { 'parallel-code': { args: string[] } };
+    };
+    expect(rewritten.mcpServers['parallel-code'].args).toContain('http://localhost:3002');
+  });
+
+  it('refreshes a restored Antigravity child once the server starts after hydration', () => {
+    const taskId = 'agy-restored';
+    coordinator.hydrateTask({
+      id: taskId,
+      name: 'restored',
+      projectId: 'proj-1',
+      projectRoot: '/tmp/project',
+      branchName: 'task/restored',
+      worktreePath: '/tmp/restored',
+      agentId: 'agent-agy-restored',
+      coordinatorTaskId: 'coord-1',
+      mcpConfigPath: join(os.tmpdir(), `parallel-code-subtask-${taskId}.json`),
+      agentCommand: 'agy',
+    });
+    expect(mockWriteAntigravityMcpConfig).not.toHaveBeenCalled();
+
+    mockExistsSync.mockReturnValue(true);
+    coordinator.setMCPServerInfo('coord-1', 'http://localhost:3002', 'new', 'new', '/srv.js');
+
+    expect(mockWriteAntigravityMcpConfig).toHaveBeenCalledWith('/tmp/restored', expect.anything());
+  });
+
+  it('deletes the temp token file when an Antigravity child cannot get its worktree config', async () => {
+    coordinator.setMCPServerInfo('coord-1', 'http://localhost:3001', 'old', 'old', '/srv.js');
+    mockWriteAntigravityMcpConfig.mockImplementationOnce(() => {
+      throw new Error('.agents/mcp_config.json is tracked by Git');
+    });
+
+    await expect(
+      coordinator.createTask({
+        name: 'test',
+        prompt: 'do',
+        coordinatorTaskId: 'coord-1',
+        agentCommand: 'agy',
+      }),
+    ).rejects.toThrow(/tracked/);
+
+    const configPath = join(os.tmpdir(), 'parallel-code-subtask-task-1.json');
+    await vi.waitFor(() => expect(mockUnlinkSync).toHaveBeenCalledWith(configPath));
+  });
+
+  it('keeps refreshing tokens when one Antigravity worktree cannot be written', async () => {
+    coordinator.setMCPServerInfo('coord-1', 'http://localhost:3001', 'old', 'old', '/srv.js');
+    await coordinator.createTask({
+      name: 'test',
+      prompt: 'do',
+      coordinatorTaskId: 'coord-1',
+      agentCommand: 'agy',
+    });
+    mockExistsSync.mockReturnValue(true);
+    mockWriteAntigravityMcpConfig.mockImplementationOnce(() => {
+      throw new Error('.agents must not be a symbolic link.');
+    });
+
+    expect(() =>
+      coordinator.setMCPServerInfo('coord-1', 'http://localhost:3002', 'new', 'new', '/srv.js'),
+    ).not.toThrow();
+  });
+
+  it('refreshes a restored Antigravity child that has no temp config path', () => {
+    coordinator.setMCPServerInfo('coord-1', 'http://localhost:3001', 'old', 'old', '/srv.js');
+    mockExistsSync.mockReturnValue(true);
+    coordinator.hydrateTask({
+      id: 'agy-no-path',
+      name: 'restored',
+      projectId: 'proj-1',
+      projectRoot: '/tmp/project',
+      branchName: 'task/restored',
+      worktreePath: '/tmp/restored',
+      agentId: 'agent-agy-no-path',
+      coordinatorTaskId: 'coord-1',
+      agentCommand: 'agy',
+    });
+    mockWriteAntigravityMcpConfig.mockClear();
+
+    coordinator.setMCPServerInfo('coord-1', 'http://localhost:3002', 'new', 'new', '/srv.js');
+
+    const rewritten = mockWriteAntigravityMcpConfig.mock.calls[0]?.[1] as
+      | { mcpServers: { 'parallel-code': { args: string[] } } }
+      | undefined;
+    expect(rewritten?.mcpServers['parallel-code'].args).toContain('http://localhost:3002');
+  });
+
+  it('restores an Antigravity child even when its worktree config cannot be written', () => {
+    coordinator.setMCPServerInfo('coord-1', 'http://localhost:3002', 'new', 'new', '/srv.js');
+    mockExistsSync.mockReturnValue(true);
+    mockWriteAntigravityMcpConfig.mockImplementationOnce(() => {
+      throw new Error('.agents must not be a symbolic link.');
+    });
+
+    coordinator.hydrateTask({
+      id: 'agy-broken',
+      name: 'restored',
+      projectId: 'proj-1',
+      projectRoot: '/tmp/project',
+      branchName: 'task/restored',
+      worktreePath: '/tmp/restored',
+      agentId: 'agent-agy-broken',
+      coordinatorTaskId: 'coord-1',
+      agentCommand: 'agy',
+    });
+
+    expect(coordinator.getTask('agy-broken')).toBeDefined();
+  });
+
+  it('leaves the worktree alone for agents that take MCP launch args', async () => {
+    coordinator.setMCPServerInfo('coord-1', 'http://localhost:3001', 'old', 'old', '/srv.js');
+    await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
+
+    expect(mockWriteAntigravityMcpConfig).not.toHaveBeenCalled();
   });
 
   it('rewrites MCP config for existing task when server info changes (restart)', async () => {
@@ -5523,6 +5738,31 @@ describe('Coordinator Docker mode — per-container sub-tasks', () => {
     expect(spawnCall.dockerMountWorktreeParent).toBe(true);
   });
 
+  it('createTask mounts the coordinator MCP dir when its worktree is outside the child parent', async () => {
+    coordinator.registerCoordinator('coord-feat', 'proj-1', {
+      worktreePath: '/tmp/project/.worktrees/feat/coord',
+    });
+    coordinator.setDockerContainerName('coord-feat', 'parallel-code-feat123456');
+    coordinator.setCoordinatorSpawnDefaults('coord-feat', 'claude', []);
+    coordinator.setMCPServerInfo(
+      'coord-feat',
+      'http://127.0.0.1:1',
+      'coord-token',
+      'sub-token',
+      '/tmp/project/.worktrees/feat/coord/.parallel-code/mcp-server.cjs',
+    );
+
+    await coordinator.createTask({ name: 'docker-sub-task', coordinatorTaskId: 'coord-feat' });
+
+    const spawnCall = mockSpawnAgent.mock.calls[0][1];
+    expect(spawnCall.dockerReadOnlyMounts).toEqual([
+      '/tmp/project/.worktrees/feat/coord/.parallel-code',
+    ]);
+    expect(coordinator.getDockerMcpMounts('task-docker-1')).toEqual([
+      '/tmp/project/.worktrees/feat/coord/.parallel-code',
+    ]);
+  });
+
   it('createTask in non-Docker mode does not set dockerMode on spawnAgent', async () => {
     coordinator.registerCoordinator('coord-host', 'proj-1');
     coordinator.setCoordinatorSpawnDefaults('coord-host', 'claude', []);
@@ -6051,17 +6291,8 @@ describe('preload.cjs MCP channel allowlist', () => {
   it('contains all MCP coordinator IPC channels', async () => {
     const { readFileSync } = await vi.importActual<typeof import('fs')>('fs');
     const path = await import('node:path');
-    const preloadPath = path.join(
-      path.dirname(new URL(import.meta.url).pathname),
-      '..',
-      'preload.cjs',
-    );
-    const manifestPath = path.join(
-      path.dirname(new URL(import.meta.url).pathname),
-      '..',
-      'ipc',
-      'channel-manifest.json',
-    );
+    const preloadPath = path.join(import.meta.dirname, '..', 'preload.cjs');
+    const manifestPath = path.join(import.meta.dirname, '..', 'ipc', 'channel-manifest.json');
     const preload = readFileSync(preloadPath, 'utf8') as string;
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8') as string) as Record<
       string,

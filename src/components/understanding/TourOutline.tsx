@@ -1,13 +1,6 @@
 import { For, Show, createEffect, createSignal } from 'solid-js';
 import { nodeTrail, type TourNode } from '../../lib/tour-tree';
-
-function Chevron() {
-  return (
-    <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
-      <path d="M2.5 1.5 5.5 4l-3 2.5" fill="none" stroke="currentColor" />
-    </svg>
-  );
-}
+import { TreeChevronIcon } from '../icons';
 
 /**
  * The tour as a quiet tree of card titles: where you are, what is above and
@@ -57,7 +50,7 @@ export function TourOutline(props: {
               when={!onPath().has(node().id)}
               fallback={
                 <span class="tour-outline-twisty" data-open="">
-                  <Chevron />
+                  <TreeChevronIcon size={8} />
                 </span>
               }
             >
@@ -68,7 +61,7 @@ export function TourOutline(props: {
                 aria-expanded={expanded(node())}
                 onClick={() => toggle(node().id)}
               >
-                <Chevron />
+                <TreeChevronIcon size={8} />
               </button>
             </Show>
           </Show>

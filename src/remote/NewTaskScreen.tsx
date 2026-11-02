@@ -11,6 +11,8 @@ import { clearPairedToken } from './auth';
 import { readLocal, writeLocal } from './storage';
 import { status } from './ws';
 import { ConnectionBanner } from './ConnectionBanner';
+import { ProjectSwatch } from '../components/ProjectSwatch';
+import { sanitizeProjectIcon } from '../lib/project-icon';
 
 interface NewTaskScreenProps {
   onCreated: (taskId: string, name: string) => void;
@@ -33,7 +35,8 @@ export function NewTaskScreen(props: NewTaskScreenProps) {
   const [loading, setLoading] = createSignal(true);
   const [busy, setBusy] = createSignal(false);
   const title = () => name().trim() || prompt().trim().replace(/\s+/g, ' ').slice(0, 80);
-  const agentName = () => projects().find((p) => p.id === projectId())?.agentName;
+  const selectedProject = () => projects().find((p) => p.id === projectId());
+  const agentName = () => selectedProject()?.agentName;
   createEffect(() => writeLocal('project', projectId()));
   createEffect(() => writeLocal('new-agent', agentId()));
   createEffect(() => writeLocal('new-name', name()));
@@ -59,7 +62,10 @@ export function NewTaskScreen(props: NewTaskScreenProps) {
       if (disposed) return;
       setProjects(list);
       setAgents(agentList);
-      if (!list.some((p) => p.id === projectId())) setProjectId(list[0]?.id ?? '');
+      // An empty list keeps the remembered project for the next load. Without a
+      // choice on this phone, start where the desktop last created a task.
+      if (list.length && !list.some((p) => p.id === projectId()))
+        setProjectId((list.find((p) => p.lastUsed) ?? list[0]).id);
       if (!agentList.some((a) => a.id === agentId())) {
         const defaultAgent = agentList.find((a) => a.isDefault) ?? agentList[0];
         setAgentId(defaultAgent?.id ?? '');
@@ -74,7 +80,7 @@ export function NewTaskScreen(props: NewTaskScreenProps) {
   }
   onMount(() => void loadProjects());
   const canSubmit = () =>
-    !!projectId() && !!prompt().trim() && !busy() && !loading() && status() === 'connected';
+    !!selectedProject() && !!prompt().trim() && !busy() && !loading() && status() === 'connected';
 
   async function handleSubmit(e: Event) {
     e.preventDefault();
@@ -132,25 +138,36 @@ export function NewTaskScreen(props: NewTaskScreenProps) {
           </Show>
           <label>
             Project
-            <select
-              class="mobile-input"
-              value={projectId()}
-              onChange={(e) => setProjectId(e.currentTarget.value)}
-              disabled={loading() || busy()}
-            >
-              <Show when={!projects().length}>
-                <option value="">
-                  {loading() ? 'Loading projects…' : 'No projects available'}
-                </option>
-              </Show>
-              <For each={projects()}>
-                {(p) => (
-                  <option value={p.id} selected={p.id === projectId()}>
-                    {p.name}
-                  </option>
+            <span class="mobile-project-select">
+              <Show when={selectedProject()?.color}>
+                {(color) => (
+                  <ProjectSwatch
+                    color={color()}
+                    icon={sanitizeProjectIcon(selectedProject()?.icon)}
+                    size={12}
+                  />
                 )}
-              </For>
-            </select>
+              </Show>
+              <select
+                class="mobile-input"
+                value={projectId()}
+                onChange={(e) => setProjectId(e.currentTarget.value)}
+                disabled={loading() || busy()}
+              >
+                <Show when={!projects().length}>
+                  <option value="">
+                    {loading() ? 'Loading projects…' : 'No projects available'}
+                  </option>
+                </Show>
+                <For each={projects()}>
+                  {(p) => (
+                    <option value={p.id} selected={p.id === projectId()}>
+                      {p.name}
+                    </option>
+                  )}
+                </For>
+              </select>
+            </span>
           </label>
           <Show when={agents().length > 0}>
             <label>
@@ -172,7 +189,7 @@ export function NewTaskScreen(props: NewTaskScreenProps) {
               </select>
             </label>
           </Show>
-          <Show when={projectId() && !loading() && !agents().length}>
+          <Show when={selectedProject() && !loading() && !agents().length}>
             <p class="mobile-project-hint muted">
               {agentName() ? `Runs with ${agentName()}` : 'Runs with your default agent'} · Desktop
               settings

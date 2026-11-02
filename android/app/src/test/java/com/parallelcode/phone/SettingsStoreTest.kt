@@ -35,6 +35,15 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun remembersTheLastProject() {
+        assertEquals(null, store.lastProjectId)
+        store.lastProjectId = "p1"
+        assertEquals("p1", SettingsStore(prefs).lastProjectId)
+        store.lastProjectId = null
+        assertFalse(prefs.contains(SettingsStore.KEY_LAST_PROJECT))
+    }
+
+    @Test
     fun defaultsToWaitForVpnDisabled() {
         assertFalse(store.waitForVpn)
     }
@@ -89,8 +98,8 @@ class SettingsStoreTest {
     }
 
     @Test
-    fun defaultsLookPresetsToObsidianPerTone() {
-        assertEquals(LookPresets.PRESET_OBSIDIAN, store.darkThemePreset)
+    fun defaultsLookPresetsToTheDesktopDefaults() {
+        assertEquals(LookPresets.PRESET_PARALLEL_CODE, store.darkThemePreset)
         assertEquals(LookPresets.PRESET_OBSIDIAN_LIGHT, store.lightThemePreset)
     }
 
@@ -114,7 +123,7 @@ class SettingsStoreTest {
     fun unknownLookPresetFallsBackToToneDefault() {
         prefs.edit { putString(SettingsStore.KEY_DARK_THEME_PRESET, "solarized-ultra") }
         prefs.edit { putString(SettingsStore.KEY_LIGHT_THEME_PRESET, "solarized-ultra") }
-        assertEquals(LookPresets.PRESET_OBSIDIAN, store.darkThemePreset)
+        assertEquals(LookPresets.PRESET_PARALLEL_CODE, store.darkThemePreset)
         assertEquals(LookPresets.PRESET_OBSIDIAN_LIGHT, store.lightThemePreset)
     }
 
@@ -122,7 +131,7 @@ class SettingsStoreTest {
     @Test
     fun lightPresetInDarkSlotFallsBackToDarkDefault() {
         prefs.edit { putString(SettingsStore.KEY_DARK_THEME_PRESET, LookPresets.PRESET_OBSIDIAN_LIGHT) }
-        assertEquals(LookPresets.PRESET_OBSIDIAN, store.darkThemePreset)
+        assertEquals(LookPresets.PRESET_PARALLEL_CODE, store.darkThemePreset)
     }
 
     @Test

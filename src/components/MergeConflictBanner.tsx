@@ -2,38 +2,57 @@ import { For, Show } from 'solid-js';
 import { sendPrompt, store } from '../store/store';
 import { bannerStyle, theme } from '../lib/theme';
 import type { Task } from '../store/types';
+import { overlapText } from '../lib/readiness-line';
 import type { MergeState } from './merge-state';
 import { GitBranchIcon, GitMergeIcon, SparkleIcon } from './icons';
 
-const buttonStyle = (primary: boolean, disabled = false) => ({
+// Neutral even with conflicts: the banner carries the urgency, and full-strength
+// text, not an accent fill, marks the suggested route.
+export const buttonStyle = (suggested: boolean, disabled = false) => ({
   padding: '5px 12px',
-  background: primary ? theme.accent : theme.bgInput,
-  border: primary ? `1px solid ${theme.accent}` : `1px solid ${theme.border}`,
+  background: theme.bgInput,
+  border: `1px solid ${theme.border}`,
   'border-radius': 'var(--radius-md)',
-  color: primary ? theme.accentText : theme.fg,
+  color: suggested ? theme.fg : theme.fgMuted,
   cursor: disabled ? 'not-allowed' : 'pointer',
   'font-size': '12px',
-  'font-weight': primary ? '600' : 'normal',
+  'font-weight': suggested ? '500' : 'normal',
+  'white-space': 'nowrap',
   opacity: disabled ? '0.5' : '1',
 });
 
 /**
  * Base moved on: offers to bring it in by rebase, by a merge commit, or by
- * asking the agent. With conflicts the agent is the suggested route.
+ * asking the agent. With conflicts, or after an attempt stopped on them, the agent is
+ * the suggested route.
  */
 export function MergeConflictBanner(props: { task: Task; state: MergeState; onDone: () => void }) {
   const base = () => props.state.baseBranchName();
-  const dirty = () => Boolean(props.state.worktreeStatus()?.has_uncommitted_changes);
-  const blocked = () => props.state.syncing() !== null || dirty();
+  // Other uncommitted changes are stashed and put back around the sync.
+  const overlap = () => props.state.uncommittedOverlap();
+  // Undefined when the overlap is unknown: then neither overlap line shows.
+  const baseOverlap = () =>
+    props.state.hasConflicts() ? undefined : props.state.mergeStatus()?.overlapping_files;
+  const blocked = () => props.state.syncing() !== null || overlap().length > 0;
   const blockedTitle = (action: string) =>
-    dirty() ? `Commit or stash changes before you ${action}` : undefined;
+    overlap().length ? `Commit or stash your changes before you ${action}` : undefined;
   const agentRunning = () =>
     props.task.agentIds.length > 0 &&
     store.agents[props.state.selectedAgentId()]?.status === 'running';
+  const agentSuggested = () => props.state.hasConflicts() || props.state.syncConflict() !== null;
+  // The merge check found no conflicts, so a single merge commit should go through
+  // where replaying the branch commit by commit did not.
+  const mergeInstead = () => props.state.syncConflict() === 'rebase' && !props.state.hasConflicts();
   const askAgent = () => {
     const agentId = props.state.selectedAgentId();
     props.onDone();
-    sendPrompt(props.task.id, agentId, `rebase on ${base()} branch`).catch((err) => {
+    const conflicts = props.state.mergeStatus()?.conflicting_files ?? [];
+    const prompt = conflicts.length
+      ? `rebase on ${base()} branch and resolve the conflicts in ${conflicts.join(', ')}`
+      : props.state.syncConflict()
+        ? `rebase on ${base()} branch and resolve the conflicts`
+        : `rebase on ${base()} branch`;
+    sendPrompt(props.task.id, agentId, prompt).catch((err) => {
       console.error('Failed to send rebase prompt:', err);
     });
   };
@@ -44,18 +63,31 @@ export function MergeConflictBanner(props: { task: Task; state: MergeState; onDo
         <Show when={status().main_ahead_count > 0}>
           <div
             style={{
-              ...bannerStyle(props.state.hasConflicts() ? theme.error : theme.warning),
-              'margin-bottom': '12px',
+              // A base that moved on is routine; only conflicts need attention now.
+              ...(props.state.hasConflicts()
+                ? bannerStyle(theme.error)
+                : {
+                    padding: '8px 12px',
+                    'border-radius': 'var(--radius-md)',
+                    border: `1px solid ${theme.border}`,
+                  }),
+              'margin-bottom': '28px',
               'font-size': '13px',
             }}
           >
-            <div style={{ 'font-weight': '600' }}>
+            <div style={{ 'font-weight': props.state.hasConflicts() ? '600' : 'normal' }}>
               <Show
                 when={props.state.hasConflicts()}
                 fallback={
                   <>
                     {base()} has {status().main_ahead_count} new commit
-                    {status().main_ahead_count > 1 ? 's' : ''}. Bring them into this branch first.
+                    {status().main_ahead_count > 1 ? 's' : ''}.
+                    {/* Nothing to act on without overlap, so it stays on the heading's line. */}
+                    <Show when={baseOverlap()?.length === 0}>
+                      <span style={{ color: theme.fgMuted }}>
+                        {" No overlap with this branch's files."}
+                      </span>
+                    </Show>
                   </>
                 }
               >
@@ -76,6 +108,18 @@ export function MergeConflictBanner(props: { task: Task; state: MergeState; onDo
                 <For each={status().conflicting_files}>{(f) => <li>{f}</li>}</For>
               </ul>
             </Show>
+            {/* Checks on this branch never saw those commits; overlap is where that matters. */}
+            <Show when={baseOverlap()?.length}>
+              <div style={{ 'margin-top': '4px', color: theme.fgMuted }}>
+                {overlapText(baseOverlap() ?? [], status().main_ahead_count)}
+              </div>
+            </Show>
+            <Show when={overlap().length > 0}>
+              <div style={{ 'margin-top': '4px' }}>
+                Commit or stash your changes to {overlap().join(', ')} first: {base()} changed them
+                too.
+              </div>
+            </Show>
             <div
               style={{
                 'margin-top': '8px',
@@ -91,10 +135,10 @@ export function MergeConflictBanner(props: { task: Task; state: MergeState; onDo
                 disabled={blocked()}
                 onClick={() => void props.state.syncWithBase('rebase')}
                 title={blockedTitle('rebase') ?? `Replay this branch's commits on top of ${base()}`}
-                style={buttonStyle(!props.state.hasConflicts(), blocked())}
+                style={buttonStyle(!agentSuggested(), blocked())}
               >
                 <GitBranchIcon size={12} />
-                {props.state.syncing() === 'rebase' ? 'Rebasing…' : `Rebase onto ${base()}`}
+                {props.state.syncing() === 'rebase' ? 'Rebasing…' : 'Rebase'}
               </button>
               <button
                 class="btn-with-icon"
@@ -108,7 +152,7 @@ export function MergeConflictBanner(props: { task: Task; state: MergeState; onDo
                 style={buttonStyle(false, blocked())}
               >
                 <GitMergeIcon size={12} />
-                {props.state.syncing() === 'merge' ? 'Merging…' : `Merge ${base()} into branch`}
+                {props.state.syncing() === 'merge' ? 'Merging…' : 'Merge'}
               </button>
               <Show when={agentRunning()}>
                 <button
@@ -116,7 +160,7 @@ export function MergeConflictBanner(props: { task: Task; state: MergeState; onDo
                   type="button"
                   onClick={askAgent}
                   title="Close the dialog and ask the agent to rebase"
-                  style={buttonStyle(props.state.hasConflicts())}
+                  style={buttonStyle(agentSuggested())}
                 >
                   <SparkleIcon size={12} />
                   Rebase with AI
@@ -126,6 +170,9 @@ export function MergeConflictBanner(props: { task: Task; state: MergeState; onDo
             <Show when={props.state.syncError()}>
               <div style={{ 'margin-top': '6px', color: theme.error }}>
                 {props.state.syncError()}
+                <Show when={mergeInstead()}>
+                  {` Merge ${base()} into the branch instead${agentRunning() ? ', or rebase with AI' : ''}.`}
+                </Show>
               </div>
             </Show>
           </div>

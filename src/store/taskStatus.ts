@@ -1,4 +1,4 @@
-import { createSignal, untrack } from 'solid-js';
+import { createEffect, createRoot, createSignal, untrack } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { isAgentChat } from './agent-chat';
 import { invoke } from '../lib/ipc';
@@ -15,6 +15,7 @@ import {
 } from '../lib/branch-divergence';
 import { warn as logWarn, info as logInfo, errMessage } from '../lib/log';
 import { adoptTaskBranch } from './task-branch';
+import { forgetPrintedPrLink, notePrintedPrLink } from './printed-pr-links';
 import {
   clearAgentHookStatus,
   formatAgentHookTooltip,
@@ -358,6 +359,12 @@ function findLastNonEmptyScreenClear(raw: string): number {
   return -1;
 }
 
+/** A bare ❯/› line: the agent is back at its main prompt. Splits on a lone \r
+ *  too, because Claude redraws its prompt after a \r on the status line. */
+function hasBarePromptLine(visible: string): boolean {
+  return visible.split(/\r\n?|\n/).some((l) => /^\s*[❯›]\s*$/.test(l));
+}
+
 /** True when recent output contains a question or confirmation prompt.
  *  Checks ALL recent lines because TUI dialogs render the question above
  *  selection options — the question text may not be the last line.
@@ -401,8 +408,7 @@ export function looksLikeQuestion(tail: string): boolean {
   const rawLower = analysisTail.toLowerCase();
   if (rawLower.includes('confirm folder trust') || rawLower.includes('do you trust')) {
     // Bare ❯ on its own line means the dialog was already answered.
-    const hasBarePromptLineRaw = lines.some((l) => /^\s*[❯›]\s*$/.test(l.trimEnd()));
-    if (!hasBarePromptLineRaw) {
+    if (!hasBarePromptLine(visible)) {
       return true;
     }
   }
@@ -424,8 +430,7 @@ export function looksLikeQuestion(tail: string): boolean {
   if (hasTrustContent) {
     // A bare ❯ on its own line means the agent returned to its prompt after
     // the trust dialog was already handled (old text lingers in the tail buffer).
-    const hasBarePromptLine = lines.some((l) => /^\s*[❯›]\s*$/.test(l.trimEnd()));
-    if (!hasBarePromptLine) {
+    if (!hasBarePromptLine(visible)) {
       return true;
     }
   }
@@ -439,8 +444,20 @@ export function looksLikeQuestion(tail: string): boolean {
   // We scan the last 8 lines (not just the last 3) because some TUI agents
   // (e.g. Codex CLI) render a multi-line footer/help bar *below* the prompt,
   // pushing the bare ❯/› line several positions up from the end.
+  //
+  // A dialog Claude redraws in place over its input box leaves the replaced box
+  // ahead of the dialog in the tail (#259); a live selection menu after the
+  // newest question marks that case, so only a prompt after it counts. Other
+  // renderers can emit a reply after a prompt they leave in place, so without
+  // a menu the whole tail still decides.
+  const questionLine = lines.findLast(isQuestionLine);
+  if (questionLine === undefined) return false;
+  const afterQuestion = visible.slice(visible.lastIndexOf(questionLine));
+  const scope = SELECTION_CURSOR_LINE.test(afterQuestion) ? afterQuestion : visible;
+  if (scope === afterQuestion && PROMPT_AFTER_MENU.test(afterQuestion)) return false;
+  const scopeLines = scope.split(/\r?\n/).filter((l) => l.trim().length > 0);
   const lastLine = lines[lines.length - 1].trimEnd();
-  const recentLines = lines.slice(-8);
+  const recentLines = scopeLines.slice(-8);
   // Suppress when the agent is sitting at its real main input prompt — any
   // earlier question/dialog text still lingering in the buffer has already been
   // answered.  chunkContainsAgentPrompt is the same readiness detector the
@@ -451,7 +468,7 @@ export function looksLikeQuestion(tail: string): boolean {
   // returns not-ready for trust/permission/selection dialogs and busy states,
   // so real questions are preserved.  Normalisation mirrors
   // coordinator.ts:normalizedTail (control chars → space, preserving \r and \n).
-  const readyProbe = visible
+  const readyProbe = scope
     // eslint-disable-next-line no-control-regex -- preserve \r and \n as line breaks for anchored prompt detection.
     .replace(/[\x00-\x09\x0b-\x0c\x0e-\x1f\x7f]/g, ' ')
     .replace(/[ \t]+/g, ' ')
@@ -465,11 +482,17 @@ export function looksLikeQuestion(tail: string): boolean {
     return false;
   }
 
-  return lines.some((line) => {
-    const trimmed = line.trimEnd();
-    if (trimmed.length === 0) return false;
-    return QUESTION_PATTERNS.some((re) => re.test(trimmed));
-  });
+  return true;
+}
+
+/** A selection cursor on a numbered option, e.g. `❯ 1. Yes`. */
+const SELECTION_CURSOR_LINE = /^\s*[❯›]\s*\d+\./m;
+/** The input box back below a menu, even holding typed text: it was answered. */
+const PROMPT_AFTER_MENU = /^\s*[❯›]\s*\d+\.[^]*^\s*[❯›](?!\s*\d+\.)/m;
+
+function isQuestionLine(line: string): boolean {
+  const trimmed = line.trimEnd();
+  return trimmed.length > 0 && QUESTION_PATTERNS.some((re) => re.test(trimmed));
 }
 
 function isAutoHandledTrustQuestion(tail: string): boolean {
@@ -857,6 +880,9 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
     combined.length > TAIL_BUFFER_MAX
       ? combined.slice(combined.length - TAIL_BUFFER_MAX)
       : combined;
+  if (state.taskId) {
+    notePrintedPrLink(agentId, state.taskId, { tail: state.outputTailBuffer, chunk: text });
+  }
 
   // Expensive analysis (regex, ANSI strip) now runs for all task agents, with a
   // slower cadence for background tasks so off-screen attention still updates.
@@ -953,7 +979,12 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
   // Plain shells aren't agent composers — a Vim "-- INSERT --" status line or
   // a Starship "❯" prompt can match AGENT_READY_TAIL_PATTERNS without the
   // shell being between turns, so they keep the normal 15s idle timeout.
-  const isShellTerminal = !!(taskId && store.tasks[taskId]?.shellAgentIds.includes(agentId));
+  // Standalone terminals pass their own id as the task id.
+  const isShellTerminal = !!(
+    taskId &&
+    (store.tasks[taskId]?.shellAgentIds.includes(agentId) ||
+      store.terminals[taskId]?.agentId === agentId)
+  );
   if (readiness.ready && !isShellTerminal && !WORKING_CANCEL_HINT_PATTERN.test(composerOutput)) {
     addToActive(agentId);
     resetIdleTimer(agentId, PROMPT_IDLE_CONFIRM_MS);
@@ -997,6 +1028,7 @@ export function markAgentBusy(agentId: string): void {
 /** Clean up timers when an agent exits. */
 export function clearAgentActivity(agentId: string): void {
   setLastOutputAt(agentId, undefined);
+  forgetPrintedPrLink(agentId);
   const state = agentStates.get(agentId);
   if (state) {
     clearAutoTrustState(agentId);
@@ -1038,6 +1070,8 @@ export function getReadyLabel(taskId: string): string {
 function hasTaskAgentError(taskId: string): boolean {
   const task = store.tasks[taskId];
   if (!task) return false;
+  // Closing kills the agents on purpose; their signal exit is not a failure.
+  if (task.closingStatus === 'closing' || task.closingStatus === 'removing') return false;
   return task.agentIds.some((id) => {
     const agent = store.agents[id];
     if (agent && isAgentChat(task, id)) return !!agent.chatState?.error;
@@ -1183,6 +1217,11 @@ export function getTaskDotStatus(taskId: string): TaskDotStatus {
 const GIT_STATUS_STALE_MS = 5 * 60_000;
 const gitRefreshVersions = new Map<string, number>();
 const gitStatusStaleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Whether the task's git status is fresh enough to tell `ready` from `idle`. */
+export function isTaskGitStatusKnown(taskId: string): boolean {
+  return isGitStatusUsable(store.taskGitStatus[taskId]);
+}
 
 function isGitStatusUsable(git: TaskGitStatusSnapshot | undefined): git is TaskGitStatusSnapshot {
   return Boolean(
@@ -1371,14 +1410,14 @@ export async function refreshAllTaskGitStatus(): Promise<void> {
   refreshAllStartedAt = Date.now();
   try {
     const taskIds = store.taskOrder;
-    const active = activeAgents();
     const currentTaskId = store.activeTaskId;
     const toRefresh = taskIds.filter((taskId) => {
       // Active task is covered by the faster refreshActiveTaskGitStatus timer
       if (taskId === currentTaskId) return false;
-      const task = store.tasks[taskId];
-      if (!task) return false;
-      return !hasRunningTaskActivity(taskId, (id) => active.has(id));
+      if (!store.tasks[taskId]) return false;
+      // Only agent work makes a snapshot moot. A busy shell (dev server) or a
+      // prompt redraw must not freeze it until it goes stale and drops `ready`.
+      return !isTaskWorking(taskId);
     });
 
     // Process in batches of 4 to limit concurrent git processes
@@ -1406,7 +1445,24 @@ export function refreshTaskStatus(taskId: string): void {
 
 let allTasksTimer: ReturnType<typeof setInterval> | null = null;
 let activeTaskTimer: ReturnType<typeof setInterval> | null = null;
+let stopTurnEndRefresh: (() => void) | null = null;
 let lastPollingTaskCount = 0;
+
+/** Agents commit at the end of a turn, so refresh then: otherwise a finished
+ *  task shows `idle` until the next background sweep, up to two minutes away. */
+function watchTurnEnds(): () => void {
+  return createRoot((dispose) => {
+    let working = new Set<string>();
+    createEffect(() => {
+      const next = new Set(store.taskOrder.filter((taskId) => isTaskWorking(taskId)));
+      untrack(() => {
+        for (const taskId of working) if (!next.has(taskId)) void refreshTaskGitStatus(taskId);
+      });
+      working = next;
+    });
+    return dispose;
+  });
+}
 
 function computeAllTasksInterval(): number {
   const taskCount = store.taskOrder.length;
@@ -1420,6 +1476,7 @@ export function startTaskStatusPolling(): void {
   // Scale interval: 30s base + 5s per additional task beyond 3
   lastPollingTaskCount = store.taskOrder.length;
   allTasksTimer = setInterval(refreshAllTaskGitStatus, computeAllTasksInterval());
+  stopTurnEndRefresh = watchTurnEnds();
   // Run once immediately
   refreshActiveTaskGitStatus();
   refreshAllTaskGitStatus();
@@ -1444,5 +1501,7 @@ export function stopTaskStatusPolling(): void {
     clearInterval(activeTaskTimer);
     activeTaskTimer = null;
   }
+  stopTurnEndRefresh?.();
+  stopTurnEndRefresh = null;
   lastPollingTaskCount = 0;
 }

@@ -7,6 +7,7 @@ let mockAutoTrustFolders = false;
 let mockActiveTaskId: string | null = null;
 let mockTasks: Record<string, unknown> = {};
 let mockAgents: Record<string, unknown> = {};
+let mockTerminals: Record<string, unknown> = {};
 let mockTaskGitStatus: Record<string, unknown> = {};
 let mockPrChecks: Record<string, { overall: string; failing: number }> = {};
 const core = vi.hoisted(() => ({
@@ -16,6 +17,7 @@ const core = vi.hoisted(() => ({
         activeTaskId: string | null;
         tasks: Record<string, unknown>;
         agents: Record<string, unknown>;
+        terminals: Record<string, unknown>;
         taskGitStatus: Record<string, unknown>;
       }>
     | undefined,
@@ -46,6 +48,12 @@ vi.mock('./core', async () => {
     },
     set agents(next) {
       mockAgents = next;
+    },
+    get terminals() {
+      return mockTerminals;
+    },
+    set terminals(next) {
+      mockTerminals = next;
     },
     get taskGitStatus() {
       return mockTaskGitStatus;
@@ -184,6 +192,7 @@ beforeEach(() => {
   mockActiveTaskId = 'task-1';
   mockTasks = {};
   mockAgents = {};
+  mockTerminals = {};
   mockTaskGitStatus = {};
   mockPrChecks = {};
 });
@@ -543,6 +552,120 @@ describe('looksLikeQuestion', () => {
     // returns not-ready and the question must stay detected (box stays guarded).
     const liveDialog = ['Do you want to proceed?', '❯ 1. Yes', '  2. No'].join('\n');
     expect(looksLikeQuestion(liveDialog)).toBe(true);
+  });
+
+  it('detects a Claude permission dialog drawn over the empty input box it replaced', () => {
+    // #259: Claude keeps its empty `❯` input box on screen while it works, then
+    // redraws in place (erase-line + cursor-up, no screen clear) to show the
+    // permission dialog. The replaced frame's bare `❯` stays in the tail.
+    const workingFrame = [
+      '⏺ Bash(npm test)',
+      '  ⎿  Running…',
+      '',
+      '✻ Cogitating… (esc to interrupt)',
+      '',
+      '─'.repeat(60),
+      '❯ ',
+      '─'.repeat(60),
+      '  ⏵⏵ accept edits on (shift+tab to cycle)',
+    ].join('\r\n');
+    const redraw = '\x1b[2K\x1b[1A'.repeat(8) + '\x1b[2K\x1b[G';
+    const dialogFrame = [
+      '⏺ Bash(npm test)',
+      '',
+      '─'.repeat(60),
+      ' Bash command',
+      '',
+      '   npm run test:unit -- src/store/taskStatus.test.ts --reporter=verbose',
+      '   Run the task status tests',
+      '',
+      ' Do you want to proceed?',
+      ' ❯ 1. Yes',
+      "   2. Yes, and don't ask again for npm test commands in /home/user/project",
+      '   3. No, and tell Claude what to do differently (esc)',
+    ].join('\r\n');
+    expect(looksLikeQuestion(workingFrame + redraw + dialogFrame)).toBe(true);
+  });
+
+  it('ignores an answered Claude permission dialog once the input box is back', () => {
+    const answered = [
+      ' Do you want to proceed?',
+      ' ❯ 1. Yes',
+      '   3. No, and tell Claude what to do differently (esc)',
+      '\x1b[2K\x1b[1A'.repeat(3),
+      '⏺ Bash(npm test)',
+      '  ⎿  Tests passed',
+      '',
+      '─'.repeat(60),
+      '❯ ',
+      '─'.repeat(60),
+      '  ? for shortcuts',
+    ].join('\r\n');
+    expect(looksLikeQuestion(answered)).toBe(false);
+  });
+
+  it('ignores an answered Claude permission dialog once the input box holds typed text', () => {
+    const answered = [
+      '─'.repeat(60),
+      '❯ ',
+      '─'.repeat(60),
+      '\x1b[2K\x1b[1A'.repeat(3),
+      ' Do you want to proceed?',
+      ' ❯ 1. Yes',
+      '   3. No, and tell Claude what to do differently (esc)',
+      '\x1b[2K\x1b[1A'.repeat(3),
+      '⏺ Bash(npm test)',
+      '  ⎿  Tests passed',
+      '',
+      '✻ Cogitating… (esc to interrupt)',
+      '─'.repeat(60),
+      '❯ also update the docs',
+      '─'.repeat(60),
+      '  ? for shortcuts',
+    ].join('\r\n');
+    expect(looksLikeQuestion(answered)).toBe(false);
+  });
+
+  it('ignores trust words in a Claude reply once its prompt is redrawn', () => {
+    // Recorded from Claude Code 2.1.308 with the reply words swapped: spaces
+    // are cursor moves, and the prompt follows a lone \r on the status line.
+    const idle =
+      '\x1b[2C\x1b[10AI\x1b[3Gchecked\x1b[11Gthe\x1b[15Gtrust\x1b[21Gsettings' +
+      '\x1b[30Gfor\x1b[34Gthis\x1b[39Gworktree\x1b[48Gfolder.\r\r\n' +
+      '\r\n'.repeat(9) +
+      '\x1b[2C\x1b[5A\x1b[?25h\x1b[?25l\x1b[2D\x1b[5B\r\x1b[8A' +
+      '\x1b[38;2;153;153;153m✻\x1b[3GChurned for 1s · done 8:56 PM\r\x1b[3B\x1b[39m❯\xa0\r\r\n' +
+      '\r\n'.repeat(4) +
+      '\x1b[2C\x1b[5A\x1b[?25h\x1b[?25l\x1b[2D\x1b[5B\r\x1b[2C\x1b[2A80% 134k · Haiku 5.5 med\r\r\n';
+    expect(looksLikeQuestion(idle)).toBe(false);
+  });
+
+  it('ignores an answered startup trust dialog once Claude idles after a turn', () => {
+    const idle =
+      '❯\x1b[4GNo,\x1b[8Gexit\r\r\n\x1b[4GYes,\x1b[9GI\x1b[11Gtrust\x1b[17Gthis\x1b[22Gfolder\r\r\n' +
+      '\x1b[2C\x1b[10ADone.\r\r\n' +
+      '\x1b[8A✻\x1b[3GChurned for 1s · done 8:56 PM\r\x1b[3B❯\xa0\r\r\n';
+    expect(looksLikeQuestion(idle)).toBe(false);
+  });
+
+  it('still detects a permission dialog drawn after an idle Claude prompt', () => {
+    const asking =
+      '✻\x1b[3GChurned for 1s · done 8:56 PM\r\x1b[3B❯\xa0\r\r\n' +
+      ' Do you want to allow this edit?\r\n ❯ 1. Yes\r\n   2. No\r\n';
+    expect(looksLikeQuestion(asking)).toBe(true);
+  });
+
+  it('keeps an idle agent quiet when its reply lands after the prompt was drawn', () => {
+    // Renderers that insert history above an unchanged composer (Codex's
+    // scroll-region inserts) emit the reply after the prompt in the stream.
+    const idle = [
+      '› ',
+      '  gpt-5.5 · ~/project',
+      '\x1b[1;20r\x1b[20;1H',
+      '• Tests pass. Would you like me to continue with the docs?',
+      '\x1b[r',
+    ].join('\r\n');
+    expect(looksLikeQuestion(idle)).toBe(false);
   });
 });
 
@@ -1169,6 +1292,17 @@ describe('terminal redraw activity', () => {
       vi.advanceTimersByTime(13_000);
       expect(getTaskAttentionState('task-1')).toBe('idle');
     });
+
+    it('treats a standalone terminal as a shell too', () => {
+      mockTerminals['term-1'] = { id: 'term-1', name: 'Terminal 1', agentId: 'shell-1' };
+
+      markAgentOutput('shell-1', encode('-- INSERT --\r\nsome buffer text'), 'term-1');
+      vi.advanceTimersByTime(2_000);
+      expect(isAgentIdle('shell-1')).toBe(false);
+
+      vi.advanceTimersByTime(13_000);
+      expect(isAgentIdle('shell-1')).toBe(true);
+    });
   });
 });
 
@@ -1330,6 +1464,19 @@ describe('task attention state', () => {
 
     expect(getTaskAttentionState('task-1')).toBe('error');
     expect(taskNeedsAttention('task-1')).toBe(true);
+  });
+
+  it('does not report the agents killed by closing a task as an error', () => {
+    setMockAgent('agent-1', { status: 'exited', exitCode: null, signal: 'SIGHUP' });
+    for (const closingStatus of ['closing', 'removing'] as const) {
+      setMockTask('task-1', { agentIds: ['agent-1'], closingStatus });
+      expect(getTaskAttentionState('task-1')).toBe('idle');
+    }
+    // A close that failed, or no close at all, still shows the dead agent.
+    for (const closingStatus of ['error', undefined] as const) {
+      setMockTask('task-1', { agentIds: ['agent-1'], closingStatus });
+      expect(getTaskAttentionState('task-1')).toBe('error');
+    }
   });
 
   it('marks coordinator review tasks as review attention', () => {

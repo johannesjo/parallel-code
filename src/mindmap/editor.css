@@ -9,7 +9,7 @@
 }
 .mindmap-editor button {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   color: var(--fg);
   padding: 5px 9px;
@@ -94,7 +94,7 @@
   box-sizing: border-box;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bg-elevated);
   box-shadow: var(--shadow-soft);
 }
@@ -115,7 +115,7 @@
   max-height: 40vh;
   resize: vertical;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   padding: 8px;
   background: var(--task-panel-bg);
   color: var(--fg);

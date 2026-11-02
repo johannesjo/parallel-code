@@ -8,6 +8,8 @@ import android.net.NetworkRequest
 import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,7 +53,15 @@ class NetworkMonitor(context: Context) {
 
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
 
+    private var foreground = false
+
     private var registered = false
+
+    /** Only use the home Wi-Fi exception while an activity is visible. */
+    fun setForeground(value: Boolean) {
+        foreground = value
+        refreshWifi()
+    }
 
     /** Register network callback to observe VPN state changes. Safe to call multiple times. */
     fun start() {
@@ -74,6 +84,9 @@ class NetworkMonitor(context: Context) {
     /** Unregister network callback when monitoring is no longer needed. */
     fun stop() {
         unregisterWifi()
+        // Never reuse a home-network exception or VPN snapshot after a monitoring pause.
+        _wifiSsid.value = null
+        _isVpnActive.value = false
         if (!registered) return
         try {
             cm?.unregisterNetworkCallback(networkCallback)
@@ -90,32 +103,38 @@ class NetworkMonitor(context: Context) {
     fun refreshWifi() {
         val manager = cm ?: return
         unregisterWifi()
+        // While visible, keep the last name (e.g. across a rotation) until the new callback replaces
+        // it, so the socket isn't closed. In the background the home Wi-Fi exception must not apply.
+        if (!foreground) {
+            _wifiSsid.value = null
+            return
+        }
         val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             object : ConnectivityManager.NetworkCallback(FLAG_INCLUDE_LOCATION_INFO) {
                 override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                    _wifiSsid.value = normalizeSsid((caps.transportInfo as? WifiInfo)?.ssid)
+                    if (foreground && wifiCallback === this) _wifiSsid.value = normalizeSsid((caps.transportInfo as? WifiInfo)?.ssid)
                 }
 
                 override fun onLost(network: Network) {
-                    _wifiSsid.value = null
+                    if (wifiCallback === this) _wifiSsid.value = null
                 }
             }
         } else {
             object : ConnectivityManager.NetworkCallback() {
                 override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
                     @Suppress("DEPRECATION")
-                    _wifiSsid.value = normalizeSsid(wifiManager?.connectionInfo?.ssid)
+                    if (foreground && wifiCallback === this) _wifiSsid.value = normalizeSsid(wifiManager?.connectionInfo?.ssid)
                 }
 
                 override fun onLost(network: Network) {
-                    _wifiSsid.value = null
+                    if (wifiCallback === this) _wifiSsid.value = null
                 }
             }
         }
         try {
             val request = NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build()
-            manager.registerNetworkCallback(request, callback)
             wifiCallback = callback
+            manager.registerNetworkCallback(request, callback, Handler(Looper.getMainLooper()))
         } catch (_: Exception) {
             // Fails gracefully in test environments or restricted execution contexts
         }

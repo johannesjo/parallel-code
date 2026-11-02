@@ -227,3 +227,58 @@ export function isManagedNodeModules(sourceDir: string, targetDir: string): bool
   }
   return false;
 }
+
+/**
+ * How many directory levels below the repo root a package's own install is
+ * looked for: `packages/plugin-dev/foo/node_modules` sits three levels down.
+ * shortcut: fixed depth scan — read the workspace globs if deeper layouts show up.
+ */
+const NESTED_PACKAGE_MAX_DEPTH = 3;
+
+function readDirsOrEmpty(dir: string): fs.Dirent[] {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Package directories below `repoRoot` (relative paths) that have their own
+ * real `node_modules`. Workspaces whose dependency versions conflict with the
+ * root keep them in the package (e.g. `packages/core/node_modules/vitest`).
+ * Symlinked directories are not followed, and dot-dirs and installs are not
+ * descended into.
+ */
+function findNestedNodeModules(repoRoot: string): string[] {
+  const found: string[] = [];
+  const visit = (rel: string, depth: number) => {
+    for (const entry of readDirsOrEmpty(path.join(repoRoot, rel))) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const childRel = rel ? path.join(rel, entry.name) : entry.name;
+      if (lstatOrNull(path.join(repoRoot, childRel, 'node_modules'))?.isDirectory()) {
+        found.push(childRel);
+      }
+      if (depth < NESTED_PACKAGE_MAX_DEPTH) visit(childRel, depth + 1);
+    }
+  };
+  visit('', 1);
+  return found;
+}
+
+/**
+ * Give each workspace package in the worktree the same per-entry links into
+ * its counterpart's `node_modules` in the main checkout; without them, tests
+ * and type checks inside the package can't resolve its dependencies. Only
+ * packages the worktree checked out are linked, and a package install the
+ * worktree made itself is left alone.
+ */
+export function linkNestedNodeModules(repoRoot: string, worktreePath: string): void {
+  for (const rel of findNestedNodeModules(repoRoot)) {
+    if (!lstatOrNull(path.join(worktreePath, rel))?.isDirectory()) continue;
+    const source = path.join(repoRoot, rel, 'node_modules');
+    const target = path.join(worktreePath, rel, 'node_modules');
+    if (lstatOrNull(target) && !isManagedNodeModules(source, target)) continue;
+    ensureNodeModulesEntryLinks(source, target);
+  }
+}

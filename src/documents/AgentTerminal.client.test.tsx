@@ -12,10 +12,18 @@ import type { Project } from '../store/types';
 const { openDocumentFile } = vi.hoisted(() => ({ openDocumentFile: vi.fn() }));
 
 vi.mock('../components/TerminalView', () => ({
-  TerminalView: (props: { onFileLink?: (filePath: string) => void }) => (
+  TerminalView: (props: {
+    fileLinkMenu?: (filePath: string, line?: number) => { open: () => void };
+  }) => (
     <div class="terminal-stub">
-      <button class="link-inside" onClick={() => props.onFileLink?.('/projects/docs/guide.md')} />
-      <button class="link-outside" onClick={() => props.onFileLink?.('/elsewhere/guide.md')} />
+      <button
+        class="link-inside"
+        onClick={() => props.fileLinkMenu?.('/projects/docs/guide.md').open()}
+      />
+      <button
+        class="link-outside"
+        onClick={() => props.fileLinkMenu?.('/elsewhere/guide.md').open()}
+      />
     </div>
   ),
 }));

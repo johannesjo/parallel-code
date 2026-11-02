@@ -46,6 +46,7 @@ const openPr: PullRequestDetails = {
   headRefName: 'feature/x',
   headRefOid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   mergeMethods: ['rebase', 'squash'],
+  authoredByViewer: true,
 };
 
 let dispose: (() => void) | undefined;
@@ -95,7 +96,10 @@ it('does not claim a merge GitHub has not confirmed', async () => {
       expect.stringContaining('GitHub has not merged it yet'),
     ),
   );
-  expect(showNotification).not.toHaveBeenCalledWith('Merged PR #5');
+  // Compares messages only, so the check holds whatever options the notice takes.
+  expect(vi.mocked(showNotification).mock.calls.map(([message]) => message)).not.toContain(
+    'Merged PR #5',
+  );
 });
 
 it('notes failing optional checks in the merge confirmation', async () => {
@@ -158,4 +162,23 @@ it('reports when there are no failed checks to hand to the agent', async () => {
   button('Fix CI').click();
   await vi.waitFor(() => expect(document.body.textContent).toContain('No failed checks found.'));
   expect(stageFailedChecksPrompt).toHaveBeenCalledWith('task-1', { number: 5, url: prUrl });
+});
+
+it('names the dialog after its title', async () => {
+  await renderDialog(openPr);
+  const dialog = document.querySelector('[role="dialog"]');
+  const titleId = dialog?.getAttribute('aria-labelledby');
+  expect(titleId).toBeTruthy();
+  expect(document.getElementById(titleId ?? '')?.textContent).toContain('Pull Request');
+});
+
+it('returns keyboard focus to the merge action after cancelling confirmation', async () => {
+  await renderDialog(openPr);
+  button('Merge on GitHub…').click();
+  await Promise.resolve();
+  expect(document.activeElement).toBe(button('Cancel'));
+  button('Cancel').click();
+  await Promise.resolve();
+  expect(document.activeElement).toBe(button('Merge on GitHub…'));
+  expect(mergePullRequestForTask).not.toHaveBeenCalled();
 });

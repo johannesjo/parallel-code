@@ -101,6 +101,16 @@ describe('createTerminalQueryResponder', () => {
     await vi.waitFor(() => expect(replies).toEqual(['\x1b[5;1R']));
   });
 
+  it('finishes serializing, and keeps later output, when the PTY resizes meanwhile', async () => {
+    const { responder } = setup(40, 3);
+    responder.feed('kept');
+    const text = responder.serialize();
+    responder.feed(' later');
+    responder.resize(20, 3);
+    expect(await text).toContain('kept');
+    expect(await responder.serialize()).toContain('kept later');
+  });
+
   it('keeps a short history by default', async () => {
     const { responder } = setup();
     const lines = Array.from({ length: 5000 }, (_, i) => `line ${i}`);

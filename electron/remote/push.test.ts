@@ -86,7 +86,8 @@ it('keeps signing keys stable, saves privately, and only restores remembered own
   push.replace(owner, subscription);
   push.replace(other, { ...subscription, endpoint: 'https://web.push.apple.com/other' });
   const path = join(directory, 'phone-push.json');
-  expect(statSync(path).mode & 0o777).toBe(0o600);
+  // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+  if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);
   expect(readFileSync(path, 'utf8')).not.toContain('Bearer');
   const restored = createMobilePush((hash) => valid.has(hash));
   restored.enable(path, [owner]);

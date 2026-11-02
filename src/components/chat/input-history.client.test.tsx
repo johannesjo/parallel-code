@@ -25,15 +25,49 @@ describe('createInputHistory', () => {
   afterEach(() => vi.restoreAllMocks());
   it('cycles back through earlier messages and restores the draft', () => {
     const { state, press } = setup(['one', 'two'], 'typing');
-    press('ArrowUp');
+    press('ArrowUp', 0);
     expect(state.draft).toBe('two');
-    press('ArrowUp');
+    press('ArrowUp', 0);
     expect(state.draft).toBe('one');
-    press('ArrowUp');
+    press('ArrowUp', 0);
     expect(state.draft).toBe('one');
     press('ArrowDown');
     press('ArrowDown');
     expect(state.draft).toBe('typing');
+    expect(press('ArrowDown')).toBe(false);
+  });
+
+  it('moves the caret to the start of the first line before going back', () => {
+    const { state, press, area } = setup(['one'], 'typing');
+    expect(press('ArrowUp', 3)).toBe(true);
+    expect(state.draft).toBe('typing');
+    expect(area.selectionStart).toBe(0);
+    expect(press('ArrowUp', 0)).toBe(true);
+    expect(state.draft).toBe('one');
+  });
+
+  it('takes the extra step again once the caret moves off a recalled entry edge', () => {
+    const { state, press } = setup(['one', 'two'], 'typing');
+    press('ArrowUp', 0);
+    press('ArrowUp', 0);
+    expect(state.draft).toBe('one');
+    expect(press('ArrowUp', 2)).toBe(true);
+    expect(state.draft).toBe('one');
+    expect(press('ArrowDown', 1)).toBe(true);
+    expect(state.draft).toBe('one');
+    expect(press('ArrowDown', 3)).toBe(true);
+    expect(state.draft).toBe('two');
+  });
+
+  it('moves the caret to the end of the last line before going forward', () => {
+    const { state, press, area } = setup(['one'], 'a\ntyping');
+    expect(press('ArrowUp', 0)).toBe(true);
+    expect(state.draft).toBe('one');
+    expect(press('ArrowDown', 0)).toBe(true);
+    expect(state.draft).toBe('a\ntyping');
+    expect(press('ArrowDown', 4)).toBe(true);
+    expect(state.draft).toBe('a\ntyping');
+    expect(area.selectionStart).toBe(8);
     expect(press('ArrowDown')).toBe(false);
   });
 
@@ -80,27 +114,36 @@ describe('wrapped input history', () => {
     });
 
     expect(press('ArrowUp')).toBe(true);
+    expect(state.draft).toBe('draft');
+    expect(press('ArrowUp', 0)).toBe(true);
     expect(state.draft).toBe(message);
     expect(press('ArrowUp', 20)).toBe(false);
     expect(press('ArrowDown', 20)).toBe(false);
     expect(press('ArrowDown', 5)).toBe(false);
     expect(state.draft).toBe(message);
     expect(press('ArrowDown', 35)).toBe(true);
+    expect(state.draft).toBe(message);
+    expect(press('ArrowDown')).toBe(true);
     expect(state.draft).toBe('draft');
 
     state.draft = message;
     expect(press('ArrowUp', 20)).toBe(false);
     expect(press('ArrowUp', 5)).toBe(true);
+    expect(state.draft).toBe(message);
+    expect(press('ArrowUp', 0)).toBe(true);
+    expect(state.draft).toBe(message);
     expect(document.body.children).toHaveLength(0);
   });
 
   it('navigates explicit lines in recalled messages before restoring the draft', () => {
     const { state, press } = setup(['first\nmiddle\nlast'], 'draft');
-    expect(press('ArrowUp')).toBe(true);
+    expect(press('ArrowUp', 0)).toBe(true);
     expect(press('ArrowDown', 2)).toBe(false);
     expect(press('ArrowDown', 8)).toBe(false);
     expect(press('ArrowUp', 8)).toBe(false);
     expect(press('ArrowDown', 15)).toBe(true);
+    expect(state.draft).toBe('first\nmiddle\nlast');
+    expect(press('ArrowDown')).toBe(true);
     expect(state.draft).toBe('draft');
   });
 });

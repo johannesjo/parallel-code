@@ -52,6 +52,28 @@ class ProtocolTest {
     }
 
     @Test
+    fun parsesTheBoardCardFields() {
+        val msg = parseServerMessage(
+            """{"type":"agents","list":[
+            {"agentId":"a1","taskId":"t1","taskName":"A","status":"running","exitCode":null,"lastLine":"","attention":"idle",
+            "lane":"pr","projectColor":"hsl(220, 70%, 62%)","projectIcon":"rocket",
+            "pr":{"url":"https://github.com/o/r/pull/42","label":"CI failed","kind":"failed","babysit":true}},
+            {"agentId":"a2","taskId":"t2","taskName":"B","status":"running","exitCode":null,"lastLine":"","attention":"idle",
+            "projectColor":""}]}""",
+        ) as ServerMessage.Agents
+        val (card, plain) = msg.list
+        assertEquals("pr", card.lane)
+        assertEquals("hsl(220, 70%, 62%)", card.projectColor)
+        assertEquals("rocket", card.projectIcon)
+        assertEquals(RemotePr("https://github.com/o/r/pull/42", "CI failed", "failed", babysit = true), card.pr)
+        assertEquals("42", card.pr?.number)
+        assertNull(plain.lane)
+        assertNull(plain.projectColor)
+        assertNull(plain.projectIcon)
+        assertNull(plain.pr)
+    }
+
+    @Test
     fun decodesTerminalData() {
         val scrollback = parseServerMessage(
             """{"type":"scrollback","agentId":"a1","data":"aGk=","cols":100}""",

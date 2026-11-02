@@ -196,6 +196,11 @@ export function ResizablePanel(props: ResizablePanelProps) {
         ? {
             [maxDim]:
               typeof child.maxAutoSize === 'number' ? `${child.maxAutoSize}px` : child.maxAutoSize,
+            // A content-sized cell has no definite size, so a child's
+            // `height: 100%` can't resolve and taller content would be clipped
+            // at the cap. As a flex column the cell shrinks the child to fit.
+            display: 'flex',
+            'flex-direction': 'column',
           }
         : {}),
       overflow: 'hidden',

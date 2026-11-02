@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createComputed, createRoot } from 'solid-js';
+import { ensureProjectAgentTask } from '../store/github-agent';
 import { IPC } from '../../electron/ipc/channels';
 import { setStore, store } from '../store/core';
 import { applyAgentHookEvent, clearAgentHookStatus } from '../store/agentHookStatus';
@@ -10,6 +12,7 @@ import {
   disposeHiddenAgentTasks,
   documentAgentTaskId,
   ensureDocumentAgentTask,
+  ensureHiddenAgentTask,
   rearmDocumentAgents,
   releaseDocumentAgentTask,
   sendToDocumentAgent,
@@ -257,6 +260,23 @@ describe('active task hand-over', () => {
   });
 });
 
+describe('page agent creation', () => {
+  it('never shows the new task to observers before its session is held for registration', () => {
+    install('codex');
+    const codeProject: Project = { id: 'code', name: 'Code', path: '/projects/code', color: '' };
+    const seen: (string | undefined)[] = [];
+    createRoot((dispose) => {
+      createComputed(() => {
+        const task = store.tasks['gh-agent-code'];
+        if (task) seen.push(task.mcpStartupStatus);
+      });
+      ensureProjectAgentTask('gh-agent-code', codeProject);
+      dispose();
+    });
+    expect(seen).toEqual(['pending']);
+  });
+});
+
 describe('disposeHiddenAgentTasks', () => {
   it('kills the sessions, forgets the task and gives up the active slot', async () => {
     install('codex');
@@ -269,6 +289,25 @@ describe('disposeHiddenAgentTasks', () => {
     expect(store.tasks[id]).toBeUndefined();
     expect(store.agents[id]).toBeUndefined();
     expect(store.activeTaskId).toBeNull();
+  });
+
+  it('revokes task creation for page agents but not the document agent', async () => {
+    install('codex');
+    const codeProject: Project = { id: 'code', name: 'Code', path: '/projects/code', color: '' };
+    ensureHiddenAgentTask('gh-agent-code', codeProject, () => agent('codex'));
+    ensureHiddenAgentTask('doc-agent-code', codeProject, () => agent('codex'));
+
+    await disposeHiddenAgentTasks('code');
+
+    expect(invoke).toHaveBeenCalledWith(IPC.DelegationRequest, {
+      action: 'unregister',
+      taskId: 'gh-agent-code',
+    });
+    expect(invoke).not.toHaveBeenCalledWith(IPC.DelegationRequest, {
+      action: 'unregister',
+      taskId: 'doc-agent-code',
+    });
+    expect(store.tasks['gh-agent-code']).toBeUndefined();
   });
 
   it('does nothing for a project that never had one', async () => {

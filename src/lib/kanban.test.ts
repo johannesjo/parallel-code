@@ -5,6 +5,7 @@ import {
   addColumn,
   advanceCardForBranch,
   archiveCard,
+  buildKanbanClusterPrompt,
   buildKanbanPlanPrompt,
   buildKanbanTaskPrompt,
   cardChecklist,
@@ -167,6 +168,34 @@ describe('checklists and dependencies', () => {
   it('ignores dependencies on cards that are not on the board', () => {
     const board = updateCard(parseKanban(SAMPLE), { column: 0, card: 1 }, { depends: ['Nope'] });
     expect(openDependencies(board, { column: 0, card: 1 })).toEqual([]);
+  });
+});
+
+describe('themes and related cards', () => {
+  const THEMED =
+    '## A\n\n- [ ] One\n  Text.\n  group: Auth\n  group: Second\n  related: Two\n  related: Two\n- [ ] Two\n';
+
+  it('reads the last theme and the related cards', () => {
+    const [one, two] = parseKanban(THEMED).columns[0].cards;
+    expect(one).toMatchObject({ group: 'Second', related: ['Two'], body: 'Text.' });
+    expect(two.group).toBeUndefined();
+    expect(two.related).toBeUndefined();
+  });
+
+  it('writes them back, and sets or clears a theme', () => {
+    const board = parseKanban(THEMED);
+    expect(parseKanban(serializeKanban(board))).toEqual(board);
+    const regrouped = updateCard(board, { column: 0, card: 1 }, { group: ' Billing ' });
+    expect(serializeKanban(regrouped)).toContain('- [ ] Two\n  group: Billing\n');
+    const cleared = updateCard(board, { column: 0, card: 0 }, { group: '' });
+    expect(serializeKanban(cleared)).not.toContain('group: Second');
+  });
+
+  it('builds a cluster prompt that only adds group and related lines', () => {
+    const prompt = buildKanbanClusterPrompt();
+    expect(prompt).toContain('group: <theme>');
+    expect(prompt).toContain('related: <other card title>');
+    expect(prompt).toContain('Change nothing else');
   });
 });
 

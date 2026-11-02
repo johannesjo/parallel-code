@@ -70,10 +70,10 @@ class LookPalettesTest {
     }
 
     @Test
-    fun defaultsToObsidianPerTone() {
-        assertEquals("obsidian", LookPresets.defaultForDark().id)
+    fun defaultsMatchTheDesktopPerTone() {
+        assertEquals("parallel-code", LookPresets.defaultForDark().id)
         assertEquals("obsidian-light", LookPresets.defaultForLight().id)
-        assertEquals("obsidian", LookPresets.defaultFor(dark = true).id)
+        assertEquals("parallel-code", LookPresets.defaultFor(dark = true).id)
         assertEquals("obsidian-light", LookPresets.defaultFor(dark = false).id)
     }
 
@@ -84,7 +84,7 @@ class LookPalettesTest {
 
     @Test
     fun byIdFallsBackForUnknownId() {
-        assertEquals("obsidian", LookPresets.byId("no-such-look").id)
+        assertEquals("parallel-code", LookPresets.byId("no-such-look").id)
         assertEquals("obsidian-light", LookPresets.byId(null, LookPresets.defaultForLight()).id)
     }
 
@@ -111,8 +111,8 @@ class LookPalettesTest {
     }
 
     /**
-     * Obsidian is the default, so its values are pinned here: these are the exact
-     * colors the app shipped with, and a generator change must not move them.
+     * Obsidian was the default for years, so its values are pinned here: these are
+     * the exact colors the app shipped with, and a generator change must not move them.
      */
     @Test
     fun obsidianKeepsItsShippedColors() {

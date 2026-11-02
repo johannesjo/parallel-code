@@ -306,4 +306,27 @@ describe('FeatureHint', () => {
     ));
     expect(notes()).toHaveLength(0);
   });
+
+  it('stays away from an anchor in a hidden or inert tile stacked under the shown one', () => {
+    // Focus mode keeps background tiles laid out beneath the shown tile.
+    const hiddenTile = document.createElement('div');
+    hiddenTile.style.visibility = 'hidden';
+    const inertTile = document.createElement('div');
+    inertTile.inert = true;
+    const underHidden = hiddenTile.appendChild(anchorAt(50));
+    const underInert = inertTile.appendChild(anchorAt(300));
+    document.body.append(hiddenTile, inertTile);
+    mount(() => (
+      <>
+        <FeatureHint id="change-tour" when anchor={() => underHidden} title="Hidden">
+          Body
+        </FeatureHint>
+        <FeatureHint id="finish-review" when anchor={() => underInert} title="Inert">
+          Body
+        </FeatureHint>
+      </>
+    ));
+
+    expect(notes()).toHaveLength(0);
+  });
 });

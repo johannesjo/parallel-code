@@ -15,6 +15,7 @@ import { DelegationReviewDialog } from './DelegationReviewDialog';
 import { IconButton } from './IconButton';
 import { ProjectSwatch } from './ProjectSwatch';
 import { StatusDot } from './StatusDot';
+import { createTaskContextMenu } from './task-context-menu';
 
 /**
  * A self-landed result opens independently of task panels, including collapsed
@@ -30,85 +31,92 @@ function AttentionRow(props: { entry: AttentionEntry; nowMs: number; onOpen: () 
   const task = () => store.tasks[props.entry.taskId];
   const project = () => store.projects.find((p) => p.id === task()?.projectId);
   const resume = () => task()?.collapsed && !opensReview(props.entry);
+  // Finish needs the task's panel, so it opens the task the way a click on this row does.
+  const menu = createTaskContextMenu({ task: () => task(), open: () => props.onOpen() });
   return (
     <Show when={task()}>
       {(t) => (
-        <button
-          type="button"
-          class="task-item sidebar-attention-row"
-          aria-current={store.activeTaskId === props.entry.taskId ? 'true' : undefined}
-          data-attention={getTaskAttentionState(props.entry.taskId)}
-          title={[t().name, props.entry.label, props.entry.detail].filter(Boolean).join(' — ')}
-          onClick={() => props.onOpen()}
-          style={{
-            display: 'flex',
-            'flex-direction': 'column',
-            'flex-shrink': '0',
-            gap: '2px',
-            padding: '6px 8px',
-            'border-radius': 'var(--radius-sm)',
-            'font-size': sf(12),
-            color: theme.fg,
-            'font-weight': '500',
-            cursor: 'pointer',
-            background: 'transparent',
-            'text-align': 'left',
-            width: '100%',
-          }}
-        >
-          <div class="task-item-head">
-            <StatusDot
-              status={getTaskDotStatus(t().id)}
-              taskId={t().id}
-              size="sm"
-              attention={getTaskAttentionState(t().id)}
-            />
-            <span class="task-item-name">{t().name}</span>
-          </div>
-          <span style={{ 'font-size': sf(11), color: theme.warning }}>
-            {props.entry.label}
-            <Show when={props.entry.kind === 'question' && props.entry.detail}>
-              {' '}
-              · {props.entry.detail}
-            </Show>
-          </span>
-          <div
+        <>
+          <button
+            type="button"
+            class="task-item sidebar-attention-row"
+            aria-current={store.activeTaskId === props.entry.taskId ? 'true' : undefined}
+            data-attention={getTaskAttentionState(props.entry.taskId)}
+            title={[t().name, props.entry.label, props.entry.detail].filter(Boolean).join(' — ')}
+            onClick={() => props.onOpen()}
+            onContextMenu={(event) => menu.onContextMenu(event)}
             style={{
               display: 'flex',
-              'align-items': 'center',
-              gap: '5px',
-              'font-size': sf(11),
-              color: theme.fgSubtle,
-              'min-width': '0',
+              'flex-direction': 'column',
+              'flex-shrink': '0',
+              gap: '2px',
+              padding: '6px 8px',
+              'border-radius': 'var(--radius-sm)',
+              'font-size': sf(12),
+              color: theme.fg,
+              'font-weight': '500',
+              cursor: 'pointer',
+              background: 'transparent',
+              'text-align': 'left',
               width: '100%',
             }}
           >
-            <Show when={project()}>
-              {(p) => (
-                <>
-                  <ProjectSwatch color={p().color} size={6} />
-                  <span
-                    style={{
-                      overflow: 'hidden',
-                      'text-overflow': 'ellipsis',
-                      'white-space': 'nowrap',
-                    }}
-                  >
-                    {p().name}
-                  </span>
-                </>
-              )}
+            <div class="task-item-head">
+              <StatusDot
+                status={getTaskDotStatus(t().id)}
+                taskId={t().id}
+                size="sm"
+                attention={getTaskAttentionState(t().id)}
+              />
+              <span class="task-item-name">{t().name}</span>
+            </div>
+            <span style={{ 'font-size': sf(11), color: theme.warning }}>
+              {props.entry.label}
+              <Show when={props.entry.kind === 'question' && props.entry.detail}>
+                {' '}
+                · {props.entry.detail}
+              </Show>
+            </span>
+            <div
+              style={{
+                display: 'flex',
+                'align-items': 'center',
+                gap: '5px',
+                'font-size': sf(11),
+                color: theme.fgSubtle,
+                'min-width': '0',
+                width: '100%',
+              }}
+            >
+              <Show when={project()}>
+                {(p) => (
+                  <>
+                    <ProjectSwatch color={p().color} icon={p().icon} size={6} />
+                    <span
+                      style={{
+                        overflow: 'hidden',
+                        'text-overflow': 'ellipsis',
+                        'white-space': 'nowrap',
+                      }}
+                    >
+                      {p().name}
+                    </span>
+                  </>
+                )}
+              </Show>
+              <Show when={props.entry.since !== undefined}>
+                <span style={{ 'flex-shrink': '0' }}>
+                  {formatRelativeAge(props.entry.since ?? props.nowMs, props.nowMs)}
+                </span>
+              </Show>
+            </div>
+            <Show when={resume()}>
+              <span style={{ 'font-size': sf(11) }}>Resume and open</span>
             </Show>
-            <Show when={props.entry.since !== undefined}>
-              <span style={{ 'flex-shrink': '0' }}>
-                {formatRelativeAge(props.entry.since ?? props.nowMs, props.nowMs)}
-              </span>
-            </Show>
-          </div>
-          <Show when={resume()}>
-            <span style={{ 'font-size': sf(11) }}>Resume and open</span>
-          </Show>
-        </button>
+          </button>
+          {/* Beside the row, not inside it: a button cannot hold the menu's controls. */}
+          <menu.Menu />
+        </>
       )}
     </Show>
   );
@@ -132,10 +140,10 @@ export function AttentionTray(props: { nowMs: number }) {
   return (
     <>
       <Show when={store.sidebarNeedsInputFirst && entries().length > 0}>
-        <section class="sidebar-attention-tray" aria-label="Needs attention">
+        <section class="sidebar-attention-tray" aria-label="Needs you">
           <div class="sidebar-attention-tray-header">
             <span style={{ 'font-size': sf(12), color: theme.warning, 'font-weight': '600' }}>
-              Needs attention ({entries().length})
+              Needs you ({entries().length})
             </span>
             <IconButton
               icon={<span aria-hidden="true">×</span>}

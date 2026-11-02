@@ -7,6 +7,10 @@ import { computeSidebarTaskOrder } from './sidebar-order';
 import { isTaskBackgrounded } from './background-tasks';
 import { uncollapseTask } from './tasks';
 import { isTaskCanvasVisible } from '../lib/canvas-tabs';
+import { boardShown, boardSidePanelOpen, towardBoard } from './project-pages';
+import type { PendingAction } from './types';
+import { getTaskShellLayout } from './shell-layout';
+import { shellColumns } from '../lib/shellLayout';
 import {
   AI_TERMINAL_PANEL,
   aiTerminalPanels,
@@ -16,6 +20,7 @@ import {
   isShellPanel,
   setTaskFocusedPanel,
   shellPanelId,
+  shellPanelIndex,
   triggerFocus,
 } from './focused-panel';
 
@@ -106,6 +111,18 @@ function isLeftColumnPanel(panel: string): boolean {
   );
 }
 
+/** Shell panel ids split into the visual rows of the task's shell layout. */
+function shellRows(taskId: string, shellCount: number): string[][] {
+  const cols = shellColumns(getTaskShellLayout(taskId), shellCount);
+  const rows: string[][] = [];
+  for (let i = 0; i < shellCount; i += cols) {
+    rows.push(
+      Array.from({ length: Math.min(cols, shellCount - i) }, (_, j) => shellPanelId(i + j)),
+    );
+  }
+  return rows;
+}
+
 function buildGrid(panelId: string): string[][] {
   const grid = buildMainGrid(panelId);
   const task = store.tasks[panelId];
@@ -129,14 +146,18 @@ function buildMainGrid(panelId: string): string[][] {
 
       // Pair the bottom-left (prompt or first AI pane if prompt hidden) with
       // whatever's at the bottom-right, so → from prompt jumps into the shell
-      // section instead of falling off to the next task.
-      const hasShells = task.shellAgentIds.length > 0;
+      // section instead of falling off to the next task. Left cells are padded
+      // to the AI pane count so the right column keeps one column index.
       const leftBottom = store.showPromptInput ? 'prompt' : aiCols[0];
-      if (hasShells) {
+      const bottomCols = aiCols.map(() => leftBottom);
+      const rows = shellRows(panelId, task.shellAgentIds.length);
+      if (rows.length > 0) {
         grid.push([...aiCols, ...toolbarCols]);
-        grid.push([leftBottom, ...task.shellAgentIds.map((_, i) => shellPanelId(i))]);
+        rows.forEach((row, i) => {
+          grid.push([...(i === rows.length - 1 ? bottomCols : aiCols), ...row]);
+        });
       } else {
-        grid.push([leftBottom, ...toolbarCols]);
+        grid.push([...bottomCols, ...toolbarCols]);
       }
       return grid;
     }
@@ -144,9 +165,7 @@ function buildMainGrid(panelId: string): string[][] {
     const grid: string[][] = [['title']];
     grid.push(['notes', 'changed-files']);
     grid.push(toolbarCols);
-    if (task.shellAgentIds.length > 0) {
-      grid.push(task.shellAgentIds.map((_, i) => shellPanelId(i)));
-    }
+    grid.push(...shellRows(panelId, task.shellAgentIds.length));
     grid.push(aiCols);
     if (store.showPromptInput) {
       grid.push(['prompt']);
@@ -211,7 +230,7 @@ export function unfocusPlaceholder(): void {
 }
 
 /** Arrow-key travel order. It skips snoozed tiles: activating one ends its
- *  snooze, so passing through would undo the snooze. Clicks and Ctrl+N still reach them. */
+ *  snooze, so passing through would undo the snooze. Sidebar clicks and Ctrl+N still reach them. */
 function travelOrder(): string[] {
   return openPanelOrder().filter((id) => !isTaskBackgrounded(id));
 }
@@ -228,6 +247,25 @@ function focusNewTaskPanel(): void {
   unfocusPlaceholder();
   setStore('newTaskPanelFocused', true);
   triggerFocus('new-task');
+}
+
+/**
+ * Moves the keyboard onto the all-tasks board, to the active task's card. The
+ * board clears the other focus flags once it has DOM focus, so a board that
+ * cannot take it leaves them, and the keys, where they were.
+ */
+function focusBoard(): void {
+  triggerFocus('task-board');
+}
+
+/** Moves the keyboard from the board into its side panel: the draft, or the task shown there. */
+export function focusBoardSidePanel(): void {
+  if (store.showNewTaskPanel) {
+    focusNewTaskPanel();
+    return;
+  }
+  const id = store.activeTaskId;
+  if (id) setTaskFocusedPanel(id, getTaskFocusedPanel(id));
 }
 
 function navigateAiTerminalColumn(
@@ -379,8 +417,14 @@ export function navigateColumn(direction: 'left' | 'right'): void {
 
   // The open draft is a real tile between the last task and the add controls.
   if (store.showNewTaskPanel && store.newTaskPanelFocused) {
+    // Beside the board, the board is its only neighbour.
+    if (boardSidePanelOpen()) {
+      if (direction === towardBoard()) focusBoard();
+      return;
+    }
     if (direction === 'right') {
-      if (openPanelOrder().length > 0) focusPlaceholder('add-task');
+      // The add-task tile is only rendered beside a visible tile.
+      if (travelOrder().length > 0) focusPlaceholder('add-task');
     } else {
       const lastTaskId = travelOrder().at(-1);
       if (lastTaskId) {
@@ -415,6 +459,12 @@ export function navigateColumn(direction: 'left' | 'right'): void {
   // task is highlighted in the sidebar. The sidebar list is its own axis; → is
   // for crossing into the panel area, not for activating the highlighted item.
   if (store.sidebarFocused) {
+    if (direction === 'right' && boardShown()) {
+      // A side panel on the board's left is the sidebar's neighbour.
+      if (boardSidePanelOpen() && store.boardSidePanelLeft) focusBoardSidePanel();
+      else focusBoard();
+      return;
+    }
     if (direction === 'right') {
       const targetTaskId = travelOrder()[0] ?? store.sidebarFocusedTaskId ?? taskId;
       if (targetTaskId) {
@@ -448,11 +498,17 @@ export function navigateColumn(direction: 'left' | 'right'): void {
   if (navigateAiTerminalColumn(taskId, current, direction)) return;
 
   const row = grid[pos.row];
-  const nextCol = direction === 'left' ? pos.col - 1 : pos.col + 1;
+  const step = direction === 'left' ? -1 : 1;
+  let nextCol = pos.col + step;
+  // Split mode repeats the bottom-left cell across the AI pane columns.
+  while (row[nextCol] === current) nextCol += step;
   if (nextCol >= 0 && nextCol < row.length) {
     setTaskFocusedPanel(taskId, row[nextCol]);
     return;
   }
+
+  // The side panel holds one task; the board's keys decide where its edges lead.
+  if (boardSidePanelOpen()) return;
 
   // Cross task boundary
   const taskOrder = travelOrder();
@@ -509,13 +565,15 @@ export function navigateColumn(direction: 'left' | 'right'): void {
  * panel name when it exists in the target's grid. Clamps at edges (no sidebar
  * or placeholder fall-through). Collapsed tasks are not in `taskOrder`, and
  * snoozed ones are filtered out, so both are skipped — same semantics as
- * `navigateColumn`'s cross-task path.
+ * `navigateColumn`'s cross-task path. The board passes its own card order.
  */
-export function navigateTask(direction: 'left' | 'right'): void {
+export function navigateTask(
+  direction: 'left' | 'right',
+  taskOrder: string[] = travelOrder(),
+): void {
   if (store.showHelpDialog || store.showSettingsDialog) return;
 
   const { activeTaskId } = store;
-  const taskOrder = travelOrder();
 
   if (store.showNewTaskPanel && store.newTaskPanelFocused) {
     if (direction === 'left') {
@@ -537,8 +595,31 @@ export function navigateTask(direction: 'left' | 'right'): void {
     return;
   }
 
-  const targetId = taskOrder[targetIdx];
-  if (!store.tasks[targetId]) {
+  switchTaskKeepingPanel(taskOrder[targetIdx]);
+}
+
+/**
+ * The target task's pane of the kind the keyboard is in now, or null when it
+ * has none. Any agent terminal stands for another, as agents differ per task;
+ * shells keep their position where the target has that many.
+ */
+export function samePanelKindIn(targetId: string): string | null {
+  const { activeTaskId } = store;
+  const target = store.tasks[targetId];
+  if (!activeTaskId || !target) return null;
+  const current = getTaskFocusedPanel(activeTaskId);
+  if (isAiTerminalPanel(current)) return AI_TERMINAL_PANEL;
+  if (isShellPanel(current)) {
+    const shells = target.shellAgentIds.length;
+    return shells > 0 ? shellPanelId(Math.min(shellPanelIndex(current) ?? 0, shells - 1)) : null;
+  }
+  return findInGrid(buildGrid(targetId), current) !== null ? current : null;
+}
+
+/** Activates a task with the keyboard on the pane of the same name, where it has one. */
+export function switchTaskKeepingPanel(targetId: string): void {
+  const { activeTaskId } = store;
+  if (!store.tasks[targetId] || !activeTaskId) {
     setActiveTask(targetId);
     return;
   }
@@ -554,9 +635,7 @@ export function navigateTask(direction: 'left' | 'right'): void {
   });
 }
 
-export function setPendingAction(
-  action: { type: 'close' | 'finish'; taskId: string } | null,
-): void {
+export function setPendingAction(action: PendingAction | null): void {
   if (action?.type === 'finish') {
     const task = store.tasks[action.taskId];
     if (task && task.gitIsolation !== 'worktree') {

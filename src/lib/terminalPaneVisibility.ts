@@ -8,7 +8,9 @@
 // are not on screen fall back to xterm's DOM renderer instead and reacquire a
 // WebGL context when they come back, keeping live contexts ≈ visible panes.
 //
-// Three things hide a pane:
+// Four things hide a pane:
+// - the running-tasks board covers the whole task workspace unless its side panel
+//   is open,
 // - focus mode shows one task; the others sit under it with visibility:hidden,
 // - tiling mode scrolls tasks horizontally; TilingLayout tracks which are
 //   fully off screen (partially visible counts as visible),
@@ -22,6 +24,8 @@ export interface PaneVisibilityInput {
   taskId: string;
   /** TilingLayout's measurement; undefined while unmeasured (treated as visible). */
   viewportVisibility: TaskViewportVisibility | undefined;
+  /** Something covers the whole task workspace (the running-tasks board). */
+  workspaceCovered?: boolean;
   /** Pane-level visibility within the task (tabs); undefined means visible. */
   paneVisible?: boolean;
   /** The pane is not a task panel (e.g. an arena competitor rendered in an
@@ -33,6 +37,7 @@ export interface PaneVisibilityInput {
 export function isTerminalPaneOnScreen(input: PaneVisibilityInput): boolean {
   if (input.paneVisible === false) return false;
   if (input.standalone) return true;
+  if (input.workspaceCovered) return false;
   if (input.focusMode) return input.activeTaskId === input.taskId;
   return (
     input.viewportVisibility !== 'offscreen-left' && input.viewportVisibility !== 'offscreen-right'

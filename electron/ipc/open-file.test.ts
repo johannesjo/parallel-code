@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { editorGotoArgs, validateEditorCommand } from './open-file.js';
+import { editorGotoArgs, editorLineArgs, validateEditorCommand } from './open-file.js';
 
 describe('editorGotoArgs', () => {
   it('uses --goto for VS Code family editors, including absolute commands', () => {
@@ -26,5 +26,15 @@ describe('validateEditorCommand', () => {
     expect(() => validateEditorCommand('')).toThrow('non-empty');
     expect(() => validateEditorCommand(42)).toThrow('non-empty');
     expect(() => validateEditorCommand('code; rm -rf /')).toThrow('metacharacters');
+  });
+});
+
+describe('editorLineArgs', () => {
+  it('jumps to the line in editors whose syntax is known', () => {
+    expect(editorLineArgs('code', '/w/a.ts', 7)).toEqual(['--goto', '/w/a.ts:7']);
+  });
+
+  it('still opens the file in other editors, without the line', () => {
+    expect(editorLineArgs('vim', '/w/a.ts', 7)).toEqual(['/w/a.ts']);
   });
 });

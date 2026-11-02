@@ -29,7 +29,8 @@ describe('writeDocumentBlock', () => {
       replacement: 'A correction.',
     });
     expect(fs.readFileSync(file, 'utf8')).toBe(expectedContent.replace('A typo.', 'A correction.'));
-    expect(fs.statSync(file).mode & 0o777).toBe(0o640);
+    // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o640);
   });
 
   it('rejects an outdated editor without losing external changes', async () => {

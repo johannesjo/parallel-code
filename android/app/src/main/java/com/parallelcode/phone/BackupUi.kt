@@ -48,7 +48,11 @@ private const val NO_PASSWORD_WARNING =
  * Lives inside a settings card, so it draws rows, not a card of its own.
  */
 @Composable
-fun BackupSettings() {
+fun BackupSettings(demoSettings: DemoSettings? = null, onDemoRestore: () -> Unit = {}) {
+    if (demoSettings != null) {
+        DemoBackupSettings(demoSettings, onDemoRestore)
+        return
+    }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val schedule = remember { BackupSchedule(context.applicationContext) }
@@ -194,6 +198,119 @@ fun BackupSettings() {
             TextButton(onClick = ::backUpToFolderNow, enabled = !busy) {
                 Text("Back up to folder now", fontWeight = FontWeight.SemiBold)
             }
+        }
+    }
+}
+
+/** Exercise the actual backup format against disposable stores; never open files or restart. */
+@Composable
+private fun DemoBackupSettings(demo: DemoSettings, onRestored: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var revision by remember { mutableIntStateOf(0) }
+    var askPassword by remember { mutableStateOf(false) }
+    var restoring by remember { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val backup = remember(revision) { demo.backup }
+    val automatic = remember(revision) { demo.automaticBackups }
+    val interval = remember(revision) { demo.intervalDays }
+
+    if (askPassword) {
+        BackupPasswordDialog(
+            title = "Back up this demo",
+            confirmLabel = "Save in demo memory",
+            onDismiss = { askPassword = false },
+            onConfirm = { secret ->
+                askPassword = false
+                busy = true
+                scope.launch {
+                    message = withContext(Dispatchers.Default) {
+                        runCatching { demo.createBackup(secret) }
+                            .fold({ "Demo backup saved in memory. Change a setting, then restore to try it." }, { "Couldn't create the demo backup." })
+                    }
+                    revision++
+                    busy = false
+                }
+            },
+        )
+    }
+    if (restoring) {
+        val encrypted = backup?.let(Backup::isEncrypted) == true
+        AlertDialog(
+            onDismissRequest = { if (!busy) restoring = false },
+            title = { Text("Restore this demo backup?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Replace this demo's computers, settings and sent-message history. Your saved connection and settings stay untouched. The app will not restart.")
+                    if (encrypted) PasswordField(password, { password = it }, "Backup password")
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !busy && (!encrypted || password.isNotEmpty()),
+                    onClick = {
+                        busy = true
+                        scope.launch {
+                            val failure = withContext(Dispatchers.Default) {
+                                runCatching { demo.restoreBackup(password.takeIf { encrypted }) }.exceptionOrNull()
+                            }
+                            busy = false
+                            if (failure == null) {
+                                restoring = false
+                                password = ""
+                                message = "Demo backup restored."
+                                revision++
+                                onRestored()
+                            } else {
+                                error = (failure as? BackupException)?.message ?: "Couldn't restore the demo backup."
+                            }
+                        }
+                    },
+                ) { Text(if (busy) "Restoring…" else "Restore") }
+            },
+            dismissButton = { TextButton(enabled = !busy, onClick = { restoring = false }) { Text("Cancel") } },
+        )
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            "Try exporting and restoring only this demo's computers, settings and sent-message history. The real backup format and password encryption run locally; the exported file stays in memory and disappears when you leave the demo.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = AppTheme.extra.textMuted,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(enabled = !busy, onClick = { message = null; askPassword = true }, modifier = Modifier.weight(1f)) {
+                Text(if (busy && !restoring) "Backing up…" else "Back up", fontWeight = FontWeight.SemiBold)
+            }
+            OutlinedButton(enabled = !busy && backup != null, onClick = { error = null; password = ""; restoring = true }, modifier = Modifier.weight(1f)) {
+                Text("Restore", fontWeight = FontWeight.SemiBold)
+            }
+        }
+        backup?.let {
+            Text(
+                "${backupFileName(Backup.isEncrypted(it))} · ${it.size} bytes · " + if (Backup.isEncrypted(it)) "encrypted" else "pairing left out",
+                style = MaterialTheme.typography.bodySmall,
+                color = AppTheme.extra.textMuted,
+            )
+        }
+        message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = AppTheme.extra.textMuted) }
+        HorizontalDivider(thickness = 1.dp, color = AppTheme.extra.border)
+        SettingSwitchRow(
+            title = "Back up automatically",
+            description = "Simulated schedule only. No folder is opened, no files are written and no background jobs are scheduled.",
+            checked = automatic,
+            onCheckedChange = { demo.automaticBackups = it; revision++ },
+        )
+        if (automatic) {
+            listOf(1 to "Daily", 7 to "Weekly").forEach { (days, label) ->
+                Row(Modifier.fillMaxWidth().clickable { demo.intervalDays = days; revision++ }, verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = interval == days, onClick = null)
+                    Text(label, modifier = Modifier.padding(start = 10.dp))
+                }
+            }
+            Text("Demo folder · schedule preview", style = MaterialTheme.typography.bodySmall, color = AppTheme.extra.textMuted)
         }
     }
 }

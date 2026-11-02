@@ -114,6 +114,8 @@ export function createReasoningFeed(
     });
   });
   return {
+    /** Every accepted update and snapshot of the current run. */
+    history,
     snapshot: () => history().snapshots.at(-1),
     /** Accepted updates in sequence order. */
     updates: () => history().updates,

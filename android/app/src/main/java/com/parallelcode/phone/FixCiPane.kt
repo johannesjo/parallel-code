@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun FixCiDialog(
     taskId: String,
-    client: RemoteClient,
+    client: PhoneClient,
     onDismiss: () -> Unit,
     onSent: () -> Unit,
 ) {

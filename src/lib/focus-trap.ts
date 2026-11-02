@@ -19,7 +19,11 @@ export function createFocusTrap(
       const el = container();
       if (!el) return;
       e.preventDefault();
-      const els = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE));
+      // Reserved-space slots (hints, errors) hide with visibility, and focus()
+      // on a hidden element does nothing, which would stall Tab on it.
+      const els = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (candidate) => candidate.checkVisibility?.({ visibilityProperty: true }) !== false,
+      );
       if (els.length === 0) return;
       const idx = els.indexOf(document.activeElement as HTMLElement);
       const next = e.shiftKey

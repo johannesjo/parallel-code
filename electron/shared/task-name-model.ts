@@ -26,6 +26,31 @@ export function isTaskNameModelId(value: unknown): value is TaskNameModelId {
   return typeof value === 'string' && Object.keys(TASK_NAME_MODELS).includes(value);
 }
 
+/**
+ * Models offered for task briefs. A brief reads a whole turn and diff, which
+ * the cheapest models summarise vaguely, so stronger ones are offered too.
+ */
+export const BRIEF_MODELS = {
+  haiku: TASK_NAME_MODELS.haiku,
+  sonnet: { label: 'Claude Sonnet (claude CLI)', provider: 'claude', model: 'sonnet' },
+  luna: TASK_NAME_MODELS.luna,
+  // Low reasoning, like Luna: a brief restates the turn rather than solving anything.
+  terra: {
+    label: 'GPT-6.1-Terra (codex CLI)',
+    provider: 'codex',
+    model: 'gpt-6.1-terra',
+    effort: 'low',
+  },
+} as const;
+
+export type BriefModelId = keyof typeof BRIEF_MODELS;
+
+export const DEFAULT_BRIEF_MODEL: BriefModelId = 'sonnet';
+
+export function isBriefModelId(value: unknown): value is BriefModelId {
+  return typeof value === 'string' && Object.keys(BRIEF_MODELS).includes(value);
+}
+
 /** A title is a few words; a longer reply is prose, such as a refusal or an explanation. */
 const MAX_TITLE_WORDS = 10;
 /** Openings of a refusal or an apology, which are short enough to pass the word cap. */

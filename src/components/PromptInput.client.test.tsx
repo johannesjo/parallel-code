@@ -12,7 +12,9 @@ import {
   registerAction,
   registerFocusFn,
   sendPrompt,
+  showNotification,
 } from '../store/store';
+import { NOTIFICATION_ERROR_MS } from '../store/notification';
 
 const { storeMock, setTaskPromptDraft, taskUsesAgentChat } = vi.hoisted(() => ({
   storeMock: {
@@ -27,7 +29,11 @@ const { storeMock, setTaskPromptDraft, taskUsesAgentChat } = vi.hoisted(() => ({
 vi.mock('../store/agent-chat', () => ({ taskUsesAgentChat }));
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn(async () => undefined), fireAndForget: vi.fn() }));
-vi.mock('../lib/log', () => ({ debug: vi.fn(), warn: vi.fn() }));
+vi.mock('../lib/log', async (importOriginal) => ({
+  debug: vi.fn(),
+  warn: vi.fn(),
+  errMessage: (await importOriginal<typeof import('../lib/log')>()).errMessage,
+}));
 
 vi.mock('../store/store', () => ({
   store: storeMock,
@@ -77,6 +83,7 @@ afterEach(() => {
   taskUsesAgentChat.mockReturnValue(false);
   vi.mocked(registerFocusFn).mockClear();
   vi.mocked(registerAction).mockClear();
+  vi.mocked(showNotification).mockClear();
 });
 
 async function waitFor(probe: () => boolean): Promise<void> {
@@ -118,6 +125,27 @@ describe('PromptInput key ownership', () => {
     // This element is still built in chat mode, just never shown. Registering would let the
     // hidden textarea swallow Enter and the focus key from the composer the user can see.
     expect(promptKeys()).toEqual([]);
+  });
+});
+
+describe('PromptInput question from the brief', () => {
+  it('shows what the agent needs above where the answer is typed', () => {
+    storeMock.tasks = { 'task-1': { id: 'task-1', agentIds: ['agent-1'] } };
+    const container = document.createElement('div');
+    document.body.append(container);
+    const [needsYou, setNeedsYou] = createSignal('Keep the old route?');
+    disposers.push(
+      render(
+        () => (
+          <PromptInput taskId="task-1" taskName="Task" agentId="agent-1" needsYou={needsYou()} />
+        ),
+        container,
+      ),
+    );
+    const label = () => container.querySelector('.prompt-needs-you')?.textContent;
+    expect(label()).toBe('Needs youKeep the old route?');
+    setNeedsYou('');
+    expect(label()).toBeUndefined();
   });
 });
 
@@ -168,6 +196,25 @@ describe('PromptInput draft persistence', () => {
     finishSend();
 
     await waitFor(() => setTaskPromptDraft.mock.calls.some(([, text]) => text === ''));
+  });
+});
+
+describe('PromptInput failed send', () => {
+  it('tells the user the send failed and keeps their text to retry', async () => {
+    vi.mocked(sendPrompt).mockRejectedValueOnce(
+      new Error("Error invoking remote method 'write_to_agent': Error: Agent not found"),
+    );
+    storeMock.tasks = { 'task-1': { id: 'task-1', agentIds: ['agent-1'], promptDraft: 'send me' } };
+    const textarea = mount('task-1');
+
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await waitFor(() => vi.mocked(showNotification).mock.calls.length > 0);
+
+    expect(showNotification).toHaveBeenCalledWith("Couldn't send prompt: Agent not found", {
+      durationMs: NOTIFICATION_ERROR_MS,
+    });
+    expect(textarea.value).toBe('send me');
+    expect(setTaskPromptDraft).not.toHaveBeenCalledWith('task-1', '');
   });
 });
 

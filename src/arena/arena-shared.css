@@ -17,13 +17,18 @@
 .arena-overlay {
   position: fixed;
   inset: 0;
-  z-index: 2000;
+  z-index: var(--z-overlay);
   background: var(--bg);
   display: flex;
   flex-direction: column;
   font-family: var(--font-ui);
   color: var(--fg);
-  animation: arena-overlay-enter 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: arena-overlay-enter var(--motion-enter) var(--ease-out);
+}
+
+/* Focused as a whole on open (ArenaOverlay.tsx); a container, so no ring. */
+.arena-overlay:focus {
+  outline: none;
 }
 
 @keyframes arena-overlay-enter {
@@ -111,7 +116,7 @@
   font-family: var(--font-ui);
   font-size: 14px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--motion-fast) var(--ease-out);
 }
 
 .arena-close-btn > svg {
@@ -171,8 +176,8 @@
   align-items: center;
   justify-content: center;
   transition:
-    background 0.15s ease,
-    transform 0.15s ease,
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
     box-shadow 0.3s ease;
 }
 
@@ -218,7 +223,7 @@
 }
 
 .arena-merge-error {
-  background: var(--error-bg, rgba(239, 68, 68, 0.1));
+  background: color-mix(in srgb, var(--error) 10%, transparent);
   border: 1px solid var(--error, #ef4444);
   border-radius: var(--radius-md);
   color: var(--error, #ef4444);

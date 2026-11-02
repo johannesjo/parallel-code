@@ -21,7 +21,28 @@ data class RemoteAgent(
     val collapsed: Boolean = false,
     /** The task's open PR checks: `pending`, `failure` or `success`; null without one. */
     val ci: String? = null,
+    /** The desktop board lane: `needs`, `stopped`, `working`, `pr` or `snoozed`; null from older desktops. */
+    val lane: String? = null,
+    /** The project's color as CSS, e.g. `#4f8cff` or `hsl(210, 80%, 60%)`; null when unknown. */
+    val projectColor: String? = null,
+    /** The project's icon id, drawn from [ProjectIcons]; null for the plain colour square. */
+    val projectIcon: String? = null,
+    /** The task's open pull request as the desktop board card shows it. */
+    val pr: RemotePr? = null,
 )
+
+/** Mirrors `RemoteTaskPr`: the board card's PR row. */
+data class RemotePr(
+    val url: String,
+    /** The board's status line, such as "CI failed" or "CI passed · Review needed". */
+    val label: String?,
+    /** `merged`, `ready`, `blocked`, `running` or `failed`; null before checks report. */
+    val kind: String?,
+    val babysit: Boolean,
+) {
+    /** The number in `…/pull/123`. */
+    val number: String? get() = Regex("/pull/(\\d+)").find(url)?.groupValues?.get(1)
+}
 
 sealed interface ServerMessage {
     data class Agents(val list: List<RemoteAgent>) : ServerMessage
@@ -95,7 +116,16 @@ private fun parseAgent(a: JSONObject) = RemoteAgent(
     isChat = a.optString("kind") == "chat",
     collapsed = a.optBoolean("collapsed", false),
     ci = a.optStringOrNull("ci"),
+    lane = a.optStringOrNull("lane"),
+    projectColor = a.optStringOrNull("projectColor")?.takeIf { it.isNotBlank() },
+    projectIcon = a.optStringOrNull("projectIcon"),
+    pr = a.optJSONObject("pr")?.let(::parsePr),
 )
+
+private fun parsePr(p: JSONObject): RemotePr? {
+    val url = p.optStringOrNull("url") ?: return null
+    return RemotePr(url, p.optStringOrNull("label"), p.optStringOrNull("kind"), p.optBoolean("babysit", false))
+}
 
 /**
  * Prepares a reply the way the phone web UI does (src/remote/terminalText.ts): control characters

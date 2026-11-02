@@ -136,7 +136,7 @@ function UsagePopover(props: {
           bottom: `${props.anchor.bottom}px`,
           width: `${POPOVER_WIDTH}px`,
           'pointer-events': 'none',
-          'z-index': '1000',
+          'z-index': 'var(--z-modal)',
           background: theme.bgElevated,
           border: `1px solid ${theme.border}`,
           'border-radius': 'var(--radius-sm)',

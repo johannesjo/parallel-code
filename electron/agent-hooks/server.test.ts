@@ -55,7 +55,9 @@ describe('startAgentHookServer', () => {
   it('writes the endpoint file, script, and settings pointing at the script', () => {
     const endpoint = fs.readFileSync(path.join(dir, 'endpoint.env'), 'utf8');
     expect(endpoint).toContain(`PARALLEL_CODE_HOOK_PORT=${server.port}\n`);
-    expect(fs.statSync(server.hookScriptPath).mode & 0o111).not.toBe(0);
+    // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+    if (process.platform !== 'win32')
+      expect(fs.statSync(server.hookScriptPath).mode & 0o111).not.toBe(0);
     const settingsPath = server.claudeSettingsPath(dir, { CLAUDE_CONFIG_DIR: dir });
     const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     expect(settings.hooks.Stop[0].hooks[0].command).toContain(server.hookScriptPath);
@@ -152,6 +154,26 @@ describe('startAgentHookServer', () => {
     }
   });
 
+  it('keeps the turn open until a background sub-agent stops', async () => {
+    const auth = {
+      'x-parallel-code-hook-token': tokenFrom(dir),
+      'x-parallel-code-agent-id': 'agent-1',
+      'x-parallel-code-task-id': 'task-1',
+      'x-parallel-code-launch-id': 'launch-1',
+    };
+    const send = (body: Record<string, unknown>) => post(JSON.stringify(body), auth);
+    await send({ hook_event_name: 'SubagentStart', agent_id: 'sub-1' });
+    await send({ hook_event_name: 'Stop' });
+    await send({ hook_event_name: 'SubagentStop', agent_id: 'sub-1' });
+    await send({ hook_event_name: 'Stop', last_assistant_message: 'All done' });
+    await vi.waitFor(() => expect(events).toHaveLength(2));
+    expect(events.map((e) => [e.state, e.background ?? false])).toEqual([
+      ['working', true],
+      ['done', false],
+    ]);
+    expect(events[1]?.lastAssistantMessage).toBe('All done');
+  });
+
   it('rejects a missing or wrong token without leaking anything', async () => {
     expect(await post('{}', { 'x-parallel-code-agent-id': 'a' })).toBe(403);
     expect(
@@ -180,19 +202,23 @@ describe('startAgentHookServer', () => {
     expect(await post('{}', { 'x-parallel-code-hook-token': tokenFrom(dir) }, '/other')).toBe(404);
   });
 
-  it('tightens permissions left loose by a previous launch', async () => {
-    const loose = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-hooks-loose-'));
-    fs.chmodSync(loose, 0o755);
-    fs.writeFileSync(path.join(loose, 'endpoint.env'), 'stale', { mode: 0o644 });
-    const second = await startAgentHookServer({ dir: loose, onEvent: () => undefined });
-    try {
-      expect(fs.statSync(loose).mode & 0o777).toBe(0o700);
-      expect(fs.statSync(path.join(loose, 'endpoint.env')).mode & 0o777).toBe(0o600);
-    } finally {
-      await second.close();
-      fs.rmSync(loose, { recursive: true, force: true });
-    }
-  });
+  // Windows has no Unix permission bits to tighten.
+  it.skipIf(process.platform === 'win32')(
+    'tightens permissions left loose by a previous launch',
+    async () => {
+      const loose = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-hooks-loose-'));
+      fs.chmodSync(loose, 0o755);
+      fs.writeFileSync(path.join(loose, 'endpoint.env'), 'stale', { mode: 0o644 });
+      const second = await startAgentHookServer({ dir: loose, onEvent: () => undefined });
+      try {
+        expect(fs.statSync(loose).mode & 0o777).toBe(0o700);
+        expect(fs.statSync(path.join(loose, 'endpoint.env')).mode & 0o777).toBe(0o600);
+      } finally {
+        await second.close();
+        fs.rmSync(loose, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('rejects instead of crashing when the hook directory cannot be written', async () => {
     const blocked = path.join(dir, 'not-a-dir');

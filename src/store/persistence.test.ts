@@ -1,6 +1,10 @@
 import { getLocalDateKey } from '../lib/date';
-import { reconcile } from 'solid-js/store';
+import { produce, reconcile } from 'solid-js/store';
 import { createMindMap } from '../graph/model';
+import {
+  DEFAULT_INDEPENDENT_TASKS_PER_CREATOR,
+  MAX_INDEPENDENT_TASKS_PER_CREATOR,
+} from '../lib/coordinator-limits';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentDef } from '../ipc/types';
 import type { PersistedTask } from './types';
@@ -200,6 +204,20 @@ describe('loadState agent definition migrations', () => {
     expect(restored.skip_permissions_args).toEqual(['--full-auto']);
   });
 
+  it('keeps the extra flags of a pane across a restart', async () => {
+    const restored = await loadPersistedAgent(agentDef({ extra_args: ['--chrome'] }));
+
+    expect(restored.extra_args).toEqual(['--chrome']);
+  });
+
+  it('drops malformed extra flags instead of passing them to the CLI', async () => {
+    const restored = await loadPersistedAgent(
+      agentDef({ extra_args: ['--chrome', 42] as unknown as string[] }),
+    );
+
+    expect(restored).not.toHaveProperty('extra_args');
+  });
+
   it('leaves current Codex skip-permissions args unchanged', async () => {
     const restored = await loadPersistedAgent(
       agentDef({
@@ -292,6 +310,144 @@ describe('landing state persistence', () => {
 
     expect(store.tasks['task-1'].verificationRun).toEqual(finished);
     expect(store.tasks['task-2'].verificationRun).toBeUndefined();
+  });
+});
+
+describe('background verify persistence', () => {
+  function stateWith(project: Record<string, unknown>, tasks: Record<string, unknown>): string {
+    return JSON.stringify({
+      projects: [
+        { id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)', ...project },
+      ],
+      lastProjectId: 'project-1',
+      lastAgentId: null,
+      taskOrder: Object.keys(tasks),
+      collapsedTaskOrder: [],
+      tasks,
+      activeTaskId: 'task-1',
+      sidebarVisible: true,
+    });
+  }
+
+  it('round-trips the last verify pass and drops a malformed one', async () => {
+    const def = agentDef();
+    const pass = { command: 'npm test', headSha: 'abc123', finishedAt: '2026-09-03T10:01:00Z' };
+    mockInvoke.mockResolvedValueOnce(
+      stateWith(
+        {},
+        {
+          'task-1': { ...persistedTask(def), lastVerifyPass: pass },
+          'task-2': {
+            ...persistedTask(def),
+            id: 'task-2',
+            branchName: 'task/task-2',
+            worktreePath: '/repo/.worktrees/task-2',
+            lastVerifyPass: { command: 'npm test', headSha: 7 },
+          },
+        },
+      ),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].lastVerifyPass).toEqual(pass);
+    expect(store.tasks['task-2'].lastVerifyPass).toBeUndefined();
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    expect(JSON.parse(lastCall[1].json).tasks['task-1'].lastVerifyPass).toEqual(pass);
+  });
+
+  it('round-trips review dismissals and drops malformed ones', async () => {
+    const def = agentDef();
+    const dismissed = { 'risk:no real provider.': { text: 'No real provider.', reason: 'CI' } };
+    mockInvoke.mockResolvedValueOnce(
+      stateWith(
+        {},
+        {
+          'task-1': { ...persistedTask(def), reviewDismissed: dismissed },
+          'task-2': {
+            ...persistedTask(def),
+            id: 'task-2',
+            branchName: 'task/task-2',
+            worktreePath: '/repo/.worktrees/task-2',
+            reviewDismissed: { 'risk:x': 'not an entry' },
+          },
+        },
+      ),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].reviewDismissed).toEqual(dismissed);
+    expect(store.tasks['task-2'].reviewDismissed).toBeUndefined();
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    expect(JSON.parse(lastCall[1].json).tasks['task-1'].reviewDismissed).toEqual(dismissed);
+  });
+
+  it.each([
+    [false, false],
+    [true, undefined],
+    ['yes', undefined],
+  ])('keeps verifyAutoRun only when it is off: %j', async (stored, loaded) => {
+    mockInvoke.mockResolvedValueOnce(stateWith({ verifyAutoRun: stored }, {}));
+    await loadState();
+    expect(store.projects[0].verifyAutoRun).toBe(loaded);
+  });
+
+  it('loads a package saved with the removed claim, review and flag fields, then drops them', async () => {
+    const def = agentDef();
+    const run = {
+      checkId: 'verify',
+      name: 'Verify',
+      kind: 'custom',
+      command: 'npm test',
+      status: 'running',
+      exitCode: null,
+      headSha: 'a'.repeat(40),
+      dirty: false,
+      startedAt: '2026-09-03T10:00:00Z',
+      outputTail: 'ok',
+    };
+    const legacy = {
+      id: 'pkg-1',
+      createdAt: '2026-09-03T10:00:00Z',
+      trigger: 'agent',
+      assembling: true,
+      scan: { headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), dirty: false, files: [] },
+      checks: [run],
+      skipped: [],
+      claim: { summary: 'Done', submittedAt: '2026-09-03T10:00:00Z' },
+      review: { status: 'running', provider: 'claude', headSha: 'a'.repeat(40), findings: [] },
+      acceptedFlags: { 'flag-1': 'fine' },
+      dismissedFindings: ['f1'],
+      sentToAgent: ['r1'],
+    };
+    mockInvoke.mockResolvedValueOnce(
+      stateWith(
+        { evidenceAutoBuild: true, evidenceModel: { when: 'risky', provider: 'codex' } },
+        { 'task-1': { ...persistedTask(def), evidence: legacy } },
+      ),
+    );
+    await loadState();
+    const pkg = store.tasks['task-1'].evidence;
+    expect(pkg).toMatchObject({ id: 'pkg-1', assembling: false, skipped: [] });
+    expect(pkg?.checks[0]).toMatchObject({ checkId: 'verify', status: 'cancelled' });
+    expect(store.projects[0]).not.toHaveProperty('evidenceModel');
+    expect(store.projects[0]).not.toHaveProperty('evidenceAutoBuild');
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    const saved = JSON.parse(lastCall[1].json);
+    expect(Object.keys(saved.tasks['task-1'].evidence).sort()).toEqual([
+      'assembling',
+      'checks',
+      'id',
+      'scan',
+      'skipped',
+    ]);
+    expect(saved.projects[0]).not.toHaveProperty('evidenceAutoBuild');
   });
 });
 
@@ -821,6 +977,39 @@ describe('PR URL persistence', () => {
 
     expect(store.tasks['task-1'].prUrl).toBe('https://github.com/acme/app/pull/12');
   });
+
+  it('restores PR babysitting progress and repairs malformed values', async () => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: ['task-1', 'task-2', 'task-3'],
+        collapsedTaskOrder: [],
+        tasks: {
+          'task-1': {
+            ...persistedTask(def),
+            prBabysit: { attempts: 2, lastSentSha: 'abc', stalled: true },
+          },
+          'task-2': { ...persistedTask(def), id: 'task-2', prBabysit: { attempts: 'x' } },
+          'task-3': { ...persistedTask(def), id: 'task-3' },
+        },
+        activeTaskId: 'task-1',
+        sidebarVisible: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['task-1'].prBabysit).toEqual({
+      attempts: 2,
+      lastSentSha: 'abc',
+      stalled: true,
+    });
+    expect(store.tasks['task-2'].prBabysit).toEqual({ attempts: 0 });
+    expect(store.tasks['task-3'].prBabysit).toBeUndefined();
+  });
 });
 
 describe('prompt draft persistence', () => {
@@ -1027,12 +1216,12 @@ describe('loadState theme persistence', () => {
     setStore('customAgents', []);
   });
 
-  it('defaults to dark mode with obsidian/islands-light when no theme fields saved', async () => {
+  it('defaults to dark mode with parallel-code/islands-light when no theme fields saved', async () => {
     mockInvoke.mockResolvedValueOnce(basePayload());
     await loadState();
 
     expect(store.appearanceMode).toBe('dark');
-    expect(store.darkThemePreset).toBe('obsidian');
+    expect(store.darkThemePreset).toBe('parallel-code');
     expect(store.lightThemePreset).toBe('islands-light');
     expect(store.darkThemeCustomId).toBeNull();
     expect(store.lightThemeCustomId).toBeNull();
@@ -1060,12 +1249,12 @@ describe('loadState theme persistence', () => {
     expect(store.darkThemePreset).toBe('classic');
   });
 
-  it('falls back to obsidian for an invalid darkThemePreset', async () => {
+  it('falls back to parallel-code for an invalid darkThemePreset', async () => {
     mockInvoke.mockResolvedValueOnce(
       basePayload({ appearanceMode: 'dark', darkThemePreset: 'not-a-theme' }),
     );
     await loadState();
-    expect(store.darkThemePreset).toBe('obsidian');
+    expect(store.darkThemePreset).toBe('parallel-code');
   });
 
   it.each(['dark', 'light', 'system'])(
@@ -1077,7 +1266,7 @@ describe('loadState theme persistence', () => {
     },
   );
 
-  it('saves and restores Obsidian explicitly when using the new default', async () => {
+  it('keeps a saved Obsidian preference after the default changed', async () => {
     setStore('darkThemePreset', 'obsidian');
     setStore('themePreset', 'obsidian');
     setStore('appearanceMode', 'dark');
@@ -1144,11 +1333,11 @@ describe('loadState theme persistence', () => {
     expect(store.darkThemePreset).toBe('classic');
   });
 
-  it('backward compat: invalid old themePreset leaves dark mode with obsidian', async () => {
+  it('backward compat: invalid old themePreset leaves dark mode with parallel-code', async () => {
     mockInvoke.mockResolvedValueOnce(basePayload({ themePreset: 'legacy-unknown' }));
     await loadState();
     expect(store.appearanceMode).toBe('dark');
-    expect(store.darkThemePreset).toBe('obsidian');
+    expect(store.darkThemePreset).toBe('parallel-code');
   });
 });
 
@@ -1524,6 +1713,34 @@ describe('new task defaults persistence', () => {
     expect(store.defaultSkipPermissions).toBe(false);
   });
 
+  // --- maxIndependentTasksPerCreator ---
+
+  it('restores maxIndependentTasksPerCreator and clamps it into range', async () => {
+    mockInvoke.mockResolvedValueOnce(basePayload({ maxIndependentTasksPerCreator: 30 }));
+    await loadState();
+    expect(store.maxIndependentTasksPerCreator).toBe(30);
+    mockInvoke.mockResolvedValueOnce(basePayload({ maxIndependentTasksPerCreator: 1000 }));
+    await loadState();
+    expect(store.maxIndependentTasksPerCreator).toBe(MAX_INDEPENDENT_TASKS_PER_CREATOR);
+    mockInvoke.mockResolvedValueOnce(basePayload({ maxIndependentTasksPerCreator: 'many' }));
+    await loadState();
+    expect(store.maxIndependentTasksPerCreator).toBe(DEFAULT_INDEPENDENT_TASKS_PER_CREATOR);
+  });
+
+  it('persists maxIndependentTasksPerCreator only when changed from the default', async () => {
+    setStore('maxIndependentTasksPerCreator', DEFAULT_INDEPENDENT_TASKS_PER_CREATOR);
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    expect(JSON.parse(mockInvoke.mock.calls[0][1].json).maxIndependentTasksPerCreator).toBe(
+      undefined,
+    );
+    mockInvoke.mockClear();
+    setStore('maxIndependentTasksPerCreator', 25);
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    expect(JSON.parse(mockInvoke.mock.calls[0][1].json).maxIndependentTasksPerCreator).toBe(25);
+  });
+
   // --- defaultPropagateSkipPermissions ---
 
   it('defaults defaultPropagateSkipPermissions to false when absent from saved state', async () => {
@@ -1579,6 +1796,52 @@ describe('task brief settings', () => {
     mockInvoke.mockResolvedValueOnce(basePayload({ taskBriefs: 'yes' }));
     await loadState();
     expect(store.taskBriefs).toBe(false);
+  });
+
+  it('restores the header fields, keeping the default for any missing or malformed one', async () => {
+    mockInvoke.mockResolvedValueOnce(basePayload());
+    await loadState();
+    expect(store.briefBarFields).toEqual({ goal: true, now: false, needsYou: true });
+    mockInvoke.mockResolvedValueOnce(
+      basePayload({ briefBarFields: { goal: false, now: true, needsYou: 'no' } }),
+    );
+    await loadState();
+    expect(store.briefBarFields).toEqual({ goal: false, now: true, needsYou: true });
+  });
+});
+
+describe('finish review setting', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('keeps the review line on unless it was turned off', async () => {
+    mockInvoke.mockResolvedValueOnce(basePayload());
+    await loadState();
+    expect(store.finishReview).toBe(true);
+    mockInvoke.mockResolvedValueOnce(basePayload({ finishReview: false }));
+    await loadState();
+    expect(store.finishReview).toBe(false);
+    mockInvoke.mockResolvedValueOnce(basePayload({ finishReview: 'no' }));
+    await loadState();
+    expect(store.finishReview).toBe(true);
+  });
+
+  it('restores the reviewer model and guidance, but not the old agent rating prompt', async () => {
+    mockInvoke.mockResolvedValueOnce(
+      basePayload({
+        reviewModel: { provider: 'codex', model: 'gpt-5', effort: 'high' },
+        reviewGuidance: 'Weigh missing tests heavily.',
+        confidencePrompt: 'Run my /confidence skill',
+      }),
+    );
+    await loadState();
+    expect(store.reviewModel).toEqual({ provider: 'codex', model: 'gpt-5', effort: 'high' });
+    expect(store.reviewGuidance).toBe('Weigh missing tests heavily.');
+    mockInvoke.mockResolvedValueOnce(
+      basePayload({ reviewModel: 'opus', confidencePrompt: 'Run my /confidence skill' }),
+    );
+    await loadState();
+    expect(store.reviewModel).toEqual({ provider: 'claude', model: 'opus' });
+    expect(store.reviewGuidance).toBe('');
   });
 });
 
@@ -1677,6 +1940,19 @@ describe('feature tips persistence', () => {
     expect(store.seenFeatureHints).toEqual(['change-tour']);
     expect((await lastSaved()).seenFeatureHints).toEqual(['change-tour']);
   });
+
+  it('round-trips board ideas and drops malformed ones', async () => {
+    const idea = { id: 'i1', text: 'Dark mode', projectId: null, createdAt: 1 };
+    mockInvoke.mockResolvedValueOnce(
+      stateJson({ taskIdeas: [idea, { id: 'i2' }], lastIdeaProjectId: 'p1' }),
+    );
+    await loadState();
+    expect(store.taskIdeas).toEqual([idea]);
+    expect(store.lastIdeaProjectId).toBe('p1');
+    const saved = await lastSaved();
+    expect(saved.taskIdeas).toEqual([idea]);
+    expect(saved.lastIdeaProjectId).toBe('p1');
+  });
 });
 
 describe('code Q&A model persistence', () => {
@@ -1770,6 +2046,17 @@ describe('code Q&A model persistence', () => {
     expect((await lastSaved()).modelTaskNames).toBe(true);
   });
 
+  it('remembers hidden plan card details and shows them otherwise', async () => {
+    mockInvoke.mockResolvedValueOnce(stateJson({ kanbanHideDetails: 'yes' }));
+    await loadState();
+    expect(store.kanbanHideDetails).toBe(false);
+
+    mockInvoke.mockResolvedValueOnce(stateJson({ kanbanHideDetails: true }));
+    await loadState();
+    expect(store.kanbanHideDetails).toBe(true);
+    expect((await lastSaved()).kanbanHideDetails).toBe(true);
+  });
+
   it('keeps a chosen naming model and falls back to Haiku for an unknown one', async () => {
     mockInvoke.mockResolvedValueOnce(stateJson({ taskNameModel: 'luna' }));
     await loadState();
@@ -1779,6 +2066,22 @@ describe('code Q&A model persistence', () => {
     mockInvoke.mockResolvedValueOnce(stateJson({ taskNameModel: 'gpt-4' }));
     await loadState();
     expect(store.taskNameModel).toBe('haiku');
+  });
+
+  it('keeps a chosen brief model and otherwise follows what briefs used before', async () => {
+    mockInvoke.mockResolvedValueOnce(stateJson({ briefModel: 'terra', taskNameModel: 'luna' }));
+    await loadState();
+    expect(store.briefModel).toBe('terra');
+    expect((await lastSaved()).briefModel).toBe('terra');
+
+    // Before the setting, Codex naming meant Codex briefs and Claude naming meant Sonnet.
+    mockInvoke.mockResolvedValueOnce(stateJson({ taskNameModel: 'luna' }));
+    await loadState();
+    expect(store.briefModel).toBe('luna');
+
+    mockInvoke.mockResolvedValueOnce(stateJson({ briefModel: 'gpt-4', taskNameModel: 'haiku' }));
+    await loadState();
+    expect(store.briefModel).toBe('sonnet');
   });
 });
 
@@ -2064,15 +2367,16 @@ it('round-trips canvas task links for active and collapsed tasks without revivin
   for (const id of ['task-1', 'task-2']) expect(saved.tasks[id].canvasTaskLinks).toEqual(links);
 });
 
-it('does not register delegation authority for hidden agent tasks', async () => {
-  const hidden = { ...persistedTask(agentDef()), id: 'gh-agent-project-1' };
+it('registers delegation authority for page agents but not other hidden agents', async () => {
+  const hidden = { ...persistedTask(agentDef()), id: 'doc-agent-project-1' };
+  const page = { ...persistedTask(agentDef()), id: 'gh-agent-project-1' };
   const normal = { ...persistedTask(agentDef()), id: 'normal-authority' };
   mockInvoke.mockResolvedValueOnce(
     JSON.stringify({
       projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: '' }],
-      taskOrder: [hidden.id, normal.id],
+      taskOrder: [hidden.id, page.id, normal.id],
       collapsedTaskOrder: [],
-      tasks: { [hidden.id]: hidden, [normal.id]: normal },
+      tasks: { [hidden.id]: hidden, [page.id]: page, [normal.id]: normal },
     }),
   );
   await loadState();
@@ -2080,6 +2384,7 @@ it('does not register delegation authority for hidden agent tasks', async () => 
     .filter(([channel, args]) => channel === IPC.DelegationRequest && args?.action === 'register')
     .map(([, args]) => args.task.taskId);
   expect(registered).not.toContain(hidden.id);
+  expect(registered).toContain(page.id);
   expect(registered).toContain(normal.id);
 });
 
@@ -2360,27 +2665,6 @@ describe('daily merge count persistence', () => {
   });
 });
 
-it.each([false, true])(
-  'preserves second-opinion dismissal across restore (collapsed=%s)',
-  async (collapsed) => {
-    const def = agentDef();
-    mockInvoke.mockResolvedValueOnce(
-      JSON.stringify({
-        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'red' }],
-        taskOrder: collapsed ? [] : ['task-1'],
-        collapsedTaskOrder: collapsed ? ['task-1'] : [],
-        tasks: { 'task-1': { ...persistedTask(def), secondOpinionDismissed: true } },
-      }),
-    );
-    await loadState();
-    expect(store.tasks['task-1'].secondOpinionDismissed).toBe(true);
-    mockInvoke.mockClear();
-    await saveState();
-    const saved = JSON.parse(mockInvoke.mock.calls[0][1].json);
-    expect(saved.tasks['task-1'].secondOpinionDismissed).toBe(true);
-  },
-);
-
 describe('timed snooze persistence', () => {
   function savedSnooze(snoozedUntil: unknown): string {
     return JSON.stringify({
@@ -2464,5 +2748,103 @@ describe('timed snooze persistence', () => {
     mockInvoke.mockResolvedValueOnce(savedSnooze(value));
     await loadState();
     expect(store.tasks['task-1'].snoozedUntil).toBeUndefined();
+  });
+});
+
+describe('board layout persistence', () => {
+  function stateWith(extra: Record<string, unknown>): string {
+    return JSON.stringify({
+      projects: [],
+      lastProjectId: null,
+      lastAgentId: null,
+      taskOrder: [],
+      collapsedTaskOrder: [],
+      tasks: {},
+      activeTaskId: null,
+      sidebarVisible: true,
+      ...extra,
+    });
+  }
+
+  it('round-trips the side panel side', async () => {
+    mockInvoke.mockResolvedValueOnce(stateWith({ boardSidePanelLeft: true }));
+    await loadState();
+    expect(store.boardSidePanelLeft).toBe(true);
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const saved = JSON.parse(mockInvoke.mock.calls.at(-1)?.[1].json);
+    expect(saved.boardSidePanelLeft).toBe(true);
+  });
+
+  it('defaults the side panel side for older state', async () => {
+    mockInvoke.mockResolvedValueOnce(stateWith({}));
+    await loadState();
+    expect(store.boardSidePanelLeft).toBe(false);
+  });
+});
+
+describe('project agent env persistence', () => {
+  function stateWith(project: Record<string, unknown>): string {
+    return JSON.stringify({
+      projects: [
+        { id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)', ...project },
+      ],
+      lastProjectId: 'project-1',
+      lastAgentId: null,
+      taskOrder: ['task-1'],
+      collapsedTaskOrder: [],
+      tasks: { 'task-1': persistedTask(agentDef()) },
+      activeTaskId: 'task-1',
+      sidebarVisible: true,
+    });
+  }
+
+  async function savedProject(): Promise<Record<string, unknown>> {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const saved = mockInvoke.mock.calls.findLast(([channel]) => channel === IPC.SaveAppState);
+    return JSON.parse(saved?.[1].json).projects[0];
+  }
+
+  it('loads older state without the field unchanged and pushes an empty env', async () => {
+    mockInvoke.mockResolvedValueOnce(stateWith({}));
+    await loadState();
+    expect(store.projects[0].agentEnv).toBeUndefined();
+    expect(mockInvoke).toHaveBeenCalledWith(IPC.SetProjectAgentEnv, {
+      projectId: 'project-1',
+      env: {},
+    });
+    expect(await savedProject()).not.toHaveProperty('agentEnv');
+  });
+
+  it('round-trips the env and drops invalid entries', async () => {
+    mockInvoke.mockResolvedValueOnce(
+      stateWith({ agentEnv: { CLAUDE_CONFIG_DIR: '~/.claude-work', 'BAD-KEY': 'x', NUM: 1 } }),
+    );
+    await loadState();
+    expect(store.projects[0].agentEnv).toEqual({ CLAUDE_CONFIG_DIR: '~/.claude-work' });
+    expect((await savedProject()).agentEnv).toEqual({ CLAUDE_CONFIG_DIR: '~/.claude-work' });
+  });
+
+  it('hands the env to the main process before tasks restore', async () => {
+    // setStore('tasks', {}) merges, so the shared reset leaves earlier tests' tasks behind.
+    setStore(
+      produce((s) => {
+        s.tasks = {};
+      }),
+    );
+    let tasksAtPush = -1;
+    mockInvoke.mockImplementation(async (channel) => {
+      if (channel === IPC.LoadAppState) return stateWith({ agentEnv: { A: '1' } });
+      if (channel === IPC.SetProjectAgentEnv) tasksAtPush = Object.keys(store.tasks).length;
+    });
+    await loadState();
+    expect(tasksAtPush).toBe(0);
+    expect(store.tasks['task-1']).toBeDefined();
+    expect(mockInvoke).toHaveBeenCalledWith(IPC.SetProjectAgentEnv, {
+      projectId: 'project-1',
+      env: { A: '1' },
+    });
   });
 });

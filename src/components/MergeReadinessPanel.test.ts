@@ -46,21 +46,7 @@ describe('buildMergeReadiness', () => {
       expect.objectContaining({ label: 'Agent report', status: 'pass' }),
       expect.objectContaining({ label: 'Coverage', status: 'neutral' }),
       expect.objectContaining({ label: 'PR checks', status: 'neutral' }),
-      expect.objectContaining({ label: 'Evidence', status: 'neutral' }),
     ]);
-  });
-
-  it('treats evidence as advice: low confidence asks for attention, medium stays neutral', () => {
-    const evidence = (level: 'low' | 'medium' | 'high') =>
-      buildMergeReadiness(
-        input({ evidence: { level, reasons: level === 'high' ? [] : [{ level, text: 'Why.' }] } }),
-      );
-    expect(evidence('high').checks[4]).toEqual(
-      expect.objectContaining({ status: 'pass', detail: 'High confidence.' }),
-    );
-    expect(evidence('low').checks[4]?.detail).toBe('Low confidence. Why.');
-    expect(evidence('low').checks[4]?.status).toBe('warning');
-    expect(evidence('medium').checks[4]?.status).toBe('neutral');
   });
 
   it('reports checking while merge data is loading', () => {
@@ -539,6 +525,21 @@ describe('buildMergeReadiness verify command runs', () => {
       expect.objectContaining({
         status: 'warning',
         detail: expect.stringContaining('older commit'),
+      }),
+    );
+  });
+
+  it('warns that a passing run does not cover commits the base gained since', () => {
+    expect(
+      verificationOf({
+        verificationRun: run(),
+        worktreeStatus: atHead('head-1'),
+        mergeStatus: { ...cleanMergeStatus, main_ahead_count: 2 },
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        status: 'warning',
+        detail: expect.stringContaining('main is 2 commits ahead'),
       }),
     );
   });

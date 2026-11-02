@@ -36,6 +36,7 @@ import type { TourRef } from '../lib/understanding-tour';
 import { errMessage, warn as logWarn } from '../lib/log';
 import { openFileInEditor } from '../lib/shell';
 import { isTypingTarget } from '../lib/tour-keys';
+import { prefersMotion } from '../lib/reducedMotion';
 import { store } from '../store/store';
 
 /** The panel is only a layout box here: the card inside it is the one surface. */
@@ -442,10 +443,9 @@ export function UnderstandingTourDialog(props: {
         const cardRect = card.getBoundingClientRect();
         const stackRect = stack.getBoundingClientRect();
         const offset = Math.max(0, (stackRect.height - cardRect.height) / 2);
-        const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
         stack.scrollTo({
           top: stack.scrollTop + cardRect.top - stackRect.top - offset,
-          behavior: reduced ? 'auto' : 'smooth',
+          behavior: prefersMotion() ? 'smooth' : 'auto',
         });
       },
     ),

@@ -1,0 +1,1167 @@
+/* The all-tasks board. One surface per element: lanes have no box, cards a
+   soft fill and no border, and colour is kept for urgent text and dots. */
+.task-board {
+  /* Sized by the window and side panel, so the lanes can fold to one column. */
+  container: task-board / inline-size;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--fg);
+  font-size: 13px;
+}
+
+/* The board's actions overlay the title bar's middle like the task pills they
+   replace, the text filter included; the plan's own tools sit in its heading row. */
+.task-board-controls {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 1;
+  font-size: 12px;
+}
+/* Same clearances as the pills: workspace and window controls on Linux,
+   the traffic lights on macOS. */
+.window-titlebar > .task-board-controls {
+  padding: 0 150px 0 280px;
+}
+.mac-titlebar-spacer > .task-board-controls {
+  padding: 0 24px 0 320px;
+}
+/* A sibling overlay, not a child, of the drag region: carve each control out
+   so the drag region does not swallow its clicks. */
+.task-board-controls > * {
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+/* The buttons keep one line. */
+.task-board-new {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.task-board-count {
+  color: var(--fg-subtle, var(--fg-muted));
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+/* Qualified to win over generic input styles. */
+.task-board-controls .task-board-search {
+  width: 260px;
+  height: 26px;
+  box-sizing: border-box;
+  padding: 0 10px 0 24px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  /* Opaque: the open filter overlays the controls to its right. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: color-mix(in srgb, var(--fg) 5%, var(--bg-elevated));
+  color: var(--fg);
+  font: inherit;
+  outline: none;
+}
+.task-board-controls .task-board-search:focus {
+  z-index: 1;
+  border-color: var(--border-focus);
+}
+/* Unfocused, the filter folds to an icon button; focus opens it over its
+   neighbours, so the centred row keeps the button's slot and never shifts. */
+.task-board-search-box {
+  position: relative;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+}
+.task-board-search-box > svg {
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  transform: translateY(-50%);
+  z-index: 2;
+  color: var(--fg-muted);
+  pointer-events: none;
+}
+.task-board-controls .task-board-search:not(:focus) {
+  width: 26px;
+  padding: 0;
+  border-color: var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+}
+.task-board-controls .task-board-search:not(:focus)::placeholder {
+  color: transparent;
+}
+.task-board-controls .task-board-search:not(:focus):hover {
+  background: var(--bg-hover);
+}
+/* A folded filter still narrowing the cards shows it, like a pressed toggle. */
+.task-board-search-box:has(.task-board-search:not(:focus, :placeholder-shown)) > svg {
+  color: var(--accent);
+}
+/* Framed like the toggle beside it, as one row of title-bar controls. */
+.task-board-new {
+  box-sizing: border-box;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.task-board-new:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+/* Icon only, square like the bulb. */
+.task-board-github {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0 6px;
+}
+/* Dimmed like the disabled plan toggle beside it. */
+.task-board-github:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.task-board-github:disabled:hover {
+  background: transparent;
+  color: var(--fg-muted);
+}
+/* The bulb and the lane toggle join into one split button. */
+.task-board-ideas-group {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.task-board-ideas-group > .task-board-new {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+}
+.task-board-ideas-group > .task-board-new:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.task-board-ideas-group > .task-board-new + .task-board-new {
+  margin-left: -1px;
+  padding: 0 8px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.task-board-idea-add[aria-expanded='true'],
+.task-board-ideas-toggle[aria-pressed='true'] {
+  background: var(--bg-hover);
+}
+/* Pressed: the count reads at full strength, like a primary label. */
+.task-board-ideas-toggle[aria-pressed='true'] .task-board-count {
+  color: var(--fg);
+}
+.task-board-ideas-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-popover);
+}
+.task-board-ideas-popover {
+  position: fixed;
+  width: 320px;
+  margin: 0;
+  padding: 5px;
+  box-sizing: border-box;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
+  font-size: 12px;
+}
+/* Grows with the idea up to a few lines, then scrolls. */
+.task-board-idea-input {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  max-height: 200px;
+  field-sizing: content;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  resize: none;
+  line-height: 17px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--fg);
+  font: inherit;
+  outline: none;
+}
+.task-board-idea-input:focus {
+  border-color: var(--border-focus);
+}
+.task-board-idea-project {
+  width: 100%;
+  margin-top: 5px;
+}
+/* Ideas are notes, not running work: an outline instead of a fill, and
+   regular-weight text. Two classes outrank the card's own rules, declared
+   later. */
+.task-board-card.task-board-idea {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 12%, transparent);
+}
+.task-board-card.task-board-idea:hover {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.task-board-card.task-board-idea:has(.task-board-title:focus, .task-board-idea-edit:focus) {
+  box-shadow: inset 0 0 0 1px var(--border-focus);
+}
+.task-board-idea .task-board-title {
+  font-weight: 400;
+}
+.task-board-idea .task-board-name {
+  white-space: pre-line;
+  -webkit-line-clamp: 4;
+}
+/* The field takes the name's place and type, so opening it moves nothing. */
+.task-board-idea-editor {
+  cursor: text;
+}
+.task-board-idea-editor::after {
+  content: none;
+}
+.task-board-idea-edit {
+  flex: 1;
+  min-width: 0;
+  /* The name's four-line clamp; longer ideas scroll instead of growing the card. */
+  max-height: 72px;
+  field-sizing: content;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  outline: none;
+}
+.task-board-idea-ring {
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  margin: 2px;
+  border: 1.5px solid var(--fg-subtle, var(--fg-muted));
+  border-radius: 50%;
+}
+/* The actions take the age's corner on hover or focus. Hidden, not removed,
+   so neither moves the card's text. Raised above the title's hit area. */
+.task-board-idea-actions {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  z-index: 1;
+  display: flex;
+  opacity: 0;
+}
+.task-board-idea:hover .task-board-age,
+.task-board-idea:focus-within .task-board-age {
+  visibility: hidden;
+}
+.task-board-idea:hover .task-board-idea-actions,
+.task-board-idea:focus-within .task-board-idea-actions {
+  opacity: 1;
+}
+.task-board-idea-action {
+  display: inline-flex;
+  padding: 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-subtle, var(--fg-muted));
+  cursor: pointer;
+}
+.task-board-idea-action:hover {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+/* The sidebar's project filter, shown here while the sidebar is hidden. A
+   fixed width holds the clear button's slot, so picking a project does not
+   shift the centred controls. */
+.task-board-controls .task-project-filter {
+  width: 170px;
+  min-width: 90px;
+  flex-shrink: 1;
+  gap: 2px;
+}
+.task-board-controls .task-project-filter-trigger {
+  flex: 1;
+  justify-content: flex-start;
+  max-width: none;
+  box-sizing: border-box;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+}
+/* Framed like its neighbours even for all projects; a pick keeps its tint. */
+.task-board-controls .task-project-filter-trigger:not(.is-filtered) {
+  border-color: var(--border);
+}
+.task-board-controls .task-project-filter-trigger svg {
+  margin-left: auto;
+}
+.task-board-lanes {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 20px;
+  padding: 12px 20px 16px;
+  overflow: auto;
+}
+/* Islands looks float every panel on the tinted frame; the board is one too,
+   with the sidebar's gutters, so it does not sit on the bare frame. */
+html[data-look^='islands-'] .task-board {
+  margin: 0 6px 6px 3px;
+  border: 1px solid var(--island-border);
+  border-radius: var(--island-radius);
+  background: var(--island-bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+/* Beside the side panel the board keeps room for a lane (the panel gives way
+   first), and lanes it cuts off fade out rather than end at a hard edge. */
+.task-board:has(+ .task-workspace.board-side-panel),
+.plan-board-shell:has(+ .task-workspace.board-side-panel) {
+  min-width: 320px;
+}
+.task-board:has(+ .task-workspace.board-side-panel) .task-board-lanes {
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+}
+.task-board-empty {
+  position: absolute;
+  inset: 40% 0 auto;
+  margin: 0;
+  text-align: center;
+  color: var(--fg-subtle, var(--fg-muted));
+  pointer-events: none;
+}
+.task-board-lane {
+  /* Equal widths, capped so lanes on wide screens stay scannable. */
+  flex: 1 1 240px;
+  min-width: 212px;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.task-board-lane-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0 2px 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+/* Empty lanes step back so the ones with work read first. */
+.task-board-lane:not(:has(.task-board-card)) .task-board-lane-title {
+  color: var(--fg-muted);
+}
+/* The one lane that is allowed colour: it holds only work blocked on you,
+   and only while something is. */
+.lane-needs .task-board-lane-title::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-subtle, var(--fg-muted));
+}
+.lane-needs:has(.task-board-card) .task-board-lane-title::before {
+  background: var(--warning);
+}
+.lane-needs:has(.task-board-card) .task-board-count {
+  color: var(--warning);
+}
+.task-board-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-board-rail {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg-subtle, var(--fg-muted));
+  font: inherit;
+  cursor: pointer;
+}
+.task-board-rail:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  color: var(--fg);
+}
+.task-board-rail-title {
+  writing-mode: vertical-rl;
+}
+/* Side by side, the rail is how the snoozed lane folds; stacked in one
+   column, this chevron at the end of its title row folds it back. */
+.lane-snoozed {
+  position: relative;
+}
+.lane-snoozed .task-board-lane-tools {
+  position: absolute;
+  top: -3px;
+  right: 0;
+  display: none;
+}
+.task-board-lane-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.task-board-lane-collapse:hover {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+
+/* A plain terminal's card: dashed, unfilled and square-cornered like a
+   terminal pane, so it reads as a different kind of thing from a task. */
+.task-board-card.task-board-terminal-card {
+  border: 1px dashed var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Too narrow for lanes side by side: stack them in one scrolling column.
+   task-board-keys reads this flex-direction to step arrows across lanes. */
+@container task-board (max-width: 550px) {
+  .task-board-lanes {
+    flex-direction: column;
+    mask-image: none;
+  }
+  .task-board-lane {
+    flex: none;
+    min-width: 0;
+    max-width: none;
+  }
+  .task-board-rail {
+    flex-direction: row;
+    align-self: flex-start;
+  }
+  .task-board-rail-title {
+    writing-mode: horizontal-tb;
+  }
+  /* kanban.css hides lane tools until a plan lane is hovered; this one is
+     the only way to fold the lane, so it always shows. It spans the title
+     row, so the whole line folds it, with the chevron at the end. */
+  .lane-snoozed .task-board-lane-tools {
+    left: 0;
+    display: flex;
+    visibility: visible;
+  }
+  .lane-snoozed .task-board-lane-collapse {
+    width: 100%;
+    justify-content: flex-end;
+    padding-right: 6px;
+  }
+}
+
+/* Cards: the title button stretches over the card, so a click anywhere opens
+   the task; the PR chip and ask button sit above it. */
+.task-board-card {
+  position: relative;
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--fg) 4.5%, transparent);
+}
+.task-board-card:hover {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+/* The task beside the board. An accent tint, as state may use: several looks'
+   --bg-selected-subtle is no lighter than the card's own fill. */
+.task-board-card.shown {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.task-board-card.shown:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+/* :focus, not :focus-visible: the board hands cards the keyboard itself, also
+   after a click or an Alt+Arrow, which :focus-visible would leave unmarked. */
+.task-board-card:has(.task-board-title:focus) {
+  box-shadow: 0 0 0 1px var(--border-focus);
+}
+/* The card's ring and the filter's border mark focus. The global
+   `:where(…):focus-visible` ring ties with their `outline: none` on
+   specificity and loads later, so it would draw a second ring inside. */
+.task-board-title:focus-visible,
+.task-board-controls .task-board-search:focus-visible {
+  outline: none;
+}
+/* Subtasks sit indented under their coordinator, tied to it by a plain rule. */
+.task-board-card.subtask {
+  margin-left: 14px;
+}
+.task-board-card.subtask::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -9px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--border);
+}
+/* Names the coordinator above its subtasks when it sits in another lane. */
+.task-board-family {
+  margin: 4px 0 -2px 2px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* A closing task fades while its teardown runs; the card stays put. */
+.task-board-card.closing {
+  opacity: 0.55;
+}
+/* Failure keeps one signal: a faint red surface. */
+.task-board-card.state-error,
+.task-board-card.failed,
+.task-board-card.close-failed {
+  background: color-mix(in srgb, var(--error) 9%, transparent);
+}
+.task-board-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-weight: 500;
+  line-height: 18px;
+  text-align: left;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  outline: none;
+}
+.task-board-title::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.task-board-name {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+.task-board-glyph {
+  display: flex;
+  flex-shrink: 0;
+  /* Centres the 12px glyph lane on the title's first 18px line. */
+  margin-top: 3px;
+}
+
+.task-board-meta,
+.task-board-activity,
+.task-board-row,
+.task-board-ask {
+  margin: 0;
+  /* The glyph's 12px and the title's 5px gap: rows start under the name. */
+  padding-left: 17px;
+  min-width: 0;
+}
+.task-board-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg-subtle, var(--fg-muted));
+  white-space: nowrap;
+}
+.task-board-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--fg-muted);
+}
+.task-board-project span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A bar, not a dot: the dot beside the title is the task's state. */
+.task-board-project i {
+  flex-shrink: 0;
+  width: 3px;
+  height: 11px;
+  border-radius: 1.5px;
+}
+/* The agent gives way first: the project and the age say more. */
+.task-board-agent {
+  flex-shrink: 100;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Narrow cards, such as beside the side panel, drop the agent's name instead
+   of cutting it to a letter. The query measures the content box, inside the padding. */
+@container (max-width: 200px) {
+  .task-board-agent {
+    display: none;
+  }
+}
+.task-board-age {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+/* Lines changed: muted, so a big diff reads as size, not as a warning. */
+.task-board-diff {
+  flex-shrink: 0;
+  font: 11px var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+}
+.task-board-meta > :not(.task-board-age) + .task-board-diff {
+  margin-left: auto;
+}
+.task-board-diff .add {
+  color: color-mix(in srgb, var(--success) 75%, var(--fg-muted));
+}
+.task-board-diff .rem {
+  color: color-mix(in srgb, var(--error) 65%, var(--fg-muted));
+}
+/* One line tall even when empty, so cards never grow or shrink. */
+.task-board-activity {
+  height: 16px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 11px/16px var(--font-mono, monospace);
+  color: var(--fg-muted);
+}
+.task-board-activity.branch {
+  color: var(--fg-subtle, var(--fg-muted));
+}
+/* The activity, then the task's issue and PR badges at its right end. */
+.task-board-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 16px;
+  margin: 0;
+  padding-left: 17px;
+  min-width: 0;
+}
+.task-board-line > .task-board-activity {
+  flex: 1;
+  padding-left: 0;
+}
+.task-board-links {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.task-board-chip.task-board-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  padding: 0 5px;
+  font-variant-numeric: tabular-nums;
+}
+.task-board-link svg {
+  opacity: 0.8;
+}
+/* Why the spinner turns is a state, not output: the label font, not mono. */
+.task-board-activity.busy {
+  font-family: inherit;
+  font-size: 12px;
+}
+.task-board-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.task-board-row > .task-board-chip {
+  flex-shrink: 0;
+}
+/* A status row's label (PR state, snooze reason), toned like the ask labels:
+   colour only for what needs the user now. It gives way first on narrow cards. */
+.task-board-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+.task-board-status > svg {
+  flex-shrink: 0;
+}
+.task-board-status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-board-status.warning {
+  color: var(--warning);
+  font-weight: 500;
+}
+.task-board-status.error {
+  color: var(--error);
+  font-weight: 500;
+}
+.task-board-status.strong {
+  color: var(--fg);
+  font-weight: 500;
+}
+.task-board-status.subtle {
+  color: var(--fg-subtle, var(--fg-muted));
+}
+.task-board-ok {
+  display: inline-flex;
+  color: var(--success);
+}
+.task-board-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.task-board-chip,
+.task-board-act {
+  position: relative;
+  z-index: 1;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.task-board-chip {
+  height: 18px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+.task-board-chip.task-pr-babysit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* Every status row (ask, PR, snooze) is as tall as its button, with or without one. */
+.task-board-ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding-top: 2px;
+  font-size: 12px;
+}
+.task-board-ask-label {
+  font-weight: 500;
+  color: var(--warning);
+}
+.state-error .task-board-ask-label,
+.close-failed .task-board-ask-label {
+  color: var(--error);
+}
+.state-review .task-board-ask-label {
+  color: var(--fg);
+}
+/* Primary by full-strength text, not colour. */
+.task-board-act {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 9px;
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 500;
+}
+.task-board-chip:hover,
+.task-board-act:hover {
+  background: color-mix(in srgb, var(--fg) 11%, transparent);
+  color: var(--fg);
+}
+/* Outranks the chip hover, so a babysat PR keeps its pressed look. An accent tint and
+   inset ring (no layout change) set it apart from the neutral chips beside it. */
+.task-board-chip.task-pr-babysit[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+.task-board-chip.task-pr-babysit[aria-pressed='true']:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+/* The empty state ignores the pointer so lanes stay droppable; its one action opts back in. */
+.task-board-empty .task-board-act {
+  margin-left: 8px;
+  pointer-events: auto;
+}
+.task-board-first {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 24px;
+}
+.task-board-first strong {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+.task-board-first span {
+  max-width: 400px;
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  text-wrap: balance;
+}
+/* The welcome screen's action, one step on: neutral, with full-strength text. */
+.task-board-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 9px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.task-board-start:hover {
+  background: var(--bg-hover);
+}
+.task-board-start:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.task-board-start kbd {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fg-subtle);
+}
+
+/* The workspace, narrowed to one task beside the board. A dragged width
+   arrives as an inline flex-basis; the panel gives way before the board does. */
+.task-workspace.board-side-panel {
+  flex: 0 1 clamp(420px, 40%, 640px);
+  min-width: 360px;
+  flex-direction: column;
+}
+/* Specific enough to beat the looks' `html[data-look…] .resize-handle`
+   (position: relative), which would drop the handle into the column. */
+.task-workspace.board-side-panel > .resize-handle.board-side-panel-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 2;
+}
+/* A panel on the left sits between the sidebar and the board, its handle on
+   the edge facing the board. */
+main.board-panel-left > .task-board,
+main.board-panel-left > .plan-board-shell {
+  order: 1;
+}
+.task-workspace.board-side-panel.panel-left > .resize-handle.board-side-panel-handle {
+  left: auto;
+  right: -3px;
+}
+
+/* View changes run as view transitions (src/lib/viewTransition.ts). The board
+   and the task workspace each get a snapshot; snapshots keep their size and
+   crop rather than stretch, so terminals never look squashed. */
+.task-board,
+.plan-board-shell {
+  view-transition-name: task-board;
+}
+/* A plan's board moves with its planner as one view. */
+.plan-board-shell .task-board {
+  view-transition-name: none;
+}
+.task-workspace {
+  view-transition-name: task-workspace;
+}
+::view-transition-group(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-duration: 220ms;
+  animation-timing-function: var(--ease-out);
+}
+::view-transition-old(task-board),
+::view-transition-new(task-board),
+::view-transition-old(task-workspace),
+::view-transition-new(task-workspace) {
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+}
+/* A view on both sides of the change swaps its contents at once and only its
+   box moves: cross-fading two layouts of it shows every line twice. */
+::view-transition-old(task-board),
+::view-transition-old(task-workspace) {
+  animation: none;
+  opacity: 0;
+}
+::view-transition-new(task-board),
+::view-transition-new(task-workspace) {
+  animation: none;
+}
+/* A view that comes or goes fades; the workspace also slides from the right
+   edge, where the side panel lives. */
+/* The board arrives as the workspace leaves, so it waits until the workspace
+   has mostly faded rather than show both at once; leaving, it goes quickly.
+   Delay plus fade ends with the workspace's 140ms exit, so returning to the
+   board never outlasts leaving the task. */
+::view-transition-new(task-board):only-child {
+  animation: view-fade-in 100ms 40ms var(--ease-out) backwards;
+}
+::view-transition-old(task-board):only-child {
+  opacity: 1;
+  animation: view-fade-out 90ms var(--ease-out) forwards;
+}
+::view-transition-new(task-workspace):only-child {
+  animation: board-side-panel-in 220ms var(--ease-out);
+}
+::view-transition-old(task-workspace):only-child {
+  opacity: 1;
+  animation: board-side-panel-out 140ms var(--ease-out) forwards;
+}
+/* The side panel instead pushes in from the window edge while the board's box
+   narrows, on the group's curve and duration, so the panel's left edge tracks
+   the board's right edge rather than fading in beside a gap; closing mirrors it. */
+.task-workspace.board-side-panel {
+  view-transition-class: board-side-panel;
+}
+::view-transition-new(task-workspace.board-side-panel):only-child {
+  animation: board-side-panel-push-in 220ms var(--ease-out);
+}
+::view-transition-old(task-workspace.board-side-panel):only-child {
+  animation: board-side-panel-push-out 220ms var(--ease-out) forwards;
+}
+/* On the left the panel emerges from the sidebar's edge rather than sliding
+   over the sidebar, so it is clipped to its own box. */
+.task-workspace.board-side-panel.panel-left {
+  view-transition-class: board-side-panel panel-left;
+}
+::view-transition-image-pair(task-workspace.panel-left) {
+  overflow: hidden;
+}
+::view-transition-new(task-workspace.panel-left):only-child {
+  animation-name: board-side-panel-push-in-left;
+}
+::view-transition-old(task-workspace.panel-left):only-child {
+  animation-name: board-side-panel-push-out-left;
+}
+/* Switching the side panel to another task: only the task beneath the bar
+   changes, so it alone gets a snapshot. The old task vanishes at once, since a
+   cross-fade shows two tasks' lines on top of each other, and the new one
+   rises in quickly. */
+:root:active-view-transition-type(task-switch) .board-side-panel .tiling-layout-shell {
+  view-transition-name: board-side-panel-task;
+}
+::view-transition-old(board-side-panel-task) {
+  animation: none;
+  opacity: 0;
+}
+::view-transition-new(board-side-panel-task) {
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+  animation: board-task-switch-in 140ms var(--ease-out);
+}
+/* Tiles and focus: the shown task gets its own snapshot whose box grows from
+   its tile to the whole workspace, or shrinks back, while its neighbours
+   recede or return behind it. Only the wider layout is drawn, cropped to the
+   moving box, so terminal text stays crisp and never shows twice; shrinking
+   swaps to the tile's layout as the box lands. */
+:root:active-view-transition-type(focus-enter) .task-workspace .tiling-panel-shown,
+:root:active-view-transition-type(focus-exit) .task-workspace .tiling-panel-shown {
+  view-transition-name: focus-task;
+}
+::view-transition-group(focus-task) {
+  animation-duration: 180ms;
+}
+::view-transition-image-pair(focus-task) {
+  overflow: hidden;
+}
+::view-transition-old(focus-task),
+::view-transition-new(focus-task) {
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+  animation: none;
+}
+:root:active-view-transition-type(focus-enter)::view-transition-old(focus-task) {
+  opacity: 0;
+}
+:root:active-view-transition-type(focus-exit)::view-transition-old(focus-task) {
+  animation: view-fade-out 180ms steps(1, end) forwards;
+}
+:root:active-view-transition-type(focus-exit)::view-transition-new(focus-task) {
+  animation: focus-task-land 180ms steps(1, end) backwards;
+}
+:root:active-view-transition-type(focus-enter)::view-transition-old(task-workspace) {
+  opacity: 1;
+  animation: focus-neighbours-recede 120ms var(--ease-out) forwards;
+}
+/* The empty workspace stays beneath the returning tiles, so the window
+   background never shows through while they fade in. */
+:root:active-view-transition-type(focus-exit)::view-transition-old(task-workspace) {
+  opacity: 1;
+}
+:root:active-view-transition-type(focus-exit)::view-transition-new(task-workspace) {
+  animation: focus-neighbours-return 150ms var(--ease-out);
+}
+@keyframes focus-task-land {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes focus-neighbours-recede {
+  to {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+@keyframes focus-neighbours-return {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+@keyframes board-task-switch-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes view-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes view-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes board-side-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+}
+@keyframes board-side-panel-out {
+  to {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+}
+@keyframes board-side-panel-push-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes board-side-panel-push-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes board-side-panel-push-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+}
+@keyframes board-side-panel-push-out-left {
+  to {
+    transform: translateX(-100%);
+  }
+}
+.board-side-panel .tiling-layout-shell {
+  height: auto;
+  min-height: 0;
+}
+/* A pill straddling the edge facing the board, centred on it and above the
+   resize handle it overlaps, so it reads as a tab of the boundary. */
+.board-side-panel-close {
+  position: absolute;
+  top: 50%;
+  left: -8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 44px;
+  padding: 0;
+  translate: 0 -50%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.board-side-panel-close:hover {
+  border-color: var(--fg-muted);
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+/* Ordered after the panel, the board would otherwise paint over the half of
+   the tab that sticks out, and take its clicks. */
+.task-workspace.board-side-panel.panel-left {
+  z-index: 1;
+}
+.task-workspace.board-side-panel.panel-left > .board-side-panel-close {
+  left: auto;
+  right: -8px;
+}

@@ -198,7 +198,7 @@ it('returns from the add-task placeholder with a numbered task shortcut', async 
   expect(scrolls).toEqual(['a']);
 });
 
-it('scrolls the tiled tasks while a draft temporarily opens the focus-mode layout', async () => {
+it('leaves the hidden tiles unscrolled while focus mode shows a draft', async () => {
   setStore('focusMode', true);
   setStore('showNewTaskPanel', true);
   await Promise.resolve();
@@ -208,7 +208,7 @@ it('scrolls the tiled tasks while a draft temporarily opens the focus-mode layou
   await Promise.resolve();
   frame();
   expect(store.activeTaskId).toBe('b');
-  expect(scrolls).toEqual(['b']);
+  expect(scrolls).toEqual([]);
 });
 
 it('keyboard travel skips a snoozed task instead of waking it', async () => {

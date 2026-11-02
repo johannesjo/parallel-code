@@ -5,14 +5,21 @@ name: Android
 # android-v0.2.0) also publishes a signed APK as a GitHub release, separate from desktop v* releases.
 on:
   workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Public version name for a tested bundle (for example 0.2.0); blank uses internal.<run>'
+        required: false
+        type: string
   push:
     branches: [main]
     tags: ['android-v*']
     paths:
       - 'android/**'
       - '.github/workflows/android.yml'
-      # LookPresetsGeneratedTest checks the generated looks against these desktop sources.
+      # LookPresetsGeneratedTest checks the generated looks and icons against these desktop sources.
       - 'scripts/generate-android-looks.mjs'
+      - 'scripts/generate-android-project-icons.mjs'
+      - 'src/lib/project-icon-paths.ts'
       - 'src/styles.css'
       - 'src/lib/look.ts'
       - 'src/lib/theme.ts'
@@ -21,6 +28,8 @@ on:
       - 'android/**'
       - '.github/workflows/android.yml'
       - 'scripts/generate-android-looks.mjs'
+      - 'scripts/generate-android-project-icons.mjs'
+      - 'src/lib/project-icon-paths.ts'
       - 'src/styles.css'
       - 'src/lib/look.ts'
       - 'src/lib/theme.ts'
@@ -123,7 +132,13 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           VERSION_CODE: ${{ github.run_number }}
-        run: ./gradlew bundleRelease -PversionName="internal.$VERSION_CODE" -PversionCode="$VERSION_CODE"
+          PUBLIC_VERSION: ${{ inputs.version_name }}
+        run: |
+          if [[ -n "$PUBLIC_VERSION" && ! "$PUBLIC_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version name must be a three-part version such as 0.2.0"
+            exit 1
+          fi
+          ./gradlew bundleRelease -PversionName="${PUBLIC_VERSION:-internal.$VERSION_CODE}" -PversionCode="$VERSION_CODE"
 
       - name: Publish to Google Play internal testing
         if: steps.publish-check.outputs.publish == 'true'

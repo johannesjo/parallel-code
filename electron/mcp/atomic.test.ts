@@ -45,7 +45,8 @@ describe('atomicWriteFile (async)', () => {
     const target = join(d, 'secret.json');
     await atomicWriteFile(target, 'data', { mode: 0o600 });
     const s = await stat(target);
-    expect(s.mode & 0o777).toBe(0o600);
+    // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+    if (process.platform !== 'win32') expect(s.mode & 0o777).toBe(0o600);
   });
 
   it('preserves existing 0600 mode on overwrite when no mode specified', async () => {
@@ -54,7 +55,8 @@ describe('atomicWriteFile (async)', () => {
     await atomicWriteFile(target, 'original', { mode: 0o600 });
     await atomicWriteFile(target, 'overwritten'); // no mode option
     const s = await stat(target);
-    expect(s.mode & 0o777).toBe(0o600);
+    // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+    if (process.platform !== 'win32') expect(s.mode & 0o777).toBe(0o600);
     expect(await readFile(target, 'utf8')).toBe('overwritten');
   });
 
@@ -94,7 +96,8 @@ describe('atomicWriteFileSync (sync)', () => {
     const target = join(d, 'secret.json');
     atomicWriteFileSync(target, 'data', { mode: 0o600 });
     const s = await stat(target);
-    expect(s.mode & 0o777).toBe(0o600);
+    // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+    if (process.platform !== 'win32') expect(s.mode & 0o777).toBe(0o600);
   });
 
   it('preserves existing 0600 mode on overwrite when no mode specified', async () => {
@@ -103,7 +106,8 @@ describe('atomicWriteFileSync (sync)', () => {
     atomicWriteFileSync(target, 'original', { mode: 0o600 });
     atomicWriteFileSync(target, 'overwritten'); // no mode option
     const s = await stat(target);
-    expect(s.mode & 0o777).toBe(0o600);
+    // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+    if (process.platform !== 'win32') expect(s.mode & 0o777).toBe(0o600);
     expect(await readFile(target, 'utf8')).toBe('overwritten');
   });
 

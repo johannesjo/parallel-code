@@ -199,7 +199,9 @@ function IssueBrowser(props: {
       })
       .catch((err: unknown) => {
         if (disposed || id !== requestId) return;
-        setError(errMessage(err));
+        setError(
+          errMessage(err).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''),
+        );
         setLoading(false);
       });
   });
@@ -223,6 +225,13 @@ function IssueBrowser(props: {
   function refresh() {
     restoreScroll = listRef?.scrollTop ?? 0;
     setRevision((v) => v + 1);
+  }
+  // Separate from refresh(): detail edits refresh the list, but the detail already
+  // holds the updated item and must not refetch it.
+  const [detailRevision, setDetailRevision] = createSignal(0);
+  function refreshAll() {
+    refresh();
+    setDetailRevision((v) => v + 1);
   }
   // Stable child objects: ResizablePanel keeps a child mounted while it stays in the list.
   const splitPanes: PanelChild[] = [
@@ -254,6 +263,7 @@ function IssueBrowser(props: {
         <GitHubIssueDetailPane
           projectId={props.project.id}
           selectedUrl={view.selectedUrl}
+          revision={detailRevision()}
           refresh={refresh}
         />
       ),
@@ -266,15 +276,30 @@ function IssueBrowser(props: {
       inert={props.covered || undefined}
     >
       <header class="github-issues-heading">
-        <div>
+        <button
+          type="button"
+          class="github-issues-back"
+          aria-label="Back to tasks"
+          title="Back to tasks"
+          onClick={() => openGitHubIssues(null)}
+        >
+          <ArrowLeftIcon /> Tasks
+        </button>
+        <div class="github-issues-title">
           <h2 id="github-issues-title">
             GitHub <span>· {props.project.name}</span>
           </h2>
           <small>{view.result?.repository ?? 'GitHub'}</small>
         </div>
         <div class="github-issues-actions">
-          <button type="button" disabled={loading()} onClick={refresh}>
-            <SyncIcon /> Refresh
+          <button
+            type="button"
+            aria-label="Refresh"
+            title="Refresh the list and the open item"
+            disabled={loading()}
+            onClick={refreshAll}
+          >
+            <SyncIcon />
           </button>
           <button
             type="button"
@@ -284,9 +309,6 @@ function IssueBrowser(props: {
             onClick={() => props.agentPane.setOpen(!props.agentPane.open())}
           >
             <SparkleIcon /> Agent
-          </button>
-          <button type="button" onClick={() => openGitHubIssues(null)}>
-            <ArrowLeftIcon /> Back to tasks
           </button>
         </div>
       </header>

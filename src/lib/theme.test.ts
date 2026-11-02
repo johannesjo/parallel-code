@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { colord } from 'colord';
-import { getTerminalSearchDecorations, getTerminalTheme, theme } from './theme';
+import {
+  getTerminalSearchDecorations,
+  getTerminalTheme,
+  resetTerminalThemeCacheForTest,
+  theme,
+} from './theme';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  resetTerminalThemeCacheForTest();
 });
 
 describe('theme tokens', () => {
@@ -31,6 +37,46 @@ describe('getTerminalTheme', () => {
 
     expect(getTerminalTheme('islands-light').background).toBe('#fefefe');
     expect(root.dataset).toEqual({ look: 'classic', customTheme: 'custom-id' });
+  });
+
+  it('reads the preset styles once, not once per terminal', () => {
+    vi.stubGlobal('document', { documentElement: { dataset: {} }, getElementById: () => null });
+    const computeStyle = vi.fn(() => ({
+      getPropertyValue: (name: string) => (name === '--task-panel-bg' ? '#202020' : ''),
+    }));
+    vi.stubGlobal('getComputedStyle', computeStyle);
+
+    // Every open terminal asks for the theme when it changes.
+    const themes = Array.from({ length: 50 }, () => getTerminalTheme('minimal'));
+
+    expect(computeStyle).toHaveBeenCalledTimes(1);
+    expect(new Set(themes).size).toBe(1);
+    expect(themes[0]?.background).toBe('#202020');
+  });
+
+  it('keeps a separate theme per preset', () => {
+    const root = { dataset: { look: 'minimal' } };
+    vi.stubGlobal('document', { documentElement: root, getElementById: () => null });
+    vi.stubGlobal('getComputedStyle', () => ({
+      getPropertyValue: (name: string) =>
+        name === '--task-panel-bg' ? (root.dataset.look === 'noir' ? '#15151b' : '#202020') : '',
+    }));
+
+    expect(getTerminalTheme('minimal').background).toBe('#202020');
+    expect(getTerminalTheme('noir').background).toBe('#15151b');
+    expect(getTerminalTheme('minimal').background).toBe('#202020');
+  });
+
+  it('reads again when the preset styles were not applied yet', () => {
+    vi.stubGlobal('document', { documentElement: { dataset: {} }, getElementById: () => null });
+    let panelBg = '';
+    vi.stubGlobal('getComputedStyle', () => ({
+      getPropertyValue: (name: string) => (name === '--task-panel-bg' ? panelBg : ''),
+    }));
+
+    expect(getTerminalTheme('minimal').background).toBe('#000000');
+    panelBg = '#202020';
+    expect(getTerminalTheme('minimal').background).toBe('#202020');
   });
 
   it('gives light presets the light ANSI palette and Obsidian its own', () => {

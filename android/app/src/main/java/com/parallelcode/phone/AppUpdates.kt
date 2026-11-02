@@ -26,7 +26,24 @@ import java.util.concurrent.TimeUnit
 class AppUpdates(private val context: Context) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val http = OkHttpClient.Builder().callTimeout(15, TimeUnit.SECONDS).build()
+    private val http = OkHttpClient.Builder()
+        // Fails closed: every request must carry the current requestGeneration tag, as fetchNewest's does.
+        .addInterceptor { chain ->
+            if (paused || chain.request().tag(Int::class.javaObjectType) != requestGeneration) throw IOException("Update checks are paused during the offline demo.")
+            chain.proceed(chain.request())
+        }
+        .callTimeout(15, TimeUnit.SECONDS).build()
+
+    @Volatile private var paused = false
+    @Volatile private var requestGeneration = 0
+
+    internal fun setPaused(value: Boolean) {
+        paused = value
+        if (value) {
+            requestGeneration++
+            http.dispatcher.cancelAll()
+        }
+    }
 
     /** The installed version, e.g. "0.2.0". */
     val currentVersion: String =
@@ -59,7 +76,7 @@ class AppUpdates(private val context: Context) {
 
     /** Check in the background when a day has passed since the last one. */
     fun checkIfDue() {
-        if (!enabled || storeManaged || System.currentTimeMillis() - checkedAt < CHECK_INTERVAL_MS) return
+        if (paused || !enabled || storeManaged || System.currentTimeMillis() - checkedAt < CHECK_INTERVAL_MS) return
         scope.launch {
             try {
                 check()
@@ -71,7 +88,10 @@ class AppUpdates(private val context: Context) {
 
     /** Ask GitHub now. Returns the newer release, if any; throws [IOException] when GitHub can't be read. */
     suspend fun check(): AppRelease? {
-        val newest = withContext(Dispatchers.IO) { fetchNewest() }
+        if (paused) throw IOException("Update checks are paused during the offline demo.")
+        val generation = requestGeneration
+        val newest = withContext(Dispatchers.IO) { fetchNewest(generation) }
+        if (paused || generation != requestGeneration) throw IOException("Update checks are paused during the offline demo.")
         prefs.edit {
             putLong(KEY_CHECKED_AT, System.currentTimeMillis())
             if (newest == null) {
@@ -85,8 +105,9 @@ class AppUpdates(private val context: Context) {
         return stored().also { _available.value = it }
     }
 
-    private fun fetchNewest(): AppRelease? {
+    private fun fetchNewest(generation: Int): AppRelease? {
         val request = Request.Builder()
+            .tag(Int::class.javaObjectType, generation)
             .url(RELEASES_URL)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "ParallelCodePhone/$currentVersion")
