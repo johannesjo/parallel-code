@@ -92,6 +92,12 @@ The release title starts with `Android`, which Obtainium filters on, and the APK
 
 QR scanning uses the Google Play services code scanner, so the app needs no camera permission. On phones without Play services, paste the link instead.
 
+After changing scanner dependencies or R8 rules, smoke-test a **minified release APK** on a device
+with Google Play services: tap **Scan QR code**, cancel and reopen it, then scan a Connect Phone QR
+code. Confirm that the scanner opens and the connection flow continues without a crash. Debug
+builds and JVM unit tests do not exercise R8's removal of the ML Kit registrar constructors.
+If the scanner is unavailable, the app must stay open and offer the paste-link fallback.
+
 ## How it maps to the server
 
 See `electron/remote/server.ts` and `electron/remote/protocol.ts`.
