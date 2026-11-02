@@ -24,13 +24,13 @@ const MAX_LOG_JOBS = 3;
 
 export async function getPullRequestDetails(prUrl: string): Promise<PullRequestDetails> {
   const ref = requirePrRef(prUrl);
-  const [prRaw, repoRaw] = await Promise.all([
+  const [prRaw, repoRaw, viewer] = await Promise.all([
     runGhJson([
       'pr',
       'view',
       prUrl,
       '--json',
-      'number,title,url,state,isDraft,mergeable,mergeStateStatus,baseRefName,headRefName,headRefOid',
+      'number,title,url,state,isDraft,mergeable,mergeStateStatus,baseRefName,headRefName,headRefOid,author',
     ]),
     runGhJson([
       'repo',
@@ -39,6 +39,7 @@ export async function getPullRequestDetails(prUrl: string): Promise<PullRequestD
       '--json',
       'squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed,viewerDefaultMergeMethod',
     ]),
+    viewerLogin(ref.host),
   ]);
   const pr = asRecord(prRaw);
   const state = asString(pr?.['state']);
@@ -54,7 +55,34 @@ export async function getPullRequestDetails(prUrl: string): Promise<PullRequestD
     headRefName: asString(pr?.['headRefName']) ?? '',
     headRefOid: asString(pr?.['headRefOid']) ?? '',
     mergeMethods: parseMergeMethods(repoRaw),
+    authoredByViewer: viewer === null ? null : authorLogin(pr?.['author']).toLowerCase() === viewer,
   };
+}
+
+// The signed-in account only changes when the user re-authenticates gh, so
+// one lookup per host serves the whole session. Failures are not cached.
+const viewerLogins = new Map<string, Promise<string | null>>();
+
+/** Lower-cased login `gh` is signed in as on `host`, or null when unknown. */
+function viewerLogin(host: string): Promise<string | null> {
+  const cached = viewerLogins.get(host);
+  if (cached) return cached;
+  const lookup = runGhJson(['api', 'user', '--hostname', host]).then(
+    (raw) => asString(asRecord(raw)?.['login'])?.toLowerCase() ?? null,
+    (err: unknown) => {
+      logWarn('github', 'Signed-in user lookup failed', { err: errMessage(err) });
+      return null;
+    },
+  );
+  viewerLogins.set(host, lookup);
+  void lookup.then((login) => {
+    if (login === null) viewerLogins.delete(host);
+  });
+  return lookup;
+}
+
+export function __resetViewerLoginsForTests(): void {
+  viewerLogins.clear();
 }
 
 export function parseMergeMethods(raw: unknown): PrMergeMethod[] {

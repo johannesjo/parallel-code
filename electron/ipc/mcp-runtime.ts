@@ -16,7 +16,7 @@ import { DelegationService } from '../mcp/delegation.js';
 import type { Coordinator } from '../mcp/coordinator.js';
 import { removeCanvasConfig } from '../mcp/canvas-config.js';
 import { getMCPRemoteServerUrl } from '../mcp/config.js';
-import type { TaskAuthorityInput } from '../shared/delegation-types.js';
+import type { IndependentTaskRequest, TaskAuthorityInput } from '../shared/delegation-types.js';
 import { warn as logWarn, errMessage } from '../log.js';
 
 export interface McpRuntimeOptions {
@@ -26,6 +26,8 @@ export interface McpRuntimeOptions {
   rememberedDevicesPath: () => string;
   /** Runs once, when the coordinator first loads; its IPC handlers are registered here. */
   onCoordinatorLoaded: () => void;
+  /** The renderer owns top-level task creation, so independent tasks are created there. */
+  createIndependentTask: (request: IndependentTaskRequest) => Promise<{ taskId: string }>;
 }
 
 export interface McpRuntime {
@@ -98,6 +100,7 @@ export function createMcpRuntime(opts: McpRuntimeOptions): McpRuntime {
       if (json) saveAppState(delegation.normalizeState(json));
     },
     parentCreated: (taskId) => notify(IPC.MCP_TaskStateSync, { taskId, delegationParent: true }),
+    createIndependent: opts.createIndependentTask,
   });
 
   async function prepareDelegationParent(task: TaskAuthorityInput): Promise<void> {

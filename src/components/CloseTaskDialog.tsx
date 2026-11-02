@@ -2,7 +2,11 @@ import { Show, createResource } from 'solid-js';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { armSpCompletion, closeTask, getProject, getCoordinatorCloseWarning } from '../store/store';
+import { store } from '../store/core';
+import { boardSidePanelOpen } from '../store/project-pages';
+import { closeSidePanel } from './BoardSidePanel';
 import { ConfirmDialog } from './ConfirmDialog';
+import { RetroButton, closeRetroPrompt } from './RetroButton';
 import { theme, bannerStyle } from '../lib/theme';
 import type { Task } from '../store/types';
 import type { WorktreeStatus } from '../ipc/types';
@@ -20,6 +24,14 @@ export function shouldDisableCloseTaskConfirm(
   return worktreeStatusLoading && task.gitIsolation === 'worktree' && !task.externalWorktree;
 }
 
+/** Closes the task without asking; callers have already confirmed or checked it is safe. */
+export function closeTaskNow(taskId: string, kind: 'merged' | 'closed'): void {
+  // The board's side panel goes at once; the card shows the teardown.
+  if (boardSidePanelOpen() && store.activeTaskId === taskId) closeSidePanel();
+  armSpCompletion(taskId, { kind });
+  void closeTask(taskId);
+}
+
 export function CloseTaskDialog(props: CloseTaskDialogProps) {
   const [worktreeStatus] = createResource(
     () =>
@@ -30,6 +42,12 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
   );
   const confirmWaitingForStatus = () =>
     shouldDisableCloseTaskConfirm(props.task, worktreeStatus.loading);
+  const deletesWorktree = () =>
+    props.task.gitIsolation === 'worktree' && !props.task.externalWorktree;
+  const agentRunning = () => {
+    const id = props.task.agentIds[0];
+    return !!id && store.agents[id]?.status === 'running';
+  };
 
   return (
     <ConfirmDialog
@@ -96,7 +114,8 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
                       'font-weight': '600',
                     }}
                   >
-                    Warning: This branch has commits that have not been merged into main.
+                    Warning: This branch has commits that have not been merged into{' '}
+                    {worktreeStatus()?.base_branch ?? 'its base branch'}.
                   </div>
                 </Show>
               </div>
@@ -144,6 +163,17 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
               );
             })()}
           </Show>
+          {/* Abandoned sessions are where the most time was lost, and they never reach Finish. */}
+          <Show when={agentRunning()}>
+            <div style={{ 'margin-top': '16px' }}>
+              <RetroButton
+                task={props.task}
+                prompt={closeRetroPrompt(deletesWorktree())}
+                // The retro happens in the agent's session, so the task stays open.
+                onSent={() => props.onDone()}
+              />
+            </div>
+          </Show>
         </div>
       }
       confirmLabel={
@@ -156,8 +186,7 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
       danger={props.task.gitIsolation === 'worktree' && !props.task.externalWorktree}
       onConfirm={() => {
         props.onDone();
-        armSpCompletion(props.task.id, { kind: 'closed' });
-        closeTask(props.task.id);
+        closeTaskNow(props.task.id, 'closed');
       }}
       onCancel={() => props.onDone()}
     />

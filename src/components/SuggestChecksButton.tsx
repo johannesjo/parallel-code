@@ -1,36 +1,40 @@
 import { createSignal, onCleanup, Show } from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
-import type { CheckSource, EvidenceModelSettings } from '../../electron/shared/evidence';
+import type { CheckSource, CheckModelSettings } from '../../electron/shared/checks';
 import {
   buildCheckSuggestionPrompt,
   parseCheckSuggestion,
   type CheckSuggestion,
 } from '../lib/check-suggestion';
-import {
-  startEvidenceModelRequest,
-  type EvidenceModelRequest,
-} from '../lib/evidence-model-request';
+import { startModelRequest, type ModelRequest } from '../lib/model-request';
 import { invoke } from '../lib/ipc';
 import { errMessage } from '../lib/log';
 import { theme } from '../lib/theme';
 import { store } from '../store/core';
+import { projectIdForPath } from '../store/project-path';
 import { SparkleIcon } from './icons';
 
 interface SuggestChecksButtonProps {
   projectRoot: string;
-  /** The review model the dialog currently shows, saved or not. */
-  model: EvidenceModelSettings;
+  /** The reviewer model, which also suggests checks. */
+  model: CheckModelSettings;
   onSuggest: (suggestion: CheckSuggestion) => void;
+  /** Defaults to "Suggest with AI". */
+  label?: string;
+  /** What to do with the suggestion; defaults to reviewing it before Save. */
+  doneHint?: string;
+  /** A larger button, for when it leads a whole section. */
+  large?: boolean;
 }
 
 /**
- * Asks the review model to fill the verify command and evidence checks from
+ * Asks the review model to fill the verify command and project checks from
  * the project's manifests. Only fills the form; nothing is saved until Save.
  */
 export function SuggestChecksButton(props: SuggestChecksButtonProps) {
   const [running, setRunning] = createSignal(false);
   const [status, setStatus] = createSignal<{ text: string; error?: boolean }>();
-  let request: EvidenceModelRequest | undefined;
+  let request: ModelRequest | undefined;
   let disposed = false;
   onCleanup(() => {
     disposed = true;
@@ -47,11 +51,12 @@ export function SuggestChecksButton(props: SuggestChecksButtonProps) {
       // A closed dialog must not start a paid model call nobody can cancel.
       if (disposed) return;
       if (sources.length === 0) throw new Error('No build or test files found in the project.');
-      request = startEvidenceModelRequest({
+      request = startModelRequest({
         prompt: buildCheckSuggestionPrompt(sources),
         cwd: props.projectRoot,
         settings: props.model,
         agentEnvFiles: store.agentEnvFiles,
+        projectId: projectIdForPath(props.projectRoot),
         purpose: 'checks',
       });
       const suggestion = parseCheckSuggestion(await request.result);
@@ -59,8 +64,9 @@ export function SuggestChecksButton(props: SuggestChecksButtonProps) {
       if (!suggestion.verifyCommand && suggestion.checks.length === 0)
         throw new Error(suggestion.reason ?? 'The model found no commands to suggest.');
       props.onSuggest(suggestion);
-      // Suggested commands run automatically once saved, so always ask for a review.
-      const review = 'Review the commands before saving.';
+      // A saved verify command can run in the background and checks run in the task
+      // worktree, so always ask for a review.
+      const review = props.doneHint ?? 'Review the commands before saving.';
       setStatus({ text: suggestion.reason ? `${suggestion.reason} ${review}` : review });
     } catch (err) {
       if (!disposed) setStatus({ text: errMessage(err), error: true });
@@ -77,19 +83,19 @@ export function SuggestChecksButton(props: SuggestChecksButtonProps) {
         type="button"
         disabled={running()}
         onClick={() => void suggest()}
-        title="Reads package.json, Makefile, CI workflows and similar files and asks the evidence review model for commands"
+        title="Reads package.json, Makefile, CI workflows and similar files and asks the review model for commands"
         style={{
-          padding: '3px 10px',
+          padding: props.large ? '6px 14px' : '3px 10px',
           background: theme.bgInput,
           border: `1px solid ${theme.border}`,
           'border-radius': 'var(--radius-sm)',
           color: theme.fgMuted,
           cursor: running() ? 'default' : 'pointer',
-          'font-size': '12px',
+          'font-size': props.large ? '13px' : '12px',
         }}
       >
-        <SparkleIcon size={12} />
-        {running() ? 'Suggesting…' : 'Suggest with AI'}
+        <SparkleIcon size={props.large ? 14 : 12} />
+        {running() ? 'Suggesting…' : (props.label ?? 'Suggest with AI')}
       </button>
       <Show when={status()}>
         {(current) => (

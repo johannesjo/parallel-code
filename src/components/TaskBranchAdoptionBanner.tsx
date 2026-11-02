@@ -2,7 +2,7 @@ import { Show, type JSX } from 'solid-js';
 import { undoBranchAdoption, dismissBranchAdoptionNotice } from '../store/store';
 import { theme } from '../lib/theme';
 import type { Task } from '../store/types';
-import { UndoIcon } from './icons';
+import { CloseIcon, UndoIcon } from './icons';
 
 const bannerBtnStyle: JSX.CSSProperties = {
   background: 'transparent',
@@ -59,7 +59,7 @@ export function TaskBranchAdoptionBanner(props: { task: Task }) {
             style={{ ...bannerBtnStyle, border: 'none', padding: '1px 4px', 'font-size': '13px' }}
             onClick={() => dismissBranchAdoptionNotice(props.task.id)}
           >
-            ×
+            <CloseIcon size={12} />
           </button>
         </div>
       )}

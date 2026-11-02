@@ -25,6 +25,8 @@ export interface RemoteAgent {
   lastLine: string;
   projectName?: string;
   projectColor?: string;
+  /** Project icon id; the phone falls back to the color square for unknown ids. */
+  projectIcon?: string;
   agentName?: string;
   /** Richer, renderer-derived task status. Defaults to 'idle' when unknown. */
   attention: RemoteAttentionState;
@@ -34,9 +36,38 @@ export interface RemoteAgent {
   collapsed?: boolean;
   /** Overall PR check status; absent without an open PR that reports checks. */
   ci?: RemoteCiStatus;
+  /** The desktop board lane the task sits in, so the phone groups tasks the same way. */
+  lane?: RemoteBoardLane;
+  /** The task's open pull request, as the desktop board card shows it. */
+  pr?: RemoteTaskPr;
 }
 
+/** Mirrors the board card's PR row (src/components/board/TaskStatus.tsx). */
+export interface RemoteTaskPr {
+  url: string;
+  /** The board's status line, such as "CI failed" or "CI passed · Review needed". */
+  label?: string;
+  kind?: RemotePrStatusKind;
+  /** Babysitting is on: the desktop sends failing checks to the agent until CI passes. */
+  babysit?: boolean;
+}
+
+/** Mirrors PrBoardStatusKind in src/store/pr-checks-state.ts. */
+export type RemotePrStatusKind = 'merged' | 'ready' | 'blocked' | 'running' | 'failed';
+
 export type RemoteCiStatus = 'pending' | 'failure' | 'success';
+
+/** Mirrors the desktop board's lanes (src/components/task-board-lanes.ts). */
+/** The desktop board's lanes; the main process passes on only these. */
+export const REMOTE_BOARD_LANES = [
+  'needs',
+  'stopped',
+  'working',
+  'pr',
+  'ready',
+  'snoozed',
+] as const;
+export type RemoteBoardLane = (typeof REMOTE_BOARD_LANES)[number];
 
 /** An agent the mobile "New Task" screen can launch, with the models it offers. */
 export interface RemoteAgentChoice {
@@ -87,11 +118,13 @@ export interface RemoteMergeReadiness {
 /** Metadata attached to a task's remote agent entry. */
 export type RemoteTaskContext = Pick<
   RemoteAgent,
-  'projectName' | 'projectColor' | 'agentName' | 'lastLine'
+  'projectName' | 'projectColor' | 'projectIcon' | 'agentName' | 'lastLine'
 > & {
   taskName?: string;
   collapsed?: boolean;
   ci?: RemoteCiStatus;
+  lane?: RemoteBoardLane;
+  pr?: RemoteTaskPr;
 };
 
 /** Conversation actions a paired phone may take on a running chat. */
@@ -132,6 +165,14 @@ export interface ScrollbackMessage {
   rows?: number;
 }
 
+/** The PTY took a new size; output after this is written for it. */
+export interface TerminalSizeMessage {
+  type: 'terminal-size';
+  agentId: string;
+  cols: number;
+  rows: number;
+}
+
 /** The whole conversation, sent on subscribe and then at most every few hundred ms. */
 export interface ChatStateMessage {
   type: 'chat-state';
@@ -152,6 +193,7 @@ export type ServerMessage =
   | StatusMessage
   | AgentsMessage
   | ScrollbackMessage
+  | TerminalSizeMessage
   | ChatStateMessage
   | InputResultMessage;
 

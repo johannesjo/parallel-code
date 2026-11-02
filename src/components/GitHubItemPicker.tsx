@@ -9,7 +9,7 @@ const SEARCH_DEBOUNCE_MS = 400;
 interface GitHubItemPickerProps {
   projectRoot: string;
   onPick: (item: GitHubWorkItem) => void;
-  /** Marks items that are already taken (e.g. on the Kanban board) and disables them. */
+  /** Marks items that are already taken (e.g. on the plan) and disables them. */
   pickedLabel?: (item: GitHubWorkItem) => string | null;
   /** Without its own frame, for use inside a popover that already has one. */
   bare?: boolean;

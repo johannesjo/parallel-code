@@ -83,8 +83,8 @@
   align-items: center;
   justify-content: center;
   transition:
-    color 0.15s ease,
-    background 0.15s ease;
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
 }
 
 .arena-stop-btn:hover {

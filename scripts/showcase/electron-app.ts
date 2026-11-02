@@ -248,8 +248,11 @@ export const launchShowcaseApp = async (
   }
   // The seeded chat tasks resume sessions that chats.ts made up. With a real
   // Claude, the app would hand those to the billed CLI instead of chat-agent.mjs.
-  if ((options.withTasks || options.tasks) && options.realAgents?.includes('claude')) {
-    throw new Error('withTasks and tasks cannot be combined with realAgents: ["claude"]');
+  if (
+    (options.withTasks || options.board || options.tasks) &&
+    options.realAgents?.includes('claude')
+  ) {
+    throw new Error('withTasks, board and tasks cannot be combined with realAgents: ["claude"]');
   }
   const dir = createDemoDir();
   const removeDir = (): void => fs.rmSync(dir, { recursive: true, force: true });
@@ -376,7 +379,7 @@ export const sendChatMessage = async (page: Page, slug: string, text: string): P
   const column = taskColumn(page, slug);
   // The model list fills once the chat has connected; a send before that is refused.
   await expect(column.getByRole('option', { name: 'Sonnet 5' })).toBeAttached();
-  const composer = column.getByRole('textbox', { name: 'Message Claude' });
+  const composer = column.getByRole('combobox', { name: 'Message Claude' });
   await composer.fill(text);
   await composer.press('Enter');
   await expect(column.locator('.chat-user-message', { hasText: text })).toBeVisible();

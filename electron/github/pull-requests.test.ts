@@ -28,6 +28,7 @@ import {
   parseFailedChecks,
   parseMergeMethods,
   parseReviewFeedback,
+  __resetViewerLoginsForTests,
 } from './pull-requests.js';
 
 type Callback = (err: Error | null, stdout: string, stderr: string) => void;
@@ -252,6 +253,39 @@ describe('parseReviewFeedback', () => {
       threads: [],
       truncated: false,
     });
+  });
+});
+
+describe('getPullRequestDetails authorship', () => {
+  const url = 'https://github.com/o/r/pull/7';
+  const details = (author: string, viewer: () => string) => {
+    stubGh((args) => {
+      if (args[0] === 'pr') return JSON.stringify({ author: { login: author } });
+      if (args[0] === 'api' && args[1] === 'user') return viewer();
+      return '{}';
+    });
+    return getPullRequestDetails(url);
+  };
+
+  beforeEach(() => {
+    __resetViewerLoginsForTests();
+  });
+
+  it('marks a PR opened by the signed-in user as theirs, ignoring case', async () => {
+    const pr = await details('Octo', () => JSON.stringify({ login: 'octo' }));
+    expect(pr.authoredByViewer).toBe(true);
+  });
+
+  it('marks a PR opened by someone else as not theirs', async () => {
+    const pr = await details('stranger', () => JSON.stringify({ login: 'octo' }));
+    expect(pr.authoredByViewer).toBe(false);
+  });
+
+  it('reports unknown authorship when the signed-in user cannot be looked up', async () => {
+    const pr = await details('octo', () => {
+      throw new Error('offline');
+    });
+    expect(pr.authoredByViewer).toBeNull();
   });
 });
 

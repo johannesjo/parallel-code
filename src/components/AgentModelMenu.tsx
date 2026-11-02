@@ -70,7 +70,7 @@ function groups(): ModelGroup[] {
  * only what its cache lists: the picked model's levels, or for the CLI's default
  * model the levels every listed model takes. Without that list it offers none.
  */
-function effortChoices(provider: AskCodeProvider, model: string): readonly string[] {
+export function effortChoices(provider: AskCodeProvider, model: string): readonly string[] {
   const known = askCodeEfforts(provider);
   if (provider !== 'codex') return known;
   const listed = codexModels().filter((choice) => !model || choice.slug === model);

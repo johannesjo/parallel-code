@@ -43,7 +43,7 @@ export interface History {
   snapshots: Snapshot[];
 }
 export const emptyHistory = (): History => ({ updates: [], snapshots: [] });
-const canonical = (value: unknown): unknown =>
+export const canonical = (value: unknown): unknown =>
   Array.isArray(value)
     ? value.map(canonical)
     : value && typeof value === 'object'

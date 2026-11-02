@@ -69,13 +69,17 @@ export interface PathMatch {
 
 export interface TerminalPathLink {
   text: string;
+  /** A file name with no folder, which links only once the caller finds the file. */
+  bare?: true;
   range: { start: { x: number; y: number }; end: { x: number; y: number } };
 }
 
 // Match file paths: absolute, ~/ home-relative, ./ or ../ relative, and bare
 // relative with a slash. Supports @scoped packages and line:col suffixes like foo.ts:42:10.
+// A file:// prefix belongs to the link; without it the match would start at the
+// slashes and leave "file:" unclickable.
 const PATH_REGEX =
-  /(?:~?\/[\w@./-]+|\.{1,2}\/[\w@./-]+|[\w@.][\w@./-]*\/[\w@./-]+)(?::\d+(?::\d+)?)?/g;
+  /(?:(?:file:\/\/(?=\/))?~?\/[\w@./-]+|\.{1,2}\/[\w@./-]+|[\w@.][\w@./-]*\/[\w@./-]+)(?::\d+(?::\d+)?)?/g;
 
 /** Find file-path matches within a single (already-joined) line of text. */
 export function matchTerminalPaths(line: string): PathMatch[] {
@@ -91,6 +95,27 @@ export function matchTerminalPaths(line: string): PathMatch[] {
     matches.push({ index: match.index, text });
   }
   return matches;
+}
+
+// A name like notes.md with no folder: not inside a path, URL or dotfile, and
+// with a letter-led extension so versions and numbers such as 1.2 stay plain.
+const BARE_NAME_REGEX =
+  /(?<![\w@./~-])\w[\w.-]*\.[A-Za-z][\w-]*(?::\d+(?::\d+)?)?(?![\w@/-]|\.[\w/])/g;
+
+/** Find file names printed without a folder, which only the caller can resolve. */
+export function matchBareFileNames(line: string): PathMatch[] {
+  return [...line.matchAll(BARE_NAME_REGEX)].map((m) => ({ index: m.index, text: m[0] }));
+}
+
+/** The filesystem path a matched link points at, without file:// or line:col. */
+export function terminalLinkFilePath(text: string): string {
+  return text.replace(/^file:\/\//, '').replace(/:\d+(:\d+)?$/, '');
+}
+
+/** The line a matched link cites with a `:line` or `:line:col` suffix, if any. */
+export function terminalLinkLine(text: string): number | undefined {
+  const line = /:(\d+)(?::\d+)?$/.exec(text)?.[1];
+  return line ? Number(line) || undefined : undefined;
 }
 
 // Cap how far we scan across wrapped rows, matching xterm's own guard.
@@ -198,12 +223,17 @@ export function computeWrappedPathLinks(buffer: TerminalBuffer, row: number): Te
   if (strings.length === 0) return [];
   const joined = strings.join('');
   const links: TerminalPathLink[] = [];
-  for (const match of matchTerminalPaths(joined)) {
-    const [sr, sc] = mapStrIdx(buffer, startRow, 0, match.index);
-    const [er, ec] = mapStrIdx(buffer, sr, sc, match.text.length);
+  const matches = [
+    ...matchTerminalPaths(joined).map((match) => ({ ...match, bare: false })),
+    ...matchBareFileNames(joined).map((match) => ({ ...match, bare: true })),
+  ];
+  for (const { index, text, bare } of matches) {
+    const [sr, sc] = mapStrIdx(buffer, startRow, 0, index);
+    const [er, ec] = mapStrIdx(buffer, sr, sc, text.length);
     if (sr < 0 || sc < 0 || er < 0 || ec < 0) continue;
     links.push({
-      text: match.text,
+      text,
+      ...(bare ? { bare } : {}),
       range: { start: { x: sc + 1, y: sr + 1 }, end: { x: ec, y: er + 1 } },
     });
   }

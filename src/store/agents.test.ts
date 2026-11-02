@@ -22,6 +22,8 @@ interface TaskLike {
   mainAgentView?: 'terminal' | 'chat';
   claudeChatSessionId?: string;
   selectedAgentId?: string;
+  worktreePath?: string;
+  agentSessionIds?: Record<string, string>;
 }
 
 interface AgentLike {
@@ -46,6 +48,7 @@ interface AgentDefLike {
   resume_args: string[];
   skip_permissions_args: string[];
   description: string;
+  extra_args?: string[];
 }
 
 vi.mock('./core', async () => {
@@ -74,13 +77,22 @@ vi.mock('./taskStatus', () => ({
 }));
 
 vi.mock('./persistence', () => ({ saveState: vi.fn() }));
+vi.mock('./task-column', () => ({ widenTaskColumnForAgentPanes: vi.fn() }));
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn(() => Promise.resolve()) }));
 vi.mock('./usage', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./usage')>()),
   refreshUsage: mockRefreshUsage,
 }));
 
-import { closeAgentInTask, markAgentExited, restartAgent, switchAgent } from './agents';
+import { invoke } from '../lib/ipc';
+import {
+  addAgentToTask,
+  closeAgentInTask,
+  markAgentExited,
+  restartAgent,
+  resumeAgentWithFlags,
+  switchAgent,
+} from './agents';
 
 const codexDef: AgentDefLike = {
   id: 'codex',
@@ -163,6 +175,29 @@ describe('restartAgent', () => {
   });
 });
 
+describe('resumeAgentWithFlags', () => {
+  it('resumes the pane with the flags on its own def copy', () => {
+    resumeAgentWithFlags('agent-1', ['--chrome']);
+
+    expect(mockAgents['agent-1']).toMatchObject({
+      def: { ...codexDef, extra_args: ['--chrome'] },
+      status: 'running',
+      resumed: true,
+      generation: 3,
+    });
+    expect(codexDef.extra_args).toBeUndefined();
+    expect(mockMarkAgentSpawned).toHaveBeenCalledWith('agent-1');
+  });
+
+  it('removes the flags when given none', () => {
+    resumeAgentWithFlags('agent-1', ['--chrome']);
+    resumeAgentWithFlags('agent-1', []);
+
+    expect(mockAgents['agent-1'].def).not.toHaveProperty('extra_args');
+    expect(mockAgents['agent-1'].resumed).toBe(true);
+  });
+});
+
 describe('switchAgent', () => {
   it('marks the next terminal mount as an explicit process replacement', () => {
     const claudeDef: AgentDefLike = {
@@ -232,6 +267,39 @@ describe('prompt history on a new conversation', () => {
     restartAgent('agent-1', false);
     expect(mockTasks['task-1'].promptHistory).toBeUndefined();
     expect(mockTasks['task-1'].lastPrompt).toBe('');
+  });
+});
+
+describe('addAgentToTask', () => {
+  const claudeDef: AgentDefLike = { ...codexDef, id: 'claude', command: 'claude', resume_args: [] };
+
+  it('pins an id-less first pane to its session before a second pane can take over', async () => {
+    mockAgents = { 'agent-1': exitedAgent({ def: claudeDef }) };
+    mockTasks = { 'task-1': { id: 'task-1', agentIds: ['agent-1'], worktreePath: '/wt' } };
+    vi.mocked(invoke).mockResolvedValueOnce([
+      { id: 'codex-thread', agent: 'codex', cwd: '/wt', updatedAt: 3 },
+      { id: 'teleported', agent: 'claude', cwd: '/wt', updatedAt: 2 },
+    ]);
+    const added = await addAgentToTask('task-1', claudeDef);
+    expect(mockTasks['task-1'].agentSessionIds?.['agent-1']).toBe('teleported');
+    // The new pane gets a fresh id of its own, not the pinned one.
+    const addedId = expectDefined(added, 'added agent id');
+    expect(mockTasks['task-1'].agentSessionIds?.[addedId]).not.toBe('teleported');
+  });
+
+  it('leaves a first pane that already has its id alone', async () => {
+    mockAgents = { 'agent-1': exitedAgent({ def: claudeDef }) };
+    mockTasks = {
+      'task-1': {
+        id: 'task-1',
+        agentIds: ['agent-1'],
+        worktreePath: '/wt',
+        agentSessionIds: { 'agent-1': 'own' },
+      },
+    };
+    await addAgentToTask('task-1', claudeDef);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(mockTasks['task-1'].agentSessionIds?.['agent-1']).toBe('own');
   });
 });
 

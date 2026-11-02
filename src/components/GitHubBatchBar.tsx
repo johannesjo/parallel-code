@@ -8,9 +8,8 @@ import type { GitHubIssueSummary } from '../ipc/types';
 import type { Project } from '../store/types';
 import { agentsLoadingText, type AgentPaneState } from './GitHubAgentPane';
 import type { BrowserSession } from './github-issues-session';
-import { CheckIcon, CloseIcon, KanbanIcon, ListIcon, SparkleIcon } from './icons';
+import { CheckIcon, CloseIcon, PlanIcon, ListIcon, SparkleIcon } from './icons';
 import { addIssuesToBoard } from '../store/kanban';
-import { showNotification } from '../store/notification';
 
 export function GitHubBatchBar(props: {
   project: Project;
@@ -22,25 +21,31 @@ export function GitHubBatchBar(props: {
   toggleSelected: (item: GitHubIssueSummary) => void;
 }) {
   const agentReady = () => githubAgentAvailability() === 'ready';
+  const draftNote = 'Finish or dismiss your task draft to start batch triage.';
+  // What keeps a batch action from working, as opposed to routine guidance.
+  const blocker = () =>
+    store.showNewTaskPanel
+      ? draftNote
+      : agentReady()
+        ? ''
+        : githubAgentAvailability() === 'none'
+          ? 'Install a coding agent to list with an agent.'
+          : agentsLoadingText();
+  const listNote = () =>
+    githubAgentAvailability() === 'none'
+      ? 'Install a coding agent to list with an agent.'
+      : !agentReady()
+        ? agentsLoadingText()
+        : !props.view.selected.length
+          ? 'Select items to list them.'
+          : !store.tasks[githubAgentTaskId(props.project.id)]
+            ? 'Starts the agent session and drafts a prompt.'
+            : 'Group related work, find duplicates, and prioritize a batch.';
   const [addingToBoard, setAddingToBoard] = createSignal(false);
   async function addSelectedToBoard() {
     setAddingToBoard(true);
     try {
-      const total = props.view.selected.length;
-      const result = await addIssuesToBoard(props.project.id, [...props.view.selected]);
-      if (result) {
-        const { added, created, column } = result;
-        const cards = `${added} ${added === 1 ? 'card' : 'cards'}`;
-        const skipped = total - added;
-        showNotification(
-          added === 0
-            ? `All ${total} are already on the Kanban board`
-            : (created
-                ? `Created KANBAN.md with ${cards} in ${column}`
-                : `Added ${cards} to ${column}`) +
-                (skipped ? `; ${skipped} already on the board` : ''),
-        );
-      }
+      await addIssuesToBoard(props.project.id, [...props.view.selected]);
     } finally {
       setAddingToBoard(false);
     }
@@ -69,28 +74,28 @@ export function GitHubBatchBar(props: {
       </button>
       <button
         disabled={!props.view.selected.length || addingToBoard()}
-        title="Add the selected items as cards to the project's Kanban board"
+        title="Add the selected items as cards to the project's plan (KANBAN.md)"
         onClick={() => void addSelectedToBoard()}
       >
-        <KanbanIcon /> Add to board
+        <PlanIcon /> Add to plan
       </button>
       <button
         class="github-issue-primary"
         disabled={!props.view.selected.length || store.showNewTaskPanel}
         aria-describedby="github-triage-note"
+        title={store.showNewTaskPanel ? draftNote : 'Start a task where an agent triages the batch'}
         onClick={() => startGitHubTriageTask(props.project.id, [...props.view.selected])}
       >
         <SparkleIcon /> Triage with agent
       </button>
-      <Show when={store.showNewTaskPanel}>
-        <small id="github-triage-note">
-          Finish or dismiss your task draft to start batch triage.
-        </small>
-      </Show>
+      {/* Notes live in tooltips; these hidden copies keep them for screen readers. */}
+      <span id="github-triage-note" class="dialog-sr-only">
+        {store.showNewTaskPanel ? draftNote : ''}
+      </span>
       <button
         disabled={!props.view.selected.length || !agentReady()}
         aria-describedby="github-list-agent-note"
-        title="Ask the agent panel to group and order the selected items"
+        title={listNote()}
         onClick={() => {
           const urls = props.view.selected.map((item) => item.url).join('\n');
           // Open only once the prompt landed; a pane with no task shows why instead.
@@ -105,17 +110,13 @@ export function GitHubBatchBar(props: {
       >
         <ListIcon /> List with agent
       </button>
-      <small id="github-list-agent-note">
-        {githubAgentAvailability() === 'none'
-          ? 'Install a coding agent to list with an agent.'
-          : !agentReady()
-            ? agentsLoadingText()
-            : !props.view.selected.length
-              ? 'Select items to list them.'
-              : !store.tasks[githubAgentTaskId(props.project.id)]
-                ? 'Starts the agent session and drafts a prompt.'
-                : 'Group related work, find duplicates, and prioritize a batch.'}
-      </small>
+      <span id="github-list-agent-note" class="dialog-sr-only">
+        {listNote()}
+      </span>
+      {/* Blockers stay visible, since disabled buttons rarely show their tooltip. */}
+      <Show when={blocker()}>
+        <small aria-hidden="true">{blocker()}</small>
+      </Show>
       <Show when={props.view.selected.length}>
         <details>
           <summary>Selected items</summary>

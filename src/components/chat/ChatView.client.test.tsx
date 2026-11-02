@@ -741,7 +741,7 @@ const suggestions = () =>
 
 it('completes slash commands and skills like a terminal', async () => {
   await update({ draft: '', state: { ...props.state, commands } });
-  expect(composer().placeholder).toContain('/ for commands');
+  expect(composer().placeholder).toContain('/ commands');
   expect(composer().getAttribute('aria-expanded')).toBe('false');
   await type('/r');
   expect(composer().getAttribute('aria-expanded')).toBe('true');
@@ -784,7 +784,7 @@ it('completes Codex skills with dollar syntax from either trigger', async () => 
       commands: [{ name: 'review', description: 'Review code', argumentHint: '', prefix: '$' }],
     },
   });
-  expect(composer().placeholder).toContain('$ for skills');
+  expect(composer().placeholder).toContain('$ skills');
   await type('$re');
   expect(suggestions()).toEqual([{ text: '$reviewReview code', selected: true }]);
   await act(() => press('Tab'));
@@ -1382,7 +1382,7 @@ it('includes uncategorized tool work alongside file and command summaries', asyn
 it('runs a ! draft as a shell command and keeps attachments for the next message', async () => {
   const shell = vi.fn(async () => {});
   await update({ draft: '', onShell: shell });
-  expect(composer().placeholder).toContain('! for a shell command');
+  expect(composer().placeholder).toContain('! shell');
   await drop([screenshot()]);
   await type('!git status');
   expect(composer().closest('.chat-composer')?.classList.contains('chat-composer-shell')).toBe(

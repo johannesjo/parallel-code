@@ -1,6 +1,6 @@
-import type { CheckSource, EvidenceCheckKind, ProjectCheck } from '../../electron/shared/evidence';
-import { MAX_PROJECT_CHECKS } from '../../electron/shared/evidence-settings';
-import { repoContent } from './evidence-review';
+import type { CheckSource, CheckKind, ProjectCheck } from '../../electron/shared/checks';
+import { MAX_PROJECT_CHECKS } from '../../electron/shared/check-settings';
+import { repoContent } from './repo-content';
 import { readSingleJsonObject } from './tour-json';
 
 export interface CheckSuggestion {
@@ -9,7 +9,7 @@ export interface CheckSuggestion {
   reason?: string;
 }
 
-const KINDS: readonly EvidenceCheckKind[] = ['unit', 'e2e', 'static', 'custom'];
+const KINDS: readonly CheckKind[] = ['unit', 'e2e', 'static', 'custom'];
 const MAX_COMMAND_LENGTH = 1000;
 const MAX_REASON = 400;
 const INVALID = 'The model returned an invalid suggestion. Try again.';
@@ -42,7 +42,7 @@ function parseCheck(value: unknown): CheckSuggestion['checks'][number] | undefin
   const cmd = command((value as Record<string, unknown>).command);
   if (!cmd) return undefined;
   return {
-    kind: KINDS.includes(kind as EvidenceCheckKind) ? (kind as EvidenceCheckKind) : 'custom',
+    kind: KINDS.includes(kind as CheckKind) ? (kind as CheckKind) : 'custom',
     command: cmd,
     run: run === 'on-demand' ? 'on-demand' : 'auto',
   };
@@ -78,7 +78,7 @@ type CheckDraft = CheckSuggestion['checks'][number] & { id?: string };
 
 /**
  * The suggested checks, where one the user already has (same command) keeps
- * its id, so evidence recorded for it stays linked.
+ * its id, so review picks and results recorded for it stay linked.
  */
 export function keepCheckIds(
   current: CheckDraft[],

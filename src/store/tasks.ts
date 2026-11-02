@@ -34,8 +34,10 @@ import {
   rescheduleTaskStatusPolling,
 } from './taskStatus';
 import { recordMergedLines, recordTaskMerged } from './completion';
+import { NOTIFICATION_ERROR_MS, showNotification } from './notification';
 import { warn as logWarn } from '../lib/log';
 import { cleanTaskName } from '../lib/clean-task-name';
+import { prefersMotion } from '../lib/reducedMotion';
 import type {
   AgentDef,
   CreatePrTaskResult,
@@ -44,14 +46,22 @@ import type {
   MergeResult,
 } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
+import { linkTaskToIssueReference } from './github-issue-link';
 import type { Agent, Task, GitIsolationMode, AppStore } from './types';
 import type { DockerSource } from '../lib/docker';
 import {
   clampCoordinatorConcurrentTasks,
   DEFAULT_COORDINATOR_CONCURRENT_TASKS,
 } from '../lib/coordinator-limits';
-import { computeSidebarDraggableTaskOrder, getCoordinatorChildren } from './sidebar-order';
+import {
+  computeSidebarDraggableTaskOrder,
+  computeTileOrder,
+  computeVisualReorder,
+  getCoordinatorChildren,
+  sortByProjectGroup,
+} from './sidebar-order';
 import { isLandedTaskState } from './landing';
+import { cleanPasteText } from '../lib/paste-text';
 import { forgetAgentPublication } from './reasoning-activity';
 import {
   armSpCompletion,
@@ -128,16 +138,19 @@ function removeTaskDraftEntries(
   agentIds: readonly string[],
   activeAgentForTask: (task: Task) => string | null,
 ): void {
-  delete s.tasks[taskId];
-  delete s.taskGitStatus[taskId];
-
+  // Before the task is deleted: its project decides where it sits on screen.
   const neighborId =
     s.activeTaskId === taskId
       ? selectActiveNeighborAfterRemoval(
-          s.taskOrder.filter((id) => id === taskId || matchesTaskProjectFilter(id)),
+          sortByProjectGroup(
+            s.taskOrder.filter((id) => id === taskId || matchesTaskProjectFilter(id)),
+          ),
           taskId,
         )
       : null;
+
+  delete s.tasks[taskId];
+  delete s.taskGitStatus[taskId];
 
   cleanupPanelEntries(s, taskId);
 
@@ -145,6 +158,9 @@ function removeTaskDraftEntries(
     s.activeTaskId = neighborId;
     const neighborTask = neighborId ? s.tasks[neighborId] : null;
     s.activeAgentId = neighborTask ? activeAgentForTask(neighborTask) : null;
+    // The board's side panel was opened for this task; with it gone, the panel
+    // would show an empty workspace or an unrelated neighbour.
+    s.boardPeek = false;
   }
 
   for (const agentId of agentIds) {
@@ -169,15 +185,19 @@ function initTaskInStore(
       // Without this it launches with the positional default, and once a second
       // pane exists that default means "the newest session in this worktree" —
       // the second pane's — so pane one comes back with the wrong conversation.
-      assignFreshSessionId(s, taskId, agent.id, agent.def.command);
+      // A teleported pane is the exception: `--teleport` picks the session.
+      if (!task.teleportSessionId) assignFreshSessionId(s, taskId, agent.id, agent.def.command);
       s.taskOrder.push(taskId);
       if (opts.activate) {
         if (s.taskProjectFilter && s.taskProjectFilter !== task.projectId)
           s.taskProjectFilter = null;
         s.activeTaskId = taskId;
         s.activeAgentId = agent.id;
+        // A task created from the board stays beside it.
+        if (s.boardView) s.boardPeek = true;
       }
       s.lastProjectId = task.projectId;
+      if (task.teleportSessionId) s.lastTeleportProjectId = task.projectId;
       if (opts.agentDef) s.lastAgentId = opts.agentDef.id;
     }),
   );
@@ -256,6 +276,8 @@ export interface CreateTaskOptions {
   githubUrl?: string;
   /** Check out this open pull request instead of branching from baseBranch. */
   pullRequestNumber?: number;
+  /** Claude web session to `--teleport` into on the agent's first launch. */
+  teleportSessionId?: string;
   skipPermissions?: boolean;
   dockerMode?: boolean;
   dockerSource?: DockerSource;
@@ -265,8 +287,34 @@ export interface CreateTaskOptions {
   propagateSkipPermissions?: boolean;
   maxConcurrentTasks?: number;
   /** Defaults to true. Pass false when the desktop user did not ask for the task
-   *  (e.g. a phone created it), so it cannot take focus from their current work. */
-  activate?: boolean;
+   *  (e.g. a phone created it), so it cannot take focus from their current work.
+   *  A function decides once the task exists, after a slow creation. */
+  activate?: boolean | (() => boolean);
+  /** Runs once the worktree exists, before the task registers or its agent starts.
+   *  A rejection removes the new worktree and fails the creation. */
+  launchGuard?: () => Promise<void>;
+}
+
+/** Removes a worktree whose task was refused before it registered, then rethrows. */
+async function refuseLaunch(
+  err: unknown,
+  cleanup: {
+    taskId: string;
+    branchName: string;
+    worktreePath: string;
+    projectRoot: string;
+    deleteBranch: boolean;
+  },
+): Promise<never> {
+  try {
+    await invoke(IPC.DeleteTask, { ...cleanup, agentIds: [] });
+  } catch (cleanupErr) {
+    logWarn('tasks', 'Failed to remove the worktree of a refused task', {
+      taskId: cleanup.taskId,
+      err: String(cleanupErr),
+    });
+  }
+  throw err;
 }
 
 export async function createTask(opts: CreateTaskOptions): Promise<string> {
@@ -334,6 +382,22 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     worktreePath = projectRoot;
   }
 
+  if (opts.launchGuard) {
+    try {
+      await opts.launchGuard();
+    } catch (err) {
+      if (gitIsolation !== 'worktree') throw err;
+      await refuseLaunch(err, {
+        taskId,
+        branchName,
+        worktreePath,
+        projectRoot,
+        // A PR checkout's branch tracks the PR, so only remove a branch this task made.
+        deleteBranch: !opts.pullRequestNumber,
+      });
+    }
+  }
+
   const agentId = crypto.randomUUID();
   const effectiveMaxConcurrentTasks = clampCoordinatorConcurrentTasks(
     opts.maxConcurrentTasks ?? DEFAULT_COORDINATOR_CONCURRENT_TASKS,
@@ -354,6 +418,9 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     }),
     initialPrompt: initialPrompt ?? undefined,
     savedInitialPrompt: initialPrompt ?? undefined,
+    teleportSessionId: opts.teleportSessionId,
+    // `--teleport` is a terminal launch flag; the chat view's launch would drop it.
+    ...(opts.teleportSessionId && { mainAgentView: 'terminal' as const }),
     skipPermissions: skipPermissions ?? undefined,
     dockerMode: dockerMode ?? undefined,
     dockerSource: dockerSource ?? undefined,
@@ -376,7 +443,8 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   });
 
   await registerTaskAuthority(task, agentDef);
-  initTaskInStore(task, agent, { agentDef, activate: opts.activate ?? true });
+  const activate = typeof opts.activate === 'function' ? opts.activate() : opts.activate;
+  initTaskInStore(task, agent, { agentDef, activate: activate ?? true });
 
   saveState(); // fire-and-forget — errors handled internally
   return taskId;
@@ -545,7 +613,10 @@ export async function retryCloseTask(taskId: string): Promise<void> {
   await closeTask(taskId);
 }
 
-const REMOVE_ANIMATION_MS = 300;
+// Matches the `.task-removing` and `.task-item-removing` animations in styles.css.
+const REMOVE_ANIMATION_MS = 160;
+// Under reduced motion nothing animates, so a closed task need not linger.
+const removeDelayMs = () => (prefersMotion() ? REMOVE_ANIMATION_MS : 0);
 const RESTORED_AGENT_SPAWN_STAGGER_MS = 1_000;
 
 function removeTaskFromStore(taskId: string, agentIds: string[]): void {
@@ -585,7 +656,7 @@ function removeTaskFromStore(taskId: string, agentIds: string[]): void {
     );
 
     rescheduleTaskStatusPolling();
-  }, REMOVE_ANIMATION_MS);
+  }, removeDelayMs());
 }
 
 /** Drops a task and its agents from the store at once, with no closing
@@ -603,7 +674,13 @@ export function forgetTask(taskId: string, agentIds: readonly string[]): void {
 
 export async function mergeTask(
   taskId: string,
-  options?: { squash?: boolean; message?: string; cleanup?: boolean },
+  options?: {
+    squash?: boolean;
+    message?: string;
+    cleanup?: boolean;
+    /** Set the base checkout's uncommitted changes aside instead of refusing. */
+    allowDirtyTarget?: boolean;
+  },
 ): Promise<void> {
   // Precondition failures throw so the merge dialog can say why nothing
   // happened; a silent return here reads as "Merge did nothing" to the user.
@@ -635,7 +712,12 @@ export async function mergeTask(
     squash: options?.squash ?? false,
     message: options?.message,
     cleanup,
+    allowDirtyTarget: options?.allowDirtyTarget ?? false,
   });
+  const merged = `Merged “${task.name}” into ${mergeResult.main_branch} · +${mergeResult.lines_added} −${mergeResult.lines_removed}`;
+  if (mergeResult.warning)
+    showNotification(`${merged}. ${mergeResult.warning}`, { durationMs: NOTIFICATION_ERROR_MS });
+  else showNotification(merged, { tone: 'success' });
 
   if (cleanup) {
     recordMergedLines(mergeResult.lines_added, mergeResult.lines_removed);
@@ -645,6 +727,9 @@ export async function mergeTask(
       linesAdded: mergeResult.lines_added,
       linesRemoved: mergeResult.lines_removed,
     });
+    // From here the task always leaves the store; marking it closing keeps the
+    // agents' kill exits from reading as failures in the meantime.
+    setStore('tasks', taskId, 'closingStatus', 'closing');
     await Promise.allSettled(
       [...agentIds, ...shellAgentIds].map((id) => invoke(IPC.KillAgent, { agentId: id })),
     );
@@ -687,6 +772,7 @@ export async function pushTask(taskId: string, onOutput: Channel<string>): Promi
 export function updateTaskName(taskId: string, name: string): void {
   setStore('tasks', taskId, 'name', name);
   setStore('tasks', taskId, 'nameIsAutoGenerated', false);
+  setStore('tasks', taskId, 'nameFromModel', undefined);
   onTaskRenamed(taskId);
 }
 
@@ -778,13 +864,15 @@ export async function sendPrompt(
   // guard treating rapid synthetic keystrokes plus Enter as a paste.
   setTaskLastInputAt(taskId);
   const useBracketed = isAgentBracketedPasteEnabled(agentId);
+  // Claude Code holds a paste with control or invisible characters instead of submitting it.
+  const body = cleanPasteText(effectiveText);
   await writeToAgentWhenReady(
     taskId,
     agentId,
-    useBracketed ? `${BRACKETED_PASTE_START}${effectiveText}${BRACKETED_PASTE_END}` : effectiveText,
+    useBracketed ? `${BRACKETED_PASTE_START}${body}${BRACKETED_PASTE_END}` : body,
     options.signal,
   );
-  await new Promise((r) => setTimeout(r, pasteDelayMs(effectiveText)));
+  await new Promise((r) => setTimeout(r, pasteDelayMs(body)));
   await writeToAgentWhenReady(taskId, agentId, '\r', options.signal);
   // App sends bypass xterm's onData handler, which normally clears this flag on Enter.
   if (agentId === task?.agentIds[0]) setTaskTerminalInputPending(taskId, false);
@@ -871,58 +959,27 @@ export function setStagedNotificationUserEdited(taskId: string): void {
   );
 }
 
-export function reorderTask(fromIndex: number, toIndex: number): void {
-  if (fromIndex === toIndex) return;
-  setStore(
-    produce((s) => {
-      const len = s.taskOrder.length;
-      if (fromIndex < 0 || fromIndex >= len || toIndex < 0 || toIndex >= len) return;
-      const [moved] = s.taskOrder.splice(fromIndex, 1);
-      s.taskOrder.splice(toIndex, 0, moved);
-    }),
-  );
+/**
+ * Reorder a task in the visual tile order (project-grouped, terminals last).
+ * Cross-project drops are ignored. `targetIndex` targets the slot in the visual
+ * order with only the moved tile removed, as a drag reports it.
+ */
+export function reorderTaskInTileOrder(movedId: string, targetIndex: number): void {
+  const next = computeVisualReorder(computeTileOrder(), movedId, targetIndex);
+  if (next) setStore('taskOrder', next);
 }
 
 /**
  * Reorder a task using visible sidebar indices (excluding hidden coordinated children).
- * Keeps coordinator+children blocks contiguous in taskOrder.
+ * Keeps coordinator+children blocks contiguous in taskOrder and inside the
+ * task's own project group; cross-group drops are ignored.
  *
  * @param movedId - ID of the task being dragged
  * @param targetVisibleIdx - target position in the visible draggable order (after removal of movedId)
  */
 export function reorderTaskVisually(movedId: string, targetVisibleIdx: number): void {
-  // Visible draggable order: active tasks excluding coordinated children
-  const draggableOrder = computeSidebarDraggableTaskOrder();
-
-  // After removing the moved item, find what task should come after it
-  const remainingDraggable = draggableOrder.filter((id) => id !== movedId);
-  const insertBeforeId = remainingDraggable[targetVisibleIdx] ?? null;
-
-  // Build the block to move: movedId + its active children in taskOrder sequence
-  const { active: activeChildren } = getCoordinatorChildren(movedId);
-  const childSet = new Set(activeChildren);
-  const block = [movedId, ...store.taskOrder.filter((id) => childSet.has(id))];
-
-  // Remove the block from taskOrder
-  const blockSet = new Set(block);
-  const remaining = store.taskOrder.filter((id) => !blockSet.has(id));
-
-  // Find where to insert in the remaining raw order
-  const rawInsertAt =
-    insertBeforeId !== null ? remaining.indexOf(insertBeforeId) : remaining.length;
-  const finalInsertAt = rawInsertAt === -1 ? remaining.length : rawInsertAt;
-
-  const newOrder = [
-    ...remaining.slice(0, finalInsertAt),
-    ...block,
-    ...remaining.slice(finalInsertAt),
-  ];
-
-  setStore(
-    produce((s) => {
-      s.taskOrder = newOrder;
-    }),
-  );
+  const next = computeVisualReorder(computeSidebarDraggableTaskOrder(), movedId, targetVisibleIdx);
+  if (next) setStore('taskOrder', next);
 }
 
 export function spawnShellForTask(taskId: string, initialCommand?: string): string {
@@ -1067,7 +1124,7 @@ export async function collapseTask(taskId: string): Promise<void> {
       // Switch active task to neighbor
       if (s.activeTaskId === taskId) {
         const neighbor = selectActiveNeighborAfterRemoval(
-          originalOrder.filter(matchesTaskProjectFilter),
+          sortByProjectGroup(originalOrder.filter(matchesTaskProjectFilter)),
           taskId,
         );
         s.activeTaskId = neighbor;
@@ -1151,7 +1208,7 @@ export function uncollapseTask(taskId: string, options: { activate?: boolean } =
 // --- GitHub drop-to-create helpers ---
 
 /** Find best matching project by comparing repo name to project directory basenames. */
-function matchProject(repoName: string): string | null {
+export function matchProject(repoName: string): string | null {
   const lower = repoName.toLowerCase();
   for (const project of store.projects) {
     const basename = project.path.split('/').pop() ?? '';
@@ -1294,6 +1351,9 @@ export function initMCPListeners(): () => void {
       if (created) {
         markAgentSpawned(evt.agentId);
         rescheduleTaskStatusPolling();
+        const projectRoot = getProjectPath(evt.projectId);
+        if (projectRoot && evt.prompt)
+          void linkTaskToIssueReference(evt.taskId, projectRoot, evt.prompt);
       }
     }),
   );

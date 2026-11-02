@@ -87,20 +87,6 @@ export function buildHeadlessLaunch(opts: HeadlessLaunchOptions): HeadlessLaunch
       else args.push(opts.prompt);
       return { command: opts.command, args };
     }
-    case 'gemini': {
-      const args = [
-        '-p',
-        opts.prompt,
-        '--output-format',
-        'json',
-        '--approval-mode',
-        // `plan` is Gemini's read-only mode; `default` would only withhold
-        // approval, which is a prompt nobody is there to decline.
-        opts.readOnly ? 'plan' : 'auto_edit',
-      ];
-      if (opts.model) args.push('--model', opts.model);
-      return { command: opts.command, args };
-    }
     default:
       throw new Error(`Agent "${opts.agentId}" has no headless mode for document runs.`);
   }
@@ -278,30 +264,6 @@ class CodexJsonlParser implements HeadlessOutputParser {
   }
 }
 
-/** Parser for `gemini -p --output-format json`: a single JSON document with `response`. */
-class GeminiJsonParser implements HeadlessOutputParser {
-  private raw = '';
-
-  feed(chunk: string): string[] {
-    this.raw += chunk;
-    return [];
-  }
-
-  finish(): HeadlessOutcome {
-    const parsed = tryParseJson(this.raw);
-    if (parsed) {
-      const response = asString(parsed.response);
-      const error = parsed.error as Record<string, unknown> | undefined;
-      return {
-        resultText: response ?? '',
-        sessionId: asString(parsed.session_id),
-        error: error ? (asString(error.message) ?? 'agent reported an error') : undefined,
-      };
-    }
-    return { resultText: this.raw };
-  }
-}
-
 /** Plain-text fallback: everything is the final message. */
 class PlainTextParser implements HeadlessOutputParser {
   private readonly lines = new LineBuffer();
@@ -323,8 +285,6 @@ export function createHeadlessParser(agentId: string): HeadlessOutputParser {
       return new ClaudeStreamParser();
     case 'codex':
       return new CodexJsonlParser();
-    case 'gemini':
-      return new GeminiJsonParser();
     default:
       return new PlainTextParser();
   }

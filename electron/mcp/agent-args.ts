@@ -50,7 +50,8 @@ export function buildMcpLaunchArgs(
   if (isCodexCommand(command)) {
     return ['--config', buildCodexMcpConfigOverride(config)];
   }
-  // Antigravity (agy) has no `--mcp-config` flag; emit nothing so launch is not broken.
+  // Antigravity (agy) has no `--mcp-config` flag; it reads the workspace
+  // `.agents/mcp_config.json` the coordinator writes (see antigravity-config.ts).
   if (isAntigravityCommand(command)) {
     return [];
   }

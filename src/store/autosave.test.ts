@@ -51,6 +51,14 @@ describe('autosave snapshot includes new-task-default fields', () => {
     setStore('canvasOwnershipBadges', true);
   });
 
+  it('finishReview changes the snapshot', () => {
+    setStore('finishReview', true);
+    const before = persistedSnapshot();
+    setStore('finishReview', false);
+    expect(persistedSnapshot()).not.toBe(before);
+    setStore('finishReview', true);
+  });
+
   it('modelTaskNames changes the snapshot', () => {
     setStore('modelTaskNames', false);
     const before = persistedSnapshot();
@@ -154,6 +162,7 @@ describe('autosave snapshot includes new-task-default fields', () => {
     'maxConcurrentTasks',
     'snoozedUntil',
     'snoozedUntilCi',
+    'reviewModel',
   ] as const)('%s changes the snapshot', (field) => {
     const taskId = 'autosave-draft-task';
     const task: Task = {
@@ -174,6 +183,8 @@ describe('autosave snapshot includes new-task-default fields', () => {
       const before = persistedSnapshot();
       if (field === 'promptHistory') {
         setStore('tasks', taskId, 'promptHistory', [{ text: 'Repeated prompt', sentAt: 1 }]);
+      } else if (field === 'reviewModel') {
+        setStore('tasks', taskId, 'reviewModel', { provider: 'claude', model: 'opus' });
       } else if (field === 'maxConcurrentTasks' || field === 'snoozedUntil') {
         setStore('tasks', taskId, field, 5);
       } else if (

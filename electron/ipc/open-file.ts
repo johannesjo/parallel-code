@@ -41,6 +41,15 @@ export function editorGotoArgs(
   return build ? build(`${absolutePath}:${line}`) : null;
 }
 
+/** Opens `absolutePath` in the editor: at `line` where its syntax is known, else at the top. */
+export function editorLineArgs(
+  editorCommand: string,
+  absolutePath: string,
+  line: number,
+): string[] {
+  return editorGotoArgs(editorCommand, absolutePath, line) ?? [absolutePath];
+}
+
 /** Launches a GUI program detached from the app; resolves once it has spawned. */
 export function spawnDetached(cmd: string, args: string[]): Promise<void> {
   return new Promise<void>((resolve, reject) => {

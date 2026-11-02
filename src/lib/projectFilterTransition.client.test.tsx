@@ -2,9 +2,12 @@ import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createProjectFilterTransition } from './projectFilterTransition';
-import { shouldAnimateTaskAppearance } from './reducedMotion';
+import { prefersMotion } from './reducedMotion';
 
-vi.mock('./reducedMotion', () => ({ shouldAnimateTaskAppearance: vi.fn(() => true) }));
+vi.mock('./reducedMotion', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./reducedMotion')>()),
+  prefersMotion: vi.fn(() => true),
+}));
 let dispose: (() => void) | undefined;
 afterEach(() => {
   dispose?.();
@@ -27,7 +30,7 @@ function fixture() {
 }
 
 it('does not animate initial rendering and cancels an old fade when switching again', async () => {
-  vi.mocked(shouldAnimateTaskAppearance).mockReturnValue(true);
+  vi.mocked(prefersMotion).mockReturnValue(true);
   const { setFilter, animate, cancel } = fixture();
   expect(animate).not.toHaveBeenCalled();
   setFilter('one');
@@ -41,7 +44,7 @@ it('does not animate initial rendering and cancels an old fade when switching ag
 });
 
 it('honors reduced motion', async () => {
-  vi.mocked(shouldAnimateTaskAppearance).mockReturnValue(false);
+  vi.mocked(prefersMotion).mockReturnValue(false);
   const { setFilter, animate } = fixture();
   setFilter('one');
   await new Promise(requestAnimationFrame);

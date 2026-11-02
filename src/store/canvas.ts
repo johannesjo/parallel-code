@@ -5,7 +5,6 @@ import {
   type MapNode,
 } from '../graph/model';
 import { parseMindMapUpdate } from '../../electron/shared/mindmap';
-import { parseCanvasView } from '../../electron/shared/canvas-view';
 import { branchPrompt, type BranchRequest } from '../graph/agentActions';
 import { produce, unwrap } from 'solid-js/store';
 import { batch } from 'solid-js';
@@ -152,24 +151,6 @@ export async function updateTaskMindMapFromAgent(
   if (store.tasks[taskId].canvasTabs?.some((tab) => tab.kind === 'mindmap')) await saveState();
   else openCanvasMindMap(taskId);
   return next;
-}
-
-/** Agents open a view on request ("show me the reasoning graph"); content stays untouched. */
-export function openCanvasViewFromAgent(taskId: string, input: unknown): void {
-  const view = parseCanvasView(input);
-  if (!Object.hasOwn(store.tasks, taskId) || store.tasks[taskId].closingStatus)
-    throw new Error('Task not available.');
-  if (view === 'mindmap') openCanvasMindMap(taskId);
-  else {
-    const agentId = store.tasks[taskId].agentIds[0];
-    const agent = store.agents[agentId];
-    if (agent)
-      setStore('tasks', taskId, 'reasoningCanvasRequest', {
-        agentId,
-        generation: agent.generation,
-      });
-    openCanvasReasoning(taskId);
-  }
 }
 
 /** Autosave persists the document; saving here again would write on every keystroke. */

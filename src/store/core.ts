@@ -1,8 +1,14 @@
 import { createStore } from 'solid-js/store';
 import { DEFAULT_TERMINAL_FONT } from '../lib/fonts';
 import { getLocalDateKey } from '../lib/date';
+import { DEFAULT_BRIEF_BAR_FIELDS } from '../lib/task-brief';
 import { defaultPresetForTone } from '../lib/look';
-import { DEFAULT_TASK_NAME_MODEL } from '../../electron/shared/task-name-model';
+import {
+  DEFAULT_BRIEF_MODEL,
+  DEFAULT_TASK_NAME_MODEL,
+} from '../../electron/shared/task-name-model';
+import { DEFAULT_REVIEW_MODEL } from '../lib/task-review';
+import { DEFAULT_INDEPENDENT_TASKS_PER_CREATOR } from '../lib/coordinator-limits';
 import type { AppStore, UsageState } from './types';
 
 const EMPTY_USAGE: UsageState = {
@@ -18,6 +24,7 @@ const EMPTY_USAGE: UsageState = {
 export const [store, setStore] = createStore<AppStore>({
   projects: [],
   lastProjectId: null,
+  lastTeleportProjectId: null,
   lastAgentId: null,
   taskOrder: [],
   collapsedTaskOrder: [],
@@ -41,11 +48,14 @@ export const [store, setStore] = createStore<AppStore>({
   sidebarFocusedProjectId: null,
   sidebarFocusedTaskId: null,
   placeholderFocused: false,
+  boardFocused: false,
   placeholderFocusedButton: 'add-task',
   showHelpDialog: false,
   showSettingsDialog: false,
   pendingAction: null,
   notification: null,
+  notificationBusy: false,
+  notificationTone: null,
   completedTaskDate: getLocalDateKey(),
   completedTaskCount: 0,
   countedMergedPrs: [],
@@ -60,14 +70,18 @@ export const [store, setStore] = createStore<AppStore>({
   darkThemePreset: defaultPresetForTone('dark'),
   darkThemeCustomId: null,
   showPromptInput: true,
+  shellLayoutOverride: null,
   fontSmoothing: true,
   windowState: null,
   autoTrustFolders: false,
   showPlans: true,
+  kanbanHideDetails: false,
   modelTaskNames: false,
   taskNameModel: DEFAULT_TASK_NAME_MODEL,
   taskBriefs: false,
-  confidencePrompt: '',
+  briefBarFields: { ...DEFAULT_BRIEF_BAR_FIELDS },
+  briefModel: DEFAULT_BRIEF_MODEL,
+  reviewGuidance: '',
   showSidebarTips: true,
   showSidebarProgress: true,
   sidebarNeedsInputFirst: true,
@@ -104,20 +118,29 @@ export const [store, setStore] = createStore<AppStore>({
   keybindingMigrationDismissed: false,
   featureHintsEnabled: true,
   seenFeatureHints: [],
+  taskIdeas: [],
+  lastIdeaProjectId: null,
   focusMode: false,
+  boardView: false,
+  boardPeek: false,
+  boardSidePanelLeft: false,
   taskSplitMode: {},
+  taskShellAutoLayout: {},
   verboseLogging: false,
   mcpOrchestrationEnabled: true,
   documentWorkspacesEnabled: false,
   documentFullWidth: false,
   activeDocumentProjectId: null,
   coordinatorNotificationDelayMs: 60_000,
+  maxIndependentTasksPerCreator: DEFAULT_INDEPENDENT_TASKS_PER_CREATOR,
   coordinatorControlHintDismissed: false,
   preferUiMode: false,
   disableClaudeUiMode: false,
   defaultSkipPermissions: false,
   defaultPropagateSkipPermissions: false,
   canvasOwnershipBadges: true,
+  finishReview: true,
+  reviewModel: DEFAULT_REVIEW_MODEL,
   customThemes: {},
   activeCustomThemeId: null,
   mcpStatus: { running: false, port: null, coordinatorTaskId: null, mcpConfigPath: null },
@@ -130,7 +153,12 @@ export const [store, setStore] = createStore<AppStore>({
 
 type CleanupPanelStore = Pick<
   AppStore,
-  'focusedPanel' | 'panelUserSize' | 'taskOrder' | 'collapsedTaskOrder' | 'taskSplitMode'
+  | 'focusedPanel'
+  | 'panelUserSize'
+  | 'taskOrder'
+  | 'collapsedTaskOrder'
+  | 'taskSplitMode'
+  | 'taskShellAutoLayout'
 >;
 
 /** Remove panelUserSize, focusedPanel, and taskOrder entries for a given ID.
@@ -145,6 +173,7 @@ export function cleanupPanelEntries(s: CleanupPanelStore, id: string): number {
   const idx = s.taskOrder.indexOf(id);
   delete s.focusedPanel[id];
   delete s.taskSplitMode[id];
+  delete s.taskShellAutoLayout[id];
   const prefixes = [id, `task:${id}`, `tiling:${id}`];
   for (const key of Object.keys(s.panelUserSize)) {
     if (prefixes.some((p) => key === p || key.startsWith(`${p}:`))) {

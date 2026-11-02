@@ -225,7 +225,8 @@ it('rejects traversal, symlinked directories and files, and oversized input', as
   await expect(read(dir)).rejects.toThrow(/large/i);
 });
 
-it.each(['symlink', 'directory', 'fifo'])(
+// Windows has no FIFOs (mkfifo), so that case runs on POSIX only.
+it.each(['symlink', 'directory', ...(process.platform === 'win32' ? [] : ['fifo'])])(
   'rejects an existing %s report before connecting',
   (kind) => {
     const dir = root();

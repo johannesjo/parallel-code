@@ -41,6 +41,11 @@ class AgentWatchService : Service() {
             watchingNotification(0),
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0,
         )
+        // Only after startForeground: stopping a service started with startForegroundService before it crashes the app.
+        if (app.demoActive) {
+            stopSelf()
+            return
+        }
         app.client.start(HOLDER)
         // The widget's usage lines; the app refreshes them itself while on screen.
         scope.launch {
@@ -69,7 +74,13 @@ class AgentWatchService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (app.demoActive) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         scope.cancel()
@@ -138,7 +149,7 @@ class AgentWatchService : Service() {
         fun sync(context: Context) {
             val app = context.applicationContext as PhoneApplication
             val intent = Intent(context, AgentWatchService::class.java)
-            if (app.settings.notificationsEnabled && app.client.state.value.link != null) {
+            if (!app.demoActive && app.settings.notificationsEnabled && app.client.state.value.link != null) {
                 ContextCompat.startForegroundService(context, intent)
             } else {
                 context.stopService(intent)

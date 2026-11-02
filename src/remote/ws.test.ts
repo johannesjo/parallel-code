@@ -86,6 +86,17 @@ describe('phone message delivery', () => {
     stopScrollback();
   });
 
+  it('passes PTY resizes to the agent terminal', async () => {
+    const { client, socket } = await connected();
+    const size = vi.fn();
+    const stop = client.onTerminalSize('agent-1', size);
+    socket.receive({ type: 'terminal-size', agentId: 'agent-1', cols: 100, rows: 30 });
+    socket.receive({ type: 'terminal-size', agentId: 'agent-2', cols: 60, rows: 20 });
+    expect(size).toHaveBeenCalledTimes(1);
+    expect(size).toHaveBeenCalledWith(100, 30);
+    stop();
+  });
+
   it.each([false, true])('recovers a stalled handshake (socket open: %s)', async (opened) => {
     const client = await import('./ws');
     client.connect();

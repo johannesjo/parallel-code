@@ -58,7 +58,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.rememberUpdatedState
@@ -117,6 +116,9 @@ fun SettingsScreen(
     onPair: () -> Unit,
     onForget: () -> Unit,
     onBack: () -> Unit,
+    demoSettings: DemoSettings? = null,
+    onDemoRestore: () -> Unit = {},
+    onDemo: (() -> Unit)? = null,
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -152,6 +154,27 @@ fun SettingsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            onDemo?.let { openDemo ->
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(onClick = openDemo) { Text("Try offline demo") }
+                        Text(
+                            "Explore sample tasks and settings without changing your saved computers or preferences.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = AppTheme.extra.textMuted,
+                        )
+                    }
+                }
+            }
+            if (demoSettings != null) {
+                item {
+                    Text(
+                        "Offline demo · Changes stay in this demo session. Screen awake, notifications, VPN, Wi-Fi and home-screen widgets are simulated; no device settings or permissions change.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AppTheme.extra.textMuted,
+                    )
+                }
+            }
             // DISPLAY SECTION
             item {
                 SectionHeader("DISPLAY")
@@ -366,7 +389,7 @@ fun SettingsScreen(
                     ) {
                         SettingSwitchRow(
                             title = "Show minimized tasks",
-                            description = "Pin collapsed and minimized tasks to the bottom of the overview.",
+                            description = "List minimized tasks in the Snoozed & minimized lane at the end of the overview. A minimized task that needs you always shows.",
                             checked = showMinimizedTasks,
                             onCheckedChange = onShowMinimizedTasksChange,
                         )
@@ -498,7 +521,7 @@ fun SettingsScreen(
                             Text(
                                 "$widgetTransparency%",
                                 style = MaterialTheme.typography.bodyLarge,
-                                fontFamily = FontFamily.Monospace,
+                                fontFamily = AppFonts.mono,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.primary,
                             )
@@ -596,7 +619,7 @@ fun SettingsScreen(
                             Text(
                                 hostLabel,
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontFamily = FontFamily.Monospace,
+                                fontFamily = AppFonts.mono,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
@@ -639,7 +662,7 @@ fun SettingsScreen(
                                 Text(
                                     latencyMs?.let { "${it} ms" } ?: "< 10 ms",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    fontFamily = FontFamily.Monospace,
+                                    fontFamily = AppFonts.mono,
                                     fontWeight = FontWeight.Medium,
                                     color = AppTheme.extra.textPrimary,
                                 )
@@ -774,7 +797,7 @@ fun SettingsScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = BorderStroke(1.dp, AppTheme.extra.border),
                 ) {
-                    Box(Modifier.fillMaxWidth().padding(16.dp)) { BackupSettings() }
+                    Box(Modifier.fillMaxWidth().padding(16.dp)) { BackupSettings(demoSettings, onDemoRestore) }
                 }
             }
 
@@ -788,7 +811,7 @@ fun SettingsScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = BorderStroke(1.dp, AppTheme.extra.border),
                 ) {
-                    Box(Modifier.fillMaxWidth().padding(16.dp)) { UpdateSettings() }
+                    Box(Modifier.fillMaxWidth().padding(16.dp)) { UpdateSettings(demoSettings) }
                 }
             }
         }
@@ -1041,7 +1064,7 @@ private fun HomeWifiEditor(ssid: String?, onChange: (String?) -> Unit, currentSs
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            "On this Wi-Fi network, connect without waiting for the VPN. Android needs location access to read the network's name; allow it all the time so agent notifications connect here too.",
+            "While the app is open, connect on this Wi-Fi without waiting for the VPN. Optional location access lets Android reveal the Wi-Fi name; we do not read your GPS position. In the background, connect your VPN or turn off Wait for VPN to receive agent notifications.",
             style = MaterialTheme.typography.bodySmall,
             color = AppTheme.extra.textMuted,
         )
@@ -1123,7 +1146,7 @@ private fun ComputerRow(
         Column(Modifier.weight(1f).padding(start = 4.dp)) {
             Text(
                 computer.label,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = AppFonts.mono,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -1131,7 +1154,7 @@ private fun ComputerRow(
             if (computer.alias?.isNotBlank() == true) {
                 Text(
                     computer.baseUrl.substringAfter("://"),
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = AppFonts.mono,
                     style = MaterialTheme.typography.bodySmall,
                     color = AppTheme.extra.textMuted,
                 )

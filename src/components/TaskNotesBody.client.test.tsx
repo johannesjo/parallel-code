@@ -136,8 +136,8 @@ describe('TaskNotesBody plan button', () => {
 
     const height = (container: HTMLElement) =>
       container.querySelector<HTMLElement>('.task-notes-body')?.style.minHeight;
-    expect(height(withoutFooter)).toBe('56px');
-    expect(height(withFooter)).toBe('87px');
+    expect(height(withoutFooter)).toBe('100px');
+    expect(height(withFooter)).toBe('131px');
   });
 
   it('keeps the notes editor mounted when a plan arrives or disappears', () => {
@@ -301,7 +301,7 @@ describe('TaskNotesBody plan button', () => {
     expect(() => buttonLabelled(container, 'Agent Tour')).toThrow();
   });
 
-  it('keeps empty notes compact even when a plan is available', () => {
+  it('marks empty notes even when a plan is available', () => {
     const container = renderPlan({ task });
     expect(container.querySelector('.task-notes-body')?.getAttribute('data-empty')).toBe('true');
   });
@@ -338,6 +338,20 @@ describe('TaskNotesBody notes', () => {
     const textarea = container.querySelector('textarea');
     expect(textarea?.getAttribute('aria-label')).toBe('Task notes');
     expect(textarea?.getAttribute('placeholder')).toBe('Add a note\u2026');
+  });
+
+  it('keeps the same editor and panel height when typing or clearing notes', () => {
+    const [notesTask, setNotesTask] = createStore<Task>(plainTask);
+    const container = renderNotes(notesTask);
+    const panel = container.querySelector<HTMLElement>('.task-notes-body');
+    const textarea = container.querySelector('textarea');
+    const height = panel?.style.minHeight;
+    setNotesTask('notes', 'Check the two terminal panes.');
+    expect(panel?.style.minHeight).toBe(height);
+    expect(container.querySelector('textarea')).toBe(textarea);
+    setNotesTask('notes', '');
+    expect(panel?.style.minHeight).toBe(height);
+    expect(container.querySelector('textarea')).toBe(textarea);
   });
 
   it('drops the empty marker once the task has notes', () => {

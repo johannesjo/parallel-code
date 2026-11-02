@@ -154,3 +154,24 @@ it('opens the Android app guide in the browser', async () => {
     url: 'https://github.com/johannesjo/parallel-code#android-app',
   });
 });
+
+it('exposes the connection link and reports a failed clipboard copy', async () => {
+  const writeText = vi
+    .spyOn(navigator.clipboard, 'writeText')
+    .mockRejectedValue(new Error('Unavailable'));
+  try {
+    mount();
+    await vi.advanceTimersByTimeAsync(0);
+    const copy = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Copy connection link"]',
+    );
+    expect(copy).not.toBeNull();
+    const descriptionId = copy?.getAttribute('aria-describedby') ?? '';
+    expect(document.getElementById(descriptionId)?.textContent).toContain('http://localhost:7777');
+    copy?.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(document.body.textContent).toContain('Could not copy the link. Please try again.');
+  } finally {
+    writeText.mockRestore();
+  }
+});

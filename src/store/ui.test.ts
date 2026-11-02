@@ -5,6 +5,11 @@ type MockStore = {
   activeTaskId: string | null;
   activeDocumentProjectId: string | null;
   focusMode: boolean;
+  boardView: boolean;
+  boardPeek: boolean;
+  showNewTaskPanel: boolean;
+  kanbanProjectId: string | null;
+  githubIssuesProjectId: string | null;
   tasks: Record<string, { id: string; projectId: string }>;
   focusedPanel: Record<string, string>;
   panelUserSize: Record<string, number>;
@@ -62,6 +67,10 @@ vi.mock('../../electron/ipc/channels', () => ({
 }));
 
 import {
+  setWorkspaceView,
+  toggleBoardView,
+  workspaceView,
+  workspaceViewTransitionTypes,
   toggleTaskFocusMode,
   getPanelUserSize,
   setPanelUserSize,
@@ -77,6 +86,11 @@ beforeEach(() => {
     activeDocumentProjectId: null,
     activeTaskId: 'task-1',
     focusMode: false,
+    boardView: false,
+    boardPeek: false,
+    showNewTaskPanel: false,
+    kanbanProjectId: null,
+    githubIssuesProjectId: null,
     tasks: {
       'task-1': { id: 'task-1', projectId: 'project-1' },
       'task-2': { id: 'task-2', projectId: 'project-2' },
@@ -101,6 +115,91 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe('workspace views', () => {
+  it('covers focus mode with the board and returns to it when the board closes', () => {
+    mockStore.focusMode = true;
+
+    setWorkspaceView('board');
+    expect(workspaceView()).toBe('board');
+
+    toggleBoardView();
+    expect(workspaceView()).toBe('focus');
+  });
+
+  it('leaves focus mode when tiles are chosen from the board', () => {
+    mockStore.focusMode = true;
+    mockStore.boardView = true;
+
+    setWorkspaceView('tiles');
+
+    expect(workspaceView()).toBe('tiles');
+  });
+
+  it('closes a plan on the board so the chosen view shows', () => {
+    mockStore.boardView = true;
+    mockStore.kanbanProjectId = 'project-1';
+
+    setWorkspaceView('focus');
+
+    expect(mockStore.kanbanProjectId).toBeNull();
+    expect(workspaceView()).toBe('focus');
+  });
+
+  it('closes the board and its side panel when another view is chosen', () => {
+    mockStore.boardView = true;
+    mockStore.boardPeek = true;
+
+    setWorkspaceView('tiles');
+
+    expect(workspaceView()).toBe('tiles');
+    expect(mockStore.boardPeek).toBe(false);
+  });
+
+  it('expands a task from the side panel into focus mode, even if focus mode was on', () => {
+    mockStore.focusMode = true;
+    mockStore.boardView = true;
+    mockStore.boardPeek = true;
+
+    toggleTaskFocusMode('task-1');
+
+    expect(workspaceView()).toBe('focus');
+    expect(mockStore.boardPeek).toBe(false);
+  });
+
+  it('stays on tiles when focus is chosen without a task to show', () => {
+    mockStore.activeTaskId = null;
+    mockStore.boardView = true;
+
+    setWorkspaceView('focus');
+
+    expect(workspaceView()).toBe('tiles');
+  });
+
+  it('animates the shown task only between tiles and focus', () => {
+    expect(workspaceViewTransitionTypes('focus')).toEqual(['focus-enter']);
+    expect(workspaceViewTransitionTypes('tiles')).toEqual([]);
+    expect(workspaceViewTransitionTypes('board')).toEqual([]);
+
+    mockStore.focusMode = true;
+    expect(workspaceViewTransitionTypes('tiles')).toEqual(['focus-exit']);
+
+    mockStore.boardView = true;
+    expect(workspaceViewTransitionTypes('tiles')).toEqual([]);
+  });
+
+  it('skips the animation when there is no task to focus', () => {
+    mockStore.activeTaskId = null;
+
+    expect(workspaceViewTransitionTypes('focus')).toEqual([]);
+  });
+
+  it('leaves a covering page to its own transition', () => {
+    mockStore.githubIssuesProjectId = 'project-1';
+
+    expect(workspaceViewTransitionTypes('focus')).toEqual([]);
+  });
+});
+
 describe('toggleTaskFocusMode', () => {
   it('can focus the document panel before an agent is installed', () => {
     mockStore.activeDocumentProjectId = 'docs';
@@ -122,6 +221,15 @@ describe('toggleTaskFocusMode', () => {
 
     expect(mocks.setTaskFocusedPanel).toHaveBeenCalledWith('task-1', 'ai-terminal');
     expect(mockStore.focusedPanel['task-1']).toBe('ai-terminal');
+  });
+
+  it('leaves focus in an open draft, which focus mode shows instead of the task', () => {
+    mockStore.showNewTaskPanel = true;
+
+    toggleTaskFocusMode('task-1');
+
+    expect(mockStore.focusMode).toBe(true);
+    expect(mocks.setTaskFocusedPanel).not.toHaveBeenCalled();
   });
 
   it('does not refocus again when leaving focus mode', () => {

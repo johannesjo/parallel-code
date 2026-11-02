@@ -129,8 +129,14 @@ export function matchesGlobalShortcut(e: KeyboardEvent): boolean {
 export function initShortcuts(): () => void {
   const handler = (e: KeyboardEvent) => {
     // Don't intercept when typing in input/textarea — unless the shortcut is global
-    const tag = (e.composedPath()[0] as HTMLElement)?.tagName;
-    const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    const origin = e.composedPath()[0] as HTMLElement | undefined;
+    const tag = origin?.tagName;
+    // Rich editors (canvas notes, document blocks) are contenteditable divs.
+    const inInput =
+      tag === 'INPUT' ||
+      tag === 'TEXTAREA' ||
+      tag === 'SELECT' ||
+      origin?.isContentEditable === true;
     // A menu or popover that already took this Escape marks it handled (the
     // same convention Dialog.tsx honours); one press should not also close
     // dialogs or leave focus mode behind it.

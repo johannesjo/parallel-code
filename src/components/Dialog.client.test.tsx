@@ -1,3 +1,4 @@
+import type { JSX } from 'solid-js';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -121,5 +122,42 @@ describe('Dialog backdrop', () => {
     press(overlay, 'click');
 
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe('Dialog initial focus', () => {
+  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+
+  function mountWithTerminalFocused(children: () => JSX.Element) {
+    const terminal = document.createElement('textarea');
+    terminal.setAttribute('aria-label', 'terminal');
+    document.body.append(terminal);
+    terminal.focus();
+    const host = document.createElement('div');
+    document.body.append(host);
+    disposers.push(
+      render(
+        () => (
+          <Dialog open={true} onClose={vi.fn()}>
+            {children()}
+          </Dialog>
+        ),
+        host,
+      ),
+    );
+  }
+
+  it('moves focus off the element behind the dialog, so typing cannot reach it', async () => {
+    mountWithTerminalFocused(() => <button aria-label="ok" />);
+    await nextFrame();
+    expect(panels()[0].contains(document.activeElement)).toBe(true);
+  });
+
+  it('keeps focus a child already claimed on mount', async () => {
+    mountWithTerminalFocused(() => (
+      <input aria-label="name" ref={(el) => queueMicrotask(() => el.focus())} />
+    ));
+    await nextFrame();
+    expect(focusedLabel()).toBe('name');
   });
 });

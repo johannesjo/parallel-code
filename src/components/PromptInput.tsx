@@ -47,6 +47,7 @@ import {
 import { taskUsesAgentChat } from '../store/agent-chat';
 import { isLandedTaskState } from '../store/landing';
 import { processAutoFireTick } from './autofire-tick';
+import { ArrowUpIcon } from './icons';
 import {
   resolveAutoSendVerifyOutcome,
   shouldAckInitialPromptDelivery,
@@ -60,7 +61,8 @@ import {
 import { hasUserPromptDraftText } from './prompt-draft';
 import { pollUntilPromptAppearsInOutput } from './prompt-verify';
 import type { StagedNotification } from '../store/types';
-import { debug, warn as logWarn } from '../lib/log';
+import { debug, errMessage, warn as logWarn } from '../lib/log';
+import { NOTIFICATION_ERROR_MS } from '../store/notification';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { taskAgentOpensSessionPicker } from '../lib/agent-args';
@@ -78,6 +80,8 @@ interface PromptInputProps {
   autoSendChildUpdates?: boolean;
   controlledBy?: 'human' | 'coordinator';
   stagedNotification?: StagedNotification;
+  /** The task brief's question for the user, shown where the answer is typed. */
+  needsYou?: string;
   nowMs?: () => number;
   initialPrompt?: string;
   prefillPrompt?: string;
@@ -926,10 +930,23 @@ export function PromptInput(props: PromptInputProps) {
       setText('');
     } catch (e) {
       console.error('Failed to send prompt:', e);
+      // The text stays in the field for a retry; without a notice the agent just looks like it ignored the prompt.
+      const reason = errMessage(e).replace(
+        /^Error invoking remote method '[^']+': (?:Error: )?/,
+        '',
+      );
+      showNotification(`Couldn't send prompt: ${reason}`, { durationMs: NOTIFICATION_ERROR_MS });
     } finally {
       setSending(false);
     }
   }
+
+  const staged = () =>
+    !!props.autoSendChildUpdates &&
+    !!props.stagedNotification &&
+    !props.stagedNotification.userEdited;
+  // A question waiting in the terminal is answered there, and the staged label owns the same spot.
+  const question = () => (questionActive() || staged() ? '' : (props.needsYou ?? ''));
 
   return (
     <div
@@ -943,13 +960,7 @@ export function PromptInput(props: PromptInputProps) {
       }}
     >
       <div style={{ position: 'relative', flex: '1', display: 'flex' }}>
-        <Show
-          when={
-            props.autoSendChildUpdates &&
-            !!props.stagedNotification &&
-            !props.stagedNotification.userEdited
-          }
-        >
+        <Show when={staged()}>
           <div
             style={{
               position: 'absolute',
@@ -967,8 +978,52 @@ export function PromptInput(props: PromptInputProps) {
             {store.mcpOrchestrationEnabled ? 'Staged for auto-send' : 'Ready for review'}
           </div>
         </Show>
+        <Show when={question()}>
+          <div
+            class="prompt-needs-you"
+            style={{
+              position: 'absolute',
+              top: '4px',
+              right: '36px',
+              display: 'flex',
+              gap: '6px',
+              'align-items': 'baseline',
+              'font-size': sf(14),
+              color: theme.fg,
+              overflow: 'hidden',
+              'white-space': 'nowrap',
+              'pointer-events': 'none',
+              'z-index': '1',
+              'padding-bottom': '3px',
+              'border-bottom': `1px solid color-mix(in srgb, ${theme.warning} 55%, transparent)`,
+            }}
+          >
+            <span
+              style={{
+                color: theme.warning,
+                'font-weight': '700',
+                'letter-spacing': '0.06em',
+                'text-transform': 'uppercase',
+                'flex-shrink': '0',
+              }}
+            >
+              Needs you
+            </span>
+            <span
+              style={{
+                overflow: 'hidden',
+                'text-overflow': 'ellipsis',
+                'min-width': '0',
+                'font-weight': '600',
+              }}
+            >
+              {question()}
+            </span>
+          </div>
+        </Show>
         <textarea
           class="prompt-textarea"
+          classList={{ 'prompt-textarea--labelled': !!staged() || !!question() }}
           ref={(el) => {
             textareaRef = el;
             props.ref?.(el);
@@ -996,24 +1051,14 @@ export function PromptInput(props: PromptInputProps) {
           placeholder={
             questionActive()
               ? 'Agent is waiting for input in terminal…'
-              : 'Send a prompt... (Enter to send, Shift+Enter for newline)'
+              : `Message ${store.agents[props.agentId]?.def?.name ?? 'agent'}…`
           }
           style={{
             flex: '1',
             background: theme.bgInput,
-            border:
-              props.autoSendChildUpdates &&
-              props.stagedNotification &&
-              !props.stagedNotification.userEdited
-                ? `1px solid ${theme.accent}60`
-                : `1px solid ${theme.border}`,
+            border: staged() ? `1px solid ${theme.accent}60` : `1px solid ${theme.border}`,
             'border-radius': 'var(--radius-lg)',
-            padding:
-              props.autoSendChildUpdates &&
-              props.stagedNotification &&
-              !props.stagedNotification.userEdited
-                ? '20px 36px 6px 10px'
-                : '6px 36px 6px 10px',
+            padding: '6px 36px 6px 10px',
             color: theme.fg,
             'font-size': sf(13),
             'font-family': "'JetBrains Mono', monospace",
@@ -1046,15 +1091,7 @@ export function PromptInput(props: PromptInputProps) {
           }}
           title="Send prompt"
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path
-              d="M7 12V2M7 2L3 6M7 2l4 4"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
+          <ArrowUpIcon size={14} />
         </button>
         <Show
           when={

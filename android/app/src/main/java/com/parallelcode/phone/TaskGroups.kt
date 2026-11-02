@@ -1,21 +1,22 @@
 package com.parallelcode.phone
 
 /**
- * How the task list sorts and narrows its agents, as the phone web UI (`src/remote/AgentList.tsx`)
- * does: the tasks that need you first, then the working ones, the ones ready to review, and the rest.
+ * The desktop board's lanes (src/components/task-board-lanes.ts), top to bottom in the board's
+ * left-to-right order, so a task sits under the same heading on the computer and the phone.
  */
-enum class TaskGroup(val label: String) {
-    NEEDS_YOU("Needs you"),
-    WORKING("Working"),
-    REVIEW("Ready to review"),
-    OTHER("Other tasks"),
+enum class TaskLane(val key: String, val label: String) {
+    NEEDS_YOU("needs", "Needs you"),
+    STOPPED("stopped", "Stopped"),
+    WORKING("working", "Working"),
+    IN_PR("pr", "In pull request"),
+    SNOOZED("snoozed", "Snoozed & minimized"),
 }
 
-/** The list's filter chips; [ALL] shows every group. */
+/** The list's filter chips, as in the phone web UI; [ALL] shows every lane. */
 enum class TaskFilter(val key: String, val label: String) {
     ALL("all", "All"),
-    NEEDS_YOU("attention", "Needs you"),
-    REVIEW("review", "Review");
+    NEEDS_YOU("needs", "Needs you"),
+    STOPPED("stopped", "Stopped");
 
     companion object {
         fun fromKey(key: String?): TaskFilter = entries.firstOrNull { it.key == key } ?: ALL
@@ -39,18 +40,26 @@ fun readyLabel(ci: String?): String = when (ci) {
     else -> "Ready"
 }
 
-fun taskGroup(agent: RemoteAgent): TaskGroup = when {
-    agent.needsYou() -> TaskGroup.NEEDS_YOU
-    !agent.running -> TaskGroup.OTHER
-    agent.attention == "active" -> TaskGroup.WORKING
-    agent.attention == "review" || agent.attention == "ready" -> TaskGroup.REVIEW
-    else -> TaskGroup.OTHER
+/**
+ * The lane the desktop put the task in. An older desktop sends none, so this guesses the same way
+ * the phone web UI does (`laneOf` in src/remote/AgentList.tsx).
+ */
+fun taskLane(agent: RemoteAgent): TaskLane {
+    TaskLane.entries.firstOrNull { it.key == agent.lane }?.let { return it }
+    return when {
+        (agent.running && agent.attention in setOf("needs_input", "error")) || agent.attention == "review" ->
+            TaskLane.NEEDS_YOU
+        agent.collapsed -> TaskLane.SNOOZED
+        agent.running && agent.attention == "active" -> TaskLane.WORKING
+        else -> TaskLane.STOPPED
+    }
 }
 
 fun TaskFilter.matches(agent: RemoteAgent): Boolean = when (this) {
     TaskFilter.ALL -> true
-    TaskFilter.NEEDS_YOU -> taskGroup(agent) == TaskGroup.NEEDS_YOU
-    TaskFilter.REVIEW -> taskGroup(agent) == TaskGroup.REVIEW
+    // Failed CI keeps its PR lane, as on the board, but still needs you.
+    TaskFilter.NEEDS_YOU -> taskLane(agent) == TaskLane.NEEDS_YOU || agent.ciFailed()
+    TaskFilter.STOPPED -> taskLane(agent) == TaskLane.STOPPED
 }
 
 /** Whether the task name, project, or agent contains [query], ignoring case and surrounding space. */
@@ -61,10 +70,10 @@ fun matchesSearch(agent: RemoteAgent, query: String): Boolean {
         .any { it.contains(q, ignoreCase = true) }
 }
 
-/** Non-empty groups in display order; each keeps the desktop's order within it. */
-fun groupTasks(agents: List<RemoteAgent>): List<Pair<TaskGroup, List<RemoteAgent>>> {
-    val byGroup = agents.groupBy(::taskGroup)
-    return TaskGroup.entries.mapNotNull { group -> byGroup[group]?.let { group to it } }
+/** Non-empty lanes in display order; each keeps the desktop's order within it. */
+fun groupTasks(agents: List<RemoteAgent>): List<Pair<TaskLane, List<RemoteAgent>>> {
+    val byLane = agents.groupBy(::taskLane)
+    return TaskLane.entries.mapNotNull { lane -> byLane[lane]?.let { lane to it } }
 }
 
 /**

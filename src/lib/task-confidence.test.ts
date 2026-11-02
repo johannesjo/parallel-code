@@ -31,6 +31,47 @@ describe('parseConfidencePayload', () => {
     ).toThrow('kind must be');
     expect(() => parseConfidencePayload('nope')).toThrow('must be an object');
   });
+
+  it('accepts what was asked, the behaviour changes and the key line', () => {
+    const score = { label: 'Correct', score: 80, why: 'x' };
+    expect(
+      parseConfidencePayload({
+        scores: [score],
+        asked: ' Keep the return URL  through sign-in. ',
+        changes: [{ now: 'You land where you were going', before: 'instead of /', tested: 'unit' }],
+        keyLine: { file: 'src/auth.ts', line: 72, why: 'The only redirect guard.' },
+      }),
+    ).toEqual({
+      scores: [score],
+      findings: [],
+      asked: 'Keep the return URL through sign-in.',
+      changes: [{ now: 'You land where you were going', before: 'instead of /', tested: 'unit' }],
+      keyLine: { file: 'src/auth.ts', line: 72, why: 'The only redirect guard.' },
+    });
+    expect(() => parseConfidencePayload({ scores: [score], changes: [{ before: 'x' }] })).toThrow(
+      'now is required',
+    );
+    expect(() =>
+      parseConfidencePayload({ scores: [score], keyLine: { file: 'a.ts', line: 0, why: 'x' } }),
+    ).toThrow('positive whole number');
+  });
+
+  it('keeps what a score was checked against, dropping blank items', () => {
+    const score = { label: 'Correct', score: 80, why: 'x' };
+    expect(
+      parseConfidencePayload({ scores: [{ ...score, verified: [' read  both callers ', ' '] }] })
+        .scores,
+    ).toEqual([{ ...score, verified: ['read both callers'] }]);
+    expect(parseConfidencePayload({ scores: [{ ...score, verified: [] }] }).scores).toEqual([
+      score,
+    ]);
+    expect(() =>
+      parseConfidencePayload({ scores: [{ ...score, verified: ['a', 'b', 'c', 'd'] }] }),
+    ).toThrow('at most 3 items');
+    expect(() => parseConfidencePayload({ scores: [{ ...score, verified: [1] }] })).toThrow(
+      'must be a string',
+    );
+  });
 });
 
 describe('restoreTaskConfidence', () => {
@@ -42,6 +83,8 @@ describe('restoreTaskConfidence', () => {
       fingerprint: 'f1',
     };
     expect(restoreTaskConfidence(saved)).toEqual(saved);
+    const detailed = { ...saved, asked: 'Fix it.', changes: [{ now: 'It works' }] };
+    expect(restoreTaskConfidence(detailed)).toEqual(detailed);
     expect(restoreTaskConfidence({ ...saved, publishedAt: 'later' })).toBeUndefined();
     expect(restoreTaskConfidence({ ...saved, scores: [] })).toBeUndefined();
     expect(restoreTaskConfidence(null)).toBeUndefined();

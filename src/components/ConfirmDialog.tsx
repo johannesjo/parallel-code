@@ -1,5 +1,6 @@
 import { Show, createEffect, createUniqueId, type JSX } from 'solid-js';
 import { Dialog } from './Dialog';
+import { DialogFooter } from './DialogFooter';
 import { theme } from '../lib/theme';
 
 interface ConfirmDialogProps {
@@ -87,42 +88,12 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         {props.message}
       </div>
 
-      <div
-        style={{
-          'flex-shrink': '0',
-          display: 'flex',
-          gap: '8px',
-          'justify-content': 'flex-end',
-          'padding-top': '4px',
-        }}
-      >
-        <Show when={props.footerNote}>
-          <span
-            style={{
-              'margin-right': 'auto',
-              'align-self': 'center',
-              'min-width': '0',
-              color: theme.fgMuted,
-              'font-size': '12px',
-            }}
-          >
-            {props.footerNote}
-          </span>
-        </Show>
+      <DialogFooter note={props.footerNote} style={{ 'padding-top': '4px' }}>
         <button
           ref={cancelRef}
           type="button"
           class="btn-secondary"
           onClick={() => props.onCancel()}
-          style={{
-            padding: '9px 18px',
-            background: theme.bgInput,
-            border: `1px solid ${theme.border}`,
-            'border-radius': 'var(--radius-md)',
-            color: theme.fgMuted,
-            cursor: 'pointer',
-            'font-size': '14px',
-          }}
         >
           {props.cancelLabel ?? 'Cancel'}
         </button>
@@ -132,27 +103,14 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           class={props.danger ? 'btn-danger' : 'btn-primary'}
           disabled={props.confirmDisabled}
           onClick={() => props.onConfirm()}
-          style={{
-            padding: '9px 20px',
-            background: props.danger ? theme.error : undefined,
-            border: props.danger ? 'none' : undefined,
-            'border-radius': 'var(--radius-md)',
-            color: props.danger ? '#fff' : undefined,
-            cursor: props.confirmDisabled ? 'not-allowed' : 'pointer',
-            'font-size': '14px',
-            'font-weight': '500',
-            opacity: props.confirmDisabled ? '0.5' : '1',
-            display: 'inline-flex',
-            'align-items': 'center',
-            gap: '8px',
-          }}
+          style={{ gap: '8px' }}
         >
           <Show when={props.confirmLoading} fallback={props.confirmIcon}>
             <span class="inline-spinner" aria-hidden="true" />
           </Show>
           {props.confirmLabel ?? 'Confirm'}
         </button>
-      </div>
+      </DialogFooter>
     </Dialog>
   );
 }

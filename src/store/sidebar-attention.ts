@@ -40,6 +40,21 @@ function panelForAskingAgent(taskId: string, agentId: string): string | null {
   return shellIndex >= 0 ? shellPanelId(shellIndex) : null;
 }
 
+/** Which agent is asking. Pane and shell numbers appear only when there is
+ *  more than one to tell apart; otherwise they are noise. */
+function askingAgentLabel(
+  task: { agentIds: string[]; shellAgentIds: string[] },
+  agentId: string,
+): string {
+  const aiIndex = task.agentIds.indexOf(agentId);
+  if (aiIndex >= 0) {
+    const name = store.agents[agentId]?.def.name ?? 'Agent';
+    return task.agentIds.length > 1 ? `${name} · pane ${aiIndex + 1}` : name;
+  }
+  const shellIndex = task.shellAgentIds.indexOf(agentId);
+  return task.shellAgentIds.length > 1 ? `Shell ${shellIndex + 1}` : 'Shell';
+}
+
 function taskAttentionEntries(taskId: string): AttentionEntry[] {
   const task = store.tasks[taskId];
   if (!task || task.closingStatus === 'closing' || task.closingStatus === 'removing') return [];
@@ -47,12 +62,12 @@ function taskAttentionEntries(taskId: string): AttentionEntry[] {
     key: JSON.stringify([taskId, 'question', question.agentId, question.since]),
     kind: 'question',
     taskId,
-    label: 'Answer question',
-    detail: task.agentIds.includes(question.agentId)
-      ? (store.agents[question.agentId]?.def.name ?? 'Agent') +
-        ' · pane ' +
-        (task.agentIds.indexOf(question.agentId) + 1)
-      : 'Shell ' + (task.shellAgentIds.indexOf(question.agentId) + 1),
+    // Match the card the agent shows: an approval is not a question.
+    label:
+      store.agents[question.agentId]?.chatState?.requests.at(-1)?.kind === 'approval'
+        ? 'Approve request'
+        : 'Answer question',
+    detail: askingAgentLabel(task, question.agentId),
     since: question.since,
     panel: panelForAskingAgent(taskId, question.agentId),
   }));

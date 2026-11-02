@@ -3,7 +3,13 @@
  * change tour once a task has changes. They are not a tour of the app: each
  * shows only once its feature has something to work on.
  */
-const FEATURE_HINT_IDS = ['change-tour', 'finish-review', 'delegate-subtasks'] as const;
+const FEATURE_HINT_IDS = [
+  'change-tour',
+  'finish-review',
+  'delegate-subtasks',
+  'board-view',
+  'board-lanes',
+] as const;
 
 export type FeatureHintId = (typeof FEATURE_HINT_IDS)[number];
 

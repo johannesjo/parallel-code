@@ -63,7 +63,7 @@ private fun statusSymbol(status: String): String = when (status) {
 @Composable
 internal fun MergeTaskDialog(
     taskId: String,
-    client: RemoteClient,
+    client: PhoneClient,
     onDismiss: () -> Unit,
     onMerged: () -> Unit,
 ) {

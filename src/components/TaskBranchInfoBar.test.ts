@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { renderToString } from 'solid-js/web';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Task } from '../store/types';
 
 const { mockGetPrChecks } = vi.hoisted(() => ({
@@ -25,6 +25,7 @@ vi.mock('../lib/shell', () => ({
 
 import { TaskBranchInfoBar } from './TaskBranchInfoBar';
 import { getProject } from '../store/store';
+import { extraPrWatchId, setTaskExtraPrs } from '../store/pr-checks-state';
 
 const task: Task = {
   id: 'task-1',
@@ -184,6 +185,16 @@ describe('TaskBranchInfoBar GitHub actions', () => {
 
     expect(html).not.toContain('task-pr-fix-ci');
   });
+
+  it('offers Babysit while the PR is open, but not once it merged', () => {
+    mockGetPrChecks.mockReturnValue(checks('pending'));
+    const open = renderToString(() => TaskBranchInfoBar({ task, onEditProject: vi.fn() }));
+    expect(open).toMatch(/class="task-pr-merge task-pr-babysit"[^>]*aria-pressed="false"/);
+
+    mockGetPrChecks.mockReturnValue(checks('success', { merged: true }));
+    const merged = renderToString(() => TaskBranchInfoBar({ task, onEditProject: vi.fn() }));
+    expect(merged).not.toContain('task-pr-babysit');
+  });
 });
 
 describe('TaskBranchInfoBar source link', () => {
@@ -218,7 +229,25 @@ describe('TaskBranchInfoBar project chip', () => {
     expect(html).toContain('class="task-branch-project-label">parallel-code</span>');
     expect(html).toContain('class="task-branch-project-compact-label"');
     expect(html).toContain('>PC</span>');
-    expect(html).toContain('aria-label="Project: parallel-code · Project settings"');
+    expect(html).toContain('aria-label="Project: parallel-code · Project actions"');
+  });
+
+  it('shows the project icon instead of the color stripe when the project has one', () => {
+    vi.mocked(getProject).mockReturnValue({
+      id: 'project-1',
+      name: 'parallel-code',
+      path: '/repo',
+      color: 'hsl(210, 70%, 75%)',
+      icon: 'terminal',
+    } as never);
+
+    const html = renderToString(() => TaskBranchInfoBar({ task, onEditProject: vi.fn() }));
+
+    expect(html).not.toContain('border-left:3px');
+    expect(html).toMatch(
+      /class="project-swatch project-swatch-icon"[^>]*style="[^"]*color:hsl\(210, 70%, 75%\)/,
+    );
+    expect(html).toContain('class="task-branch-project-label">parallel-code</span>');
   });
 });
 
@@ -246,12 +275,19 @@ describe('TaskBranchInfoBar responsive styles', () => {
     );
   });
 
-  it('keeps the project visible as initials at 480px', () => {
+  // Several projects make a branch name ambiguous, so only a lone project may hide.
+  it('keeps the project visible as initials at 480px when there are several projects', () => {
     expect(css).not.toMatch(
-      /@container\s+task-branch-info\s+\(max-width:\s*480px\)[\s\S]*?\.task-branch-project\s*{[^}]*display:\s*none/,
+      /@container\s+task-branch-info\s+\(max-width:\s*480px\)[\s\S]*?(?<!--single-project\s)\.task-branch-project\s*{[^}]*display:\s*none/,
     );
     expect(css).toMatch(
       /@container\s+task-branch-info\s+\(max-width:\s*480px\)[\s\S]*?\.task-branch-project-compact-label\s*{[^}]*display:\s*inline/,
+    );
+  });
+
+  it('drops the project initials at 480px when there is only one project', () => {
+    expect(css).toMatch(
+      /@container\s+task-branch-info\s+\(max-width:\s*480px\)[\s\S]*?\.task-branch-info-bar--single-project\s+\.task-branch-project\s*{[^}]*display:\s*none/,
     );
   });
 
@@ -281,5 +317,41 @@ describe('TaskBranchInfoBar responsive styles', () => {
       );
     }
     expect(css).toMatch(/\.task-pr-link\b[^{}]*{[^}]*flex:\s*0 0 auto/);
+  });
+});
+
+describe('TaskBranchInfoBar additional PRs', () => {
+  const apiUrl = 'https://github.com/acme/api/pull/7';
+
+  beforeEach(() => {
+    mockGetPrChecks.mockImplementation((id: string) =>
+      id === extraPrWatchId(task.id, apiUrl)
+        ? {
+            overall: 'failure',
+            passing: 1,
+            pending: 0,
+            failing: 1,
+            checks: [],
+            checkedAt: '2026-10-22T10:00:00.000Z',
+          }
+        : undefined,
+    );
+    setTaskExtraPrs(task.id, [{ url: apiUrl, repo: 'api' }]);
+  });
+
+  afterEach(() => {
+    setTaskExtraPrs(task.id, []);
+    mockGetPrChecks.mockReset();
+  });
+
+  it('shows a chip per additional PR, labelled with its nested repository', () => {
+    const html = renderToString(() => TaskBranchInfoBar({ task, onEditProject: vi.fn() }));
+
+    expect(html).toContain('aria-label="PR #12"');
+    expect(html).toContain('aria-label="PR api #7, CI failed"');
+    expect(html).toContain('class="task-pr-repo"');
+    // Fix CI for the failing additional PR; Merge stays with the task's own PR.
+    expect(html.match(/class="task-pr-fix-ci"/g)).toHaveLength(1);
+    expect(html).not.toContain('task-pr-merge');
   });
 });

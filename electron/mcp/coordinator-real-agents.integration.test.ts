@@ -19,7 +19,7 @@ const describeRealAgents =
 const projectRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 
 interface RealAgentProfile {
-  name: 'codex' | 'claude' | 'gemini';
+  name: 'codex' | 'claude';
   command: string;
   args: string[];
 }
@@ -81,19 +81,6 @@ function realAgentProfiles(): RealAgentProfile[] {
       name: 'claude',
       command: claude,
       args: ['--dangerously-skip-permissions'],
-    });
-  }
-
-  const gemini = which('gemini');
-  if (gemini) {
-    profiles.push({
-      name: 'gemini',
-      command: gemini,
-      args: [
-        '--skip-trust',
-        '--prompt-interactive',
-        'Do not edit files. Wait for the next user instruction.',
-      ],
     });
   }
 

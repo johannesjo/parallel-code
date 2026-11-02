@@ -1,5 +1,22 @@
 import { GitHubIssuesPage } from './components/GitHubIssuesPage';
 import { KanbanPage } from './components/KanbanPage';
+import { TaskBoard } from './components/TaskBoard';
+import { openBesideBoard } from './components/board/TaskStatus';
+import { navigateBoard, navigateBoardTask } from './components/task-board-keys';
+import { openNextAttentionTask, openPreviousAttentionTask } from './components/next-attention-task';
+import {
+  BoardSidePanelClose,
+  BoardSidePanelHandle,
+  boardSidePanelBasis,
+  closeSidePanel,
+} from './components/BoardSidePanel';
+import {
+  boardCoversWorkspace,
+  boardShown,
+  boardSidePanelOpen,
+  closeBoard,
+  projectPageOpen,
+} from './store/project-pages';
 import '@xterm/xterm/css/xterm.css';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
@@ -20,6 +37,7 @@ import {
   Show,
   ErrorBoundary,
   createSignal,
+  createMemo,
   lazy,
 } from 'solid-js';
 import { invoke } from './lib/ipc';
@@ -32,18 +50,22 @@ import { resolvePanelCloseTarget } from './store/close-target';
 import { Sidebar } from './components/Sidebar';
 import { TilingLayout } from './components/TilingLayout';
 import { HelpDialog } from './components/HelpDialog';
+import { IdeaDialog, toggleIdeaDialog } from './components/IdeaDialog';
 import { TaskSwitcher } from './components/TaskSwitcher';
 import { SettingsDialog } from './components/SettingsDialog';
 import { WorkspaceControls } from './components/WorkspaceControls';
 import { WindowTitleBar } from './components/WindowTitleBar';
+import { TaskBoardControls } from './components/TaskBoardControls';
 import { FocusModeTaskIndicators } from './components/FocusModeTaskIndicators';
 import { UsageStatusBar } from './components/UsageStatusBar';
-import { theme } from './lib/theme';
+import { WelcomeScreen } from './components/WelcomeScreen';
+import { linkButtonStyle, theme } from './lib/theme';
 import * as log from './lib/log';
 import {
   store,
   loadAgents,
   loadState,
+  isStateLoaded,
   saveState,
   toggleNewTaskPanel,
   toggleSidebar,
@@ -67,6 +89,7 @@ import {
   spawnShellForTask,
   closeShell,
   clearNotification,
+  notificationAction,
   setWindowState,
   createTerminal,
   closeTerminal,
@@ -74,7 +97,10 @@ import {
   validateProjectPaths,
   setPlanContent,
   setDockerAvailable,
-  toggleTaskFocusMode,
+  setWorkspaceView,
+  toggleBoardView,
+  workspaceView,
+  workspaceViewTransitionTypes,
   toggleFocusMode,
   initMCPListeners,
   markTaskMcpPending,
@@ -84,6 +110,7 @@ import {
   triggerAction,
 } from './store/store';
 import { isGitHubUrl } from './lib/github-url';
+import { isClaudeSessionUrl } from './lib/claude-session-url';
 import { getDeepActiveElement } from './lib/dom-focus';
 import { HoldToQuit } from './components/HoldToQuit';
 import type { PersistedWindowState } from './store/types';
@@ -93,7 +120,14 @@ import {
   registerJumpToTaskShortcuts,
   registerZoomShortcuts,
 } from './lib/shortcuts';
-import { resolvedBindings, loadKeybindings, dismissMigrationBanner } from './store/keybindings';
+import {
+  allBindings,
+  resolvedBindings,
+  loadKeybindings,
+  dismissMigrationBanner,
+} from './store/keybindings';
+import { switcherActions } from './lib/switcher-actions';
+import { openItemName } from './store/navigation';
 import { setupAutosave } from './store/autosave';
 import { buildCustomThemeCss } from './lib/custom-theme';
 import { osIsDark } from './lib/os-appearance';
@@ -101,6 +135,7 @@ import { applyAppearanceMode, markCustomThemesReady, loadCustomThemes } from './
 import { isMac } from './lib/platform';
 import { createCtrlWheelZoomHandler } from './lib/wheelZoom';
 import { redrawAllTerminals } from './lib/terminalFitManager';
+import { withViewTransition } from './lib/viewTransition';
 import { isDocumentAgentTaskId } from './documents/agent-task';
 import { isHiddenAgentTaskId } from './documents/task-id';
 import {
@@ -117,16 +152,18 @@ import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 import { startSuperProductivitySync, startSpOpenListener } from './store/store';
 import { startBackgroundTaskWatcher } from './store/background-tasks';
 import { startTaskBriefWatcher } from './store/task-brief';
-import { startKanbanAutomation } from './store/kanban';
+import { showPlanTasks, startKanbanAutomation } from './store/kanban';
 import { startPrChecksSubscription } from './store/pr-checks';
-import { startUpdateSubscription } from './store/updates';
+import { startPrBabysitWatcher } from './store/pr-babysit';
+import { restartApp, startUpdateSubscription } from './store/updates';
+import { isStaleBuildError } from './lib/stale-build';
 import { startRemoteTaskHandlers } from './store/remoteTaskHandler';
 import { startRemoteStatusSync } from './store/remoteStatusSync';
 import { startAgentHookStatusListener } from './store/agentHookStatus';
 import { applyPlanContent } from './store/canvas';
-import { startEvidenceAutoBuild } from './store/evidence-auto';
+import { startBackgroundChecks } from './store/background-checks';
 import type { PlanContentMessage } from './store/canvas';
-import { SyncIcon } from './components/icons';
+import { CircleCheckIcon, GitHubMarkIcon, SyncIcon } from './components/icons';
 
 const ThinkingSpace = lazy(() =>
   import('./components/thinking/ThinkingSpace').then((m) => ({ default: m.ThinkingSpace })),
@@ -136,13 +173,6 @@ const ArenaOverlay = lazy(() =>
 );
 
 const MIN_WINDOW_DIMENSION = 100;
-
-/** Whether a project page (GitHub issues or the Kanban board) covers the task area. */
-function projectPageOpen(): boolean {
-  return store.projects.some(
-    (p) => p.id === store.githubIssuesProjectId || p.id === store.kanbanProjectId,
-  );
-}
 
 function DropOverlay() {
   return (
@@ -161,15 +191,13 @@ function DropOverlay() {
         'backdrop-filter': 'blur(4px)',
       }}
     >
-      <svg
-        width="48"
-        height="48"
-        viewBox="0 0 16 16"
-        fill={theme.accent}
-        style={{ opacity: '0.9' }}
-      >
-        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-      </svg>
+      {/* Drag events hide the link until drop, so both kinds are announced. */}
+      <div style={{ display: 'flex', gap: '24px' }}>
+        <GitHubMarkIcon size={48} style={{ color: theme.accent, opacity: '0.9' }} />
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="#D97757" style={{ opacity: '0.9' }}>
+          <path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z" />
+        </svg>
+      </div>
       <span
         style={{
           color: theme.fg,
@@ -178,7 +206,7 @@ function DropOverlay() {
           'font-family': 'var(--font-ui)',
         }}
       >
-        Drop GitHub link to create task
+        Drop a GitHub or Claude session link to create a task
       </span>
       <span
         style={{
@@ -187,11 +215,20 @@ function DropOverlay() {
           'font-family': 'var(--font-ui)',
         }}
       >
-        A new task will be created with the link in the prompt
+        GitHub links prefill a review; Claude session links teleport
       </span>
     </div>
   );
 }
+
+const WELCOME_ACTIONS = new Set([
+  'toggleHelp',
+  'toggleSettings',
+  'closeDialogs',
+  'zoomIn',
+  'zoomOut',
+  'resetZoom',
+]);
 
 function App() {
   let mainRef!: HTMLDivElement;
@@ -200,6 +237,32 @@ function App() {
   const [showDropOverlay, setShowDropOverlay] = createSignal(false);
   const [closeHandlerReady, setCloseHandlerReady] = createSignal(false);
   const [taskSwitcherOpen, setTaskSwitcherOpen] = createSignal(false);
+  const [stateLoaded, setStateLoaded] = createSignal(false);
+  const [stateRestored, setStateRestored] = createSignal(false);
+  // A new install sees only the welcome screen, whatever view is selected; and
+  // nothing flashes up before the saved state says whether it is one. An
+  // unreadable state is no first run: its projects would not be saved.
+  const welcome = () => stateRestored() && store.projects.length === 0;
+  // The welcome screen hides the workspace; only shortcuts that open their own UI work there.
+  const fitsScreen = (binding: { action?: string }) =>
+    !welcome() || (binding.action !== undefined && WELCOME_ACTIONS.has(binding.action));
+  // A document workspace's hidden agent task can be the active one; it has
+  // no worktree to close, merge or push and no panel a shell could show in.
+  const listedTask = (id: string) =>
+    !projectPageOpen() && store.tasks[id] !== undefined && !isHiddenAgentTaskId(id);
+  // Filled in on mount; the switcher only runs actions after that.
+  let actionHandlers: Record<string, (e: KeyboardEvent) => void> = {};
+  // The same actions the shortcuts reach right now, unbound ones included,
+  // less those whose handler would do nothing without an active item.
+  const paletteActions = createMemo(() => {
+    const id = store.activeTaskId;
+    return switcherActions(allBindings().filter(fitsScreen), {
+      activeName: id && !projectPageOpen() ? openItemName(id) : null,
+      taskActive: id !== null && listedTask(id),
+      documentOpen: store.activeDocumentProjectId !== null && isDocumentAgentTaskId(id),
+    });
+  });
+  const bare = () => !stateLoaded() || welcome();
   let dragCounter = 0;
 
   function closeArena() {
@@ -207,17 +270,20 @@ function App() {
     toggleArena(false);
   }
 
-  function extractGitHubUrl(dt: DataTransfer): string | null {
+  // GitHub links prefill a review; Claude web session links teleport.
+  const isTaskSourceUrl = (url: string) => isGitHubUrl(url) || isClaudeSessionUrl(url);
+
+  function extractDroppedUrl(dt: DataTransfer): string | null {
     const uriList = dt.getData('text/uri-list');
     if (uriList) {
       const firstUrl = uriList
         .split('\n')
         .find((l) => !l.startsWith('#'))
         ?.trim();
-      if (firstUrl && isGitHubUrl(firstUrl)) return firstUrl;
+      if (firstUrl && isTaskSourceUrl(firstUrl)) return firstUrl;
     }
     const text = dt.getData('text/plain')?.trim();
-    if (text && isGitHubUrl(text)) return text;
+    if (text && isTaskSourceUrl(text)) return text;
     return null;
   }
 
@@ -255,7 +321,7 @@ function App() {
     dragCounter = 0;
     setShowDropOverlay(false);
     if (!e.dataTransfer) return;
-    const url = extractGitHubUrl(e.dataTransfer);
+    const url = extractDroppedUrl(e.dataTransfer);
     if (!url) return;
     setNewTaskDropUrl(url);
     toggleNewTaskPanel(true);
@@ -385,7 +451,7 @@ function App() {
     // loadState spawns them, and IPC does not replay what nobody listened to.
     const stopMCPListeners = initMCPListeners();
     const stopAgentHookStatusListener = startAgentHookStatusListener();
-    const stopEvidenceAutoBuild = startEvidenceAutoBuild();
+    const stopBackgroundChecks = startBackgroundChecks();
     // Listen for plan content pushed from backend plan watcher
     const offPlanContent = window.electron.ipcRenderer.on(IPC.PlanContent, (data: unknown) => {
       if (!data || typeof data !== 'object') return;
@@ -447,7 +513,12 @@ function App() {
       (available) => setDockerAvailable(available),
       () => setDockerAvailable(false),
     );
-    await loadState();
+    try {
+      await loadState();
+    } finally {
+      setStateRestored(isStateLoaded());
+      setStateLoaded(true);
+    }
     const themesLoaded = await loadCustomThemes();
     // Only unlock slot-ID sanitization when the IPC call succeeded. On failure
     // customThemes remains {} and we must not null out the user's persisted selections.
@@ -591,6 +662,7 @@ function App() {
     const stopTaskBriefWatcher = startTaskBriefWatcher();
     const stopKanbanAutomation = startKanbanAutomation();
     const stopPrChecksSubscription = startPrChecksSubscription();
+    const stopPrBabysitWatcher = startPrBabysitWatcher();
     const stopUpdateSubscription = startUpdateSubscription();
     const stopRemoteTaskHandlers = startRemoteTaskHandlers();
     const stopRemoteStatusSync = startRemoteStatusSync();
@@ -607,7 +679,7 @@ function App() {
         return;
       }
       const text = e.clipboardData?.getData('text/plain')?.trim();
-      if (text && isGitHubUrl(text)) {
+      if (text && isTaskSourceUrl(text)) {
         e.preventDefault();
         setNewTaskDropUrl(text);
         toggleNewTaskPanel(true);
@@ -674,18 +746,16 @@ function App() {
     });
     setCloseHandlerReady(true);
 
-    // A document workspace's hidden agent task can be the active one; it has
-    // no worktree to close, merge or push and no panel a shell could show in.
-    const listedTask = (id: string) =>
-      !projectPageOpen() && store.tasks[id] !== undefined && !isHiddenAgentTaskId(id);
-
-    const actionHandlers: Record<string, (e: KeyboardEvent) => void> = {
-      'navigateRow:up': () => navigateRow('up'),
-      'navigateRow:down': () => navigateRow('down'),
-      'navigateColumn:left': () => navigateColumn('left'),
-      'navigateColumn:right': () => navigateColumn('right'),
-      'navigateTask:left': () => navigateTask('left'),
-      'navigateTask:right': () => navigateTask('right'),
+    actionHandlers = {
+      // The board takes these first while it, rather than its side panel, has the keyboard.
+      'navigateRow:up': () => navigateBoard('up') || navigateRow('up'),
+      'navigateRow:down': () => navigateBoard('down') || navigateRow('down'),
+      'navigateColumn:left': () => navigateBoard('left') || navigateColumn('left'),
+      'navigateColumn:right': () => navigateBoard('right') || navigateColumn('right'),
+      'navigateTask:left': () => navigateBoardTask('left') || navigateTask('left'),
+      'navigateTask:right': () => navigateBoardTask('right') || navigateTask('right'),
+      'navigateBoardTask:up': () => navigateBoardTask('up'),
+      'navigateBoardTask:down': () => navigateBoardTask('down'),
       'moveActiveTask:left': () => moveActiveTask('left'),
       'moveActiveTask:right': () => moveActiveTask('right'),
       ...Object.fromEntries(
@@ -719,6 +789,10 @@ function App() {
         const id = store.activeTaskId;
         if (id && listedTask(id)) setPendingAction({ type: 'finish', taskId: id });
       },
+      createPullRequest: () => {
+        const id = store.activeTaskId;
+        if (id && listedTask(id)) setPendingAction({ type: 'create-pr', taskId: id });
+      },
       spawnShell: () => {
         const id = store.activeTaskId;
         if (id && listedTask(id)) spawnShellForTask(id);
@@ -731,11 +805,21 @@ function App() {
         if (!projectPageOpen()) sendActivePrompt();
       },
       createTerminal: (e) => {
-        if (!e.repeat) createTerminal();
+        if (e.repeat) return;
+        // On the board the new terminal opens in its side panel, not the tiled view.
+        if (boardShown()) openBesideBoard(null, createTerminal);
+        else createTerminal();
       },
-      newTask: () => toggleNewTaskPanel(true),
+      newTask: () => withViewTransition(() => toggleNewTaskPanel(true)),
+      addIdea: () => toggleIdeaDialog(),
       toggleSidebar: () => toggleSidebar(),
-      toggleFocusMode: () => toggleTaskFocusMode(),
+      toggleFocusMode: () => {
+        const next = workspaceView() === 'focus' ? 'tiles' : 'focus';
+        withViewTransition(() => setWorkspaceView(next), workspaceViewTransitionTypes(next));
+      },
+      toggleBoardView: () => withViewTransition(toggleBoardView),
+      openNextAttentionTask: () => openNextAttentionTask(),
+      openPreviousAttentionTask: () => openPreviousAttentionTask(),
       switchDocument: () => {
         if (store.activeDocumentProjectId && isDocumentAgentTaskId(store.activeTaskId))
           setFilesOpen(true);
@@ -772,13 +856,27 @@ function App() {
           toggleSettingsDialog(false);
           return;
         }
+        // The workspace behind the welcome screen stays as it is.
+        if (welcome()) return;
+        // The board covers focus mode, so it closes first, its side panel
+        // before it. A draft in the side panel handles Escape itself.
+        if (boardShown()) {
+          if (store.showNewTaskPanel) return;
+          if (store.boardPeek) closeSidePanel();
+          // A plan steps back to its project's running tasks before the board closes.
+          else if (store.kanbanProjectId) withViewTransition(showPlanTasks);
+          // closeBoard, not a toggle: the update runs a frame later, so a
+          // repeated Escape would otherwise reopen the board.
+          else withViewTransition(closeBoard);
+          return;
+        }
         // Not global, so an Escape typed into the agent terminal still
         // reaches the agent instead of leaving focus mode. Exits directly:
         // toggleTaskFocusMode ignores a standalone terminal as the active item.
-        // The new-task panel and project pages hide focus mode; leave it for
+        // The new-task draft and project pages cover the focused task; leave it for
         // when they close rather than flipping it unseen.
         if (store.focusMode && !store.showNewTaskPanel && !projectPageOpen()) {
-          toggleFocusMode(false);
+          withViewTransition(() => toggleFocusMode(false), workspaceViewTransitionTypes('tiles'));
         }
       },
       zoomIn: () => adjustGlobalScale(1),
@@ -794,9 +892,19 @@ function App() {
 
     const cleanupJumpToTaskShortcuts = registerJumpToTaskShortcuts((i) => jumpToTask(i));
 
+    // Shortcuts always swallow their keys, so the board's own ones exist only
+    // while it is shown; Alt+PageUp/PageDown stay with terminals otherwise.
+    const boardOnly = (binding: { action?: string }) =>
+      binding.action?.startsWith('navigateBoardTask:') === true;
     createEffect(() => {
-      const cleanup = registerFromRegistry(resolvedBindings(), actionHandlers);
-      onCleanup(cleanup);
+      const bindings = resolvedBindings().filter(
+        (binding) => !boardOnly(binding) && fitsScreen(binding),
+      );
+      onCleanup(registerFromRegistry(bindings, actionHandlers));
+    });
+    createEffect(() => {
+      if (!boardShown()) return;
+      onCleanup(registerFromRegistry(resolvedBindings().filter(boardOnly), actionHandlers));
     });
 
     onCleanup(() => {
@@ -815,11 +923,12 @@ function App() {
       stopTaskBriefWatcher();
       stopKanbanAutomation();
       stopPrChecksSubscription();
+      stopPrBabysitWatcher();
       stopUpdateSubscription();
       stopRemoteTaskHandlers();
       stopRemoteStatusSync();
       stopAgentHookStatusListener();
-      stopEvidenceAutoBuild();
+      stopBackgroundChecks();
       stopDocumentListeners();
       stopWindowVisibilityTracking();
       offPlanContent();
@@ -833,52 +942,63 @@ function App() {
 
   return (
     <ErrorBoundary
-      fallback={(err, reset) => (
-        <div
-          style={{
-            width: '100vw',
-            height: '100vh',
-            display: 'flex',
-            'flex-direction': 'column',
-            'align-items': 'center',
-            'justify-content': 'center',
-            gap: '16px',
-            background: theme.bg,
-            color: theme.fg,
-            'font-family': "var(--font-ui, 'Sora', sans-serif)",
-          }}
-        >
-          <div style={{ 'font-size': '19px', 'font-weight': '600', color: theme.error }}>
-            Something went wrong
-          </div>
+      fallback={(err, reset) => {
+        const stale = isStaleBuildError(err);
+        return (
           <div
             style={{
-              'max-width': '500px',
-              'text-align': 'center',
-              color: theme.fgMuted,
-              'word-break': 'break-word',
-            }}
-          >
-            {String(err)}
-          </div>
-          <button
-            class="btn-with-icon"
-            onClick={reset}
-            style={{
-              background: theme.bgElevated,
-              border: `1px solid ${theme.border}`,
+              width: '100vw',
+              height: '100vh',
+              display: 'flex',
+              'flex-direction': 'column',
+              'align-items': 'center',
+              'justify-content': 'center',
+              gap: '16px',
+              background: theme.bg,
               color: theme.fg,
-              padding: '8px 24px',
-              'border-radius': 'var(--radius-md)',
-              cursor: 'pointer',
-              'font-size': '15px',
+              'font-family': "var(--font-ui, 'Sora', sans-serif)",
             }}
           >
-            <SyncIcon size={14} />
-            Reload
-          </button>
-        </div>
-      )}
+            <div
+              style={{
+                'font-size': '19px',
+                'font-weight': '600',
+                color: stale ? theme.fg : theme.error,
+              }}
+            >
+              {stale ? 'Parallel Code was updated' : 'Something went wrong'}
+            </div>
+            <div
+              style={{
+                'max-width': '500px',
+                'text-align': 'center',
+                color: theme.fgMuted,
+                'word-break': 'break-word',
+              }}
+            >
+              {stale
+                ? 'A newer version was installed while the app was running. Restart to load it.'
+                : String(err)}
+            </div>
+            <button
+              class="btn-with-icon"
+              onClick={() => (stale ? restartApp() : reset())}
+              style={{
+                background: theme.bgElevated,
+                border: `1px solid ${theme.border}`,
+                color: theme.fg,
+                padding: '8px 24px',
+                'border-radius': 'var(--radius-md)',
+                cursor: 'pointer',
+                'font-size': '15px',
+              }}
+            >
+              <SyncIcon size={14} />
+              {stale ? 'Restart' : 'Reload'}
+            </button>
+          </div>
+        );
+      }}
     >
       <div
         ref={mainRef}
@@ -906,15 +1026,18 @@ function App() {
         }}
       >
         <Show when={!isMac}>
-          <WindowTitleBar />
+          <WindowTitleBar bare={bare()} />
         </Show>
         <Show when={isMac}>
           <div class="mac-titlebar-spacer" data-tauri-drag-region>
-            <WorkspaceControls />
-            <FocusModeTaskIndicators />
+            <Show when={!bare()}>
+              <WorkspaceControls />
+              <FocusModeTaskIndicators />
+              <TaskBoardControls />
+            </Show>
           </div>
         </Show>
-        <Show when={!store.keybindingMigrationDismissed}>
+        <Show when={!bare() && !store.keybindingMigrationDismissed}>
           <div
             class="keybinding-migration-notice"
             role="region"
@@ -952,25 +1075,55 @@ function App() {
             </button>
           </div>
         </Show>
-        <main style={{ flex: '1', display: 'flex', overflow: 'hidden' }}>
+        <Show when={welcome()}>
+          <WelcomeScreen />
+        </Show>
+        {/* Hidden rather than unmounted, so startup sees the workspace it always has. */}
+        <main
+          style={{ flex: '1', display: bare() ? 'none' : 'flex', overflow: 'hidden' }}
+          classList={{ 'board-panel-left': boardSidePanelOpen() && store.boardSidePanelLeft }}
+        >
           <Show when={store.sidebarVisible}>
             <Sidebar />
           </Show>
-          {/* Keep terminals mounted while the issue page occupies the workspace. */}
+          <Show when={boardShown()}>
+            <Show when={store.kanbanProjectId} fallback={<TaskBoard />}>
+              <KanbanPage />
+            </Show>
+          </Show>
+          {/* Keep terminals mounted while a page or the board occupies the
+              workspace; the board shows it as its side panel. */}
           <div
             class="task-workspace"
+            classList={{
+              'board-side-panel': boardSidePanelOpen(),
+              'panel-left': boardSidePanelOpen() && store.boardSidePanelLeft,
+            }}
             style={{
-              display: projectPageOpen() ? 'none' : undefined,
+              display: projectPageOpen() || boardCoversWorkspace() ? 'none' : undefined,
+              'flex-basis': boardSidePanelOpen() ? boardSidePanelBasis() : undefined,
             }}
           >
+            <Show when={boardSidePanelOpen()}>
+              <BoardSidePanelHandle />
+              <BoardSidePanelClose />
+            </Show>
             <TilingLayout />
           </div>
           <GitHubIssuesPage />
-          <KanbanPage />
         </main>
-        <UsageStatusBar />
+        <Show when={!bare()}>
+          <UsageStatusBar />
+        </Show>
+        <IdeaDialog />
         <HelpDialog open={store.showHelpDialog} onClose={() => toggleHelpDialog(false)} />
-        <TaskSwitcher open={taskSwitcherOpen()} onClose={() => setTaskSwitcherOpen(false)} />
+        <TaskSwitcher
+          open={taskSwitcherOpen()}
+          onClose={() => setTaskSwitcherOpen(false)}
+          actions={paletteActions()}
+          // A fresh event: no handler sees auto-repeat from a palette pick.
+          onAction={(action) => actionHandlers[action]?.(new KeyboardEvent('keydown'))}
+        />
         <SettingsDialog
           open={store.showSettingsDialog}
           onClose={() => toggleSettingsDialog(false)}
@@ -990,28 +1143,58 @@ function App() {
         <Show when={isMac && closeHandlerReady()}>
           <HoldToQuit />
         </Show>
-        <Show when={store.notification}>
-          <div
-            onClick={() => clearNotification()}
-            style={{
-              position: 'fixed',
-              bottom: '24px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              background: theme.islandBg,
-              border: `1px solid ${theme.border}`,
-              'border-radius': 'var(--radius-md)',
-              padding: '10px 20px',
-              color: theme.fg,
-              'font-size': '14px',
-              'z-index': '2000',
-              'box-shadow': '0 4px 24px rgba(0,0,0,0.4)',
-              cursor: 'pointer',
-            }}
-          >
-            {store.notification}
-          </div>
-        </Show>
+        {/* The live region stays mounted: screen readers announce changes to
+            an existing region, not a region that appears with its text. */}
+        <div role="status" aria-live="polite">
+          <Show when={store.notification}>
+            <div
+              class="app-notice"
+              onClick={() => clearNotification()}
+              style={{
+                position: 'fixed',
+                bottom: '24px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                'border-radius': 'var(--radius-md)',
+                padding: '10px 20px',
+                color: theme.fg,
+                'font-size': '14px',
+                'z-index': 'var(--z-overlay)',
+                cursor: 'pointer',
+                display: 'flex',
+                'align-items': 'center',
+                gap: '8px',
+              }}
+            >
+              <Show when={store.notificationBusy}>
+                <span class="inline-spinner" aria-hidden="true" />
+              </Show>
+              <Show when={store.notificationTone === 'success'}>
+                <span class="app-notice-check" aria-hidden="true">
+                  <CircleCheckIcon size={16} />
+                </span>
+              </Show>
+              {store.notification}
+              <Show when={notificationAction()}>
+                {(action) => (
+                  <button
+                    type="button"
+                    style={{ ...linkButtonStyle, color: theme.fg, 'font-size': 'inherit' }}
+                    onClick={(e) => {
+                      // The notice dismisses on any click; clear it before running, so a notice the action shows stays up.
+                      e.stopPropagation();
+                      const { run } = action();
+                      clearNotification();
+                      run();
+                    }}
+                  >
+                    {action().label}
+                  </button>
+                )}
+              </Show>
+            </div>
+          </Show>
+        </div>
       </div>
     </ErrorBoundary>
   );

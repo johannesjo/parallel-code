@@ -36,15 +36,6 @@ const DEFAULT_AGENTS: AgentDef[] = [
     description: "OpenAI's Codex CLI agent",
   },
   {
-    id: 'gemini',
-    name: 'Gemini CLI',
-    command: 'gemini',
-    args: [],
-    resume_args: ['--resume', 'latest'],
-    skip_permissions_args: getSkipPermissionsArgs('gemini'),
-    description: "Google's Gemini CLI agent",
-  },
-  {
     id: 'opencode',
     name: 'OpenCode',
     command: 'opencode',

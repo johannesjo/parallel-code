@@ -6,6 +6,7 @@ const EMPTY = {
   sidebarFocused: false,
   placeholderFocused: false,
   newTaskPanelFocused: false,
+  boardFocused: false,
   terminals: {},
   tasks: {},
   focusedPanel: {},
@@ -32,6 +33,10 @@ describe('resolvePanelCloseTarget', () => {
 
   it('spares the active terminal while the placeholder has focus', () => {
     expect(resolvePanelCloseTarget({ ...ACTIVE_TERMINAL, placeholderFocused: true })).toBeNull();
+  });
+
+  it('spares the active terminal while a board card has focus', () => {
+    expect(resolvePanelCloseTarget({ ...ACTIVE_TERMINAL, boardFocused: true })).toBeNull();
   });
 
   it('spares the active terminal while the new-task panel has focus', () => {

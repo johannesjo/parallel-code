@@ -1847,3 +1847,45 @@ describe('branch focus and search', () => {
     expect(container.querySelector('[role="listbox"]')).toBeNull();
   });
 });
+
+describe('agent pointer', () => {
+  const selectedId = () =>
+    container.querySelector('[data-node-id][data-selected="true"]')?.getAttribute('data-node-id');
+  it('reveals and selects the note the agent points at without taking keyboard focus', () => {
+    const fixture = makeFixture();
+    const [snapshot, setSnapshot] = createSignal<Snapshot>(fixture.snapshots[5]);
+    const [focusRequest, setFocusRequest] = createSignal<{ nodeId: string; seq: number }>();
+    dispose = render(
+      () => (
+        <ReasoningGraph
+          graphKey="task-a"
+          snapshot={snapshot()}
+          visible
+          focusRequest={focusRequest()}
+        />
+      ),
+      container,
+    );
+    branchToggle('Collapse Retry reapplication').click();
+    expect(container.querySelector('[data-record-id="H21"]')).toBeNull();
+    const chat = document.createElement('textarea');
+    document.body.append(chat);
+    chat.focus();
+    setFocusRequest({ nodeId: 'H21', seq: 1 });
+    expect(selectedId()).toBe('H21');
+    expect(document.activeElement).toBe(chat);
+
+    // A paused view moves on to the update that holds the note.
+    pause();
+    // Closing the pause menu returns focus to its button; the user goes back to the chat.
+    chat.focus();
+    const held = new Set(fixture.snapshots[5].records.map((record) => record.id));
+    const added = expectDefined(fixture.snapshots[6].records.find((r) => !held.has(r.id)));
+    setSnapshot(fixture.snapshots[6]);
+    expect(container.querySelector(`[data-record-id="${added.id}"]`)).toBeNull();
+    setFocusRequest({ nodeId: added.id, seq: 2 });
+    expect(selectedId()).toBe(added.id);
+    expect(document.activeElement).toBe(chat);
+    chat.remove();
+  });
+});

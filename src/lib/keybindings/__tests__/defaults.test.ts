@@ -6,6 +6,10 @@ const APP_LAYER_IDS = [
   'app.nav.row-down',
   'app.nav.column-left',
   'app.nav.column-right',
+  'app.nav.board-task-up',
+  'app.nav.board-task-down',
+  'app.nav.board-task-up-linux',
+  'app.nav.board-task-down-linux',
   'app.task.reorder-left',
   'app.task.reorder-right',
   'app.task.reorder-left-linux',
@@ -21,6 +25,9 @@ const APP_LAYER_IDS = [
   'app.new-task-alt',
   'app.toggle-sidebar',
   'app.toggle-focus-mode',
+  'app.toggle-board-view',
+  'app.nav.next-attention',
+  'app.nav.previous-attention',
   'app.switch-document',
   'app.toggle-help',
   'app.toggle-help-f1',
@@ -63,6 +70,22 @@ describe('DEFAULT_BINDINGS', () => {
     for (const id of TERMINAL_LAYER_IDS) {
       expect(ids.has(id), `Missing terminal-layer binding: ${id}`).toBe(true);
     }
+  });
+
+  it('binds next attention task to one-handed Ctrl+Tab, never Cmd+Tab', () => {
+    const binding = DEFAULT_BINDINGS.find((b) => b.id === 'app.nav.next-attention');
+    expect(binding).toMatchObject({ key: 'Tab', modifiers: { ctrl: true }, global: true });
+    expect(binding?.modifiers).not.toHaveProperty('cmdOrCtrl');
+  });
+
+  it('binds previous attention task to Ctrl+Shift+Tab, never Cmd+Shift+Tab', () => {
+    const binding = DEFAULT_BINDINGS.find((b) => b.id === 'app.nav.previous-attention');
+    expect(binding).toMatchObject({
+      key: 'Tab',
+      modifiers: { ctrl: true, shift: true },
+      global: true,
+    });
+    expect(binding?.modifiers).not.toHaveProperty('cmdOrCtrl');
   });
 
   it('has no duplicate IDs', () => {

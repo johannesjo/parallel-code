@@ -21,6 +21,8 @@ type MockStore = {
   showPromptInput: boolean;
   sidebarVisible: boolean;
   taskSplitMode: Record<string, boolean>;
+  shellLayoutOverride: 'row' | 'grid' | 'column' | null;
+  taskShellAutoLayout: Record<string, 'row' | 'grid' | 'column'>;
   pendingAction: { type: 'close' | 'finish'; taskId: string } | null;
 };
 
@@ -123,6 +125,8 @@ beforeEach(() => {
     showPromptInput: true,
     sidebarVisible: true,
     taskSplitMode: {},
+    shellLayoutOverride: null,
+    taskShellAutoLayout: {},
     pendingAction: null,
   });
 
@@ -350,6 +354,40 @@ describe('focus navigation neighbor map', () => {
     expect(mockStore.activeTaskId).toBe('task-1');
     expect(mockStore.sidebarFocused).toBe(false);
     expect(mockStore.focusedPanel['task-1']).toBe('ai-terminal:agent-1');
+  });
+
+  it('walks stacked shells top to bottom when Column is pinned', () => {
+    setTask('task-1', { shellAgentIds: ['shell-1', 'shell-2'] });
+    mockStore.shellLayoutOverride = 'column';
+    mockStore.focusedPanel['task-1'] = 'shell-toolbar:0';
+
+    navigateRow('down');
+    expect(mockStore.focusedPanel['task-1']).toBe('shell:0');
+    navigateRow('down');
+    expect(mockStore.focusedPanel['task-1']).toBe('shell:1');
+  });
+
+  it('clamps down-moves into the shorter last row of a square grid', () => {
+    setTask('task-1', { shellAgentIds: ['shell-1', 'shell-2', 'shell-3'] });
+    mockStore.shellLayoutOverride = 'grid';
+    mockStore.focusedPanel['task-1'] = 'shell:0';
+
+    navigateColumn('right');
+    expect(mockStore.focusedPanel['task-1']).toBe('shell:1');
+    navigateRow('down');
+    expect(mockStore.focusedPanel['task-1']).toBe('shell:2');
+  });
+
+  it('pairs the prompt with the bottom shell when the side column stacks shells', () => {
+    setTask('task-1', { shellAgentIds: ['shell-1', 'shell-2'] });
+    mockStore.taskSplitMode['task-1'] = true;
+    mockStore.taskShellAutoLayout['task-1'] = 'column';
+    mockStore.focusedPanel['task-1'] = 'prompt';
+
+    navigateColumn('right');
+    expect(mockStore.focusedPanel['task-1']).toBe('shell:1');
+    navigateRow('up');
+    expect(mockStore.focusedPanel['task-1']).toBe('shell:0');
   });
 
   it('clamps split shell-toolbar down-moves to the last available shell', () => {

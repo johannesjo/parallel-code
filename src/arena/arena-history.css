@@ -18,8 +18,8 @@
   flex-direction: column;
   gap: 6px;
   transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
     transform 0.2s ease,
     box-shadow 0.2s ease;
 }
@@ -88,8 +88,8 @@
   padding: 4px;
   border-radius: var(--radius-xs);
   transition:
-    color 0.15s ease,
-    background 0.15s ease;
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
 }
 
 .arena-history-delete-btn:hover:not(:disabled) {

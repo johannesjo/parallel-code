@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { setStore } from './core';
 import { addAgentToTask } from './agents';
+import { autoTaskColumnWidth } from './task-column';
 import { deletePanelUserSize, getPanelUserSize, setPanelUserSize } from './ui';
 import type { AgentDef } from '../ipc/types';
 import type { Task } from './types';
@@ -52,12 +53,19 @@ afterEach(() => {
   deletePanelUserSize(['tiling:task-1', 'task:task-1:canvas-cols:canvas']);
 });
 
-it('widens the column so a second terminal and its neighbour each stay workable', async () => {
+it('makes room for each side-by-side terminal without pinning the column', async () => {
   await addAgentToTask('task-1', codex);
-  expect(columnWidth()).toBe(2 * 420);
+  expect(autoTaskColumnWidth('task-1')).toBe(2 * 420);
 
   await addAgentToTask('task-1', codex);
-  expect(columnWidth()).toBe(3 * 420);
+  expect(autoTaskColumnWidth('task-1')).toBe(3 * 420);
+  expect(columnWidth()).toBeUndefined();
+});
+
+it('widens a column the user dragged too narrow for the panes', async () => {
+  setPanelUserSize('tiling:task-1', 600);
+  await addAgentToTask('task-1', codex);
+  expect(columnWidth()).toBe(2 * 420);
 });
 
 it('leaves a column the user already made wide enough alone', async () => {
@@ -68,13 +76,21 @@ it('leaves a column the user already made wide enough alone', async () => {
 
 it('pays for the open canvas on top of the terminal panes', async () => {
   setStore('tasks', 'task-1', 'canvasOpen', true);
+  expect(autoTaskColumnWidth('task-1')).toBe(520 + 400);
+  await addAgentToTask('task-1', codex);
+  expect(autoTaskColumnWidth('task-1')).toBe(2 * 420 + 400);
+});
+
+it('pays for the open canvas on a dragged column too', async () => {
+  setStore('tasks', 'task-1', 'canvasOpen', true);
   setPanelUserSize('tiling:task-1', 520 + 400);
   await addAgentToTask('task-1', codex);
   expect(columnWidth()).toBe(2 * 420 + 400);
 });
 
-it('leaves the column alone when the panes are stacked as tabs', async () => {
+it('needs no extra room when the panes are stacked as tabs', async () => {
   setStore('tasks', 'task-1', 'aiTerminalLayout', 'tabs');
   await addAgentToTask('task-1', codex);
+  expect(autoTaskColumnWidth('task-1')).toBe(520);
   expect(columnWidth()).toBeUndefined();
 });

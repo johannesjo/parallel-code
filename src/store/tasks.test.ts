@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { IPC } from '../../electron/ipc/channels';
 import { CANVAS_INSTRUCTIONS } from '../../electron/shared/canvas-view';
 import { expectDefined, type MockStoreHarness } from './test-helpers';
+import { showNotification } from './notification';
 
 // Hoisted so these refs are available both in vi.mock() factories and in test bodies.
 const { mockInvoke, mockIsAgentBracketedPasteEnabled, mockSaveState } = vi.hoisted(() => ({
@@ -46,6 +47,7 @@ const ipcHandlers = new Map<string, (data: unknown) => void>();
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
 vi.mock('../lib/ipc', () => ({ Channel: vi.fn(), invoke: mockInvoke }));
+vi.mock('./notification', () => ({ NOTIFICATION_ERROR_MS: 10_000, showNotification: vi.fn() }));
 
 vi.mock('./core', async () => {
   const { createMockStoreHarness } = await import('./test-helpers');
@@ -117,17 +119,21 @@ vi.mock('./completion', () => ({
 }));
 vi.mock('../lib/log', () => ({ warn: vi.fn() }));
 vi.mock('../lib/clean-task-name', () => ({ cleanTaskName: vi.fn() }));
-vi.mock('./sidebar-order', () => ({
-  getCoordinatorChildren: vi.fn(),
-  computeSidebarDraggableTaskOrder: vi.fn(() =>
-    mockTaskOrder.filter((taskId) => {
-      const projectId = mockTasks[taskId]?.projectId;
-      return !mockProjects.some(
-        (project) => project.id === projectId && project.tasksCollapsed === true,
-      );
-    }),
-  ),
-}));
+vi.mock('./sidebar-order', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./sidebar-order')>();
+  return {
+    ...actual,
+    getCoordinatorChildren: vi.fn(),
+    computeSidebarDraggableTaskOrder: vi.fn(() =>
+      mockTaskOrder.filter((taskId) => {
+        const projectId = mockTasks[taskId]?.projectId;
+        return !mockProjects.some(
+          (project) => project.id === projectId && project.tasksCollapsed === true,
+        );
+      }),
+    ),
+  };
+});
 vi.mock('../lib/github-url', () => ({
   parseGitHubUrl: vi.fn(),
   taskNameFromGitHubUrl: vi.fn(),
@@ -176,6 +182,7 @@ import {
   createAgentRecord,
   selectActiveNeighborAfterRemoval,
   updateTaskName,
+  forgetTask,
 } from './tasks';
 import { armSpCompletion, fireSpCompletion, onTaskRenamed } from './superProductivity';
 import { updateTaskBranch } from './task-branch';
@@ -264,6 +271,32 @@ beforeEach(() => {
   mockAgentEnvFiles = {};
   mockInvoke.mockResolvedValue(undefined);
   mockSaveState.mockResolvedValue(undefined);
+});
+
+describe('task removal beside the board', () => {
+  const state = () =>
+    expectDefined(core.harness, 'mock store harness').state() as unknown as Record<string, unknown>;
+  beforeEach(() => {
+    mockTasks.shown = { agentIds: [], shellAgentIds: [] };
+    mockTasks.other = { agentIds: [], shellAgentIds: [] };
+    mockTaskOrder.push('shown', 'other');
+    Object.assign(state(), {
+      activeTaskId: 'shown',
+      boardView: true,
+      boardPeek: true,
+      taskGitStatus: {},
+    });
+  });
+
+  it('closes the side panel when the task it shows goes', () => {
+    forgetTask('shown', []);
+    expect(state().boardPeek).toBe(false);
+  });
+
+  it('keeps the side panel when another task goes', () => {
+    forgetTask('other', []);
+    expect(state().boardPeek).toBe(true);
+  });
 });
 
 describe('updateTaskBranch', () => {
@@ -1596,6 +1629,21 @@ describe('sendPrompt', () => {
     expect(writePayloads()).toEqual(['\x1b[I', '\x1b[200~line 1\nline 2\x1b[201~', '\r']);
   });
 
+  it('drops controls and invisible characters that keep Claude Code from submitting', async () => {
+    mockIsAgentBracketedPasteEnabled.mockReturnValue(true);
+    // Each of these made Claude Code hold the paste; a paste end must not escape it either.
+    const text = 'FAIL\b\x07 a\r\nb \u{1F468}‍\u{1F469}\x1b[201~x';
+
+    await sendPrompt('task-1', 'agent-1', text, { appPrompt: true });
+
+    expect(writePayloads()).toEqual([
+      '\x1b[I',
+      '\x1b[200~FAIL a\nb \u{1F468}\u{1F469}[201~x\x1b[201~',
+      '\r',
+    ]);
+    expect(mockSetStore).toHaveBeenCalledWith('tasks', 'task-1', 'lastPrompt', text);
+  });
+
   it('records repeated sent prompts separately and preserves the legacy last prompt', async () => {
     mockTasks['task-1'].lastPrompt = 'Earlier prompt';
     mockAgents['agent-1'] = { status: 'running', def: { name: 'Codex' } };
@@ -1895,6 +1943,55 @@ describe('Super Productivity completion wiring', () => {
     await mergeTask('task-1', { cleanup: true });
     // The worktree and branch are gone; keeping the task would leave it unrestorable.
     expect(fireSpCompletion).toHaveBeenCalledWith('task-1');
+  });
+
+  it('marks a merged task as closing before killing its agents', async () => {
+    mockTasks['task-1'] = { ...worktreeTask(), agentIds: ['agent-1'] };
+    const statusAtKill: unknown[] = [];
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel === IPC.KillAgent) statusAtKill.push(mockTasks['task-1']?.closingStatus);
+      return Promise.resolve(
+        channel === IPC.MergeTask ? { lines_added: 1, lines_removed: 0 } : undefined,
+      );
+    });
+    await mergeTask('task-1', { cleanup: true });
+    // Otherwise the killed agents' signal exits show the card as failed.
+    expect(statusAtKill).toEqual(['closing']);
+  });
+
+  it('confirms a merge with its target branch and line counts', async () => {
+    mockTasks['task-1'] = { ...worktreeTask(), name: 'Add forecast' };
+    mockInvoke.mockImplementation((channel: string) =>
+      Promise.resolve(
+        channel === IPC.MergeTask
+          ? { main_branch: 'main', lines_added: 10, lines_removed: 2 }
+          : undefined,
+      ),
+    );
+    await mergeTask('task-1', { cleanup: true });
+    expect(showNotification).toHaveBeenCalledWith('Merged “Add forecast” into main · +10 −2', {
+      tone: 'success',
+    });
+  });
+
+  it('keeps a merge warning up instead of the success notice', async () => {
+    mockTasks['task-1'] = { ...worktreeTask(), name: 'Add forecast' };
+    mockInvoke.mockImplementation((channel: string) =>
+      Promise.resolve(
+        channel === IPC.MergeTask
+          ? { main_branch: 'main', lines_added: 10, lines_removed: 2, warning: 'Changes kept.' }
+          : undefined,
+      ),
+    );
+    await mergeTask('task-1', { cleanup: true, allowDirtyTarget: true });
+    expect(mockInvoke).toHaveBeenCalledWith(
+      IPC.MergeTask,
+      expect.objectContaining({ allowDirtyTarget: true }),
+    );
+    expect(showNotification).toHaveBeenCalledWith(
+      'Merged “Add forecast” into main · +10 −2. Changes kept.',
+      { durationMs: 10_000 },
+    );
   });
 
   it('does not complete anything for a merge that keeps the task', async () => {

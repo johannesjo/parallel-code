@@ -201,13 +201,13 @@ describe('custom theme helper primitives', () => {
 });
 
 describe('checkThemeContrast', () => {
-  it('warns when subtle text falls below 3:1 on elevated backgrounds', () => {
+  it('warns when subtle text falls below 4.5:1 on elevated backgrounds', () => {
     const warnings = checkThemeContrast({
       '--bg-elevated': '#ffffff',
       '--bg-selected': '#ffffff',
       '--fg': '#000000',
       '--fg-muted': '#555555',
-      '--fg-subtle': '#aaaaaa',
+      '--fg-subtle': '#888888',
       '--accent': '#000000',
       '--accent-text': '#ffffff',
     });
@@ -216,8 +216,20 @@ describe('checkThemeContrast', () => {
       expect.objectContaining({
         fgVar: '--fg-subtle',
         bgVar: '--bg-elevated',
-        required: 3,
+        required: 4.5,
       }),
+    ]);
+  });
+
+  it('checks subtle text on the island background panels use', () => {
+    const warnings = checkThemeContrast({
+      '--bg-elevated': '#000000',
+      '--island-bg': '#555555',
+      '--fg-subtle': '#aaaaaa',
+    });
+
+    expect(warnings).toEqual([
+      expect.objectContaining({ fgVar: '--fg-subtle', bgVar: '--island-bg', required: 4.5 }),
     ]);
   });
 });

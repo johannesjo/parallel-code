@@ -57,6 +57,14 @@ describe('buildFailedChecksPrompt', () => {
     expect(prompt).toContain('### unit\nhttps://x/1\n````text\nsaw ``` in output\n````');
     expect(prompt).toContain('### lint\n(no log available');
   });
+
+  it('points the agent at the nested repository a PR belongs to', () => {
+    const checks = [{ name: 'unit', url: null, logTail: null }];
+    expect(buildFailedChecksPrompt({ ...pr, repo: 'api' }, checks)).toContain(
+      'The pull request is in the nested repository `api/`; fix and commit there.',
+    );
+    expect(buildFailedChecksPrompt(pr, checks)).not.toContain('nested repository');
+  });
 });
 
 describe('buildReviewFeedbackPrompt', () => {

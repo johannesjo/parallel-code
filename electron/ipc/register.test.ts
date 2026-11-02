@@ -5,6 +5,7 @@ import {
   optionalBaseBranch,
   projectRootArg,
   selectMcpJsonDir,
+  selectMcpJsonFile,
   validateExternalHttpUrl,
   worktreePathArg,
 } from './register.js';
@@ -20,6 +21,18 @@ describe('selectMcpJsonDir', () => {
 
   it('returns empty string when worktreePath is empty string (nullish coalescing only catches null/undefined)', () => {
     expect(selectMcpJsonDir('', '/project')).toBe('');
+  });
+});
+
+describe('selectMcpJsonFile', () => {
+  it('uses the workspace file Antigravity discovers, by executable name', () => {
+    expect(selectMcpJsonFile('agy')).toBe('.agents/mcp_config.json');
+    expect(selectMcpJsonFile('/usr/local/bin/agy')).toBe('.agents/mcp_config.json');
+  });
+
+  it('keeps .mcp.json for other agents', () => {
+    expect(selectMcpJsonFile('claude')).toBe('.mcp.json');
+    expect(selectMcpJsonFile(undefined)).toBe('.mcp.json');
   });
 });
 

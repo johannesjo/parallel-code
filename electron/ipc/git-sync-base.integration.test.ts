@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  writeFileSync,
+  appendFileSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mergeBaseIntoTask } from './git.js';
+import { checkMergeStatus, mergeBaseIntoTask, rebaseTask } from './git.js';
 
 const directories: string[] = [];
 function git(cwd: string, ...args: string[]): string {
@@ -55,10 +62,75 @@ describe('mergeBaseIntoTask', () => {
     const { child } = fixture({ file: 'base.txt', content: 'task edit\n' });
     const before = git(child, 'rev-parse', 'HEAD');
 
-    await expect(mergeBaseIntoTask(child, 'main')).rejects.toThrow(/Merge failed/);
+    await expect(mergeBaseIntoTask(child, 'main')).rejects.toThrow(
+      'Merge stopped on conflicts in base.txt and was undone; the branch is unchanged.',
+    );
 
     expect(git(child, 'rev-parse', 'HEAD')).toBe(before);
     expect(git(child, 'status', '--porcelain')).toBe('');
     expect(existsSync(join(git(child, 'rev-parse', '--git-dir'), 'MERGE_HEAD'))).toBe(false);
+  });
+
+  it('keeps uncommitted changes the base does not touch', async () => {
+    const { child } = fixture({ file: 'result.txt', content: 'task work\n' });
+    writeFileSync(join(child, 'result.txt'), 'still editing\n');
+
+    await mergeBaseIntoTask(child, 'main');
+
+    expect(() => git(child, 'merge-base', '--is-ancestor', 'main', 'HEAD')).not.toThrow();
+    expect(readFileSync(join(child, 'result.txt'), 'utf8')).toBe('still editing\n');
+    expect(git(child, 'stash', 'list')).toBe('');
+  });
+});
+
+describe('rebaseTask', () => {
+  it('keeps uncommitted changes the base does not touch', async () => {
+    const { child } = fixture({ file: 'result.txt', content: 'task work\n' });
+    writeFileSync(join(child, 'result.txt'), 'still editing\n');
+    writeFileSync(join(child, 'new.txt'), 'untracked\n');
+
+    await rebaseTask(child, 'main');
+
+    expect(() => git(child, 'merge-base', '--is-ancestor', 'main', 'HEAD')).not.toThrow();
+    expect(readFileSync(join(child, 'result.txt'), 'utf8')).toBe('still editing\n');
+    expect(readFileSync(join(child, 'new.txt'), 'utf8')).toBe('untracked\n');
+    expect(git(child, 'stash', 'list')).toBe('');
+  });
+
+  it('refuses when uncommitted changes touch files the base changed', async () => {
+    const { child } = fixture({ file: 'result.txt', content: 'task work\n' });
+    writeFileSync(join(child, 'base.txt'), 'local edit\n');
+    const before = git(child, 'rev-parse', 'HEAD');
+
+    await expect(rebaseTask(child, 'main')).rejects.toThrow(
+      'Commit or stash your changes to base.txt first: main changed them too.',
+    );
+
+    expect(git(child, 'rev-parse', 'HEAD')).toBe(before);
+    expect(readFileSync(join(child, 'base.txt'), 'utf8')).toBe('local edit\n');
+  });
+
+  it('names the conflicting files when the rebase stops', async () => {
+    const { child } = fixture({ file: 'base.txt', content: 'task edit\n' });
+    const before = git(child, 'rev-parse', 'HEAD');
+
+    await expect(rebaseTask(child, 'main')).rejects.toThrow(
+      'Rebase stopped on conflicts in base.txt and was undone; the branch is unchanged.',
+    );
+
+    expect(git(child, 'rev-parse', 'HEAD')).toBe(before);
+    expect(git(child, 'status', '--porcelain')).toBe('');
+  });
+});
+
+describe('checkMergeStatus', () => {
+  it('lists uncommitted files the base changed too', async () => {
+    const { child } = fixture({ file: 'result.txt', content: 'task work\n' });
+    writeFileSync(join(child, 'base.txt'), 'local edit\n');
+    writeFileSync(join(child, 'result.txt'), 'still editing\n');
+
+    const status = await checkMergeStatus(child, 'main');
+
+    expect(status.uncommitted_overlap).toEqual(['base.txt']);
   });
 });

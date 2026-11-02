@@ -9,6 +9,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { setStore, store } from '../store/core';
 import { effectiveAgentId } from '../store/agent-select';
+import { delegationRequest } from '../store/delegation';
 import { restartAgent } from '../store/agents';
 import { getAgentHookStatus } from '../store/agentHookStatus';
 import { setActiveTask } from '../store/navigation';
@@ -28,6 +29,7 @@ import {
   documentAgentTaskId,
   githubAgentTaskId,
   isDocumentAgentTaskId,
+  isProjectPageAgentTaskId,
   kanbanAgentTaskId,
 } from './task-id';
 export { documentAgentTaskId, isDocumentAgentTaskId } from './task-id';
@@ -186,5 +188,8 @@ async function disposeHiddenAgentTask(taskId: string): Promise<void> {
   await Promise.allSettled(
     agentIds.map((id) => invoke(IPC.KillAgent, { agentId: id }).catch(console.error)),
   );
+  // Page agents hold task-creation authority; it must not outlive the removed project.
+  if (isProjectPageAgentTaskId(taskId))
+    await delegationRequest({ action: 'unregister', taskId }).catch(console.error);
   forgetTask(task.id, agentIds);
 }

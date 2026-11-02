@@ -32,6 +32,7 @@ let container: HTMLDivElement;
 let dispose: () => void;
 const [pushing, setPushing] = createSignal(false);
 const [pushSuccess, setPushSuccess] = createSignal(false);
+const [tour, setTour] = createSignal<{ generatedAt: number; fingerprint: string; stops: number }>();
 const onFinish = vi.fn();
 
 beforeEach(() => {
@@ -43,6 +44,7 @@ beforeEach(() => {
   setStore('focusMode', false);
   setPushing(false);
   setPushSuccess(false);
+  setTour(undefined);
   onFinish.mockClear();
   container = document.createElement('div');
   document.body.append(container);
@@ -55,6 +57,7 @@ beforeEach(() => {
         onFinish={onFinish}
         pushing={pushing()}
         pushSuccess={pushSuccess()}
+        tour={tour()}
         onTitleEditRef={() => undefined}
       />
     ),
@@ -74,7 +77,7 @@ const button = (name: string) =>
 
 it('offers Finish as a labelled action that reflects push progress', () => {
   const finish = button('Finish');
-  expect(finish?.title).toBe('Finish: merge into main or push');
+  expect(finish?.title).toBe('Finish: merge into main (locally or via PR) or push');
   finish?.click();
   expect(onFinish).toHaveBeenCalledOnce();
 
@@ -86,40 +89,68 @@ it('offers Finish as a labelled action that reflects push progress', () => {
   expect(finish?.dataset.state).toBe('pushed');
 });
 
-const evidence: NonNullable<Task['evidence']> = {
-  id: 'p1',
-  createdAt: '2026-10-06T10:00:00.000Z',
-  trigger: 'agent',
-  assembling: false,
-  scan: {
-    headSha: 'a'.repeat(40),
-    baseSha: 'b'.repeat(40),
-    dirty: false,
-    files: [],
-    flags: [],
-    tests: [],
-    coveringTests: [],
-    sourceWithoutTests: [],
-  },
-  checks: [],
-  skipped: [],
-  acceptedFlags: {},
-  dismissedFindings: [],
-};
-
-it('opens Finish from the check summary so open flags can be reviewed', () => {
-  setStore('tasks', 'one', 'evidence', evidence);
-  const summary = container.querySelector<HTMLButtonElement>('button.task-check-signal');
-  expect(summary?.textContent).toMatch(/^ · \S/);
-  summary?.click();
-  expect(onFinish).toHaveBeenCalledOnce();
+it('marks Finish with its reports, fading those of older code', () => {
+  const finish = container.querySelector<HTMLButtonElement>('.task-finish-btn');
+  expect(finish?.querySelector('.task-finish-reports')).toBeNull();
+  setStore('tasks', 'one', 'confidence', {
+    scores: [{ label: 'Correct', score: 82, why: '' }],
+    findings: [],
+    publishedAt: 100,
+    fingerprint: 'a',
+  });
+  expect(finish?.querySelectorAll('.task-finish-reports svg')).toHaveLength(1);
+  expect(finish?.title).toContain('Current for the latest commit:\n· Review (lowest score 82%)');
+  expect(finish?.querySelector('.task-finish-report-outdated')).toBeNull();
+  // A later read of different code makes the review outdated: still shown, but named so.
+  setStore('tasks', 'one', 'codeFingerprint', { fingerprint: 'b', at: 200 });
+  expect(finish?.querySelectorAll('.task-finish-reports svg')).toHaveLength(1);
+  expect(finish?.querySelector('.task-finish-report-outdated')).not.toBeNull();
+  expect(finish?.title).toBe(
+    'Finish: merge into main (locally or via PR) or push\n' +
+      'Out of date, the code changed since:\n· Review (lowest score 82%)',
+  );
+  expect(finish?.getAttribute('aria-label')).toBe('Finish, out of date: Review (lowest score 82%)');
 });
 
-it('keeps the check summary as plain text once the task cannot be finished', () => {
-  setStore('tasks', 'one', { evidence, landingState: 'landed_pending_review' });
-  const status = container.querySelector('.task-title-status');
-  expect(status?.textContent).toMatch(/ · \S/);
-  expect(container.querySelector('button.task-check-signal')).toBeNull();
+it('marks Finish with a ready tour, outdated once the diff changes', () => {
+  const finish = container.querySelector<HTMLButtonElement>('.task-finish-btn');
+  setTour({ generatedAt: 100, fingerprint: 'a', stops: 4 });
+  expect(finish?.querySelectorAll('.task-finish-reports svg')).toHaveLength(1);
+  expect(finish?.getAttribute('aria-label')).toBe('Finish, current: Tour (4 stops)');
+  setStore('tasks', 'one', 'codeFingerprint', { fingerprint: 'b', at: 200 });
+  expect(finish?.querySelector('.task-finish-report-outdated')).not.toBeNull();
+  expect(finish?.getAttribute('aria-label')).toBe('Finish, out of date: Tour (4 stops)');
+});
+
+it('shows a small spinner on Finish while a report is being generated', () => {
+  const finish = container.querySelector<HTMLButtonElement>('.task-finish-btn');
+  expect(finish?.querySelector('.task-finish-generating')).toBeNull();
+  setStore('tasks', 'one', 'reviewStatus', { state: 'running', startedAt: 1 });
+  expect(finish?.querySelector('.task-finish-generating')).not.toBeNull();
+  expect(finish?.title).toContain('Generating: Review');
+  expect(finish?.getAttribute('aria-label')).toBe('Finish, generating: Review');
+  // Pushing has its own spinner; the report one would read as a second loading state.
+  setPushing(true);
+  expect(finish?.querySelector('.task-finish-generating')).toBeNull();
+  setPushing(false);
+  setStore('tasks', 'one', 'reviewStatus', undefined);
+  expect(finish?.querySelector('.task-finish-generating')).toBeNull();
+});
+
+it('shows the status as an icon whose label appears on hover', () => {
+  const status = container.querySelector<HTMLElement>('.task-title-status');
+  const glyph = status?.querySelector('.status-glyph');
+  expect(status?.nextElementSibling?.classList.contains('editable-text')).toBe(true);
+  expect(glyph?.getAttribute('aria-label')).toBeTruthy();
+  // The custom label replaces the slow native tooltip rather than doubling it.
+  expect(glyph?.hasAttribute('title')).toBe(false);
+  expect(status?.textContent).toBe('');
+
+  status?.dispatchEvent(new MouseEvent('mouseenter'));
+  const hint = document.querySelector('[role="tooltip"].task-status-hint');
+  expect(hint?.textContent).toContain(glyph?.getAttribute('aria-label') ?? '');
+  status?.dispatchEvent(new MouseEvent('mouseleave'));
+  expect(document.querySelector('.task-status-hint')).toBeNull();
 });
 
 it('exposes canvas and focus as named toggles', () => {
@@ -210,12 +241,20 @@ it('offers running snooze presets directly in a submenu without a dialog', () =>
     [...document.querySelectorAll('[role="menu"][aria-label="Snooze · keep running"] button')].map(
       (item) => item.textContent?.trim(),
     ),
-  ).toEqual(['15 minutes', '30 minutes', '1 hour', '2 hours', '4 hours', '8 hours']);
+  ).toEqual([
+    '15 minutes',
+    '30 minutes',
+    '1 hour',
+    '2 hours',
+    '4 hours',
+    '8 hours',
+    'Tomorrow morning',
+  ]);
   const now = Date.now();
   menuItem('15 minutes')?.click();
   expect(getTaskSnoozedUntil('one')).toBeGreaterThanOrEqual(now + 0.25 * 3_600_000);
   expect(store.tasks.one.collapsed).not.toBe(true);
-  expect(container.textContent).toContain('Snoozed until');
+  expect(isTaskBackgrounded('one')).toBe(true);
   expect(document.querySelector('[role="menu"]')).toBeNull();
 });
 
@@ -226,12 +265,26 @@ it('offers longer presets for stopping agents while snoozed', async () => {
     [...document.querySelectorAll('[role="menu"][aria-label="Snooze · stop agents"] button')].map(
       (item) => item.textContent?.trim(),
     ),
-  ).toEqual(['1 hour', '4 hours', '8 hours', '1 day', '3 days', '1 week']);
+  ).toEqual(['1 hour', '4 hours', '8 hours', 'Tomorrow morning', '1 day', '3 days', '1 week']);
   const now = Date.now();
   menuItem('3 days')?.click();
   await vi.waitFor(() => expect(store.tasks.one.collapsed).toBe(true));
   expect(store.tasks.one.snoozedUntil).toBeGreaterThanOrEqual(now + 72 * 3_600_000);
   expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it('snoozes until 9:00 tomorrow', () => {
+  // A pinned clock keeps the expected day fixed even if a run crosses midnight.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    vi.setSystemTime(new Date(2026, 9, 21, 17, 30));
+    button('Later')?.click();
+    menuItem('Snooze · keep running')?.click();
+    menuItem('Tomorrow morning')?.click();
+    expect(getTaskSnoozedUntil('one')).toBeCloseTo(new Date(2026, 9, 22, 9, 0).getTime(), -1);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('disables the stop-agents submenu for coordinated tasks', () => {

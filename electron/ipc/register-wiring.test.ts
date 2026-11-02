@@ -1,5 +1,8 @@
 import type { BrowserWindow } from 'electron';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC } from './channels.js';
@@ -71,8 +74,8 @@ const NOT_HANDLED_HERE: readonly string[] = [
   IPC.MCP_PublishConfidenceRequest,
   IPC.MCP_PublishTourRequest,
   IPC.MCP_PublishGitHubListRequest,
-  IPC.MCP_SubmitEvidenceRequest,
-  IPC.MCP_GetEvidenceRequest,
+  IPC.MCP_PublishPrDraftRequest,
+  IPC.MCP_CreateIndependentTaskRequest,
   IPC.MCP_ReadMindMapRequest,
   IPC.MCP_ReadReasoningRequest,
   IPC.MCP_StaleUrlWarning,
@@ -101,6 +104,7 @@ const NOT_HANDLED_HERE: readonly string[] = [
   IPC.Remote_MergeTaskRequest,
   IPC.Remote_SetNotesRequest,
   IPC.SuperProductivityOpenTaskRequested,
+  IPC.TaskScreensProgress,
   IPC.UpdateStatusChanged,
   IPC.WindowBlur,
   IPC.WindowCloseRequested,
@@ -197,5 +201,58 @@ describe('registerAllHandlers wiring', () => {
       ]),
     );
     expect(onPtyEvent.mock.calls.map(([event]) => event)).toEqual(['exit']);
+  });
+});
+
+describe('StartMCPServer for Antigravity', () => {
+  it('refuses a linked .agents before touching coordinator state', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'start-mcp-agy-'));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'start-mcp-agy-outside-'));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: root });
+      fs.symlinkSync(outside, path.join(root, '.agents'));
+      register();
+      const start = handlers.get(IPC.StartMCPServer);
+
+      await expect(
+        Promise.resolve(
+          start?.(undefined, {
+            coordinatorTaskId: '12345678-1234-4234-8234-123456789abc',
+            projectId: 'project',
+            projectRoot: root,
+            agentCommand: 'agy',
+          }),
+        ),
+      ).rejects.toThrow(/symbolic link/);
+      expect(fs.readdirSync(outside)).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a tracked config, whose token a commit would publish', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'start-mcp-agy-tracked-'));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: root });
+      fs.mkdirSync(path.join(root, '.agents'));
+      fs.writeFileSync(path.join(root, '.agents', 'mcp_config.json'), '{}');
+      execFileSync('git', ['add', '.agents/mcp_config.json'], { cwd: root });
+      register();
+      const start = handlers.get(IPC.StartMCPServer);
+
+      await expect(
+        Promise.resolve(
+          start?.(undefined, {
+            coordinatorTaskId: '12345678-1234-4234-8234-123456789abc',
+            projectId: 'project',
+            projectRoot: root,
+            agentCommand: 'agy',
+          }),
+        ),
+      ).rejects.toThrow(/tracked/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

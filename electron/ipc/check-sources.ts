@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { CheckSource } from '../shared/evidence.js';
+import type { CheckSource } from '../shared/checks.js';
 
 /** Root files whose content names a project's commands. */
 const CONTENT_FILES = [
@@ -96,7 +96,7 @@ async function workflowFiles(root: string): Promise<string[]> {
 
 /**
  * Reads the files a model needs to suggest a project's verify command and
- * evidence checks: manifests, task runners, CI workflows and agent guidance,
+ * other checks: manifests, task runners, CI workflows and agent guidance,
  * plus a list of lockfiles and test-runner configs that are present.
  */
 export async function readCheckSources(projectRoot: string): Promise<CheckSource[]> {

@@ -1,16 +1,15 @@
-import { Show } from 'solid-js';
+import { For, Show, createSignal, onCleanup, onMount } from 'solid-js';
+import { Dynamic, Portal } from 'solid-js/web';
 import {
   store,
-  reorderTask,
+  reorderTaskInTileOrder,
   activateTaskFromPointer,
   updateTaskName,
-  collapseTask,
   getTaskDotStatus,
   getTaskAttentionState,
   toggleTaskFocusMode,
-  clearTaskLandingReview,
-  getVerifyCommand,
-  getEvidenceConfidence,
+  setActiveTask,
+  workspaceViewTransitionTypes,
   isTaskCanvasVisible,
   openTaskCanvas,
   closeTaskCanvas,
@@ -20,32 +19,29 @@ import { IconButton } from './IconButton';
 import { MoreMenu } from './chat/MoreMenu';
 import { StatusDot, getDotTooltip } from './StatusDot';
 import {
-  ActivityIcon,
-  CheckIcon,
+  CheckCircleIcon,
   ClockIcon,
   CloseIcon,
-  PlayIcon,
-  StopIcon,
-  UndoIcon,
+  CollapseAltIcon,
+  ImageIcon,
+  PanelRightIcon,
+  ReviewIcon,
+  TourIcon,
 } from './icons';
-import { theme } from '../lib/theme';
-import { badgeStyle } from '../lib/badgeStyle';
-import { taskCheckSignal } from '../lib/task-check-signal';
+import {
+  finishReports,
+  finishReportsTitle,
+  type FinishReportKind,
+  type FinishReportsInput,
+} from '../lib/finish-reports';
+import { taskScreens } from '../store/task-screens';
+import { withViewTransition } from '../lib/viewTransition';
 import { handleDragReorder } from '../lib/dragReorder';
-import { getTaskDockerBadgeLabel } from '../lib/docker';
+import { computeTileOrder } from '../store/sidebar-order';
 import { displayTaskNameFromPrompt, shouldUsePromptDerivedTaskName } from '../lib/clean-task-name';
 import type { Task } from '../store/types';
 import { isLandedTaskState } from '../store/landing';
-import {
-  bringTaskToFront,
-  canSnoozeTaskUntilCi,
-  getTaskSnoozedUntil,
-  isTaskBackgrounded,
-  isTaskSnoozedUntilCi,
-  sendTaskToBack,
-  snoozeTask,
-  snoozeTaskUntilCi,
-} from '../store/background-tasks';
+import { laterMenuItems } from './task-later-menu';
 
 interface TaskTitleBarProps {
   task: Task;
@@ -55,75 +51,16 @@ interface TaskTitleBarProps {
   onFinish: () => void;
   pushing: boolean;
   pushSuccess: boolean;
+  /** The ready change tour, if one was generated for the whole task. */
+  tour?: FinishReportsInput['tour'];
   onTitleEditRef: (h: EditableTextHandle) => void;
 }
 
 export function TaskTitleBar(props: TaskTitleBarProps) {
-  const canStopAgents = () =>
-    !props.task.coordinatorMode && !props.task.delegationParent && !props.task.coordinatedBy;
-  const snoozeChoices = (keepRunning: boolean) =>
-    (keepRunning ? [0.25, 0.5, 1, 2, 4, 8] : [1, 4, 8, 24, 72, 168]).map((hours) => ({
-      label:
-        hours < 1
-          ? `${hours * 60} minutes`
-          : hours === 1
-            ? '1 hour'
-            : hours === 168
-              ? '1 week'
-              : hours >= 24
-                ? `${hours / 24} ${hours === 24 ? 'day' : 'days'}`
-                : `${hours} hours`,
-      icon: <ClockIcon size={14} />,
-      run: () => void snoozeTask(props.task.id, hours, keepRunning),
-    }));
-  const snoozedUntil = () => getTaskSnoozedUntil(props.task.id);
-  const dockerBadgeLabel = () => getTaskDockerBadgeLabel(props.task.dockerSource);
+  // The board covers focus mode; from its side panel the button enters it.
+  const focusShown = () => store.focusMode && !store.boardView;
   const isLandedTask = () => isLandedTaskState(props.task.landingState);
   const canFinish = () => props.task.gitIsolation === 'worktree' && !isLandedTask();
-  const landingBadge = () => {
-    switch (props.task.landingState) {
-      case 'landed_pending_review':
-        return { label: 'Landed', color: theme.success, title: 'Landed — pending review' };
-      case 'landed_cleanup_failed':
-        return {
-          label: 'Cleanup failed',
-          color: theme.warning,
-          title: props.task.landingReason ?? 'Landed, but cleanup failed',
-        };
-      case 'landing_escalated':
-        return {
-          label: 'Landing blocked',
-          color: theme.warning,
-          title: props.task.landingReason ?? 'Landing needs attention',
-        };
-      case 'landing_failed':
-        return {
-          label: 'Landing failed',
-          color: theme.error,
-          title: props.task.landingReason ?? 'Landing failed',
-        };
-      case 'reviewed':
-        return { label: 'Reviewed', color: theme.fgMuted, title: 'Landing reviewed' };
-      default:
-        return null;
-    }
-  };
-  // Hidden while the agent works: the result is about to change anyway. A busy
-  // shell (dev server, watcher) is not agent work and must not hide a failure.
-  const checkSignal = () => {
-    const attention = getTaskAttentionState(props.task.id);
-    if (attention === 'active' || (!attention && getTaskDotStatus(props.task.id) === 'busy'))
-      return undefined;
-    const git = store.taskGitStatus[props.task.id];
-    return taskCheckSignal({
-      evidence: getEvidenceConfidence(props.task, git),
-      evidencePackage: props.task.evidence,
-      verificationRun: props.task.verificationRun,
-      verification: props.task.verification,
-      verifyCommandConfigured: Boolean(getVerifyCommand(props.task.id)),
-      headSha: git?.head_sha,
-    });
-  };
   const titleLabel = () => {
     const initialPrompt = props.task.savedInitialPrompt?.trim();
     if (
@@ -138,29 +75,89 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
     }
     return displayTaskNameFromPrompt(initialPrompt) || props.task.name;
   };
+  // Reports for older code still show, dimmed and named as out of date, so they are not mistaken for current ones.
+  const reports = () => {
+    const screens = taskScreens(props.task.id);
+    return finishReports({
+      confidence: props.task.confidence,
+      tour: props.tour,
+      codeFingerprint: props.task.codeFingerprint,
+      brief: props.task.brief,
+      ...(screens?.state === 'done' && {
+        screens: {
+          headSha: screens.headSha,
+          capturedAt: screens.capturedAt,
+          fingerprint: screens.fingerprint,
+          count: screens.shots.length,
+        },
+      }),
+      headSha: store.taskGitStatus[props.task.id]?.head_sha,
+    });
+  };
+  // Reports run in the background after Finish closes; the button shows they are still coming.
+  const generating = () =>
+    [
+      props.task.reviewStatus?.state === 'running' && 'Review',
+      taskScreens(props.task.id)?.state === 'running' && 'Before & after',
+    ].filter((label): label is string => !!label);
   const finishTitle = () => {
     const base = props.task.baseBranch ?? 'base';
-    return props.pushing ? 'Pushing… (open to see output)' : `Finish: merge into ${base} or push`;
+    return props.pushing
+      ? 'Pushing… (open to see output)'
+      : finishReportsTitle(
+          `Finish: merge into ${base} (locally or via PR) or push`,
+          reports(),
+          generating(),
+        );
+  };
+  const finishLabel = () => {
+    const named = (outdated: boolean) =>
+      reports()
+        .filter((report) => report.outdated === outdated)
+        .map((report) => report.label)
+        .join(', ');
+    const parts = [
+      named(false) && `current: ${named(false)}`,
+      named(true) && `out of date: ${named(true)}`,
+      generating().length && `generating: ${generating().join(', ')}`,
+    ].filter(Boolean);
+    return !props.pushing && parts.length ? `Finish, ${parts.join('; ')}` : undefined;
   };
 
-  const statusDescription = () =>
-    getDotTooltip(
-      getTaskDotStatus(props.task.id),
-      getTaskAttentionState(props.task.id),
-      props.task.id,
+  // The actions overlay the title's end so inactive columns can show the whole
+  // title; the title fades out under them by their measured width.
+  let barRef: HTMLDivElement | undefined;
+  let actionsRef: HTMLDivElement | undefined;
+  onMount(() => {
+    if (typeof ResizeObserver === 'undefined' || !barRef || !actionsRef) return;
+    const bar = barRef;
+    const actions = actionsRef;
+    const observer = new ResizeObserver(() =>
+      bar.style.setProperty('--title-actions-width', `${actions.offsetWidth}px`),
     );
+    observer.observe(actions);
+    onCleanup(() => observer.disconnect());
+  });
 
   function handleTitleMouseDown(e: MouseEvent) {
     handleDragReorder(e, {
       itemId: props.task.id,
-      getTaskOrder: () => store.taskOrder,
-      onReorder: reorderTask,
+      getTaskOrder: () => computeTileOrder(),
+      onReorder: (_fromIdx, toIdx) => reorderTaskInTileOrder(props.task.id, toIdx),
       onTap: () => activateTaskFromPointer(props.task.id),
     });
   }
 
   return (
-    <div class="task-title-bar" data-active={props.isActive} onMouseDown={handleTitleMouseDown}>
+    <div
+      ref={barRef}
+      class="task-title-bar"
+      data-active={props.isActive}
+      // A push in progress or just done stays visible in every column.
+      data-actions-pinned={props.pushing || props.pushSuccess}
+      onMouseDown={handleTitleMouseDown}
+    >
+      <TaskStatusGlyph taskId={props.task.id} />
       <EditableText
         value={titleLabel()}
         onCommit={(v) => updateTaskName(props.task.id, v)}
@@ -168,105 +165,7 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
         title={props.task.savedInitialPrompt || titleLabel()}
         ref={(h) => props.onTitleEditRef(h)}
       />
-      <div class="task-title-details">
-        <span class="task-title-status" title={statusDescription()}>
-          <StatusDot
-            status={getTaskDotStatus(props.task.id)}
-            taskId={props.task.id}
-            size="md"
-            attention={getTaskAttentionState(props.task.id)}
-          />
-          <span>
-            <span>{statusDescription().split(' — ')[0]}</span>
-            <span class="task-status-explanation">
-              {statusDescription().includes(' — ')
-                ? ` — ${statusDescription().split(' — ').slice(1).join(' — ')}`
-                : ''}
-            </span>
-            <Show when={checkSignal()}>
-              {(signal) => (
-                // The Finish dialog is where flags are accepted and checks rerun.
-                <Show
-                  when={canFinish()}
-                  fallback={
-                    <span style={{ color: signal().color }} title={signal().title}>
-                      {` · ${signal().label}`}
-                    </span>
-                  }
-                >
-                  <button
-                    type="button"
-                    class="task-check-signal"
-                    style={{ color: signal().color }}
-                    title={`${signal().title}\n\nOpen Finish to review.`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      props.onFinish();
-                    }}
-                  >
-                    {` · ${signal().label}`}
-                  </button>
-                </Show>
-              )}
-            </Show>
-          </span>
-        </span>
-        <Show when={props.task.gitIsolation === 'direct'}>
-          <span style={badgeStyle(theme.warning)}>{props.task.branchName}</span>
-        </Show>
-        <Show when={props.task.gitIsolation === 'none'}>
-          <span style={badgeStyle(theme.fgMuted)}>no git</span>
-        </Show>
-        <Show when={props.task.dockerMode}>
-          <span style={badgeStyle(theme.fgMuted)} title={props.task.dockerImage}>
-            {dockerBadgeLabel()}
-          </span>
-        </Show>
-        <Show when={props.task.externalWorktree}>
-          <span style={badgeStyle(theme.accent)}>Imported</span>
-        </Show>
-        <Show when={isTaskBackgrounded(props.task.id)}>
-          <span style={badgeStyle(theme.fgMuted)}>
-            {isTaskSnoozedUntilCi(props.task.id)
-              ? 'Snoozed until CI finishes'
-              : snoozedUntil() === undefined
-                ? 'Background'
-                : `Snoozed until ${new Date(snoozedUntil() ?? 0).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`}
-          </span>
-        </Show>
-        <Show when={props.task.needsReview}>
-          <span
-            style={badgeStyle(theme.warning)}
-            title={props.task.landingReason ?? 'Review this task'}
-          >
-            Review
-          </span>
-        </Show>
-        <Show when={landingBadge()}>
-          {(badge) => (
-            <button
-              style={{
-                ...badgeStyle(badge().color),
-                cursor: props.task.landingState === 'landed_pending_review' ? 'pointer' : 'default',
-              }}
-              title={
-                props.task.landingState === 'landed_pending_review'
-                  ? `${badge().title}. Click to mark reviewed.`
-                  : badge().title
-              }
-              onClick={(e) => {
-                e.stopPropagation();
-                if (props.task.landingState === 'landed_pending_review') {
-                  clearTaskLandingReview(props.task.id);
-                }
-              }}
-            >
-              {badge().label}
-            </button>
-          )}
-        </Show>
-      </div>
-      <div class="task-title-actions">
+      <div ref={actionsRef} class="task-title-actions">
         <div class="task-action-group" role="group" aria-label="Task actions">
           <Show when={canFinish()}>
             <button
@@ -274,6 +173,8 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
               class="task-finish-btn"
               data-state={props.pushing ? 'pushing' : props.pushSuccess ? 'pushed' : undefined}
               title={finishTitle()}
+              // The report icons are hidden from screen readers; their names are here instead.
+              aria-label={finishLabel()}
               onClick={(e) => {
                 e.stopPropagation();
                 props.onFinish();
@@ -289,93 +190,37 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
                   />
                 }
               >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm1.5 0a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm10.28-1.72-4.5 4.5a.75.75 0 0 1-1.06 0l-2-2a.75.75 0 0 1 1.06-1.06L6.75 9.19l3.97-3.97a.75.75 0 0 1 1.06 1.06Z" />
-                </svg>
+                <CheckCircleIcon size={14} />
               </Show>
               {props.pushing ? 'Pushing…' : props.pushSuccess ? 'Pushed' : 'Finish'}
+              <Show when={!props.pushing && (reports().length > 0 || generating().length > 0)}>
+                <span class="task-finish-reports" aria-hidden="true">
+                  <For each={reports()}>
+                    {(report) => (
+                      <Dynamic
+                        component={REPORT_ICONS[report.kind]}
+                        size={11}
+                        class={report.outdated ? 'task-finish-report-outdated' : undefined}
+                      />
+                    )}
+                  </For>
+                  <Show when={generating().length > 0}>
+                    <span class="inline-spinner task-finish-generating" />
+                  </Show>
+                </span>
+              </Show>
             </button>
           </Show>
           <MoreMenu
             label="Later"
             icon={<ClockIcon size={14} />}
             class="task-finish-btn"
-            items={[
-              {
-                label: isTaskBackgrounded(props.task.id)
-                  ? 'Restore to front'
-                  : 'Snooze until new activity',
-                icon: isTaskBackgrounded(props.task.id) ? (
-                  <UndoIcon size={14} />
-                ) : (
-                  <ActivityIcon size={14} />
-                ),
-                run: () =>
-                  isTaskBackgrounded(props.task.id)
-                    ? bringTaskToFront(props.task.id)
-                    : sendTaskToBack(props.task.id),
-              },
-              ...(canSnoozeTaskUntilCi(props.task.id)
-                ? [
-                    {
-                      label: 'Snooze until CI finishes',
-                      icon: <CheckIcon size={14} />,
-                      title: 'Returns when the pull request checks pass or fail.',
-                      run: () => snoozeTaskUntilCi(props.task.id),
-                    },
-                  ]
-                : []),
-              {
-                label: 'Snooze · keep running',
-                icon: <PlayIcon size={14} />,
-                children: snoozeChoices(true),
-              },
-              {
-                label: 'Snooze · stop agents',
-                icon: <StopIcon size={14} />,
-                children: snoozeChoices(false),
-                disabled: !canStopAgents(),
-                title: canStopAgents()
-                  ? undefined
-                  : 'Coordinated tasks need to keep their agents running.',
-              },
-              ...(canStopAgents()
-                ? [
-                    {
-                      label: 'Minimize (stop agents)',
-                      icon: (
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 16 16"
-                          fill="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path d="M2 8a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8Z" />
-                        </svg>
-                      ),
-                      run: () => void collapseTask(props.task.id),
-                    },
-                  ]
-                : []),
-            ]}
+            items={laterMenuItems(props.task)}
           />
         </div>
         <div class="task-action-group" role="group" aria-label="View actions">
           <IconButton
-            icon={
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-              >
-                <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
-                <path d="M10 2.75v10.5" />
-              </svg>
-            }
+            icon={<PanelRightIcon />}
             onClick={() =>
               isTaskCanvasVisible(props.task)
                 ? closeTaskCanvas(props.task.id)
@@ -385,16 +230,19 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
             pressed={isTaskCanvasVisible(props.task)}
           />
           <IconButton
-            icon={
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M2.75 5.5A.75.75 0 0 0 3.5 4.75V3.5h1.25a.75.75 0 0 0 0-1.5H2.5a.5.5 0 0 0-.5.5v2.25c0 .414.336.75.75.75ZM12.5 4.75a.75.75 0 0 0 1.5 0V2.5a.5.5 0 0 0-.5-.5h-2.25a.75.75 0 0 0 0 1.5h1.25v1.25ZM3.5 11.25a.75.75 0 0 0-1.5 0V13.5a.5.5 0 0 0 .5.5h2.25a.75.75 0 0 0 0-1.5H3.5v-1.25ZM13.25 10.5a.75.75 0 0 0-.75.75v1.25h-1.25a.75.75 0 0 0 0 1.5H13.5a.5.5 0 0 0 .5-.5v-2.25a.75.75 0 0 0-.75-.75Z" />
-              </svg>
-            }
+            icon={<CollapseAltIcon />}
             onClick={() => {
-              toggleTaskFocusMode(props.task.id);
+              const taskId = props.task.id;
+              // The button bypasses the title bar's tap-to-activate; activate before the
+              // old layout is captured so focus grows from this tile, not the last one.
+              if (store.activeTaskId !== taskId) setActiveTask(taskId);
+              withViewTransition(
+                () => toggleTaskFocusMode(taskId),
+                workspaceViewTransitionTypes(store.focusMode ? 'tiles' : 'focus'),
+              );
             }}
-            title={store.focusMode ? 'Exit focus mode' : 'Focus on this task'}
-            pressed={store.focusMode}
+            title={focusShown() ? 'Exit focus mode' : 'Focus on this task'}
+            pressed={focusShown()}
           />
         </div>
         <div class="task-action-group" role="group" aria-label="Close task">
@@ -402,5 +250,59 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Above the glyph, so the label never covers the branch row the user is reading. */
+const HINT_GAP = 6;
+// shortcut: fixed one-line height — measure the hint if it ever wraps
+const HINT_HEIGHT = 28;
+
+function hintPosition(rect: DOMRect): Record<string, string> {
+  // Without room above (a window edge), fall back to below rather than clip.
+  if (rect.top < HINT_HEIGHT + HINT_GAP) {
+    return { left: `${rect.left}px`, top: `${rect.bottom + HINT_GAP}px` };
+  }
+  return { left: `${rect.left}px`, bottom: `${window.innerHeight - rect.top + HINT_GAP}px` };
+}
+
+const REPORT_ICONS: Record<FinishReportKind, typeof ReviewIcon> = {
+  review: ReviewIcon,
+  tour: TourIcon,
+  screens: ImageIcon,
+};
+
+/**
+ * The header shows the status as an icon only; hovering it names the state at
+ * once. The label is overlaid in a portal so nothing in the header moves, and
+ * the glyph keeps its aria-label for screen readers.
+ */
+function TaskStatusGlyph(props: { taskId: string }) {
+  const [anchor, setAnchor] = createSignal<DOMRect | null>(null);
+  const status = () => getTaskDotStatus(props.taskId);
+  const attention = () => getTaskAttentionState(props.taskId);
+  return (
+    <span
+      class="task-title-status"
+      onMouseEnter={(e) => setAnchor(e.currentTarget.getBoundingClientRect())}
+      onMouseLeave={() => setAnchor(null)}
+    >
+      <StatusDot
+        status={status()}
+        taskId={props.taskId}
+        size="md"
+        attention={attention()}
+        nativeTitle={false}
+      />
+      <Show when={anchor()}>
+        {(rect) => (
+          <Portal>
+            <div role="tooltip" class="task-status-hint" style={hintPosition(rect())}>
+              {getDotTooltip(status(), attention(), props.taskId)}
+            </div>
+          </Portal>
+        )}
+      </Show>
+    </span>
   );
 }

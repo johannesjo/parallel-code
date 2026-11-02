@@ -129,6 +129,15 @@ describe('agentHookStatus', () => {
     expect(getAgentHookStatus('a1')?.lastAssistantMessage).toBeUndefined();
   });
 
+  it('keeps naming a background command when an idle-prompt notification follows Stop', () => {
+    const detail = 'background: Dev server';
+    applyAgentHookEvent(event({ state: 'done', event: 'Stop', detail }));
+    applyAgentHookEvent(event({ state: 'done', event: 'Notification', at: Date.now() + 60_000 }));
+    expect(getAgentHookStatus('a1')?.detail).toBe(detail);
+    applyAgentHookEvent(event({ state: 'working', at: Date.now() + 70_000 }));
+    expect(getAgentHookStatus('a1')?.detail).toBeUndefined();
+  });
+
   it('marks a finished turn unread only when its task is not on screen', () => {
     applyAgentHookEvent(event({ state: 'done', event: 'Stop' }));
     expect(isTaskUnread('t1')).toBe(false);
@@ -289,6 +298,14 @@ describe('agentHookStatus', () => {
     // A new prompt from the user is always real.
     applyAgentHookEvent(event({ event: 'UserPromptSubmit', at: Date.now() + 200 }));
     expect(getAgentHookStatus('a1')?.state).toBe('working');
+  });
+
+  it('reads no interrupt into Esc at the prompt while a background sub-agent runs', () => {
+    applyAgentHookEvent(event({ state: 'working', event: 'SubagentRunning', background: true }));
+    noteAgentTerminalInput('a1', '\x1b');
+    noteAgentTerminalInput('a1', '\x03');
+    vi.advanceTimersByTime(1_000);
+    expect(getAgentHookStatus('a1')).toMatchObject({ state: 'working', background: true });
   });
 
   it('cancels the interrupt when a hook event arrives inside the settle window', () => {

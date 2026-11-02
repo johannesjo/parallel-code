@@ -46,6 +46,7 @@ import { SourceDiff } from './SourceDiff';
 import { createRenderedBlocks } from './use-blocks';
 import { renderDocument } from './render-document';
 import { CheckIcon, SparkleIcon } from '../components/icons';
+import { prefersMotion } from '../lib/reducedMotion';
 
 function projectRoot(): string {
   const project = documentStore.projectId ? getProject(documentStore.projectId) : undefined;
@@ -118,9 +119,7 @@ function ChangeNav(props: {
     const reveal = (body: HTMLElement | undefined, index: number) =>
       body?.querySelector<HTMLElement>(`[data-block-index="${index}"]`)?.scrollIntoView({
         block: 'center',
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
-          ? 'instant'
-          : 'smooth',
+        behavior: prefersMotion() ? 'smooth' : 'instant',
       });
     reveal(props.baseBody(), Math.min(hunk.baseStart, props.baseCount - 1));
     reveal(props.body(), Math.min(hunk.candStart, props.candidateCount - 1));

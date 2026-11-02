@@ -1,13 +1,15 @@
 import { onMount, onCleanup, createSignal, createEffect, untrack, Show, For } from 'solid-js';
 import { Terminal } from '@xterm/xterm';
 import { TERMINAL_SCROLL_OPTIONS, base64ToUint8Array } from '../lib/terminalConstants';
+import { createFling } from './fling';
 import { createTerminalHttpLinkHandler } from '../lib/terminalLinks';
+import { PARALLEL_CODE_TERMINAL_THEME } from '../lib/parallelCodeTerminalTheme';
 import { fetchNotes, saveNotes, ApiError } from './api';
 import { TaskDiffView } from './TaskDiffView';
 import { TaskActionsDialog } from './TaskActionsDialog';
 import { clearPairedToken } from './auth';
 import { readLocal, writeLocal } from './storage';
-import { messageForTerminal } from './terminalText';
+import { messageForTerminal, terminalBufferText } from './terminalText';
 import { TaskHeader } from './TaskHeader';
 import { needsYou } from './attention';
 import { MAX_SCROLL_LINES } from '../../electron/remote/protocol';
@@ -16,6 +18,7 @@ import {
   unsubscribeAgent,
   onOutput,
   onScrollback,
+  onTerminalSize,
   scrollAgent,
   sendInput,
   agents,
@@ -31,6 +34,10 @@ interface AgentDetailProps {
   onNextTask: (taskId: string) => void;
 }
 
+// Rows of swipe per wheel notch in a full-screen agent UI. Agents scroll about
+// three lines per notch, so this keeps the transcript roughly under the finger.
+const ROWS_PER_WHEEL_NOTCH = 3;
+
 const openRemoteHttpLink = createTerminalHttpLinkHandler({
   isMac: false,
   openExternal: (url) => {
@@ -42,6 +49,7 @@ export function AgentDetail(props: AgentDetailProps) {
   let termContainer: HTMLDivElement | undefined;
   let outputArea: HTMLDivElement | undefined;
   let terminalScroller: HTMLDivElement | undefined;
+  let textView: HTMLPreElement | undefined;
   let inputRef: HTMLTextAreaElement | undefined;
   let term: Terminal | undefined;
   let disposed = false;
@@ -65,8 +73,32 @@ export function AgentDetail(props: AgentDetailProps) {
   const [multilinePaste, setMultilinePaste] = createSignal(false);
   const [terminalBottom, setTerminalBottom] = createSignal(true);
   const [zoom, setZoom] = createSignal(1);
+  // xterm only selects with a mouse, so touch selection works on a plain-text copy.
+  const [selectableText, setSelectableText] = createSignal<string>();
   const fontSize = 14;
   let terminalLineHeight = fontSize * 1.2;
+  // xterm draws history only at whole rows, so a swipe stepped it a row at a time
+  // while the grid around it panned by the pixel. The pixels short of the next row
+  // shift the drawn rows instead, so history follows the finger like the grid does.
+  let historyOffset = 0;
+  // xterm draws scrolled rows on its next frame. Shifting them sooner moved the
+  // old rows by the new amount for a frame, so a fling juddered at each row.
+  let awaitingRows = false;
+  const shiftRows = () => {
+    const screen = term?.element?.querySelector<HTMLElement>('.xterm-screen');
+    if (screen) screen.style.transform = historyOffset ? `translateY(${-historyOffset}px)` : '';
+  };
+  /** Shift the drawn rows by `offset`, once xterm has drawn any rows that moved. */
+  const setHistoryOffset = (offset: number, rowsMoved: boolean) => {
+    historyOffset = offset;
+    awaitingRows ||= rowsMoved;
+    if (!awaitingRows) shiftRows();
+  };
+  const resetHistoryOffset = () => {
+    historyOffset = 0;
+    awaitingRows = false;
+    shiftRows();
+  };
   const [notesText, setNotesText] = createSignal(readLocal(notesKey));
   const [notesDirty, setNotesDirty] = createSignal(readLocal(`${notesKey}:dirty`) === 'true');
   const [notesLoading, setNotesLoading] = createSignal(false);
@@ -149,6 +181,8 @@ export function AgentDetail(props: AgentDetailProps) {
       termContainer.style.width = `${width + 24}px`;
       termContainer.style.height = `${height + 8}px`;
       terminalLineHeight = height / term.rows;
+      // An offset measured in the old row height would misplace the rows.
+      resetHistoryOffset();
       // Repaint once the task's visible layout has settled, including a return from Notes.
       term.refresh(0, term.rows - 1);
       if (followTerminal && view() === 'terminal') jumpToLatest();
@@ -167,6 +201,7 @@ export function AgentDetail(props: AgentDetailProps) {
 
   function jumpToLatest() {
     term?.scrollToBottom();
+    resetHistoryOffset();
     if (terminalScroller) terminalScroller.scrollTop = terminalScroller.scrollHeight;
     setTerminalBottom(true);
   }
@@ -179,7 +214,8 @@ export function AgentDetail(props: AgentDetailProps) {
       fontSize,
       fontFamily: 'monospace',
       lineHeight: 1.2,
-      theme: { background: '#0b0f14', foreground: '#dce7f1' },
+      // The phone screen's background, with the desktop default look's ANSI colours.
+      theme: { background: '#080c10', ...PARALLEL_CODE_TERMINAL_THEME },
       ...TERMINAL_SCROLL_OPTIONS,
       cursorBlink: false,
       disableStdin: true,
@@ -191,14 +227,35 @@ export function AgentDetail(props: AgentDetailProps) {
     const updateOutput = () => {
       if (term) setMultilinePaste(term.modes.bracketedPasteMode);
     };
-    const scrollListener = term.onScroll(updateTerminalBottom);
+    // Set while a swipe moves history, so its own row steps are not mistaken for output.
+    let scrollingHistory = false;
+    const scrollListener = term.onScroll(() => {
+      // A swipe that stops just short of the latest row leaves it partly hidden, and
+      // output then follows with it hidden. Rows are moving anyway: take up the slack.
+      if (
+        !scrollingHistory &&
+        historyOffset < 0 &&
+        term?.buffer.active.viewportY === term?.buffer.active.baseY
+      ) {
+        setHistoryOffset(0, true);
+      }
+      updateTerminalBottom();
+    });
+    const renderListener = term.onRender(() => {
+      if (!awaitingRows) return;
+      awaitingRows = false;
+      shiftRows();
+    });
     const parsedListener = term.onWriteParsed(updateOutput);
+    // A full-screen agent draws its own screen, which must not inherit history's part-row shift.
+    const bufferListener = term.buffer.onBufferChange(resetHistoryOffset);
     // eslint-disable-next-line solid/reactivity -- socket callbacks read the latest layout settings
     const cleanupScrollback = onScrollback(props.agentId, (data, cols, rows) => {
       if (!term) return;
       const followTerminal = terminalBottom();
       // Reset parser and screen so reconnecting cannot duplicate an old frame.
       term.reset();
+      resetHistoryOffset();
       term.resize(Math.max(1, cols || 80), Math.max(1, rows || 24));
       fitTerminal();
       term.write(base64ToUint8Array(data), () => {
@@ -214,6 +271,12 @@ export function AgentDetail(props: AgentDetailProps) {
     const cleanupOutput = onOutput(props.agentId, (data) =>
       term?.write(base64ToUint8Array(data), updateOutput),
     );
+    // Follow the PTY's width, or the agent's later lines wrap at the wrong column.
+    // xterm parses queued output before resizing, so earlier lines keep their width.
+    const cleanupSize = onTerminalSize(props.agentId, (cols, rows) => {
+      term?.resize(cols, rows);
+      fitTerminal();
+    });
     subscribeAgent(props.agentId);
     const observer = new ResizeObserver(fitTerminal);
     if (outputArea) observer.observe(outputArea);
@@ -224,7 +287,7 @@ export function AgentDetail(props: AgentDetailProps) {
     let touchId: number | undefined;
     // Lock each swipe to its first direction so history scrolling never drifts sideways.
     let touchAxis: 'x' | 'y' | undefined;
-    let historyPixels = 0;
+    let wheelPixels = 0;
     // A full-screen agent UI keeps its transcript out of the terminal history:
     // turn the wheel over the cell under the finger, as the desktop pane does.
     const scrollFullScreen = (lines: number, x: number, y: number) => {
@@ -241,28 +304,65 @@ export function AgentDetail(props: AgentDetailProps) {
         cell(y - (rect?.top ?? 0), rect?.height, term.rows),
       );
     };
-    const scrollTerminal = (dx: number, dy: number, x: number, y: number) => {
-      if (!term || !terminalScroller) return;
+    /** Pan the grid; returns the vertical pixels it had no room for. */
+    const scrollPane = (dx: number, dy: number) => {
+      if (!terminalScroller) return dy;
       terminalScroller.scrollLeft += dx;
       const previousTop = terminalScroller.scrollTop;
       terminalScroller.scrollTop = Math.max(
         0,
         Math.min(terminalScroller.scrollHeight - terminalScroller.clientHeight, previousTop + dy),
       );
-      if (Math.abs(dy) >= Math.abs(dx)) {
-        historyPixels += dy - (terminalScroller.scrollTop - previousTop);
-        const lines = Math.trunc(historyPixels / terminalLineHeight);
-        if (lines) {
-          if (term.buffer.active.type === 'alternate') scrollFullScreen(lines, x, y);
-          else term.scrollLines(lines);
-          historyPixels -= lines * terminalLineHeight;
-        }
-      }
+      return dy - (terminalScroller.scrollTop - previousTop);
+    };
+    // The agent redraws its own screen, so it can only move by whole wheel notches.
+    // Agents scroll several lines per notch, so a notch per row outran the finger.
+    const turnWheel = (dy: number, x: number, y: number) => {
+      const notchPixels = terminalLineHeight * ROWS_PER_WHEEL_NOTCH;
+      wheelPixels += dy;
+      const notches = Math.trunc(wheelPixels / notchPixels);
+      if (!notches) return;
+      scrollFullScreen(notches, x, y);
+      wheelPixels -= notches * notchPixels;
+    };
+    const scrollHistory = (dy: number, x: number, y: number) => {
+      // Nothing to move, and redrawing from the other row would flip the blank strip's edge.
+      if (!term || !dy) return;
+      const buffer = term.buffer.active;
+      if (buffer.type === 'alternate') return turnWheel(dy, x, y);
+      const top = Math.max(
+        0,
+        Math.min(
+          buffer.baseY * terminalLineHeight,
+          buffer.viewportY * terminalLineHeight + historyOffset + dy,
+        ),
+      );
+      const rows = top / terminalLineHeight;
+      // Float error must not turn a whole-row scroll into a row and a sliver.
+      const whole = Math.abs(rows - Math.round(rows)) < 1e-6;
+      // xterm draws no row past either edge, so one edge shows a blank strip of
+      // up to a row. Put it where rows leave, so the rows coming in slide in whole.
+      const line = whole ? Math.round(rows) : (dy > 0 ? Math.ceil : Math.floor)(rows);
+      const rowsMoved = line !== buffer.viewportY;
+      // Set first, so the draw the scroll triggers applies the new shift.
+      setHistoryOffset(whole ? 0 : top - line * terminalLineHeight, rowsMoved);
+      scrollingHistory = true;
+      if (rowsMoved) term.scrollLines(line - buffer.viewportY);
+      scrollingHistory = false;
+    };
+    // Grid and history chain as one scroller: a swipe or flick that runs out of
+    // grid carries on into history instead of stopping at the edge.
+    const scrollTerminal = (dx: number, dy: number, x: number, y: number) => {
+      const rest = scrollPane(dx, dy);
+      if (Math.abs(dy) >= Math.abs(dx)) scrollHistory(rest, x, y);
       updateTerminalBottom();
     };
+    // Coasts over the cell where the swipe left off.
+    const fling = createFling((dx, dy) => scrollTerminal(dx, dy, touchX, touchY));
     const touchStart = (e: TouchEvent) => {
       e.stopPropagation();
-      historyPixels = 0;
+      fling.stop();
+      wheelPixels = 0;
       touchId = undefined;
       touchAxis = undefined;
       if (e.touches.length === 1) {
@@ -276,6 +376,7 @@ export function AgentDetail(props: AgentDetailProps) {
       // Let the browser handle pinch zoom.
       if (e.touches.length !== 1) {
         touchId = undefined;
+        fling.stop();
         return;
       }
       const touch = e.touches[0];
@@ -289,20 +390,25 @@ export function AgentDetail(props: AgentDetailProps) {
       // Touch-down jitter is not a direction: keep the start point until the swipe has one.
       if (!touchAxis && Math.max(Math.abs(dx), Math.abs(dy)) < 8) return;
       touchAxis ??= Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
-      if (touchAxis === 'x') scrollTerminal(dx, 0, touch.clientX, touch.clientY);
-      else scrollTerminal(0, dy, touch.clientX, touch.clientY);
+      const [moveX, moveY] = touchAxis === 'x' ? [dx, 0] : [0, dy];
+      scrollTerminal(moveX, moveY, touch.clientX, touch.clientY);
+      fling.track(moveX, moveY);
       touchX = touch.clientX;
       touchY = touch.clientY;
     };
     const touchEnd = (e: TouchEvent) => {
       e.stopPropagation();
+      const lifted = touchId !== undefined && e.type === 'touchend' && e.touches.length === 0;
       touchId = undefined;
-      historyPixels = 0;
+      wheelPixels = 0;
+      if (lifted) fling.release();
+      else fling.stop();
     };
     const wheel = (e: WheelEvent) => {
       e.stopPropagation();
       if (e.ctrlKey) return; // Preserve browser pinch-to-zoom.
       e.preventDefault();
+      fling.stop();
       const scale =
         e.deltaMode === WheelEvent.DOM_DELTA_LINE
           ? terminalLineHeight
@@ -318,6 +424,7 @@ export function AgentDetail(props: AgentDetailProps) {
     terminalScroller.addEventListener('wheel', wheel, { passive: false, capture: true });
     onCleanup(() => {
       disposed = true;
+      fling.stop();
       cancelAnimationFrame(renderFrame);
       cancelAnimationFrame(terminalFrame);
       observer.disconnect();
@@ -329,8 +436,11 @@ export function AgentDetail(props: AgentDetailProps) {
       unsubscribeAgent(props.agentId);
       cleanupScrollback();
       cleanupOutput();
+      cleanupSize();
       scrollListener.dispose();
+      renderListener.dispose();
       parsedListener.dispose();
+      bufferListener.dispose();
       term?.dispose();
       term = undefined;
     });
@@ -457,8 +567,22 @@ export function AgentDetail(props: AgentDetailProps) {
     setSent(false);
   }
 
+  function toggleTextSelection() {
+    if (selectableText() !== undefined || !term) {
+      setSelectableText(undefined);
+      fitTerminal();
+      return;
+    }
+    const buffer = term.buffer.active;
+    // Open where the terminal was showing; the copy wraps differently, so this is approximate.
+    const position = terminalBottom() ? 1 : buffer.viewportY / Math.max(1, buffer.length);
+    setSelectableText(terminalBufferText(buffer));
+    if (textView) textView.scrollTop = position * textView.scrollHeight;
+  }
+
   function selectView(next: 'terminal' | 'notes' | 'diff') {
     const wasDiff = view() === 'diff';
+    setSelectableText(undefined);
     setView(next);
     // Re-entering the diff tab refetches, so returning to it always shows the
     // agent's newest work rather than a snapshot from the first visit.
@@ -512,6 +636,14 @@ export function AgentDetail(props: AgentDetailProps) {
           <div class="mobile-text-size" role="group" aria-label="Terminal text size">
             <button
               class="mobile-button"
+              aria-label="Select terminal text"
+              aria-pressed={selectableText() !== undefined}
+              onClick={toggleTextSelection}
+            >
+              Select
+            </button>
+            <button
+              class="mobile-button"
               aria-label="Smaller terminal text"
               disabled={zoom() <= 0.5}
               onClick={() => {
@@ -540,11 +672,22 @@ export function AgentDetail(props: AgentDetailProps) {
           ref={terminalScroller}
           onScroll={updateTerminalBottom}
           class="mobile-terminal-scroll"
-          classList={{ 'mobile-terminal-hidden': view() !== 'terminal' }}
-          aria-hidden={view() !== 'terminal'}
+          classList={{
+            'mobile-terminal-hidden': view() !== 'terminal' || selectableText() !== undefined,
+          }}
+          aria-hidden={view() !== 'terminal' || selectableText() !== undefined}
         >
           <div ref={termContainer} class="mobile-terminal" />
         </div>
+        <Show when={selectableText() !== undefined}>
+          <pre
+            ref={textView}
+            class="mobile-terminal-text"
+            style={{ 'font-size': `${fontSize * zoom()}px` }}
+          >
+            {selectableText()}
+          </pre>
+        </Show>
         <Show when={view() === 'notes'}>
           <div class="mobile-scroll mobile-notes">
             <Show when={notesError()}>
@@ -584,7 +727,7 @@ export function AgentDetail(props: AgentDetailProps) {
             </Show>
           </div>
         </Show>
-        <Show when={view() === 'terminal'}>
+        <Show when={view() === 'terminal' && selectableText() === undefined}>
           <div class="mobile-output-actions">
             <Show when={nextAttentionTask()}>
               {(next) => (
@@ -612,93 +755,109 @@ export function AgentDetail(props: AgentDetailProps) {
         when={view() === 'notes'}
         fallback={
           <Show when={view() === 'terminal'}>
-            <div class="mobile-composer">
-              <Show when={inputText().includes('\n') && !multilinePaste()}>
-                <p class="muted">This terminal sends line breaks as spaces.</p>
-              </Show>
-              <Show when={sendError()}>
-                <p class="mobile-error" role="alert">
-                  {sendError()}
-                </p>
-              </Show>
-              <div class="mobile-composer-row">
-                <Show when={bashMode()}>
-                  <button
-                    class="mobile-button mobile-bash"
-                    aria-label="Shell command mode"
-                    aria-pressed="true"
-                    disabled={sending()}
-                    onClick={() => {
-                      setBashMode(false);
-                      inputRef?.focus();
-                    }}
-                  >
-                    !
-                  </button>
+            <div class="mobile-composer-dock">
+              {/* Notices float above the composer instead of growing it, so the
+                  terminal keeps its rows and nothing jumps while typing. */}
+              <div class="mobile-composer-notices">
+                <Show when={inputText().includes('\n') && !multilinePaste()}>
+                  <p class="muted">This terminal sends line breaks as spaces.</p>
                 </Show>
-                <textarea
-                  ref={(element) => {
-                    inputRef = element;
-                    queueMicrotask(() => {
-                      if (!disposed) resizeComposer();
-                    });
-                  }}
-                  class="mobile-input"
-                  rows={1}
-                  maxlength={4000}
-                  aria-label="Message agent"
-                  placeholder={composerPlaceholder()}
-                  value={inputText()}
-                  onInput={(e) => composerInput(e.currentTarget)}
-                  disabled={sending()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
-                      e.preventDefault();
-                      void handleSend();
-                    }
-                  }}
-                />
-                <button
-                  class="mobile-button primary"
-                  disabled={!inputText().trim() || sending() || status() !== 'connected'}
-                  onClick={() => void handleSend()}
-                >
-                  {sending() ? 'Sending…' : canControl() ? 'Send' : 'Authorize'}
-                </button>
+                <Show when={sendError()}>
+                  <p class="mobile-error" role="alert">
+                    {sendError()}
+                  </p>
+                </Show>
+                <Show when={inputText().length >= 3600}>
+                  <p class="muted" role="status">
+                    {4000 - inputText().length} characters remaining
+                  </p>
+                </Show>
               </div>
-              <Show when={inputText().length >= 3600}>
-                <p class="muted" role="status">
-                  {4000 - inputText().length} characters remaining
-                </p>
-              </Show>
-              <Show when={sent()}>
-                <p class="muted mobile-success" role="status">
-                  Accepted by terminal
-                </p>
-              </Show>
-              <div id="terminal-keys" class="mobile-keys" role="group" aria-label="Terminal keys">
-                <For
-                  each={[
-                    { label: 'Enter', name: 'Enter', data: '\r' },
-                    { label: '/', name: 'Slash', data: '/' },
-                    { label: 'Tab', name: 'Tab', data: '\t' },
-                    { label: '↑', name: 'Arrow up', data: '\x1b[A' },
-                    { label: '↓', name: 'Arrow down', data: '\x1b[B' },
-                    { label: 'Esc', name: 'Escape', data: '\x1b' },
-                    { label: 'Ctrl+C', name: 'Interrupt agent (Control C)', data: '\x03' },
-                  ]}
-                >
-                  {(key) => (
+              <div class="mobile-composer">
+                <div class="mobile-composer-row">
+                  <Show when={bashMode()}>
                     <button
-                      class="mobile-button"
-                      aria-label={key.name}
-                      disabled={!canControl() || sending()}
-                      onClick={() => void quickKey(key.data)}
+                      class="mobile-button mobile-bash"
+                      aria-label="Shell command mode"
+                      aria-pressed="true"
+                      disabled={sending()}
+                      onClick={() => {
+                        setBashMode(false);
+                        inputRef?.focus();
+                      }}
                     >
-                      {key.label}
+                      !
                     </button>
-                  )}
-                </For>
+                  </Show>
+                  <textarea
+                    ref={(element) => {
+                      inputRef = element;
+                      queueMicrotask(() => {
+                        if (!disposed) resizeComposer();
+                      });
+                    }}
+                    class="mobile-input"
+                    rows={1}
+                    maxlength={4000}
+                    aria-label="Message agent"
+                    placeholder={composerPlaceholder()}
+                    value={inputText()}
+                    onInput={(e) => composerInput(e.currentTarget)}
+                    disabled={sending()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
+                        e.preventDefault();
+                        void handleSend();
+                      }
+                    }}
+                  />
+                  <button
+                    class="mobile-button primary"
+                    classList={{ 'mobile-success': sent() }}
+                    disabled={!inputText().trim() || sending() || status() !== 'connected'}
+                    // Keep focus in the field: a blur would close the keyboard and
+                    // bring back the key row, moving Send before the tap lands.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void handleSend()}
+                  >
+                    {sending()
+                      ? 'Sending…'
+                      : !canControl()
+                        ? 'Authorize'
+                        : sent()
+                          ? 'Sent'
+                          : 'Send'}
+                  </button>
+                </div>
+                <Show when={sent()}>
+                  <span class="mobile-sr-only" role="status">
+                    Accepted by terminal
+                  </span>
+                </Show>
+                <div id="terminal-keys" class="mobile-keys" role="group" aria-label="Terminal keys">
+                  <For
+                    each={[
+                      { label: 'Enter', name: 'Enter', data: '\r' },
+                      { label: '/', name: 'Slash', data: '/' },
+                      { label: 'Tab', name: 'Tab', data: '\t' },
+                      { label: '↑', name: 'Arrow up', data: '\x1b[A' },
+                      { label: '↓', name: 'Arrow down', data: '\x1b[B' },
+                      { label: 'Esc', name: 'Escape', data: '\x1b' },
+                      { label: 'Ctrl+C', name: 'Interrupt agent (Control C)', data: '\x03' },
+                    ]}
+                  >
+                    {(key) => (
+                      <button
+                        class="mobile-button"
+                        aria-label={key.name}
+                        disabled={!canControl() || sending()}
+                        onClick={() => void quickKey(key.data)}
+                      >
+                        {key.label}
+                      </button>
+                    )}
+                  </For>
+                </div>
               </div>
             </div>
           </Show>

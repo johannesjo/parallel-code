@@ -10,6 +10,7 @@ vi.mock('../store/core', () => ({
     agents: { agent: { status: 'running', def: { name: 'Codex', command: 'codex' } } },
     activeTaskId: 'task',
     autoTrustFolders: false,
+    terminals: {},
   },
   setStore: vi.fn(),
 }));

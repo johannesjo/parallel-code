@@ -5,6 +5,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { store, setStore } from '../store/core';
 import {
+  jumpToTask,
   openPanelOrder,
   setTaskProjectFilter,
   setActiveTask,
@@ -17,7 +18,12 @@ import {
   startBackgroundTaskWatcher,
 } from '../store/background-tasks';
 import { collapseTask, createTask } from '../store/tasks';
-import { deletePanelUserSize, getPanelUserSize, setPanelUserSize } from '../store/ui';
+import {
+  deletePanelUserSize,
+  getPanelUserSize,
+  getTaskViewportVisibility,
+  setPanelUserSize,
+} from '../store/ui';
 import { TilingLayout } from './TilingLayout';
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn() }));
@@ -133,6 +139,110 @@ it('keeps the active tile visible when a background task returns ahead of it', a
     bringTaskToFront('returning');
     currentScroll.mockRestore();
     returningScroll.mockRestore();
+  }
+});
+
+it('recomputes which tiles are on screen when the project order changes', async () => {
+  setStore('projects', [
+    { id: 'project', name: 'Project', path: '/repo', color: '#abc' },
+    { id: 'other', name: 'Other', path: '/other', color: '#def' },
+  ]);
+  for (const [id, projectId] of [
+    ['first', 'project'],
+    ['second', 'other'],
+  ] as const) {
+    setStore('tasks', id, {
+      id,
+      name: id,
+      projectId,
+      branchName: id,
+      worktreePath: `/repo/${id}`,
+      gitIsolation: 'worktree',
+      agentIds: [],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+    });
+  }
+  setStore('taskOrder', ['first', 'second']);
+  // One 100px tile fits; each tile sits at its DOM position.
+  const rect = vi
+    .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    .mockImplementation(function (this: HTMLElement) {
+      const tiles = [...container.querySelectorAll('[data-task-id]')];
+      const left = this.dataset.taskId ? tiles.indexOf(this) * 100 : 0;
+      return DOMRect.fromRect({ x: left, y: 0, width: 100, height: 100 });
+    });
+  try {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(getTaskViewportVisibility('second')).toBe('offscreen-right');
+
+    setStore('projects', (projects) => [...projects].reverse());
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(getTaskViewportVisibility('second')).toBe('visible');
+    expect(getTaskViewportVisibility('first')).toBe('offscreen-right');
+  } finally {
+    rect.mockRestore();
+  }
+});
+
+it('hides a snoozed tile from the strip but keeps it mounted until it returns', async () => {
+  for (const id of ['snoozed', 'current']) {
+    setStore('tasks', id, {
+      id,
+      name: id,
+      projectId: 'project',
+      branchName: id,
+      worktreePath: `/repo/${id}`,
+      gitIsolation: 'worktree',
+      agentIds: [],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+    });
+  }
+  setStore('taskOrder', ['snoozed', 'current']);
+  setActiveTask('snoozed');
+  const stop = startBackgroundTaskWatcher();
+  try {
+    sendTaskToBack('snoozed', 1);
+    // A visible snoozed tile woke on any click into it; a hidden one cannot be clicked.
+    const tile = container.querySelector<HTMLElement>('[data-task-id="snoozed"]');
+    assert(tile);
+    expect(tile.parentElement?.style.display).toBe('none');
+    jumpToTask(1);
+    expect(store.activeTaskId).toBe('snoozed');
+    expect(store.tasks.snoozed?.snoozedUntil).toBeUndefined();
+    expect(container.querySelector('[data-task-id="snoozed"]')).toBe(tile);
+    expect(tile.parentElement?.style.display).not.toBe('none');
+  } finally {
+    stop();
+  }
+});
+
+it('says the tasks are snoozed rather than missing when every task is snoozed', () => {
+  setStore('tasks', 'only', {
+    id: 'only',
+    name: 'only',
+    projectId: 'project',
+    branchName: 'only',
+    worktreePath: '/repo/only',
+    gitIsolation: 'worktree',
+    agentIds: [],
+    shellAgentIds: [],
+    notes: '',
+    lastPrompt: '',
+  });
+  setStore('taskOrder', ['only']);
+  setActiveTask('only');
+  const stop = startBackgroundTaskWatcher();
+  try {
+    sendTaskToBack('only');
+    expect(container.textContent).toContain('All tasks are snoozed');
+    expect(container.textContent).not.toContain('No tasks yet');
+  } finally {
+    stop();
+    bringTaskToFront('only');
   }
 });
 
@@ -369,28 +479,122 @@ describe('inline task creation', () => {
     expect((await openDraft()).value).toBe('');
   });
 
-  it('retains input after a creation failure and closes after a successful retry', async () => {
+  it('keeps a failed draft with its settings for the next New Task and retries it', async () => {
+    const originalInvoke = vi.mocked(invoke).getMockImplementation();
+    vi.mocked(invoke).mockImplementation(async (channel, args) =>
+      channel === IPC.GetBranches ? ['main', 'dev'] : originalInvoke?.(channel, args),
+    );
+    setStore('availableAgents', (agents) => [
+      ...agents,
+      { ...agents[0], id: 'other', name: 'Other' },
+    ]);
+    setStore('projects', 0, 'defaultBaseBranch', 'dev');
     const prompt = await openDraft();
+    Array.from(container.querySelectorAll<HTMLElement>('[role="radio"]'))
+      .find((el) => el.textContent?.includes('Other'))
+      ?.click();
     prompt.value = 'Implement inline tasks';
     prompt.dispatchEvent(new Event('input', { bubbles: true }));
     vi.mocked(createTask).mockRejectedValueOnce(new Error('Cannot create worktree'));
     container
       .querySelector('form')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    await vi.waitFor(() => expect(container.textContent).toContain('Cannot create worktree'));
-    expect(prompt.value).toBe('Implement inline tasks');
+    expect(store.showNewTaskPanel).toBe(false);
+    await vi.waitFor(() => expect(store.notification).toContain('Cannot create worktree'));
+    // The failure must not pull focus into a reopened panel.
+    expect(store.showNewTaskPanel).toBe(false);
+
+    setStore('projects', 0, { defaultBaseBranch: 'main', defaultGitIsolation: 'direct' });
+    expect((await openDraft()).value).toBe('Implement inline tasks');
     vi.mocked(createTask).mockResolvedValueOnce('created-task');
     container
       .querySelector('form')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    await vi.waitFor(() => expect(store.showNewTaskPanel).toBe(false));
+    await vi.waitFor(() => expect(createTask).toHaveBeenCalledTimes(2));
     expect(createTask).toHaveBeenLastCalledWith(
       expect.objectContaining({
         initialPrompt: 'Implement inline tasks',
         projectId: 'project',
-        baseBranch: 'main',
+        baseBranch: 'dev',
+        gitIsolation: 'worktree',
+        agentDef: expect.objectContaining({ id: 'other' }),
       }),
     );
+  });
+
+  it('does not link another repository issue when a draft from another project is retried', async () => {
+    const issue = 'https://github.com/other/repo/issues/7';
+    setStore('projects', (projects) => [
+      ...projects,
+      { id: 'other', name: 'Other', path: '/other', color: '#cba' },
+    ]);
+    setStore('newTaskPrefillPrompt', {
+      prompt: `Fix ${issue}`,
+      projectId: 'other',
+      githubUrl: issue,
+    });
+    await openDraft();
+    const project = container.querySelector('select');
+    assert(project);
+    project.value = 'project';
+    project.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(container.querySelector('button[type="submit"]')?.hasAttribute('disabled')).toBe(
+        false,
+      ),
+    );
+    vi.mocked(createTask).mockRejectedValueOnce(new Error('Cannot create worktree'));
+    container
+      .querySelector('form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(store.notification).toContain('Cannot create worktree'));
+    expect(createTask).toHaveBeenLastCalledWith(
+      expect.objectContaining({ projectId: 'project', githubUrl: undefined }),
+    );
+
+    await openDraft();
+    vi.mocked(createTask).mockResolvedValueOnce('created-task');
+    container
+      .querySelector('form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(createTask).toHaveBeenCalledTimes(2));
+    expect(createTask).toHaveBeenLastCalledWith(
+      expect.objectContaining({ projectId: 'project', githubUrl: undefined }),
+    );
+  });
+
+  it('leaves a newer draft alone when a slow creation fails and offers the failed one next', async () => {
+    const first = await openDraft();
+    first.value = 'First task';
+    first.dispatchEvent(new Event('input', { bubbles: true }));
+    let fail!: (error: Error) => void;
+    vi.mocked(createTask).mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          fail = reject;
+        }),
+    );
+    container
+      .querySelector('form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    const next = await openDraft();
+    next.value = 'Second task';
+    next.dispatchEvent(new Event('input', { bubbles: true }));
+
+    fail(new Error('Cannot create worktree'));
+    await vi.waitFor(() => expect(store.notification).toContain('Cannot create worktree'));
+    expect(container.querySelector('textarea')).toBe(next);
+    expect(next.value).toBe('Second task');
+
+    toggleNewTaskPanel(false);
+    const restored = await openDraft();
+    expect(restored.value).toBe('First task');
+    // The queue held the only copy, so leaving it must ask first.
+    restored.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(store.showNewTaskPanel).toBe(true);
+    expect(
+      Array.from(document.querySelectorAll('button')).some((el) => el.textContent === 'Discard'),
+    ).toBe(true);
   });
 
   it('keeps the panel visible in focus mode without changing the preference', async () => {
@@ -405,6 +609,31 @@ describe('inline task creation', () => {
       ?.click();
     expect(store.showNewTaskPanel).toBe(false);
     expect(store.focusMode).toBe(true);
+  });
+
+  it('shows the draft alone in focus mode, the task behind it', async () => {
+    setStore('tasks', 'task', {
+      id: 'task',
+      name: 'Task',
+      projectId: 'project',
+      branchName: 'task/test',
+      worktreePath: '/repo/task',
+      agentIds: [],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+    });
+    setStore('taskOrder', ['task']);
+    setActiveTask('task');
+    await openDraft();
+    const wrapperOf = (selector: string) =>
+      container.querySelector(selector)?.parentElement?.style.visibility;
+    expect(wrapperOf('[data-task-id="task"]')).not.toBe('hidden');
+
+    setStore('focusMode', true);
+
+    expect(wrapperOf('[data-new-task-panel]')).toBe('visible');
+    expect(wrapperOf('[data-task-id="task"]')).toBe('hidden');
   });
 
   it('returns to the active task instantly when the draft is cancelled', async () => {
@@ -513,8 +742,8 @@ describe('inline task creation', () => {
     scrollTo.mockRestore();
   });
 
-  it('prevents duplicate submissions and dismissal while creation is pending', async () => {
-    const prompt = await openDraft();
+  it('lets the next draft start while a slow creation is pending', async () => {
+    await openDraft();
     let finish!: (taskId: string) => void;
     vi.mocked(createTask).mockImplementationOnce(
       () =>
@@ -525,16 +754,34 @@ describe('inline task creation', () => {
     const form = container.querySelector('form');
     assert(form);
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    expect(createTask).toHaveBeenCalledOnce();
-    expect(
-      Array.from(container.querySelectorAll('button')).find((el) => el.textContent === 'Cancel')
-        ?.disabled,
-    ).toBe(true);
-    prompt.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    expect(store.showNewTaskPanel).toBe(true);
+    expect(store.showNewTaskPanel).toBe(false);
+    const next = await openDraft();
+    expect(next.value).toBe('');
     finish('created-task');
-    await vi.waitFor(() => expect(store.showNewTaskPanel).toBe(false));
+    await Promise.resolve();
+    expect(createTask).toHaveBeenCalledOnce();
+    expect(store.showNewTaskPanel).toBe(true);
+  });
+
+  it('keeps typing focus in the draft when the first task arrives beside it', async () => {
+    const prompt = await openDraft();
+    prompt.focus();
+    setStore('tasks', 'first', {
+      id: 'first',
+      name: 'First',
+      projectId: 'project',
+      branchName: 'task/first',
+      worktreePath: '/repo/first',
+      agentIds: [],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+    });
+    setStore('taskOrder', ['first']);
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-task-id="first"]')).not.toBeNull(),
+    );
+    expect(document.activeElement).toBe(prompt);
   });
 
   it('prefills immediately and does not reclaim focus when agent discovery finishes', async () => {
@@ -623,7 +870,7 @@ describe('inline document workspace', () => {
 
 describe('task column resizing', () => {
   beforeEach(() => {
-    deletePanelUserSize(['tiling:terminal']);
+    deletePanelUserSize(['tiling:terminal', 'tiling:task']);
     setStore('terminals', 'terminal', { id: 'terminal', name: 'Terminal', agentId: 'shell' });
     setStore('taskOrder', ['terminal']);
     setStore('activeTaskId', 'terminal');
@@ -641,6 +888,51 @@ describe('task column resizing', () => {
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 210 }));
     window.dispatchEvent(new MouseEvent('mouseup'));
     expect(getPanelUserSize('tiling:terminal')).toBe(310);
+  });
+
+  it('sizes an undragged task column for its canvas without pinning it', () => {
+    setStore('tasks', 'task', {
+      id: 'task',
+      name: 'Task',
+      projectId: 'project',
+      branchName: '',
+      worktreePath: '/repo',
+      agentIds: [],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+      canvasOpen: true,
+    });
+    setStore('taskOrder', ['task']);
+    const columnWidth = () =>
+      container.querySelector<HTMLElement>('[data-task-id="task"]')?.parentElement?.style.width;
+    expect(columnWidth()).toBe('920px');
+    setStore('tasks', 'task', 'canvasOpen', false);
+    expect(columnWidth()).toBe('520px');
+    expect(getPanelUserSize('tiling:task')).toBeUndefined();
+  });
+
+  it('fits side-by-side agents and pins from that width when dragged', () => {
+    setStore('tasks', 'task', {
+      id: 'task',
+      name: 'Task',
+      projectId: 'project',
+      branchName: '',
+      worktreePath: '/repo',
+      agentIds: ['agent-a', 'agent-b'],
+      shellAgentIds: [],
+      notes: '',
+      lastPrompt: '',
+      canvasOpen: false,
+    });
+    setStore('taskOrder', ['task']);
+    const column = container.querySelector<HTMLElement>('[data-task-id="task"]')?.parentElement;
+    expect(column?.style.width).toBe('840px');
+    expect(getPanelUserSize('tiling:task')).toBeUndefined();
+    startDrag();
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 210 }));
+    window.dispatchEvent(new MouseEvent('mouseup'));
+    expect(getPanelUserSize('tiling:task')).toBe(850);
   });
 
   it('does not pin a column on a click without movement', () => {

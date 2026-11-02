@@ -30,8 +30,8 @@ export function MergeCommitList(props: { state: MergeState }) {
               'overflow-x': 'hidden',
               'font-family': "'JetBrains Mono', monospace",
               'font-size': '12px',
+              // Square corners, like the changed-files list: rounded, it reads like a button.
               border: `1px solid ${theme.border}`,
-              'border-radius': 'var(--radius-md)',
               padding: '4px 0',
             }}
           >

@@ -41,12 +41,17 @@ export const prIsBlocked = (pr: PullRequestDetails): boolean => pr.mergeStateSta
 
 /**
  * Why merging is not offered, or null when GitHub may accept it. With
- * `bypass`, branch protection is left for GitHub to waive (`--admin`).
+ * `bypass`, branch protection is left for GitHub to waive (`--admin`); with
+ * `allowDraft`, the merge marks a draft ready for review first.
  */
-export function prMergeBlocker(pr: PullRequestDetails, bypass = false): string | null {
+export function prMergeBlocker(
+  pr: PullRequestDetails,
+  { bypass = false, allowDraft = false } = {},
+): string | null {
   if (pr.state === 'MERGED') return 'Already merged.';
   if (pr.state === 'CLOSED') return 'The pull request is closed.';
-  if (pr.isDraft) return 'Draft pull requests cannot be merged. Mark it ready for review first.';
+  if (pr.isDraft && !allowDraft)
+    return 'Draft pull requests cannot be merged. Mark it ready for review first.';
   if (pr.mergeable === 'CONFLICTING') return 'The branch has conflicts with its base branch.';
   if (pr.mergeStateStatus === 'BEHIND')
     return 'The branch must be updated with its base branch first.';
@@ -114,12 +119,28 @@ export function createPrActions(props: PrActionsProps) {
     return false;
   }
 
+  /** Why the PR, now out of draft, still cannot merge; draft state can hide a block. */
+  async function markReadyForMerge(url: string, admin: boolean): Promise<string | null> {
+    await markPullRequestReadyForTask(props.task.id, url);
+    // A failed fetch resolves with the resource in error, so `pr()` is undefined.
+    await refetch();
+    const ready = pr();
+    return ready ? prMergeBlocker(ready, { bypass: admin }) : 'Reopen to retry.';
+  }
+
   async function merge(admin = false): Promise<PrMergeOutcome> {
     const chosen = chosenMethod();
     const current = pr();
     if (!chosen || !current || !props.prUrl) return 'failed';
     begin('merge');
+    let markedReady = false;
     try {
+      // GitHub refuses to merge drafts, so a merge of one takes it out of draft first.
+      if (current.isDraft) {
+        const blocker = await markReadyForMerge(props.prUrl, admin);
+        markedReady = true;
+        if (blocker) throw new Error(blocker);
+      }
       const merged = await mergePullRequestForTask(props.task.id, {
         prUrl: props.prUrl,
         method: chosen,
@@ -128,7 +149,10 @@ export function createPrActions(props: PrActionsProps) {
       });
       return merged ? 'merged' : 'queued';
     } catch (err) {
-      setError(errMessage(err));
+      const message = errMessage(err);
+      setError(markedReady ? `Marked ready for review, but not merged: ${message}` : message);
+      // The merge state right after `gh pr ready` may be stale; show the block that stopped it.
+      if (markedReady) await refetch();
       return 'failed';
     } finally {
       setBusy(null);
@@ -253,11 +277,13 @@ export function createFinishPr(props: FinishPrProps) {
     return bypassProtection() && !!pr && prIsBlocked(pr);
   };
 
-  const blocker = (): string | undefined => {
+  /** Why merging is unavailable; `asIs` merges the PR at its own head, local commits aside. */
+  const blocker = (asIs = false): string | undefined => {
     const pr = actions.pr();
     if (!pr) return 'Checking the pull request…';
-    const github = prMergeBlocker(pr, bypassing());
+    const github = prMergeBlocker(pr, { bypass: bypassing(), allowDraft: true });
     if (github) return github;
+    if (asIs) return undefined;
     if (props.headSha() === undefined) return 'Checking the branch…';
     // Merging is pinned to the PR head, so local commits would be left behind.
     if (headDiffers()) {

@@ -45,6 +45,27 @@ function initRepository(): string {
   return root;
 }
 
+/** A repo with a tracked workspace package whose own install lives in the package dir. */
+function initWorkspaceRepository(): string {
+  const root = initRepository();
+  fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n', 'utf8');
+  fs.mkdirSync(path.join(root, 'packages', 'core'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'packages', 'core', 'package.json'), '{}\n', 'utf8');
+  git(root, ['add', '.gitignore', 'packages/core/package.json']);
+  git(root, [
+    '-c',
+    'user.name=Parallel Code Tests',
+    '-c',
+    'user.email=tests@parallel-code.local',
+    'commit',
+    '-m',
+    'workspace',
+  ]);
+  fs.mkdirSync(path.join(root, 'node_modules', 'left-pad'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'packages', 'core', 'node_modules', 'vitest'), { recursive: true });
+  return root;
+}
+
 beforeEach(() => {
   for (const name of localGitEnvVars) {
     inheritedGitEnv.set(name, process.env[name]);
@@ -163,6 +184,18 @@ describe('getSymlinkCandidates', () => {
       { name: '.worktree', isDefault: false },
       { name: 'dist', isDefault: false },
     ]);
+  });
+
+  it('does not offer .agents when only its Antigravity MCP config is ignored', async () => {
+    const root = initRepository();
+    fs.writeFileSync(path.join(root, '.gitignore'), 'dist/\n', 'utf8');
+    fs.appendFileSync(path.join(root, '.git', 'info', 'exclude'), '/.agents/mcp_config.json\n');
+    fs.mkdirSync(path.join(root, '.agents'));
+    fs.writeFileSync(path.join(root, '.agents', 'mcp_config.json'), '{}\n', 'utf8');
+    fs.mkdirSync(path.join(root, 'dist'));
+    fs.writeFileSync(path.join(root, 'dist', 'app.js'), 'built\n', 'utf8');
+
+    await expect(getSymlinkCandidates(root)).resolves.toEqual([{ name: 'dist', isDefault: false }]);
   });
 
   it('does not show a directory whose contents are ignored by *.log', async () => {
@@ -430,6 +463,20 @@ describe('createWorktree', () => {
     expect(git(result.path, ['status', '--porcelain'])).not.toContain('node_modules');
   });
 
+  it('links the node_modules of tracked workspace packages too', async () => {
+    const root = initWorkspaceRepository();
+    // Ignored in the main checkout and absent from the worktree: nothing to link into.
+    fs.mkdirSync(path.join(root, 'scratch', 'node_modules', 'tmp'), { recursive: true });
+
+    const result = await createWorktree(root, 'task-nm-nested', ['node_modules']);
+    const nested = path.join(result.path, 'packages', 'core', 'node_modules');
+
+    expect(fs.lstatSync(nested).isDirectory()).toBe(true);
+    expect(fs.lstatSync(path.join(nested, 'vitest')).isSymbolicLink()).toBe(true);
+    expect(fs.existsSync(path.join(result.path, 'scratch'))).toBe(false);
+    expect(git(result.path, ['status', '--porcelain'])).not.toContain('node_modules');
+  });
+
   it('silently rejects selected names nested below the repository root', async () => {
     const root = initRepository();
     fs.mkdirSync(path.join(root, 'foo', 'bar'), { recursive: true });
@@ -593,6 +640,17 @@ describe('refreshWorktreeNodeModules', () => {
     expect(fs.lstatSync(path.join(target, 'pkg-b')).isSymbolicLink()).toBe(true);
   });
 
+  it('backfills workspace package installs added after the worktree was created', async () => {
+    const root = initWorkspaceRepository();
+    const result = await createWorktree(root, 'task-nm-nested-refresh', ['node_modules']);
+    const nested = path.join(result.path, 'packages', 'core', 'node_modules');
+    fs.mkdirSync(path.join(root, 'packages', 'core', 'node_modules', 'tinybench'));
+
+    refreshWorktreeNodeModules(result.path, root);
+
+    expect(fs.lstatSync(path.join(nested, 'tinybench')).isSymbolicLink()).toBe(true);
+  });
+
   it('leaves the main checkout and unmanaged worktree installs untouched', async () => {
     const root = initRepository();
     const rootInstall = path.join(root, 'node_modules');
@@ -613,15 +671,65 @@ describe('refreshWorktreeNodeModules', () => {
 });
 
 describe('ensureSymlinkExcludes', () => {
-  it('escapes gitignore wildcards so similarly-named files stay visible', async () => {
+  // Windows filenames cannot contain `*`, so the wildcard file cannot exist there.
+  it.skipIf(process.platform === 'win32')(
+    'escapes gitignore wildcards so similarly-named files stay visible',
+    async () => {
+      const root = initRepository();
+      fs.writeFileSync(path.join(root, 'star*file'), 'a\n', 'utf8');
+      fs.writeFileSync(path.join(root, 'starZZfile'), 'b\n', 'utf8');
+
+      ensureSymlinkExcludes(root, ['star*file']);
+
+      const status = git(root, ['status', '--porcelain']);
+      expect(status).not.toContain('star*file');
+      expect(status).toContain('starZZfile');
+    },
+  );
+});
+
+describe('ensureClaudeSandboxFiles', () => {
+  function makeWorktreeDir(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-claude-worktree-'));
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  it('does not seed .claude/worktrees/ into a new worktree', async () => {
     const root = initRepository();
-    fs.writeFileSync(path.join(root, 'star*file'), 'a\n', 'utf8');
-    fs.writeFileSync(path.join(root, 'starZZfile'), 'b\n', 'utf8');
+    const sourceWorktrees = path.join(root, '.claude', 'worktrees', 'some-agent-id');
+    fs.mkdirSync(sourceWorktrees, { recursive: true });
+    fs.writeFileSync(path.join(sourceWorktrees, 'marker.txt'), 'a nested worktree checkout\n');
 
-    ensureSymlinkExcludes(root, ['star*file']);
+    const worktreePath = makeWorktreeDir();
+    await ensureClaudeSandboxFiles(worktreePath, root);
 
-    const status = git(root, ['status', '--porcelain']);
-    expect(status).not.toContain('star*file');
-    expect(status).toContain('starZZfile');
+    expect(fs.existsSync(path.join(worktreePath, '.claude', 'worktrees'))).toBe(false);
+  });
+
+  it('still excludes plans/ and steps.json (pre-existing behavior)', async () => {
+    const root = initRepository();
+    fs.mkdirSync(path.join(root, '.claude', 'plans'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.claude', 'steps.json'), '{}\n');
+
+    const worktreePath = makeWorktreeDir();
+    await ensureClaudeSandboxFiles(worktreePath, root);
+
+    expect(fs.existsSync(path.join(worktreePath, '.claude', 'plans'))).toBe(false);
+    expect(fs.existsSync(path.join(worktreePath, '.claude', 'steps.json'))).toBe(false);
+  });
+
+  it('still seeds ordinary .claude/ entries (e.g. skills/) from the source', async () => {
+    const root = initRepository();
+    const sourceSkills = path.join(root, '.claude', 'skills');
+    fs.mkdirSync(sourceSkills, { recursive: true });
+    fs.writeFileSync(path.join(sourceSkills, 'example.md'), '# example skill\n');
+
+    const worktreePath = makeWorktreeDir();
+    await ensureClaudeSandboxFiles(worktreePath, root);
+
+    expect(
+      fs.readFileSync(path.join(worktreePath, '.claude', 'skills', 'example.md'), 'utf8'),
+    ).toBe('# example skill\n');
   });
 });

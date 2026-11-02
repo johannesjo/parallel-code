@@ -37,8 +37,8 @@ describe('defaultPresetForTone', () => {
     expect(defaultPresetForTone('light')).toBe('obsidian-light');
   });
 
-  it('returns obsidian for dark', () => {
-    expect(defaultPresetForTone('dark')).toBe('obsidian');
+  it('returns parallel-code for dark', () => {
+    expect(defaultPresetForTone('dark')).toBe('parallel-code');
   });
 });
 

@@ -93,6 +93,15 @@ it('keeps the sent-changes digest through draft updates and restores only bounde
     restoreReasoningWorkspaces({ task: { drafts: {}, sentChanges: 'x'.repeat(100_001) } }),
   ).toBeUndefined();
 });
+it('restores the seen baseline only as a sequence number', () => {
+  const seen = { ...emptyWorkspace(), seenSequence: 4 };
+  expect(restoreReasoningWorkspaces({ task: seen })).toEqual({ task: seen });
+  expect(restoreReasoningWorkspaces({ task: { drafts: {}, seenSequence: -1 } })).toEqual({
+    task: { drafts: {}, seenSequence: -1 },
+  });
+  for (const seenSequence of ['4', 1.5, -2])
+    expect(restoreReasoningWorkspaces({ task: { drafts: {}, seenSequence } })).toBeUndefined();
+});
 it('creates a typed child without committing it or exposing drafts', () => {
   expect(childNode('root', 'hypothesis')).toMatchObject({
     parent: 'root',

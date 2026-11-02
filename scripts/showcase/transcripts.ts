@@ -9,6 +9,8 @@ const bold = (text: string): string => `\x1b[1m${text}\x1b[0m`;
 /** How a CLI marks its prompt and tool calls. Claude tasks use chat view instead (chats.ts). */
 type AgentStyle = { prompt: string; bullet: string };
 const GEMINI: AgentStyle = { prompt: bold('>'), bullet: '\x1b[34m✦\x1b[0m' };
+const CODEX: AgentStyle = { prompt: bold('›'), bullet: '\x1b[32m•\x1b[0m' };
+const COPILOT: AgentStyle = { prompt: bold('>'), bullet: '\x1b[35m●\x1b[0m' };
 
 export type DemoSession = { prompt: string; transcript: string };
 
@@ -32,6 +34,68 @@ export const README_SESSION = session(GEMINI, 'Document local setup in README', 
   '',
   'Done. The README covers install,',
   'the API key and the dev server.',
+  '',
+  GEMINI.prompt + ' ',
+]);
+
+// The board scene's extra tasks: one per lane state, so the board reads as a
+// fleet. Busy ones keep a spinner going (`busy` in demo-workspace.ts).
+
+/** Asks before writing: ends on a [Y/n] question, so the task needs you. */
+export const UNITS_SESSION = session(CODEX, 'Add a °C/°F toggle', [
+  '* Read src/forecast.ts',
+  '* Edit src/forecast.ts, src/settings.ts',
+  dim('  +24 -3'),
+  '',
+  'Apply changes to 2 files? [Y/n]',
+]);
+
+export const OFFLINE_SESSION = session(GEMINI, 'Cache forecasts for offline use', [
+  '* Read src/api/weather.ts',
+  '* Write src/cache.ts',
+  dim('  + 31 lines'),
+  '',
+]);
+
+export const AIR_QUALITY_SESSION = session(CODEX, 'Show the air quality index', [
+  '* Read src/api/weather.ts',
+  '* Edit src/api/air.ts',
+  dim('  +18 -0'),
+  '',
+]);
+
+export const CONTRAST_SESSION = session(COPILOT, 'Fix contrast in the dark theme', [
+  '* Read src/styles.css',
+  '* Edit src/styles.css',
+  dim('  +6 -6'),
+  '',
+]);
+
+/** Finished and committed: ends on an idle prompt. */
+export const RAIN_SESSION = session(COPILOT, 'Rain alerts at 8 am', [
+  '* Write src/alerts.ts',
+  '* git commit -m "feat: rain alerts"',
+  dim('  1 file changed, 22 insertions'),
+  '',
+  'Done. Alerts fire at 8 am local time.',
+  '',
+  COPILOT.prompt + ' ',
+]);
+
+export const HOURLY_SESSION = session(CODEX, 'Hourly temperature chart', [
+  '* Write src/components/Hourly.tsx',
+  '* git commit -m "feat: hourly chart"',
+  '* gh pr create',
+  '',
+  'Opened a pull request.',
+  '',
+  CODEX.prompt + ' ',
+]);
+
+export const CITY_SEARCH_SESSION = session(GEMINI, 'Fuzzy city search', [
+  '* Read src/api/weather.ts',
+  '',
+  'Paused until the geocoding API is chosen.',
   '',
   GEMINI.prompt + ' ',
 ]);

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Parallel Code for Android — Privacy Policy</title>
+  </head>
+  <body>
+    <h1>Parallel Code for Android — Privacy Policy</h1>
+    <p>Last updated: October 23, 2026</p>
+    <p>
+      This policy applies to the Parallel Code Android companion app (com.parallelcode.phone),
+      published by The Front End and maintained by Johannes Millan. Contact:
+      <a href="mailto:contact@super-productivity.com">contact@super-productivity.com</a>.
+    </p>
+    <h2>What the app does</h2>
+    <p>
+      Parallel Code connects your phone directly to the Parallel Code desktop application that you
+      choose. The project does not operate a relay or account service for these connections. The
+      Android app contains no advertising or developer-operated analytics or crash reporting. Google
+      scanner diagnostics are described below. You do not create an account with us.
+    </p>
+    <h2>Data exchanged with your computer</h2>
+    <p>
+      The app sends connection and pairing credentials to your selected desktop. It receives task
+      names, agent status, usage information, terminal output, conversations, notes, and source-code
+      changes. When you use the corresponding controls, it sends prompts, terminal input, notes, and
+      task actions to that desktop. These may contain personal information or confidential code.
+      Your desktop and the AI agents and services you configure there process and may retain this
+      content under their own settings and policies. The Parallel Code project does not receive a
+      copy.
+    </p>
+    <h2>Data on your phone</h2>
+    <p>
+      Saved computer addresses, computer names, access tokens, preferences, quick replies, and
+      prompt history are stored in the app's private Android storage. Content received from your
+      desktop is held in memory for display; the home-screen widget also stores a summary locally.
+      Android notification history may retain task information until you clear it. Access tokens
+      authorize access to your computer: protect your phone and any backups.
+    </p>
+    <h2>Optional permissions</h2>
+    <p>
+      Location permission is requested only if you choose to identify your current home Wi-Fi.
+      Android requires it to reveal the Wi-Fi network name. The app compares that name locally with
+      the home network you save to decide whether to wait for a VPN. It does not request GPS
+      coordinates, track your movements, or send the Wi-Fi name to the developer. Wi-Fi recognition
+      is used only while the app is visible; the app does not request background location. You can
+      decline or revoke location access and continue using the app.
+    </p>
+    <p>
+      Notification permission lets the app notify you when an agent needs input, encounters an
+      error, or finishes. Enabling agent notifications starts a foreground service with an ongoing
+      notification to maintain the connection to your desktop. Turn notifications off in the app's
+      settings to stop this service. If Wait for VPN is enabled, background connections wait for an
+      active VPN.
+    </p>
+    <h2>QR scanning and voice input</h2>
+    <p>
+      Optional QR scanning uses Google's Play services code scanner. The scanner handles camera
+      access and returns the scanned link to the app; Parallel Code does not receive camera images
+      or request camera permission. Google's scanner SDK sends device and app information, device or
+      installation identifiers, performance measurements, API usage events, and error codes to
+      Google for diagnostics and usage analytics over HTTPS. Scanning images and results are
+      processed on your device, not sent to Google by the scanner. You can paste a connection link
+      instead of scanning. See https://developers.google.com/ml-kit/android-data-disclosure.
+    </p>
+    <p>
+      Optional voice input opens the speech recognizer installed on your device. That provider may
+      send audio to its servers under its own privacy policy and settings. Parallel Code receives
+      the recognized text, which you can review before sending it to your desktop. The app does not
+      record or store audio itself.
+    </p>
+    <h2>Backups</h2>
+    <p>
+      You can export or schedule backups to a file or folder you select through Android. If you
+      select a cloud storage provider, that provider receives the backup under its own policy.
+      Backups contain settings, saved computers and prompt history. Password-protected backups
+      encrypt their contents using AES-256-GCM and include paired access tokens. Unencrypted backups
+      omit paired tokens but still contain view-only access tokens and other saved data. Treat all
+      backup files as sensitive. The password for scheduled encrypted backups is protected with
+      Android Keystore. Automatic Android cloud backup and device transfer of app data are disabled.
+    </p>
+    <h2>Network security and third parties</h2>
+    <p>
+      The app supports direct HTTP/WebSocket connections on your network as well as HTTPS
+      connections. Plain HTTP is not encrypted by the app. Use a trusted network or an encrypted
+      VPN, or configure HTTPS on your desktop endpoint, to protect sensitive content and tokens in
+      transit. The Wait for VPN setting detects whether a VPN is active; it does not verify that the
+      VPN routes every connection.
+    </p>
+    <p>
+      Google Play distributes and updates Play-installed copies under Google's privacy policy.
+      Play-installed copies do not use the app's GitHub update checker. For copies installed outside
+      an app store, the optional update checker contacts GitHub, which receives normal network
+      metadata such as your IP address. Opening external links also sends normal network metadata to
+      the destination. Google's policy is at https://policies.google.com/privacy and GitHub's at
+      https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement.
+    </p>
+    <h2>Retention and deletion</h2>
+    <p>
+      Saved app data remains on your phone until you remove it or clear the app's storage in Android
+      settings or uninstall the app. Forgetting a computer removes its saved connection credentials
+      from this phone. Revoke remembered phone access on the desktop as well if you want to
+      invalidate its authorization. Clearing phone data does not delete content on your desktop,
+      AI-provider systems, exported backups, cloud storage, or Android notification history; delete
+      those separately using the relevant service or device controls. Scheduled backups keep the
+      most recent backups according to the app's retention limit.
+    </p>
+    <p>
+      We have no developer-hosted account or copy of your app content to delete or export. For
+      privacy questions or requests concerning information you send us directly, contact the address
+      above. We use support correspondence to respond to your request and retain it only as needed
+      for that purpose and applicable obligations.
+    </p>
+    <h2>Children and changes</h2>
+    <p>
+      Parallel Code is a developer tool and is not directed at children under 13. We update this
+      policy when the app's data practices change. The date above identifies this version.
+    </p>
+  </body>
+</html>

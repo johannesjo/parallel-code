@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { describe, expect, it } from 'vitest';
+import { EASE_OUT } from './reducedMotion';
 
 const css = readFileSync(resolve(__dirname, '../styles.css'), 'utf8');
 
@@ -40,6 +41,16 @@ describe('main stylesheet reduced-motion styles', () => {
     expectRule(
       block,
       [
+        '.dialog-overlay',
+        '.dialog-overlay > form',
+        '.dialog-overlay > .dialog-content',
+        '.exit-badge',
+      ],
+      /animation:\s*none\s*;/,
+    );
+    expectRule(
+      block,
+      [
         '.task-appearing',
         '.new-task-appearing',
         '.task-item-appearing',
@@ -60,5 +71,19 @@ describe('main stylesheet reduced-motion styles', () => {
       css.slice(end + 1).trim(),
       'Keep the reduced-motion block at the end of styles.css so its class rules win by source order',
     ).toBe('');
+  });
+});
+
+describe('motion tokens', () => {
+  it('keeps the Web Animations easing equal to the CSS --ease-out token', () => {
+    expect(css).toContain(`--ease-out: ${EASE_OUT};`);
+  });
+
+  it('defines every motion token chat.css uses in the phone stylesheet, which also loads it', () => {
+    const chat = readFileSync(resolve(__dirname, '../components/chat/chat.css'), 'utf8');
+    const mobile = readFileSync(resolve(__dirname, '../remote/mobile.css'), 'utf8');
+    const used = new Set(chat.match(/--(?:motion|ease)-[\w-]+/g));
+    expect(used.size).toBeGreaterThan(0);
+    for (const token of used) expect(mobile, token).toContain(`${token}:`);
   });
 });

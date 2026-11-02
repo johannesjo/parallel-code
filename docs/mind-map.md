@@ -165,7 +165,10 @@ reasoning graph for this bug"_ or _"show me the mind map"_ works without the
 **Start live map** button: the agent opens the view and publishes through the
 update tools. The first report of a run and the first map publication open their
 tab on their own; later updates leave a tab the user closed alone, which is what
-`canvas_open` is for. A graph the agent opens before it has published anything is
+`canvas_open` is for. With `focusId`, the agent points at one node while it explains
+it: the canvas opens that branch, moves on from a paused older revision if the node is
+newer, selects the node and scrolls to it, without taking keyboard focus from the
+chat. An unknown id fails and leaves the view alone. A graph the agent opens before it has published anything is
 shown muted, with the status pill reading **Building…** while the agent is still
 working (or **Connecting…** once it has paused), until its first nodes arrive.
 

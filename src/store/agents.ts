@@ -11,6 +11,9 @@ import { refreshUsage, usageProviderForAgent } from './usage';
 import { assignFreshSessionId } from './session-ids';
 import { widenTaskColumnForAgentPanes } from './task-column';
 import { forgetAgentPrompts } from '../lib/prompt-history';
+import { canAssignSessionId } from '../../electron/shared/session-resume';
+import { sessionAgentForCommand, type SessionRecord } from '../../electron/shared/session-record';
+import { warn as logWarn, errMessage } from '../lib/log';
 
 const [agentsLoaded, setAgentsLoaded] = createSignal(false);
 const [agentsLoadFailed, setAgentsLoadFailed] = createSignal(false);
@@ -34,7 +37,31 @@ export async function loadAgents(): Promise<void> {
   }
 }
 
+/**
+ * Pin a first pane that has no session id (a teleported one, where
+ * `--teleport` picked its session, or one from before ids were minted) to the
+ * newest session in the worktree, which is still its own. Its resume is otherwise positional — "the newest session here" —
+ * and would take over the conversation of the pane being added.
+ */
+async function pinIdlessFirstPane(taskId: string): Promise<void> {
+  const task = store.tasks[taskId];
+  const first = task?.agentIds[0] ? store.agents[task.agentIds[0]] : undefined;
+  if (!task || !first || task.agentSessionIds?.[first.id]) return;
+  if (!canAssignSessionId(first.def.command)) return;
+  const agent = sessionAgentForCommand(first.def.command);
+  try {
+    const sessions = await invoke<SessionRecord[]>(IPC.ListSessions, { cwd: task.worktreePath });
+    const newest = sessions.find((session) => session.agent === agent);
+    if (!newest || !store.tasks[taskId] || store.tasks[taskId].agentSessionIds?.[first.id]) return;
+    setStore('tasks', taskId, 'agentSessionIds', (ids) => ({ ...ids, [first.id]: newest.id }));
+  } catch (err) {
+    logWarn('agents', 'failed to pin the first pane session', { taskId, error: errMessage(err) });
+  }
+}
+
 export async function addAgentToTask(taskId: string, agentDef: AgentDef): Promise<string | null> {
+  if (!store.tasks[taskId]) return null;
+  await pinIdlessFirstPane(taskId);
   const task = store.tasks[taskId];
   if (!task) return null;
 
@@ -169,6 +196,27 @@ export function restartAgent(agentId: string, useResumeArgs: boolean): void {
     }),
   );
   markAgentSpawned(agentId);
+}
+
+/**
+ * Relaunch a pane, running or exited, with `extraArgs` added to this and every
+ * later launch of it (an empty list clears them). It resumes the pane's
+ * conversation, because CLI flags such as Claude's `--chrome` only take effect
+ * at startup and the point is to keep the history.
+ */
+export function resumeAgentWithFlags(agentId: string, extraArgs: string[]): void {
+  if (!store.agents[agentId]) return;
+  setStore(
+    produce((s) => {
+      // A fresh object: the pane's def may be the shared default's object, and
+      // assigning (not merging) is what lets an empty list remove the flags.
+      const def: AgentDef = { ...s.agents[agentId].def, extra_args: extraArgs };
+      if (!extraArgs.length) delete def.extra_args;
+      s.agents[agentId].def = def;
+    }),
+  );
+  restartAgent(agentId, true);
+  void saveState();
 }
 
 export function switchAgent(agentId: string, newDef: AgentDef): void {

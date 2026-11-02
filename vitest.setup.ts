@@ -20,3 +20,12 @@ const REPO_POINTING_VARS = [
 ] as const;
 
 for (const name of REPO_POINTING_VARS) Reflect.deleteProperty(process.env, name);
+
+/**
+ * happy-dom 21 implements `Element.animate`, but its animations do not finish
+ * the way a browser's do: exit ghosts linger in the DOM and cancelled
+ * animations reject `finished` unobserved. Removing it keeps the motion code on
+ * its no-animation path, as on happy-dom 20; tests that cover motion install
+ * their own `animate` stub.
+ */
+if (typeof Element !== 'undefined') Reflect.deleteProperty(Element.prototype, 'animate');

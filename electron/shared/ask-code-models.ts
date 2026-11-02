@@ -56,7 +56,8 @@ export function askCodeEnvFile(
 }
 
 /**
- * The level Claude tours, answers and reviewers run at when none is chosen.
+ * The level Claude tours and answers run at when none is chosen; reviews name
+ * their own (see `withReviewEffort` in src/lib/task-review.ts).
  * shortcut: fixed level — the CLI keeps its own default per full model id,
  * which the aliases sent here do not name; read it if the CLI ever reports it.
  */

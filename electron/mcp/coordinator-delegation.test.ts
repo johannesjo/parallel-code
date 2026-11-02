@@ -96,7 +96,8 @@ describe('ordinary delegation lifecycle', () => {
     );
     expect(mockSpawnAgent).toHaveBeenCalledWith(
       mockNotify,
-      expect.objectContaining({ command: 'codex', envFile: '/agent.env' }),
+      // The project id lets the spawn apply that project's env vars to the child.
+      expect.objectContaining({ command: 'codex', envFile: '/agent.env', projectId: 'project' }),
       expect.any(Function),
     );
     expect(

@@ -120,8 +120,8 @@ the document.
    agent. A session that exits offers **Restart**, **Resume** and a switch to another
    agent. Reopening attaches to a live process automatically. If the process has ended,
    Codex, Claude Code and Copilot open their native session picker instead of resuming
-   whichever conversation in the shared folder happened to run last. Gemini and
-   Antigravity start fresh; use their manual resume controls if needed. Explicit session
+   whichever conversation in the shared folder happened to run last.
+   Antigravity starts fresh; use its manual resume controls if needed. Explicit session
    IDs and custom resume arguments are preserved.
    The processes survive closing the workspace. Agent definitions, stable agent IDs,
    prompt drafts and the last prompt are saved with the task; reopening after an app
@@ -240,8 +240,6 @@ the document.
   See the provider references for [Codex](https://developers.openai.com/codex/cli/reference/),
   [Claude Code](https://code.claude.com/docs/en/cli-reference), and
   [Copilot](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference).
-  [Gemini's CLI resume flag selects the latest session](https://geminicli.com/docs/cli/tutorials/session-management/),
-  so document terminals leave resuming to its interactive `/resume` command instead.
   Each time
   the workspace mounts, the agents are re-armed to attach (a restart clears that for its
   one spawn), and an exited agent is reset for resuming. Removing the project
@@ -272,14 +270,11 @@ the document.
 - **Headless agents.** Each candidate runs the official CLI in print mode inside its own
   worktree under `.worktrees/parallel-doc/`: `claude -p --output-format stream-json`
   with tools limited to Read/Edit/Write/Glob/Grep, `codex exec --json --sandbox
-workspace-write` (the sandbox blocks writes outside the worktree),
-  `gemini -p --output-format json --approval-mode auto_edit` (`plan`, Gemini's read-only
-  mode, for annotation questions). Process exit means the
+workspace-write` (the sandbox blocks writes outside the worktree). Process exit means the
   proposal is ready. Cancelling kills the CLI's whole process group. OpenCode and Copilot
   expose an unrestricted shell in print mode and are not offered until they can be
   restricted. A model or reasoning level chosen in the composer goes to the CLI as
-  `claude --model … --effort …`, `codex --model … -c model_reasoning_effort=…` or
-  `gemini --model …`, is kept on the candidate in the run record, and lands in the
+  `claude --model … --effort …` or `codex --model … -c model_reasoning_effort=…`, is kept on the candidate in the run record, and lands in the
   `Parallel-Model` and `Parallel-Effort` trailers of the proposal and integration commits.
 - **The main session stays warm.** One agent owns the project's main session (choose it in
   the composer). Its worktree is persistent (`.worktrees/parallel-doc-main`) so the working
@@ -415,7 +410,7 @@ requires the document itself to be unchanged since the proposal's base.
 
 Evaluator agents, threaded annotations, rich-text editing,
 external stylesheets and images in HTML pages. Custom agents, OpenCode and
-Copilot cannot be picked. Gemini runs one-shot only. Non-document files open in the viewer
+Copilot cannot be picked. Non-document files open in the viewer
 as Markdown, so a source file renders as prose rather than as code. The interactive
 session's edits are not proposals: they are not compared, and the compare view never sees
 them.

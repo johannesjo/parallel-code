@@ -1,52 +1,66 @@
-import { For, Show } from 'solid-js';
+import { For, Show, onCleanup, type JSX } from 'solid-js';
 import { theme } from '../lib/theme';
 import type { AgentDef } from '../ipc/types';
+import { isAgentInstalled } from '../lib/default-agent';
 
 interface AgentSelectorProps {
   agents: AgentDef[];
   selectedAgent: AgentDef | null;
   onSelect: (agent: AgentDef) => void;
   wrap?: boolean;
+  /** Shown at the end of the label row, such as the model picker. */
+  action?: JSX.Element;
 }
 
 /**
  * Roving-tabindex agent picker.
  * Only the selected agent is in the Tab order; Arrow keys move between agents.
+ * Agents whose CLI is missing are hidden, except the selected one: it may be
+ * the last one used, which can run inside a Docker image.
+ * Once deselected it is hidden like the rest: picking it again means installing it.
  */
 export function AgentSelector(props: AgentSelectorProps) {
-  const btnRefs: HTMLButtonElement[] = [];
+  // By id: hiding a deselected missing agent shifts the indexes.
+  const btnRefs = new Map<string, HTMLButtonElement>();
   const allowWrap = () => props.wrap ?? true;
+  const agents = () =>
+    props.agents.filter((agent) => isAgentInstalled(agent) || agent.id === props.selectedAgent?.id);
 
   function handleKeyDown(e: KeyboardEvent, idx: number) {
-    const agents = props.agents;
+    const list = agents();
     let nextIdx: number | null = null;
 
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
       e.preventDefault();
-      nextIdx = (idx + 1) % agents.length;
+      nextIdx = (idx + 1) % list.length;
     } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
       e.preventDefault();
-      nextIdx = (idx - 1 + agents.length) % agents.length;
+      nextIdx = (idx - 1 + list.length) % list.length;
     }
 
     if (nextIdx !== null) {
-      props.onSelect(agents[nextIdx]);
-      btnRefs[nextIdx]?.focus();
+      const next = list[nextIdx];
+      props.onSelect(next);
+      btnRefs.get(next.id)?.focus();
     }
   }
 
   return (
     <div data-nav-field="agent" style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-      <label
-        style={{
-          'font-size': '12px',
-          color: theme.fgMuted,
-          'text-transform': 'uppercase',
-          'letter-spacing': '0.05em',
-        }}
-      >
-        Agent
-      </label>
+      {/* The fixed height keeps the agents still when an action comes or goes. */}
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', 'min-height': '26px' }}>
+        <label
+          style={{
+            'font-size': '12px',
+            color: theme.fgMuted,
+            'text-transform': 'uppercase',
+            'letter-spacing': '0.05em',
+          }}
+        >
+          Agent
+        </label>
+        {props.action}
+      </div>
       <div
         role="radiogroup"
         style={{
@@ -58,12 +72,13 @@ export function AgentSelector(props: AgentSelectorProps) {
           'padding-bottom': allowWrap() ? undefined : '2px',
         }}
       >
-        <For each={props.agents}>
+        <For each={agents()}>
           {(agent, i) => {
             const isSelected = () => props.selectedAgent?.id === agent.id;
+            onCleanup(() => btnRefs.delete(agent.id));
             return (
               <button
-                ref={(el) => (btnRefs[i()] = el)}
+                ref={(el) => btnRefs.set(agent.id, el)}
                 type="button"
                 role="radio"
                 aria-checked={isSelected()}

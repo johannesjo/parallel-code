@@ -175,7 +175,7 @@ private const val USAGE_POLL_MS = 60_000L
 
 /** The desktop status bar's subscription meters. Hidden until the desktop has a snapshot. */
 @Composable
-fun UsageStrip(client: RemoteClient, connected: Boolean) {
+fun UsageStrip(client: PhoneClient, connected: Boolean) {
     var usage by remember { mutableStateOf<List<ProviderUsage>>(emptyList()) }
     var refresh by remember { mutableIntStateOf(0) }
     // Reads on every (re)connect and tap, then once a minute.

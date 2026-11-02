@@ -2,6 +2,8 @@
 
 _Last updated: 2026-05-26_
 
+For the Android companion app, see the [Android privacy policy](https://parallelcode.app/android-privacy/). The policy below covers the desktop application.
+
 Parallel Code is an open-source desktop application that runs entirely on your local machine. This policy describes what data the application handles and how.
 
 ## Summary
@@ -32,7 +34,7 @@ Parallel Code is a local interface for third-party AI coding CLIs and agent comm
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Anthropic)
 - [Codex CLI](https://github.com/openai/codex) (OpenAI)
-- [Gemini CLI](https://github.com/google-gemini/gemini-cli) (Google)
+- [Antigravity CLI](https://antigravity.google/) (Google)
 - [Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli) (GitHub)
 - [OpenCode](https://opencode.ai/) (a multi-provider AI coding agent)
 - Arena presets such as Aider and any custom agent commands you add yourself

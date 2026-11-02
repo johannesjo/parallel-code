@@ -26,7 +26,8 @@ export function createPushRun(props: PushRunProps) {
     channel = null;
   });
 
-  function start(): void {
+  /** Resolves true once the branch is on origin; a failure is kept in `error`. */
+  function start(): Promise<boolean> {
     const taskId = props.task.id;
     const onDone = props.onDone;
     channel?.cleanup?.();
@@ -39,11 +40,15 @@ export function createPushRun(props: PushRunProps) {
       onOutput?.();
     };
     props.onStart();
-    void pushTask(taskId, channel)
-      .then(() => onDone(true))
+    return pushTask(taskId, channel)
+      .then(() => {
+        onDone(true);
+        return true;
+      })
       .catch((err: unknown) => {
         setError(errMessage(err));
         onDone(false);
+        return false;
       })
       .finally(() => {
         setPushing(false);

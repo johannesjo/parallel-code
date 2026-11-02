@@ -224,6 +224,8 @@ it('updates the working badge from live activity without requiring a new graph r
   vi.mocked(invoke).mockResolvedValue(feed(encode(8)));
   mount();
   await vi.advanceTimersByTimeAsync(0);
+  // Loading records the seen baseline once; activity alone must write nothing after that.
+  vi.mocked(setTaskReasoningWorkspace).mockClear();
   const badge = () => expectDefined(container.querySelector('.investigation-working-label'));
   const node = badge().closest('.investigation-node-shell');
   expect(badge().textContent).toContain('Worked on last');
@@ -1334,4 +1336,32 @@ it('anchors agent updates observed live and jumps from a note to the update that
   jump();
   expect(api.jump).toHaveBeenLastCalledWith('reasoning:0');
   expect(container.textContent).toContain('No transcript position recorded for this node.');
+});
+
+it('marks agent changes made while hidden until they are marked as seen, not those watched live', async () => {
+  let raw = encode(2);
+  vi.mocked(invoke).mockImplementation(async () => feed(raw));
+  const controls = mount();
+  await vi.advanceTimersByTimeAsync(0);
+  const marks = () => container.querySelectorAll('.reasoning-change-mark');
+  expect(container.textContent).not.toContain('since you last looked');
+  controls.setVisible(false);
+  raw = encode(4);
+  controls.setVisible(true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(container.textContent).toMatch(/\d+ new.* since you last looked/);
+  expect(marks().length).toBeGreaterThan(0);
+  expect(marks()[0]?.getAttribute('aria-label')).toMatch(/since you last looked/);
+  // Further updates are news too until acknowledged.
+  raw = encode(5);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(container.textContent).toContain('since you last looked');
+  button('Mark as seen').click();
+  expect(container.textContent).not.toContain('since you last looked');
+  expect(marks()).toHaveLength(0);
+  // Once acknowledged, updates watched live do not light up.
+  raw = encode(7);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(container.textContent).not.toContain('since you last looked');
+  expect(marks()).toHaveLength(0);
 });

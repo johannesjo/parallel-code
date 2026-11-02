@@ -49,6 +49,25 @@ const copilotAgent = {
   skip_permissions_args: ['--yolo'],
 };
 
+describe('buildTaskAgentArgs with pane flags', () => {
+  const SESSION = 'fb4f2bc6-62d9-4b29-a795-240caf2fc459';
+  const claudeWithFlags = { ...claudeAgent, extra_args: ['--chrome'] };
+
+  it('adds the flags when resuming the pane session', () => {
+    expect(
+      buildTaskAgentArgs(claudeWithFlags, { skipPermissions: true }, true, undefined, SESSION),
+    ).toEqual(['--resume', SESSION, '--chrome', '--dangerously-skip-permissions']);
+  });
+
+  it('keeps the flags on a fresh launch', () => {
+    expect(buildTaskAgentArgs(claudeWithFlags, {}, false, undefined, SESSION)).toEqual([
+      '--session-id',
+      SESSION,
+      '--chrome',
+    ]);
+  });
+});
+
 describe('buildTaskAgentArgs with a session id', () => {
   const SESSION = 'fb4f2bc6-62d9-4b29-a795-240caf2fc459';
   const claudeWithContinue = { ...claudeAgent, resume_args: ['--continue'] };
@@ -605,5 +624,38 @@ describe('the model and level a launch sets itself', () => {
     expect(effortInArgs(['--effort=low'])).toBe('low');
     expect(effortInArgs(['-c', 'model_reasoning_effort="xhigh"'])).toBe('xhigh');
     expect(effortInArgs(['-c', 'model=gpt-6-sol'])).toBe('');
+  });
+});
+
+describe('buildTaskAgentArgs for a teleported web session', () => {
+  const TELEPORT = 'session_011CUabcXYZ';
+  const task = { teleportSessionId: TELEPORT, agentIds: ['a1'] };
+
+  it('teleports the first launch of the first pane', () => {
+    expect(buildTaskAgentArgs(claudeAgent, task, false, 'a1')).toEqual(['--teleport', TELEPORT]);
+  });
+
+  it('keeps permissions flags alongside the teleport', () => {
+    expect(
+      buildTaskAgentArgs(claudeAgent, { ...task, skipPermissions: true }, false, 'a1'),
+    ).toEqual(['--teleport', TELEPORT, '--dangerously-skip-permissions']);
+  });
+
+  it('resumes positionally instead of teleporting again', () => {
+    const claudeWithContinue = { ...claudeAgent, resume_args: ['--continue'] };
+    expect(buildTaskAgentArgs(claudeWithContinue, task, true, 'a1')).toEqual(['--continue']);
+  });
+
+  it('starts a fresh session once the pane has its own id', () => {
+    const SESSION = 'fb4f2bc6-62d9-4b29-a795-240caf2fc459';
+    expect(buildTaskAgentArgs(claudeAgent, task, false, 'a1', SESSION)).toEqual([
+      '--session-id',
+      SESSION,
+    ]);
+  });
+
+  it('ignores the teleport for other panes and other CLIs', () => {
+    expect(buildTaskAgentArgs(claudeAgent, task, false, 'a2')).toEqual([]);
+    expect(buildTaskAgentArgs(codexAgent, task, false, 'a1')).toEqual([]);
   });
 });

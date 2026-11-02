@@ -80,6 +80,7 @@ describe('startup persistence', () => {
     await loadState();
     expect(store.featureHintsEnabled).toBe(true);
     expect(store.keybindingMigrationDismissed).toBe(true);
+    expect(store.boardView).toBe(true);
 
     await saveState();
     const saved = mockInvoke.mock.calls.find(([channel]) => channel === IPC.SaveAppState);
@@ -103,6 +104,17 @@ describe('startup persistence', () => {
 
     expect(mockInvoke).toHaveBeenCalledWith(IPC.SaveAppState, { json: expect.any(String) });
   });
+
+  it('tells an unreadable saved state apart from a new install', async () => {
+    const { isStateLoaded, loadState } = await import('./persistence');
+    mockInvoke.mockResolvedValueOnce('{not json');
+    await loadState();
+    expect(isStateLoaded()).toBe(false);
+
+    mockInvoke.mockResolvedValueOnce(null);
+    await loadState();
+    expect(isStateLoaded()).toBe(true);
+  }, 20_000);
 
   it('keeps saves disabled if loading the saved state fails', async () => {
     const { loadState, saveState } = await import('./persistence');

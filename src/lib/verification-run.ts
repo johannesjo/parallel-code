@@ -1,4 +1,5 @@
 import type { VerificationRun } from '../ipc/types';
+import type { VerifyPassRecord } from '../store/types';
 
 export type VerificationSummaryKind =
   | 'none'
@@ -52,7 +53,7 @@ export function changedDuringRun(run: VerificationRun): boolean {
 }
 
 /** Pure read model shared by the merge-readiness row, the title bar and the
- *  evidence check list, so they never disagree about what a run means. */
+ *  readiness line, so they never disagree about what a run means. */
 export function summarizeVerificationRun(
   run: VerificationRun | undefined,
   currentHeadSha?: string | null,
@@ -105,16 +106,35 @@ export function asStoreVerificationRun(run: VerificationRun): VerificationRun {
   return { message: undefined, headShaAfter: undefined, dirtyAfter: undefined, ...run };
 }
 
+/** The last pass worth pointing at: same command, a different commit. */
+export function earlierPass(
+  run: VerificationRun,
+  lastPass: VerifyPassRecord | undefined,
+): VerifyPassRecord | undefined {
+  if (!lastPass || lastPass.command !== run.command || lastPass.headSha === run.headSha)
+    return undefined;
+  return lastPass;
+}
+
 /** Prompt that hands a failing run back to the agent, mirroring how diff
  *  review feedback is compiled. Passing runs are never sent. */
-export function compileVerificationFailurePrompt(run: VerificationRun): string {
+export function compileVerificationFailurePrompt(
+  run: VerificationRun,
+  lastPass?: VerifyPassRecord,
+): string {
   const tailLines = run.outputTail.split(/\r?\n/).slice(-VERIFY_PROMPT_TAIL_LINES).join('\n');
   const exit = run.exitCode === null ? (run.message ?? 'unknown') : String(run.exitCode);
+  const pass = earlierPass(run, lastPass);
   return [
     "The project's verification command failed. Fix the failures, then run it again until it passes.",
     '',
     `Command: \`${run.command}\``,
     `Exit code: ${exit}`,
+    ...(pass
+      ? [
+          `It last passed at commit ${pass.headSha}; \`git diff ${pass.headSha}\` shows what changed since.`,
+        ]
+      : []),
     '',
     'Output (last lines):',
     '```',

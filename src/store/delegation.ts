@@ -218,6 +218,19 @@ export function peerDeliveryBlocker(
   if (task.delegationPaused || state.paused) return 'Delivery is paused';
   if (task.controlledBy === 'human' && message.origin !== 'user')
     return 'You are controlling this task';
+  return composerInputBlocker(task, checkComposerDraft, now);
+}
+
+/**
+ * Why automatic input to a task must wait for the user or another automatic
+ * message, or null. `checkComposerDraft` is set when the input goes to the
+ * task's first pane, which the task composer targets.
+ */
+export function composerInputBlocker(
+  task: Task,
+  checkComposerDraft: boolean,
+  now = Date.now(),
+): string | null {
   if (task.initialPrompt) return 'Waiting for the task prompt to send first';
   if (task.automationWriteInFlight) return 'Waiting for another automatic message';
   if (checkComposerDraft && (task.promptDraftActive || task.promptDraft?.trim()))

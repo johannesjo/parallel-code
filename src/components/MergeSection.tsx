@@ -1,10 +1,17 @@
 import { Show, type JSX } from 'solid-js';
-import { getProject, getTaskChecks, updateTaskBranch } from '../store/store';
-import { bannerStyle, theme } from '../lib/theme';
+import {
+  backgroundVerifyEnabled,
+  getProject,
+  getTaskChecks,
+  updateTaskBranch,
+} from '../store/store';
+import { bannerStyle, sectionLabelStyle, theme } from '../lib/theme';
+import { sf } from '../lib/fontScale';
 import type { Task } from '../store/types';
 import type { ChangedFile } from '../ipc/types';
 import { ChangedFilesList } from './ChangedFilesList';
 import { MergeCommitList } from './MergeCommitList';
+import { BaseUpstreamNotice } from './BaseUpstreamNotice';
 import { MergeConflictBanner } from './MergeConflictBanner';
 import type { MergeState } from './merge-state';
 
@@ -24,7 +31,7 @@ const optionStyle = {
   'font-size': '13px',
   color: theme.fg,
 };
-const messageFieldStyle = {
+export const messageFieldStyle = {
   width: '100%',
   background: theme.bgInput,
   border: `1px solid ${theme.border}`,
@@ -40,7 +47,7 @@ const messageFieldStyle = {
 const commitLabel = (count: number) => `${count} commit${count === 1 ? '' : 's'}`;
 
 /** What stops or changes a merge; shown first so it is read before anything else. */
-export function MergeBlockers(props: MergeSectionProps) {
+export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean }) {
   return (
     <>
       <Show when={props.state.hasBranchMismatch()}>
@@ -106,6 +113,32 @@ export function MergeBlockers(props: MergeSectionProps) {
           Uncommitted changes in the worktree are not part of this merge.
         </div>
       </Show>
+      <Show when={props.state.targetUncommitted()}>
+        {(target) => (
+          <div
+            data-testid="target-uncommitted"
+            style={{
+              ...bannerStyle(theme.warning),
+              'margin-bottom': '12px',
+              'font-size': '13px',
+            }}
+          >
+            <Show
+              when={target().overlap.length > 0}
+              fallback={
+                <>
+                  {target().path} has uncommitted changes in {target().files.length} file
+                  {target().files.length > 1 ? 's' : ''}. Merging sets them aside and puts them back
+                  afterwards.
+                </>
+              }
+            >
+              Uncommitted changes in {target().path} touch files this merge changes:{' '}
+              {target().overlap.join(', ')}. Commit or stash them first.
+            </Show>
+          </div>
+        )}
+      </Show>
       <Show when={!props.state.worktreeStatus.loading && !props.state.hasCommittedChangesToMerge()}>
         <div
           style={{
@@ -118,7 +151,11 @@ export function MergeBlockers(props: MergeSectionProps) {
           {props.state.baseBranchName()}.
         </div>
       </Show>
-      <MergeConflictBanner task={props.task} state={props.state} onDone={props.onDone} />
+      {/* Before the conflict banner: it explains conflicts that banner lists. */}
+      <BaseUpstreamNotice task={props.task} state={props.state} />
+      <Show when={props.showBaseSync}>
+        <MergeConflictBanner task={props.task} state={props.state} onDone={props.onDone} />
+      </Show>
       {/* Outside the conflict banner: that one hides once the base is in. */}
       <Show when={props.state.syncDone()}>
         {(kind) => (
@@ -130,8 +167,8 @@ export function MergeBlockers(props: MergeSectionProps) {
               ? `Merged ${props.state.baseBranchName()} into this branch.`
               : `Rebased onto ${props.state.baseBranchName()}.`}
             <Show when={getTaskChecks(props.task.id).length > 0}>
-              {getProject(props.task.projectId)?.evidenceAutoBuild
-                ? ' Re-running the checks.'
+              {backgroundVerifyEnabled(props.task.id)
+                ? ' Verify runs again in the background.'
                 : ' Refresh the checks to cover the new commits.'}
             </Show>
           </div>
@@ -141,15 +178,11 @@ export function MergeBlockers(props: MergeSectionProps) {
   );
 }
 
-/**
- * What is being reviewed: open by default, since everything below judges it.
- * Children, such as the change tour, form a footer strip under the file list,
- * as in the task's changed-files panel.
- */
-export function MergeChanges(props: MergeSectionProps & { children?: JSX.Element }) {
+/** What is being reviewed: open by default, since everything below judges it. */
+export function MergeChanges(props: MergeSectionProps) {
   return (
     <details open style={{ 'margin-bottom': '20px', 'font-size': '13px' }}>
-      <summary style={{ cursor: 'pointer', color: theme.fgMuted }}>
+      <summary style={{ ...sectionLabelStyle, 'font-size': sf(11), cursor: 'pointer' }}>
         Commits and changed files
         <Show when={props.state.commitCount()}>{(count) => ` (${commitLabel(count())})`}</Show>
       </summary>
@@ -157,11 +190,10 @@ export function MergeChanges(props: MergeSectionProps & { children?: JSX.Element
         <MergeCommitList state={props.state} />
         <div
           style={{
+            // Square corners: rounded, the list reads like one of the buttons around it.
             border: `1px solid ${theme.border}`,
-            'border-radius': 'var(--radius-md)',
             overflow: 'hidden',
-            // About five rows plus the footer: the list scrolls itself so the
-            // dialog does not.
+            // About five rows: the list scrolls itself so the dialog does not.
             'max-height': '200px',
             display: 'flex',
             'flex-direction': 'column',
@@ -177,10 +209,34 @@ export function MergeChanges(props: MergeSectionProps & { children?: JSX.Element
             coverageReportPath={getProject(props.task.projectId)?.coverageReportPath}
             onCoverageComparisonChange={props.state.setCoverageComparison}
           />
-          {props.children}
         </div>
       </div>
     </details>
+  );
+}
+
+/** Opt-out of removing the task once it merged, locally or through its PR. */
+export function CleanupOption(props: {
+  task: Task;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+  children: JSX.Element;
+}) {
+  return (
+    // Imported worktrees are user-owned — never offer to delete them or their branch.
+    <Show when={!props.task.externalWorktree}>
+      <label style={optionStyle}>
+        <input
+          type="checkbox"
+          checked={props.checked}
+          disabled={props.disabled}
+          onChange={(e) => props.onChange(e.currentTarget.checked)}
+          style={{ cursor: 'pointer' }}
+        />
+        {props.children}
+      </label>
+    </Show>
   );
 }
 
@@ -189,19 +245,14 @@ export function MergeOptions(props: Pick<MergeSectionProps, 'task' | 'state'>) {
   return (
     <>
       <div style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '6px 20px' }}>
-        {/* Imported worktrees are user-owned — never offer to delete them or their branch. */}
-        <Show when={!props.task.externalWorktree}>
-          <label style={optionStyle}>
-            <input
-              type="checkbox"
-              checked={!props.state.requiresSeparateClose() && props.state.cleanupAfterMerge()}
-              disabled={props.state.requiresSeparateClose()}
-              onChange={(e) => props.state.setCleanupAfterMerge(e.currentTarget.checked)}
-              style={{ cursor: 'pointer' }}
-            />
-            Delete branch and worktree after merge
-          </label>
-        </Show>
+        <CleanupOption
+          task={props.task}
+          checked={!props.state.requiresSeparateClose() && props.state.cleanupAfterMerge()}
+          disabled={props.state.requiresSeparateClose()}
+          onChange={(checked) => props.state.setCleanupAfterMerge(checked)}
+        >
+          Delete branch and worktree after merge
+        </CleanupOption>
         <label style={optionStyle}>
           <input
             type="checkbox"

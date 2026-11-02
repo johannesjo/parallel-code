@@ -15,15 +15,15 @@ export interface StatusDisplay {
   glow: boolean;
 }
 
-// Colours chosen to match the mobile SPA's existing palette and the desktop
-// StatusDot: amber = needs input, blue = working, red = error, purple = review,
+// Colours from the desktop's default Parallel Code look, as its StatusDot uses:
+// amber = needs input, blue = working, red = error, purple = review,
 // green = ready, grey = idle/exited.
-const AMBER = '#ffc569';
-const BLUE = '#2ec8ff';
-const RED = '#ff5f73';
-const PURPLE = '#c084fc';
-const GREEN = '#2fd198';
-const GREY = '#678197';
+const AMBER = '#dfba83';
+const BLUE = '#67d9ed';
+const RED = '#f08f8a';
+const PURPLE = '#c1b0e8';
+const GREEN = '#98c9ae';
+const GREY = '#7f91a1';
 
 const BY_ATTENTION: Partial<Record<RemoteAttentionState, StatusDisplay>> = {
   needs_input: { label: 'Needs input', color: AMBER, glow: true },

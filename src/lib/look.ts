@@ -129,7 +129,7 @@ export function presetsForTone(tone: 'light' | 'dark'): LookPresetOption[] {
 }
 
 export function defaultPresetForTone(tone: 'light' | 'dark'): LookPreset {
-  return tone === 'light' ? 'obsidian-light' : 'obsidian';
+  return tone === 'light' ? 'obsidian-light' : 'parallel-code';
 }
 
 /** True for built-in presets with a light background; false for unknown ids. */

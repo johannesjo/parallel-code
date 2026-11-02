@@ -1,5 +1,5 @@
 /** Renderer side of the project Kanban board (KANBAN.md at the project root). */
-import { createEffect, createRoot, on } from 'solid-js';
+import { batch, createEffect, createRoot, on } from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { cleanHandoffText } from '../lib/agent-handoff';
@@ -8,9 +8,11 @@ import {
   DEFAULT_KANBAN_MARKDOWN,
   addIssueCard,
   advanceCardForBranch,
+  findCardByBranch,
   findCardByIssue,
   isArchiveColumn,
   parseGitHubIssueUrl,
+  buildKanbanClusterPrompt,
   buildKanbanPlanPrompt,
   buildKanbanTaskPrompt,
   findCard,
@@ -24,16 +26,47 @@ import { setStore, store } from './core';
 import { ensureProjectAgentTask } from './github-agent';
 import { setPrefillPrompt } from './tasks';
 import { kanbanAgentTaskId } from '../documents/task-id';
-import { toggleNewTaskPanel } from './navigation';
+import { setTaskProjectFilter, toggleNewTaskPanel } from './navigation';
 import { showNotification } from './notification';
 import { getPrChecks } from './pr-checks-state';
-import { getProjectPath } from './projects';
+import { getProjectPath, isPlannableProject } from './projects';
+import { taskProjectFilter } from './task-project-filter';
+import { getTaskAttentionState, isTaskGitStatusKnown, type TaskAttentionState } from './taskStatus';
 import type { KanbanNewTaskSource, Project, Task } from './types';
 
-/** Opens the board page for a project, or returns to the tasks with null. */
+/**
+ * Shows a project's plan on the board, or with null the running tasks again.
+ * A plan selects its project, so every project picker names the plan's.
+ */
 export function openKanban(projectId: string | null): void {
-  if (projectId) setStore('githubIssuesProjectId', null);
-  setStore('kanbanProjectId', projectId);
+  batch(() => {
+    if (projectId) {
+      setStore('githubIssuesProjectId', null);
+      setStore('boardView', true);
+      setTaskProjectFilter(projectId);
+    }
+    setStore('kanbanProjectId', projectId);
+  });
+}
+
+/**
+ * The project the Plan view shows: the selected project, which opening a plan
+ * selects. Null while all projects show, which hides the Plan toggle.
+ */
+export function planViewProjectId(): string | null {
+  const projectId = taskProjectFilter();
+  return isPlannableProject(projectId) ? projectId : null;
+}
+
+/** Opens the Plan view's project plan; does nothing while there is none. */
+export function openPlanView(): void {
+  const projectId = planViewProjectId();
+  if (projectId) openKanban(projectId);
+}
+
+/** From a plan, shows the running tasks of its project only: the filter already follows the plan. */
+export function showPlanTasks(): void {
+  openKanban(null);
 }
 
 /** The board's Markdown, or null when the project has none yet. */
@@ -100,7 +133,7 @@ export function startKanbanCardTask(
     ...(parseGitHubIssueUrl(card.issue)?.kind === 'issue' ? { githubUrl: card.issue } : {}),
     kanban: { projectId, title: card.title, column: column.title, ref: { ...ref } },
   });
-  openKanban(null);
+  // The draft opens beside the plan, which stays.
   toggleNewTaskPanel(true);
   return true;
 }
@@ -159,6 +192,32 @@ export async function advanceKanbanCard(
   }
 }
 
+/**
+ * Checks off the card of a closed task's branch. A card stays open while
+ * another of its branches still has an open task working on it.
+ */
+async function completeCardOfClosedTask(projectId: string, branch: string): Promise<void> {
+  const projectRoot = getProjectPath(projectId);
+  if (!projectRoot || !branch) return;
+  const openOn = (other: string) =>
+    Object.values(store.tasks).some(
+      (task) =>
+        task?.projectId === projectId &&
+        task.gitIsolation === 'worktree' &&
+        task.branchName === other,
+    );
+  try {
+    await updateKanbanFile(projectRoot, (board) => {
+      const ref = findCardByBranch(board, branch);
+      const card = ref && board.columns[ref.column]?.cards[ref.card];
+      if (!card || card.branches.some((other) => other !== branch && openOn(other))) return null;
+      return advanceCardForBranch(board, branch, 'done');
+    });
+  } catch (err) {
+    logWarn('kanban', 'could not check off card', { projectId, branch, error: errMessage(err) });
+  }
+}
+
 /** Whether a task has handed its work over: the agent signalled done, or a PR is open. */
 function taskReachedReview(task: Task): boolean {
   return Boolean(
@@ -169,6 +228,20 @@ function taskReachedReview(task: Task): boolean {
   );
 }
 
+/**
+ * Whether the task's agent is done: stopped with its work committed and nothing
+ * failing. Null while that cannot be told, before git status first arrives; a
+ * refresh keeps the last answer, so it is not taken for a new transition.
+ */
+function taskReady(
+  now: { attention: TaskAttentionState; gitKnown: boolean },
+  before: boolean | null | undefined,
+): boolean | null {
+  if (now.attention === 'ready') return true;
+  if (now.attention !== 'idle' && now.attention !== 'shell_busy') return false;
+  return now.gitKnown ? false : (before ?? null);
+}
+
 /** The task's work is in: landed by the coordinator, or its PR merged on GitHub. */
 function taskLanded(task: Task): boolean {
   return task.landingState === 'reviewed' || getPrChecks(task.id)?.merged === true;
@@ -176,16 +249,26 @@ function taskLanded(task: Task): boolean {
 
 /**
  * Keeps cards in step with their tasks while the app runs: a task that reaches
- * review moves its card to the Review column, a landed one or one whose PR
+ * review, or whose agent finishes with its work committed, moves its card to
+ * the Review column, a landed one or one whose PR
  * merged to Done. Only transitions seen while running count; a task's state at
  * startup is the baseline, though PR checks arrive later and may then report a
  * merge. Each task moves its card at most once per stage, so a card dragged
- * back by hand stays put. Merges done from the app are reported by their
+ * back by hand stays put. Closing a task checks its card off: closed, its run is over. Merges done from the app are reported by their
  * callers (the merge dialog and the phone handler).
  */
 export function startKanbanAutomation(): () => void {
   return createRoot((dispose) => {
-    const seen = new Map<string, { review: boolean; landed: boolean }>();
+    const seen = new Map<
+      string,
+      {
+        review: boolean;
+        ready: boolean | null;
+        landed: boolean;
+        projectId: string;
+        branch: string;
+      }
+    >();
     const moved = new Set<string>();
     const advanceOnce = (
       task: { id: string; projectId: string; branch: string },
@@ -207,6 +290,8 @@ export function startKanbanAutomation(): () => void {
                   branch: task.branchName,
                   review: taskReachedReview(task),
                   landed: taskLanded(task),
+                  attention: getTaskAttentionState(task.id),
+                  gitKnown: isTaskGitStatusKnown(task.id),
                 }
               : null,
           ),
@@ -216,12 +301,24 @@ export function startKanbanAutomation(): () => void {
             if (!task) continue;
             present.add(task.id);
             const before = seen.get(task.id);
-            seen.set(task.id, { review: task.review, landed: task.landed });
+            const ready = taskReady(task, before?.ready);
+            seen.set(task.id, {
+              review: task.review,
+              ready,
+              landed: task.landed,
+              projectId: task.projectId,
+              branch: task.branch,
+            });
             if (!before) continue;
             if (task.landed && !before.landed) advanceOnce(task, 'done');
-            else if (task.review && !before.review) advanceOnce(task, 'review');
+            else if ((task.review && !before.review) || (ready === true && before.ready === false))
+              advanceOnce(task, 'review');
           }
-          for (const id of seen.keys()) if (!present.has(id)) seen.delete(id);
+          for (const [id, task] of seen) {
+            if (present.has(id)) continue;
+            seen.delete(id);
+            void completeCardOfClosedTask(task.projectId, task.branch);
+          }
           for (const key of moved)
             if (!present.has(key.slice(0, key.lastIndexOf(':')))) moved.delete(key);
         },
@@ -236,11 +333,23 @@ export function startKanbanAutomation(): () => void {
  * and send. An unsent draft in that box is left alone.
  */
 export function prefillKanbanPlanPrompt(project: Project, goal = ''): boolean {
+  return prefillKanbanAgentPrompt(project, buildKanbanPlanPrompt(goal)) !== null;
+}
+
+/**
+ * Puts the prompt that clusters the cards into themes in the board agent's
+ * prompt box: 'kept' when an unsent draft there was left alone instead.
+ */
+export function prefillKanbanClusterPrompt(project: Project): 'set' | 'kept' | null {
+  return prefillKanbanAgentPrompt(project, buildKanbanClusterPrompt());
+}
+
+function prefillKanbanAgentPrompt(project: Project, prompt: string): 'set' | 'kept' | null {
   const task = ensureProjectAgentTask(kanbanAgentTaskId(project.id), project);
-  if (!task) return false;
-  if ((task.prefillPrompt ?? task.promptDraft ?? '').trim()) return true;
-  setPrefillPrompt(task.id, buildKanbanPlanPrompt(goal));
-  return true;
+  if (!task) return null;
+  if ((task.prefillPrompt ?? task.promptDraft ?? '').trim()) return 'kept';
+  setPrefillPrompt(task.id, prompt);
+  return 'set';
 }
 
 /** What adding GitHub items to a board did. */
@@ -252,10 +361,22 @@ export interface AddIssuesResult {
   column: string;
 }
 
+function addedMessage(total: number, { added, created, column }: AddIssuesResult): string {
+  if (added === 0)
+    return total === 1 ? 'Already on the plan' : `All ${total} are already on the plan`;
+  const cards = `${added} ${added === 1 ? 'card' : 'cards'}`;
+  const skipped = total - added;
+  return (
+    (created ? `Created KANBAN.md with ${cards} in ${column}` : `Added ${cards} to ${column}`) +
+    (skipped ? `; ${skipped} already on the plan` : '')
+  );
+}
+
 /**
  * Adds GitHub issues or PRs to the project's board as cards in the first
  * column, skipping any it already tracks and creating the board if the
- * project has none. Null on failure, which is reported.
+ * project has none. Confirms the outcome, or reports the failure and
+ * returns null.
  */
 export async function addIssuesToBoard(
   projectId: string,
@@ -286,6 +407,9 @@ export async function addIssuesToBoard(
       column = next.columns.find((c) => !isArchiveColumn(c.title))?.title ?? '';
       return next === board ? null : next;
     });
+    // The same item picked twice is one card, not one skipped.
+    const total = new Set(items.map((item) => item.url)).size;
+    showNotification(addedMessage(total, { added, created, column }));
     return { added, created, column };
   } catch (err) {
     logWarn('kanban', 'could not add issues to board', { projectId, error: errMessage(err) });

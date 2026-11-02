@@ -233,6 +233,23 @@ describe('subscribe snapshot', () => {
     expect(pty.getAgentScrollback).not.toHaveBeenCalled();
     ws.close();
   });
+
+  it('tells the phone when the PTY is resized', async () => {
+    vi.mocked(pty.subscribeToAgentRendered).mockImplementation((_id, _onSnapshot, handlers) => {
+      handlers.onResize(100, 30);
+      return vi.fn();
+    });
+    const ws = await connectAndAuth(mobileToken);
+    const size = new Promise<unknown>((resolve) =>
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(String(raw)) as { type: string };
+        if (msg.type === 'terminal-size') resolve(msg);
+      }),
+    );
+    ws.send(JSON.stringify({ type: 'subscribe', agentId: 'agent-1' }));
+    expect(await size).toEqual({ type: 'terminal-size', agentId: 'agent-1', cols: 100, rows: 30 });
+    ws.close();
+  });
 });
 
 describe('agent respawned under the same ID', () => {
@@ -257,7 +274,7 @@ describe('agent respawned under the same ID', () => {
       expect(pty.subscribeToAgentRendered).toHaveBeenCalledWith(
         agentId,
         expect.any(Function),
-        expect.any(Function),
+        expect.objectContaining({ onOutput: expect.any(Function) }),
       ),
     );
   }
@@ -644,7 +661,9 @@ describe('mobile SPA static responses', () => {
     expect(await res.text()).toBe('Not found');
   });
 
-  it.skipIf(process.getuid?.() === 0)(
+  // Root reads any file, and Windows chmod only toggles read-only, so the
+  // unreadable file cannot be made there.
+  it.skipIf(process.getuid?.() === 0 || process.platform === 'win32')(
     'returns an uncached error when an existing file cannot be read',
     async () => {
       chmodSync(join(staticDir, 'assets', 'index-test.js'), 0o000);

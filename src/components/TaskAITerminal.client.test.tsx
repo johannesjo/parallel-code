@@ -640,9 +640,9 @@ it('copies the raw Markdown of a file opened in the viewer', async () => {
   );
   mount();
   const terminalProps = mocks.terminalMounts.mock.calls[0]?.[0] as {
-    onFileLink?: (filePath: string) => void;
+    fileLinkMenu?: (filePath: string, line?: number) => { open: () => void };
   };
-  terminalProps.onFileLink?.('/worktree/NOTES.md');
+  terminalProps.fileLinkMenu?.('/worktree/NOTES.md').open();
 
   await vi.waitFor(() => {
     expect(document.querySelector('[role="dialog"] [title="Copy Markdown"]')).not.toBeNull();
@@ -662,9 +662,9 @@ it('offers to edit a file opened in the viewer as a document', async () => {
   );
   mount();
   const terminalProps = mocks.terminalMounts.mock.calls[0]?.[0] as {
-    onFileLink?: (filePath: string) => void;
+    fileLinkMenu?: (filePath: string, line?: number) => { open: () => void };
   };
-  terminalProps.onFileLink?.('/worktree/NOTES.md');
+  terminalProps.fileLinkMenu?.('/worktree/NOTES.md').open();
 
   const button = await vi.waitFor(() => {
     const el = document.querySelector<HTMLButtonElement>(
@@ -692,9 +692,9 @@ it('logs why copying the Markdown failed', async () => {
   try {
     mount();
     const terminalProps = mocks.terminalMounts.mock.calls[0]?.[0] as {
-      onFileLink?: (filePath: string) => void;
+      fileLinkMenu?: (filePath: string, line?: number) => { open: () => void };
     };
-    terminalProps.onFileLink?.('/worktree/NOTES.md');
+    terminalProps.fileLinkMenu?.('/worktree/NOTES.md').open();
     await vi.waitFor(() => {
       expect(document.querySelector('[role="dialog"] [title="Copy Markdown"]')).not.toBeNull();
     });
@@ -722,28 +722,20 @@ it('starts a task in Chat without mounting a terminal and still allows switching
   expect(store.tasks.task.mainAgentView).toBe('terminal');
 });
 
-it('offers second opinion with one live agent and dismisses it per task without removing menu access', () => {
+it('offers second opinion through the terminal menu with one live agent', () => {
   setStore('mcpOrchestrationEnabled', true);
   setStore('agents', 'agent', 'sessionInstanceId', 'live-session');
   mount();
   const props = mocks.terminalMounts.mock.calls.at(-1)?.[0] as {
     onSecondOpinion?: () => void;
   };
-  expect(document.querySelector('.agent-header-controls .terminal-second-opinion')).not.toBeNull();
-  expect(props.onSecondOpinion).toBeTypeOf('function');
-  document
-    .querySelector<HTMLButtonElement>('[aria-label="Dismiss second opinion button for this task"]')
-    ?.click();
-  expect(store.tasks.task.secondOpinionDismissed).toBe(true);
-  expect(document.querySelector('.terminal-second-opinion')).toBeNull();
   expect(props.onSecondOpinion).toBeTypeOf('function');
 });
 
-it('opens second opinion by action after dismissing the button and preserves an open draft', () => {
+it('opens second opinion by action and preserves an open draft', () => {
   mocks.invoke.mockResolvedValue([]);
   setStore('mcpOrchestrationEnabled', true);
   setStore('agents', 'agent', 'sessionInstanceId', 'live-session');
-  setStore('tasks', 'task', 'secondOpinionDismissed', true);
   mount();
   triggerAction('task:second-opinion');
   const instructions = document.querySelector<HTMLTextAreaElement>('.agent-handoff textarea');

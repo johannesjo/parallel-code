@@ -27,6 +27,7 @@ vi.mock('../store/store', () => ({
 vi.mock('../store/github', () => ({ stageFailedChecksPrompt: mockStage }));
 
 import { TaskBranchInfoBar } from './TaskBranchInfoBar';
+import { extraPrWatchId, setTaskExtraPrs } from '../store/pr-checks-state';
 
 const task = {
   id: 'task-1',
@@ -83,6 +84,26 @@ describe('TaskBranchInfoBar Fix CI', () => {
 
     await vi.waitFor(() => expect(mockNotify).toHaveBeenCalledWith('No failed checks found.'));
   });
+
+  it('names the nested repository when fixing an additional PR', () => {
+    const apiUrl = 'https://github.com/acme/api/pull/7';
+    setTaskExtraPrs('task-1', [{ url: apiUrl, repo: 'api' }]);
+    mockPrChecks.mockImplementation((id: string) =>
+      id === extraPrWatchId('task-1', apiUrl) ? failingChecks : undefined,
+    );
+    mockStage.mockResolvedValue(true);
+    try {
+      dispose = render(
+        () => <TaskBranchInfoBar task={task} onEditProject={vi.fn()} />,
+        document.body,
+      );
+      findButton('Fix CI')?.click();
+    } finally {
+      setTaskExtraPrs('task-1', []);
+    }
+
+    expect(mockStage).toHaveBeenCalledWith('task-1', { number: 7, url: apiUrl, repo: 'api' });
+  });
 });
 
 describe('TaskBranchInfoBar Merge', () => {
@@ -121,5 +142,23 @@ describe('TaskBranchInfoBar Merge', () => {
   it('hides Merge when the task cannot finish', () => {
     renderBar(greenChecks);
     expect(findButton('Merge')).toBeUndefined();
+  });
+});
+
+describe('TaskBranchInfoBar Source link', () => {
+  it('stays neutral instead of using the accent colour', () => {
+    mockPrChecks.mockReturnValue(null);
+    dispose = render(
+      () => (
+        <TaskBranchInfoBar
+          task={{ ...task, githubUrl: 'https://github.com/acme/app/issues/3' }}
+          onEditProject={vi.fn()}
+        />
+      ),
+      document.body,
+    );
+    const source = document.querySelector<HTMLButtonElement>('button.task-branch-source');
+    expect(source).not.toBeNull();
+    expect(source?.getAttribute('style')).not.toContain('--accent');
   });
 });

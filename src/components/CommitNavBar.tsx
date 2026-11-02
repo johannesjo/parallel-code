@@ -3,6 +3,7 @@ import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { accentControlColors } from '../lib/controlStyle';
 import type { CommitInfo } from '../ipc/types';
+import { ChevronLeftAltIcon, ChevronRightAltIcon } from './icons';
 
 /**
  * Sentinel value used in place of a commit hash to mean "show only currently
@@ -27,6 +28,8 @@ interface CommitNavBarProps {
   onNavigate: (selection: CommitSelection) => void;
   compact?: boolean;
   showMessage?: boolean;
+  /** Files with uncommitted changes; null or omitted when the current view cannot tell. */
+  uncommittedCount?: number | null;
 }
 
 export function CommitNavBar(props: CommitNavBarProps) {
@@ -81,6 +84,12 @@ export function CommitNavBar(props: CommitNavBarProps) {
       props.onNavigate(UNCOMMITTED_SELECTION);
     }
   }
+
+  const uncommittedTitle = () => {
+    const count = props.uncommittedCount;
+    if (typeof count !== 'number') return 'Uncommitted changes only';
+    return `Uncommitted changes only (${count} file${count === 1 ? '' : 's'})`;
+  };
 
   const compact = () => props.compact ?? false;
   const btnSize = () => (compact() ? '18px' : '22px');
@@ -138,9 +147,7 @@ export function CommitNavBar(props: CommitNavBarProps) {
           'flex-shrink': '0',
         }}
       >
-        <svg width={iconSize()} height={iconSize()} viewBox="0 0 16 16" fill="currentColor">
-          <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
-        </svg>
+        <ChevronLeftAltIcon size={iconSize()} />
       </button>
 
       {/* Chevron Right */}
@@ -167,9 +174,7 @@ export function CommitNavBar(props: CommitNavBarProps) {
           'flex-shrink': '0',
         }}
       >
-        <svg width={iconSize()} height={iconSize()} viewBox="0 0 16 16" fill="currentColor">
-          <path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z" />
-        </svg>
+        <ChevronRightAltIcon size={iconSize()} />
       </button>
 
       {/* Uncommitted-only button */}
@@ -178,10 +183,16 @@ export function CommitNavBar(props: CommitNavBarProps) {
           e.stopPropagation();
           props.onNavigate(UNCOMMITTED_SELECTION);
         }}
-        title="Uncommitted changes only"
-        style={pillStyle(isUncommittedOnly())}
+        title={uncommittedTitle()}
+        style={{ ...pillStyle(isUncommittedOnly()), gap: '3px' }}
       >
         U
+        <Show when={typeof props.uncommittedCount === 'number'}>
+          {/* Zero stays visible but quiet: "all committed" is a state, not an alert. */}
+          <span style={{ color: props.uncommittedCount === 0 ? theme.fgSubtle : theme.fg }}>
+            {props.uncommittedCount}
+          </span>
+        </Show>
       </button>
 
       {/* All Changes button */}

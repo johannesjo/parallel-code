@@ -15,6 +15,8 @@ export interface FileTreeNode {
   linesRemoved: number;
   /** Total files in subtree */
   fileCount: number;
+  /** Whether any file in the subtree has uncommitted changes */
+  hasUncommitted: boolean;
 }
 
 export interface FlatTreeRow {
@@ -73,6 +75,7 @@ export function buildFileTree(files: ChangedFile[]): FileTreeNode[] {
           linesAdded: child.file.lines_added,
           linesRemoved: child.file.lines_removed,
           fileCount: 1,
+          hasUncommitted: !child.file.committed,
         });
       } else {
         // Compact single-child directory chains
@@ -93,11 +96,13 @@ export function buildFileTree(files: ChangedFile[]): FileTreeNode[] {
         const children = convert(cur, compactedPath);
         let linesAdded = 0,
           linesRemoved = 0,
-          fileCount = 0;
+          fileCount = 0,
+          hasUncommitted = false;
         for (const c of children) {
           linesAdded += c.linesAdded;
           linesRemoved += c.linesRemoved;
           fileCount += c.fileCount;
+          hasUncommitted ||= c.hasUncommitted;
         }
         result.push({
           name: compactedName,
@@ -106,6 +111,7 @@ export function buildFileTree(files: ChangedFile[]): FileTreeNode[] {
           linesAdded,
           linesRemoved,
           fileCount,
+          hasUncommitted,
         });
       }
     }
