@@ -174,7 +174,7 @@ describe('GitHub issue workflow', () => {
     expect(store.showNewTaskPanel).toBe(true);
     expect(store.newTaskPrefillPrompt).toMatchObject({
       projectId: 'p1',
-      name: '#7 Fix broken save',
+      name: 'Issue 7: Fix broken save',
       githubUrl: issue.url,
     });
     expect(store.newTaskPrefillPrompt?.prompt).toContain('Repro steps');

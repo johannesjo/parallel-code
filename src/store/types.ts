@@ -755,6 +755,8 @@ export interface AppStore {
     prompt: string;
     projectId: string | null;
     name?: string;
+    /** URL that supplied an automatic dropped-link name; absent for a custom name. */
+    droppedNameUrl?: string;
     baseBranch?: string;
     canvasSource?: CanvasTaskSource;
     /** null marks a batch without a single issue association. */

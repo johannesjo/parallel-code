@@ -49,7 +49,7 @@ function firstCleanTaskLine(text: string): string {
   return cleanTaskName(text.trim().split('\n')[0] ?? '');
 }
 
-function truncateOnWordBoundary(text: string, maxLength: number): string {
+export function truncateOnWordBoundary(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
 
   const shortened = text.slice(0, maxLength).replace(/\s+\S*$/, '');

@@ -67,11 +67,11 @@ import {
 import { SegmentedButtons } from './SegmentedButtons';
 import { autoTaskNameFromPrompt, nextDefaultTaskName } from '../lib/clean-task-name';
 import { isAgentInstalled, pickDefaultAgent } from '../lib/default-agent';
-import { extractGitHubUrl } from '../lib/github-url';
+import { extractGitHubUrl, parseGitHubUrl } from '../lib/github-url';
 import { parseClaudeSessionUrl } from '../lib/claude-session-url';
 import { sessionAgentForCommand } from '../../electron/shared/session-record';
 import { buildIssuePrompt, buildPrTaskPrompt, workItemTaskName } from '../lib/github-prompts';
-import { getGitHubIssue } from '../store/github';
+import { getGitHubIssue, getPullRequestDetails, readGitHubIssue } from '../store/github';
 import { linkTaskToIssueReference } from '../store/github-issue-link';
 import { GitHubItemPicker } from './GitHubItemPicker';
 import {
@@ -459,6 +459,8 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
   const [initialName, setInitialName] = createSignal('');
   const [confirmDiscard, setConfirmDiscard] = createSignal(false);
   const [name, setName] = createSignal('');
+  const [droppedNameUrl, setDroppedNameUrl] = createSignal<string>();
+  let droppedItemName: Promise<string | undefined> | undefined;
   const [selectedAgent, setSelectedAgentSignal] = createSignal<AgentDef | null>(null);
   // Empty runs the agent's own default; another agent's model would not apply.
   const [taskModel, setTaskModel] = createSignal({ model: '', effort: '' });
@@ -661,7 +663,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
           const defaults = teleportId ? null : getGitHubDropDefaults(dropUrl);
           if (!teleportId && !prompt().trim()) setPrompt(`review ${dropUrl}`);
           const dropName = teleportId ? teleportTaskName(teleportId) : defaults?.name;
-          if (dropName && !name().trim()) setName(dropName);
+          if (dropName && !name().trim()) {
+            setName(dropName);
+            setDroppedNameUrl(defaults ? dropUrl : undefined);
+          }
           if (teleportId) setSelectedProjectId(teleportProjectId());
           else if (defaults?.projectId) setSelectedProjectId(defaults.projectId);
           const claude = teleportId ? store.availableAgents.find(isInstalledClaude) : undefined;
@@ -696,6 +701,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
           picked = { prompt: '', name: '' };
           setAdvancedOpen(false);
           setName('');
+          setDroppedNameUrl(undefined);
           setError('');
           setLoading(false);
           setGitIsolation('worktree');
@@ -731,7 +737,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             const defaults = dropUrl && !teleportId ? getGitHubDropDefaults(dropUrl) : null;
 
             if (dropUrl && !teleportId) setPrompt(`review ${dropUrl}`);
-            if (defaults) setName(defaults.name);
+            if (defaults) {
+              setName(defaults.name);
+              setDroppedNameUrl(dropUrl ?? undefined);
+            }
             if (teleportId) setName(teleportTaskName(teleportId));
             setSelectedProjectId(
               teleportId ? teleportProjectId() : (defaults?.projectId ?? fallbackProjectId),
@@ -745,6 +754,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             if (prefill) {
               setPrompt(prefill.prompt);
               setName(prefill.name ?? 'Compare arena results');
+              setDroppedNameUrl(prefill.droppedNameUrl);
               // Holds any prefill: a retried draft also brings its branch and isolation.
               setCanvasPrefill(prefill);
               if (prefill.projectId) setSelectedProjectId(prefill.projectId);
@@ -806,6 +816,39 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
         });
       },
     ),
+  );
+
+  // Resolve dropped links by URL so the title always comes from the linked repo.
+  createEffect(
+    on([() => props.open, droppedNameUrl], ([open, url]) => {
+      droppedItemName = undefined;
+      const parsed = url ? parseGitHubUrl(url) : null;
+      if (!open || !url || !parsed?.number || !['issues', 'pull'].includes(parsed.type ?? ''))
+        return;
+      const previousName = name();
+      let cancelled = false;
+      onCleanup(() => {
+        cancelled = true;
+      });
+      const kind = parsed.type === 'pull' ? 'pr' : 'issue';
+      droppedItemName = (kind === 'pr' ? getPullRequestDetails(url) : readGitHubIssue(url))
+        .then((item) => {
+          const title = workItemTaskName({
+            kind,
+            number: Number(parsed.number),
+            title: item.title,
+          });
+          untrack(() => {
+            if (!cancelled && name() === previousName) {
+              if (initialName() === previousName) setInitialName(title);
+              setName(title);
+            }
+          });
+          return title;
+        })
+        // The URL-derived name remains usable offline or without GitHub access.
+        .catch(() => undefined);
+    }),
   );
 
   // Fetch gitignored dirs whenever the panel opens or the project changes.
@@ -1219,6 +1262,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     if (!canSubmit()) return;
     const manualName = name().trim();
     const n = resolvedName();
+    const pendingDropName = droppedNameUrl() ? droppedItemName : undefined;
 
     const agent = selectedAgent();
     if (!agent) {
@@ -1333,7 +1377,12 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
       // The panel closes before creation finishes so the next draft can start.
       void createTaskInBackground({
         name: n,
-        create: (quick) => create({ ...options, activate: quick }),
+        create: (quick) =>
+          pendingDropName
+            ? pendingDropName.then((title) =>
+                create({ ...options, name: title ?? n, activate: quick }),
+              )
+            : create({ ...options, activate: quick }),
         onCreated: (taskId) => {
           // Drop flow: prefill prompt without auto-sending
           if (isFromDrop && p) {
@@ -1356,6 +1405,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
             ...(prefill?.githubUrl !== undefined && { githubUrl: ghUrl ?? null }),
             prompt: prompt(),
             name: manualName,
+            droppedNameUrl: droppedNameUrl(),
             projectId,
             agentId: agent.id,
             gitIsolation: gitIsolation(),
@@ -1404,6 +1454,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
         ...store.newTaskPrefillPrompt,
         prompt: prompt(),
         name: name(),
+        droppedNameUrl: droppedNameUrl(),
         projectId: selectedProjectId(),
         agentId: selectedAgent()?.id,
         gitIsolation: gitIsolation(),
@@ -1757,7 +1808,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                   class="input-field"
                   type="text"
                   value={name()}
-                  onInput={(e) => setName(e.currentTarget.value)}
+                  onInput={(e) => {
+                    setDroppedNameUrl(undefined);
+                    setName(e.currentTarget.value);
+                  }}
                   placeholder={resolvedName()}
                   style={{
                     background: theme.bgInput,
