@@ -127,6 +127,45 @@ describe('ChangedFilesList markdown canvas button', () => {
     expect(container.querySelector('.changed-files-open-canvas-btn')).toBeNull();
     expect(container.querySelector('.changed-files-open-editor-btn')).not.toBeNull();
   });
+
+  it('reports line totals and leaves them out of the footer when the owner shows them', async () => {
+    const files: ChangedFile[] = [
+      { path: 'docs/a.md', status: 'M', lines_added: 2, lines_removed: 1, committed: false },
+      { path: 'docs/b.md', status: 'A', lines_added: 3, lines_removed: 0, committed: false },
+    ];
+    vi.mocked(invoke).mockImplementation(((channel: string) => {
+      if (channel === IPC.GetUncommittedChangedFiles) return Promise.resolve(files);
+      return Promise.reject(new Error(`Unexpected IPC call: ${channel}`));
+    }) as typeof invoke);
+    const onTotalsChange = vi.fn();
+    const mount = (hideTotals: boolean) => {
+      const container = document.createElement('div');
+      document.body.append(container);
+      disposers.push(
+        render(
+          () => (
+            <ChangedFilesList
+              worktreePath="/task"
+              isActive
+              selectedCommit={UNCOMMITTED_SELECTION}
+              onTotalsChange={onTotalsChange}
+              hideTotals={hideTotals}
+            />
+          ),
+          container,
+        ),
+      );
+      return container;
+    };
+
+    const plain = mount(false);
+    const owned = mount(true);
+    await waitFor(() => owned.querySelector('.file-row') !== null);
+    await waitFor(() => plain.querySelector('.file-row') !== null);
+    expect(onTotalsChange).toHaveBeenLastCalledWith({ added: 5, removed: 1 });
+    expect(plain.querySelector('[title="5 added lines"]')).not.toBeNull();
+    expect(owned.querySelector('[title="5 added lines"]')).toBeNull();
+  });
 });
 
 describe('ChangedFilesList understand button', () => {
@@ -416,5 +455,115 @@ describe('ChangedFilesList polling', () => {
       vi.useRealTimers();
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('ChangedFilesList nested repositories', () => {
+  it('labels a nested repository folder with its branch', async () => {
+    const files: ChangedFile[] = [
+      { path: 'readme.md', status: 'M', lines_added: 1, lines_removed: 0, committed: false },
+      { path: 'api/src/login.ts', status: 'A', lines_added: 3, lines_removed: 0, committed: true },
+      { path: 'docs/notes.md', status: 'M', lines_added: 1, lines_removed: 0, committed: false },
+    ];
+    vi.mocked(invoke).mockImplementation(((channel: string) => {
+      if (channel === IPC.GetChangedFiles) return Promise.resolve(files);
+      if (channel === IPC.GetNestedRepos) {
+        return Promise.resolve([{ name: 'api', branch: 'feature/login' }]);
+      }
+      return Promise.reject(new Error(`Unexpected IPC call: ${channel}`));
+    }) as typeof invoke);
+
+    const container = document.createElement('div');
+    document.body.append(container);
+    disposers.push(render(() => <ChangedFilesList worktreePath="/task" isActive />, container));
+
+    await waitFor(() => container.textContent?.includes('feature/login') === true);
+
+    const rows = [...container.querySelectorAll('.file-row')];
+    const apiRow = rows.find((row) => row.querySelector('span[title="api/src"]'));
+    expect(apiRow?.textContent).toContain('feature/login');
+    const docsRow = rows.find((row) => row.querySelector('span[title="docs"]'));
+    expect(docsRow?.textContent).not.toContain('feature/login');
+  });
+});
+
+describe('ChangedFilesList commit state', () => {
+  const files: ChangedFile[] = [
+    { path: 'src/dirty.ts', status: 'M', lines_added: 1, lines_removed: 0, committed: false },
+    { path: 'src/clean.ts', status: 'M', lines_added: 2, lines_removed: 1, committed: true },
+    { path: 'docs/notes.md', status: 'A', lines_added: 4, lines_removed: 0, committed: true },
+  ];
+
+  async function mountRows(
+    selectedCommit?: string,
+    onUncommittedCountChange?: (count: number | null) => void,
+  ): Promise<Element[]> {
+    vi.mocked(invoke).mockImplementation(((channel: string) => {
+      if (channel === IPC.GetChangedFiles) return Promise.resolve(files);
+      if (channel === IPC.GetCommitChangedFiles) return Promise.resolve(files);
+      if (channel === IPC.GetUncommittedChangedFiles) {
+        return Promise.resolve(files.map((file) => ({ ...file, committed: false })));
+      }
+      if (channel === IPC.GetNestedRepos) return Promise.resolve([]);
+      return Promise.reject(new Error(`Unexpected IPC call: ${channel}`));
+    }) as typeof invoke);
+    const container = document.createElement('div');
+    document.body.append(container);
+    disposers.push(
+      render(
+        () => (
+          <ChangedFilesList
+            worktreePath="/task"
+            isActive
+            selectedCommit={selectedCommit}
+            onUncommittedCountChange={onUncommittedCountChange}
+          />
+        ),
+        container,
+      ),
+    );
+    await waitFor(() => container.querySelectorAll('.file-row').length === 5);
+    return [...container.querySelectorAll('.file-row')];
+  }
+
+  const rowFor = (rows: Element[], title: string) =>
+    rows.find((row) => row.querySelector(`span[title="${title}"]`)) as HTMLElement | undefined;
+  const hasMark = (row: Element | undefined) =>
+    row?.querySelector('.changed-files-uncommitted-mark') !== null;
+
+  it('marks uncommitted files and folders that contain them, and dims fully committed ones', async () => {
+    const rows = await mountRows();
+
+    for (const title of ['src', 'src/dirty.ts']) {
+      expect(hasMark(rowFor(rows, title)), title).toBe(true);
+      expect(rowFor(rows, title)?.style.opacity, title).toBe('1');
+    }
+    for (const title of ['docs', 'docs/notes.md', 'src/clean.ts']) {
+      expect(hasMark(rowFor(rows, title)), title).toBe(false);
+      expect(rowFor(rows, title)?.style.opacity, title).toBe('0.7');
+    }
+  });
+
+  it.each([
+    ['a single commit', 'abc1234'],
+    ['uncommitted changes only', UNCOMMITTED_SELECTION],
+  ])('shows no commit state while viewing %s', async (_label, selection) => {
+    const rows = await mountRows(selection);
+
+    for (const row of rows) {
+      expect(hasMark(row)).toBe(false);
+      expect((row as HTMLElement).style.opacity).toBe('1');
+    }
+  });
+
+  it.each([
+    ['all changes', undefined, 1],
+    ['uncommitted changes only', UNCOMMITTED_SELECTION, 3],
+    ['a single commit', 'abc1234', null],
+  ])('reports the uncommitted count for %s', async (_label, selection, expected) => {
+    const onUncommittedCountChange = vi.fn();
+    await mountRows(selection, onUncommittedCountChange);
+
+    expect(onUncommittedCountChange).toHaveBeenLastCalledWith(expected);
   });
 });

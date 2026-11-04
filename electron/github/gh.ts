@@ -4,6 +4,7 @@
  * them and nothing is stored by the app.
  */
 import { execFile } from 'child_process';
+import { existsSync } from 'fs';
 import { promisify } from 'util';
 import type { PrMergeable } from '../ipc/shared-types.js';
 
@@ -24,8 +25,19 @@ export async function runGh(args: string[], cwd?: string, input?: string): Promi
     const { stdout } = await pending;
     return stdout;
   } catch (err) {
+    // Node reports a missing cwd as `spawn gh ENOENT` too; don't claim gh is missing.
+    if (cwd && isGhSpawnMissing(err) && !existsSync(cwd)) {
+      throw new Error(`Project folder not found: ${cwd}`);
+    }
     throw new Error(describeGhError(err));
   }
+}
+
+function isGhSpawnMissing(err: unknown): boolean {
+  const e = (err ?? {}) as { code?: unknown; path?: unknown; syscall?: unknown };
+  const spawnedGh =
+    e.path === 'gh' || (typeof e.syscall === 'string' && e.syscall.includes('spawn gh'));
+  return e.code === 'ENOENT' && spawnedGh;
 }
 
 export async function runGhJson(args: string[], cwd?: string, input?: string): Promise<unknown> {
@@ -34,31 +46,24 @@ export async function runGhJson(args: string[], cwd?: string, input?: string): P
 
 /** Maps a failed `gh` invocation to a message the user can act on. */
 export function describeGhError(err: unknown): string {
-  const e = (err ?? {}) as {
-    code?: unknown;
-    path?: unknown;
-    syscall?: unknown;
-    stderr?: unknown;
-    killed?: unknown;
-    message?: unknown;
-  };
-  const spawnedGh =
-    e.path === 'gh' || (typeof e.syscall === 'string' && e.syscall.includes('spawn gh'));
-  if (e.code === 'ENOENT' && spawnedGh) {
-    return 'GitHub CLI (gh) was not found. Install it from https://cli.github.com and run "gh auth login".';
+  const e = (err ?? {}) as { stderr?: unknown; killed?: unknown; message?: unknown };
+  // A gh the user's terminal finds can still be outside the app's PATH (#316).
+  if (isGhSpawnMissing(err)) {
+    return "GitHub CLI (gh) was not found on the app's PATH. Install it from https://cli.github.com, or if it is already installed, add its folder to PATH in your shell profile and restart Parallel Code.";
   }
   const stderr = typeof e.stderr === 'string' ? e.stderr.trim() : '';
+  // Before the auth check: gh's unknown-host error also suggests `gh auth login`.
+  if (
+    /no git remotes found|none of the git remotes .* point to a known github host/i.test(stderr)
+  ) {
+    return 'This project has no GitHub remote.';
+  }
   if (/not logged into|authentication required|gh auth login/i.test(stderr)) {
     return 'GitHub CLI is not logged in. Run "gh auth login" in a terminal.';
   }
   // With several remotes and no default, gh refuses to guess the repository.
   if (/gh repo set-default/i.test(stderr)) {
     return 'GitHub CLI does not know which repository to use. Run "gh repo set-default" in the project folder.';
-  }
-  if (
-    /no git remotes found|none of the git remotes .* point to a known github host/i.test(stderr)
-  ) {
-    return 'This project has no GitHub remote, so there are no GitHub issues to show.';
   }
   if (/rate limit/i.test(stderr)) {
     return 'GitHub API rate limit reached. Try again in a few minutes.';

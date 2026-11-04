@@ -222,7 +222,7 @@ it('revokes existing session orchestration immediately while allowing completion
     const response = await request(token, { name, params: {} });
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
-      error: 'Agent orchestration is disabled in Settings > MCP.',
+      error: 'Agent orchestration is disabled in Settings > Agents.',
     });
   }
   expect(dispatch).not.toHaveBeenCalled();

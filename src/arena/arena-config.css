@@ -26,7 +26,7 @@
   flex-direction: column;
   gap: 10px;
   transition:
-    border-color 0.15s ease,
+    border-color var(--motion-fast) var(--ease-out),
     box-shadow 0.2s ease;
 }
 
@@ -59,7 +59,7 @@
   font-size: 14px;
   outline: none;
   box-sizing: border-box;
-  transition: border-color 0.15s ease;
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 
 .arena-competitor-input:focus {
@@ -86,8 +86,8 @@
   align-items: center;
   justify-content: center;
   transition:
-    color 0.15s ease,
-    background 0.15s ease;
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
 }
 
 .arena-remove-btn:hover:not(:disabled) {
@@ -111,9 +111,9 @@
   font-size: 14px;
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
-    color 0.15s ease,
-    background 0.15s ease;
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
 }
 
 .arena-add-btn:hover {
@@ -141,7 +141,7 @@
   resize: vertical;
   outline: none;
   box-sizing: border-box;
-  transition: border-color 0.15s ease;
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 
 .arena-prompt-area:focus {
@@ -168,9 +168,9 @@
   font-size: 13px;
   cursor: pointer;
   transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .arena-preset-btn:hover {
@@ -187,7 +187,7 @@
   font-size: 13px;
   cursor: pointer;
   padding: 2px 4px;
-  transition: color 0.15s ease;
+  transition: color var(--motion-fast) var(--ease-out);
 }
 
 .arena-preset-delete-btn:hover {
@@ -212,10 +212,10 @@
   position: relative;
   overflow: hidden;
   transition:
-    background 0.15s ease,
-    color 0.15s ease,
-    border-color 0.15s ease,
-    transform 0.1s ease;
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .arena-tool-preset-btn:hover {

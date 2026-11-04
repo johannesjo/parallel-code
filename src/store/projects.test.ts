@@ -27,6 +27,7 @@ import {
   addQuickEditProject,
   relinkProject,
   removeProject,
+  pickAndAddProject,
   updateProject,
   updateProjectCoordination,
 } from './projects';
@@ -34,6 +35,27 @@ import { openDialog } from '../lib/dialog';
 import type { Task } from './types';
 import { blockEditIn, startBlockEdit } from '../documents/block-edit-state';
 import type { DocumentBlock } from '../documents/markdown-blocks';
+
+describe('pickAndAddProject', () => {
+  afterEach(() => {
+    setStore({ projects: [] });
+    vi.clearAllMocks();
+  });
+
+  it('opens one folder dialog however often it is asked while one is open', async () => {
+    let choose: (path: string | null) => void = () => undefined;
+    vi.mocked(openDialog).mockReturnValueOnce(new Promise((r) => (choose = r)));
+    const first = pickAndAddProject();
+    expect(await pickAndAddProject()).toBeNull();
+    choose(null);
+    expect(await first).toBeNull();
+    expect(openDialog).toHaveBeenCalledTimes(1);
+
+    vi.mocked(openDialog).mockResolvedValueOnce(null);
+    await pickAndAddProject();
+    expect(openDialog).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe('relinkProject document terminals', () => {
   afterEach(() => {
@@ -265,6 +287,16 @@ describe('updateProject', () => {
 
     expect(store.projects[0]?.defaultBaseBranch).toBeUndefined();
   });
+
+  it('sets an icon and clears it when undefined is provided', () => {
+    setStore('projects', [{ id: 'p1', name: 'Project', path: '/repo', color: 'hsl(0, 70%, 75%)' }]);
+
+    updateProject('p1', { icon: 'terminal' });
+    expect(store.projects[0]?.icon).toBe('terminal');
+
+    updateProject('p1', { icon: undefined });
+    expect(store.projects[0]?.icon).toBeUndefined();
+  });
 });
 
 describe('updateProject verify command', () => {
@@ -380,6 +412,18 @@ describe('quick edit projects', () => {
       projectRoot: '/data/quick-edits/abc',
     });
     expect(store.projects.some((p) => p.id === id)).toBe(false);
+  });
+
+  it("keeps a removed project's ideas, no longer tied to it", () => {
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    setStore('projects', [{ id: 'gone', name: 'Gone', path: '/gone', color: '#000' }]);
+    setStore('taskIdeas', [{ id: 'i1', text: 'Dark mode', projectId: 'gone', createdAt: 1 }]);
+
+    removeProject('gone');
+
+    expect(store.taskIdeas).toEqual([
+      { id: 'i1', text: 'Dark mode', projectId: null, createdAt: 1 },
+    ]);
   });
 
   it("forgets a removed project's block edits, so a re-added one starts clean", () => {

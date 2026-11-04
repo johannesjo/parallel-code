@@ -141,8 +141,10 @@ export function createTerminalQueryResponder(opts: {
     serialize() {
       if (disposed) return Promise.resolve(null);
       // Writes are parsed in order, so this callback runs after all earlier feeds.
+      // Empty bytes, not '': resize flushes queued writes and stops at an empty
+      // string, dropping its callback and every write queued after it.
       return new Promise((resolve) => {
-        term.write('', () => resolve(disposed ? null : serializer.serialize()));
+        term.write(new Uint8Array(0), () => resolve(disposed ? null : serializer.serialize()));
       });
     },
     resize(cols, rows) {

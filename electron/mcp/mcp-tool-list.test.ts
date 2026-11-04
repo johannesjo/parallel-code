@@ -15,8 +15,8 @@ import {
   CANVAS_INSTRUCTIONS,
   TOUR_TOOLS,
   CONFIDENCE_TOOLS,
+  PR_DRAFT_TOOLS,
   GITHUB_LIST_TOOLS,
-  EVIDENCE_TOOLS,
   hasCanvasTools,
   APP_TASK_INSTRUCTIONS,
   serverInstructions,
@@ -35,7 +35,7 @@ describe('selectTools — role-based tool list', () => {
       ...CANVAS_VIEW_TOOLS,
       ...TOUR_TOOLS,
       ...CONFIDENCE_TOOLS,
-      ...EVIDENCE_TOOLS,
+      ...PR_DRAFT_TOOLS,
     ]);
     expect(tools.map((t: ToolDef) => t.name)).toStrictEqual([
       'land_self',
@@ -47,8 +47,7 @@ describe('selectTools — role-based tool list', () => {
       'canvas_open',
       'tour_publish',
       'confidence_publish',
-      'submit_evidence',
-      'get_evidence',
+      'pr_draft_publish',
     ]);
   });
 
@@ -61,7 +60,6 @@ describe('selectTools — role-based tool list', () => {
       ...CANVAS_VIEW_TOOLS,
       ...TOUR_TOOLS,
       ...CONFIDENCE_TOOLS,
-      ...EVIDENCE_TOOLS,
     ]);
   });
 
@@ -160,7 +158,7 @@ it('ordinary canvas sessions advertise only map tools', () => {
     ...CANVAS_VIEW_TOOLS,
     ...TOUR_TOOLS,
     ...CONFIDENCE_TOOLS,
-    ...EVIDENCE_TOOLS,
+    ...PR_DRAFT_TOOLS,
   ]);
 });
 
@@ -172,8 +170,30 @@ it('offers github_list_publish only to the GitHub page agent', () => {
     ...TOUR_TOOLS,
     ...CONFIDENCE_TOOLS,
     ...GITHUB_LIST_TOOLS,
-    ...EVIDENCE_TOOLS,
   ]);
+});
+
+it('gives a page agent only independent task creation besides its page tools', () => {
+  const capabilities = { profile: 'page' as const, canCreate: true, peers: false };
+  const tools = selectTools('gh-agent-p1', '', false, capabilities);
+  const createTask = tools.find((tool) => tool.name === 'create_task');
+  expect(createTask?.inputSchema.properties.relation).toEqual({
+    type: 'string',
+    enum: ['independent'],
+  });
+  expect(createTask?.inputSchema.properties).not.toHaveProperty('baseOnParent');
+  expect(tools.map((tool) => tool.name)).toEqual([
+    ...[
+      ...MINDMAP_TOOLS,
+      ...REASONING_TOOLS,
+      ...CANVAS_VIEW_TOOLS,
+      ...TOUR_TOOLS,
+      ...CONFIDENCE_TOOLS,
+      ...GITHUB_LIST_TOOLS,
+    ].map((tool) => tool.name),
+    'create_task',
+  ]);
+  expect(sessionInstructions(capabilities)).toContain("relation 'independent'");
 });
 
 it('explains the canvases to every session that advertises canvas tools', () => {
@@ -186,10 +206,15 @@ it('explains the canvases to every session that advertises canvas tools', () => 
   expect(CANVAS_INSTRUCTIONS).toContain('Shape the graph to the question');
 });
 
-it('canvas_open takes exactly one of the two canvas views', () => {
+it('canvas_open takes exactly one of the two canvas views and an optional node', () => {
   const tool = CANVAS_VIEW_TOOLS.find((t) => t.name === 'canvas_open');
   expect(tool?.inputSchema.required).toEqual(['view']);
   expect(tool?.inputSchema.properties.view).toEqual({ enum: ['mindmap', 'reasoning'] });
+  expect(tool?.inputSchema.properties.focusId).toEqual({
+    type: 'string',
+    minLength: 1,
+    maxLength: 128,
+  });
 });
 
 it('describes tour_publish with the caps the validator enforces', () => {
@@ -252,8 +277,7 @@ describe('session capability tool sets', () => {
     'canvas_open',
     'tour_publish',
     'confidence_publish',
-    'submit_evidence',
-    'get_evidence',
+    'pr_draft_publish',
   ];
   const supervision = [
     'list_tasks',
@@ -273,6 +297,19 @@ describe('session capability tool sets', () => {
   it('exposes exact ordinary rights separately from agent creation consent', () => {
     expect(names('ordinary')).toEqual([...canvas, ...supervision]);
     expect(names('ordinary', true)).toEqual([...canvas, 'create_task', ...supervision]);
+  });
+
+  it('makes ordinary sessions choose between a child and an independent task', () => {
+    const createTask = selectTools('task', '', false, {
+      profile: 'ordinary',
+      canCreate: true,
+      peers: false,
+    }).find((tool) => tool.name === 'create_task');
+    expect(createTask?.inputSchema.required).toContain('relation');
+    expect(createTask?.inputSchema.properties.relation).toEqual({
+      type: 'string',
+      enum: ['child', 'independent'],
+    });
   });
 
   it('never grants children creation even if a malformed capability requests it', () => {
@@ -335,6 +372,20 @@ describe('serverInstructions', () => {
     }
   });
 
+  it("keeps a page agent's page, role and app guidance within the client limit", () => {
+    const sessionCapabilities = { profile: 'page' as const, canCreate: true, peers: false };
+    const text = serverInstructions({
+      taskId: 'gh-agent-p1',
+      coordinatorId: '',
+      canvasOnly: false,
+      sessionCapabilities,
+    });
+    const essential = `${GITHUB_AGENT_INSTRUCTIONS}\n\n${sessionInstructions(sessionCapabilities)}\n\n${APP_TASK_INSTRUCTIONS}`;
+    expect(text.startsWith(essential)).toBe(true);
+    expect(essential.length).toBeLessThanOrEqual(CLIENT_LIMIT);
+    expect(APP_TASK_INSTRUCTIONS).toContain('project page agent');
+  });
+
   it('leads with app guidance for sessions without capabilities', () => {
     for (const [taskId, coordinatorId, canvasOnly] of [
       ['', 'coordinator', false],
@@ -347,7 +398,7 @@ describe('serverInstructions', () => {
   });
 
   it('tells the GitHub page agent to publish lists there, first and within the client limit', () => {
-    // Hidden agents are never delegation tasks, so they launch canvas-only without capabilities.
+    // Without orchestration a page agent launches canvas-only, without capabilities.
     const text = serverInstructions({ taskId: 'gh-agent-p1', coordinatorId: '', canvasOnly: true });
     expect(text.startsWith(GITHUB_AGENT_INSTRUCTIONS)).toBe(true);
     expect(GITHUB_AGENT_INSTRUCTIONS).toContain('github_list_publish');

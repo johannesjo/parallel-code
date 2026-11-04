@@ -1,39 +1,22 @@
+import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { createStore, type SetStoreFunction } from 'solid-js/store';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { mockChange, mockKeep, mockMarkRead, mockRate, mockRefreshCode, mockTargetName } =
-  vi.hoisted(() => ({
-    mockTargetName: vi.fn<() => string | undefined>(),
-    mockMarkRead: vi.fn(),
-    mockRefreshCode: vi.fn(),
-    mockChange: vi.fn(),
-    mockKeep: vi.fn(),
-    mockRate: vi.fn(),
-  }));
-
-vi.mock('../store/task-brief', () => ({
-  briefTargetAgentName: mockTargetName,
-  changeBriefDecision: mockChange,
-  keepBriefDecision: mockKeep,
-  markBriefRead: mockMarkRead,
-  reopenBriefDecision: vi.fn(),
-  refreshTaskBrief: vi.fn(),
-  refreshCodeFingerprint: mockRefreshCode,
-  requestConfidenceRating: mockRate,
-}));
+vi.mock('../store/task-brief', () => ({ refreshTaskBrief: vi.fn() }));
+const [working, setWorking] = createSignal(false);
+vi.mock('../store/taskStatus', () => ({ isTaskWorking: () => working() }));
 
 import type { Task } from '../store/types';
-import { TaskBriefBar, TaskBriefLine } from './TaskBrief';
+import type { BriefBarFields } from '../lib/task-brief';
+import { TaskBriefBar } from './TaskBrief';
 
 let dispose: (() => void) | undefined;
 let lastSetState: SetStoreFunction<Task> | undefined;
-beforeEach(() => {
-  mockTargetName.mockReturnValue(undefined);
-});
 afterEach(() => {
   dispose?.();
   document.body.replaceChildren();
+  setWorking(false);
   vi.clearAllMocks();
 });
 
@@ -52,21 +35,14 @@ function baseTask(overrides: Partial<Task> = {}): Task {
     brief: {
       brief: {
         goal: 'Stop webhook timeouts.',
-        headline: 'Deduplicate by event ID or invoice ID?',
-        unbacked: [],
-        changed: [{ text: 'Route queues the event.', file: 'src/webhooks.ts' }],
-        extra: [],
-        open: [{ text: 'Nine event types still synchronous.' }],
-        decided: [{ text: 'Used BullMQ.' }],
+        now: 'Two events queued; moving the other nine next.',
       },
       generatedAt: 2_000,
       fingerprint: 'new',
-      turns: [{ prompt: 'Move it to a queue', outcome: 'Queued two events.', endedAt: 1_000 }],
-      decisions: {},
     },
     confidence: {
       scores: [
-        { label: 'Correct', score: 70, why: 'Happy path tested.' },
+        { label: 'Correct', score: 70, why: 'Happy path tested.', verified: ['read the worker'] },
         { label: 'Complete', score: 40, why: 'No dedupe.' },
       ],
       findings: [{ kind: 'extra', text: 'Added Redis to production compose.' }],
@@ -78,215 +54,150 @@ function baseTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function mount(task: Task, onFileClick = vi.fn()) {
+const QUESTION = 'Deduplicate by event ID or invoice ID?';
+const DEFAULT_FIELDS: BriefBarFields = { goal: true, now: false, needsYou: true };
+
+function mount(
+  task: Task,
+  { fields = DEFAULT_FIELDS, questionInPrompt = false } = {} as {
+    fields?: BriefBarFields;
+    questionInPrompt?: boolean;
+  },
+) {
   const [state, setState] = createStore(task);
   lastSetState = setState;
   const root = document.createElement('div');
   document.body.append(root);
-  dispose = render(() => <TaskBriefBar task={state} onFileClick={onFileClick} />, root);
+  dispose = render(
+    () => <TaskBriefBar task={state} fields={fields} questionInPrompt={questionInPrompt} />,
+    root,
+  );
   const bar = root.querySelector<HTMLButtonElement>('.task-brief-bar');
   if (!bar) throw new Error('Missing brief bar');
-  return { bar, onFileClick };
+  return { bar };
 }
 
 const card = () => document.querySelector<HTMLElement>('[role="dialog"][aria-label="Task brief"]');
 const button = (label: string) =>
   Array.from(card()?.querySelectorAll('button') ?? []).find((b) => b.textContent === label);
+const cardTerms = () =>
+  Array.from(card()?.querySelectorAll('dt') ?? []).map((dt) => dt.textContent);
 
 describe('TaskBriefBar', () => {
-  it('shows the headline and scores compactly and marks a rating the code moved past', () => {
+  it('shows the goal by default, leaving the current step to the card', () => {
     const { bar } = mount(baseTask());
-    expect(bar.textContent).toContain('Deduplicate by event ID or invoice ID?');
-    expect(bar.querySelector('[aria-label="Correct 70%"]')?.getAttribute('title')).toBe('Correct');
-    expect(bar.querySelector('[aria-label="Complete 40%"] svg')).not.toBeNull();
-    expect(bar.textContent).toContain('out of date');
+    expect(bar.textContent).toContain('Goal');
+    expect(bar.textContent).toContain('Stop webhook timeouts.');
+    expect(bar.textContent).not.toContain('Now');
+    expect(bar.textContent).not.toContain('Two events queued');
+    expect(bar.hasAttribute('data-urgent')).toBe(false);
     expect(bar.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('keeps unknown score labels as text', () => {
-    const task = baseTask();
-    const confidence = task.confidence;
-    if (!confidence) throw new Error('Missing rating');
-    const { bar } = mount({
-      ...task,
-      confidence: { ...confidence, scores: [{ label: 'toString', score: 50, why: 'Odd.' }] },
-    });
-    const score = bar.querySelector('[aria-label="toString 50%"]');
-    expect(score?.textContent).toBe('toString50%');
-    expect(score?.querySelector('svg')).toBeNull();
+  it('shows a labelled line for each chosen field', () => {
+    const { bar } = mount(baseTask(), { fields: { goal: true, now: true, needsYou: true } });
+    expect(bar.textContent).toContain('Goal');
+    expect(bar.textContent).toContain('Stop webhook timeouts.');
+    expect(bar.textContent).toContain('Now');
+    expect(bar.textContent).toContain('Two events queued; moving the other nine next.');
   });
 
-  it('counts changed, open and decided items on the bar, rating gaps included', () => {
+  it('skips a chosen field the brief leaves empty', () => {
     const task = baseTask();
-    const confidence = task.confidence;
-    if (!confidence) throw new Error('Missing rating');
-    const { bar } = mount({
-      ...task,
-      confidence: { ...confidence, findings: [{ kind: 'gap', text: 'No dedupe test.' }] },
-    });
-    const counts = bar.querySelector('[aria-label$="decided"]');
-    expect(counts?.getAttribute('aria-label')).toBe('1 changed, 2 open, 1 decided');
-    expect(counts?.textContent).toBe('121');
+    const { bar } = mount(
+      {
+        ...task,
+        brief: { generatedAt: 2_000, fingerprint: 'new', brief: { goal: '', now: 'Step' } },
+      },
+      { fields: { goal: true, now: true, needsYou: true } },
+    );
+    expect(bar.textContent).not.toContain('Goal');
+    expect(bar.textContent).toContain('Step');
   });
 
-  it('quietens the decided count once every decision is handled', () => {
+  it('keeps a quiet label that opens the card when every field is off', () => {
+    const { bar } = mount(baseTask(), { fields: { goal: false, now: false, needsYou: false } });
+    lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
+    expect(bar.textContent).toContain('Brief');
+    expect(bar.textContent).not.toContain('Stop webhook timeouts.');
+    expect(bar.textContent).not.toContain('Deduplicate');
+    expect(bar.hasAttribute('data-urgent')).toBe(false);
+    bar.click();
+    expect(cardTerms()).toEqual(['Goal', 'Now', 'Needs you']);
+  });
+
+  it('opens the goal and the current step, and leaves ratings to the Finish review', () => {
     const { bar } = mount(baseTask());
-    const decidedIcon = () =>
-      bar.querySelector<SVGElement>('[aria-label$="decided"] > span:last-child svg');
-    expect(decidedIcon()?.style.color).not.toBe('var(--fg-muted)');
-    lastSetState?.('brief', 'decisions', { 'Used BullMQ.': 'kept' });
-    expect(decidedIcon()?.style.color).toBe('var(--fg-muted)');
-  });
-
-  it('leaves empty sections out of the bar counts', () => {
-    const task = baseTask();
-    const brief = task.brief;
-    if (!brief) throw new Error('Missing brief');
-    const { bar } = mount({
-      ...task,
-      brief: { ...brief, brief: { ...brief.brief, open: [], decided: [] } },
-    });
-    expect(bar.querySelector('[aria-label="1 changed"]')?.textContent).toBe('1');
-  });
-
-  it('opens the full brief with rating findings merged into the sections', () => {
-    const { bar, onFileClick } = mount(baseTask());
+    // The fixture carries a rating, which belongs to finishing rather than to the brief.
+    expect(bar.textContent).not.toContain('%');
+    expect(bar.textContent).not.toContain('out of date');
     bar.click();
     expect(bar.getAttribute('aria-expanded')).toBe('true');
+    expect(cardTerms()).toEqual(['Goal', 'Now']);
     const text = card()?.textContent ?? '';
     expect(text).toContain('Stop webhook timeouts.');
-    expect(text).toContain('Added Redis to production compose.');
-    expect(card()?.querySelector('title')?.textContent).toBe('From the confidence rating');
-    const headings = Array.from(card()?.querySelectorAll('h3') ?? []).map((h) =>
-      h.getAttribute('aria-label'),
-    );
-    expect(headings).toEqual(['Open (1)', 'Decided (1)', 'Extra (1)', 'Changed (1)']);
-    expect(text).toContain('code changed since');
-    // What changed is collapsed, since the diff and the agent's message say it already.
-    expect(text).not.toContain('Route queues the event.');
-    const toggle = card()?.querySelector<HTMLButtonElement>('h3[aria-label^="Changed"] button');
-    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
-    toggle?.click();
-    expect(card()?.textContent).toContain('Route queues the event.');
-    button('src/webhooks.ts')?.click();
-    expect(onFileClick).toHaveBeenCalledWith('src/webhooks.ts');
-    expect(card()).toBeNull();
+    expect(text).toContain('Two events queued; moving the other nine next.');
+    expect(text).not.toContain('Happy path tested.');
+    expect(button('Run review')).toBeUndefined();
+    expect(button('Review again')).toBeUndefined();
   });
 
-  it('marks a new brief on the bar until the card is opened', () => {
-    const task = baseTask();
-    const brief = task.brief;
-    if (!brief) throw new Error('Missing brief');
-    const { bar } = mount({ ...task, brief: { ...brief, unread: true } });
-    const dot = () => bar.querySelector<HTMLElement>('.task-brief-unread');
-    expect(dot()?.style.visibility).toBe('visible');
+  it('puts what the agent needs on the top line and flags the bar', () => {
+    const { bar } = mount(baseTask(), { fields: { goal: true, now: true, needsYou: true } });
+    expect(bar.textContent).not.toContain('Needs you');
+    lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
+    expect(bar.hasAttribute('data-urgent')).toBe(true);
+    expect(bar.textContent).toContain('Needs you');
+    expect(bar.textContent).toContain(QUESTION);
+    // Replaces the top line rather than adding one, so the header keeps its height.
+    expect(bar.textContent).not.toContain('Stop webhook timeouts.');
+    expect(bar.textContent).toContain('Two events queued');
     bar.click();
-    expect(mockMarkRead).toHaveBeenCalledWith('task');
-    lastSetState?.('brief', 'unread', undefined);
-    // Hidden rather than removed, so the headline does not shift.
-    expect(dot()?.style.visibility).toBe('hidden');
+    expect(cardTerms()).toEqual(['Goal', 'Now', 'Needs you']);
   });
 
-  it('flags claims the diff does not back on the bar and leads the card with them', () => {
-    const task = baseTask();
-    const brief = task.brief;
-    if (!brief) throw new Error('Missing brief');
-    const { bar } = mount(task);
-    expect(bar.getAttribute('style')).not.toContain('var(--warning)');
-    lastSetState?.('brief', 'brief', 'unbacked', [{ text: 'Says it added dedupe tests.' }]);
-    expect(bar.getAttribute('style')).toContain('var(--warning)');
-    expect(bar.querySelector('[aria-label^="1 unbacked"]')).not.toBeNull();
+  it('puts the question in place of the current step when it is the only line', () => {
+    const { bar } = mount(baseTask(), { fields: { goal: false, now: true, needsYou: true } });
+    lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
+    expect(bar.textContent).toContain(QUESTION);
+    expect(bar.textContent).not.toContain('Two events queued');
+    expect(bar.textContent).not.toContain('Stop webhook timeouts.');
+  });
+
+  it('leaves the question to the card when Needs you is off', () => {
+    const { bar } = mount(baseTask(), { fields: { goal: true, now: false, needsYou: false } });
+    lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
+    expect(bar.hasAttribute('data-urgent')).toBe(false);
+    expect(bar.textContent).not.toContain('Deduplicate');
+    expect(bar.textContent).toContain('Stop webhook timeouts.');
+  });
+
+  it('keeps to the other fields when the prompt box shows the question', () => {
+    const { bar } = mount(baseTask(), { questionInPrompt: true });
+    lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
+    expect(bar.hasAttribute('data-urgent')).toBe(false);
+    expect(bar.textContent).not.toContain('Deduplicate');
+    expect(bar.textContent).toContain('Stop webhook timeouts.');
     bar.click();
-    expect(card()?.querySelector('h3')?.getAttribute('aria-label')).toBe('Not in diff (1)');
-    expect(card()?.textContent).toContain('Says it added dedupe tests.');
+    expect(cardTerms()).toEqual(['Goal', 'Now', 'Needs you']);
   });
 
-  it('keeps a decision or sends the typed change to the agent', async () => {
-    mockChange.mockResolvedValue(undefined);
+  it('drops a question the agent has moved past while it works on the answer', () => {
+    const { bar } = mount(baseTask());
+    lastSetState?.('brief', 'brief', 'needsYou', QUESTION);
+    setWorking(true);
+    expect(bar.hasAttribute('data-urgent')).toBe(false);
+    expect(bar.textContent).not.toContain('Needs you');
+    expect(bar.textContent).not.toContain('Deduplicate');
+    expect(bar.textContent).toContain('Stop webhook timeouts.');
+    bar.click();
+    expect(cardTerms()).toEqual(['Goal', 'Now']);
+  });
+
+  it('closes on Escape', () => {
     const { bar } = mount(baseTask());
     bar.click();
-    button('Keep')?.click();
-    expect(mockKeep).toHaveBeenCalledWith('task', 'Used BullMQ.');
-    button('Change…')?.click();
-    const textarea = card()?.querySelector('textarea');
-    if (!textarea) throw new Error('Missing correction field');
-    expect(textarea.value).toBe('About your decision "Used BullMQ.": ');
-    textarea.value = 'Use pg-boss instead.';
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    button('Send to agent')?.click();
-    await vi.waitFor(() =>
-      expect(mockChange).toHaveBeenCalledWith('task', 'Used BullMQ.', 'Use pg-boss instead.'),
-    );
-  });
-
-  it('quietens the Decided icon once every decision is handled', () => {
-    const { bar } = mount(baseTask());
-    bar.click();
-    const decidedIcon = () =>
-      card()?.querySelector('h3[aria-label^="Decided"] svg')?.getAttribute('style') ?? '';
-    expect(decidedIcon()).toContain('var(--review)');
-    lastSetState?.('brief', 'decisions', { 'Used BullMQ.': 'kept' });
-    expect(decidedIcon()).toContain('var(--fg-muted)');
-    lastSetState?.('brief', 'decisions', { 'Used BullMQ.': 'sent' });
-    expect(decidedIcon()).toContain('var(--fg-muted)');
-  });
-
-  it('keeps a half-typed correction when the brief is rewritten', () => {
-    const { bar } = mount(baseTask());
-    bar.click();
-    button('Change…')?.click();
-    const textarea = card()?.querySelector('textarea');
-    if (!textarea) throw new Error('Missing correction field');
-    textarea.value = 'Half typed';
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    lastSetState?.('brief', 'brief', 'decided', [{ text: 'Used BullMQ.' }, { text: 'New one.' }]);
-    expect(card()?.querySelector('textarea')?.value).toBe('Half typed');
-  });
-
-  it('keeps each draft and lets only its own send clear it', async () => {
-    let finishSend: () => void = () => {};
-    mockChange.mockReturnValueOnce(new Promise<void>((resolve) => (finishSend = resolve)));
-    const task = baseTask();
-    task.brief?.brief.decided.push({ text: 'Retries 5 times.' });
-    const { bar } = mount(task);
-    bar.click();
-    const changeButtons = () =>
-      Array.from(card()?.querySelectorAll('button') ?? []).filter(
-        (b) => b.textContent === 'Change…',
-      );
-    changeButtons()[0]?.click();
-    button('Send to agent')?.click();
-    expect(button('Sending…')).toBeDefined();
-    changeButtons()[0]?.click();
-    const fields = () => Array.from(card()?.querySelectorAll('textarea') ?? []);
-    expect(fields()).toHaveLength(2);
-    fields()[1].value = 'Alert on-call instead';
-    fields()[1].dispatchEvent(new Event('input', { bubbles: true }));
-    finishSend();
-    await vi.waitFor(() => expect(fields()).toHaveLength(1));
-    expect(fields()[0].value).toBe('Alert on-call instead');
-  });
-
-  it('checks a rating against the current code when opened', () => {
-    const { bar } = mount(baseTask({ brief: undefined }));
-    bar.click();
-    expect(mockRefreshCode).toHaveBeenCalledWith('task');
-  });
-
-  it('marks a rating out of date from a newer code check', () => {
-    const { bar } = mount(
-      baseTask({ brief: undefined, codeFingerprint: { fingerprint: 'changed', at: 5_000 } }),
-    );
-    expect(bar.textContent).toContain('out of date');
-  });
-
-  it('closes on Escape and asks for a rating from the footer', () => {
-    mockRate.mockResolvedValue(undefined);
-    const { bar } = mount(baseTask({ confidence: undefined }));
-    expect(bar.textContent).not.toContain('%');
-    bar.click();
-    button('Rate confidence')?.click();
-    expect(mockRate).toHaveBeenCalledWith('task');
+    expect(card()).not.toBeNull();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(card()).toBeNull();
   });
@@ -308,33 +219,8 @@ describe('TaskBriefBar', () => {
     terminal.remove();
   });
 
-  it('names the agent a rating goes to when the task has several', () => {
-    mockTargetName.mockReturnValue('Codex');
-    const { bar } = mount(baseTask({ confidence: undefined }));
-    bar.click();
-    expect(button('Rate confidence · Codex')).toBeDefined();
-  });
-
   it('explains the empty state before the first brief', () => {
-    const { bar } = mount(baseTask({ brief: undefined, confidence: undefined }));
+    const { bar } = mount(baseTask({ brief: undefined }));
     expect(bar.textContent).toContain('The brief appears after the agent finishes a turn');
-  });
-});
-
-describe('TaskBriefLine', () => {
-  it('shows only the headline and nothing without a brief', () => {
-    const root = document.createElement('div');
-    document.body.append(root);
-    dispose = render(
-      () => (
-        <>
-          <TaskBriefLine task={baseTask()} />
-          <TaskBriefLine task={baseTask({ brief: undefined })} />
-        </>
-      ),
-      root,
-    );
-    expect(root.querySelectorAll('.task-brief-line')).toHaveLength(1);
-    expect(root.textContent).toBe('Deduplicate by event ID or invoice ID?');
   });
 });

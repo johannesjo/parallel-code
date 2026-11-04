@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,6 +15,24 @@ import {
   getFileDiffFromBranch,
   getWorktreeStatus,
 } from './git.js';
+
+// Pass-through spy: tests count spawned git commands without changing them.
+const gitSpawns = vi.hoisted(() => [] as string[][]);
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  const { promisify } = await import('node:util');
+  const run = promisify(actual.execFile);
+  const execFile = Object.assign(
+    (...args: Parameters<typeof actual.execFile>) => actual.execFile(...args),
+    {
+      [promisify.custom]: (file: string, args: string[], opts: object) => {
+        gitSpawns.push(args);
+        return run(file, args, opts);
+      },
+    },
+  );
+  return { ...actual, execFile };
+});
 
 const directories: string[] = [];
 
@@ -231,6 +249,30 @@ describe('subtask diffs after rebasing onto upstream', () => {
       (await getChangedFilesFromBranch(root, 'child', 'parent')).map((file) => file.path),
     ).toEqual(['child.txt']);
     expect((await getWorktreeStatus(child, 'parent')).has_committed_changes).toBe(true);
+  });
+
+  it('does not rescan an unchanged reflog after the diff base cache expires', async () => {
+    const { root, child } = fixture();
+    git(child, 'rebase', 'main');
+    commitFile(child, 'child.txt', 'child work\n');
+    commitFile(root, 'upstream-later.txt', 'later upstream work\n');
+    git(child, 'rebase', 'main');
+    commitFile(child, 'child-2.txt', 'more child work\n');
+    const octopusCalls = () => gitSpawns.filter((args) => args.includes('--octopus')).length;
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      gitSpawns.length = 0;
+      const first = await getChangedFiles(child, 'parent');
+      expect(octopusCalls()).toBeGreaterThan(0);
+
+      vi.setSystemTime(Date.now() + 60_000);
+      gitSpawns.length = 0;
+      expect(await getChangedFiles(child, 'parent')).toEqual(first);
+      expect(octopusCalls()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('continues excluding inherited work after a second upstream rebase', async () => {

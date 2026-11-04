@@ -169,7 +169,7 @@ export function ResourcesPanel() {
               bottom: `${bottom()}px`,
               width: `${PANEL_WIDTH}px`,
               'max-width': 'calc(100vw - 16px)',
-              'z-index': '1000',
+              'z-index': 'var(--z-modal)',
               background: theme.bgElevated,
               border: `1px solid ${theme.border}`,
               'border-radius': 'var(--radius-sm)',

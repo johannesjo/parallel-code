@@ -4,7 +4,11 @@ import path from 'path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { ensureNodeModulesEntryLinks, isManagedNodeModules } from './worktree-node-modules.js';
+import {
+  ensureNodeModulesEntryLinks,
+  isManagedNodeModules,
+  linkNestedNodeModules,
+} from './worktree-node-modules.js';
 
 const tempDirs: string[] = [];
 
@@ -269,5 +273,38 @@ describe('isManagedNodeModules', () => {
     const source = makeSource({ 'pkg/index.js': 'x\n' });
 
     expect(isManagedNodeModules(source, makeTarget())).toBe(false);
+  });
+});
+
+describe('linkNestedNodeModules', () => {
+  /** Main checkout and worktree, each with the given package directories. */
+  function makeCheckouts(packages: string[]): { root: string; worktree: string } {
+    const root = makeTempDir();
+    const worktree = makeTempDir();
+    for (const rel of packages) {
+      fs.mkdirSync(path.join(root, rel, 'node_modules', 'dep'), { recursive: true });
+      fs.mkdirSync(path.join(worktree, rel), { recursive: true });
+    }
+    return { root, worktree };
+  }
+
+  it('links packages up to three levels deep but not below', () => {
+    const { root, worktree } = makeCheckouts(['packages/dev/plugin', 'a/b/c/d']);
+
+    linkNestedNodeModules(root, worktree);
+
+    const linked = path.join(worktree, 'packages/dev/plugin/node_modules/dep');
+    expect(fs.lstatSync(linked).isSymbolicLink()).toBe(true);
+    expect(fs.existsSync(path.join(worktree, 'a/b/c/d/node_modules'))).toBe(false);
+  });
+
+  it('leaves an install the worktree made itself alone', () => {
+    const { root, worktree } = makeCheckouts(['packages/core']);
+    const local = path.join(worktree, 'packages/core/node_modules');
+    fs.mkdirSync(path.join(local, 'own-dep'), { recursive: true });
+
+    linkNestedNodeModules(root, worktree);
+
+    expect(fs.readdirSync(local)).toEqual(['own-dep']);
   });
 });

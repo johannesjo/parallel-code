@@ -6,6 +6,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Coordinator } from './coordinator.js';
 import type { CoordinatedTask } from './types.js';
 import { parseSignalDoneInput } from '../shared/completion-report.js';
+import { isProjectPageAgentTaskId } from '../shared/project-page-agents.js';
 import {
   getAgentPromptReadiness,
   stripAnsi,
@@ -14,6 +15,8 @@ import {
 import { canConfigureCanvasMcp } from './canvas-config.js';
 import { validateBranchName } from './validation.js';
 import {
+  clampIndependentTasksPerCreator,
+  DEFAULT_INDEPENDENT_TASKS_PER_CREATOR,
   MAX_COORDINATOR_CONCURRENT_TASKS,
   MIN_COORDINATOR_CONCURRENT_TASKS,
 } from '../shared/coordinator-limits.js';
@@ -34,6 +37,7 @@ import type {
   DelegationRequest,
   DelegationSnapshot,
   DelegationState,
+  IndependentTaskRequest,
   IntegrationPolicy,
   PeerMessage,
   PeerSession,
@@ -90,7 +94,25 @@ interface CreatedChild {
   integrationPolicy: IntegrationPolicy;
 }
 
+interface CreatedIndependentTask {
+  taskId: string;
+  relation: 'independent';
+}
+
 type Authority = TaskAuthorityInput & { closing?: boolean; closed?: boolean };
+
+/** A project page's hidden agent, working in the checkout rather than a worktree of its own. */
+function isPageAgent(task: Authority): boolean {
+  return isProjectPageAgentTaskId(task.taskId) && task.gitIsolation === 'none';
+}
+
+/**
+ * Works in the project checkout, so it may only start tasks the user reviews on their own:
+ * it has no worktree branch for children to build on or land into.
+ */
+function isCheckoutCreator(task: Authority): boolean {
+  return isPageAgent(task) || (task.gitIsolation === 'direct' && !task.parentTaskId);
+}
 
 export class DelegationError extends Error {
   constructor(
@@ -136,6 +158,21 @@ export class DelegationService {
     string,
     { payload: string; promise: Promise<CreatedChild> }
   >();
+  /** Same keys as `requests`, so closing the creator forgets both. */
+  private readonly independentRequests = new Map<
+    string,
+    { payload: string; promise: Promise<CreatedIndependentTask> }
+  >();
+  /**
+   * Request key → created task ID (undefined while launching) for every independent task
+   * that still counts against its creator's cap; a close or failed launch frees the slot.
+   */
+  private readonly openIndependent = new Map<string, string | undefined>();
+  // Independent tasks are neither supervised nor counted against the child limit, so a
+  // looping agent could otherwise start worktrees without end. Set in Settings > Agents.
+  private maxIndependentPerCreator = DEFAULT_INDEPENDENT_TASKS_PER_CREATOR;
+  /** launchId → recheck, live while the renderer builds an independent task's worktree. */
+  private readonly independentLaunches = new Map<string, () => void>();
   private readonly attempts = new Map<string, DelegationAttempt>();
   private readonly messages = new Map<string, PeerMessage>();
   /** sessionInstanceId → requestId → request. Keeps a payload hash, not the prompt,
@@ -160,9 +197,15 @@ export class DelegationService {
       changed: (event: DelegationChanged) => void;
       persist: () => void;
       parentCreated?: (taskId: string) => void;
+      createIndependent: (request: IndependentTaskRequest) => Promise<{ taskId: string }>;
     },
   ) {
     this.orchestrationEnabled = options.orchestrationEnabled ?? true;
+  }
+
+  /** Applies the saved per-creator cap; tasks already open past a lowered cap stay open. */
+  setMaxIndependentPerCreator(limit: number): void {
+    this.maxIndependentPerCreator = clampIndependentTasksPerCreator(limit);
   }
 
   isOrchestrationEnabled(): boolean {
@@ -172,7 +215,7 @@ export class DelegationService {
   private assertOrchestrationEnabled(epoch = this.orchestrationEpoch): void {
     if (!this.orchestrationEnabled || epoch !== this.orchestrationEpoch)
       throw new DelegationError(
-        'Agent orchestration is disabled or this operation was canceled in Settings > MCP.',
+        'Agent orchestration is disabled or this operation was canceled in Settings > Agents.',
         403,
       );
   }
@@ -287,7 +330,12 @@ export class DelegationService {
 
   capabilities(taskId: string): SessionCapabilities | undefined {
     const task = this.tasks.get(taskId);
-    if (!task || task.closed || task.closing || task.gitIsolation !== 'worktree') return undefined;
+    if (!task || task.closed || task.closing) return undefined;
+    if (isCheckoutCreator(task))
+      return this.orchestrationEnabled
+        ? { profile: 'page', canCreate: true, peers: false }
+        : undefined;
+    if (task.gitIsolation !== 'worktree') return undefined;
     if (!this.orchestrationEnabled && !task.parentTaskId) return undefined;
     return {
       profile: task.parentTaskId
@@ -322,24 +370,26 @@ export class DelegationService {
     const [branchName, headSha, status] = await Promise.all([
       git(task.worktreePath, 'symbolic-ref', '--short', 'HEAD'),
       git(task.worktreePath, 'rev-parse', 'HEAD'),
-      git(task.worktreePath, 'status', '--porcelain'),
+      git(task.worktreePath, '--no-optional-locks', 'status', '--porcelain'),
     ]);
     this.requireTask(taskId);
     return { branchName, headSha, changedFileCount: status ? status.split('\n').length : 0 };
   }
 
-  private creationGuard(taskId: string, caller?: SessionCaller): void {
+  private creationGuard(taskId: string, caller?: SessionCaller, independent = false): void {
     this.assertOrchestrationEnabled();
     const task = this.requireTask(taskId);
-    if (task.parentTaskId || task.gitIsolation !== 'worktree')
+    // Page agents and direct tasks share the project checkout, so they get no children to supervise or land.
+    const pageCreator = independent && isCheckoutCreator(task);
+    if (task.parentTaskId || (task.gitIsolation !== 'worktree' && !pageCreator))
       throw new DelegationError('Only top-level worktree tasks may delegate', 403);
     if (task.delegationPaused)
-      throw new DelegationError('Child creation is paused. Resume it in Parallel Code.', 403);
+      throw new DelegationError('Task creation is paused. Resume it in Parallel Code.', 403);
     if (caller) {
       this.requireCaller(caller);
       if (caller.taskId !== taskId || !caller.capabilities.canCreate)
         throw new DelegationError(
-          'This session lacks task-creation tools. Enable orchestration in Settings > MCP, then restart and resume the session.',
+          'This session lacks task-creation tools. Enable orchestration in Settings > Agents, then restart and resume the session.',
           403,
         );
     }
@@ -456,6 +506,66 @@ export class DelegationService {
     }
   }
 
+  /** A top-level task the creator neither supervises nor integrates; the user reviews it. */
+  private createIndependent(
+    creatorTaskId: string,
+    params: Record<string, unknown>,
+    caller: SessionCaller,
+  ): Promise<CreatedIndependentTask> {
+    this.creationGuard(creatorTaskId, caller, true);
+    if (params.baseOnParent === true)
+      throw new DelegationError(
+        "Independent tasks start from the main branch; use relation 'child' with baseOnParent to build on your commits",
+      );
+    const requestId = id(params.requestId, 'requestId');
+    const request = {
+      creatorTaskId,
+      name: text(params.name, 'name'),
+      prompt: text(params.prompt, 'prompt', MAX_PROMPT_BYTES),
+    };
+    if (Buffer.byteLength(request.prompt) > MAX_PROMPT_BYTES)
+      throw new DelegationError('Prompt too large');
+    const key = `${creatorTaskId}:${requestId}`;
+    const payload = JSON.stringify(request);
+    const previous = this.independentRequests.get(key);
+    if (previous) {
+      if (previous.payload !== payload)
+        throw new DelegationError('Request ID reused with a different assignment');
+      return previous.promise;
+    }
+    const prefix = `${creatorTaskId}:`;
+    const open = [...this.openIndependent.keys()].filter((k) => k.startsWith(prefix));
+    if (open.length >= this.maxIndependentPerCreator)
+      throw new DelegationError(
+        `Independent task limit reached: ${open.length} independent tasks created by this task are still open, and each task may keep ${this.maxIndependentPerCreator} open. Close or merge one of them in the sidebar, or raise the limit in Settings > Agents`,
+      );
+    // Building the worktree can take a while; a pause or disable meanwhile must still
+    // stop the agent from starting, as the child path's launch guard does.
+    const epoch = this.orchestrationEpoch;
+    const launchId = randomUUID();
+    this.independentLaunches.set(launchId, () => {
+      this.assertOrchestrationEnabled(epoch);
+      this.creationGuard(creatorTaskId, caller, true);
+    });
+    this.openIndependent.set(key, undefined);
+    const promise = this.options
+      .createIndependent({ ...request, launchId })
+      .then(({ taskId }) => {
+        // A task closed before its launch resolved never comes back to free the slot.
+        if (this.openIndependent.has(key) && !this.tasks.get(taskId)?.closed)
+          this.openIndependent.set(key, taskId);
+        else this.openIndependent.delete(key);
+        return { taskId, relation: 'independent' as const };
+      })
+      .catch((error: unknown) => {
+        this.openIndependent.delete(key);
+        throw error;
+      })
+      .finally(() => this.independentLaunches.delete(launchId));
+    this.independentRequests.set(key, { payload, promise });
+    return promise;
+  }
+
   private requireCaller(caller: SessionCaller): Authority {
     if (
       !this.options
@@ -509,9 +619,21 @@ export class DelegationService {
       }
       throw new DelegationError('Tool unavailable to this child session', 403);
     }
+    if (caller.capabilities.profile === 'page') {
+      if (name === 'create_task' && params.relation === 'independent')
+        return this.createIndependent(task.taskId, params, caller);
+      throw new DelegationError(
+        "A session working in the project checkout can only create tasks with relation 'independent'",
+        403,
+      );
+    }
     if (caller.capabilities.profile !== 'ordinary')
       throw new DelegationError('Invalid session profile', 403);
     if (name === 'create_task') {
+      if (params.relation === 'independent')
+        return this.createIndependent(task.taskId, params, caller);
+      if (params.relation !== 'child')
+        throw new DelegationError("relation must be 'child' or 'independent'");
       this.creationGuard(task.taskId, caller);
       const requestId = id(params.requestId, 'requestId');
       const previous = this.requests.get(`${task.taskId}:${requestId}`);
@@ -592,7 +714,10 @@ export class DelegationService {
       target.closed ||
       sender.closing ||
       target.closing ||
-      sender.projectId !== target.projectId
+      sender.projectId !== target.projectId ||
+      // Page agents are registered only to create independent tasks, not to talk to peers.
+      isPageAgent(sender) ||
+      isPageAgent(target)
     )
       return false;
     if (sender.parentTaskId) return sender.parentTaskId === targetId;
@@ -1076,6 +1201,12 @@ export class DelegationService {
         return this.closeParent(id(request.taskId), request.deleteBranch ?? true);
       case 'detachChild':
         return this.detachChild(id(request.taskId));
+      case 'assertIndependentLaunch': {
+        const guard = this.independentLaunches.get(id(request.launchId, 'launchId'));
+        if (!guard) throw new DelegationError('Task creation was canceled', 403);
+        guard();
+        return { ok: true };
+      }
       default:
         throw new DelegationError('Unknown delegation action');
     }
@@ -1217,11 +1348,16 @@ export class DelegationService {
   /**
    * A closed task can no longer create children, so its replay entries (which hold
    * full prompts) and launch attempts are unreachable. The closed authority record
-   * itself stays: it is what stops a late register from reviving the task.
+   * itself stays: it is what stops a late register from reviving the task. A closed
+   * independent task also frees its creator's slot.
    */
   private forgetLaunches(taskId: string): void {
     const prefix = `${taskId}:`;
+    for (const [key, created] of this.openIndependent)
+      if (created === taskId || key.startsWith(prefix)) this.openIndependent.delete(key);
     for (const key of this.requests.keys()) if (key.startsWith(prefix)) this.requests.delete(key);
+    for (const key of this.independentRequests.keys())
+      if (key.startsWith(prefix)) this.independentRequests.delete(key);
     for (const key of this.attempts.keys()) if (key.startsWith(prefix)) this.attempts.delete(key);
   }
 

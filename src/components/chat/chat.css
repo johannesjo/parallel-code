@@ -64,7 +64,7 @@
 .chat-markdown.plan-markdown :not(pre) > code {
   background: var(--chat-surface-strong);
   padding: 0.15em 0.35em;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   font-size: 0.875em;
   font-weight: 400;
 }
@@ -129,7 +129,7 @@
   gap: 6px;
   padding-top: 4px;
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 .chat-answer .chat-message-actions {
   justify-content: flex-start;
@@ -173,7 +173,7 @@
   border: 1px solid var(--chat-border);
   background: var(--bg-input);
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 .chat-code:is(:hover, :focus-within) > .chat-copy,
 .chat-ui .chat-code > .chat-copy[data-copied='true'] {
@@ -224,7 +224,7 @@
   content: '›';
   flex: none;
   color: var(--fg-muted);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 .chat-tool[open] summary::before {
   transform: rotate(90deg);
@@ -931,15 +931,26 @@
 .chat-progress {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  /* Reserve the row between turns so the transcript and composer stay put. */
+  min-height: 30px;
+  box-sizing: border-box;
   padding: 3px 4px 7px;
-  color: var(--fg-subtle);
-  font-size: 11px;
+  color: var(--fg);
+  font-size: 13px;
+}
+.chat-progress-indicator {
+  display: flex;
+  flex: none;
+  width: 14px;
 }
 .chat-progress .inline-spinner {
-  width: 10px;
-  height: 10px;
-  margin-right: -4px;
+  width: 14px;
+  height: 14px;
+}
+.chat-progress-detail,
+.chat-progress time {
+  color: var(--fg-muted);
 }
 .chat-progress [role='status'] {
   min-width: 0;
@@ -1006,16 +1017,18 @@
 .chat-context-meter-ring {
   width: 13px;
   height: 13px;
-  /* The used arc starts at twelve o'clock. */
+  /* The used wedge starts at twelve o'clock. */
   rotate: -90deg;
   fill: none;
-  stroke-width: 2.5;
 }
 .chat-context-meter-ring circle:first-child {
   stroke: var(--chat-border);
+  stroke-width: 1.5;
 }
+/* Stroke as wide as the circle's diameter fills a pie wedge. */
 .chat-context-meter-ring circle:last-child {
   stroke: currentColor;
+  stroke-width: 5.5;
 }
 .chat-context-meter[data-level='high'] {
   color: var(--warning);

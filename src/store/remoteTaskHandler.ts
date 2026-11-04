@@ -1,20 +1,24 @@
-// Handles task-creation requests from paired phones. The remote HTTP server
-// (main process) forwards them here so we can run the renderer's normal
+// Handles task-creation requests from paired phones and agents. The remote HTTP server
+// and the MCP runtime (main process) forward them here so we can run the renderer's normal
 // createTask orchestration — the same path the desktop "New Task" dialog uses —
 // and reply with the resulting task id. See electron/ipc/register.ts for the
 // main-side bridge.
 
 import { publishAgentTour } from './agent-tour';
 import { publishTaskConfidence } from './task-brief';
+import { publishAgentPrDraft } from './pr-draft';
 import { publishGitHubList } from './github-lists';
-import { getTaskMindMap, openCanvasViewFromAgent, updateTaskMindMapFromAgent } from './canvas';
-import { getEvidenceForAgent, submitEvidence } from './evidence';
+import { linkTaskToIssueReference } from './github-issue-link';
+import { getTaskMindMap, updateTaskMindMapFromAgent } from './canvas';
+import { openCanvasViewFromAgent } from './canvas-agent';
 import { getTaskReasoning, updateTaskReasoningFromAgent } from './reasoning';
 import { store } from './core';
+import { delegationRequest } from './delegation';
 import { codeProjects, getProject, getProjectPath } from './projects';
 import {
   closeTask,
   createTask,
+  type CreateTaskOptions,
   getCoordinatorCloseWarning,
   mergeTask,
   sendPrompt,
@@ -24,7 +28,6 @@ import { getVerifyCommand } from './verification';
 import { getPrChecks } from './pr-checks-state';
 import { loadFailedChecksPrompt } from './github';
 import { advanceKanbanCard } from './kanban';
-import { getEvidenceConfidence } from './evidence-state';
 import { buildMergeReadiness, type MergeReadinessCheck } from '../components/merge-readiness';
 import { taskPrUrl } from '../components/pr-actions';
 import { parseGitHubUrl } from '../lib/github-url';
@@ -32,7 +35,6 @@ import { invoke } from '../lib/ipc';
 import { errMessage } from '../lib/log';
 import { getTaskDiffBaseBranch, loadTaskDiff } from '../lib/load-task-diff';
 import { IPC } from '../../electron/ipc/channels';
-import { parseEvidenceSubmission } from '../../electron/shared/evidence';
 import { resolveSkipPermissionsArgs } from '../../electron/shared/skip-permissions';
 import {
   ASK_CODE_CLAUDE_MODELS,
@@ -40,7 +42,7 @@ import {
 } from '../../electron/shared/ask-code-models';
 import { reviewerWithModel } from '../lib/agent-handoff';
 import type { AgentDef, GitIgnoredEntry, MergeStatus, WorktreeStatus } from '../ipc/types';
-import type { Task } from './types';
+import type { Project, Task } from './types';
 import type {
   RemoteAgentChoice,
   RemoteCloseResult,
@@ -57,6 +59,13 @@ interface CreateTaskRequest extends RendererRequest {
   prompt: string;
   agentId?: string;
   model?: string;
+}
+
+interface CreateIndependentTaskRequest extends RendererRequest {
+  creatorTaskId: string;
+  name: string;
+  prompt: string;
+  launchId: string;
 }
 
 interface GetNotesRequest extends RendererRequest {
@@ -93,6 +102,9 @@ function handleGetProjects(req: RendererRequest): void {
     codeProjects().map((p) => ({
       id: p.id,
       name: p.name,
+      color: p.color,
+      icon: p.icon,
+      lastUsed: p.id === store.lastProjectId,
       agentName: defaultAgent()?.name ?? '',
     })),
   );
@@ -170,6 +182,25 @@ export function remoteSkipPermissions(
   return defaultSkipPermissions && resolveSkipPermissionsArgs(agentDef).length > 0;
 }
 
+/** The Git settings the New Task dialog defaults to, for tasks created without it. */
+async function newTaskGitDefaults(
+  project: Project,
+): Promise<Pick<CreateTaskOptions, 'gitIsolation' | 'baseBranch' | 'symlinkDirs'>> {
+  // Non-git projects can't use worktree isolation; fall back to working
+  // directly in the project folder.
+  if (project.isGitRepo === false) return { gitIsolation: 'none', baseBranch: '', symlinkDirs: [] };
+  const baseBranch =
+    project.defaultBaseBranch ??
+    (await invoke<string>(IPC.GetMainBranch, { projectRoot: project.path }));
+  // Match the desktop New Task default without opting remote users into
+  // newly discovered entries that have no confirmation UI.
+  const ignoredEntries = await invoke<GitIgnoredEntry[]>(IPC.GetGitignoredDirs, {
+    projectRoot: project.path,
+  });
+  const symlinkDirs = ignoredEntries.filter((entry) => entry.isDefault).map((entry) => entry.name);
+  return { gitIsolation: 'worktree', baseBranch, symlinkDirs };
+}
+
 async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
   try {
     const project = store.projects.find((p) => p.id === req.projectId);
@@ -178,30 +209,11 @@ async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
     // Without a choice from the phone, the agent the New Task dialog preselects.
     const agentDef = await resolveMobileAgent(req);
 
-    // Non-git projects can't use worktree isolation; fall back to working
-    // directly in the project folder.
-    const isGit = project.isGitRepo !== false;
-    let baseBranch = '';
-    let symlinkDirs: string[] = [];
-    if (isGit) {
-      baseBranch =
-        project.defaultBaseBranch ??
-        (await invoke<string>(IPC.GetMainBranch, { projectRoot: project.path }));
-      // Match the desktop New Task default without opting remote users into
-      // newly discovered entries that have no confirmation UI.
-      const ignoredEntries = await invoke<GitIgnoredEntry[]>(IPC.GetGitignoredDirs, {
-        projectRoot: project.path,
-      });
-      symlinkDirs = ignoredEntries.filter((entry) => entry.isDefault).map((entry) => entry.name);
-    }
-
     const taskId = await createTask({
       name: req.name,
       agentDef,
       projectId: req.projectId,
-      gitIsolation: isGit ? 'worktree' : 'none',
-      baseBranch,
-      symlinkDirs,
+      ...(await newTaskGitDefaults(project)),
       initialPrompt: req.prompt,
       // Without this the flag was simply never passed, so every task created
       // from a phone launched bare regardless of the setting.
@@ -209,6 +221,43 @@ async function handleCreateTask(req: CreateTaskRequest): Promise<void> {
       // Someone at the desktop may be mid-task; only they decide what gets focus.
       activate: false,
     });
+    void linkTaskToIssueReference(taskId, project.path, req.prompt);
+    reply(req.reqId, true, { taskId });
+  } catch (err) {
+    reply(req.reqId, false, undefined, errMessage(err));
+  }
+}
+
+/** A top-level task an agent asked for: the creator's project, agent and sandbox, no parent. */
+async function handleCreateIndependentTask(req: CreateIndependentTaskRequest): Promise<void> {
+  try {
+    if (!isKnownTask(store.tasks, req.creatorTaskId)) throw new Error('Creating task not found');
+    const creator = store.tasks[req.creatorTaskId];
+    const project = store.projects.find((p) => p.id === creator.projectId);
+    if (!project) throw new Error('Project not found');
+    const agentDef = creator.agentIds[0] ? store.agents[creator.agentIds[0]]?.def : undefined;
+    if (!agentDef) throw new Error('Creating agent not found');
+
+    const taskId = await createTask({
+      name: req.name,
+      agentDef,
+      projectId: project.id,
+      ...(await newTaskGitDefaults(project)),
+      initialPrompt: req.prompt,
+      // Same rule as children: an agent may hand on permission bypass only when the
+      // user allowed it, and may not start work outside its own container.
+      skipPermissions: creator.propagateSkipPermissions === true,
+      dockerMode: creator.dockerMode,
+      dockerSource: creator.dockerSource,
+      dockerImage: creator.dockerImage,
+      // The user did not ask for this task directly, so it must not take focus.
+      activate: false,
+      // Building the worktree takes a while; the user may pause creation meanwhile.
+      launchGuard: async () => {
+        await delegationRequest({ action: 'assertIndependentLaunch', launchId: req.launchId });
+      },
+    });
+    void linkTaskToIssueReference(taskId, project.path, req.prompt);
     reply(req.reqId, true, { taskId });
   } catch (err) {
     reply(req.reqId, false, undefined, errMessage(err));
@@ -381,7 +430,6 @@ async function handleGetMergeReadiness(req: GetTaskDiffRequest): Promise<void> {
       // Coverage comparison needs a base report the phone has no way to read;
       // the check reports "no task coverage report" instead of guessing.
       coverage: null,
-      evidence: getEvidenceConfidence(task, worktreeStatus),
     });
     const overall = summarizeReadiness(readiness.checks);
     reply(req.reqId, true, {
@@ -499,6 +547,13 @@ export function startRemoteTaskHandlers(): () => void {
       if (data && typeof data === 'object') void handleCreateTask(data as CreateTaskRequest);
     },
   );
+  const offCreateIndependent = window.electron.ipcRenderer.on(
+    IPC.MCP_CreateIndependentTaskRequest,
+    (data: unknown) => {
+      if (data && typeof data === 'object')
+        void handleCreateIndependentTask(data as CreateIndependentTaskRequest);
+    },
+  );
   const offGetNotes = window.electron.ipcRenderer.on(
     IPC.Remote_GetNotesRequest,
     (data: unknown) => {
@@ -565,12 +620,10 @@ export function startRemoteTaskHandlers(): () => void {
     (data: unknown) => {
       if (!data || typeof data !== 'object') return;
       const req = data as GetNotesRequest & { view: unknown };
-      try {
-        openCanvasViewFromAgent(req.taskId, req);
-        reply(req.reqId, true, { ok: true });
-      } catch (error) {
-        reply(req.reqId, false, undefined, errMessage(error));
-      }
+      void openCanvasViewFromAgent(req.taskId, req).then(
+        () => reply(req.reqId, true, { ok: true }),
+        (error: unknown) => reply(req.reqId, false, undefined, errMessage(error)),
+      );
     },
   );
   const offPublishTour = window.electron.ipcRenderer.on(
@@ -599,6 +652,19 @@ export function startRemoteTaskHandlers(): () => void {
       }
     },
   );
+  const offPublishPrDraft = window.electron.ipcRenderer.on(
+    IPC.MCP_PublishPrDraftRequest,
+    (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const req = data as GetNotesRequest & { draft: unknown };
+      try {
+        publishAgentPrDraft(req.taskId, req.draft);
+        reply(req.reqId, true, { ok: true });
+      } catch (error) {
+        reply(req.reqId, false, undefined, errMessage(error));
+      }
+    },
+  );
   const offPublishGitHubList = window.electron.ipcRenderer.on(
     IPC.MCP_PublishGitHubListRequest,
     (data: unknown) => {
@@ -611,34 +677,7 @@ export function startRemoteTaskHandlers(): () => void {
       );
     },
   );
-  const offSubmitEvidence = window.electron.ipcRenderer.on(
-    IPC.MCP_SubmitEvidenceRequest,
-    (data: unknown) => {
-      if (!data || typeof data !== 'object') return;
-      const req = data as GetNotesRequest & { payload: unknown };
-      try {
-        // Validated again here: the renderer is the boundary that stores it.
-        reply(req.reqId, true, submitEvidence(req.taskId, parseEvidenceSubmission(req.payload)));
-      } catch (error) {
-        reply(req.reqId, false, undefined, errMessage(error));
-      }
-    },
-  );
-  const offGetEvidence = window.electron.ipcRenderer.on(
-    IPC.MCP_GetEvidenceRequest,
-    (data: unknown) => {
-      if (!data || typeof data !== 'object') return;
-      const req = data as GetNotesRequest;
-      try {
-        reply(req.reqId, true, getEvidenceForAgent(req.taskId));
-      } catch (error) {
-        reply(req.reqId, false, undefined, errMessage(error));
-      }
-    },
-  );
   return () => {
-    offSubmitEvidence();
-    offGetEvidence();
     offReadReasoning();
     offUpdateReasoning();
     offReadMap();
@@ -646,9 +685,11 @@ export function startRemoteTaskHandlers(): () => void {
     offOpenCanvas();
     offPublishTour();
     offPublishConfidence();
+    offPublishPrDraft();
     offPublishGitHubList();
     offProjects();
     offCreate();
+    offCreateIndependent();
     offAgents();
     offGetNotes();
     offSetNotes();

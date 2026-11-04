@@ -26,6 +26,8 @@ export interface CoordinatedTask {
   initialPrompt?: string;
   automationWriteInFlight?: boolean;
   mcpConfigPath?: string; // path to per-task tmp config, deleted on cleanup
+  /** agy reads `.agents/mcp_config.json` in the worktree, so token rewrites must reach it too. */
+  antigravityWorkspaceMcp?: boolean;
   doneToken?: string; // per-task token; only the owning sub-task may call /done
   preambleFileExistedBefore?: boolean; // true if the preamble file existed before injection (even if empty)
   signalDoneAt?: Date; // set when sub-task explicitly calls signal_done

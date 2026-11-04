@@ -165,15 +165,6 @@
 .dialog-overlay .agent-handoff .handoff-actions {
   padding-top: 4px;
 }
-.terminal-second-opinion {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-}
-.terminal-second-opinion button,
 .terminal-selection-trigger {
   display: inline-flex;
   align-items: center;
@@ -186,7 +177,6 @@
   cursor: pointer;
   font-size: 11px;
 }
-.terminal-second-opinion button:hover,
 .terminal-selection-trigger:hover {
   color: var(--fg);
 }
@@ -201,20 +191,41 @@
 .terminal-selection-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1500;
+  z-index: var(--z-floating);
 }
 .terminal-selection-menu {
   position: fixed;
-  z-index: 1501;
+  z-index: calc(var(--z-floating) + 1);
   padding: 4px;
   min-width: 180px;
   max-width: calc(100vw - 8px);
   max-height: calc(100vh - 8px);
   overflow: auto;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  /* Terminals share the elevated tone, so lift the menu off them with a lighter
+     surface, a firmer edge and a deeper shadow — neutral, not accent. */
+  background: color-mix(in srgb, var(--bg-elevated) 90%, var(--fg));
+  border: 1px solid color-mix(in srgb, var(--border) 70%, var(--fg));
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-soft);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.3),
+    0 12px 32px rgba(0, 0, 0, 0.45);
+}
+/* On white the mix would only grey the menu; the edge and a softer shadow lift it. */
+html[data-look='obsidian-light'] .terminal-selection-menu,
+html[data-look='islands-light'] .terminal-selection-menu {
+  background: var(--bg-elevated);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 10px 28px rgba(0, 0, 0, 0.18);
+}
+html[data-look='obsidian-light'] .terminal-selection-menu button:hover,
+html[data-look='obsidian-light'] .terminal-selection-menu button:focus-visible,
+html[data-look='islands-light'] .terminal-selection-menu button:hover,
+html[data-look='islands-light'] .terminal-selection-menu button:focus-visible {
+  background: var(--bg-hover);
+}
+.terminal-selection-menu:focus {
+  outline: none;
 }
 .terminal-selection-menu button {
   display: flex;
@@ -230,7 +241,7 @@
 }
 .terminal-selection-menu button:hover,
 .terminal-selection-menu button:focus-visible {
-  background: var(--bg-hover);
+  background: color-mix(in srgb, var(--bg-elevated) 78%, var(--fg));
 }
 .terminal-selection-menu [role='alert'] {
   color: var(--error);

@@ -60,7 +60,25 @@ private const val SLOW_REQUEST_SECONDS = 130L
 /** [json] is the error reply's body, for routes that explain a refusal (e.g. close warnings). */
 class ApiException(message: String, val status: Int = 0, val json: JSONObject? = null) : IOException(message)
 
-data class MobileProject(val id: String, val name: String, val agentName: String?)
+/** A project the New task screen can target; [lastUsed] marks the desktop's last-used project. */
+data class MobileProject(
+    val id: String,
+    val name: String,
+    val agentName: String?,
+    val color: String? = null,
+    val icon: String? = null,
+    val lastUsed: Boolean = false,
+)
+
+/**
+ * Which project New task starts on: the [current] choice if it is still listed, else the one
+ * this phone last created a task in, else the desktop's last-used project, else the first.
+ */
+fun initialProjectId(projects: List<MobileProject>, current: String, remembered: String?): String {
+    val ids = projects.map { it.id }
+    return listOf(current, remembered).firstOrNull { it in ids }
+        ?: (projects.find { it.lastUsed } ?: projects.firstOrNull())?.id.orEmpty()
+}
 
 /** What another saved computer reported in the last poll, under the name the phone shows for it. */
 data class ComputerSnapshot(val label: String, val agents: List<RemoteAgent>, val usage: List<ProviderUsage>)
@@ -91,9 +109,14 @@ class RemoteClient(
     private val wifiSsid: StateFlow<String?> = MutableStateFlow(null),
     private val waitForVpn: () -> Boolean = { false },
     private val homeWifiSsid: () -> String? = { null },
-) {
+) : PhoneClient {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val http = OkHttpClient.Builder()
+        // Fails closed: build every request with [transportRequest] so it carries its transport generation.
+        .addInterceptor { chain ->
+            if (suspended || chain.request().tag(Int::class.javaObjectType) != transportGeneration) throw IOException("Real connections are paused during the offline demo.")
+            chain.proceed(chain.request())
+        }
         .connectTimeout(10, TimeUnit.SECONDS)
         .pingInterval(30, TimeUnit.SECONDS)
         .build()
@@ -108,18 +131,18 @@ class RemoteClient(
     private val slowHttp = http.newBuilder().readTimeout(SLOW_REQUEST_SECONDS, TimeUnit.SECONDS).build()
 
     private val _state = MutableStateFlow(ConnectionState(link = credentials.link))
-    val state: StateFlow<ConnectionState> = _state.asStateFlow()
+    override val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
     init {
         scope.launch { combine(vpnActive, wifiSsid) { _, _ -> }.collect { onVpnPolicyChanged() } }
     }
 
     private val _agents = MutableStateFlow<List<RemoteAgent>>(emptyList())
-    val agents: StateFlow<List<RemoteAgent>> = _agents.asStateFlow()
+    override val agents: StateFlow<List<RemoteAgent>> = _agents.asStateFlow()
     private val _computers = MutableStateFlow(credentials.computers)
 
     /** Every desktop this phone has linked to; [ConnectionState.link] is the one in use. */
-    val computers: StateFlow<List<SavedComputer>> = _computers.asStateFlow()
+    override val computers: StateFlow<List<SavedComputer>> = _computers.asStateFlow()
     private val _otherComputers = MutableStateFlow<Map<String, ComputerSnapshot>>(emptyMap())
 
     /**
@@ -129,13 +152,15 @@ class RemoteClient(
     val otherComputers: StateFlow<Map<String, ComputerSnapshot>> = _otherComputers.asStateFlow()
     private var pollJob: Job? = null
     private val _latencyMs = MutableStateFlow<Long?>(null)
-    val latencyMs: StateFlow<Long?> = _latencyMs.asStateFlow()
+    override val latencyMs: StateFlow<Long?> = _latencyMs.asStateFlow()
 
     private var socket: WebSocket? = null
     // OkHttp queues sends before the socket opens, which would put them ahead of the auth message.
     private var socketOpen = false
     private var authKind = TokenKind.MOBILE
     private var started = false
+    @Volatile private var suspended = false
+    @Volatile private var transportGeneration = 0
     private var reconnectJob: Job? = null
     private var handshakeJob: Job? = null
     private val terminalBuffers = mutableMapOf<String, TerminalBuffer>()
@@ -160,20 +185,44 @@ class RemoteClient(
      * Keep the connection open for [holder] (the visible app, the background notification service);
      * it closes once no holder remains.
      */
-    fun start(holder: String) {
+    override fun start(holder: String) {
         holders.add(holder)
+        if (suspended) return
         started = true
         connect()
         if (pollJob == null) pollOtherComputers()
     }
 
-    fun stop(holder: String) {
+    override fun stop(holder: String) {
         holders.remove(holder)
         if (holders.isNotEmpty()) return
         started = false
         closeSocket()
         pollJob?.cancel()
         pollJob = null
+    }
+
+    /** A request the transport interceptor lets through while [generation] is still current. */
+    private fun transportRequest(generation: Int) = Request.Builder().tag(Int::class.javaObjectType, generation)
+
+    /** Pause every real transport while an offline review session is visible, preserving holders. */
+    internal fun setSuspended(value: Boolean) {
+        suspended = value
+        if (value) {
+            transportGeneration++
+            started = false
+            // Cancel rather than wait for a close handshake: a queued auth frame must not reach the desktop.
+            val open = socket
+            closeSocket()
+            open?.cancel()
+            pollJob?.cancel()
+            pollJob = null
+            http.dispatcher.cancelAll()
+        } else if (holders.isNotEmpty()) {
+            started = true
+            connect()
+            pollOtherComputers()
+        }
     }
 
     /**
@@ -216,7 +265,8 @@ class RemoteClient(
 
     /** The status and body of a GET to [path] on [computer], or null when it can't be reached. */
     private suspend fun getFrom(computer: SavedComputer, path: String): Pair<Int, String>? = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
+        if (suspended) return@withContext null
+        val request = transportRequest(transportGeneration)
             .url(computer.baseUrl + path)
             .header("Authorization", "Bearer ${computer.pairedToken ?: computer.token}")
             .build()
@@ -227,20 +277,20 @@ class RemoteClient(
         }
     }
 
-    fun link(link: ConnectionLink) {
+    override fun link(link: ConnectionLink) {
         credentials.saveLink(link)
         useActiveComputer()
     }
 
     /** Switch to another saved computer. */
-    fun switchTo(baseUrl: String) {
+    override fun switchTo(baseUrl: String) {
         if (baseUrl == credentials.link?.baseUrl) return
         credentials.select(baseUrl)
         useActiveComputer()
     }
 
     /** Name a saved computer; a blank name clears the one it had. */
-    fun rename(baseUrl: String, alias: String?) {
+    override fun rename(baseUrl: String, alias: String?) {
         credentials.rename(baseUrl, alias)
         _computers.value = credentials.computers
         val label = credentials.computers.firstOrNull { it.baseUrl == baseUrl }?.label
@@ -248,7 +298,7 @@ class RemoteClient(
     }
 
     /** Forget a saved computer; forgetting the one in use leaves the phone unlinked. */
-    fun forget(baseUrl: String? = credentials.link?.baseUrl) {
+    override fun forget(baseUrl: String?) {
         if (baseUrl == null) return
         val inUse = baseUrl == credentials.link?.baseUrl
         credentials.remove(baseUrl)
@@ -282,7 +332,7 @@ class RemoteClient(
         viewSizeSent = false
     }
 
-    fun reconnect() {
+    override fun reconnect() {
         // A manual reconnect is the user's way to pick up a desktop that was updated meanwhile.
         usageRoute.clear()
         closeSocket()
@@ -290,7 +340,7 @@ class RemoteClient(
     }
 
     /** Pauses or resumes connecting when the VPN, the Wi-Fi network, or the wait-for-VPN settings change. */
-    fun onVpnPolicyChanged() {
+    override fun onVpnPolicyChanged() {
         if (!started) return
         if (mustWaitForVpn()) {
             closeSocket()
@@ -303,7 +353,7 @@ class RemoteClient(
     private fun mustWaitForVpn() = waitsForVpn(waitForVpn(), vpnActive.value, wifiSsid.value, homeWifiSsid())
 
     /** Trade the desktop's six-digit PIN for a paired token, then reconnect with it. */
-    suspend fun pair(pin: String, remember: Boolean) {
+    override suspend fun pair(pin: String, remember: Boolean) {
         val reply = api(
             "POST",
             "/api/pair/verify",
@@ -318,11 +368,18 @@ class RemoteClient(
     }
 
     /** Projects a paired phone may start tasks in. */
-    suspend fun fetchProjects(): List<MobileProject> {
+    override suspend fun fetchProjects(): List<MobileProject> {
         val list = JSONArray(apiRaw("GET", "/api/mobile/projects", null, pairedTokenOrThrow()))
         return List(list.length()) { i ->
             val p = list.getJSONObject(i)
-            MobileProject(p.getString("id"), p.getString("name"), p.optString("agentName").ifEmpty { null })
+            MobileProject(
+                p.getString("id"),
+                p.getString("name"),
+                p.optString("agentName").ifEmpty { null },
+                color = if (p.isNull("color")) null else p.optString("color").ifBlank { null },
+                icon = if (p.isNull("icon")) null else p.optString("icon").ifBlank { null },
+                lastUsed = p.optBoolean("lastUsed"),
+            )
         }
     }
 
@@ -331,7 +388,7 @@ class RemoteClient(
      * the route: it refuses unknown paths for a paired token with 403. Tasks then use its
      * default agent.
      */
-    suspend fun fetchAgentChoices(): List<MobileAgentChoice> {
+    override suspend fun fetchAgentChoices(): List<MobileAgentChoice> {
         val raw = try {
             apiRaw("GET", "/api/mobile/agents", null, pairedTokenOrThrow())
         } catch (e: ApiException) {
@@ -348,12 +405,12 @@ class RemoteClient(
      * Start a top-level task on the desktop; returns its task id. A null [agentId]
      * or [model] leaves that choice to the desktop's defaults.
      */
-    suspend fun createTask(
+    override suspend fun createTask(
         projectId: String,
         name: String,
         prompt: String,
-        agentId: String? = null,
-        model: String? = null,
+        agentId: String?,
+        model: String?,
     ): String {
         val body = JSONObject().put("projectId", projectId).put("name", name).put("prompt", prompt)
         agentId?.let { body.put("agentId", it) }
@@ -362,16 +419,16 @@ class RemoteClient(
     }
 
     /** The task's notes panel; readable with the view-only token. */
-    suspend fun fetchNotes(taskId: String): String =
+    override suspend fun fetchNotes(taskId: String): String =
         api("GET", notesPath(taskId), null, credentials.pairedToken ?: credentials.link?.token)
             .optString("notes")
 
-    suspend fun saveNotes(taskId: String, notes: String) {
+    override suspend fun saveNotes(taskId: String, notes: String) {
         api("PUT", notesPath(taskId), JSONObject().put("notes", notes), pairedTokenOrThrow())
     }
 
     /** The task's changes against its base branch; readable with the view-only token. */
-    suspend fun fetchDiff(taskId: String): TaskDiff {
+    override suspend fun fetchDiff(taskId: String): TaskDiff {
         val json = api(
             "GET",
             "/api/mobile/tasks/${encodePath(taskId)}/diff",
@@ -386,7 +443,7 @@ class RemoteClient(
      * The desktop status bar's subscription usage; readable with the view-only token. Empty, without
      * asking again, from a desktop that has no usage route yet (it answered 404).
      */
-    suspend fun fetchUsage(): List<ProviderUsage> {
+    override suspend fun fetchUsage(): List<ProviderUsage> {
         val baseUrl = credentials.link?.baseUrl
         if (baseUrl != null && usageRoute.isMissing(baseUrl)) return emptyList<ProviderUsage>().also { _usage.value = it }
         val usage = try {
@@ -406,7 +463,7 @@ class RemoteClient(
      * `buildMergeReadiness` the desktop dialog uses. Read-only, so the view-only
      * token may read it.
      */
-    suspend fun fetchMergeReadiness(taskId: String): MergeReadiness =
+    override suspend fun fetchMergeReadiness(taskId: String): MergeReadiness =
         parseMergeReadiness(
             api(
                 "GET",
@@ -418,7 +475,7 @@ class RemoteClient(
         )
 
     /** Merge a task into its base branch. Runs real git, so it needs the paired token. */
-    suspend fun mergeTask(taskId: String, squash: Boolean, cleanup: Boolean) {
+    override suspend fun mergeTask(taskId: String, squash: Boolean, cleanup: Boolean) {
         api(
             "POST",
             "/api/mobile/tasks/${encodePath(taskId)}/merge",
@@ -432,13 +489,13 @@ class RemoteClient(
      * The desktop's Fix CI prompt: the failed PR checks and their log tails. Null when nothing
      * failed. Paired only, since the phone's next step is sending it to the agent.
      */
-    suspend fun fetchFixCiPrompt(taskId: String): String? =
+    override suspend fun fetchFixCiPrompt(taskId: String): String? =
         parseFixCiPrompt(
             api("GET", fixCiPath(taskId), null, pairedTokenOrThrow(), slow = true),
         )
 
     /** Send the reviewed Fix CI prompt to the task's agent, exactly as the user left it. */
-    suspend fun sendFixCiPrompt(taskId: String, prompt: String) {
+    override suspend fun sendFixCiPrompt(taskId: String, prompt: String) {
         api("POST", fixCiPath(taskId), JSONObject().put("prompt", prompt), pairedTokenOrThrow(), slow = true)
     }
 
@@ -455,7 +512,7 @@ class RemoteClient(
      * Close a task on the desktop: stops its agents and removes its worktree. Unless [force], the
      * desktop refuses when work would be lost and this returns its warnings; empty means closed.
      */
-    suspend fun closeTask(taskId: String, force: Boolean): List<String> = try {
+    override suspend fun closeTask(taskId: String, force: Boolean): List<String> = try {
         api(
             "POST",
             "/api/mobile/tasks/${encodePath(taskId)}/close",
@@ -497,12 +554,14 @@ class RemoteClient(
         token: String?,
         slow: Boolean = false,
     ): String {
+        if (suspended) throw ApiException("Real connections are paused during the offline demo.")
         val link = credentials.link ?: throw ApiException("Not connected to a computer.")
         if (token == null) throw ApiException("Not connected to a computer.")
         if (mustWaitForVpn()) {
             throw ApiException("Waiting for VPN connection. Connect your VPN and try again.")
         }
-        val request = Request.Builder()
+        val generation = transportGeneration
+        val request = transportRequest(generation)
             .url(link.baseUrl + path)
             .header("Authorization", "Bearer $token")
             .method(method, body?.toString()?.toRequestBody("application/json".toMediaType()))
@@ -521,6 +580,7 @@ class RemoteClient(
                 throw ApiException("Could not reach your computer. Check you're on the same network.")
             }
         }
+        if (suspended || generation != transportGeneration) throw ApiException("Real connections are paused during the offline demo.")
         val elapsed = System.currentTimeMillis() - start
         _latencyMs.value = elapsed
         if (code in 200..299) return text
@@ -545,7 +605,7 @@ class RemoteClient(
      * reopened while its last screen still animates out, the pager taking over from a lone task),
      * and the screen leaving last must not drop the buffer the other one is drawing.
      */
-    fun getTerminalBuffer(agentId: String): TerminalBuffer {
+    override fun getTerminalBuffer(agentId: String): TerminalBuffer {
         terminalWatchers[agentId] = (terminalWatchers[agentId] ?: 0) + 1
         return streamTerminal(agentId)
     }
@@ -557,7 +617,7 @@ class RemoteClient(
     }
 
     /** Stop streaming a terminal once no screen shows it. */
-    fun releaseTerminal(agentId: String) {
+    override fun releaseTerminal(agentId: String) {
         val watchers = (terminalWatchers[agentId] ?: 0) - 1
         if (watchers > 0) {
             terminalWatchers[agentId] = watchers
@@ -580,7 +640,7 @@ class RemoteClient(
      * Size an agent's PTY to this phone's terminal view, so full-screen TUIs such as Claude Code fill
      * the phone. Needs pairing. The desktop gets its size back on [releaseViewSize] or disconnect.
      */
-    fun setViewSize(agentId: String, cols: Int, rows: Int) {
+    override fun setViewSize(agentId: String, cols: Int, rows: Int) {
         viewSize?.let { if (it.first != agentId) releaseViewSize(it.first) }
         if (viewSize == Triple(agentId, cols, rows)) return
         viewSize = Triple(agentId, cols, rows)
@@ -588,7 +648,7 @@ class RemoteClient(
         sendViewSize()
     }
 
-    fun releaseViewSize(agentId: String) {
+    override fun releaseViewSize(agentId: String) {
         if (viewSize?.first != agentId) return
         viewSize = null
         if (!socketOpen) return
@@ -604,13 +664,13 @@ class RemoteClient(
      * The app left the screen but the socket stays open for notifications: give the desktop its
      * size back until [resumeViewSize].
      */
-    fun pauseViewSize() {
+    override fun pauseViewSize() {
         val agentId = viewSize?.first ?: return
         if (socketOpen && viewSizeSent) send(JSONObject().put("type", "view-size").put("agentId", agentId))
         viewSizeSent = false
     }
 
-    fun resumeViewSize() = sendViewSize()
+    override fun resumeViewSize() = sendViewSize()
 
     /** Only paired sockets may size a PTY; the server closes a view-only one that tries. */
     private fun sendViewSize() {
@@ -627,7 +687,7 @@ class RemoteClient(
      * Needs pairing; the server closes a view-only socket that tries. Agents scroll their
      * transcript wherever the wheel turns, so it turns over the middle of the screen.
      */
-    fun scrollTerminal(agentId: String, lines: Int) {
+    override fun scrollTerminal(agentId: String, lines: Int) {
         val screen = terminalBuffers[agentId]?.screen ?: return
         if (lines == 0 || !_state.value.canControl) return
         send(
@@ -661,7 +721,7 @@ class RemoteClient(
      * than sending the protocol's `prefixKey`: desktops from before that field drop it, which
      * would send a shell command to the agent as a prompt.
      */
-    suspend fun sendInput(agentId: String, data: String, submit: Boolean, prefixKey: String? = null) {
+    override suspend fun sendInput(agentId: String, data: String, submit: Boolean, prefixKey: String?) {
         if (data.length > MAX_INPUT_LENGTH) {
             throw IOException("This message is too long. Shorten it and try again.")
         }
@@ -683,7 +743,7 @@ class RemoteClient(
      * Follow a built-in chat's conversation, as the phone web UI does. Call [unwatchChat] when done;
      * the state stays null until the desktop sends the first frame.
      */
-    fun watchChat(agentId: String): StateFlow<ChatState?> {
+    override fun watchChat(agentId: String): StateFlow<ChatState?> {
         val flow = chats.getOrPut(agentId) { MutableStateFlow(null) }
         val watchers = chatWatchers[agentId] ?: 0
         chatWatchers[agentId] = watchers + 1
@@ -691,7 +751,7 @@ class RemoteClient(
         return flow.asStateFlow()
     }
 
-    fun unwatchChat(agentId: String) {
+    override fun unwatchChat(agentId: String) {
         val watchers = (chatWatchers[agentId] ?: return) - 1
         if (watchers > 0) {
             chatWatchers[agentId] = watchers
@@ -703,7 +763,7 @@ class RemoteClient(
     }
 
     /** One of the desktop's chat actions (send, interrupt, respond, …); needs pairing. */
-    suspend fun sendChatAction(agentId: String, action: String, params: JSONObject = JSONObject()) {
+    override suspend fun sendChatAction(agentId: String, action: String, params: JSONObject) {
         if (params.toString().toByteArray().size > MAX_CHAT_MESSAGE_LENGTH) {
             throw IOException("This message is too long to send from a phone.")
         }
@@ -742,7 +802,7 @@ class RemoteClient(
     }
 
     private fun connect() {
-        if (socket != null) return
+        if (suspended || socket != null) return
         val link = credentials.link ?: return
         if (mustWaitForVpn()) {
             reconnectJob?.cancel()
@@ -755,10 +815,15 @@ class RemoteClient(
 
         reconnectJob?.cancel()
         _state.update { it.copy(status = ConnectionStatus.CONNECTING, canControl = false, linkExpired = false) }
-        val request = Request.Builder().url(link.webSocketUrl).build()
+        val generation = transportGeneration
+        val request = transportRequest(generation).url(link.webSocketUrl).build()
         lateinit var ws: WebSocket
         ws = http.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (suspended || generation != transportGeneration) {
+                    webSocket.cancel()
+                    return
+                }
                 // Authenticate in the first message, not the URL, so the token stays out of logs.
                 webSocket.send(JSONObject().put("type", "auth").put("token", token).toString())
                 scope.launch {

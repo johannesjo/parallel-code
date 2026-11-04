@@ -1,4 +1,4 @@
-import { Show, onMount } from 'solid-js';
+import { Show, createSignal, onMount } from 'solid-js';
 import {
   getProject,
   setActiveTask,
@@ -17,6 +17,7 @@ import {
 } from './CommitNavBar';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
+import { SUPPORT_PANE_MIN_HEIGHT } from '../lib/layout-sizes';
 import { useFocusRegistration } from '../lib/focus-registration';
 import type { Task } from '../store/types';
 import type { ChangedFile, CommitInfo } from '../ipc/types';
@@ -37,9 +38,7 @@ interface TaskChangedFilesSectionProps {
   selectedCommit: CommitSelection;
   onCommitNavigate: (selection: CommitSelection) => void;
   onDiffFileClick: (path: string) => void;
-  /** Shrink to a header strip: the column uses this while the list is empty. */
-  compact?: boolean;
-  onFileCountChange?: (count: number) => void;
+  onFilesChange?: (files: ChangedFile[]) => void;
   /** Starts a guided tour of a changed file; omit to hide the row action. */
   onUnderstandClick?: (file: ChangedFile) => void;
   /** Lets each row's tour button show its own generating/ready state. */
@@ -81,44 +80,39 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
     });
   });
 
+  // The heading carries the summary, so the list drops its own totals footer.
+  const [fileCount, setFileCount] = createSignal(0);
+  const [totals, setTotals] = createSignal({ added: 0, removed: 0 });
+  const [uncommittedCount, setUncommittedCount] = createSignal<number | null>(null);
+  const headingLabel = () => {
+    const count = fileCount();
+    if (count === 0) return 'No changes yet';
+    // The pane is the changed-files pane, so "changed" only cost room in narrow columns.
+    return `${count} file${count === 1 ? '' : 's'}`;
+  };
+
   return (
     <div
       class="task-changed-files-section focusable-panel"
       data-panel-focused={isPanelFocused(props.task.id, 'changed-files') ? 'true' : 'false'}
       style={{
         // `height: 100%` fills when the panel is an absorber (notes-split
-        // horizontal, 50/50 with notes). `min-height` gives the content-sized
-        // case (split-right vertical) a usable default, while `max-height`
-        // keeps the panel from ballooning past ~40 % of the viewport when the
-        // changed-file list is long. The ResizablePanel wrapper applies the
-        // fixed 300 px cap for unpinned auto-growth.
+        // horizontal, 50/50 with notes; split-right without shells). `min-height`
+        // gives the content-sized case (split-right with shells) a usable
+        // default. The ResizablePanel wrapper caps unpinned auto-growth, so no
+        // cap here: it would stop an absorber or a dragged pin from growing.
         height: '100%',
-        'min-height': props.compact ? '56px' : '140px',
-        'max-height': '40vh',
+        'min-height': `${SUPPORT_PANE_MIN_HEIGHT}px`,
         'min-width': '0',
         background: theme.taskPanelBg,
         display: 'flex',
         'flex-direction': 'column',
       }}
-      onClick={focusChangedFilesPanel}
+      onPointerDown={focusChangedFilesPanel}
     >
-      <div
-        style={{
-          padding: '4px 8px',
-          'font-size': sf(11),
-          'font-weight': '600',
-          color: theme.fgMuted,
-          'text-transform': 'uppercase',
-          'letter-spacing': '0.05em',
-          'border-bottom': `1px solid ${theme.border}`,
-          'flex-shrink': '0',
-          display: 'flex',
-          'align-items': 'center',
-          gap: '6px',
-        }}
-      >
+      <div class="task-pane-heading" style={{ 'font-size': sf(11) }}>
         <span
-          title="Changed Files"
+          title={headingLabel()}
           style={{
             flex: '1',
             'min-width': '0',
@@ -127,8 +121,18 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
             'text-overflow': 'ellipsis',
           }}
         >
-          Changed Files
+          {headingLabel()}
         </span>
+        <Show when={fileCount() > 0}>
+          <span style={{ display: 'flex', gap: '6px', 'flex-shrink': '0' }}>
+            <span title={`${totals().added} added lines`} style={{ color: theme.success }}>
+              +{totals().added}
+            </span>
+            <span title={`${totals().removed} removed lines`} style={{ color: theme.error }}>
+              -{totals().removed}
+            </span>
+          </span>
+        </Show>
         <Show when={hasCommitNav()}>
           <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'flex-shrink': '0' }}>
             <Show when={canShowTree()}>
@@ -145,6 +149,7 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
               selectedCommitHash={props.selectedCommit}
               onNavigate={props.onCommitNavigate}
               compact={true}
+              uncommittedCount={uncommittedCount()}
             />
           </div>
         </Show>
@@ -189,7 +194,18 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
           Uncommitted changes only
         </div>
       </Show>
-      <div style={{ flex: '1', overflow: 'hidden' }}>
+      {/* A grid row gives the list's `height: 100%` a definite size even when
+          the section is content-sized (focus-mode side column without shells);
+          otherwise the list grows past the section and its footer is clipped. */}
+      <div
+        style={{
+          flex: '1',
+          overflow: 'hidden',
+          display: 'grid',
+          'grid-template-rows': 'minmax(0, 1fr)',
+          'grid-template-columns': 'minmax(0, 1fr)',
+        }}
+      >
         <ChangedFilesList
           worktreePath={props.task.worktreePath}
           projectRoot={getProject(props.task.projectId)?.path}
@@ -200,7 +216,13 @@ export function TaskChangedFilesSection(props: TaskChangedFilesSectionProps) {
           coverageReportPath={coverageReportPath()}
           selectedCommit={props.selectedCommit}
           onFileClick={(file) => props.onDiffFileClick(file.path)}
-          onFileCountChange={props.onFileCountChange}
+          onFilesChange={(files) => {
+            setFileCount(files.length);
+            props.onFilesChange?.(files);
+          }}
+          onTotalsChange={setTotals}
+          onUncommittedCountChange={setUncommittedCount}
+          hideTotals
           onOpenInEditorClick={focusChangedFilesPanel}
           onOpenMarkdownClick={openMarkdownInCanvas}
           onUnderstandClick={props.onUnderstandClick}

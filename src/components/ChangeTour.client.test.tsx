@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show } from 'solid-js';
+import { createRoot, createSignal, createEffect, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '../lib/ipc';
@@ -7,6 +7,7 @@ import { parseUnifiedDiff } from '../lib/unified-diff-parser';
 import { ChangeTour } from './ChangeTour';
 import { ChangeTourButton } from './ChangeTourButton';
 import { createChangeTour } from '../lib/create-change-tour';
+import { diffFingerprint } from '../lib/task-brief';
 import { info as logInfo } from '../lib/log';
 import { setAskCodeModel, setAskCodeProvider, store } from '../store/store';
 import {
@@ -50,6 +51,7 @@ vi.mock('../lib/log', async (importOriginal) => ({
 }));
 const disposers: (() => void)[] = [];
 afterEach(() => {
+  vi.useRealTimers();
   disposers.splice(0).forEach((dispose) => dispose());
   document.body.replaceChildren();
   channels.length = 0;
@@ -64,6 +66,7 @@ function mount(initialDiff = diff, initiallyDisabled = false) {
   const [raw, setRaw] = createSignal(initialDiff);
   const [disabled, setDisabled] = createSignal(initiallyDisabled);
   const [readerOpen, setReaderOpen] = createSignal(false);
+  const [outdated, setOutdated] = createSignal(false);
   const navigate = vi.fn();
   const host = document.createElement('div');
   document.body.append(host);
@@ -76,6 +79,7 @@ function mount(initialDiff = diff, initiallyDisabled = false) {
           <ChangeTourButton
             tour={tour}
             disabled={disabled()}
+            outdated={outdated()}
             onClick={() => {
               if (tour.stops().length) setReaderOpen(true);
               else
@@ -99,7 +103,7 @@ function mount(initialDiff = diff, initiallyDisabled = false) {
       );
     }, host),
   );
-  return { host, setRaw, navigate, setReaderOpen, setDisabled };
+  return { host, setRaw, navigate, setReaderOpen, setDisabled, setOutdated };
 }
 function complete(index = 0, filePath = 'file.ts', questions?: string[]) {
   const stop = {
@@ -145,6 +149,7 @@ const largeDiff = ['file.ts', 'second.ts', 'third.ts']
 
 describe('guided tour', () => {
   it('picks the tour model from the chevron beside Generate tour', () => {
+    vi.useFakeTimers();
     const { host } = mount();
     const trigger = host.querySelector<HTMLButtonElement>('[aria-label="Tour model"]');
     const controls = host.querySelector('.change-tour-hover');
@@ -152,6 +157,8 @@ describe('guided tour', () => {
     // The chevron is outside the hover anchor, so the help popover gives way to
     // the menu instead of standing over it.
     controls.dispatchEvent(new MouseEvent('mouseenter'));
+    vi.advanceTimersByTime(500);
+    vi.useRealTimers();
     expect(document.querySelector('[role="tooltip"]')).not.toBeNull();
     trigger.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     expect(document.querySelector('[role="tooltip"]')).toBeNull();
@@ -166,6 +173,27 @@ describe('guided tour', () => {
     expect(store.askCodeModel).toBe('opus');
   });
 
+  it('waits a moment before showing help to the pointer, so passing over it shows nothing', () => {
+    vi.useFakeTimers();
+    try {
+      const { host } = mount();
+      const controls = host.querySelector('.change-tour-hover');
+      if (!controls) throw new Error('Missing generate control');
+      const tooltip = () => document.querySelector('[role="tooltip"]');
+      controls.dispatchEvent(new MouseEvent('mouseenter'));
+      vi.advanceTimersByTime(400);
+      expect(tooltip()).toBeNull();
+      controls.dispatchEvent(new MouseEvent('mouseleave'));
+      vi.advanceTimersByTime(1_000);
+      expect(tooltip()).toBeNull();
+      controls.dispatchEvent(new MouseEvent('mouseenter'));
+      vi.advanceTimersByTime(500);
+      expect(tooltip()).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('explains generation and the configured model on hover/focus without generating', () => {
     setAskCodeModel('MiniMax-M3.1-Flash');
     const { host } = mount();
@@ -175,7 +203,10 @@ describe('guided tour', () => {
     expect(button.textContent).toBe('Generate tour');
     // The action and the model chevron beside it, and nothing else.
     expect(host.querySelectorAll('button')).toHaveLength(2);
+    vi.useFakeTimers();
     controls.dispatchEvent(new MouseEvent('mouseenter'));
+    vi.advanceTimersByTime(500);
+    vi.useRealTimers();
     expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('MiniMax-M3.1-Flash');
     expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
       'Sends the selected tour diff',
@@ -415,9 +446,14 @@ describe('guided tour', () => {
     const { host, navigate } = mount(largeDiff);
     host.querySelector('button')?.click();
     complete();
-    [...host.querySelectorAll('button')]
-      .find((button) => button.title === 'Cancel tour generation')
-      ?.click();
+    // The action shows the run; only the × beside it stops it.
+    host.querySelector<HTMLButtonElement>('.change-tour-action')?.click();
+    expect(invoke).not.toHaveBeenCalledWith(IPC.CancelAskAboutCode, expect.anything());
+    host.querySelector<HTMLButtonElement>('button[aria-label="Cancel tour generation"]')?.click();
+    // The × goes away with the run; focus stays on the tour instead of falling to the page.
+    expect(document.activeElement).toBe(host.querySelector('.change-tour-action'));
+    // Focus moved there by the ×, not by the user: no help pops up over the dialog.
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
     complete(1, 'second.ts');
     expect(channels).toHaveLength(2);
     expect(navigate).not.toHaveBeenCalled();
@@ -518,6 +554,35 @@ describe('guided tour', () => {
     items[1].querySelector('button')?.click();
     expect(host.querySelector('.understanding-overview')).toBeNull();
     expect(progressText(host)).toContain('2 / 2');
+  });
+
+  it('marks a ready tour of older code as out of date', () => {
+    const { host, setOutdated } = mount();
+    host.querySelector('button')?.click();
+    complete();
+    setOutdated(true);
+    expect(host.querySelector('button')?.textContent).toContain('Start tour · out of date');
+  });
+
+  it('drops the stop count from a resumed tour of older code', () => {
+    const { host, setReaderOpen, setOutdated } = openTour();
+    buttonByText(host, 'Next').click();
+    setReaderOpen(false);
+    setOutdated(true);
+    expect(host.querySelector('button')?.textContent).toContain('Resume tour · out of date');
+    expect(host.querySelector('button')?.textContent).not.toContain('2/2');
+  });
+
+  it('records the diff a whole-task tour explains, but not a single commit’s', async () => {
+    vi.mocked(invoke).mockResolvedValue(diff);
+    await createRoot(async (dispose) => {
+      const tour = createChangeTour();
+      await tour.generateForTask({ worktreePath: '/repo', taskName: 'Task' });
+      expect(tour.basis()?.fingerprint).toBe(diffFingerprint(diff));
+      await tour.generateForTask({ worktreePath: '/repo', taskName: 'Task', selectedCommit: 'c1' });
+      expect(tour.basis()).toBeUndefined();
+      dispose();
+    });
   });
 
   it('offers to resume a tour the reader left midway', () => {

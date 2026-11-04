@@ -1,5 +1,5 @@
 import { createEffect, on, onCleanup, type Accessor } from 'solid-js';
-import { shouldAnimateTaskAppearance } from './reducedMotion';
+import { EASE_OUT, prefersMotion } from './reducedMotion';
 
 /** Fade the settled layout, never animate terminal widths or remount sessions. */
 export function createProjectFilterTransition(
@@ -10,12 +10,12 @@ export function createProjectFilterTransition(
     on(
       filter,
       () => {
-        if (!shouldAnimateTaskAppearance()) return;
+        if (!prefersMotion()) return;
         let animation: Animation | undefined;
         const frame = requestAnimationFrame(() => {
           animation = element()?.animate?.([{ opacity: 0.45 }, { opacity: 1 }], {
             duration: 160,
-            easing: 'ease-out',
+            easing: EASE_OUT,
           });
         });
         onCleanup(() => {

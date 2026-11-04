@@ -150,17 +150,15 @@ export function buildSpDoneNote(input: {
   linesAdded?: number;
   linesRemoved?: number;
   prUrl?: string;
-}): string {
-  const branch = input.branchName ? `\`${input.branchName}\`` : '';
-  let line: string;
-  if (input.kind === 'merged') {
-    const into = input.baseBranch ? ` into \`${input.baseBranch}\`` : '';
-    line = `Merged ${branch || 'branch'}${into} in Parallel Code`;
-    if (typeof input.linesAdded === 'number' && typeof input.linesRemoved === 'number') {
-      line += ` (+${input.linesAdded} −${input.linesRemoved})`;
-    }
-  } else {
-    line = `Closed in Parallel Code${branch ? ` (branch ${branch})` : ''}`;
+}): string | undefined {
+  // A close says nothing the done state doesn't already, so it leaves no
+  // note unless there is a PR worth linking.
+  if (input.kind === 'closed') return input.prUrl ? `PR: ${input.prUrl}` : undefined;
+  const branch = input.branchName ? `\`${input.branchName}\`` : 'branch';
+  const into = input.baseBranch ? ` into \`${input.baseBranch}\`` : '';
+  let line = `Merged ${branch}${into} in Parallel Code`;
+  if (typeof input.linesAdded === 'number' && typeof input.linesRemoved === 'number') {
+    line += ` (+${input.linesAdded} −${input.linesRemoved})`;
   }
   line += '.';
   if (input.prUrl) line += ` PR: ${input.prUrl}`;

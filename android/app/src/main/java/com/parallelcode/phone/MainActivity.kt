@@ -62,11 +62,15 @@ data class NotificationPrefs(
     val finished: Boolean,
 )
 
-class PhoneViewModel(application: Application) : AndroidViewModel(application) {
+class PhoneViewModel internal constructor(application: Application, internal val demo: DemoSession?) : AndroidViewModel(application) {
+    constructor(application: Application) : this(application, null)
+
     private val phoneApp = application as PhoneApplication
-    val client = phoneApp.client
-    val settingsStore = phoneApp.settings
-    val promptHistory = phoneApp.promptHistory
+    val client: PhoneClient = demo ?: phoneApp.client
+    val settingsStore = demo?.settings ?: phoneApp.settings
+    val promptHistory = demo?.promptHistory ?: phoneApp.promptHistory
+    // A separate in-memory session: never attached to the real client or saved credentials.
+    internal val demoSession = MutableStateFlow<DemoSession?>(null)
 
     /** An agent to open, from a tapped notification. */
     val openAgentRequest = MutableStateFlow<String?>(null)
@@ -87,7 +91,7 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
         settingsStore.notifyErrors = prefs.errors
         settingsStore.notifyFinished = prefs.finished
         _notifications.value = prefs
-        AgentWatchService.sync(getApplication())
+        if (demo == null) AgentWatchService.sync(getApplication())
     }
     private val _keepScreenOn = MutableStateFlow(settingsStore.keepScreenOn)
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
@@ -103,7 +107,7 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _homeWifiSsid = MutableStateFlow(settingsStore.homeWifiSsid)
     val homeWifiSsid: StateFlow<String?> = _homeWifiSsid.asStateFlow()
-    val currentWifiSsid: StateFlow<String?> = phoneApp.networkMonitor.wifiSsid
+    val currentWifiSsid: StateFlow<String?> = if (demo == null) phoneApp.networkMonitor.wifiSsid else MutableStateFlow("Demo home Wi-Fi")
 
     fun setHomeWifiSsid(value: String?) {
         settingsStore.homeWifiSsid = value
@@ -112,7 +116,7 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Reads the Wi-Fi name again, after location permission is granted or the app returns to the screen. */
-    fun refreshWifi() = phoneApp.networkMonitor.refreshWifi()
+    fun refreshWifi() { if (demo == null) phoneApp.networkMonitor.refreshWifi() }
 
     private val _keepScreenOnOnlyWhenActive = MutableStateFlow(settingsStore.keepScreenOnOnlyWhenActive)
     val keepScreenOnOnlyWhenActive: StateFlow<Boolean> = _keepScreenOnOnlyWhenActive.asStateFlow()
@@ -198,7 +202,7 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
         settingsStore.widgetTransparency = value
         _widgetTransparency.value = settingsStore.widgetTransparency
         // The widget draws on its own schedule, so push the new card to it right away.
-        AgentWidget.refresh(getApplication())
+        if (demo == null) AgentWidget.refresh(getApplication())
     }
 
     private val _widgetPalette = MutableStateFlow(settingsStore.widgetPalette)
@@ -207,7 +211,30 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
     fun setWidgetPalette(value: String) {
         settingsStore.widgetPalette = value
         _widgetPalette.value = settingsStore.widgetPalette
-        AgentWidget.refresh(getApplication())
+        if (demo == null) AgentWidget.refresh(getApplication())
+    }
+    fun reloadSettings() {
+        _notifications.value = readNotificationPrefs()
+        _keepScreenOn.value = settingsStore.keepScreenOn
+        _waitForVpn.value = settingsStore.waitForVpn
+        _homeWifiSsid.value = settingsStore.homeWifiSsid
+        _keepScreenOnOnlyWhenActive.value = settingsStore.keepScreenOnOnlyWhenActive
+        _themeMode.value = settingsStore.themeMode
+        _darkThemePreset.value = settingsStore.darkThemePreset
+        _lightThemePreset.value = settingsStore.lightThemePreset
+        _showMinimizedTasks.value = settingsStore.showMinimizedTasks
+        _quickReplies.value = settingsStore.quickReplies
+        _sendQuickReplies.value = settingsStore.sendQuickReplies
+        _fitTerminalToPhone.value = settingsStore.fitTerminalToPhone
+        _alwaysFollowOutput.value = settingsStore.alwaysFollowOutput
+        _widgetTransparency.value = settingsStore.widgetTransparency
+        _widgetPalette.value = settingsStore.widgetPalette
+        demo?.reloadComputers()
+    }
+
+    override fun onCleared() {
+        // Back finishes the activity before Android 12; don't leave real connections and notifications paused.
+        if (demo == null && demoSession.value != null) phoneApp.setDemoActive(false)
     }
 }
 
@@ -216,18 +243,26 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val phoneApp = application as PhoneApplication
+        // The task may have been dismissed while the Application stayed alive.
+        if (phoneApp.demoActive != (model.demoSession.value != null)) {
+            phoneApp.setDemoActive(model.demoSession.value != null)
+        }
         openAgentFrom(intent)
         enableEdgeToEdge()
         setContent {
-            val keepScreenOn by model.keepScreenOn.collectAsState()
-            val keepScreenOnOnlyActive by model.keepScreenOnOnlyWhenActive.collectAsState()
-            val agents by model.client.agents.collectAsState()
-            val themeMode by model.themeMode.collectAsState()
-            val darkThemePreset by model.darkThemePreset.collectAsState()
-            val lightThemePreset by model.lightThemePreset.collectAsState()
+            val demo by model.demoSession.collectAsState()
+            // Built outside ViewModelProvider, so onCleared never runs: keep viewModelScope out of PhoneViewModel.
+            val activeModel = remember(demo) { if (demo == null) model else PhoneViewModel(application, demo) }
+            val keepScreenOn by activeModel.keepScreenOn.collectAsState()
+            val keepScreenOnOnlyActive by activeModel.keepScreenOnOnlyWhenActive.collectAsState()
+            val agents by activeModel.client.agents.collectAsState()
+            val themeMode by activeModel.themeMode.collectAsState()
+            val darkThemePreset by activeModel.darkThemePreset.collectAsState()
+            val lightThemePreset by activeModel.lightThemePreset.collectAsState()
 
             val hasActiveAgent = agents.any { it.running && (it.attention == "active" || it.attention == "shell_busy") }
-            val shouldKeepAwake = keepScreenOn && (!keepScreenOnOnlyActive || hasActiveAgent)
+            val shouldKeepAwake = demo == null && keepScreenOn && (!keepScreenOnOnlyActive || hasActiveAgent)
 
             DisposableEffect(shouldKeepAwake) {
                 if (shouldKeepAwake) {
@@ -267,7 +302,23 @@ class MainActivity : ComponentActivity() {
             }
 
             ParallelCodeTheme(palette = palette) {
-                PhoneApp(model)
+                key(demo) {
+                    DemoFrame(
+                        active = demo != null,
+                        onReset = { model.demoSession.value = DemoSession() },
+                        onExit = {
+                            model.demoSession.value = null
+                            (application as PhoneApplication).setDemoActive(false)
+                            model.client.start("app")
+                            model.client.resumeViewSize()
+                        },
+                    ) {
+                        PhoneApp(activeModel, onDemo = {
+                            (application as PhoneApplication).setDemoActive(true)
+                            model.demoSession.value = DemoSession()
+                        })
+                    }
+                }
             }
         }
     }
@@ -286,9 +337,10 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         (application as PhoneApplication).inForeground = true
+        if (model.demoSession.value != null) return
         // Android hides the Wi-Fi name from apps in the background, so a name read while only the
         // notification service was running is blank. Read it again now that the app is visible.
-        model.refreshWifi()
+        (application as PhoneApplication).networkMonitor.setForeground(true)
         model.client.start(HOLDER)
         model.client.resumeViewSize()
         AgentWatchService.sync(this)
@@ -299,6 +351,8 @@ class MainActivity : ComponentActivity() {
         model.client.pauseViewSize()
         model.client.stop(HOLDER)
         (application as PhoneApplication).inForeground = false
+        // A rotation stops and restarts the activity; keep the Wi-Fi name so the socket stays open.
+        if (!isChangingConfigurations) (application as PhoneApplication).networkMonitor.setForeground(false)
         super.onStop()
     }
 
@@ -317,7 +371,7 @@ private sealed interface Screen {
 }
 
 @Composable
-private fun PhoneApp(model: PhoneViewModel) {
+private fun PhoneApp(model: PhoneViewModel, onDemo: () -> Unit) {
     val state by model.client.state.collectAsState()
     val agents by model.client.agents.collectAsState()
     var screenKey by rememberSaveable { mutableStateOf("agents") }
@@ -343,16 +397,23 @@ private fun PhoneApp(model: PhoneViewModel) {
 
     val computers by model.client.computers.collectAsState()
     if (link == null) {
-        ConnectScreen(
+        if (model.demo != null) {
+            DemoConnectScreen(model.demo, saved = computers, onDone = { screenKey = "pair" })
+        } else ConnectScreen(
             expired = state.linkExpired,
             onLink = { model.client.link(it) },
             saved = computers,
             onSelectSaved = { model.client.switchTo(it) },
+            onDemo = onDemo,
         )
         return
     }
     if (screenKey == "add-computer") {
         BackHandler { screenKey = "settings" }
+        if (model.demo != null) {
+            DemoConnectScreen(model.demo, saved = computers, onDone = { screenKey = "pair" }, onCancel = { screenKey = "settings" })
+            return
+        }
         ConnectScreen(
             expired = false,
             onLink = {
@@ -408,6 +469,7 @@ private fun PhoneApp(model: PhoneViewModel) {
                     state = state,
                     agents = agents,
                     showMinimizedTasks = showMinimizedTasks,
+                    showUpdates = model.demo == null,
                     onOpen = { screenKey = "agent:${it.agentId}" },
                     onPair = { screenKey = "pair" },
                     onNewTask = { screenKey = "new-task" },
@@ -435,38 +497,19 @@ private fun PhoneApp(model: PhoneViewModel) {
                     model.setNotifications(notifications.copy(enabled = granted))
                 }
                 val context = LocalContext.current
-                // Agent notifications run in the background, where Android hides the Wi-Fi name unless
-                // location is allowed all the time. Android 10+ asks for that after the usual location
-                // access, and Android 11+ shows it as a settings page.
-                val backgroundLocationPermission = rememberLauncherForActivityResult(
-                    ActivityResultContracts.RequestPermission(),
-                ) { model.refreshWifi() }
-                val requestBackgroundLocationIfNeeded = {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-                        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) !=
-                        PackageManager.PERMISSION_GRANTED
-                    ) {
-                        backgroundLocationPermission.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-                    }
-                }
                 val locationPermission = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestMultiplePermissions(),
-                ) { granted ->
-                    model.refreshWifi()
-                    if (granted[Manifest.permission.ACCESS_FINE_LOCATION] == true) requestBackgroundLocationIfNeeded()
-                }
+                ) { model.refreshWifi() }
                 // Asks for location access; true while the Wi-Fi name is still hidden even on screen.
                 val requestLocationIfNeeded = {
                     val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
                         PackageManager.PERMISSION_GRANTED
-                    if (!granted) {
+                    if (!granted && model.demo == null) {
                         locationPermission.launch(
                             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
                         )
-                    } else {
-                        requestBackgroundLocationIfNeeded()
                     }
-                    !granted
+                    !granted && model.demo == null
                 }
                 val currentWifiSsid by model.currentWifiSsid.collectAsState()
                 SettingsScreen(
@@ -496,7 +539,7 @@ private fun PhoneApp(model: PhoneViewModel) {
                     onSendQuickRepliesChange = model::setSendQuickReplies,
                     notifications = notifications,
                     onNotificationsChange = { prefs ->
-                        val needsPermission = prefs.enabled && !notifications.enabled &&
+                        val needsPermission = model.demo == null && prefs.enabled && !notifications.enabled &&
                             Build.VERSION.SDK_INT >= 33 &&
                             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
                             PackageManager.PERMISSION_GRANTED
@@ -528,18 +571,23 @@ private fun PhoneApp(model: PhoneViewModel) {
                     onPair = { screenKey = "pair" },
                     onForget = {
                         model.client.forget()
-                        AgentWatchService.sync(context)
+                        if (model.demo == null) AgentWatchService.sync(context)
                         screenKey = "agents"
                     },
                     onBack = { screenKey = "agents" },
+                    demoSettings = model.demo?.demoSettings,
+                    onDemo = if (model.demo == null) onDemo else null,
+                    onDemoRestore = model::reloadSettings,
                 )
             }
             Screen.Pair -> PairScreen(
                 pair = model.client::pair,
+                instructions = if (model.demo == null) null else "Offline pairing simulation: enter 123456. No computer or credentials are needed.",
                 onDone = { screenKey = "agents" },
             )
             Screen.NewTask -> NewTaskScreen(
                 client = model.client,
+                settings = model.settingsStore,
                 onDone = { screenKey = "agents" },
                 onNeedsPairing = { screenKey = "pair" },
             )

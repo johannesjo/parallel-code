@@ -2,16 +2,18 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { reconcile } from 'solid-js/store';
 import { render } from 'solid-js/web';
 import { TaskTitleBar } from '../components/TaskTitleBar';
+import { TaskRoutineBadges } from '../components/TaskHeaderBadges';
 import { store, setStore } from './core';
 import { AGENT_HOOK_STALE_MS, applyAgentHookEvent, getAgentHookStatus } from './agentHookStatus';
 import { clearAgentActivity, getTaskAttentionState, markAgentBusy } from './taskStatus';
 import { invoke } from '../lib/ipc';
 import { info } from '../lib/log';
 import { IPC } from '../../electron/ipc/channels';
-import { collapseTask, uncollapseTask } from './tasks';
+import { collapseTask, forgetTask, uncollapseTask } from './tasks';
 import { setActiveTask } from './navigation';
 import { removePrChecks, setPrChecks, type PrChecksState } from './pr-checks-state';
 import { computeAttentionEntries } from './sidebar-attention';
+import { computeVisibleTaskOrder } from './sidebar-order';
 import {
   bringTaskToFront,
   getTaskSnoozedUntil,
@@ -354,15 +356,18 @@ it('offers the action and a manual return in the task header', () => {
   document.body.append(container);
   const dispose = render(
     () => (
-      <TaskTitleBar
-        task={store.tasks.one}
-        isActive={store.activeTaskId === 'one'}
-        onClose={() => undefined}
-        onFinish={() => undefined}
-        pushing={false}
-        pushSuccess={false}
-        onTitleEditRef={() => undefined}
-      />
+      <>
+        <TaskTitleBar
+          task={store.tasks.one}
+          isActive={store.activeTaskId === 'one'}
+          onClose={() => undefined}
+          onFinish={() => undefined}
+          pushing={false}
+          pushSuccess={false}
+          onTitleEditRef={() => undefined}
+        />
+        <TaskRoutineBadges task={store.tasks.one} />
+      </>
     ),
     container,
   );
@@ -375,7 +380,7 @@ it('offers the action and a manual return in the task header', () => {
     expect(send).toBeDefined();
     send?.click();
     expect(isTaskBackgrounded('one')).toBe(true);
-    expect(container.textContent).toContain('Background');
+    expect(container.textContent).toContain('Snoozed until new activity');
     doLater?.click();
     const restore = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
       (item) => item.textContent === 'Restore to front',
@@ -383,7 +388,7 @@ it('offers the action and a manual return in the task header', () => {
     expect(restore).toBeDefined();
     restore?.click();
     expect(isTaskBackgrounded('one')).toBe(false);
-    expect(container.textContent).not.toContain('Background');
+    expect(container.textContent).not.toContain('Snoozed until new activity');
   } finally {
     dispose();
     container.remove();
@@ -417,6 +422,53 @@ it('keeps the selected project when sending its active task to the back', () => 
   sendTaskToBack('two');
   expect(store.activeTaskId).toBe('three');
   expect(store.taskProjectFilter).toBe('project');
+});
+
+it('parks a snoozed task at the end of its own project group', () => {
+  setStore('projects', [
+    { id: 'project', name: 'Project', path: '/project', color: '#abc' },
+    { id: 'other', name: 'Other', path: '/other', color: '#def' },
+  ]);
+  setStore('tasks', 'one', 'projectId', 'project');
+  setStore('tasks', 'two', 'projectId', 'other');
+  setStore('tasks', 'three', 'projectId', 'project');
+  setStore('taskOrder', ['one', 'two', 'three']);
+
+  sendTaskToBack('one');
+  // Last of its own group on screen, ahead of the other project's tiles.
+  expect(computeVisibleTaskOrder()).toEqual(['three', 'one', 'two']);
+  bringTaskToFront('one');
+  // Front of its own group in the visual order: [one, three] before [two].
+  expect(computeVisibleTaskOrder()).toEqual(['one', 'three', 'two']);
+});
+
+function splitAcrossProjects() {
+  setStore('projects', [
+    { id: 'project', name: 'Project', path: '/project', color: '#abc' },
+    { id: 'other', name: 'Other', path: '/other', color: '#def' },
+  ]);
+  setStore('tasks', 'two', 'projectId', 'other');
+  // Raw order [one, two, three] shows as [one, three, two].
+  setActiveTask('three');
+}
+
+it('hands selection to the visual neighbor when sending a task to the back', () => {
+  splitAcrossProjects();
+  sendTaskToBack('three');
+  expect(store.activeTaskId).toBe('one');
+});
+
+it('hands selection to the visual neighbor when minimizing a task', async () => {
+  splitAcrossProjects();
+  await collapseTask('three');
+  expect(store.activeTaskId).toBe('one');
+});
+
+it('hands selection to the visual neighbor when removing a task', () => {
+  splitAcrossProjects();
+  forgetTask('three', ['three-agent']);
+  expect(store.activeTaskId).toBe('one');
+  setStore('tasks', 'three', task('three')); // afterEach expects all three
 });
 
 it('keeps timed snooze through new activity and restores at its deadline without taking focus', () => {
@@ -744,15 +796,18 @@ it('offers the CI snooze in the Later menu and shows it in the header', () => {
   document.body.append(container);
   const dispose = render(
     () => (
-      <TaskTitleBar
-        task={store.tasks.one}
-        isActive={store.activeTaskId === 'one'}
-        onClose={() => undefined}
-        onFinish={() => undefined}
-        pushing={false}
-        pushSuccess={false}
-        onTitleEditRef={() => undefined}
-      />
+      <>
+        <TaskTitleBar
+          task={store.tasks.one}
+          isActive={store.activeTaskId === 'one'}
+          onClose={() => undefined}
+          onFinish={() => undefined}
+          pushing={false}
+          pushSuccess={false}
+          onTitleEditRef={() => undefined}
+        />
+        <TaskRoutineBadges task={store.tasks.one} />
+      </>
     ),
     container,
   );

@@ -22,6 +22,7 @@ import {
 } from './hook-script.js';
 import { isCurrentAgentLaunch } from './observations.js';
 import { mapClaudeHookPayload, type AgentHookEventPayload } from './status.js';
+import { createSubagentGate } from './subagents.js';
 import { readUserStatusLine } from './user-status-line.js';
 import { warn as logWarn, errMessage } from '../log.js';
 
@@ -150,6 +151,7 @@ function statusLineSettings(
 export function startAgentHookServer(options: AgentHookServerOptions): Promise<AgentHookServer> {
   const token = randomUUID();
   const now = options.now ?? Date.now;
+  const gateSubagents = createSubagentGate();
   const server = http.createServer(async (req, res) => {
     if (req.method !== 'POST' || (req.url !== '/hook/claude' && req.url !== '/usage/claude')) {
       res.writeHead(404).end();
@@ -168,10 +170,12 @@ export function startAgentHookServer(options: AgentHookServerOptions): Promise<A
       return;
     }
     const agentId = headerValue(req, HOOK_AGENT_ID_HEADER);
-    const update = mapClaudeHookPayload(parseJson(body));
     const taskId = headerValue(req, HOOK_TASK_ID_HEADER);
     const launchId = headerValue(req, HOOK_LAUNCH_ID_HEADER);
-    if (!agentId || !update || !isCurrentAgentLaunch(agentId, taskId, launchId)) return;
+    if (!agentId || !isCurrentAgentLaunch(agentId, taskId, launchId)) return;
+    const payload = parseJson(body);
+    const update = gateSubagents(launchId, payload, mapClaudeHookPayload(payload));
+    if (!update) return;
     options.onEvent({
       ...update,
       agentId,

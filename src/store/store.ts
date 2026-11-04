@@ -15,7 +15,7 @@ export {
   relinkProject,
   isProjectMissing,
   projectIsGitRepo,
-  PASTEL_HUES,
+  PROJECT_COLORS,
 } from './projects';
 export { removeProjectWithTasks } from './project-cleanup';
 export {
@@ -63,8 +63,8 @@ export {
   clearPrefillPrompt,
   clearTaskLandingReview,
   setPrefillPrompt,
-  reorderTask,
   reorderTaskVisually,
+  reorderTaskInTileOrder,
   spawnShellForTask,
   runBookmarkInTask,
   closeShell,
@@ -99,6 +99,8 @@ export {
   moveActiveTask,
   jumpToTask,
   toggleNewTaskPanel,
+  retryTeleportInRepo,
+  startProjectTask,
 } from './navigation';
 export {
   registerFocusFn,
@@ -117,6 +119,9 @@ export {
   focusSidebar,
   unfocusSidebar,
   unfocusPlaceholder,
+  focusBoardSidePanel,
+  samePanelKindIn,
+  switchTaskKeepingPanel,
   navigateRow,
   navigateColumn,
   navigateTask,
@@ -128,7 +133,7 @@ export {
   scrollTaskElementIntoView,
 } from './focus';
 export type { PanelId, PendingAction, TaskViewportVisibility } from './types';
-export { saveState, loadState, loadCustomThemes } from './persistence';
+export { saveState, loadState, isStateLoaded, loadCustomThemes } from './persistence';
 export {
   adjustGlobalScale,
   resetGlobalScale,
@@ -143,6 +148,10 @@ export {
   setDocumentWorkspacesEnabled,
   toggleFocusMode,
   toggleTaskFocusMode,
+  workspaceView,
+  setWorkspaceView,
+  workspaceViewTransitionTypes,
+  toggleBoardView,
   setTaskSplitMode,
   setTerminalFont,
   setTerminalScreenReaderMode,
@@ -155,11 +164,14 @@ export {
   deleteCustomTheme,
   setAutoTrustFolders,
   setShowPlans,
+  setKanbanHideDetails,
   setShowPromptInput,
   setModelTaskNames,
   setTaskNameModel,
   setTaskBriefs,
-  setConfidencePrompt,
+  setBriefBarField,
+  setBriefModel,
+  setReviewGuidance,
   setShowSidebarTips,
   setShowSidebarProgress,
   setSidebarNeedsInputFirst,
@@ -169,6 +181,7 @@ export {
   setDesktopNotificationsEnabled,
   setVerboseLogging,
   setCoordinatorNotificationDelayMs,
+  setMaxIndependentTasksPerCreator,
   setInactiveColumnOpacity,
   setEditorCommand,
   setDockerImage,
@@ -183,6 +196,8 @@ export {
   setDisableClaudeUiMode,
   setDefaultSkipPermissions,
   setCanvasOwnershipBadges,
+  setFinishReview,
+  setReviewModel,
   setDefaultPropagateSkipPermissions,
 } from './ui';
 export {
@@ -210,37 +225,26 @@ export {
   rescheduleTaskStatusPolling,
 } from './taskStatus';
 export type { TaskAttentionState, TaskDotStatus } from './taskStatus';
-export { getTaskAgentHookStatus, isTaskUnread, noteAgentTerminalInput } from './agentHookStatus';
+export type { WorkspaceView } from './ui';
+export { setShellLayoutOverride, setTaskShellAutoLayout, getTaskShellLayout } from './shell-layout';
+export { isTaskUnread, noteAgentTerminalInput } from './agentHookStatus';
 export type { TaskAgentHookStatus } from './agentHookStatus';
-export { showNotification, clearNotification } from './notification';
+export { showNotification, clearNotification, notificationAction } from './notification';
 export { startPrChecksSubscription, getPrChecks, type PrChecksState } from './pr-checks';
 export {
+  backgroundVerifyEnabled,
   cancelTaskVerification,
+  getBackgroundVerifyHold,
   getVerificationOutput,
   getVerifyCommand,
+  runBackgroundVerify,
   runTaskVerification,
   sendVerificationFailureToAgent,
+  stageVerificationFailurePrompt,
 } from './verification';
-export {
-  buildEvidence,
-  cancelEvidenceChecks,
-  getEvidenceForAgent,
-  runEvidenceCheck,
-  sendEvidenceToAgent,
-  stopEvidence,
-  submitEvidence,
-} from './evidence';
-export { runEvidenceReview } from './evidence-review';
-export {
-  acceptEvidenceFlag,
-  dismissEvidenceFinding,
-  restoreEvidenceFinding,
-  reopenEvidenceFlag,
-  getEvidenceConfidence,
-  getEvidenceUiState,
-  getTaskChecks,
-  isEvidenceBusy,
-} from './evidence-state';
+export type { BackgroundVerifyHold } from './verification';
+export { stageCheckFailurePrompt } from './check-suite';
+export { getCheckSuiteUiState, getTaskChecks, isCheckSuiteBusy } from './check-suite-state';
 export { getMergedTasksTodayCount } from './completion';
 export {
   createTerminal,

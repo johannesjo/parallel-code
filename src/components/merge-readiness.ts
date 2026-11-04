@@ -5,11 +5,6 @@ import {
   MATERIAL_COVERAGE_DELTA,
   type CoverageComparison,
 } from '../lib/coverage-comparison';
-import type {
-  EvidenceConfidence,
-  EvidenceConfidenceLevel,
-} from '../../electron/shared/evidence-confidence';
-import { EVIDENCE_LEVEL } from '../lib/evidence-display';
 import type { SubtaskVerification } from '../store/types';
 import {
   summarizeVerificationRun,
@@ -37,8 +32,6 @@ interface PrReadinessState {
 }
 
 export interface MergeReadinessInput {
-  /** Confidence of the task's evidence package; advisory, never blocks. */
-  evidence?: EvidenceConfidence;
   expectedBranch: string;
   mergeStatus?: MergeStatus;
   mergeStatusLoading: boolean;
@@ -129,8 +122,18 @@ const RUN_KIND_STATUS: Record<VerificationSummaryKind, MergeReadinessCheckStatus
 function verificationRunCheck(
   run: VerificationRun | undefined,
   headSha: string | null | undefined,
+  mergeStatus: MergeStatus | undefined,
 ): MergeReadinessCheck {
   const summary = summarizeVerificationRun(run, headSha);
+  // Merging replays the task onto the base, so the run did not cover the
+  // commits the base gained since; reads like a stale run, not a pass.
+  if (summary.kind === 'passed' && mergeStatus && mergeStatus.main_ahead_count > 0) {
+    return {
+      label: 'Verify command',
+      status: 'warning',
+      detail: `Passed before integration. ${mergeStatus.base_branch} is ${countLabel(mergeStatus.main_ahead_count, 'commit')} ahead; rebase and re-run to check the combined code.`,
+    };
+  }
   return {
     label: 'Verify command',
     status: RUN_KIND_STATUS[summary.kind],
@@ -140,7 +143,11 @@ function verificationRunCheck(
 
 function verificationCheck(input: MergeReadinessInput): MergeReadinessCheck {
   if (usesVerificationRun(input.verificationRun, Boolean(input.verifyCommandConfigured))) {
-    return verificationRunCheck(input.verificationRun, input.worktreeStatus?.head_sha);
+    return verificationRunCheck(
+      input.verificationRun,
+      input.worktreeStatus?.head_sha,
+      input.mergeStatus,
+    );
   }
   return reportedVerificationCheck(input.verification);
 }
@@ -165,28 +172,6 @@ function reportedVerificationCheck(verification?: SubtaskVerification): MergeRea
     label: 'Agent report',
     status: 'pass',
     detail: `${countLabel(verification.checks.length, 'check')} passed.`,
-  };
-}
-
-// Medium is the usual state of a reviewed change, so only low or outdated
-// evidence asks for attention.
-const EVIDENCE_STATUS: Record<EvidenceConfidenceLevel, MergeReadinessCheckStatus> = {
-  checking: 'checking',
-  'not-checked': 'warning',
-  low: 'warning',
-  medium: 'neutral',
-  high: 'pass',
-};
-
-function evidenceCheck(confidence?: EvidenceConfidence): MergeReadinessCheck {
-  if (!confidence) {
-    return { label: 'Evidence', status: 'neutral', detail: 'No evidence package yet.' };
-  }
-  const reason = confidence.reasons[0]?.text;
-  return {
-    label: 'Evidence',
-    status: EVIDENCE_STATUS[confidence.level],
-    detail: `${EVIDENCE_LEVEL[confidence.level].label}.${reason ? ` ${reason}` : ''}`,
   };
 }
 
@@ -311,7 +296,6 @@ export function buildMergeReadiness(input: MergeReadinessInput): MergeReadiness 
     verificationCheck(input),
     coverageCheck(input.coverage, input.mergeStatus),
     prCheck(input.prChecks),
-    evidenceCheck(input.evidence),
   ];
   return { checks };
 }

@@ -67,6 +67,9 @@ interface Box {
  * its overflow, and by the window. Undefined when nothing of it shows.
  */
 function visibleBox(el: HTMLElement): Box | undefined {
+  // Focus mode keeps background tiles laid out, hidden and inert, beneath the
+  // shown one: a tip for their anchors would float over a different panel.
+  if (el.closest('[inert]') || getComputedStyle(el).visibility === 'hidden') return undefined;
   const rect = el.getBoundingClientRect();
   const box = { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
   const clip = (by: Box) => {

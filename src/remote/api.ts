@@ -57,6 +57,10 @@ export async function verifyPairingPin(pin: string, remember: boolean): Promise<
 export interface MobileProject {
   id: string;
   name: string;
+  color?: string;
+  icon?: string;
+  /** The project the desktop last created a task in. */
+  lastUsed?: boolean;
   agentName?: string;
 }
 

@@ -74,3 +74,8 @@ export function downloadUpdate(): void {
 export function installUpdate(): void {
   fireAndForget(IPC.QuitAndInstallUpdate);
 }
+
+/** Quit and start the app again, e.g. onto a build installed while it ran. */
+export function restartApp(): void {
+  fireAndForget(IPC.RestartApp);
+}

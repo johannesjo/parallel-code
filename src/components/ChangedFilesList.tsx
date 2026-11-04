@@ -8,6 +8,7 @@ import { getStatusColor } from '../lib/status-colors';
 import { openFileInEditor } from '../lib/shell';
 import { isMarkdownPath } from '../lib/canvas-tabs';
 import { buildFileTree, flattenVisibleTree } from '../lib/file-tree';
+import { ExternalLinkIcon, PanelRightIcon, QuestionAltIcon } from './icons';
 import {
   buildCoverageComparison,
   formatCoverageDelta,
@@ -23,7 +24,7 @@ import {
 } from './CommitNavBar';
 import type { UnderstandingTourState } from '../lib/create-understanding-tour';
 import { TourHint } from './understanding/TourHint';
-import type { ChangedFile, CoverageFileSummary, CoverageSummary } from '../ipc/types';
+import type { ChangedFile, CoverageFileSummary, CoverageSummary, NestedRepo } from '../ipc/types';
 
 interface ChangedFilesListProps {
   worktreePath: string;
@@ -52,8 +53,14 @@ interface ChangedFilesListProps {
   baseBranch?: string;
   /** Reports coverage changes when task or base coverage data refreshes. */
   onCoverageComparisonChange?: (comparison: CoverageComparison | null) => void;
-  /** Reports the number of listed files whenever the list refreshes. */
-  onFileCountChange?: (count: number) => void;
+  /** Reports the listed files whenever the list refreshes. */
+  onFilesChange?: (files: ChangedFile[]) => void;
+  /** Files with uncommitted changes, or null when the current view carries no working-tree state. */
+  onUncommittedCountChange?: (count: number | null) => void;
+  /** Reports added/removed line totals whenever the list refreshes. */
+  onTotalsChange?: (totals: { added: number; removed: number }) => void;
+  /** Drop the +/- totals from the footer when the owner shows them elsewhere. */
+  hideTotals?: boolean;
   /**
    * Selection mode for the file list:
    * - undefined/null: all changes (committed + uncommitted)
@@ -356,9 +363,7 @@ function OpenInEditorButton(props: {
       title="Open in editor"
       aria-label={`Open ${props.filePath} in editor`}
     >
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-3a.75.75 0 0 1 1.5 0v3A3 3 0 0 1 12.5 16h-9A3 3 0 0 1 0 12.5v-9A3 3 0 0 1 3.5 0h3a.75.75 0 0 1 0 1.5h-3ZM10 .75a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0V2.56L8.53 8.53a.75.75 0 0 1-1.06-1.06L13.44 1.5H10.75A.75.75 0 0 1 10 .75Z" />
-      </svg>
+      <ExternalLinkIcon />
     </button>
   );
 }
@@ -403,14 +408,7 @@ function UnderstandFileButton(props: {
           }}
           aria-label={`Understand ${props.filePath}`}
         >
-          <Show
-            when={loading()}
-            fallback={
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0ZM1.5 8a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0Zm6.6-3.7c-.9 0-1.5.4-1.9 1a.75.75 0 0 1-1.3-.8c.7-1 1.7-1.7 3.2-1.7 1.7 0 3.1 1.1 3.1 2.7 0 1.2-.7 1.9-1.5 2.4-.6.4-.9.7-.9 1.2a.75.75 0 0 1-1.5 0c0-1.3.8-1.9 1.5-2.4.6-.4.9-.7.9-1.2 0-.7-.7-1.2-1.6-1.2ZM8 11.4a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z" />
-              </svg>
-            }
-          >
+          <Show when={loading()} fallback={<QuestionAltIcon />}>
             <span class="inline-spinner" aria-hidden="true" />
           </Show>
         </button>
@@ -443,24 +441,14 @@ function OpenMarkdownButton(props: { filePath: string; onOpenMarkdownClick?: () 
       title="Open in canvas"
       aria-label={`Open ${props.filePath} in canvas`}
     >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.5"
-      >
-        <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
-        <path d="M10 2.75v10.5" />
-      </svg>
+      <PanelRightIcon />
     </button>
   );
 }
 
 export function ChangedFilesList(props: ChangedFilesListProps) {
   const [files, setFiles] = createSignal<ChangedFile[]>([]);
-  createEffect(() => props.onFileCountChange?.(files().length));
+  createEffect(() => props.onFilesChange?.(files()));
   const [comparisonFiles, setComparisonFiles] = createSignal<ChangedFile[] | null>(null);
   const [coverage, setCoverage] = createSignal<CoverageSummary | null>(null);
   const [baseCoverage, setBaseCoverage] = createSignal<CoverageSummary | null>(null);
@@ -472,10 +460,28 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
   const [canOpenFilesInEditor, setCanOpenFilesInEditor] = createSignal(false);
   const [selectedIndex, setSelectedIndex] = createSignal(-1);
   const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set());
+  // Polled with the files; compared by value so unchanged polls don't re-render rows.
+  const [nestedRepos, setNestedRepos] = createSignal<NestedRepo[]>([], {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
+  /** Branch of the separate repo a top-level folder row belongs to, if any. */
+  const nestedRepoBranch = (dirPath: string) =>
+    nestedRepos().find((repo) => repo.name === dirPath.split('/')[0])?.branch;
   const rowRefs: HTMLDivElement[] = [];
 
   const tree = createMemo(() => buildFileTree(files()));
   const visibleRows = createMemo(() => flattenVisibleTree(tree(), collapsed()));
+  // Commit and tour inventories carry no working-tree state. Only the all-changes view mixes
+  // committed and uncommitted files; the uncommitted-only view would mark every row.
+  const hasWorkingTreeState = () =>
+    !props.filesOverride && !isCommitHashSelection(props.selectedCommit);
+  const showCommitState = () =>
+    hasWorkingTreeState() && !isUncommittedSelection(props.selectedCommit);
+  createEffect(() =>
+    props.onUncommittedCountChange?.(
+      hasWorkingTreeState() ? files().filter((file) => !file.committed).length : null,
+    ),
+  );
   const coverageFiles = createMemo(() => coverage()?.files ?? {});
   const hasCoverageArtifact = createMemo(() => coverage() !== null);
   const hasBaseCoverageArtifact = createMemo(() => baseCoverage() !== null);
@@ -757,6 +763,13 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
     async function refresh() {
       if (inFlight) return;
       inFlight = true;
+      if (path && !singleCommitHash) {
+        void invoke<NestedRepo[]>(IPC.GetNestedRepos, { worktreePath: path })
+          .then((repos) => {
+            if (!cancelled) setNestedRepos(repos);
+          })
+          .catch((err: unknown) => console.warn('Failed to load nested repositories:', err));
+      }
       try {
         // Single-commit mode: fetch files for that commit only
         if (singleCommitHash && path) {
@@ -999,6 +1012,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
 
   const totalAdded = createMemo(() => files().reduce((s, f) => s + f.lines_added, 0));
   const totalRemoved = createMemo(() => files().reduce((s, f) => s + f.lines_removed, 0));
+  createEffect(() => props.onTotalsChange?.({ added: totalAdded(), removed: totalRemoved() }));
 
   return (
     <div
@@ -1034,11 +1048,7 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                 'white-space': 'nowrap',
                 cursor: 'pointer',
                 'border-radius': 'var(--radius-xs)',
-                opacity:
-                  !isCommitHashSelection(props.selectedCommit) &&
-                  (row().isDir || row().node.file?.committed)
-                    ? '0.45'
-                    : '1',
+                opacity: showCommitState() && !row().node.hasUncommitted ? '0.7' : '1',
                 background:
                   selectedIndex() === i
                     ? theme.bgHover
@@ -1056,6 +1066,20 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                 }
               }}
             >
+              <Show when={showCommitState() && row().node.hasUncommitted}>
+                <span
+                  class="changed-files-uncommitted-mark"
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    left: '2px',
+                    top: '0',
+                    bottom: '0',
+                    width: '2px',
+                    background: theme.fgSubtle,
+                  }}
+                />
+              </Show>
               {row().isDir ? (
                 <>
                   <span
@@ -1080,6 +1104,20 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                   >
                     {row().node.name}/
                   </span>
+                  <Show when={row().depth === 0 && nestedRepoBranch(row().node.path)}>
+                    {(branch) => (
+                      <span
+                        style={{
+                          color: theme.fg,
+                          'font-size': sf(11),
+                          'flex-shrink': '0',
+                        }}
+                        title={`Separate Git repository on ${branch()}. Finish and merge leave it untouched.`}
+                      >
+                        {branch()}
+                      </span>
+                    )}
+                  </Show>
                   <Show when={collapsed().has(row().node.path)}>
                     <span
                       style={{
@@ -1188,7 +1226,13 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
           )}
         </Index>
       </div>
-      <Show when={files().length > 0}>
+      {/* Without totals, a bare "no report" glyph would fill a whole row. */}
+      <Show
+        when={
+          files().length > 0 &&
+          (!props.hideTotals || hasCoverageArtifact() || hasBaseCoverageArtifact())
+        }
+      >
         <div
           style={{
             padding: '4px 8px',
@@ -1297,14 +1341,16 @@ export function ChangedFilesList(props: ChangedFilesListProps) {
                 </Show>
               </div>
             </Show>
-            <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
-              <span title={`${totalAdded()} added lines`} style={{ color: theme.success }}>
-                +{totalAdded()}
-              </span>
-              <span title={`${totalRemoved()} removed lines`} style={{ color: theme.error }}>
-                -{totalRemoved()}
-              </span>
-            </div>
+            <Show when={!props.hideTotals}>
+              <div style={{ display: 'flex', 'align-items': 'center', gap: '6px' }}>
+                <span title={`${totalAdded()} added lines`} style={{ color: theme.success }}>
+                  +{totalAdded()}
+                </span>
+                <span title={`${totalRemoved()} removed lines`} style={{ color: theme.error }}>
+                  -{totalRemoved()}
+                </span>
+              </div>
+            </Show>
           </div>
         </div>
       </Show>

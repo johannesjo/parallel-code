@@ -21,7 +21,17 @@ import {
   writeChatScript,
   writeChatSession,
 } from './chats';
-import { type DemoSession, README_SESSION } from './transcripts';
+import {
+  AIR_QUALITY_SESSION,
+  CITY_SEARCH_SESSION,
+  CONTRAST_SESSION,
+  type DemoSession,
+  HOURLY_SESSION,
+  OFFLINE_SESSION,
+  RAIN_SESSION,
+  README_SESSION,
+  UNITS_SESSION,
+} from './transcripts';
 
 const FAKE_AGENT = path.resolve(import.meta.dirname, '..', 'fake-agent.mjs');
 
@@ -131,6 +141,89 @@ const DEMO_TASKS: DemoTask[] = [
   },
 ];
 
+const commitFiles = (worktree: string, files: Record<string, string>, message: string): void => {
+  writeFiles(worktree, files);
+  commit(worktree, message);
+};
+
+/**
+ * Seven more tasks for the board scene, so with the three above every lane
+ * fills: ten agents across Needs you, Working, Stopped, In pull request and
+ * Snoozed.
+ */
+const BOARD_TASKS: DemoTask[] = [
+  {
+    slug: 'units-toggle',
+    name: 'Add a °C/°F toggle',
+    session: UNITS_SESSION,
+    agentName: 'Codex CLI',
+    prepare: () => {},
+  },
+  {
+    slug: 'offline-cache',
+    name: 'Cache forecasts offline',
+    session: OFFLINE_SESSION,
+    agentName: 'Gemini CLI',
+    busy: 'Writing src/cache.ts',
+    prepare: (worktree) =>
+      writeFiles(worktree, {
+        'src/cache.ts': 'export const cache = new Map<string, unknown>();\n',
+      }),
+  },
+  {
+    slug: 'air-quality',
+    name: 'Show the air quality index',
+    session: AIR_QUALITY_SESSION,
+    agentName: 'Codex CLI',
+    busy: 'Running tests',
+    prepare: (worktree) =>
+      writeFiles(worktree, {
+        'src/api/air.ts': 'export const fetchAir = (city: string) => fetch(`/api/air/${city}`);\n',
+      }),
+  },
+  {
+    slug: 'dark-contrast',
+    name: 'Fix contrast in the dark theme',
+    session: CONTRAST_SESSION,
+    agentName: 'Copilot CLI',
+    busy: 'Checking contrast ratios',
+    prepare: () => {},
+  },
+  {
+    slug: 'rain-alerts',
+    name: 'Rain alerts at 8 am',
+    session: RAIN_SESSION,
+    agentName: 'Copilot CLI',
+    prepare: (worktree) =>
+      commitFiles(
+        worktree,
+        { 'src/alerts.ts': 'export const ALERT_HOUR = 8;\n' },
+        'feat: rain alerts',
+      ),
+  },
+  {
+    slug: 'hourly-chart',
+    name: 'Hourly temperature chart',
+    session: HOURLY_SESSION,
+    agentName: 'Codex CLI',
+    prepare: (worktree) =>
+      commitFiles(
+        worktree,
+        { 'src/components/Hourly.tsx': 'export const Hourly = () => <canvas />;\n' },
+        'feat: hourly chart',
+      ),
+    state: { prUrl: 'https://github.com/example/weather-app/pull/42' },
+  },
+  {
+    slug: 'city-search',
+    name: 'Fuzzy city search',
+    session: CITY_SEARCH_SESSION,
+    agentName: 'Gemini CLI',
+    prepare: () => {},
+    state: { collapsed: true },
+  },
+];
+
 /** Hosts the v2 plan mind map, whose branches link to the other demo tasks. */
 const PLANNER_TASK: DemoTask = {
   slug: 'plan-v2',
@@ -156,6 +249,7 @@ const createRepo = (repo: string): void => {
 
 /**
  * - `withTasks`: restore the three demo tasks.
+ * - `board`: restore ten tasks, one lane's worth each, and open the board.
  * - `tasks`: restore these tasks instead, e.g. a benchmark's.
  * - `planner`: add the planning task with the v2 mind map, first in line.
  * - `focus`: the slug of the task to open in focus mode.
@@ -163,6 +257,7 @@ const createRepo = (repo: string): void => {
  */
 export type DemoWorkspaceOptions = {
   withTasks?: boolean;
+  board?: boolean;
   tasks?: DemoTask[];
   planner?: boolean;
   focus?: string;
@@ -256,34 +351,48 @@ export const seedDemoWorkspace = (
 ): string => {
   const repo = path.join(dir, 'weather-app');
   createRepo(repo);
+  const seeded = options.withTasks || options.board;
   const demoTasks =
     options.tasks ??
-    (options.withTasks ? [...(options.planner ? [PLANNER_TASK] : []), ...DEMO_TASKS] : []);
+    (seeded
+      ? [
+          ...(options.planner ? [PLANNER_TASK] : []),
+          ...DEMO_TASKS,
+          ...(options.board ? BOARD_TASKS : []),
+        ]
+      : []);
   const tasks = demoTasks.map((task) =>
     createTask({ dir, repo, home }, task, options.shell && task.slug === options.focus ? 1 : 0),
   );
   const focusId = options.focus ? `task-${options.focus}` : undefined;
+  const isCollapsed = ([, task]: [string, unknown]): boolean =>
+    (task as { collapsed?: boolean }).collapsed === true;
+  const openTasks = tasks.filter((entry) => !isCollapsed(entry));
   const state = {
     projects: [{ id: 'demo', name: 'weather-app', path: repo, color: 'hsl(200, 70%, 75%)' }],
     lastProjectId: 'demo',
     lastAgentId: DEMO_AGENT.id,
-    taskOrder: tasks.map(([id]) => id),
-    collapsedTaskOrder: [],
+    taskOrder: openTasks.map(([id]) => id),
+    collapsedTaskOrder: tasks.filter(isCollapsed).map(([id]) => id),
     tasks: Object.fromEntries(tasks),
-    activeTaskId: focusId ?? tasks[0]?.[0] ?? null,
+    activeTaskId: focusId ?? openTasks[0]?.[0] ?? null,
+    boardView: options.board || undefined,
     // Three columns at the agent pane's minimum width fit the showcase window
     // beside a slightly narrower sidebar (default 240).
     panelUserSize: {
       'sidebar:width': 220,
       ...Object.fromEntries(tasks.map(([id]) => [`tiling:${id}`, 420])),
+      // Narrow enough that every board lane still fits beside the open task.
+      ...(options.board ? { 'board:side-panel': 560 } : {}),
     },
     panelUserSizeMigratedV2: true,
-    sidebarVisible: true,
+    // The board shows what needs you; the sidebar would list it twice.
+    sidebarVisible: !options.board,
     keybindingMigrationDismissed: true,
     focusMode: Boolean(focusId && tasks.length > 0),
     // One theme for every shot, so stills and videos cut together.
     appearanceMode: 'dark',
-    darkThemePreset: 'noir',
+    darkThemePreset: 'parallel-code',
     // Delegation needs a real agent connected to the app's MCP server; without
     // one, chat tasks show a "start a new task session" banner.
     mcpOrchestrationEnabled: false,

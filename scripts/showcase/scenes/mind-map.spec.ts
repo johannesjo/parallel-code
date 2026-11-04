@@ -23,7 +23,9 @@ test('mind map: a plan whose branches are running tasks', async () => {
     // Linked branches show their task's live state; the committed task turns
     // ready on the second git poll, about 30 s in.
     await expect(map.getByText('Needs input')).toBeVisible();
-    await expect(map.getByText('Ready to merge')).toBeVisible({ timeout: 45_000 });
+    await expect(map.getByRole('button', { name: 'Ready: Document local setup' })).toBeVisible({
+      timeout: 45_000,
+    });
     // The planner answers by adding steps to the map, as its MCP call would.
     await sendChatMessage(page, 'plan-v2', 'Break the 5-day forecast into steps.');
     await publishAsAgent(app, {

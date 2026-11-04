@@ -1,6 +1,6 @@
 # Parallel Code
 
-Electron desktop app for running coding agents in isolated Git worktrees. Desktop releases target **macOS and Linux only**. The phone UI is a separate web frontend.
+Electron desktop app for running coding agents in isolated Git worktrees. Desktop releases target **macOS, Linux and Windows**. The phone UI is a separate web frontend.
 
 - **Frontend:** SolidJS, strict TypeScript, Vite.
 - **Backend:** Node.js, Electron, node-pty.
@@ -16,7 +16,8 @@ Electron desktop app for running coding agents in isolated Git worktrees. Deskto
   - `npm run test:unit -- path/to/file.test.ts` for logic/backend tests (Node environment).
   - `npm run test:client -- path/to/file.client.test.tsx` for DOM/component tests (happy-dom).
   - `npm run test:changed` runs the tests of both suites that uncommitted changes affect; run it before committing.
-- For code changes, run `npm run check` and relevant tests before handoff. It runs backend and frontend type checking, lint, and a formatting check; caches in `node_modules/.cache` make repeat runs fast. For documentation-only changes, check the changed files with Prettier.
+- For code changes, run `npm run check` and relevant tests before handoff. It runs backend and frontend type checking, lint, and a formatting check in parallel, reports every failing step in one run, and prints output only for failures; caches in `node_modules/.cache` make repeat runs fast. For documentation-only changes, check the changed files with Prettier.
+- Vitest switches to its compact `agent` reporter (failures only) when it detects a coding agent, so don't pass `--reporter` or pipe test output through `tail`.
 - `npm test` runs both test suites. `npm run test:ci` adds unit coverage thresholds. `npm run check:static` includes dead-code and architecture checks as well as type checking and lint; use it when changing exports or module dependencies.
 - See `.github/workflows/ci.yml` for the complete CI sequence, including security-rule fixture tests and the real-PTY coordinator test. Ordinary test runs skip opt-in PTY, Docker, and real-agent suites; real-agent tests can launch paid services. Report skipped or unavailable verification.
 - CI tests that Semgrep rules work on fixtures; it does not scan the repository with Semgrep. `npm run lint:security` and `npm run lint:secrets` run separate scans and require Semgrep and Gitleaks respectively.
@@ -38,6 +39,15 @@ When committing, use conventional commit messages, such as `fix(terminal): resto
 - Reserve visual intensity for urgency. Filled or tinted backgrounds, accent or status colours, and strong borders signal something that needs attention now, such as failures, blocking questions, or conflicts. Routine actions stay neutral: no accent fill, a plain border. A dialog's primary action, such as Finish, is marked by full-strength text, not colour, so it never looks quieter than Cancel or other secondary actions beside it. Routine actions can gain emphasis on hover. Showing state is an exception: a pressed toggle or a brief success confirmation may use accent or success colour.
 - Dense areas such as task headers already contain status text and badges. Don't add another attention-seeking element; use a label, placement, or spacing to make an action discoverable.
 - Content must not jump. Focus, hover, typing, or a state change should not move surrounding content. Reserve space for elements that come and go, such as hints, badges, and errors (for example, toggle `visibility` or `opacity` rather than `display`), or overlay them. Accept layout shift only when it is unavoidable, such as new content arriving.
+
+### Motion
+
+- Instant beats animation. Animate only to explain a change the user might otherwise miss, such as where something went, what appeared, or what is still working. Hover, press, focus, selection, and switching panes or tabs respond at once or within about 100ms.
+- Animations feel fast. Entrances take about 120–200ms, exits are shorter, and both ease out. Use the tokens in `:root` of `src/styles.css`: `--motion-fast` for hover, press, and focus feedback, `--motion-enter` for entrances, and `--ease-out` for the curve, instead of raw durations and `ease`. Durations that a JavaScript timer waits on, and the choreographed view transitions in `src/components/task-board.css`, stay explicit and are kept in step by hand. The phone UI repeats these tokens in `src/remote/mobile.css` for the shared chat view. Nothing the user waits on takes longer than 250ms. Never delay the actual state change or input for an animation, and never block clicks or typing while an element animates in.
+- Use motion to hide latency, not add it. When work takes time (creating a worktree, spawning an agent, merging, loading), respond at once with the final layout, a placeholder, or a working indicator. Then fill in the result. Spinners and pulses are reserved for real ongoing work; prefer the `statusPulse` and `spinnerSpin` keyframes in `src/styles.css` over adding new loops.
+- Everything stays smooth. Animate `opacity` and `transform`, not layout properties, on large or frequently updated elements (collapsing a small sidebar row is fine); never animate terminal sizes. Keep JavaScript timers that wait for an animation equal to its CSS duration, and zero when reduced motion turns it off. A newer change cancels or overrides a running animation instead of queueing behind it.
+- Respect `prefers-reduced-motion`. Add new CSS animations to the reduced-motion block at the end of `src/styles.css`, or to a `prefers-reduced-motion` rule in their own stylesheet. Gate JavaScript animations with `prefersMotion()` from `src/lib/reducedMotion.ts`, or `createReducedMotion()` when a component must react to the setting changing. Query `matchMedia` directly only to handle its `change` event outside a signal, as `src/components/chat/create-reveal.ts` does.
+- Deliberate showpieces (arena countdown and results) may run longer, but never on a path the user takes repeatedly.
 
 ### IPC changes
 
@@ -62,4 +72,5 @@ When committing, use conventional commit messages, such as `fix(terminal): resto
 - `src/remote/`, `electron/remote/`: phone UI and its server.
 - `src/documents/`, `electron/documents/`: document workspaces; see `docs/document-workspaces.md`.
 - `docs/browser-preview.md`: native browser architecture, limitations, and verification.
+- `docs/market/`: competitor scorecard, refreshed monthly by a scheduled session; the README there holds the target and the method.
 - `docs/architecture-overview.html`: broader architecture overview. New files under `docs/` are ignored unless explicitly included in `.gitignore`.

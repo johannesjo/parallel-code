@@ -5,6 +5,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
 import type { Project, Task } from './types';
 import { sanitizeBranchPrefix } from '../lib/branch-name';
+import { sanitizeProjectIcon } from '../lib/project-icon';
 import { projectHiddenAgentTaskIds } from '../documents/task-id';
 import { closeProjectPages } from './project-pages';
 import { forgetBlockEdits } from '../documents/block-edit-state';
@@ -14,11 +15,22 @@ import { assignFreshSessionId } from './session-ids';
 import { forgetAgentPrompts } from '../lib/prompt-history';
 import { delegationRequest, registerTaskAuthority } from './delegation';
 
-export const PASTEL_HUES = [0, 30, 60, 120, 180, 210, 260, 300, 330];
+// Pastels, plus one deeper blue so two blue projects stay distinguishable.
+export const PROJECT_COLORS = [
+  'hsl(0, 70%, 75%)',
+  'hsl(30, 70%, 75%)',
+  'hsl(60, 70%, 75%)',
+  'hsl(120, 70%, 75%)',
+  'hsl(180, 70%, 75%)',
+  'hsl(210, 70%, 75%)',
+  'hsl(220, 70%, 62%)',
+  'hsl(260, 70%, 75%)',
+  'hsl(300, 70%, 75%)',
+  'hsl(330, 70%, 75%)',
+];
 
 export function randomPastelColor(): string {
-  const hue = PASTEL_HUES[Math.floor(Math.random() * PASTEL_HUES.length)];
-  return `hsl(${hue}, 70%, 75%)`;
+  return PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)];
 }
 
 const byName = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
@@ -135,9 +147,13 @@ export function removeProject(projectId: string): void {
       // A stale id would keep task shortcuts disabled with no page shown.
       if (s.githubIssuesProjectId === projectId) s.githubIssuesProjectId = null;
       if (s.kanbanProjectId === projectId) s.kanbanProjectId = null;
+      // An idea outlives its project: it stays, belonging to none.
+      for (const idea of s.taskIdeas) if (idea.projectId === projectId) idea.projectId = null;
     }),
   );
   forgetGitHubLists(projectId);
+  // The main process would otherwise keep a removed project's secrets until restart.
+  void syncProjectAgentEnv(projectId, undefined);
 }
 
 export function updateProject(
@@ -148,15 +164,17 @@ export function updateProject(
       | 'allowPeerAccess'
       | 'name'
       | 'color'
+      | 'icon'
       | 'branchPrefix'
       | 'deleteBranchOnClose'
       | 'defaultGitIsolation'
       | 'defaultBaseBranch'
       | 'coverageReportPath'
       | 'verifyCommand'
+      | 'agentEnv'
       | 'evidenceChecks'
-      | 'evidenceModel'
-      | 'evidenceAutoBuild'
+      | 'verifyAutoRun'
+      | 'reviewChecks'
       | 'terminalBookmarks'
       | 'isGitRepo'
       | 'documentMainAgentId'
@@ -179,6 +197,8 @@ export function updateProject(
         s.projects[idx].allowPeerAccess = updates.allowPeerAccess;
       if (updates.name !== undefined) s.projects[idx].name = updates.name;
       if (updates.color !== undefined) s.projects[idx].color = updates.color;
+      if (Object.prototype.hasOwnProperty.call(updates, 'icon'))
+        s.projects[idx].icon = sanitizeProjectIcon(updates.icon);
       if (updates.branchPrefix !== undefined)
         s.projects[idx].branchPrefix = sanitizeBranchPrefix(updates.branchPrefix);
       if (updates.deleteBranchOnClose !== undefined)
@@ -191,12 +211,15 @@ export function updateProject(
         s.projects[idx].coverageReportPath = updates.coverageReportPath;
       if (Object.prototype.hasOwnProperty.call(updates, 'verifyCommand'))
         s.projects[idx].verifyCommand = updates.verifyCommand;
+      if (Object.prototype.hasOwnProperty.call(updates, 'agentEnv'))
+        s.projects[idx].agentEnv = updates.agentEnv;
       if (Object.prototype.hasOwnProperty.call(updates, 'evidenceChecks'))
         s.projects[idx].evidenceChecks = updates.evidenceChecks;
-      if (Object.prototype.hasOwnProperty.call(updates, 'evidenceModel'))
-        s.projects[idx].evidenceModel = updates.evidenceModel;
-      if (updates.evidenceAutoBuild !== undefined)
-        s.projects[idx].evidenceAutoBuild = updates.evidenceAutoBuild;
+      // Stored only when off, matching how persistence normalizes it.
+      if (updates.verifyAutoRun !== undefined)
+        s.projects[idx].verifyAutoRun = updates.verifyAutoRun ? undefined : false;
+      if (updates.reviewChecks !== undefined)
+        s.projects[idx].reviewChecks = [...updates.reviewChecks];
       if (updates.terminalBookmarks !== undefined)
         s.projects[idx].terminalBookmarks = updates.terminalBookmarks;
       if (updates.isGitRepo !== undefined) s.projects[idx].isGitRepo = updates.isGitRepo;
@@ -223,6 +246,22 @@ export function updateProject(
     updates.verifyCommand !== previousVerifyCommand
   ) {
     syncCoordinatorVerifyCommand(projectId, updates.verifyCommand);
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'agentEnv')) {
+    void syncProjectAgentEnv(projectId, updates.agentEnv);
+  }
+}
+
+/** Hands the project's agent env vars to the main process, which applies them
+ *  at spawn. Never rejects; the warning leaves the values out. */
+export async function syncProjectAgentEnv(
+  projectId: string,
+  env: Record<string, string> | undefined,
+): Promise<void> {
+  try {
+    await invoke(IPC.SetProjectAgentEnv, { projectId, env: env ?? {} });
+  } catch (error) {
+    console.warn('Could not apply project environment variables:', String(error));
   }
 }
 
@@ -267,16 +306,26 @@ export function projectIsGitRepo(projectId: string): boolean {
   return getProject(projectId)?.isGitRepo !== false;
 }
 
+let picking = false;
+
+/** Asks for a folder and links it; null when cancelled, or while the dialog is already open. */
 export async function pickAndAddProject(): Promise<string | null> {
-  const selected = await openDialog({ directory: true, multiple: false });
-  if (!selected) return null;
-  const path = selected as string;
+  // A button, Ctrl+N and a dropped link can all ask at once; one dialog answers them.
+  if (picking) return null;
+  picking = true;
+  try {
+    const selected = await openDialog({ directory: true, multiple: false });
+    if (!selected) return null;
+    const path = selected as string;
 
-  const isGitRepo = await invoke<boolean>(IPC.CheckIsGitRepo, { path });
+    const isGitRepo = await invoke<boolean>(IPC.CheckIsGitRepo, { path });
 
-  const segments = path.split('/');
-  const name = segments[segments.length - 1] || path;
-  return addProject(name, path, isGitRepo);
+    const segments = path.split('/');
+    const name = segments[segments.length - 1] || path;
+    return addProject(name, path, isGitRepo);
+  } finally {
+    picking = false;
+  }
 }
 
 /** Check each project path and record which ones are missing. */
@@ -370,6 +419,12 @@ export async function relinkProject(projectId: string): Promise<boolean> {
 
 export function isProjectMissing(projectId: string): boolean {
   return projectId in store.missingProjectIds;
+}
+
+/** Whether a project can have a plan: a code project still on disk. */
+export function isPlannableProject(projectId: string | null): boolean {
+  const project = store.projects.find((p) => p.id === projectId);
+  return !!project && !isDocumentProject(project) && !isProjectMissing(project.id);
 }
 
 /** Peer permission changes take effect in the main process before the UI reports success. */

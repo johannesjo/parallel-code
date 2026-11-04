@@ -22,7 +22,7 @@ test.skip(
 test('real agent: Claude Code answers on Haiku', async () => {
   const { page, close } = await launchShowcaseApp({ realAgents: ['claude'] });
   try {
-    await page.getByRole('button', { name: 'New Task' }).click();
+    await page.getByRole('button', { name: 'New Task', exact: true }).click();
     await page.getByRole('radio', { name: /Claude Code/ }).click();
     await page.getByPlaceholder('What should the agent work on?').fill('Add a 5-day forecast view');
     await page.getByRole('button', { name: 'Create Task' }).click();

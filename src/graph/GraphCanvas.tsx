@@ -15,7 +15,7 @@ import {
 import { nodeTrail, visibleNodes, type MapData, type MapNode } from './model';
 import { defaultAppearance, type NodeAppearance } from './presentation';
 import { KindMark } from './KindMark';
-import { KebabIcon, LinkIcon } from '../components/icons';
+import { KebabIcon, LinkIcon, LockIcon } from '../components/icons';
 import './graph.css';
 import { adjacentNode, positionsFor, type Position, type MapOrientation } from './layout';
 import { NodeContextMenu, type NodeAction } from './NodeContextMenu';
@@ -832,18 +832,7 @@ export function GraphCanvas<N extends MapNode>(props: GraphProps<N>) {
                             <Show when={props.showOwnership && ownershipTitle(record().userEdited)}>
                               {(title) => (
                                 <span class="mindmap-ownership" title={title()}>
-                                  <svg
-                                    width="10"
-                                    height="10"
-                                    viewBox="0 0 16 16"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.5"
-                                    aria-hidden="true"
-                                  >
-                                    <rect x="3" y="7" width="10" height="8" rx="1.5" />
-                                    <path d="M5 7V5a3 3 0 0 1 6 0v2" stroke-linecap="round" />
-                                  </svg>
+                                  <LockIcon size={10} />
                                 </span>
                               )}
                             </Show>

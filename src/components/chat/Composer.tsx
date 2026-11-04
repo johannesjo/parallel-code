@@ -11,7 +11,7 @@ import { shellCommand, type Composer as ComposerState } from './composer-state';
 import { ModelPicker, PermissionPicker } from './ModelPicker';
 import { Progress } from './Progress';
 import { RequestCard, type RespondToRequest } from './RequestCard';
-import { PencilIcon, SendIcon, SyncIcon } from '../icons';
+import { ArrowUpAltIcon, PencilIcon, SendIcon, StopSmallIcon, SyncIcon } from '../icons';
 
 export interface ChatHistoryEntry {
   title: string;
@@ -113,10 +113,25 @@ export function Composer(props: ComposerProps) {
   // A terminal shows the `!` as its prompt, so the field holds only the command after it.
   const shellPrefix = () => (c.shellMode() ? props.draft.indexOf('!') + 1 : 0);
   const shown = () => props.draft.slice(shellPrefix());
-  const placeholder = () =>
-    c.shellMode()
-      ? 'Command to run in this worktree… Backspace to leave'
-      : `${working() ? 'Add a follow-up' : `Message ${props.agentName}`}… Shift+Enter for a new line${props.onListFiles ? ', @ for files' : ''}${props.state.commands?.length ? (props.state.commands.some((command) => command.prefix === '$') ? ', $ for skills' : ', / for commands') : ''}${c.canRunShell() ? ', ! for a shell command' : ''}`;
+  // Terse: task columns are narrow, and a cut-off hint reads as a glitch.
+  // Shift+Enter for a new line is the chat convention, so it goes unsaid.
+  const placeholderHints = () =>
+    [
+      props.onListFiles ? '@ files' : '',
+      props.state.commands?.length
+        ? props.state.commands.some((command) => command.prefix === '$')
+          ? '$ skills'
+          : '/ commands'
+        : '',
+      c.canRunShell() ? '! shell' : '',
+    ].filter(Boolean);
+  const placeholder = () => {
+    if (c.shellMode()) return 'Command to run in this worktree… Backspace to leave';
+    // Same lead while working: the send button already says the message queues.
+    const lead = `Message ${props.agentName}`;
+    const hints = placeholderHints();
+    return hints.length ? `${lead}… ${hints.join(' · ')}` : `${lead}…`;
+  };
   const sendLabel = () =>
     c.shellMode()
       ? working()
@@ -345,15 +360,7 @@ export function Composer(props: ComposerProps) {
                 }
                 onClick={() => void c.send()}
               >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path
-                    d="M8 12V4M4 8l4-4 4 4"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
+                <ArrowUpAltIcon size={16} />
               </button>
             </Show>
             <Show when={working()}>
@@ -364,15 +371,7 @@ export function Composer(props: ComposerProps) {
                 title={stopLabel()}
                 onClick={() => void c.stop()}
               >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <rect x="4.5" y="4.5" width="7" height="7" rx="1" />
-                </svg>
+                <StopSmallIcon size={16} />
               </button>
             </Show>
           </span>

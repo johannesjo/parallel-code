@@ -4,6 +4,7 @@ import { IPC } from '../../electron/ipc/channels';
 import { askCodeEnvFile } from '../../electron/shared/ask-code-models';
 import { CHANGE_TOUR_TIMEOUT_MS } from '../../electron/shared/change-tour-limits';
 import { store } from '../store/store';
+import { projectIdForPath } from '../store/project-path';
 import { errMessage, info as logInfo, warn as logWarn } from './log';
 import { PROVIDER_ERROR_CHARS, providerFailureMessage } from './provider-error';
 import {
@@ -17,6 +18,8 @@ import { createTourQuestions } from './create-tour-questions';
 import { GO_DEEPER_QUESTION, buildFollowUpPrompt } from './understanding-prompt';
 import { parseUnifiedDiff, type FileDiff } from './unified-diff-parser';
 import { loadTaskDiff, type TaskDiffInput } from './load-task-diff';
+import { diffFingerprint } from './task-brief';
+import type { TourBasis } from './finish-reports';
 
 interface TourMessage {
   type: 'chunk' | 'error' | 'done';
@@ -49,6 +52,8 @@ export function createChangeTour() {
   const [taskName, setTaskName] = createSignal('');
 
   const [sourceDiff, setSourceDiff] = createSignal('');
+  /** Set only for a tour of the whole task, the diff its outdated check compares against. */
+  const [basis, setBasis] = createSignal<TourBasis>();
   function cancel() {
     cancelRequest?.();
     setLoading(false);
@@ -62,6 +67,7 @@ export function createChangeTour() {
     setStep(0);
     setError('');
     setSourceDiff('');
+    setBasis(undefined);
     setTaskName('');
     lastInput = undefined;
   }
@@ -118,10 +124,14 @@ export function createChangeTour() {
       active = false;
     };
     try {
+      const readAt = Date.now();
       const { rawDiff, cwd } = await loadTaskDiff({
         ...input,
       });
       if (!active) return;
+      if (!input.selectedCommit) {
+        setBasis({ generatedAt: readAt, fingerprint: diffFingerprint(rawDiff) });
+      }
       generate({
         rawDiff,
         files: parseUnifiedDiff(rawDiff),
@@ -273,6 +283,7 @@ export function createChangeTour() {
         provider,
         model,
         envFile,
+        projectId: projectIdForPath(worktreePath),
       }).catch((error) => {
         if (!active) return;
         active = false;
@@ -313,6 +324,7 @@ export function createChangeTour() {
     elapsedSeconds,
     receiving,
     sourceDiff,
+    basis,
     generateForTask,
     generate,
     cancel,

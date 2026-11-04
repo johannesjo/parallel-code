@@ -43,7 +43,7 @@ import {
 } from './chat-bridge.js';
 import { parseMindMapUpdate, type MindMapDocument, type MindMapUpdate } from '../shared/mindmap.js';
 import { parseReasoningUpdate } from '../shared/reasoning-feed.js';
-import { parseCanvasView, type CanvasView } from '../shared/canvas-view.js';
+import { parseCanvasRequest, type CanvasRequest } from '../shared/canvas-view.js';
 import { parseAgentTourPayload, type AgentTourPayload } from '../shared/agent-tour.js';
 import {
   CONFIDENCE_LIMITS,
@@ -51,11 +51,7 @@ import {
   type ConfidencePayload,
 } from '../shared/task-confidence.js';
 import { parseGitHubList, type GitHubCustomList } from '../shared/github-list.js';
-import {
-  EVIDENCE_LIMITS,
-  parseEvidenceSubmission,
-  type EvidenceSubmission,
-} from '../shared/evidence.js';
+import { PR_DRAFT_LIMITS, parsePrDraft, type PrDraft } from '../shared/pr-draft.js';
 import type { SessionCaller, SessionCapabilities } from '../shared/delegation-types.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
@@ -309,6 +305,10 @@ interface RemoteServer {
 export interface RemoteProject {
   id: string;
   name: string;
+  color?: string;
+  icon?: string;
+  /** The project the desktop last created a task in. */
+  lastUsed?: boolean;
 }
 
 /** The task a paired phone asked for; agent and model fall back to the desktop default. */
@@ -434,9 +434,8 @@ type CanvasOps = Pick<
   | 'openCanvas'
   | 'publishTour'
   | 'publishConfidence'
+  | 'publishPrDraft'
   | 'publishGitHubList'
-  | 'submitEvidence'
-  | 'getEvidence'
 >;
 type CanvasRoute =
   | 'mindmaps'
@@ -444,8 +443,8 @@ type CanvasRoute =
   | 'canvas'
   | 'tours'
   | 'confidence'
-  | 'github-lists'
-  | 'evidence';
+  | 'pr-drafts'
+  | 'github-lists';
 /** A published tour inlines its own context; the shared parser caps it again. */
 const TOUR_MAX_BODY_BYTES = 256 * 1024;
 /** 100 items with full-length titles and reasons, plus JSON overhead. */
@@ -472,20 +471,6 @@ function canvasErrorStatus(err: unknown): number {
   return CANVAS_UNAVAILABLE.test(message) ? 503 : 400;
 }
 
-async function evidenceRequest(
-  ops: CanvasOps,
-  req: IncomingMessage,
-  taskId: string,
-): Promise<unknown> {
-  if (req.method === 'GET') {
-    if (!ops.getEvidence) throw httpError(503, 'Evidence unavailable');
-    return ops.getEvidence(taskId);
-  }
-  if (!ops.submitEvidence) throw httpError(503, 'Evidence unavailable');
-  const body = await readJsonBody(req, EVIDENCE_LIMITS.submissionBytes * 2);
-  return ops.submitEvidence(taskId, parseEvidenceSubmission(body));
-}
-
 async function canvasRequest(
   ops: CanvasOps,
   req: IncomingMessage,
@@ -495,9 +480,9 @@ async function canvasRequest(
   if (route === 'canvas') {
     if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
     if (!ops.openCanvas) throw httpError(503, 'Canvas unavailable');
-    const view = parseCanvasView(await readJsonBody(req));
-    await ops.openCanvas(taskId, view);
-    return { ok: true, view };
+    const request = parseCanvasRequest(await readJsonBody(req));
+    await ops.openCanvas(taskId, request);
+    return { ok: true, ...request };
   }
   if (route === 'tours') {
     if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
@@ -513,6 +498,13 @@ async function canvasRequest(
     await ops.publishConfidence(taskId, payload);
     return { ok: true, scores: payload.scores.length };
   }
+  if (route === 'pr-drafts') {
+    if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
+    if (!ops.publishPrDraft) throw httpError(503, 'Pull request drafts unavailable');
+    const draft = parsePrDraft(await readJsonBody(req, PR_DRAFT_LIMITS.payloadBytes));
+    await ops.publishPrDraft(taskId, draft);
+    return { ok: true, title: draft.title };
+  }
   if (route === 'github-lists') {
     if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
     if (!ops.publishGitHubList) throw httpError(503, 'GitHub lists unavailable');
@@ -520,7 +512,6 @@ async function canvasRequest(
     await ops.publishGitHubList(taskId, list);
     return { ok: true, name: list.name };
   }
-  if (route === 'evidence') return evidenceRequest(ops, req, taskId);
   const reasoning = route === 'reasoning';
   if (req.method === 'GET') {
     const read = reasoning ? ops.readReasoning : ops.readMindMap;
@@ -1030,18 +1021,16 @@ export function startRemoteServer(opts: {
   readReasoning?: (taskId: string) => Promise<ReasoningDocument>;
   updateReasoning?: (taskId: string, update: ReasoningUpdate) => Promise<ReasoningDocument>;
   updateMindMap?: (taskId: string, update: MindMapUpdate) => Promise<MindMapDocument>;
-  /** Open or focus a canvas view for the agent's own task (renderer-backed). */
-  openCanvas?: (taskId: string, view: CanvasView) => Promise<void>;
+  /** Open or focus a canvas view for the agent's own task, optionally at a node (renderer-backed). */
+  openCanvas?: (taskId: string, request: CanvasRequest) => Promise<void>;
   /** Show a tour the agent wrote for its own task (renderer-backed). */
   publishTour?: (taskId: string, payload: AgentTourPayload) => Promise<unknown>;
   /** Show a confidence rating the agent published for its own task (renderer-backed). */
   publishConfidence?: (taskId: string, payload: ConfidencePayload) => Promise<unknown>;
+  /** Fill the Create pull request dialog with a draft the agent wrote for its own task (renderer-backed). */
+  publishPrDraft?: (taskId: string, draft: PrDraft) => Promise<unknown>;
   /** Show an issue list the agent ordered and grouped on its project's GitHub page. */
   publishGitHubList?: (taskId: string, list: GitHubCustomList) => Promise<unknown>;
-  /** Record the agent's handoff claim and start building evidence (renderer-backed). */
-  submitEvidence?: (taskId: string, submission: EvidenceSubmission) => Promise<unknown>;
-  /** The app's evidence status for the agent's own task (renderer-backed). */
-  getEvidence?: (taskId: string) => Promise<unknown>;
   /** Read a task's notes (renderer-backed). */
   getTaskNotes?: (taskId: string) => Promise<string>;
   /** Read merge readiness for the phone's merge dialog (renderer-backed). */
@@ -1338,7 +1327,7 @@ export function startRemoteServer(opts: {
       };
 
       const mapMatch = url.pathname.match(
-        /^\/api\/(mindmaps|reasoning|canvas|tours|confidence|github-lists|evidence)\/([^/]+)$/,
+        /^\/api\/(mindmaps|reasoning|canvas|tours|confidence|pr-drafts|github-lists)\/([^/]+)$/,
       );
       if (mapMatch) {
         const route = mapMatch[1] as CanvasRoute;
@@ -1399,7 +1388,9 @@ export function startRemoteServer(opts: {
             if (canvasAgents.get(agentId) !== record || !canvasActive(owner))
               return jsonEnd(403, { error: 'Session expired' });
             if (opts.isOrchestrationEnabled?.() === false && body.name !== 'signal_done')
-              return jsonEnd(403, { error: 'Agent orchestration is disabled in Settings > MCP.' });
+              return jsonEnd(403, {
+                error: 'Agent orchestration is disabled in Settings > Agents.',
+              });
             const result = await opts.callSessionTool?.(
               { taskId: record.taskId, agentId, ...session },
               body.name,
@@ -1869,7 +1860,7 @@ export function startRemoteServer(opts: {
         !(req.method === 'POST' && /^\/api\/tasks\/[^/]+\/done$/.test(url.pathname)) &&
         opts.isOrchestrationEnabled?.() === false;
       if (disabledAgentRoute())
-        return jsonEnd(403, { error: 'Agent orchestration is disabled in Settings > MCP.' });
+        return jsonEnd(403, { error: 'Agent orchestration is disabled in Settings > Agents.' });
       if (!orch && isCoordinatorRoute) {
         res.writeHead(503, { ...SECURITY_HEADERS, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'coordinator not available' }));
@@ -1880,7 +1871,7 @@ export function startRemoteServer(opts: {
         const readBody = async () => {
           const body = await readCoordinatorBody(req, jsonReply);
           if (disabledAgentRoute()) {
-            jsonReply(403, { error: 'Agent orchestration is disabled in Settings > MCP.' });
+            jsonReply(403, { error: 'Agent orchestration is disabled in Settings > Agents.' });
             throw new Error('Agent orchestration disabled while reading the request');
           }
           return body;
@@ -2103,7 +2094,15 @@ export function startRemoteServer(opts: {
         if (snapshot) sendScrollback(snapshot.data, snapshot.cols, snapshot.rows);
         else sendRawScrollback();
       },
-      cb,
+      {
+        onOutput: cb,
+        onResize: (cols, rows) => {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          ws.send(
+            JSON.stringify({ type: 'terminal-size', agentId, cols, rows } satisfies ServerMessage),
+          );
+        },
+      },
     );
     if (subscriber) {
       subs?.set(agentId, subscriber);

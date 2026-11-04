@@ -12,7 +12,7 @@ function tokenSummary(state: AgentChatState): string {
   return ` Session: ${usage.totalTokens.toLocaleString()} tokens · ${usage.inputTokens.toLocaleString()} input (including cache) · ${usage.outputTokens.toLocaleString()} output, ${usage.scope === 'connection' ? 'since this chat connected' : 'for this conversation'}.`;
 }
 
-/** How full the context window is: a ring, joined by the percentage once it runs
+/** How full the context window is: a pie, joined by the percentage once it runs
  *  short, with the exact figures and session token usage on hover. Absent until the
  *  provider reports it. */
 export function ContextMeter(props: { state: AgentChatState }) {
@@ -38,11 +38,13 @@ export function ContextMeter(props: { state: AgentChatState }) {
             data-level={share() >= 1 ? 'full' : share() >= 0.9 ? 'high' : 'normal'}
           >
             <svg class="chat-context-meter-ring" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="8" cy="8" r="6" />
+              <circle cx="8" cy="8" r="6.5" />
+              {/* A filled wedge, not an arc: a partial ring reads as a
+                  loading spinner on an idle composer. */}
               <circle
                 cx="8"
                 cy="8"
-                r="6"
+                r="2.75"
                 pathLength="100"
                 stroke-dasharray={`${Math.min(100, share() * 100)} 100`}
               />

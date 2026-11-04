@@ -149,4 +149,42 @@ describe('ScrollingDiffView large-diff collapsing', () => {
     const host = mount([file('a.ts', LARGE_DIFF_LINE_THRESHOLD + 1), file('b.ts', 20)], 'gone.ts');
     expect(renderedFiles(host)).toEqual(['a.ts']);
   });
+
+  it('dims the other files at once when navigating, then fades them back after a painted frame', () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const [target, setTarget] = createSignal<string | null>(null);
+    const host = document.createElement('div');
+    document.body.append(host);
+    disposers.push(
+      render(
+        () => (
+          <ReviewProvider open compilePrompt={() => ''}>
+            <ScrollingDiffView
+              files={[file('a.ts', 1), file('b.ts', 1)]}
+              scrollToPath={target()}
+              worktreePath="/wt"
+            />
+          </ReviewProvider>
+        ),
+        host,
+      ),
+    );
+    const sections = host.firstElementChild?.children;
+    const other = sections?.[0];
+    if (!(other instanceof HTMLElement)) throw new Error('Missing file section');
+
+    setTarget('b.ts');
+    expect(other.style.opacity).toBe('0.25');
+    expect(other.style.transition).toBe('none');
+
+    frames.shift()?.(0);
+    expect(other.style.opacity, 'still dimmed while the dimmed frame paints').toBe('0.25');
+    while (frames.length > 0) frames.shift()?.(0);
+    expect(other.style.opacity).toBe('0.9');
+    expect(other.style.transition).toContain('opacity');
+  });
 });

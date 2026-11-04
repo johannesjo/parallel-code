@@ -65,6 +65,11 @@ it('keeps a focused task card mounted when live preview text and project color c
   expect(document.activeElement).toBe(card);
   expect(card.textContent).toContain('Running tests');
   expect(swatch()?.style.background).toBe('#0000ff');
+  publish([{ ...agent, projectColor: '#0000ff', projectIcon: 'bug' }]);
+  expect(swatch()?.style.color).toBe('#0000ff');
+  expect(swatch()?.querySelector('svg')).not.toBeNull();
+  publish([{ ...agent, projectColor: '#0000ff', projectIcon: 'not-an-icon' }]);
+  expect(swatch()?.style.background).toBe('#0000ff');
   publish([{ ...agent, projectColor: undefined }]);
   expect(swatch()).toBeNull();
 });
@@ -124,7 +129,7 @@ it('combines search with status filters and restores them when returning from a 
   search.value = 'Codex';
   search.dispatchEvent(new Event('input', { bubbles: true }));
   expect(host.querySelectorAll('.agent-card')).toHaveLength(2);
-  click('Review 1');
+  click('Needs you 1');
   expect(host.querySelectorAll('.agent-card')).toHaveLength(1);
   expect(host.querySelector('.agent-card')?.textContent).toContain('Review tests');
   dispose();
@@ -167,18 +172,37 @@ it('points Android browsers to the app and leaves other phones alone', () => {
   userAgent.mockRestore();
 });
 
-it('files failed CI under Needs you and names a ready task by its checks', () => {
+it('groups tasks under the desktop board lanes and names a ready task by its checks', () => {
   const base = { status: 'running', exitCode: null, lastLine: '' } as const;
   const list: RemoteAgent[] = [
-    { ...base, agentId: 'a1', taskId: 't1', taskName: 'Red PR', attention: 'idle', ci: 'failure' },
+    {
+      ...base,
+      agentId: 'a1',
+      taskId: 't1',
+      taskName: 'Red PR',
+      attention: 'idle',
+      ci: 'failure',
+      lane: 'needs',
+    },
+    {
+      ...base,
+      agentId: 'a4',
+      taskId: 't4',
+      taskName: 'Babysat PR',
+      attention: 'idle',
+      ci: 'failure',
+      lane: 'pr',
+    },
     {
       ...base,
       agentId: 'a2',
       taskId: 't2',
-      taskName: 'Green PR',
+      taskName: 'Green work',
       attention: 'ready',
       ci: 'success',
+      lane: 'stopped',
     },
+    { ...base, agentId: 'a3', taskId: 't3', taskName: 'Question', attention: 'needs_input' },
   ];
   Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list }) });
   dispose = render(
@@ -188,7 +212,49 @@ it('files failed CI under Needs you and names a ready task by its checks', () =>
   const group = (name: string) => host.querySelector(`section[aria-label="${name}"]`);
   expect(group('Needs you')?.textContent).toContain('Red PR');
   expect(group('Needs you')?.textContent).toContain('CI failed');
-  expect(group('Ready to review')?.textContent).toContain('Green PR');
-  expect(group('Ready to review')?.textContent).toContain('Ready to merge');
-  expect(host.textContent).toContain('1 task needs your attention');
+  expect(group('In pull request')?.textContent).toContain('Babysat PR');
+  expect(group('Stopped')?.textContent).toContain('Green work');
+  expect(group('Stopped')?.textContent).toContain('Ready to merge');
+  // Without a lane from the desktop, the phone still files a question under Needs you.
+  expect(group('Needs you')?.textContent).toContain('Question');
+  // The desktop leaves failed CI in its PR lane only while Babysit hands it to
+  // the agent, so the phone does not count it as needing you either.
+  expect(host.textContent).toContain('2 tasks need your attention');
+  expect(group('In pull request')?.querySelector('.agent-card.attention')).toBeNull();
+});
+
+it("shows a task's PR row like the board card, without repeating its checks in the status", () => {
+  const base = { status: 'running', exitCode: null, lastLine: '', lane: 'pr' } as const;
+  const list: RemoteAgent[] = [
+    {
+      ...base,
+      agentId: 'a1',
+      taskId: 't1',
+      taskName: 'Red PR',
+      attention: 'idle',
+      ci: 'failure',
+      pr: {
+        url: 'https://github.com/o/r/pull/42',
+        label: 'CI failed',
+        kind: 'failed',
+        babysit: true,
+      },
+    },
+    { ...base, agentId: 'a2', taskId: 't2', taskName: 'No PR', attention: 'idle' },
+  ];
+  Socket.current.onmessage?.({ data: JSON.stringify({ type: 'agents', list }) });
+  dispose = render(
+    () => <AgentList onSelect={() => {}} onNewTask={() => {}} onPair={() => {}} />,
+    host,
+  );
+  const [red, plain] = host.querySelectorAll('.agent-card');
+  const row = red?.querySelector('.agent-pr');
+  expect(row?.textContent).toContain('PR #42');
+  expect(row?.textContent).toContain('CI failed');
+  expect(row?.textContent).toContain('Babysitting');
+  expect(row?.classList.contains('failed')).toBe(true);
+  expect(red?.querySelector('.agent-status')?.textContent).not.toContain('CI failed');
+  // Babysit hands the failure to the agent, so the card does not ask for the user.
+  expect(red?.classList.contains('attention')).toBe(false);
+  expect(plain?.querySelector('.agent-pr')).toBeNull();
 });

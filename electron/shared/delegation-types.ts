@@ -1,6 +1,7 @@
 /** Serializable contracts shared by desktop, MCP and main-process coordination. */
 export type IntegrationPolicy = 'review' | 'automatic';
-export type SessionProfile = 'ordinary' | 'child-review' | 'child-automatic';
+/** `page` is a project page's agent: it works in the checkout and may only create independent tasks. */
+export type SessionProfile = 'ordinary' | 'child-review' | 'child-automatic' | 'page';
 export interface SessionCapabilities {
   profile: SessionProfile;
   canCreate: boolean;
@@ -49,6 +50,16 @@ export interface DelegationSnapshot {
   branchName: string;
   headSha: string;
   changedFileCount: number;
+}
+
+/** An agent's request for a top-level task that is not its child; the renderer creates it
+ *  like the New Task dialog would, inheriting the creator's project, agent and sandbox. */
+export interface IndependentTaskRequest {
+  creatorTaskId: string;
+  name: string;
+  prompt: string;
+  /** Pass to `assertIndependentLaunch` right before the agent starts. */
+  launchId: string;
 }
 
 export interface DelegateAssignment {
@@ -136,7 +147,8 @@ export type DelegationRequest =
   | { action: 'dismissAttempt'; parentTaskId: string; requestId: string }
   | { action: 'state'; taskId: string }
   | { action: 'closeParent'; taskId: string; deleteBranch?: boolean }
-  | { action: 'detachChild'; taskId: string };
+  | { action: 'detachChild'; taskId: string }
+  | { action: 'assertIndependentLaunch'; launchId: string };
 
 export interface DelegationState {
   attempts: DelegationAttempt[];

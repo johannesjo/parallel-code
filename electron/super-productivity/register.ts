@@ -100,7 +100,7 @@ export function registerSuperProductivityHandlers(): void {
   ipcMain.handle(IPC.SuperProductivityCompleteTask, (_e, args: IpcArgs) =>
     client.completeTask(
       spId(args?.taskId, 'taskId'),
-      boundedText(args?.note, 'note', MAX_NOTE_LENGTH),
+      args?.note === undefined ? undefined : boundedText(args.note, 'note', MAX_NOTE_LENGTH),
     ),
   );
 

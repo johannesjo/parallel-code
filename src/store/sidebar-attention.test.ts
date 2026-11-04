@@ -93,6 +93,33 @@ function askingTask(taskId: string, task: MockTask, question: TaskOpenQuestion |
   if (question) status.questions.set(taskId, [question]);
 }
 
+describe('question wording', () => {
+  const question = () => computeAttentionEntries().find((entry) => entry.kind === 'question');
+
+  it('names the agent without a pane number when the task has one agent', () => {
+    mockStore.taskOrder = ['task-1'];
+    askingTask('task-1', { agentIds: ['agent-1'] }, { agentId: 'agent-1', since: 1 });
+    expect(question()?.detail).toBe('Agent');
+  });
+
+  it('numbers panes only when the task has several agents', () => {
+    mockStore.taskOrder = ['task-1'];
+    askingTask('task-1', { agentIds: ['agent-1', 'agent-2'] }, { agentId: 'agent-2', since: 1 });
+    expect(question()?.detail).toBe('Agent · pane 2');
+  });
+
+  it('says Approve for a chat approval request', () => {
+    mockStore.taskOrder = ['task-1'];
+    askingTask('task-1', { agentIds: ['agent-1'] }, { agentId: 'agent-1', since: 1 });
+    (mockStore.agents as Record<string, unknown>)['agent-1'] = {
+      def: { name: 'Claude Code' },
+      chatState: { requests: [{ id: 1, since: 1, kind: 'approval', text: '' }] },
+    };
+    expect(question()?.label).toBe('Approve request');
+    expect(question()?.detail).toBe('Claude Code');
+  });
+});
+
 describe('questionEntries', () => {
   it('returns only tasks waiting on an answer, newest question first', () => {
     mockStore.taskOrder = ['task-1', 'task-2', 'task-3'];

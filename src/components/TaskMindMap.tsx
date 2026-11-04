@@ -87,6 +87,11 @@ export function TaskMindMap(props: { task: Task; visible: boolean; wide?: boolea
         taskActions={taskControls.actions}
         renderTaskBadge={taskControls.renderBadge}
         visible={props.visible}
+        focusRequest={
+          props.task.canvasFocusRequest?.view === 'mindmap'
+            ? props.task.canvasFocusRequest
+            : undefined
+        }
         defaultZoom={canvasDefaultZoom(props.wide)}
         showOwnership={store.canvasOwnershipBadges}
         sendChanges={sendChanges()}

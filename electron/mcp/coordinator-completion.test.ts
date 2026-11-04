@@ -35,7 +35,7 @@ function gitResults(status = '', head = sha) {
       _options: unknown,
       cb: (error: Error | null, stdout: string, stderr: string) => void,
     ) => {
-      cb(null, args[0] === 'status' ? status : head, '');
+      cb(null, args.includes('status') ? status : head, '');
     },
   );
 }
@@ -143,7 +143,7 @@ describe('completion capture', () => {
         _options: unknown,
         cb: (error: Error | null, stdout: string, stderr: string) => void,
       ) => {
-        cb(null, args[0] === 'status' ? '' : ++reads === 1 ? sha : 'b'.repeat(40), '');
+        cb(null, args.includes('status') ? '' : ++reads === 1 ? sha : 'b'.repeat(40), '');
       },
     );
     await expect(coordinator.signalDone('task-1', { result: report })).rejects.toThrow(

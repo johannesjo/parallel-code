@@ -189,7 +189,7 @@
   font-size: 11px;
   color: var(--fg-subtle);
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border-subtle);
   white-space: nowrap;
   flex-shrink: 0;
@@ -267,9 +267,9 @@
   margin-left: 6px;
   font-size: 11px;
   padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-text);
+  border-radius: var(--radius-pill);
+  background: var(--bg-hover);
+  color: var(--fg-muted);
 }
 
 .docws-btn {
@@ -481,7 +481,7 @@
   gap: 2px;
   padding: 4px 8px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--island-bg);
   font-size: 12px;
   color: var(--fg-muted);
@@ -751,7 +751,7 @@
   border-radius: var(--radius-sm);
   margin: 0 -10px;
   padding: 2px 10px;
-  transition: background 0.1s ease;
+  transition: background var(--motion-fast) var(--ease-out);
 }
 
 .docws-content.docws-selectable:not(.docws-page) .doc-block:hover:not(.is-selected) {
@@ -1003,7 +1003,7 @@
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.1s ease;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .docws-block-action:hover::after,
@@ -1200,7 +1200,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  transition: border-color 160ms ease;
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 
 /* Always present, so it steps back while the reader is in the prose and
@@ -1481,7 +1481,7 @@
   gap: 6px;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 4px 6px 4px 10px;
   color: var(--fg-muted);
   font-family: var(--font-ui);
@@ -1517,7 +1517,7 @@
 .docws-count-btn {
   min-width: 22px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   color: var(--fg);
@@ -1676,7 +1676,7 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   color: var(--fg-muted);
   white-space: nowrap;
@@ -1863,8 +1863,12 @@
 
 /* The head is the window drag region while the view fills the window; on
    macOS the traffic lights sit in its top-left corner, so it starts to their
-   right, as the workspace header does. */
+   right, as the workspace header does. Its 32px height matches
+   .mac-titlebar-spacer so the controls centre on the traffic lights. */
 .docws-compare-dialog.is-mac .docws-compare-dialog-head {
+  height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
   padding-left: 86px;
 }
 

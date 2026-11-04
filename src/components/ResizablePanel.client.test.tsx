@@ -329,3 +329,18 @@ describe('keyboard resizing', () => {
     expect(getPanelUserSize('test:notes')).toBeUndefined();
   });
 });
+
+describe('capped content-sized cells', () => {
+  it('lays out the child as a flex column so it shrinks to the cap instead of being clipped', () => {
+    const files: PanelChild = {
+      id: 'files',
+      minSize: 100,
+      maxAutoSize: 'min(300px, 33vh)',
+      content: () => 'Files',
+    };
+    const panel = mount([files, shell], ['shell'], [300, 400]);
+    expect(panel.cells[0].style.maxHeight).toBe('min(300px, 33vh)');
+    expect(panel.cells[0].style.display).toBe('flex');
+    expect(panel.cells[0].style.flexDirection).toBe('column');
+  });
+});

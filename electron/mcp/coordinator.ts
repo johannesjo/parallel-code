@@ -7,6 +7,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { unlinkSync, readFileSync, existsSync } from 'fs';
 import { unlink as fsUnlink } from 'fs/promises';
+import { dirname } from 'path';
 import {
   buildSubTaskMcpConfig,
   getSubTaskMcpConfigPath,
@@ -14,7 +15,13 @@ import {
   writeSubTaskMcpConfig,
   writeSubTaskMcpConfigSync,
 } from './config.js';
-import { buildMcpLaunchArgs, isCodexCommand, type ParallelCodeMcpConfig } from './agent-args.js';
+import {
+  buildMcpLaunchArgs,
+  isAntigravityCommand,
+  isCodexCommand,
+  type ParallelCodeMcpConfig,
+} from './agent-args.js';
+import { writeAntigravityMcpConfig } from './antigravity-config.js';
 import { validateBranchName } from './validation.js';
 import { atomicWriteFileSync } from './atomic.js';
 import { ReplayCache } from './replay-cache.js';
@@ -58,6 +65,7 @@ import {
   getDiffBaseSha,
   getMainBranch,
   mergeTask as gitMergeTask,
+  rebaseTask,
 } from '../ipc/git.js';
 import {
   stripAnsi,
@@ -115,6 +123,8 @@ function clampWaitTimeoutMs(timeoutMs: number): number {
 }
 const PROMPT_WRITE_DELAY_MS = 50;
 const GIT_LOCK_RETRY_DELAY_MS = 2_000;
+/** Rebase-and-verify rounds before a base that other landings keep moving escalates. */
+const LANDING_VERIFY_ATTEMPTS = 3;
 const INITIAL_PROMPT_READY_DELAY_MS = 1_500;
 const MAX_PENDING_PROMPTS = 32;
 const MAX_PROMPT_BYTES = 64 * 1024;
@@ -208,6 +218,18 @@ function execStdout(result: Awaited<ReturnType<typeof execAsync>>): string {
   return typeof stdout === 'string' ? stdout : stdout.toString('utf8');
 }
 
+/** Whether `worktreePath`'s HEAD already contains every commit of `branch`. */
+async function containsBranch(worktreePath: string, branch: string): Promise<boolean> {
+  try {
+    await execAsync('git', ['merge-base', '--is-ancestor', branch, 'HEAD'], { cwd: worktreePath });
+    return true;
+  } catch (err) {
+    // Exit 1 is git's "no"; anything else is a real failure.
+    if ((err as { code?: unknown }).code === 1) return false;
+    throw err;
+  }
+}
+
 export class Coordinator {
   private tasks = new Map<string, CoordinatedTask>();
   private tailBuffers = new Map<string, string>();
@@ -266,7 +288,7 @@ export class Coordinator {
   private assertOrchestrationEnabled(epoch = this.orchestrationEpoch): void {
     if (!this.orchestrationEnabled || epoch !== this.orchestrationEpoch) {
       throw new Error(
-        'Agent orchestration is disabled or this operation was canceled. Enable it in Settings > MCP to start new operations.',
+        'Agent orchestration is disabled or this operation was canceled. Enable it in Settings > Agents to start new operations.',
       );
     }
   }
@@ -933,17 +955,15 @@ export class Coordinator {
     // second coordinator starting up does not overwrite the first's task configs.
     for (const task of this.tasks.values()) {
       if (task.coordinatorTaskId !== coordinatorTaskId) continue;
-      if (!task.mcpConfigPath) continue;
       const mcpConfigPath = task.mcpConfigPath;
       const safeMcpConfigPath = isAllowedSubTaskMcpConfigPath(mcpConfigPath, {
         taskId: task.id,
         serverPath,
         dockerContainerName: state?.dockerContainerName ?? null,
       });
-      if (!safeMcpConfigPath) {
-        task.mcpConfigPath = undefined;
-        continue;
-      }
+      if (!safeMcpConfigPath) task.mcpConfigPath = undefined;
+      // An agy child may have only its worktree file, which needs the new token too.
+      if (!safeMcpConfigPath && !task.antigravityWorkspaceMcp) continue;
       // Preserve existing doneToken; generate a fresh one if not yet set (e.g. older persisted task).
       if (!task.doneToken) task.doneToken = randomBytes(24).toString('base64url');
       const session = this.sessionMcpProvider?.(task);
@@ -955,7 +975,17 @@ export class Coordinator {
         taskId: task.id,
         doneToken: task.doneToken,
       });
-      writeSubTaskMcpConfigSync(mcpConfigPath, mcpConfig);
+      if (safeMcpConfigPath && mcpConfigPath) writeSubTaskMcpConfigSync(mcpConfigPath, mcpConfig);
+      if (!task.antigravityWorkspaceMcp || !existsSync(task.worktreePath)) continue;
+      try {
+        writeAntigravityMcpConfig(task.worktreePath, mcpConfig);
+      } catch (err) {
+        // One child's broken worktree must not leave the others on a stale token.
+        logWarn('coordinator.antigravity_mcp', 'could not refresh Antigravity MCP config', {
+          taskId: task.id,
+          err: String(err),
+        });
+      }
     }
   }
 
@@ -1517,6 +1547,11 @@ export class Coordinator {
         await writeSubTaskMcpConfig(configPath, mcpConfig);
         subTaskMcpConfigPath = configPath;
         task.mcpConfigPath = configPath;
+        // After recording the temp path, so a failure here still cleans up its token.
+        if (isAntigravityCommand(agentCommand)) {
+          writeAntigravityMcpConfig(result.worktree_path, mcpConfig);
+          task.antigravityWorkspaceMcp = true;
+        }
         assertStillPresent();
       }
 
@@ -1552,16 +1587,18 @@ export class Coordinator {
           cwd: result.worktree_path,
           env: {},
           envFile: opts.agentEnvFile ?? coordinatorState.agentEnvFile,
+          projectId: projId,
           cols: 120,
           rows: 40,
           ...(dockerContainerName
             ? {
                 dockerMode: true,
                 dockerImage: coordinatorState.dockerImage ?? undefined,
-                // Mount parent dir so the sub-task can reach the coordinator's
-                // .parallel-code/ dir (which holds the per-sub-task MCP config).
                 // resolveWorktreeGitDirMount adds the main .git dir mount.
                 dockerMountWorktreeParent: true,
+                // The coordinator's .parallel-code/ holds the MCP server and this
+                // sub-task's config; its worktree need not share the child's parent.
+                dockerReadOnlyMounts: this.getDockerMcpMounts(task.id),
               }
             : {}),
           onOutput: { __CHANNEL_ID__: channelId },
@@ -2133,7 +2170,9 @@ export class Coordinator {
   }
 
   private async statusPaths(worktreePath: string): Promise<string[]> {
-    const result = await execAsync('git', ['status', '--porcelain'], { cwd: worktreePath });
+    const result = await execAsync('git', ['--no-optional-locks', 'status', '--porcelain'], {
+      cwd: worktreePath,
+    });
     return parsePorcelainPaths(execStdout(result));
   }
 
@@ -2181,6 +2220,43 @@ export class Coordinator {
     const command = this.coordinators.get(task.coordinatorTaskId)?.verifyCommand;
     const worktreePath = task.worktreePath;
     if (!command || !worktreePath) return;
+    // The merge replays the task onto its base, so a pass on the branch alone
+    // says nothing about what lands. Verify the rebased branch instead; the
+    // merge's own rebase is then a no-op and fast-forwards to the checked HEAD.
+    // shortcut: a landing between the last check and the merge goes unverified —
+    // pass the checked base into gitMergeTask if that window ever matters.
+    const baseBranch = task.baseBranch ?? (await getMainBranch(task.projectRoot));
+    for (let attempt = 1; attempt <= LANDING_VERIFY_ATTEMPTS; attempt++) {
+      await this.escalateOnError(task, () => rebaseTask(worktreePath, baseBranch));
+      await this.runLandingVerification(task, worktreePath, command);
+      const settled = await this.escalateOnError(task, () =>
+        containsBranch(worktreePath, baseBranch),
+      );
+      if (settled) return;
+    }
+    const reason = `${baseBranch} kept moving while \`${command}\` ran; land again once it settles.`;
+    this.escalateLanding(task, 'landing_escalated', reason);
+    throw new Error(reason);
+  }
+
+  private async escalateOnError<T>(task: CoordinatedTask, run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (err) {
+      this.escalateLanding(
+        task,
+        'landing_escalated',
+        err instanceof Error ? err.message : String(err),
+      );
+      throw err;
+    }
+  }
+
+  private async runLandingVerification(
+    task: CoordinatedTask,
+    worktreePath: string,
+    command: string,
+  ): Promise<void> {
     const pending = pendingVerificationRun(command);
     this.syncVerificationRun(task, pending);
     const run = await verificationRunner
@@ -2646,9 +2722,13 @@ export class Coordinator {
         });
       } catch {
         // Commit failed — check if uncommitted changes still exist
-        const { stdout: statusOut } = await execAsync('git', ['status', '--porcelain'], {
-          cwd: task.worktreePath,
-        });
+        const { stdout: statusOut } = await execAsync(
+          'git',
+          ['--no-optional-locks', 'status', '--porcelain'],
+          {
+            cwd: task.worktreePath,
+          },
+        );
         if (statusOut.trim()) {
           throw new Error(
             `Auto-commit failed and the task worktree still has uncommitted changes. ` +
@@ -2849,6 +2929,18 @@ export class Coordinator {
     return this.tasks.get(taskId);
   }
 
+  /**
+   * Dirs a Docker sub-task container must mount to start the coordinator's MCP
+   * server: its copy of mcp-server.cjs and the per-sub-task config sit together
+   * in the coordinator's `.parallel-code/`, wherever that worktree lives.
+   */
+  getDockerMcpMounts(taskId: string): string[] | undefined {
+    const task = this.tasks.get(taskId);
+    const state = task && this.coordinators.get(task.coordinatorTaskId);
+    if (!state?.dockerContainerName || !state.mcpServerInfo) return undefined;
+    return [dirname(state.mcpServerInfo.serverPath)];
+  }
+
   hydrateTask(opts: {
     id: string;
     name: string;
@@ -3045,6 +3137,8 @@ export class Coordinator {
     mcpConfigPath: string | undefined,
     agentCommand: string | undefined,
   ): string[] | undefined {
+    // Set before the early return: a server that starts later must still refresh the file.
+    if (agentCommand) task.antigravityWorkspaceMcp = isAntigravityCommand(agentCommand);
     const serverInfo = this.coordinators.get(coordinatorTaskId)?.mcpServerInfo;
     if (!serverInfo) return undefined;
     const { serverUrl, subtaskToken, serverPath } = serverInfo;
@@ -3068,6 +3162,18 @@ export class Coordinator {
     }
     if (mcpConfigPath) {
       writeSubTaskMcpConfigSync(mcpConfigPath, mcpConfig);
+    }
+    // A restored child whose worktree is gone has no session to configure.
+    if (task.antigravityWorkspaceMcp && existsSync(task.worktreePath)) {
+      try {
+        writeAntigravityMcpConfig(task.worktreePath, mcpConfig);
+      } catch (err) {
+        // Losing the restored task would be worse than one session without coordinator tools.
+        logWarn('coordinator.antigravity_mcp', 'could not write Antigravity MCP config', {
+          taskId: task.id,
+          err: String(err),
+        });
+      }
     }
     return this.buildTaskMcpLaunchArgs(agentCommand ?? 'claude', mcpConfigPath, mcpConfig);
   }
@@ -3426,7 +3532,11 @@ export class Coordinator {
         return sha;
       };
       sourceCommit = await readHead();
-      const { stdout } = await execAsync('git', ['status', '--porcelain', '-z'], options);
+      const { stdout } = await execAsync(
+        'git',
+        ['--no-optional-locks', 'status', '--porcelain', '-z'],
+        options,
+      );
       snapshotState = stdout ? 'dirty' : 'clean';
       if ((await readHead()) !== sourceCommit)
         throw new Error(

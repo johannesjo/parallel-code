@@ -14,3 +14,8 @@ export function pendingVerificationRun(command: string): VerificationRun {
     outputTail: '',
   };
 }
+
+/** Why the runner cancelled an automatic run before starting it: the tree no
+ *  longer matched the commit it was meant for. */
+export const HELD_RUN_MESSAGE =
+  'Automatic check held: the worktree changed since the change scan. Run this check explicitly.';

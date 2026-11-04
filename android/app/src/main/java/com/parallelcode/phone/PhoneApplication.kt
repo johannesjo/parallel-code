@@ -2,6 +2,7 @@ package com.parallelcode.phone
 
 import android.app.Application
 import android.content.Context
+import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +29,28 @@ class PhoneApplication : Application() {
     @Volatile
     var inForeground = false
 
+    @Volatile
+    var demoActive = false
+        private set
+
+    fun setDemoActive(active: Boolean) {
+        demoActive = active
+        if (active) {
+            client.setSuspended(true)
+            updates.setPaused(true)
+            networkMonitor.stop()
+        } else {
+            // Refresh network policy before any real token may leave the phone again.
+            networkMonitor.start()
+            networkMonitor.setForeground(inForeground)
+            client.setSuspended(false)
+            updates.setPaused(false)
+        }
+        // Android 12+ refuses foreground-service starts from the background (e.g. the task was swiped
+        // away during the demo); MainActivity.onStart syncs again once the app is visible.
+        if (active || inForeground || Build.VERSION.SDK_INT < 31) AgentWatchService.sync(this)
+    }
+
     override fun onCreate() {
         super.onCreate()
         settings = SettingsStore(getSharedPreferences(SettingsStore.PREFS_NAME, Context.MODE_PRIVATE))
@@ -52,7 +75,7 @@ class PhoneApplication : Application() {
                     state.status == ConnectionStatus.CONNECTED,
                     others.values.toList(),
                 )
-            }.collect { AgentWidget.publish(this@PhoneApplication, it) }
+            }.collect { if (!demoActive) AgentWidget.publish(this@PhoneApplication, it) }
         }
     }
 }

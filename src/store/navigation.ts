@@ -1,3 +1,4 @@
+import { claudeSessionUrl } from '../lib/claude-session-url';
 import { matchesTaskProjectFilter } from './task-project-filter';
 import { batch } from 'solid-js';
 import { documentAgentTaskId, isProjectPageAgentTaskId } from '../documents/task-id';
@@ -10,9 +11,11 @@ import {
   triggerFocus,
 } from './focused-panel';
 import { showNotification } from './notification';
-import { pickAndAddProject } from './projects';
-import { reorderTask } from './tasks';
+import { isPlannableProject, pickAndAddProject } from './projects';
+import { matchProject, reorderTaskInTileOrder } from './tasks';
 import { closeProjectPages } from './project-pages';
+import { restoreFailedDraft } from './task-creation';
+import { computeTileOrder, reorderBlock } from './sidebar-order';
 
 const AI_TERMINAL_PREFIX = 'ai-terminal:';
 
@@ -34,7 +37,7 @@ function selectedAgentIdForTask(task: {
 
 /** Visible tile order; the single document workspace follows coding tasks. */
 export function openPanelOrder(): string[] {
-  const taskOrder = store.taskOrder.filter(matchesTaskProjectFilter);
+  const taskOrder = computeTileOrder();
   return store.activeDocumentProjectId
     ? [...taskOrder, documentAgentTaskId(store.activeDocumentProjectId)]
     : taskOrder;
@@ -53,7 +56,8 @@ export function openItemName(id: string): string {
   );
 }
 
-export function setActiveTask(id: string): void {
+/** `keepBoard` keeps the all-tasks board showing; see `closeProjectPages`. */
+export function setActiveTask(id: string, opts: { keepBoard?: boolean } = {}): void {
   // Its panel lives on the GitHub page or the board, which an active task would close.
   if (isProjectPageAgentTaskId(id)) return;
   const task = store.tasks[id];
@@ -69,7 +73,7 @@ export function setActiveTask(id: string): void {
     });
   }
   if (!isDocument && !matchesTaskProjectFilter(id)) setStore('taskProjectFilter', null);
-  closeProjectPages();
+  closeProjectPages(opts);
   setStore('newTaskPanelFocused', false);
   setStore('placeholderFocused', false);
   let activeAgentId: string | null = null;
@@ -114,14 +118,26 @@ export function setActiveAgent(agentId: string): void {
 
 export function moveActiveTask(direction: 'left' | 'right'): void {
   if (store.newTaskPanelFocused) return;
-  const { taskOrder, activeTaskId } = store;
-  if (!activeTaskId || taskOrder.length < 2) return;
-  const visibleOrder = taskOrder.filter(matchesTaskProjectFilter);
-  const idx = visibleOrder.indexOf(activeTaskId);
-  if (idx === -1) return;
-  const target = direction === 'left' ? idx - 1 : idx + 1;
-  if (target < 0 || target >= visibleOrder.length) return;
-  reorderTask(taskOrder.indexOf(activeTaskId), taskOrder.indexOf(visibleOrder[target]));
+  const { activeTaskId } = store;
+  if (!activeTaskId) return;
+  const visibleOrder = computeTileOrder();
+  if (visibleOrder.length < 2) return;
+  if (!visibleOrder.includes(activeTaskId)) return;
+  // A coordinator moves with its children, so step past the whole block.
+  const block = new Set(reorderBlock(activeTaskId));
+  const members = visibleOrder.filter((id) => block.has(id));
+  const neighbor =
+    direction === 'left'
+      ? visibleOrder[visibleOrder.indexOf(members[0] ?? activeTaskId) - 1]
+      : visibleOrder[visibleOrder.indexOf(members.at(-1) ?? activeTaskId) + 1];
+  if (!neighbor) return;
+  // Step past the neighbour's whole block too, not into it.
+  const neighborBlock = new Set(reorderBlock(neighbor));
+  const span = visibleOrder.filter((id) => neighborBlock.has(id));
+  const anchor = (direction === 'left' ? span[0] : span.at(-1)) ?? neighbor;
+  const withoutMoved = visibleOrder.filter((id) => id !== activeTaskId);
+  const target = withoutMoved.indexOf(anchor) + (direction === 'left' ? 0 : 1);
+  reorderTaskInTileOrder(activeTaskId, target);
   // Re-focus the moved task and scroll it into view (DOM node move loses focus)
   setTaskFocusedPanel(activeTaskId, getTaskFocusedPanel(activeTaskId));
 }
@@ -146,7 +162,9 @@ export function toggleNewTaskPanel(show?: boolean): void {
     return;
   }
   if (shouldShow) {
-    closeProjectPages();
+    if (!store.showNewTaskPanel) restoreFailedDraft();
+    // On the board the draft opens in its side panel.
+    closeProjectPages({ keepBoard: true });
     setStore('sidebarFocused', false);
     setStore('placeholderFocused', false);
   } else {
@@ -158,13 +176,46 @@ export function toggleNewTaskPanel(show?: boolean): void {
   if (shouldShow) triggerFocus('new-task');
 }
 
+/**
+ * Reopens the new-task form for a web session that `claude --teleport` refused
+ * because it belongs to another repository. Preselects the project whose folder
+ * matches that repository, or none so the user picks one.
+ */
+export function retryTeleportInRepo(sessionId: string, repo: string): void {
+  // Cleared first so an open panel still holding this link applies the project.
+  setStore({ lastTeleportProjectId: matchProject(repo), newTaskDropUrl: null });
+  setStore('newTaskDropUrl', claudeSessionUrl(sessionId));
+  toggleNewTaskPanel(true);
+}
+
+/**
+ * Opens a blank new-task form for the project. An already open form keeps its
+ * draft and project, as with the other prefilled starts.
+ */
+export function startProjectTask(projectId: string): void {
+  if (!store.showNewTaskPanel) {
+    setStore('newTaskDropUrl', null);
+    // An empty name lets the model name the task from the prompt.
+    setStore('newTaskPrefillPrompt', { prompt: '', name: '', projectId });
+  }
+  toggleNewTaskPanel(true);
+}
+
+/**
+ * Selects the project whose tasks show. On a plan this switches to the new
+ * project's plan; all projects, or one without a plan, show the running tasks.
+ */
 export function setTaskProjectFilter(projectId: string | null): void {
   batch(() => {
     setStore('taskProjectFilter', projectId);
+    if (store.kanbanProjectId && store.kanbanProjectId !== projectId) {
+      setStore('kanbanProjectId', isPlannableProject(projectId) ? projectId : null);
+    }
     setStore('sidebarFocusedTaskId', null);
     if (!store.activeTaskId || !openPanelOrder().includes(store.activeTaskId)) {
       const nextId = openPanelOrder()[0];
-      if (nextId) setActiveTask(nextId);
+      // Narrowing the board's cards must not close the board.
+      if (nextId) setActiveTask(nextId, { keepBoard: true });
       else {
         setStore('activeTaskId', null);
         setStore('activeAgentId', null);

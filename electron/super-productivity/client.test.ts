@@ -169,6 +169,16 @@ describe('createSpClient', () => {
     expect(JSON.parse(patch.body as string)).toEqual({ isDone: true, notes: 'Old\n\nMerged.' });
   });
 
+  it('completes a task without touching its notes when there is no note', async () => {
+    const fetchImpl = fakeFetch(() => ok({}));
+    const client = createSpClient({ getToken: () => 'tok', fetchImpl });
+    expect(await client.completeTask('t1')).toEqual({ ok: true, value: null });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const patch = fetchImpl.mock.calls[0][1];
+    expect(patch.method).toBe('PATCH');
+    expect(JSON.parse(patch.body as string)).toEqual({ isDone: true });
+  });
+
   it('skips missing tasks in a batch but reports a dead connection', async () => {
     const client = createSpClient({
       getToken: () => 'tok',

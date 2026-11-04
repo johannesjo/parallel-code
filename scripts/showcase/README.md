@@ -105,7 +105,7 @@ It confirms from `ps` that the running process has `--model haiku`, waits for Ha
 
 ### Demo tasks without agents
 
-`launchShowcaseApp({ withTasks: true })` opens the app with three tasks already in flight, as in `scenes/overview.spec.ts`: one working, one waiting for input, one ready to merge. `demo-workspace.ts` gives each a real worktree whose changes match its story, and seeds its state. The app derives every status from the agent and from git, exactly as for a real agent, but no agent runs. Every seeded run uses the Noir theme, so stills and videos match.
+`launchShowcaseApp({ withTasks: true })` opens the app with three tasks already in flight, as in `scenes/overview.spec.ts`: one working, one waiting for input, one ready. `demo-workspace.ts` gives each a real worktree whose changes match its story, and seeds its state. The app derives every status from the agent and from git, exactly as for a real agent, but no agent runs. Every seeded run uses the Parallel Code theme, so stills and videos match.
 
 Claude Code tasks open in chat view. Their history is a Claude session file written from `chats.ts` into the throwaway home, which the app reads when it resumes the chat. The live part comes from `chat-agent.mjs`: the blocked `claude` stub hands it every chat launch (`--input-format stream-json`), and it answers the CLI's protocol with the task's script instead of a model. A script can open with a permission request (the Sydney task's pending edit), and replies to a sent message without ever finishing, so the task reads as working. Allow, Decline and Stop still end the turn, so a live demo does not get stuck. Because the seeded chats are made up, `withTasks` cannot be combined with `realAgents: ['claude']`; the launch refuses it. The chat only starts working on a send, so scenes call `sendChatMessage(page, slug, text)`. Keep the chat's diffs consistent with the worktree. Delegation stays off (`mcpOrchestrationEnabled: false`): it needs a real agent connected to the app's MCP server, and would show a banner above every chat.
 
@@ -114,6 +114,7 @@ Other agents, such as the Gemini task, run `fake-agent.mjs --transcript` in thei
 More options shape the seeded workspace:
 
 - `planner: true` adds a fourth task, "Plan weather app v2" (a Claude chat), whose mind map (`canvases.ts`) links its nodes to the other three tasks.
+- `board: true` adds seven more tasks (`BOARD_TASKS`) so every board lane fills, ten agents in all, and opens the board without the sidebar.
 - `focus: '<slug>'` opens that task in focus mode; `shell: true` gives it a shell terminal. The seeded rc files keep the shell prompt short.
 
 The demo repository always lives at `$TMPDIR/pc-demo`, so paths in the UI stay short. A run deletes a leftover `pc-demo` only when it holds the `.parallel-code-showcase` marker and the process id in that marker is no longer running; otherwise it refuses. The demo repository's Git commands ignore your global and system Git config and commit as `Demo <demo@example.com>`.
@@ -127,6 +128,7 @@ These scenes save a still to `.tmp/showcase/<scene>.png` (1920 × 1080). No agen
 | Scene         | Shows                                                                       |
 | ------------- | --------------------------------------------------------------------------- |
 | `overview`    | Three tasks working, waiting for input and ready to merge                   |
+| `board`       | Ten tasks across every board lane, one open and working beside it           |
 | `focus`       | One task in focus mode with notes and a shell                               |
 | `diff-review` | An inline review comment on a changed line                                  |
 | `change-tour` | The guided change tour; the blocked `claude` stub answers with a canned one |

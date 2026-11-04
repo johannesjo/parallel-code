@@ -1,4 +1,13 @@
-import { Show, For, createSignal, createEffect, onCleanup, type JSX } from 'solid-js';
+import {
+  Show,
+  For,
+  createSignal,
+  createEffect,
+  onCleanup,
+  onMount,
+  untrack,
+  type JSX,
+} from 'solid-js';
 import { createStore } from 'solid-js/store';
 import {
   store,
@@ -16,14 +25,21 @@ import {
   shellPanelId,
   isPanelFocused,
   isPanelFocusedPrefix,
+  getTaskShellLayout,
+  setTaskShellAutoLayout,
 } from '../store/store';
 import { TerminalView } from './TerminalView';
+import { fileLinkMenu, type ChangesLink } from './file-link-menu';
+import { findBareFile } from '../lib/find-bare-file';
+import { createMarkdownViewer } from './MarkdownViewerDialog';
 import { editAsDocument } from '../documents/store';
-import { CloseIcon } from './icons';
+import { CloseIcon, TerminalSmallIcon } from './icons';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { mod } from '../lib/platform';
 import { extractLabel, consumePendingShellCommand } from '../lib/bookmarks';
+import { autoShellLayout, shellColumns } from '../lib/shellLayout';
+import { ShellLayoutMenu } from './ShellLayoutMenu';
 import type { Task } from '../store/types';
 
 /** Outlined terminal launchers retain a clear boundary without a filled bar. */
@@ -49,6 +65,18 @@ const toolbarBtnStyle = (highlighted: boolean, iconOnly = false): JSX.CSSPropert
 interface TaskShellSectionProps {
   task: Task;
   isActive: boolean;
+  /** Opens a worktree-relative file in the task's side panel. */
+  onOpenInSidePanel?: (relativePath: string) => void;
+  /** The task's changed files, which links open in the changes dialog. */
+  changes?: ChangesLink;
+}
+
+/** Smallest height the shell section can show without clipping its open
+ *  terminals; its cell must never be sized below this. Focus mode's floor is
+ *  `max(200px, 33vh)`, so 200 is the part a pixel floor can promise. */
+export function shellSectionMinHeight(task: Task): number {
+  if (task.shellAgentIds.length === 0 || store.taskSplitMode[task.id]) return 35;
+  return store.focusMode ? 200 : 140;
 }
 
 export function TaskShellSection(props: TaskShellSectionProps) {
@@ -58,6 +86,8 @@ export function TaskShellSection(props: TaskShellSectionProps) {
     Record<string, { exitCode: number | null; signal: string | null }>
   >({});
   let shellToolbarEl: HTMLDivElement | undefined;
+  let sectionEl: HTMLDivElement | undefined;
+  const [sectionWidth, setSectionWidth] = createSignal(0);
 
   const projectBookmarks = () => getProject(props.task.projectId)?.terminalBookmarks ?? [];
 
@@ -83,6 +113,30 @@ export function TaskShellSection(props: TaskShellSectionProps) {
   });
 
   const hasShell = () => props.task.shellAgentIds.length > 0;
+  const shellCount = () => props.task.shellAgentIds.length;
+  const layout = () => getTaskShellLayout(props.task.id);
+  const cols = () => shellColumns(layout(), shellCount());
+
+  onMount(() => {
+    if (!sectionEl) return;
+    const ro = new ResizeObserver((entries) => {
+      setSectionWidth(entries[0]?.contentRect.width ?? 0);
+    });
+    ro.observe(sectionEl);
+    setSectionWidth(sectionEl.clientWidth);
+    onCleanup(() => ro.disconnect());
+  });
+
+  // The size-based pick lives in the store so keyboard navigation (focus.ts)
+  // walks the same rows the user sees.
+  createEffect(() => {
+    const width = sectionWidth();
+    if (width <= 0) return;
+    const id = props.task.id;
+    const prev = untrack(() => store.taskShellAutoLayout[id]);
+    const split = !!store.taskSplitMode[id];
+    setTaskShellAutoLayout(id, autoShellLayout({ width, count: shellCount(), split, prev }));
+  });
 
   // Intrinsic height the flex-first panel tree will size this panel to when
   // it isn't pinned. Empty state collapses to the 35 px toolbar. With agents
@@ -97,13 +151,16 @@ export function TaskShellSection(props: TaskShellSectionProps) {
   // back to 0 in that case and let the wrapper's allocated size drive xterm.
   const intrinsicHeight = () => {
     if (!hasShell()) return '35px';
-    if (store.focusMode && store.taskSplitMode[props.task.id]) return '0';
+    if (store.taskSplitMode[props.task.id]) return '0';
     if (store.focusMode) return 'max(200px, 33vh)';
     return '140px';
   };
 
+  const markdownViewer = createMarkdownViewer();
+
   return (
     <div
+      ref={sectionEl}
       style={{
         // `height: 100%` fills the wrapper when flex assigns one (absorber in
         // split-right); `min-height` provides the content size otherwise so
@@ -115,111 +172,111 @@ export function TaskShellSection(props: TaskShellSectionProps) {
         background: 'transparent',
       }}
     >
-      <div
-        ref={(el) => {
-          shellToolbarEl = el;
-        }}
-        class="focusable-panel shell-toolbar-panel"
-        data-panel-focused={
-          isPanelFocusedPrefix(props.task.id, 'shell-toolbar:') ? 'true' : 'false'
-        }
-        tabIndex={0}
-        onClick={() => setTaskFocusedPanel(props.task.id, `shell-toolbar:${shellToolbarIdx()}`)}
-        onFocus={() => setShellToolbarFocused(true)}
-        onBlur={() => setShellToolbarFocused(false)}
-        onKeyDown={(e) => {
-          if (e.altKey) return;
-          const itemCount = 1 + projectBookmarks().length;
-          if (e.key === 'ArrowRight') {
-            e.preventDefault();
-            const next = Math.min(itemCount - 1, shellToolbarIdx() + 1);
-            setShellToolbarIdx(next);
-            setTaskFocusedPanel(props.task.id, `shell-toolbar:${next}`);
-          } else if (e.key === 'ArrowLeft') {
-            e.preventDefault();
-            const next = Math.max(0, shellToolbarIdx() - 1);
-            setShellToolbarIdx(next);
-            setTaskFocusedPanel(props.task.id, `shell-toolbar:${next}`);
-          } else if (e.key === 'Enter') {
-            e.preventDefault();
-            const idx = shellToolbarIdx();
-            if (idx === 0) {
-              spawnShellForTask(props.task.id);
-            } else {
-              const bm = projectBookmarks()[idx - 1];
-              if (bm) runBookmarkInTask(props.task.id, bm.command);
-            }
-          }
-        }}
-        style={{
-          height: '35px',
-          'min-height': '35px',
-          display: 'flex',
-          'align-items': 'center',
-          padding: '4px 5px',
-          background: 'transparent',
-          'box-sizing': 'border-box',
-          gap: '4px',
-          'overflow-x': 'auto',
-          'overflow-y': 'hidden',
-          outline: 'none',
-        }}
-      >
-        <button
-          class="shell-toolbar-button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setActiveTask(props.task.id);
-            setTaskFocusedPanel(props.task.id, 'shell-toolbar:0');
-            spawnShellForTask(props.task.id);
+      {/* The layout menu sits outside the scrolling toolbar so many bookmarks can't push it out of reach. */}
+      <div style={{ display: 'flex', 'align-items': 'center', 'flex-shrink': '0', gap: '4px' }}>
+        <div
+          ref={(el) => {
+            shellToolbarEl = el;
           }}
-          tabIndex={-1}
-          title={`Open terminal (${mod}+Shift+T)`}
-          aria-label="Open terminal"
-          style={toolbarBtnStyle(shellToolbarIdx() === 0 && shellToolbarFocused(), true)}
+          class="focusable-panel shell-toolbar-panel"
+          data-panel-focused={
+            isPanelFocusedPrefix(props.task.id, 'shell-toolbar:') ? 'true' : 'false'
+          }
+          tabIndex={0}
+          onClick={() => setTaskFocusedPanel(props.task.id, `shell-toolbar:${shellToolbarIdx()}`)}
+          onFocus={() => setShellToolbarFocused(true)}
+          onBlur={() => setShellToolbarFocused(false)}
+          onKeyDown={(e) => {
+            if (e.altKey) return;
+            const itemCount = 1 + projectBookmarks().length;
+            if (e.key === 'ArrowRight') {
+              e.preventDefault();
+              const next = Math.min(itemCount - 1, shellToolbarIdx() + 1);
+              setShellToolbarIdx(next);
+              setTaskFocusedPanel(props.task.id, `shell-toolbar:${next}`);
+            } else if (e.key === 'ArrowLeft') {
+              e.preventDefault();
+              const next = Math.max(0, shellToolbarIdx() - 1);
+              setShellToolbarIdx(next);
+              setTaskFocusedPanel(props.task.id, `shell-toolbar:${next}`);
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              const idx = shellToolbarIdx();
+              if (idx === 0) {
+                spawnShellForTask(props.task.id);
+              } else {
+                const bm = projectBookmarks()[idx - 1];
+                if (bm) runBookmarkInTask(props.task.id, bm.command);
+              }
+            }
+          }}
+          style={{
+            flex: '1',
+            'min-width': '0',
+            height: '35px',
+            'min-height': '35px',
+            display: 'flex',
+            'align-items': 'center',
+            padding: '4px 5px',
+            background: 'transparent',
+            'box-sizing': 'border-box',
+            gap: '4px',
+            'overflow-x': 'auto',
+            'overflow-y': 'hidden',
+            outline: 'none',
+          }}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.25"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            style={{ 'flex-shrink': '0' }}
-            aria-hidden="true"
+          <button
+            class="shell-toolbar-button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveTask(props.task.id);
+              setTaskFocusedPanel(props.task.id, 'shell-toolbar:0');
+              spawnShellForTask(props.task.id);
+            }}
+            tabIndex={-1}
+            title={`Open terminal (${mod}+Shift+T)`}
+            aria-label="Open terminal"
+            style={toolbarBtnStyle(shellToolbarIdx() === 0 && shellToolbarFocused(), true)}
           >
-            <rect x="1.5" y="2.5" width="13" height="11" />
-            <path d="m4 6 2 2-2 2m4 0h3" />
-          </svg>
-        </button>
-        <For each={projectBookmarks()}>
-          {(bookmark, i) => (
-            <button
-              class="shell-toolbar-button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setActiveTask(props.task.id);
-                setTaskFocusedPanel(props.task.id, `shell-toolbar:${i() + 1}`);
-                runBookmarkInTask(props.task.id, bookmark.command);
-              }}
-              tabIndex={-1}
-              title={bookmark.command}
-              style={toolbarBtnStyle(shellToolbarIdx() === i() + 1 && shellToolbarFocused())}
-            >
-              <span>{extractLabel(bookmark.command)}</span>
-            </button>
-          )}
-        </For>
+            <TerminalSmallIcon size={14} style={{ 'flex-shrink': '0' }} />
+          </button>
+          <For each={projectBookmarks()}>
+            {(bookmark, i) => (
+              <button
+                class="shell-toolbar-button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveTask(props.task.id);
+                  setTaskFocusedPanel(props.task.id, `shell-toolbar:${i() + 1}`);
+                  runBookmarkInTask(props.task.id, bookmark.command);
+                }}
+                tabIndex={-1}
+                title={bookmark.command}
+                style={toolbarBtnStyle(shellToolbarIdx() === i() + 1 && shellToolbarFocused())}
+              >
+                <span>{extractLabel(bookmark.command)}</span>
+              </button>
+            )}
+          </For>
+        </div>
+        <Show when={shellCount() >= 2}>
+          <ShellLayoutMenu taskId={props.task.id} mode={layout()} />
+        </Show>
       </div>
       <Show when={props.task.shellAgentIds.length > 0}>
         <div
           class="shell-terminals-row"
           style={{
             flex: '1',
-            display: 'flex',
-            overflow: 'hidden',
+            'min-height': '0',
+            display: 'grid',
+            'grid-template-columns': `repeat(${cols()}, minmax(0, 1fr))`,
+            // Stacked shells keep a usable height; the area scrolls rather
+            // than squeezing them when a pinned layout doesn't fit.
+            'grid-auto-rows': cols() < shellCount() ? 'minmax(80px, 1fr)' : 'minmax(0, 1fr)',
+            'overflow-x': 'hidden',
+            'overflow-y': 'auto',
             background: theme.taskContainerBg,
           }}
         >
@@ -246,12 +303,15 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                   class="focusable-panel shell-terminal-container"
                   data-panel-focused={isShellPanelFocused() ? 'true' : 'false'}
                   style={{
-                    flex: '1',
+                    'min-width': '0',
+                    'min-height': '0',
                     overflow: 'hidden',
                     position: 'relative',
                     background: theme.taskPanelBg,
+                    'border-left': i() % cols() > 0 ? '1px solid var(--border)' : undefined,
+                    'border-top': i() >= cols() ? '1px solid var(--border)' : undefined,
                   }}
-                  onClick={() => setTaskFocusedPanel(props.task.id, shellPanelId(i()))}
+                  onPointerDown={() => setTaskFocusedPanel(props.task.id, shellPanelId(i()))}
                 >
                   <button
                     class="shell-terminal-close"
@@ -302,6 +362,15 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                     args={['-l']}
                     cwd={props.task.worktreePath}
                     onEditAsDocument={store.documentWorkspacesEnabled ? editAsDocument : undefined}
+                    fileLinkMenu={(filePath, line) =>
+                      fileLinkMenu(filePath, line, {
+                        worktreePath: props.task.worktreePath,
+                        openDialog: markdownViewer.show,
+                        openInSidePanel: props.onOpenInSidePanel,
+                        changes: props.changes,
+                      })
+                    }
+                    findBareFile={(name) => findBareFile(name, props.task)}
                     dockerMode={props.task.dockerMode}
                     dockerImage={props.task.dockerImage}
                     initialCommand={initialCommand}
@@ -327,6 +396,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
           </For>
         </div>
       </Show>
+      {markdownViewer.view()}
     </div>
   );
 }

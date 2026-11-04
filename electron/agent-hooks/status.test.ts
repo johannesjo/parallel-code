@@ -124,6 +124,25 @@ describe('mapClaudeHookPayload', () => {
     expect(long?.lastAssistantMessage?.endsWith('…')).toBe(true);
   });
 
+  it('names background shell commands still running when the turn ends', () => {
+    // Recorded from Claude Code 2.1.312 after a Bash call with run_in_background.
+    const shell = (id: string, description?: string) => ({
+      id,
+      type: 'shell',
+      status: 'running',
+      description,
+      command: 'sleep 45; echo finished',
+    });
+    const stop = (tasks: unknown[]) =>
+      mapClaudeHookPayload(payload({ hook_event_name: 'Stop', background_tasks: tasks }));
+    expect(stop([shell('b1', 'Run delayed echo')])?.detail).toBe('background: Run delayed echo');
+    expect(stop([shell('b1'), shell('b2', 'Dev server')])?.detail).toBe(
+      'background: sleep 45; echo finished +1',
+    );
+    expect(stop([{ ...shell('b1', 'x'), status: 'completed' }])?.detail).toBeUndefined();
+    expect(stop([])?.detail).toBeUndefined();
+  });
+
   it('preserves bounded StopFailure context', () => {
     expect(
       mapClaudeHookPayload(

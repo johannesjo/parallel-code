@@ -20,6 +20,9 @@ export interface AgentDef {
   prompt_ready_delay_ms?: number;
   /** CLI flag used to pass an MCP config path to this agent. Omit when unsupported. */
   mcp_config_flag?: string;
+  /** Flags one pane adds to every launch, set by "Resume with flags…". Only
+   *  ever set on a pane's own copy of the def, never on the shared defaults. */
+  extra_args?: string[];
 }
 
 export interface CreateTaskResult {
@@ -79,6 +82,10 @@ export interface WorktreeStatus {
   /** HEAD commit sha; lets consumers tell whether a verification run still
    *  describes the current tree. Absent from older senders, null when unreadable. */
   head_sha?: string | null;
+  /** Lines added/removed by the branch's commits since the merge base.
+   *  Absent from older senders and when unreadable. */
+  lines_added?: number;
+  lines_removed?: number;
 }
 
 export type VerificationRunStatus =
@@ -121,12 +128,62 @@ export interface MergeStatus {
   main_ahead_count: number;
   conflicting_files: string[];
   base_branch: string;
+  /** Files both this branch and the base's newer commits changed, without a
+   *  conflict. The branch's checks never ran against those base changes.
+   *  Absent from older senders. */
+  overlapping_files?: string[];
+  /** The task branch on origin as of the last fetch or push: never pushed,
+   *  at another commit than HEAD, or at HEAD. Absent without an origin, on a
+   *  detached HEAD, and from older senders. */
+  remote?: RemoteBranchState;
+  /** The task's uncommitted files the base's newer commits changed too.
+   *  Bringing the base in could not put them back cleanly. Absent when there
+   *  are none and from older senders. */
+  uncommitted_overlap?: string[];
+  /** Uncommitted changes in the checkout the merge runs in, and those of them
+   *  the merge changes too. A merge sets the first aside and refuses the
+   *  second. Absent when that checkout is clean or was not asked about. */
+  target_uncommitted?: MergeTargetChanges;
+  /** The base has commits on neither its upstream nor this branch, and is
+   *  behind its upstream. Absent otherwise and from older senders. */
+  base_upstream?: BaseUpstreamDivergence;
 }
+
+export interface BaseUpstreamDivergence {
+  /** e.g. `origin/main`, as of the last fetch. */
+  upstream: string;
+  /** The base's commit when checked; a reset refuses if it moved since. */
+  head: string;
+  behind: number;
+  local_count: number;
+  /** The newest of the local commits, at most ten. */
+  local_commits: { hash: string; subject: string }[];
+  /** Files those commits touched whose content differs on the upstream. */
+  differing_files: string[];
+}
+
+export interface MergeTargetChanges {
+  path: string;
+  files: string[];
+  overlap: string[];
+}
+
+export type RemoteBranchState = 'unpushed' | 'differs' | 'pushed';
 
 export interface MergeResult {
   main_branch: string;
   lines_added: number;
   lines_removed: number;
+  /** Set when the merge went through but something around it did not. */
+  warning?: string;
+}
+
+/** A Git repository inside a task's worktree that the task's own repository does not track. */
+export interface NestedRepo {
+  /** Top-level folder name in the worktree. */
+  name: string;
+  /** Checked-out branch, or `HEAD` when detached. */
+  branch: string;
 }
 
 export interface FileDiffResult {
@@ -154,6 +211,9 @@ export interface PrCheckRun {
 
 export interface PrChecksUpdatePayload {
   taskId: string;
+  /** Watcher the update belongs to: the task ID for the task's primary PR,
+   *  another ID for an additional PR. */
+  watchId: string;
   prUrl?: string;
   /** Actual GitHub merge time, not the time the watcher noticed it. */
   mergedAt?: string;
@@ -167,6 +227,8 @@ export interface PrChecksUpdatePayload {
   pending: number;
   failing: number;
   checks: PrCheckRun[];
+  /** PR head commit the checks belong to. Absent before the first fetch. */
+  headSha?: string;
   checkedAt: string;
   /** True when the main process has stopped watching this task (PR merged or
    *  closed). The renderer should drop its bookkeeping so a later restart of
@@ -177,8 +239,19 @@ export interface PrChecksUpdatePayload {
   merged?: boolean;
 }
 
+/** An open PR of a task besides its primary one. */
+export interface TaskExtraPr {
+  url: string;
+  /** Folder of the nested repository the PR belongs to; absent for the task's own repository. */
+  repo?: string;
+}
+
 export interface BranchPrDetectionResult {
   url: string | null;
+  /** The task's other open PRs: further PRs of its branch and PRs of its nested repositories. */
+  extras?: TaskExtraPr[];
+  /** Repositories whose PRs could not be listed: nested folder names, `.` for the task's own. */
+  failedRepos?: string[];
   unavailable?: 'missing' | 'auth';
 }
 
@@ -281,6 +354,8 @@ export interface PullRequestDetails {
   headRefOid: string;
   /** Repo-allowed merge methods, the viewer's default first. */
   mergeMethods: PrMergeMethod[];
+  /** Whether the account gh is signed in as opened the PR; null when that is unknown. */
+  authoredByViewer: boolean | null;
 }
 
 export interface PrFailedCheck {

@@ -10,6 +10,8 @@ const HOOK_TIMEOUT_SECONDS = 10;
 /** Events that carry a `tool_name` and therefore need a matcher. */
 const TOOL_EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest'];
 const TURN_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure'];
+// Not status on their own: they tell a lead turn's end from a sub-agent still running.
+const SUBAGENT_EVENTS = ['SubagentStart', 'SubagentStop'];
 // idle_prompt is a turn boundary signal; the rest all mean "blocked on the human".
 const NOTIFICATION_MATCHER =
   'permission_prompt|idle_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog';
@@ -68,7 +70,7 @@ export function buildClaudeHookSettings(
     timeout: HOOK_TIMEOUT_SECONDS,
   };
   const hooks: Record<string, HookGroup[]> = {};
-  for (const event of TURN_EVENTS) hooks[event] = [{ hooks: [hook] }];
+  for (const event of [...TURN_EVENTS, ...SUBAGENT_EVENTS]) hooks[event] = [{ hooks: [hook] }];
   for (const event of TOOL_EVENTS) hooks[event] = [{ matcher: '*', hooks: [hook] }];
   hooks.Notification = [{ matcher: NOTIFICATION_MATCHER, hooks: [hook] }];
   return statusLine ? { hooks, statusLine } : { hooks };

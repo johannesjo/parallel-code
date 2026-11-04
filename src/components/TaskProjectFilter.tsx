@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
+import { CaretDownIcon, CloseIcon } from './icons';
 import { createAnchorEffect, placeBelow } from '../lib/floating';
 import { codeProjects } from '../store/projects';
 import { store } from '../store/core';
@@ -8,13 +9,20 @@ import { taskProjectFilter } from '../store/task-project-filter';
 import { ProjectSwatch } from './ProjectSwatch';
 import './TaskProjectFilter.css';
 
-export function TaskProjectFilter() {
+/**
+ * Pass `hideLabel` where the surrounding controls already say what is filtered,
+ * and `onPick` to move the keyboard on once a project is chosen.
+ */
+export function TaskProjectFilter(props: { hideLabel?: boolean; onPick?: () => void }) {
   const [open, setOpen] = createSignal(false);
   const [position, setPosition] = createSignal({ top: 0, right: 0, maxHeight: 320 });
   let trigger: HTMLButtonElement | undefined;
   let menu: HTMLDivElement | undefined;
   const selected = () => store.projects.find((project) => project.id === taskProjectFilter());
-  const choices = () => [{ id: '', name: 'All projects', color: undefined }, ...codeProjects()];
+  const choices = () => [
+    { id: '', name: 'All projects', color: undefined, icon: undefined },
+    ...codeProjects(),
+  ];
   const items = () => Array.from(menu?.querySelectorAll<HTMLButtonElement>('button') ?? []);
   const close = () => {
     setOpen(false);
@@ -45,7 +53,9 @@ export function TaskProjectFilter() {
 
   return (
     <div class="task-project-filter">
-      <span class="task-project-filter-label">Tasks</span>
+      <Show when={!props.hideLabel}>
+        <span class="task-project-filter-label">Tasks</span>
+      </Show>
       <button
         ref={trigger}
         type="button"
@@ -58,12 +68,10 @@ export function TaskProjectFilter() {
         onClick={() => setOpen(!open())}
       >
         <Show when={selected()}>
-          {(project) => <ProjectSwatch color={project().color} size={7} />}
+          {(project) => <ProjectSwatch color={project().color} icon={project().icon} size={7} />}
         </Show>
         <span>{selected()?.name ?? 'All projects'}</span>
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-          <path d="m4 6 4 4 4-4z" />
-        </svg>
+        <CaretDownIcon size={12} />
       </button>
       <Show when={selected()}>
         <button
@@ -76,7 +84,7 @@ export function TaskProjectFilter() {
             setTaskProjectFilter(null);
           }}
         >
-          ×
+          <CloseIcon size={12} />
         </button>
       </Show>
       <Show when={open()}>
@@ -129,13 +137,14 @@ export function TaskProjectFilter() {
                     onClick={() => {
                       close();
                       setTaskProjectFilter(project.id || null);
+                      props.onPick?.();
                     }}
                   >
                     <Show
                       when={project.color}
                       fallback={<span class="task-project-filter-all">▦</span>}
                     >
-                      {(color) => <ProjectSwatch color={color()} size={8} />}
+                      {(color) => <ProjectSwatch color={color()} icon={project.icon} size={8} />}
                     </Show>
                     <span class="task-project-filter-name">{project.name}</span>
                     <span aria-hidden="true">

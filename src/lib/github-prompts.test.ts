@@ -4,9 +4,29 @@ import {
   buildIssuePrompt,
   buildIssueTriagePrompt,
   buildReviewFeedbackPrompt,
+  workItemTaskName,
 } from './github-prompts';
 
 const pr = { number: 7, url: 'https://github.com/o/r/pull/7' };
+
+it.each([
+  ['issue', 'Issue'],
+  ['pr', 'PR'],
+] as const)('names a %s with its number and title', (kind, label) => {
+  expect(workItemTaskName({ kind, number: 1234, title: 'Fix login' })).toBe(
+    `${label} 1234: Fix login`,
+  );
+  const longName = workItemTaskName({ kind, number: 1234, title: 'Long title '.repeat(30) });
+  expect(longName.length).toBeLessThanOrEqual(120);
+  expect(longName).toMatch(new RegExp(`^${label} 1234: Long title`));
+  expect(longName).toMatch(/(?:Long|title)$/);
+  expect(workItemTaskName({ kind, number: 1234, title: 'x'.repeat(121) })).toBe(
+    `${label} 1234: ${'x'.repeat(120 - `${label} 1234: `.length)}`,
+  );
+  expect(workItemTaskName({ kind, number: 1234, title: 'Please fix login please' })).toBe(
+    `${label} 1234: Please fix login please`,
+  );
+});
 
 describe('buildIssuePrompt', () => {
   it('bounds a full browser description and points to the omitted context', () => {
@@ -56,6 +76,14 @@ describe('buildFailedChecksPrompt', () => {
     ]);
     expect(prompt).toContain('### unit\nhttps://x/1\n````text\nsaw ``` in output\n````');
     expect(prompt).toContain('### lint\n(no log available');
+  });
+
+  it('points the agent at the nested repository a PR belongs to', () => {
+    const checks = [{ name: 'unit', url: null, logTail: null }];
+    expect(buildFailedChecksPrompt({ ...pr, repo: 'api' }, checks)).toContain(
+      'The pull request is in the nested repository `api/`; fix and commit there.',
+    );
+    expect(buildFailedChecksPrompt(pr, checks)).not.toContain('nested repository');
   });
 });
 

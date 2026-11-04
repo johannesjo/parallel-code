@@ -4,6 +4,16 @@ import { theme } from '../lib/theme';
 import type { AgentDef } from '../ipc/types';
 import { PlusIcon } from './icons';
 
+const compactButtonStyle = {
+  padding: '6px 14px',
+  background: 'var(--bg-input)',
+  border: '1px solid var(--border)',
+  'border-radius': 'var(--radius-sm)',
+  color: 'var(--fg-muted)',
+  cursor: 'pointer',
+  'font-size': '13px',
+};
+
 export function CustomAgentEditor() {
   const [showForm, setShowForm] = createSignal(false);
   const [name, setName] = createSignal('');
@@ -47,6 +57,16 @@ export function CustomAgentEditor() {
     width: '100%',
     'box-sizing': 'border-box' as const,
   });
+
+  const labelStyle = () => ({
+    display: 'flex',
+    'flex-direction': 'column' as const,
+    gap: '4px',
+    color: theme.fgMuted,
+    'font-size': '12px',
+  });
+
+  const canAdd = () => name().trim().length > 0 && command().trim().length > 0;
 
   return (
     <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
@@ -125,63 +145,65 @@ export function CustomAgentEditor() {
             border: `1px solid ${theme.border}`,
           }}
         >
-          <input
-            type="text"
-            placeholder="Name (e.g. OpenCode)"
-            value={name()}
-            onInput={(e) => setName(e.currentTarget.value)}
-            style={inputStyle()}
-          />
-          <input
-            type="text"
-            placeholder="Command (e.g. opencode)"
-            value={command()}
-            onInput={(e) => setCommand(e.currentTarget.value)}
-            style={inputStyle()}
-          />
-          <input
-            type="text"
-            placeholder="Resume args (optional, space-separated)"
-            value={resumeArgs()}
-            onInput={(e) => setResumeArgs(e.currentTarget.value)}
-            style={inputStyle()}
-          />
-          <input
-            type="text"
-            placeholder="Skip permissions args (optional, space-separated)"
-            value={skipArgs()}
-            onInput={(e) => setSkipArgs(e.currentTarget.value)}
-            style={inputStyle()}
-          />
+          <label style={labelStyle()}>
+            Name
+            <input
+              type="text"
+              placeholder="e.g. OpenCode"
+              value={name()}
+              onInput={(e) => setName(e.currentTarget.value)}
+              style={inputStyle()}
+            />
+          </label>
+          <label style={labelStyle()}>
+            Command
+            <input
+              type="text"
+              placeholder="e.g. opencode"
+              value={command()}
+              onInput={(e) => setCommand(e.currentTarget.value)}
+              style={inputStyle()}
+            />
+          </label>
+          <label style={labelStyle()}>
+            Resume args
+            <input
+              type="text"
+              placeholder="optional, space-separated"
+              value={resumeArgs()}
+              onInput={(e) => setResumeArgs(e.currentTarget.value)}
+              style={inputStyle()}
+            />
+          </label>
+          <label style={labelStyle()}>
+            Skip permissions args
+            <input
+              type="text"
+              placeholder="optional, space-separated"
+              value={skipArgs()}
+              onInput={(e) => setSkipArgs(e.currentTarget.value)}
+              style={inputStyle()}
+            />
+          </label>
           <div style={{ display: 'flex', gap: '8px', 'justify-content': 'flex-end' }}>
             <button
               type="button"
+              class="btn-secondary"
               onClick={() => setShowForm(false)}
-              style={{
-                padding: '6px 14px',
-                background: 'transparent',
-                border: `1px solid ${theme.border}`,
-                'border-radius': 'var(--radius-sm)',
-                color: theme.fgMuted,
-                cursor: 'pointer',
-                'font-size': '13px',
-              }}
+              style={compactButtonStyle}
             >
               Cancel
             </button>
             <button
-              class="btn-with-icon"
+              class="btn-primary btn-with-icon"
               type="button"
+              disabled={!canAdd()}
+              title={canAdd() ? undefined : 'Enter a name and a command'}
               onClick={handleAdd}
               style={{
-                padding: '6px 14px',
-                background: theme.accent,
-                border: 'none',
-                'border-radius': 'var(--radius-sm)',
-                color: theme.accentText,
-                cursor: 'pointer',
-                'font-size': '13px',
-                opacity: name().trim() && command().trim() ? 1 : 0.5,
+                ...compactButtonStyle,
+                cursor: canAdd() ? 'pointer' : 'not-allowed',
+                opacity: canAdd() ? '1' : '0.5',
               }}
             >
               <PlusIcon size={14} />

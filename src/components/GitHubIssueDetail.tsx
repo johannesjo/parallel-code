@@ -1,6 +1,16 @@
-import { For, Show, createMemo, createResource, createSignal } from 'solid-js';
+import {
+  For,
+  Show,
+  batch,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  on,
+  untrack,
+} from 'solid-js';
 import { IPC } from '../../electron/ipc/channels';
-import type { GitHubIssueChange } from '../ipc/types';
+import type { GitHubIssueActivityPage, GitHubIssueChange } from '../ipc/types';
 import { errMessage } from '../lib/log';
 import { invoke } from '../lib/ipc';
 import { sameGitHubIssue } from '../lib/github-url';
@@ -16,25 +26,23 @@ import {
 } from '../store/github';
 import { addIssuesToBoard, issueBoardColumn, openKanban } from '../store/kanban';
 import { GitHubItemBadges } from './GitHubItemBadges';
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  CheckIcon,
-  ExternalLinkIcon,
-  PencilIcon,
-  PersonIcon,
-  KanbanIcon,
-  PlayIcon,
-  SyncIcon,
-} from './icons';
+import { CheckIcon, ExternalLinkIcon, PencilIcon, PersonIcon, PlanIcon, PlayIcon } from './icons';
 import { renderChatMarkdown } from './chat/chat-markdown';
 
 export function GitHubIssueDetail(props: {
   url: string;
   projectId: string;
+  /** Bumped by the page's Refresh; reloads the item and its activity. */
+  revision: number;
   onChanged: () => void;
 }) {
-  const [issue, { mutate, refetch }] = createResource(() => props.url, readGitHubIssue);
+  // The page's Refresh reloads this item, but not mid-edit or mid-save, where a
+  // late response could overwrite what is being changed.
+  const [issueRevision, setIssueRevision] = createSignal(0);
+  const [issue, { mutate, refetch }] = createResource(
+    () => ({ url: props.url, revision: issueRevision() }),
+    ({ url }) => readGitHubIssue(url),
+  );
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal('');
   const [editing, setEditing] = createSignal<'labels' | 'assignees' | null>(null);
@@ -44,7 +52,32 @@ export function GitHubIssueDetail(props: {
   const [revision, setRevision] = createSignal(0);
   const [activity] = createResource(
     () => ({ url: props.url, page: activityPage(), revision: revision() }),
-    ({ url, page }) => readGitHubIssueActivity(url, page),
+    ({ url, page }) => readGitHubIssueActivity(url, page).then((result) => ({ ...result, page })),
+  );
+  // "Load more" appends pages; a reload starts again from page 1. Shown items stay
+  // until their replacement arrives, so the timeline does not collapse meanwhile.
+  const [activityItems, setActivityItems] = createSignal<GitHubIssueActivityPage['items']>([]);
+  createEffect(() => {
+    const loaded = activity.error ? undefined : activity();
+    if (!loaded) return;
+    setActivityItems((items) => (loaded.page === 1 ? loaded.items : [...items, ...loaded.items]));
+  });
+  function reloadActivity() {
+    batch(() => {
+      setActivityPage(1);
+      setRevision((v) => v + 1);
+    });
+  }
+  createEffect(
+    on(
+      () => props.revision,
+      () => {
+        if (untrack(() => busy() || editing() !== null)) return;
+        setIssueRevision((v) => v + 1);
+        reloadActivity();
+      },
+      { defer: true },
+    ),
   );
   // Reading an errored resource throws to the app-wide ErrorBoundary; show the error inline instead.
   const loadedIssue = () => (issue.error ? undefined : issue());
@@ -80,7 +113,7 @@ export function GitHubIssueDetail(props: {
         isCrossRepository: loadedIssue()?.isCrossRepository,
       });
       setEditing(null);
-      setRevision((v) => v + 1);
+      reloadActivity();
       props.onChanged();
     } catch (err) {
       setError(`Could not update issue: ${errMessage(err)}`);
@@ -93,7 +126,7 @@ export function GitHubIssueDetail(props: {
   }
   function refresh() {
     void refetch();
-    setRevision((v) => v + 1);
+    reloadActivity();
   }
   return (
     <div class="github-issue-detail-body">
@@ -120,16 +153,13 @@ export function GitHubIssueDetail(props: {
               <button onClick={() => external(current().url)}>
                 <ExternalLinkIcon /> Open in GitHub
               </button>
-              <button disabled={busy() || !!editing() || issue.loading} onClick={refresh}>
-                <SyncIcon /> Refresh issue
-              </button>
               {/* One button whose label follows the board, so focus stays on it. */}
               <button
                 aria-busy={addingToBoard() || boardColumn.loading || undefined}
                 title={
                   boardColumn()
-                    ? "Open the project's Kanban board"
-                    : "Add a card for this item to the project's Kanban board (KANBAN.md)"
+                    ? "Open the project's plan"
+                    : "Add a card for this item to the project's plan (KANBAN.md)"
                 }
                 onClick={() => {
                   if (addingToBoard() || boardColumn.loading) return;
@@ -137,14 +167,14 @@ export function GitHubIssueDetail(props: {
                   else void addToBoard(current());
                 }}
               >
-                <KanbanIcon />{' '}
+                <PlanIcon />{' '}
                 {boardColumn.loading && boardColumn() === undefined
-                  ? 'Board…'
+                  ? 'Plan…'
                   : addingToBoard()
                     ? 'Adding…'
                     : boardColumn()
-                      ? `On board · ${boardColumn()}`
-                      : 'Add to board'}
+                      ? `On plan · ${boardColumn()}`
+                      : 'Add to plan'}
               </button>
             </div>
             <h2>{current().title}</h2>
@@ -192,7 +222,7 @@ export function GitHubIssueDetail(props: {
               class="github-issue-triage"
               disabled={busy() || issue.loading || !!issue.error}
             >
-              <legend>Triage</legend>
+              <legend class="dialog-sr-only">Triage</legend>
               <For each={['labels', 'assignees'] as const}>
                 {(field) => (
                   <div class="github-issue-metadata">
@@ -244,8 +274,66 @@ export function GitHubIssueDetail(props: {
                   </form>
                 )}
               </Show>
-              <div class="github-issues-actions">
-                <Show when={current().kind === 'issue'}>
+              {/* Always present, so the line is reserved and the live region announces. */}
+              <small role="status" class="github-issue-saving">
+                {busy() ? 'Saving to GitHub…' : ''}
+              </small>
+            </fieldset>
+            <h3>Description</h3>
+            <IssueMarkdown
+              body={current().body || '_No description provided._'}
+              onOpen={external}
+            />
+            <h3>Activity</h3>
+            <Show when={activity.error}>
+              <p role="alert" class="github-issues-error">
+                {errMessage(activity.error)}{' '}
+                <button onClick={() => setRevision((v) => v + 1)}>Retry activity</button>
+              </p>
+            </Show>
+            <Show when={!activity.loading && !activity.error && !activityItems().length}>
+              <p>No activity yet.</p>
+            </Show>
+            <For each={activityItems()}>
+              {(item) => (
+                <article class="github-issue-activity">
+                  <div class="github-issue-byline">
+                    <strong>@{item.author}</strong> {item.event}{' '}
+                    <time>{item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}</time>
+                  </div>
+                  <Show when={item.body}>
+                    <IssueMarkdown body={item.body} onOpen={external} />
+                  </Show>
+                </article>
+              )}
+            </For>
+            <Show when={activity.loading && !activityItems().length}>
+              <p role="status">Loading activity…</p>
+            </Show>
+            {/* Stays in place while the next page loads, so content below does not jump. */}
+            <Show
+              when={
+                !activity.error &&
+                activityItems().length &&
+                (activity.loading || activity()?.hasMore)
+              }
+            >
+              <button
+                disabled={activity.loading}
+                aria-busy={activity.loading || undefined}
+                onClick={() => setActivityPage((p) => p + 1)}
+              >
+                {activity.loading ? 'Loading activity…' : 'Load more activity'}
+              </button>
+            </Show>
+            {/* Last, where GitHub puts it: away from the edit buttons it could be mistaken for. */}
+            <Show when={current().kind === 'issue'}>
+              <fieldset
+                class="github-issue-triage github-issue-state-actions"
+                disabled={busy() || issue.loading || !!issue.error}
+              >
+                <legend class="dialog-sr-only">Issue state</legend>
+                <div class="github-issues-actions">
                   <Show
                     when={current().state === 'open'}
                     fallback={
@@ -276,60 +364,9 @@ export function GitHubIssueDetail(props: {
                       <CheckIcon /> Close issue
                     </button>
                   </Show>
-                </Show>
-                <Show when={busy()}>
-                  <span role="status">Saving to GitHub…</span>
-                </Show>
-              </div>
-            </fieldset>
-            <h3>Description</h3>
-            <IssueMarkdown
-              body={current().body || '_No description provided._'}
-              onOpen={external}
-            />
-            <h3>Activity</h3>
-            <Show when={activity.loading}>
-              <p role="status">Loading activity…</p>
+                </div>
+              </fieldset>
             </Show>
-            <Show when={activity.error}>
-              <p role="alert" class="github-issues-error">
-                {errMessage(activity.error)}{' '}
-                <button onClick={() => setRevision((v) => v + 1)}>Retry activity</button>
-              </p>
-            </Show>
-            <Show when={!activity.loading && !activity.error}>
-              <Show when={!activity()?.items.length}>
-                <p>No activity on this page.</p>
-              </Show>
-              <For each={activity()?.items}>
-                {(item) => (
-                  <article class="github-issue-activity">
-                    <div class="github-issue-byline">
-                      <strong>@{item.author}</strong> {item.event}{' '}
-                      <time>{item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}</time>
-                    </div>
-                    <Show when={item.body}>
-                      <IssueMarkdown body={item.body} onOpen={external} />
-                    </Show>
-                  </article>
-                )}
-              </For>
-            </Show>
-            <div class="github-issues-pagination">
-              <button
-                disabled={activity.loading || activityPage() <= 1}
-                onClick={() => setActivityPage((p) => p - 1)}
-              >
-                <ChevronLeftIcon /> Previous activity
-              </button>
-              <span>Page {activityPage()}</span>
-              <button
-                disabled={activity.loading || !!activity.error || !activity()?.hasMore}
-                onClick={() => setActivityPage((p) => p + 1)}
-              >
-                Next activity <ChevronRightIcon />
-              </button>
-            </div>
           </>
         )}
       </Show>

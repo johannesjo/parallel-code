@@ -1,19 +1,59 @@
+/* The desktop's default Parallel Code look (html[data-look='parallel-code'] in
+   src/styles.css), under the same names so the shared chat view reads it too.
+   Keep the two in step when that palette changes. */
 :root {
   color-scheme: dark;
-  --mobile-bg: #0b0f14;
-  --mobile-panel: #121a23;
-  --mobile-border: #253443;
-  --mobile-muted: #9bb0c3;
-  --mobile-accent: #65d5ff;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Sora', var(--font-ui);
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Motion tokens from src/styles.css, used by the shared chat view. */
+  --motion-fast: 120ms;
+  --motion-enter: 180ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --bg: #080c10;
+  --bg-elevated: #161e26;
+  --bg-input: #0c1218;
+  --bg-hover: #1b252f;
+  --bg-selected: #18343e;
+  --border: #29343d;
+  --border-subtle: #1e272f;
+  --border-focus: #67d9ed;
+  --fg: #f0f4f7;
+  --fg-muted: #b4c0cb;
+  --fg-subtle: #7f91a1;
+  --accent: #67d9ed;
+  --accent-hover: #91e5f3;
+  --accent-text: #080c10;
+  --link: #67d9ed;
+  --success: #98c9ae;
+  --error: #f08f8a;
+  --warning: #dfba83;
+  --info: #9db3e6;
+  --diff-add-bg: rgba(152, 201, 174, 0.12);
+  --diff-remove-bg: rgba(240, 143, 138, 0.12);
+  --island-bg: #10161c;
+  --task-panel-bg: #10161c;
+  --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.45);
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
 }
 body {
-  background: var(--mobile-bg);
-  color: #e0eaf3;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
+}
+/* Geometric display headings over compact UI text, as on the desktop. */
+:is(h1, h2, .mobile-dialog-title) {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.025em;
 }
 input::placeholder,
 textarea::placeholder {
-  color: #8196aa;
+  color: var(--fg-subtle);
   opacity: 1;
 }
 button,
@@ -36,7 +76,7 @@ a:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 2px solid var(--mobile-accent);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 .mobile-screen {
@@ -44,15 +84,19 @@ select:focus-visible {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--mobile-bg);
+  /* The desktop window's faint cyan glow from the top edge, sized to the top of
+     a tall phone screen rather than its full height. */
+  background:
+    radial-gradient(ellipse 120% 360px at 50% 0%, #16485b33, transparent) no-repeat,
+    var(--bg);
   padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
 }
 .mobile-notifications {
   padding: 12px;
   margin-bottom: 16px;
-  border: 1px solid var(--mobile-border);
-  border-radius: 12px;
-  background: var(--mobile-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--island-bg);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -62,10 +106,10 @@ select:focus-visible {
 }
 .mobile-notifications p {
   margin: 12px 0 0;
-  color: var(--mobile-muted);
+  color: var(--fg-muted);
 }
 .mobile-notifications a {
-  color: var(--mobile-accent);
+  color: var(--link);
 }
 .mobile-notifications button {
   margin-top: 12px;
@@ -76,18 +120,17 @@ select:focus-visible {
   gap: 12px;
   padding: 12px 16px;
   padding-top: max(12px, env(safe-area-inset-top));
-  border-bottom: 1px solid var(--mobile-border);
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 .mobile-header h1 {
   font-size: 18px;
-  font-weight: 650;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .mobile-header .mobile-eyebrow,
 .mobile-eyebrow {
-  color: var(--mobile-muted);
+  color: var(--fg-subtle);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.1em;
@@ -103,11 +146,15 @@ select:focus-visible {
   min-width: 44px;
   padding-inline: 10px;
 }
+/* Two lines: one line beside the back and next buttons left a phone about 20 characters. */
 .mobile-task-header h1 {
+  letter-spacing: -0.01em;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   font-size: 16px;
+  line-height: 1.3;
 }
 .mobile-task-meta {
   display: flex;
@@ -128,7 +175,7 @@ select:focus-visible {
 }
 .mobile-header p,
 .muted {
-  color: var(--mobile-muted);
+  color: var(--fg-muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -143,29 +190,31 @@ select:focus-visible {
 .mobile-button {
   min-width: 44px;
   min-height: 44px;
-  border: 1px solid var(--mobile-border);
-  background: var(--mobile-panel);
-  color: #dce7f1;
-  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--fg-muted);
+  border-radius: var(--radius-md);
   padding: 10px 14px;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
 }
+/* Like the desktop's primary: weight and full-strength text, never an accent fill. */
 .mobile-button.primary {
-  background: var(--mobile-accent);
-  color: #06202d;
-  border-color: transparent;
+  background: var(--bg-input);
+  border-color: var(--border);
+  color: var(--fg);
+  font-weight: 600;
 }
 .mobile-button.quiet {
   background: transparent;
   border-color: transparent;
-  color: var(--mobile-accent);
+  color: var(--link);
 }
 .mobile-button.wide {
   width: 100%;
 }
 .mobile-button:not(:disabled):active {
-  filter: brightness(0.85);
+  background: var(--bg-hover);
 }
 .mobile-banner {
   display: flex;
@@ -173,8 +222,8 @@ select:focus-visible {
   justify-content: space-between;
   gap: 10px;
   padding: 8px 16px;
-  background: #302711;
-  color: #ffdd98;
+  background: color-mix(in srgb, var(--warning) 14%, var(--bg));
+  color: var(--warning);
   font-size: 13px;
   line-height: 1.5;
   flex-shrink: 0;
@@ -184,33 +233,34 @@ select:focus-visible {
   white-space: nowrap;
 }
 .mobile-banner.info {
-  background: #132838;
-  color: #b3e6ff;
+  background: color-mix(in srgb, var(--info) 14%, var(--bg));
+  color: var(--info);
 }
 /* Failed CI is urgent, like the desktop's red Fix CI button. */
 .mobile-banner.error {
-  background: #311b23;
-  color: #ffb0bb;
+  background: color-mix(in srgb, var(--error) 14%, var(--bg));
+  color: var(--error);
 }
 .mobile-error {
-  color: #ffb0bb;
-  background: #311b23;
-  border-radius: 10px;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 12%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border-radius: var(--radius-md);
   padding: 12px;
   font-size: 14px;
   line-height: 1.5;
 }
 .mobile-success {
-  color: #79e2b7;
+  color: var(--success);
 }
 .mobile-empty {
   padding: 40px 12px;
   text-align: center;
-  color: var(--mobile-muted);
+  color: var(--fg-muted);
   line-height: 1.6;
 }
 .mobile-empty h2 {
-  color: #e0eaf3;
+  color: var(--fg);
   font-size: 20px;
   margin-bottom: 8px;
 }
@@ -222,12 +272,18 @@ select:focus-visible {
   width: 100%;
   min-height: 48px;
   padding: 12px 14px;
-  border: 1px solid var(--mobile-border);
-  border-radius: 12px;
-  color: #e0eaf3;
-  background: #101720;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg);
+  background: var(--bg-input);
   font-size: 16px;
   line-height: 1.5;
+}
+/* The desktop's focused-field treatment: accent border and a faint ring. */
+:is(.mobile-search, .mobile-input):focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .mobile-search-field {
   position: relative;
@@ -256,11 +312,11 @@ select:focus-visible {
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  border: 1px solid var(--mobile-border);
-  border-radius: 24px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   padding: 8px 12px;
   font-size: 13px;
-  color: var(--mobile-muted);
+  color: var(--fg-muted);
   background: transparent;
 }
 .mobile-filter span {
@@ -268,15 +324,15 @@ select:focus-visible {
   font-size: 12px;
 }
 .mobile-filter[aria-pressed='true'] {
-  color: #bdeaff;
-  border-color: #467b93;
-  background: #183344;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: var(--bg-selected);
 }
 textarea.mobile-input {
   resize: vertical;
 }
 .mobile-fix-ci-prompt {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
 }
 .mobile-group {
@@ -285,12 +341,13 @@ textarea.mobile-input {
 .mobile-group h2 {
   display: flex;
   gap: 8px;
-  font-size: 14px;
-  color: var(--mobile-muted);
+  font-size: 13px;
+  letter-spacing: 0;
+  color: var(--fg-muted);
   margin: 0 2px 8px;
 }
 .mobile-group h2 span {
-  color: #e0eaf3;
+  color: var(--fg-subtle);
   font-variant-numeric: tabular-nums;
 }
 .agent-card {
@@ -300,41 +357,30 @@ textarea.mobile-input {
   width: 100%;
   text-align: left;
   margin-bottom: 8px;
-  border: 1px solid var(--mobile-border);
-  background: #101821;
-  border-radius: 12px;
-  padding: 12px;
-  color: #e0eaf3;
+  border: 1px solid var(--border);
+  background: var(--island-bg);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  color: var(--fg);
 }
 .agent-card:active {
-  background: #1a2b39;
+  background: var(--bg-hover);
 }
 .agent-card.attention {
-  border-color: #766037;
-  background: linear-gradient(120deg, #241e1266, transparent 75%), #101821;
-}
-.agent-card-top {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  justify-content: space-between;
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+  background: color-mix(in srgb, var(--warning) 6%, var(--island-bg));
 }
 .agent-card strong {
   font-size: 16px;
   font-weight: 600;
+  letter-spacing: -0.015em;
   line-height: 1.4;
   overflow-wrap: anywhere;
   min-width: 0;
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-.agent-card-chevron {
-  color: var(--mobile-muted);
-  font-size: 24px;
-  line-height: 1;
-  flex-shrink: 0;
+  -webkit-line-clamp: 3;
 }
 .agent-card-meta {
   display: flex;
@@ -359,6 +405,7 @@ textarea.mobile-input {
   font-size: 12px;
   line-height: 1.5;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 .status-dot {
@@ -370,24 +417,70 @@ textarea.mobile-input {
 }
 .agent-preview {
   font-size: 14px;
-  color: #b5c5d3;
+  color: var(--fg-muted);
   line-height: 1.5;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.agent-pr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+.agent-pr-chip,
+.agent-pr-babysit {
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  flex-shrink: 0;
+}
+.agent-pr-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.agent-pr.ready .agent-pr-chip {
+  color: var(--success);
+  font-weight: 600;
+}
+/* GitHub's merged purple, as on the desktop board's PR chip. */
+.agent-pr.merged .agent-pr-chip {
+  color: #8957e5;
+  font-weight: 600;
+}
+.agent-pr.failed {
+  color: var(--error);
+  font-weight: 600;
+}
+.agent-pr.failed .agent-pr-chip {
+  background: color-mix(in srgb, var(--error) 14%, transparent);
+}
+/* A pressed toggle on the desktop, so it may carry the accent. */
+.agent-pr-babysit {
+  color: var(--accent);
+  font-weight: 400;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
 .mobile-footer {
   padding: 12px 16px max(12px, env(safe-area-inset-bottom));
-  border-top: 1px solid var(--mobile-border);
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
-  background: var(--mobile-panel);
+  background: var(--island-bg);
 }
 .mobile-tabs {
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 4px 12px;
-  border-bottom: 1px solid var(--mobile-border);
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 .mobile-view-tabs {
@@ -400,14 +493,14 @@ textarea.mobile-input {
   flex: 1;
   background: transparent;
   border: 0;
-  border-radius: 10px;
-  color: var(--mobile-muted);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
   min-height: 36px;
   font-size: 14px;
 }
 .mobile-view-tabs button[aria-pressed='true'] {
-  background: #203747;
-  color: #bdeaff;
+  background: var(--bg-hover);
+  color: var(--fg);
 }
 .mobile-text-size {
   display: flex;
@@ -419,6 +512,8 @@ textarea.mobile-input {
 }
 .mobile-output-area {
   position: relative;
+  /* Flat behind the terminal, so the screen's glow doesn't show below its rows. */
+  background: var(--bg);
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -439,6 +534,21 @@ textarea.mobile-input {
   pointer-events: none;
   height: 100%;
 }
+/* A plain-text copy of the terminal, so long-press selection and the system Copy menu work. */
+.mobile-terminal-text {
+  height: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  overflow: auto;
+  overscroll-behavior-y: contain;
+  background: #080c10;
+  font-family: monospace;
+  line-height: 1.2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
 .mobile-output-actions {
   position: absolute;
   bottom: 12px;
@@ -450,15 +560,38 @@ textarea.mobile-input {
 }
 .mobile-output-actions > .mobile-button {
   pointer-events: auto;
-  box-shadow: 0 3px 16px #0008;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-pop);
 }
-.mobile-composer {
-  border-top: 1px solid var(--mobile-border);
-  background: var(--mobile-panel);
-  padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+.mobile-composer-dock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   flex-shrink: 1;
   min-height: 0;
   max-height: 60%;
+}
+.mobile-composer-notices {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  inset-inline: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+.mobile-composer-notices > p {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-pop);
+}
+.mobile-composer {
+  border-top: 1px solid var(--border);
+  background: var(--island-bg);
+  padding: 6px 10px max(6px, env(safe-area-inset-bottom));
+  min-height: 0;
   overflow-y: auto;
 }
 .mobile-composer-row {
@@ -467,39 +600,57 @@ textarea.mobile-input {
   align-items: flex-end;
 }
 .mobile-composer-row > button {
-  min-height: 48px;
+  min-height: 40px;
+  padding-block: 6px;
+}
+.mobile-composer-row > .mobile-button.primary.mobile-success {
+  color: var(--success);
 }
 .mobile-bash {
   flex: 0 0 auto;
   padding: 8px 12px;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 18px;
 }
 .mobile-bash[aria-pressed='true'] {
-  color: #bdeaff;
-  border-color: #467b93;
-  background: #183344;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: var(--bg-selected);
 }
 .mobile-composer textarea {
   flex: 1;
   min-width: 0;
+  min-height: 40px;
   max-height: 160px;
+  padding-block: 7px;
   resize: none;
-}
-.mobile-composer > .mobile-error {
-  margin-bottom: 8px;
 }
 .mobile-keys {
   display: flex;
   gap: 3px;
-  padding-top: 8px;
+  padding-top: 6px;
   overflow-x: auto;
+}
+/* While typing, the keyboard takes the space; these keys answer agent menus,
+   which need no keyboard, and / and Tab can be typed. */
+.mobile-composer:has(.mobile-input:focus) .mobile-keys {
+  display: none;
 }
 .mobile-keys .mobile-button {
   flex: 1 0 auto;
   min-width: 30px;
-  padding: 8px 4px;
+  min-height: 34px;
+  padding: 4px;
   font-size: 12px;
+  white-space: nowrap;
+}
+.mobile-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
 .mobile-form {
@@ -515,21 +666,37 @@ textarea.mobile-input {
   flex-direction: column;
   gap: 8px;
   font-size: 14px;
-  color: #c4d5e3;
+  color: var(--fg-muted);
 }
 .mobile-form details summary {
   cursor: pointer;
   min-height: 44px;
   padding: 12px 0;
-  color: var(--mobile-muted);
+  color: var(--fg-muted);
   font-size: 14px;
 }
 .mobile-project-hint {
   margin-top: -14px;
 }
+/* A native <option> can't show a glyph, so the chosen project's mark sits inside the field.
+   The padding stays constant so the text doesn't jump when the mark appears. */
+.mobile-project-select {
+  position: relative;
+  display: block;
+}
+.mobile-project-select .project-swatch {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.mobile-project-select select {
+  padding-left: 38px;
+}
 .mobile-title-options {
-  border-top: 1px solid var(--mobile-border);
-  border-bottom: 1px solid var(--mobile-border);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding-bottom: 4px;
 }
 .mobile-title-options summary span {
@@ -564,12 +731,12 @@ textarea.mobile-input {
   gap: 12px;
 }
 .mobile-diff-status {
-  color: var(--mobile-muted);
+  color: var(--fg-muted);
   font-size: 14px;
   margin: 0;
 }
 .mobile-diff-error {
-  color: #ff9c9c;
+  color: var(--error);
   font-size: 13px;
   margin: 4px 0 0;
   overflow-wrap: anywhere;
@@ -583,8 +750,8 @@ textarea.mobile-input {
   gap: 8px;
 }
 .mobile-diff-file {
-  border: 1px solid var(--mobile-border);
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 .mobile-diff-file-head {
@@ -594,9 +761,9 @@ textarea.mobile-input {
   gap: 10px;
   width: 100%;
   padding: 10px 12px;
-  background: var(--mobile-panel);
+  background: var(--island-bg);
   border: 0;
-  color: var(--mobile-fg, #e0eaf3);
+  color: var(--fg);
   text-align: left;
   font-size: 13px;
   min-height: 40px;
@@ -608,14 +775,15 @@ textarea.mobile-input {
 }
 .mobile-diff-stat {
   flex-shrink: 0;
-  color: var(--mobile-muted);
+  color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
 }
 .mobile-diff-hunk {
   margin: 0;
   padding: 8px 0;
-  background: #0a0f14;
+  background: var(--bg-input);
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.5;
   overflow-x: auto;
@@ -631,27 +799,27 @@ textarea.mobile-input {
 .mobile-diff-hunk-head {
   display: block;
   padding: 2px 10px;
-  color: var(--mobile-muted);
-  background: #101821;
+  color: var(--fg-muted);
+  background: var(--island-bg);
 }
 .mobile-diff-line {
   display: block;
   padding: 0 10px;
   white-space: pre;
-  color: #c8d6e2;
+  color: var(--fg-muted);
 }
 .mobile-diff-line-add {
-  background: rgba(52, 168, 83, 0.16);
-  color: #b7f0c4;
+  background: var(--diff-add-bg);
+  color: var(--success);
 }
 .mobile-diff-line-remove {
-  background: rgba(248, 81, 73, 0.14);
-  color: #ffc4c0;
+  background: var(--diff-remove-bg);
+  color: var(--error);
 }
 .mobile-diff-binary {
   margin: 0;
   padding: 10px 12px;
-  color: var(--mobile-muted);
+  color: var(--fg-muted);
   font-size: 13px;
 }
 .mobile-diff-actions {
@@ -675,9 +843,10 @@ textarea.mobile-input {
   max-height: 85vh;
   overflow: auto;
   overscroll-behavior-y: contain;
-  background: var(--mobile-panel);
-  border: 1px solid var(--mobile-border);
-  border-radius: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
   padding: 16px;
 }
 .mobile-dialog-title {
@@ -701,20 +870,20 @@ textarea.mobile-input {
   flex: 1;
 }
 .mobile-readiness {
-  border: 1px solid var(--mobile-border);
-  border-left: 3px solid var(--mobile-muted);
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--fg-muted);
+  border-radius: var(--radius-md);
   padding: 10px 12px;
   margin-bottom: 12px;
 }
 .mobile-readiness-ok {
-  border-left-color: #34a853;
+  border-left-color: var(--success);
 }
 .mobile-readiness-warn {
-  border-left-color: #f5a623;
+  border-left-color: var(--warning);
 }
 .mobile-readiness-bad {
-  border-left-color: #f85149;
+  border-left-color: var(--error);
 }
 .mobile-readiness-list {
   list-style: none;
@@ -733,16 +902,16 @@ textarea.mobile-input {
 .mobile-readiness-symbol {
   flex-shrink: 0;
   width: 1em;
-  color: var(--mobile-muted);
+  color: var(--fg-muted);
 }
 .mobile-readiness-row.mobile-readiness-ok .mobile-readiness-symbol {
-  color: #34a853;
+  color: var(--success);
 }
 .mobile-readiness-row.mobile-readiness-warn .mobile-readiness-symbol {
-  color: #f5a623;
+  color: var(--warning);
 }
 .mobile-readiness-row.mobile-readiness-bad .mobile-readiness-symbol {
-  color: #f85149;
+  color: var(--error);
 }
 .mobile-setup {
   justify-content: center;
@@ -763,7 +932,7 @@ textarea.mobile-input {
   margin-bottom: 12px;
 }
 .mobile-setup p {
-  color: var(--mobile-muted);
+  color: var(--fg-muted);
   line-height: 1.6;
   font-size: 15px;
 }
@@ -772,16 +941,16 @@ textarea.mobile-input {
   gap: 8px;
   list-style: none;
   font-size: 12px;
-  color: var(--mobile-muted);
+  color: var(--fg-muted);
 }
 .mobile-steps li {
   flex: 1;
-  border-top: 3px solid var(--mobile-border);
+  border-top: 3px solid var(--border);
   padding-top: 8px;
 }
 .mobile-steps li.current {
-  color: var(--mobile-accent);
-  border-color: var(--mobile-accent);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .mobile-pin {
   text-align: center;
@@ -806,38 +975,24 @@ textarea.mobile-input {
   .mobile-screen {
     max-width: 760px;
     margin-inline: auto;
-    border-inline: 1px solid var(--mobile-border);
+    border-inline: 1px solid var(--border);
   }
 }
 
+/* History shifts the drawn rows by part of a row; clip them to the grid so the
+   shift cannot grow the pane's scroll range and fight the next swipe. */
+.mobile-terminal .xterm {
+  overflow: hidden;
+}
 .mobile-terminal .xterm-helper-textarea,
 .mobile-terminal .xterm-composition-view {
   pointer-events: none;
 }
 
-/* The desktop chat view, themed from the phone palette. It reads the desktop's
-   theme variables, which the phone page does not otherwise define. */
+/* The desktop chat view. It reads the desktop theme variables defined at :root;
+   it sits on the screen background rather than a raised task panel. */
 .mobile-chat {
-  --fg: #e0eaf3;
-  --fg-muted: var(--mobile-muted);
-  --border: var(--mobile-border);
-  --border-focus: var(--mobile-accent);
-  --accent: var(--mobile-accent);
-  --accent-hover: #8fe0ff;
-  --accent-text: #031018;
-  --link: var(--mobile-accent);
-  --success: #2fd198;
-  --error: #ff5f73;
-  --warning: #ffc569;
-  --diff-add-bg: rgba(47, 209, 152, 0.1);
-  --diff-remove-bg: rgba(255, 95, 115, 0.1);
-  --bg-elevated: var(--mobile-panel);
-  --task-panel-bg: var(--mobile-bg);
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --task-panel-bg: var(--bg);
   --chat-border: var(--border);
   --chat-accent: var(--accent);
   --chat-surface: color-mix(in srgb, var(--fg) 5%, var(--task-panel-bg));

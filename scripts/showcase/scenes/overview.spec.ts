@@ -13,7 +13,9 @@ test('overview: agents working, waiting and ready to merge', async () => {
     await expect(taskColumn(page, 'five-day-forecast')).toContainText('Adding min/max');
     // The first git poll skips tasks that just printed output; the next one,
     // 30 s later, marks the committed task ready.
-    await expect(page.getByText('Ready to merge')).toBeVisible({ timeout: 45_000 });
+    await expect(
+      taskColumn(page, 'readme-setup').getByRole('img', { name: 'Ready', exact: true }),
+    ).toBeVisible({ timeout: 45_000 });
     await page.screenshot({ path: OUTPUT });
   } finally {
     await close();

@@ -26,8 +26,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,7 +56,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -96,7 +93,7 @@ fun ChatScreen(
     agent: RemoteAgent?,
     agentId: String,
     state: ConnectionState,
-    client: RemoteClient,
+    client: PhoneClient,
     quickReplies: List<String>,
     sendQuickReplies: Boolean = false,
     promptHistory: PromptHistoryStore? = null,
@@ -166,16 +163,12 @@ fun ChatScreen(
                         }
                     },
                     actions = {
-                        if (agent != null && state.canControl && agent.ci == "failure") {
-                            // Red like the desktop's Fix CI button: a failed check is urgent.
-                            TextButton(onClick = { fixingCiTask = agent.taskId }) {
-                                Text("Fix CI", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
                         if (agent != null && state.canControl) {
-                            TextButton(onClick = { closing = true }) {
-                                Text("Close", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
-                            }
+                            TaskActionsMenu(
+                                onFixCi = if (agent.ci == "failure") ({ fixingCiTask = agent.taskId }) else null,
+                                onMerge = null,
+                                onClose = { closing = true },
+                            )
                         }
                     },
                 )
@@ -255,7 +248,7 @@ private fun Banner(text: String, error: Boolean = false) {
 }
 
 @Composable
-private fun ChatTranscript(
+internal fun ChatTranscript(
     agentId: String,
     chat: ChatState,
     agentName: String,
@@ -458,7 +451,7 @@ private fun ToolItem(item: ChatItem) {
             Text(mark, color = color, fontWeight = FontWeight.Bold)
             Text(
                 activity?.command ?: activity?.label ?: "Tool",
-                fontFamily = if (activity?.command != null) FontFamily.Monospace else null,
+                fontFamily = if (activity?.command != null) AppFonts.mono else null,
                 style = MaterialTheme.typography.bodySmall,
                 color = AppTheme.extra.textMuted,
                 maxLines = if (open) Int.MAX_VALUE else 1,
@@ -471,7 +464,7 @@ private fun ToolItem(item: ChatItem) {
                 Modifier
                     .padding(top = 6.dp)
                     .horizontalScroll(rememberScrollState()),
-                fontFamily = FontFamily.Monospace,
+                fontFamily = AppFonts.mono,
                 fontSize = 11.sp,
                 lineHeight = 14.sp,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -544,7 +537,7 @@ private fun RequestCard(
                     style = MaterialTheme.typography.bodySmall,
                 )
                 if (showDetails) {
-                    Text(details, fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp)
+                    Text(details, fontFamily = AppFonts.mono, fontSize = 11.sp, lineHeight = 14.sp)
                 }
             }
         }
@@ -648,50 +641,43 @@ private fun ChatComposer(
         Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         QuickReplies(quickReplies, enabled = enabled && !busy) {
             if (sendQuickReplies) run({ send(it) }, clearDraft = false)
             else draft = appendToDraft(draft, it)
         }
-        OutlinedTextField(
-            value = draft,
-            onValueChange = { draft = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Message the agent") },
-            minLines = 2,
-            maxLines = 6,
-            enabled = enabled,
-        )
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.End,
-        ) {
-            VoiceInputButton(enabled = enabled && !busy) { draft = appendToDraft(draft, it) }
-            if (promptHistory != null) {
-                OutlinedButton(
-                    onClick = { showHistory = true },
-                    enabled = enabled && !busy && promptHistory.history(draftKey).isNotEmpty(),
-                    shape = MaterialTheme.shapes.large,
-                ) {
-                    Icon(Icons.Filled.History, contentDescription = "Recent messages")
-                }
-            }
-            if (working && draft.isBlank()) {
-                OutlinedButton(onClick = { run(stop, clearDraft = false) }, enabled = enabled && !busy) {
-                    Icon(Icons.Filled.Stop, contentDescription = "Stop")
-                }
-            } else {
-                Button(
-                    onClick = {
-                        val text = draft.trim()
-                        run({ send(text); promptHistory?.record(draftKey, text) }, clearDraft = true)
-                    },
-                    enabled = enabled && !busy && draft.isNotBlank(),
-                ) { Text("Send") }
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Message the agent") },
+                trailingIcon = {
+                    Row {
+                        if (promptHistory != null) {
+                            PromptHistoryButton(
+                                enabled = enabled && !busy && promptHistory.history(draftKey).isNotEmpty(),
+                            ) { showHistory = true }
+                        }
+                        VoiceInputButton(enabled = enabled && !busy) { draft = appendToDraft(draft, it) }
+                    }
+                },
+                maxLines = 6,
+                enabled = enabled,
+            )
+            ComposerSendButton(
+                stop = working && draft.isBlank(),
+                enabled = enabled && !busy && (draft.isNotBlank() || working),
+                onStop = { run(stop, clearDraft = false) },
+                onSend = {
+                    val text = draft.trim()
+                    run({ send(text); promptHistory?.record(draftKey, text) }, clearDraft = true)
+                },
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
         }
         if (showHistory) {
             val history = remember(showHistory) { promptHistory?.history(draftKey).orEmpty() }

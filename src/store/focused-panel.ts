@@ -1,4 +1,5 @@
 import { store, setStore } from './core';
+import { boardSidePanelOpen } from './project-pages';
 
 let pendingFocus: { taskId: string; panel: string } | undefined;
 
@@ -122,7 +123,14 @@ export function isPanelFocused(taskId: string, panel: string): boolean {
 
 /** Whether focus is inside this task at all, rather than the sidebar or another task. */
 function taskOwnsFocus(taskId: string): boolean {
-  if (store.sidebarFocused || store.placeholderFocused || store.newTaskPanelFocused) return false;
+  if (
+    store.sidebarFocused ||
+    store.placeholderFocused ||
+    store.newTaskPanelFocused ||
+    store.boardFocused
+  ) {
+    return false;
+  }
   return store.activeTaskId === taskId;
 }
 
@@ -145,9 +153,17 @@ export function isTaskColumnHighlighted(taskId: string | null): boolean {
   return taskId !== null && store.activeTaskId === taskId && !store.newTaskPanelFocused;
 }
 
+/**
+ * Whether the workspace shows a single column (focus mode, the board's side
+ * panel), so the active one needs no ring to stand out. A new-task draft
+ * replaces that column until it closes.
+ */
+export function isSoloTaskColumn(): boolean {
+  return boardSidePanelOpen() || store.focusMode;
+}
+
 export function isPanelFocusedPrefix(taskId: string, prefix: string): boolean {
-  if (store.sidebarFocused || store.placeholderFocused || store.newTaskPanelFocused) return false;
-  if (store.activeTaskId !== taskId) return false;
+  if (!taskOwnsFocus(taskId)) return false;
   return store.focusedPanel[taskId]?.startsWith(prefix) ?? false;
 }
 
@@ -162,6 +178,7 @@ export function setTaskFocusedPanel(taskId: string, panel: string): void {
   setStore('sidebarFocused', false);
   setStore('placeholderFocused', false);
   setStore('newTaskPanelFocused', false);
+  setStore('boardFocused', false);
   scheduleTaskFocus(taskId, normalizedPanel);
   scrollTaskIntoView(taskId);
 }
@@ -238,7 +255,8 @@ export function scrollTaskIntoView(taskId: string, behavior: ScrollBehavior = 's
     pendingScroll = undefined;
     if (
       !target ||
-      (store.focusMode && !store.showNewTaskPanel) ||
+      store.focusMode ||
+      boardSidePanelOpen() ||
       store.activeTaskId !== target.taskId ||
       store.placeholderFocused ||
       newTaskDraftHasFocus()

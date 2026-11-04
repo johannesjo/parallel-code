@@ -291,11 +291,16 @@ export interface ContrastWarning {
   required: number;
 }
 
-/** Pairs to check: [fgVar, bgVar, minimumRatio] */
+/**
+ * Pairs to check: [fgVar, bgVar, minimumRatio]. Muted and subtle colours set
+ * small body text such as hints and metadata, so they need WCAG AA's 4.5:1 too;
+ * panels sit on --island-bg, so subtle text is checked there as well.
+ */
 const CONTRAST_PAIRS: [CssVar, CssVar, number][] = [
   ['--fg', '--bg-elevated', 4.5],
-  ['--fg-muted', '--bg-elevated', 3.0],
-  ['--fg-subtle', '--bg-elevated', 3.0],
+  ['--fg-muted', '--bg-elevated', 4.5],
+  ['--fg-subtle', '--bg-elevated', 4.5],
+  ['--fg-subtle', '--island-bg', 4.5],
   ['--fg', '--bg-selected', 4.5],
   ['--accent-text', '--accent', 4.5],
 ];
@@ -343,6 +348,7 @@ const RULES = `RULES:
 - --bg-selected-subtle should be the same hue as --bg-selected with ~25% opacity appended (e.g. #2d2b5840)
 - --island-radius should be 12px, 8px, or 0px
 - Ensure sufficient contrast: --fg on --bg-elevated should meet WCAG AA (4.5:1 ratio)
+- --fg-muted and --fg-subtle also need 4.5:1 on --bg-elevated, and --fg-subtle on --island-bg
 - terminalBackground must be an opaque hex value`;
 
 export function generateThemePrompt(existingCss?: string): string {

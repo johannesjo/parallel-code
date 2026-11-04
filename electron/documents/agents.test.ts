@@ -44,19 +44,8 @@ describe('buildHeadlessLaunch', () => {
     expect(launch.args.slice(-2)).toEqual(['thread-1', 'P']);
   });
 
-  it('ignores a session id for agents that cannot resume', () => {
-    const launch = buildHeadlessLaunch({
-      agentId: 'gemini',
-      command: 'gemini',
-      prompt: 'P',
-      sessionId: 'ignored',
-      newSessionId: 'x',
-    });
-    expect(launch.args).not.toContain('ignored');
-  });
-
   it('starts with the CLI defaults when no model or effort is chosen', () => {
-    for (const agentId of ['claude-code', 'codex', 'gemini']) {
+    for (const agentId of ['claude-code', 'codex']) {
       const launch = buildHeadlessLaunch({ agentId, command: 'x', prompt: 'P', newSessionId: 's' });
       expect(launch.args).not.toContain('--model');
       expect(launch.args).not.toContain('--effort');
@@ -95,19 +84,6 @@ describe('buildHeadlessLaunch', () => {
     expect(configAt).toBeLessThan(resumeAt);
     expect(launch.args[configAt + 1]).toBe('model_reasoning_effort="xhigh"');
     expect(launch.args.slice(-2)).toEqual(['thread-1', 'P']);
-  });
-
-  it('passes a gemini model and drops the effort it has no flag for', () => {
-    const launch = buildHeadlessLaunch({
-      agentId: 'gemini',
-      command: 'gemini',
-      prompt: 'P',
-      newSessionId: 's',
-      model: 'gemini-2.5-pro',
-      effort: 'high',
-    });
-    expect(launch.args[launch.args.indexOf('--model') + 1]).toBe('gemini-2.5-pro');
-    expect(launch.args).not.toContain('high');
   });
 
   it('rejects agents without a headless mode', () => {
@@ -221,20 +197,7 @@ describe('codex jsonl parser', () => {
   });
 });
 
-describe('gemini and plain parsers', () => {
-  it('extracts the gemini response', () => {
-    const parser = createHeadlessParser('gemini');
-    parser.feed('{"response": "hello", ');
-    parser.feed('"session_id": "g1"}');
-    expect(parser.finish()).toEqual({ resultText: 'hello', sessionId: 'g1', error: undefined });
-  });
-
-  it('treats unparseable gemini output as text', () => {
-    const parser = createHeadlessParser('gemini');
-    parser.feed('plain');
-    expect(parser.finish().resultText).toBe('plain');
-  });
-
+describe('plain parser', () => {
   it('keeps everything for plain-text agents', () => {
     const parser = createHeadlessParser('custom-agent');
     const log = parser.feed('one\ntwo\n');

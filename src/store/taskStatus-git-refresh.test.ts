@@ -21,9 +21,13 @@ import {
   refreshAllTaskGitStatus,
   clearTaskGitStatusTracking,
   getBranchDivergence,
+  markAgentBusy,
+  clearAgentActivity,
 } from './taskStatus';
 import { undoBranchAdoption } from './task-branch';
-import type { Task, TaskGitStatusSnapshot } from './types';
+import { IPC } from '../../electron/ipc/channels';
+import type { AgentDef } from '../ipc/types';
+import type { Agent, Task, TaskGitStatusSnapshot } from './types';
 import type { WorktreeStatus } from '../ipc/types';
 
 const seededTaskIds: string[] = [];
@@ -67,8 +71,40 @@ async function refreshTwice(taskId: string): Promise<void> {
   await flush();
 }
 
+const seededAgentIds: string[] = [];
+
+/** Give a seeded task a running agent and register it for cleanup. */
+function seedAgent(taskId: string, agentId: string): void {
+  seededAgentIds.push(agentId);
+  const agent: Agent = {
+    id: agentId,
+    taskId,
+    def: { name: 'Claude' } as AgentDef,
+    resumed: false,
+    status: 'running',
+    exitCode: null,
+    signal: null,
+    lastOutput: [],
+    generation: 0,
+  };
+  setStore('agents', agentId, agent);
+  setStore('tasks', taskId, 'agentIds', [agentId]);
+}
+
+function worktreeStatusCalls(taskId: string): unknown[] {
+  return invokeMock.mock.calls.filter(
+    ([channel, args]) =>
+      channel === IPC.GetWorktreeStatus &&
+      (args as { worktreePath: string }).worktreePath === `/tmp/worktrees/${taskId}`,
+  );
+}
+
 afterEach(() => {
   invokeMock.mockReset();
+  for (const agentId of seededAgentIds.splice(0)) {
+    clearAgentActivity(agentId);
+    setStore('agents', agentId, undefined as unknown as Agent);
+  }
   const ids = seededTaskIds.splice(0);
   setStore('taskOrder', (order) => order.filter((id) => !ids.includes(id)));
   for (const taskId of ids) {
@@ -233,5 +269,34 @@ describe('branch auto-adoption', () => {
 
     expect(store.tasks['t-closing'].branchName).toBe('task/t-closing');
     expect(store.tasks['t-closing'].branchAdoptedFrom).toBeUndefined();
+  });
+});
+
+describe('git status freshness', () => {
+  it('keeps sweeping a task whose shell is busy', async () => {
+    seedTask('t-shell');
+    setStore('taskOrder', [...store.taskOrder, 't-shell']);
+    setStore('tasks', 't-shell', 'shellAgentIds', ['s-shell']);
+    seededAgentIds.push('s-shell');
+    // A dev server printing in a shell is not agent work; skipping the task
+    // let its snapshot go stale and drop it from ready.
+    markAgentBusy('s-shell');
+    invokeMock.mockResolvedValue(worktreeStatus('task/t-shell'));
+
+    await refreshAllTaskGitStatus();
+
+    expect(worktreeStatusCalls('t-shell')).toHaveLength(1);
+  });
+
+  it('skips a task whose agent is working', async () => {
+    seedTask('t-busy');
+    seedAgent('t-busy', 'a-busy');
+    setStore('taskOrder', [...store.taskOrder, 't-busy']);
+    markAgentBusy('a-busy');
+    invokeMock.mockResolvedValue(worktreeStatus('task/t-busy'));
+
+    await refreshAllTaskGitStatus();
+
+    expect(worktreeStatusCalls('t-busy')).toHaveLength(0);
   });
 });

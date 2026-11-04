@@ -43,6 +43,17 @@ export function Dialog(props: DialogProps) {
     onCleanup(() => popDialog(dialogId));
   });
 
+  // Opened from a shortcut, focus would stay in the terminal behind the
+  // overlay and keystrokes would reach the agent. A frame later, so a child
+  // that focuses its own field on mount keeps it.
+  createEffect(() => {
+    if (!props.open) return;
+    const frame = requestAnimationFrame(() => {
+      if (panelRef && !panelRef.contains(document.activeElement)) panelRef.focus();
+    });
+    onCleanup(() => cancelAnimationFrame(frame));
+  });
+
   // Escape closes only the topmost dialog.
   createEffect(() => {
     if (!props.open) return;
@@ -107,7 +118,7 @@ export function Dialog(props: DialogProps) {
             'align-items': 'center',
             'justify-content': 'center',
             background: 'rgba(0,0,0,0.55)',
-            'z-index': String(props.zIndex ?? 1000),
+            'z-index': props.zIndex === undefined ? 'var(--z-modal)' : String(props.zIndex),
             ...props.overlayStyle,
           }}
           // A drag between the panel and the backdrop, either way, clicks the

@@ -82,6 +82,23 @@ describe('creating a task from the phone', () => {
     });
     expect(localStorage.getItem('parallel-mobile:new-prompt')).toBeNull();
   });
+  it('starts on the desktop last-used project and shows its mark', async () => {
+    vi.mocked(fetchProjects).mockResolvedValue([
+      { id: 'p1', name: 'First project', color: '#f00' },
+      { id: 'p2', name: 'Second project', color: '#0f0', icon: 'bug', lastUsed: true },
+    ]);
+    mount();
+    await vi.waitFor(() => expect(host.querySelector('select')?.value).toBe('p2'));
+    expect(host.querySelector('.mobile-project-select .project-swatch-icon')).not.toBeNull();
+    expect(localStorage.getItem('parallel-mobile:project')).toBe('p2');
+  });
+  it('keeps the remembered project when the list comes back empty', async () => {
+    localStorage.setItem('parallel-mobile:project', 'p2');
+    vi.mocked(fetchProjects).mockResolvedValue([]);
+    mount();
+    await vi.waitFor(() => expect(host.textContent).toContain('No projects available'));
+    expect(localStorage.getItem('parallel-mobile:project')).toBe('p2');
+  });
   it('keeps the form draft through an authorization detour', async () => {
     vi.mocked(createTask).mockRejectedValue(new ApiError('Pair again', 403));
     const { onNeedsPairing } = mount();

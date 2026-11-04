@@ -9,11 +9,11 @@ import fs from 'node:fs';
 import { MCPClient } from './client.js';
 import { parseMindMapUpdate } from '../shared/mindmap.js';
 import { parseReasoningUpdate } from '../shared/reasoning-feed.js';
-import { parseCanvasView } from '../shared/canvas-view.js';
+import { parseCanvasRequest } from '../shared/canvas-view.js';
 import { parseAgentTourPayload } from '../shared/agent-tour.js';
 import { parseConfidencePayload } from '../shared/task-confidence.js';
+import { parsePrDraft } from '../shared/pr-draft.js';
 import { isGitHubAgentTaskId, parseGitHubList } from '../shared/github-list.js';
-import { parseEvidenceSubmission } from '../shared/evidence.js';
 import {
   LEGACY_WAIT_DEFAULT_MS,
   LEGACY_WAIT_MAX_MS,
@@ -107,9 +107,8 @@ export async function handleMCPToolCall(
     'canvas_open',
     'tour_publish',
     'confidence_publish',
+    'pr_draft_publish',
     'github_list_publish',
-    'submit_evidence',
-    'get_evidence',
   ].includes(name);
   if (
     sessionCapabilities &&
@@ -176,7 +175,7 @@ export async function handleMCPToolCall(
       case 'canvas_open': {
         const id = taskId || coordinatorId;
         if (!id) throw new Error('A task-scoped MCP session is required.');
-        const result = await client.openCanvas(id, parseCanvasView(params));
+        const result = await client.openCanvas(id, parseCanvasRequest(params));
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       case 'tour_publish': {
@@ -191,20 +190,15 @@ export async function handleMCPToolCall(
         const result = await client.publishConfidence(id, parseConfidencePayload(params));
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
+      case 'pr_draft_publish': {
+        if (!taskId) throw new Error('A task-scoped MCP session is required.');
+        const result = await client.publishPrDraft(taskId, parsePrDraft(params));
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
       case 'github_list_publish': {
         const id = taskId || coordinatorId;
         if (!id) throw new Error('A task-scoped MCP session is required.');
         const result = await client.publishGitHubList(id, parseGitHubList(params).list);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      }
-      case 'submit_evidence':
-      case 'get_evidence': {
-        const id = taskId || coordinatorId;
-        if (!id) throw new Error('A task-scoped MCP session is required.');
-        const result =
-          name === 'get_evidence'
-            ? await client.getEvidence(id)
-            : await client.submitEvidence(id, parseEvidenceSubmission(params));
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       case 'mindmap_read':
@@ -392,7 +386,12 @@ export function parseArgs(argv: string[]): {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--session-profile') {
       const value = argv[++i];
-      if (value !== 'ordinary' && value !== 'child-review' && value !== 'child-automatic')
+      if (
+        value !== 'ordinary' &&
+        value !== 'child-review' &&
+        value !== 'child-automatic' &&
+        value !== 'page'
+      )
         throw new Error('Invalid --session-profile.');
       profile = value;
     } else if (argv[i] === '--allow-create') {

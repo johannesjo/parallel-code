@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  Works with Claude Code, Codex, and Gemini · Every change isolated in its own git worktree · Free, open source, no extra platform fee
+  Works with Claude Code, Codex, OpenCode, Copilot, and Antigravity · Every change isolated in its own git worktree · Free, open source, no extra platform fee
 </p>
 
 <p align="center">
@@ -35,75 +35,48 @@
   <img src="screens/longer-video.gif" alt="Parallel Code demo" width="800">
 </p>
 
+## How it works
+
+1. **Start a task.** Describe it and pick an agent. Parallel Code creates a branch and a [git worktree](https://git-scm.com/docs/git-worktree), links `node_modules` and other git-ignored directories into it, and starts the agent there.
+2. **Start the next one.** The Board sorts every task by what it needs from you: Needs you, Stopped, Working, In pull request. `Ctrl+Tab` jumps to the next task that is waiting for you.
+3. **Review the diff.** Comment on lines and send the comments back to the agent, or ask for a guided tour of what changed.
+4. **Merge it or toss it.** Finish merges the branch or pushes it for a pull request. Closing a task removes its worktree.
+
+That is the core loop. Everything else is optional and stays out of the way until you use it.
+
 ## Screenshots
 
-| Multiple agents in parallel                           | Focused view on a single task                 |
-| ----------------------------------------------------- | --------------------------------------------- |
-| ![Overview](screens/islands-overview.png)             | ![Focus view](screens/islands-focus-view.png) |
-| **Diff review with inline comments**                  | **AI Arena — race agents head-to-head**       |
-| ![Diff review](screens/diff-dialog-code-comments.png) | ![AI Arena](screens/ai-arena-mode.png)        |
+<p align="center">
+  <img src="screens/showcase-board.png" alt="Board with ten agents sorted by what they need from you" width="800"><br>
+  <em>Ten agents across Claude Code, Codex, Gemini and Copilot, sorted by what they need from you</em>
+</p>
+
+| Agents working, waiting for input, and ready to merge | One task in focus with its chat, files, notes, and shell |
+| ----------------------------------------------------- | -------------------------------------------------------- |
+| ![Overview](screens/showcase-overview.png)            | ![Focus view](screens/showcase-focus.png)                |
+| **Inline review comments you send back to the agent** | **A guided tour of what the agent changed**              |
+| ![Diff review](screens/showcase-diff-review.png)      | ![Change tour](screens/showcase-change-tour.png)         |
+| **The agent's reasoning graph, updated live**         | **A mind map with branches linked to live tasks**        |
+| ![Reasoning graph](screens/showcase-reasoning.png)    | ![Mind map](screens/showcase-mind-map.png)               |
 
 ## Why Parallel Code?
 
-- **Use the AI coding tools you already trust** — [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), and [Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli) — all from one interface.
-- **Free and open source** — no extra subscription required. MIT licensed.
-- **Keep every change isolated and reviewable** — each task gets its own git branch and worktree automatically.
-- **Run agents in parallel, not in sequence** — five agents on five features at the same time, zero conflicts.
-- **See every session in one place** — switch context without losing momentum.
-- **Control everything keyboard-first** — every action has a shortcut, mouse optional.
-- **Monitor progress from your phone** — scan a QR code, watch agents work over Wi-Fi or Tailscale.
-- **Ask about code with any LLM** — the inline code Q&A feature supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (default) or [MiniMax](https://www.minimax.io/) — configurable in Settings. MiniMax offers M3.1-Flash (default for new selections) and M3 through the global API for text-only questions, with a 50,000-character inline prompt limit. Saved MiniMax selections are preserved; older MiniMax installations without a saved model keep M2.7 until a new model is selected.
+- **Mix the agents you already use** — [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [OpenCode](https://opencode.ai/), [Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli), [Antigravity CLI](https://antigravity.google/), or any other terminal agent, side by side on one board. Each runs as its own CLI, with your own login and plan.
+- **Review is built in** — a diff viewer with inline comments you send back to the agent, guided tours of the changes, and an optional second-opinion review by a separate model, so an agent never grades its own work.
+- **Every change isolated** — each task gets its own branch and worktree, and optionally its own Docker container.
+- **Free, open source, local** — MIT licensed, no account, no extra subscription. Parallel Code has no server of its own: your code goes only to the agent CLIs you run and to the models you choose in Settings.
+- **Keyboard-first** — every action has a shortcut.
+- **Check in from your phone** — scan a QR code to follow and answer your agents over Wi-Fi or Tailscale.
 
-<details>
-<summary><strong>How does it compare?</strong></summary>
+### Where it fits
 
-| Approach                                           | What's missing                                                                          |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| **Multiple terminal windows / tmux**               | No GUI, no automatic git isolation — you manage worktrees, branches, and merges by hand |
-| **VS Code extensions** (Kilo Code, Roo Code, etc.) | Tied to VS Code; no true parallel worktree isolation between agents                     |
-| **Running agents sequentially**                    | One task at a time — blocks your workflow while each agent finishes                     |
+| If you use…                                           | Parallel Code adds                                                                                                                                               |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Several terminals or tmux**                         | Worktrees, branches and merges handled for you, and one board that shows which agent is waiting for you                                                          |
+| **One vendor's desktop app** (Claude, Codex, Copilot) | Agents from different vendors on the same board, the same review flow for all of them, and an arena to compare them on one task                                  |
+| **Another parallel-agent app**                        | Free and MIT licensed with no paid tier, macOS and Linux, a review loop you can send back to the agent, and phone access that connects straight to your computer |
 
-</details>
-
-## How it works
-
-When you create a task, Parallel Code:
-
-1. Creates a new git branch from your main branch
-2. Sets up a [git worktree](https://git-scm.com/docs/git-worktree) so the agent works in a separate directory
-3. Symlinks `node_modules` and other gitignored directories into the worktree
-4. Spawns the AI agent in that worktree
-
-When you're happy with the result, merge the branch back to main from the sidebar.
-
-<details>
-<summary><strong>More features</strong></summary>
-
-- Tiled panel layout with drag-to-reorder
-- **Focus mode** — single-task layout with a clean two-column view on wide screens (`Ctrl+Shift+F`)
-- Built-in diff viewer with inline review comments and per-commit navigation
-- **Guided change tour** — click **Generate tour of changes** at the bottom right of a task's Changed Files panel to generate in the background while you work. **Automatic** scope includes the whole feature branch against its configured or detected base, including uncommitted work; on `main`, `master`, and `develop`, it includes only uncommitted changes. Choose **Current diff** to explicitly use the commit selector (All, Uncommitted, or a single commit). Uncaptured context stays omitted when reading a captured tour. Hover or focus the button for an explanation and the configured provider/model. The button shows a spinner and progress, then a green checkmark and **Start tour** when ready. Click **Start tour** to open the diff captured for the tour; it never opens automatically. Completed tours remain available when you close and reopen the tour; clicking the loading button cancels generation. Uses your configured code Q&A provider, aiming for 4–6 concise stops in one request with a dedicated 500,000-character prompt budget; inline Q&A keeps its 50,000-character limit. This is an app guard, not an exact token limit—provider context limits still apply. Larger diffs use compact excerpts and a five-minute timeout per part. Claude tour prompts are piped through stdin to avoid command-line size limits. Verbose logs include request sizes, time to first output, and total request duration, without code or response contents. Tours describe the supplied diff and do not verify test execution. Each stop is a card with a role label and a tone that flags risky or uncertain changes; **Ask** and **Go deeper** answer follow-ups under a stop with the diff as context. Jump between stops from the progress strip, or with the arrow keys and Home/End while the tour has focus. The button shows **Resume tour** when you left midway.
-- **All tours** — click a progress segment to jump to that card (a dot marks cards with answered follow-ups), copy the tour with its answers as Markdown, or **Rework** it with your own instructions ("focus on error handling", "for a newcomer"), which regenerates it from the same context. Code references open at their line when your editor command is VS Code, Cursor, VSCodium, Windsurf, Zed or Sublime Text; other editors open the file.
-- **Understanding tours** — **Take Tour** beside **Review Plan** (and in the plan viewer's header) explains the plan; **Understand** on a changed-file row explains that file. Both open a short card tour: a gist, then 3–7 cards with **Ask** and **Go deeper**. Plan, document and agent tours read like slides: a claim, a few short points, and collapsed notes. Every answer becomes a card under the card it was asked on; ← → move along one level, ↓ ↑ go into and out of answers, and an outline of every card sits beside the card on wide windows. **Save tour** writes the tour with its answers to a `.tour.md` file in the worktree, which opens again from the canvas with **Open Tour**; **Reference in chat** puts the card on screen into the agent's prompt. See [docs/tour-outline.md](docs/tour-outline.md). They use the same code Q&A provider setting as the change tour and inline Q&A, and run without tools: a plan tour sends the plan markdown, a file tour sends the file plus its direct imports (size-capped; anything omitted is listed on the gist card). Unsaved tours live in memory for as long as the task panel is open and are discarded when you switch tasks. A reopened file tour whose file has changed shows a **Regenerate** notice instead of silently going stale. Free-form subsystem questions ("how does X work?") are not supported yet.
-- **Task brief** — after each agent turn, a model rewrites a short brief from the turn's prompts, the agent's last message and the branch diff (the task-naming model, or Claude Sonnet when that is Claude): claims the diff does not show, what is still open, decisions the agent made on its own, changes beyond the goal, and what changed. A card above the agent's output shows what to do next, marks a new brief with a dot, and is tinted when a claim is not in the diff; click it for the full brief, where you can keep a decision or send the agent a correction. Off by default; turn it on under Settings → **Write task briefs**
-- **Confidence ratings** — **Rate confidence** on the brief card (shown while Write task briefs is on) asks the agent to rate its work and publish it with the `confidence_publish` MCP tool. Scores are named by whoever rates (one plain score or your own dimensions), low ones are highlighted, and a rating is marked out of date once the code changes after it. Point the prompt at your own rating skill in Settings
-- **Project Kanban board** — the board icon on a project row opens a board kept as plain Markdown in `KANBAN.md` (Obsidian Kanban compatible). Start a task from any card; the card follows its task to In progress, Review and Done, shows when the agent needs input, and links to the task. Cards can carry a checklist (acceptance criteria), dependencies and a GitHub issue, added from the board or the GitHub page. **Plan with agent** lets an agent break a goal into cards. See [docs/kanban.md](docs/kanban.md)
-- **Notes panel per task** — jot ideas, then send the notes straight to the agent as a prompt
-- **Canvas per task** — a Markdown file from the worktree rendered live as the agent writes it; edit it in place, or select a passage and send it to the agent with your question
-- **Browser preview in the canvas** — run a local app in the task shell, open **+ → Browser**, and pick elements to reference in your prompt ([usage and limits](docs/browser-preview.md))
-- **PR CI status watcher** — desktop notification when GitHub checks settle
-- **Super Productivity integration** — the task you focus is tracked in Super Productivity (a matching task is created there on first focus, in the Super Productivity project you link in project settings), titles stay in sync, and merging or closing a task marks it done there. A task Super Productivity is already tracking that isn't a Parallel Code task is never replaced — a banner offers to switch instead. Connect in Settings with the token from Super Productivity's Local REST API (Settings → Misc; the API must stay turned on). With Super Productivity's bundled **Parallel Code** plugin enabled, **Start in Parallel Code** on a task opens a pre-filled New Task form here; that link needs the macOS app or the `.deb` (an AppImage only handles it if it was integrated into your desktop).
-- Shell terminals per task, scoped to the worktree
-- **Direct mode** for working on the main branch without isolation, plus support for **folders without a git repo**
-- **Existing worktree import** — bring already-created worktrees into Parallel Code
-- **Sandboxing with project-specific Dockerfiles** — drop a `.parallel-code/Dockerfile` into the project and tasks run inside it
-- **Coverage radar** — per-file test-coverage badges in the Changed Files panel
-- **Configurable keyboard shortcuts** with per-agent presets
-- 10 themes — Islands Dark, Minimal, Graphite, Midnight, Classic, Indigo, Ember, Glacier, Zenburnesque, Workbench
-- State persists across restarts
-- macOS and Linux
-
-</details>
+**When something else fits better:** Parallel Code runs agents on your computer, so it is not for agents that keep working in the cloud while your laptop is off.
 
 ## Demo
 
@@ -117,24 +90,13 @@ When you're happy with the result, merge the branch back to main from the sideba
   <em><a href="screens/showcase.mp4">▶ Watch the showcase (MP4)</a></em>
 </p>
 
-## Getting Started
+## Getting started
 
-1. **Download** the latest release for your platform from the [releases page](https://github.com/johannesjo/parallel-code/releases/latest):
-   - **macOS** — `.dmg` (universal)
+1. **Download** the latest release from the [releases page](https://github.com/johannesjo/parallel-code/releases/latest):
+   - **macOS** — `.dmg` (universal, signed and notarized)
    - **Linux** — `.AppImage` or `.deb`
-
-2. **Install at least one AI coding CLI:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Antigravity CLI](https://antigravity.google/), or [Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli)
-
-3. **Open Parallel Code**, point it at a git repo, and start dispatching tasks.
-
-<details>
-<summary><strong>Antigravity CLI: run natively, not in Docker isolation</strong></summary>
-
-Antigravity (`agy`) signs in interactively and caches credentials in your OS keyring (Keychain/libsecret). The keyring cannot be reached from inside a Linux container — it needs a secret-service daemon the agent container doesn't run — and `agy` has no API-key fallback, so **Docker-isolated Antigravity tasks cannot authenticate. Run Antigravity as a native (non-Docker) task.**
-
-The bundled image still ships the `agy` binary, and `~/.gemini/antigravity-cli` (settings/plugins) is shared when "Share agent auth" is enabled, so Docker support is forward-compatible if a file-based or API-key auth path appears later.
-
-</details>
+2. **Install at least one agent CLI** — Claude Code, Codex CLI, OpenCode, Copilot CLI or Antigravity CLI. The welcome screen shows which ones it found.
+3. **Open Parallel Code**, choose a folder with your code (a git repository works best), and start a task.
 
 <details>
 <summary><strong>Build from source</strong></summary>
@@ -146,68 +108,24 @@ npm install
 npm run dev
 ```
 
-Requires [Node.js](https://nodejs.org/) v18+.
+Requires [Node.js](https://nodejs.org/) 22.12 or later. On Windows, the npm scripts use POSIX shell syntax, so run them through Git Bash: `npm config set script-shell "C:\Program Files\Git\bin\bash.exe" --location project`.
 
 Phone access uses port `8777` in development (`npm run dev`) and `7777` in the installed app, so both can run together. Run `npm run build:remote` after changing the mobile UI, then use **Connect Phone** in the development app to get its connection link or QR code.
 
 </details>
 
-## Android app
+## Optional features
 
-The phone UI works in any mobile browser. On Android, the native app adds agent notifications that need no HTTPS setup, a home-screen widget, and voice input.
+Each feature is described in [docs/features.md](docs/features.md).
 
-1. On your phone, open the [Android releases](https://github.com/johannesjo/parallel-code/releases?q=android-v&expanded=true) and download the newest `parallel-code-phone-*.apk`.
-2. Open the downloaded file. Android asks you to allow installs from your browser the first time.
-3. In the app, scan the QR code from **Connect Phone** or paste its link, then enter the desktop PIN to enable replies.
+- **Review** — inline review comments, a guided tour of the changes, confidence ratings from a separate reviewer model, per-file test coverage, before-and-after screenshots of UI changes, and tours that explain a plan or a file
+- **Planning** — a Kanban project plan kept in `KANBAN.md`, agents that start and manage their own subtasks, an arena that runs one prompt with two to four agents to compare, a mind map and the agent's live reasoning graph, a live Markdown canvas, notes, and short task briefs
+- **Running code** — shell terminals per task, a browser preview of your local app, per-project Docker sandboxes (not for Antigravity), direct mode without a worktree, folders without git, and importing existing worktrees
+- **Phone** — a phone UI in any mobile browser, an Android app, and notifications when a task needs you. See [docs/phone.md](docs/phone.md)
+- **Integrations** — PR CI status notifications, Super Productivity time tracking, and a choice of model for code Q&A
+- **Customization** — Focus, Tiles and Board layouts, configurable shortcuts, custom agents, and 10 themes
 
-The app is not in the Play Store yet. It checks GitHub for a newer release once a day and offers the download; you can turn that off under **Settings → About**. [Obtainium](https://github.com/ImranR98/Obtainium) can also install and update it: add `https://github.com/johannesjo/parallel-code` and filter release titles by `Android`.
-
-Its notifications come from your computer over the same connection as the app, so the phone has to be able to reach your computer, on the same Wi-Fi or through Tailscale. Turning them on keeps a quiet notification visible while the app watches in the background.
-
-## Phone notifications
-
-Paired phones can receive a notification when a running task changes to **Needs input**, including while the phone is locked or the phone app is closed. Tap the notification to open that task. Parallel Code must remain running on your computer with phone access enabled, and both devices need internet access for push delivery.
-
-1. Open the phone UI over **HTTPS**. The ordinary Wi-Fi and Tailscale IP links use HTTP and cannot enable browser push. One option is [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve): with both devices on your tailnet, run `tailscale serve --bg http://127.0.0.1:7777` on your computer (use the port shown in **Connect Phone**, normally `8777` in development). Follow Tailscale's HTTPS setup prompts.
-2. Copy the connection link from **Connect Phone** and replace its `http://IP:PORT` part with the HTTPS address printed by Serve, keeping `?token=…`. Open that link on your phone and authorize it with the desktop PIN. Choose **Keep this device authenticated** to retain notifications across computer restarts.
-3. On iPhone/iPad (iOS/iPadOS 16.4 or later), use **Add to Home Screen**, then open the app from that icon and authorize it there if asked. [Apple requires a Home Screen web app for Web Push](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/).
-4. In **Your tasks → Task notifications**, tap **Enable notifications** and allow notifications when your phone asks. You can turn them off in the same place. Disconnecting phones on the desktop revokes their notifications too.
-
-Notifications show the task name and a request for input; terminal output and connection credentials are not included. Opening a task still requires a connection to your computer. A different HTTPS proxy can also be used at the origin root; it must preserve the original `Host` header and forward WebSockets.
-
-<details>
-<summary><strong>Keyboard Shortcuts</strong></summary>
-
-`Ctrl` = `Cmd` on macOS.
-
-| Shortcut               | Action                             |
-| ---------------------- | ---------------------------------- |
-| **Tasks**              |                                    |
-| `Ctrl+N`               | New task                           |
-| `Ctrl+Shift+A`         | New task (alternative)             |
-| `Ctrl+Enter`           | Send prompt                        |
-| `Ctrl+Shift+M`         | Finish task (merge or push)        |
-| `Ctrl+W`               | Close focused panel or file        |
-| `Ctrl+Shift+W`         | Close active task                  |
-| **Navigation**         |                                    |
-| `Alt+Arrows`           | Focus pane/task in arrow direction |
-| `Alt+Shift+Left/Right` | Move task (macOS: `Ctrl+Shift`)    |
-| `Ctrl+Shift+J`         | Switch task by name (Linux)        |
-| `Cmd+K`                | Switch task by name (macOS)        |
-| `Ctrl+B`               | Toggle sidebar                     |
-| `Ctrl+Shift+F`         | Toggle focus mode                  |
-| **Terminals**          |                                    |
-| `Ctrl+Shift+T`         | New shell terminal                 |
-| `Ctrl+Shift+D`         | New standalone terminal            |
-| **App**                |                                    |
-| `Ctrl+,`               | Open settings                      |
-| `Ctrl+/` or `F1`       | Show all shortcuts                 |
-| `Ctrl+=` / `Ctrl+-`    | Zoom in / out                      |
-| `Ctrl+0`               | Reset zoom                         |
-| `Ctrl+Scroll`          | Adjust zoom                        |
-| `Escape`               | Close dialog or leave focus mode   |
-
-</details>
+Every action has a keyboard shortcut. Press `Ctrl+/` or `F1` in the app to see them all, or read the [shortcut list](docs/features.md#keyboard-shortcuts).
 
 ---
 

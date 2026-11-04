@@ -1,5 +1,6 @@
-import { For, Show, createEffect, createSignal, on } from 'solid-js';
+import { For, Show, createEffect, createSignal, createUniqueId, on } from 'solid-js';
 import { Dialog } from './Dialog';
+import { DialogFooter } from './DialogFooter';
 import { errMessage } from '../lib/log';
 import { bannerStyle, dialogButtonStyle, theme } from '../lib/theme';
 import { getPrChecks } from '../store/store';
@@ -24,11 +25,31 @@ const BUCKET_COLORS: Record<PrCheckBucket, string> = {
   cancel: theme.error,
 };
 
+const BUCKET_LABELS: Record<PrCheckBucket, string> = {
+  pass: 'Passed',
+  skipping: 'Skipped',
+  pending: 'In progress',
+  fail: 'Failed',
+  cancel: 'Cancelled',
+};
+const MERGE_STATUS_LABELS: Record<string, string> = {
+  BEHIND: 'Branch needs updating',
+  BLOCKED: 'Merge requirements not met',
+  CLEAN: 'Ready to merge',
+  DIRTY: 'Conflicts to resolve',
+  DRAFT: 'Draft',
+  HAS_HOOKS: 'Repository checks required',
+  UNKNOWN: 'Checking merge status',
+  UNSTABLE: 'Some checks have not passed',
+};
+
 /** PR status for a task, plus actions that feed GitHub feedback to the agent or merge. */
 export function PullRequestDialog(props: PullRequestDialogProps) {
   const actions = createPrActions(props);
   const { details, busy, error, info } = actions;
   const [confirmingMerge, setConfirmingMerge] = createSignal(false);
+  const titleId = createUniqueId();
+  let mergeButton: HTMLButtonElement | undefined;
   const checks = () => getPrChecks(props.task.id);
   const chosenMethod = actions.method;
   const setMethod = actions.setMethod;
@@ -57,20 +78,28 @@ export function PullRequestDialog(props: PullRequestDialogProps) {
     setConfirmingMerge(false);
     const outcome = await actions.merge();
     if (outcome === 'failed') return;
-    showNotification(
-      outcome === 'merged'
-        ? `Merged PR #${number}`
-        : `Merge requested for PR #${number}; GitHub has not merged it yet (it may be in a merge queue).`,
-    );
+    if (outcome === 'merged') showNotification(`Merged PR #${number}`, { tone: 'success' });
+    else
+      showNotification(
+        `Merge requested for PR #${number}; GitHub has not merged it yet (it may be in a merge queue).`,
+      );
     // Closing avoids showing the pre-merge details (and merge button) until
     // a refetch lands; the PR chip updates from the checks watcher.
     props.onClose();
   }
 
   return (
-    <Dialog open={props.open} onClose={() => !busy() && props.onClose()} width="560px">
+    <Dialog
+      open={props.open}
+      onClose={() => !busy() && props.onClose()}
+      width="560px"
+      labelledBy={titleId}
+    >
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '14px' }}>
-        <h2 style={{ margin: '0', 'font-size': '17px', color: theme.fg, 'font-weight': '600' }}>
+        <h2
+          id={titleId}
+          style={{ margin: '0', 'font-size': '17px', color: theme.fg, 'font-weight': '600' }}
+        >
           Pull Request
           <Show when={actions.pr()}>
             {(d) => (
@@ -119,12 +148,8 @@ export function PullRequestDialog(props: PullRequestDialogProps) {
                     ? 'No conflicts'
                     : 'Unknown'}{' '}
                 <span style={{ color: theme.fgSubtle }}>
-                  ({d().mergeStateStatus.toLowerCase()})
+                  ({MERGE_STATUS_LABELS[d().mergeStateStatus] ?? 'Checking merge status'})
                 </span>
-              </dd>
-              <dt style={{ color: theme.fgMuted }}>Review</dt>
-              <dd style={{ margin: '0' }}>
-                {checks()?.reviewDecision?.toLowerCase().replace(/_/g, ' ') ?? 'none'}
               </dd>
             </dl>
           )}
@@ -139,38 +164,60 @@ export function PullRequestDialog(props: PullRequestDialogProps) {
           </div>
         </Show>
 
-        <Show when={checks()?.checks.length}>
-          <ul
-            aria-label="Checks"
-            style={{
-              'list-style': 'none',
-              margin: '0',
-              padding: '0',
-              'max-height': '160px',
-              'overflow-y': 'auto',
-              'font-size': '12px',
-            }}
+        <section aria-label="Checks and reviews">
+          <h3 style={{ margin: '0 0 8px', 'font-size': '13px', color: theme.fg }}>
+            Checks and reviews
+          </h3>
+          <p style={{ margin: '0 0 8px', color: theme.fgMuted, 'font-size': '12px' }}>
+            Review:{' '}
+            {checks()?.reviewDecision?.toLowerCase().replace(/_/g, ' ') ??
+              'No review decision reported'}
+          </p>
+          <Show
+            when={checks()?.checks.length}
+            fallback={
+              <span style={{ color: theme.fgMuted, 'font-size': '12px' }}>No checks reported.</span>
+            }
           >
-            <For each={checks()?.checks ?? []}>
-              {(check) => (
-                <li style={{ display: 'flex', gap: '8px', 'align-items': 'center' }}>
-                  <span
-                    aria-hidden="true"
+            <ul
+              aria-label="Checks"
+              tabIndex={0}
+              style={{
+                'list-style': 'none',
+                margin: '0',
+                padding: '0',
+                'max-height': '160px',
+                'overflow-y': 'auto',
+                'font-size': '12px',
+              }}
+            >
+              <For each={checks()?.checks ?? []}>
+                {(check) => (
+                  <li
                     style={{
-                      width: '7px',
-                      height: '7px',
-                      'border-radius': '50%',
-                      background: BUCKET_COLORS[check.bucket],
+                      display: 'flex',
+                      gap: '8px',
+                      'align-items': 'center',
+                      'flex-wrap': 'wrap',
                     }}
-                  />
-                  <span style={{ color: theme.fg }}>{check.name}</span>
-                  <span style={{ color: theme.fgSubtle }}>{check.bucket}</span>
-                </li>
-              )}
-            </For>
-          </ul>
-        </Show>
-
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        width: '7px',
+                        height: '7px',
+                        'border-radius': '50%',
+                        background: BUCKET_COLORS[check.bucket],
+                      }}
+                    />
+                    <span style={{ color: theme.fg }}>{check.name}</span>
+                    <span style={{ color: theme.fgSubtle }}>{BUCKET_LABELS[check.bucket]}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+        </section>
         <div style={{ display: 'flex', gap: '8px', 'flex-wrap': 'wrap' }}>
           <button
             type="button"
@@ -205,12 +252,22 @@ export function PullRequestDialog(props: PullRequestDialogProps) {
           </button>
         </div>
 
+        <p style={{ margin: '0', color: theme.fgMuted, 'font-size': '12px' }}>
+          Fix CI and Address review prepare a prompt for you to send to the agent.
+        </p>
         <Show when={actions.pr()}>
           {(d) => (
             <Show
               when={!blocker()}
               fallback={
-                <div style={{ display: 'flex', gap: '8px', 'align-items': 'center' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '8px',
+                    'align-items': 'center',
+                    'flex-wrap': 'wrap',
+                  }}
+                >
                   <span style={{ flex: '1', 'font-size': '13px', color: theme.fgMuted }}>
                     {blocker()}
                   </span>
@@ -231,7 +288,15 @@ export function PullRequestDialog(props: PullRequestDialogProps) {
               <Show
                 when={confirmingMerge()}
                 fallback={
-                  <div style={{ display: 'flex', gap: '8px', 'align-items': 'center' }}>
+                  <div
+                    style={{
+                      'min-height': '92px',
+                      display: 'flex',
+                      gap: '8px',
+                      'align-items': 'center',
+                      'flex-wrap': 'wrap',
+                    }}
+                  >
                     <select
                       aria-label="Merge method"
                       value={chosenMethod()}
@@ -254,6 +319,7 @@ export function PullRequestDialog(props: PullRequestDialogProps) {
                       type="button"
                       class="btn-primary btn-with-icon"
                       disabled={!!busy()}
+                      ref={mergeButton}
                       onClick={() => setConfirmingMerge(true)}
                       style={dialogButtonStyle(true, !!busy())}
                     >
@@ -264,11 +330,24 @@ export function PullRequestDialog(props: PullRequestDialogProps) {
                 }
               >
                 <div
-                  role="alertdialog"
+                  role="group"
                   aria-label="Confirm merge"
-                  style={{ display: 'flex', gap: '8px', 'align-items': 'center' }}
+                  style={{
+                    'min-height': '92px',
+                    display: 'flex',
+                    gap: '8px',
+                    'align-items': 'center',
+                    'flex-wrap': 'wrap',
+                  }}
                 >
-                  <span style={{ flex: '1', 'font-size': '13px', color: theme.fg }}>
+                  <span
+                    style={{
+                      flex: '1 1 100%',
+                      'overflow-wrap': 'anywhere',
+                      'font-size': '13px',
+                      color: theme.fg,
+                    }}
+                  >
                     {PR_METHOD_LABELS[chosenMethod() ?? 'merge']} PR #{d().number} into{' '}
                     {d().baseRefName}?
                     {/* UNSTABLE: non-required checks fail; GitHub allows the merge. */}
@@ -280,7 +359,15 @@ export function PullRequestDialog(props: PullRequestDialogProps) {
                   <button
                     type="button"
                     class="btn-secondary"
-                    onClick={() => setConfirmingMerge(false)}
+                    ref={(button) =>
+                      queueMicrotask(() => {
+                        if (button.isConnected) button.focus();
+                      })
+                    }
+                    onClick={() => {
+                      setConfirmingMerge(false);
+                      queueMicrotask(() => mergeButton?.focus());
+                    }}
                     style={dialogButtonStyle(false)}
                   >
                     Cancel
@@ -300,26 +387,16 @@ export function PullRequestDialog(props: PullRequestDialogProps) {
           )}
         </Show>
 
-        <Show when={info()}>
-          <div style={{ ...bannerStyle(theme.fgMuted), 'font-size': '13px' }}>{info()}</div>
-        </Show>
-        <Show when={error()}>
-          <div role="alert" style={{ ...bannerStyle(theme.error), 'font-size': '13px' }}>
-            {error()}
-          </div>
-        </Show>
-
-        <div style={{ display: 'flex', 'justify-content': 'flex-end' }}>
+        <DialogFooter error={error()} note={info() || undefined}>
           <button
             type="button"
             class="btn-secondary"
             disabled={!!busy()}
             onClick={() => props.onClose()}
-            style={dialogButtonStyle(false, !!busy())}
           >
             Close
           </button>
-        </div>
+        </DialogFooter>
       </div>
     </Dialog>
   );

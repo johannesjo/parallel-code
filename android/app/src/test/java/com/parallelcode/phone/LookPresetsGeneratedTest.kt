@@ -6,9 +6,10 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 /**
- * Runs the look generator in `--check` mode against the checked-in
- * LookPalettes.kt, so the phone's palettes cannot fall behind src/lib/look.ts or
- * src/styles.css after a desktop theme is renamed, recolored or added.
+ * Runs the look and project icon generators in `--check` mode against the
+ * checked-in LookPalettes.kt and ProjectIcons.kt, so the phone's palettes and
+ * icons cannot fall behind the desktop after a theme or icon is renamed,
+ * recolored or added.
  *
  * Skipped when the repository root is not reachable (a bare Gradle project, or a
  * test run from an unpacked source jar); the Kotlin tests in LookPalettesTest
@@ -18,8 +19,25 @@ class LookPresetsGeneratedTest {
 
     @Test
     fun generatedPalettesAreUpToDateWithTheDesktop() {
+        assertGeneratorPasses(
+            "scripts/generate-android-looks.mjs",
+            "LookPalettes.kt is out of date with src/lib/look.ts or src/styles.css.\n" +
+                "Run: npm run generate:android-looks",
+        )
+    }
+
+    @Test
+    fun generatedProjectIconsAreUpToDateWithTheDesktop() {
+        assertGeneratorPasses(
+            "scripts/generate-android-project-icons.mjs",
+            "ProjectIcons.kt is out of date with src/lib/project-icon-paths.ts.\n" +
+                "Run: npm run generate:android-icons",
+        )
+    }
+
+    private fun assertGeneratorPasses(script: String, failure: String) {
         val repoRoot = findRepoRoot() ?: return
-        val generator = File(repoRoot, "scripts/generate-android-looks.mjs")
+        val generator = File(repoRoot, script)
         assumeTrue("generator script is missing at ${generator.path}", generator.isFile)
 
         val process =
@@ -31,12 +49,7 @@ class LookPresetsGeneratedTest {
         val output = process.inputStream.bufferedReader().readText()
         val finished = process.waitFor(2, java.util.concurrent.TimeUnit.MINUTES)
         assertTrue("generator did not finish", finished)
-
-        assertTrue(
-            "LookPalettes.kt is out of date with src/lib/look.ts or src/styles.css.\n" +
-                "Run: npm run generate:android-looks\n\n$output",
-            process.exitValue() == 0,
-        )
+        assertTrue("$failure\n\n$output", process.exitValue() == 0)
     }
 
     /**

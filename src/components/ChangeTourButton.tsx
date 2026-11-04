@@ -11,22 +11,32 @@ import {
 } from '../lib/floating';
 import { store } from '../store/store';
 import { activeFeatureHint } from '../store/onboarding';
+import { ArrowRightThinIcon, CloseIcon, TourIcon } from './icons';
 import { askCodeLabel } from './understanding/ask-code-label';
 import { TourModelMenu } from './understanding/TourModelMenu';
+
+/** Hover help waits this long, so a pointer passing over the button does not flash it. */
+const HELP_HOVER_DELAY_MS = 500;
 
 export function ChangeTourButton(props: {
   tour: ChangeTourController;
   onClick: () => void;
   disabled?: boolean;
+  /** The ready tour explains code that has changed since. */
+  outdated?: boolean;
   /** Extra actions shown as segments between the tour action and the model menu. */
   children?: JSX.Element;
 }) {
   const ready = () => props.tour.stops().length > 0;
   /** A reader who closed the tour midway picks it up where they left. */
-  const resumeLabel = () =>
-    props.tour.step() > 0
-      ? `Resume tour · ${props.tour.step() + 1}/${props.tour.stops().length}`
-      : 'Start tour';
+  const resumeLabel = () => {
+    const verb = props.tour.step() > 0 ? 'Resume tour' : 'Start tour';
+    // The stop count gives way, so the one-line label in Finish keeps "out of date" in view.
+    if (props.outdated) return `${verb} · out of date`;
+    return props.tour.step() > 0
+      ? `${verb} · ${props.tour.step() + 1}/${props.tour.stops().length}`
+      : verb;
+  };
   const helpId = createUniqueId();
   const help = createHeldSignal<boolean>(150);
   // A first-use tip about the tour already explains it in the same spot.
@@ -40,7 +50,25 @@ export function ChangeTourButton(props: {
   let controls: HTMLDivElement | undefined;
   let popover: HTMLDivElement | undefined;
   const openHelp = () => help.set(true);
-  const closeHelp = () => help.set(false);
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  const cancelHover = () => {
+    clearTimeout(hoverTimer);
+    hoverTimer = undefined;
+  };
+  onCleanup(cancelHover);
+  // Focus opens the help at once; a pointer has to rest on the button first.
+  const hoverHelp = () => {
+    help.hold();
+    if (help.value() || hoverTimer) return;
+    hoverTimer = setTimeout(() => {
+      hoverTimer = undefined;
+      openHelp();
+    }, HELP_HOVER_DELAY_MS);
+  };
+  const closeHelp = () => {
+    cancelHover();
+    help.set(false);
+  };
   createAnchorEffect(helpOpen, () => {
     if (controls)
       setPosition(
@@ -76,6 +104,7 @@ export function ChangeTourButton(props: {
       document.removeEventListener('pointerdown', onPointer, true);
     });
   });
+  let action: HTMLButtonElement | undefined;
   return (
     <Show when={!props.disabled || props.tour.loading() || ready()}>
       <div class="change-tour-footer">
@@ -86,8 +115,9 @@ export function ChangeTourButton(props: {
           <div
             class="change-tour-hover"
             ref={controls}
-            onMouseEnter={openHelp}
+            onMouseEnter={hoverHelp}
             onMouseLeave={() => {
+              cancelHover();
               if (!controls?.contains(document.activeElement)) help.clear();
             }}
             onFocusIn={openHelp}
@@ -100,54 +130,39 @@ export function ChangeTourButton(props: {
             }}
           >
             <button
+              ref={action}
               class="change-tour-action"
               disabled={props.disabled && !props.tour.loading() && !ready()}
+              // Shows the run while it lasts; the × beside it is what stops it.
               aria-busy={props.tour.loading()}
               aria-describedby={helpOpen() ? helpId : undefined}
               title={
                 props.tour.loading()
-                  ? 'Cancel tour generation'
+                  ? undefined
                   : props.tour.error() ||
                     (ready()
-                      ? props.tour.step() > 0
-                        ? `Resume guided tour at stop ${props.tour.step() + 1} of ${props.tour.stops().length}`
-                        : 'Start guided tour'
+                      ? (props.tour.step() > 0
+                          ? `Resume guided tour at stop ${props.tour.step() + 1} of ${props.tour.stops().length}`
+                          : 'Start guided tour') +
+                        (props.outdated
+                          ? '. Made before the latest changes; regenerate to cover them.'
+                          : '')
                       : undefined)
               }
               onClick={(event) => {
                 event.stopPropagation();
                 closeHelp();
-                if (props.tour.loading()) props.tour.cancel();
-                else props.onClick();
+                if (!props.tour.loading()) props.onClick();
               }}
             >
               <Show
                 when={props.tour.loading()}
                 fallback={
-                  <Show
-                    when={ready()}
-                    fallback={
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.25"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                      >
-                        <circle cx="4" cy="3" r="1.5" />
-                        <circle cx="12" cy="13" r="1.5" />
-                        <path d="M5.5 3h5a2.5 2.5 0 0 1 0 5h-5a2.5 2.5 0 0 0 0 5h5" />
-                      </svg>
-                    }
-                  >
+                  <Show when={ready()} fallback={<TourIcon size={14} />}>
                     <span
                       aria-label="Tour ready"
                       style={{
-                        color: theme.success,
+                        color: props.outdated ? theme.fgMuted : theme.success,
                         width: '14px',
                         'flex-shrink': '0',
                         'text-align': 'center',
@@ -179,23 +194,34 @@ export function ChangeTourButton(props: {
                   </span>
                 </Show>
               </span>
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d={props.tour.loading() ? 'm4 4 8 8M12 4l-8 8' : 'M3 8h10m-4-4 4 4-4 4'} />
-              </svg>
+              {/* Hidden, not removed, so the label keeps its width while the tour generates. */}
+              <ArrowRightThinIcon
+                size={14}
+                class="change-tour-arrow"
+                style={{ visibility: props.tour.loading() ? 'hidden' : undefined }}
+              />
             </button>
           </div>
           {props.children}
-          <TourModelMenu class="change-tour-model" />
+          {/* A generating tour keeps the model it started with, so the × to cancel takes the menu's place. */}
+          <Show when={props.tour.loading()} fallback={<TourModelMenu class="change-tour-model" />}>
+            <button
+              type="button"
+              class="change-tour-model"
+              aria-label="Cancel tour generation"
+              title="Cancel tour generation"
+              onClick={(event) => {
+                event.stopPropagation();
+                // The × goes away with the run; keep focus on the tour, not the page.
+                action?.focus();
+                // That focus is not the user's: it must not raise the help popover.
+                closeHelp();
+                props.tour.cancel();
+              }}
+            >
+              <CloseIcon size={12} />
+            </button>
+          </Show>
         </div>
         <Show when={helpOpen()}>
           <Portal>
@@ -214,7 +240,7 @@ export function ChangeTourButton(props: {
                 'max-height': `${Math.min(260, position().maxHeight)}px`,
                 'box-sizing': 'border-box',
                 overflow: 'auto',
-                'z-index': '2000',
+                'z-index': 'var(--z-overlay)',
                 padding: '14px',
                 background: theme.bgElevated,
                 color: theme.fg,

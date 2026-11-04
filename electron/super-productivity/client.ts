@@ -271,8 +271,14 @@ export function createSpClient(deps: SpClientDeps) {
       return res.ok ? { ok: true, value: null } : res;
     },
 
-    /** Mark done and append one line to the task's notes. */
-    async completeTask(taskId: string, note: string): Promise<SpResult<null>> {
+    /** Mark done and, given a note, append it to the task's notes. */
+    async completeTask(taskId: string, note?: string): Promise<SpResult<null>> {
+      if (note === undefined) {
+        const res = await request('PATCH', `/tasks/${encodeURIComponent(taskId)}`, {
+          isDone: true,
+        });
+        return res.ok ? { ok: true, value: null } : res;
+      }
       const current = await getTask(taskId);
       if (!current.ok) return current;
       const res = await request('PATCH', `/tasks/${encodeURIComponent(taskId)}`, {

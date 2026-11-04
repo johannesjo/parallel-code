@@ -1,6 +1,8 @@
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setStore } from '../store/core';
+import { GitGraphIcon, NoteIcon, QuestionIcon } from '../components/icons';
+import { ActionIcon, BLOCK_ACTIONS } from './BlockActions';
 import { RunComposer } from './RunComposer';
 import { documentStore, setDocumentComposerDraft, type DocumentSelection } from './store';
 import type { DocumentBlock } from './markdown-blocks';
@@ -38,6 +40,35 @@ const passage: DocumentSelection = {
   heading: undefined,
   wholeDocument: false,
 };
+
+describe('block action glyphs', () => {
+  it('points every action at its shared icon-module component', () => {
+    expect(BLOCK_ACTIONS.find((a) => a.kind === 'proposals')?.icon).toBe(GitGraphIcon);
+    expect(BLOCK_ACTIONS.find((a) => a.kind === 'note')?.icon).toBe(NoteIcon);
+    expect(BLOCK_ACTIONS.find((a) => a.kind === 'question')?.icon).toBe(QuestionIcon);
+  });
+
+  it('renders the same glyph body as the module icon itself', () => {
+    for (const action of BLOCK_ACTIONS) {
+      const host = document.createElement('div');
+      document.body.append(host);
+      const Icon = action.icon;
+      disposers.push(
+        render(
+          () => (
+            <>
+              <ActionIcon kind={action.kind} />
+              <Icon size={14} />
+            </>
+          ),
+          host,
+        ),
+      );
+      const [fromAction, fromModule] = Array.from(host.querySelectorAll('path'));
+      expect(fromAction.getAttribute('d'), action.kind).toBe(fromModule.getAttribute('d'));
+    }
+  });
+});
 
 describe('RunComposer draft mode', () => {
   it('opens on the mode a hover action asked for', () => {

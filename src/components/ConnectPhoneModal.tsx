@@ -1,7 +1,16 @@
 // src/components/ConnectPhoneModal.tsx
 
-import { Show, createSignal, createEffect, onCleanup, createMemo, untrack } from 'solid-js';
+import {
+  Show,
+  createSignal,
+  createEffect,
+  onCleanup,
+  createMemo,
+  untrack,
+  createUniqueId,
+} from 'solid-js';
 import { Dialog } from './Dialog';
+import { DialogCloseButton } from './DialogCloseButton';
 import { store } from '../store/core';
 import {
   startRemoteAccess,
@@ -47,12 +56,14 @@ export function availableNetworkModeFor(
 }
 
 export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
+  const titleId = createUniqueId();
   const [qrDataUrl, setQrDataUrl] = createSignal<string | null>(null);
   const [qrError, setQrError] = createSignal<string | null>(null);
   const [starting, setStarting] = createSignal(false);
   const [disconnecting, setDisconnecting] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [copied, setCopied] = createSignal(false);
+  const [copyError, setCopyError] = createSignal('');
   const [mode, setMode] = createSignal<NetworkMode>('wifi');
   const [pairingPin, setPairingPin] = createSignal<string | null>(null);
   const [pairingError, setPairingError] = createSignal<string | null>(null);
@@ -234,13 +245,15 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
   async function handleCopyUrl() {
     const url = activeUrl();
     if (!url) return;
+    setCopyError('');
+    setCopied(false);
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
       if (copiedTimer !== undefined) clearTimeout(copiedTimer);
       copiedTimer = setTimeout(() => setCopied(false), 2000);
     } catch {
-      /* clipboard not available */
+      setCopyError('Could not copy the link. Please try again.');
     }
   }
 
@@ -259,14 +272,28 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
     <Dialog
       open={props.open}
       onClose={props.onClose}
-      width="380px"
+      width="440px"
       panelStyle={{ 'align-items': 'center', gap: '20px' }}
+      labelledBy={titleId}
     >
-      <div style={{ 'text-align': 'center' }}>
-        <h2 style={{ margin: '0', 'font-size': '17px', color: theme.fg, 'font-weight': '600' }}>
-          Connect Phone
-        </h2>
-        <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>Experimental</span>
+      <div
+        style={{
+          width: '100%',
+          display: 'flex',
+          'align-items': 'center',
+          'justify-content': 'space-between',
+        }}
+      >
+        <div>
+          <h2
+            id={titleId}
+            style={{ margin: '0', 'font-size': '17px', color: theme.fg, 'font-weight': '600' }}
+          >
+            Connect Phone
+          </h2>
+          <span style={{ 'font-size': '12px', color: theme.fgSubtle }}>Experimental</span>
+        </div>
+        <DialogCloseButton label="Close" onClick={props.onClose} />
       </div>
 
       <Show when={starting()}>
@@ -280,6 +307,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
       </Show>
 
       <Show when={!starting() && store.remoteAccess.enabled}>
+        <h3 style={{ margin: '0', 'font-size': '14px', color: theme.fg }}>1. Connect your phone</h3>
         {/* Network mode toggle */}
         <div
           style={{
@@ -299,6 +327,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             }}
           >
             <button
+              aria-pressed={mode() === 'wifi'}
               onClick={() => setMode('wifi')}
               disabled={!store.remoteAccess.wifiUrl}
               style={{
@@ -321,6 +350,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             }}
           >
             <button
+              aria-pressed={mode() === 'tailscale'}
               onClick={() => setMode('tailscale')}
               disabled={!store.remoteAccess.tailscaleUrl}
               style={{
@@ -378,7 +408,10 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
         </div>
 
         {/* URL */}
-        <div
+        <button
+          type="button"
+          aria-label="Copy connection link"
+          aria-describedby={`${titleId}-url`}
           style={{
             width: '100%',
             background: theme.bgInput,
@@ -395,12 +428,19 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
           onClick={handleCopyUrl}
           title="Click to copy"
         >
-          {activeUrl()}
-        </div>
+          <span id={`${titleId}-url`}>{activeUrl()}</span>
+        </button>
 
-        <Show when={copied()}>
-          <span style={{ 'font-size': '13px', color: theme.success }}>Copied!</span>
-        </Show>
+        <span
+          role="status"
+          style={{
+            'font-size': '13px',
+            color: copyError() ? theme.error : theme.success,
+            'min-height': '18px',
+          }}
+        >
+          {copyError() || (copied() ? 'Copied!' : '')}
+        </span>
 
         {/* Instructions */}
         <p
@@ -412,8 +452,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             'line-height': '1.5',
           }}
         >
-          1. Scan the QR code to view your tasks. 2. Choose Enable replies below and enter the code
-          on your phone before leaving your computer.
+          Scan the QR code to view your tasks, or copy the connection link.
           <Show
             when={mode() === 'tailscale'}
             fallback={<> Your phone and this computer must be on the same WiFi network.</>}
@@ -444,55 +483,45 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
         </p>
 
         {/* Connected clients */}
-        <Show
-          when={store.remoteAccess.connectedClients > 0}
-          fallback={
-            <div
-              style={{
-                'font-size': '13px',
-                color: theme.fgSubtle,
-                display: 'flex',
-                'align-items': 'center',
-                gap: '6px',
-              }}
-            >
+        <div role="status" style={{ 'min-height': '24px' }}>
+          <Show
+            when={store.remoteAccess.connectedClients > 0}
+            fallback={
               <div
                 style={{
-                  width: '8px',
-                  height: '8px',
-                  'border-radius': '50%',
-                  background: theme.fgSubtle,
+                  'font-size': '13px',
+                  color: theme.fgSubtle,
+                  display: 'flex',
+                  'align-items': 'center',
+                  gap: '6px',
                 }}
-              />
-              Waiting for connection...
-            </div>
-          }
-        >
-          <div
-            style={{
-              display: 'flex',
-              'flex-direction': 'column',
-              'align-items': 'center',
-              gap: '8px',
-            }}
+              >
+                <div
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    'border-radius': '50%',
+                    background: theme.fgSubtle,
+                  }}
+                />
+                Waiting for connection...
+              </div>
+            }
           >
-            <svg
-              width="48"
-              height="48"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke={theme.success}
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+            <div
+              style={{
+                display: 'flex',
+                'flex-direction': 'column',
+                'align-items': 'center',
+                gap: '8px',
+              }}
             >
-              <path d="M20 6L9 17l-5-5" />
-            </svg>
-            <span style={{ 'font-size': '15px', color: theme.success, 'font-weight': '500' }}>
-              {store.remoteAccess.connectedClients} client(s) connected
-            </span>
-          </div>
-        </Show>
+              <span style={{ 'font-size': '15px', color: theme.success, 'font-weight': '500' }}>
+                {store.remoteAccess.connectedClients} client(s) connected
+              </span>
+            </div>
+          </Show>
+        </div>
 
         {/* Auto-start on launch */}
         <label
@@ -526,6 +555,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             gap: '8px',
           }}
         >
+          <h3 style={{ margin: '0', 'font-size': '14px', color: theme.fg }}>2. Enable replies</h3>
           <Show
             when={pairingPin()}
             fallback={
@@ -556,7 +586,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
             {(pin) => (
               <>
                 <span style={{ 'font-size': '12px', color: theme.fgMuted }}>
-                  2. Enter this code on your phone to enable replies (valid 5 min):
+                  Enter this code on your phone before leaving your computer (valid 5 min):
                 </span>
                 <span
                   style={{

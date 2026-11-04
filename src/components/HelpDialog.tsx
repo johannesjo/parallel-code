@@ -1,5 +1,6 @@
 import { For, Show, createSignal, createUniqueId, onCleanup, createEffect } from 'solid-js';
 import { Dialog } from './Dialog';
+import { DialogCloseButton } from './DialogCloseButton';
 import { confirm as appConfirm } from '../lib/dialog';
 import { theme } from '../lib/theme';
 import { isMac } from '../lib/platform';
@@ -223,21 +224,7 @@ export function HelpDialog(props: HelpDialogProps) {
         >
           Keyboard Shortcuts
         </h2>
-        <button
-          onClick={() => props.onClose()}
-          aria-label="Close help"
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: theme.fgMuted,
-            cursor: 'pointer',
-            'font-size': '19px',
-            padding: '0 4px',
-            'line-height': '1',
-          }}
-        >
-          &times;
-        </button>
+        <DialogCloseButton label="Close help" onClick={() => props.onClose()} />
       </div>
 
       {/* Preset selector row */}

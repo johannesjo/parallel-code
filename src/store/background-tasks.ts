@@ -7,7 +7,7 @@ import { scrollTaskIntoView } from './focused-panel';
 import { setActiveTask } from './navigation';
 import { collapseTask, uncollapseTask } from './tasks';
 import { getPrChecks } from './pr-checks-state';
-import { getCoordinatorChildren } from './sidebar-order';
+import { getCoordinatorChildren, sortByProjectGroup } from './sidebar-order';
 import { getTaskOpenQuestions, isAgentIdle, type TaskOpenQuestion } from './taskStatus';
 
 // Activity baselines are session-only. Timed snoozes are also saved on the task.
@@ -139,11 +139,9 @@ function activityChange(
 
 /** Nearest foreground task, preferring the left neighbor as closing a task does. */
 function foregroundNeighbor(taskId: string, block: readonly string[]): string | undefined {
-  const index = store.taskOrder.indexOf(taskId);
-  const candidates = [
-    ...store.taskOrder.slice(0, index).reverse(),
-    ...store.taskOrder.slice(index + 1),
-  ];
+  const order = sortByProjectGroup(store.taskOrder);
+  const index = order.indexOf(taskId);
+  const candidates = [...order.slice(0, index).reverse(), ...order.slice(index + 1)];
   return candidates.find(
     (id) => !block.includes(id) && !isTaskBackgrounded(id) && matchesTaskProjectFilter(id),
   );

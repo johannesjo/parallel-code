@@ -85,9 +85,8 @@
   border-bottom: 1px solid var(--border);
 }
 .investigation .investigation-primary {
-  color: var(--accent-text);
-  background: var(--accent);
-  border-color: var(--accent);
+  color: var(--fg);
+  font-weight: 600;
 }
 .investigation-divider {
   width: 1px;
@@ -128,7 +127,7 @@
   padding: 20px;
   overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--task-panel-bg);
   box-shadow: var(--shadow-soft);
 }
@@ -217,7 +216,7 @@
   padding: 16px;
   min-width: 230px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bg-elevated);
   box-shadow: var(--shadow-soft);
 }
@@ -754,4 +753,21 @@
 .reasoning-graph-breadcrumb [aria-current] {
   color: var(--fg);
   font-weight: 600;
+}
+/* Unseen agent changes: a static corner dot, so it neither moves the card nor competes with
+   the working pulse. New is filled; changed is a ring. */
+.reasoning-change-mark {
+  position: absolute;
+  z-index: 1;
+  top: -4px;
+  right: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--info);
+  background: var(--info);
+  pointer-events: auto;
+}
+.reasoning-change-mark[data-mark='changed'] {
+  background: var(--task-panel-bg);
 }

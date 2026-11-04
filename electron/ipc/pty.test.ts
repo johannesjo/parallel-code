@@ -121,6 +121,7 @@ import {
   writeAgentPrompt,
   getAgentInputBlocker,
 } from './pty.js';
+import { setProjectAgentEnv } from './project-env.js';
 
 let tempPaths: string[] = [];
 let agentCounter = 0;
@@ -302,6 +303,63 @@ describe('buildPtySpawnEnv', () => {
   it('lets per-task renderer env win over the agent env file', () => {
     const env = buildPtySpawnEnv({ ANTHROPIC_API_KEY: 'per-task' }, { ANTHROPIC_API_KEY: 'file' });
     expect(env.ANTHROPIC_API_KEY).toBe('per-task');
+  });
+
+  it('layers project env between the agent env file and per-task env', () => {
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '/login-shell');
+    const env = buildPtySpawnEnv(
+      { TASK_ONLY: 'task', SHARED: 'task' },
+      { CLAUDE_CONFIG_DIR: '/file', FILE_ONLY: 'file', SHARED: 'file' },
+      { CLAUDE_CONFIG_DIR: '/project', SHARED: 'project' },
+    );
+    expect(env.CLAUDE_CONFIG_DIR).toBe('/project');
+    expect(env.FILE_ONLY).toBe('file');
+    expect(env.SHARED).toBe('task');
+  });
+
+  it('keeps the block list authoritative over project env values', () => {
+    vi.stubEnv('PARALLEL_CODE_MCP_TOKEN', 'host-token');
+    const env = buildPtySpawnEnv({}, {}, { PATH: '/bad', PARALLEL_CODE_MCP_TOKEN: 'project' });
+    expect(env.PATH).not.toBe('/bad');
+    expect(env.PARALLEL_CODE_MCP_TOKEN).toBe('host-token');
+  });
+});
+
+describe('spawnAgent project env', () => {
+  afterEach(() => setProjectAgentEnv('project-1', undefined));
+
+  it('applies the project env, with ~ expanded, without logging the values', async () => {
+    setProjectAgentEnv('project-1', {
+      CLAUDE_CONFIG_DIR: '~/.claude-work',
+      PROJECT_SECRET: 'project-secret-value',
+    });
+    await spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({ cwd: makeTempHome([]), dockerMode: false, projectId: 'project-1' }),
+    );
+    const { env } = getLastSpawnCall().options;
+    expect(env.CLAUDE_CONFIG_DIR).toBe(path.join(os.homedir(), '.claude-work'));
+    expect(env.PROJECT_SECRET).toBe('project-secret-value');
+    for (const call of mockLogDebug.mock.calls) {
+      expect(JSON.stringify(call)).not.toContain('project-secret-value');
+    }
+  });
+
+  it('applies nothing without a project id', async () => {
+    setProjectAgentEnv('project-1', { PROJECT_SECRET: 'x' });
+    await spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({ cwd: makeTempHome([]), dockerMode: false }),
+    );
+    expect(getLastSpawnCall().options.env.PROJECT_SECRET).toBeUndefined();
+  });
+
+  it('skips the project env in Docker mode', async () => {
+    setProjectAgentEnv('project-1', { PROJECT_SECRET: 'x' });
+    await spawnAgent(createMockNotify(), buildSpawnArgs({ projectId: 'project-1' }));
+    const { args, options } = getLastSpawnCall();
+    expect(options.env.PROJECT_SECRET).toBeUndefined();
+    expect(getFlagValues(args, '-e')).not.toContain('PROJECT_SECRET');
   });
 });
 
@@ -783,6 +841,22 @@ describe('spawnAgent docker mode', () => {
       // Coordinator worktree itself still mounted
       expect(volumeFlags).toContain(
         '/Users/alice/git/my-repo/.worktrees/task/coordinator-abc:/Users/alice/git/my-repo/.worktrees/task/coordinator-abc',
+      );
+    });
+
+    it('mounts dockerReadOnlyMounts read-only', async () => {
+      await spawnAgent(
+        createMockNotify(),
+        buildSpawnArgs({
+          cwd: '/repo/.worktrees/task/child',
+          dockerMountWorktreeParent: true,
+          dockerReadOnlyMounts: ['/repo/.worktrees/feat/coord/.parallel-code'],
+        }),
+      );
+
+      const volumeFlags = getFlagValues(getLastSpawnCall().args, '-v');
+      expect(volumeFlags).toContain(
+        '/repo/.worktrees/feat/coord/.parallel-code:/repo/.worktrees/feat/coord/.parallel-code:ro',
       );
     });
 
@@ -1962,7 +2036,8 @@ describe('seedClaudeProjectTrust — file permissions', () => {
     expect(fs.existsSync(hostFile)).toBe(true);
     const stat = fs.statSync(hostFile);
     // mode & 0o777 strips file-type bits; 0o600 = owner r/w, no group/other access
-    expect(stat.mode & 0o777).toBe(0o600);
+    // Windows has no Unix permission bits; stat reports only 0o666 or 0o444.
+    if (process.platform !== 'win32') expect(stat.mode & 0o777).toBe(0o600);
   });
 });
 
@@ -2285,7 +2360,7 @@ describe('subscribeToAgentRendered', () => {
     const subscriber = subscribeToAgentRendered(
       'agent-rendered',
       (snapshot) => events.push(`snapshot:${decode(snapshot?.data ?? '')}`),
-      (encoded) => events.push(`output:${decode(encoded)}`),
+      { onOutput: (encoded) => events.push(`output:${decode(encoded)}`), onResize: vi.fn() },
     );
     expect(subscriber).not.toBeNull();
     proc.emitData('\r\nlater');
@@ -2298,18 +2373,54 @@ describe('subscribeToAgentRendered', () => {
     expect(events[1]).toBe('output:\r\nlater');
   });
 
+  it('reports a resize after the output written at the old size', async () => {
+    const proc = await launch('agent-rendered-resize');
+    const events: string[] = [];
+    subscribeToAgentRendered(
+      'agent-rendered-resize',
+      (snapshot) => events.push(`snapshot:${snapshot?.cols}x${snapshot?.rows}`),
+      {
+        onOutput: (encoded) => events.push(`output:${decode(encoded)}`),
+        onResize: (cols, rows) => events.push(`resize:${cols}x${rows}`),
+      },
+    );
+    await vi.waitFor(() => expect(events).toEqual(['snapshot:120x40']));
+    // Still batched when the resize lands: it must reach the phone first.
+    proc.emitData('wide');
+    resizeAgent('agent-rendered-resize', 60, 20);
+    expect(events).toEqual(['snapshot:120x40', 'output:wide', 'resize:60x20']);
+  });
+
+  it('labels the snapshot with the size it was rendered at, then reports a resize', async () => {
+    const proc = await launch('agent-rendered-early-resize');
+    proc.emitData('x'.repeat(100));
+    const events: string[] = [];
+    subscribeToAgentRendered(
+      'agent-rendered-early-resize',
+      (snapshot) => events.push(`snapshot:${snapshot?.cols}x${snapshot?.rows}`),
+      {
+        onOutput: vi.fn(),
+        onResize: (cols, rows) => events.push(`resize:${cols}x${rows}`),
+      },
+    );
+    // Lands while the snapshot is serializing: the snapshot still renders at the old size.
+    resizeAgent('agent-rendered-early-resize', 60, 20);
+    await vi.waitFor(() => expect(events).toEqual(['snapshot:120x40', 'resize:60x20']));
+  });
+
   it('returns null for an unknown agent', () => {
-    expect(subscribeToAgentRendered('missing', vi.fn(), vi.fn())).toBeNull();
+    expect(
+      subscribeToAgentRendered('missing', vi.fn(), { onOutput: vi.fn(), onResize: vi.fn() }),
+    ).toBeNull();
   });
 
   it('keeps long history in running mirrors only while phones can connect', async () => {
     const snapshotOf = async (agentId: string) => {
       let data: string | null = null;
-      subscribeToAgentRendered(
-        agentId,
-        (snapshot) => (data = decode(snapshot?.data ?? '')),
-        vi.fn(),
-      );
+      subscribeToAgentRendered(agentId, (snapshot) => (data = decode(snapshot?.data ?? '')), {
+        onOutput: vi.fn(),
+        onResize: vi.fn(),
+      });
       await vi.waitFor(() => expect(data).not.toBeNull());
       return data ?? '';
     };

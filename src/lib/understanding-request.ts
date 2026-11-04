@@ -12,6 +12,7 @@ import {
   UNDERSTANDING_TIMEOUT_MS,
 } from '../../electron/shared/understanding-limits';
 import { store } from '../store/store';
+import { projectIdForPath } from '../store/project-path';
 import { Channel, invoke } from './ipc';
 import { errMessage, info as logInfo, warn as logWarn } from './log';
 import { PROVIDER_ERROR_CHARS, providerFailureMessage } from './provider-error';
@@ -153,6 +154,7 @@ export function startUnderstandingRequest(options: {
     provider,
     model,
     envFile,
+    projectId: projectIdForPath(options.cwd),
   }).catch((error) => {
     if (!active) return;
     finish('failed', { status: 'failed', message: errMessage(error) });

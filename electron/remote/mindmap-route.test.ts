@@ -15,6 +15,7 @@ import { appendReasoningUpdate, readReasoningFeed } from '../ipc/reasoning.js';
 import { parseReasoningFeed } from '../shared/reasoning-feed.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
+import type { CanvasRequest } from '../shared/canvas-view.js';
 
 vi.mock('../ipc/git-exclude.js', () => ({ appendGitInfoExcludeBlock: () => 'appended' }));
 
@@ -65,14 +66,11 @@ const updateReasoning = vi.fn(async (taskId: string, update: ReasoningUpdate) =>
   appendReasoningUpdate(reportDirectory, taskId, 'agent', update);
   return readReasoning(taskId);
 });
-const openCanvas = vi.fn(async (_taskId: string, _view: 'mindmap' | 'reasoning') => {});
+const openCanvas = vi.fn(async (_taskId: string, _request: CanvasRequest) => {});
 const publishTour = vi.fn(async (_taskId: string, _payload: AgentTourPayload) => ({ ok: true }));
 const publishConfidence = vi.fn(async (_taskId: string, _payload: unknown) => ({ ok: true }));
+const publishPrDraft = vi.fn(async (_taskId: string, _draft: unknown) => ({ ok: true }));
 const publishGitHubList = vi.fn(async (_taskId: string, _list: unknown) => ({ ok: true }));
-const submitEvidence = vi.fn(async (_taskId: string, _submission: unknown) => ({
-  status: 'building',
-}));
-const getEvidence = vi.fn(async (_taskId: string) => ({ status: 'none', checks: [] }));
 const read = vi.fn(async (_taskId: string) => structuredClone(map));
 const update = vi.fn(
   async (
@@ -104,9 +102,8 @@ beforeEach(async () => {
     openCanvas,
     publishTour,
     publishConfidence,
+    publishPrDraft,
     publishGitHubList,
-    submitEvidence,
-    getEvidence,
   });
   token = server.registerCanvasAgent('task-1', 'agent-1');
   client = new MCPClient(`http://127.0.0.1:${server.port}`, token);
@@ -177,12 +174,18 @@ it('scopes chat canvas credentials to their live session independently of termin
 });
 
 it('opens canvas views for the owning task only and validates the view', async () => {
-  await expect(client.openCanvas('task-1', 'reasoning')).resolves.toEqual({
+  await expect(client.openCanvas('task-1', { view: 'reasoning' })).resolves.toEqual({
     ok: true,
     view: 'reasoning',
   });
-  expect(openCanvas).toHaveBeenCalledWith('task-1', 'reasoning');
-  await expect(client.openCanvas('task-2', 'mindmap')).rejects.toThrow('403');
+  expect(openCanvas).toHaveBeenCalledWith('task-1', { view: 'reasoning' });
+  await expect(client.openCanvas('task-1', { view: 'mindmap', focusId: 'n2' })).resolves.toEqual({
+    ok: true,
+    view: 'mindmap',
+    focusId: 'n2',
+  });
+  expect(openCanvas).toHaveBeenLastCalledWith('task-1', { view: 'mindmap', focusId: 'n2' });
+  await expect(client.openCanvas('task-2', { view: 'mindmap' })).rejects.toThrow('403');
   const endpoint = `http://127.0.0.1:${server.port}/api/canvas/task-1`;
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   const unknown = await fetch(endpoint, {
@@ -191,8 +194,14 @@ it('opens canvas views for the owning task only and validates the view', async (
     body: JSON.stringify({ view: 'browser' }),
   });
   expect(unknown.status).toBe(400);
+  const longId = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ view: 'mindmap', focusId: 'x'.repeat(129) }),
+  });
+  expect(longId.status).toBe(400);
   expect((await fetch(endpoint, { headers })).status).toBe(405);
-  expect(openCanvas).toHaveBeenCalledTimes(1);
+  expect(openCanvas).toHaveBeenCalledTimes(2);
 });
 
 it('publishes a confidence rating for the owning task only and validates it', async () => {
@@ -212,6 +221,23 @@ it('publishes a confidence rating for the owning task only and validates it', as
   });
   expect(malformed.status).toBe(400);
   expect(publishConfidence).toHaveBeenCalledTimes(1);
+});
+
+it('publishes a pull request draft for the owning task only and validates it', async () => {
+  const draft = { title: 'fix(git): keep the base', body: '## Why\n\nIt moved.' };
+  await expect(client.publishPrDraft('task-1', draft)).resolves.toEqual({
+    ok: true,
+    title: draft.title,
+  });
+  expect(publishPrDraft).toHaveBeenCalledWith('task-1', draft);
+  await expect(client.publishPrDraft('task-2', draft)).rejects.toThrow('403');
+  const untitled = await fetch(`http://127.0.0.1:${server.port}/api/pr-drafts/task-1`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: '  ', body: 'x' }),
+  });
+  expect(untitled.status).toBe(400);
+  expect(publishPrDraft).toHaveBeenCalledTimes(1);
 });
 
 it('publishes a tour for the owning task only and validates the payload', async () => {
@@ -263,26 +289,6 @@ it('publishes a GitHub list for the owning task only and validates it', async ()
   expect(foreign.status).toBe(400);
   expect((await fetch(endpoint, { headers })).status).toBe(405);
   expect(publishGitHubList).toHaveBeenCalledTimes(1);
-});
-
-it('accepts evidence for the owning task only and rejects app-owned fields', async () => {
-  const submission = { summary: 'Adds retries', notVerified: ['Safari'] };
-  await expect(client.submitEvidence('task-1', submission)).resolves.toEqual({
-    status: 'building',
-  });
-  expect(submitEvidence).toHaveBeenCalledWith('task-1', submission);
-  await expect(client.getEvidence('task-1')).resolves.toEqual({ status: 'none', checks: [] });
-  await expect(client.submitEvidence('task-2', submission)).rejects.toThrow('403');
-  await expect(client.getEvidence('task-2')).rejects.toThrow('403');
-  const endpoint = `http://127.0.0.1:${server.port}/api/evidence/task-1`;
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-  const forged = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ confidence: 'high' }),
-  });
-  expect(forged.status).toBe(400);
-  expect(submitEvidence).toHaveBeenCalledTimes(1);
 });
 
 it('rejects access to other tasks, terminals, task control and device pairing', async () => {
@@ -371,12 +377,11 @@ it('serves discoverable tools over real MCP stdio and reflects subsequent manual
       'canvas_open',
       'tour_publish',
       'confidence_publish',
-      'submit_evidence',
-      'get_evidence',
+      'pr_draft_publish',
     ]);
     const opened = await mcp.callTool({ name: 'canvas_open', arguments: { view: 'mindmap' } });
     expect(opened.isError).not.toBe(true);
-    expect(openCanvas).toHaveBeenCalledWith('task-1', 'mindmap');
+    expect(openCanvas).toHaveBeenCalledWith('task-1', { view: 'mindmap' });
     const read = await mcp.callTool({ name: 'mindmap_read', arguments: {} });
     expect(read.isError).not.toBe(true);
     const changed = await mcp.callTool({

@@ -152,4 +152,85 @@ class TerminalScreenTest {
         s.feed("\u001b[4;1Hz".toByteArray())
         assertEquals("abc\n\n\nz", s.text())
     }
+
+    @Test
+    fun copyTextRejoinsWrappedRowsIntoTheirLine() {
+        // A URL wider than the terminal must copy as one line, also once it scrolled into history.
+        val s = screen(cols = 4, rows = 2, data = "https://x.io\r\nok\r\nnext")
+        assertEquals("https://x.io\nok\nnext", s.copyText(100, 1_000))
+    }
+
+    @Test
+    fun copyTextKeepsTheSpaceAtAWrapBoundary() {
+        assertEquals("abc def", screen(cols = 4, data = "abc def").copyText(100, 1_000))
+    }
+
+    @Test
+    fun copyTextKeepsExplicitLineBreaksAtFullWidth() {
+        assertEquals("abcd\nef", screen(cols = 4, data = "abcd\r\nef").copyText(100, 1_000))
+    }
+
+    @Test
+    fun copyTextForgetsAWrapOnceTheRowIsRewritten() {
+        // A TUI moving the cursor up and writing a fresh line must not inherit the old wrap.
+        val s = screen(cols = 4, rows = 3, data = "abcdef\u001b[2;1H\u001b[2Kxy\r\nz")
+        assertEquals("abcd\nxy\nz", s.copyText(100, 1_000))
+    }
+
+    @Test
+    fun copyTextJoinsAShellCommandAcrossReadlinesWrap() {
+        // Bash's readline, captured at 10 columns: at the edge it wraps with a space, returns, and
+        // overwrites that space with the next typed character.
+        val s = screen(cols = 10, rows = 3, data = "\$ echo 123 \r4567890123 \r4")
+        assertEquals("\$ echo 12345678901234", s.copyText(100, 1_000))
+    }
+
+    @Test
+    fun copyTextJoinsNoSpacesInOnceTheTerminalWidens() {
+        val s = screen(cols = 4, rows = 3, data = "abcdef").apply { resize(8, 3) }
+        assertEquals("abcd\nef", s.copyText(100, 1_000))
+    }
+
+    @Test
+    fun copyTextKeepsOnlyTheNewestLines() {
+        val s = screen(cols = 4, rows = 2, data = "1\r\nabcdef\r\n3")
+        assertEquals("abcdef\n3", s.copyText(2, 1_000))
+    }
+
+    @Test
+    fun copyTextKeepsWithinTheCharacterBudget() {
+        // Long lines are what make the soft-wrapped snapshot tall, so they are capped too.
+        val s = screen(cols = 4, rows = 3, data = "abcdef\r\ngh\r\nij")
+        assertEquals("gh\nij", s.copyText(100, 5))
+    }
+
+    @Test
+    fun copyTextTrimsBlanksPaintedWithABackground() {
+        assertEquals("bar\nok", screen(data = "\u001b[44mbar   \u001b[0m\r\nok").copyText(100, 1_000))
+    }
+
+    @Test
+    fun copyTextShowsOnlyTheAlternateScreen() {
+        val s = screen(cols = 4, rows = 2, data = "1\r\n2\r\n3\u001b[?1049h\u001b[Habcdef")
+        assertEquals("abcdef", s.copyText(100, 1_000))
+    }
+
+    @Test
+    fun copyTextSplitsAWrapPushedIntoHistoryByAResize() {
+        val s = screen(cols = 4, rows = 2, data = "abcdef").apply { resize(8, 1) }
+        assertEquals("abcd\nef", s.copyText(100, 1_000))
+    }
+
+    @Test
+    fun copyTextKeepsAWrapWhenOnlyTheRowsStartIsErased() {
+        // As in xterm.js: erasing up to the cursor leaves the rest of the row continuing the line.
+        val s = screen(cols = 4, rows = 3, data = "abcdefg\u001b[2G\u001b[1K")
+        assertEquals("abcd  g", s.copyText(100, 1_000))
+    }
+
+    @Test
+    fun copyTextNeverStartsWithHalfACharacter() {
+        val s = screen(data = "a\uD83D\uDE00b")
+        assertEquals("b", s.copyText(100, 2))
+    }
 }

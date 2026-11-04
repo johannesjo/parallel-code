@@ -7,9 +7,11 @@ import type {
   DelegateAssignment,
   DelegationChanged,
   DelegationState,
+  IndependentTaskRequest,
   SessionCaller,
   TaskAuthorityInput,
 } from '../shared/delegation-types.js';
+import { DEFAULT_INDEPENDENT_TASKS_PER_CREATOR } from '../shared/coordinator-limits.js';
 
 const mocks = vi.hoisted(() => ({
   git: vi.fn(),
@@ -82,6 +84,7 @@ let core: {
 let persist: () => void;
 let changed: Mock<(event: DelegationChanged) => void>;
 let prepareParent: ReturnType<typeof vi.fn<() => Promise<void>>>;
+let createIndependent: Mock<(request: IndependentTaskRequest) => Promise<{ taskId: string }>>;
 
 function task(taskId: string, extra: Partial<TaskAuthorityInput> = {}): TaskAuthorityInput {
   return {
@@ -180,7 +183,7 @@ beforeEach(() => {
           .join('');
       else if (args[0] === 'symbolic-ref') stdout = 'feature';
       else if (args[0] === 'rev-parse') stdout = head;
-      else if (args[0] === 'status') stdout = dirty;
+      else if (args.includes('status')) stdout = dirty;
       return { stdout, stderr: '' };
     },
   );
@@ -208,6 +211,7 @@ beforeEach(() => {
   persist = vi.fn();
   changed = vi.fn();
   prepareParent = vi.fn(async () => {});
+  createIndependent = vi.fn(async () => ({ taskId: 'sibling' }));
   service = new DelegationService({
     coordinator: async () => core as unknown as Coordinator,
     currentCoordinator: () => core as unknown as Coordinator,
@@ -215,6 +219,7 @@ beforeEach(() => {
     sessions: () => sessions,
     changed,
     persist,
+    createIndependent,
   });
 });
 afterEach(() => {
@@ -331,12 +336,261 @@ describe('delegation authority and creation', () => {
     await expect(
       service.callTool(caller, 'create_task', {
         requestId: 'default-create',
+        relation: 'child',
         name: 'Haiku',
         prompt: 'Write a haiku',
       }),
     ).resolves.toEqual({ taskId: 'child', agentId: 'agent-child', integrationPolicy: 'review' });
     expect(core.createTask).toHaveBeenCalledOnce();
     expect(service.capabilities('parent')?.canCreate).toBe(true);
+  });
+
+  it('creates an independent top-level task instead of a child when asked', async () => {
+    await register('parent');
+    const caller = session('parent');
+    const params = {
+      requestId: 'sibling-request',
+      relation: 'independent',
+      name: 'Sibling',
+      prompt: 'Fix the unrelated bug',
+    };
+    await expect(service.callTool(caller, 'create_task', params)).resolves.toEqual({
+      taskId: 'sibling',
+      relation: 'independent',
+    });
+    await service.callTool(caller, 'create_task', params);
+    expect(createIndependent).toHaveBeenCalledOnce();
+    expect(createIndependent).toHaveBeenCalledWith({
+      creatorTaskId: 'parent',
+      name: 'Sibling',
+      prompt: 'Fix the unrelated bug',
+      launchId: expect.any(String),
+    });
+    expect(core.createTask).not.toHaveBeenCalled();
+    expect(prepareParent).not.toHaveBeenCalled();
+    expect(service.getTask('parent')?.delegationParent).toBeFalsy();
+  });
+
+  it('lets a project page agent create independent tasks but nothing else', async () => {
+    const pageTask = 'gh-agent-project';
+    await register(pageTask, { gitIsolation: 'none', worktreePath: '/repo', branchName: '' });
+    const capabilities = service.capabilities(pageTask);
+    expect(capabilities).toEqual({ profile: 'page', canCreate: true, peers: false });
+    if (!capabilities) throw new Error('missing capabilities');
+    const caller: SessionCaller = {
+      taskId: pageTask,
+      agentId: 'agent-page',
+      sessionInstanceId: 'instance-page',
+      capabilities,
+    };
+    sessions.push(caller);
+    const base = { requestId: 'page-request', name: 'Fix #1', prompt: 'Fix issue #1' };
+    await expect(
+      service.callTool(caller, 'create_task', { ...base, relation: 'independent' }),
+    ).resolves.toEqual({ taskId: 'sibling', relation: 'independent' });
+    expect(createIndependent).toHaveBeenCalledWith(
+      expect.objectContaining({ creatorTaskId: pageTask, name: 'Fix #1' }),
+    );
+    await expect(
+      service.callTool(caller, 'create_task', { ...base, requestId: 'r2', relation: 'child' }),
+    ).rejects.toThrow('independent');
+    await expect(service.callTool(caller, 'list_tasks', {})).rejects.toThrow('independent');
+    expect(core.createTask).not.toHaveBeenCalled();
+
+    await service.request({ action: 'orchestrationSetting', enabled: false });
+    expect(service.capabilities(pageTask)).toBeUndefined();
+  });
+
+  it('lets a top-level task working in the checkout create independent tasks only', async () => {
+    await register('direct', { gitIsolation: 'direct', worktreePath: '/repo', branchName: 'main' });
+    const capabilities = service.capabilities('direct');
+    expect(capabilities).toEqual({ profile: 'page', canCreate: true, peers: false });
+    if (!capabilities) throw new Error('missing capabilities');
+    const caller: SessionCaller = {
+      taskId: 'direct',
+      agentId: 'agent-direct',
+      sessionInstanceId: 'instance-direct',
+      capabilities,
+    };
+    sessions.push(caller);
+    const base = { requestId: 'direct-request', name: 'Fix #2', prompt: 'Fix issue #2' };
+    await expect(
+      service.callTool(caller, 'create_task', { ...base, relation: 'independent' }),
+    ).resolves.toEqual({ taskId: 'sibling', relation: 'independent' });
+    await expect(
+      service.callTool(caller, 'create_task', { ...base, requestId: 'r2', relation: 'child' }),
+    ).rejects.toThrow('independent');
+    expect(core.createTask).not.toHaveBeenCalled();
+  });
+
+  it('gives no task tools to a checkout task that is not a page agent', async () => {
+    await register('plain', { gitIsolation: 'none', worktreePath: '/repo', branchName: '' });
+    expect(service.capabilities('plain')).toBeUndefined();
+  });
+
+  it('requires a relation and rejects building an independent task on the creator', async () => {
+    await register('parent');
+    const caller = session('parent');
+    const base = { requestId: 'r', name: 'Task', prompt: 'Do it' };
+    await expect(service.callTool(caller, 'create_task', base)).rejects.toThrow('relation');
+    await expect(
+      service.callTool(caller, 'create_task', { ...base, relation: 'sibling' }),
+    ).rejects.toThrow('relation');
+    await expect(
+      service.callTool(caller, 'create_task', {
+        ...base,
+        relation: 'independent',
+        baseOnParent: true,
+      }),
+    ).rejects.toThrow('baseOnParent');
+    expect(createIndependent).not.toHaveBeenCalled();
+    expect(core.createTask).not.toHaveBeenCalled();
+  });
+
+  it('rechecks pause, orchestration and the session just before an independent agent starts', async () => {
+    await register('parent');
+    const caller = session('parent');
+    const guard = (launchId: string) =>
+      service.request({ action: 'assertIndependentLaunch', launchId });
+    const outcomes: string[] = [];
+    let launch = '';
+    createIndependent.mockImplementation(async ({ launchId }) => {
+      launch = launchId;
+      await guard(launchId);
+      outcomes.push('allowed');
+      await service.request({ action: 'pause', taskId: 'parent', paused: true });
+      await guard(launchId).catch((error: Error) => outcomes.push(error.message));
+      await service.request({ action: 'pause', taskId: 'parent', paused: false });
+      await service.request({ action: 'orchestrationSetting', enabled: false });
+      await service.request({ action: 'orchestrationSetting', enabled: true });
+      await guard(launchId).catch((error: Error) => outcomes.push(error.message));
+      return { taskId: 'sibling' };
+    });
+    await service.callTool(caller, 'create_task', {
+      requestId: 'guarded',
+      relation: 'independent',
+      name: 'Sibling',
+      prompt: 'Work alone',
+    });
+    expect(outcomes).toEqual([
+      'allowed',
+      expect.stringContaining('Task creation is paused'),
+      expect.stringContaining('canceled'),
+    ]);
+    // A finished launch can no longer be approved.
+    await expect(guard(launch)).rejects.toThrow('canceled');
+  });
+
+  it('caps how many independent tasks one creator can start', async () => {
+    await register('parent');
+    const caller = session('parent');
+    const create = (requestId: string) =>
+      service.callTool(caller, 'create_task', {
+        requestId,
+        relation: 'independent',
+        name: 'Task',
+        prompt: 'Do it',
+      });
+    for (let i = 0; i < DEFAULT_INDEPENDENT_TASKS_PER_CREATOR; i++) await create(`r${i}`);
+    await expect(create('one-too-many')).rejects.toThrow('Independent task limit reached');
+    // A replay of an earlier request still answers; it starts nothing new.
+    await expect(create('r0')).resolves.toMatchObject({ relation: 'independent' });
+    expect(createIndependent).toHaveBeenCalledTimes(DEFAULT_INDEPENDENT_TASKS_PER_CREATOR);
+  });
+
+  it('applies the configured independent task cap to the next launch', async () => {
+    await register('parent');
+    const caller = session('parent');
+    const create = (requestId: string) =>
+      service.callTool(caller, 'create_task', {
+        requestId,
+        relation: 'independent',
+        name: 'Task',
+        prompt: 'Do it',
+      });
+    service.setMaxIndependentPerCreator(2);
+    await create('r0');
+    await create('r1');
+    await expect(create('r2')).rejects.toThrow('2 independent tasks created by this task');
+    service.setMaxIndependentPerCreator(3);
+    await expect(create('r2')).resolves.toMatchObject({ relation: 'independent' });
+    // Out-of-range values clamp instead of disabling the guard.
+    service.setMaxIndependentPerCreator(0);
+    await expect(create('r3')).rejects.toThrow('Independent task limit reached');
+  });
+
+  it('frees an independent slot when its task closes or its launch fails', async () => {
+    await register('parent');
+    const caller = session('parent');
+    let next = 0;
+    createIndependent.mockImplementation(async () => ({ taskId: `t${next++}` }));
+    const create = (requestId: string) =>
+      service.callTool(caller, 'create_task', {
+        requestId,
+        relation: 'independent',
+        name: 'Task',
+        prompt: 'Do it',
+      });
+    for (let i = 0; i < DEFAULT_INDEPENDENT_TASKS_PER_CREATOR; i++) await create(`r${i}`);
+    await expect(create('full')).rejects.toThrow('Independent task limit reached');
+    await service.request({ action: 'unregister', taskId: 't3' });
+    await expect(create('after-close')).resolves.toEqual({
+      taskId: `t${DEFAULT_INDEPENDENT_TASKS_PER_CREATOR}`,
+      relation: 'independent',
+    });
+    await expect(create('full-again')).rejects.toThrow('Independent task limit reached');
+
+    await service.request({ action: 'unregister', taskId: 't4' });
+    createIndependent.mockRejectedValueOnce(new Error('worktree failed'));
+    await expect(create('fails')).rejects.toThrow('worktree failed');
+    await expect(create('after-failure')).resolves.toMatchObject({
+      taskId: `t${DEFAULT_INDEPENDENT_TASKS_PER_CREATOR + 1}`,
+    });
+  });
+
+  it('frees an independent slot when its task closes as a parent or during launch', async () => {
+    await register('parent');
+    const caller = session('parent');
+    let next = 0;
+    createIndependent.mockImplementation(async () => ({ taskId: `t${next++}` }));
+    const create = (requestId: string) =>
+      service.callTool(caller, 'create_task', {
+        requestId,
+        relation: 'independent',
+        name: 'Task',
+        prompt: 'Do it',
+      });
+    for (let i = 0; i < DEFAULT_INDEPENDENT_TASKS_PER_CREATOR; i++) await create(`r${i}`);
+    // A created task that delegated in turn closes through closeParent, not unregister.
+    await register('t0');
+    await service.closeParent('t0', false);
+    // Closed after it registered but before its launch answered the creator.
+    createIndependent.mockImplementationOnce(async () => {
+      await register('early');
+      service.unregister('early');
+      return { taskId: 'early' };
+    });
+    await expect(create('early')).resolves.toMatchObject({ taskId: 'early' });
+    await expect(create('last')).resolves.toMatchObject({
+      taskId: `t${DEFAULT_INDEPENDENT_TASKS_PER_CREATOR}`,
+    });
+    await expect(create('full')).rejects.toThrow('Independent task limit reached');
+  });
+
+  it('holds independent tasks to the child byte limit and the launch pause', async () => {
+    await register('parent');
+    const caller = session('parent');
+    const base = { requestId: 'r', relation: 'independent', name: 'Task' };
+    // Under the character limit, over the byte limit.
+    const prompt = '€'.repeat(30 * 1024);
+    await expect(service.callTool(caller, 'create_task', { ...base, prompt })).rejects.toThrow(
+      'Prompt too large',
+    );
+    await service.request({ action: 'pause', taskId: 'parent', paused: true });
+    await expect(
+      service.callTool(caller, 'create_task', { ...base, requestId: 'p', prompt: 'Do it' }),
+    ).rejects.toThrow('Task creation is paused');
+    expect(createIndependent).not.toHaveBeenCalled();
   });
 
   it('uses only the task automation option to select child integration policy', async () => {
@@ -346,6 +600,7 @@ describe('delegation authority and creation', () => {
     await expect(
       service.callTool(caller, 'create_task', {
         requestId: 'automatic',
+        relation: 'child',
         name: 'Child',
         prompt: 'Implement assignment',
         integrationPolicy: 'review',
@@ -359,6 +614,7 @@ describe('delegation authority and creation', () => {
     await register('parent', { autoMergeChildren: false });
     await service.callTool(caller, 'create_task', {
       requestId: 'review',
+      relation: 'child',
       name: 'Child',
       prompt: 'Implement assignment',
       integrationPolicy: 'automatic',
@@ -415,7 +671,12 @@ describe('delegation authority and creation', () => {
   it('replays an agent request without deriving a new snapshot after the parent advances', async () => {
     await register('parent');
     const caller = session('parent');
-    const params = { requestId: 'stable-request', name: 'Child', prompt: 'Implement assignment' };
+    const params = {
+      requestId: 'stable-request',
+      relation: 'child',
+      name: 'Child',
+      prompt: 'Implement assignment',
+    };
     const first = await service.callTool(caller, 'create_task', params);
     const snapshot = vi.spyOn(service, 'snapshot').mockRejectedValue(new Error('Parent changed'));
     await expect(service.callTool(caller, 'create_task', params)).resolves.toEqual(first);
@@ -575,6 +836,15 @@ describe('delegation authority and creation', () => {
     await register('child', { parentTaskId: 'parent', integrationPolicy: 'review' });
     const child = session('child', 'child-instance', true);
     await expect(service.callTool(child, 'create_task', {})).rejects.toThrow('unavailable');
+    await expect(
+      service.callTool(child, 'create_task', {
+        requestId: 'escape',
+        relation: 'independent',
+        name: 'Sibling',
+        prompt: 'Work alone',
+      }),
+    ).rejects.toThrow('unavailable');
+    expect(createIndependent).not.toHaveBeenCalled();
     const parent = session('parent');
     core.getTaskStatus.mockReturnValue({ coordinatorTaskId: 'someone-else' });
     await expect(
@@ -626,6 +896,20 @@ describe('held peer messages and access', () => {
         sessionInstanceId: peer.sessionInstanceId,
       }),
     ).resolves.toMatchObject({ output: 'Hello peer', truncated: false });
+  });
+
+  it('keeps project page agents out of peer scope', async () => {
+    await register('parent');
+    await register('gh-agent-project', {
+      gitIsolation: 'none',
+      worktreePath: '/repo',
+      branchName: '',
+    });
+    const parent = session('parent'),
+      page = session('gh-agent-project');
+    policy(true);
+    await expect(service.callTool(parent, 'list_agent_sessions', {})).resolves.toEqual([]);
+    await expect(send(parent, page)).rejects.toThrow('scope');
   });
 
   it('limits a child to its own parent even when peer access is enabled', async () => {

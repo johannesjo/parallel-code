@@ -4,7 +4,7 @@ import { CANVAS_INSTRUCTIONS, canvasViews } from '../shared/canvas-view.js';
 import { AGENT_TOUR_LIMITS } from '../shared/agent-tour.js';
 import { CONFIDENCE_LIMITS } from '../shared/task-confidence.js';
 import { GITHUB_LIST_LIMITS, isGitHubAgentTaskId } from '../shared/github-list.js';
-import { EVIDENCE_LIMITS } from '../shared/evidence.js';
+import { PR_DRAFT_LIMITS } from '../shared/pr-draft.js';
 import { TOUR_CARD_LIMITS, TOUR_FORMS, TOUR_TONES } from '../shared/understanding-limits.js';
 import { semanticNodeKinds, reasoningStatuses } from '../shared/graph.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
@@ -29,7 +29,7 @@ export interface ToolDef {
 }
 
 export const APP_TASK_INSTRUCTIONS =
-  'You are running inside Parallel Code. When the user asks to create a Parallel Code task (or PC task), use this server’s create_task MCP tool. It creates a visible task in the app with its own Git worktree and agent terminal. Native sub-agent tools such as spawn_agent do not create Parallel Code tasks and must not substitute for this request. Only report a task as created after create_task succeeds and returns its taskId. If the tool is missing or rejected, explain the limitation instead of silently using a native sub-agent. Task creation requires orchestration enabled in Settings > MCP, a supported top-level Git worktree task, and an app-managed MCP session. After enabling tools, restart and resume the session where supported.';
+  'You are running inside Parallel Code. When the user asks to create a Parallel Code task (or PC task), use this server’s create_task MCP tool. It creates a visible task in the app with its own Git worktree and agent terminal. Native sub-agent tools such as spawn_agent do not create Parallel Code tasks and must not substitute for this request. Only report a task as created after create_task succeeds and returns its taskId. If the tool is missing or rejected, explain the limitation instead of silently using a native sub-agent. Task creation requires orchestration enabled in Settings > Agents, a top-level task (worktree or direct) or project page agent, and an app-managed MCP session. After enabling tools, restart and resume the session where supported.';
 
 /**
  * Without this, "list them in Parallel Code" matches the canvas guidance and the
@@ -146,11 +146,14 @@ export const CANVAS_VIEW_TOOLS: ToolDef[] = [
   {
     name: 'canvas_open',
     description:
-      'Open or focus this task’s Mind map or Reasoning graph canvas for the user. Use it when the user asks to see, open, or create a map or graph, before or after publishing with mindmap_update or reasoning_update. Idempotent; it changes no content.',
+      'Open or focus this task’s Mind map or Reasoning graph canvas for the user. Use it when the user asks to see, open, or create a map or graph, before or after publishing with mindmap_update or reasoning_update. Idempotent; it changes no content. Pass focusId to point the user at one node while you explain it: the canvas opens its branch, selects it and scrolls to it without taking keyboard focus. An unknown id is an error; read the graph first.',
     inputSchema: {
       type: 'object',
       required: ['view'],
-      properties: { view: { enum: [...canvasViews] } },
+      properties: {
+        view: { enum: [...canvasViews] },
+        focusId: { type: 'string', minLength: 1, maxLength: 128 },
+      },
     },
   },
 ];
@@ -190,17 +193,35 @@ export const TOUR_TOOLS: ToolDef[] = [
   },
 ];
 
+export const PR_DRAFT_TOOLS: ToolDef[] = [
+  {
+    name: 'pr_draft_publish',
+    description:
+      "Publish a pull request title and description you drafted for your task's branch. The app fills its Create pull request dialog with them; the user reviews, edits and creates the PR there. This tool never pushes or creates anything, and you should not either. " +
+      'Use it when the app or the user asks you to draft the pull request. ' +
+      `title is one line under 70 characters if you can, at most ${PR_DRAFT_LIMITS.title}; follow the style of the commit subjects. body is GitHub Markdown of at most ${PR_DRAFT_LIMITS.body} characters: why the change is needed, what changed, and how it was verified, claiming only checks you actually saw pass. If the repository has a pull request template, fill in its sections and keep its headings and checklists. No closing note about how the text was written.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', maxLength: PR_DRAFT_LIMITS.title },
+        body: { type: 'string', maxLength: PR_DRAFT_LIMITS.body },
+      },
+      required: ['title', 'body'],
+    },
+  },
+];
+
 const confidenceCaps = CONFIDENCE_LIMITS;
 
 export const CONFIDENCE_TOOLS: ToolDef[] = [
   {
     name: 'confidence_publish',
     description:
-      'Publish a confidence rating of the current changes on your task. The app shows it on the task brief and marks it out of date once the code changes after it. ' +
+      'Publish a confidence rating of the current changes on your task. The app shows it in the Finish dialog review and marks it out of date once the code changes after it. ' +
       'Use it when the user asks you to rate your confidence, or as the last step of a rating or review skill. Do not change code while rating. ' +
       `Send ${confidenceCaps.minScores} to ${confidenceCaps.maxScores} scores; name them as your rating defines them (one "Confidence" score, or dimensions such as "Correct", "Complete", "Minimal"). ` +
-      `A score is {label (at most ${confidenceCaps.label} characters), score (0-100), why (one line, at most ${confidenceCaps.why} characters: what keeps it from being higher)}. ` +
-      `Optional findings, at most ${confidenceCaps.maxFindings}: {kind: "gap" (missing or unverified), "extra" (change the task did not ask for) or "risk", text (a short phrase that leads with the key fact, at most ${confidenceCaps.findingText} characters), file? (repository-relative)}. ` +
+      `A score is {label (at most ${confidenceCaps.label} characters), score (0-100), why (one line, at most ${confidenceCaps.why} characters: what keeps it from being higher), verified? (at most ${confidenceCaps.maxVerified} short items, at most ${confidenceCaps.verified} characters each: what you checked directly that backs the score)}. ` +
+      `Optional findings, at most ${confidenceCaps.maxFindings}: {kind: "gap" (missing), "extra" (change the task did not ask for), "risk" (something you confirmed is likely to break) or "unverified" (a doubt you did not confirm by reading the code), text (a short phrase that leads with the key fact, at most ${confidenceCaps.findingText} characters), file? (repository-relative), axis? (the label of the score it lowers most)}. ` +
       `Optional "source" names who rated, such as a skill name, at most ${confidenceCaps.source} characters.`,
     inputSchema: {
       type: 'object',
@@ -215,6 +236,11 @@ export const CONFIDENCE_TOOLS: ToolDef[] = [
               label: { type: 'string', maxLength: confidenceCaps.label },
               score: { type: 'number', minimum: 0, maximum: 100 },
               why: { type: 'string', maxLength: confidenceCaps.why },
+              verified: {
+                type: 'array',
+                maxItems: confidenceCaps.maxVerified,
+                items: { type: 'string', maxLength: confidenceCaps.verified },
+              },
             },
             required: ['label', 'score', 'why'],
           },
@@ -225,9 +251,10 @@ export const CONFIDENCE_TOOLS: ToolDef[] = [
           items: {
             type: 'object',
             properties: {
-              kind: { type: 'string', enum: ['gap', 'extra', 'risk'] },
+              kind: { type: 'string', enum: ['gap', 'extra', 'risk', 'unverified'] },
               text: { type: 'string', maxLength: confidenceCaps.findingText },
               file: { type: 'string', maxLength: confidenceCaps.file },
+              axis: { type: 'string', maxLength: confidenceCaps.label },
             },
             required: ['kind', 'text'],
           },
@@ -284,46 +311,6 @@ export const GITHUB_LIST_TOOLS: ToolDef[] = [
       },
       required: ['name', 'groups'],
     },
-  },
-];
-
-const evidenceText = { type: 'string', maxLength: EVIDENCE_LIMITS.stringBytes };
-
-export const EVIDENCE_TOOLS: ToolDef[] = [
-  {
-    name: 'submit_evidence',
-    description:
-      'Hand off your work for review. Call it once, after committing, when you believe the task is done. ' +
-      "The app re-runs the project's checks and inspects test changes itself, so report only what it cannot observe: a short summary, what you did not verify, and risks. " +
-      'If a test cannot be made to pass, say so in notVerified; never modify, skip or weaken a test to make it pass. ' +
-      'checkResults is optional; use the check ids get_evidence lists. Returns immediately while the app builds the evidence.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        summary: { type: 'string', maxLength: EVIDENCE_LIMITS.summaryBytes },
-        notVerified: { type: 'array', maxItems: EVIDENCE_LIMITS.maxItems, items: evidenceText },
-        risks: { type: 'array', maxItems: EVIDENCE_LIMITS.maxItems, items: evidenceText },
-        checkResults: {
-          type: 'array',
-          maxItems: EVIDENCE_LIMITS.maxCheckResults,
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['checkId', 'result'],
-            properties: {
-              checkId: { type: 'string' },
-              result: { enum: ['passed', 'failed', 'not-run'] },
-            },
-          },
-        },
-      },
-    },
-  },
-  {
-    name: 'get_evidence',
-    description:
-      "Read the app's evidence status for this task: the configured check ids, the latest results, open flags on test changes, and why confidence is not high. Use it before submit_evidence to learn the check ids, or after it to see what needs fixing.",
-    inputSchema: { type: 'object', properties: {} },
   },
 ];
 
@@ -588,19 +575,20 @@ const ORDINARY_TOOLS: ToolDef[] = COORDINATOR_TOOLS.filter(
     return {
       ...tool,
       description:
-        'Create a visible Parallel Code task with its own Git worktree and agent terminal. Use this for requests to create a Parallel Code task or PC task, not native sub-agent tools. Children branch from the main branch and their results merge into main, not into your branch; merge main into your branch when you need a landed result. Children inherit neither conversation nor your edits. Include required context in prompt. Use requestId for identical retries. Set baseOnParent:true only when the child must build on your own commits; it then branches from your committed snapshot and lands on your branch. With baseOnParent, supply expectedBranch and expectedHeadSha after inspecting your Git state; if dirty, explicitly choose useLastCommit:true to omit dirty edits. This never authorizes committing. The result reports integrationPolicy: review requires user approval; automatic permits the child to verify and self-land via land_self. The policy comes from this task’s user-selected automation options; do not override it in the child prompt.',
+        'Create a visible Parallel Code task with its own Git worktree and agent terminal. Use this for requests to create a Parallel Code task or PC task, not native sub-agent tools. Choose relation: "child" only when the task is part of your assignment and you will wait for, review or build on its result; "independent" for a separate deliverable the user reviews on its own, which you will not wait for (for example an unrelated bug you noticed, or when the user asks for separate tasks). An independent task is a top-level task on the main branch: it is not listed in list_tasks, sends you no signal_done, and outlives you; the result reports only its taskId. The rest applies to children. Children branch from the main branch and their results merge into main, not into your branch; merge main into your branch when you need a landed result. Children inherit neither conversation nor your edits. Include required context in prompt. Use requestId for identical retries. Set baseOnParent:true only when the child must build on your own commits; it then branches from your committed snapshot and lands on your branch. With baseOnParent, supply expectedBranch and expectedHeadSha after inspecting your Git state; if dirty, explicitly choose useLastCommit:true to omit dirty edits. This never authorizes committing. The result reports integrationPolicy: review requires user approval; automatic permits the child to verify and self-land via land_self. The policy comes from this task’s user-selected automation options; do not override it in the child prompt.',
       inputSchema: {
         type: 'object' as const,
         properties: {
           name: { type: 'string' },
           prompt: { type: 'string' },
+          relation: { type: 'string', enum: ['child', 'independent'] },
           requestId: { type: 'string' },
           expectedBranch: { type: 'string' },
           expectedHeadSha: { type: 'string' },
           useLastCommit: { type: 'boolean', default: false },
           baseOnParent: { type: 'boolean', default: false },
         },
-        required: ['name', 'prompt', 'requestId'],
+        required: ['name', 'prompt', 'relation', 'requestId'],
       },
     };
   if (tool.name === 'wait_for_signal_done' || tool.name === 'wait_for_idle')
@@ -618,16 +606,37 @@ const ORDINARY_TOOLS: ToolDef[] = COORDINATOR_TOOLS.filter(
   return { ...tool, description: `${tool.description} Scoped to your own direct children.` };
 });
 
+/** A page agent works in the checkout, so it may only start tasks the user reviews on their own. */
+const PAGE_TOOLS: ToolDef[] = [
+  {
+    name: 'create_task',
+    description:
+      'Create a visible top-level Parallel Code task with its own Git worktree and agent terminal, branched from the main branch. Use this for requests to create a Parallel Code task or PC task, not native sub-agent tools. The task is independent: the user reviews it on its own, and you neither supervise nor merge it. It inherits no conversation, so include the required context (such as the issue link and what to do) in prompt. Use requestId for identical retries. The result reports only its taskId.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        prompt: { type: 'string' },
+        relation: { type: 'string', enum: ['independent'] },
+        requestId: { type: 'string' },
+      },
+      required: ['name', 'prompt', 'relation', 'requestId'],
+    },
+  },
+];
+
 export function sessionInstructions(capabilities: SessionCapabilities): string {
   const guidance =
     capabilities.profile === 'ordinary'
       ? (capabilities.canCreate
           ? 'Use create_task to create Parallel Code tasks for bounded assignments with the context needed; children do not inherit your conversation or uncommitted changes. '
-          : 'This launch cannot create Parallel Code tasks. Enable orchestration in Settings > MCP, then restart and resume the session. You may supervise existing children. ') +
+          : 'This launch cannot create Parallel Code tasks. Enable orchestration in Settings > Agents, then restart and resume the session. You may supervise existing children. ') +
         'Follow each child’s returned integrationPolicy. Review-policy children commit and call signal_done for user approval. Automatic-policy children commit, verify, and call land_self to merge and clean up through Parallel Code. Never directly merge or delete child worktrees. Use list_tasks and bounded wait_for_signal_done for progress; self-landed children leave the active list, so reconcile status and app completion summaries rather than expecting signal_done from them. Empty child lists end waiting. After timeout check status once and wait again while work remains; without a blocking wait leave at least 10 seconds between unchanged status checks. Idle and consumed completion events are not integration. Do not resend original assignments. If a wait lists stalled children, tell the user at once.'
-      : capabilities.profile === 'child-review'
-        ? 'Commit and verify your assigned work, then call signal_done. Your result requires user review before merging; do not call land_self. This is a child task and cannot create further Parallel Code tasks; direct creation requests to a top-level task.'
-        : 'Commit and verify your assigned work before land_self. Use signal_done when manual review is needed. This is a child task and cannot create further Parallel Code tasks; direct creation requests to a top-level task.';
+      : capabilities.profile === 'page'
+        ? "Use create_task with relation 'independent' to create Parallel Code tasks, for example one per issue. Each starts from the main branch in its own worktree and inherits neither your conversation nor the checkout, so include the context it needs in its prompt. You cannot supervise, message or merge the tasks you create; the user reviews them."
+        : capabilities.profile === 'child-review'
+          ? 'Commit and verify your assigned work, then call signal_done. Your result requires user review before merging; do not call land_self. This is a child task and cannot create further Parallel Code tasks; direct creation requests to a top-level task.'
+          : 'Commit and verify your assigned work before land_self. Use signal_done when manual review is needed. This is a child task and cannot create further Parallel Code tasks; direct creation requests to a top-level task.';
   return (
     guidance +
     (capabilities.peers
@@ -673,25 +682,28 @@ export function selectTools(
     ...CANVAS_VIEW_TOOLS,
     ...TOUR_TOOLS,
     ...CONFIDENCE_TOOLS,
+    // A branch PR needs a task; coordinators and the GitHub page's agent have none.
+    ...(taskId && !isGitHubAgentTaskId(taskId) ? PR_DRAFT_TOOLS : []),
     // Publishing opens the GitHub page's list picker; other tasks have no page to publish to.
     ...(isGitHubAgentTaskId(taskId) ? GITHUB_LIST_TOOLS : []),
-    ...EVIDENCE_TOOLS,
   ];
   if (capabilities) {
     const taskTools =
-      capabilities.profile === 'ordinary'
-        ? ORDINARY_TOOLS.filter((tool) => tool.name !== 'create_task' || capabilities.canCreate)
-        : SUBTASK_TOOLS.filter(
-            (tool) => tool.name === 'signal_done' || capabilities.profile === 'child-automatic',
-          ).map((tool) =>
-            tool.name === 'signal_done'
-              ? {
-                  ...tool,
-                  description:
-                    'Signal that your committed, verified work is ready for review. Include a concise result with summary, checks actually run, useful repository-relative artifact paths, and unresolved issues. Completion does not merge or approve your result.',
-                }
-              : tool,
-          );
+      capabilities.profile === 'page'
+        ? PAGE_TOOLS.filter(() => capabilities.canCreate)
+        : capabilities.profile === 'ordinary'
+          ? ORDINARY_TOOLS.filter((tool) => tool.name !== 'create_task' || capabilities.canCreate)
+          : SUBTASK_TOOLS.filter(
+              (tool) => tool.name === 'signal_done' || capabilities.profile === 'child-automatic',
+            ).map((tool) =>
+              tool.name === 'signal_done'
+                ? {
+                    ...tool,
+                    description:
+                      'Signal that your committed, verified work is ready for review. Include a concise result with summary, checks actually run, useful repository-relative artifact paths, and unresolved issues. Completion does not merge or approve your result.',
+                  }
+                : tool,
+            );
     return [...canvasTools, ...taskTools, ...(capabilities.peers ? PEER_TOOLS : [])];
   }
   if (canvasOnly) return canvasTools;

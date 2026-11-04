@@ -3,7 +3,7 @@ import { existsSync } from 'fs';
 import { promisify } from 'util';
 import { resolveUserShell } from '../user-shell.js';
 import { stripAnsi } from '../shared/prompt-detect.js';
-import { pendingVerificationRun } from '../shared/verification-run.js';
+import { HELD_RUN_MESSAGE, pendingVerificationRun } from '../shared/verification-run.js';
 import type { VerificationRun, VerificationRunStatus } from './shared-types.js';
 
 export const VERIFY_TIMEOUT_MS = 10 * 60_000;
@@ -12,6 +12,8 @@ export const VERIFY_MAX_CONCURRENT = 2;
 export const VERIFY_OUTPUT_TAIL_CHARS = 32 * 1024;
 export const VERIFY_COMMAND_MAX_LENGTH = 4096;
 const KILL_GRACE_MS = 3_000;
+/** Niceness added to background runs; everything the shell forks inherits it. */
+export const VERIFY_LOW_PRIORITY = 10;
 
 export interface VerifyRequest {
   /** Cancel handle and "one run per task" key: starting a run with a key that
@@ -19,10 +21,12 @@ export interface VerifyRequest {
   key: string;
   worktreePath: string;
   command: string;
-  /** Automatic evidence checks require this HEAD and a clean tree at execution time. */
+  /** Automatic suite checks require this HEAD and a clean tree at execution time. */
   expectedHeadSha?: string;
   /** Extra variables visible to the command (task id, branch, …). */
   env?: Record<string, string>;
+  /** Background runs yield the CPU to the agents and the app. */
+  lowPriority?: boolean;
   timeoutMs?: number;
   onOutput?: (chunk: string) => void;
 }
@@ -37,7 +41,7 @@ export interface VerifyRunnerDeps {
 export interface VerificationRunner {
   start(request: VerifyRequest): Promise<VerificationRun>;
   cancel(key: string): boolean;
-  /** Stops every run whose key starts with `prefix`, e.g. all of a task's evidence checks. */
+  /** Stops every run whose key starts with `prefix`, e.g. all of a task's suite checks. */
   cancelPrefix(prefix: string): boolean;
   /** Stops every running and queued run, e.g. when the app quits. */
   cancelAll(): void;
@@ -96,7 +100,7 @@ async function snapshotGitState(
     );
   const [head, status] = await Promise.all([
     git(['rev-parse', 'HEAD']),
-    git(['status', '--porcelain']),
+    git(['--no-optional-locks', 'status', '--porcelain']),
   ]);
   // No HEAD means no checkout (gitIsolation 'none') or no git: the run still
   // happens, it just can't be pinned. A status failure on its own (index.lock
@@ -136,7 +140,14 @@ function exitOutcome(code: number | null, signal: NodeJS.Signals | null): EndRea
 }
 
 function spawnCommand(request: VerifyRequest, deps: SpawnDeps): Child {
-  return deps.spawnImpl(deps.shell, ['-c', request.command], {
+  const shellArgs = [deps.shell, '-c', request.command];
+  // Started under `nice` rather than reniced after spawn, so nothing the shell
+  // forks early runs at full priority. Both desktop targets ship `nice`.
+  const [file, ...args] =
+    request.lowPriority && process.platform !== 'win32'
+      ? ['nice', '-n', String(VERIFY_LOW_PRIORITY), ...shellArgs]
+      : shellArgs;
+  return deps.spawnImpl(file, args, {
     cwd: request.worktreePath,
     env: { ...process.env, ...request.env, NO_COLOR: '1', FORCE_COLOR: '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -232,8 +243,7 @@ async function execute(
       status: 'cancelled',
       exitCode: null,
       outputTail: '',
-      message:
-        'Automatic check held: the worktree changed since the evidence scan. Rebuild or run this check explicitly.',
+      message: HELD_RUN_MESSAGE,
     };
   }
   const outcome = await runCommand(request, signal, deps);

@@ -108,7 +108,7 @@ export default [
   // The look generator is a command-line tool: it reports what it wrote or why it
   // refused, which is the whole output of a --check run in CI.
   {
-    files: ['scripts/generate-android-looks.mjs'],
+    files: ['scripts/generate-android-looks.mjs', 'scripts/generate-android-project-icons.mjs'],
     languageOptions: {
       globals: {
         console: 'readonly',

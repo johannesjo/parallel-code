@@ -654,12 +654,20 @@ describe('mind map tools', () => {
     expect(
       await handleMCPToolCall(context, 'canvas_open', { view: 'reasoning', taskId: 'other' }),
     ).not.toHaveProperty('isError');
-    expect(client.openCanvas).toHaveBeenCalledWith('own-task', 'reasoning');
+    expect(client.openCanvas).toHaveBeenCalledWith('own-task', { view: 'reasoning' });
+    await handleMCPToolCall(context, 'canvas_open', { view: 'mindmap', focusId: 'n3' });
+    expect(client.openCanvas).toHaveBeenLastCalledWith('own-task', {
+      view: 'mindmap',
+      focusId: 'n3',
+    });
     expect(await handleMCPToolCall(context, 'canvas_open', { view: 'browser' })).toMatchObject({
       isError: true,
       content: [{ text: expect.stringContaining('mindmap, reasoning') }],
     });
-    expect(client.openCanvas).toHaveBeenCalledTimes(1);
+    expect(
+      await handleMCPToolCall(context, 'canvas_open', { view: 'mindmap', focusId: 3 }),
+    ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('focusId') }] });
+    expect(client.openCanvas).toHaveBeenCalledTimes(2);
   });
   it('publishes a tour for the session task and rejects a malformed one before transport', async () => {
     const client = {
@@ -685,7 +693,7 @@ describe('mind map tools', () => {
     } as unknown as MCPClient;
     const rating = {
       scores: [{ label: 'Correct', score: 80.4, why: 'Happy path tested.' }],
-      findings: [{ kind: 'gap', text: 'No dedupe yet.', file: 'src/a.ts' }],
+      findings: [{ kind: 'gap', text: 'No dedupe yet.', file: 'src/a.ts', axis: 'Correct' }],
       source: 'review skill',
     };
     const context = { client, taskId: 'own-task', coordinatorId: '', canvasOnly: true };
@@ -700,6 +708,32 @@ describe('mind map tools', () => {
       await handleMCPToolCall(context, 'confidence_publish', { ...rating, scores: [] }),
     ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('scores') }] });
     expect(client.publishConfidence).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes a pull request draft only for a task session and rejects one without a title', async () => {
+    const client = {
+      publishPrDraft: vi.fn().mockResolvedValue({ ok: true, title: 'Fix' }),
+    } as unknown as MCPClient;
+    const context = { client, taskId: 'own-task', coordinatorId: '', canvasOnly: true };
+    expect(
+      await handleMCPToolCall(context, 'pr_draft_publish', {
+        title: 'Fix\nthe  base',
+        body: ' Why. ',
+        taskId: 'other',
+      }),
+    ).not.toHaveProperty('isError');
+    expect(client.publishPrDraft).toHaveBeenCalledWith('own-task', {
+      title: 'Fix the base',
+      body: 'Why.',
+    });
+    expect(
+      await handleMCPToolCall(context, 'pr_draft_publish', { title: ' ', body: 'x' }),
+    ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('no title') }] });
+    const coordinator = { ...context, taskId: '', coordinatorId: 'coord-1', canvasOnly: false };
+    expect(
+      await handleMCPToolCall(coordinator, 'pr_draft_publish', { title: 'Fix', body: '' }),
+    ).toMatchObject({ isError: true });
+    expect(client.publishPrDraft).toHaveBeenCalledTimes(1);
   });
 
   it('publishes a GitHub list for the session task and rejects a malformed one before transport', async () => {
@@ -855,6 +889,23 @@ describe('capability-bound sessions', () => {
       ['--allow-create'],
     ])
       expect(() => parseArgs(args)).toThrow();
+  });
+
+  it('parses the page-agent profile', () => {
+    expect(
+      parseArgs([
+        '--url',
+        'http://localhost:7777',
+        '--task-id',
+        'gh-agent-p1',
+        '--session-profile',
+        'page',
+        '--allow-create',
+      ]),
+    ).toMatchObject({
+      taskId: 'gh-agent-p1',
+      sessionCapabilities: { profile: 'page', canCreate: true, peers: false },
+    });
   });
 
   it('routes ordinary creation through session authority without a coordinator header', async () => {

@@ -36,6 +36,43 @@ const MAX_TOKENS_INLINE = 2048;
 const MAX_TOKENS_STRUCTURED = Math.ceil(UNDERSTANDING_MAX_OUTPUT_CHARS / 3);
 export const MINIMAX_MODEL = ASK_CODE_MODELS.minimax;
 
+interface ThinkingFilterState {
+  insideThinking: boolean;
+  pending: string;
+}
+
+/** Remove inline reasoning tags, including tags split across SSE deltas. */
+function visibleMinimaxContent(delta: string, state: ThinkingFilterState): string {
+  let text = state.pending + delta;
+  state.pending = '';
+  let visible = '';
+
+  while (text) {
+    const tag = state.insideThinking ? '</think>' : '<think>';
+    const tagIndex = text.indexOf(tag);
+    if (tagIndex >= 0) {
+      if (!state.insideThinking) visible += text.slice(0, tagIndex);
+      text = text.slice(tagIndex + tag.length);
+      state.insideThinking = !state.insideThinking;
+      continue;
+    }
+
+    let pendingLength = 0;
+    for (let length = Math.min(tag.length - 1, text.length); length > 0; length--) {
+      if (tag.startsWith(text.slice(-length))) {
+        pendingLength = length;
+        break;
+      }
+    }
+    const complete = text.slice(0, text.length - pendingLength);
+    if (!state.insideThinking) visible += complete;
+    state.pending = text.slice(text.length - pendingLength);
+    break;
+  }
+
+  return visible;
+}
+
 const activeRequests = new RequestRegistry<AbortController>({
   maxConcurrent: ASK_CODE_MAX_CONCURRENT,
   timeoutMs: ASK_CODE_TIMEOUT_MS,
@@ -91,10 +128,12 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
       model,
       // Flash always thinks; keep reasoning separate from answers and tour JSON.
       ...(isFlash
-        ? { thinking: { type: 'adaptive' }, reasoning_effort: 'low', reasoning_split: true }
+        ? { thinking: { type: 'adaptive' }, reasoning_effort: 'low' }
         : isM3
-          ? { thinking: { type: 'disabled' }, reasoning_split: true }
+          ? { thinking: { type: 'disabled' } }
           : {}),
+      // M2.7 and custom model ids can otherwise return <think> blocks in content.
+      reasoning_split: true,
       messages: [
         { role: 'system', content: askCodeSystemPrompt(args.purpose) },
         { role: 'user', content: prompt },
@@ -120,6 +159,7 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = '';
+      const thinkingFilter: ThinkingFilterState = { insideThinking: false, pending: '' };
 
       // When the AbortController fires, cancel the reader so reader.read() resolves
       let aborted = false;
@@ -154,11 +194,17 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
                 choices?: Array<{ delta?: { content?: string } }>;
               };
               const delta = json.choices?.[0]?.delta?.content;
-              if (delta) send({ type: 'chunk', text: delta });
+              if (delta) {
+                const text = visibleMinimaxContent(delta, thinkingFilter);
+                if (text) send({ type: 'chunk', text });
+              }
             } catch {
               // ignore parse errors in SSE stream
             }
           }
+        }
+        if (!thinkingFilter.insideThinking && thinkingFilter.pending) {
+          send({ type: 'chunk', text: thinkingFilter.pending });
         }
       } finally {
         controller.signal.removeEventListener('abort', onAbort);

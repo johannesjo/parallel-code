@@ -13,6 +13,7 @@ import { getUserDataDir } from './user-data-dir.js';
 import { installIpcTracing } from './ipc/trace.js';
 import { startAgentHookRuntime, stopAgentHookRuntime } from './agent-hooks/runtime.js';
 import { killAllAgents } from './ipc/pty.js';
+import { stopAllTaskScreens } from './ipc/task-screens.js';
 import { removeAllCanvasConfigs } from './mcp/canvas-config.js';
 import { stopAllPlanWatchers } from './ipc/plans.js';
 import { stopAllDocumentWork } from './documents/register.js';
@@ -138,11 +139,18 @@ function createWindow() {
     icon: getIconPath(),
     frame: process.platform === 'darwin',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : undefined,
+    // Centre the 16px-tall traffic-light buttons on the renderer's 32px
+    // `.mac-titlebar-spacer` row (y + 8 = 16), so they line up with the
+    // workspace controls beside them; x keeps hiddenInset's default inset.
+    // Keep in sync with that row's height (windowChromeTopInset).
+    // shortcut: holds at 100% UI scale only, since webFrame zoom scales the
+    // row but not the native buttons — move them on zoom change if that matters.
+    trafficLightPosition: process.platform === 'darwin' ? { x: 12, y: 8 } : undefined,
     resizable: true,
     // Paints until the renderer loads, avoiding a white flash. Matches the
-    // default Obsidian background. shortcut: fixed colour, so light-theme users
+    // default Parallel Code background. shortcut: fixed colour, so light-theme users
     // see a dark frame first; read the saved preset here if that matters.
-    backgroundColor: '#171717',
+    backgroundColor: '#080c10',
     webPreferences: {
       preload: path.join(__dirname, '..', 'electron', 'preload.cjs'),
       contextIsolation: true,
@@ -215,6 +223,14 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  // Without these a renderer crash or hang leaves no trace, so reports like
+  // "the app crashed" can't tell a freeze from an OOM or a GPU failure.
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    logWarn('window', 'renderer process gone', { ...details });
+  });
+  mainWindow.on('unresponsive', () => logWarn('window', 'window unresponsive'));
+  mainWindow.on('responsive', () => logWarn('window', 'window responsive again'));
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -326,6 +342,7 @@ app.on('will-quit', () => {
   removeAllCanvasConfigs();
   // Detached process groups would outlive Electron otherwise.
   verificationRunner.cancelAll();
+  stopAllTaskScreens();
   stopAgentHookRuntime();
   stopAllPlanWatchers();
   stopAllDocumentWork();
@@ -335,6 +352,13 @@ app.on('will-quit', () => {
 // icon is a dead end and the only way back is attempting to quit. `show()` alone
 // left a minimized or buried window where it was — see restoreWindow.
 app.on('activate', () => restoreWindow(mainWindow));
+
+// Covers the GPU process, whose crash blanks every WebGL terminal at once.
+app.on('child-process-gone', (_event, details) => {
+  // Helpers exit cleanly at quit; only failures are worth a warning.
+  if (details.reason === 'clean-exit') return;
+  logWarn('app', 'child process gone', { ...details });
+});
 
 app.on('window-all-closed', () => {
   app.quit();

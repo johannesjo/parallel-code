@@ -66,6 +66,7 @@ afterEach(() => {
   clearAgentActivity('agent');
   clearAgentActivity('other');
   removePrChecks('task');
+  setStore('projects', []);
   vi.useRealTimers();
 });
 
@@ -155,4 +156,48 @@ it('publishes the PR check status, and drops it once the PR merges or has no che
 
   setPrChecks('task', { ...checks, overall: 'success', merged: true });
   expect(lastCi()).toBeUndefined();
+});
+
+it('publishes the board lane so the phone groups tasks like the desktop board', () => {
+  const lastLane = () => {
+    const [, payload] = vi.mocked(fireAndForget).mock.lastCall ?? [];
+    return (payload as { contexts: Record<string, { lane?: unknown }> }).contexts.task.lane;
+  };
+  stop = startRemoteStatusSync();
+  expect(lastLane()).toBe('stopped');
+
+  setStore('tasks', 'task', 'prUrl', 'https://github.com/o/r/pull/1');
+  expect(lastLane()).toBe('pr');
+
+  setStore('tasks', 'task', 'collapsed', true);
+  expect(lastLane()).toBe('snoozed');
+});
+
+it('publishes the PR row and project icon the board card shows', () => {
+  const lastContext = () => {
+    const [, payload] = vi.mocked(fireAndForget).mock.lastCall ?? [];
+    return (payload as { contexts: Record<string, { pr?: unknown; projectIcon?: unknown }> })
+      .contexts.task;
+  };
+  setStore('projects', [
+    { id: 'project', name: 'App', path: '/tmp', color: '#fff', icon: 'rocket' },
+  ]);
+  stop = startRemoteStatusSync();
+  expect(lastContext().projectIcon).toBe('rocket');
+  expect(lastContext().pr).toBeUndefined();
+
+  const url = 'https://github.com/o/r/pull/1';
+  setStore('tasks', 'task', 'prUrl', url);
+  expect(lastContext().pr).toEqual({ url });
+
+  setPrChecks('task', {
+    overall: 'failure',
+    passing: 0,
+    pending: 0,
+    failing: 1,
+    checks: [],
+    checkedAt: '2026-10-10T00:00:00Z',
+  });
+  setStore('tasks', 'task', 'prBabysit', { attempts: 0 });
+  expect(lastContext().pr).toEqual({ url, label: 'CI failed', kind: 'failed', babysit: true });
 });

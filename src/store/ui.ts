@@ -1,18 +1,22 @@
 import { documentAgentTaskId } from '../documents/task-id';
 import { batch } from 'solid-js';
-import { produce } from 'solid-js/store';
+import { produce, reconcile } from 'solid-js/store';
 import { store, setStore } from './core';
 import { setActiveTask } from './navigation';
 import { setTaskFocusedPanel } from './focused-panel';
+import { closeBoard, closeProjectPages, projectPageOpen } from './project-pages';
 import type { LookPreset, AppearanceMode } from '../lib/look';
 import { osIsDark } from '../lib/os-appearance';
 import type { CustomTheme } from '../lib/custom-theme';
 import { themeToCss } from '../lib/custom-theme';
+import type { ReviewModelSettings } from '../lib/task-review';
+import type { BriefBarFields } from '../lib/task-brief';
 import type { PersistedWindowState, TaskViewportVisibility } from './types';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
+import { clampIndependentTasksPerCreator } from '../lib/coordinator-limits';
 import { defaultAskCodeModel, type AskCodeProvider } from '../../electron/shared/ask-code-models';
-import type { TaskNameModelId } from '../../electron/shared/task-name-model';
+import type { BriefModelId, TaskNameModelId } from '../../electron/shared/task-name-model';
 
 // Set to true after loadCustomThemes() resolves. Sanitization of persisted slot
 // IDs is skipped until then so the startup reactive effect cannot null them out
@@ -76,7 +80,9 @@ export function getTaskViewportVisibility(taskId: string): TaskViewportVisibilit
 }
 
 export function setTaskViewportVisibility(entries: Record<string, TaskViewportVisibility>): void {
-  setStore('taskViewportVisibility', entries);
+  // reconcile, not a plain set: Solid merges objects, so tiles that left the
+  // strip would keep reporting their last position.
+  setStore('taskViewportVisibility', reconcile(entries));
 }
 
 // --- Sidebar ---
@@ -165,6 +171,10 @@ export function setShowPlans(showPlans: boolean): void {
   setStore('showPlans', showPlans);
 }
 
+export function setKanbanHideDetails(hide: boolean): void {
+  setStore('kanbanHideDetails', hide);
+}
+
 export function setModelTaskNames(enabled: boolean): void {
   setStore('modelTaskNames', enabled);
 }
@@ -177,8 +187,16 @@ export function setTaskBriefs(enabled: boolean): void {
   setStore('taskBriefs', enabled);
 }
 
-export function setConfidencePrompt(prompt: string): void {
-  setStore('confidencePrompt', prompt);
+export function setBriefBarField(field: keyof BriefBarFields, shown: boolean): void {
+  setStore('briefBarFields', field, shown);
+}
+
+export function setBriefModel(model: BriefModelId): void {
+  setStore('briefModel', model);
+}
+
+export function setReviewGuidance(guidance: string): void {
+  setStore('reviewGuidance', guidance);
 }
 
 export function setShowSidebarTips(show: boolean): void {
@@ -251,6 +269,15 @@ export function setCanvasOwnershipBadges(enabled: boolean): void {
   setStore('canvasOwnershipBadges', enabled);
 }
 
+export function setFinishReview(enabled: boolean): void {
+  setStore('finishReview', enabled);
+}
+
+export function setReviewModel(model: ReviewModelSettings): void {
+  // Replaced whole: a model left out of the new choice must not survive from the old one.
+  setStore('reviewModel', reconcile(model));
+}
+
 export function setDefaultPropagateSkipPermissions(enabled: boolean): void {
   setStore('defaultPropagateSkipPermissions', enabled);
 }
@@ -258,6 +285,10 @@ export function setDefaultPropagateSkipPermissions(enabled: boolean): void {
 export function setCoordinatorNotificationDelayMs(ms: number): void {
   const clamped = Math.max(5_000, Math.min(300_000, Math.round(ms)));
   setStore('coordinatorNotificationDelayMs', clamped);
+}
+
+export function setMaxIndependentTasksPerCreator(limit: number): void {
+  setStore('maxIndependentTasksPerCreator', clampIndependentTasksPerCreator(limit));
 }
 
 export function setInactiveColumnOpacity(opacity: number): void {
@@ -330,12 +361,54 @@ export function toggleTaskFocusMode(taskId: string | null = store.activeTaskId):
   const isDocument =
     store.activeDocumentProjectId && taskId === documentAgentTaskId(store.activeDocumentProjectId);
   if (!taskId || (!store.tasks[taskId] && !isDocument)) return;
-  const enteringFocusMode = !store.focusMode;
+  // From the board's side panel the button expands the task into focus mode.
+  const enteringFocusMode = !store.focusMode || store.boardView;
   if (store.activeTaskId !== taskId) setActiveTask(taskId);
-  toggleFocusMode();
-  if (!enteringFocusMode) return;
+  closeBoard();
+  toggleFocusMode(enteringFocusMode);
+  // An open draft is what focus mode shows; it keeps its own focus.
+  if (!enteringFocusMode || store.showNewTaskPanel) return;
   const panel = store.focusedPanel[taskId] ?? 'ai-terminal';
   requestAnimationFrame(() => setTaskFocusedPanel(taskId, panel));
+}
+
+export type WorkspaceView = 'focus' | 'tiles' | 'board';
+
+/** The view the workspace toggle shows as pressed; the board covers the other two. */
+export function workspaceView(): WorkspaceView {
+  if (store.boardView) return 'board';
+  return store.focusMode ? 'focus' : 'tiles';
+}
+
+/** View-transition types for switching to `next`. Tiles and focus share one
+ *  layout strip, so between them the active task can grow into focus and
+ *  shrink back; the board and pages have their own transitions. */
+export function workspaceViewTransitionTypes(next: WorkspaceView): string[] {
+  const current = workspaceView();
+  if (current === next || current === 'board' || next === 'board' || projectPageOpen()) return [];
+  // Without a task focus stays on tiles; animating would only shimmer the tiles.
+  if (next === 'focus' && !store.activeTaskId) return [];
+  return [next === 'focus' ? 'focus-enter' : 'focus-exit'];
+}
+
+/** Shows one of the three workspace views, closing any page that covers them. */
+export function setWorkspaceView(view: WorkspaceView): void {
+  batch(() => {
+    closeProjectPages();
+    if (view === 'board') {
+      setStore('boardView', true);
+      return;
+    }
+    closeBoard();
+    // Focus mode needs a task to show; without one this stays on tiles.
+    if ((view === 'focus') !== store.focusMode) toggleTaskFocusMode();
+  });
+}
+
+/** Opens the board, or returns to the focus or tiles view it covered. */
+export function toggleBoardView(): void {
+  if (store.boardView) closeBoard();
+  else setWorkspaceView('board');
 }
 
 export function setTaskSplitMode(taskId: string, active: boolean): void {

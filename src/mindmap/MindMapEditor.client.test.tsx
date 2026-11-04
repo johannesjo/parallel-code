@@ -16,6 +16,7 @@ interface Extra {
   showOwnership?: boolean;
   sendChanges?: ChangeDelivery;
   orientation?: 'vertical' | 'horizontal';
+  focusRequest?: { nodeId: string; seq: number };
 }
 
 let container: HTMLDivElement;
@@ -1196,4 +1197,27 @@ it('describes the map with one hint instead of a key legend on every idea', () =
   const hint = document.getElementById(section.getAttribute('aria-describedby') ?? '');
   expect(hint?.textContent).toBe('Right-click for actions · F2 rename · Ctrl+wheel zoom');
   expect(idea('a').getAttribute('aria-label')).not.toContain('Enter or Tab');
+});
+
+it('shows an idea the agent points at without taking keyboard focus, once per request', () => {
+  const { setExtra } = mount(twoBranches());
+  container.querySelector<HTMLButtonElement>('[aria-label="Collapse A"]')?.click();
+  vi.advanceTimersByTime(400);
+  expect(container.querySelector('[data-record-id="a1"]')).toBeNull();
+  const chat = document.createElement('textarea');
+  document.body.append(chat);
+  chat.focus();
+  setExtra({ focusRequest: { nodeId: 'a1', seq: 1 } });
+  vi.advanceTimersByTime(400);
+  expect(idea('a1').getAttribute('aria-current')).toBe('true');
+  expect(document.activeElement).toBe(chat);
+  // The same request again is not a new pointer; the user's own selection stays.
+  idea('b').click();
+  setExtra({ focusRequest: { nodeId: 'a1', seq: 1 } });
+  vi.advanceTimersByTime(400);
+  expect(idea('b').getAttribute('aria-current')).toBe('true');
+  setExtra({ focusRequest: { nodeId: 'a1', seq: 2 } });
+  vi.advanceTimersByTime(400);
+  expect(idea('a1').getAttribute('aria-current')).toBe('true');
+  chat.remove();
 });

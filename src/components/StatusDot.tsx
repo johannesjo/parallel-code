@@ -5,6 +5,7 @@ import {
   type TaskDotStatus,
 } from '../store/taskStatus';
 import { getCiGlyphState, type CiGlyphState } from '../store/pr-checks-state';
+import { StatusCheckIcon } from './icons';
 import { theme } from '../lib/theme';
 
 const SIZES = { sm: 6, md: 8 } as const;
@@ -14,8 +15,18 @@ const SPINNERS = { sm: 10, md: 12 } as const;
 const REVIEW_COLOR = theme.review;
 
 /** Shape carries the state, colour only reinforces it — a scan of the list
- *  should separate "spinning", "asking", and "resting" without reading hue. */
-type StatusGlyph = 'spinner' | 'question' | 'dot' | 'ci_running' | 'ci_failed';
+ *  should separate "spinning", "asking", and "resting" without reading hue:
+ *  motion means working, a filled badge needs you, an outline is at rest. */
+type StatusGlyph =
+  | 'spinner'
+  | 'question'
+  | 'error'
+  | 'review'
+  | 'ready'
+  | 'waiting'
+  | 'dot'
+  | 'ci_running'
+  | 'ci_failed';
 /** Keeps the CI pie visible before any check has finished. */
 const MIN_CI_SWEEP = 12;
 
@@ -93,15 +104,21 @@ export function getStatusGlyph(
   ci?: CiGlyphState['state'],
 ): StatusGlyph {
   if (attention === 'needs_input') return 'question';
-  if (attention === 'error') return 'dot';
+  if (attention === 'error') return 'error';
   if (attention === 'active') return 'spinner';
   // CI outranks resting states and shell activity but not a working agent:
   // that agent is often the one fixing CI, and the CI glyph returns when it stops.
   if (ci === 'failed') return 'ci_failed';
   if (ci === 'running') return 'ci_running';
   // Review outranks activity in the attention state, so a busy task under
-  // review shows the review dot rather than a spinner in its colour.
+  // review shows the review ring rather than a spinner in its colour.
   if (attention === 'shell_busy' || (status === 'busy' && !attention)) return 'spinner';
+  // Same precedence as the colour: a resting attention state beats the dot status.
+  const resting = attention === 'review' || attention === 'ready' ? attention : status;
+  if (resting === 'review') return 'review';
+  if (resting === 'ready') return 'ready';
+  // Hollow: nothing has happened yet, so it must not read as a grey Ready.
+  if (resting === 'waiting') return 'waiting';
   return 'dot';
 }
 
@@ -110,14 +127,23 @@ export function StatusDot(props: {
   size?: 'sm' | 'md';
   attention?: TaskAttentionState;
   taskId?: string;
+  /** False when the host shows its own hover label; the aria-label stays either way. */
+  nativeTitle?: boolean;
+  /** A running check to show instead, as a review-coloured spinner; the host
+   *  decides when it outranks the task's own state. */
+  checking?: string;
 }) {
   const size = () => props.size ?? 'sm';
   const ci = () => (props.taskId ? getCiGlyphState(props.taskId) : undefined);
-  const glyph = () => getStatusGlyph(props.status, props.attention, ci()?.state);
+  const glyph = (): StatusGlyph =>
+    props.checking ? 'spinner' : getStatusGlyph(props.status, props.attention, ci()?.state);
+  const tooltip = () =>
+    props.checking || getDotTooltip(props.status, props.attention, props.taskId);
   const color = () => {
+    if (props.checking) return REVIEW_COLOR;
     if (glyph() === 'ci_failed') return theme.error;
-    // A failed check turns the pie red before the whole run finishes.
-    if (glyph() === 'ci_running') return ci()?.failing ? theme.error : theme.warning;
+    // A running pie is a routine wait, so it stays neutral; a failed check turns it red early.
+    if (glyph() === 'ci_running') return ci()?.failing ? theme.error : theme.fgMuted;
     return getDotColor(props.status, props.attention);
   };
   const ciSweep = () => Math.max(MIN_CI_SWEEP, ci()?.progress ?? 0);
@@ -140,12 +166,15 @@ export function StatusDot(props: {
   return (
     <span
       class="status-glyph"
-      title={[
-        getDotTooltip(props.status, props.attention, props.taskId),
-        props.taskId ? getTaskActivityTooltip(props.taskId) : undefined,
-      ]
-        .filter(Boolean)
-        .join('\n')}
+      role="img"
+      aria-label={tooltip()}
+      title={
+        props.nativeTitle === false
+          ? undefined
+          : [tooltip(), props.taskId ? getTaskActivityTooltip(props.taskId) : undefined]
+              .filter(Boolean)
+              .join('\n')
+      }
       style={{
         // Lane size travels as a variable so a host row can restyle the box —
         // the sidebar shrinks it to one text line to keep it off wrapped names.
@@ -160,6 +189,24 @@ export function StatusDot(props: {
         />
       ) : glyph() === 'question' ? (
         badge('?', getDotShadow(props.attention))
+      ) : glyph() === 'error' ? (
+        badge('!', getDotShadow(props.attention))
+      ) : glyph() === 'review' ? (
+        <span
+          class="status-glyph-review"
+          style={{
+            width: `${SPINNERS[size()] - 1}px`,
+            height: `${SPINNERS[size()] - 1}px`,
+            'box-shadow': getDotShadow(props.attention),
+          }}
+        />
+      ) : glyph() === 'ready' ? (
+        <StatusCheckIcon class="status-glyph-ready" size={SPINNERS[size()]} />
+      ) : glyph() === 'waiting' ? (
+        <span
+          class="status-glyph-waiting"
+          style={{ width: `${SIZES[size()] + 1}px`, height: `${SIZES[size()] + 1}px` }}
+        />
       ) : glyph() === 'ci_failed' ? (
         badge('×', halo(theme.error))
       ) : glyph() === 'ci_running' ? (

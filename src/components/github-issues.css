@@ -2,7 +2,6 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  background: var(--island-bg);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -50,12 +49,15 @@
 }
 .github-issues-heading {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 16px;
-  padding: 16px 20px;
+  padding: 12px 20px;
   border-bottom: 1px solid var(--border);
+}
+.github-issues-title {
+  flex: 1;
+  min-width: 0;
 }
 .github-issues h2 {
   font-size: 19px;
@@ -84,23 +86,24 @@
 .github-issues-filters {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
 }
-.github-issues-search {
-  display: flex;
-  /* A full row of its own; the fields below then share the remaining rows evenly. */
-  flex: 1 1 100%;
-  gap: 8px;
-  min-width: 0;
-}
 .github-issues-filters input[name='search'] {
-  flex: 1;
+  flex: 3 1 220px;
   min-width: 0;
-  width: auto;
+  min-height: 30px;
+  box-sizing: border-box;
 }
-.github-issues-search button {
+.github-issues-filters > :is(select, input:not([name='search'])) {
+  flex: 1 1 120px;
+  min-width: 0;
+  min-height: 30px;
+  box-sizing: border-box;
+}
+.github-issues-filters > button {
   flex-shrink: 0;
 }
 .github-issues-content {
@@ -145,6 +148,21 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   box-shadow: inset 3px 0 var(--accent);
 }
+.github-issue-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.github-issue-row-head time {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+/* Stale rows while a new page loads: still usable, visibly out of date. */
+.github-issues-rows[aria-busy='true'] {
+  opacity: 0.6;
+}
 .github-issue-row strong {
   font-size: 14px;
   font-weight: 500;
@@ -153,7 +171,6 @@
 }
 .github-issue-row-meta {
   display: flex;
-  justify-content: space-between;
   gap: 8px;
   font-size: 11px;
 }
@@ -161,11 +178,8 @@
   font-size: 12px;
   text-transform: capitalize;
 }
-.github-issue-state.open {
-  color: var(--success);
-}
 .github-issue-state.closed {
-  color: var(--accent);
+  color: var(--fg-muted);
 }
 .github-issue-labels {
   display: flex;
@@ -258,20 +272,24 @@
   font-size: 11px;
 }
 .github-issues .github-issue-primary {
-  background: var(--accent);
-  color: var(--bg);
+  color: var(--fg);
+  font-weight: 600;
 }
+/* Borderless: a fieldset only so busy states disable every control inside at once. */
 .github-issue-triage {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 12px;
+  border: 0;
+  padding: 0;
   margin: 0;
   min-width: 0;
 }
-.github-issue-triage legend {
-  color: var(--fg-muted);
-  font-size: 11px;
-  padding: 0 5px;
+.github-issue-saving {
+  display: block;
+  min-height: 1.5em;
+}
+.github-issue-state-actions {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
 }
 .github-issue-metadata {
   display: flex;
@@ -412,27 +430,9 @@
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-.github-issues-filters {
-  align-items: end;
-}
-.github-issues-filters label {
-  flex: 1 1 130px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--fg-muted);
-}
-.github-issues-filters label :is(input, select) {
-  width: 100%;
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 30px;
-}
 .github-triage-batch small {
   flex: 1 1 16ch;
   min-width: 0;
-  font-size: 12px;
 }
 .github-triage-batch details {
   width: 100%;
@@ -450,26 +450,15 @@
 .github-item-kind {
   font-size: 11px;
   font-weight: 600;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   padding: 2px 6px;
   color: var(--fg-muted);
   background: var(--bg-input);
 }
-.github-item-kind.bug {
-  color: var(--error);
-  background: color-mix(in srgb, var(--error) 12%, transparent);
-}
-.github-item-kind.feature {
-  color: var(--success);
-  background: color-mix(in srgb, var(--success) 12%, transparent);
-}
-.github-item-kind.discussion {
-  color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-}
+/* Kinds are routine information on every row, so they stay neutral; colour is
+   kept for things that need attention (AGENTS.md, UI design). */
 .github-item-kind.pr {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--fg);
 }
 .github-issue-selectable-row {
   display: flex;

@@ -100,8 +100,33 @@ function explicitSessionArgs(
 
 type AgentLaunchTask = Pick<Task, 'skipPermissions' | 'mcpConfigPath' | 'mcpLaunchArgs'> &
   Partial<
-    Pick<Task, 'id' | 'agentIds' | 'codexChatThreadId' | 'codexChatHandoff' | 'claudeChatSessionId'>
+    Pick<
+      Task,
+      | 'id'
+      | 'agentIds'
+      | 'codexChatThreadId'
+      | 'codexChatHandoff'
+      | 'claudeChatSessionId'
+      | 'teleportSessionId'
+    >
   >;
+
+/** `--teleport <id>` for the first fresh launch of a task created from a Claude
+ *  web session link. The pane has no PC-assigned session id then (see
+ *  initTaskInStore), so a later resume falls back to `--continue`, which in a
+ *  fresh worktree is the teleported conversation; a fresh restart mints an id
+ *  and starts a new session instead of teleporting twice. */
+function teleportArgs(
+  agentDef: AgentDef,
+  task: AgentLaunchTask,
+  launch: { resumed: boolean; agentId?: string; sessionId?: string },
+): string[] | null {
+  const id = task.teleportSessionId;
+  if (!id || launch.resumed || launch.sessionId) return null;
+  if (launch.agentId !== task.agentIds?.[0]) return null;
+  if (agentDef.command.split('/').pop() !== 'claude') return null;
+  return ['--teleport', id, ...agentDef.args];
+}
 
 function positionalAgentArgs(
   agentDef: AgentDef,
@@ -166,6 +191,7 @@ export function buildTaskAgentArgs(
   sessionId?: string,
 ): string[] {
   let args =
+    teleportArgs(agentDef, task, { resumed, agentId, sessionId }) ??
     explicitSessionArgs(agentDef, resumed, sessionId) ??
     positionalAgentArgs(agentDef, task, resumed);
   const session = task.codexChatHandoff;
@@ -187,6 +213,7 @@ export function buildTaskAgentArgs(
   }
   return [
     ...args,
+    ...(agentDef.extra_args ?? []),
     // Resolved, not read straight off the def: a def restored from an older
     // profile or synthesised from a bare command carries no skip args, and
     // reading the field directly downgrades an explicit opt-in to a launch

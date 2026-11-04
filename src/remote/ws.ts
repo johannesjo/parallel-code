@@ -33,9 +33,11 @@ function failPendingInputs(): void {
 
 type OutputListener = (data: string) => void;
 type ScrollbackListener = (data: string, cols: number, rows: number) => void;
+type TerminalSizeListener = (cols: number, rows: number) => void;
 type ChatListener = (state: AgentChatState) => void;
 const outputListeners = new Map<string, Set<OutputListener>>();
 const scrollbackListeners = new Map<string, Set<ScrollbackListener>>();
+const terminalSizeListeners = new Map<string, Set<TerminalSizeListener>>();
 const chatListeners = new Map<string, Set<ChatListener>>();
 
 let ws: WebSocket | null = null;
@@ -144,6 +146,10 @@ export function connect(): void {
         listeners?.forEach((fn) => fn(msg.data, msg.cols, msg.rows ?? 24));
         break;
       }
+
+      case 'terminal-size':
+        terminalSizeListeners.get(msg.agentId)?.forEach((fn) => fn(msg.cols, msg.rows));
+        break;
 
       case 'status':
         setAgentState('list', (a) => a.agentId === msg.agentId, {
@@ -296,32 +302,31 @@ export function unsubscribeAgent(agentId: string): void {
   send({ type: 'unsubscribe', agentId });
 }
 
-export function onOutput(agentId: string, fn: OutputListener): () => void {
-  let listeners = outputListeners.get(agentId);
+function listen<T>(registry: Map<string, Set<T>>, agentId: string, fn: T): () => void {
+  let listeners = registry.get(agentId);
   if (!listeners) {
     listeners = new Set();
-    outputListeners.set(agentId, listeners);
+    registry.set(agentId, listeners);
   }
   listeners.add(fn);
   return () => {
-    const set = outputListeners.get(agentId);
+    const set = registry.get(agentId);
     set?.delete(fn);
-    if (set?.size === 0) outputListeners.delete(agentId);
+    if (set?.size === 0) registry.delete(agentId);
   };
 }
 
+export function onOutput(agentId: string, fn: OutputListener): () => void {
+  return listen(outputListeners, agentId, fn);
+}
+
 export function onScrollback(agentId: string, fn: ScrollbackListener): () => void {
-  let listeners = scrollbackListeners.get(agentId);
-  if (!listeners) {
-    listeners = new Set();
-    scrollbackListeners.set(agentId, listeners);
-  }
-  listeners.add(fn);
-  return () => {
-    const set = scrollbackListeners.get(agentId);
-    set?.delete(fn);
-    if (set?.size === 0) scrollbackListeners.delete(agentId);
-  };
+  return listen(scrollbackListeners, agentId, fn);
+}
+
+/** The agent's PTY took a new size; later output is wrapped for it. */
+export function onTerminalSize(agentId: string, fn: TerminalSizeListener): () => void {
+  return listen(terminalSizeListeners, agentId, fn);
 }
 
 /** Follow a desktop chat. The first listener subscribes; the last one to leave unsubscribes. */

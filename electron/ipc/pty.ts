@@ -22,6 +22,7 @@ import {
   refreshWorktreeNodeModules,
 } from './git.js';
 import { loadEnvFile } from './env-file.js';
+import { projectAgentEnv } from './project-env.js';
 import {
   createTerminalQueryResponder,
   MIRROR_SCROLLBACK_LINES,
@@ -51,6 +52,8 @@ interface PtySession {
   canvasTools?: boolean;
   flushTimer: ReturnType<typeof setTimeout> | null;
   subscribers: Set<(encoded: string) => void>;
+  /** Size listeners of rendered subscribers, keyed by their output subscriber. */
+  resizeSubscribers: Map<(encoded: string) => void, (cols: number, rows: number) => void>;
   scrollback: RingBuffer;
   queries: TerminalQueryResponder;
   lastInputAt: number;
@@ -332,6 +335,8 @@ export interface SpawnAgentArgs {
   /** Optional path to a `KEY=VALUE` file whose contents are merged into the
    *  spawn environment. Re-read on every spawn so edits need no app restart. */
   envFile?: string;
+  /** Project whose agent env vars apply; the main process holds the values. */
+  projectId?: string;
   cols: number;
   rows: number;
   isShell?: boolean;
@@ -340,6 +345,9 @@ export interface SpawnAgentArgs {
   shareDockerAgentAuth?: boolean;
   attachExisting?: boolean;
   dockerMountWorktreeParent?: boolean;
+  /** Host dirs mounted read-only at the same path. Main-process only: the
+   *  SpawnAgent handler derives them and never trusts a renderer value. */
+  dockerReadOnlyMounts?: string[];
   onOutput: { __CHANNEL_ID__: string };
 }
 
@@ -429,6 +437,7 @@ function copyProcessEnv(): Record<string, string> {
 export function buildPtySpawnEnv(
   rendererEnv: Record<string, string> = {},
   fileEnv: Record<string, string> = {},
+  projectEnv: Record<string, string> = {},
 ): Record<string, string> {
   const spawnEnv: Record<string, string> = {
     ...copyProcessEnv(),
@@ -436,10 +445,11 @@ export function buildPtySpawnEnv(
     COLORTERM: 'truecolor',
   };
 
-  // Both override the inherited login-shell environment, per-task env winning
-  // over the file, and both stay subject to ENV_BLOCK_LIST so the main process
-  // remains authoritative over PATH/HOME/SHELL and the MCP token.
-  for (const [key, value] of Object.entries({ ...fileEnv, ...rendererEnv })) {
+  // All override the inherited login-shell environment: per-task env wins over
+  // the project's variables, which win over the agent's file, so one agent file
+  // can serve every project. All stay subject to ENV_BLOCK_LIST so the main
+  // process remains authoritative over PATH/HOME/SHELL and the MCP token.
+  for (const [key, value] of Object.entries({ ...fileEnv, ...projectEnv, ...rendererEnv })) {
     if (!ENV_BLOCK_LIST.has(key)) spawnEnv[key] = value;
   }
 
@@ -532,6 +542,7 @@ function buildPtySpawnSpec(
       ...(args.dockerMountWorktreeParent
         ? ['-v', `${path.dirname(cwd)}:${path.dirname(cwd)}`, ...resolveWorktreeGitDirMount(cwd)]
         : []),
+      ...(args.dockerReadOnlyMounts ?? []).flatMap((dir) => ['-v', `${dir}:${dir}:ro`]),
       '-v',
       `${cwd}:${cwd}`,
       '-w',
@@ -585,6 +596,7 @@ function cleanupExistingSession(agentId: string, existing: PtySession | undefine
   if (!existing) return;
   if (existing.flushTimer) clearTimeout(existing.flushTimer);
   existing.subscribers.clear();
+  existing.resizeSubscribers.clear();
   retireAgentLaunch(agentId, existing.launchId);
   existing.proc.kill();
   sessions.delete(agentId);
@@ -810,7 +822,10 @@ export async function spawnAgent(
   cleanupExistingSession(args.agentId, existing);
   codexExitIds.delete(args.agentId);
 
-  const spawnEnv = buildPtySpawnEnv(args.env, fileEnv);
+  // Docker skips project variables: values such as `~/.claude-work` name host
+  // paths the container does not mount.
+  const projectEnv = args.dockerMode ? {} : projectAgentEnv(args.projectId);
+  const spawnEnv = buildPtySpawnEnv(args.env, fileEnv, projectEnv);
   const launchId = crypto.randomUUID();
 
   // Backfill sandbox placeholders for pre-existing worktrees (and anywhere
@@ -877,6 +892,7 @@ export async function spawnAgent(
     canvasTools: args.canvasTools,
     flushTimer: null,
     subscribers: new Set(),
+    resizeSubscribers: new Map(),
     scrollback: new RingBuffer(),
     lastInputAt: -Infinity,
     inputPending: false,
@@ -1071,8 +1087,11 @@ export function setRemoteHistory(enabled: boolean): void {
 
 function applySize(session: PtySession, cols: number, rows: number): void {
   if (session.proc.cols === cols && session.proc.rows === rows) return;
+  // Output batched so far was written for the old size; phones must get it first.
+  session.flushOutput?.();
   session.proc.resize(cols, rows);
   session.queries.resize(cols, rows);
+  for (const onResize of session.resizeSubscribers.values()) onResize(cols, rows);
 }
 
 function resizeDesktopView(session: PtySession, cols: number, rows: number): void {
@@ -1136,6 +1155,7 @@ export function killAgent(agentId: string): void {
     // notify stale listeners. Let onExit handle sessions.delete
     // and emitPtyEvent to avoid the race condition.
     session.subscribers.clear();
+    session.resizeSubscribers.clear();
     // Stop the Docker container first so it doesn't keep running after the
     // local PTY process (docker run) is killed. Fire-and-forget; the PTY kill
     // below is the authoritative termination signal.
@@ -1159,6 +1179,7 @@ export function killAllAgents(): void {
   for (const [, session] of sessions) {
     if (session.flushTimer) clearTimeout(session.flushTimer);
     session.subscribers.clear();
+    session.resizeSubscribers.clear();
     if (session.containerName) {
       // Use synchronous docker kill with a short timeout so containers are
       // terminated before the Electron process exits. Errors are ignored
@@ -1189,39 +1210,52 @@ export function subscribeToAgent(agentId: string, cb: (encoded: string) => void)
  * main-process mirror keeps (10k lines while Remote Access is on, see setRemoteHistory), as ANSI text, instead of the raw
  * byte replay, which redraw-heavy TUIs fill with repaints of one screen.
  * Output already in the snapshot is not sent again; later output reaches `cb`
- * after `onSnapshot`. The snapshot is null when the mirror is gone (the process
- * exited), so the caller can fall back to the raw replay. Returns the
- * subscriber to pass to unsubscribeFromAgent, or null for an unknown agent.
+ * after `onSnapshot`, and PTY resizes reach `onResize` in order with it, so a
+ * phone wraps each chunk at the width it was written for. The snapshot is null
+ * when the mirror is gone (the process exited), so the caller can fall back to
+ * the raw replay. Returns the subscriber to pass to unsubscribeFromAgent, or
+ * null for an unknown agent.
  */
 export function subscribeToAgentRendered(
   agentId: string,
   onSnapshot: (snapshot: { data: string; cols: number; rows: number } | null) => void,
-  cb: (encoded: string) => void,
+  handlers: {
+    onOutput: (encoded: string) => void;
+    onResize: (cols: number, rows: number) => void;
+  },
 ): ((encoded: string) => void) | null {
   const session = sessions.get(agentId);
   if (!session) return null;
   // The mirror parses output as it arrives but subscribers get it in batches:
   // flush, so what the snapshot will contain has all been sent already.
   session.flushOutput?.();
+  // A later resize parses the mirror's queued writes first, so the snapshot
+  // below is always rendered at this size; onResize then reports the change.
   const { cols, rows } = session.proc;
-  let queued: string[] | null = [];
+  let queued: (() => void)[] | null = [];
   const subscriber = (encoded: string) => {
-    if (queued) queued.push(encoded);
-    else cb(encoded);
+    if (queued) queued.push(() => handlers.onOutput(encoded));
+    else handlers.onOutput(encoded);
   };
   session.subscribers.add(subscriber);
+  session.resizeSubscribers.set(subscriber, (cols, rows) => {
+    if (queued) queued.push(() => handlers.onResize(cols, rows));
+    else handlers.onResize(cols, rows);
+  });
   void session.queries.serialize().then((text) => {
     const later = queued ?? [];
     queued = null;
     onSnapshot(text === null ? null : { data: Buffer.from(text).toString('base64'), cols, rows });
-    for (const encoded of later) cb(encoded);
+    for (const deliver of later) deliver();
   });
   return subscriber;
 }
 
 /** Remove a previously registered output subscriber. */
 export function unsubscribeFromAgent(agentId: string, cb: (encoded: string) => void): void {
-  sessions.get(agentId)?.subscribers.delete(cb);
+  const session = sessions.get(agentId);
+  session?.subscribers.delete(cb);
+  session?.resizeSubscribers.delete(cb);
 }
 
 /** Get the scrollback buffer for an agent as a base64 string. */

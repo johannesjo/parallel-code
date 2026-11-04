@@ -12,7 +12,7 @@ import { getWorktreeStatus, removeWorktree, mergeTask } from './git.js';
 let base: string;
 
 function run(cwd: string, args: string[]): string {
-  return execFileSync('git', args, { cwd, encoding: 'utf8' });
+  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
 }
 
 const TASK_BRANCH = 'task/demo';
@@ -82,7 +82,37 @@ describe('branch adoption against real git', () => {
       current_branch: TASK_BRANCH,
       base_branch: 'main',
       head_sha: run(worktreePath, ['rev-parse', 'HEAD']).trim(),
+      lines_added: 0,
+      lines_removed: 0,
     });
+  });
+
+  it('getWorktreeStatus counts committed lines since the base, not uncommitted ones', async () => {
+    const { worktreePath } = makeRepo('loc');
+    fs.writeFileSync(path.join(worktreePath, 'README.md'), 'hi\nthere\n');
+    run(worktreePath, ['commit', '-am', 'edit readme']);
+    fs.writeFileSync(path.join(worktreePath, 'README.md'), 'hi\nthere\nfriend\n');
+
+    const status = await getWorktreeStatus(worktreePath);
+    // Committed: 'hello' → 'hi', 'there'. The uncommitted 'friend' waits for its commit.
+    expect(status.lines_added).toBe(2);
+    expect(status.lines_removed).toBe(1);
+  });
+
+  it('getWorktreeStatus counts a renamed file by its edits, not its whole content', async () => {
+    const { worktreePath } = makeRepo('loc-rename');
+    const body = Array.from({ length: 50 }, (_, i) => `line ${i}`).join('\n');
+    fs.writeFileSync(path.join(worktreePath, 'old.txt'), `${body}\n`);
+    run(worktreePath, ['add', 'old.txt']);
+    run(worktreePath, ['commit', '-m', 'add old']);
+    run(worktreePath, ['update-ref', 'refs/heads/main', 'HEAD']);
+    run(worktreePath, ['mv', 'old.txt', 'new.txt']);
+    fs.writeFileSync(path.join(worktreePath, 'new.txt'), `${body}\nmore\n`);
+    run(worktreePath, ['commit', '-am', 'rename and extend']);
+
+    const status = await getWorktreeStatus(worktreePath);
+    expect(status.lines_added).toBe(1);
+    expect(status.lines_removed).toBe(0);
   });
 
   it('getWorktreeStatus counts an untracked file as uncommitted', async () => {

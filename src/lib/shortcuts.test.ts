@@ -97,6 +97,32 @@ describe('registerFromRegistry — jump-to-task bindings', () => {
     }
   });
 
+  it('leaves non-global keys to a contenteditable editor', () => {
+    const closeDialogs = vi.fn();
+    const cleanupRegistry = registerFromRegistry(DEFAULT_BINDINGS, { closeDialogs });
+    const cleanupShortcuts = initShortcuts();
+    const editor = { tagName: 'DIV', isContentEditable: true };
+    const event = {
+      key: 'Escape',
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      defaultPrevented: false,
+      target: editor,
+      composedPath: () => [editor],
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    } as unknown as KeyboardEvent;
+    try {
+      keydownHandler?.(event);
+      expect(closeDialogs).not.toHaveBeenCalled();
+    } finally {
+      cleanupRegistry();
+      cleanupShortcuts();
+    }
+  });
+
   it('zooms in and out from the registry bindings', () => {
     const zoomIn = vi.fn();
     const zoomOut = vi.fn();

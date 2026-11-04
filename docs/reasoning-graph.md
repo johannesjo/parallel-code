@@ -52,6 +52,17 @@ once it has paused), until its first nodes arrive. A report the agent publishes 
 chat makes the panel live with no activation prompt sent; the status line reads
 **Live · agent · Revision N** followed by the latest caption.
 
+## Changes since you last looked
+
+Agent updates that arrive while the reasoning tab is hidden are marked when you come
+back: a small dot on each card the agent added (filled) or changed (ring), and a line
+below the toolbar such as **2 new · 1 changed · 1 removed since you last looked**, with
+the titles of removed nodes. **Mark as seen** clears them. Until then, further agent
+updates are marked too. Updates you watch arrive while the tab is visible are not
+marked, and neither are your own edits. The baseline is one update sequence stored in
+the run's workspace, so a new run starts without marks. Changes inside collapsed
+branches count in the line but show no dot until you expand them.
+
 ## Workflows
 
 Workflows change reporting guidance only; all four share the same graph and feed

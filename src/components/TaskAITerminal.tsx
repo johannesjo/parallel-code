@@ -1,5 +1,4 @@
 import { Show, For, createSignal, createEffect, onMount, onCleanup, untrack } from 'solid-js';
-import type { JSX } from 'solid-js';
 import type { TranscriptMarks } from '../investigation/transcript';
 
 import {
@@ -20,47 +19,45 @@ import {
   addAgentToTask,
   closeAgentInTask,
   showNotification,
+  retryTeleportInRepo,
   toggleAITerminalLayout,
 } from '../store/store';
 import { markDirty } from '../lib/terminalFitManager';
 import { isAgentAskingQuestion, isAgentSettled } from '../store/taskStatus';
-import { errMessage, warn as logWarn } from '../lib/log';
+import { warn as logWarn } from '../lib/log';
 import { AgentHandoffComposer } from './AgentHandoffComposer';
 import { isSupportedDelegationAgent } from '../store/delegation';
 import { InfoBar } from './InfoBar';
 import { PromptHistory } from './PromptHistory';
 import { TerminalView } from './TerminalView';
+import { fileLinkMenu, type ChangesLink, type FileLinkMenu } from './file-link-menu';
+import { findBareFile } from '../lib/find-bare-file';
+import { parseTeleportRepoMismatch } from '../lib/claude-session-url';
+import { createMarkdownViewer } from './MarkdownViewerDialog';
 import { SessionPicker } from './SessionPicker';
+import { createResumeWithFlags } from './resume-with-flags';
 import { AgentChatView } from './AgentChatView';
 import { isAgentChat, agentChatProvider, agentChatUnavailableReason } from '../store/agent-chat';
 import { agentViewHandsOff, agentViewSwitchCost, switchMainAgentView } from '../store/agent-view';
 import { setStore } from '../store/core';
-import { DocumentIcon } from '../documents/DocumentIcon';
-import { isEditableDocumentPath } from '../lib/document-path';
 import { editAsDocument } from '../documents/store';
 import { saveState } from '../store/persistence';
 import { registerAction, unregisterAction } from '../store/focus';
-import { resolvedBindings } from '../store/keybindings';
-import { formatKeyCombo } from '../lib/keybindings';
-import { Dialog } from './Dialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
-  CheckIcon,
   CloseIcon,
+  ColumnsIcon,
   CommentIcon,
-  EyeIcon,
-  CopyIcon,
   PlayIcon,
+  PlusSmallIcon,
   SyncIcon,
+  TerminalAltIcon,
   TerminalIcon,
 } from './icons';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
-import { invoke } from '../lib/ipc';
 import { getTaskDockerOverlayLabel } from '../lib/docker';
-import { IPC } from '../../electron/ipc/channels';
 import { codexResumeId } from '../../electron/shared/codex-resume';
-import { createHighlightedMarkdown } from '../lib/marked-shiki';
 import type { Task } from '../store/types';
 import type { AgentDef } from '../ipc/types';
 import type { PromptInputHandle } from './PromptInput';
@@ -79,11 +76,13 @@ interface TaskAITerminalProps {
   /** First look at a Markdown path the agent printed; returns true when it
    *  took the link. Otherwise the file opens in the Markdown viewer. */
   onFileLink?: (filePath: string) => boolean;
+  /** Present where the task has a side panel: opens a worktree-relative Markdown path there. */
+  onOpenInSidePanel?: (relativePath: string) => void;
+  /** The task's changed files, which links open in the changes dialog. */
+  changes?: ChangesLink;
   onReview?: (path?: string) => void;
   /** Opens the tour the agent published through `tour_publish`. */
   onOpenTour?: () => void;
-  /** Task brief bar, shown between the agent header and its output, where people look first. */
-  brief?: JSX.Element;
 }
 
 export function TaskAITerminal(props: TaskAITerminalProps) {
@@ -104,10 +103,6 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
       );
     });
   const canHandoff = (id: string) => store.mcpOrchestrationEnabled && handoffAgents().includes(id);
-  const secondOpinionTitle = () => {
-    const binding = resolvedBindings().find((item) => item.id === 'app.task.second-opinion');
-    return `Ask for a second opinion${binding ? ` (${formatKeyCombo(binding)})` : ''}`;
-  };
   createEffect(() => {
     const key = `${props.task.id}:second-opinion`;
     const open = () => {
@@ -123,11 +118,11 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
     registerAction(key, open);
     onCleanup(() => unregisterAction(key, open));
   });
-  // --- Markdown file viewer ---
-  const [mdViewerContent, setMdViewerContent] = createSignal('');
-  const [mdViewerFileName, setMdViewerFileName] = createSignal('');
-  const [mdViewerFilePath, setMdViewerFilePath] = createSignal('');
-  const [mdViewerOpen, setMdViewerOpen] = createSignal(false);
+  const markdownViewer = createMarkdownViewer();
+  /** Markdown the caller doesn't take opens in the dialog. */
+  const routeMarkdown = (filePath: string) => {
+    if (!props.onFileLink?.(filePath)) markdownViewer.show(filePath);
+  };
 
   const firstAgentId = () => props.task.agentIds[0] ?? '';
   const [switchingView, setSwitchingView] = createSignal(false);
@@ -201,8 +196,6 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
   }
   const selectedAgent = () =>
     store.agents[props.selectedAgentId] ?? store.agents[firstAgentId()] ?? undefined;
-
-  const fileNameFromPath = (filePath: string) => filePath.split('/').pop() ?? filePath;
 
   const multipleAgents = () => props.task.agentIds.length > 1;
   const tabsMode = () => multipleAgents() && props.task.aiTerminalLayout === 'tabs';
@@ -284,22 +277,6 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
     unregisterFocusFn(`${props.task.id}:${aiTerminalPanelId(agentId)}`);
   }
 
-  function handleFileLink(filePath: string) {
-    invoke<string>(IPC.ReadFileText, { filePath })
-      .then((content) => {
-        setMdViewerContent(content);
-        setMdViewerFileName(fileNameFromPath(filePath));
-        setMdViewerFilePath(filePath);
-        setMdViewerOpen(true);
-      })
-      .catch((err) => {
-        setMdViewerContent(`**Error loading file:** ${String(err)}`);
-        setMdViewerFileName(fileNameFromPath(filePath));
-        setMdViewerFilePath(filePath);
-        setMdViewerOpen(true);
-      });
-  }
-
   return (
     <>
       <div
@@ -311,7 +288,9 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
           display: 'flex',
           'flex-direction': 'column',
         }}
-        onClick={() => setTaskFocusedPanel(props.task.id, aiTerminalPanelId(props.selectedAgentId))}
+        onPointerDown={() =>
+          setTaskFocusedPanel(props.task.id, aiTerminalPanelId(props.selectedAgentId))
+        }
       >
         <InfoBar
           allowOverflow
@@ -335,36 +314,6 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
           >
             <PromptHistory task={props.task} emptyLabel={infoBarStatus().text} />
             <div class="agent-header-controls">
-              <Show
-                when={
-                  canHandoff(props.selectedAgentId) &&
-                  !handoff() &&
-                  !props.task.secondOpinionDismissed
-                }
-              >
-                <div class="terminal-second-opinion">
-                  <button
-                    title={secondOpinionTitle()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setHandoff({ sourceAgentId: props.selectedAgentId });
-                    }}
-                  >
-                    <EyeIcon size={12} /> Second opinion
-                  </button>
-                  <button
-                    aria-label="Dismiss second opinion button for this task"
-                    title="Dismiss for this task; still available on right-click"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setStore('tasks', props.task.id, 'secondOpinionDismissed', true);
-                      void saveState();
-                    }}
-                  >
-                    <CloseIcon size={10} />
-                  </button>
-                </div>
-              </Show>
               <div class="agent-header-tabs">
                 <For each={props.task.agentIds}>
                   {(agentId, i) => {
@@ -474,31 +423,11 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                     when={tabsMode()}
                     fallback={
                       /* Currently side-by-side → click switches to tabs (one panel). */
-                      <svg
-                        width="13"
-                        height="13"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.3"
-                      >
-                        <rect x="2" y="2.75" width="12" height="10.5" rx="1.25" />
-                        <path d="M2 5.75 H14" />
-                      </svg>
+                      <TerminalAltIcon size={13} />
                     }
                   >
                     {/* Currently tabbed → click switches to side-by-side columns. */}
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.3"
-                    >
-                      <rect x="2" y="2.75" width="5" height="10.5" rx="1.25" />
-                      <rect x="9" y="2.75" width="5" height="10.5" rx="1.25" />
-                    </svg>
+                    <ColumnsIcon size={13} />
                   </Show>
                 </button>
               </Show>
@@ -550,7 +479,6 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
             </div>
           </div>
         </InfoBar>
-        {props.brief}
         <Show when={handoff()} keyed>
           {(request) => (
             <AgentHandoffComposer
@@ -591,9 +519,16 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                 tabsMode={tabsMode()}
                 visible={props.visible !== false && (!tabsMode() || visibleAgentId() === agentId)}
                 onSelect={() => selectAgent(agentId)}
-                onFileLink={(filePath) => {
-                  if (!props.onFileLink?.(filePath)) handleFileLink(filePath);
-                }}
+                fileLinkMenu={(filePath, line) =>
+                  fileLinkMenu(filePath, line, {
+                    worktreePath: props.task.worktreePath,
+                    openDialog: markdownViewer.show,
+                    openMarkdown: props.onFileLink ? routeMarkdown : undefined,
+                    openInSidePanel: props.onOpenInSidePanel,
+                    changes: props.changes,
+                  })
+                }
+                findBareFile={(name) => findBareFile(name, props.task)}
                 onEditAsDocument={store.documentWorkspacesEnabled ? editAsDocument : undefined}
                 onReview={props.onReview}
                 onOpenTour={props.onOpenTour}
@@ -622,14 +557,7 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
           </For>
         </div>
       </div>
-      <MarkdownViewerDialog
-        open={mdViewerOpen()}
-        onClose={() => setMdViewerOpen(false)}
-        content={mdViewerContent()}
-        fileName={mdViewerFileName()}
-        filePath={mdViewerFilePath()}
-        onEditAsDocument={store.documentWorkspacesEnabled ? editAsDocument : undefined}
-      />
+      {markdownViewer.view()}
       <Show when={pendingSwitch()}>
         {(mode) => (
           // Re-read on every render: the CLI on the other side may have exited
@@ -708,9 +636,7 @@ function AddAgentMenu(props: { taskId: string }) {
           padding: '0',
         }}
       >
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M8 2.75a.75.75 0 0 1 .75.75v3.75h3.75a.75.75 0 0 1 0 1.5H8.75v3.75a.75.75 0 0 1-1.5 0V8.75H3.5a.75.75 0 0 1 0-1.5h3.75V3.5A.75.75 0 0 1 8 2.75Z" />
-        </svg>
+        <PlusSmallIcon size={13} />
       </button>
       <Show when={open()}>
         <div
@@ -783,7 +709,8 @@ function AgentTerminalPane(props: {
   tabsMode: boolean;
   visible: boolean;
   onSelect: () => void;
-  onFileLink: (filePath: string) => void;
+  fileLinkMenu: (filePath: string, line: number | undefined) => FileLinkMenu;
+  findBareFile: (name: string) => Promise<string | undefined>;
   onEditAsDocument?: (filePath: string) => void;
   onReady: (agentId: string, focusFn: () => void) => void;
   onUnmount: (agentId: string) => void;
@@ -793,6 +720,7 @@ function AgentTerminalPane(props: {
 
   const dockerOverlayLabel = () => getTaskDockerOverlayLabel(props.task.dockerSource);
   const agent = () => store.agents[props.agentId];
+  const resumeWithFlags = createResumeWithFlags(() => props.agentId);
   const [terminalOpened, setTerminalOpened] = createSignal(
     untrack(() => !isAgentChat(props.task, props.agentId)),
   );
@@ -832,7 +760,7 @@ function AgentTerminalPane(props: {
         'flex-direction': 'column',
         background: theme.taskPanelBg,
       }}
-      onClick={(e) => {
+      onPointerDown={(e) => {
         e.stopPropagation();
         props.onSelect();
       }}
@@ -858,6 +786,7 @@ function AgentTerminalPane(props: {
           <span title={props.task.dockerImage}>{dockerOverlayLabel()}</span>
         </div>
       </Show>
+      <resumeWithFlags.Dialog />
       <Show when={agent()}>
         {(a) => (
           <>
@@ -1025,11 +954,34 @@ function AgentTerminalPane(props: {
                         showNotification(
                           'Resume failed. Your existing conversation was not replaced; review the terminal error before retrying.',
                         );
+                      const teleportId = props.task.teleportSessionId;
+                      const teleportRepo =
+                        teleportId && props.task.agentIds[0] === a().id && !a().resumed
+                          ? parseTeleportRepoMismatch(code.last_output)
+                          : null;
+                      if (teleportId && teleportRepo) {
+                        // Claude links don't name their repo, so the first try can
+                        // land in the wrong project; the CLI's refusal names it.
+                        retryTeleportInRepo(teleportId, teleportRepo);
+                        showNotification(
+                          `This web session belongs to ${teleportRepo}. Choose its project to teleport it.`,
+                        );
+                      }
                       markAgentExited(a().id, code);
                     }}
                     onData={(data) => markAgentOutput(a().id, data, props.task.id)}
-                    onFileLink={props.onFileLink}
+                    fileLinkMenu={props.fileLinkMenu}
+                    findBareFile={props.findBareFile}
                     onEditAsDocument={props.onEditAsDocument}
+                    paneActions={[
+                      {
+                        label: 'Resume with flags…',
+                        icon: () => <SyncIcon size={14} />,
+                        title:
+                          'Restart this agent and continue its conversation with extra CLI flags.',
+                        run: resumeWithFlags.open,
+                      },
+                    ]}
                     onPromptDetected={(text) => setLastPrompt(props.task.id, text, props.agentId)}
                     onReady={(focusFn) => {
                       terminalFocus = focusFn;
@@ -1045,163 +997,6 @@ function AgentTerminalPane(props: {
         )}
       </Show>
     </div>
-  );
-}
-
-function MarkdownViewerDialog(props: {
-  open: boolean;
-  onClose: () => void;
-  content: string;
-  fileName: string;
-  filePath: string;
-  onEditAsDocument?: (filePath: string) => void;
-}) {
-  const html = createHighlightedMarkdown(() => props.content);
-  const [copied, setCopied] = createSignal(false);
-  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
-  onCleanup(() => clearTimeout(copiedTimer));
-
-  function copyMarkdown() {
-    navigator.clipboard
-      .writeText(props.content)
-      .then(() => {
-        setCopied(true);
-        clearTimeout(copiedTimer);
-        copiedTimer = setTimeout(() => setCopied(false), 1500);
-      })
-      .catch((err: unknown) => {
-        logWarn('clipboard', 'Could not copy Markdown', { err: errMessage(err) });
-      });
-  }
-
-  return (
-    <Dialog
-      open={props.open}
-      onClose={props.onClose}
-      width="fit-content"
-      panelStyle={{
-        width: '80vw',
-        'max-width': '1200px',
-        height: '80vh',
-        overflow: 'hidden',
-        padding: '0',
-        gap: '0',
-        resize: 'both',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          'align-items': 'center',
-          gap: '10px',
-          padding: '12px 20px',
-          'border-bottom': `1px solid ${theme.border}`,
-          'flex-shrink': '0',
-        }}
-      >
-        <span
-          style={{
-            'font-size': sf(14),
-            color: theme.fg,
-            'font-weight': '600',
-            'font-family': "'JetBrains Mono', monospace",
-          }}
-        >
-          {props.fileName}
-        </span>
-        <span style={{ flex: '1' }} />
-        <button
-          onClick={copyMarkdown}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: copied() ? theme.success : theme.fgMuted,
-            cursor: 'pointer',
-            padding: '4px',
-            display: 'flex',
-            'align-items': 'center',
-            'border-radius': 'var(--radius-xs)',
-          }}
-          title={copied() ? 'Copied' : 'Copy Markdown'}
-        >
-          {copied() ? <CheckIcon size={16} /> : <CopyIcon size={16} />}
-        </button>
-        <Show when={props.filePath}>
-          <button
-            onClick={() => {
-              invoke(IPC.OpenPath, { filePath: props.filePath }).catch(console.error);
-            }}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: theme.fgMuted,
-              cursor: 'pointer',
-              padding: '4px',
-              display: 'flex',
-              'align-items': 'center',
-              'border-radius': 'var(--radius-xs)',
-            }}
-            title="Open in editor"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M3.5 2a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-3a.75.75 0 0 1 1.5 0v3A3 3 0 0 1 12.5 16h-9A3 3 0 0 1 0 12.5v-9A3 3 0 0 1 3.5 0h3a.75.75 0 0 1 0 1.5h-3ZM10 .75a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0V2.56L8.53 8.53a.75.75 0 0 1-1.06-1.06L13.44 1.5H10.75A.75.75 0 0 1 10 .75Z" />
-            </svg>
-          </button>
-        </Show>
-        <Show when={props.onEditAsDocument && isEditableDocumentPath(props.filePath)}>
-          <button
-            onClick={() => {
-              props.onEditAsDocument?.(props.filePath);
-              props.onClose();
-            }}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: theme.fgMuted,
-              cursor: 'pointer',
-              padding: '4px',
-              display: 'flex',
-              'align-items': 'center',
-              'border-radius': 'var(--radius-xs)',
-            }}
-            title={`Edit ${props.fileName} as a document (nothing is committed here)`}
-            aria-label="Edit as document"
-          >
-            <DocumentIcon size={16} />
-          </button>
-        </Show>
-        <button
-          onClick={() => props.onClose()}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: theme.fgMuted,
-            cursor: 'pointer',
-            padding: '4px',
-            display: 'flex',
-            'align-items': 'center',
-            'border-radius': 'var(--radius-xs)',
-          }}
-          title="Close"
-        >
-          <CloseIcon />
-        </button>
-      </div>
-      <div
-        style={{
-          flex: '1',
-          'overflow-y': 'auto',
-          padding: '28px 40px',
-        }}
-      >
-        <div
-          class="plan-markdown plan-markdown-dialog"
-          style={{ color: theme.fg, 'max-width': '100%' }}
-          // eslint-disable-next-line solid/no-innerhtml -- local markdown files from worktree
-          innerHTML={html()}
-        />
-      </div>
-    </Dialog>
   );
 }
 

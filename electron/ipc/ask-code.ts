@@ -1,7 +1,12 @@
 import { spawn, type ChildProcess } from 'child_process';
+import { existsSync, readFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 import type { BrowserWindow } from 'electron';
 import { validateCommand, ENV_BLOCK_LIST } from './pty.js';
 import { loadEnvFile } from './env-file.js';
+import { projectAgentEnv } from './project-env.js';
+import { warn as logWarn } from '../log.js';
 import { defaultCodexEffort, defaultCodexModel, listCodexModels } from './codex-models.js';
 import {
   ASK_CODE_CLAUDE_EFFORT,
@@ -42,6 +47,8 @@ interface AskCodeRequest {
   effort?: string;
   /** Env file configured for the agent behind the chosen provider, if any. */
   envFile?: string;
+  /** Project whose agent env vars apply, as set with `SetProjectAgentEnv`. */
+  projectId?: string;
 }
 
 const activeRequests = new RequestRegistry<ChildProcess>({
@@ -52,23 +59,73 @@ const activeRequests = new RequestRegistry<ChildProcess>({
 /**
  * The environment an ask-code CLI runs in. It is the same CLI an agent
  * terminal runs, so it needs the same credentials — otherwise configuring an
- * env file fixes the terminals and leaves this silently broken.
+ * env file fixes the terminals and leaves this silently broken. Project env
+ * vars override the file, as they do for agent terminals.
  */
-function askCodeEnv(envFile?: string): Record<string, string> {
+export function askCodeEnv(envFile?: string, projectId?: string): Record<string, string> {
   const filtered: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (v !== undefined) filtered[k] = v;
   }
-  if (envFile?.trim()) {
-    for (const [k, v] of Object.entries(loadEnvFile(envFile))) {
-      if (!ENV_BLOCK_LIST.has(k)) filtered[k] = v;
-    }
+  const fileEnv = envFile?.trim() ? loadEnvFile(envFile) : {};
+  for (const [k, v] of Object.entries({ ...fileEnv, ...projectAgentEnv(projectId) })) {
+    if (!ENV_BLOCK_LIST.has(k)) filtered[k] = v;
   }
   // Clear env vars that prevent nested agent sessions
   delete filtered.CLAUDECODE;
   delete filtered.CLAUDE_CODE_SESSION;
   delete filtered.CLAUDE_CODE_ENTRYPOINT;
   return filtered;
+}
+
+// Only what logs the CLI in: the rest of the file could run code (hooks) or
+// widen reads past the worktree (permissions.additionalDirectories).
+const LOGIN_SETTINGS = ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport'] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readUserSettings(env: Record<string, string>): Record<string, unknown> {
+  const file = join(env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'settings.json');
+  if (!existsSync(file)) return {};
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    return isRecord(parsed) ? parsed : {};
+  } catch (err) {
+    logWarn('askCode', 'Could not read the Claude settings for a review', {
+      file,
+      err: String(err),
+    });
+    return {};
+  }
+}
+
+/**
+ * A review runs `--restricted`, which skips the user's settings file, where
+ * their Claude login or endpoint may live, so its login part is passed back:
+ * the helper commands as `--settings`, and its `env` through the environment,
+ * where an API key in it stays out of the process list.
+ * shortcut: project and local settings stay skipped — pass them too if a
+ * project ever sets its login there.
+ */
+function reviewLogin(env: Record<string, string>): { args: string[]; env: Record<string, string> } {
+  const settings = readUserSettings(env);
+  const helpers = Object.fromEntries(
+    LOGIN_SETTINGS.filter((key) => typeof settings[key] === 'string').map((key) => [
+      key,
+      settings[key],
+    ]),
+  );
+  const extra = isRecord(settings.env) ? settings.env : {};
+  const loginEnv = { ...env };
+  for (const [key, value] of Object.entries(extra)) {
+    if (typeof value === 'string' && !ENV_BLOCK_LIST.has(key)) loginEnv[key] = value;
+  }
+  return {
+    args: Object.keys(helpers).length > 0 ? ['--settings', JSON.stringify(helpers)] : [],
+    env: loginEnv,
+  };
 }
 
 export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
@@ -105,6 +162,8 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
   }
 
   validateCommand('claude');
+  const baseEnv = askCodeEnv(envFile, args.projectId);
+  const login = args.purpose === 'review' ? reviewLogin(baseEnv) : { args: [], env: baseEnv };
 
   const proc = spawn(
     'claude',
@@ -118,16 +177,23 @@ export function askAboutCode(win: BrowserWindow, args: AskCodeRequest): void {
       // Named even when none is chosen, so the level shown is the one that runs.
       '--effort',
       args.effort || ASK_CODE_CLAUDE_EFFORT,
-      // Empty string disables all tool usage for quick Q&A responses
+      // Empty string disables all tool usage for quick Q&A responses. A review
+      // reads callers and tests outside the diff, so it may read but not run
+      // or change anything. Repo text steers what it reads, so reads stay in
+      // the worktree (--restricted) and nothing reaches an MCP server.
       '--tools',
-      '',
+      args.purpose === 'review' ? 'Read,Grep,Glob' : '',
+      ...(args.purpose === 'review' ? ['--restricted', '--strict-mcp-config', ...login.args] : []),
       '--no-session-persistence',
-      '--append-system-prompt',
+      // A title replaces Claude Code's prompt: appended to it, the repository
+      // context there (status, recent commits) leads Haiku to answer a vague
+      // prompt such as "what should we do next?" instead of naming it.
+      args.purpose === 'task-name' ? '--system-prompt' : '--append-system-prompt',
       askCodeSystemPrompt(args.purpose),
     ],
     {
       cwd,
-      env: askCodeEnv(envFile),
+      env: login.env,
       stdio: [isStructured ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     },
   );
@@ -232,9 +298,9 @@ function asText(value: unknown): string {
  * the prompt itself. Both halves go over stdin (`-`), which keeps a large tour
  * diff clear of the OS argument-size limit.
  *
- * An answer must come from the context the app supplied, the way `--tools ''`
- * keeps the Claude CLI to it, so the configured MCP servers and web search are
- * switched off. shortcut: Codex has no flag for its own shell tool, so the
+ * An answer must come from the context the app supplied (a review may also
+ * read the worktree), as the Claude CLI's tool flags ensure, so the configured
+ * MCP servers and web search are switched off. shortcut: Codex has no flag for its own shell tool, so the
  * read-only sandbox is the ceiling here — drop the tool itself once the CLI
  * supports it.
  */
@@ -261,7 +327,11 @@ function askAboutCodeCodex(args: AskCodeRequest, send: (msg: unknown) => void): 
       ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : []),
       '-',
     ],
-    { cwd: args.cwd, env: askCodeEnv(args.envFile), stdio: ['pipe', 'pipe', 'pipe'] },
+    {
+      cwd: args.cwd,
+      env: askCodeEnv(args.envFile, args.projectId),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
   );
 
   const session = AskCodeSession.start(

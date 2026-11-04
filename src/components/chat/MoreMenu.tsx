@@ -1,6 +1,6 @@
 import { For, Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { ChevronRightIcon, KebabIcon } from '../icons';
+import { CheckIcon, ChevronRightIcon, KebabIcon } from '../icons';
 import './MoreMenu.css';
 import { createAnchorEffect, placeBelow, type BelowAnchor } from '../../lib/floating';
 
@@ -13,9 +13,11 @@ interface MenuEntry {
   disabled?: boolean;
   /** Items sharing a group are listed under it as a heading. */
   group?: string;
+  /** Makes the entry one of a set of choices; the chosen one shows a check. */
+  checked?: boolean;
 }
 
-type MenuAction = MenuEntry & { run: () => void; children?: never };
+export type MenuAction = MenuEntry & { run: () => void; children?: never };
 type Submenu = MenuEntry & { children: MenuAction[]; run?: never };
 export type MoreMenuItem = MenuAction | Submenu;
 
@@ -36,7 +38,8 @@ function MenuButtons(props: {
           </Show>
           <button
             type="button"
-            role="menuitem"
+            role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+            aria-checked={item.checked}
             title={item.title}
             disabled={item.disabled}
             aria-haspopup={item.children ? 'menu' : undefined}
@@ -64,6 +67,9 @@ function MenuButtons(props: {
             >
               <ChevronRightIcon size={12} />
             </Show>
+            <Show when={item.checked}>
+              <CheckIcon size={12} />
+            </Show>
           </button>
         </>
       )}
@@ -88,7 +94,9 @@ function MenuList(props: {
   const [branchPosition, setBranchPosition] = createSignal({ top: 0, left: 0, maxHeight: 0 });
   const entries = (panel = menu) =>
     Array.from(
-      panel?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [],
+      panel?.querySelectorAll<HTMLButtonElement>(
+        ':is([role="menuitem"], [role="menuitemradio"]):not(:disabled)',
+      ) ?? [],
     );
 
   createAnchorEffect(
@@ -230,11 +238,37 @@ function MenuList(props: {
   );
 }
 
+/** A menu opened at a point, such as a right-click; its top-left corner sits there. */
+export function ContextMenu(props: {
+  items: MoreMenuItem[];
+  at: { x: number; y: number };
+  label: string;
+  onClose: () => void;
+}) {
+  const position = () => {
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    const height = props.items.length * ITEM_HEIGHT + MENU_PADDING;
+    // placeBelow right-aligns with its anchor, so the anchor spans one menu width from the point.
+    const anchor = { top: props.at.y, bottom: props.at.y, right: props.at.x + MENU_WIDTH };
+    return placeBelow(anchor, MENU_WIDTH, viewport, 12, height);
+  };
+  return (
+    <MenuList
+      items={props.items}
+      position={position()}
+      label={props.label}
+      onClose={props.onClose}
+    />
+  );
+}
+
 /** An action menu with an optional labelled trigger. */
 export function MoreMenu(props: {
   items: MoreMenuItem[];
   label?: string;
   icon?: JSX.Element;
+  /** Show only the icon; the label becomes the button's tooltip and name. */
+  iconOnly?: boolean;
   class?: string;
 }) {
   let button: HTMLButtonElement | undefined;
@@ -254,6 +288,7 @@ export function MoreMenu(props: {
         type="button"
         class={props.class ?? 'chat-more'}
         aria-label={props.label ?? 'More actions'}
+        title={props.iconOnly ? props.label : undefined}
         aria-haspopup="menu"
         aria-expanded={open()}
         onClick={(event) => {
@@ -261,9 +296,11 @@ export function MoreMenu(props: {
           setOpen(!open());
         }}
       >
-        <Show when={props.label} fallback={<KebabIcon size={14} />}>
-          {props.icon}
-          {props.label}
+        <Show when={!props.iconOnly} fallback={props.icon}>
+          <Show when={props.label} fallback={<KebabIcon size={14} />}>
+            {props.icon}
+            {props.label}
+          </Show>
         </Show>
       </button>
       <Show when={open()}>

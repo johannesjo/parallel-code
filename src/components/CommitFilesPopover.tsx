@@ -31,7 +31,7 @@ export function CommitFilesPopover(props: CommitFilesPopoverProps) {
           'max-height': `${POPOVER_MAX_HEIGHT}px`,
           overflow: 'hidden',
           'pointer-events': 'none',
-          'z-index': '1000',
+          'z-index': 'var(--z-modal)',
           background: theme.bgElevated,
           border: `1px solid ${theme.border}`,
           'border-radius': 'var(--radius-sm)',

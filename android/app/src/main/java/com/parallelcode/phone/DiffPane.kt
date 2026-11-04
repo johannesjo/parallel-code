@@ -36,7 +36,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,7 +47,7 @@ private const val MAX_FILE_LINES = 1500
 /** The task's changes against its base branch, file by file, as the desktop's diff view. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DiffPane(taskId: String, client: RemoteClient, modifier: Modifier) {
+fun DiffPane(taskId: String, client: PhoneClient, modifier: Modifier) {
     var reload by remember { mutableIntStateOf(0) }
     var files by remember(taskId) { mutableStateOf<List<DiffFile>?>(null) }
     var truncated by remember(taskId) { mutableStateOf(false) }
@@ -150,7 +149,7 @@ private fun DiffFileRow(file: DiffFile) {
             Text(
                 file.path,
                 Modifier.weight(1f),
-                fontFamily = FontFamily.Monospace,
+                fontFamily = AppFonts.mono,
                 fontSize = 12.sp,
                 maxLines = 2,
                 overflow = TextOverflow.StartEllipsis,
@@ -193,7 +192,7 @@ private fun DiffLines(file: DiffFile) {
                     line.ifEmpty { " " },
                     Modifier.background(bg),
                     color = fg,
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = AppFonts.mono,
                     fontSize = 11.sp,
                     lineHeight = 14.sp,
                     softWrap = false,

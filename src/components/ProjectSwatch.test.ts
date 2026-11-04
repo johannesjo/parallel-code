@@ -18,4 +18,14 @@ describe('ProjectSwatch', () => {
     expect(html).toContain('height:6px');
     expect(html).toContain('aria-hidden="true"');
   });
+
+  it('draws the project icon in the project color instead of the square', () => {
+    const html = renderToString(() => ProjectSwatch({ color: 'red', icon: 'terminal', size: 8 }));
+
+    expect(html).toContain('<svg');
+    expect(html).toContain('color:red');
+    expect(html).toContain('width="12"');
+    expect(html).not.toContain('background:red');
+    expect(html).toContain('aria-hidden="true"');
+  });
 });

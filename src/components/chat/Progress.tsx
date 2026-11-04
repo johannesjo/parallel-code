@@ -38,26 +38,31 @@ export function Progress(props: { state: AgentChatState }) {
           </ol>
         </details>
       </Show>
-      <Show when={working() || props.state.interrupted}>
-        <div class="chat-progress">
-          <Show when={working() && !props.state.requests.length}>
-            <span class="inline-spinner" aria-hidden="true" />
-          </Show>
+      <div class="chat-progress">
+        <Show when={working() || props.state.interrupted}>
+          <span class="chat-progress-indicator" aria-hidden="true">
+            <Show when={working() && !props.state.requests.length}>
+              <span class="inline-spinner" />
+            </Show>
+          </span>
           {/* The clock stays outside the live region, or it is re-announced every second. */}
           <span role="status">
             {props.state.requests.length
               ? 'Waiting for your input'
               : working()
-                ? running()?.activity?.label || 'Working…'
+                ? 'Working…'
                 : 'Response stopped'}
+            <Show when={working() && !props.state.requests.length && running()?.activity?.label}>
+              {(label) => <span class="chat-progress-detail"> · {label()}</span>}
+            </Show>
           </span>
           <Show when={working() && elapsed() !== undefined}>
             <time>
               {Math.floor((elapsed() ?? 0) / 60)}:{String((elapsed() ?? 0) % 60).padStart(2, '0')}
             </time>
           </Show>
-        </div>
-      </Show>
+        </Show>
+      </div>
     </>
   );
 }

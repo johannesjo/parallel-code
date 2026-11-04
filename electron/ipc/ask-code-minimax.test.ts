@@ -192,20 +192,19 @@ describe('askAboutCodeMinimax', () => {
       expect(body).not.toHaveProperty('service_tier');
       if (model === 'MiniMax-M3') {
         expect(body.thinking).toEqual({ type: 'disabled' });
-        expect(body.reasoning_split).toBe(true);
       } else {
         expect(body).not.toHaveProperty('thinking');
-        expect(body).not.toHaveProperty('reasoning_split');
       }
+      expect(body.reasoning_split).toBe(true);
     },
   );
 
-  it('does not forward separated thinking into a structured answer', async () => {
+  it('does not forward inline thinking into a structured answer', async () => {
     const { win, messages } = makeMockWin();
     mockFetch.mockResolvedValueOnce(
       makeStreamResponse(
-        'data: {"choices":[{"delta":{"reasoning_content":"<think>private reasoning</think>"}}]}\n\n' +
-          sseChunk('{"cards":[]}') +
+        sseChunk('<thi') +
+          sseChunk('nk>private reasoning</think>{"cards":[]}') +
           'data: [DONE]\n\n',
       ),
     );

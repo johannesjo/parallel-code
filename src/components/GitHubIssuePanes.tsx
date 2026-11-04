@@ -5,6 +5,7 @@ import { GITHUB_BATCH_LIMIT } from '../store/github';
 import type { GitHubIssueSummary } from '../ipc/types';
 import { sameGitHubIssue } from '../lib/github-url';
 import { countLabel } from '../lib/plural';
+import { formatRelativeAge } from '../lib/relativeAge';
 import { GitHubListView, useShownGitHubList } from './GitHubCustomLists';
 import { GitHubIssueDetail } from './GitHubIssueDetail';
 import { GitHubItemBadges } from './GitHubItemBadges';
@@ -26,6 +27,9 @@ export interface GitHubIssueListPaneProps {
 }
 
 export function GitHubIssueListPane(props: GitHubIssueListPaneProps) {
+  // The visible date follows the sort, so the column explains the order.
+  const rowDate = (issue: GitHubIssueSummary) =>
+    props.view.query.sort.startsWith('created') ? issue.createdAt : issue.updatedAt;
   return (
     <div class="github-issues-listpane">
       <Show when={props.shownList}>
@@ -55,16 +59,28 @@ export function GitHubIssueListPane(props: GitHubIssueListPaneProps) {
             <button onClick={() => props.refresh()}>Retry</button>
           </div>
         </Show>
+        {/* Before the first result, skeletons stand in for rows; afterwards the
+            stale rows stay put (dimmed) so a refresh never pushes the list down. */}
         <Show when={props.loading}>
-          <div role="status" class="github-issues-loading">
-            Loading issues…
-            <span class="github-issues-skeleton" aria-hidden="true" />
-            <span class="github-issues-skeleton" aria-hidden="true" />
-            <span class="github-issues-skeleton" aria-hidden="true" />
-          </div>
+          <Show
+            when={props.view.result}
+            fallback={
+              <div role="status" class="github-issues-loading">
+                Loading issues…
+                <span class="github-issues-skeleton" aria-hidden="true" />
+                <span class="github-issues-skeleton" aria-hidden="true" />
+                <span class="github-issues-skeleton" aria-hidden="true" />
+              </div>
+            }
+          >
+            <span role="status" class="dialog-sr-only">
+              Loading issues…
+            </span>
+          </Show>
         </Show>
         <div
           class="github-issues-rows"
+          aria-busy={props.loading || undefined}
           ref={props.listRef}
           onScroll={(e) => {
             props.onScroll(e.currentTarget.scrollTop);
@@ -83,41 +99,44 @@ export function GitHubIssueListPane(props: GitHubIssueListPaneProps) {
                     aria-label={`Select #${issue.number}: ${issue.title}`}
                     checked={props.view.selected.some((i) => i.url === issue.url)}
                     disabled={
-                      props.loading ||
-                      (props.view.selected.length >= GITHUB_BATCH_LIMIT &&
-                        !props.view.selected.some((i) => i.url === issue.url))
+                      props.view.selected.length >= GITHUB_BATCH_LIMIT &&
+                      !props.view.selected.some((i) => i.url === issue.url)
                     }
                     onChange={() => props.toggleSelected(issue)}
                   />
                   <button
                     type="button"
                     class="github-issue-row"
-                    disabled={props.loading}
                     aria-pressed={props.view.selectedUrl === issue.url}
                     onClick={() => props.setView('selectedUrl', issue.url)}
                   >
+                    <span class="github-issue-row-head">
+                      <strong>{issue.title}</strong>
+                      <time
+                        dateTime={rowDate(issue)}
+                        title={`Created ${new Date(issue.createdAt).toLocaleString()}; updated ${new Date(issue.updatedAt).toLocaleString()}`}
+                      >
+                        {shortDate(rowDate(issue))}
+                      </time>
+                    </span>
                     <span class="github-issue-row-meta">
                       <span class={`github-issue-state ${issue.state}`}>
-                        <GitHubItemBadges item={issue} /> #{issue.number}
+                        #{issue.number}
+                        {/* Open is the usual case; only the exception is spelled out. */}
+                        <Show when={issue.state !== 'open'}> · {issue.state}</Show>
                       </span>
-                      <span title={`Created ${issue.createdAt}; updated ${issue.updatedAt}`}>
-                        {props.view.query.sort.startsWith('created') ? 'Created' : 'Updated'}{' '}
-                        {new Date(
-                          props.view.query.sort.startsWith('created')
-                            ? issue.createdAt
-                            : issue.updatedAt,
-                        ).toLocaleDateString()}
-                      </span>
-                    </span>
-                    <strong>{issue.title}</strong>
-                    <span class="github-issue-row-meta">
-                      {issue.assignees.length
-                        ? issue.assignees.map((a) => `@${a}`).join(', ')
-                        : `by @${issue.author}`}
+                      <GitHubItemBadges item={issue} />
                       <span>
-                        {countLabel(issue.commentCount, 'comment')} ·{' '}
-                        {countLabel(issue.reactionCount, 'reaction')}
+                        {issue.assignees.length
+                          ? issue.assignees.map((a) => `@${a}`).join(', ')
+                          : `by @${issue.author}`}
                       </span>
+                      <Show when={issue.commentCount}>
+                        <span>{countLabel(issue.commentCount, 'comment')}</span>
+                      </Show>
+                      <Show when={issue.reactionCount}>
+                        <span>{countLabel(issue.reactionCount, 'reaction')}</span>
+                      </Show>
                       <Show
                         when={Object.values(store.tasks).some(
                           (t) =>
@@ -177,6 +196,8 @@ export function GitHubIssueListPane(props: GitHubIssueListPaneProps) {
 export function GitHubIssueDetailPane(props: {
   projectId: string;
   selectedUrl: string | null;
+  /** Bumped by the page's Refresh to reload the open item. */
+  revision: number;
   refresh: () => void;
 }) {
   return (
@@ -196,9 +217,24 @@ export function GitHubIssueDetailPane(props: {
         }
       >
         {(url) => (
-          <GitHubIssueDetail url={url} projectId={props.projectId} onChanged={props.refresh} />
+          <GitHubIssueDetail
+            url={url}
+            projectId={props.projectId}
+            revision={props.revision}
+            onChanged={props.refresh}
+          />
         )}
       </Show>
     </section>
   );
+}
+
+const MONTH_MS = 30 * 24 * 60 * 60 * 1_000;
+
+/** Recent dates read as an age ("3d"); older ones as a date, where an age stops helping. */
+function shortDate(iso: string): string {
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) return '';
+  const now = Date.now();
+  return now - time < MONTH_MS ? formatRelativeAge(time, now) : new Date(time).toLocaleDateString();
 }

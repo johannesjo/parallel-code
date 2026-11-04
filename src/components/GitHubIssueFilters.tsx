@@ -39,8 +39,27 @@ export function createIssueFilters(
     setDraft({ search: '', label: '', assignee: '', author: '' });
     changeFilters({ kind: 'all', state: 'open', sort: 'updated-desc' });
   }
+  /** True when nothing narrows the results, so there is nothing to reset. */
+  function isDefault() {
+    const q = currentQuery();
+    return (
+      !q.search &&
+      !q.label &&
+      !q.assignee &&
+      !q.author &&
+      !draft.search &&
+      !draft.label &&
+      !draft.assignee &&
+      !draft.author &&
+      !customAssignee() &&
+      q.kind === 'all' &&
+      q.state === 'open' &&
+      q.sort === 'updated-desc'
+    );
+  }
   return {
     draft,
+    isDefault,
     setDraft,
     customAssignee,
     setCustomAssignee,
@@ -79,104 +98,94 @@ export function GitHubIssueFilters(props: { view: BrowserSession; filters: Issue
           props.filters.changeFilters();
         }}
       >
-        <div class="github-issues-search">
+        <input
+          name="search"
+          type="search"
+          aria-label="Search issues"
+          placeholder="Search issues and PRs…"
+          maxLength={200}
+          value={props.filters.draft.search}
+          onInput={(e) => props.filters.textFilter('search', e.currentTarget.value)}
+        />
+        {/* Each control names itself through its options or placeholder, so the
+            row needs no visible labels; aria-labels carry the field names. */}
+        <select
+          aria-label="Issue state"
+          value={props.view.query.state}
+          onChange={(e) =>
+            props.filters.changeFilters({
+              state: e.currentTarget.value as GitHubIssueQuery['state'],
+            })
+          }
+        >
+          <option value="open">Open</option>
+          <option value="closed">Closed / merged</option>
+          <option value="all">All states</option>
+        </select>
+        <select
+          aria-label="Filter by label"
+          value={props.filters.draft.label}
+          onChange={(e) => {
+            props.filters.setDraft('label', e.currentTarget.value);
+            props.filters.changeFilters();
+          }}
+        >
+          <option value="">Any label</option>
+          <option value="@none">No labels</option>
+          <For each={props.view.result?.labels ?? []}>
+            {(label) => <option value={label}>{label}</option>}
+          </For>
+        </select>
+        <select
+          aria-label="Filter by assignee"
+          value={props.filters.customAssignee() ? 'custom' : props.filters.draft.assignee}
+          onChange={(e) => {
+            const value = e.currentTarget.value;
+            props.filters.setCustomAssignee(value === 'custom');
+            props.filters.setDraft('assignee', value === 'custom' ? '' : value);
+            props.filters.changeFilters();
+          }}
+        >
+          <option value="">Any assignee</option>
+          <option value="@none">Unassigned</option>
+          <option value="@me">Assigned to me</option>
+          <option value="custom">Specific assignee…</option>
+        </select>
+        <Show when={props.filters.customAssignee()}>
           <input
-            name="search"
-            type="search"
-            aria-label="Search issues"
-            placeholder="Search issues and PRs…"
-            maxLength={200}
-            value={props.filters.draft.search}
-            onInput={(e) => props.filters.textFilter('search', e.currentTarget.value)}
-          />
-          <button type="button" onClick={() => props.filters.resetFilters()}>
-            <CloseIcon /> Reset
-          </button>
-        </div>
-        <label>
-          State
-          <select
-            aria-label="Issue state"
-            value={props.view.query.state}
-            onChange={(e) =>
-              props.filters.changeFilters({
-                state: e.currentTarget.value as GitHubIssueQuery['state'],
-              })
-            }
-          >
-            <option value="open">Open</option>
-            <option value="closed">Closed / merged</option>
-            <option value="all">All states</option>
-          </select>
-        </label>
-        <label>
-          Label
-          <select
-            aria-label="Filter by label"
-            value={props.filters.draft.label}
-            onChange={(e) => {
-              props.filters.setDraft('label', e.currentTarget.value);
-              props.filters.changeFilters();
-            }}
-          >
-            <option value="">Any label</option>
-            <option value="@none">No labels</option>
-            <For each={props.view.result?.labels ?? []}>
-              {(label) => <option value={label}>{label}</option>}
-            </For>
-          </select>
-        </label>
-        <label>
-          Assignee
-          <select
-            aria-label="Filter by assignee"
-            value={props.filters.customAssignee() ? 'custom' : props.filters.draft.assignee}
-            onChange={(e) => {
-              const value = e.currentTarget.value;
-              props.filters.setCustomAssignee(value === 'custom');
-              props.filters.setDraft('assignee', value === 'custom' ? '' : value);
-              props.filters.changeFilters();
-            }}
-          >
-            <option value="">Anyone</option>
-            <option value="@none">Unassigned</option>
-            <option value="@me">Assigned to me</option>
-            <option value="custom">Specific user…</option>
-          </select>
-          <Show when={props.filters.customAssignee()}>
-            <input
-              aria-label="Assignee username"
-              placeholder="GitHub username"
-              maxLength={100}
-              value={props.filters.draft.assignee}
-              onInput={(e) => props.filters.textFilter('assignee', e.currentTarget.value)}
-            />
-          </Show>
-        </label>
-        <label>
-          Author
-          <input
-            aria-label="Filter by author"
-            placeholder="Anyone"
+            aria-label="Assignee username"
+            placeholder="Assignee username"
             maxLength={100}
-            value={props.filters.draft.author}
-            onInput={(e) => props.filters.textFilter('author', e.currentTarget.value)}
+            value={props.filters.draft.assignee}
+            onInput={(e) => props.filters.textFilter('assignee', e.currentTarget.value)}
           />
-        </label>
-        <label>
-          Sort
-          <select
-            aria-label="Sort issues"
-            value={props.view.query.sort}
-            onChange={(e) =>
-              props.filters.changeFilters({ sort: e.currentTarget.value as TriageSort })
-            }
-          >
-            <For each={Object.entries(TRIAGE_SORTS)}>
-              {([sort, label]) => <option value={sort}>{label}</option>}
-            </For>
-          </select>
-        </label>
+        </Show>
+        <input
+          aria-label="Filter by author"
+          placeholder="Any author"
+          maxLength={100}
+          value={props.filters.draft.author}
+          onInput={(e) => props.filters.textFilter('author', e.currentTarget.value)}
+        />
+        <select
+          aria-label="Sort issues"
+          value={props.view.query.sort}
+          onChange={(e) =>
+            props.filters.changeFilters({ sort: e.currentTarget.value as TriageSort })
+          }
+        >
+          <For each={Object.entries(TRIAGE_SORTS)}>
+            {([sort, label]) => <option value={sort}>{label}</option>}
+          </For>
+        </select>
+        {/* Hidden, not removed, so the row keeps its width when filters change. */}
+        <button
+          type="button"
+          style={{ visibility: props.filters.isDefault() ? 'hidden' : undefined }}
+          onClick={() => props.filters.resetFilters()}
+        >
+          <CloseIcon /> Reset
+        </button>
       </form>
     </>
   );

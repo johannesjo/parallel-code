@@ -6,6 +6,7 @@ import type {
   PrFailedCheck,
   PrReviewFeedback,
 } from '../ipc/types';
+import { DISPLAY_TASK_NAME_MAX_LENGTH, truncateOnWordBoundary } from './clean-task-name';
 
 // Content fetched from GitHub is written by anyone who can comment; the agent
 // must not follow instructions embedded in it.
@@ -18,6 +19,8 @@ const MAX_COMMENT_CHARS = 4000;
 interface PrRefLike {
   number: number;
   url: string;
+  /** Nested repository folder the PR belongs to, when it isn't the task's own repo. */
+  repo?: string;
 }
 
 export function buildIssuePrompt(issue: GitHubIssueDetails): string {
@@ -37,8 +40,11 @@ export function buildPrTaskPrompt(pr: Pick<GitHubWorkItem, 'number' | 'title' | 
   return `Review pull request #${pr.number}: ${pr.title}\n${pr.url}`;
 }
 
-export function workItemTaskName(item: Pick<GitHubWorkItem, 'number' | 'title'>): string {
-  return `#${item.number} ${item.title}`;
+export function workItemTaskName(item: Pick<GitHubWorkItem, 'kind' | 'number' | 'title'>): string {
+  const prefix = `${item.kind === 'pr' ? 'PR' : 'Issue'} ${item.number}: `;
+  return (
+    prefix + truncateOnWordBoundary(item.title.trim(), DISPLAY_TASK_NAME_MAX_LENGTH - prefix.length)
+  );
 }
 
 export function buildFailedChecksPrompt(pr: PrRefLike, checks: PrFailedCheck[]): string {
@@ -51,6 +57,9 @@ export function buildFailedChecksPrompt(pr: PrRefLike, checks: PrFailedCheck[]):
   );
   return [
     `CI failed on pull request #${pr.number} (${pr.url}).`,
+    ...(pr.repo
+      ? [`The pull request is in the nested repository \`${pr.repo}/\`; fix and commit there.`]
+      : []),
     'Find the root cause of each failing check, fix it, and run the relevant checks locally before committing.',
     '',
     UNTRUSTED_NOTE,
