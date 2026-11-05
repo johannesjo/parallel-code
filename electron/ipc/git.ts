@@ -2,6 +2,7 @@ import { execFile, execFileSync as _execFileSync, spawn } from 'child_process';
 import { createHash } from 'crypto';
 import { promisify } from 'util';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import type { Notify } from './notify.js';
 import { KANBAN_FILE } from './kanban.js';
@@ -1527,30 +1528,100 @@ export function blockingStatusLines(porcelain: string): string[] {
 }
 
 /**
+ * The board as committed at HEAD, with the checkout's line-ending filters
+ * applied so it compares with the working copy (CRLF on many Windows
+ * checkouts); empty when HEAD has none (untracked or absent).
+ */
+async function committedBoard(mergeRoot: string): Promise<string> {
+  const opts = { cwd: mergeRoot, maxBuffer: MAX_BUFFER };
+  const { stdout: entry } = await exec(
+    'git',
+    ['ls-tree', '--name-only', 'HEAD', '--', KANBAN_FILE],
+    opts,
+  );
+  if (!entry.trim()) return '';
+  const { stdout } = await exec('git', ['cat-file', '--filters', `HEAD:${KANBAN_FILE}`], opts);
+  return stdout;
+}
+
+/**
+ * Three-way merge of the local board edits onto the board a merge committed,
+ * via `git merge-file`. Null when the two sides' edits overlap.
+ */
+async function mergeBoardText(
+  mergeRoot: string,
+  sides: { local: Buffer; base: string; merged: string },
+): Promise<string | null> {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'kanban-merge-'));
+  const files = [path.join(dir, 'local'), path.join(dir, 'base'), path.join(dir, 'merged')];
+  try {
+    await fs.promises.writeFile(files[0], sides.local);
+    await fs.promises.writeFile(files[1], sides.base);
+    await fs.promises.writeFile(files[2], sides.merged);
+    const { stdout } = await exec('git', ['merge-file', '-p', ...files], {
+      cwd: mergeRoot,
+      maxBuffer: MAX_BUFFER,
+    });
+    return stdout;
+  } catch (err) {
+    // merge-file exits with the number of conflicts (1-127); anything else is a real failure.
+    const code = (err as { code?: unknown }).code;
+    if (typeof code === 'number' && code > 0 && code < 128) return null;
+    throw err;
+  } finally {
+    await fs.promises.rm(dir, { recursive: true, force: true });
+  }
+}
+
+const KANBAN_CLASH_WARNING =
+  `${KANBAN_FILE} keeps your local edits: the board changes the task committed ` +
+  `could not be combined with them and are only in the commit.`;
+
+/**
  * Moves unstaged Kanban board edits out of the way for a merge and returns
  * a function that puts them back. The file returns to its committed state (or
  * is removed when untracked), so the merge, its checkout and any recovery
- * (`reset --hard`) run on a clean tree and can never touch the board's edits;
- * the saved text is written back afterwards whatever the merge did. If the
- * merge changed the board too, the local board wins and the merged version
- * stays in the commit, visible as a diff.
+ * (`reset --hard`) run on a clean tree and can never touch the board's edits.
+ *
+ * Putting them back compares the board at HEAD before and after the merge.
+ * Unchanged: the saved text is written back as is. Changed (the task branch
+ * committed board edits): the saved edits are merged onto the new board with
+ * `git merge-file`, so the branch's changes are not reverted in the working
+ * copy (#337). When the edits overlap, the saved text is written back and the
+ * function resolves to a warning naming the board, since the file then lacks
+ * changes that are in the commit.
  */
 export async function setAsideKanbanEdits(
   mergeRoot: string,
   porcelain: string,
-): Promise<() => Promise<void>> {
+): Promise<() => Promise<string | undefined>> {
   const line = porcelain.split('\n').find(isUnstagedKanbanLine);
-  if (!line) return async () => {};
+  if (!line) return async () => undefined;
   const target = path.join(mergeRoot, KANBAN_FILE);
   const saved = await fs.promises.readFile(target);
+  const base = await committedBoard(mergeRoot);
   if (line.startsWith('??')) await fs.promises.unlink(target);
   else await exec('git', ['checkout', '--', KANBAN_FILE], { cwd: mergeRoot });
   return async () => {
+    let text: Buffer | string = saved;
+    let warning: string | undefined;
     try {
-      atomicWriteFileSync(target, saved);
+      const merged = await committedBoard(mergeRoot);
+      if (merged !== base) {
+        const combined = await mergeBoardText(mergeRoot, { local: saved, base, merged });
+        if (combined === null) warning = KANBAN_CLASH_WARNING;
+        else text = combined;
+      }
+    } catch (err) {
+      console.warn(`Failed to merge ${KANBAN_FILE} edits after merge:`, err);
+      warning = KANBAN_CLASH_WARNING;
+    }
+    try {
+      atomicWriteFileSync(target, text);
     } catch (err) {
       console.warn(`Failed to restore ${KANBAN_FILE} after merge:`, err);
     }
+    return warning;
   };
 }
 
@@ -2797,6 +2868,12 @@ export async function mergeTask(
       restored = true;
       return restoreLocal(branchRestoreFailed);
     };
+    // Same once-only rule for the board: on failure its warning joins the error.
+    let boardRestored = false;
+    const putBoardBack = () => {
+      boardRestored = true;
+      return restoreKanban();
+    };
     let result: MergeResult;
     let warning: string | undefined;
     try {
@@ -2893,13 +2970,15 @@ export async function mergeTask(
       result = { main_branch: mainBranch, lines_added: linesAdded, lines_removed: linesRemoved };
     } catch (e) {
       // The merge error alone would leave the user unaware their changes sit in a stash.
-      const kept = await putBack();
+      // A merge can land and a later step (worktree cleanup) still fail.
+      const kept = [await putBack(), await putBoardBack()].filter(Boolean).join(' ');
       if (kept) throw new Error(`${e instanceof Error ? e.message : String(e)} ${kept}`);
       throw e;
     } finally {
       // After restoreBranch: the changes go back onto the commit they were made on.
       if (!restored) warning = await putBack();
-      await restoreKanban();
+      const boardWarning = boardRestored ? undefined : await putBoardBack();
+      if (boardWarning) warning = warning ? `${warning} ${boardWarning}` : boardWarning;
     }
     return warning ? { ...result, warning } : result;
   });
