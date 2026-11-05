@@ -12,6 +12,9 @@ import {
 import { setFeatureHintsEnabled } from '../../store/onboarding';
 import { SuperProductivitySettings } from '../SuperProductivitySettings';
 import { SyncIcon } from '../icons';
+import { invoke } from '../../lib/ipc';
+import { IPC } from '../../../electron/ipc/channels';
+import { buildIssueUrl, describeRuntime, type IssueKind } from '../../lib/issue-report';
 import {
   SettingsCard,
   SettingsCheckboxRow,
@@ -20,7 +23,7 @@ import {
 } from './settings-ui';
 
 export function GeneralSettings() {
-  // Styles shared across the Updates section's rows, buttons and messages.
+  // Styles shared across the Updates and Feedback sections' rows, buttons and messages.
   const updateRowStyle = {
     display: 'flex',
     'align-items': 'center',
@@ -38,6 +41,15 @@ export function GeneralSettings() {
     opacity: disabled ? '0.6' : '1',
   });
   const updateMessageStyle = (color: string) => ({ 'font-size': '12px', color });
+
+  const openIssue = (kind: IssueKind) => {
+    const url = buildIssueUrl(kind, {
+      version: updateStatus().currentVersion,
+      runtime: describeRuntime(navigator.userAgent),
+      agents: store.availableAgents.filter((a) => a.available !== false).map((a) => a.name),
+    });
+    void invoke(IPC.ShellOpenExternal, { url });
+  };
 
   // Phases that permit a manual check. An allow-list keeps a future phase
   // from defaulting to "shown" the way excluding non-checkable phases would.
@@ -97,6 +109,34 @@ export function GeneralSettings() {
       </SettingsSection>
       <SettingsSection title="Super Productivity">
         <SuperProductivitySettings />
+      </SettingsSection>
+      <SettingsSection title="Feedback">
+        <SettingsCard gap="10px">
+          <div style={{ ...updateRowStyle, 'flex-wrap': 'wrap' }}>
+            <span
+              style={{ ...updateMessageStyle(theme.fgSubtle), flex: '1', 'min-width': '200px' }}
+            >
+              Opens a GitHub issue with the app version, OS and detected agents filled in. Nothing
+              is sent until you submit it.
+            </span>
+            <div style={{ display: 'flex', gap: '8px', 'flex-shrink': '0' }}>
+              <button
+                type="button"
+                onClick={() => openIssue('bug')}
+                style={updateSecondaryButtonStyle(false)}
+              >
+                Report a bug
+              </button>
+              <button
+                type="button"
+                onClick={() => openIssue('feature')}
+                style={updateSecondaryButtonStyle(false)}
+              >
+                Suggest a feature
+              </button>
+            </div>
+          </div>
+        </SettingsCard>
       </SettingsSection>
       <SettingsSection title="Diagnostics">
         <SettingsCheckboxRow
