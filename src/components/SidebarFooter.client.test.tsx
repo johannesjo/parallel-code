@@ -74,3 +74,16 @@ describe('SidebarFooter star request', () => {
     expect(starTip()).toBeUndefined();
   });
 });
+
+describe('SidebarFooter contribute entry', () => {
+  it('opens the contribute dialog, with or without sidebar tips', () => {
+    setStore('showSidebarTips', false);
+    mountWithMergesToday(0);
+
+    button('Contribute')?.click();
+
+    expect(document.querySelector('[role="dialog"] h2')?.textContent).toBe(
+      'Contribute to Parallel Code',
+    );
+  });
+});

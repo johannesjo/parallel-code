@@ -13,8 +13,9 @@ import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { theme } from '../lib/theme';
 import { alt, mod } from '../lib/platform';
+import { ContributeDialog } from './ContributeDialog';
 import { FeatureHint } from './FeatureHint';
-import { IdeaIcon, KeyboardIcon, PhoneIcon, ScrambleIcon } from './icons';
+import { GitPullRequestIcon, IdeaIcon, KeyboardIcon, PhoneIcon, ScrambleIcon } from './icons';
 
 const REPO_URL = 'https://github.com/johannesjo/parallel-code';
 /** Merges in a day that show the app is earning its keep, so asking for a star is fair. */
@@ -23,6 +24,7 @@ const STAR_HINT_MIN_MERGES = 3;
 /** Compact utilities and optional activity totals, shared by every theme. */
 export function SidebarFooter(props: { onConnectPhone: () => void }) {
   const [clock, setClock] = createSignal(Date.now());
+  const [showContribute, setShowContribute] = createSignal(false);
   const dayTimer = setInterval(() => setClock(Date.now()), 60_000);
   onCleanup(() => clearInterval(dayTimer));
   const mergedTasksToday = createMemo(() => {
@@ -103,6 +105,15 @@ export function SidebarFooter(props: { onConnectPhone: () => void }) {
             <IdeaIcon size={14} />
             Thinking
           </button>
+          <button
+            onClick={() => setShowContribute(true)}
+            title="Contribute to Parallel Code: pick an upstream issue and work on it as a task"
+            type="button"
+            class="sidebar-footer-action"
+          >
+            <GitPullRequestIcon size={14} />
+            Contribute
+          </button>
 
           <Show when={store.showSidebarTips}>
             <button
@@ -149,6 +160,7 @@ export function SidebarFooter(props: { onConnectPhone: () => void }) {
       >
         If Parallel Code is saving you time, a star on GitHub helps other developers find it.
       </FeatureHint>
+      <ContributeDialog open={showContribute()} onClose={() => setShowContribute(false)} />
     </div>
   );
 }

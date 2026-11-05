@@ -109,6 +109,7 @@ export const [store, setStore] = createStore<AppStore>({
   },
   autoStartRemoteAccess: false,
   githubIssuesProjectId: null,
+  githubIssuesLabel: null,
   kanbanProjectId: null,
   showArena: false,
   thinkingSpace: null,

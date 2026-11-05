@@ -5,6 +5,8 @@ const listOpenPrUrlsForBranch = vi.fn<(cwd: string, branch: string) => Promise<s
 
 vi.mock('./gh.js', () => ({ runGh }));
 vi.mock('../ipc/pr-checks.js', () => ({ listOpenPrUrlsForBranch }));
+const resolvePrHead = vi.fn((_cwd: string, branch: string) => Promise.resolve(branch));
+vi.mock('./pr-head.js', () => ({ resolvePrHead }));
 
 const { createPullRequest } = await import('./create-pull-request.js');
 
@@ -45,6 +47,19 @@ describe('createPullRequest', () => {
     ]);
     expect(cwd).toBe('/repo/wt');
     expect(input).toBe(OPTIONS.body);
+  });
+
+  it('names the fork owner in --head when the branch lives on a fork', async () => {
+    runGh.mockResolvedValue(URL);
+    resolvePrHead.mockResolvedValueOnce('jane:task/fix-login');
+    await createPullRequest(OPTIONS);
+    expect(resolvePrHead).toHaveBeenCalledWith('/repo/wt', 'task/fix-login');
+    expect(runGh.mock.calls[0][0].slice(0, 4)).toEqual([
+      'pr',
+      'create',
+      '--head',
+      'jane:task/fix-login',
+    ]);
   });
 
   it('omits --draft for a ready PR', async () => {

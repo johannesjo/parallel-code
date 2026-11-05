@@ -779,6 +779,8 @@ export interface AppStore {
   /** Persisted: start the remote (Connect Phone) server automatically on launch. */
   autoStartRemoteAccess: boolean;
   githubIssuesProjectId: string | null;
+  /** Label the next issue browser session starts filtered by; consumed when the page opens. */
+  githubIssuesLabel: string | null;
   /** Project whose Kanban board occupies the task area. */
   kanbanProjectId: string | null;
   showArena: boolean;
