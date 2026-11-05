@@ -28,7 +28,9 @@ import { setPrefillPrompt } from './tasks';
 import { kanbanAgentTaskId } from '../documents/task-id';
 import { setTaskProjectFilter, toggleNewTaskPanel } from './navigation';
 import { showNotification } from './notification';
-import { getPrChecks } from './pr-checks-state';
+import { getTaskExtraPrs } from './pr-checks-state';
+import { taskPrsKnown, taskPrsProbed } from './pr-checks';
+import { taskPrsChecks } from './task-prs';
 import { getProjectPath, isPlannableProject } from './projects';
 import { taskProjectFilter } from './task-project-filter';
 import { getTaskAttentionState, isTaskGitStatusKnown, type TaskAttentionState } from './taskStatus';
@@ -218,7 +220,7 @@ async function completeCardOfClosedTask(projectId: string, branch: string): Prom
   }
 }
 
-/** Whether a task has handed its work over: the agent signalled done, or a PR is open. */
+/** Whether a task has handed its work over: the agent signalled done, or its own PR is open. */
 function taskReachedReview(task: Task): boolean {
   return Boolean(
     task.needsReview ||
@@ -226,6 +228,15 @@ function taskReachedReview(task: Task): boolean {
     task.prUrl ||
     task.landingState === 'landed_pending_review',
   );
+}
+
+/**
+ * Whether the task has additional PRs, e.g. one in a nested repository; null
+ * until branch detection has first listed them. They are not saved, so after a restart
+ * detection finds them again, which is not a new PR.
+ */
+function taskHasExtraPrs(task: Task): boolean | null {
+  return taskPrsProbed(task) ? getTaskExtraPrs(task.id).length > 0 : null;
 }
 
 /**
@@ -242,9 +253,11 @@ function taskReady(
   return now.gitKnown ? false : (before ?? null);
 }
 
-/** The task's work is in: landed by the coordinator, or its PR merged on GitHub. */
+/** The task's work is in: landed by the coordinator, or its PRs merged on GitHub. */
 function taskLanded(task: Task): boolean {
-  return task.landingState === 'reviewed' || getPrChecks(task.id)?.merged === true;
+  if (task.landingState === 'reviewed') return true;
+  const prs = taskPrsChecks(task);
+  return prs.length > 0 && prs.every((checks) => checks?.merged === true) && taskPrsKnown(task);
 }
 
 /**
@@ -263,6 +276,7 @@ export function startKanbanAutomation(): () => void {
       string,
       {
         review: boolean;
+        extras: boolean | null;
         ready: boolean | null;
         landed: boolean;
         projectId: string;
@@ -289,6 +303,7 @@ export function startKanbanAutomation(): () => void {
                   projectId: task.projectId,
                   branch: task.branchName,
                   review: taskReachedReview(task),
+                  extras: taskHasExtraPrs(task),
                   landed: taskLanded(task),
                   attention: getTaskAttentionState(task.id),
                   gitKnown: isTaskGitStatusKnown(task.id),
@@ -304,6 +319,7 @@ export function startKanbanAutomation(): () => void {
             const ready = taskReady(task, before?.ready);
             seen.set(task.id, {
               review: task.review,
+              extras: task.extras,
               ready,
               landed: task.landed,
               projectId: task.projectId,
@@ -311,7 +327,13 @@ export function startKanbanAutomation(): () => void {
             });
             if (!before) continue;
             if (task.landed && !before.landed) advanceOnce(task, 'done');
-            else if ((task.review && !before.review) || (ready === true && before.ready === false))
+            // A first PR moves the card; a further one, or one found again, does not.
+            else if (
+              (!before.review &&
+                before.extras !== true &&
+                (task.review || (task.extras === true && before.extras === false))) ||
+              (ready === true && before.ready === false)
+            )
               advanceOnce(task, 'review');
           }
           for (const [id, task] of seen) {

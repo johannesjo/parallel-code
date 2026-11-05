@@ -70,7 +70,8 @@ vi.mock('../lib/ipc', () => ({
   invoke: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('./pr-checks-state', () => ({
+vi.mock('./pr-checks-state', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./pr-checks-state')>()),
   getPrChecks: (taskId: string) => mockPrChecks[taskId],
 }));
 

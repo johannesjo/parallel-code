@@ -1,4 +1,4 @@
-import { createStore, produce, unwrap } from 'solid-js/store';
+import { createStore, produce, reconcile, unwrap } from 'solid-js/store';
 import type { PrChecksOverall, PrChecksUpdatePayload, PrCheckRun, TaskExtraPr } from '../ipc/types';
 
 export interface PrChecksState {
@@ -48,6 +48,72 @@ export function checksFromUpdate(msg: Partial<PrChecksUpdatePayload>): PrChecksS
 const [prChecks, setPrChecksStore] = createStore<Record<string, PrChecksState>>({});
 // Not persisted: detection finds the open ones again shortly after startup.
 const [extraPrs, setExtraPrsStore] = createStore<Record<string, TaskExtraPr[]>>({});
+
+// Closed primary PRs by task, so their watcher is not restarted after every
+// probe and the task's other PRs carry on without them. Not persisted either.
+const [closedPrimaryPrs, setClosedPrimaryPrs] = createStore<Record<string, string>>({});
+
+/** The task's primary PR URL if it closed without merging. */
+export function closedPrimaryPrUrl(taskId: string): string | undefined {
+  return closedPrimaryPrs[taskId];
+}
+
+/** Records the task's primary PR as closed; undefined forgets it, e.g. once reopened. */
+export function markPrimaryPrClosed(taskId: string, url: string | undefined): void {
+  if (unwrap(closedPrimaryPrs)[taskId] === url) return;
+  setClosedPrimaryPrs(
+    produce((s) => {
+      if (url) s[taskId] = url;
+      else delete s[taskId];
+    }),
+  );
+}
+
+/** Forgets every closed primary PR, as when PR watching stops. */
+export function forgetClosedPrimaryPrs(): void {
+  setClosedPrimaryPrs(reconcile({}));
+}
+
+// Tasks whose branch probe has listed their PRs since PR watching started:
+// 'all' when every repository was listed, 'some' when one could not be. Until
+// then a task may have open PRs nobody knows of yet, e.g. after a restart.
+const [prsDetected, setPrsDetected] = createStore<Record<string, 'all' | 'some'>>({});
+
+// Set once gh cannot probe branches: no probe will list further PRs then.
+const [prDetectionUnavailable, setPrDetectionUnavailable] = createStore({ value: false });
+
+/** Whether the task's PRs are as complete as probing can make them: listed by a
+ *  branch probe since PR watching started, or no probe can run. */
+export function taskPrsDetected(taskId: string): boolean {
+  return prDetectionUnavailable.value || prsDetected[taskId] === 'all';
+}
+
+/** Whether a branch probe has listed the task's PRs at least in part since PR
+ *  watching started, or no probe can run: PRs found from then on are new ones. */
+export function taskPrsListed(taskId: string): boolean {
+  return prDetectionUnavailable.value || prsDetected[taskId] !== undefined;
+}
+
+export function markPrDetectionUnavailable(): void {
+  setPrDetectionUnavailable('value', true);
+}
+
+export function markTaskPrsDetected(taskId: string): void {
+  if (unwrap(prsDetected)[taskId] === 'all') return;
+  setPrsDetected(taskId, 'all');
+}
+
+/** Records a probe that could not list one of the task's repositories. */
+export function markTaskPrsListed(taskId: string): void {
+  if (unwrap(prsDetected)[taskId]) return;
+  setPrsDetected(taskId, 'some');
+}
+
+/** Forgets which tasks were probed, as when PR watching stops. */
+export function forgetTaskPrsDetected(): void {
+  setPrsDetected(reconcile({}));
+  setPrDetectionUnavailable('value', false);
+}
 
 /** Watcher ID of a task's additional PR; its checks are stored under this key. */
 export function extraPrWatchId(taskId: string, url: string): string {

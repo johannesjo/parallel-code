@@ -18,7 +18,8 @@ import {
 } from './taskStatus';
 import { taskUsesAgentChat } from './agent-chat';
 import { getPrChecks, prBoardStatus } from './pr-checks-state';
-import { taskPrUrl } from './pr-checks';
+import { hasOpenTaskPr } from './pr-babysit';
+import { taskLeadPr, taskLinkedPrUrl } from './task-prs';
 import { fireAndForget } from '../lib/ipc';
 import { boardLaneOf } from '../components/task-board-lanes';
 import { IPC } from '../../electron/ipc/channels';
@@ -66,21 +67,24 @@ export function remoteChatPreview(state: AgentChatState | undefined): string {
 }
 
 /** A merged PR no longer gates anything, and 'none' means GitHub reported no checks. */
-function remoteCiStatus(taskId: string): RemoteCiStatus | undefined {
-  const checks = getPrChecks(taskId);
+function remoteCiStatus(task: Task): RemoteCiStatus | undefined {
+  const lead = taskLeadPr(task);
+  const checks = lead && getPrChecks(lead.watchId);
   if (!checks || checks.merged || checks.overall === 'none') return undefined;
   return checks.overall;
 }
 
 /** The board card's PR row: the PR, the checks' status line, and whether babysitting is on. */
 function remotePr(task: Task): RemoteTaskPr | undefined {
-  const url = taskPrUrl(task);
+  const url = taskLinkedPrUrl(task);
   if (!url) return undefined;
-  const status = prBoardStatus(getPrChecks(task.id));
+  const lead = taskLeadPr(task);
+  const status = lead && prBoardStatus(getPrChecks(lead.watchId));
   return {
     url,
     ...(status && { label: status.label, kind: status.kind }),
-    ...(task.prBabysit && { babysit: true }),
+    // Babysit outlives a closed PR while the task's other PRs are not all known.
+    ...(task.prBabysit && hasOpenTaskPr(task.id) && { babysit: true }),
   };
 }
 
@@ -134,7 +138,7 @@ export function startRemoteStatusSync(): () => void {
         contexts[taskId] = {
           taskName: task.name,
           collapsed: Boolean(task.collapsed),
-          ci: remoteCiStatus(taskId),
+          ci: remoteCiStatus(task),
           lane: boardLaneOf(task),
           projectName: project?.name ?? '',
           projectColor: project?.color ?? '',

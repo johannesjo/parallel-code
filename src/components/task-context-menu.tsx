@@ -10,6 +10,7 @@ import { ContextMenu, type MoreMenuItem } from './chat/MoreMenu';
 import { CloseTaskDialog } from './CloseTaskDialog';
 import { CloseIcon, ExternalLinkIcon, GitMergeIcon, GitPullRequestIcon, UndoIcon } from './icons';
 import { taskPrUrl } from './pr-actions';
+import { taskLinkedPrUrl } from '../store/task-prs';
 import { laterMenuItems } from './task-later-menu';
 
 interface TaskMenuActions {
@@ -55,18 +56,20 @@ function endMenuItems(task: Task, actions: TaskMenuActions): MoreMenuItem[] {
 
 function taskMenuItems(task: Task, actions: TaskMenuActions): MoreMenuItem[] {
   const otherSide = actions.openOnOtherSide;
+  // The PR the card links, which may be one in a nested repository.
+  const prUrl = taskLinkedPrUrl(task);
   const opens: MoreMenuItem[] = [
     { label: 'Open', run: actions.open },
     // Moving the panel lives here rather than on the panel, which rarely needs it.
     ...(otherSide
       ? [{ label: `Open on the ${store.boardSidePanelLeft ? 'right' : 'left'}`, run: otherSide }]
       : []),
-    ...(task.prUrl
+    ...(prUrl
       ? [
           {
             label: 'Open PR in browser',
             icon: <ExternalLinkIcon size={14} />,
-            run: () => void invoke(IPC.ShellOpenExternal, { url: task.prUrl }),
+            run: () => void invoke(IPC.ShellOpenExternal, { url: prUrl }),
           },
         ]
       : []),

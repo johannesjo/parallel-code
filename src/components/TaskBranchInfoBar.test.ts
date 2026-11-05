@@ -367,6 +367,17 @@ describe('TaskBranchInfoBar additional PRs', () => {
     expect(html).toContain('class="task-pr-repo"');
     // Fix CI for the failing additional PR; Merge stays with the task's own PR.
     expect(html.match(/class="task-pr-fix-ci"/g)).toHaveLength(1);
-    expect(html).not.toContain('task-pr-merge');
+    expect(html).not.toContain('open Finish to merge');
+    // Babysit covers every open PR of the task, the additional ones included.
+    expect(html).toContain('task-pr-babysit');
+  });
+
+  it('offers Babysit for the additional PRs of a task without its own PR', () => {
+    const html = renderToString(() =>
+      TaskBranchInfoBar({ task: { ...task, prUrl: undefined }, onEditProject: vi.fn() }),
+    );
+
+    expect(html).not.toContain('aria-label="PR #12"');
+    expect(html.match(/task-pr-babysit/g)).toHaveLength(1);
   });
 });

@@ -6,6 +6,7 @@ import {
   type TaskDotStatus,
 } from '../store/taskStatus';
 import { getCiGlyphState, type CiGlyphState } from '../store/pr-checks-state';
+import { taskLeadWatchId } from '../store/task-prs';
 import { StatusCheckIcon } from './icons';
 import { theme } from '../lib/theme';
 
@@ -80,7 +81,7 @@ export function getDotTooltip(
   taskId?: string,
 ): string {
   const readyLabel = () => (taskId ? getReadyLabel(taskId) : 'Ready');
-  const ci = taskId ? getCiGlyphState(taskId) : undefined;
+  const ci = taskId ? getCiGlyphState(taskLeadWatchId(taskId)) : undefined;
   const glyph = ci ? getStatusGlyph(status, attention, ci.state) : undefined;
   if (ci && (glyph === 'ci_running' || glyph === 'ci_failed')) return getCiTooltip(ci);
   if (attention === 'active') return 'Active — agent is working';
@@ -139,7 +140,7 @@ export function StatusDot(props: {
   checking?: string;
 }) {
   const size = () => props.size ?? 'sm';
-  const ci = () => (props.taskId ? getCiGlyphState(props.taskId) : undefined);
+  const ci = () => (props.taskId ? getCiGlyphState(taskLeadWatchId(props.taskId)) : undefined);
   const glyph = (): StatusGlyph =>
     props.checking ? 'spinner' : getStatusGlyph(props.status, props.attention, ci()?.state);
   const tooltip = () =>

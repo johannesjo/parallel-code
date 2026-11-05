@@ -19,13 +19,18 @@ vi.mock('./persistence', () => ({
 
 import { setStore, store } from './core';
 import { getMergedTasksTodayCount } from './completion';
-import { getPrChecks, startPrChecksSubscription } from './pr-checks';
+import { getPrChecks, startPrChecksSubscription, taskPrsKnown, taskPrsProbed } from './pr-checks';
+import { taskLeadPr, taskLeadWatchId, taskLinkedPrUrl } from './task-prs';
 import {
   extraPrWatchId,
   getTaskExtraPrs,
+  markPrimaryPrClosed,
   removePrChecks,
+  setPrChecks,
   setTaskExtraPrs,
+  type PrChecksState,
 } from './pr-checks-state';
+import type { Task } from './types';
 
 const flushPromises = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 const mockOn = vi.fn();
@@ -159,7 +164,7 @@ describe('startPrChecksSubscription updates', () => {
     disposeRoot?.();
   });
 
-  it('stops babysitting a PR that closes without merging', () => {
+  it('leaves Babysit on when the primary PR closes, for its other PRs found later', () => {
     const prUrl = 'https://github.com/acme/app/pull/12';
     setStore('taskOrder', ['task-1']);
     setStore('tasks', {
@@ -201,8 +206,9 @@ describe('startPrChecksSubscription updates', () => {
       merged: false,
     });
 
-    // The Babysit button hides with the PR, so nothing else could turn it off.
-    expect(store.tasks['task-1']?.prBabysit).toBeUndefined();
+    // After a restart the task's other PRs are not listed yet; once they are,
+    // the Babysit watcher stops it if none is open.
+    expect(store.tasks['task-1']?.prBabysit).toEqual({ attempts: 1, lastSentSha: 'abc' });
     disposeRoot?.();
   });
 });
@@ -249,6 +255,68 @@ describe('startPrChecksSubscription branch PR detection', () => {
       branch: { worktreePath: '/repo/.worktrees/task-1', branchName: 'task/task-1' },
     });
     disposeRoot?.();
+  });
+
+  it("does not count a task's PRs as known while a repository could not be listed", async () => {
+    setStore('taskOrder', ['task-1']);
+    setStore('tasks', {
+      'task-1': {
+        id: 'task-1',
+        name: 'Task',
+        projectId: 'project-1',
+        branchName: 'task/task-1',
+        worktreePath: '/repo/.worktrees/task-1',
+        agentIds: [],
+        shellAgentIds: [],
+        notes: '',
+        lastPrompt: '',
+        gitIsolation: 'worktree',
+      },
+    });
+    mockInvoke.mockResolvedValueOnce({ url: null, extras: [], failedRepos: ['lib'] });
+    let disposeRoot: (() => void) | undefined;
+    createRoot((dispose) => {
+      disposeRoot = dispose;
+      startPrChecksSubscription();
+    });
+    await flushPromises();
+    const task = store.tasks['task-1'];
+    // An open PR in `lib` may be missing from the list.
+    expect(task && taskPrsKnown(task)).toBe(false);
+    // The other repositories were listed, so a PR found in them later is a new one.
+    expect(task && taskPrsProbed(task)).toBe(true);
+    disposeRoot?.();
+  });
+
+  it("counts a task's PRs as known once branch probing is unavailable", async () => {
+    setStore('taskOrder', ['task-1']);
+    setStore('tasks', {
+      'task-1': {
+        id: 'task-1',
+        name: 'Task',
+        projectId: 'project-1',
+        branchName: 'task/task-1',
+        worktreePath: '/repo/.worktrees/task-1',
+        agentIds: [],
+        shellAgentIds: [],
+        notes: '',
+        lastPrompt: '',
+        gitIsolation: 'worktree',
+      },
+    });
+    mockInvoke.mockResolvedValueOnce({ url: null, unavailable: 'missing' });
+    let disposeRoot: (() => void) | undefined;
+    createRoot((dispose) => {
+      disposeRoot = dispose;
+      startPrChecksSubscription();
+    });
+    const task = store.tasks['task-1'];
+    expect(task && taskPrsKnown(task)).toBe(false);
+    await flushPromises();
+    // No probe will list its other PRs, so a merged primary PR must still count.
+    expect(task && taskPrsKnown(task)).toBe(true);
+    disposeRoot?.();
+    expect(task && taskPrsKnown(task)).toBe(false);
   });
 
   it('does not keep probing branches after gh is unavailable', async () => {
@@ -666,5 +734,74 @@ describe('startPrChecksSubscription additional PRs', () => {
     // Listed until GitHub answers, so the chip and its watcher never drop out.
     expect(mockFireAndForget).not.toHaveBeenCalledWith(IPC.StopPrChecksWatcher, stopApiWatcher);
     dispose();
+  });
+});
+
+describe('taskLeadPr', () => {
+  const primary = 'https://github.com/acme/app/pull/12';
+  const extra = 'https://github.com/acme/lib/pull/3';
+  const extraId = extraPrWatchId('lead', extra);
+  const lead = { id: 'lead', prUrl: primary } as Task;
+  const checks = (overall: PrChecksState['overall'], more: Partial<PrChecksState> = {}) =>
+    ({
+      overall,
+      passing: 0,
+      pending: 0,
+      failing: 0,
+      checks: [],
+      checkedAt: '',
+      ...more,
+    }) as PrChecksState;
+  // A fresh object each time: the store merges later writes into the one it was given.
+  const ready = () => checks('success', { mergeable: 'MERGEABLE', reviewDecision: 'APPROVED' });
+
+  beforeEach(() => {
+    removePrChecks('lead');
+    removePrChecks(extraId);
+    markPrimaryPrClosed('lead', undefined);
+    setTaskExtraPrs('lead', [{ url: extra, repo: 'lib' }]);
+  });
+
+  it('describes the open PR that most needs attention', () => {
+    setPrChecks('lead', ready());
+    setPrChecks(extraId, checks('failure', { failing: 1 }));
+    expect(taskLeadPr(lead)).toEqual({ url: extra, watchId: extraId });
+    setPrChecks(extraId, checks('pending', { pending: 1 }));
+    expect(taskLeadPr(lead)?.url).toBe(extra);
+    setPrChecks(extraId, ready());
+    setPrChecks('lead', checks('pending', { pending: 1 }));
+    expect(taskLeadPr(lead)?.url).toBe(primary);
+  });
+
+  it('describes an open PR over a merged one, and a merged one once all merged', () => {
+    setPrChecks('lead', checks('none', { merged: true }));
+    expect(taskLeadPr(lead)?.url).toBe(extra);
+    setPrChecks(extraId, checks('none', { merged: true }));
+    expect(taskLeadPr(lead)?.url).toBe(primary);
+  });
+
+  it('names the watcher of the PR the status describes, for status glyphs and labels', () => {
+    setStore('tasks', { lead: { ...lead } as Task });
+    setPrChecks('lead', ready());
+    setPrChecks(extraId, checks('pending', { pending: 1 }));
+    expect(taskLeadWatchId('lead')).toBe(extraId);
+    // Without PRs, checks would sit under the task ID.
+    setStore('tasks', { lead: { id: 'lead' } as Task });
+    setTaskExtraPrs('lead', []);
+    expect(taskLeadWatchId('lead')).toBe('lead');
+  });
+
+  it('describes a PR in a nested repository when the task has no own PR', () => {
+    expect(taskLeadPr({ id: 'lead' } as Task)).toEqual({ url: extra, watchId: extraId });
+    setTaskExtraPrs('lead', []);
+    expect(taskLeadPr({ id: 'lead' } as Task)).toBeUndefined();
+  });
+
+  it('links the own PR of a task that came from it once that closed unmerged', () => {
+    setTaskExtraPrs('lead', []);
+    const fromPr = { id: 'lead', githubUrl: primary } as Task;
+    markPrimaryPrClosed('lead', primary);
+    expect(taskLeadPr(fromPr)).toBeUndefined();
+    expect(taskLinkedPrUrl(fromPr)).toBe(primary);
   });
 });

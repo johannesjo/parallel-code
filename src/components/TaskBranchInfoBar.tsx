@@ -143,6 +143,15 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
     const parsed = url ? parseGitHubUrl(url) : null;
     return parsed?.type === 'pull' ? parsed.number : undefined;
   };
+  // Babysit covers all the task's PRs, so it stays while any of them is open.
+  const hasOpenPr = () =>
+    [
+      ...(prLinkUrl() ? [props.task.id] : []),
+      ...getTaskExtraPrs(props.task.id).map((pr) => extraPrWatchId(props.task.id, pr.url)),
+    ].some((watchId) => {
+      const checks = getPrChecks(watchId);
+      return !!checks && !checks.merged;
+    });
   const sourceLinkUrl = () => {
     const prUrl = prLinkUrl();
     return props.task.githubUrl && props.task.githubUrl !== prUrl
@@ -262,7 +271,7 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
                   <FixCiButton taskId={props.task.id} prUrl={url()} prNumber={Number(number())} />
                 )}
               </Show>
-              <Show when={pr() && !pr()?.merged}>
+              <Show when={hasOpenPr()}>
                 <BabysitButton taskId={props.task.id} />
               </Show>
               <Show when={readyToMerge() && props.onFinish}>
@@ -306,6 +315,10 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
           );
         }}
       </For>
+      {/* Without a primary PR, Babysit follows the additional ones. */}
+      <Show when={!prLinkUrl() && hasOpenPr()}>
+        <BabysitButton taskId={props.task.id} />
+      </Show>
       <Show when={sourceLinkUrl()}>
         {(url) => (
           <button

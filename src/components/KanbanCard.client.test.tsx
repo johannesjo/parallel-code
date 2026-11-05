@@ -3,7 +3,14 @@ import { reconcile } from 'solid-js/store';
 import { render } from 'solid-js/web';
 import { KanbanCardView } from './KanbanCard';
 import { store, setStore } from '../store/core';
-import { removePrChecks, setPrChecks, type PrChecksState } from '../store/pr-checks-state';
+import {
+  extraPrWatchId,
+  markPrimaryPrClosed,
+  removePrChecks,
+  setPrChecks,
+  setTaskExtraPrs,
+  type PrChecksState,
+} from '../store/pr-checks-state';
 import type { KanbanCard } from '../lib/kanban';
 import type { Task } from '../store/types';
 
@@ -47,6 +54,8 @@ const green: PrChecksState = {
   checkedAt: '2026-10-31T00:00:00Z',
 };
 
+const EXTRA = 'https://github.com/o/lib/pull/3';
+
 let container: HTMLDivElement;
 let dispose: () => void;
 
@@ -88,6 +97,9 @@ afterEach(() => {
   dispose();
   container.remove();
   removePrChecks('one');
+  removePrChecks(extraPrWatchId('one', EXTRA));
+  setTaskExtraPrs('one', []);
+  markPrimaryPrClosed('one', undefined);
   setStore('pendingAction', null);
 });
 
@@ -110,4 +122,17 @@ it('offers no Merge for a task the Finish dialog cannot take', () => {
   setStore('tasks', 'one', { gitIsolation: 'direct' });
   setPrChecks('one', green);
   expect(mergeButton()).toBeUndefined();
+});
+
+const prLink = () => container.querySelector('.task-board-link')?.getAttribute('title');
+
+it('links the PR its row describes, and its own PR once that closed unmerged', () => {
+  setPrChecks('one', { ...green });
+  setTaskExtraPrs('one', [{ url: EXTRA, repo: 'lib' }]);
+  setPrChecks(extraPrWatchId('one', EXTRA), { ...green, overall: 'failure', failing: 1 });
+  expect(prLink()).toBe('Open pull request #3');
+  expect(container.querySelector('.task-board-status')?.textContent).toBe('CI failed');
+  setTaskExtraPrs('one', []);
+  markPrimaryPrClosed('one', task.prUrl);
+  expect(prLink()).toBe('Open pull request #7');
 });

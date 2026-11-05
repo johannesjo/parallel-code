@@ -24,6 +24,7 @@ import {
   noteAgentPromptSent,
 } from './agentHookStatus';
 import { getPrChecks } from './pr-checks-state';
+import { taskLeadWatchId } from './task-prs';
 import {
   chunkContainsAgentPrompt,
   getAgentPromptReadiness,
@@ -1071,7 +1072,7 @@ export function clearAgentActivity(agentId: string): void {
 
 function isTaskReady(taskId: string): boolean {
   const git = store.taskGitStatus[taskId];
-  const prChecks = getPrChecks(taskId);
+  const prChecks = getPrChecks(taskLeadWatchId(taskId));
   return Boolean(
     isGitStatusUsable(git) &&
     git.has_committed_changes &&
@@ -1084,7 +1085,7 @@ function isTaskReady(taskId: string): boolean {
 /** `ready` only knows nothing failed, so name what the PR checks actually say:
  *  pending CI is not ready to merge, and without a PR there is nothing to vouch for. */
 export function getReadyLabel(taskId: string): string {
-  const overall = getPrChecks(taskId)?.overall;
+  const overall = getPrChecks(taskLeadWatchId(taskId))?.overall;
   if (overall === 'success') return 'Ready to merge';
   if (overall === 'pending') return 'CI running';
   return 'Ready';

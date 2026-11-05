@@ -9,15 +9,25 @@ import { isTaskWorking } from './taskStatus';
 import { printedPrLink } from './printed-pr-links';
 import {
   checksFromUpdate,
+  closedPrimaryPrUrl,
   extraPrWatchId,
+  forgetClosedPrimaryPrs,
+  forgetTaskPrsDetected,
+  markPrDetectionUnavailable,
+  markTaskPrsDetected,
+  markTaskPrsListed,
+  taskPrsDetected,
+  taskPrsListed,
   getPrChecks,
   getTaskExtraPrs,
+  markPrimaryPrClosed,
   removePrChecks,
   setPrChecks,
   setTaskExtraPrs,
   taskIdsWithExtraPrs,
 } from './pr-checks-state';
 import type { PrChecksState } from './pr-checks-state';
+import { taskPrUrl } from './task-prs';
 import type {
   BranchPrDetectionResult,
   PrChecksUpdatePayload,
@@ -33,15 +43,16 @@ const BRANCH_PR_DETECT_RETRY_MS = 2 * 60_000;
 // over many tasks doesn't burst dozens of processes and GitHub API calls.
 const MAX_CONCURRENT_BRANCH_PROBES = 4;
 
-function parsePrUrl(url: string | undefined): string | null {
-  if (!url) return null;
-  const parsed = parseGitHubUrl(url);
-  if (!parsed || parsed.type !== 'pull' || !parsed.number) return null;
-  return url;
+/** Whether all of a task's PRs are known: tasks without a branch to probe have
+ *  only their primary PR; others wait for the first probe after startup. */
+export function taskPrsKnown(task: Task): boolean {
+  return !branchPrCandidateFor(task) || taskPrsDetected(task.id);
 }
 
-export function taskPrUrl(task: Task): string | null {
-  return parsePrUrl(task.prUrl) ?? parsePrUrl(task.githubUrl);
+/** Whether a probe has listed a task's PRs, if only in part, so that a PR found
+ *  later is a new one rather than one known before a restart. */
+export function taskPrsProbed(task: Task): boolean {
+  return !branchPrCandidateFor(task) || taskPrsListed(task.id);
 }
 
 interface BranchPrCandidate {
@@ -119,9 +130,6 @@ export function startPrChecksSubscription(): () => void {
   const activeByWatchId = new Map<string, ActiveWatcher>();
   const branchProbeByTaskId = new Map<string, { key: string; attemptedAt: number }>();
   const pendingBranchProbes = new Set<string>();
-  // Closed primary PRs by task, so a sync doesn't restart their watcher after
-  // every probe; a probe that finds the branch's PR open again replaces this.
-  const closedPrimaryByTaskId = new Map<string, string>();
   let branchPrDetectionDisabled = false;
   let disposed = false;
 
@@ -150,8 +158,9 @@ export function startPrChecksSubscription(): () => void {
     const task = store.tasks[taskId];
     if (!task) return;
     const current = taskPrUrl(task);
-    if (result.url && (!current || closedPrimaryByTaskId.get(taskId) === current)) {
-      closedPrimaryByTaskId.delete(taskId);
+    // A probe that finds the branch's PR open again replaces a closed one.
+    if (result.url && (!current || closedPrimaryPrUrl(taskId) === current)) {
+      markPrimaryPrClosed(taskId, undefined);
       if (result.url !== current) {
         setStore('tasks', taskId, 'prUrl', result.url);
         void saveState();
@@ -167,6 +176,10 @@ export function startPrChecksSubscription(): () => void {
       );
       setTaskExtraPrs(taskId, [...next, ...gone]);
       for (const pr of gone) settleGoneExtra(taskId, pr);
+      // A repository that could not be listed may hold an open PR. Marked after
+      // the PRs are stored, so the kanban takes them as known PRs, not new ones.
+      if (!result.failedRepos?.length) markTaskPrsDetected(taskId);
+      else markTaskPrsListed(taskId);
     }
     syncWatchers();
   };
@@ -207,6 +220,7 @@ export function startPrChecksSubscription(): () => void {
         if (disposed || !result) return;
         if (result.unavailable) {
           branchPrDetectionDisabled = true;
+          markPrDetectionUnavailable();
           branchProbeByTaskId.clear();
           return;
         }
@@ -294,13 +308,9 @@ export function startPrChecksSubscription(): () => void {
       activeByWatchId.delete(watchId);
       removePrChecks(watchId);
       if (isPrimary && typeof msg.prUrl === 'string') {
-        closedPrimaryByTaskId.set(msg.taskId, msg.prUrl);
-        // Closed unmerged (a merge returned above): the Babysit toggle hides with
-        // the PR, so turn it off here rather than leave it on where nothing shows it.
-        if (store.tasks[msg.taskId]?.prBabysit) {
-          setStore('tasks', msg.taskId, 'prBabysit', undefined);
-          void saveState();
-        }
+        // Closed unmerged (a merge returned above). The Babysit watcher turns
+        // Babysit off once the task's other PRs are known and none is open.
+        markPrimaryPrClosed(msg.taskId, msg.prUrl);
       } else if (!isPrimary) {
         // A closed additional PR is done; left listed, the next sync would watch it again.
         const taskId = msg.taskId;
@@ -322,7 +332,7 @@ export function startPrChecksSubscription(): () => void {
       const task = store.tasks[taskId];
       if (!task) continue;
       const prUrl = taskPrUrl(task);
-      if (prUrl && closedPrimaryByTaskId.get(taskId) !== prUrl) {
+      if (prUrl && closedPrimaryPrUrl(taskId) !== prUrl) {
         seen.add(taskId);
         const candidate = branchPrCandidateFor(task);
         startWatcher(taskId, {
@@ -343,8 +353,7 @@ export function startPrChecksSubscription(): () => void {
           taskId,
           prUrl: pr.url,
           taskName: `${task.name} · ${extraPrLabel(pr)}`,
-          // Babysitting follows the primary PR only.
-          babysit: false,
+          babysit: task.prBabysit !== undefined,
           // Pushes reach these through the primary PR's shared head.
           branch: null,
         });
@@ -394,6 +403,8 @@ export function startPrChecksSubscription(): () => void {
       fireAndForget(IPC.StopPrChecksWatcher, { watchId });
     }
     activeByWatchId.clear();
+    forgetClosedPrimaryPrs();
+    forgetTaskPrsDetected();
   };
 
   onCleanup(cleanup);
