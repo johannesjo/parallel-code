@@ -127,6 +127,10 @@ Each feature is described in [docs/features.md](docs/features.md).
 
 Every action has a keyboard shortcut. Press `Ctrl+/` or `F1` in the app to see them all, or read the [shortcut list](docs/features.md#keyboard-shortcuts).
 
+## Contributing
+
+Found a bug or have an idea? Use **Settings → General → Report a bug** in the app, or [open an issue](https://github.com/johannesjo/parallel-code/issues/new/choose). Pull requests are welcome, including ones written with coding agents; see [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
+
 ---
 
 If Parallel Code saves you time, consider giving it a [star on GitHub](https://github.com/johannesjo/parallel-code). It helps others find the project.

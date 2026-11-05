@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in Parallel Code is broken or behaves unexpectedly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Settings → General → Report a bug** in the app fills in the version fields for you.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, and what went wrong? Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start a task with …
+        2. …
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+  - type: input
+    id: version
+    attributes:
+      label: Parallel Code version
+      description: Shown in Settings → General → Updates.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      description: The app fills in the platform. Please add the OS version, such as macOS 15, Ubuntu 24.04 or Windows 11.
+  - type: input
+    id: agents
+    attributes:
+      label: Agents involved
+      placeholder: Claude Code, Codex CLI …
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Optional. The window's logs are in the developer console (Ctrl+Shift+I, or View → Toggle Developer Tools on macOS). Logs from the app's background process appear in the terminal, if you started Parallel Code from one. Settings → General → Verbose logging adds more detail. Logs can contain file paths, branch names and commit messages, so review them before pasting.
+      render: text
