@@ -122,15 +122,11 @@ function boardRepo(branchBoard: string, opts: { eol?: 'crlf' } = {}): string {
 }
 
 it('combines local board edits with board edits the task branch committed', async () => {
-  const root = boardRepo(
-    BASE_BOARD.replace('  Notes on B\n', '  Notes on B\n  More from the task\n'),
-  );
+  const root = boardRepo(B_EXTENDED(BASE_BOARD));
   const result = await mergeTask(root, 'task/a', false, null, false, 'main');
   expect(result.warning).toBeUndefined();
   // Card A stays in its new column and card B keeps the branch's new line.
-  expect(board(root)).toBe(
-    A_MOVED.replace('  Notes on B\n', '  Notes on B\n  More from the task\n'),
-  );
+  expect(board(root)).toBe(B_EXTENDED(A_MOVED));
   expect(run(root, ['show', 'HEAD:KANBAN.md'])).toContain('More from the task');
 });
 
