@@ -7,10 +7,12 @@ import { setTaskProjectFilter } from '../store/navigation';
 import { TaskBoardControls } from './TaskBoardControls';
 
 let flakyCalls = 0;
-// Only /github-repo resolves to a github.com repository.
+// Only /github-repo and /unasked-repo resolve to a github.com repository.
 const resolveRepository = vi.hoisted(() =>
   vi.fn(async (_channel: string, args: { projectRoot: string }) => {
     if (args.projectRoot === '/github-repo') return 'acme/api';
+    // Kept for one test, as answers are cached for the whole file.
+    if (args.projectRoot === '/unasked-repo') return 'acme/docs';
     // Fails once, as when offline, then answers.
     if (args.projectRoot === '/flaky' && flakyCalls++ > 0) return 'acme/web';
     throw new Error('not a github.com repository');
@@ -114,18 +116,42 @@ describe('TaskBoardControls', () => {
     ).toHaveLength(1);
   });
 
-  it("with all projects, offers the active task's project, disabled without a task", async () => {
+  it('with all projects, lets you pick the project from a menu', async () => {
     setStore('projects', 1, { id: 'p2', name: 'api', color: '#def', path: '/github-repo' });
+    // The active task does not choose for you: a hidden target confused.
     setStore('tasks', { t1: { id: 't1', projectId: 'p2' } as never });
-    const host = mount();
-    expect(githubButton(host).disabled).toBe(true);
-    expect(githubButton(host).title).toBe('Select a project or task to see its GitHub issues');
-
     setStore('activeTaskId', 't1');
-    await settle();
+    const host = mount();
     expect(githubButton(host).disabled).toBe(false);
+    expect(githubButton(host).getAttribute('aria-haspopup')).toBe('menu');
+
     githubButton(host).click();
+    await settle();
+    const item = (name: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (b) => b.textContent === name,
+      );
+    expect(item('weather-app')?.disabled).toBe(true);
+    expect(item('weather-app')?.title).toBe('GitHub issues unavailable for weather-app');
+    expect(item('api')?.disabled).toBe(false);
+    item('api')?.click();
     expect(store.githubIssuesProjectId).toBe('p2');
+  });
+
+  it('keeps a menu entry, and its focus, while gh answers', async () => {
+    setStore('projects', 1, { id: 'p2', name: 'api', color: '#def', path: '/unasked-repo' });
+    const host = mount();
+    githubButton(host).click();
+    const entry = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (b) => b.textContent === 'api',
+    );
+    expect(entry?.disabled).toBe(true);
+    entry?.focus();
+
+    await settle();
+    expect(entry?.isConnected).toBe(true);
+    expect(entry?.disabled).toBe(false);
+    expect(document.activeElement).toBe(entry);
   });
 
   it('checks again later after a failed check, without blaming the project', async () => {

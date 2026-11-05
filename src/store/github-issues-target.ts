@@ -6,17 +6,22 @@ import { projectPageOpen } from './project-pages';
 import { isPlannableProject } from './projects';
 
 /** Why there are no GitHub issues to open: nothing names a project. */
-export const NO_GITHUB_ISSUES_TARGET = 'Select a project or task to see its GitHub issues';
+const NO_GITHUB_ISSUES_TARGET = 'Select a project or task to see its GitHub issues';
+
+/** The project the board is explicitly on: the open plan's, else the selected one. */
+export function selectedGitHubProjectId(): string | null {
+  if (isPlannableProject(store.kanbanProjectId)) return store.kanbanProjectId;
+  return planViewProjectId();
+}
 
 /**
- * The project whose GitHub issues the board button and shortcut open: the open
- * plan's, else the selected project, else the active task's. With all projects
- * showing the active task still names one, so the sidebar need not be opened
- * to pick it. Null without any of them.
+ * The project whose GitHub issues the shortcut opens: the selected one (see
+ * selectedGitHubProjectId), else the active task's. A keystroke has no menu to
+ * pick from, so the active task stands in; the board button offers a menu
+ * instead. Null without any of them.
  */
-export function githubIssuesTargetProjectId(): string | null {
-  if (isPlannableProject(store.kanbanProjectId)) return store.kanbanProjectId;
-  const selected = planViewProjectId();
+function githubIssuesTargetProjectId(): string | null {
+  const selected = selectedGitHubProjectId();
   if (selected) return selected;
   const id = store.activeTaskId;
   const taskProject = id ? store.tasks[id]?.projectId : undefined;
@@ -34,7 +39,7 @@ export function toggleGitHubIssues(): void {
     showNotification(NO_GITHUB_ISSUES_TARGET);
     return;
   }
-  // Same answer as the board button, which is disabled for a known non-GitHub
+  // Same answer as the board button, which disables a known non-GitHub
   // project; while gh is still asked, the page reports a failure itself.
   if (isGitHubProject(project.path) === false)
     showNotification(`GitHub issues unavailable for ${project.name}`);
