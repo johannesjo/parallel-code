@@ -829,12 +829,36 @@ function tryAutoTrust(agentId: string, rawTail: string): boolean {
   return true;
 }
 
+/** Standalone terminals pass their own id as the task id. */
+function isShellTerminal(agentId: string, taskId: string | undefined): boolean {
+  return !!(
+    taskId &&
+    (store.tasks[taskId]?.shellAgentIds.includes(agentId) ||
+      store.terminals[taskId]?.agentId === agentId)
+  );
+}
+
+/** A shell's live question waits on the cursor line (`Proceed? [y/N] `). Once a
+ *  command has finished, that line is the prompt, so a question further up is old
+ *  output — and an idle shell prints nothing that would clear it. Agents keep the
+ *  whole-tail check: their dialogs draw options below the question. */
+function terminalAsks(agentId: string, tail: string, taskId: string | undefined): boolean {
+  if (!isShellTerminal(agentId, taskId)) return looksLikeQuestion(tail);
+  const lastLine = stripAnsi(tail)
+    .split(/\r\n?|\n/)
+    .findLast((line) => line.trim() !== '');
+  if (lastLine === undefined) return false;
+  // A prompt can carry question-like words: a branch `update-deps` and git's `?`.
+  const atPrompt = /[❯›]\s*$/.test(lastLine) || looksLikeBareShellPrompt(lastLine);
+  return !atPrompt && isQuestionLine(lastLine);
+}
+
 /** Run expensive prompt/question/agent-ready detection on the tail buffer.
  *  Called at most every ANALYSIS_INTERVAL_MS (200ms) per agent. */
 function analyzeAgentOutput(agentId: string): void {
   const state = getAgentState(agentId);
   const rawTail = state.outputTailBuffer;
-  let hasQuestion = looksLikeQuestion(rawTail);
+  let hasQuestion = terminalAsks(agentId, rawTail, state.taskId);
   if (state.autoTrustBlocked && !looksLikeTrustDialog(rawTail)) state.autoTrustBlocked = undefined;
 
   // Suppress question state for trust dialogs when auto-trust is enabled —
@@ -961,7 +985,7 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
     // analysis throttle window (common for background Y/n confirmations).
     // Without this fast-path check, cancelling the pending analysis would drop
     // the question signal and the task would incorrectly look idle.
-    const hasQuestion = looksLikeQuestion(state.outputTailBuffer);
+    const hasQuestion = terminalAsks(agentId, state.outputTailBuffer, state.taskId);
     updateQuestionState(agentId, hasQuestion);
 
     // Fire the agentReady callback (used by PromptInput auto-send).
@@ -980,13 +1004,11 @@ export function markAgentOutput(agentId: string, data: Uint8Array, taskId?: stri
   // Plain shells aren't agent composers — a Vim "-- INSERT --" status line or
   // a Starship "❯" prompt can match AGENT_READY_TAIL_PATTERNS without the
   // shell being between turns, so they keep the normal 15s idle timeout.
-  // Standalone terminals pass their own id as the task id.
-  const isShellTerminal = !!(
-    taskId &&
-    (store.tasks[taskId]?.shellAgentIds.includes(agentId) ||
-      store.terminals[taskId]?.agentId === agentId)
-  );
-  if (readiness.ready && !isShellTerminal && !WORKING_CANCEL_HINT_PATTERN.test(composerOutput)) {
+  if (
+    readiness.ready &&
+    !isShellTerminal(agentId, taskId) &&
+    !WORKING_CANCEL_HINT_PATTERN.test(composerOutput)
+  ) {
     addToActive(agentId);
     resetIdleTimer(agentId, PROMPT_IDLE_CONFIRM_MS);
     return;
@@ -1129,6 +1151,16 @@ function hasShellActivity(taskId: string, predicate: (id: string) => boolean): b
 
 function hasRunningTaskActivity(taskId: string, predicate: (id: string) => boolean): boolean {
   return hasRunningAgentActivity(taskId, predicate) || hasShellActivity(taskId, predicate);
+}
+
+/** True when the task waits on input only because a plain terminal asks, e.g. a
+ *  shell's startup `[Y/n]`. Without saying so, "Waiting for input" reads as the
+ *  agent's question and stays put however often the agent is answered. */
+export function isTaskTerminalAsking(taskId: string): boolean {
+  return (
+    hasShellActivity(taskId, isAgentBlockedOnInput) &&
+    !hasRunningAgentActivity(taskId, isAgentBlockedOnInput)
+  );
 }
 
 /** Working agents can coexist with a question or review in another pane. */

@@ -1109,11 +1109,19 @@ export function TerminalView(props: TerminalViewProps) {
       setTaskTerminalInputPending(props.taskId, pending);
     }
 
+    /** A 1-based row of the program's screen, to tell what a mouse click hit. The
+     *  report counts rows of the pane, but the program reads them against its live
+     *  screen (`baseY`), even while the user has scrolled back. */
+    const screenLine = (row: number): string => {
+      const buf = term?.buffer.active;
+      return buf?.getLine(buf.baseY + row - 1)?.translateToString(true) ?? '';
+    };
+
     // eslint-disable-next-line solid/reactivity -- event handler reads current prop values intentionally
     term.onData((data) => {
       if (!canForwardInput()) return;
       noteUserTerminalInput(data);
-      if (!props.isShell) noteAgentTerminalInput(agentId, data);
+      if (!props.isShell) noteAgentTerminalInput(agentId, data, screenLine);
       if (props.onPromptDetected) {
         for (const ch of data) {
           if (ch === '\r') {

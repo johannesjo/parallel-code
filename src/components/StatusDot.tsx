@@ -1,6 +1,7 @@
 import {
   getReadyLabel,
   getTaskActivityTooltip,
+  isTaskTerminalAsking,
   type TaskAttentionState,
   type TaskDotStatus,
 } from '../store/taskStatus';
@@ -84,7 +85,11 @@ export function getDotTooltip(
   if (ci && (glyph === 'ci_running' || glyph === 'ci_failed')) return getCiTooltip(ci);
   if (attention === 'active') return 'Active — agent is working';
   if (attention === 'shell_busy') return 'Terminal busy — no agent working';
-  if (attention === 'needs_input') return 'Waiting for input';
+  if (attention === 'needs_input') {
+    return taskId && isTaskTerminalAsking(taskId)
+      ? 'Terminal waiting for input'
+      : 'Waiting for input';
+  }
   if (attention === 'error') return 'Error — an agent exited or its turn failed';
   // Without this, a review-flagged task whose agent is still active falls
   // through to the dot-status map and reads "Busy" under a purple dot.

@@ -74,6 +74,21 @@ const ANSWER_INPUTS: ReadonlySet<string> = new Set([
   '\x1b[13;1u',
   ...'123456789',
 ]);
+/** A left-button release as an SGR mouse report (`ESC [ < 0 ; col ; row m`, 1-based):
+ *  Claude Code turns on mouse reporting, so clicking a dialog option answers it. */
+// eslint-disable-next-line no-control-regex -- matches the terminal's escape sequence
+const LEFT_CLICK_RELEASE = /^\x1b\[<0;\d+;(\d+)m$/;
+/** The option the dialog's cursor is on: `❯ 1. Yes`. A numbered list in the
+ *  transcript has no cursor. */
+const CURSOR_OPTION_LINE = /^\s*[❯›]\s*\d+\.\s/;
+
+/** True when `data` releases a left click on the dialog's selected option, the one
+ *  case verified against real Claude. A click elsewhere, e.g. to focus the terminal,
+ *  must not dismiss a waiting prompt. */
+function isOptionClick(data: string, lineAt: (row: number) => string): boolean {
+  const row = LEFT_CLICK_RELEASE.exec(data)?.[1];
+  return row !== undefined && CURSOR_OPTION_LINE.test(lineAt(Number(row)));
+}
 
 const [statuses, setStatuses] = createSignal<ReadonlyMap<string, AgentHookStatus>>(new Map());
 const staleTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -198,8 +213,13 @@ export function applyAgentActivitySnapshot(snapshot: AgentActivitySnapshot): voi
  * permission dialog and the tool finishing, so an approved long command would
  * sit at "Needs you" for its whole run. Both are inferences: the interrupt
  * waits out a settle window, the approval is corrected by the next hook event.
+ * `lineAt` reads a 1-based screen row, to tell a click on a dialog option apart.
  */
-export function noteAgentTerminalInput(agentId: string, data: string): void {
+export function noteAgentTerminalInput(
+  agentId: string,
+  data: string,
+  lineAt: (row: number) => string,
+): void {
   const current = statuses().get(agentId);
   if (!current) return;
   if (current.state === 'working' && !current.background && (data === ESC || data === CTRL_C)) {
@@ -208,7 +228,11 @@ export function noteAgentTerminalInput(agentId: string, data: string): void {
   }
   // AskUserQuestion is left alone: a digit only advances a multi-question
   // prompt, and its own PostToolUse clears the wait promptly anyway.
-  if (current.state === 'waiting' && current.prompt === 'permission' && ANSWER_INPUTS.has(data)) {
+  if (
+    current.state === 'waiting' &&
+    current.prompt === 'permission' &&
+    (ANSWER_INPUTS.has(data) || isOptionClick(data, lineAt))
+  ) {
     const now = Date.now();
     setStatus(agentId, {
       ...current,
