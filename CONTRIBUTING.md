@@ -44,7 +44,11 @@ Parallel Code is built with coding agents, and you are welcome to use them too. 
 1. **You own the change.** Read and understand every line before you open the pull request, and make sure the checks pass.
 2. **Say which agent helped** in the pull request description.
 
-Pull requests that look unreviewed may be closed without a detailed review.
+Reviewing takes time on both sides. If a pull request looks like it hasn't been read through yet, we may ask you to do that before we review it in detail.
+
+## Security issues
+
+Please don't report vulnerabilities in public issues. See [SECURITY.md](SECURITY.md).
 
 ## License
 
