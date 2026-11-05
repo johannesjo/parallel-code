@@ -1,7 +1,8 @@
 /**
  * One-time tips that point at a feature the first time it can be used, e.g. a
  * change tour once a task has changes. They are not a tour of the app: each
- * shows only once its feature has something to work on.
+ * shows only once its feature has something to work on. One is instead a
+ * request that fits the moment: a GitHub star after a productive day.
  */
 const FEATURE_HINT_IDS = [
   'change-tour',
@@ -9,6 +10,7 @@ const FEATURE_HINT_IDS = [
   'delegate-subtasks',
   'board-view',
   'board-lanes',
+  'github-star',
 ] as const;
 
 export type FeatureHintId = (typeof FEATURE_HINT_IDS)[number];

@@ -53,6 +53,8 @@ interface FeatureHintProps {
   children: JSX.Element;
   /** Tries the feature; taking it counts as having seen the tip. */
   actions?: FeatureHintAction[];
+  /** Label of the button that only dismisses; "Got it" unless the tip asks for something. */
+  dismissLabel?: string;
 }
 
 interface Box {
@@ -305,7 +307,7 @@ export function FeatureHint(props: FeatureHintProps) {
                   style={buttonStyle(!props.actions?.some((action) => !action.quiet))}
                   onClick={dismiss}
                 >
-                  Got it
+                  {props.dismissLabel ?? 'Got it'}
                 </button>
               </div>
             </div>
