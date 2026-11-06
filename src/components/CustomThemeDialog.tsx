@@ -207,7 +207,8 @@ export function CustomThemeDialog(props: CustomThemeDialogProps) {
                 'font-size': '12px',
                 padding: '3px 10px',
                 'border-radius': 'var(--radius-xs)',
-                transition: 'background 0.2s, border-color 0.2s',
+                transition:
+                  'background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out)',
               }}
             >
               {copied() ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
@@ -267,7 +268,7 @@ export function CustomThemeDialog(props: CustomThemeDialogProps) {
             resize: 'vertical',
             'box-sizing': 'border-box',
             outline: 'none',
-            transition: 'border-color 0.15s',
+            transition: 'border-color var(--motion-fast) var(--ease-out)',
           }}
         />
         {/* Reserve validation space so typing never moves the footer. */}

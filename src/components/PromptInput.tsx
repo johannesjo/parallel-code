@@ -1087,7 +1087,8 @@ export function PromptInput(props: PromptInputProps) {
             'align-items': 'center',
             'justify-content': 'center',
             padding: '0',
-            transition: 'background 0.15s, color 0.15s',
+            transition:
+              'background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out)',
           }}
           title="Send prompt"
         >

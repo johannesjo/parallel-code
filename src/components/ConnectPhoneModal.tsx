@@ -642,7 +642,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               style={{
                 display: 'inline-block',
                 transform: showRisks() ? 'rotate(90deg)' : 'none',
-                transition: 'transform 0.15s ease',
+                transition: 'transform var(--motion-fast) var(--ease-out)',
                 'font-size': '11px',
               }}
             >

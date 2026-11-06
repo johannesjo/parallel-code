@@ -205,9 +205,12 @@ export function GeneralSettings() {
                   <div
                     style={{
                       height: '100%',
-                      width: `${updateStatus().downloadPercent}%`,
+                      // scaleX, not width: progress events arrive often and a width
+                      // transition relayouts on every frame.
+                      transform: `scaleX(${updateStatus().downloadPercent / 100})`,
+                      'transform-origin': 'left',
                       background: theme.accent,
-                      transition: 'width 0.2s',
+                      transition: 'transform var(--motion-enter) var(--ease-out)',
                     }}
                   />
                 </div>

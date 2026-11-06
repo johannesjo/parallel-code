@@ -505,7 +505,7 @@ function FileSection(props: {
         background: theme.bgElevated,
         opacity: props.dimmed ? '0.25' : '0.9',
         // Dims at once; only the return to full strength fades.
-        transition: props.dimmed ? 'none' : 'opacity 400ms ease-out',
+        transition: props.dimmed ? 'none' : 'opacity 400ms var(--ease-out)',
       }}
     >
       {/* Sticky file header */}
@@ -531,7 +531,7 @@ function FileSection(props: {
             color: theme.fgSubtle,
             'font-size': sf(12),
             'user-select': 'none',
-            transition: 'transform 0.15s',
+            transition: 'transform var(--motion-fast) var(--ease-out)',
             transform: props.collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
             display: 'inline-block',
           }}

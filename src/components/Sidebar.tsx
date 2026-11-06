@@ -224,7 +224,7 @@ export function ProjectTaskGroupToggle(props: {
         style={{
           'flex-shrink': '0',
           transform: props.collapsed ? 'rotate(-90deg)' : 'none',
-          transition: 'transform 0.15s ease',
+          transition: 'transform var(--motion-fast) var(--ease-out)',
         }}
       />
       <ProjectSwatch color={props.project.color} icon={props.project.icon} size={6} />
@@ -655,7 +655,7 @@ export function Sidebar() {
                 style={{
                   'flex-shrink': '0',
                   transform: store.projectsCollapsed ? 'rotate(-90deg)' : 'none',
-                  transition: 'transform 0.15s ease',
+                  transition: 'transform var(--motion-fast) var(--ease-out)',
                 }}
               />
               <span

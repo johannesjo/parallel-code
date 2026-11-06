@@ -272,7 +272,7 @@ export function GraphCanvas<N extends MapNode>(props: GraphProps<N>) {
     followingCamera = false;
     const start = untrack(camera);
     const begin = performance.now();
-    const duration = animate && !props.reducedMotion ? 300 : 0;
+    const duration = animate && !props.reducedMotion ? 220 : 0;
     const tick = (now: number) => {
       const t = duration ? Math.min(1, (now - begin) / duration) : 1;
       const ease = 1 - (1 - t) ** 3;
@@ -530,7 +530,7 @@ export function GraphCanvas<N extends MapNode>(props: GraphProps<N>) {
     );
     const begin = performance.now();
     const tick = (now: number) => {
-      const t = reduced ? 1 : Math.min(1, (now - begin) / 320);
+      const t = reduced ? 1 : Math.min(1, (now - begin) / 220);
       const ease = 1 - (1 - t) ** 3;
       setFrame(
         new Map(

@@ -1,5 +1,6 @@
 import { store, setStore } from './core';
 import { boardSidePanelOpen } from './project-pages';
+import { prefersMotion } from '../lib/reducedMotion';
 
 let pendingFocus: { taskId: string; panel: string } | undefined;
 
@@ -242,6 +243,7 @@ let pendingScroll: { taskId: string; behavior: ScrollBehavior } | undefined;
 /** Selection and pane focus share one scroll per frame, including task reorders. */
 export function scrollTaskIntoView(taskId: string, behavior: ScrollBehavior = 'smooth'): void {
   if (store.activeTaskId !== taskId) return;
+  if (!prefersMotion()) behavior = 'instant';
   const alreadyPending = pendingScroll !== undefined;
   // Keep an instant return from the draft/initial selection when pane focus
   // also requests a smooth scroll to the same task.

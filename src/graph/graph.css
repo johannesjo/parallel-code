@@ -50,9 +50,9 @@
   stroke: var(--border);
   stroke-width: 1.5;
   transition:
-    stroke 240ms,
-    stroke-width 240ms,
-    opacity 180ms;
+    stroke var(--motion-fast) var(--ease-out),
+    stroke-width var(--motion-fast) var(--ease-out),
+    opacity var(--motion-enter) var(--ease-out);
 }
 .investigation-tree-edge[data-path='true'] {
   stroke: color-mix(in srgb, var(--info) 65%, var(--border));
@@ -60,7 +60,7 @@
 }
 .investigation-evidence-link {
   pointer-events: none;
-  transition: opacity 180ms;
+  transition: opacity var(--motion-enter) var(--ease-out);
 }
 /* Cross-links stay barely visible until a linked node is selected or hovered. */
 .investigation-evidence-link[data-active='false'] path {
@@ -90,7 +90,7 @@
 .investigation-node-shell {
   position: relative;
   margin: 26px 8px 0;
-  transition: opacity 180ms;
+  transition: opacity var(--motion-enter) var(--ease-out);
 }
 /* Hover highlights hand over between notes; a slower fade keeps that motion calm. */
 .investigation-graph-wrap[data-hover-dim='true']
@@ -122,9 +122,9 @@
   color: var(--fg);
   cursor: pointer;
   transition:
-    background 240ms,
-    border-color 240ms,
-    box-shadow 240ms;
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 .investigation-node-symbol {
   display: grid;

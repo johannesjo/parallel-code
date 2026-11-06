@@ -156,9 +156,9 @@
   display: flex;
   align-items: center;
   transition:
-    color 0.15s ease,
-    transform 0.15s cubic-bezier(0.2, 0.7, 0.2, 1),
-    filter 0.15s ease;
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    filter var(--motion-fast) var(--ease-out);
 }
 
 .arena-star-btn:hover:not(:disabled) {
@@ -197,8 +197,8 @@
   padding: 6px 16px;
   cursor: pointer;
   transition:
-    background 0.15s ease,
-    opacity 0.15s ease;
+    background var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
 }
 
 .arena-merge-btn:hover:not(:disabled) {
@@ -270,7 +270,7 @@
 
 .arena-output-toggle-icon {
   font-size: 11px;
-  transition: transform 0.15s ease;
+  transition: transform var(--motion-fast) var(--ease-out);
   display: inline-block;
 }
 

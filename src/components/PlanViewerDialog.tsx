@@ -22,6 +22,7 @@ import { openFileInEditor } from '../lib/shell';
 import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import type { ReviewAnnotation } from './review-types';
+import { prefersMotion } from '../lib/reducedMotion';
 
 interface PlanViewerDialogProps {
   open: boolean;
@@ -151,7 +152,10 @@ function PlanViewerContent(props: PlanViewerContentProps) {
       const scrollRect = scrollRef.getBoundingClientRect();
       const slotRect = slot.getBoundingClientRect();
       const top = scrollRef.scrollTop + slotRect.top - scrollRect.top;
-      scrollRef.scrollTo({ top: Math.max(0, top - 100), behavior: 'smooth' });
+      scrollRef.scrollTo({
+        top: Math.max(0, top - 100),
+        behavior: prefersMotion() ? 'smooth' : 'instant',
+      });
     }
   });
 
