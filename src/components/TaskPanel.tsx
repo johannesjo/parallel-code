@@ -111,6 +111,7 @@ interface TaskPanelProps {
 const CHANGED_FILES_PANEL_AUTO_MAX = 'min(300px, 33vh)';
 const NOTES_PANEL_AUTO_MAX = 'min(400px, 33vh)';
 const CONTEXT_PANEL_AUTO_MAX = '45%';
+const NOTES_SPLIT_DEFAULT = 'min(240px, 25vh)';
 // Last agent-tour revision shown per task. Collapsing and expanding a task
 // remounts its panel, which must not reopen a tour the user already dismissed.
 const shownAgentTourRevisions = new WeakMap<Task, number>();
@@ -815,6 +816,12 @@ export function TaskPanel(props: TaskPanelProps) {
       return notesMinHeight(props.task);
     },
     maxAutoSize: NOTES_PANEL_AUTO_MAX,
+    // In the split column the shells absorb all free height, so content-sized
+    // notes would leave the first terminal nearly the whole column. Give
+    // notes a modest start instead; ignored where notes absorb (stack mode).
+    get defaultSize() {
+      return props.task.shellAgentIds.length > 0 ? NOTES_SPLIT_DEFAULT : undefined;
+    },
     content: () => notesBodyEl,
   };
 

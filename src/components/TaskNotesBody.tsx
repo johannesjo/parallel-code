@@ -54,7 +54,10 @@ function hasTourFooter(task: Task): boolean {
  * a host shorter than the pane clips its bottom edge, focus ring included.
  */
 export function notesMinHeight(task: Task): number {
-  const editor = store.focusMode ? 240 : SUPPORT_PANE_MIN_HEIGHT;
+  // Focus mode's taller floor is for the stacked row; in the split side column
+  // notes can be dragged down to the normal floor, focus mode or not.
+  const tall = store.focusMode && !store.taskSplitMode[task.id];
+  const editor = tall ? 240 : SUPPORT_PANE_MIN_HEIGHT;
   return editor + (hasTourFooter(task) ? TOUR_FOOTER_HEIGHT : 0);
 }
 

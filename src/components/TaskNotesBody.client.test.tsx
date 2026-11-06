@@ -15,7 +15,7 @@ const { setAskCodeProvider, setAskCodeModel } = vi.hoisted(() => ({
 }));
 
 vi.mock('../store/store', () => ({
-  store: { showPlans: true, focusMode: false },
+  store: { showPlans: true, focusMode: false, taskSplitMode: {} as Record<string, boolean> },
   setAskCodeProvider,
   setAskCodeModel,
   updateTaskNotes: vi.fn(),
@@ -139,6 +139,23 @@ describe('TaskNotesBody plan button', () => {
     expect(height(withoutFooter)).toBe('100px');
     expect(height(withFooter)).toBe('131px');
   });
+
+  it.each([false, true])(
+    'allows a shorter pane in the split side column (focus mode %s)',
+    (focusMode) => {
+      store.taskSplitMode[task.id] = true;
+      store.focusMode = focusMode;
+      try {
+        const container = renderPlan({ task: { ...task, planContent: undefined } });
+        expect(container.querySelector<HTMLElement>('.task-notes-body')?.style.minHeight).toBe(
+          '100px',
+        );
+      } finally {
+        store.taskSplitMode[task.id] = false;
+        store.focusMode = false;
+      }
+    },
+  );
 
   it('keeps the notes editor mounted when a plan arrives or disappears', () => {
     const [notesTask, setNotesTask] = createStore<Task>({ ...task, planContent: undefined });
