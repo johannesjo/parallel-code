@@ -255,6 +255,46 @@ export function addCustomAgent(agent: AgentDef): void {
   void refreshAvailableAgents();
 }
 
+/** The fields a custom agent's editor sets; its id never changes. */
+export type CustomAgentFields = Pick<
+  AgentDef,
+  'name' | 'command' | 'args' | 'resume_args' | 'skip_permissions_args'
+>;
+
+/** Same def with the edited fields, keeping what a pane added to its own copy. */
+function withCustomAgentFields(def: AgentDef, fields: CustomAgentFields): AgentDef {
+  return { ...def, ...fields, description: `Custom agent: ${fields.name}` };
+}
+
+/**
+ * Change a custom agent in place. The id stays, so its env file and the tasks
+ * that use it stay linked. Tasks keep their own copy of the def (it is saved
+ * with them), so those copies are updated too: the change applies the next
+ * time any of them starts. A running agent keeps the launch it has.
+ */
+export function updateCustomAgent(agentId: string, fields: CustomAgentFields): void {
+  setStore(
+    produce((s) => {
+      const index = s.customAgents.findIndex((a) => a.id === agentId);
+      if (index === -1) return;
+      s.customAgents[index] = withCustomAgentFields(s.customAgents[index], fields);
+      for (const agent of Object.values(s.agents)) {
+        if (agent.def.id === agentId) agent.def = withCustomAgentFields(agent.def, fields);
+      }
+      for (const task of Object.values(s.tasks)) {
+        if (task.savedAgentDef?.id === agentId)
+          task.savedAgentDef = withCustomAgentFields(task.savedAgentDef, fields);
+        if (task.savedAgentDefs?.some((def) => def.id === agentId))
+          task.savedAgentDefs = task.savedAgentDefs.map((def) =>
+            def.id === agentId ? withCustomAgentFields(def, fields) : def,
+          );
+      }
+    }),
+  );
+  void refreshAvailableAgents();
+  void saveState();
+}
+
 export function removeCustomAgent(agentId: string): void {
   setStore(
     produce((s) => {

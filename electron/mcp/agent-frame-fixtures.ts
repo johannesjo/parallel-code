@@ -110,6 +110,23 @@ export const NOT_READY_AGENT_FRAME_FIXTURES: NotReadyAgentFrameFixture[] = [
     ].join('\n'),
   },
   {
+    // Visible text from the Codex 0.166.0 capture in #336, as `cursorRowsToLines`
+    // splits it: the menu is drawn over the startup composer without a clear,
+    // so the composer row stays above it. Enter here runs the package manager.
+    name: 'Codex update menu drawn over its startup composer',
+    reason: 'startup_or_dialog',
+    frame: [
+      '› Ask Codex to do anything',
+      '? for shortcuts',
+      'Update available · 0.166.0 → 99.0.0',
+      'Release notes: https://github.com/openai/codex/releases/latest',
+      '› 1. Update now (runs `npm install -g @openai/codex`)',
+      '2. Skip',
+      '3. Skip until next version',
+      'enter continue · esc skip',
+    ].join('\n'),
+  },
+  {
     name: 'TUI selection menu',
     reason: 'no_prompt',
     frame: ['❯ Option A', '  Option B', '  Option C', 'Choose an option to continue'].join('\n'),

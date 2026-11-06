@@ -13,6 +13,7 @@ import {
   chunkContainsAgentPrompt,
   getAgentPromptReadiness,
   PROMPT_PATTERNS,
+  showsSelectionMenu,
 } from './prompt-detect.js';
 import {
   NOT_READY_AGENT_FRAME_FIXTURES,
@@ -188,6 +189,25 @@ describe('chunkContainsAgentPrompt', () => {
       ['Starting MCP servers (0/1): parallel-code', 'Starting MCP servers complete', '>'].join(
         '\n',
       ),
+    ],
+    [
+      'Codex composer below an answered numbered menu',
+      ['› 1. Yes, continue', '2. No, quit', '› Ask Codex to do anything'].join('\n'),
+    ],
+    [
+      'Codex composer redrawn below its answered update menu',
+      [
+        '› 1. Update now (runs `npm install -g @openai/codex`)',
+        '2. Skip',
+        '╭──────────────────────────────╮',
+        '│ >_ OpenAI Codex (v0.166.0)   │',
+        '╰──────────────────────────────╯',
+        '› Ask Codex to do anything',
+      ].join('\n'),
+    ],
+    [
+      'Codex history line that starts with a number, composer below',
+      ['› 1. fix the failing test', 'Done.', '›'].join('\n'),
     ],
   ])('classifies ready agent fixture: %s', (_name, fixture) => {
     expect(getAgentPromptReadiness(fixture)).toMatchObject({ ready: true, reason: 'ready' });
@@ -370,5 +390,33 @@ describe('chunkContainsAgentPrompt', () => {
     const stale = '\x1b[?1049l'; // alternate-screen exit — no ❯ in plain text
     const stripped = stripAnsi(stale);
     expect(chunkContainsAgentPrompt(stripped)).toBe(false);
+  });
+});
+
+describe('showsSelectionMenu', () => {
+  it('sees a numbered menu drawn over a ready composer', () => {
+    const visible = [
+      '› Ask Codex to do anything',
+      'Select a model',
+      '› 1. gpt-a',
+      '  2. gpt-b',
+    ].join('\n');
+    expect(showsSelectionMenu(visible)).toBe(true);
+    expect(getAgentPromptReadiness(visible)).toMatchObject({
+      ready: false,
+      reason: 'startup_or_dialog',
+    });
+  });
+
+  it('sees the cursor on a later option', () => {
+    expect(showsSelectionMenu(['  1. Update now', '› 2. Skip'].join('\n'))).toBe(true);
+  });
+
+  it('treats a prompt drawn below the menu as answered', () => {
+    expect(showsSelectionMenu(['❯ 1. Yes', '  2. No', '❯'].join('\n'))).toBe(false);
+  });
+
+  it('needs line breaks: a cursor mid-line is not a menu row', () => {
+    expect(showsSelectionMenu('logo › 1. Update now')).toBe(false);
   });
 });

@@ -26,9 +26,11 @@ export {
   restartAgent,
   switchAgent,
   addCustomAgent,
+  updateCustomAgent,
   removeCustomAgent,
   setAgentEnvFile,
 } from './agents';
+export type { CustomAgentFields } from './agents';
 export { publishAgentTour, referenceTourCard } from './agent-tour';
 export {
   openCanvasDocument,

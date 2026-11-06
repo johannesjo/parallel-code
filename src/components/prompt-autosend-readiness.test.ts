@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isMenuBlockingAutoSend,
+  isScreenBlockingAutoSend,
   isStartupBlockingAutoSend,
   shouldAbortInitialPromptAfterTimeout,
 } from './prompt-autosend-readiness';
-import { normalizeCurrentFrame } from '../store/taskStatus';
+import { looksLikeQuestion, normalizeCurrentFrame } from '../store/taskStatus';
 
 describe('isStartupBlockingAutoSend', () => {
   it('blocks while Codex is still loading the model', () => {
@@ -107,5 +109,59 @@ describe('shouldAbortInitialPromptAfterTimeout', () => {
         tail: '› Explain this codebase',
       }),
     ).toBe(true);
+  });
+});
+
+/** Codex 0.166.0's startup as #336 describes it: bracketed paste, the
+ *  alternate screen, the composer, then the update menu drawn over it with
+ *  cursor moves only — no newlines and no screen clear. */
+const CODEX_UPDATE_MENU_TAIL = [
+  '\x1b[?2004h\x1b[?1049h',
+  '\x1b[20;1H› Ask Codex to do anything\x1b[22;1H? for shortcuts',
+  '\x1b[2;3HUpdate available · 0.166.0 → 99.0.0',
+  '\x1b[4;3HRelease notes: https://github.com/openai/codex/releases/latest',
+  '\x1b[6;1H› 1. Update now (runs `npm install -g @openai/codex`)',
+  '\x1b[7;3H2. Skip\x1b[8;3H3. Skip until next version',
+  '\x1b[10;3Henter continue · esc skip',
+].join('');
+
+describe('isMenuBlockingAutoSend', () => {
+  it("blocks on Codex's update menu drawn over its composer (#336)", () => {
+    expect(isMenuBlockingAutoSend(CODEX_UPDATE_MENU_TAIL)).toBe(true);
+    expect(isScreenBlockingAutoSend(CODEX_UPDATE_MENU_TAIL)).toBe(true);
+  });
+
+  it('blocks on a numbered login menu', () => {
+    const tail =
+      '\x1b[1;1HSign in\x1b[3;1H› 1. Sign in with ChatGPT\x1b[4;3H2. Provide your own API key';
+    expect(isMenuBlockingAutoSend(tail)).toBe(true);
+  });
+
+  it('lets the send through once the composer is drawn below the menu', () => {
+    const tail = `${CODEX_UPDATE_MENU_TAIL}\x1b[2J\x1b[20;1H› Ask Codex to do anything`;
+    expect(isMenuBlockingAutoSend(tail)).toBe(false);
+  });
+
+  it('does not block a plain ready composer', () => {
+    expect(isMenuBlockingAutoSend('\x1b[20;1H› Ask Codex to do anything')).toBe(false);
+    expect(isScreenBlockingAutoSend('\x1b[20;1H› Ask Codex to do anything')).toBe(false);
+  });
+
+  it('leaves the startup check alone, which also gates question handoff', () => {
+    expect(isStartupBlockingAutoSend(CODEX_UPDATE_MENU_TAIL)).toBe(false);
+  });
+});
+
+describe('an answered update menu', () => {
+  /** Skip picked: the menu rows erased and the composer redrawn below, no clear. */
+  const answered = `${CODEX_UPDATE_MENU_TAIL}\x1b[6;1H\x1b[K\x1b[7;1H\x1b[K\x1b[8;1H\x1b[K\x1b[20;1H› Ask Codex to do anything`;
+
+  it('no longer holds the send', () => {
+    expect(isScreenBlockingAutoSend(answered)).toBe(false);
+  });
+
+  it('is no longer a question, so the queued prompt can go', () => {
+    expect(looksLikeQuestion(CODEX_UPDATE_MENU_TAIL)).toBe(true);
+    expect(looksLikeQuestion(answered)).toBe(false);
   });
 });

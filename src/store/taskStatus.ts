@@ -26,9 +26,14 @@ import {
 import { getPrChecks } from './pr-checks-state';
 import { taskLeadWatchId } from './task-prs';
 import {
+  AGENT_UPDATE_MENU_PATTERN,
   chunkContainsAgentPrompt,
   getAgentPromptReadiness,
+  PROMPT_AFTER_MENU,
   PROMPT_PATTERNS,
+  SELECTION_CURSOR_LINE,
+  cursorRowsToLines,
+  showsSelectionMenu,
   stripAnsi,
 } from '../../electron/mcp/prompt-detect';
 
@@ -387,6 +392,10 @@ export function looksLikeQuestion(tail: string): boolean {
   const analysisTail = clearIdx >= 0 ? tail.slice(clearIdx) : tail;
 
   const visible = stripAnsi(analysisTail);
+  // Codex's update menu has no "?" (#336). Codex draws it with cursor moves,
+  // so read it in rows; it is a question only until a prompt is drawn below it.
+  const rows = stripAnsi(cursorRowsToLines(analysisTail));
+  if (AGENT_UPDATE_MENU_PATTERN.test(rows) && showsSelectionMenu(rows)) return true;
   // Use the full visible content — do NOT slice to a small suffix.
   // TUI agents (Copilot CLI, Codex CLI) use cursor positioning instead of
   // newlines, so all rendered text collapses to one long string.  A 500-char
@@ -486,11 +495,6 @@ export function looksLikeQuestion(tail: string): boolean {
 
   return true;
 }
-
-/** A selection cursor on a numbered option, e.g. `❯ 1. Yes`. */
-const SELECTION_CURSOR_LINE = /^\s*[❯›]\s*\d+\./m;
-/** The input box back below a menu, even holding typed text: it was answered. */
-const PROMPT_AFTER_MENU = /^\s*[❯›]\s*\d+\.[^]*^\s*[❯›](?!\s*\d+\.)/m;
 
 function isQuestionLine(line: string): boolean {
   const trimmed = line.trimEnd();
