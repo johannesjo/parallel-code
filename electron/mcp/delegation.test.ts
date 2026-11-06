@@ -183,7 +183,7 @@ beforeEach(() => {
           .join('');
       else if (args[0] === 'symbolic-ref') stdout = 'feature';
       else if (args[0] === 'rev-parse') stdout = head;
-      else if (args[0] === 'status') stdout = dirty;
+      else if (args.includes('status')) stdout = dirty;
       return { stdout, stderr: '' };
     },
   );

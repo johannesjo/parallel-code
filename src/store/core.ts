@@ -18,6 +18,7 @@ const EMPTY_USAGE: UsageState = {
   fetchedAt: null,
   status: 'idle',
   error: null,
+  refreshing: false,
 };
 
 export const [store, setStore] = createStore<AppStore>({
@@ -109,6 +110,7 @@ export const [store, setStore] = createStore<AppStore>({
   },
   autoStartRemoteAccess: false,
   githubIssuesProjectId: null,
+  githubIssuesLabel: null,
   kanbanProjectId: null,
   showArena: false,
   thinkingSpace: null,
@@ -128,6 +130,7 @@ export const [store, setStore] = createStore<AppStore>({
   verboseLogging: false,
   mcpOrchestrationEnabled: true,
   documentWorkspacesEnabled: false,
+  taskContext: false,
   documentFullWidth: false,
   activeDocumentProjectId: null,
   coordinatorNotificationDelayMs: 60_000,
@@ -143,7 +146,11 @@ export const [store, setStore] = createStore<AppStore>({
   customThemes: {},
   activeCustomThemeId: null,
   mcpStatus: { running: false, port: null, coordinatorTaskId: null, mcpConfigPath: null },
-  usage: { claude: { ...EMPTY_USAGE }, codex: { ...EMPTY_USAGE } },
+  usage: {
+    claude: { ...EMPTY_USAGE },
+    codex: { ...EMPTY_USAGE },
+    antigravity: { ...EMPTY_USAGE },
+  },
 });
 
 type CleanupPanelStore = Pick<

@@ -1,0 +1,187 @@
+/* Contribute dialog: routine choices, so neutral at rest; hover only firms the border. */
+
+.contribute-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.contribute-title {
+  margin: 0;
+  color: var(--fg);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.contribute-subtitle {
+  margin: 4px 0 0;
+  color: var(--fg-subtle);
+  font-size: 12px;
+}
+
+.contribute-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: contribute-step;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contribute-steps li {
+  counter-increment: contribute-step;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.contribute-steps li::before {
+  content: counter(contribute-step);
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--fg-subtle);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.contribute-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.contribute-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-input) 72%, transparent);
+  color: var(--fg);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out);
+}
+
+.contribute-choice:hover:not(:disabled) {
+  border-color: var(--fg-subtle);
+  background: var(--bg-hover);
+}
+
+.contribute-choice:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.contribute-choice:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.contribute-choice-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.contribute-choice-title svg {
+  color: var(--fg-subtle);
+}
+
+.contribute-choice-desc {
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.contribute-missing {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.contribute-missing-title {
+  margin: 0;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.contribute-hint {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.contribute-hint code,
+.contribute-command {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+
+.contribute-command {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+.contribute-add {
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.contribute-error {
+  color: var(--error);
+}
+
+.contribute-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.contribute-guide {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.contribute-guide:hover {
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contribute-choice {
+    transition: none;
+  }
+}

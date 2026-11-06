@@ -27,6 +27,7 @@ import type { ChatPermissionMode, ChatSession } from '../../electron/shared/agen
 import type { AskCodeProvider } from '../../electron/shared/ask-code-models';
 import type { BriefModelId, TaskNameModelId } from '../../electron/shared/task-name-model';
 import type { BriefBarFields, TaskBriefRecord } from '../lib/task-brief';
+import type { PlanStep } from '../../electron/shared/agent-plan';
 import type { TaskConfidence } from '../lib/task-confidence';
 import type { ReviewDismissal } from '../lib/review-summary';
 import type { ReviewModelSettings } from '../lib/task-review';
@@ -181,6 +182,8 @@ export interface SuperProductivityLink {
   taskId: string;
   /** Last title both apps agreed on — the base for the three-way title sync. */
   syncedTitle: string;
+  /** Last notes pushed to or pulled from Super Productivity. */
+  syncedNotes?: string;
 }
 
 export interface DocumentModelChoice {
@@ -215,6 +218,13 @@ export interface Agent {
   canvasGuidanceGeneration?: number;
   spawnDelayMs?: number;
   attachExisting?: boolean;
+}
+
+export interface TaskAgentPlan {
+  steps: PlanStep[];
+  /** A shell command that failed during the step in progress; cleared by the next list. */
+  failedCommand?: string;
+  updatedAt: number;
 }
 
 /** A task side panel can show a worktree document, the browser preview, a mind map, or its reasoning graph. */
@@ -380,6 +390,8 @@ export interface Task {
   evidence?: CheckSuite;
   /** Snapshot of the work so far, rewritten by a cheap model after each agent turn. */
   brief?: TaskBriefRecord;
+  /** The lead agent's own to-do list, from its last TodoWrite. */
+  agentPlan?: TaskAgentPlan;
   /** Runtime-only: a brief is being written, or the last attempt failed. */
   briefStatus?: { state: 'generating' } | { state: 'failed'; message: string };
   /** Runtime-only: newest diff fingerprint read, which ratings are compared against. */
@@ -504,6 +516,8 @@ export interface PersistedTask {
   /** Validated on load. */
   brief?: unknown;
   /** Validated on load. */
+  agentPlan?: unknown;
+  /** Validated on load. */
   confidence?: unknown;
   /** Validated on load. */
   reviewDismissed?: unknown;
@@ -606,6 +620,7 @@ export interface PersistedState {
   darkThemeCustomId?: string | null;
   mcpOrchestrationEnabled?: boolean;
   documentWorkspacesEnabled?: boolean;
+  taskContext?: boolean;
   documentFullWidth?: boolean;
   coordinatorNotificationDelayMs?: number;
   maxIndependentTasksPerCreator?: number;
@@ -744,6 +759,9 @@ export interface AppStore {
     prompt: string;
     projectId: string | null;
     name?: string;
+    notes?: string;
+    /** URL that supplied an automatic dropped-link name; absent for a custom name. */
+    droppedNameUrl?: string;
     baseBranch?: string;
     canvasSource?: CanvasTaskSource;
     /** null marks a batch without a single issue association. */
@@ -766,6 +784,8 @@ export interface AppStore {
   /** Persisted: start the remote (Connect Phone) server automatically on launch. */
   autoStartRemoteAccess: boolean;
   githubIssuesProjectId: string | null;
+  /** Label the next issue browser session starts filtered by; consumed when the page opens. */
+  githubIssuesLabel: string | null;
   /** Project whose Kanban board occupies the task area. */
   kanbanProjectId: string | null;
   showArena: boolean;
@@ -803,6 +823,9 @@ export interface AppStore {
   darkThemeCustomId: string | null;
   mcpOrchestrationEnabled: boolean;
   documentWorkspacesEnabled: boolean;
+  /** Opt-in: the task's goal and the agent's plan in a Context pane (split view) or a plan line
+   *  under the title (stacked view), in place of the header brief. */
+  taskContext: boolean;
   /** Let the rendered document take the whole column instead of a reading width. */
   documentFullWidth: boolean;
   /** Project whose document workspace is open in the task area. */

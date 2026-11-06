@@ -229,6 +229,26 @@ describe('FeatureHint', () => {
     expect(notes()).toHaveLength(0);
   });
 
+  it('names its dismiss button as asked, and dismissing counts as seen', () => {
+    const anchor = anchorAt(50);
+    mount(() => (
+      <FeatureHint
+        id="change-tour"
+        when
+        anchor={() => anchor}
+        title="Tour"
+        dismissLabel="No thanks"
+      >
+        Body
+      </FeatureHint>
+    ));
+    expect(button('Got it')).toBeUndefined();
+
+    button('No thanks')?.click();
+    expect(store.seenFeatureHints).toEqual(['change-tour']);
+    expect(notes()).toHaveLength(0);
+  });
+
   it('steps aside for a dialog, and inside one lives in its panel', () => {
     const outside = anchorAt(50);
     let inside: HTMLElement | undefined;

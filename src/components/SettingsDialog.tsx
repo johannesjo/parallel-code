@@ -5,7 +5,7 @@ import { DialogCloseButton } from './DialogCloseButton';
 import { DialogTabs, dialogTabId, dialogTabPanelId, type DialogTab } from './DialogTabs';
 import { getAvailableTerminalFonts, fetchAvailableTerminalFonts } from '../lib/fonts';
 import { theme } from '../lib/theme';
-import { store, setDocumentWorkspacesEnabled } from '../store/store';
+import { store, setTaskContext, setDocumentWorkspacesEnabled } from '../store/store';
 import { mod } from '../lib/platform';
 import { SettingsCheckboxRow, SettingsSection, type SettingsTab } from './settings/settings-ui';
 import { GeneralSettings } from './settings/GeneralSettings';
@@ -160,6 +160,14 @@ export function SettingsDialog(props: SettingsDialogProps) {
               checked={store.documentWorkspacesEnabled}
               onChange={setDocumentWorkspacesEnabled}
               description="Add document projects: a folder with one Markdown document, set up for you if it is not a Git repository yet. Select a passage, send the same instruction to one or more agents running headlessly in isolated worktrees, compare the proposals side by side, and accept one as a single readable commit. Adds Documents as an Open as choice when adding a project."
+            />
+          </SettingsSection>
+          <SettingsSection title="Task context">
+            <SettingsCheckboxRow
+              label="Task context"
+              checked={store.taskContext}
+              onChange={setTaskContext}
+              description="Show the task's goal and the agent's plan in place of the brief under the task title: as a Context pane above Changed files when the task is wide, or as one line under the title that opens the full plan when it is narrow. Shows the prompt box whenever the agent waits on you."
             />
           </SettingsSection>
         </SettingsTabPanel>

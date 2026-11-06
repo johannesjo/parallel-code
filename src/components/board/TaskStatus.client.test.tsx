@@ -27,8 +27,7 @@ afterEach(() => {
 });
 
 const status = () => document.querySelector('.task-board-status');
-const render7 = () =>
-  render(() => <TaskPr taskId="t" url="https://github.com/o/r/pull/7" />, document.body);
+const render7 = () => render(() => <TaskPr taskId="t" watchId="t" />, document.body);
 
 it('shows a green, mergeable PR as ready to merge, then as merged', () => {
   setPrChecks('t', green());
@@ -42,6 +41,22 @@ it('shows a green, mergeable PR as ready to merge, then as merged', () => {
   // Done, not urgent: the label recedes and the success check goes.
   expect(status()?.classList).toContain('subtle');
   expect(status()?.querySelector('.task-board-ok')).toBeNull();
+});
+
+it("offers Merge only for the task's own PR, which Finish merges", () => {
+  const merge = () => undefined;
+  setPrChecks('t', green());
+  dispose = render(() => <TaskPr taskId="t" watchId="t" onMerge={merge} />, document.body);
+  expect(document.querySelector('[title="CI passed — open Finish to merge"]')).not.toBeNull();
+  dispose();
+  setPrChecks('t|https://github.com/o/lib/pull/3', green());
+  dispose = render(
+    () => <TaskPr taskId="t" watchId="t|https://github.com/o/lib/pull/3" onMerge={merge} />,
+    document.body,
+  );
+  expect(status()?.textContent).toBe('Ready to merge');
+  expect(document.querySelector('[title="CI passed — open Finish to merge"]')).toBeNull();
+  removePrChecks('t|https://github.com/o/lib/pull/3');
 });
 
 it('says failed CI once, in the label', () => {

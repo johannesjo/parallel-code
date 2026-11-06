@@ -5,6 +5,15 @@ import { TaskBoardCard } from './TaskBoardCard';
 import { store, setStore } from '../store/core';
 import { bringTaskToFront, isTaskBackgrounded } from '../store/background-tasks';
 import { invoke } from '../lib/ipc';
+import {
+  extraPrWatchId,
+  getTaskExtraPrs,
+  markPrimaryPrClosed,
+  removePrChecks,
+  setPrChecks,
+  setTaskExtraPrs,
+  type PrChecksState,
+} from '../store/pr-checks-state';
 import { IPC } from '../../electron/ipc/channels';
 import type { Task } from '../store/types';
 
@@ -41,7 +50,20 @@ beforeEach(() => {
 afterEach(() => {
   dispose();
   container.remove();
+  for (const pr of getTaskExtraPrs('one')) removePrChecks(extraPrWatchId('one', pr.url));
+  setTaskExtraPrs('one', []);
+  removePrChecks('one');
+  markPrimaryPrClosed('one', undefined);
 });
+
+const failingChecks: PrChecksState = {
+  overall: 'failure',
+  passing: 0,
+  pending: 0,
+  failing: 1,
+  checks: [],
+  checkedAt: '2026-10-10T00:00:00Z',
+};
 
 const rightClick = () =>
   container
@@ -126,6 +148,42 @@ it('opens the pull request in the browser from its menu', () => {
     url: 'https://github.com/o/r/pull/7',
   });
   expect(labels()).not.toContain('Create pull request…');
+});
+
+it('shows the PR row of a task whose only PR is in a nested repository', () => {
+  const url = 'https://github.com/o/lib/pull/3';
+  setTaskExtraPrs('one', [{ url, repo: 'lib' }]);
+  setPrChecks(extraPrWatchId('one', url), failingChecks);
+  expect(container.querySelector('.task-board-status')?.textContent).toBe('CI failed');
+  expect(container.querySelector('.task-pr-babysit')).not.toBeNull();
+});
+
+it('links, tints and opens the PR its row describes', () => {
+  const url = 'https://github.com/o/lib/pull/3';
+  setStore('tasks', 'one', { prUrl: 'https://github.com/o/r/pull/7' });
+  setPrChecks('one', { ...failingChecks, overall: 'success', failing: 0 });
+  setTaskExtraPrs('one', [{ url, repo: 'lib' }]);
+  setPrChecks(extraPrWatchId('one', url), failingChecks);
+  const card = container.querySelector('.task-board-card');
+  expect(card?.classList).toContain('failed');
+  expect(
+    container.querySelector('.task-board-link[title*="pull request"]')?.getAttribute('title'),
+  ).toContain('3');
+  rightClick();
+  menuItem('Open PR in browser')?.click();
+  expect(invoke).toHaveBeenCalledWith(IPC.ShellOpenExternal, { url });
+});
+
+it('still links and opens its own PR once that closed unmerged', () => {
+  const url = 'https://github.com/o/r/pull/7';
+  setStore('tasks', 'one', { prUrl: url });
+  markPrimaryPrClosed('one', url);
+  expect(container.querySelector('.task-board-link')?.getAttribute('title')).toBe(
+    'Open pull request #7',
+  );
+  rightClick();
+  menuItem('Open PR in browser')?.click();
+  expect(invoke).toHaveBeenCalledWith(IPC.ShellOpenExternal, { url });
 });
 
 it('opens Finish on Create pull request from its menu', () => {

@@ -8,7 +8,8 @@ export const MAX_BABYSIT_ATTEMPTS = 3;
 export interface PrBabysit {
   /** Failure prompts sent since CI last passed. */
   attempts: number;
-  /** Head commit whose failures were last sent, so each failing commit is sent once. */
+  /** Head commit whose failures were last sent, so each failing commit is sent once.
+   *  With several PRs, their failing heads joined by `,` (see combinedBabysitChecks). */
   lastSentSha?: string;
   /** CI still fails on `lastSentSha` and nobody is pushing a fix, often because
    *  the agent could not run a command it needed; the failure is the user's. */
@@ -20,6 +21,39 @@ export interface BabysitChecks {
   overall: PrChecksOverall;
   headSha?: string;
   merged?: boolean;
+}
+
+/**
+ * A task's PRs summed up as one, so one Babysit covers them all: merged once
+ * every PR merged, otherwise the open ones' state with running beating failed
+ * beating passed. A failure's `headSha` joins the failing heads, so a push to
+ * any of them is a new failure to send. Unknown until every PR has reported.
+ */
+export function combinedBabysitChecks(
+  all: readonly (BabysitChecks | undefined)[],
+): BabysitChecks | undefined {
+  if (all.length === 0 || all.some((c) => c === undefined)) return undefined;
+  const open = (all as BabysitChecks[]).filter((c) => !c.merged);
+  if (open.length === 0) return { overall: 'none', merged: true };
+  // A single PR keeps its own state, so `lastSentSha` stays a plain commit.
+  if (open.length === 1 && open[0]) return open[0];
+  const has = (overall: PrChecksOverall) => open.some((c) => c.overall === overall);
+  if (has('pending')) return { overall: 'pending' };
+  if (has('failure')) {
+    const heads = open.filter((c) => c.overall === 'failure').map((c) => c.headSha);
+    return heads.every(Boolean)
+      ? { overall: 'failure', headSha: heads.join(',') }
+      : { overall: 'failure' };
+  }
+  return { overall: has('success') ? 'success' : 'none' };
+}
+
+/** Every failing head in `headSha` was already sent, so nothing new failed;
+ *  a PR fixed meanwhile drops out of the key without making the rest new. */
+function alreadySent(headSha: string, lastSentSha: string | undefined): boolean {
+  if (!lastSentSha) return false;
+  const sent = new Set(lastSentSha.split(','));
+  return headSha.split(',').every((head) => sent.has(head));
 }
 
 export type BabysitStep =
@@ -41,7 +75,7 @@ export function nextBabysitStep(
   // Pending wins over failed in the summary, so this waits for the whole run
   // and sends its failures together.
   if (checks.overall !== 'failure' || !checks.headSha) return { kind: 'wait' };
-  if (checks.headSha === babysit.lastSentSha) return { kind: 'wait' };
+  if (alreadySent(checks.headSha, babysit.lastSentSha)) return { kind: 'wait' };
   if (babysit.attempts >= MAX_BABYSIT_ATTEMPTS) return { kind: 'give-up' };
   return { kind: 'send', headSha: checks.headSha };
 }
@@ -52,7 +86,7 @@ export function isAwaitingFixPush(babysit: PrBabysit, checks: BabysitChecks | un
   return (
     checks?.overall === 'failure' &&
     checks.headSha !== undefined &&
-    checks.headSha === babysit.lastSentSha
+    alreadySent(checks.headSha, babysit.lastSentSha)
   );
 }
 
@@ -67,6 +101,6 @@ export function babysitCiWaitReason(
   if (checks.overall === 'none') return 'Waiting for CI checks to start';
   if (checks.overall === 'success') return 'CI is passing';
   if (!checks.headSha) return 'Waiting for the PR checks to load';
-  if (checks.headSha === babysit.lastSentSha) return 'Waiting for a new push';
+  if (alreadySent(checks.headSha, babysit.lastSentSha)) return 'Waiting for a new push';
   return null;
 }

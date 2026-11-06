@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/johannesjo/parallel-code/blob/main/CONTRIBUTING.md
+    about: How to set up the project and open a pull request.
+  - name: Report a security vulnerability
+    url: https://github.com/johannesjo/parallel-code/security/advisories/new
+    about: Please report security issues privately, not as a public issue.

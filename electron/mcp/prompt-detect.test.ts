@@ -81,6 +81,13 @@ describe('stripAnsi', () => {
     expect(stripAnsi(raw)).toBe('bold yellow');
   });
 
+  it('removes CSI sequences with intermediate or private-marker bytes', () => {
+    // Shells set the cursor shape (`ESC [ 5 SP q`) and keyboard modes (`ESC [ > 4 ; 1 m`)
+    // after drawing the prompt; leftovers would hide that the line ends in `❯`.
+    expect(stripAnsi('❯ \x1b[5 q')).toBe('❯ ');
+    expect(stripAnsi('❯ \x1b[>4;1m')).toBe('❯ ');
+  });
+
   it('returns empty string for input that is only escape sequences', () => {
     expect(stripAnsi('\x1b[2J\x1b[H\x1b[?1049h')).toBe('');
   });

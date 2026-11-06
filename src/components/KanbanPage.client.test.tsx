@@ -214,6 +214,7 @@ describe('KanbanPage', () => {
       branchName: 'task/sync',
       gitIsolation: 'worktree',
       agentIds: ['a1'],
+      shellAgentIds: [],
       lastPrompt: 'implement the engine',
     } as unknown as Task);
     setStore('agents', 'a1', { def: { name: 'Claude Code' } } as never);
@@ -240,6 +241,7 @@ describe('KanbanPage', () => {
       branchName: 'task/sync',
       gitIsolation: 'worktree',
       agentIds: [],
+      shellAgentIds: [],
     } as unknown as Task);
     await mount();
     cardEl('Sync engine')
@@ -261,6 +263,7 @@ describe('KanbanPage', () => {
       branchName: 'task/sync',
       gitIsolation: 'worktree',
       agentIds: [],
+      shellAgentIds: [],
     } as unknown as Task);
     vi.mocked(getTaskAttentionState).mockReturnValue('needs_input');
     await mount();
@@ -463,6 +466,7 @@ describe('KanbanPage', () => {
       branchName: 'task/sync',
       gitIsolation: 'worktree',
       agentIds: [],
+      shellAgentIds: [],
     } as unknown as Task);
     vi.mocked(getTaskAttentionState).mockReturnValue('needs_input');
     await mount();

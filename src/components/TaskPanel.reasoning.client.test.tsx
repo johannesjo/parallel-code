@@ -18,6 +18,8 @@ import {
   toggleFocusMode,
   setTaskFocusedPanel,
   setTaskBriefs,
+  setTaskContext,
+  setShowPromptInput,
   setActiveTask,
 } from '../store/store';
 import { GIST_LABEL } from '../lib/understanding-tour';
@@ -64,6 +66,7 @@ vi.mock('../store/store', () => {
     askCodeProvider: 'minimax',
     agentEnvFiles: {},
     taskBriefs: true,
+    taskContext: false,
     pendingAction: null as unknown,
   });
   pending.set = (action: unknown) => setStore('pendingAction', action);
@@ -101,6 +104,9 @@ vi.mock('../store/store', () => {
     clearPendingAction: () => setStore('pendingAction', null),
     toggleFocusMode: (on?: boolean) => setStore('focusMode', on ?? !store.focusMode),
     setTaskBriefs: (on: boolean) => setStore('taskBriefs', on),
+    setTaskContext: (on: boolean) => setStore('taskContext', on),
+    setShowPromptInput: (on: boolean) => setStore('showPromptInput', on),
+    showCanvasContext: vi.fn(),
   };
 });
 vi.mock('../lib/theme', () => ({ theme: {} }));
@@ -135,7 +141,15 @@ vi.mock('./TaskAITerminal', () => ({
     </div>
   ),
 }));
-vi.mock('./TaskBrief', () => ({ TaskBriefBar: () => <div class="test-brief-bar" /> }));
+vi.mock('./TaskBrief', () => ({
+  TaskBriefBar: () => <div class="test-brief-bar" />,
+  // The brief's question, without the working-state check behind it.
+  needsYouNow: (task: Task) => task.brief?.brief.needsYou ?? '',
+}));
+vi.mock('./TaskContext', () => ({ TaskContext: () => <div class="test-context" /> }));
+vi.mock('./TaskContextStrip', () => ({
+  TaskContextStrip: () => <div class="test-context-strip" />,
+}));
 vi.mock('./PromptInput', () => ({
   PromptInput: () => <textarea class="test-prompt" value="Draft" />,
 }));
@@ -355,6 +369,97 @@ it('hides the brief line while briefs are off', () => {
     expect(bar()).toBeNull();
   } finally {
     setTaskBriefs(true);
+  }
+});
+
+function briefTask(needsYou?: string): Task {
+  return {
+    id: 'task',
+    name: 'Task',
+    projectId: 'project',
+    agentIds: ['agent'],
+    shellAgentIds: [],
+    notes: '',
+    gitIsolation: 'none',
+    branchName: '',
+    worktreePath: '/tmp/task',
+    lastPrompt: '',
+    brief: { brief: { goal: 'g', now: 'n', needsYou }, generatedAt: 1, fingerprint: '' },
+  };
+}
+
+it('swaps the header brief for a plan line while task context is on in the stacked view', () => {
+  const container = document.createElement('div');
+  document.body.append(container);
+  dispose = render(() => <TaskPanel task={briefTask()} isActive />, container);
+  const bar = () => container.querySelector('.test-brief-bar');
+  const strip = () => container.querySelector('.test-context-strip');
+  expect(bar()).not.toBeNull();
+  expect(strip()).toBeNull();
+  setTaskContext(true);
+  try {
+    expect(bar()).toBeNull();
+    expect(strip()).not.toBeNull();
+    expect(container.querySelector('.test-context')).toBeNull();
+    // Title 38px + plan line 28px + branch bar 28px, so the terminal never moves.
+    const header = expectDefined(container.querySelector<HTMLElement>('.task-header-stack'));
+    expect(header.style.flex).toBe('0 0 94px');
+  } finally {
+    setTaskContext(false);
+  }
+});
+
+it('puts task context on top of the split view side column instead of the header', () => {
+  const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
+  setTaskContext(true);
+  try {
+    toggleFocusMode(true);
+    const container = document.createElement('div');
+    document.body.append(container);
+    dispose = render(() => <TaskPanel task={briefTask()} isActive />, container);
+    const contextCell = expectDefined(
+      container.querySelector('.test-context')?.closest<HTMLElement>('.rp-cell'),
+    );
+    const notesCell = expectDefined(
+      container.querySelector('.test-notes')?.closest<HTMLElement>('.rp-cell'),
+    );
+    expect(contextCell.parentElement).toBe(notesCell.parentElement);
+    expect(contextCell.parentElement?.querySelector(':scope > .rp-cell')).toBe(contextCell);
+    // Sized to its content up to a cap, so the panes below keep their room.
+    expect(contextCell.style.maxHeight).toBe('45%');
+    expect(container.querySelector('.test-context-strip')).toBeNull();
+    expect(container.querySelector('.test-brief-bar')).toBeNull();
+    setTaskContext(false);
+    expect(container.querySelector('.test-context')).toBeNull();
+    expect(container.querySelector('.test-brief-bar')).not.toBeNull();
+  } finally {
+    toggleFocusMode(false);
+    setTaskContext(false);
+    width.mockRestore();
+  }
+});
+
+it("shows the turned-off prompt box for the agent's question only with task context on", () => {
+  const container = document.createElement('div');
+  document.body.append(container);
+  const prompt = () => container.querySelector('.test-prompt');
+  setShowPromptInput(false);
+  try {
+    dispose = render(
+      () => <TaskPanel task={briefTask('Keep the old route?')} isActive />,
+      container,
+    );
+    // Without task context, the header brief asks the question instead.
+    expect(prompt()).toBeNull();
+    setTaskContext(true);
+    expect(prompt()).not.toBeNull();
+    dispose();
+    setTaskContext(true);
+    dispose = render(() => <TaskPanel task={briefTask()} isActive />, container);
+    expect(prompt()).toBeNull();
+  } finally {
+    setTaskContext(false);
+    setShowPromptInput(true);
   }
 });
 

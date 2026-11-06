@@ -4,9 +4,29 @@ import {
   buildIssuePrompt,
   buildIssueTriagePrompt,
   buildReviewFeedbackPrompt,
+  workItemTaskName,
 } from './github-prompts';
 
 const pr = { number: 7, url: 'https://github.com/o/r/pull/7' };
+
+it.each([
+  ['issue', 'Issue'],
+  ['pr', 'PR'],
+] as const)('names a %s with its number and title', (kind, label) => {
+  expect(workItemTaskName({ kind, number: 1234, title: 'Fix login' })).toBe(
+    `${label} 1234: Fix login`,
+  );
+  const longName = workItemTaskName({ kind, number: 1234, title: 'Long title '.repeat(30) });
+  expect(longName.length).toBeLessThanOrEqual(120);
+  expect(longName).toMatch(new RegExp(`^${label} 1234: Long title`));
+  expect(longName).toMatch(/(?:Long|title)$/);
+  expect(workItemTaskName({ kind, number: 1234, title: 'x'.repeat(121) })).toBe(
+    `${label} 1234: ${'x'.repeat(120 - `${label} 1234: `.length)}`,
+  );
+  expect(workItemTaskName({ kind, number: 1234, title: 'Please fix login please' })).toBe(
+    `${label} 1234: Please fix login please`,
+  );
+});
 
 describe('buildIssuePrompt', () => {
   it('bounds a full browser description and points to the omitted context', () => {

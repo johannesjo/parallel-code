@@ -5,8 +5,11 @@ import {
   buildSpDoneNote,
   decideSpFocusAction,
   parseParallelCodeUrl,
+  resolveSpNotesSync,
   resolveSpTitleSync,
+  SP_MAX_NOTES_LENGTH,
   SP_MAX_TITLE_LENGTH,
+  toSpNotes,
   toSpTitle,
   type SpTaskSummary,
 } from './super-productivity.js';
@@ -21,7 +24,7 @@ describe('decideSpFocusAction', () => {
   it('tracks when nothing is being tracked', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: null, isBreak: false },
+        tracking: { current: null, isBreak: false, otherDevice: null },
         ownSpTaskId: 'own',
         ownSpTaskIsDone: false,
         linkedSpTaskIds: linked,
@@ -32,7 +35,7 @@ describe('decideSpFocusAction', () => {
   it('tracks a not-yet-linked task (it will be created) when nothing is tracked', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: null, isBreak: false },
+        tracking: { current: null, isBreak: false, otherDevice: null },
         ownSpTaskId: null,
         ownSpTaskIsDone: false,
         linkedSpTaskIds: linked,
@@ -43,7 +46,7 @@ describe('decideSpFocusAction', () => {
   it('switches away from another Parallel Code task', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: spTask('other-pc'), isBreak: false },
+        tracking: { current: spTask('other-pc'), isBreak: false, otherDevice: null },
         ownSpTaskId: 'own',
         ownSpTaskIsDone: false,
         linkedSpTaskIds: linked,
@@ -54,7 +57,11 @@ describe('decideSpFocusAction', () => {
   it('treats a subtask of a linked task as Parallel Code work', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: spTask('sub', { parentId: 'other-pc' }), isBreak: false },
+        tracking: {
+          current: spTask('sub', { parentId: 'other-pc' }),
+          isBreak: false,
+          otherDevice: null,
+        },
         ownSpTaskId: 'own',
         ownSpTaskIsDone: false,
         linkedSpTaskIds: linked,
@@ -66,7 +73,7 @@ describe('decideSpFocusAction', () => {
     for (const current of [spTask('own'), spTask('sub', { parentId: 'own' })]) {
       expect(
         decideSpFocusAction({
-          tracking: { current, isBreak: false },
+          tracking: { current, isBreak: false, otherDevice: null },
           ownSpTaskId: 'own',
           ownSpTaskIsDone: false,
           linkedSpTaskIds: linked,
@@ -78,7 +85,11 @@ describe('decideSpFocusAction', () => {
   it('never takes over a task that is not Parallel Code work', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: spTask('email', { title: 'Answer email' }), isBreak: false },
+        tracking: {
+          current: spTask('email', { title: 'Answer email' }),
+          isBreak: false,
+          otherDevice: null,
+        },
         ownSpTaskId: 'own',
         ownSpTaskIsDone: false,
         linkedSpTaskIds: linked,
@@ -89,7 +100,40 @@ describe('decideSpFocusAction', () => {
   it('asks instead of starting during a break', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: null, isBreak: true },
+        tracking: { current: null, isBreak: true, otherDevice: null },
+        ownSpTaskId: 'own',
+        ownSpTaskIsDone: false,
+        linkedSpTaskIds: linked,
+      }),
+    ).toEqual({ kind: 'banner', reason: 'break' });
+  });
+
+  it('asks instead of taking over tracking on another device', () => {
+    expect(
+      decideSpFocusAction({
+        tracking: { current: null, isBreak: false, otherDevice: 'Android' },
+        ownSpTaskId: 'own',
+        ownSpTaskIsDone: false,
+        linkedSpTaskIds: linked,
+      }),
+    ).toEqual({ kind: 'banner', reason: 'other_device', trackingTitle: 'Android' });
+  });
+
+  it('leaves its own task alone even while another device tracks', () => {
+    expect(
+      decideSpFocusAction({
+        tracking: { current: spTask('own'), isBreak: false, otherDevice: 'Android' },
+        ownSpTaskId: 'own',
+        ownSpTaskIsDone: false,
+        linkedSpTaskIds: linked,
+      }),
+    ).toEqual({ kind: 'none' });
+  });
+
+  it('reports a break before another device', () => {
+    expect(
+      decideSpFocusAction({
+        tracking: { current: null, isBreak: true, otherDevice: 'Android' },
         ownSpTaskId: 'own',
         ownSpTaskIsDone: false,
         linkedSpTaskIds: linked,
@@ -100,7 +144,7 @@ describe('decideSpFocusAction', () => {
   it('asks instead of starting a duplicate when the linked task is gone', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: null, isBreak: false },
+        tracking: { current: null, isBreak: false, otherDevice: null },
         ownSpTaskId: null,
         ownSpTaskIsDone: false,
         ownSpTaskMissing: true,
@@ -112,7 +156,7 @@ describe('decideSpFocusAction', () => {
   it('asks instead of reopening a task completed in Super Productivity', () => {
     expect(
       decideSpFocusAction({
-        tracking: { current: null, isBreak: false },
+        tracking: { current: null, isBreak: false, otherDevice: null },
         ownSpTaskId: 'own',
         ownSpTaskIsDone: true,
         linkedSpTaskIds: linked,
@@ -136,6 +180,66 @@ describe('resolveSpTitleSync', () => {
   });
   it('only moves the base when both made the same rename', () => {
     expect(resolveSpTitleSync('a', 'b', 'b')).toEqual({ kind: 'rebase', title: 'b' });
+  });
+});
+
+describe('toSpNotes', () => {
+  it('leaves notes within limits untouched', () => {
+    expect(toSpNotes('')).toBe('');
+    expect(toSpNotes('line 1\nline 2\n\n# Header')).toBe('line 1\nline 2\n\n# Header');
+  });
+
+  it('caps notes longer than SP_MAX_NOTES_LENGTH', () => {
+    const long = 'a'.repeat(SP_MAX_NOTES_LENGTH + 50);
+    const cut = toSpNotes(long);
+    expect(cut.length).toBe(SP_MAX_NOTES_LENGTH - 1);
+  });
+
+  it('does not split surrogate pairs at the cut boundary', () => {
+    const prefix = 'a'.repeat(SP_MAX_NOTES_LENGTH - 2);
+    const withEmoji = `${prefix}🔥xx`;
+    const cut = toSpNotes(withEmoji);
+    expect(cut).toBe(prefix);
+  });
+});
+
+describe('resolveSpNotesSync', () => {
+  it('does nothing when local, remote and base agree', () => {
+    expect(resolveSpNotesSync('notes', 'notes', 'notes')).toEqual({ kind: 'none' });
+  });
+
+  it('pulls changes made in Super Productivity', () => {
+    expect(resolveSpNotesSync('a', 'a', 'b')).toEqual({ kind: 'pull', notes: 'b' });
+  });
+
+  it('pushes changes made in Parallel Code', () => {
+    expect(resolveSpNotesSync('a', 'b', 'a')).toEqual({ kind: 'push', notes: 'b' });
+  });
+
+  it('lets Parallel Code win when both changed', () => {
+    expect(resolveSpNotesSync('a', 'b', 'c')).toEqual({ kind: 'push', notes: 'b' });
+  });
+
+  it('rebases when both made identical edits', () => {
+    expect(resolveSpNotesSync('a', 'b', 'b')).toEqual({ kind: 'rebase', notes: 'b' });
+  });
+
+  it('pulls remote notes when base is undefined and local is empty', () => {
+    expect(resolveSpNotesSync(undefined, '', 'remote notes')).toEqual({
+      kind: 'pull',
+      notes: 'remote notes',
+    });
+  });
+
+  it('pushes local notes when base is undefined and local has content', () => {
+    expect(resolveSpNotesSync(undefined, 'local notes', '')).toEqual({
+      kind: 'push',
+      notes: 'local notes',
+    });
+    expect(resolveSpNotesSync(undefined, 'local notes', 'remote notes')).toEqual({
+      kind: 'push',
+      notes: 'local notes',
+    });
   });
 });
 

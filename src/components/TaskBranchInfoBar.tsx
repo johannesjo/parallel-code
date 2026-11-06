@@ -132,7 +132,7 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
     return parsed?.type === 'pull' && !!parsed.number;
   };
   const githubLabel = (url: string): string => url.replace(/^https?:\/\/(www\.)?github\.com\//, '');
-  const compactSourceLabel = (url: string): string => {
+  const sourceLabel = (url: string): string => {
     const parsed = parseGitHubUrl(url);
     return parsed?.number ? `#${parsed.number}` : (parsed?.repo ?? 'Source');
   };
@@ -143,6 +143,15 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
     const parsed = url ? parseGitHubUrl(url) : null;
     return parsed?.type === 'pull' ? parsed.number : undefined;
   };
+  // Babysit covers all the task's PRs, so it stays while any of them is open.
+  const hasOpenPr = () =>
+    [
+      ...(prLinkUrl() ? [props.task.id] : []),
+      ...getTaskExtraPrs(props.task.id).map((pr) => extraPrWatchId(props.task.id, pr.url)),
+    ].some((watchId) => {
+      const checks = getPrChecks(watchId);
+      return !!checks && !checks.merged;
+    });
   const sourceLinkUrl = () => {
     const prUrl = prLinkUrl();
     return props.task.githubUrl && props.task.githubUrl !== prUrl
@@ -262,7 +271,7 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
                   <FixCiButton taskId={props.task.id} prUrl={url()} prNumber={Number(number())} />
                 )}
               </Show>
-              <Show when={pr() && !pr()?.merged}>
+              <Show when={hasOpenPr()}>
                 <BabysitButton taskId={props.task.id} />
               </Show>
               <Show when={readyToMerge() && props.onFinish}>
@@ -306,6 +315,10 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
           );
         }}
       </For>
+      {/* Without a primary PR, Babysit follows the additional ones. */}
+      <Show when={!prLinkUrl() && hasOpenPr()}>
+        <BabysitButton taskId={props.task.id} />
+      </Show>
       <Show when={sourceLinkUrl()}>
         {(url) => (
           <button
@@ -323,8 +336,8 @@ export function TaskBranchInfoBar(props: TaskBranchInfoBarProps) {
               Source
             </span>
             <GitHubMarkIcon size={12} style={{ 'flex-shrink': '0' }} />
-            <span class="task-branch-source-label">{githubLabel(url())}</span>
-            <span class="task-branch-source-compact-label">{compactSourceLabel(url())}</span>
+            <span class="task-branch-source-label">{sourceLabel(url())}</span>
+            <span class="task-branch-source-compact-label">{sourceLabel(url())}</span>
           </button>
         )}
       </Show>

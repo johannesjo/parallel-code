@@ -160,6 +160,7 @@ async function readUncommittedPlan(
     'git',
     [
       '--literal-pathspecs',
+      '--no-optional-locks',
       'status',
       '--porcelain=v1',
       '-z',

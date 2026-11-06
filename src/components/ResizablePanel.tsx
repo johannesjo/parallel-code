@@ -18,8 +18,9 @@ export interface PanelChild {
   /** Starting flex-basis (px) for non-absorbers without a user-pinned size.
    *  Without this, non-absorbers fall back to `auto` (content-sized), which
    *  in horizontal splits lets wide intrinsic content push the column far
-   *  past its min. Use whenever content-driven sizing would surprise. */
-  defaultSize?: number;
+   *  past its min. Use whenever content-driven sizing would surprise. A
+   *  number is px; a string is used verbatim as a CSS length. */
+  defaultSize?: number | string;
   /** Maximum content-driven size for non-absorbers without a user-pinned size.
    *  A number is treated as px; a string is used verbatim as a CSS length
    *  (e.g. `min(400px, 33vh)`). User drag pins intentionally ignore this so a
@@ -182,9 +183,13 @@ export function ResizablePanel(props: ResizablePanelProps) {
       };
     }
     if (child.defaultSize !== undefined) {
+      const size =
+        typeof child.defaultSize === 'number' ? `${child.defaultSize}px` : child.defaultSize;
       return {
-        flex: `0 ${isHorizontal() ? 1 : 0} ${child.defaultSize}px`,
-        [dim]: `${child.defaultSize}px`,
+        'flex-grow': '0',
+        'flex-shrink': isHorizontal() ? '1' : '0',
+        'flex-basis': size,
+        [dim]: size,
         [minDim]: `${min}px`,
         overflow: 'hidden',
       };
@@ -211,6 +216,41 @@ export function ResizablePanel(props: ResizablePanelProps) {
     const el = wrapperRefs.get(childId);
     if (!el) return 0;
     return isHorizontal() ? el.getBoundingClientRect().width : el.getBoundingClientRect().height;
+  }
+
+  const isPinnable = (child: PanelChild | undefined): child is PanelChild =>
+    !!child && !isAbsorber(child.id) && child.noPin?.() !== true;
+
+  /** The sole absorber at or after `fromIdx`, when it can flex. */
+  function absorberFrom(fromIdx: number): PanelChild | undefined {
+    if (absorberSet().size !== 1) return undefined;
+    const absorber = props.children.slice(fromIdx).find((c) => isAbsorber(c.id));
+    return absorber && absorber.noPin?.() !== true ? absorber : undefined;
+  }
+
+  const roomAboveMin = (child: PanelChild) =>
+    Math.max(0, measureWrapper(child.id) - (child.minSize ?? 0));
+
+  /** Space a drag may take from the sole absorber once the fixed child below
+   *  the handle reaches its minimum, so growing one pane (e.g. changed files)
+   *  keeps going into the flexible pane further down (the terminals) instead
+   *  of stopping. The absorber shrinks on its own via `flex: 1 1 0`. */
+  function cascadeRoom(handleIdx: number): number {
+    const left = props.children[handleIdx];
+    const right = props.children[handleIdx + 1];
+    if (!isPinnable(left) || !isPinnable(right)) return 0;
+    const absorber = absorberFrom(handleIdx + 2);
+    return absorber ? roomAboveMin(absorber) : 0;
+  }
+
+  /** The mirror case: once the fixed child above the handle reaches its
+   *  minimum, keep shrinking the pinnable pane before it (notes at minimum
+   *  shrink changed files), handing the space to the absorber below. */
+  function cascadeAbove(handleIdx: number) {
+    const before = props.children[handleIdx - 1];
+    if (!isPinnable(before) || !isPinnable(props.children[handleIdx])) return undefined;
+    if (!absorberFrom(handleIdx + 1)) return undefined;
+    return { child: before, start: measureWrapper(before.id), room: roomAboveMin(before) };
   }
 
   function beginDrag(handleIdx: number, e: MouseEvent) {
@@ -263,11 +303,19 @@ export function ResizablePanel(props: ResizablePanelProps) {
       }
     }
     const soleAbs = absorberSet().size === 1;
+    const cascade = cascadeRoom(handleIdx);
+    const above = cascadeAbove(handleIdx);
+    let latestAbove: number | undefined;
 
     const onMove = (ev: MouseEvent) => {
       let delta = (isHorizontal() ? ev.clientX : ev.clientY) - startPos;
-      if (!leftNoPin && startLeft + delta < leftMin) delta = leftMin - startLeft;
-      if (!rightNoPin && startRight - delta < rightMin) delta = startRight - rightMin;
+      const aboveRoom = above?.room ?? 0;
+      if (!leftNoPin && startLeft + delta < leftMin - aboveRoom) {
+        delta = leftMin - aboveRoom - startLeft;
+      }
+      if (!rightNoPin && startRight - delta < rightMin - cascade) {
+        delta = startRight - rightMin + cascade;
+      }
       // Absorber clamps when noPin reroutes the delta through it. With
       // rightNoPin the absorber gives up `delta`; with leftNoPin it absorbs
       // `-delta`. Either way the absorber must stay above its minSize.
@@ -277,8 +325,17 @@ export function ResizablePanel(props: ResizablePanelProps) {
       if (leftNoPin && reroutedAbsorberId && absorberStart + delta < absorberMin) {
         delta = absorberMin - absorberStart;
       }
-      latestLeft = startLeft + delta;
-      latestRight = startRight - delta;
+      // Past the left child's minimum the pane above it gives up the rest.
+      latestLeft = above
+        ? startLeft + Math.max(delta, -Math.max(0, startLeft - leftMin))
+        : startLeft + delta;
+      const aboveShrink = latestLeft - (startLeft + delta);
+      latestAbove = above && aboveShrink > 0 ? above.start - aboveShrink : undefined;
+      // Past the right child's minimum the cascade absorber gives up the rest.
+      latestRight =
+        cascade > 0
+          ? startRight - Math.min(delta, Math.max(0, startRight - rightMin))
+          : startRight - delta;
       // Skip the override on noPin children so they stay content-sized; also
       // skip on a sole absorber adjacent to a noPin sibling, since pinning the
       // absorber temporarily would steal the space the noPin child can't take.
@@ -294,6 +351,7 @@ export function ResizablePanel(props: ResizablePanelProps) {
       if (!rightNoPin && !(rightIsAbs && leftNoPin && soleAbs)) {
         override[rightChild.id] = latestRight;
       }
+      if (above && latestAbove !== undefined) override[above.child.id] = latestAbove;
       setDragOverride(override);
     };
     const cleanup = () => {
@@ -326,6 +384,8 @@ export function ResizablePanel(props: ResizablePanelProps) {
       batch(() => {
         if (leftKey) setPanelUserSize(leftKey, latestLeft);
         if (rightKey) setPanelUserSize(rightKey, latestRight);
+        const aboveKey = above ? keyFor(above.child.id) : null;
+        if (aboveKey && latestAbove !== undefined) setPanelUserSize(aboveKey, latestAbove);
         for (const { key, size } of absorberPins) {
           if (key && size > 0) setPanelUserSize(key, size);
         }

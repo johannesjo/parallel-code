@@ -1,8 +1,10 @@
 /** Strip ANSI escape sequences (CSI, OSC, and single-char escapes) from terminal output. */
 export function stripAnsi(text: string): string {
   return text.replace(
+    // A full CSI (ECMA-48: parameters, then intermediates, then a final byte) goes
+    // first: the older pattern leaves e.g. ` q` of a cursor-shape change behind.
     // eslint-disable-next-line no-control-regex
-    /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nq-uy=><~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g,
+    /(?:\x1b\[|\u009b)[0-?]*[ -/]*[@-~]|[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nq-uy=><~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g,
     '',
   );
 }

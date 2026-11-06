@@ -403,7 +403,7 @@ export type EslintQualityResult =
   | { status: 'unavailable'; message: string };
 
 /** Agents whose subscription rate limits the app can read. */
-export type UsageProvider = 'claude' | 'codex';
+export type UsageProvider = 'claude' | 'codex' | 'antigravity';
 
 export interface UsageWindow {
   /** Percent of the window consumed, 0–100. */
@@ -446,6 +446,8 @@ export interface UsageState {
   /** `unavailable` means no subscription login — the bar hides. `error` keeps the last snapshot. */
   status: 'idle' | 'ok' | 'error' | 'unavailable';
   error: string | null;
+  /** Whether a background or user-initiated refresh is currently in flight. */
+  refreshing?: boolean;
 }
 
 /** One OS process in the resources panel. */

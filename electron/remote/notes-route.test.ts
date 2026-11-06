@@ -263,6 +263,13 @@ describe('GET /api/mobile/usage', () => {
       status: 'idle' as const,
       error: null,
     },
+    antigravity: {
+      fiveHour: null,
+      sevenDay: null,
+      fetchedAt: null,
+      status: 'idle' as const,
+      error: null,
+    },
   };
   const getUsage = vi.fn(async () => usage);
   beforeEach(() => start({ getUsage }));

@@ -109,6 +109,7 @@ import {
   getProject,
   triggerAction,
 } from './store/store';
+import { toggleGitHubIssues } from './store/github-issues-target';
 import { isGitHubUrl } from './lib/github-url';
 import { isClaudeSessionUrl } from './lib/claude-session-url';
 import { getDeepActiveElement } from './lib/dom-focus';
@@ -818,6 +819,7 @@ function App() {
         withViewTransition(() => setWorkspaceView(next), workspaceViewTransitionTypes(next));
       },
       toggleBoardView: () => withViewTransition(toggleBoardView),
+      toggleGitHubIssues: () => toggleGitHubIssues(),
       openNextAttentionTask: () => openNextAttentionTask(),
       openPreviousAttentionTask: () => openPreviousAttentionTask(),
       switchDocument: () => {

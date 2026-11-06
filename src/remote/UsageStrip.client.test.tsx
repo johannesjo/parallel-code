@@ -31,20 +31,54 @@ it('shows the providers the desktop has a snapshot for', async () => {
       error: null,
     },
     codex: { fiveHour: null, sevenDay: null, fetchedAt: null, status: 'unavailable', error: 'x' },
+    antigravity: {
+      fiveHour: { usedPercent: 30, resetsAt: null },
+      sevenDay: null,
+      fetchedAt: 1,
+      status: 'ok',
+      error: null,
+    },
   });
   const host = await mount();
   await vi.waitFor(() => expect(host.querySelector('.mobile-usage')).not.toBeNull());
   expect(host.textContent).toContain('Claude');
+  expect(host.textContent).toContain('Antigravity');
   expect(host.textContent).not.toContain('Codex');
   expect(host.textContent).toContain('15% left');
   expect(host.textContent).toContain('80% left');
+  expect(host.textContent).toContain('70% left');
   expect(host.querySelector('.usage-meter.warn')).not.toBeNull();
+});
+
+it('shows credit spend for a login with no rate-limit windows', async () => {
+  const idle = { fiveHour: null, sevenDay: null, fetchedAt: null, error: null };
+  vi.mocked(fetchUsage).mockResolvedValue({
+    claude: {
+      ...idle,
+      creditUsage: { used: 12.34, limit: 50, currency: 'USD', usedPercent: 24.68 },
+      fetchedAt: 1,
+      status: 'ok',
+    },
+    codex: { ...idle, status: 'idle' },
+    antigravity: { ...idle, status: 'idle' },
+  });
+  const host = await mount();
+  await vi.waitFor(() => expect(host.querySelector('.mobile-usage')).not.toBeNull());
+  expect(host.textContent).toContain('$12.34 / $50.00');
+  expect(host.textContent).not.toContain('unavailable');
 });
 
 it('stays hidden when no subscription usage is readable', async () => {
   vi.mocked(fetchUsage).mockResolvedValue({
     claude: { fiveHour: null, sevenDay: null, fetchedAt: null, status: 'unavailable', error: 'x' },
     codex: { fiveHour: null, sevenDay: null, fetchedAt: null, status: 'idle', error: null },
+    antigravity: {
+      fiveHour: null,
+      sevenDay: null,
+      fetchedAt: null,
+      status: 'unavailable',
+      error: null,
+    },
   });
   const host = await mount();
   expect(host.querySelector('.mobile-usage')).toBeNull();

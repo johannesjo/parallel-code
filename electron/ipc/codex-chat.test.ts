@@ -233,6 +233,88 @@ describe('Codex chat app-server protocol', () => {
     h.chat.stop();
   });
 
+  it.each(['other-thread', 'previous-turn'])(
+    'keeps working when %s finishes before the active turn',
+    async (source) => {
+      const h = harness();
+      await h.start();
+      const sent = h.chat.send('Keep working');
+      h.reply({ turn: { id: 'active-turn' } });
+      await sent;
+      h.receive({
+        method: 'item/started',
+        params: {
+          threadId: 'thread-1',
+          item: { id: 'tool', type: 'commandExecution', command: 'npm test' },
+        },
+      });
+      const threadId = source === 'other-thread' ? 'thread-2' : 'thread-1';
+      h.receive({
+        method: 'turn/completed',
+        params: { threadId, turn: { id: 'older-turn', status: 'completed' } },
+      });
+      expect(h.chat.state.status).toBe('working');
+      expect(h.chat.state.items[0].activity?.status).toBe('running');
+
+      // Stop must still address the active turn, even after unrelated events.
+      const stopped = h.chat.interrupt();
+      expect(h.messages[h.messages.length - 1]).toMatchObject({
+        method: 'turn/interrupt',
+        params: { threadId: 'thread-1', turnId: 'active-turn' },
+      });
+      h.reply({});
+      await stopped;
+      h.receive({
+        method: 'turn/completed',
+        params: {
+          threadId: 'thread-1',
+          turn: { id: 'active-turn', status: 'interrupted' },
+        },
+      });
+      expect(h.chat.state.status).toBe('ready');
+      h.chat.stop();
+    },
+  );
+
+  it('ignores another thread starting or streaming while this conversation is idle', async () => {
+    const h = harness();
+    await h.start();
+    h.publish.mockClear();
+    h.receive({
+      method: 'turn/started',
+      params: { threadId: 'thread-2', turn: { id: 'other-turn' } },
+    });
+    h.receive({
+      method: 'item/agentMessage/delta',
+      params: { threadId: 'thread-2', itemId: 'other-message', delta: 'Still working' },
+    });
+    expect(h.chat.state.status).toBe('ready');
+    expect(h.chat.state.items).toEqual([]);
+    expect(h.publish).not.toHaveBeenCalled();
+    h.chat.stop();
+  });
+
+  it('clears resolved child-thread requests while the parent keeps working', async () => {
+    const h = harness();
+    await h.start();
+    const sent = h.chat.send('Delegate this task');
+    h.reply({ turn: { id: 'parent-turn' } });
+    await sent;
+    h.receive({
+      id: 'child-request',
+      method: 'item/commandExecution/requestApproval',
+      params: { threadId: 'child-thread', command: 'npm test' },
+    });
+    expect(h.chat.state.requests).toHaveLength(1);
+    h.receive({
+      method: 'serverRequest/resolved',
+      params: { threadId: 'child-thread', requestId: 'child-request' },
+    });
+    expect(h.chat.state.requests).toEqual([]);
+    expect(h.chat.state.status).toBe('working');
+    h.chat.stop();
+  });
+
   it('resumes the exact saved conversation and restores its history', async () => {
     const h = harness();
     await h.start('saved-thread', [

@@ -122,10 +122,14 @@ Each feature is described in [docs/features.md](docs/features.md).
 - **Planning** — a Kanban project plan kept in `KANBAN.md`, agents that start and manage their own subtasks, an arena that runs one prompt with two to four agents to compare, a mind map and the agent's live reasoning graph, a live Markdown canvas, notes, and short task briefs
 - **Running code** — shell terminals per task, a browser preview of your local app, per-project Docker sandboxes (not for Antigravity), direct mode without a worktree, folders without git, and importing existing worktrees
 - **Phone** — a phone UI in any mobile browser, an Android app, and notifications when a task needs you. See [docs/phone.md](docs/phone.md)
-- **Integrations** — PR CI status notifications, Super Productivity time tracking, and a choice of model for code Q&A
+- **Integrations** — PR CI status notifications, [Super Productivity](https://super-productivity.com) time tracking (an open-source to-do list and time tracker by the same developer), and a choice of model for code Q&A
 - **Customization** — Focus, Tiles and Board layouts, configurable shortcuts, custom agents, and 10 themes
 
 Every action has a keyboard shortcut. Press `Ctrl+/` or `F1` in the app to see them all, or read the [shortcut list](docs/features.md#keyboard-shortcuts).
+
+## Contributing
+
+Found a bug or have an idea? Use **Settings → General → Report a bug** in the app, or [open an issue](https://github.com/johannesjo/parallel-code/issues/new/choose). Pull requests are welcome, including ones written with coding agents; see [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
 ---
 

@@ -16,6 +16,7 @@ import { formatRelativeAge } from '../lib/relativeAge';
 import { invoke } from '../lib/ipc';
 import { errMessage, warn } from '../lib/log';
 import { store } from './core';
+import { applyTaskPlanEvent } from './task-plan';
 
 /**
  * Status an agent reported about itself through Claude Code hooks. Unlike the
@@ -25,7 +26,7 @@ import { store } from './core';
 export interface AgentHookStatus {
   state: AgentHookStatusState;
   /** Hook event that produced this state, or `Interrupt` / `PermissionAnswered`
-   *  when inferred from a keypress. */
+   *  when inferred from a keypress, or `PromptSent` when the app submitted a prompt. */
   event: string;
   prompt?: AgentHookPrompt;
   /** When the agent entered this state (epoch ms); kept across same-state events. */
@@ -54,6 +55,9 @@ export { AGENT_HOOK_STALE_MS };
 const INTERRUPT_SETTLE_MS = 500;
 /** Tool events of the interrupted turn can still land shortly after; ignore them. */
 const INTERRUPT_SUPPRESS_MS = 5_000;
+/** UserPromptSubmit normally lands well under a second after Enter; a sent text
+ *  that starts no turn (e.g. a local slash command) is withdrawn after this. */
+const PROMPT_CONFIRM_MS = 5_000;
 const TOOL_EVENTS: ReadonlySet<string> = new Set([
   'PreToolUse',
   'PostToolUse',
@@ -71,10 +75,26 @@ const ANSWER_INPUTS: ReadonlySet<string> = new Set([
   '\x1b[13;1u',
   ...'123456789',
 ]);
+/** A left-button release as an SGR mouse report (`ESC [ < 0 ; col ; row m`, 1-based):
+ *  Claude Code turns on mouse reporting, so clicking a dialog option answers it. */
+// eslint-disable-next-line no-control-regex -- matches the terminal's escape sequence
+const LEFT_CLICK_RELEASE = /^\x1b\[<0;\d+;(\d+)m$/;
+/** The option the dialog's cursor is on: `❯ 1. Yes`. A numbered list in the
+ *  transcript has no cursor. */
+const CURSOR_OPTION_LINE = /^\s*[❯›]\s*\d+\.\s/;
+
+/** True when `data` releases a left click on the dialog's selected option, the one
+ *  case verified against real Claude. A click elsewhere, e.g. to focus the terminal,
+ *  must not dismiss a waiting prompt. */
+function isOptionClick(data: string, lineAt: (row: number) => string): boolean {
+  const row = LEFT_CLICK_RELEASE.exec(data)?.[1];
+  return row !== undefined && CURSOR_OPTION_LINE.test(lineAt(Number(row)));
+}
 
 const [statuses, setStatuses] = createSignal<ReadonlyMap<string, AgentHookStatus>>(new Map());
 const staleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const interruptTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const promptTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const suppressToolEventsUntil = new Map<string, number>();
 // Retain retirement sequences so an in-flight snapshot cannot revive an exit.
 const observationSequences = new Map<string, number>();
@@ -167,6 +187,8 @@ export function applyAgentActivityObservation(observation: AgentActivityObservat
     return;
   }
   if (prev?.launchId !== observation.launchId) clearAgentHookStatus(observation.agentId);
+  // Before the tool-event suppression below: that guards status, not the plan.
+  applyTaskPlanEvent(observation);
   clearTimer(interruptTimers, observation.agentId);
   if (isSuppressedToolEvent(observation)) return;
   // Main already matched tool results and reduced this state. Reducing it
@@ -194,8 +216,13 @@ export function applyAgentActivitySnapshot(snapshot: AgentActivitySnapshot): voi
  * permission dialog and the tool finishing, so an approved long command would
  * sit at "Needs you" for its whole run. Both are inferences: the interrupt
  * waits out a settle window, the approval is corrected by the next hook event.
+ * `lineAt` reads a 1-based screen row, to tell a click on a dialog option apart.
  */
-export function noteAgentTerminalInput(agentId: string, data: string): void {
+export function noteAgentTerminalInput(
+  agentId: string,
+  data: string,
+  lineAt: (row: number) => string,
+): void {
   const current = statuses().get(agentId);
   if (!current) return;
   if (current.state === 'working' && !current.background && (data === ESC || data === CTRL_C)) {
@@ -204,7 +231,11 @@ export function noteAgentTerminalInput(agentId: string, data: string): void {
   }
   // AskUserQuestion is left alone: a digit only advances a multi-question
   // prompt, and its own PostToolUse clears the wait promptly anyway.
-  if (current.state === 'waiting' && current.prompt === 'permission' && ANSWER_INPUTS.has(data)) {
+  if (
+    current.state === 'waiting' &&
+    current.prompt === 'permission' &&
+    (ANSWER_INPUTS.has(data) || isOptionClick(data, lineAt))
+  ) {
     const now = Date.now();
     setStatus(agentId, {
       ...current,
@@ -217,6 +248,36 @@ export function noteAgentTerminalInput(agentId: string, data: string): void {
       unread: false,
     });
   }
+}
+
+/**
+ * The app just submitted a prompt to a hooked agent sitting between turns, so
+ * show the turn now instead of after Claude's UserPromptSubmit round trip. Any
+ * hook event replaces this inference; if none arrives, the previous state returns.
+ */
+export function noteAgentPromptSent(agentId: string): void {
+  const previous = statuses().get(agentId);
+  if (previous?.state !== 'done') return;
+  const now = Date.now();
+  const sent: AgentHookStatus = {
+    state: 'working',
+    event: 'PromptSent',
+    source: 'terminal',
+    launchId: previous.launchId,
+    since: now,
+    updatedAt: now,
+    unread: false,
+  };
+  setStatus(agentId, sent);
+  clearTimer(promptTimers, agentId);
+  promptTimers.set(
+    agentId,
+    setTimeout(() => {
+      promptTimers.delete(agentId);
+      if (statuses().get(agentId) !== sent) return;
+      setStatus(agentId, { ...previous, unread: false });
+    }, PROMPT_CONFIRM_MS),
+  );
 }
 
 /** Confirm the interrupt only if no hook event lands in the settle window;
@@ -287,6 +348,7 @@ export function formatAgentHookTooltip(status: TaskAgentHookStatus, nowMs?: numb
 export function clearAgentHookStatus(agentId: string): void {
   clearTimer(staleTimers, agentId);
   clearTimer(interruptTimers, agentId);
+  clearTimer(promptTimers, agentId);
   suppressToolEventsUntil.delete(agentId);
   if (!statuses().has(agentId)) return;
   updateStatuses((next) => next.delete(agentId));

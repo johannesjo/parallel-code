@@ -54,6 +54,13 @@ function toTaskSummary(value: unknown): SpTaskSummary | null {
   };
 }
 
+/** `/status` reports a device that tracks via SuperSync; older builds omit it. */
+function toOtherDevice(status: unknown): string | null {
+  if (!isRecord(status) || !isRecord(status.trackingOnOtherDevice)) return null;
+  const label = status.trackingOnOtherDevice.deviceLabel;
+  return typeof label === 'string' && label.trim() ? label.trim() : null;
+}
+
 function toTaskDetail(value: unknown): SpTaskDetail | null {
   const summary = toTaskSummary(value);
   if (!summary || !isRecord(value)) return null;
@@ -188,9 +195,10 @@ export function createSpClient(deps: SpClientDeps) {
     },
 
     async getTracking(): Promise<SpResult<SpTrackingState>> {
-      const [current, focus] = await Promise.all([
+      const [current, focus, status] = await Promise.all([
         request('GET', '/task-control/current'),
         request('GET', '/focus'),
+        request('GET', '/status'),
       ]);
       if (!current.ok) return current;
       const currentTask = current.value === null ? null : toTaskSummary(current.value);
@@ -207,6 +215,7 @@ export function createSpClient(deps: SpClientDeps) {
           // A paused break is still a break; 'done' means it is over.
           isBreak:
             timer?.purpose === 'break' && (timer.status === 'running' || timer.status === 'paused'),
+          otherDevice: status.ok ? toOtherDevice(status.value) : null,
         },
       };
     },
@@ -218,6 +227,7 @@ export function createSpClient(deps: SpClientDeps) {
 
     async createTask(input: {
       title: string;
+      notes?: string;
       projectId?: string;
       parentId?: string;
     }): Promise<SpResult<SpTaskSummary>> {
@@ -228,6 +238,7 @@ export function createSpClient(deps: SpClientDeps) {
         title: input.title,
         isIgnoreShortSyntax: true,
       };
+      if (typeof input.notes === 'string') body.notes = input.notes;
       if (input.parentId) body.parentId = input.parentId;
       else if (input.projectId) body.projectId = input.projectId;
       const res = await request('POST', '/tasks', body);
@@ -267,6 +278,13 @@ export function createSpClient(deps: SpClientDeps) {
       const res = await request('PATCH', `/tasks/${encodeURIComponent(taskId)}`, {
         title,
         isIgnoreShortSyntax: true,
+      });
+      return res.ok ? { ok: true, value: null } : res;
+    },
+
+    async updateTaskNotes(taskId: string, notes: string): Promise<SpResult<null>> {
+      const res = await request('PATCH', `/tasks/${encodeURIComponent(taskId)}`, {
+        notes,
       });
       return res.ok ? { ok: true, value: null } : res;
     },

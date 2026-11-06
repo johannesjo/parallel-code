@@ -70,7 +70,8 @@ vi.mock('../lib/ipc', () => ({
   invoke: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('./pr-checks-state', () => ({
+vi.mock('./pr-checks-state', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./pr-checks-state')>()),
   getPrChecks: (taskId: string) => mockPrChecks[taskId],
 }));
 
@@ -124,7 +125,7 @@ import {
   applyAgentHookEvent,
   getAgentHookStatus,
 } from './agentHookStatus';
-import { getTaskActivityTooltip } from './taskStatus';
+import { getTaskActivityTooltip, isTaskTerminalAsking } from './taskStatus';
 
 const CLAUDE_DECLINE_FOCUSED_TRUST_DIALOG = [
   ' WebFetch(domain:registry.npmjs.org),',
@@ -1428,6 +1429,51 @@ describe('task attention state', () => {
     expect(getTaskAttentionState('task-1')).toBe('shell_busy');
     expect(getTaskDotStatus('task-1')).toBe('waiting');
     expect(taskNeedsAttention('task-1')).toBe(false);
+  });
+
+  it('names the terminal when only a task shell is asking', () => {
+    setMockTask('task-1', { agentIds: ['agent-1'], shellAgentIds: ['shell-1'] });
+    setMockAgent('agent-1', { status: 'running' });
+    markAgentSpawned('agent-1');
+    // oh-my-zsh's default update mode stops a new shell at this prompt.
+    markAgentOutput(
+      'shell-1',
+      new TextEncoder().encode('[oh-my-zsh] Would you like to update? [Y/n] '),
+      'task-1',
+    );
+    vi.advanceTimersByTime(1_000);
+
+    expect(getTaskAttentionState('task-1')).toBe('needs_input');
+    expect(isTaskTerminalAsking('task-1')).toBe(true);
+
+    markAgentOutput(
+      'agent-1',
+      new TextEncoder().encode('Do you want to proceed?\r\n❯ 1. Yes\r\n  2. No'),
+      'task-1',
+    );
+    vi.advanceTimersByTime(1_000);
+    expect(isTaskTerminalAsking('task-1')).toBe(false);
+  });
+
+  it('does not keep asking once a shell command has finished', () => {
+    setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
+    // A finished command left a question in the output; the shell is back at a
+    // prompt the agent-prompt patterns do not know.
+    const output = 'Do you want to continue? [Y/n] y\r\nUpdated 3 packages\r\nλ ';
+    markAgentOutput('shell-1', new TextEncoder().encode(output), 'task-1');
+    vi.advanceTimersByTime(1_000);
+
+    expect(getTaskAttentionState('task-1')).not.toBe('needs_input');
+  });
+
+  it('clears an answered shell question once the prompt sets the cursor shape', () => {
+    setMockTask('task-1', { agentIds: [], shellAgentIds: ['shell-1'] });
+    // zsh draws its prompt, then switches to a bar cursor (`ESC [ 5 SP q`).
+    const output = 'Proceed? [y/N] y\r\nDone\r\n~/x on main\r\n❯ \x1b[5 q';
+    markAgentOutput('shell-1', new TextEncoder().encode(output), 'task-1');
+    vi.advanceTimersByTime(1_000);
+
+    expect(getTaskAttentionState('task-1')).not.toBe('needs_input');
   });
 
   it('still reports ready while a task shell keeps producing output', () => {

@@ -1053,12 +1053,12 @@ export function startRemoteServer(opts: {
   }) => Promise<void>;
   /** Persist a task's notes (renderer-backed). */
   setTaskNotes?: (taskId: string, notes: string) => Promise<void>;
+  /** The desktop's last agent-subscription usage snapshot (renderer-backed). */
+  getUsage?: () => Promise<Record<UsageProvider, UsageState>>;
   /** Close a task (renderer-backed); unless `force`, refuses when work would be lost. */
   closeTaskFromMobile?: (taskId: string, force: boolean) => Promise<RemoteCloseResult>;
   /** A task's diff against its base branch (renderer-backed). */
   getTaskDiff?: (taskId: string) => Promise<RemoteTaskDiff>;
-  /** The desktop's last agent-subscription usage snapshot (renderer-backed). */
-  getUsage?: () => Promise<Record<UsageProvider, UsageState>>;
   /** Renderer-derived task attention state (needs input, working, ready, …). */
   getTaskAttention?: (taskId: string) => RemoteAttentionState;
   getTaskContext?: (taskId: string) => RemoteTaskContext | undefined;

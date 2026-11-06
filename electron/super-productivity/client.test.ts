@@ -102,8 +102,55 @@ describe('createSpClient', () => {
       value: {
         current: { id: 't1', title: 'Fix', isDone: false, projectId: null, parentId: 'parent' },
         isBreak: true,
+        otherDevice: null,
       },
     });
+  });
+
+  it('reads which other device is tracking from /status', async () => {
+    const client = createSpClient({
+      getToken: () => 'tok',
+      fetchImpl: fakeFetch((_m, path) => {
+        if (path === '/status') {
+          return ok({
+            currentTask: null,
+            currentTaskId: null,
+            taskCount: 3,
+            trackingOnOtherDevice: { taskId: 't9', deviceLabel: 'Android', sinceTs: 1_700_000_000 },
+          });
+        }
+        return path === '/focus' ? ok({ timer: null }) : ok(null);
+      }),
+    });
+    expect(await client.getTracking()).toEqual({
+      ok: true,
+      value: { current: null, isBreak: false, otherDevice: 'Android' },
+    });
+  });
+
+  it('treats a missing, malformed or failed /status as no other device', async () => {
+    const statuses: { status: number; json: unknown }[] = [
+      ok({ currentTask: null, currentTaskId: null, taskCount: 0 }),
+      ok({ trackingOnOtherDevice: null }),
+      ok({ trackingOnOtherDevice: { taskId: 't9', deviceLabel: '', sinceTs: 1 } }),
+      ok({ trackingOnOtherDevice: { taskId: 't9', deviceLabel: 42, sinceTs: 1 } }),
+      ok({ trackingOnOtherDevice: 'Android' }),
+      ok('nonsense'),
+      { status: 500, json: { ok: false, error: { code: 'INTERNAL', message: 'x' } } },
+    ];
+    for (const status of statuses) {
+      const client = createSpClient({
+        getToken: () => 'tok',
+        fetchImpl: fakeFetch((_m, path) => {
+          if (path === '/status') return status;
+          return path === '/focus' ? ok({ timer: null }) : ok(null);
+        }),
+      });
+      expect(await client.getTracking()).toEqual({
+        ok: true,
+        value: { current: null, isBreak: false, otherDevice: null },
+      });
+    }
   });
 
   it('asks for literal titles on create and rename', async () => {
@@ -156,6 +203,34 @@ describe('createSpClient', () => {
       parentId: 'parent',
       isIgnoreShortSyntax: true,
     });
+  });
+
+  it('creates a task with notes when provided', async () => {
+    const fetchImpl = fakeFetch((_m, _p, body) => ({
+      status: 201,
+      json: { ok: true, data: { id: 'n', ...(body as object) } },
+    }));
+    const client = createSpClient({ getToken: () => 'tok', fetchImpl });
+    await client.createTask({ title: 'Task with notes', notes: 'Initial notes content' });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body as string)).toEqual({
+      title: 'Task with notes',
+      notes: 'Initial notes content',
+      isIgnoreShortSyntax: true,
+    });
+  });
+
+  it('updates task notes via PATCH', async () => {
+    const fetchImpl = fakeFetch((_m, _p, _b) => ok({}));
+    const client = createSpClient({ getToken: () => 'tok', fetchImpl });
+    const res = await client.updateTaskNotes('t1', 'Updated notes');
+    expect(res).toEqual({ ok: true, value: null });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      expect.stringContaining('/tasks/t1'),
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ notes: 'Updated notes' }),
+      }),
+    );
   });
 
   it('completes a task by appending to its notes', async () => {

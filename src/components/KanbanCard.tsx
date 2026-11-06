@@ -37,6 +37,7 @@ import {
   type CardTaskState,
 } from './board/task-state';
 import { ASK_ACTION, AskRow, TaskGlyph, TaskLine, TaskPr, openBeside } from './board/TaskStatus';
+import { taskLeadPr, taskLinkedPrUrl } from '../store/task-prs';
 import { createTaskContextMenu } from './task-context-menu';
 
 /** The open task of this project working on `branch`, if any. */
@@ -121,11 +122,15 @@ function TaskRow(props: { task: Task }) {
       <TaskLine
         text={activityText()}
         classList={{ branch: fromAgent() }}
-        prUrl={props.task.prUrl}
+        prUrl={taskLinkedPrUrl(props.task)}
       />
-      <Show when={props.task.prUrl}>
-        {(url) => (
-          <TaskPr taskId={props.task.id} url={url()} onMerge={canFinish() ? merge : undefined} />
+      <Show when={taskLeadPr(props.task)}>
+        {(pr) => (
+          <TaskPr
+            taskId={props.task.id}
+            watchId={pr().watchId}
+            onMerge={canFinish() ? merge : undefined}
+          />
         )}
       </Show>
       <menu.Menu />

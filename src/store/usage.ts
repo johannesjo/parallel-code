@@ -10,19 +10,24 @@ const POLL_INTERVAL_MS = 5 * 60_000;
 const MIN_REFRESH_GAP_MS = 30_000;
 
 /** Render order of the providers in the status bar. */
-export const USAGE_PROVIDERS: readonly UsageProvider[] = ['claude', 'codex'];
+export const USAGE_PROVIDERS: readonly UsageProvider[] = ['claude', 'codex', 'antigravity'];
 
 const CHANNELS: Record<UsageProvider, IPC> = {
   claude: IPC.GetClaudeUsage,
   codex: IPC.GetCodexUsage,
+  antigravity: IPC.GetAntigravityUsage,
 };
 
-// Only the bundled Claude Code and Codex agents report subscription usage the app can read.
-const AGENT_PROVIDERS: Record<string, UsageProvider> = { 'claude-code': 'claude', codex: 'codex' };
+// Agents whose sessions move a usage meter the app can read.
+const AGENT_PROVIDERS: Record<string, UsageProvider> = {
+  'claude-code': 'claude',
+  codex: 'codex',
+  antigravity: 'antigravity',
+};
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let stopClaudeListener: (() => void) | null = null;
-const lastRequestAt: Record<UsageProvider, number> = { claude: 0, codex: 0 };
+const lastRequestAt: Record<UsageProvider, number> = { claude: 0, codex: 0, antigravity: 0 };
 const inFlight: Partial<Record<UsageProvider, Promise<void>>> = {};
 
 /** The usage meter an agent's sessions move, if the app tracks one for it. */
@@ -39,6 +44,7 @@ function applyResult(provider: UsageProvider, result: UsageResult): void {
       fetchedAt: result.fetchedAt,
       status: 'ok',
       error: null,
+      refreshing: false,
     });
   } else if (result.status === 'unavailable') {
     // Full reset: setStore merges, and a surviving snapshot would keep the bar visible after logout.
@@ -49,9 +55,10 @@ function applyResult(provider: UsageProvider, result: UsageResult): void {
       fetchedAt: null,
       status: 'unavailable',
       error: result.reason,
+      refreshing: false,
     });
   } else {
-    setStore('usage', provider, { status: 'error', error: result.message });
+    setStore('usage', provider, { status: 'error', error: result.message, refreshing: false });
   }
 }
 
@@ -68,15 +75,18 @@ export function refreshUsage(
     return Promise.resolve();
   }
   lastRequestAt[provider] = Date.now();
+  setStore('usage', provider, 'refreshing', true);
   const request = invoke<UsageResult>(CHANNELS[provider])
     .then((result) => applyResult(provider, result))
     .catch((err: unknown) => {
       setStore('usage', provider, {
         status: 'error',
         error: err instanceof Error ? err.message : String(err),
+        refreshing: false,
       });
     })
     .finally(() => {
+      setStore('usage', provider, 'refreshing', false);
       delete inFlight[provider];
     });
   inFlight[provider] = request;

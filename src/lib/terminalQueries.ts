@@ -9,7 +9,9 @@ const isCursorPositionQuery = (params: (number | number[])[]) =>
  * including while this view is hidden or unmounted; a second answer from here would
  * reach the process as stray input.
  */
-export function leaveCursorQueriesToMain(term: { parser: IParser }): void {
+export function leaveCursorQueriesToMain(term: {
+  parser: Pick<IParser, 'registerCsiHandler'>;
+}): void {
   term.parser.registerCsiHandler({ final: 'n' }, isCursorPositionQuery);
   term.parser.registerCsiHandler({ prefix: '?', final: 'n' }, isCursorPositionQuery);
 }

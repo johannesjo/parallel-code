@@ -88,24 +88,15 @@ export function pickRepoRemotes(
   const names = new Set<string>();
   for (const line of remoteV.split('\n')) {
     const [name, url] = line.split(/\s+/);
-    if (!url) continue;
-    let remoteUrl: URL;
-    try {
-      // Convert scp-style git@host:owner/repo into an SSH URL.
-      remoteUrl = new URL(url.includes('://') ? url : url.replace(/^([^/]+):/, 'ssh://$1/'));
-    } catch {
-      continue;
-    }
+    const remote = url ? parseRemoteUrl(url) : null;
+    if (!remote) continue;
+    const { url: remoteUrl, repo } = remote;
     // SSH ports belong to the Git transport, not the enterprise web server.
     const sameHost = ['http:', 'https:'].includes(remoteUrl.protocol)
       ? remoteUrl.host === webUrl.host
       : remoteUrl.hostname.toLowerCase() === webUrl.hostname;
-    const repo = remoteUrl.pathname
-      .replace(/^\//, '')
-      .replace(/(?:\.git)?\/?$/, '')
-      .toLowerCase();
     // A leading dash would turn the remote name into a `git fetch` option.
-    if (name && !name.startsWith('-') && sameHost && repo === want) names.add(name);
+    if (name && !name.startsWith('-') && sameHost && repo.toLowerCase() === want) names.add(name);
   }
   return [...names];
 }
@@ -133,4 +124,16 @@ function gitErrorLine(err: unknown): string {
   const stderr = (err as { stderr?: unknown })?.stderr;
   const line = typeof stderr === 'string' ? stderr.trim().split('\n').pop() : undefined;
   return line || (err instanceof Error ? err.message : String(err));
+}
+
+/** A git remote URL, scp-style `git@host:owner/repo` included, and its `owner/repo` path. */
+export function parseRemoteUrl(url: string): { url: URL; repo: string } | null {
+  try {
+    // Convert scp-style git@host:owner/repo into an SSH URL.
+    const parsed = new URL(url.includes('://') ? url : url.replace(/^([^/]+):/, 'ssh://$1/'));
+    const repo = parsed.pathname.replace(/^\//, '').replace(/(?:\.git)?\/?$/, '');
+    return { url: parsed, repo };
+  } catch {
+    return null;
+  }
 }

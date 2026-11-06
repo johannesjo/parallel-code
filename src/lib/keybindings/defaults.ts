@@ -407,6 +407,18 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
+    id: 'app.toggle-github-issues',
+    layer: 'app',
+    category: 'App',
+    description: 'Toggle GitHub issues of the current project',
+    platform: 'both',
+    // I is taken by the developer tools; E as in issuEs.
+    key: 'E',
+    modifiers: { cmdOrCtrl: true, shift: true },
+    action: 'toggleGitHubIssues',
+    global: true,
+  },
+  {
     id: 'app.nav.next-attention',
     layer: 'app',
     category: 'Navigation',

@@ -1544,7 +1544,7 @@ describe('Coordinator land_self', () => {
           cb(null, 'task/test\n', '');
           return;
         }
-        if (args[0] === 'status') {
+        if (args.includes('status')) {
           cb(null, statusOut, '');
           return;
         }
@@ -1878,7 +1878,7 @@ describe('Coordinator land_self', () => {
           cb(null, 'task/test\n', '');
           return;
         }
-        if (args[0] === 'status') {
+        if (args.includes('status')) {
           cb(null, ' M AGENTS.md\n', '');
           return;
         }
@@ -1929,7 +1929,7 @@ describe('Coordinator land_self', () => {
           cb(null, 'task/test\n', '');
           return;
         }
-        if (args[0] === 'status') {
+        if (args.includes('status')) {
           statusCalls += 1;
           cb(null, statusCalls <= 2 ? ' M .claude/settings.local.json\n' : '', '');
           return;
@@ -2012,7 +2012,7 @@ describe('Coordinator land_self', () => {
           cb(null, 'task/test\n', '');
           return;
         }
-        if (args[0] === 'status') {
+        if (args.includes('status')) {
           cb(null, '', '');
           return;
         }

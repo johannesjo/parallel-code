@@ -3,21 +3,31 @@ import { fetchUsage } from './api';
 import { status } from './ws';
 import {
   USAGE_WARN_PERCENT,
+  formatCurrency,
   formatReset,
   hasUsageSnapshot,
   remainingPercent,
   usageVisible,
 } from '../components/usage-format';
-import type { UsageProvider, UsageState, UsageWindow } from '../../electron/ipc/shared-types';
+import type {
+  CreditUsage,
+  UsageProvider,
+  UsageState,
+  UsageWindow,
+} from '../../electron/ipc/shared-types';
 
 // The desktop polls the usage endpoints itself; this only re-reads its snapshot.
 const POLL_INTERVAL_MS = 60_000;
 
-const PROVIDER_LABELS: Record<UsageProvider, string> = { claude: 'Claude', codex: 'Codex' };
+const PROVIDER_LABELS: Record<UsageProvider, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  antigravity: 'Antigravity',
+};
 
 function Meter(props: { label: string; window: UsageWindow }) {
   const left = () => remainingPercent(props.window);
-  const reset = () => formatReset(props.window.resetsAt);
+  const reset = () => (left() === 100 ? '' : formatReset(props.window.resetsAt));
   return (
     <div class="usage-meter" classList={{ warn: props.window.usedPercent >= USAGE_WARN_PERCENT }}>
       <span class="usage-label">{props.label}</span>
@@ -39,8 +49,23 @@ function Meter(props: { label: string; window: UsageWindow }) {
   );
 }
 
+function Credits(props: { credit: CreditUsage }) {
+  const used = () => formatCurrency(props.credit.used, props.credit.currency);
+  const limit = () =>
+    props.credit.limit === null ? null : formatCurrency(props.credit.limit, props.credit.currency);
+  return (
+    <div
+      class="usage-meter"
+      classList={{ warn: (props.credit.usedPercent ?? 0) >= USAGE_WARN_PERCENT }}
+    >
+      <span class="usage-label">credits</span>
+      <span class="usage-left">{limit() ? `${used()} / ${limit()}` : `${used()} used`}</span>
+    </div>
+  );
+}
+
 /**
- * The desktop status bar's agent-subscription meters (Claude Code, Codex).
+ * The desktop status bar's agent-subscription meters (Claude Code, Codex, Antigravity).
  * Hidden until the desktop has a snapshot, like the bar itself; tap to re-read.
  */
 export function UsageStrip() {
@@ -78,6 +103,7 @@ export function UsageStrip() {
                   <span class="usage-name">{PROVIDER_LABELS[provider]}</span>
                   <Show when={state().fiveHour}>{(w) => <Meter label="5h" window={w()} />}</Show>
                   <Show when={state().sevenDay}>{(w) => <Meter label="7d" window={w()} />}</Show>
+                  <Show when={state().creditUsage}>{(c) => <Credits credit={c()} />}</Show>
                   <Show when={!hasUsageSnapshot(state())}>
                     <span class="usage-reset">usage unavailable · {state().error}</span>
                   </Show>
