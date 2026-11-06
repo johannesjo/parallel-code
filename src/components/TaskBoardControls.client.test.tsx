@@ -138,6 +138,26 @@ describe('TaskBoardControls', () => {
     expect(store.githubIssuesProjectId).toBe('p2');
   });
 
+  it('marks each project in the menu with its icon or color', async () => {
+    setStore('projects', 1, {
+      id: 'p2',
+      name: 'api',
+      color: '#def',
+      path: '/github-repo',
+      icon: 'rocket',
+    });
+    const host = mount();
+    githubButton(host).click();
+    await settle();
+    const entry = (name: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (b) => b.textContent === name,
+      );
+    expect(entry('weather-app')?.querySelector('.project-swatch-icon')).toBeNull();
+    expect(entry('weather-app')?.querySelector('.project-swatch')).not.toBeNull();
+    expect(entry('api')?.querySelector('.project-swatch-icon svg')).not.toBeNull();
+  });
+
   it('keeps a menu entry, and its focus, while gh answers', async () => {
     setStore('projects', 1, { id: 'p2', name: 'api', color: '#def', path: '/unasked-repo' });
     const host = mount();

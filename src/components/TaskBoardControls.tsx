@@ -11,6 +11,7 @@ import type { Project } from '../store/types';
 import { BoardSearch } from './BoardSearch';
 import { type MenuAction, MoreMenu } from './chat/MoreMenu';
 import { GitHubIcon, PlanIcon } from './icons';
+import { ProjectSwatch } from './ProjectSwatch';
 import { IdeasControl } from './TaskBoardIdeas';
 import { TaskProjectFilter } from './TaskProjectFilter';
 import { ToggleButton, ToggleGroup } from './ToggleGroup';
@@ -58,6 +59,7 @@ function GitHubIssuesButton() {
     () => store.projects.filter((p) => isPlannableProject(p.id)),
     (p): MenuAction => ({
       label: p.name,
+      icon: <ProjectSwatch color={p.color} icon={p.icon} />,
       get title() {
         return githubTitle(p);
       },
