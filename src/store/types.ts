@@ -308,7 +308,7 @@ export interface Task {
   snoozedUntil?: number;
   /** Backgrounded until the PR checks stop pending, retained across app restarts. */
   snoozedUntilCi?: boolean;
-  /** Auto-sends the PR's CI failures to the agent while set. */
+  /** Auto-sends the PR's CI failures and merge conflicts to the agent while set. */
   prBabysit?: PrBabysit;
   collapsed?: boolean;
   savedAgentDef?: AgentDef;
@@ -465,7 +465,7 @@ export interface PersistedTask {
   snoozedUntil?: number;
   /** Backgrounded until the PR checks stop pending, retained across app restarts. */
   snoozedUntilCi?: boolean;
-  /** Auto-sends the PR's CI failures to the agent while set. */
+  /** Auto-sends the PR's CI failures and merge conflicts to the agent while set. */
   prBabysit?: PrBabysit;
   collapsed?: boolean;
   savedAgentSessionIds?: (string | null)[];

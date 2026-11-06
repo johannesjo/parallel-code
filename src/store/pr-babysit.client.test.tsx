@@ -150,7 +150,7 @@ it('says what it is waiting for', async () => {
   setStore('tasks', 'task-1', 'promptDraft', 'half-typed');
   setPrChecks('task-1', failing('a'));
   expect(prBabysitStatus('task-1')).toBe(
-    'CI failed; waiting: Your draft in the task prompt is unsent',
+    'Checks failed; waiting: Your draft in the task prompt is unsent',
   );
 
   setStore('tasks', 'task-1', 'promptDraft', undefined);
@@ -176,6 +176,37 @@ it('tells the user when a failing commit has nothing to send', async () => {
   );
 });
 
+it('asks the agent to resolve merge conflicts with the base branch', async () => {
+  // GitHub runs no CI on a conflicted branch, so the conflict is the only failure.
+  vi.mocked(loadFailedChecksPrompt).mockResolvedValueOnce(null);
+  setPrChecks('task-1', {
+    ...failing('a'),
+    mergeable: 'CONFLICTING',
+    checks: [{ name: 'Merge conflicts with base branch', bucket: 'fail' }],
+  });
+  stop = startPrBabysitWatcher();
+  await tick();
+  expect(sendPrompt).toHaveBeenCalledTimes(1);
+  expect(sendPrompt).toHaveBeenCalledWith(
+    'task-1',
+    'agent-1',
+    expect.stringContaining(
+      'Pull request #12 (https://github.com/acme/app/pull/12) has merge conflicts',
+    ),
+    { appPrompt: true },
+  );
+  expect(store.tasks['task-1']?.prBabysit).toEqual({ attempts: 1, lastSentSha: 'a' });
+});
+
+it('sends merge conflicts together with the failing checks', async () => {
+  setPrChecks('task-1', { ...failing('a'), mergeable: 'CONFLICTING' });
+  stop = startPrBabysitWatcher();
+  await tick();
+  const prompt = vi.mocked(sendPrompt).mock.calls[0]?.[2];
+  expect(prompt).toContain('has merge conflicts');
+  expect(prompt).toContain('fix CI');
+});
+
 it('hands the failure back when the agent stops without pushing a fix', async () => {
   setPrChecks('task-1', failing('a'));
   stop = startPrBabysitWatcher();
@@ -191,7 +222,7 @@ it('hands the failure back when the agent stops without pushing a fix', async ()
     lastSentSha: 'a',
     stalled: true,
   });
-  expect(prBabysitStatus('task-1')).toBe('Stuck: CI still fails and no fix was pushed');
+  expect(prBabysitStatus('task-1')).toBe('Stuck: checks still fail and no fix was pushed');
   expect(showNotification).toHaveBeenLastCalledWith(expect.stringContaining('no fix was pushed'));
 
   // A push from anywhere, such as the user's own terminal, resumes babysitting.
@@ -359,7 +390,7 @@ it('keeps babysitting when a newly failing PR has nothing to send beside one alr
   expect(sendPrompt).toHaveBeenCalledTimes(1);
   vi.mocked(showNotification).mockClear();
 
-  // Only a merge conflict, say: nothing new to send while the agent still fixes the app.
+  // A check without logs, say: nothing new to send while the agent still fixes the app.
   setPrChecks(extraWatchId, failing('x'));
   await tick();
   expect(sendPrompt).toHaveBeenCalledTimes(1);

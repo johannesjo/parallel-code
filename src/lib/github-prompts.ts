@@ -70,6 +70,20 @@ export function buildFailedChecksPrompt(pr: PrRefLike, checks: PrFailedCheck[]):
     .trimEnd();
 }
 
+/** Asks the agent to bring a PR's base branch in and resolve the conflicts.
+ *  Holds no GitHub content, so it needs no untrusted-content note. */
+export function buildMergeConflictPrompt(pr: PrRefLike): string {
+  return [
+    `Pull request #${pr.number} (${pr.url}) has merge conflicts with its base branch.`,
+    ...(pr.repo
+      ? [`The pull request is in the nested repository \`${pr.repo}/\`; resolve and commit there.`]
+      : []),
+    // A merge commit, not a rebase: the branch is already pushed, and a rebase would need a force push.
+    'Fetch the base branch, merge it into this branch, and resolve the conflicts keeping the intent of both sides.',
+    'Run the relevant checks locally, then commit and push.',
+  ].join('\n');
+}
+
 export function buildReviewFeedbackPrompt(pr: PrRefLike, feedback: PrReviewFeedback): string {
   const lines = [
     `Address the unresolved review feedback on pull request #${pr.number} (${pr.url}).`,

@@ -94,11 +94,13 @@ export function TaskPr(props: { taskId: string; watchId: string; onMerge?: () =>
   const checks = () => getPrChecks(props.watchId);
   const status = () => prBoardStatus(checks());
   const kind = () => status()?.kind;
-  // A stalled Babysit is why a failed PR is back in Needs you, so say so.
-  const label = () =>
-    kind() === 'failed' && isPrBabysitStuck(props.taskId)
-      ? 'CI failed · Babysit stuck'
-      : (status()?.label ?? 'Pull request open');
+  // A stalled Babysit is why a failing PR, CI or conflict, is back in Needs you, so say so.
+  const label = () => {
+    const text = status()?.label ?? 'Pull request open';
+    return checks()?.overall === 'failure' && isPrBabysitStuck(props.taskId)
+      ? `${text} · Babysit stuck`
+      : text;
+  };
   return (
     <div class="task-board-ask">
       <span

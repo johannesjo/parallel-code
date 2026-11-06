@@ -191,6 +191,14 @@ it('moves a pull request by what it waits for', () => {
   removePrChecks('pr');
 });
 
+it('says Babysit is stuck on a conflict it could not resolve', () => {
+  setPrChecks('pr', checksFromUpdate({ overall: 'failure', mergeable: 'CONFLICTING', failing: 1 }));
+  setStore('tasks', 'pr', 'prBabysit', { attempts: 1, stalled: true });
+  expect(lane('Needs you')?.textContent).toContain('Conflicts · Babysit stuck');
+  setStore('tasks', 'pr', 'prBabysit', undefined);
+  removePrChecks('pr');
+});
+
 it('puts the lanes that need attention next to each other', () => {
   const titles = [...host.querySelectorAll('.task-board-lane h3')].map((h) =>
     h.textContent?.replace(/\d+$/, ''),
