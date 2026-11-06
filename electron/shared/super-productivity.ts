@@ -31,6 +31,9 @@ export interface SpTrackingState {
   current: SpTaskSummary | null;
   /** True while a focus-mode break is running. */
   isBreak: boolean;
+  /** Label of another device that is live-tracking via SuperSync, or null.
+   *  Older Super Productivity builds don't report it: always null there. */
+  otherDevice: string | null;
 }
 
 export type SpConnectionState =
@@ -85,12 +88,14 @@ export type SpFocusDecision =
   | { kind: 'track' }
   | { kind: 'banner'; reason: SpBannerReason; trackingTitle?: string };
 
-export type SpBannerReason = 'other_task' | 'break' | 'done' | 'missing';
+export type SpBannerReason = 'other_task' | 'other_device' | 'break' | 'done' | 'missing';
 
 /**
  * What to do when the user settles on a Parallel Code task:
  * - already tracking it → nothing
  * - a focus-mode break is running → ask (banner) instead of starting
+ * - another device (a phone, via SuperSync) is tracking → ask, because
+ *   starting here stops tracking there
  * - Super Productivity tracks a task that isn't Parallel Code's → ask
  * - the linked task was completed in Super Productivity → ask, because
  *   starting a done task reopens it there
@@ -115,6 +120,9 @@ export function decideSpFocusAction(input: {
     return { kind: 'none' };
   }
   if (tracking.isBreak) return { kind: 'banner', reason: 'break' };
+  if (tracking.otherDevice) {
+    return { kind: 'banner', reason: 'other_device', trackingTitle: tracking.otherDevice };
+  }
   if (current && !isLinkedSpTask(current, linkedSpTaskIds)) {
     return { kind: 'banner', reason: 'other_task', trackingTitle: current.title };
   }

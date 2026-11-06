@@ -178,6 +178,68 @@ describe('ResizablePanel drag release', () => {
   });
 });
 
+describe('cascading past a minimum', () => {
+  const files: PanelChild = { id: 'files', minSize: 100, content: () => 'Files' };
+  const fixedNotes: PanelChild = { id: 'notes', minSize: 60, content: () => 'Notes' };
+
+  it('takes space from the absorber below once the neighbor reaches its minimum', () => {
+    const sizes = [150, 160, 400];
+    const panel = mount([files, fixedNotes, shell], ['shell'], sizes);
+    panel.start(0);
+    panel.move(200);
+    // Notes give up 100px to reach 60; the other 100px comes from the shell.
+    expect(panel.cells[0].style.flexBasis).toBe('350px');
+    expect(panel.cells[1].style.flexBasis).toBe('60px');
+    panel.move(1000);
+    // Stops once the shell is at its own 28px minimum: 150 + 100 + 372.
+    expect(panel.cells[0].style.flexBasis).toBe('622px');
+    panel.move(150);
+    // Dragging back returns the space to the shell before the notes grow.
+    expect(panel.cells[0].style.flexBasis).toBe('300px');
+    expect(panel.cells[1].style.flexBasis).toBe('60px');
+    panel.move(50);
+    expect(panel.cells[1].style.flexBasis).toBe('110px');
+    panel.release();
+
+    expect(getPanelUserSize('test:files')).toBe(200);
+    expect(getPanelUserSize('test:notes')).toBe(110);
+    expect(getPanelUserSize('test:shell')).toBeUndefined();
+  });
+
+  it('shrinks the pane above once a shrinking pane reaches its minimum', () => {
+    const sizes = [150, 160, 400];
+    const panel = mount([files, fixedNotes, shell], ['shell'], sizes);
+    panel.start(1);
+    panel.move(-130);
+    // Notes give up 100px to reach 60; files give up the other 30px.
+    expect(panel.cells[0].style.flexBasis).toBe('120px');
+    expect(panel.cells[1].style.flexBasis).toBe('60px');
+    panel.move(-1000);
+    // Stops once files are at their own 100px minimum.
+    expect(panel.cells[0].style.flexBasis).toBe('100px');
+    expect(panel.cells[2].style.flexBasis).toBe('550px');
+    panel.move(-40);
+    // Moving back down leaves files untouched while notes are above minimum.
+    expect(panel.cells[0].style.flexBasis).toBe('auto');
+    expect(panel.cells[1].style.flexBasis).toBe('120px');
+    panel.move(-130);
+    panel.release();
+
+    expect(getPanelUserSize('test:files')).toBe(120);
+    expect(getPanelUserSize('test:notes')).toBe(60);
+    expect(getPanelUserSize('test:shell')).toBeUndefined();
+  });
+
+  it('does not cascade into an absorber above the handle', () => {
+    const sizes = [400, 150, 160];
+    const panel = mount([shell, files, fixedNotes], ['shell'], sizes);
+    panel.start(1);
+    panel.move(1000);
+    expect(panel.cells[1].style.flexBasis).toBe('250px');
+    expect(panel.cells[2].style.flexBasis).toBe('60px');
+  });
+});
+
 describe('horizontal resizing', () => {
   it('resizes from the visible width when a saved side panel has shrunk to fit', () => {
     setPanelUserSize('test:shell', 700);
@@ -342,5 +404,19 @@ describe('capped content-sized cells', () => {
     expect(panel.cells[0].style.maxHeight).toBe('min(300px, 33vh)');
     expect(panel.cells[0].style.display).toBe('flex');
     expect(panel.cells[0].style.flexDirection).toBe('column');
+  });
+});
+
+describe('default sizes', () => {
+  it('uses a CSS length default verbatim so it can scale with the window', () => {
+    // happy-dom rejects min()/vh values, so a percentage stands in for them.
+    const panel = mount(
+      [{ ...notes, absorberWeight: undefined, defaultSize: '40%' }, shell],
+      ['shell'],
+      [200, 400],
+    );
+    expect(panel.cells[0].style.flexBasis).toBe('40%');
+    expect(panel.cells[0].style.height).toBe('40%');
+    expect(panel.cells[0].style.flexShrink).toBe('0');
   });
 });

@@ -54,6 +54,13 @@ function toTaskSummary(value: unknown): SpTaskSummary | null {
   };
 }
 
+/** `/status` reports a device that tracks via SuperSync; older builds omit it. */
+function toOtherDevice(status: unknown): string | null {
+  if (!isRecord(status) || !isRecord(status.trackingOnOtherDevice)) return null;
+  const label = status.trackingOnOtherDevice.deviceLabel;
+  return typeof label === 'string' && label.trim() ? label.trim() : null;
+}
+
 function toTaskDetail(value: unknown): SpTaskDetail | null {
   const summary = toTaskSummary(value);
   if (!summary || !isRecord(value)) return null;
@@ -188,9 +195,10 @@ export function createSpClient(deps: SpClientDeps) {
     },
 
     async getTracking(): Promise<SpResult<SpTrackingState>> {
-      const [current, focus] = await Promise.all([
+      const [current, focus, status] = await Promise.all([
         request('GET', '/task-control/current'),
         request('GET', '/focus'),
+        request('GET', '/status'),
       ]);
       if (!current.ok) return current;
       const currentTask = current.value === null ? null : toTaskSummary(current.value);
@@ -207,6 +215,7 @@ export function createSpClient(deps: SpClientDeps) {
           // A paused break is still a break; 'done' means it is over.
           isBreak:
             timer?.purpose === 'break' && (timer.status === 'running' || timer.status === 'paused'),
+          otherDevice: status.ok ? toOtherDevice(status.value) : null,
         },
       };
     },

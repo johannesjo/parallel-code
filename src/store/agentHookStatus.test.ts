@@ -63,6 +63,7 @@ const {
   getTaskAgentHookStatus,
   isTaskUnread,
   markTaskRead,
+  noteAgentPromptSent,
   noteAgentTerminalInput,
   startAgentHookStatusListener,
 } = await import('./agentHookStatus');
@@ -92,6 +93,9 @@ function event(overrides: Partial<AgentHookEventPayload>): AgentHookEventPayload
 }
 
 describe('agentHookStatus', () => {
+  /** No dialog on screen: a mouse click can't hit an option. */
+  const noScreen = () => '';
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
@@ -167,9 +171,9 @@ describe('agentHookStatus', () => {
         prompt: 'permission',
       }),
     );
-    noteAgentTerminalInput('a1', '\x1b[A');
+    noteAgentTerminalInput('a1', '\x1b[A', noScreen);
     expect(getAgentHookStatus('a1')?.state).toBe('waiting');
-    noteAgentTerminalInput('a1', '\r');
+    noteAgentTerminalInput('a1', '\r', noScreen);
     expect(getAgentHookStatus('a1')).toMatchObject({
       state: 'working',
       event: 'PermissionAnswered',
@@ -180,8 +184,51 @@ describe('agentHookStatus', () => {
     applyAgentHookEvent(
       event({ state: 'waiting', event: 'PermissionRequest', prompt: 'permission' }),
     );
-    noteAgentTerminalInput('a1', '2');
+    noteAgentTerminalInput('a1', '2', noScreen);
     expect(getAgentHookStatus('a1')?.state).toBe('working');
+  });
+
+  it('treats a click on the selected permission option as approval, but not a click elsewhere', () => {
+    // Rows as Claude Code 2.1.318 draws its dialog; mouse reports are SGR (1006).
+    const screen: Record<number, string> = {
+      16: ' Do you want to create notes.txt?',
+      17: ' ❯ 1. Yes',
+      18: '   2. Yes, and switch to accept edits (auto-approve file edits) (shift+tab)',
+      19: '   3. No',
+    };
+    const lineAt = (row: number) => screen[row] ?? '';
+    applyAgentHookEvent(
+      event({ state: 'waiting', event: 'PermissionRequest', prompt: 'permission' }),
+    );
+    // Focusing the terminal or pressing on an option is no answer yet. A click on
+    // another option is unverified against real Claude, so it doesn't count either.
+    noteAgentTerminalInput('a1', '\x1b[<0;10;16m', lineAt);
+    noteAgentTerminalInput('a1', '\x1b[<0;6;17M', lineAt);
+    noteAgentTerminalInput('a1', '\x1b[<0;6;18m', lineAt);
+    expect(getAgentHookStatus('a1')?.state).toBe('waiting');
+
+    noteAgentTerminalInput('a1', '\x1b[<0;6;17m', lineAt);
+    expect(getAgentHookStatus('a1')).toMatchObject({
+      state: 'working',
+      event: 'PermissionAnswered',
+    });
+  });
+
+  it('ignores a click on a numbered line outside the dialog', () => {
+    // Claude's own numbered plan sits above the dialog; it has no selection cursor.
+    const screen: Record<number, string> = {
+      4: '  1. Add the parser',
+      5: '  2. Wire it into the CLI',
+      16: ' Do you want to create notes.txt?',
+      17: ' ❯ 1. Yes',
+      18: '   2. No',
+    };
+    const lineAt = (row: number) => screen[row] ?? '';
+    applyAgentHookEvent(
+      event({ state: 'waiting', event: 'PermissionRequest', prompt: 'permission' }),
+    );
+    noteAgentTerminalInput('a1', '\x1b[<0;6;5m', lineAt);
+    expect(getAgentHookStatus('a1')?.state).toBe('waiting');
   });
 
   it('keeps the permission prompt kind across a follow-up notification', () => {
@@ -201,7 +248,7 @@ describe('agentHookStatus', () => {
         prompt: 'question',
       }),
     );
-    noteAgentTerminalInput('a1', '\r');
+    noteAgentTerminalInput('a1', '\r', noScreen);
     expect(getAgentHookStatus('a1')?.state).toBe('waiting');
   });
 
@@ -282,7 +329,7 @@ describe('agentHookStatus', () => {
 
   it('infers an interrupt from a bare Esc that no hook event follows', () => {
     applyAgentHookEvent(event({ state: 'working' }));
-    noteAgentTerminalInput('a1', '\x1b');
+    noteAgentTerminalInput('a1', '\x1b', noScreen);
     vi.advanceTimersByTime(499);
     expect(getAgentHookStatus('a1')?.state).toBe('working');
     vi.advanceTimersByTime(1);
@@ -300,17 +347,61 @@ describe('agentHookStatus', () => {
     expect(getAgentHookStatus('a1')?.state).toBe('working');
   });
 
+  it('shows a sent prompt as working before its UserPromptSubmit lands', () => {
+    applyAgentHookEvent(event({ state: 'done', event: 'Stop', lastAssistantMessage: 'Shipped' }));
+    noteAgentPromptSent('a1');
+    expect(getAgentHookStatus('a1')).toMatchObject({
+      state: 'working',
+      event: 'PromptSent',
+      source: 'terminal',
+      since: Date.now(),
+    });
+    expect(getAgentHookStatus('a1')?.lastAssistantMessage).toBeUndefined();
+
+    vi.advanceTimersByTime(300);
+    applyAgentHookEvent(event({ event: 'UserPromptSubmit', at: Date.now() }));
+    vi.advanceTimersByTime(10_000);
+    expect(getAgentHookStatus('a1')).toMatchObject({ state: 'working', source: 'hook' });
+  });
+
+  it('restores the previous state when no hook confirms the sent prompt', () => {
+    applyAgentHookEvent(event({ state: 'done', event: 'Stop', lastAssistantMessage: 'Shipped' }));
+    noteAgentPromptSent('a1');
+    vi.advanceTimersByTime(4_999);
+    expect(getAgentHookStatus('a1')?.state).toBe('working');
+    vi.advanceTimersByTime(1);
+    expect(getAgentHookStatus('a1')).toMatchObject({
+      state: 'done',
+      event: 'Stop',
+      lastAssistantMessage: 'Shipped',
+      unread: false,
+    });
+  });
+
+  it('leaves working, waiting and unknown agents alone when a prompt is sent', () => {
+    noteAgentPromptSent('a1');
+    expect(getAgentHookStatus('a1')).toBeNull();
+
+    applyAgentHookEvent(event({ state: 'waiting', event: 'PermissionRequest' }));
+    noteAgentPromptSent('a1');
+    expect(getAgentHookStatus('a1')?.event).toBe('PermissionRequest');
+
+    applyAgentHookEvent(event({ state: 'working', event: 'PreToolUse', at: Date.now() + 1 }));
+    noteAgentPromptSent('a1');
+    expect(getAgentHookStatus('a1')?.event).toBe('PreToolUse');
+  });
+
   it('reads no interrupt into Esc at the prompt while a background sub-agent runs', () => {
     applyAgentHookEvent(event({ state: 'working', event: 'SubagentRunning', background: true }));
-    noteAgentTerminalInput('a1', '\x1b');
-    noteAgentTerminalInput('a1', '\x03');
+    noteAgentTerminalInput('a1', '\x1b', noScreen);
+    noteAgentTerminalInput('a1', '\x03', noScreen);
     vi.advanceTimersByTime(1_000);
     expect(getAgentHookStatus('a1')).toMatchObject({ state: 'working', background: true });
   });
 
   it('cancels the interrupt when a hook event arrives inside the settle window', () => {
     applyAgentHookEvent(event({ state: 'working' }));
-    noteAgentTerminalInput('a1', '\x03');
+    noteAgentTerminalInput('a1', '\x03', noScreen);
     vi.advanceTimersByTime(200);
     applyAgentHookEvent(event({ event: 'PostToolUse', at: Date.now() }));
     vi.advanceTimersByTime(500);
@@ -319,12 +410,12 @@ describe('agentHookStatus', () => {
 
   it('ignores Esc sequences that are not the bare key and any key outside working', () => {
     applyAgentHookEvent(event({ state: 'working' }));
-    noteAgentTerminalInput('a1', '\x1b[A');
+    noteAgentTerminalInput('a1', '\x1b[A', noScreen);
     vi.advanceTimersByTime(1000);
     expect(getAgentHookStatus('a1')?.state).toBe('working');
 
     applyAgentHookEvent(event({ state: 'waiting', event: 'PermissionRequest', at: Date.now() }));
-    noteAgentTerminalInput('a1', '\x1b');
+    noteAgentTerminalInput('a1', '\x1b', noScreen);
     vi.advanceTimersByTime(1000);
     expect(getAgentHookStatus('a1')?.state).toBe('waiting');
   });
@@ -342,7 +433,7 @@ describe('agentHookStatus', () => {
 
   it('forgets an agent entirely when cleared', () => {
     applyAgentHookEvent(event({ state: 'working' }));
-    noteAgentTerminalInput('a1', '\x1b');
+    noteAgentTerminalInput('a1', '\x1b', noScreen);
     clearAgentHookStatus('a1');
     vi.advanceTimersByTime(1000);
     expect(getAgentHookStatus('a1')).toBeNull();
@@ -354,6 +445,15 @@ describe('agentHookStatus', () => {
     applyAgentActivityObservation(newer);
     applyAgentActivitySnapshot({ sequence: newer.sequence, observations: [old] });
     expect(getAgentHookStatus('a1')?.state).toBe('working');
+  });
+
+  it("keeps the task's plan from a TodoWrite observation", () => {
+    mockTasks = { t1: { id: 't1', agentIds: ['a1'] } };
+    const todos = [{ step: 'Check the dev command', status: 'in_progress' as const }];
+    applyAgentActivityObservation(
+      observation({ event: 'PostToolUse', toolName: 'TodoWrite', todos, at: 7 }),
+    );
+    expect(mockTasks.t1).toMatchObject({ agentPlan: { steps: todos, updatedAt: 7 } });
   });
 
   it('does not revive a retired launch from an in-flight snapshot', () => {
@@ -405,7 +505,7 @@ describe('agentHookStatus', () => {
       prompt: 'permission',
     });
     applyAgentActivityObservation(current);
-    noteAgentTerminalInput('a1', '\r');
+    noteAgentTerminalInput('a1', '\r', noScreen);
     applyAgentActivitySnapshot({ sequence: current.sequence, observations: [current] });
     expect(getAgentHookStatus('a1')).toMatchObject({
       event: 'PermissionAnswered',
@@ -415,7 +515,7 @@ describe('agentHookStatus', () => {
 
   it('does not attribute local interruption details to a later hook observation', () => {
     applyAgentActivityObservation(observation());
-    noteAgentTerminalInput('a1', '\x1b');
+    noteAgentTerminalInput('a1', '\x1b', noScreen);
     vi.advanceTimersByTime(500);
     expect(getAgentHookStatus('a1')).toMatchObject({ source: 'terminal', detail: 'Interrupted' });
     vi.advanceTimersByTime(60_000);
@@ -471,7 +571,7 @@ describe('agentHookStatus', () => {
 
   it('does not change inferred interrupt onset when a tool event is suppressed', () => {
     applyAgentActivityObservation(observation());
-    noteAgentTerminalInput('a1', '\x1b');
+    noteAgentTerminalInput('a1', '\x1b', noScreen);
     vi.advanceTimersByTime(500);
     const inferredSince = getAgentHookStatus('a1')?.since;
     applyAgentActivityObservation({ ...observation({ event: 'PostToolUse' }), since: 1 });

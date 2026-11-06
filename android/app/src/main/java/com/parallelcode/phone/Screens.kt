@@ -166,6 +166,7 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 
 private const val NOT_A_LINK = "That isn't a Parallel Code link. Open Connect Phone on your computer and try again."
+private const val SCANNER_UNAVAILABLE = "The scanner isn't available. Paste the link instead."
 
 @Composable
 fun ConnectScreen(
@@ -215,12 +216,19 @@ fun ConnectScreen(
             ),
             onClick = {
                 error = null
-                val options = GmsBarcodeScannerOptions.Builder()
-                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                    .build()
-                GmsBarcodeScanning.getClient(context, options).startScan()
+                // Client creation and startup can throw before a Task exists for the failure listener.
+                val scan = try {
+                    val options = GmsBarcodeScannerOptions.Builder()
+                        .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                        .build()
+                    GmsBarcodeScanning.getClient(context, options).startScan()
+                } catch (_: RuntimeException) {
+                    error = SCANNER_UNAVAILABLE
+                    return@Button
+                }
+                scan
                     .addOnSuccessListener { accept(it.rawValue.orEmpty()) }
-                    .addOnFailureListener { error = "The scanner isn't available. Paste the link instead." }
+                    .addOnFailureListener { error = SCANNER_UNAVAILABLE }
             },
         ) { Text("Scan QR code", fontWeight = FontWeight.SemiBold) }
         Text(

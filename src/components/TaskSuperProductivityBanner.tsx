@@ -24,6 +24,13 @@ function bannerText(banner: SpBanner): JSX.Element {
           Super Productivity is tracking <strong>{banner.trackingTitle || 'another task'}</strong>.
         </>
       );
+    case 'other_device':
+      return (
+        <>
+          Tracking on <strong>{banner.trackingTitle || 'another device'}</strong> — track here
+          instead?
+        </>
+      );
     case 'break':
       return <>Super Productivity is on a break.</>;
     case 'done':

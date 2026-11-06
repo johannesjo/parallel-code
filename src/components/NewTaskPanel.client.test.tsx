@@ -27,6 +27,7 @@ beforeEach(() => {
   setStore('tasks', reconcile({}));
   setStore({
     newTaskPrefillPrompt: null,
+    newTaskDropUrl: null,
     lastTeleportProjectId: null,
     mcpOrchestrationEnabled: true,
     projects: [{ id: 'project', name: 'Project', path: '/project', color: '#abc' }],
@@ -77,6 +78,226 @@ function typePrompt(text: string): void {
   prompt.value = text;
   prompt.dispatchEvent(new Event('input', { bubbles: true }));
 }
+
+function taskNameInput(): HTMLInputElement {
+  if (!host.querySelector('[data-nav-field="task-name"]')) {
+    [...host.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes('Advanced options'))
+      ?.click();
+  }
+  const input = host.querySelector<HTMLInputElement>('[data-nav-field="task-name"] input');
+  if (!input) throw new Error('Missing task name input');
+  return input;
+}
+
+it.each([
+  ['issues', IPC.ReadGitHubIssue, 'Issue'],
+  ['pull', IPC.GetPullRequestDetails, 'PR'],
+] as const)(
+  'loads the title of a dropped %s link before creating the task',
+  async (path, channel, label) => {
+    dispose();
+    host.replaceChildren();
+    const url = `https://github.com/o/r/${path}/42`;
+    let resolveTitle!: (item: { title: string }) => void;
+    const originalInvoke = vi.mocked(invoke).getMockImplementation();
+    vi.mocked(invoke).mockImplementation((ch, args) =>
+      ch === channel
+        ? new Promise((resolve) => (resolveTitle = resolve))
+        : Promise.resolve(originalInvoke?.(ch, args)),
+    );
+    setStore('newTaskDropUrl', url);
+    dispose = render(() => <NewTaskPanel open={true} onClose={vi.fn()} />, host);
+    const submit = host.querySelector<HTMLButtonElement>('button[type="submit"]');
+    await vi.waitFor(() => expect(submit?.disabled).toBe(false));
+    const creation = deferCreateTask();
+    setStore('activeTaskId', null);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      host
+        .querySelector('form')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      expect(store.showNewTaskPanel).toBe(false);
+      vi.advanceTimersByTime(500);
+      expect(store.notification).toContain('Creating');
+      // A new draft must not receive the old lookup's response, or change the
+      // task settings that were already submitted.
+      dispose();
+      host.replaceChildren();
+      setStore({
+        newTaskDropUrl: null,
+        newTaskPrefillPrompt: { prompt: 'Next task', name: 'My next task', projectId: 'project' },
+        showNewTaskPanel: true,
+      });
+      dispose = render(() => <NewTaskPanel open={true} onClose={vi.fn()} />, host);
+      resolveTitle({ title: 'Fix login' });
+      await vi.waitFor(() =>
+        expect(invoke).toHaveBeenCalledWith(
+          IPC.CreateTask,
+          expect.objectContaining({ name: `${label} 42: Fix login` }),
+        ),
+      );
+      creation.resolve('dropped-task');
+      await vi.waitFor(() =>
+        expect(store.tasks['dropped-task']?.name).toBe(`${label} 42: Fix login`),
+      );
+      expect(taskNameInput().value).toBe('My next task');
+      expect(store.tasks['dropped-task']?.githubUrl).toBe(url);
+      expect(store.activeTaskId).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+it('preserves a custom title typed while a dropped issue is loading', async () => {
+  let resolveTitle!: (item: { title: string }) => void;
+  const originalInvoke = vi.mocked(invoke).getMockImplementation();
+  vi.mocked(invoke).mockImplementation((channel, args) =>
+    channel === IPC.ReadGitHubIssue
+      ? new Promise((resolve) => (resolveTitle = resolve))
+      : Promise.resolve(originalInvoke?.(channel, args)),
+  );
+  setStore('newTaskDropUrl', 'https://github.com/o/r/issues/42');
+  const input = taskNameInput();
+  input.value = 'My title';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  resolveTitle({ title: 'Fix login' });
+  await Promise.resolve();
+  expect(input.value).toBe('My title');
+});
+
+it('keeps the first dropped issue as the name source when another repo has the same number', async () => {
+  const firstUrl = 'https://github.com/o/first/issues/42';
+  let resolveTitle!: (item: { title: string }) => void;
+  const originalInvoke = vi.mocked(invoke).getMockImplementation();
+  vi.mocked(invoke).mockImplementation((channel, args) => {
+    if (channel === IPC.ReadGitHubIssue) {
+      return args?.url === firstUrl
+        ? new Promise((resolve) => (resolveTitle = resolve))
+        : Promise.resolve({ title: 'Other repo title' });
+    }
+    return Promise.resolve(originalInvoke?.(channel, args));
+  });
+  setStore('newTaskDropUrl', firstUrl);
+  setStore('newTaskDropUrl', 'https://github.com/o/second/issues/42');
+  resolveTitle({ title: 'Original title' });
+  await vi.waitFor(() => expect(taskNameInput().value).toBe('Issue 42: Original title'));
+  const submit = host.querySelector<HTMLButtonElement>('button[type="submit"]');
+  await vi.waitFor(() => expect(submit?.disabled).toBe(false));
+  const creation = deferCreateTask();
+  host
+    .querySelector('form')
+    ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  creation.resolve('first-issue');
+  await vi.waitFor(() =>
+    expect(store.tasks['first-issue']).toMatchObject({
+      name: 'Issue 42: Original title',
+      githubUrl: firstUrl,
+    }),
+  );
+});
+
+it.each(['before', 'pending', 'after'] as const)(
+  'preserves an explicit fallback-shaped name entered %s the lookup',
+  async (when) => {
+    let resolveTitle: ((item: { title: string }) => void) | undefined;
+    const originalInvoke = vi.mocked(invoke).getMockImplementation();
+    vi.mocked(invoke).mockImplementation((channel, args) =>
+      channel === IPC.GetPullRequestDetails
+        ? new Promise((resolve) => (resolveTitle = resolve))
+        : Promise.resolve(originalInvoke?.(channel, args)),
+    );
+    const setCustomName = () => {
+      const input = taskNameInput();
+      input.value = 'pr 42';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    if (when === 'before') setCustomName();
+    setStore('newTaskDropUrl', 'https://github.com/o/r/pull/42');
+    if (when === 'pending') setCustomName();
+    resolveTitle?.({ title: 'Fix login' });
+    if (when === 'after') {
+      await vi.waitFor(() => expect(taskNameInput().value).toBe('PR 42: Fix login'));
+      setCustomName();
+    }
+    const submit = host.querySelector<HTMLButtonElement>('button[type="submit"]');
+    await vi.waitFor(() => expect(submit?.disabled).toBe(false));
+    const creation = deferCreateTask();
+    host
+      .querySelector('form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    creation.resolve('custom-title');
+    await vi.waitFor(() => expect(store.tasks['custom-title']?.name).toBe('pr 42'));
+  },
+);
+
+it.each([true, false])(
+  'retains automatic-name provenance (%s) when retrying a failed draft',
+  async (automatic) => {
+    const url = 'https://github.com/o/r/pull/42';
+    const originalInvoke = vi.mocked(invoke).getMockImplementation();
+    vi.mocked(invoke).mockImplementation((channel, args) =>
+      channel === IPC.GetPullRequestDetails
+        ? Promise.resolve({ title: 'Fix login' })
+        : Promise.resolve(originalInvoke?.(channel, args)),
+    );
+    setStore('newTaskDropUrl', url);
+    await vi.waitFor(() => expect(taskNameInput().value).toBe('PR 42: Fix login'));
+    if (!automatic) {
+      const input = taskNameInput();
+      input.value = 'pr 42';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    const submit = host.querySelector<HTMLButtonElement>('button[type="submit"]');
+    await vi.waitFor(() => expect(submit?.disabled).toBe(false));
+    const creation = deferCreateTask();
+    host
+      .querySelector('form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    // Let background creation finish its title lookup before failing the worktree.
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith(IPC.CreateTask, expect.anything()));
+    creation.reject(new Error('Worktree unavailable'));
+    await vi.waitFor(() => expect(store.notification).toContain('Worktree unavailable'));
+    toggleNewTaskPanel(true);
+    expect(store.newTaskPrefillPrompt?.droppedNameUrl).toBe(automatic ? url : undefined);
+    dispose();
+    host.replaceChildren();
+    dispose = render(() => <NewTaskPanel open={true} onClose={vi.fn()} />, host);
+    await vi.waitFor(() =>
+      expect(taskNameInput().value).toBe(automatic ? 'PR 42: Fix login' : 'pr 42'),
+    );
+  },
+);
+
+it('fills a dropped issue title without making an untouched draft dirty', async () => {
+  dispose();
+  host.replaceChildren();
+  const originalInvoke = vi.mocked(invoke).getMockImplementation();
+  vi.mocked(invoke).mockImplementation((channel, args) =>
+    channel === IPC.ReadGitHubIssue
+      ? Promise.resolve({ title: 'Fix login' })
+      : Promise.resolve(originalInvoke?.(channel, args)),
+  );
+  setStore('newTaskDropUrl', 'https://github.com/o/r/issues/42');
+  const close = vi.fn();
+  dispose = render(() => <NewTaskPanel open={true} onClose={close} />, host);
+  await vi.waitFor(() => expect(taskNameInput().value).toBe('Issue 42: Fix login'));
+  [...host.querySelectorAll('button')].find((button) => button.textContent === 'Cancel')?.click();
+  expect(close).toHaveBeenCalled();
+});
+
+it('keeps the URL name when the dropped issue cannot be loaded', async () => {
+  const originalInvoke = vi.mocked(invoke).getMockImplementation();
+  vi.mocked(invoke).mockImplementation((channel, args) =>
+    channel === IPC.ReadGitHubIssue
+      ? Promise.reject(new Error('Offline'))
+      : Promise.resolve(originalInvoke?.(channel, args)),
+  );
+  setStore('newTaskDropUrl', 'https://github.com/o/r/issues/42');
+  await Promise.resolve();
+  expect(taskNameInput().value).toBe('issue 42');
+});
 
 it('keeps the draft of a creation that fails before the panel finishes closing', async () => {
   const pendingClose: (() => void)[] = [];
@@ -384,8 +605,13 @@ it('checks out a picked PR while keeping the text the user typed', async () => {
     host.querySelector<HTMLButtonElement>('.github-item-option')?.click();
   };
   await pickPr();
+  const name = taskNameInput();
+  expect(name.value).toBe('PR 7: Fix login');
+  name.value = 'My PR review';
+  name.dispatchEvent(new Event('input', { bubbles: true }));
   // Picking again replaces the generated text instead of stacking it.
   await pickPr();
+  expect(name.value).toBe('My PR review');
   expect(prompt.value).toBe(
     'Review pull request #7: Fix login\nhttps://github.com/o/r/pull/7\n\nAlso check perf',
   );
@@ -397,7 +623,7 @@ it('checks out a picked PR while keeping the text the user typed', async () => {
   await vi.waitFor(() =>
     expect(invoke).toHaveBeenCalledWith(
       IPC.CreatePrTask,
-      expect.objectContaining({ projectRoot: '/project', prNumber: 7 }),
+      expect.objectContaining({ projectRoot: '/project', prNumber: 7, name: 'My PR review' }),
     ),
   );
   expect(vi.mocked(invoke).mock.calls.some(([channel]) => channel === IPC.CreateTask)).toBe(false);

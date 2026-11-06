@@ -370,7 +370,7 @@ export class DelegationService {
     const [branchName, headSha, status] = await Promise.all([
       git(task.worktreePath, 'symbolic-ref', '--short', 'HEAD'),
       git(task.worktreePath, 'rev-parse', 'HEAD'),
-      git(task.worktreePath, 'status', '--porcelain'),
+      git(task.worktreePath, '--no-optional-locks', 'status', '--porcelain'),
     ]);
     this.requireTask(taskId);
     return { branchName, headSha, changedFileCount: status ? status.split('\n').length : 0 };

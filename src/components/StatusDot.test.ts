@@ -1,16 +1,30 @@
 import { renderToString } from 'solid-js/web';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { removePrChecks, setPrChecks } from '../store/pr-checks-state';
 import { theme } from '../lib/theme';
 import { StatusDot, getDotTooltip, getStatusGlyph } from './StatusDot';
+
+const terminalAsking = vi.hoisted(() => ({ value: false }));
+vi.mock('../store/taskStatus', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../store/taskStatus')>()),
+  isTaskTerminalAsking: () => terminalAsking.value,
+}));
 
 function prChecks(overall: 'pending' | 'success' | 'failure' | 'none') {
   return { overall, passing: 0, pending: 0, failing: 0, checks: [], checkedAt: '' };
 }
 
 describe('getDotTooltip', () => {
-  afterEach(() => removePrChecks('t1'));
+  afterEach(() => {
+    removePrChecks('t1');
+    terminalAsking.value = false;
+  });
+
+  it('names the terminal when it, not an agent, waits for input', () => {
+    terminalAsking.value = true;
+    expect(getDotTooltip('busy', 'needs_input', 't1')).toBe('Terminal waiting for input');
+  });
 
   it('describes review status', () => {
     expect(getDotTooltip('review')).toBe('Ready for review');

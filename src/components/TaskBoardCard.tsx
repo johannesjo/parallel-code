@@ -3,6 +3,7 @@ import { formatRelativeAge } from '../lib/relativeAge';
 import { isTaskBackgrounded } from '../store/background-tasks';
 import { store } from '../store/core';
 import { getPrChecks } from '../store/pr-checks-state';
+import { taskLeadPr, taskLeadWatchId, taskLinkedPrUrl } from '../store/task-prs';
 import { getProject } from '../store/projects';
 import { ClockIcon } from './icons';
 import { ProjectSwatch } from './ProjectSwatch';
@@ -149,7 +150,7 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
       data-board-card={props.task.id}
       data-board-task-id={props.task.id}
       classList={{
-        failed: getPrChecks(props.task.id)?.overall === 'failure',
+        failed: getPrChecks(taskLeadWatchId(props.task.id))?.overall === 'failure',
         'close-failed': props.task.closingStatus === 'error',
         shown: shown(),
         closing: closing(),
@@ -178,10 +179,12 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
           branch: fromAgent() && !closing() && !closeErrorText() && !busy(),
           busy: !closing() && !closeErrorText() && !!busy(),
         }}
-        prUrl={props.task.prUrl}
+        prUrl={taskLinkedPrUrl(props.task)}
         issueUrl={props.task.githubUrl}
       />
-      <Show when={props.task.prUrl}>{(url) => <TaskPr taskId={props.task.id} url={url()} />}</Show>
+      <Show when={taskLeadPr(props.task)}>
+        {(pr) => <TaskPr taskId={props.task.id} watchId={pr().watchId} />}
+      </Show>
       <Show when={props.lane === 'snoozed' && setAsideLabel(props.task)}>
         {(label) => (
           <p class="task-board-ask">

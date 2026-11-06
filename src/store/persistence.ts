@@ -1,6 +1,7 @@
 import { parseCompletionRecord } from '../../electron/shared/completion-report';
 import { persistedCheckSuite, restoredCheckSuite } from '../lib/check-suite-storage';
 import { restoreBriefBarFields, restoreTaskBriefRecord } from '../lib/task-brief';
+import { restoreTaskAgentPlan } from '../lib/task-plan';
 import { restoreReviewChecks } from '../lib/review-checks';
 import { restoreTaskConfidence } from '../lib/task-confidence';
 import { restoreReviewDismissed } from '../lib/review-summary';
@@ -428,6 +429,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     lastVerifyPass: task.lastVerifyPass,
     evidence: persistedCheckSuite(task.evidence),
     brief: task.brief,
+    agentPlan: task.agentPlan,
     confidence: task.confidence,
     reviewDismissed: task.reviewDismissed,
     reviewModel: task.reviewModel,
@@ -547,6 +549,7 @@ export async function saveState(): Promise<void> {
     darkThemeCustomId: store.darkThemeCustomId ?? undefined,
     mcpOrchestrationEnabled: store.mcpOrchestrationEnabled,
     documentWorkspacesEnabled: store.documentWorkspacesEnabled || undefined,
+    taskContext: store.taskContext || undefined,
     documentFullWidth: store.documentFullWidth || undefined,
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed || undefined,
     preferUiMode: store.preferUiMode || undefined,
@@ -760,6 +763,7 @@ interface LegacyPersistedState {
   darkThemeCustomId?: unknown;
   mcpOrchestrationEnabled?: unknown;
   documentWorkspacesEnabled?: unknown;
+  taskContext?: unknown;
   documentFullWidth?: unknown;
   coordinatorControlHintDismissed?: unknown;
   preferUiMode?: unknown;
@@ -1106,6 +1110,7 @@ export async function loadState(): Promise<void> {
 
       s.mcpOrchestrationEnabled = raw.mcpOrchestrationEnabled !== false;
       s.documentWorkspacesEnabled = raw.documentWorkspacesEnabled === true;
+      s.taskContext = raw.taskContext === true;
       s.documentFullWidth = raw.documentFullWidth === true;
 
       s.coordinatorControlHintDismissed = raw.coordinatorControlHintDismissed === true;
@@ -1292,6 +1297,7 @@ export async function loadState(): Promise<void> {
           lastVerifyPass: restoredVerifyPass(pt.lastVerifyPass),
           evidence: restoredCheckSuite(pt.evidence),
           brief: restoreTaskBriefRecord(pt.brief),
+          agentPlan: restoreTaskAgentPlan(pt.agentPlan),
           confidence: restoreTaskConfidence(pt.confidence),
           reviewDismissed: restoreReviewDismissed(pt.reviewDismissed),
           reviewModel:
@@ -1452,6 +1458,7 @@ export async function loadState(): Promise<void> {
           lastVerifyPass: restoredVerifyPass(pt.lastVerifyPass),
           evidence: restoredCheckSuite(pt.evidence),
           brief: restoreTaskBriefRecord(pt.brief),
+          agentPlan: restoreTaskAgentPlan(pt.agentPlan),
           confidence: restoreTaskConfidence(pt.confidence),
           reviewDismissed: restoreReviewDismissed(pt.reviewDismissed),
           reviewModel:

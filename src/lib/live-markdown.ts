@@ -18,6 +18,7 @@ import {
   WidgetType,
 } from '@codemirror/view';
 import { normalizeLineEndings, preferredLineEnding } from './canvas-blocks';
+import { editTables, liveTables } from './live-markdown-table';
 
 export interface CanvasSelection {
   quote: string;
@@ -32,6 +33,8 @@ export interface CanvasEditorOptions {
   ariaLabel: string;
   onChange: (matchesSaved: boolean) => void;
   onSelection: (selection: CanvasSelection | null) => void;
+  /** Opened to edit: the table under the caret shows its source at once. */
+  editing?: boolean;
 }
 
 export interface CanvasEditor {
@@ -334,6 +337,7 @@ const liveTheme = EditorView.theme({
     cursor: 'pointer',
   },
   '.cm-md-task-done': { opacity: '0.6' },
+  // Table source shows only while the caret is in it (see live-markdown-table).
   // No `white-space: pre` here: a row wider than the pane would stretch the
   // content box and scroll the whole document sideways. The `break-spaces` that
   // `EditorView.lineWrapping` puts on the content still keeps the runs of
@@ -369,6 +373,7 @@ export function createCanvasEditor(options: CanvasEditorOptions): CanvasEditor {
     EditorView.lineWrapping,
     markdownLanguage,
     liveMarkdown,
+    liveTables,
     checkboxToggle,
     liveTheme,
     placeholder(options.placeholder),
@@ -410,6 +415,7 @@ export function createCanvasEditor(options: CanvasEditorOptions): CanvasEditor {
     state: stateFor(options.defaultValue),
   });
   savedDocument = view.state.doc;
+  if (options.editing) view.dispatch({ effects: editTables });
 
   return {
     markdown: () => view.state.doc.toString(),
@@ -423,13 +429,17 @@ export function createCanvasEditor(options: CanvasEditorOptions): CanvasEditor {
       const state = stateFor(markdown);
       savedDocument = state.doc;
       view.setState(state);
+      // The focus stays, so no focus change will say the editor is in use.
+      if (view.hasFocus) view.dispatch({ effects: editTables });
     },
     goToLine: (line) => {
       const doc = view.state.doc;
       const pos = doc.line(Math.min(Math.max(line, 1), doc.lines)).from;
       view.dispatch({
         selection: { anchor: pos },
-        effects: EditorView.scrollIntoView(pos, { y: 'start', yMargin: 24 }),
+        // A table at the line shows its source in this update, so the scroll
+        // is measured against the source rather than the shorter rendering.
+        effects: [editTables, EditorView.scrollIntoView(pos, { y: 'start', yMargin: 24 })],
       });
       view.focus();
     },

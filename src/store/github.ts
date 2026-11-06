@@ -138,6 +138,14 @@ export function openGitHubIssues(projectId: string | null): void {
   setStore('githubIssuesProjectId', projectId);
 }
 
+/** Opens the project's issue browser afresh, filtered to one label. */
+export function openGitHubIssuesWithLabel(projectId: string, label: string): void {
+  // Closing first remounts a page already open on this project, so it starts the new session.
+  setStore('githubIssuesProjectId', null);
+  setStore('githubIssuesLabel', label);
+  setStore('githubIssuesProjectId', projectId);
+}
+
 /** The project's github.com repository (`owner/name`) as the GitHub CLI resolves it. */
 export function resolveGitHubRepository(projectRoot: string): Promise<string> {
   return invoke<string>(IPC.ResolveGitHubRepository, { projectRoot });

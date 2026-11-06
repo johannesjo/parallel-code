@@ -1,0 +1,226 @@
+/* Task context: goal bar, then the agent's plan as a connected step track.
+   Sized to its content; the pane cell or the popover scrolls it. */
+.ctx {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.ctx-goalbar {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 14px;
+  line-height: 1.4;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ctx-label,
+.ctx-head {
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--fg-muted);
+}
+.ctx-label {
+  flex-shrink: 0;
+}
+.ctx-head {
+  margin: 0;
+  padding: 10px 14px 4px;
+}
+.ctx-count {
+  margin-left: 2px;
+  color: var(--fg-subtle);
+}
+
+.ctx-now,
+.ctx-empty {
+  margin: 0;
+  padding: 0 14px 10px;
+  max-width: 560px;
+  line-height: 1.4;
+}
+.ctx-empty {
+  padding-top: 10px;
+  color: var(--fg-muted);
+}
+
+.ctx-track {
+  margin: 0;
+  padding: 0 10px 8px;
+  max-width: 560px;
+  list-style: none;
+}
+.ctx-row {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+/* The track joining each step to the next; solid behind finished steps. */
+.ctx-row::before {
+  content: '';
+  position: absolute;
+  left: 14.5px;
+  top: 24px;
+  bottom: -8px;
+  width: 1px;
+  background: var(--border);
+}
+.ctx-row:last-child::before {
+  display: none;
+}
+.ctx-row--completed::before {
+  background: var(--fg-muted);
+}
+.ctx-icon {
+  position: relative;
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--fg-muted);
+}
+.ctx-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ctx-row--completed {
+  color: var(--fg-subtle);
+}
+.ctx-row--pending {
+  color: var(--fg-muted);
+}
+.ctx-row--in_progress {
+  background: var(--bg-selected-subtle);
+}
+.ctx-row--in_progress .ctx-icon {
+  color: var(--fg);
+}
+.ctx-fail {
+  font-size: 12px;
+  color: var(--error);
+}
+.ctx-fail code {
+  font-family: var(--font-mono);
+}
+
+/* Routine, so plain borders and muted text. */
+.ctx-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+.ctx-foot-note {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.ctx-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.ctx-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The stacked view's one-line plan under the title. Routine like the brief
+   line it replaces: fill and chevron only on hover or while open. */
+.ctx-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 12px 0 16px;
+  border: none;
+  background: transparent;
+  color: var(--fg-subtle);
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+.ctx-strip:hover,
+.ctx-strip[aria-expanded='true'] {
+  background: var(--bg-elevated);
+}
+.ctx-strip-label {
+  flex-shrink: 0;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.ctx-strip-count {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+}
+.ctx-strip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg);
+}
+.ctx-strip-text[data-empty] {
+  color: var(--fg-muted);
+}
+.ctx-strip-chevron {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ctx-strip:hover .ctx-strip-chevron,
+.ctx-strip:focus-visible .ctx-strip-chevron,
+.ctx-strip[aria-expanded='true'] .ctx-strip-chevron {
+  opacity: 1;
+}
+
+.ctx-popover {
+  position: fixed;
+  overflow: auto;
+  z-index: var(--z-modal);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ctx-strip-chevron {
+    transition: none;
+  }
+}
+
+/* The split view's pane cell caps its height; the pane scrolls past that. */
+.task-context-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--task-panel-bg);
+}

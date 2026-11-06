@@ -4,7 +4,15 @@ import { IPC } from '../../electron/ipc/channels';
 import { fireAndForget } from '../lib/ipc';
 import { applyAgentHookEvent } from './agentHookStatus';
 import { setStore } from './core';
-import { removePrChecks, setPrChecks, type PrChecksState } from './pr-checks-state';
+import {
+  extraPrWatchId,
+  getTaskExtraPrs,
+  markPrimaryPrClosed,
+  removePrChecks,
+  setPrChecks,
+  setTaskExtraPrs,
+  type PrChecksState,
+} from './pr-checks-state';
 import { startRemoteStatusSync } from './remoteStatusSync';
 import { clearAgentActivity, markAgentOutput } from './taskStatus';
 
@@ -66,6 +74,9 @@ afterEach(() => {
   clearAgentActivity('agent');
   clearAgentActivity('other');
   removePrChecks('task');
+  for (const pr of getTaskExtraPrs('task')) removePrChecks(extraPrWatchId('task', pr.url));
+  setTaskExtraPrs('task', []);
+  markPrimaryPrClosed('task', undefined);
   setStore('projects', []);
   vi.useRealTimers();
 });
@@ -142,6 +153,7 @@ it('publishes the PR check status, and drops it once the PR merges or has no che
     checks: [],
     checkedAt: '2026-10-10T00:00:00Z',
   };
+  setStore('tasks', 'task', 'prUrl', 'https://github.com/o/r/pull/1');
   stop = startRemoteStatusSync();
   expect(lastCi()).toBeUndefined();
 
@@ -171,6 +183,48 @@ it('publishes the board lane so the phone groups tasks like the desktop board', 
 
   setStore('tasks', 'task', 'collapsed', true);
   expect(lastLane()).toBe('snoozed');
+});
+
+it('publishes the PR row of the PR that most needs attention', () => {
+  const lastPr = () => {
+    const [, payload] = vi.mocked(fireAndForget).mock.lastCall ?? [];
+    return (payload as { contexts: Record<string, { pr?: unknown }> }).contexts.task.pr;
+  };
+  const extra = 'https://github.com/o/lib/pull/3';
+  setStore('tasks', 'task', 'prUrl', 'https://github.com/o/r/pull/1');
+  setPrChecks('task', {
+    overall: 'none',
+    merged: true,
+    passing: 0,
+    pending: 0,
+    failing: 0,
+    checks: [],
+    checkedAt: '2026-10-10T00:00:00Z',
+  });
+  setTaskExtraPrs('task', [{ url: extra, repo: 'lib' }]);
+  setPrChecks(extraPrWatchId('task', extra), {
+    overall: 'failure',
+    passing: 0,
+    pending: 0,
+    failing: 1,
+    checks: [],
+    checkedAt: '2026-10-10T00:00:00Z',
+  });
+  stop = startRemoteStatusSync();
+  expect(lastPr()).toEqual({ url: extra, label: 'CI failed', kind: 'failed' });
+});
+
+it('still links its own PR once that closed unmerged, without a status', () => {
+  const url = 'https://github.com/o/r/pull/1';
+  setStore('tasks', 'task', 'prUrl', url);
+  // Babysit can outlive the PR while another repository's PRs cannot be listed.
+  setStore('tasks', 'task', 'prBabysit', { attempts: 0 });
+  markPrimaryPrClosed('task', url);
+  stop = startRemoteStatusSync();
+  const [, payload] = vi.mocked(fireAndForget).mock.lastCall ?? [];
+  expect((payload as { contexts: Record<string, { pr?: unknown }> }).contexts.task.pr).toEqual({
+    url,
+  });
 });
 
 it('publishes the PR row and project icon the board card shows', () => {

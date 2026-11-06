@@ -204,6 +204,87 @@ describe('mapClaudeHookPayload', () => {
       mapClaudeHookPayload(payload({ hook_event_name: 'PostToolUse', tool_use_id: 'toolu_2' })),
     ).toEqual({ state: 'working', event: 'PostToolUse', toolUseId: 'toolu_2' });
   });
+
+  it("carries the lead's whole to-do list from a TodoWrite result", () => {
+    const update = mapClaudeHookPayload(
+      payload({
+        hook_event_name: 'PostToolUse',
+        tool_name: 'TodoWrite',
+        tool_use_id: 'toolu_3',
+        tool_input: {
+          todos: [
+            { content: 'Read the scripts', status: 'completed', activeForm: 'Reading' },
+            { content: 'Check   the\ndev command', status: 'in_progress' },
+            { content: 'Commit', status: 'pending' },
+            { content: '', status: 'pending' },
+            { status: 'pending' },
+          ],
+        },
+      }),
+    );
+    expect(update?.todos).toEqual([
+      { step: 'Read the scripts', status: 'completed' },
+      { step: 'Check the dev command', status: 'in_progress' },
+      { step: 'Commit', status: 'pending' },
+    ]);
+  });
+
+  it('caps a long to-do list and its step text', () => {
+    const todos = Array.from({ length: 40 }, (_, i) => ({
+      content: `${i} ${'x'.repeat(300)}`,
+      status: 'pending',
+    }));
+    const update = mapClaudeHookPayload(
+      payload({ hook_event_name: 'PostToolUse', tool_name: 'TodoWrite', tool_input: { todos } }),
+    );
+    expect(update?.todos).toHaveLength(30);
+    expect(update?.todos?.[0].step).toHaveLength(200);
+  });
+
+  it("ignores a sub-agent's to-do list so it cannot replace the lead's plan", () => {
+    const update = mapClaudeHookPayload(
+      payload({
+        hook_event_name: 'PostToolUse',
+        tool_name: 'TodoWrite',
+        agent_id: 'sub-1',
+        tool_input: { todos: [{ content: 'Sub step', status: 'pending' }] },
+      }),
+    );
+    expect(update).toEqual({ state: 'working', event: 'PostToolUse' });
+  });
+
+  it("ignores a sub-agent's failed command so it is not shown under the lead's step", () => {
+    const update = mapClaudeHookPayload(
+      payload({
+        hook_event_name: 'PostToolUseFailure',
+        tool_name: 'Bash',
+        agent_id: 'sub-1',
+        tool_input: { command: 'npm test' },
+      }),
+    );
+    expect(update).toEqual({ state: 'working', event: 'PostToolUseFailure' });
+  });
+
+  it('names the command of a failed shell call, but not of other failed tools', () => {
+    expect(
+      mapClaudeHookPayload(
+        payload({
+          hook_event_name: 'PostToolUseFailure',
+          tool_name: 'Bash',
+          tool_input: { command: 'npm run dev' },
+        }),
+      ),
+    ).toEqual({ state: 'working', event: 'PostToolUseFailure', failedCommand: 'npm run dev' });
+    expect(
+      mapClaudeHookPayload(
+        payload({
+          hook_event_name: 'PostToolUseFailure',
+          tool_name: 'Read',
+          tool_input: { file_path: '/w/a.ts' },
+        }),
+      ),
+    ).toEqual({ state: 'working', event: 'PostToolUseFailure' });
+  });
 });
 
 describe('isAskUserQuestionTool', () => {

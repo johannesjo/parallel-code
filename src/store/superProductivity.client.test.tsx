@@ -43,6 +43,7 @@ const sp = vi.hoisted(() => ({
   tasks: new Map<string, FakeSpTask>(),
   current: null as string | null,
   isBreak: false,
+  otherDevice: null as string | null,
   nextId: 1,
   creates: [] as Record<string, unknown>[],
   projects: [{ id: 'sp-proj', title: 'Proj' }] as { id: string; title: string }[],
@@ -65,7 +66,11 @@ function fakeSp(channel: string, args: Record<string, unknown> = {}): unknown {
     case IPC.SuperProductivityListProjects:
       return ok(sp.projects);
     case IPC.SuperProductivityGetTracking:
-      return ok({ current: sp.current ? sp.tasks.get(sp.current) : null, isBreak: sp.isBreak });
+      return ok({
+        current: sp.current ? sp.tasks.get(sp.current) : null,
+        isBreak: sp.isBreak,
+        otherDevice: sp.otherDevice,
+      });
     case IPC.SuperProductivityGetTask:
       return sp.tasks.has(id) ? ok(sp.tasks.get(id)) : missing;
     case IPC.SuperProductivityGetTasks:
@@ -155,6 +160,7 @@ describe('Super Productivity sync', () => {
     sp.tasks.clear();
     sp.current = null;
     sp.isBreak = false;
+    sp.otherDevice = null;
     sp.nextId = 1;
     sp.creates.length = 0;
     sp.projects = [{ id: 'sp-proj', title: 'Proj' }];
@@ -290,6 +296,18 @@ describe('Super Productivity sync', () => {
     await focus('a');
     expect(sp.current).toBeNull();
     expect(spBanner()?.reason).toBe('break');
+  });
+
+  it('asks instead of taking over tracking on another device', async () => {
+    addTask('a');
+    sp.otherDevice = 'Android';
+    await focus('a');
+    expect(sp.current).toBeNull();
+    expect(spBanner()).toEqual({ taskId: 'a', reason: 'other_device', trackingTitle: 'Android' });
+
+    // The banner's button takes over on purpose.
+    expect(await trackTaskInSp('a')).toBe(true);
+    expect(sp.current).toBe(store.tasks.a.superProductivity?.taskId);
   });
 
   it('asks before replacing a linked task that was archived or deleted there', async () => {

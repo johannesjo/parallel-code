@@ -335,6 +335,10 @@ export function setShareDockerAgentAuth(enabled: boolean): void {
   setStore('shareDockerAgentAuth', enabled);
 }
 
+export function setTaskContext(enabled: boolean): void {
+  setStore('taskContext', enabled);
+}
+
 export function setDocumentWorkspacesEnabled(enabled: boolean): void {
   setStore('documentWorkspacesEnabled', enabled);
   if (!enabled) setStore('activeDocumentProjectId', null);

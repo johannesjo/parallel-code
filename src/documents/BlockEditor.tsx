@@ -44,6 +44,8 @@ function LiveSource(props: {
       defaultValue: untrack(() => props.initial),
       placeholder: 'Write Markdown…',
       ariaLabel: 'Block source',
+      // A table block opens as the source it was opened to edit.
+      editing: true,
       onChange: () => props.onInput(editor.markdown()),
       onSelection: () => {},
     });

@@ -100,7 +100,7 @@ async function snapshotGitState(
     );
   const [head, status] = await Promise.all([
     git(['rev-parse', 'HEAD']),
-    git(['status', '--porcelain']),
+    git(['--no-optional-locks', 'status', '--porcelain']),
   ]);
   // No HEAD means no checkout (gitIsolation 'none') or no git: the run still
   // happens, it just can't be pinned. A status failure on its own (index.lock

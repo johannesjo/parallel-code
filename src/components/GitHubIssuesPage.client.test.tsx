@@ -7,6 +7,7 @@ import { setStore, store } from '../store/core';
 import {
   browseGitHubIssues,
   openGitHubIssues,
+  openGitHubIssuesWithLabel,
   readGitHubIssue,
   readGitHubIssueActivity,
   resolveGitHubRepository,
@@ -26,6 +27,7 @@ vi.mock('../store/core', async () => {
     tasks: {},
     showNewTaskPanel: false,
     githubIssuesProjectId: null,
+    githubIssuesLabel: null,
     newTaskPrefillPrompt: null,
     panelUserSize: {},
   });
@@ -174,7 +176,7 @@ describe('GitHub issue workflow', () => {
     expect(store.showNewTaskPanel).toBe(true);
     expect(store.newTaskPrefillPrompt).toMatchObject({
       projectId: 'p1',
-      name: '#7 Fix broken save',
+      name: 'Issue 7: Fix broken save',
       githubUrl: issue.url,
     });
     expect(store.newTaskPrefillPrompt?.prompt).toContain('Repro steps');
@@ -185,6 +187,31 @@ describe('GitHub issue workflow', () => {
     expect(document.body.textContent).toContain('Page 2');
     expect(document.body.textContent).toContain('Repro steps');
     expect(document.querySelector('.github-issues-rows')?.scrollTop).toBe(120);
+  });
+  it('restarts an open browser filtered to a requested label', async () => {
+    mount();
+    await flush();
+    button('Next').click();
+    await flush();
+    openGitHubIssuesWithLabel('p1', 'help wanted');
+    await flush();
+    expect(vi.mocked(browseGitHubIssues).mock.lastCall).toEqual([
+      '/repo',
+      expect.objectContaining({ label: 'help wanted', page: 1, state: 'open' }),
+    ]);
+    expect(store.githubIssuesLabel).toBeNull();
+    // The select shows the filter even though this repository's label list lacks it.
+    const select = document.querySelector<HTMLSelectElement>(
+      'select[aria-label="Filter by label"]',
+    );
+    expect(select?.value).toBe('help wanted');
+    // The label belongs to that session; reopening the page keeps it.
+    openGitHubIssues(null);
+    openGitHubIssues('p1');
+    await flush();
+    expect(vi.mocked(browseGitHubIssues).mock.lastCall?.[1]).toMatchObject({
+      label: 'help wanted',
+    });
   });
   it('never overwrites an existing task draft', async () => {
     setStore('showNewTaskPanel', true);

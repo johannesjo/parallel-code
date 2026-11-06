@@ -17,7 +17,7 @@ import type { BrowserSession } from './github-issues-session';
 import { ArrowLeftIcon, SyncIcon, SparkleIcon } from './icons';
 import { ResizablePanel, type PanelChild } from './ResizablePanel';
 import { githubAgentTaskId } from '../documents/task-id';
-import { store } from '../store/core';
+import { setStore, store } from '../store/core';
 import { triggerFocus } from '../store/focused-panel';
 import { GITHUB_BATCH_LIMIT, browseGitHubIssues, openGitHubIssues } from '../store/github';
 import { shownGitHubList } from '../store/github-lists';
@@ -38,13 +38,15 @@ export function GitHubIssuesPage() {
     store.projects.find((p) => p.id === store.githubIssuesProjectId),
   );
   function session(id: string): BrowserSession {
+    const label = untrack(() => store.githubIssuesLabel);
+    if (label !== null) setStore('githubIssuesLabel', null);
     const existing = sessions.get(id);
-    if (existing) return existing;
+    if (existing && label === null) return existing;
     const value: BrowserSession = {
       query: {
         search: '',
         state: 'open',
-        label: '',
+        label: label ?? '',
         assignee: '',
         author: '',
         kind: 'all',

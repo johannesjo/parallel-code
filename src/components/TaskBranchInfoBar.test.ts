@@ -198,7 +198,20 @@ describe('TaskBranchInfoBar GitHub actions', () => {
 });
 
 describe('TaskBranchInfoBar source link', () => {
-  it('renders a compact issue number without removing the full accessible label', () => {
+  it.each([
+    ['https://github.com/acme/app', 'app'],
+    ['https://github.com/acme/app/discussions/42', '#42'],
+    ['https://example.com/task', 'Source'],
+  ])('uses a concise label for %s', (githubUrl, label) => {
+    const html = renderToString(() =>
+      TaskBranchInfoBar({ task: { ...task, githubUrl }, onEditProject: vi.fn() }),
+    );
+
+    expect(html).toContain(`class="task-branch-source-label">${label}</span>`);
+    expect(html).toContain(`class="task-branch-source-compact-label">${label}</span>`);
+  });
+
+  it('renders the issue number at every width while preserving the full URL', () => {
     const issueTask: Task = {
       ...task,
       githubUrl: 'https://github.com/acme/app/issues/249',
@@ -208,7 +221,9 @@ describe('TaskBranchInfoBar source link', () => {
       TaskBranchInfoBar({ task: issueTask, onEditProject: vi.fn() }),
     );
 
+    expect(html).toContain('class="task-branch-source-label">#249</span>');
     expect(html).toContain('class="task-branch-source-compact-label">#249</span>');
+    expect(html).toContain('title="https://github.com/acme/app/issues/249"');
     expect(html).toContain('aria-label="Source: acme/app/issues/249"');
   });
 });
@@ -352,6 +367,17 @@ describe('TaskBranchInfoBar additional PRs', () => {
     expect(html).toContain('class="task-pr-repo"');
     // Fix CI for the failing additional PR; Merge stays with the task's own PR.
     expect(html.match(/class="task-pr-fix-ci"/g)).toHaveLength(1);
-    expect(html).not.toContain('task-pr-merge');
+    expect(html).not.toContain('open Finish to merge');
+    // Babysit covers every open PR of the task, the additional ones included.
+    expect(html).toContain('task-pr-babysit');
+  });
+
+  it('offers Babysit for the additional PRs of a task without its own PR', () => {
+    const html = renderToString(() =>
+      TaskBranchInfoBar({ task: { ...task, prUrl: undefined }, onEditProject: vi.fn() }),
+    );
+
+    expect(html).not.toContain('aria-label="PR #12"');
+    expect(html.match(/task-pr-babysit/g)).toHaveLength(1);
   });
 });

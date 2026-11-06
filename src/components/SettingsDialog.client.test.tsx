@@ -222,3 +222,24 @@ it('keeps the propagate default in place but disabled while orchestration is off
   setStore('mcpOrchestrationEnabled', true);
   expect(label?.querySelector('input')?.disabled).toBe(false);
 });
+
+it('opens a pre-filled bug report from the General tab', () => {
+  setStore('availableAgents', [
+    { id: 'claude-code', name: 'Claude Code', available: true },
+    { id: 'codex', name: 'Codex CLI', available: false },
+  ] as typeof store.availableAgents);
+  const button = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+    (element) => element.textContent === 'Report a bug',
+  );
+  if (!button) throw new Error('Missing Report a bug button');
+  button.click();
+  const url = new URL(
+    (
+      vi.mocked(invoke).mock.calls.find(([channel]) => channel === IPC.ShellOpenExternal)?.[1] as {
+        url: string;
+      }
+    ).url,
+  );
+  expect(url.searchParams.get('template')).toBe('bug_report.yml');
+  expect(url.searchParams.get('agents')).toBe('Claude Code');
+});

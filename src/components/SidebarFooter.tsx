@@ -9,13 +9,22 @@ import {
   startMCPStatusPolling,
   stopMCPStatusPolling,
 } from '../store/store';
+import { IPC } from '../../electron/ipc/channels';
+import { invoke } from '../lib/ipc';
 import { theme } from '../lib/theme';
 import { alt, mod } from '../lib/platform';
-import { IdeaIcon, KeyboardIcon, PhoneIcon, ScrambleIcon } from './icons';
+import { ContributeDialog } from './ContributeDialog';
+import { FeatureHint } from './FeatureHint';
+import { GitPullRequestIcon, IdeaIcon, KeyboardIcon, PhoneIcon, ScrambleIcon } from './icons';
+
+const REPO_URL = 'https://github.com/johannesjo/parallel-code';
+/** Merges in a day that show the app is earning its keep, so asking for a star is fair. */
+const STAR_HINT_MIN_MERGES = 3;
 
 /** Compact utilities and optional activity totals, shared by every theme. */
 export function SidebarFooter(props: { onConnectPhone: () => void }) {
   const [clock, setClock] = createSignal(Date.now());
+  const [showContribute, setShowContribute] = createSignal(false);
   const dayTimer = setInterval(() => setClock(Date.now()), 60_000);
   onCleanup(() => clearInterval(dayTimer));
   const mergedTasksToday = createMemo(() => {
@@ -37,6 +46,7 @@ export function SidebarFooter(props: { onConnectPhone: () => void }) {
   onCleanup(() => stopMCPStatusPolling());
 
   const mcpOk = () => store.mcpStatus.running;
+  let mergedStat: HTMLDivElement | undefined;
 
   return (
     <div class="sidebar-footer">
@@ -95,6 +105,15 @@ export function SidebarFooter(props: { onConnectPhone: () => void }) {
             <IdeaIcon size={14} />
             Thinking
           </button>
+          <button
+            onClick={() => setShowContribute(true)}
+            title="Contribute to Parallel Code: pick an upstream issue and work on it as a task"
+            type="button"
+            class="sidebar-footer-action"
+          >
+            <GitPullRequestIcon size={14} />
+            Contribute
+          </button>
 
           <Show when={store.showSidebarTips}>
             <button
@@ -115,12 +134,33 @@ export function SidebarFooter(props: { onConnectPhone: () => void }) {
 
       <Show when={store.showSidebarProgress && mergedTasksToday() > 0}>
         <div class="sidebar-footer-progress">
-          <div class="sidebar-footer-stat" title="Local task merges and tracked PRs merged today">
+          <div
+            ref={mergedStat}
+            class="sidebar-footer-stat"
+            title="Local task merges and tracked PRs merged today"
+          >
             <span>Merged today</span>
             <strong>{mergedTasksToday()}</strong>
           </div>
         </div>
       </Show>
+      {/* Asked once, after a productive day, not on a timer. */}
+      <FeatureHint
+        id="github-star"
+        when={store.showSidebarProgress && mergedTasksToday() >= STAR_HINT_MIN_MERGES}
+        anchor={() => mergedStat}
+        title="A productive day"
+        actions={[
+          {
+            label: 'Star on GitHub',
+            run: () => void invoke(IPC.ShellOpenExternal, { url: REPO_URL }),
+          },
+        ]}
+        dismissLabel="No thanks"
+      >
+        If Parallel Code is saving you time, a star on GitHub helps other developers find it.
+      </FeatureHint>
+      <ContributeDialog open={showContribute()} onClose={() => setShowContribute(false)} />
     </div>
   );
 }

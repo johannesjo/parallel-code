@@ -603,6 +603,15 @@ export class CodexChat {
         this.publish();
         return;
       }
+    } else if (method === 'serverRequest/resolved') {
+      // Requests from child threads are shown too; resolve them by request ID
+      // before filtering conversation-specific notifications.
+      this.state.requests = this.state.requests.filter((r) => r.id !== params.requestId);
+      this.elicitations.delete(params.requestId as string | number);
+    } else if (params.threadId && params.threadId !== this.state.threadId) {
+      // Notifications for another thread must not change this conversation's
+      // transcript or make its working indicator start or stop.
+      return;
     } else if (method === 'item/started' || method === 'item/completed') {
       this.upsert(chatItem(params.item, method === 'item/completed'));
     } else if (
@@ -657,6 +666,8 @@ export class CodexChat {
       this.turnId = string(record(params.turn).id);
       this.state.status = 'working';
     } else if (method === 'turn/completed') {
+      const completedId = string(record(params.turn).id);
+      if (this.turnId && completedId && completedId !== this.turnId) return;
       this.state.interrupted = record(params.turn).status === 'interrupted';
       this.interruptActivities();
       this.turnId = undefined;
@@ -665,9 +676,6 @@ export class CodexChat {
       this.elicitations.clear();
       const error = record(record(params.turn).error);
       if (error.message) this.state.error = string(error.message);
-    } else if (method === 'serverRequest/resolved') {
-      this.state.requests = this.state.requests.filter((r) => r.id !== params.requestId);
-      this.elicitations.delete(params.requestId as string | number);
     } else if (method === 'skills/changed') {
       void this.loadSkills();
       return;

@@ -132,7 +132,9 @@ export function GitHubIssueFilters(props: { view: BrowserSession; filters: Issue
         >
           <option value="">Any label</option>
           <option value="@none">No labels</option>
-          <For each={props.view.result?.labels ?? []}>
+          {/* The chosen label stays listed before the repository's labels load, or the
+              select would fall back to "Any label" while the results stay filtered. */}
+          <For each={labelOptions(props.view.result?.labels ?? [], props.filters.draft.label)}>
             {(label) => <option value={label}>{label}</option>}
           </For>
         </select>
@@ -189,4 +191,10 @@ export function GitHubIssueFilters(props: { view: BrowserSession; filters: Issue
       </form>
     </>
   );
+}
+
+function labelOptions(labels: string[], selected: string): string[] {
+  return !selected || selected === '@none' || labels.includes(selected)
+    ? labels
+    : [selected, ...labels];
 }

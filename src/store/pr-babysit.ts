@@ -1,12 +1,15 @@
-/** PR babysitting: sends a task's failing PR checks to its agent until CI passes. */
+/** PR babysitting: sends a task's failing PR checks to its agent until CI passes.
+ *  One toggle per task covers all its PRs, since they share the task's agent. */
 import { reconcile } from 'solid-js/store';
 import { errMessage, warn as logWarn } from '../lib/log';
 import { parseGitHubUrl } from '../lib/github-url';
 import {
   MAX_BABYSIT_ATTEMPTS,
   babysitCiWaitReason,
+  combinedBabysitChecks,
   isAwaitingFixPush,
   nextBabysitStep,
+  type BabysitChecks,
   type PrBabysit,
 } from '../lib/pr-babysit';
 import { setStore, store } from './core';
@@ -16,7 +19,8 @@ import { isLandedTaskState } from './landing';
 import { showNotification } from './notification';
 import { saveState } from './persistence';
 import { getPrChecks } from './pr-checks-state';
-import { taskPrUrl } from './pr-checks';
+import { taskPrsKnown } from './pr-checks';
+import { taskPrs, taskPrsChecks } from './task-prs';
 import { isAgentAskingQuestion, isAgentIdle } from './taskStatus';
 import { sendPrompt } from './tasks';
 
@@ -35,22 +39,59 @@ export function getPrBabysit(taskId: string): PrBabysit | undefined {
   return store.tasks[taskId]?.prBabysit;
 }
 
+/** All of the task's PRs as the one state babysitting follows. */
+function babysitChecks(taskId: string): BabysitChecks | undefined {
+  const task = store.tasks[taskId];
+  if (!task) return undefined;
+  const checks = combinedBabysitChecks(taskPrsChecks(task));
+  // A merge only ends Babysit once no other PR of the task can still be open.
+  return checks?.merged && !taskPrsKnown(task) ? undefined : checks;
+}
+
+/** Whether the task has an open PR for Babysit to watch. */
+export function hasOpenTaskPr(taskId: string): boolean {
+  const task = store.tasks[taskId];
+  return !!task && taskPrsChecks(task).some((checks) => checks !== undefined && !checks.merged);
+}
+
+// PRs confirmed as the user's while Babysit is on, by task: a PR's author
+// never changes, so a later gh hiccup cannot stop Babysit, and each PR costs
+// one lookup. Turning Babysit on checks afresh.
+const confirmedPrsByTask = new Map<string, Set<string>>();
+
+/** Why the PR's CI logs must not go to the agent unreviewed; null when they may. */
+async function babysitRefusal(taskId: string, prUrl: string): Promise<string | null> {
+  if (confirmedPrsByTask.get(taskId)?.has(prUrl)) return null;
+  const details = await getPullRequestDetails(prUrl);
+  if (details.authoredByViewer === true) {
+    const confirmed = confirmedPrsByTask.get(taskId) ?? new Set<string>();
+    confirmedPrsByTask.set(taskId, confirmed.add(prUrl));
+    return null;
+  }
+  return details.authoredByViewer === false
+    ? 'Babysit is only available for pull requests you opened.'
+    : 'Could not confirm you opened this pull request. Is gh signed in?';
+}
+
 /**
- * Turns babysitting on for the task's PR. Only PRs the signed-in GitHub user
- * opened qualify: their CI logs come from the user's own code, which is what
- * makes sending them unreviewed acceptable. Returns whether it was turned on.
+ * Turns babysitting on for the task's open PRs. Only PRs the signed-in GitHub
+ * user opened qualify: their CI logs come from the user's own code, which is
+ * what makes sending them unreviewed acceptable. PRs found later are checked
+ * before their failures are sent. Returns whether it was turned on.
  */
 export async function startPrBabysit(taskId: string): Promise<boolean> {
   const task = store.tasks[taskId];
-  const prUrl = task ? taskPrUrl(task) : null;
-  if (!prUrl) return false;
-  const details = await getPullRequestDetails(prUrl);
-  if (details.authoredByViewer !== true) {
-    showNotification(
-      details.authoredByViewer === false
-        ? 'Babysit is only available for pull requests you opened.'
-        : 'Could not confirm you opened this pull request. Is gh signed in?',
-    );
+  const urls = task
+    ? taskPrs(task)
+        .filter((pr) => getPrChecks(pr.watchId)?.merged !== true)
+        .map((pr) => pr.url)
+    : [];
+  if (urls.length === 0) return false;
+  confirmedPrsByTask.delete(taskId);
+  const refusals = await Promise.all(urls.map((url) => babysitRefusal(taskId, url)));
+  const refusal = refusals.find((r) => r !== null);
+  if (refusal) {
+    showNotification(refusal);
     return false;
   }
   if (!store.tasks[taskId]) return false;
@@ -59,6 +100,7 @@ export async function startPrBabysit(taskId: string): Promise<boolean> {
 }
 
 export function stopPrBabysit(taskId: string): void {
+  confirmedPrsByTask.delete(taskId);
   if (getPrBabysit(taskId)) setPrBabysit(taskId, undefined);
 }
 
@@ -109,22 +151,62 @@ export function prBabysitStatus(taskId: string): string | null {
   const babysit = getPrBabysit(taskId);
   if (!babysit) return null;
   if (babysit.stalled) return STALLED_STATUS;
-  const ciReason = babysitCiWaitReason(babysit, getPrChecks(taskId));
+  const ciReason = babysitCiWaitReason(babysit, babysitChecks(taskId));
   if (ciReason) return ciReason;
   const blocker = babysitAgentBlocker(taskId);
   return blocker ? `CI failed; waiting: ${blocker}` : 'Sending CI failures to the agent';
 }
 
-async function deliverFailures(taskId: string, headSha: string): Promise<void> {
+/** The failure prompts of the task's failing PRs, or why they must not be sent;
+ *  an empty list when none has a failing check to send. A PR whose failing head
+ *  is in `sentHeads` was sent already, so the agent is not told twice. */
+async function loadFailurePrompts(
+  taskId: string,
+  sentHeads: ReadonlySet<string>,
+): Promise<string[] | { refusal: string }> {
   const task = store.tasks[taskId];
-  const prUrl = task ? taskPrUrl(task) : null;
-  const number = prUrl ? parseGitHubUrl(prUrl)?.number : undefined;
-  if (!prUrl || !number) return;
-  const prompt = await loadFailedChecksPrompt({ number: Number(number), url: prUrl });
+  const failing = task
+    ? taskPrs(task).filter((pr) => {
+        const checks = getPrChecks(pr.watchId);
+        if (checks?.overall !== 'failure' || checks.merged) return false;
+        return !checks.headSha || !sentHeads.has(checks.headSha);
+      })
+    : [];
+  const prompts: string[] = [];
+  for (const pr of failing) {
+    const number = parseGitHubUrl(pr.url)?.number;
+    if (!number) continue;
+    // Confirmed already unless found after Babysit was turned on.
+    const refusal = await babysitRefusal(taskId, pr.url);
+    if (refusal) return { refusal };
+    const prompt = await loadFailedChecksPrompt({
+      number: Number(number),
+      url: pr.url,
+      ...(pr.repo ? { repo: pr.repo } : {}),
+    });
+    if (prompt !== null) prompts.push(prompt);
+  }
+  return prompts;
+}
+
+async function deliverFailures(taskId: string, headSha: string): Promise<void> {
+  const lastSent = store.tasks[taskId]?.prBabysit?.lastSentSha;
+  const sentHeads = new Set(lastSent ? lastSent.split(',') : []);
+  const prompts = await loadFailurePrompts(taskId, sentHeads);
   // Collecting logs takes seconds; anything may have changed meanwhile.
   const babysit = store.tasks[taskId]?.prBabysit;
-  if (!babysit || getPrChecks(taskId)?.headSha !== headSha) return;
-  if (prompt === null) {
+  if (!babysit || babysitChecks(taskId)?.headSha !== headSha) return;
+  if (!Array.isArray(prompts)) {
+    stopPrBabysit(taskId);
+    showNotification(`Babysit stopped: ${prompts.refusal}`);
+    return;
+  }
+  if (prompts.length === 0 && headSha.split(',').some((head) => sentHeads.has(head))) {
+    // The agent still works on failures it was sent; the stall watch covers it.
+    setPrBabysit(taskId, { ...babysit, lastSentSha: headSha });
+    return;
+  }
+  if (prompts.length === 0) {
     // Nothing the agent can act on, such as only a merge conflict; skip this commit.
     setPrBabysit(taskId, { ...babysit, lastSentSha: headSha, stalled: true });
     showNotification(
@@ -132,6 +214,7 @@ async function deliverFailures(taskId: string, headSha: string): Promise<void> {
     );
     return;
   }
+  const prompt = prompts.join('\n\n');
   const agentId = readyAgentId(taskId);
   if (!agentId) return;
   const attempts = babysit.attempts + 1;
@@ -160,7 +243,7 @@ function trackStall(taskId: string, babysit: PrBabysit, idleSince: Map<string, n
     const { attempts, lastSentSha } = babysit;
     setPrBabysit(taskId, lastSentSha ? { attempts, lastSentSha } : { attempts });
   };
-  if (!isAwaitingFixPush(babysit, getPrChecks(taskId))) {
+  if (!isAwaitingFixPush(babysit, babysitChecks(taskId))) {
     idleSince.delete(taskId);
     if (babysit.stalled) clearStall();
     return;
@@ -197,7 +280,12 @@ export function startPrBabysitWatcher(): () => void {
     for (const [taskId, task] of Object.entries(store.tasks)) {
       const babysit = task?.prBabysit;
       if (!babysit || inFlight.has(taskId)) continue;
-      const step = nextBabysitStep(babysit, getPrChecks(taskId));
+      // Its last PR closed unmerged: no toggle shows any more to turn Babysit off.
+      if (taskPrs(task).length === 0 && taskPrsKnown(task)) {
+        stopPrBabysit(taskId);
+        continue;
+      }
+      const step = nextBabysitStep(babysit, babysitChecks(taskId));
       trackStall(taskId, babysit, idleSince);
       if (step.kind === 'done') stopPrBabysit(taskId);
       else if (step.kind === 'reset') setPrBabysit(taskId, { attempts: 0 });

@@ -2,6 +2,7 @@
 import { listOpenPrUrlsForBranch } from '../ipc/pr-checks.js';
 import { errMessage, warn as logWarn } from '../log.js';
 import { runGh } from './gh.js';
+import { resolvePrHead } from './pr-head.js';
 
 export interface CreatePullRequestOptions {
   worktreePath: string;
@@ -29,7 +30,8 @@ export async function createPullRequest(
   options: CreatePullRequestOptions,
 ): Promise<CreatedPullRequest> {
   const { worktreePath, head, base, title, body, draft } = options;
-  const args = ['pr', 'create', '--head', head, '--base', base, '--title', title];
+  const prHead = await resolvePrHead(worktreePath, head);
+  const args = ['pr', 'create', '--head', prHead, '--base', base, '--title', title];
   args.push('--body-file', '-');
   if (draft) args.push('--draft');
   try {

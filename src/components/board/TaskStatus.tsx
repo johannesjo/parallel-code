@@ -14,7 +14,7 @@ import {
 import { setOpenDraftAside } from '../../store/task-creation';
 import { getTaskAttentionState, getTaskDotStatus } from '../../store/taskStatus';
 import type { Task } from '../../store/types';
-import { isPrBabysitStuck } from '../../store/pr-babysit';
+import { hasOpenTaskPr, isPrBabysitStuck } from '../../store/pr-babysit';
 import { BabysitButton } from '../BabysitButton';
 import { CheckIcon, GitMergeIcon, GitPullRequestIcon, IssueOpenedIcon } from '../icons';
 import { StatusDot } from '../StatusDot';
@@ -86,11 +86,12 @@ function prTone(kind: PrBoardStatusKind | undefined, conflicting: boolean): stri
 }
 
 /**
- * The PR's state as one label, toned by urgency, with Babysit; the link sits in
- * the task's line. `onMerge` adds a Merge button once the PR is ready to merge.
+ * The state of the task's PR as one label, toned by urgency, with Babysit; the
+ * link sits in the task's line. `watchId` names the PR it describes, see
+ * `taskLeadPr`. `onMerge` adds a Merge button once the task's own PR is ready.
  */
-export function TaskPr(props: { taskId: string; url: string; onMerge?: () => void }) {
-  const checks = () => getPrChecks(props.taskId);
+export function TaskPr(props: { taskId: string; watchId: string; onMerge?: () => void }) {
+  const checks = () => getPrChecks(props.watchId);
   const status = () => prBoardStatus(checks());
   const kind = () => status()?.kind;
   // A stalled Babysit is why a failed PR is back in Needs you, so say so.
@@ -117,10 +118,11 @@ export function TaskPr(props: { taskId: string; url: string; onMerge?: () => voi
         <span class="task-board-status-text">{label()}</span>
       </span>
       <span class="task-board-actions">
-        <Show when={checks() && !checks()?.merged}>
+        <Show when={hasOpenTaskPr(props.taskId)}>
           <BabysitButton taskId={props.taskId} class="task-board-chip" />
         </Show>
-        <Show when={kind() === 'ready' && props.onMerge}>
+        {/* Finish merges the task's own PR only. */}
+        <Show when={kind() === 'ready' && props.watchId === props.taskId && props.onMerge}>
           {(merge) => (
             <button
               type="button"

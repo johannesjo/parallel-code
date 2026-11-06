@@ -16,6 +16,7 @@ import type {
 } from '../shared/agent-chat-types.js';
 import { stripAnsi } from '../shared/prompt-detect.js';
 import { readContextUsage } from '../shared/agent-chat-types.js';
+import { parseTodoWriteInput } from '../shared/agent-plan.js';
 import {
   describePermissionUpdates,
   describeToolCall,
@@ -839,20 +840,8 @@ export class ClaudeChat implements AgentChat {
               : ['Edit', 'Write', 'MultiEdit'].includes(tool)
                 ? 'files'
                 : 'tool';
-          if (tool === 'TodoWrite' && Array.isArray(input.todos)) {
-            this.state.plan = input.todos.map((value) => {
-              const todo = record(value);
-              return {
-                step: string(todo.content),
-                status:
-                  todo.status === 'completed'
-                    ? 'completed'
-                    : todo.status === 'in_progress'
-                      ? 'in_progress'
-                      : 'pending',
-              };
-            });
-          }
+          const todos = tool === 'TodoWrite' ? parseTodoWriteInput(input) : undefined;
+          if (todos) this.state.plan = todos;
           const diffs = proposedDiffs(tool, input);
           this.upsert({
             id: string(block.id),
