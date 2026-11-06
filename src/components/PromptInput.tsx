@@ -55,6 +55,7 @@ import {
   shouldRendererAutoSendInitialPrompt,
 } from './prompt-control';
 import {
+  isScreenBlockingAutoSend,
   isStartupBlockingAutoSend,
   shouldAbortInitialPromptAfterTimeout,
 } from './prompt-autosend-readiness';
@@ -283,7 +284,7 @@ export function PromptInput(props: PromptInputProps) {
       // Don't tear down the auto-send mechanism if we can't send yet —
       // the quiescence timer needs to stay alive to retry after settling.
       if (isAutoTrustSettling(agentId)) return;
-      if (isStartupBlockingAutoSend(getAgentOutputTail(agentId))) return;
+      if (isScreenBlockingAutoSend(getAgentOutputTail(agentId))) return;
       cleanup();
       void handleSend('auto');
     }
@@ -306,7 +307,7 @@ export function PromptInput(props: PromptInputProps) {
         onAgentReady(agentId, onReady);
         return;
       }
-      if (isStartupBlockingAutoSend(getAgentOutputTail(agentId))) {
+      if (isScreenBlockingAutoSend(getAgentOutputTail(agentId))) {
         onAgentReady(agentId, onReady);
         return;
       }
@@ -335,7 +336,7 @@ export function PromptInput(props: PromptInputProps) {
           pendingSendTimer = undefined;
           if (cancelled) return;
           const tail = getAgentOutputTail(agentId);
-          if (isStartupBlockingAutoSend(tail)) {
+          if (isScreenBlockingAutoSend(tail)) {
             onAgentReady(agentId, onReady);
             return;
           }
@@ -407,7 +408,7 @@ export function PromptInput(props: PromptInputProps) {
 
       const tail = getAgentOutputTail(agentId);
       if (!tail) return;
-      if (isStartupBlockingAutoSend(tail)) {
+      if (isScreenBlockingAutoSend(tail)) {
         lastRawTail = tail;
         stableSince = 0;
         return;
@@ -809,7 +810,7 @@ export function PromptInput(props: PromptInputProps) {
     // the callers (onReady, quiescence timer) already verified with fresh data.
     if (mode === 'auto') {
       const tail = getAgentOutputTail(props.agentId);
-      if (isStartupBlockingAutoSend(tail)) {
+      if (isScreenBlockingAutoSend(tail)) {
         return;
       }
       if (isQuestionBlockingAutoSend(props.agentId, tail)) {

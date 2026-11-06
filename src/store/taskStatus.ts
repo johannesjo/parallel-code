@@ -26,9 +26,12 @@ import {
 import { getPrChecks } from './pr-checks-state';
 import { taskLeadWatchId } from './task-prs';
 import {
+  AGENT_UPDATE_MENU_PATTERN,
   chunkContainsAgentPrompt,
   getAgentPromptReadiness,
+  PROMPT_AFTER_MENU,
   PROMPT_PATTERNS,
+  SELECTION_CURSOR_LINE,
   stripAnsi,
 } from '../../electron/mcp/prompt-detect';
 
@@ -331,6 +334,8 @@ const QUESTION_PATTERNS: RegExp[] = [
   /trust.*folder/i,
   // Copilot CLI header: "Confirm folder trust" (normal and TUI-garbled "Confirmfoldertrust").
   /confirm.*folder.*trust/i,
+  // Codex's "Update available" menu has no "?" (#336).
+  AGENT_UPDATE_MENU_PATTERN,
 ];
 
 /** Find the byte offset just after the last screen-clearing ANSI sequence
@@ -486,11 +491,6 @@ export function looksLikeQuestion(tail: string): boolean {
 
   return true;
 }
-
-/** A selection cursor on a numbered option, e.g. `❯ 1. Yes`. */
-const SELECTION_CURSOR_LINE = /^\s*[❯›]\s*\d+\./m;
-/** The input box back below a menu, even holding typed text: it was answered. */
-const PROMPT_AFTER_MENU = /^\s*[❯›]\s*\d+\.[^]*^\s*[❯›](?!\s*\d+\.)/m;
 
 function isQuestionLine(line: string): boolean {
   const trimmed = line.trimEnd();
