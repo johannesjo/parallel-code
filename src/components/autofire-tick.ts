@@ -20,6 +20,8 @@ export function processAutoFireTick(params: {
   controlledBy: 'coordinator' | 'human' | undefined;
   allowPromptlessGrace?: boolean;
   questionActive: boolean;
+  /** The screen shows a numbered selection menu that Enter would answer. */
+  menuBlocking?: boolean;
   promptDraftActive?: boolean;
   terminalInputPending?: boolean;
   userActivityHoldUntil?: number;
@@ -40,7 +42,7 @@ export function processAutoFireTick(params: {
 
   // A question/dialog is active — the ❯ visible in the TUI is a selection
   // cursor, not the agent prompt. Pause to avoid sending into the dialog.
-  if (params.questionActive) {
+  if (params.questionActive || params.menuBlocking) {
     return { outcome: 'paused' };
   }
 

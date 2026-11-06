@@ -55,6 +55,7 @@ import {
   shouldRendererAutoSendInitialPrompt,
 } from './prompt-control';
 import {
+  isMenuBlockingAutoSend,
   isScreenBlockingAutoSend,
   isStartupBlockingAutoSend,
   shouldAbortInitialPromptAfterTimeout,
@@ -583,6 +584,7 @@ export function PromptInput(props: PromptInputProps) {
         controlledBy: untrack(() => store.tasks[props.taskId]?.controlledBy),
         allowPromptlessGrace: props.autoSendChildUpdates || props.controlledBy === 'coordinator',
         questionActive: untrack(() => questionActive()),
+        menuBlocking: isMenuBlockingAutoSend(untrack(() => getAgentOutputTail(props.agentId))),
         promptDraftActive: hasUserPromptDraft(staged),
         terminalInputPending:
           untrack(() => store.tasks[props.taskId]?.terminalInputPending) === true,

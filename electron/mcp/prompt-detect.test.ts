@@ -195,6 +195,17 @@ describe('chunkContainsAgentPrompt', () => {
       ['› 1. Yes, continue', '2. No, quit', '› Ask Codex to do anything'].join('\n'),
     ],
     [
+      'Codex composer redrawn below its answered update menu',
+      [
+        '› 1. Update now (runs `npm install -g @openai/codex`)',
+        '2. Skip',
+        '╭──────────────────────────────╮',
+        '│ >_ OpenAI Codex (v0.166.0)   │',
+        '╰──────────────────────────────╯',
+        '› Ask Codex to do anything',
+      ].join('\n'),
+    ],
+    [
       'Codex history line that starts with a number, composer below',
       ['› 1. fix the failing test', 'Done.', '›'].join('\n'),
     ],

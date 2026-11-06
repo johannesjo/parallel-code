@@ -5,7 +5,7 @@ import {
   isStartupBlockingAutoSend,
   shouldAbortInitialPromptAfterTimeout,
 } from './prompt-autosend-readiness';
-import { normalizeCurrentFrame } from '../store/taskStatus';
+import { looksLikeQuestion, normalizeCurrentFrame } from '../store/taskStatus';
 
 describe('isStartupBlockingAutoSend', () => {
   it('blocks while Codex is still loading the model', () => {
@@ -149,5 +149,19 @@ describe('isMenuBlockingAutoSend', () => {
 
   it('leaves the startup check alone, which also gates question handoff', () => {
     expect(isStartupBlockingAutoSend(CODEX_UPDATE_MENU_TAIL)).toBe(false);
+  });
+});
+
+describe('an answered update menu', () => {
+  /** Skip picked: the menu rows erased and the composer redrawn below, no clear. */
+  const answered = `${CODEX_UPDATE_MENU_TAIL}\x1b[6;1H\x1b[K\x1b[7;1H\x1b[K\x1b[8;1H\x1b[K\x1b[20;1H› Ask Codex to do anything`;
+
+  it('no longer holds the send', () => {
+    expect(isScreenBlockingAutoSend(answered)).toBe(false);
+  });
+
+  it('is no longer a question, so the queued prompt can go', () => {
+    expect(looksLikeQuestion(CODEX_UPDATE_MENU_TAIL)).toBe(true);
+    expect(looksLikeQuestion(answered)).toBe(false);
   });
 });

@@ -134,8 +134,7 @@ vi.mock('../shared/prompt-detect.js', async (importOriginal) => {
   // A simplified detector the coordinator tests are written against (it
   // accepts e.g. `Done ❯`), except for menus: those use the real check, so
   // the tests see what the coordinator does when a menu covers the prompt.
-  const blockedByMenu = (tail: string): boolean =>
-    real.AGENT_UPDATE_MENU_PATTERN.test(tail) || real.showsSelectionMenu(tail);
+  const blockedByMenu = (tail: string): boolean => real.showsSelectionMenu(tail);
   return {
     cursorRowsToLines: real.cursorRowsToLines,
     stripAnsi: (s: string) =>

@@ -32,6 +32,8 @@ import {
   PROMPT_AFTER_MENU,
   PROMPT_PATTERNS,
   SELECTION_CURSOR_LINE,
+  cursorRowsToLines,
+  showsSelectionMenu,
   stripAnsi,
 } from '../../electron/mcp/prompt-detect';
 
@@ -334,8 +336,6 @@ const QUESTION_PATTERNS: RegExp[] = [
   /trust.*folder/i,
   // Copilot CLI header: "Confirm folder trust" (normal and TUI-garbled "Confirmfoldertrust").
   /confirm.*folder.*trust/i,
-  // Codex's "Update available" menu has no "?" (#336).
-  AGENT_UPDATE_MENU_PATTERN,
 ];
 
 /** Find the byte offset just after the last screen-clearing ANSI sequence
@@ -392,6 +392,10 @@ export function looksLikeQuestion(tail: string): boolean {
   const analysisTail = clearIdx >= 0 ? tail.slice(clearIdx) : tail;
 
   const visible = stripAnsi(analysisTail);
+  // Codex's update menu has no "?" (#336). Codex draws it with cursor moves,
+  // so read it in rows; it is a question only until a prompt is drawn below it.
+  const rows = stripAnsi(cursorRowsToLines(analysisTail));
+  if (AGENT_UPDATE_MENU_PATTERN.test(rows) && showsSelectionMenu(rows)) return true;
   // Use the full visible content — do NOT slice to a small suffix.
   // TUI agents (Copilot CLI, Codex CLI) use cursor positioning instead of
   // newlines, so all rendered text collapses to one long string.  A 500-char

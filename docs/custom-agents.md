@@ -6,13 +6,13 @@ Add, edit or remove one under **Settings → Agents → Custom agents**.
 
 ## The fields
 
-| Field                     | Required | What it does                                                                                                                                                                       | Example                              |
-| ------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| **Name**                  | yes      | Shown in the agent picker and on task cards.                                                                                                                                       | `Gemini`                             |
-| **Command**               | yes      | The program to run. A name on your `PATH` or an absolute path. Use an absolute path if the agent exits at once with "command not found".                                           | `gemini`, `/opt/homebrew/bin/gemini` |
-| **Launch args**           | no       | Added to every fresh start, for example a model.                                                                                                                                   | `--model gemini-2.5-pro`             |
-| **Resume args**           | no       | Used **instead of** the launch args when Parallel Code reopens a task after a restart, to continue its conversation. Leave it empty and a reopened task starts a new conversation. | `--resume latest`                    |
-| **Skip permissions args** | no       | Added when a task has **Skip permissions** ticked in the New task dialog. The checkbox only appears for agents that have these args.                                               | `--yolo`                             |
+| Field                     | Required | What it does                                                                                                                                                                             | Example                              |
+| ------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| **Name**                  | yes      | Shown in the agent picker and on task cards.                                                                                                                                             | `Gemini`                             |
+| **Command**               | yes      | The program to run. A name on your `PATH` or an absolute path. Use an absolute path if the agent exits at once with "command not found".                                                 | `gemini`, `/opt/homebrew/bin/gemini` |
+| **Launch args**           | no       | Added to every fresh start, for example a model.                                                                                                                                         | `--model gemini-2.5-pro`             |
+| **Resume args**           | no       | Used **instead of** the launch args when Parallel Code reopens a task after a restart, to continue its conversation. Leave it empty and a reopened task starts a new conversation.       | `--resume latest`                    |
+| **Skip permissions args** | no       | Added when a task has **Skip permissions** ticked in the New task dialog. The checkbox appears for agents that have these args, or whose command is one Parallel Code knows (see below). | `--yolo`                             |
 
 Arguments are split on spaces, and quotes are not supported, so a single argument can't contain a space. If you need that, point **Command** at a small wrapper script that passes the arguments on.
 
@@ -41,11 +41,11 @@ For Docker tasks the agent runs inside the container, so it must be installed in
 ## What works differently from built-in agents
 
 - **Status on the board.** For built-in agents other than Claude Code, and for every custom agent, Parallel Code works out whether the agent is working, waiting or asking a question from its terminal output. It recognises an input line that starts with `❯` or `›`. Other agents still work, but their status is less precise.
-- **The first prompt.** A task's prompt is typed in once the agent shows its input line. For an agent whose input line Parallel Code doesn't recognise, it is typed once the output has stayed unchanged for about 1.5 seconds. It is never typed while the screen shows a numbered menu (`❯ 1. …`) or a known question; answer the agent and the prompt goes in afterwards.
-- **Commands named like a built-in agent.** Parallel Code recognises built-in agents by the command's file name. A custom agent whose command is `claude`, `codex`, `copilot` or `agy` (or a path ending in one) gets that agent's handling: Claude Code's status hooks and session IDs, Codex's session handling, their MCP flags. A wrapper script with another name gets the generic handling.
+- **The first prompt.** A task's prompt is typed in once the agent shows its input line. For an agent whose input line Parallel Code doesn't recognise, it is typed once the output has stayed unchanged for about 1.5 seconds. It is held while the screen shows a numbered menu whose cursor is `❯` or `›` (`❯ 1. …`) or a question Parallel Code recognises; answer the agent and the prompt goes in afterwards. Menus drawn differently, for example inside a box or with `●` or `>` as the cursor, are not recognised, so answer any startup dialog before the prompt is due.
+- **Commands named like a built-in agent.** Parallel Code recognises some agents by the command's file name and gives a custom agent with such a command that agent's handling. `claude` gets Claude Code's status hooks, session IDs and MCP flag. Any name that contains `codex`, such as a wrapper called `my-codex`, gets Codex's session handling and MCP config. `copilot` gets its own MCP flag, and `agy` none, since Parallel Code writes its workspace MCP config instead. `claude`, `codex`, `gemini`, `copilot` and `agy` also get a default skip-permissions flag when that field is empty. A wrapper script with any other name gets the generic handling.
 - **Tours, reviews and code questions** run only with Claude Code, Codex or MiniMax, chosen in Settings, not with custom agents.
 - **The chat view** is only available for Claude Code and Codex.
-- **Agent orchestration.** When a custom agent runs a coordinated task, Parallel Code adds `--mcp-config <file>`, as for Claude Code. Use a custom agent there only if it accepts that flag.
+- **Agent orchestration.** When a custom agent with a command it doesn't recognise runs a coordinated task, Parallel Code adds `--mcp-config <file>`, as for Claude Code. Use a custom agent there only if it accepts that flag.
 
 ## Checking a new agent
 
