@@ -91,3 +91,20 @@ export function appendGitInfoExcludeBlock(
   if (!excludePath) return 'missing';
   return appendGitInfoExcludeBlockAtPath(excludePath, marker, block, onError);
 }
+
+/** Whether Git tracks `file`; exclusion cannot hide a tracked file from `git status`. */
+export function isTrackedByGit(workspace: string, file: string): boolean {
+  try {
+    childProcess.execFileSync('git', ['ls-files', '--error-unmatch', '--', file], {
+      cwd: workspace,
+      stdio: 'ignore',
+      timeout: 3000,
+    });
+    return true;
+  } catch (err) {
+    // Exit 1 means untracked. Anything else (no repo, no git, timeout) is no answer:
+    // fail closed rather than risk writing a token into a tracked file.
+    if ((err as { status?: unknown }).status === 1) return false;
+    throw new Error(`Could not check whether ${file} is tracked: ${String(err)}`);
+  }
+}

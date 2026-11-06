@@ -81,6 +81,7 @@ let core: {
   setMaxConcurrentSubTasks: ReturnType<typeof vi.fn>;
   hasPendingPrompt: ReturnType<typeof vi.fn>;
   recordUserMerge: ReturnType<typeof vi.fn>;
+  landSelf: ReturnType<typeof vi.fn>;
 };
 let persist: () => void;
 let changed: Mock<(event: DelegationChanged) => void>;
@@ -209,6 +210,7 @@ beforeEach(() => {
     setMaxConcurrentSubTasks: vi.fn(),
     hasPendingPrompt: vi.fn().mockReturnValue(false),
     recordUserMerge: vi.fn(),
+    landSelf: vi.fn().mockResolvedValue({ ok: true }),
   };
   persist = vi.fn();
   changed = vi.fn();
@@ -624,6 +626,31 @@ describe('delegation authority and creation', () => {
     expect(core.createTask).toHaveBeenLastCalledWith(
       expect.objectContaining({ integrationPolicy: 'review' }),
     );
+  });
+
+  it('rejects a malformed land_self from an automatic child before landing anything', async () => {
+    await register('parent');
+    await register('child', { parentTaskId: 'parent', integrationPolicy: 'automatic' });
+    const child = session('child', 'child-launch', true);
+    child.capabilities = { ...child.capabilities, profile: 'child-automatic' };
+    await expect(
+      service.callTool(child, 'land_self', { verification: { checks: [{ result: 'passed' }] } }),
+    ).rejects.toThrow('verification check name must be a non-empty string');
+    expect(core.landSelf).not.toHaveBeenCalled();
+    const checks = [{ name: 'tests', command: 'npm test', result: 'passed' }];
+    await service.callTool(child, 'land_self', { verification: { checks }, summary: 'Done' });
+    expect(core.landSelf).toHaveBeenCalledWith('child', {
+      verification: { checks: [{ ...checks[0], reason: undefined }] },
+      summary: 'Done',
+    });
+  });
+
+  it('hands the cancellation of a session wait to the coordinator waiter', async () => {
+    await register('parent');
+    const cancel = new AbortController();
+    const caller = { ...session('parent'), signal: cancel.signal };
+    await service.callTool(caller, 'wait_for_signal_done', { timeoutMs: 1000 });
+    expect(core.waitForSignalDone).toHaveBeenCalledWith('parent', 1000, { signal: cancel.signal });
   });
 
   it('stops every child pane without stopping the parent or unrelated tasks', async () => {

@@ -4,6 +4,7 @@ import {
   hasTerminalDraftActivity,
   hasTerminalUserActivity,
   nextTerminalInputPending,
+  submitsTerminalDraft,
 } from '../shared/terminal-input.js';
 import { stopAgentChat, stopAllAgentChats, runningAgentChatIds } from '../chat/sessions.js';
 import { execFileSync, execFile, spawn as cpSpawn } from 'child_process';
@@ -946,14 +947,7 @@ function writeSessionInput(session: PtySession, data: string): void {
   const userActivity = hasTerminalUserActivity(data);
   if (userActivity) session.lastInputAt = Date.now();
   session.proc.write(data);
-  if (
-    session.inputPending &&
-    (data === '\r' ||
-      data === '\n' ||
-      data === '\r\n' ||
-      data === '\x1b[13u' ||
-      data === '\x1b[13;1u')
-  ) {
+  if (submitsTerminalDraft(session.inputPending, data)) {
     invalidateAgentActivity(session.agentId, session.launchId);
     if (!session.isShell) emitPtyEvent('prompt-submitted', session.agentId);
   }

@@ -2104,6 +2104,27 @@ describe('writeToAgent — interrupt keystrokes', () => {
     }
   });
 
+  it('reports a prompt typed and submitted in one chunk, but not newlines inside a paste', async () => {
+    const submitted: string[] = [];
+    const off = onPtyEvent('prompt-submitted', (agentId) => submitted.push(agentId));
+    try {
+      const agent = buildSpawnArgs({
+        agentId: 'agent-coalesced',
+        command: 'codex',
+        args: [],
+        dockerMode: false,
+      });
+      await spawnAgent(createMockNotify(), agent);
+      writeToAgent(agent.agentId, '\x1b[200~first line\rsecond line\x1b[201~');
+      expect(submitted).toEqual([]);
+      writeToAgent(agent.agentId, '\x15');
+      writeToAgent(agent.agentId, 'follow-up\r');
+      expect(submitted).toEqual([agent.agentId]);
+    } finally {
+      off();
+    }
+  });
+
   it('emits an interrupt event for a bare Esc or Ctrl+C on agent sessions only', async () => {
     const interrupted: string[] = [];
     const off = onPtyEvent('interrupt', (agentId) => interrupted.push(agentId));

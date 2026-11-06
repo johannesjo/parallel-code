@@ -2222,8 +2222,12 @@ export class Coordinator {
 
   /** Runs the project's verify command in the task worktree, the same check the
    *  Finish dialog offers. Anything but a pass escalates so the user sees the
-   *  task flagged, and throws so the calling agent sees the output. */
-  private async verifyBeforeLanding(task: CoordinatedTask): Promise<void> {
+   *  task flagged, and throws so the calling agent sees the output.
+   *  `assertAllowed` throws once the landing is canceled; each retry checks it first. */
+  private async verifyBeforeLanding(
+    task: CoordinatedTask,
+    assertAllowed: () => void,
+  ): Promise<void> {
     const command = this.coordinators.get(task.coordinatorTaskId)?.verifyCommand;
     const worktreePath = task.worktreePath;
     if (!command || !worktreePath) return;
@@ -2234,6 +2238,7 @@ export class Coordinator {
     // pass the checked base into gitMergeTask if that window ever matters.
     const baseBranch = task.baseBranch ?? (await getMainBranch(task.projectRoot));
     for (let attempt = 1; attempt <= LANDING_VERIFY_ATTEMPTS; attempt++) {
+      assertAllowed();
       await this.escalateOnError(task, () => rebaseTask(worktreePath, baseBranch));
       await this.runLandingVerification(task, worktreePath, command);
       const settled = await this.escalateOnError(task, () =>
@@ -2605,7 +2610,7 @@ export class Coordinator {
       this.escalateLanding(task, 'landing_escalated', reason);
       throw err;
     }
-    await this.verifyBeforeLanding(task);
+    await this.verifyBeforeLanding(task, () => this.assertOrchestrationEnabled(epoch));
 
     let mergeResult: { mainBranch: string; linesAdded: number; linesRemoved: number };
     try {
@@ -2747,15 +2752,23 @@ export class Coordinator {
     }
     // skipVerification is the coordinator's way past a failure the task cannot
     // fix, such as a suite that is already red on the base branch.
-    if (!opts?.skipVerification) await this.verifyBeforeLanding(task);
+    if (!opts?.skipVerification)
+      await this.verifyBeforeLanding(task, () => this.assertOrchestrationEnabled(epoch));
 
     const result = await this.runGitMerge(task, opts, () => this.assertOrchestrationEnabled(epoch));
 
     if (opts?.cleanup) {
-      await this.cleanupTask(taskId, {
-        linesAdded: result.linesAdded,
-        linesRemoved: result.linesRemoved,
-      });
+      try {
+        await this.cleanupTask(taskId, {
+          linesAdded: result.linesAdded,
+          linesRemoved: result.linesRemoved,
+        });
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `Merged into ${result.mainBranch}, but cleanup failed: ${reason}. Call close_task to retry the cleanup.`,
+        );
+      }
     }
 
     return {
@@ -2927,7 +2940,8 @@ export class Coordinator {
         taskId,
         error: err instanceof Error ? err.message : String(err),
       });
-      return;
+      // The agent that asked for the close must not be told the task is gone.
+      throw err;
     }
 
     // Clean up internal state — resolve idle and signal waiters before deleting
@@ -3711,15 +3725,19 @@ export class Coordinator {
     }
   }
 
+  /** `signal` aborts when the caller is gone (HTTP request closed, tool call cancelled): its
+   *  waiter must not take the next completion, or the coordinator never sees it. */
   waitForSignalDone(
     coordinatorTaskId: string,
     rawTimeoutMs = DEFAULT_WAIT_TIMEOUT_MS,
-    requestId?: string,
+    { requestId, signal }: { requestId?: string; signal?: AbortSignal } = {},
   ): Promise<WaitForSignalDoneResult> {
     const timeoutMs = clampWaitTimeoutMs(rawTimeoutMs);
     if (!this.coordinators.has(coordinatorTaskId)) {
       return Promise.reject(new Error(`Coordinator not found: ${coordinatorTaskId}`));
     }
+    if (signal?.aborted)
+      return Promise.resolve({ remaining: this.countRemaining(coordinatorTaskId) });
     // Replay the cached result if this requestId already delivered — handles retry
     // after the HTTP response was lost before the client received it.
     // Key includes coordinatorTaskId to prevent cross-coordinator replay.
@@ -3759,6 +3777,7 @@ export class Coordinator {
         if (settled) return;
         settled = true;
         if (timerRef.value !== undefined) clearTimeout(timerRef.value);
+        signal?.removeEventListener('abort', supersede);
         if (requestKey && this.pendingSignalWaitsByRequest.get(requestKey) === supersede) {
           this.pendingSignalWaitsByRequest.delete(requestKey);
         }
@@ -3777,6 +3796,7 @@ export class Coordinator {
       const complete = (result: WaitForSignalDoneResult) => settle(result, false);
       const supersede = () => settle({ remaining: this.countRemaining(coordinatorTaskId) }, true);
       if (requestKey) this.pendingSignalWaitsByRequest.set(requestKey, supersede);
+      signal?.addEventListener('abort', supersede, { once: true });
 
       timerRef.value = setTimeout(() => {
         logWarn('coordinator.signal_wait', `wait_for_signal_done timed out after ${timeoutMs}ms`, {

@@ -26,6 +26,34 @@ const MAX_ERROR_BODY_CHARS = 2000;
 /** Slack beyond the server-side wait so the server's own timed-out reply wins the race. */
 const WAIT_CLIENT_MARGIN_MS = 30_000;
 
+/** AbortSignal.any needs Node 20.3; this server runs on whatever `node` the user has. */
+function eitherSignal(a?: AbortSignal, b?: AbortSignal): AbortSignal | undefined {
+  if (!a || !b) return a ?? b;
+  const controller = new AbortController();
+  for (const source of [a, b]) {
+    if (source.aborted) controller.abort(source.reason);
+    else source.addEventListener('abort', () => controller.abort(source.reason), { once: true });
+  }
+  return controller.signal;
+}
+
+/** Undici reports every network failure as a bare `fetch failed`; name the app and the cause. */
+function unreachableError(baseUrl: string, err: TypeError): TypeError {
+  // `Error.cause` is ES2022; the Electron build targets ES2020 libs.
+  const cause = (err as { cause?: unknown }).cause;
+  const code =
+    cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string'
+      ? ` (${cause.code})`
+      : '';
+  // Still a TypeError: waitForSignalDone retries network failures by that type.
+  return Object.assign(
+    new TypeError(
+      `Parallel Code app unreachable at ${new URL(baseUrl).origin}${code}. If the app restarted, restart or resume this agent session.`,
+    ),
+    { cause: err },
+  );
+}
+
 function truncateErrorBody(text: string): string {
   return text.length > MAX_ERROR_BODY_CHARS
     ? `${text.slice(0, MAX_ERROR_BODY_CHARS)}... [truncated ${text.length - MAX_ERROR_BODY_CHARS} chars]`
@@ -44,7 +72,7 @@ export class MCPClient {
     method: string,
     path: string,
     body?: unknown,
-    opts: { timeoutMs?: number; owner?: boolean } = {},
+    opts: { timeoutMs?: number; owner?: boolean; signal?: AbortSignal } = {},
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {
@@ -64,11 +92,16 @@ export class MCPClient {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
-        signal: opts.timeoutMs !== undefined ? AbortSignal.timeout(opts.timeoutMs) : undefined,
+        signal: eitherSignal(
+          opts.timeoutMs !== undefined ? AbortSignal.timeout(opts.timeoutMs) : undefined,
+          opts.signal,
+        ),
       });
     } catch (err) {
       if (err instanceof Error && err.name === 'TimeoutError')
         throw new Error(`API ${method} ${path} timed out after ${opts.timeoutMs}ms`);
+      if (err instanceof TypeError && err.message === 'fetch failed')
+        throw unreachableError(this.baseUrl, err);
       throw err;
     }
 
@@ -82,8 +115,12 @@ export class MCPClient {
     return (text ? JSON.parse(text) : undefined) as T;
   }
 
-  async callSessionTool(name: string, params: Record<string, unknown>): Promise<unknown> {
-    return this.request<unknown>('POST', '/api/session/tools', { name, params });
+  async callSessionTool(
+    name: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.request<unknown>('POST', '/api/session/tools', { name, params }, { signal });
   }
 
   async createTask(opts: {
@@ -210,9 +247,12 @@ export class MCPClient {
     return this.request<T>(method, path, body, { owner: true });
   }
 
+  /** `signal` is the MCP tool call's cancellation; aborting it closes the long-poll so the
+   *  app releases the waiter instead of handing it the next completion. */
   async waitForSignalDone(
     coordinatorTaskId: string,
     timeoutMs?: number,
+    signal?: AbortSignal,
   ): Promise<WaitForSignalDoneResult> {
     const MAX_RETRIES = 10;
     const startedAt = Date.now();
@@ -230,7 +270,10 @@ export class MCPClient {
           'POST',
           '/api/wait-signal',
           { coordinatorTaskId, timeoutMs: remaining, requestId },
-          { timeoutMs: remaining !== undefined ? remaining + WAIT_CLIENT_MARGIN_MS : undefined },
+          {
+            timeoutMs: remaining !== undefined ? remaining + WAIT_CLIENT_MARGIN_MS : undefined,
+            signal,
+          },
         );
       } catch (err: unknown) {
         // Retry on network-level errors (fetch failed, ECONNRESET, etc.).
@@ -243,6 +286,7 @@ export class MCPClient {
           timeoutMs !== undefined ? timeoutMs - elapsedAfterFail : undefined;
         const delayMs = Math.min(1_000 * 2 ** attempt, 30_000, remainingAfterFail ?? Infinity);
         await new Promise((r) => setTimeout(r, delayMs));
+        signal?.throwIfAborted();
       }
     }
     // Only reachable after a network failure ate the budget; the true `remaining` count is

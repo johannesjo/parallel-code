@@ -254,3 +254,31 @@ describe('StartMCPServer for Antigravity', () => {
     }
   });
 });
+
+describe('StartMCPServer for a Docker coordinator', () => {
+  it('refuses a tracked .mcp.json before touching coordinator state', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'start-mcp-docker-tracked-'));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: root });
+      fs.writeFileSync(path.join(root, '.mcp.json'), '{}');
+      execFileSync('git', ['add', '.mcp.json'], { cwd: root });
+      register();
+      const start = handlers.get(IPC.StartMCPServer);
+
+      await expect(
+        Promise.resolve(
+          start?.(undefined, {
+            coordinatorTaskId: '12345678-1234-4234-8234-123456789abc',
+            projectId: 'project',
+            projectRoot: root,
+            agentCommand: 'claude',
+            dockerContainerName: 'parallel-code-test',
+          }),
+        ),
+      ).rejects.toThrow(/tracked/);
+      expect(fs.readFileSync(path.join(root, '.mcp.json'), 'utf8')).toBe('{}');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

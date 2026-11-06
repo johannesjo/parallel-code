@@ -52,12 +52,17 @@ import {
 } from '../shared/task-confidence.js';
 import { parseGitHubList, type GitHubCustomList } from '../shared/github-list.js';
 import { PR_DRAFT_LIMITS, parsePrDraft, type PrDraft } from '../shared/pr-draft.js';
-import type { SessionCaller, SessionCapabilities } from '../shared/delegation-types.js';
+import type {
+  SessionCaller,
+  SessionCapabilities,
+  SessionRequest,
+} from '../shared/delegation-types.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import type { Coordinator } from '../mcp/coordinator.js';
 import { validateBranchName } from '../mcp/validation.js';
-import type { ApiTaskDetail, LandSelfInput, SubtaskVerification } from '../mcp/types.js';
+import type { ApiTaskDetail } from '../mcp/types.js';
+import { parseLandSelfInput } from '../mcp/land-self-input.js';
 import { parseSignalDoneInput } from '../shared/completion-report.js';
 import { CODEX_MODEL_PATTERN } from '../shared/ask-code-models.js';
 
@@ -177,48 +182,6 @@ export function buildRemoteCsp(host: string | undefined): string {
     "frame-ancestors 'none'",
     "form-action 'self'",
   ].join('; ');
-}
-
-function parseLandSelfInput(body: Record<string, unknown>): LandSelfInput | string {
-  const summary = body.summary;
-  if (summary !== undefined && typeof summary !== 'string') return 'summary must be a string';
-  if (summary !== undefined && summary.length > 20_000)
-    return 'summary must be 20000 characters or fewer';
-
-  const verification = body.verification as { checks?: unknown } | undefined;
-  if (!verification || typeof verification !== 'object') {
-    return 'verification must be an object';
-  }
-  if (!Array.isArray(verification.checks) || verification.checks.length === 0) {
-    return 'verification.checks must be a non-empty array';
-  }
-  if (verification.checks.length > 50) return 'verification.checks must contain 50 checks or fewer';
-
-  const checks: SubtaskVerification['checks'] = [];
-  for (const rawCheck of verification.checks) {
-    if (!rawCheck || typeof rawCheck !== 'object') return 'verification checks must be objects';
-    const check = rawCheck as Record<string, unknown>;
-    if (typeof check.name !== 'string' || !check.name.trim()) {
-      return 'verification check name must be a non-empty string';
-    }
-    if (typeof check.command !== 'string' || !check.command.trim()) {
-      return 'verification check command must be a non-empty string';
-    }
-    if (check.result !== 'passed' && check.result !== 'blocked' && check.result !== 'failed') {
-      return 'verification check result must be passed, blocked, or failed';
-    }
-    if (check.reason !== undefined && typeof check.reason !== 'string') {
-      return 'verification check reason must be a string';
-    }
-    checks.push({
-      name: check.name,
-      command: check.command,
-      result: check.result,
-      reason: check.reason,
-    });
-  }
-
-  return { verification: { checks }, summary };
 }
 
 /**
@@ -650,6 +613,17 @@ interface CoordinatorRouteContext {
   readBody: () => Promise<Record<string, unknown>>;
   requireTask: (taskId: string) => ApiTaskDetail | null;
   hasMatchingDoneToken: (taskId: string) => boolean;
+  /** Aborted when the client disconnects before the reply. */
+  clientGone: AbortSignal;
+}
+
+/** Long-polls must release server-side waiters when the agent cancels the tool call. */
+function abortOnClientClose(res: ServerResponse): AbortSignal {
+  const controller = new AbortController();
+  res.on('close', () => {
+    if (!res.writableEnded) controller.abort();
+  });
+  return controller.signal;
 }
 
 /** Largest delay setTimeout accepts; larger values fire immediately. */
@@ -675,9 +649,17 @@ function handleWaitSignal(ctx: CoordinatorRouteContext): void {
       const coordinatorTaskId = ctx.callerCoordinatorId ?? REST_COORDINATOR_SENTINEL;
       const timeout = parseWaitTimeout(body.timeoutMs);
       if (!timeout.ok) return ctx.jsonReply(400, { error: timeout.error });
-      const requestId = typeof body.requestId === 'string' ? body.requestId : undefined;
+      const requestId = body.requestId;
+      // Kept as a map key for the whole wait; the MCP client sends a UUID.
+      if (requestId !== undefined && (typeof requestId !== 'string' || requestId.length > 128))
+        return ctx.jsonReply(400, {
+          error: 'requestId must be a string of 128 characters or fewer',
+        });
       mcpLog('info', `wait_for_signal_done coordinator=${coordinatorTaskId}`);
-      const result = await ctx.orch.waitForSignalDone(coordinatorTaskId, timeout.value, requestId);
+      const result = await ctx.orch.waitForSignalDone(coordinatorTaskId, timeout.value, {
+        requestId,
+        signal: ctx.clientGone,
+      });
       mcpLog(
         'info',
         `wait_for_signal_done OK taskId=${result.taskId} remaining=${result.remaining}`,
@@ -1007,7 +989,7 @@ export function startRemoteServer(opts: {
   getCoordinator: () => Coordinator | null;
   isOrchestrationEnabled?: () => boolean;
   callSessionTool?: (
-    caller: SessionCaller,
+    caller: SessionRequest,
     name: string,
     params: Record<string, unknown>,
   ) => Promise<unknown>;
@@ -1376,6 +1358,8 @@ export function startRemoteServer(opts: {
         if (!session) return jsonEnd(403, { error: 'Session unavailable' });
         const release = acquireCanvasSlot(`session:${agentId}`);
         if (!release) return jsonEnd(429, { error: 'Too many concurrent session requests' });
+        // Listen before reading the body; a client gone by dispatch time never emits `close` again.
+        const clientGone = abortOnClientClose(res);
         void readJsonBody(req, 1_000_000)
           .then(async (body) => {
             if (
@@ -1392,7 +1376,7 @@ export function startRemoteServer(opts: {
                 error: 'Agent orchestration is disabled in Settings > Agents.',
               });
             const result = await opts.callSessionTool?.(
-              { taskId: record.taskId, agentId, ...session },
+              { taskId: record.taskId, agentId, ...session, signal: clientGone },
               body.name,
               body.params as Record<string, unknown>,
             );
@@ -1911,6 +1895,7 @@ export function startRemoteServer(opts: {
           readBody,
           requireTask,
           hasMatchingDoneToken,
+          clientGone: abortOnClientClose(res),
         };
 
         const rootRoute = COORDINATOR_ROOT_ROUTES.find(

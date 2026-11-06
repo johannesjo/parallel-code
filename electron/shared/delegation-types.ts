@@ -15,6 +15,11 @@ export interface SessionCaller {
   capabilities: SessionCapabilities;
 }
 
+/** A session tool call; `signal` aborts when the agent's HTTP request closes before the reply. */
+export interface SessionRequest extends SessionCaller {
+  signal?: AbortSignal;
+}
+
 export interface TaskAuthorityInput {
   taskId: string;
   name: string;

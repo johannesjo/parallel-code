@@ -27,7 +27,7 @@ import { projectAgentEnv, setProjectAgentEnv } from './project-env.js';
 import { getResourceSnapshot } from './resources.js';
 import { editorLineArgs, spawnDetached, validateEditorCommand } from './open-file.js';
 import { isExecutablePath } from '../shared/executable-path.js';
-import { appendGitInfoExcludeBlock } from './git-exclude.js';
+import { appendGitInfoExcludeBlock, isTrackedByGit } from './git-exclude.js';
 import {
   spawnAgent,
   writeToAgent,
@@ -215,6 +215,28 @@ export function selectMcpJsonDir(worktreePath: string | undefined, projectRoot: 
 /** Workspace MCP file the coordinator's agent discovers; agy has no `--mcp-config` flag. */
 export function selectMcpJsonFile(agentCommand: string | undefined): string {
   return agentCommand && isAntigravityCommand(agentCommand) ? ANTIGRAVITY_MCP_CONFIG : '.mcp.json';
+}
+
+/**
+ * Whether to merge the coordinator token into the workspace `.mcp.json`. A tracked file
+ * would carry the token into a commit: skip it when a launch flag already carries the
+ * config, and refuse to start when the agent can only discover the server from the file.
+ */
+export function shouldWriteMcpJson(dir: string, agentNeedsFile: boolean): boolean {
+  if (agentNeedsFile) {
+    if (isTrackedByGit(dir, '.mcp.json'))
+      throw new Error(
+        '.mcp.json is tracked by Git; a commit would publish its MCP token. Untrack it or run the coordinator without Docker.',
+      );
+    return true;
+  }
+  try {
+    if (!isTrackedByGit(dir, '.mcp.json')) return true;
+    logWarn('mcp', '.mcp.json is tracked by Git; passing the MCP config only by launch flag');
+  } catch (err) {
+    logWarn('mcp', `Not writing .mcp.json: ${errMessage(err)}`);
+  }
+  return false;
 }
 
 export interface CoordinatorMCPConfigOpts {
@@ -2312,7 +2334,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
       let worktreeMcpPath: string | undefined;
       let mcpFileExistedBefore = false;
       let existingMcpContent: Record<string, unknown> = {};
-      if (mcpJsonDir) {
+      // Outside Docker every agent but agy gets the config by launch flag, and Codex always does.
+      const agentNeedsMcpJson =
+        Boolean(args.dockerContainerName) && !isCodexCommand(args.agentCommand ?? 'claude');
+      if (
+        mcpJsonDir &&
+        (mcpJsonFile !== '.mcp.json' || shouldWriteMcpJson(mcpJsonDir, agentNeedsMcpJson))
+      ) {
         // Before the read: a linked `.agents` would put the token in another checkout.
         if (mcpJsonFile === ANTIGRAVITY_MCP_CONFIG) prepareAntigravityConfigDir(mcpJsonDir);
         worktreeMcpPath = path.join(mcpJsonDir, mcpJsonFile);
