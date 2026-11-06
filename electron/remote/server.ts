@@ -2232,6 +2232,9 @@ export function startRemoteServer(opts: {
           if (timer) clearTimeout(timer);
           const list = agentList();
           ws.send(JSON.stringify({ type: 'agents', list } satisfies ServerMessage));
+          ws.send(
+            JSON.stringify({ type: 'addresses', ...networkBaseUrls() } satisfies ServerMessage),
+          );
         } else {
           ws.close(4001, 'Unauthorized');
         }
@@ -2472,6 +2475,13 @@ export function startRemoteServer(opts: {
   // gate above), so it is safe to surface in the UI and the QR code.
   // Coordinator token never leaves the main process.
   const url = `http://${primaryIp}:${opts.port}?token=${mobileToken}`;
+  /** Re-detects IPs each call so newly connected interfaces (e.g. Tailscale) are picked up. */
+  function networkBaseUrls(): { wifi: string | null; tailscale: string | null } {
+    const cur = getNetworkIps();
+    // result.port, not opts.port: it holds the bound port when opts.port is 0.
+    const base = (ip: string | null) => (ip ? `http://${ip}:${result.port}` : null);
+    return { wifi: base(cur.wifi), tailscale: base(cur.tailscale) };
+  }
 
   const result: RemoteServer = {
     unregisterCanvasAgent: (agentId) => {
@@ -2552,12 +2562,12 @@ export function startRemoteServer(opts: {
     url,
     /** Re-detect network IPs so newly connected interfaces (e.g. Tailscale) are picked up. */
     get wifiUrl() {
-      const cur = getNetworkIps();
-      return cur.wifi ? `http://${cur.wifi}:${opts.port}?token=${mobileToken}` : null;
+      const { wifi } = networkBaseUrls();
+      return wifi ? `${wifi}?token=${mobileToken}` : null;
     },
     get tailscaleUrl() {
-      const cur = getNetworkIps();
-      return cur.tailscale ? `http://${cur.tailscale}:${opts.port}?token=${mobileToken}` : null;
+      const { tailscale } = networkBaseUrls();
+      return tailscale ? `${tailscale}?token=${mobileToken}` : null;
     },
     connectedClients: () => authenticatedClients.size,
     generatePairingPin,

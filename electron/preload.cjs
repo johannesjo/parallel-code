@@ -93,6 +93,7 @@ const ALLOWED_CHANNELS = new Set([
   'start_remote_server',
   'stop_remote_server',
   'get_remote_status',
+  'get_tailscale_state',
   'generate_pairing_pin',
   'remote_get_projects_request',
   'remote_create_task_request',

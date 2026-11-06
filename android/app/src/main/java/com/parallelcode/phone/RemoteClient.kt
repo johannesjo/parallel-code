@@ -289,6 +289,11 @@ class RemoteClient(
         useActiveComputer()
     }
 
+    /** Reconnect the computer in use through its address on the other network (Wi-Fi or Tailscale). */
+    override fun switchNetwork() {
+        if (credentials.switchNetwork()) useActiveComputer()
+    }
+
     /** Name a saved computer; a blank name clears the one it had. */
     override fun rename(baseUrl: String, alias: String?) {
         credentials.rename(baseUrl, alias)
@@ -905,6 +910,10 @@ class RemoteClient(
                 terminalListeners[msg.agentId]?.toList()?.forEach { it.onOutput(msg.data) }
             }
             is ServerMessage.Chat -> chats[msg.agentId]?.value = msg.state
+            is ServerMessage.Addresses -> {
+                credentials.saveAddresses(msg.wifi, msg.tailscale)
+                _computers.value = credentials.computers
+            }
             is ServerMessage.InputResult -> {
                 val result = pending.remove(msg.requestId) ?: return
                 if (msg.ok) {

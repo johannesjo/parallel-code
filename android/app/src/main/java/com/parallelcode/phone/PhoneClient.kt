@@ -13,6 +13,7 @@ interface PhoneClient {
     fun stop(holder: String)
     fun link(link: ConnectionLink)
     fun switchTo(baseUrl: String)
+    fun switchNetwork()
     fun rename(baseUrl: String, alias: String?)
     fun forget(baseUrl: String? = state.value.link?.baseUrl)
     fun reconnect()

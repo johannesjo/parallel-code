@@ -12,9 +12,25 @@ data class SavedComputer(
     val pairedToken: String?,
     /** A name the user gave this computer; null means it has none. */
     val alias: String? = null,
+    /** The desktop's own Wi-Fi and Tailscale addresses, as it last reported them. */
+    val wifiUrl: String? = null,
+    val tailscaleUrl: String? = null,
 ) {
     /** What the phone shows for this computer: its name, or "192.168.1.20:7777". */
     val label: String get() = alias?.takeIf { it.isNotBlank() } ?: baseUrl.substringAfter("://")
+
+    val onTailscale: Boolean get() = baseUrl == tailscaleUrl
+
+    /**
+     * The address on the other network, or null. Only offered while on one of the two reported
+     * addresses, so a hand-set link (such as a Tailscale Serve HTTPS address) is never replaced.
+     */
+    val otherNetworkUrl: String?
+        get() = when (baseUrl) {
+            wifiUrl -> tailscaleUrl
+            tailscaleUrl -> wifiUrl
+            else -> null
+        }
 }
 
 /**
@@ -56,6 +72,42 @@ class CredentialStore(private val prefs: SharedPreferences) {
     }
 
     fun savePairedToken(token: String) = updateActive { it.copy(pairedToken = token) }
+
+    /**
+     * Remember the desktop's reported addresses. A missing one keeps the last known value: Tailscale
+     * being down on the desktop at connect time must not take away the switch for the walk later.
+     */
+    fun saveAddresses(wifiUrl: String?, tailscaleUrl: String?) {
+        val current = active ?: return
+        val updated = current.copy(
+            wifiUrl = asBaseUrl(wifiUrl) ?: current.wifiUrl,
+            tailscaleUrl = asBaseUrl(tailscaleUrl) ?: current.tailscaleUrl,
+        )
+        // Sent on every connect; skip the write when nothing changed.
+        if (updated != current) updateActive { updated }
+    }
+
+    // A malformed address would become the active baseUrl on switch and break every connect.
+    private fun asBaseUrl(url: String?): String? =
+        url?.takeIf { ConnectionLink.parse("$it/?token=t")?.baseUrl == it }
+
+    /**
+     * Move the computer in use to its address on the other network, keeping its tokens and name.
+     * Another saved entry at that address is the same desktop, so it is merged in: its pairing and
+     * name fill in what the computer in use lacks. False when there is no other network to switch to.
+     */
+    fun switchNetwork(): Boolean {
+        val current = active ?: return false
+        val target = current.otherNetworkUrl ?: return false
+        val existing = computers.firstOrNull { it.baseUrl == target }
+        val moved = current.copy(
+            baseUrl = target,
+            pairedToken = current.pairedToken ?: existing?.pairedToken,
+            alias = current.alias ?: existing?.alias,
+        )
+        write(computers.filter { it.baseUrl != current.baseUrl && it.baseUrl != target } + moved, active = target)
+        return true
+    }
 
     fun clearPairedToken() = updateActive { it.copy(pairedToken = null) }
 
@@ -121,7 +173,9 @@ class CredentialStore(private val prefs: SharedPreferences) {
                         .put("baseUrl", it.baseUrl)
                         .put("token", it.token)
                         .put("pairedToken", it.pairedToken ?: JSONObject.NULL)
-                        .put("alias", it.alias ?: JSONObject.NULL),
+                        .put("alias", it.alias ?: JSONObject.NULL)
+                        .put("wifiUrl", it.wifiUrl ?: JSONObject.NULL)
+                        .put("tailscaleUrl", it.tailscaleUrl ?: JSONObject.NULL),
                 )
             }
             return array.toString()
@@ -147,6 +201,8 @@ class CredentialStore(private val prefs: SharedPreferences) {
                     if (c.isNull("pairedToken")) null else c.optString("pairedToken").ifEmpty { null },
                     // Written by newer builds; missing on older ones.
                     if (c.isNull("alias")) null else c.optString("alias").ifEmpty { null },
+                    if (c.isNull("wifiUrl")) null else c.optString("wifiUrl").ifEmpty { null },
+                    if (c.isNull("tailscaleUrl")) null else c.optString("tailscaleUrl").ifEmpty { null },
                 )
             }
         }

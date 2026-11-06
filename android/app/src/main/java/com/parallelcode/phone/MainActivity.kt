@@ -476,6 +476,7 @@ private fun PhoneApp(model: PhoneViewModel, onDemo: () -> Unit) {
                     onSettings = { screenKey = "settings" },
                     computers = computers,
                     onSwitchComputer = { model.client.switchTo(it) },
+                    onSwitchNetwork = { model.client.switchNetwork() },
                     search = taskSearch,
                     onSearch = { taskSearch = it },
                     filter = TaskFilter.fromKey(taskFilterKey),

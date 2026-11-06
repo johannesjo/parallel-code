@@ -484,3 +484,13 @@ export interface UpdateStatus {
   /** Human-readable message when `phase` is `error`. */
   error: string | null;
 }
+
+/** This computer's Tailscale state, as Connect Phone explains it. */
+export type TailscaleState =
+  | { state: 'running' }
+  | { state: 'needs-login'; loginUrl: string | null }
+  | { state: 'needs-approval' }
+  | { state: 'stopped' }
+  | { state: 'not-running' }
+  | { state: 'not-installed' }
+  | { state: 'unknown' };

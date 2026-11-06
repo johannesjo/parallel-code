@@ -142,6 +142,39 @@ describe('automatic phone pairing setup', () => {
   });
 });
 
+it('explains a logged-out Tailscale and opens its login page', async () => {
+  vi.mocked(invoke).mockImplementation(async (channel) =>
+    channel === IPC.GetTailscaleState
+      ? { state: 'needs-login', loginUrl: 'https://login.tailscale.com/a/abc' }
+      : undefined,
+  );
+  mount();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(document.body.textContent).toContain('Logged out');
+  const link = [...document.querySelectorAll('a')].find((a) => a.textContent === 'Log in');
+  if (!link) throw new Error('Missing Tailscale login link');
+  link.click();
+  expect(invoke).toHaveBeenCalledWith(IPC.ShellOpenExternal, {
+    url: 'https://login.tailscale.com/a/abc',
+  });
+});
+
+it('hides the Tailscale hint until its state is known, and rereads it on focus', async () => {
+  let state: unknown = new Promise(() => undefined);
+  vi.mocked(invoke).mockImplementation(async (channel) =>
+    channel === IPC.GetTailscaleState ? state : undefined,
+  );
+  mount();
+  await vi.advanceTimersByTimeAsync(0);
+  const hint = [...document.querySelectorAll('span')].find((s) => s.textContent === 'Not detected');
+  expect(hint?.style.visibility).toBe('hidden');
+
+  state = { state: 'stopped' };
+  window.dispatchEvent(new Event('focus'));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(document.body.textContent).toContain('Turned off');
+});
+
 it('opens the Android app guide in the browser', async () => {
   mount();
   await vi.advanceTimersByTimeAsync(0);

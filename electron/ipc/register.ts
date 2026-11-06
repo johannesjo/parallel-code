@@ -206,6 +206,7 @@ import { validateBranchName as sharedValidateBranchName, validateUUID } from '..
 import { debug as logDebug, warn as logWarn, errMessage } from '../log.js';
 import { getMCPRemoteServerUrl, detectStaleDockerMCPUrl } from '../mcp/config.js';
 import { redactServerUrl } from '../remote/server.js';
+import { readTailscaleState } from '../remote/tailscale-status.js';
 
 export function selectMcpJsonDir(worktreePath: string | undefined, projectRoot: string): string {
   return worktreePath ?? projectRoot;
@@ -2061,6 +2062,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       port: server.port,
     };
   });
+
+  ipcMain.handle(IPC.GetTailscaleState, () => readTailscaleState());
 
   // --- MCP server management ---
 

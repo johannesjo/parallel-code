@@ -188,7 +188,18 @@ export interface InputResultMessage {
   error?: string;
 }
 
+/**
+ * The desktop's base URLs (`http://ip:port`) on each network, sent after auth so
+ * the phone app can switch between Wi-Fi and Tailscale without scanning again.
+ */
+export interface AddressesMessage {
+  type: 'addresses';
+  wifi: string | null;
+  tailscale: string | null;
+}
+
 export type ServerMessage =
+  | AddressesMessage
   | OutputMessage
   | StatusMessage
   | AgentsMessage

@@ -86,6 +86,7 @@
   "StartRemoteServer": "start_remote_server",
   "StopRemoteServer": "stop_remote_server",
   "GetRemoteStatus": "get_remote_status",
+  "GetTailscaleState": "get_tailscale_state",
   "GeneratePairingPin": "generate_pairing_pin",
   "Remote_GetProjectsRequest": "remote_get_projects_request",
   "Remote_CreateTaskRequest": "remote_create_task_request",

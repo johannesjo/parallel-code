@@ -74,6 +74,9 @@ internal class DemoSession : PhoneClient {
         selectCurrentComputer()
     }
 
+    // Demo computers report no second network address, so there is nothing to switch to.
+    override fun switchNetwork() = Unit
+
     override fun rename(baseUrl: String, alias: String?) {
         credentials.rename(baseUrl, alias)
         _computers.value = credentials.computers
