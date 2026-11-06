@@ -31,6 +31,7 @@ docs/*
 !docs/agent-handoff-plan.md
 !docs/kanban.md
 !docs/features.md
+!docs/custom-agents.md
 !docs/phone.md
 !docs/market/
 

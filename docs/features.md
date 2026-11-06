@@ -58,7 +58,7 @@ The bundled image still ships the `agy` binary, and `~/.gemini/antigravity-cli` 
 ## Customization
 
 - **Configurable keyboard shortcuts** with per-agent presets
-- **Custom agents** — add any other terminal agent under Settings → Agents → **Custom agents**
+- **Custom agents** — add and edit any other terminal agent under Settings → Agents → **Custom agents**. See [custom-agents.md](custom-agents.md)
 - 10 themes — Islands Dark, Minimal, Graphite, Midnight, Classic, Indigo, Ember, Glacier, Zenburnesque, Workbench
 
 ## Keyboard shortcuts
