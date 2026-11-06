@@ -89,6 +89,12 @@ export function TaskContextStrip(props: TaskContextProps) {
         class="ctx-strip"
         aria-haspopup="dialog"
         aria-expanded={popover.open()}
+        // Hint lives in the tooltip so the dense header stays quiet until there's content.
+        title={
+          plan().length === 0 && !goal()
+            ? "The agent's plan shows here once it writes a to-do list"
+            : undefined
+        }
         onClick={(e) => {
           e.stopPropagation();
           popover.setShown(!popover.open());
@@ -99,9 +105,7 @@ export function TaskContextStrip(props: TaskContextProps) {
           fallback={
             <>
               <span class="ctx-strip-label">Goal</span>
-              <span class="ctx-strip-text" data-empty={goal() ? undefined : ''}>
-                {goal() || "The agent's plan shows here once it writes a to-do list"}
-              </span>
+              <span class="ctx-strip-text">{goal()}</span>
             </>
           }
         >
