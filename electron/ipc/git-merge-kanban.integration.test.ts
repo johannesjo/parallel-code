@@ -31,6 +31,8 @@ function repo(): string {
   run(root, ['config', 'commit.gpgsign', 'false']);
   fs.writeFileSync(path.join(root, 'README.md'), 'hello\n');
   fs.writeFileSync(path.join(root, 'KANBAN.md'), '# Board\n\n## Todo\n');
+  // The app excludes its task worktrees the same way; without it a global gitignore decides.
+  fs.appendFileSync(path.join(root, '.git', 'info', 'exclude'), '/.worktrees/\n');
   run(root, ['add', '.']);
   run(root, ['commit', '-m', 'initial']);
   run(root, ['branch', 'task/a']);
