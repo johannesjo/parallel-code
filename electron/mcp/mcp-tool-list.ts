@@ -9,6 +9,7 @@ import { TOUR_CARD_LIMITS, TOUR_FORMS, TOUR_TONES } from '../shared/understandin
 import { semanticNodeKinds, reasoningStatuses } from '../shared/graph.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import { completionReportSchema, toolOutputSchemas } from './tool-output-schemas.js';
+import { CLOSE_SUGGESTION_REASON_MAX } from '../shared/close-suggestion.js';
 /** Pure tool-list logic — extracted so it can be unit-tested without starting the MCP server. */
 
 export interface ToolDef {
@@ -568,7 +569,26 @@ const PEER_TOOLS: ToolDef[] = [
   },
 ];
 
-const ORDINARY_TOOLS: ToolDef[] = COORDINATOR_TOOLS.filter(
+/** Ordinary parents may not close children; they flag them and the user decides. */
+const SUGGEST_CLOSE_TOOL: ToolDef = {
+  name: 'suggest_close_task',
+  description:
+    'Flag one of your direct children you no longer need (superseded, duplicate, stalled, or its result is already covered) so the user can close it. Nothing is stopped or deleted; the user decides. wait_for_signal_done stops counting the child until you send it a new prompt or it reports a new completion.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      taskId: { type: 'string', description: 'Task ID' },
+      reason: {
+        type: 'string',
+        maxLength: CLOSE_SUGGESTION_REASON_MAX,
+        description: 'Why the child can be closed; shown to the user',
+      },
+    },
+    required: ['taskId', 'reason'],
+  },
+};
+
+const SUPERVISION_TOOLS: ToolDef[] = COORDINATOR_TOOLS.filter(
   (tool) => !['merge_task', 'close_task'].includes(tool.name),
 ).map((tool) => {
   if (tool.name === 'create_task')
@@ -605,6 +625,7 @@ const ORDINARY_TOOLS: ToolDef[] = COORDINATOR_TOOLS.filter(
     };
   return { ...tool, description: `${tool.description} Scoped to your own direct children.` };
 });
+const ORDINARY_TOOLS: ToolDef[] = [...SUPERVISION_TOOLS, SUGGEST_CLOSE_TOOL];
 
 /** A page agent works in the checkout, so it may only start tasks the user reviews on their own. */
 const PAGE_TOOLS: ToolDef[] = [

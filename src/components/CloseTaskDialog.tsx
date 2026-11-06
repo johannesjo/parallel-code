@@ -73,6 +73,13 @@ export function CloseTaskDialog(props: CloseTaskDialogProps) {
               </div>
             )}
           </Show>
+          <Show when={props.task.closeSuggestion}>
+            {(suggestion) => (
+              <p style={{ margin: '0 0 12px' }}>
+                The coordinator suggested closing this task: {suggestion().reason}
+              </p>
+            )}
+          </Show>
           <Show when={props.task.gitIsolation !== 'worktree'}>
             <p style={{ margin: '0' }}>
               This will stop all running agents and shells for this task. No git operations will be

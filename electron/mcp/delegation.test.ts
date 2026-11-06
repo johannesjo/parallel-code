@@ -70,6 +70,7 @@ let core: {
   getTaskStatus: ReturnType<typeof vi.fn>;
   getTaskDiff: ReturnType<typeof vi.fn>;
   getTaskOutput: ReturnType<typeof vi.fn>;
+  suggestClose: ReturnType<typeof vi.fn>;
   isRegisteredCoordinator: ReturnType<typeof vi.fn>;
   waitForSignalDone: ReturnType<typeof vi.fn>;
   detachChildren: ReturnType<typeof vi.fn>;
@@ -197,6 +198,7 @@ beforeEach(() => {
     getTaskStatus: vi.fn(),
     getTaskDiff: vi.fn(),
     getTaskOutput: vi.fn(),
+    suggestClose: vi.fn(),
     isRegisteredCoordinator: vi.fn().mockReturnValue(true),
     waitForSignalDone: vi.fn().mockResolvedValue({ remaining: 0 }),
     detachChildren: vi.fn().mockReturnValue(['child']),
@@ -853,6 +855,34 @@ describe('delegation authority and creation', () => {
     await expect(service.callTool(parent, 'merge_task', { taskId: 'child' })).rejects.toThrow(
       'unavailable',
     );
+  });
+
+  it('lets a parent suggest closing only its own children, with a reason', async () => {
+    await register('parent');
+    await register('child', { parentTaskId: 'parent', integrationPolicy: 'review' });
+    const parent = session('parent');
+    const suggestion = { reason: 'Superseded by the retry', at: '2026-11-06T10:00:00.000Z' };
+    core.suggestClose.mockReturnValue(suggestion);
+    core.getTaskStatus.mockReturnValue({ coordinatorTaskId: 'parent' });
+    await expect(
+      service.callTool(parent, 'suggest_close_task', {
+        taskId: 'child',
+        reason: 'Superseded by the retry',
+      }),
+    ).resolves.toEqual(suggestion);
+    expect(core.suggestClose).toHaveBeenCalledWith('child', 'Superseded by the retry');
+    await expect(
+      service.callTool(parent, 'suggest_close_task', { taskId: 'child', reason: '  ' }),
+    ).rejects.toThrow('reason');
+    core.getTaskStatus.mockReturnValue({ coordinatorTaskId: 'someone-else' });
+    await expect(
+      service.callTool(parent, 'suggest_close_task', { taskId: 'foreign', reason: 'Done' }),
+    ).rejects.toThrow('not your child');
+    const child = session('child', 'child-instance', true);
+    await expect(
+      service.callTool(child, 'suggest_close_task', { taskId: 'child', reason: 'Done' }),
+    ).rejects.toThrow('unavailable');
+    expect(core.suggestClose).toHaveBeenCalledTimes(1);
   });
 
   it('says a closed child is gone instead of calling it foreign', async () => {

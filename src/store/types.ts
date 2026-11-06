@@ -28,6 +28,7 @@ import type { AskCodeProvider } from '../../electron/shared/ask-code-models';
 import type { BriefModelId, TaskNameModelId } from '../../electron/shared/task-name-model';
 import type { BriefBarFields, TaskBriefRecord } from '../lib/task-brief';
 import type { PlanStep } from '../../electron/shared/agent-plan';
+import type { CloseSuggestion } from '../../electron/shared/close-suggestion';
 import type { TaskConfidence } from '../lib/task-confidence';
 import type { ReviewDismissal } from '../lib/review-summary';
 import type { ReviewModelSettings } from '../lib/task-review';
@@ -376,6 +377,8 @@ export interface Task {
   signalDoneReceived?: boolean;
   signalDoneAt?: string;
   signalDoneConsumed?: boolean;
+  /** The coordinator no longer needs this child and asks the user to close it. */
+  closeSuggestion?: CloseSuggestion;
   needsReview?: boolean;
   verification?: SubtaskVerification;
   /** Latest app-run verify command result. Distinct from `verification`,
@@ -504,6 +507,8 @@ export interface PersistedTask {
   signalDoneReceived?: boolean;
   signalDoneAt?: string;
   signalDoneConsumed?: boolean;
+  /** The coordinator no longer needs this child and asks the user to close it. */
+  closeSuggestion?: CloseSuggestion;
   needsReview?: boolean;
   verification?: SubtaskVerification;
   verificationRun?: VerificationRun;

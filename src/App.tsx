@@ -612,6 +612,7 @@ function App() {
           reviewRevision: task.reviewRevision,
           signalDoneAt: task.signalDoneAt,
           signalDoneConsumed: task.signalDoneConsumed,
+          closeSuggestion: task.closeSuggestion,
           verification: task.verification,
           landingState: task.landingState,
           landingReason: task.landingReason,

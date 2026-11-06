@@ -6,6 +6,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Coordinator } from './coordinator.js';
 import type { CoordinatedTask } from './types.js';
 import { parseSignalDoneInput } from '../shared/completion-report.js';
+import { CLOSE_SUGGESTION_REASON_MAX } from '../shared/close-suggestion.js';
 import { isProjectPageAgentTaskId } from '../shared/project-page-agents.js';
 import {
   getAgentPromptReadiness,
@@ -667,6 +668,7 @@ export class DelegationService {
       'send_prompt',
       'wait_for_idle',
       'wait_for_signal_done',
+      'suggest_close_task',
     ];
     if (!allowed.includes(name))
       throw new DelegationError('Tool unavailable to ordinary sessions', 403);
@@ -700,6 +702,11 @@ export class DelegationService {
         return coordinator.sendPrompt(childId, text(params.prompt, 'prompt', MAX_PROMPT_BYTES));
       case 'wait_for_idle':
         return coordinator.waitForIdle(childId, timeout(params.timeoutMs));
+      case 'suggest_close_task':
+        return coordinator.suggestClose(
+          childId,
+          text(params.reason, 'reason', CLOSE_SUGGESTION_REASON_MAX),
+        );
     }
   }
 

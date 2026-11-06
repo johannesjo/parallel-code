@@ -2571,6 +2571,43 @@ describe('Coordinator sendPrompt', () => {
     });
   });
 
+  it('withdraws a close suggestion when the child gets new work', async () => {
+    await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
+    coordinator.markPromptDelivered('task-1');
+    coordinator.suggestClose('task-1', 'Superseded');
+
+    await coordinator.sendPrompt('task-1', 'Actually, continue');
+
+    expect(coordinator.getTaskStatus('task-1')?.closeSuggestion).toBeUndefined();
+  });
+
+  it('withdraws a close suggestion even while the new prompt waits in the queue', async () => {
+    await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
+    coordinator.markPromptDelivered('task-1');
+    coordinator.suggestClose('task-1', 'Superseded');
+    coordinator.setTaskControl('task-1', 'human');
+    mockNotifyRenderer.mockClear();
+
+    await expect(coordinator.sendPrompt('task-1', 'Actually, continue')).resolves.toEqual({
+      queued: true,
+    });
+
+    expect(coordinator.getTaskStatus('task-1')?.closeSuggestion).toBeUndefined();
+    expect(mockNotifyRenderer).toHaveBeenCalledWith('mcp_task_state_sync', {
+      taskId: 'task-1',
+      closeSuggestion: null,
+    });
+  });
+
+  it('withdraws a close suggestion when the child reports a newer completion', async () => {
+    await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
+    coordinator.suggestClose('task-1', 'Superseded');
+
+    await coordinator.signalDone('task-1');
+
+    expect(coordinator.getTaskStatus('task-1')?.closeSuggestion).toBeUndefined();
+  });
+
   it('enforces the prompt size limit in UTF-8 bytes', async () => {
     await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
     coordinator.markPromptDelivered('task-1');

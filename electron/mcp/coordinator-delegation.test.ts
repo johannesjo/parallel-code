@@ -281,6 +281,46 @@ describe('ordinary delegation lifecycle', () => {
     expect(coordinator.detachChild(child.id)).toBeUndefined();
   });
 
+  it('stops waiting for a child the parent suggested closing, but leaves it running', async () => {
+    const child = await create();
+    const waiting = coordinator.waitForSignalDone('parent');
+    const suggestion = coordinator.suggestClose(child.id, 'Superseded by the retry task');
+    expect(suggestion.reason).toBe('Superseded by the retry task');
+    await expect(waiting).resolves.toEqual({ remaining: 0 });
+    expect(coordinator.getTaskStatus(child.id)?.closeSuggestion).toEqual(suggestion);
+    expect(mockNotifyRenderer).toHaveBeenCalledWith('mcp_task_state_sync', {
+      taskId: child.id,
+      closeSuggestion: suggestion,
+    });
+    expect(mockKillAgent).not.toHaveBeenCalled();
+    expect(mockDeleteBackendTask).not.toHaveBeenCalled();
+  });
+
+  it('keeps a restored close suggestion out of the wait count', async () => {
+    const closeSuggestion = { reason: 'Superseded', at: '2026-11-06T10:00:00.000Z' };
+    const restored = {
+      id: 'restored-child',
+      name: 'Restored',
+      projectId: 'project',
+      projectRoot: '/project',
+      branchName: 'task/restored',
+      baseBranch: 'parent',
+      worktreePath: '/tmp/restored',
+      agentId: 'restored-agent',
+      coordinatorTaskId: 'parent',
+      closeSuggestion,
+    };
+    coordinator.hydrateTask(restored);
+    getSpawnHandler()(restored.agentId);
+    expect(coordinator.getTaskStatus(restored.id)).toMatchObject({
+      status: 'running',
+      closeSuggestion,
+    });
+    const waiting = coordinator.waitForSignalDone('parent', 1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(waiting).resolves.toEqual({ remaining: 0 });
+  });
+
   it('preserves visible review notifications while the ordinary agent consumes completion', async () => {
     const child = await create();
     const waiting = coordinator.waitForSignalDone('parent');

@@ -2157,6 +2157,15 @@ describe('MCP_TaskStateSync listener', () => {
     expect(mockTasks['task-1'].needsReview).toBe(false);
   });
 
+  it('sets a close suggestion and clears it when the backend withdraws it', () => {
+    const closeSuggestion = { reason: 'Superseded', at: '2026-11-06T10:00:00.000Z' };
+    taskStateSyncHandler({ taskId: 'task-1', closeSuggestion });
+    expect(mockTasks['task-1'].closeSuggestion).toEqual(closeSuggestion);
+
+    taskStateSyncHandler({ taskId: 'task-1', closeSuggestion: null });
+    expect(mockTasks['task-1'].closeSuggestion).toBeUndefined();
+  });
+
   it('clears coordinator wiring and MCP startup state from null sync fields', () => {
     taskStateSyncHandler({
       taskId: 'task-1',

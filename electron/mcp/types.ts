@@ -1,6 +1,7 @@
 import type { VerificationRun } from '../ipc/shared-types.js';
 import type { ActivityEvidence } from '../agent-hooks/status.js';
 import type { CompletionRecord, SubtaskVerification } from '../shared/completion-report.js';
+import type { CloseSuggestion } from '../shared/close-suggestion.js';
 export type { SubtaskVerification, SubtaskVerificationCheck } from '../shared/completion-report.js';
 
 // Shared types for the MCP coordinating-agent system.
@@ -32,6 +33,8 @@ export interface CoordinatedTask {
   preambleFileExistedBefore?: boolean; // true if the preamble file existed before injection (even if empty)
   signalDoneAt?: Date; // set when sub-task explicitly calls signal_done
   signalDoneConsumed?: boolean; // true after wait_for_signal_done returns this task's signal
+  /** Set while the coordinator no longer needs this child; it stops counting as remaining. */
+  closeSuggestion?: CloseSuggestion;
   completion?: CompletionRecord;
   reviewRevision?: number;
   verification?: SubtaskVerification;
@@ -181,6 +184,7 @@ export interface ApiTaskSummary {
   status: string;
   coordinatorTaskId: string;
   signalDoneAt?: string; // ISO timestamp, set when sub-task called signal_done
+  closeSuggestion?: CloseSuggestion;
   completion?: CompletionRecord;
   verification?: SubtaskVerification;
   landingState?: LandingState;

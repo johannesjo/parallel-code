@@ -97,6 +97,7 @@ import type {
 } from './types.js';
 import { IPC } from '../ipc/channels.js';
 import type { SessionCapabilities } from '../shared/delegation-types.js';
+import { parseCloseSuggestion, type CloseSuggestion } from '../shared/close-suggestion.js';
 import {
   parseCompletionRecord,
   parseSignalDoneInput,
@@ -1715,6 +1716,7 @@ export class Coordinator {
       coordinatorTaskId: t.coordinatorTaskId,
       integrationPolicy: t.integrationPolicy,
       signalDoneAt: t.signalDoneAt?.toISOString(),
+      closeSuggestion: t.closeSuggestion,
       completion: t.completion,
       reviewRevision: t.reviewRevision,
       verification: t.verification,
@@ -1745,6 +1747,7 @@ export class Coordinator {
       pendingPrompts: task.pendingPrompts ? [...task.pendingPrompts] : undefined,
       pendingPromptCount: task.pendingPrompts?.length,
       signalDoneAt: task.signalDoneAt?.toISOString(),
+      closeSuggestion: task.closeSuggestion,
       completion: task.completion,
       reviewRevision: task.reviewRevision,
       verification: task.verification,
@@ -1769,6 +1772,8 @@ export class Coordinator {
     if (queueLen >= MAX_PENDING_PROMPTS)
       throw new Error(`Prompt queue full (${MAX_PENDING_PROMPTS} pending)`);
     this.advanceReviewRevision(task);
+    // New work means the coordinator wants this child after all, even while it queues.
+    this.withdrawCloseSuggestion(task);
     if (task.initialPrompt && !task.assignedPromptDelivered) {
       this.queuePrompt(task, prompt);
       this.clearInitialPromptTimer(task.id);
@@ -1840,6 +1845,8 @@ export class Coordinator {
     for (const task of this.tasks.values()) {
       // A child that signalled done took its prompt, whatever its screen shows.
       if (task.coordinatorTaskId !== coordinatorTaskId || task.signalDoneAt) continue;
+      // The parent already gave this child up; reporting it again would only nag the user.
+      if (task.closeSuggestion) continue;
       const delivery = this.promptDelivery(task);
       if (delivery && isStalled(delivery, task.status === 'idle')) {
         stalled.push({ taskId: task.id, name: task.name, delivery });
@@ -2815,6 +2822,21 @@ export class Coordinator {
   }
 
   /**
+   * Flag a child its coordinator no longer needs. Only the user closes it, so the
+   * agent and worktree stay untouched; waits just stop counting it.
+   */
+  suggestClose(taskId: string, reason: string): CloseSuggestion {
+    const task = this.tasks.get(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+    const suggestion = parseCloseSuggestion({ reason, at: new Date().toISOString() });
+    if (!suggestion) throw new Error('A close suggestion needs a short, nonempty reason.');
+    task.closeSuggestion = suggestion;
+    this.notifyRenderer(IPC.MCP_TaskStateSync, { taskId, closeSuggestion: suggestion });
+    this.resolveSignalWaitersIfNoneRemain(task.coordinatorTaskId);
+    return suggestion;
+  }
+
+  /**
    * Remove a coordinated task's backend state when the UI closes it directly.
    * Unlike cleanupTask, this does NOT kill the agent or delete the worktree —
    * the UI has already done both. It only cleans up in-memory coordinator state.
@@ -2955,6 +2977,7 @@ export class Coordinator {
     integrationPolicy?: IntegrationPolicy;
     signalDoneAt?: string;
     signalDoneConsumed?: boolean;
+    closeSuggestion?: CloseSuggestion;
     completion?: CompletionRecord;
     reviewRevision?: number;
     verification?: SubtaskVerification;
@@ -3002,6 +3025,7 @@ export class Coordinator {
         signalDoneReceived: existingTask.signalDoneAt !== undefined,
         signalDoneAt: existingTask.signalDoneAt?.toISOString() ?? null,
         signalDoneConsumed: existingTask.signalDoneConsumed ?? false,
+        closeSuggestion: existingTask.closeSuggestion ?? null,
       });
       return { mcpLaunchArgs };
     }
@@ -3026,6 +3050,7 @@ export class Coordinator {
       promptQueuedAt: opts.initialPrompt || opts.pendingPrompts?.length ? Date.now() : undefined,
       signalDoneAt: opts.signalDoneAt ? new Date(opts.signalDoneAt) : undefined,
       signalDoneConsumed: opts.signalDoneConsumed,
+      closeSuggestion: parseCloseSuggestion(opts.closeSuggestion),
       completion,
       reviewRevision: Math.max(
         Number.isSafeInteger(opts.reviewRevision) && (opts.reviewRevision ?? -1) >= 0
@@ -3484,6 +3509,12 @@ export class Coordinator {
     );
   }
 
+  private withdrawCloseSuggestion(task: CoordinatedTask): void {
+    if (!task.closeSuggestion) return;
+    task.closeSuggestion = undefined;
+    this.notifyRenderer(IPC.MCP_TaskStateSync, { taskId: task.id, closeSuggestion: null });
+  }
+
   private advanceReviewRevision(task: CoordinatedTask): number {
     task.reviewRevision = (task.reviewRevision ?? 0) + 1;
     this.notifyRenderer(IPC.MCP_TaskStateSync, {
@@ -3561,6 +3592,8 @@ export class Coordinator {
     task.suppressIdleUntil = undefined;
     task.signalDoneAt = completedAt;
     task.signalDoneConsumed = false;
+    // The suggestion predates this result; the user should review it, not just close it.
+    this.withdrawCloseSuggestion(task);
 
     const coordinatorId = task.coordinatorTaskId;
     const anyResolvers = this.anySignalResolvers.get(coordinatorId);
@@ -3816,6 +3849,7 @@ export class Coordinator {
       if (task.coordinatorTaskId !== coordinatorTaskId) continue;
       if (task.signalDoneConsumed) continue; // coordinator already processed this one
       if (task.status === 'exited' && !task.signalDoneAt) continue; // exited without signal — handled by UI
+      if (task.closeSuggestion) continue; // the coordinator gave it up; the user closes it
       count++;
     }
     return count;

@@ -122,6 +122,7 @@ function structuralSnapshot(): string {
             signalDoneReceived: t.signalDoneReceived,
             signalDoneAt: t.signalDoneAt,
             signalDoneConsumed: t.signalDoneConsumed,
+            closeSuggestion: t.closeSuggestion,
             needsReview: t.needsReview,
             verification: t.verification,
             verificationRun: t.verificationRun,

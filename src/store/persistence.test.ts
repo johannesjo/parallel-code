@@ -313,6 +313,38 @@ describe('landing state persistence', () => {
   });
 });
 
+describe('close suggestion persistence', () => {
+  it('restores a valid close suggestion and drops a malformed one', async () => {
+    const def = agentDef();
+    const closeSuggestion = { reason: 'Superseded by task B', at: '2026-11-06T10:00:00.000Z' };
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: ['task-1', 'task-2'],
+        collapsedTaskOrder: [],
+        tasks: {
+          'task-1': { ...persistedTask(def), coordinatedBy: 'coord-1', closeSuggestion },
+          'task-2': {
+            ...persistedTask(def),
+            id: 'task-2',
+            coordinatedBy: 'coord-1',
+            closeSuggestion: { reason: 42 },
+          },
+        },
+        activeTaskId: 'task-1',
+        sidebarVisible: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['task-1'].closeSuggestion).toEqual(closeSuggestion);
+    expect(store.tasks['task-2'].closeSuggestion).toBeUndefined();
+  });
+});
+
 describe('background verify persistence', () => {
   function stateWith(project: Record<string, unknown>, tasks: Record<string, unknown>): string {
     return JSON.stringify({

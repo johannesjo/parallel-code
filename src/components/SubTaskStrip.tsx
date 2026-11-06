@@ -151,7 +151,7 @@ export function SubTaskStrip(props: SubTaskStripProps) {
   // `urgent` tones get a tinted chip; plain merged work stays neutral.
   const taskTone = (
     task: (typeof store.tasks)[string],
-  ): { color: string; label: string; urgent: boolean } | null => {
+  ): { color: string; label: string; urgent: boolean; detail?: string } | null => {
     if (task.landingState === 'landed_pending_review') {
       return { color: theme.warning, label: 'Merged · review pending', urgent: true };
     }
@@ -174,6 +174,14 @@ export function SubTaskStrip(props: SubTaskStripProps) {
     if (task.landingState === 'landing_failed') {
       return { color: theme.error, label: 'Merge failed', urgent: true };
     }
+    // Not urgent: nothing is lost by leaving it open until the user gets to it.
+    if (task.closeSuggestion)
+      return {
+        color: theme.fgSubtle,
+        label: 'Close suggested',
+        urgent: false,
+        detail: task.closeSuggestion.reason,
+      };
     if (task.signalDoneReceived)
       return {
         color: theme.warning,
@@ -245,7 +253,7 @@ export function SubTaskStrip(props: SubTaskStripProps) {
                           }
                           activateTaskFromPointer(task.id);
                         }}
-                        title={`${task.collapsed ? 'Resume and open: ' : ''}${task.name} — ${tone()?.label ?? getDotTooltip(getTaskDotStatus(task.id), getTaskAttentionState(task.id), task.id)}`}
+                        title={`${task.collapsed ? 'Resume and open: ' : ''}${task.name} — ${tone()?.label ?? getDotTooltip(getTaskDotStatus(task.id), getTaskAttentionState(task.id), task.id)}${tone()?.detail ? `: ${tone()?.detail}` : ''}`}
                         data-urgent={tone()?.urgent ? '' : undefined}
                         style={{ '--tone': tone()?.color, 'font-size': sf(11) }}
                       >

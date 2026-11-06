@@ -1487,6 +1487,7 @@ export function initMCPListeners(): () => void {
         signalDoneReceived?: boolean;
         signalDoneAt?: string;
         signalDoneConsumed?: boolean;
+        closeSuggestion?: Task['closeSuggestion'] | null;
         needsReview?: boolean;
         verification?: Task['verification'];
         verificationRun?: Task['verificationRun'] | null;
@@ -1532,6 +1533,8 @@ export function initMCPListeners(): () => void {
           setStore('tasks', evt.taskId, 'signalDoneAt', evt.signalDoneAt ?? undefined);
         if (evt.signalDoneConsumed !== undefined)
           setStore('tasks', evt.taskId, 'signalDoneConsumed', evt.signalDoneConsumed);
+        if (evt.closeSuggestion !== undefined)
+          setStore('tasks', evt.taskId, 'closeSuggestion', evt.closeSuggestion ?? undefined);
         if (evt.needsReview !== undefined)
           setStore('tasks', evt.taskId, 'needsReview', evt.needsReview);
         if (evt.verification !== undefined)
@@ -1712,6 +1715,7 @@ export function retryTaskMcpStartup(taskId: string): Promise<void> {
       reviewRevision: task.reviewRevision,
       signalDoneAt: task.signalDoneAt,
       signalDoneConsumed: task.signalDoneConsumed,
+      closeSuggestion: task.closeSuggestion,
       verification: task.verification,
       landingState: task.landingState,
       landingReason: task.landingReason,

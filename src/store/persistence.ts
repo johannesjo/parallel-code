@@ -1,4 +1,5 @@
 import { parseCompletionRecord } from '../../electron/shared/completion-report';
+import { parseCloseSuggestion } from '../../electron/shared/close-suggestion';
 import { persistedCheckSuite, restoredCheckSuite } from '../lib/check-suite-storage';
 import { restoreBriefBarFields, restoreTaskBriefRecord } from '../lib/task-brief';
 import { restoreTaskAgentPlan } from '../lib/task-plan';
@@ -419,6 +420,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     signalDoneReceived: task.signalDoneReceived,
     signalDoneAt: task.signalDoneAt,
     signalDoneConsumed: task.signalDoneConsumed,
+    closeSuggestion: task.closeSuggestion,
     needsReview: task.needsReview,
     verification: task.verification,
     verificationRun: task.verificationRun,
@@ -1287,6 +1289,7 @@ export async function loadState(): Promise<void> {
           signalDoneReceived: pt.signalDoneReceived,
           signalDoneAt: pt.signalDoneAt,
           signalDoneConsumed: pt.signalDoneConsumed,
+          closeSuggestion: parseCloseSuggestion(pt.closeSuggestion),
           needsReview: pt.needsReview,
           verification: pt.verification,
           verificationRun: restoredVerificationRun(pt.verificationRun),
@@ -1448,6 +1451,7 @@ export async function loadState(): Promise<void> {
           signalDoneReceived: pt.signalDoneReceived,
           signalDoneAt: pt.signalDoneAt,
           signalDoneConsumed: pt.signalDoneConsumed,
+          closeSuggestion: parseCloseSuggestion(pt.closeSuggestion),
           needsReview: pt.needsReview,
           verification: pt.verification,
           verificationRun: restoredVerificationRun(pt.verificationRun),
