@@ -12,9 +12,10 @@ import { linkTaskToIssueReference } from './github-issue-link';
 import { getTaskMindMap, updateTaskMindMapFromAgent } from './canvas';
 import { openCanvasViewFromAgent } from './canvas-agent';
 import { getTaskReasoning, updateTaskReasoningFromAgent } from './reasoning';
+import { unwrap } from 'solid-js/store';
 import { store } from './core';
 import { delegationRequest } from './delegation';
-import { codeProjects, getProject, getProjectPath } from './projects';
+import { addProject, codeProjects, getProject, getProjectPath } from './projects';
 import {
   closeTask,
   createTask,
@@ -95,6 +96,16 @@ function reply(reqId: string, ok: boolean, data?: unknown, error?: string): void
   invoke(IPC.Remote_RendererReply, { reqId, ok, data, error }).catch(() => {});
 }
 
+interface AddProjectRequest extends RendererRequest {
+  name: string;
+  path: string;
+}
+
+/** Register a folder the main process just created as a git project. */
+function handleAddProject(req: AddProjectRequest): void {
+  reply(req.reqId, true, { id: addProject(req.name, req.path, true), name: req.name });
+}
+
 function handleGetProjects(req: RendererRequest): void {
   reply(
     req.reqId,
@@ -102,6 +113,7 @@ function handleGetProjects(req: RendererRequest): void {
     codeProjects().map((p) => ({
       id: p.id,
       name: p.name,
+      path: p.path,
       color: p.color,
       icon: p.icon,
       lastUsed: p.id === store.lastProjectId,
@@ -391,7 +403,6 @@ async function handleGetMergeReadiness(req: GetTaskDiffRequest): Promise<void> {
     if (task.gitIsolation !== 'worktree') {
       reply(req.reqId, true, {
         readiness: {
-          overall: 'blocked',
           checks: [
             {
               label: 'Merge safety',
@@ -538,6 +549,12 @@ export function startRemoteTaskHandlers(): () => void {
       if (data && typeof data === 'object') handleGetProjects(data as RendererRequest);
     },
   );
+  const offAddProject = window.electron.ipcRenderer.on(
+    IPC.Remote_AddProjectRequest,
+    (data: unknown) => {
+      if (data && typeof data === 'object') handleAddProject(data as AddProjectRequest);
+    },
+  );
   const offAgents = window.electron.ipcRenderer.on(IPC.Remote_GetAgentsRequest, (data: unknown) => {
     if (data && typeof data === 'object') void handleGetAgents(data as RendererRequest);
   });
@@ -558,6 +575,13 @@ export function startRemoteTaskHandlers(): () => void {
     IPC.Remote_GetNotesRequest,
     (data: unknown) => {
       if (data && typeof data === 'object') handleGetNotes(data as GetNotesRequest);
+    },
+  );
+  const offGetUsage = window.electron.ipcRenderer.on(
+    IPC.Remote_GetUsageRequest,
+    (data: unknown) => {
+      if (data && typeof data === 'object')
+        reply((data as RendererRequest).reqId, true, unwrap(store.usage));
     },
   );
   const offSetNotes = window.electron.ipcRenderer.on(
@@ -688,6 +712,7 @@ export function startRemoteTaskHandlers(): () => void {
     offPublishPrDraft();
     offPublishGitHubList();
     offProjects();
+    offAddProject();
     offCreate();
     offCreateIndependent();
     offAgents();
@@ -699,5 +724,6 @@ export function startRemoteTaskHandlers(): () => void {
     offFixCiPrompt();
     offSendFixCi();
     offMerge();
+    offGetUsage();
   };
 }

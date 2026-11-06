@@ -68,6 +68,7 @@ data class MobileProject(
     val color: String? = null,
     val icon: String? = null,
     val lastUsed: Boolean = false,
+    val path: String? = null,
 )
 
 /**
@@ -376,11 +377,19 @@ class RemoteClient(
                 p.getString("id"),
                 p.getString("name"),
                 p.optString("agentName").ifEmpty { null },
+                path = p.optString("path").ifEmpty { null },
                 color = if (p.isNull("color")) null else p.optString("color").ifBlank { null },
                 icon = if (p.isNull("icon")) null else p.optString("icon").ifBlank { null },
                 lastUsed = p.optBoolean("lastUsed"),
             )
         }
+    }
+
+    /** Create a new git project folder on the desktop and add it; returns the project. */
+    suspend fun createProject(name: String, parentDir: String): MobileProject {
+        val body = JSONObject().put("name", name).put("parentDir", parentDir)
+        val p = api("POST", "/api/mobile/projects", body, pairedTokenOrThrow())
+        return MobileProject(p.getString("id"), p.getString("name"), null, path = p.optString("path").ifEmpty { null })
     }
 
     /**

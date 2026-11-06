@@ -54,9 +54,11 @@ import { parseGitHubList, type GitHubCustomList } from '../shared/github-list.js
 import { PR_DRAFT_LIMITS, parsePrDraft, type PrDraft } from '../shared/pr-draft.js';
 import type { SessionCaller, SessionCapabilities } from '../shared/delegation-types.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
+import type { UsageProvider, UsageState } from '../ipc/shared-types.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import type { Coordinator } from '../mcp/coordinator.js';
 import { validateBranchName } from '../mcp/validation.js';
+import { validateProjectFolderName } from './project-create.js';
 import type { ApiTaskDetail, LandSelfInput, SubtaskVerification } from '../mcp/types.js';
 import { parseSignalDoneInput } from '../shared/completion-report.js';
 import { CODEX_MODEL_PATTERN } from '../shared/ask-code-models.js';
@@ -305,6 +307,8 @@ interface RemoteServer {
 export interface RemoteProject {
   id: string;
   name: string;
+  /** Desktop folder, so the phone can suggest where a new project goes. */
+  path?: string;
   color?: string;
   icon?: string;
   /** The project the desktop last created a task in. */
@@ -1017,6 +1021,8 @@ export function startRemoteServer(opts: {
   getAgentChoices?: () => Promise<RemoteAgentChoice[]>;
   /** Create a top-level task on behalf of a paired phone (renderer-backed). */
   createTaskFromMobile?: (req: MobileTaskRequest) => Promise<{ taskId: string }>;
+  /** Create a new git project folder and register it (renderer-backed). */
+  createProjectFromMobile?: (req: { parentDir: string; name: string }) => Promise<RemoteProject>;
   readMindMap?: (taskId: string) => Promise<MindMapDocument>;
   readReasoning?: (taskId: string) => Promise<ReasoningDocument>;
   updateReasoning?: (taskId: string, update: ReasoningUpdate) => Promise<ReasoningDocument>;
@@ -1047,6 +1053,8 @@ export function startRemoteServer(opts: {
   }) => Promise<void>;
   /** Persist a task's notes (renderer-backed). */
   setTaskNotes?: (taskId: string, notes: string) => Promise<void>;
+  /** The desktop's last agent-subscription usage snapshot (renderer-backed). */
+  getUsage?: () => Promise<Record<UsageProvider, UsageState>>;
   /** Close a task (renderer-backed); unless `force`, refuses when work would be lost. */
   closeTaskFromMobile?: (taskId: string, force: boolean) => Promise<RemoteCloseResult>;
   /** A task's diff against its base branch (renderer-backed). */
@@ -1512,6 +1520,30 @@ export function startRemoteServer(opts: {
           return;
         }
 
+        if (url.pathname === '/api/mobile/projects' && req.method === 'POST') {
+          const createProject = opts.createProjectFromMobile;
+          if (!createProject) return jsonEnd(503, { error: 'project creation unavailable' });
+          readJsonBody(req)
+            .then(async (body) => {
+              let name: string;
+              try {
+                name = validateProjectFolderName(body.name);
+              } catch (err) {
+                return jsonEnd(400, { error: err instanceof Error ? err.message : String(err) });
+              }
+              const parentDir = typeof body.parentDir === 'string' ? body.parentDir : '';
+              if (!parentDir)
+                return jsonEnd(400, { error: 'parentDir must be a non-empty string' });
+              try {
+                jsonEnd(201, await createProject({ parentDir, name }));
+              } catch (err) {
+                jsonEnd(400, { error: err instanceof Error ? err.message : String(err) });
+              }
+            })
+            .catch(() => jsonEnd(400, { error: 'bad request' }));
+          return;
+        }
+
         if (url.pathname === '/api/mobile/tasks' && req.method === 'POST') {
           const createTask = opts.createTaskFromMobile;
           if (!createTask) return jsonEnd(503, { error: 'task creation unavailable' });
@@ -1552,6 +1584,21 @@ export function startRemoteServer(opts: {
         }
 
         return jsonEnd(405, { error: 'method not allowed' });
+      }
+
+      // --- Subscription usage (read-only: mobile + paired) ---
+      // Serves the snapshot the desktop status bar already polls, so phones
+      // never add requests to the rate-limited usage endpoints.
+      if (url.pathname === '/api/mobile/usage') {
+        if (tokenClass !== 'mobile' && tokenClass !== 'paired')
+          return jsonEnd(403, { error: 'forbidden' });
+        if (req.method !== 'GET') return jsonEnd(405, { error: 'method not allowed' });
+        if (!opts.getUsage) return jsonEnd(503, { error: 'usage unavailable' });
+        opts
+          .getUsage()
+          .then((usage) => jsonEnd(200, usage))
+          .catch((err) => jsonEnd(500, { error: String(err) }));
+        return;
       }
 
       // --- Task diff (read: mobile + paired) ---

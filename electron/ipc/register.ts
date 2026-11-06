@@ -76,6 +76,7 @@ import { detectTaskPrs } from './task-prs.js';
 import { readCoverageSummary } from './coverage.js';
 import { loadEslintQualityFindings } from './eslint-quality-findings.js';
 import { buildVerifyEnv, validateVerifyCommand, verificationRunner } from './verify.js';
+import { createProjectFolder } from '../remote/project-create.js';
 import { scanChange } from './change-scan.js';
 import {
   startRemoteServer,
@@ -83,6 +84,7 @@ import {
   type MobileTaskRequest,
   type RemoteProject,
 } from '../remote/server.js';
+import type { UsageProvider, UsageState } from './shared-types.js';
 import { sanitizeRemotePr } from '../remote/task-context.js';
 import type {
   RemoteAgentChoice,
@@ -187,6 +189,7 @@ import { listCodexModels } from './codex-models.js';
 import { getSystemMonospaceFonts } from './system-fonts.js';
 import { fetchClaudeUsage } from './claude-usage.js';
 import { fetchCodexUsage } from './codex-usage.js';
+import { fetchAntigravityUsage } from './antigravity-usage.js';
 import path from 'path';
 import {
   assertString,
@@ -1904,10 +1907,18 @@ export function registerAllHandlers(win: BrowserWindow): void {
     getAgentChoices: () => callRenderer<RemoteAgentChoice[]>(IPC.Remote_GetAgentsRequest, {}),
     createTaskFromMobile: (req: MobileTaskRequest) =>
       callRenderer<{ taskId: string }>(IPC.Remote_CreateTaskRequest, req),
+    createProjectFromMobile: async (req: { parentDir: string; name: string }) => {
+      const projectPath = await createProjectFolder(req.parentDir, req.name);
+      return callRenderer<RemoteProject>(IPC.Remote_AddProjectRequest, {
+        name: path.basename(projectPath),
+        path: projectPath,
+      });
+    },
     getTaskNotes: (taskId: string) =>
       callRenderer<{ notes: string }>(IPC.Remote_GetNotesRequest, { taskId }).then((r) => r.notes),
     setTaskNotes: (taskId: string, notes: string) =>
       callRenderer<{ ok: boolean }>(IPC.Remote_SetNotesRequest, { taskId, notes }).then(() => {}),
+    getUsage: () => callRenderer<Record<UsageProvider, UsageState>>(IPC.Remote_GetUsageRequest, {}),
     closeTaskFromMobile: (taskId: string, force: boolean) =>
       callRenderer<RemoteCloseResult>(IPC.Remote_CloseTaskRequest, { taskId, force }),
     getTaskDiff: (taskId: string) =>
@@ -2519,6 +2530,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(IPC.GetClaudeUsage, () => fetchClaudeUsage());
   ipcMain.handle(IPC.GetCodexUsage, () => fetchCodexUsage());
+  ipcMain.handle(IPC.GetAntigravityUsage, () => fetchAntigravityUsage());
   ipcMain.handle(IPC.GetResourceUsage, () => getResourceSnapshot());
 
   // --- Forward window events to renderer ---
