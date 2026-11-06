@@ -145,6 +145,7 @@ export {
   toggleSidebar,
   toggleArena,
   openThinkingSpace,
+  setTaskContext,
   setDocumentWorkspacesEnabled,
   toggleFocusMode,
   toggleTaskFocusMode,

@@ -1,3 +1,5 @@
+import type { PlanStep } from './agent-plan.js';
+
 export interface ChatItem {
   id: string;
   /** 'shell' is a command the user ran with `!`; it carries a command activity. */
@@ -111,7 +113,7 @@ export interface AgentChatState {
     /** Claude's cumulative SDK accounting restarts when the connection resumes. */
     scope: 'conversation' | 'connection';
   };
-  plan?: { step: string; status: 'pending' | 'in_progress' | 'completed' }[];
+  plan?: PlanStep[];
   /** The mode the agent reports it is actually running in, once it says so. */
   permissionMode?: string;
   /** Why the running mode differs from the one the user configured, if it does. */

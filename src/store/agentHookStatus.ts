@@ -16,6 +16,7 @@ import { formatRelativeAge } from '../lib/relativeAge';
 import { invoke } from '../lib/ipc';
 import { errMessage, warn } from '../lib/log';
 import { store } from './core';
+import { applyTaskPlanEvent } from './task-plan';
 
 /**
  * Status an agent reported about itself through Claude Code hooks. Unlike the
@@ -186,6 +187,8 @@ export function applyAgentActivityObservation(observation: AgentActivityObservat
     return;
   }
   if (prev?.launchId !== observation.launchId) clearAgentHookStatus(observation.agentId);
+  // Before the tool-event suppression below: that guards status, not the plan.
+  applyTaskPlanEvent(observation);
   clearTimer(interruptTimers, observation.agentId);
   if (isSuppressedToolEvent(observation)) return;
   // Main already matched tool results and reduced this state. Reducing it

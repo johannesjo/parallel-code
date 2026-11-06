@@ -385,6 +385,41 @@ describe('background verify persistence', () => {
     expect(JSON.parse(lastCall[1].json).tasks['task-1'].reviewDismissed).toEqual(dismissed);
   });
 
+  it("round-trips the agent's plan and drops a malformed one", async () => {
+    const def = agentDef();
+    const plan = {
+      steps: [
+        { step: 'Read the scripts', status: 'completed' },
+        { step: 'Check the dev command', status: 'in_progress' },
+      ],
+      failedCommand: 'npm run dev',
+      updatedAt: 5,
+    };
+    mockInvoke.mockResolvedValueOnce(
+      stateWith(
+        {},
+        {
+          'task-1': { ...persistedTask(def), agentPlan: plan },
+          'task-2': {
+            ...persistedTask(def),
+            id: 'task-2',
+            branchName: 'task/task-2',
+            worktreePath: '/repo/.worktrees/task-2',
+            agentPlan: { steps: [{ step: 'x', status: 'done' }], updatedAt: 1 },
+          },
+        },
+      ),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].agentPlan).toEqual(plan);
+    expect(store.tasks['task-2'].agentPlan).toBeUndefined();
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    expect(JSON.parse(lastCall[1].json).tasks['task-1'].agentPlan).toEqual(plan);
+  });
+
   it.each([
     [false, false],
     [true, undefined],
@@ -1807,6 +1842,17 @@ describe('task brief settings', () => {
     );
     await loadState();
     expect(store.briefBarFields).toEqual({ goal: false, now: true, needsYou: true });
+  });
+  it('keeps task context off unless it was turned on', async () => {
+    mockInvoke.mockResolvedValueOnce(basePayload());
+    await loadState();
+    expect(store.taskContext).toBe(false);
+    mockInvoke.mockResolvedValueOnce(basePayload({ taskContext: true }));
+    await loadState();
+    expect(store.taskContext).toBe(true);
+    mockInvoke.mockResolvedValueOnce(basePayload({ taskContext: 'yes' }));
+    await loadState();
+    expect(store.taskContext).toBe(false);
   });
 });
 

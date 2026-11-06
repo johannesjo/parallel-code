@@ -59,6 +59,8 @@ import { isCommitHashSelection, type CommitSelection } from './CommitNavBar';
 import { TaskShellSection, shellSectionMinHeight } from './TaskShellSection';
 import { TaskCanvasPanel } from './TaskCanvasPanel';
 import { TaskBriefBar, needsYouNow } from './TaskBrief';
+import { TaskContext } from './TaskContext';
+import { TaskContextStrip } from './TaskContextStrip';
 import { TaskAITerminal } from './TaskAITerminal';
 import { isAgentChat } from '../store/agent-chat';
 import { TaskClosingOverlay } from './TaskClosingOverlay';
@@ -108,6 +110,7 @@ interface TaskPanelProps {
 // never taller than 33vh. User drag pins intentionally bypass this.
 const CHANGED_FILES_PANEL_AUTO_MAX = 'min(300px, 33vh)';
 const NOTES_PANEL_AUTO_MAX = 'min(400px, 33vh)';
+const CONTEXT_PANEL_AUTO_MAX = '45%';
 // Last agent-tour revision shown per task. Collapsing and expanding a task
 // remounts its panel, which must not reopen a tour the user already dismissed.
 const shownAgentTourRevisions = new WeakMap<Task, number>();
@@ -196,8 +199,10 @@ export function TaskPanel(props: TaskPanelProps) {
       selectedCommit: selectedCommit(),
     });
   // A task without agents has no turns to brief. Shown before the first brief
-  // too, so the header keeps one height while a task runs.
-  const showBrief = () => store.taskBriefs && props.task.agentIds.length > 0;
+  // too, so the header keeps one height while a task runs. Opt-in task
+  // context takes over the brief's goal, so the header drops it then.
+  const contextOn = () => store.taskContext && props.task.agentIds.length > 0;
+  const showBrief = () => store.taskBriefs && props.task.agentIds.length > 0 && !contextOn();
 
   const finishTour = () => {
     const basis = tour.basis();
@@ -441,6 +446,8 @@ export function TaskPanel(props: TaskPanelProps) {
   const SPLIT_EXIT_WIDTH = 1030;
   const [panelWidth, setPanelWidth] = createSignal(0);
   const [useSplit, setUseSplit] = createSignal(false);
+  // Split mode shows task context as a pane in the side column instead.
+  const showContextStrip = () => contextOn() && !useSplit();
   createEffect(() => {
     const w = panelWidth();
     const focused = document.activeElement;
@@ -729,8 +736,13 @@ export function TaskPanel(props: TaskPanelProps) {
   );
   // Prompt wrapper carries its own intrinsic height so the flex-first panel
   // tree sizes it to 72 px by default and lets a user-drag pin override.
+  // With task context on there is no header brief to ask the agent's
+  // question, so the prompt box appears for it even when turned off.
   const promptBoxShown = () =>
-    !isAgentChat(props.task, firstAgentId()) && (store.showPromptInput || autoSendChildUpdates());
+    !isAgentChat(props.task, firstAgentId()) &&
+    (store.showPromptInput ||
+      autoSendChildUpdates() ||
+      (contextOn() && needsYouNow(props.task) !== ''));
   const promptInputEl = (
     <div
       onClick={() => setTaskFocusedPanel(props.task.id, 'prompt')}
@@ -812,6 +824,21 @@ export function TaskPanel(props: TaskPanelProps) {
     minSize: 100,
     maxAutoSize: CHANGED_FILES_PANEL_AUTO_MAX,
     content: () => changedFilesEl,
+  };
+
+  // Split mode only: the goal and plan on top of the side column, as tall as
+  // they need up to the cap, then scrolling. The changed files right below
+  // carry their own tour button, so this pane leaves out the walkthrough.
+  const contextChild: PanelChild = {
+    id: 'context',
+    resizeLabel: 'Resize context panel',
+    minSize: 80,
+    maxAutoSize: CONTEXT_PANEL_AUTO_MAX,
+    content: () => (
+      <div class="task-context-pane">
+        <TaskContext task={props.task} />
+      </div>
+    ),
   };
 
   // Stack-mode row containing notes (absorbs horizontally) and changed files.
@@ -909,6 +936,7 @@ export function TaskPanel(props: TaskPanelProps) {
                       overflow: 'auto',
                     }}
                     children={[
+                      ...(contextOn() ? [contextChild] : []),
                       ...(isGitUnavailable() ? [] : [changedFilesChild]),
                       notesChild,
                       shellSectionChild,
@@ -974,8 +1002,9 @@ export function TaskPanel(props: TaskPanelProps) {
         class="task-header-stack"
         style={{
           // Grows with the brief, up to three lines: new content may move the
-          // output down, but nothing else changes the header's height.
-          flex: showBrief() ? '0 0 auto' : '0 0 66px',
+          // output down, but nothing else changes the header's height. The
+          // plan line is a fixed 28px.
+          flex: showBrief() ? '0 0 auto' : showContextStrip() ? '0 0 94px' : '0 0 66px',
           display: 'flex',
           'flex-direction': 'column',
           overflow: 'hidden',
@@ -1006,6 +1035,16 @@ export function TaskPanel(props: TaskPanelProps) {
               onWalkThrough={openOrGenerateTour}
               walkThroughDisabled={changedFileCount() === 0}
               questionInPrompt={promptBoxShown()}
+            />
+          </div>
+        </Show>
+        {/* The stacked view has no side column for the context pane. */}
+        <Show when={showContextStrip()}>
+          <div style={{ flex: '0 0 28px', overflow: 'hidden' }}>
+            <TaskContextStrip
+              task={props.task}
+              onWalkThrough={openOrGenerateTour}
+              walkThroughDisabled={changedFileCount() === 0}
             />
           </div>
         </Show>

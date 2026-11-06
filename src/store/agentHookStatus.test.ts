@@ -447,6 +447,15 @@ describe('agentHookStatus', () => {
     expect(getAgentHookStatus('a1')?.state).toBe('working');
   });
 
+  it("keeps the task's plan from a TodoWrite observation", () => {
+    mockTasks = { t1: { id: 't1', agentIds: ['a1'] } };
+    const todos = [{ step: 'Check the dev command', status: 'in_progress' as const }];
+    applyAgentActivityObservation(
+      observation({ event: 'PostToolUse', toolName: 'TodoWrite', todos, at: 7 }),
+    );
+    expect(mockTasks.t1).toMatchObject({ agentPlan: { steps: todos, updatedAt: 7 } });
+  });
+
   it('does not revive a retired launch from an in-flight snapshot', () => {
     const old = observation({ state: 'done', event: 'Stop' });
     applyAgentActivityObservation(old);

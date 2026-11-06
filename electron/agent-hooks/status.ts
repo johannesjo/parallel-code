@@ -8,6 +8,8 @@
  * the terminal heuristics have to do.
  */
 
+import { isPlanSteps, parseTodoWriteInput, type PlanStep } from '../shared/agent-plan.js';
+
 export type AgentHookStatusState = 'working' | 'waiting' | 'done';
 
 /** What a `waiting` agent needs: a yes/no on a permission-style dialog, or
@@ -28,6 +30,10 @@ export interface AgentHookStatusUpdate {
   detail?: string;
   /** Claude's final text for the turn; only present on turn boundaries. */
   lastAssistantMessage?: string;
+  /** The lead's whole to-do list after a TodoWrite; event-only, never reduced into status. */
+  todos?: PlanStep[];
+  /** The shell command a failed tool call ran; event-only, like `todos`. */
+  failedCommand?: string;
   /** A background sub-agent or workflow is still running, so the lead may sit at
    *  its prompt while `working`: Esc there interrupts nothing. */
   background?: boolean;
@@ -94,7 +100,8 @@ export function isAgentHookEventPayload(value: unknown): value is AgentHookEvent
     Number.isFinite(v.at) &&
     (v.prompt === undefined || v.prompt === 'permission' || v.prompt === 'question') &&
     (v.background === undefined || typeof v.background === 'boolean') &&
-    ['toolName', 'toolUseId', 'detail', 'lastAssistantMessage'].every(
+    (v.todos === undefined || isPlanSteps(v.todos)) &&
+    ['toolName', 'toolUseId', 'detail', 'lastAssistantMessage', 'failedCommand'].every(
       (key) => v[key] === undefined || typeof v[key] === 'string',
     )
   );
@@ -119,6 +126,30 @@ function summarizeToolInput(toolInput: unknown): string | undefined {
     if (value) return clip(value, DETAIL_MAX_CHARS);
   }
   return undefined;
+}
+
+const PLAN_MAX_STEPS = 30;
+const PLAN_STEP_MAX_CHARS = 200;
+
+/** What task context needs from a tool result: the lead's plan, or the
+ *  command that just failed. Sub-agent events carry `agent_id`; their to-do
+ *  lists and failures belong to them, not to the lead's plan. */
+function toolResultContext(
+  body: Record<string, unknown>,
+  event: string,
+  toolName: string | undefined,
+): Pick<AgentHookStatusUpdate, 'todos' | 'failedCommand'> {
+  if (body.agent_id !== undefined) return {};
+  if (event === 'PostToolUseFailure' && toolName === 'Bash') {
+    const failedCommand = clip(asString(asRecord(body.tool_input)?.command), DETAIL_MAX_CHARS);
+    return failedCommand ? { failedCommand } : {};
+  }
+  if (event !== 'PostToolUse' || toolName !== 'TodoWrite') return {};
+  const todos = parseTodoWriteInput(body.tool_input)
+    ?.map((todo) => ({ ...todo, step: clip(todo.step, PLAN_STEP_MAX_CHARS) ?? '' }))
+    .filter((todo) => todo.step)
+    .slice(0, PLAN_MAX_STEPS);
+  return todos ? { todos } : {};
 }
 
 /** Background shell commands still running as the turn ends; the lead is not
@@ -197,7 +228,7 @@ export function mapClaudeHookPayload(payload: unknown): AgentHookStatusUpdate | 
       return mapPreToolUse(body, toolName);
     case 'PostToolUse':
     case 'PostToolUseFailure':
-      return { state: 'working', event, toolUseId };
+      return { state: 'working', event, toolUseId, ...toolResultContext(body, event, toolName) };
     case 'PermissionRequest': {
       const detail = summarizeToolInput(body.tool_input);
       return { state: 'waiting', event, toolName, toolUseId, detail, prompt: 'permission' };
