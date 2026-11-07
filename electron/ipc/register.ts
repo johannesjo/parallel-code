@@ -1762,18 +1762,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.WindowClose, () => win.close());
   ipcMain.handle(IPC.WindowForceClose, () => win.destroy());
   ipcMain.handle(IPC.WindowHide, () => win.hide());
-  ipcMain.handle(IPC.WindowMaximize, () => win.maximize());
-  ipcMain.handle(IPC.WindowUnmaximize, () => win.unmaximize());
-  ipcMain.handle(IPC.WindowSetSize, (_e, args) => {
-    assertInt(args.width, 'width');
-    assertInt(args.height, 'height');
-    return win.setSize(args.width, args.height);
-  });
-  ipcMain.handle(IPC.WindowSetPosition, (_e, args) => {
-    assertInt(args.x, 'x');
-    assertInt(args.y, 'y');
-    return win.setPosition(args.x, args.y);
-  });
   ipcMain.handle(IPC.WindowGetPosition, () => {
     const [x, y] = win.getPosition();
     return { x, y };

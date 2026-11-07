@@ -376,22 +376,6 @@ function App() {
     setWindowState({ ...geometry, maximized });
   };
 
-  const restoreWindowState = async (): Promise<void> => {
-    const saved = store.windowState;
-    if (!saved) return;
-    if (saved.width < MIN_WINDOW_DIMENSION || saved.height < MIN_WINDOW_DIMENSION) return;
-
-    await appWindow.unmaximize().catch(() => {});
-    await appWindow.setSize({ width: saved.width, height: saved.height }).catch(() => {});
-    await appWindow.setPosition({ x: saved.x, y: saved.y }).catch(() => {});
-
-    if (saved.maximized) {
-      await appWindow.maximize().catch(() => {});
-    }
-
-    void syncWindowMaximized();
-  };
-
   // Re-derive effective theme whenever OS dark mode or appearance mode/slots change
   createEffect(() => {
     osIsDark(); // reactive dependency
@@ -651,7 +635,6 @@ function App() {
     }
 
     await validateProjectPaths();
-    await restoreWindowState();
     await captureWindowState();
     setupAutosave();
     startTaskStatusPolling();
