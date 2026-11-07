@@ -86,6 +86,7 @@ describe('TaskContext', () => {
 
   it("falls back to the brief's status when the agent wrote no plan", () => {
     mount({ brief: brief('Document local setup', 'Checking the dev command') });
+    expect(container.querySelector('.ctx')?.hasAttribute('title')).toBe(false);
     expect(container.querySelector('.ctx-head')?.textContent).toBe('Now');
     expect(container.querySelector('.ctx-now')?.textContent).toBe('Checking the dev command');
   });
@@ -93,7 +94,11 @@ describe('TaskContext', () => {
   it("uses the task's prompt as the goal and explains the empty plan", () => {
     mount({ savedInitialPrompt: 'Fix the login redirect\nMore detail' });
     expect(container.querySelector('.ctx-goalbar')?.textContent).toBe('GoalFix the login redirect');
-    expect(container.querySelector('.ctx-empty')).not.toBeNull();
+    const section = container.querySelector('.ctx');
+    expect(section?.getAttribute('title')).toBe(
+      "The agent's plan shows here once it writes a to-do list",
+    );
+    expect(section?.textContent).not.toContain('plan shows here');
   });
 
   it('updates the brief on request and says when it was written', () => {

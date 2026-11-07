@@ -38,17 +38,11 @@
   color: var(--fg-subtle);
 }
 
-.ctx-now,
-.ctx-empty {
+.ctx-now {
   margin: 0;
   padding: 0 16px 12px;
   max-width: 640px;
 }
-.ctx-empty {
-  padding-top: 12px;
-  color: var(--fg-muted);
-}
-
 .ctx-track {
   margin: 0;
   padding: 0 10px 10px;
