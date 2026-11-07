@@ -8,6 +8,7 @@ import {
   setTaskExtraPrs,
   type PrChecksState,
 } from '../store/pr-checks-state';
+import { awaitsOpenPr } from '../store/task-prs';
 import type { Task } from '../store/types';
 import { boardLaneOf } from './task-board-lanes';
 
@@ -57,4 +58,44 @@ it('keeps a task in pull request while another PR is open after its own merged',
   setTaskExtraPrs('task-1', [{ url: extraUrl, repo: 'lib' }]);
   setPrChecks(extraPrWatchId('task-1', extraUrl), checks({ overall: 'failure', failing: 1 }));
   expect(boardLaneOf(withPr)).toBe('needs');
+});
+
+it('routes a signalled-done subtask with a PR by its CI, not straight to Needs you', () => {
+  const done = { ...task, signalDoneReceived: true };
+  setStore('tasks', reconcile({ 'task-1': done }));
+  expect(boardLaneOf(done)).toBe('needs');
+  const withPr = { ...done, prUrl: 'https://github.com/acme/app/pull/12' };
+  setStore('tasks', reconcile({ 'task-1': withPr }));
+  setPrChecks('task-1', checks({}));
+  expect(boardLaneOf(withPr)).toBe('pr');
+  expect(awaitsOpenPr(withPr, false)).toBe(true);
+  setPrChecks('task-1', checks({ overall: 'failure', pending: 0, failing: 1 }));
+  expect(boardLaneOf(withPr)).toBe('needs');
+  // The sidebar tray shares this rule, so it lists the failing result too.
+  expect(awaitsOpenPr(withPr, false)).toBe(false);
+  // Babysit owns a CI failure while it can act.
+  expect(awaitsOpenPr(withPr, true)).toBe(true);
+  setPrChecks('task-1', checks({ overall: 'success', pending: 0, passing: 1 }));
+  expect(boardLaneOf(withPr)).toBe('ready');
+});
+
+it('returns a signalled-done subtask to Needs you once its PR merged', () => {
+  const merged = {
+    ...task,
+    signalDoneReceived: true,
+    prUrl: 'https://github.com/acme/app/pull/12',
+  };
+  setStore('tasks', reconcile({ 'task-1': merged }));
+  setPrChecks('task-1', checks({ overall: 'success', pending: 0, merged: true }));
+  expect(boardLaneOf(merged)).toBe('needs');
+});
+
+it('keeps a subtask whose landing needs review in Needs you despite running CI', () => {
+  const escalated = { ...task, needsReview: true, prUrl: 'https://github.com/acme/app/pull/12' };
+  setStore('tasks', reconcile({ 'task-1': escalated }));
+  setPrChecks('task-1', checks({}));
+  expect(boardLaneOf(escalated)).toBe('needs');
+  const landed: Task = { ...escalated, needsReview: false, landingState: 'landed_pending_review' };
+  setStore('tasks', reconcile({ 'task-1': landed }));
+  expect(boardLaneOf(landed)).toBe('needs');
 });

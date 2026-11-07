@@ -127,6 +127,11 @@ export function isPrBabysitStuck(taskId: string): boolean {
   return !task.closingStatus && !!agentId && store.agents[agentId]?.status === 'exited';
 }
 
+/** Babysit is on and can still act, so the task's failing PRs wait on it. */
+export function isPrBabysat(taskId: string): boolean {
+  return !!getPrBabysit(taskId) && !isPrBabysitStuck(taskId);
+}
+
 /** Why the task's first agent cannot take an automatic prompt now; null when it can. */
 export function babysitAgentBlocker(taskId: string): string | null {
   const task = store.tasks[taskId];

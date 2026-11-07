@@ -202,6 +202,30 @@ export function isPrReadyToMerge(c: PrChecksState | undefined): boolean {
   );
 }
 
+/** The board lane a task's pull requests put it in. */
+export type PullRequestsLane = 'needs' | 'pr' | 'ready';
+
+/** A task's pull requests wait on you when GitHub says one of the open ones
+ *  cannot merge as it is, or when all of them can; otherwise on CI or reviewers.
+ *  Babysit sends CI failures and conflicts back to the agent, so `babysat`
+ *  ones wait on it. Merged PRs are done, and a PR not reported yet keeps the task waiting. */
+export function pullRequestsLane(
+  all: readonly (PrChecksState | undefined)[],
+  babysat: boolean,
+): PullRequestsLane {
+  const open = all.filter((c): c is PrChecksState => c !== undefined && !c.merged);
+  if (open.length === 0) return 'pr';
+  const blocked = (c: PrChecksState) =>
+    // Babysit sends a conflict once running checks finish; green CI beside a
+    // conflict is a stale run it does not act on.
+    (c.mergeable === 'CONFLICTING' && !(babysat && c.overall !== 'success')) ||
+    c.reviewDecision === 'CHANGES_REQUESTED';
+  if (open.some(blocked)) return 'needs';
+  if (!babysat && open.some((c) => c.overall === 'failure')) return 'needs';
+  if (!all.includes(undefined) && open.every(isPrReadyToMerge)) return 'ready';
+  return 'pr';
+}
+
 export type PrBoardStatusKind = 'merged' | 'ready' | 'blocked' | 'running' | 'failed';
 
 /** What a board card says about its task's PR, most decisive state first. */

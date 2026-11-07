@@ -33,6 +33,12 @@ vi.mock('./core', async () => {
   return core.harness.moduleMock();
 });
 
+const prs = vi.hoisted(() => ({ awaiting: new Set<string>() }));
+vi.mock('./task-prs', () => ({
+  awaitsOpenPr: (task: Task) => prs.awaiting.has(task.id),
+}));
+vi.mock('./pr-babysit', () => ({ isPrBabysat: () => false }));
+
 vi.mock('./taskStatus', () => ({
   getTaskOpenQuestions: (taskId: string) => status.questions.get(taskId) ?? [],
   isTaskWorking: (taskId: string) => status.working.has(taskId),
@@ -247,6 +253,25 @@ describe('independent attention reasons', () => {
     expect(new Set(entries.map((entry) => entry.key)).size).toBe(3);
     status.questions.delete('task-1');
     expect(computeAttentionEntries().map((entry) => entry.kind)).toEqual(['review']);
+  });
+
+  it('holds back a signalled-done review while its PR is open', () => {
+    mockStore.taskOrder = ['task-1'];
+    mockStore.tasks['task-1'] = {
+      id: 'task-1',
+      agentIds: [],
+      integrationPolicy: 'review',
+      signalDoneReceived: true,
+    };
+    status.questions.clear();
+    prs.awaiting.add('task-1');
+    try {
+      expect(computeAttentionEntries()).toEqual([]);
+      prs.awaiting.delete('task-1');
+      expect(computeAttentionEntries().map((entry) => entry.kind)).toEqual(['review']);
+    } finally {
+      prs.awaiting.clear();
+    }
   });
 
   it('removes a superseded review and changes its identity on a fresh completion', () => {

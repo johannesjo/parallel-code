@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { PrChecksState } from '../store/pr-checks-state';
 import type { Task } from '../store/types';
-import { groupSubtasks, headingParentAt, pullRequestsLane } from './task-board-lanes';
+import { pullRequestsLane } from '../store/pr-checks-state';
+import { groupSubtasks, headingParentAt } from './task-board-lanes';
 
 const task = (id: string, coordinatedBy?: string) => ({ id, coordinatedBy }) as Task;
 const ids = (tasks: Task[]) => tasks.map((t) => t.id);

@@ -1,9 +1,9 @@
 import { isHiddenAgentTaskId } from '../documents/task-id';
 import { store } from '../store/core';
 import { isTaskBackgrounded } from '../store/background-tasks';
-import { getPrBabysit, isPrBabysitStuck } from '../store/pr-babysit';
-import { getTaskExtraPrs, isPrReadyToMerge, type PrChecksState } from '../store/pr-checks-state';
-import { taskPrsChecks } from '../store/task-prs';
+import { isPrBabysat } from '../store/pr-babysit';
+import { getTaskExtraPrs, pullRequestsLane } from '../store/pr-checks-state';
+import { awaitsOpenPr, taskPrsChecks } from '../store/task-prs';
 import { getProject } from '../store/projects';
 import { sortByProjectGroup } from '../store/sidebar-order';
 import { matchesTaskProjectFilter } from '../store/task-project-filter';
@@ -59,40 +59,21 @@ export function boardLaneOf(task: Task): BoardLaneId {
   // A review or check started from Finish is still work in progress: the
   // task needs you again once it has a result.
   const checking = boardCheckLabel(task) !== '';
-  if (state === 'review' && !checking) return 'needs';
+  // A subtask that signalled done with a PR open waits on that PR, so the PR
+  // checks below decide.
+  const babysat = isPrBabysat(task.id);
+  if (state === 'review' && !checking && !awaitsOpenPr(task, babysat)) return 'needs';
   // Minimized tasks never wake, so they join the snoozed ones only while
   // nothing needs you; otherwise a question would wait unseen in the rail.
   if (task.collapsed) return 'snoozed';
   if (state === 'active' || checking) return 'working';
   // Additional PRs count too, e.g. one in a nested repository with none in the task's own.
   if (task.prUrl || getTaskExtraPrs(task.id).length > 0) {
-    const babysat = !!getPrBabysit(task.id) && !isPrBabysitStuck(task.id);
     return pullRequestsLane(taskPrsChecks(task), babysat);
   }
   // Ready vs idle hinges on whether the agent committed, not on what you do
   // next, so they share a lane and the card's label tells them apart.
   return 'stopped';
-}
-
-/** A task's pull requests wait on you when GitHub says one of the open ones
- *  cannot merge as it is, or when all of them can; otherwise on CI or reviewers.
- *  Babysit sends CI failures and conflicts back to the agent, so `babysat`
- *  ones wait on it. Merged PRs are done, and a PR not reported yet keeps the task waiting. */
-export function pullRequestsLane(
-  all: readonly (PrChecksState | undefined)[],
-  babysat: boolean,
-): BoardLaneId {
-  const open = all.filter((c): c is PrChecksState => c !== undefined && !c.merged);
-  if (open.length === 0) return 'pr';
-  const blocked = (c: PrChecksState) =>
-    // Babysit sends a conflict once running checks finish; green CI beside a
-    // conflict is a stale run it does not act on.
-    (c.mergeable === 'CONFLICTING' && !(babysat && c.overall !== 'success')) ||
-    c.reviewDecision === 'CHANGES_REQUESTED';
-  if (open.some(blocked)) return 'needs';
-  if (!babysat && open.some((c) => c.overall === 'failure')) return 'needs';
-  if (!all.includes(undefined) && open.every(isPrReadyToMerge)) return 'ready';
-  return 'pr';
 }
 
 function matchesQuery(task: Task, query: string): boolean {

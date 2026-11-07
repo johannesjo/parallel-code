@@ -14,6 +14,8 @@ import {
 } from './focused-panel';
 import { setActiveTask } from './navigation';
 import { uncollapseTask } from './tasks';
+import { awaitsOpenPr } from './task-prs';
+import { isPrBabysat } from './pr-babysit';
 import { getTaskOpenQuestions, isTaskWorking } from './taskStatus';
 
 export interface AttentionEntry {
@@ -75,7 +77,10 @@ function taskAttentionEntries(taskId: string): AttentionEntry[] {
   if (
     landedReview ||
     (!isLandedTaskState(task.landingState) &&
-      (task.needsReview || (task.integrationPolicy === 'review' && task.signalDoneReceived)))
+      (task.needsReview ||
+        (task.integrationPolicy === 'review' &&
+          task.signalDoneReceived &&
+          !awaitsOpenPr(task, isPrBabysat(taskId)))))
   ) {
     const at = landedReview ? task.landedMetadata?.landedAt : task.signalDoneAt;
     const since = at ? Date.parse(at) : NaN;
