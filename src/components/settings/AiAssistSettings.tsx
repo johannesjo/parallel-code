@@ -97,7 +97,7 @@ export function AiAssistSettings() {
           label="Write task briefs"
           checked={store.taskBriefs}
           onChange={setTaskBriefs}
-          description="After each agent turn, a model sums up the goal, the current step and anything the agent needs from you. Sends the turn's prompts, the agent's last message and the diff to that model's provider"
+          description="After each agent turn, and as a task with a long prompt starts, a model sums up the goal, the current step and anything the agent needs from you. Sends the turn's prompts, the agent's last message and the diff to that model's provider"
         />
         <Show when={store.modelTaskNames}>
           <ModelSelect

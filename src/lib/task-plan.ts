@@ -15,19 +15,37 @@ export function restoreTaskAgentPlan(value: unknown): TaskAgentPlan | undefined 
 }
 
 const GOAL_MAX_CHARS = 200;
+/** A first line longer than this reads as a paragraph, not a goal. */
+const EARLY_BRIEF_MIN_CHARS = 80;
+
+type GoalSource = Pick<Task, 'brief' | 'savedInitialPrompt' | 'initialPrompt' | 'promptHistory'>;
+
+/** The first non-empty line of what the user asked for, whitespace collapsed. */
+function promptLine(task: GoalSource): string {
+  const prompt = task.savedInitialPrompt ?? task.initialPrompt ?? task.promptHistory?.[0]?.text;
+  return (
+    prompt
+      ?.split('\n')
+      .map((text) => text.replace(/\s+/g, ' ').trim())
+      .find(Boolean) ?? ''
+  );
+}
 
 /** The brief's goal, else the first line of what the user asked for, so the
  *  context has a goal even with task briefs turned off. */
-export function taskGoal(
-  task: Pick<Task, 'brief' | 'savedInitialPrompt' | 'initialPrompt' | 'promptHistory'>,
-): string {
+export function taskGoal(task: GoalSource): string {
   const goal = task.brief?.brief.goal;
   if (goal) return goal;
-  const prompt = task.savedInitialPrompt ?? task.initialPrompt ?? task.promptHistory?.[0]?.text;
-  const line = prompt
-    ?.split('\n')
-    .map((text) => text.replace(/\s+/g, ' ').trim())
-    .find(Boolean);
+  const line = promptLine(task);
   if (!line) return '';
   return line.length > GOAL_MAX_CHARS ? `${line.slice(0, GOAL_MAX_CHARS - 1)}…` : line;
+}
+
+/**
+ * Whether to brief the task as soon as it starts instead of after its first
+ * turn: until then the goal falls back to the raw prompt, which for a long
+ * prompt is a paragraph cut mid-sentence.
+ */
+export function needsEarlyBrief(task: GoalSource): boolean {
+  return !task.brief && promptLine(task).length > EARLY_BRIEF_MIN_CHARS;
 }

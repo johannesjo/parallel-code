@@ -6,6 +6,7 @@ import { startModelRequest } from '../lib/model-request';
 import { getTaskDiffBaseBranch, loadTaskDiff } from '../lib/load-task-diff';
 import { errMessage, info as logInfo, warn as logWarn } from '../lib/log';
 import { buildTaskBriefPrompt, diffFingerprint, parseTaskBriefResponse } from '../lib/task-brief';
+import { needsEarlyBrief } from '../lib/task-plan';
 import { isAgentChat } from './agent-chat';
 import { getAgentHookStatus } from './agentHookStatus';
 import { store, setStore } from './core';
@@ -20,8 +21,14 @@ const TURN_SETTLE_MS = 4_000;
 const MIN_BRIEF_INTERVAL_MS = 45_000;
 
 const inFlight = new Map<string, { cancel: () => void }>();
-/** Tasks whose turn ended again while their brief was being written. */
-const rerun = new Set<string>();
+interface BriefOptions {
+  force?: boolean;
+  /** Ask for a task title; by default only the task's first brief does. */
+  title?: boolean;
+}
+
+/** Tasks whose turn ended again while their brief was being written, with that run's options. */
+const rerun = new Map<string, BriefOptions>();
 
 export function isLiveTask(task: Task | undefined): task is Task {
   return !!task && !task.closingStatus && !!task.worktreePath;
@@ -99,14 +106,15 @@ export function promptsSince(task: Task, since: number): string[] {
  * is sent when no prompt went out and the code did not change since the last
  * brief: agents also look busy while starting up or echoing typed input.
  */
-export async function refreshTaskBrief(
-  taskId: string,
-  options: { force?: boolean } = {},
-): Promise<void> {
+export async function refreshTaskBrief(taskId: string, options: BriefOptions = {}): Promise<void> {
   const task = store.tasks[taskId];
   if (!store.taskBriefs || !isLiveTask(task)) return;
   if (inFlight.has(taskId)) {
-    rerun.add(taskId);
+    const queued = rerun.get(taskId);
+    rerun.set(taskId, {
+      force: !!queued?.force || !!options.force,
+      title: queued?.title || options.title,
+    });
     return;
   }
   let cancelled = false;
@@ -123,7 +131,7 @@ export async function refreshTaskBrief(
   // Read before the diff is awaited, so a prompt sent meanwhile is left for the next brief.
   const prompts = promptsSince(task, previous?.generatedAt ?? 0);
   const message = latestAgentMessage(task);
-  const withTitle = !previous && canRetitleFromBrief(task);
+  const withTitle = (options.title ?? !previous) && canRetitleFromBrief(task);
   // Screen snapshots change constantly, so only a real reply counts as news.
   const messageFingerprint = message.isReply ? diffFingerprint(message.text) : undefined;
   try {
@@ -182,8 +190,9 @@ export async function refreshTaskBrief(
     // Every exit (cancel, skip, a task that closed meanwhile) must clear the spinner.
     if (store.tasks[taskId]?.briefStatus?.state === 'generating')
       setStore('tasks', taskId, 'briefStatus', undefined);
-    if (cancelled) rerun.delete(taskId);
-    else if (rerun.delete(taskId)) void refreshTaskBrief(taskId);
+    const queued = rerun.get(taskId);
+    rerun.delete(taskId);
+    if (!cancelled && queued) void refreshTaskBrief(taskId, queued);
   }
 }
 
@@ -232,13 +241,17 @@ function cancelTaskBrief(taskId: string): void {
 
 /**
  * Writes a brief whenever a task's agents go from working to finished and stay
- * there for a moment. Returns the stop function.
+ * there for a moment, and once as a task with a long prompt starts working, so
+ * its goal is not the raw prompt for the whole first turn. Returns the stop function.
  */
 export function startTaskBriefWatcher(): () => void {
   return createRoot((dispose) => {
     const working = new Map<string, boolean>();
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
     const lastRun = new Map<string, number>();
+    const briefedEarly = new Set<string>();
+    /** Early-briefed tasks whose first turn has not been briefed yet. */
+    const awaitingFirstTurn = new Set<string>();
 
     function clearTimer(taskId: string): void {
       const timer = timers.get(taskId);
@@ -256,9 +269,23 @@ export function startTaskBriefWatcher(): () => void {
           timers.delete(taskId);
           if (isTaskWorking(taskId)) return;
           lastRun.set(taskId, Date.now());
-          void refreshTaskBrief(taskId);
+          // The early brief saw no reply and maybe no code, so a turn that only
+          // answered would otherwise look unchanged and go unbriefed; and it
+          // left the title to this brief, which knows the agent's work.
+          const firstTurn = awaitingFirstTurn.delete(taskId);
+          void refreshTaskBrief(taskId, firstTurn ? { force: true, title: true } : {});
         }, delay),
       );
+    }
+
+    function onTurnStart(taskId: string): void {
+      dropAnsweredQuestion(taskId);
+      const task = store.tasks[taskId];
+      if (!task || briefedEarly.has(taskId) || !needsEarlyBrief(task)) return;
+      briefedEarly.add(taskId);
+      awaitingFirstTurn.add(taskId);
+      // Not counted in lastRun: the brief after the turn should not wait for this one.
+      void refreshTaskBrief(taskId, { title: false });
     }
 
     createEffect(() => {
@@ -275,12 +302,14 @@ export function startTaskBriefWatcher(): () => void {
         working.set(taskId, now);
         if (now) {
           clearTimer(taskId);
-          if (!was) untrack(() => dropAnsweredQuestion(taskId));
+          if (!was) untrack(() => onTurnStart(taskId));
         } else if (was) schedule(taskId);
       }
       for (const taskId of [...working.keys()]) {
         if (ids.has(taskId)) continue;
         working.delete(taskId);
+        briefedEarly.delete(taskId);
+        awaitingFirstTurn.delete(taskId);
         clearTimer(taskId);
         cancelTaskBrief(taskId);
       }
