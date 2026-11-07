@@ -318,6 +318,8 @@ export interface Task {
   savedAgentSessionIds?: (string | null)[];
   /** A collapsed coordinated child's pane IDs, reused on restore so its coordinator keeps tracking them. */
   savedAgentIds?: string[];
+  /** Sidebar shows this coordinator's archived (collapsed) children; UI-only, not persisted. */
+  archivedChildrenShown?: boolean;
   savedSelectedAgentIndex?: number;
   savedPromptedAgentIndexes?: number[];
   planContent?: string;

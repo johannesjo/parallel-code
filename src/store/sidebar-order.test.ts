@@ -6,6 +6,7 @@ type MockTask = {
   coordinatorMode?: boolean;
   coordinatedBy?: string;
   collapsed?: boolean;
+  archivedChildrenShown?: boolean;
 };
 type MockStore = {
   taskProjectFilter?: string | null;
@@ -76,7 +77,7 @@ describe('sidebar coordinator ordering', () => {
     });
   });
 
-  it('includes visible nested subtasks in keyboard navigation order', () => {
+  it('includes visible nested subtasks in keyboard navigation order, archived ones once shown', () => {
     mockStore.projects = [{ id: 'proj-1' }];
     mockStore.taskOrder = ['coord-1', 'child-1', 'task-1'];
     mockStore.collapsedTaskOrder = ['child-2'];
@@ -87,8 +88,11 @@ describe('sidebar coordinator ordering', () => {
       'task-1': { projectId: 'proj-1' },
     };
 
-    expect(computeSidebarTaskOrder()).toEqual(['coord-1', 'child-1', 'child-2', 'task-1']);
+    // Archived (collapsed) children are folded away until the user opens the group.
+    expect(computeSidebarTaskOrder()).toEqual(['coord-1', 'child-1', 'task-1']);
     expect(computeSidebarDraggableTaskOrder()).toEqual(['coord-1', 'task-1']);
+    mockStore.tasks['coord-1'].archivedChildrenShown = true;
+    expect(computeSidebarTaskOrder()).toEqual(['coord-1', 'child-1', 'child-2', 'task-1']);
   });
 
   it('omits tasks in collapsed project groups from keyboard navigation', () => {

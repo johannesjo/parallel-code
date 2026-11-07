@@ -178,6 +178,7 @@ export {
   setShowSidebarTips,
   setShowSidebarProgress,
   setSidebarNeedsInputFirst,
+  setArchivedChildrenShown,
   setProjectTasksCollapsed,
   setProjectsCollapsed,
   setFontSmoothing,

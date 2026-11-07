@@ -1,12 +1,6 @@
 import './Delegation.css';
 import { For, Show, createMemo, createSignal, createUniqueId, onMount } from 'solid-js';
-import {
-  store,
-  activateTaskFromPointer,
-  getTaskDotStatus,
-  uncollapseTask,
-  showNotification,
-} from '../store/store';
+import { store, activateTaskFromPointer, getTaskDotStatus, showNotification } from '../store/store';
 import { getCoordinatorChildren } from '../store/sidebar-order';
 import { getChildAttentionSummary } from '../store/sidebar-attention';
 import { invoke } from '../lib/ipc';
@@ -144,8 +138,10 @@ export function SubTaskStrip(props: SubTaskStripProps) {
   const summary = createMemo(() => getChildAttentionSummary(props.coordinatorTaskId));
 
   const subTasks = createMemo(() => {
-    const { active, collapsed } = getCoordinatorChildren(props.coordinatorTaskId);
-    return [...active, ...collapsed].map((id) => store.tasks[id]).filter(Boolean);
+    // Archived (collapsed) children live in the sidebar's archived group, not here.
+    return getCoordinatorChildren(props.coordinatorTaskId)
+      .active.map((id) => store.tasks[id])
+      .filter(Boolean);
   });
 
   // `urgent` tones get a tinted chip; plain merged work stays neutral.
@@ -248,12 +244,9 @@ export function SubTaskStrip(props: SubTaskStripProps) {
                         class="subtask-chip"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (task.collapsed) {
-                            uncollapseTask(task.id);
-                          }
                           activateTaskFromPointer(task.id);
                         }}
-                        title={`${task.collapsed ? 'Resume and open: ' : ''}${task.name} — ${tone()?.label ?? getDotTooltip(getTaskDotStatus(task.id), getTaskAttentionState(task.id), task.id)}${tone()?.detail ? `: ${tone()?.detail}` : ''}`}
+                        title={`${task.name} — ${tone()?.label ?? getDotTooltip(getTaskDotStatus(task.id), getTaskAttentionState(task.id), task.id)}${tone()?.detail ? `: ${tone()?.detail}` : ''}`}
                         data-urgent={tone()?.urgent ? '' : undefined}
                         style={{ '--tone': tone()?.color, 'font-size': sf(11) }}
                       >
@@ -274,10 +267,7 @@ export function SubTaskStrip(props: SubTaskStripProps) {
                             </span>
                           )}
                         </Show>
-                        <span class="subtask-name">
-                          {task.collapsed ? 'Resume: ' : ''}
-                          {task.name}
-                        </span>
+                        <span class="subtask-name">{task.name}</span>
                         <span
                           class="subtask-status"
                           style={{ color: tone()?.color ?? theme.fgSubtle }}

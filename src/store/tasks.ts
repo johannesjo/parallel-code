@@ -1092,6 +1092,17 @@ export async function collapseTask(taskId: string): Promise<void> {
       // The backend coordinator registry still holds these IDs; fresh ones on restore
       // would break send_prompt and idle detection for the child.
       if (task.coordinatedBy) s.tasks[taskId].savedAgentIds = savedAgentIds;
+      // An archived child folds into its coordinator's closed archive group;
+      // keyboard focus must not stay on the hidden row.
+      const parent = task.coordinatedBy ? s.tasks[task.coordinatedBy] : undefined;
+      // The first child into an empty group starts it closed, even if the user
+      // left it open for children that have since been restored.
+      const groupWasEmpty = !s.collapsedTaskOrder.some(
+        (id) => s.tasks[id]?.collapsed && s.tasks[id]?.coordinatedBy === task.coordinatedBy,
+      );
+      if (parent && groupWasEmpty) parent.archivedChildrenShown = false;
+      if (parent && s.sidebarFocusedTaskId === taskId && !parent.archivedChildrenShown)
+        s.sidebarFocusedTaskId = parent.id;
       s.tasks[taskId].agentSessionIds = undefined;
       s.tasks[taskId].savedSelectedAgentIndex =
         selectedAgentIndex >= 0 ? selectedAgentIndex : undefined;

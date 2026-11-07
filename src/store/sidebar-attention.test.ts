@@ -391,6 +391,16 @@ describe('independent attention reasons', () => {
     mockStore.tasks['task-1'].coordinatedBy = undefined;
     expect(getChildAttentionSummary('parent')).toBe('1 launch failed');
   });
+
+  it('leaves archived children out of the summary; their rows are folded away', () => {
+    seedReview();
+    mockStore.tasks['task-1'].coordinatedBy = 'parent';
+    mockStore.tasks['task-1'].collapsed = true;
+    mockStore.taskOrder = [];
+    mockStore.collapsedTaskOrder = ['task-1'];
+    status.working.add('task-1');
+    expect(getChildAttentionSummary('parent')).toBe('');
+  });
 });
 
 describe('jumpToWaitingTask', () => {

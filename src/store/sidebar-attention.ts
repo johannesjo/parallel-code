@@ -156,8 +156,10 @@ export function getChildAttentionSummary(parentTaskId: string): string {
   let working = 0;
   for (const taskId of new Set([...store.taskOrder, ...store.collapsedTaskOrder])) {
     const task = store.tasks[taskId];
+    // Archived children sit in the sidebar's folded group, not the strip this summarises.
     if (
       task?.coordinatedBy !== parentTaskId ||
+      task.collapsed ||
       task.closingStatus === 'closing' ||
       task.closingStatus === 'removing'
     )

@@ -777,6 +777,75 @@ describe('collapseTask and reopen', () => {
     expect(mockAgents['agent-1']).toMatchObject({ resumed: true, attachExisting: false });
   });
 
+  it('moves sidebar focus to the coordinator when it archives the focused child', async () => {
+    const harness = expectDefined(core.harness, 'mock store harness');
+    mockTasks['coordinator-1'] = { id: 'coordinator-1', agentIds: [], shellAgentIds: [] };
+    mockTasks['sub-task-1'] = {
+      id: 'sub-task-1',
+      agentIds: [],
+      shellAgentIds: [],
+      coordinatedBy: 'coordinator-1',
+    };
+    mockTaskOrder.push('coordinator-1', 'sub-task-1');
+    (harness.store as { sidebarFocusedTaskId?: string | null }).sidebarFocusedTaskId = 'sub-task-1';
+
+    await collapseTask('sub-task-1');
+
+    // The folded archive group hides the child; Enter on it would restore it.
+    expect((harness.store as { sidebarFocusedTaskId?: string | null }).sidebarFocusedTaskId).toBe(
+      'coordinator-1',
+    );
+  });
+
+  it('closes the archive group again when a child is archived into an empty one', async () => {
+    mockTasks['coordinator-1'] = {
+      id: 'coordinator-1',
+      agentIds: [],
+      shellAgentIds: [],
+      archivedChildrenShown: true,
+    };
+    mockTasks['sub-task-1'] = {
+      id: 'sub-task-1',
+      agentIds: [],
+      shellAgentIds: [],
+      coordinatedBy: 'coordinator-1',
+    };
+    mockTaskOrder.push('coordinator-1', 'sub-task-1');
+
+    await collapseTask('sub-task-1');
+
+    // The user opened the group for earlier children, all since restored.
+    expect(mockTasks['coordinator-1'].archivedChildrenShown).toBe(false);
+  });
+
+  it('keeps an open archive group open while it still holds children', async () => {
+    mockTasks['coordinator-1'] = {
+      id: 'coordinator-1',
+      agentIds: [],
+      shellAgentIds: [],
+      archivedChildrenShown: true,
+    };
+    mockTasks['sub-task-0'] = {
+      id: 'sub-task-0',
+      agentIds: [],
+      shellAgentIds: [],
+      coordinatedBy: 'coordinator-1',
+      collapsed: true,
+    };
+    mockTasks['sub-task-1'] = {
+      id: 'sub-task-1',
+      agentIds: [],
+      shellAgentIds: [],
+      coordinatedBy: 'coordinator-1',
+    };
+    mockTaskOrder.push('coordinator-1', 'sub-task-1');
+    mockCollapsedTaskOrder.push('sub-task-0');
+
+    await collapseTask('sub-task-1');
+
+    expect(mockTasks['coordinator-1'].archivedChildrenShown).toBe(true);
+  });
+
   it('proceeds normally for tasks without coordinatedBy', async () => {
     mockTasks['plain-task'] = {
       agentIds: ['agent-2'],

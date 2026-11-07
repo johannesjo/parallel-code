@@ -10,7 +10,16 @@ type MockStore = {
   showNewTaskPanel: boolean;
   kanbanProjectId: string | null;
   githubIssuesProjectId: string | null;
-  tasks: Record<string, { id: string; projectId: string }>;
+  tasks: Record<
+    string,
+    {
+      id: string;
+      projectId: string;
+      coordinatedBy?: string;
+      collapsed?: boolean;
+      archivedChildrenShown?: boolean;
+    }
+  >;
   focusedPanel: Record<string, string>;
   panelUserSize: Record<string, number>;
   projects: Array<{ id: string; tasksCollapsed?: boolean }>;
@@ -75,6 +84,7 @@ import {
   getPanelUserSize,
   setPanelUserSize,
   deletePanelUserSize,
+  setArchivedChildrenShown,
   setProjectTasksCollapsed,
   setProjectsCollapsed,
   setTerminalScreenReaderMode,
@@ -340,6 +350,29 @@ describe('setProjectTasksCollapsed', () => {
     setProjectTasksCollapsed('project-1', false);
 
     expect(mockStore.projects[0].tasksCollapsed).toBe(false);
+    expect(mockStore.sidebarFocusedTaskId).toBe('task-1');
+  });
+});
+
+describe('setArchivedChildrenShown', () => {
+  it("folds a coordinator's archived children and moves focus off a hidden one", () => {
+    mockStore.tasks['task-2'].coordinatedBy = 'task-1';
+    mockStore.tasks['task-2'].collapsed = true;
+    mockStore.tasks['task-1'].archivedChildrenShown = true;
+    mockStore.sidebarFocusedTaskId = 'task-2';
+
+    setArchivedChildrenShown('task-1', false);
+
+    expect(mockStore.tasks['task-1'].archivedChildrenShown).toBe(false);
+    expect(mockStore.sidebarFocusedTaskId).toBe('task-1');
+  });
+
+  it('shows archived children and keeps focus', () => {
+    mockStore.sidebarFocusedTaskId = 'task-1';
+
+    setArchivedChildrenShown('task-1', true);
+
+    expect(mockStore.tasks['task-1'].archivedChildrenShown).toBe(true);
     expect(mockStore.sidebarFocusedTaskId).toBe('task-1');
   });
 });

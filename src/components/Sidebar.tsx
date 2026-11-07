@@ -54,6 +54,7 @@ import { openDocumentWorkspace } from '../documents/store';
 import { codeProjects, isDocumentProject } from '../store/projects';
 import { ImportWorktreesDialog } from './ImportWorktreesDialog';
 import { SidebarFooter } from './SidebarFooter';
+import { ArchivedChildrenGroup } from './ArchivedChildrenGroup';
 import { IconButton } from './IconButton';
 import { StatusDot, getDotTooltip } from './StatusDot';
 import { ProjectSwatch } from './ProjectSwatch';
@@ -1059,7 +1060,8 @@ function TaskEntry(props: TaskEntryProps) {
 function CoordinatorFolder(props: TaskEntryProps) {
   const task = () => store.tasks[props.taskId];
   const children = createMemo(() => getCoordinatorChildren(props.taskId));
-  const childCount = createMemo(() => children().active.length + children().collapsed.length);
+  // Archived children are counted by their own folded group row.
+  const childCount = () => children().active.length;
   const idx = () => props.globalIndex(props.taskId);
   const offscreenAttention = createOffscreenAttentionState(() => props.taskId);
 
@@ -1130,10 +1132,12 @@ function CoordinatorFolder(props: TaskEntryProps) {
             )}
           </For>
 
-          {/* Indented collapsed children */}
-          <For each={children().collapsed}>
-            {(childId) => <CollapsedTaskEntry taskId={childId} indented />}
-          </For>
+          {/* Collapsed children are the ones the coordinator archived. */}
+          <ArchivedChildrenGroup coordinatorId={props.taskId} count={children().collapsed.length}>
+            <For each={children().collapsed}>
+              {(childId) => <CollapsedTaskEntry taskId={childId} indented />}
+            </For>
+          </ArchivedChildrenGroup>
         </>
       )}
     </Show>
@@ -1150,7 +1154,8 @@ function CollapsedTaskEntry(props: { taskId: string; indented?: boolean; coordin
   const children = createMemo(() =>
     isCoordinator() ? getCoordinatorChildren(props.taskId) : { active: [], collapsed: [] },
   );
-  const childCount = createMemo(() => children().active.length + children().collapsed.length);
+  // Archived children are counted by their own folded group row.
+  const childCount = () => children().active.length;
 
   return (
     <Show when={task()}>
@@ -1181,7 +1186,7 @@ function CollapsedTaskEntry(props: { taskId: string; indented?: boolean; coordin
                 }
               }
             }}
-            title={`${t().name} — Click to restore`}
+            title={`${t().name}${t().closeSuggestion ? ` — Archived: ${t().closeSuggestion?.reason}` : ''} — Click to restore`}
             paddingLeft={props.indented ? '22px' : '10px'}
             fontSize={sf(12)}
             cursor="pointer"
@@ -1231,11 +1236,13 @@ function CollapsedTaskEntry(props: { taskId: string; indented?: boolean; coordin
                 <CollapsedTaskEntry taskId={childId} indented coordinatorId={props.taskId} />
               )}
             </For>
-            <For each={children().collapsed}>
-              {(childId) => (
-                <CollapsedTaskEntry taskId={childId} indented coordinatorId={props.taskId} />
-              )}
-            </For>
+            <ArchivedChildrenGroup coordinatorId={props.taskId} count={children().collapsed.length}>
+              <For each={children().collapsed}>
+                {(childId) => (
+                  <CollapsedTaskEntry taskId={childId} indented coordinatorId={props.taskId} />
+                )}
+              </For>
+            </ArchivedChildrenGroup>
           </Show>
         </>
       )}

@@ -474,6 +474,25 @@ it('lists every subtask under a collapsible header', () => {
   expect(list?.hidden).toBe(false);
 });
 
+it('leaves archived children out of the subtask strip', () => {
+  for (const id of ['live', 'archived']) {
+    setStore('tasks', id, {
+      ...task,
+      id,
+      name: `Child ${id}`,
+      coordinatedBy: 'parent',
+      collapsed: id === 'archived',
+      agentIds: [],
+    });
+  }
+  setStore('taskOrder', ['parent', 'live']);
+  setStore('collapsedTaskOrder', ['archived']);
+  dispose = render(() => <SubTaskStrip coordinatorTaskId="parent" />, host);
+  expect(button('Subtasks (1)')).toBeDefined();
+  expect(button('Child live')).toBeDefined();
+  expect(button('Child archived')).toBeUndefined();
+});
+
 it('opens a queued handoff and says why it is still waiting', async () => {
   const session = {
     agentId: 'agent',

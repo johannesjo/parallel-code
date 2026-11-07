@@ -237,6 +237,21 @@ export function setProjectTasksCollapsed(projectId: string, collapsed: boolean):
   );
 }
 
+/** Show or fold a coordinator's archived children in the sidebar. */
+export function setArchivedChildrenShown(coordinatorId: string, shown: boolean): void {
+  setStore(
+    produce((s) => {
+      const coordinator = s.tasks[coordinatorId];
+      if (!coordinator) return;
+      coordinator.archivedChildrenShown = shown;
+      // Keyboard focus must not stay on a row that just disappeared.
+      const focused = s.sidebarFocusedTaskId ? s.tasks[s.sidebarFocusedTaskId] : undefined;
+      if (!shown && focused?.coordinatedBy === coordinatorId && focused.collapsed)
+        s.sidebarFocusedTaskId = coordinatorId;
+    }),
+  );
+}
+
 export function setShowPromptInput(show: boolean): void {
   setStore('showPromptInput', show);
 }
