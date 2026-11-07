@@ -765,9 +765,13 @@ describe('startPrChecksWatcher — pushes made outside the app', () => {
   const success = [{ name: 'build', status: 'COMPLETED', conclusion: 'SUCCESS' }];
   const pending = [{ name: 'build', status: 'IN_PROGRESS', conclusion: '' }];
 
-  async function watchSettledPr(send: ReturnType<typeof vi.fn>) {
+  async function watchSettledPr(
+    send: ReturnType<typeof vi.fn>,
+    rollup: unknown[] = success,
+    mergeable = 'MERGEABLE',
+  ) {
     initPrChecks(fakeWindow(send));
-    const github = { head: 'old-sha', rollup: success };
+    const github = { head: 'old-sha', rollup, mergeable };
     const local: { origin: string; error: (Error & { code?: unknown }) | null } = {
       origin: 'old-sha',
       error: null,
@@ -782,6 +786,7 @@ describe('startPrChecksWatcher — pushes made outside the app', () => {
         JSON.stringify({
           state: 'OPEN',
           headRefOid: github.head,
+          mergeable: github.mergeable,
           statusCheckRollup: github.rollup,
         }),
         '',
@@ -824,6 +829,46 @@ describe('startPrChecksWatcher — pushes made outside the app', () => {
     await __runTickForTests();
 
     expect(ghCalls()).toHaveLength(1);
+  });
+
+  it('notices a failed run re-run on the same head on the next tick', async () => {
+    const send = vi.fn();
+    const failure = [{ name: 'build', status: 'COMPLETED', conclusion: 'FAILURE' }];
+    const { github, ghCalls } = await watchSettledPr(send, failure);
+    send.mockClear();
+    const before = ghCalls().length;
+
+    // "Re-run failed jobs" on GitHub: no push, same head, the job runs again.
+    github.rollup = pending;
+    await __runTickForTests();
+
+    expect(ghCalls().length).toBe(before + 1);
+    expect(send.mock.calls[send.mock.calls.length - 1]?.[1]).toMatchObject({
+      overall: 'pending',
+      headSha: 'old-sha',
+    });
+  });
+
+  // The conflict is the only failure, and only a push resolves it.
+  it('leaves a PR failing only on conflicts on the settled cadence', async () => {
+    const send = vi.fn();
+    const { ghCalls } = await watchSettledPr(send, success, 'CONFLICTING');
+    const before = ghCalls().length;
+
+    await __runTickForTests();
+
+    expect(ghCalls().length).toBe(before);
+  });
+
+  it('keeps polling a conflicted PR whose CI failed as well', async () => {
+    const send = vi.fn();
+    const failure = [{ name: 'build', status: 'COMPLETED', conclusion: 'FAILURE' }];
+    const { ghCalls } = await watchSettledPr(send, failure, 'CONFLICTING');
+    const before = ghCalls().length;
+
+    await __runTickForTests();
+
+    expect(ghCalls().length).toBe(before + 1);
   });
 
   it('does not mark a push the app already reported a second time', async () => {

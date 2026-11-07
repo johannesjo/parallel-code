@@ -269,7 +269,11 @@ async function runTick(babysatOnly = false): Promise<void> {
     const now = Date.now();
     const due: string[] = [];
     for (const entry of watched) {
-      if (entry.overall === 'pending') {
+      // A failed run is often re-run on GitHub on the same head; no push
+      // reveals that, so a failure keeps polling like a running one. A
+      // conflict alone is no run, so no re-run can resolve it.
+      const conflictOnly = entry.mergeable === 'CONFLICTING' && entry.failing === 1;
+      if (entry.overall === 'pending' || (entry.overall === 'failure' && !conflictOnly)) {
         due.push(entry.watchId);
       } else if (now - entry.lastRefreshedAt >= SETTLED_REFRESH_MS) {
         due.push(entry.watchId);
