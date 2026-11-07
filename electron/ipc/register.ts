@@ -1506,7 +1506,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertString(args.onOutput?.__CHANNEL_ID__, 'channelId');
     validatePath(args.cwd, 'cwd');
     const provider = askCodeProvider(args.provider);
-    // Only a model the provider offers may become a CLI argument.
+    // Validate provider-specific model values before they reach a CLI or API backend.
     if (args.model !== undefined && !isAskCodeModel(provider, args.model))
       throw new Error('Invalid code Q&A model');
     if (args.effort !== undefined && !isAskCodeEffort(provider, args.effort))

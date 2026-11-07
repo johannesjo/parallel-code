@@ -11,7 +11,7 @@ const PROVIDER_NAMES: Record<AskCodeProvider, string> = {
 /** Provider and model as one line, for callers that hold their own store. */
 export function askCodeLabel(provider: AskCodeProvider, model: string): string {
   const name = PROVIDER_NAMES[provider];
-  if (provider === 'minimax') return `${name} · ${ASK_CODE_MODELS.minimax}`;
+  if (provider === 'minimax') return `${name} · ${model || ASK_CODE_MODELS.minimax}`;
   const run = modelToRun(provider, model);
   // Codex names no model only while it lists none; its name alone is then the truth.
   return run ? `${name} · ${run}` : name;
