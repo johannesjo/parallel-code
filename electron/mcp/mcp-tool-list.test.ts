@@ -288,6 +288,7 @@ describe('session capability tool sets', () => {
     'get_task_output',
     'wait_for_signal_done',
     'suggest_close_task',
+    'archive_task',
   ];
   const names = (
     profile: 'ordinary' | 'child-review' | 'child-automatic',

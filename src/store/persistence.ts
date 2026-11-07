@@ -200,6 +200,13 @@ function restoredAgentIds(pt: PersistedTask, count: number, used: Set<string>): 
   });
 }
 
+/** A collapsed coordinated child keeps its pane IDs; see Task.savedAgentIds. */
+function restoredSavedAgentIds(pt: PersistedTask, count: number): string[] | undefined {
+  const ids = pt.agentIds;
+  if (!pt.coordinatedBy || !Array.isArray(ids) || ids.length !== count) return undefined;
+  return ids.every((id) => typeof id === 'string' && id.length > 0) ? [...ids] : undefined;
+}
+
 function restoredPromptedAgentIds(pt: PersistedTask, agentIds: string[]): string[] | undefined {
   if (!Array.isArray(pt.promptedAgentIds)) return undefined;
   const valid = pt.promptedAgentIds.filter(
@@ -365,7 +372,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     shellCount: task.shellAgentIds.length,
     agentDef: agentDefs[0] ?? null,
     agentDefs: agentDefs.length > 1 ? agentDefs : undefined,
-    agentIds: task.agentIds.length > 0 ? [...task.agentIds] : undefined,
+    agentIds: task.agentIds.length > 0 ? [...task.agentIds] : task.savedAgentIds,
     agentSessionIds: task.agentSessionIds,
     selectedAgentId: task.selectedAgentId,
     aiTerminalLayout: task.aiTerminalLayout,
@@ -1422,6 +1429,7 @@ export async function loadState(): Promise<void> {
                 return isSessionId(id) ? id : null;
               })
             : undefined,
+          savedAgentIds: restoredSavedAgentIds(pt, agentDefs.length),
           savedAgentDef: agentDefs[0],
           savedAgentDefs: agentDefs.length > 0 ? agentDefs : undefined,
           delegationParent: pt.delegationParent === true,

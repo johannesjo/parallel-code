@@ -16,6 +16,10 @@ import {
   mockKillAgent,
   mockGetActiveAgentIds,
   mockGetAgentMeta,
+  mockGetAgentInputBlocker,
+  mockFsReadFile,
+  mockExistsSync,
+  mockReadFileSync,
   getOutputCb,
   getSpawnHandler,
   getExitHandler,
@@ -53,6 +57,12 @@ function create(extra: Partial<Parameters<typeof coordinator.createTask>[0]> = {
     integrationPolicy: 'review',
     ...extra,
   });
+}
+/** A child with nothing at stake, so archiving it needs no force. */
+function settle(taskId: string) {
+  const task = coordinator.getTask(taskId);
+  if (task) task.status = 'idle';
+  gitResults();
 }
 
 beforeEach(() => {
@@ -319,6 +329,253 @@ describe('ordinary delegation lifecycle', () => {
     const waiting = coordinator.waitForSignalDone('parent', 1_000);
     await vi.advanceTimersByTimeAsync(1_000);
     await expect(waiting).resolves.toEqual({ remaining: 0 });
+  });
+
+  it('archives a child: asks the app to collapse it and stops waiting for it', async () => {
+    const child = await create();
+    const waiting = coordinator.waitForSignalDone('parent');
+    settle(child.id);
+    const result = await coordinator.archiveTask(child.id, 'Result already merged');
+    expect(result).toMatchObject({ archived: true, reason: 'Result already merged' });
+    await expect(waiting).resolves.toEqual({ remaining: 0 });
+    expect(coordinator.getTaskStatus(child.id)).toMatchObject({
+      archived: true,
+      closeSuggestion: { reason: 'Result already merged' },
+    });
+    expect(mockNotifyRenderer).toHaveBeenCalledWith('mcp_task_state_sync', {
+      taskId: child.id,
+      archived: true,
+    });
+    // The app stops the agent while collapsing; the worktree stays for restore.
+    expect(mockKillAgent).not.toHaveBeenCalled();
+    expect(mockDeleteBackendTask).not.toHaveBeenCalled();
+  });
+
+  it('does not report an archived child exiting as a result', async () => {
+    coordinator.registerCoordinator('parent', 'project', {
+      projectRoot: '/project',
+      branchName: 'parent',
+      worktreePath: '/parent',
+      spawnDefaults: { command: 'codex', args: [] },
+      automaticNotifications: false,
+      maxConcurrentTasks: 2,
+    });
+    const archived = await create();
+    mockNextTask({ id: 'task-2' });
+    await create({ name: 'Other' });
+    settle(archived.id);
+    await coordinator.archiveTask(archived.id, 'Superseded');
+    let settled = false;
+    void coordinator.waitForSignalDone('parent', 1_000).then(() => (settled = true));
+    getExitHandler()(coordinator.getTask(archived.id)?.agentId ?? '', { exitCode: 0 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    expect(coordinator.getTaskStatus(archived.id)?.status).toBe('exited');
+  });
+
+  it('withdraws a pending review notification for a child it archives', async () => {
+    const child = await create();
+    await coordinator.signalDone(child.id);
+    expect(mockNotifyRenderer).toHaveBeenCalledWith(
+      'mcp_coordinator_notification_staged',
+      expect.anything(),
+    );
+    mockNotifyRenderer.mockClear();
+    settle(child.id);
+    // Forced: the result awaits review, which is itself a blocker.
+    await coordinator.archiveTask(child.id, 'Merged', true);
+    expect(mockNotifyRenderer).toHaveBeenCalledWith(
+      'mcp_coordinator_notification_cleared',
+      expect.anything(),
+    );
+  });
+
+  it('drops queued prompts on archive so a restore does not replay them', async () => {
+    const child = await create();
+    expect(coordinator.getTask(child.id)?.initialPrompt).toBeDefined();
+    settle(child.id);
+    await coordinator.archiveTask(child.id, 'Superseded');
+    expect(coordinator.getTask(child.id)).toMatchObject({
+      initialPrompt: undefined,
+      pendingPrompts: undefined,
+    });
+  });
+
+  it('refuses to archive a child that is still being created', async () => {
+    const child = await create();
+    const task = coordinator.getTask(child.id);
+    if (task) task.status = 'creating';
+    await expect(coordinator.archiveTask(child.id, 'Superseded', true)).rejects.toThrow(
+      'being created',
+    );
+    expect(coordinator.getTaskStatus(child.id)?.archived).toBeUndefined();
+  });
+
+  it('rejects prompts to an archived child until the user restores it', async () => {
+    const child = await create();
+    coordinator.markPromptDelivered(child.id);
+    settle(child.id);
+    await coordinator.archiveTask(child.id, 'Superseded');
+    await expect(coordinator.sendPrompt(child.id, 'continue')).rejects.toThrow('archived');
+
+    // Restoring respawns the same agent ID, which un-archives the child.
+    getSpawnHandler()(coordinator.getTask(child.id)?.agentId ?? '', { reattached: false });
+    expect(coordinator.getTaskStatus(child.id)?.archived).toBeUndefined();
+    // The user wants it back, so the parent's waits count it again.
+    expect(coordinator.getTaskStatus(child.id)?.closeSuggestion).toBeUndefined();
+  });
+
+  it('reports what is at stake instead of archiving a busy, dirty child', async () => {
+    const child = await create();
+    gitResults(' M src/a.ts\n?? notes.md\n');
+    mockGetAgentInputBlocker.mockReturnValue('unsent-input');
+    mockNotifyRenderer.mockClear();
+    await expect(coordinator.archiveTask(child.id, 'Superseded')).resolves.toEqual({
+      archived: false,
+      blockers: ['agent-working', 'unsent-input', 'uncommitted-changes'],
+      changedFiles: ['src/a.ts', 'notes.md'],
+    });
+    expect(coordinator.getTaskStatus(child.id)).toMatchObject({ status: 'running' });
+    expect(coordinator.getTaskStatus(child.id)?.archived).toBeUndefined();
+    expect(coordinator.getTaskStatus(child.id)?.closeSuggestion).toBeUndefined();
+    expect(mockNotifyRenderer).not.toHaveBeenCalled();
+  });
+
+  it('reports recent typing and an unreadable worktree as blockers', async () => {
+    const child = await create();
+    settle(child.id);
+    mockGetAgentInputBlocker.mockReturnValue('recent-input');
+    mockExecFile.mockImplementation(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (err: Error | null) => void) =>
+        cb(new Error('not a git repository')),
+    );
+    await expect(coordinator.archiveTask(child.id, 'Superseded')).resolves.toEqual({
+      archived: false,
+      blockers: ['recent-input', 'changes-unknown'],
+    });
+  });
+
+  it('rechecks the agent after reading the worktree, which can take a while', async () => {
+    const child = await create();
+    settle(child.id);
+    let finishStatus: (() => void) | undefined;
+    mockExecFile.mockImplementation(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (e: null, out: string) => void) => {
+        finishStatus = () => cb(null, '');
+      },
+    );
+    const archiving = coordinator.archiveTask(child.id, 'Superseded');
+    // A peer prompt starts a new turn while git status runs.
+    const task = coordinator.getTask(child.id);
+    if (task) task.status = 'running';
+    finishStatus?.();
+    await expect(archiving).resolves.toEqual({ archived: false, blockers: ['agent-working'] });
+  });
+
+  it("does not count the injected instructions file as the child's own changes", async () => {
+    const child = await create();
+    settle(child.id);
+    // The app wrote only its sub-task block into AGENTS.md, which was absent at HEAD.
+    const injected = '<sub-task-mode>\nrules\n</sub-task-mode>';
+    mockFsReadFile.mockImplementation(async (p: unknown) => {
+      if (String(p).endsWith('AGENTS.md')) return injected;
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    });
+    mockExistsSync.mockImplementation((p?: unknown) => String(p).endsWith('AGENTS.md'));
+    mockReadFileSync.mockReturnValue(injected);
+    mockExecFile.mockImplementation(
+      (_cmd: string, args: string[], _opts: unknown, cb: (e: Error | null, out: string) => void) =>
+        args.includes('status') ? cb(null, ' M AGENTS.md\n M src/a.ts\n') : cb(null, ''),
+    );
+    await expect(coordinator.archiveTask(child.id, 'Superseded')).resolves.toEqual({
+      archived: false,
+      blockers: ['uncommitted-changes'],
+      changedFiles: ['src/a.ts'],
+    });
+  });
+
+  it('treats a peer prompt being pasted into an idle child as work in progress', async () => {
+    const child = await create();
+    settle(child.id);
+    mockGetAgentInputBlocker.mockReturnValue('busy');
+    await expect(coordinator.archiveTask(child.id, 'Superseded')).resolves.toEqual({
+      archived: false,
+      blockers: ['agent-working'],
+    });
+  });
+
+  it('reports an already archived child as archived without checking it again', async () => {
+    const child = await create();
+    settle(child.id);
+    await coordinator.archiveTask(child.id, 'Superseded');
+    gitResults(' M src/a.ts\n');
+    mockNotifyRenderer.mockClear();
+    await expect(coordinator.archiveTask(child.id, 'Again')).resolves.toMatchObject({
+      archived: true,
+      reason: 'Superseded',
+    });
+    // The app may have skipped the first collapse; asking again lets it catch up.
+    expect(mockNotifyRenderer).toHaveBeenCalledWith('mcp_task_state_sync', {
+      taskId: child.id,
+      archived: true,
+    });
+  });
+
+  it("reports a result still waiting for the user's review as a blocker", async () => {
+    const child = await create();
+    await coordinator.signalDone(child.id);
+    settle(child.id);
+    await expect(coordinator.archiveTask(child.id, 'Merged')).resolves.toEqual({
+      archived: false,
+      blockers: ['unreviewed-result'],
+    });
+  });
+
+  it('archives a reviewed child the user merged but kept, without force', async () => {
+    const child = await create();
+    await coordinator.signalDone(child.id);
+    coordinator.recordUserMerge(child.id);
+    settle(child.id);
+    await expect(coordinator.archiveTask(child.id, 'Merged')).resolves.toMatchObject({
+      archived: true,
+    });
+  });
+
+  it('archives a busy, dirty child when the parent forces it', async () => {
+    const child = await create();
+    gitResults(' M src/a.ts\n');
+    mockGetAgentInputBlocker.mockReturnValue('unsent-input');
+    await expect(coordinator.archiveTask(child.id, 'Superseded', true)).resolves.toMatchObject({
+      archived: true,
+      reason: 'Superseded',
+    });
+    expect(coordinator.getTaskStatus(child.id)?.archived).toBe(true);
+  });
+
+  it('never archives a child the user has taken over, even when forced', async () => {
+    const child = await create();
+    coordinator.markPromptDelivered(child.id);
+    settle(child.id);
+    coordinator.setTaskControl(child.id, 'human');
+    await expect(coordinator.archiveTask(child.id, 'Superseded', true)).rejects.toThrow(
+      'user has taken over',
+    );
+    expect(coordinator.getTaskStatus(child.id)?.archived).toBeUndefined();
+  });
+
+  it('restores the archived state of a collapsed child after restart', () => {
+    coordinator.hydrateTask({
+      id: 'restored-child',
+      name: 'Restored',
+      projectId: 'project',
+      projectRoot: '/project',
+      branchName: 'task/restored',
+      worktreePath: '/tmp/restored',
+      agentId: 'restored-agent',
+      coordinatorTaskId: 'parent',
+      archived: true,
+    });
+    expect(coordinator.getTaskStatus('restored-child')?.archived).toBe(true);
   });
 
   it('preserves visible review notifications while the ordinary agent consumes completion', async () => {

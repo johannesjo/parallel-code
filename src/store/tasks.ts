@@ -1054,10 +1054,6 @@ export async function collapseTask(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
   if (!task || task.collapsed || task.closingStatus) return;
   if (task.coordinatorMode || task.delegationParent) return;
-  // Coordinated children must not be collapsed — the backend coordinator registry
-  // still holds the old agentId, so clearing agentIds here breaks send_prompt and
-  // idle detection. Block collapse entirely for tasks managed by a coordinator.
-  if (task.coordinatedBy) return;
 
   // Stop file watchers to prevent FSWatcher leak
   invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
@@ -1093,6 +1089,9 @@ export async function collapseTask(taskId: string): Promise<void> {
       s.tasks[taskId].savedAgentSessionIds = savedAgentIds.map(
         (id) => task.agentSessionIds?.[id] ?? null,
       );
+      // The backend coordinator registry still holds these IDs; fresh ones on restore
+      // would break send_prompt and idle detection for the child.
+      if (task.coordinatedBy) s.tasks[taskId].savedAgentIds = savedAgentIds;
       s.tasks[taskId].agentSessionIds = undefined;
       s.tasks[taskId].savedSelectedAgentIndex =
         selectedAgentIndex >= 0 ? selectedAgentIndex : undefined;
@@ -1139,7 +1138,11 @@ export function uncollapseTask(taskId: string, options: { activate?: boolean } =
       : task.savedAgentDef
         ? [task.savedAgentDef]
         : [];
-  const restoredAgents = savedDefs.map((def) => ({ id: crypto.randomUUID(), def }));
+  const savedIds = task.savedAgentIds?.length === savedDefs.length ? task.savedAgentIds : undefined;
+  const restoredAgents = savedDefs.map((def, i) => ({
+    id: savedIds?.[i] ?? crypto.randomUUID(),
+    def,
+  }));
   const selectedAgentIndex = task.savedSelectedAgentIndex ?? 0;
   const promptedAgentIndexes = task.savedPromptedAgentIndexes ?? [];
 
@@ -1162,6 +1165,8 @@ export function uncollapseTask(taskId: string, options: { activate?: boolean } =
           taskId,
           def,
           resumed: true,
+          // A reused ID's killed process may not have exited yet; replace it, never reattach.
+          attachExisting: savedIds ? false : undefined,
           spawnDelayMs:
             restoredAgents.length > 1 && i > 0 ? i * RESTORED_AGENT_SPAWN_STAGGER_MS : undefined,
         });
@@ -1184,6 +1189,7 @@ export function uncollapseTask(taskId: string, options: { activate?: boolean } =
       t.savedAgentDef = undefined;
       t.savedAgentDefs = undefined;
       t.savedAgentSessionIds = undefined;
+      t.savedAgentIds = undefined;
       t.savedSelectedAgentIndex = undefined;
       t.savedPromptedAgentIndexes = undefined;
       if (activate) s.activeAgentId = t.selectedAgentId ?? null;
@@ -1488,6 +1494,7 @@ export function initMCPListeners(): () => void {
         signalDoneAt?: string;
         signalDoneConsumed?: boolean;
         closeSuggestion?: Task['closeSuggestion'] | null;
+        archived?: boolean;
         needsReview?: boolean;
         verification?: Task['verification'];
         verificationRun?: Task['verificationRun'] | null;
@@ -1535,6 +1542,7 @@ export function initMCPListeners(): () => void {
           setStore('tasks', evt.taskId, 'signalDoneConsumed', evt.signalDoneConsumed);
         if (evt.closeSuggestion !== undefined)
           setStore('tasks', evt.taskId, 'closeSuggestion', evt.closeSuggestion ?? undefined);
+        if (evt.archived) void collapseTask(evt.taskId);
         if (evt.needsReview !== undefined)
           setStore('tasks', evt.taskId, 'needsReview', evt.needsReview);
         if (evt.verification !== undefined)

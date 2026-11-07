@@ -709,7 +709,7 @@ describe('uncollapseTask with Claude chat turned off', () => {
   });
 });
 
-describe('collapseTask — coordinated child guard (TODO #23)', () => {
+describe('collapseTask and reopen', () => {
   it('keeps each pane on its own session across repeated collapse and reopen', async () => {
     const def = {
       id: 'claude',
@@ -747,20 +747,34 @@ describe('collapseTask — coordinated child guard (TODO #23)', () => {
     }
   });
 
-  it('is a no-op when task has coordinatedBy set', async () => {
+  it('keeps a coordinated child on its agent ID so its coordinator still tracks it', async () => {
+    const def = {
+      id: 'claude',
+      name: 'Claude',
+      command: 'claude',
+      args: [],
+      resume_args: ['--continue'],
+      skip_permissions_args: [],
+      description: '',
+    };
     mockTasks['sub-task-1'] = {
+      id: 'sub-task-1',
       agentIds: ['agent-1'],
       shellAgentIds: [],
       coordinatedBy: 'coordinator-1',
       collapsed: false,
     };
+    mockAgents['agent-1'] = createAgentRecord({ id: 'agent-1', taskId: 'sub-task-1', def });
     mockTaskOrder.push('sub-task-1');
 
     await collapseTask('sub-task-1');
+    expect(mockTasks['sub-task-1']).toMatchObject({ collapsed: true, savedAgentIds: ['agent-1'] });
 
+    uncollapseTask('sub-task-1');
     expect(mockTasks['sub-task-1'].agentIds).toEqual(['agent-1']);
-    expect(mockTasks['sub-task-1'].collapsed).toBeFalsy();
-    expect(mockTaskOrder).toContain('sub-task-1');
+    expect(mockTasks['sub-task-1'].savedAgentIds).toBeUndefined();
+    // Replace rather than reattach: the killed process may not have exited yet.
+    expect(mockAgents['agent-1']).toMatchObject({ resumed: true, attachExisting: false });
   });
 
   it('proceeds normally for tasks without coordinatedBy', async () => {
@@ -2164,6 +2178,13 @@ describe('MCP_TaskStateSync listener', () => {
 
     taskStateSyncHandler({ taskId: 'task-1', closeSuggestion: null });
     expect(mockTasks['task-1'].closeSuggestion).toBeUndefined();
+  });
+
+  it('collapses a child the backend reports archived', async () => {
+    mockTaskOrder.push('task-1');
+    taskStateSyncHandler({ taskId: 'task-1', archived: true });
+    await vi.waitFor(() => expect(mockTasks['task-1'].collapsed).toBe(true));
+    expect(mockTaskOrder).not.toContain('task-1');
   });
 
   it('clears coordinator wiring and MCP startup state from null sync fields', () => {

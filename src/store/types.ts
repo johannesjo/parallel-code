@@ -316,6 +316,8 @@ export interface Task {
   savedAgentDefs?: AgentDef[];
   /** Session ownership in savedAgentDefs order while pane IDs are absent. */
   savedAgentSessionIds?: (string | null)[];
+  /** A collapsed coordinated child's pane IDs, reused on restore so its coordinator keeps tracking them. */
+  savedAgentIds?: string[];
   savedSelectedAgentIndex?: number;
   savedPromptedAgentIndexes?: number[];
   planContent?: string;

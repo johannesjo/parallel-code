@@ -71,6 +71,7 @@ let core: {
   getTaskDiff: ReturnType<typeof vi.fn>;
   getTaskOutput: ReturnType<typeof vi.fn>;
   suggestClose: ReturnType<typeof vi.fn>;
+  archiveTask: ReturnType<typeof vi.fn>;
   isRegisteredCoordinator: ReturnType<typeof vi.fn>;
   waitForSignalDone: ReturnType<typeof vi.fn>;
   detachChildren: ReturnType<typeof vi.fn>;
@@ -200,6 +201,7 @@ beforeEach(() => {
     getTaskDiff: vi.fn(),
     getTaskOutput: vi.fn(),
     suggestClose: vi.fn(),
+    archiveTask: vi.fn(),
     isRegisteredCoordinator: vi.fn().mockReturnValue(true),
     waitForSignalDone: vi.fn().mockResolvedValue({ remaining: 0 }),
     detachChildren: vi.fn().mockReturnValue(['child']),
@@ -910,6 +912,37 @@ describe('delegation authority and creation', () => {
       service.callTool(child, 'suggest_close_task', { taskId: 'child', reason: 'Done' }),
     ).rejects.toThrow('unavailable');
     expect(core.suggestClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a parent archive only its own children, with a reason', async () => {
+    await register('parent');
+    await register('child', { parentTaskId: 'parent', integrationPolicy: 'review' });
+    const parent = session('parent');
+    const archived = { reason: 'Merged', at: '2026-11-07T10:00:00.000Z', archived: true };
+    core.archiveTask.mockReturnValue(archived);
+    core.getTaskStatus.mockReturnValue({ coordinatorTaskId: 'parent' });
+    await expect(
+      service.callTool(parent, 'archive_task', { taskId: 'child', reason: 'Merged' }),
+    ).resolves.toEqual(archived);
+    expect(core.archiveTask).toHaveBeenCalledWith('child', 'Merged', false);
+    await service.callTool(parent, 'archive_task', {
+      taskId: 'child',
+      reason: 'Merged',
+      force: true,
+    });
+    expect(core.archiveTask).toHaveBeenLastCalledWith('child', 'Merged', true);
+    await expect(
+      service.callTool(parent, 'archive_task', { taskId: 'child', reason: '' }),
+    ).rejects.toThrow('reason');
+    core.getTaskStatus.mockReturnValue({ coordinatorTaskId: 'someone-else' });
+    await expect(
+      service.callTool(parent, 'archive_task', { taskId: 'foreign', reason: 'Done' }),
+    ).rejects.toThrow('not your child');
+    const child = session('child', 'child-instance', true);
+    await expect(
+      service.callTool(child, 'archive_task', { taskId: 'child', reason: 'Done' }),
+    ).rejects.toThrow('unavailable');
+    expect(core.archiveTask).toHaveBeenCalledTimes(2);
   });
 
   it('says a closed child is gone instead of calling it foreign', async () => {

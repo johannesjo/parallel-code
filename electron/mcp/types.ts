@@ -35,6 +35,8 @@ export interface CoordinatedTask {
   signalDoneConsumed?: boolean; // true after wait_for_signal_done returns this task's signal
   /** Set while the coordinator no longer needs this child; it stops counting as remaining. */
   closeSuggestion?: CloseSuggestion;
+  /** Collapsed in the app at the coordinator's request; restoring the task clears it. */
+  archived?: boolean;
   completion?: CompletionRecord;
   reviewRevision?: number;
   verification?: SubtaskVerification;
@@ -185,6 +187,7 @@ export interface ApiTaskSummary {
   coordinatorTaskId: string;
   signalDoneAt?: string; // ISO timestamp, set when sub-task called signal_done
   closeSuggestion?: CloseSuggestion;
+  archived?: boolean;
   completion?: CompletionRecord;
   verification?: SubtaskVerification;
   landingState?: LandingState;
@@ -226,3 +229,16 @@ export interface ApiLandSelfResult extends ApiMergeResult {
   landingState: LandingState;
   landedMetadata: LandedMetadata;
 }
+
+/** Why archive_task left a child alone; the parent may retry with force. */
+export type ArchiveBlocker =
+  | 'agent-working'
+  | 'unsent-input'
+  | 'recent-input'
+  | 'unreviewed-result'
+  | 'uncommitted-changes'
+  | 'changes-unknown';
+
+export type ArchiveResult =
+  | (CloseSuggestion & { archived: true })
+  | { archived: false; blockers: ArchiveBlocker[]; changedFiles?: string[] };

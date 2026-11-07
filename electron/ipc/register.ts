@@ -2210,6 +2210,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
           signalDoneAt?: string;
           signalDoneConsumed?: boolean;
           closeSuggestion?: import('../shared/close-suggestion.js').CloseSuggestion;
+          archived?: boolean;
           verification?: import('../mcp/types.js').SubtaskVerification;
           landingState?: import('../mcp/types.js').LandingState;
           landingReason?: string;
@@ -2271,6 +2272,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
           signalDoneAt: args.signalDoneAt,
           signalDoneConsumed: args.signalDoneConsumed,
           closeSuggestion: args.closeSuggestion,
+          archived: args.archived === true,
           verification: args.verification,
           landingState: args.landingState,
           landingReason: args.landingReason,

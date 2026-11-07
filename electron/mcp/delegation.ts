@@ -670,6 +670,7 @@ export class DelegationService {
       'wait_for_idle',
       'wait_for_signal_done',
       'suggest_close_task',
+      'archive_task',
     ];
     if (!allowed.includes(name))
       throw new DelegationError('Tool unavailable to ordinary sessions', 403);
@@ -709,6 +710,12 @@ export class DelegationService {
         return coordinator.suggestClose(
           childId,
           text(params.reason, 'reason', CLOSE_SUGGESTION_REASON_MAX),
+        );
+      case 'archive_task':
+        return coordinator.archiveTask(
+          childId,
+          text(params.reason, 'reason', CLOSE_SUGGESTION_REASON_MAX),
+          params.force === true,
         );
     }
   }

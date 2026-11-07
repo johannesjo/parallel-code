@@ -759,6 +759,40 @@ describe('collapsed session ownership persistence', () => {
   });
 });
 
+describe('collapsed coordinated child agent IDs', () => {
+  it.each([
+    { saved: ['agent-1'], expected: ['agent-1'] },
+    { saved: ['agent-1', 'agent-2'], expected: undefined },
+    { saved: [42], expected: undefined },
+  ])('restores and saves pane IDs $saved', async ({ saved, expected }) => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'blue' }],
+        taskOrder: ['coord-1'],
+        collapsedTaskOrder: ['task-1'],
+        tasks: {
+          'coord-1': { ...persistedTask(def), id: 'coord-1' },
+          'task-1': {
+            ...persistedTask(def),
+            coordinatedBy: 'coord-1',
+            collapsed: true,
+            agentIds: saved,
+          },
+        },
+      }),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].savedAgentIds).toEqual(expected);
+    mockInvoke.mockClear();
+    mockInvoke.mockResolvedValue(undefined);
+    await saveState();
+    const call = mockInvoke.mock.calls.find(([channel]) => channel === IPC.SaveAppState);
+    const persisted = JSON.parse(call?.[1].json);
+    expect(persisted.tasks['task-1'].agentIds).toEqual(expected);
+  });
+});
+
 describe('reasoning profile persistence', () => {
   it.each(['architecture', 'research', 'explanation', undefined, 'unknown'])(
     'restores and saves %s for active and collapsed tasks',

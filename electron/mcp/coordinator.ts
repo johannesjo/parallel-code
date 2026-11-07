@@ -49,6 +49,7 @@ import {
   getAgentScrollback,
   getActiveAgentIds,
   getAgentMeta,
+  getAgentInputBlocker,
   getAgentPromptSnapshot,
   onPtyEvent,
 } from '../ipc/pty.js';
@@ -89,6 +90,8 @@ import type {
   ApiTaskDetail,
   ApiDiffResult,
   ApiLandSelfResult,
+  ArchiveBlocker,
+  ArchiveResult,
   LandSelfInput,
   LandingState,
   StalledChild,
@@ -123,6 +126,8 @@ function clampWaitTimeoutMs(timeoutMs: number): number {
   return Math.min(MAX_WAIT_TIMEOUT_MS, Math.max(MIN_WAIT_TIMEOUT_MS, timeoutMs));
 }
 const PROMPT_WRITE_DELAY_MS = 50;
+// Enough for the parent to judge the stakes; get_task_diff has the rest.
+const ARCHIVE_CHANGED_FILES_MAX = 20;
 const GIT_LOCK_RETRY_DELAY_MS = 2_000;
 /** Rebase-and-verify rounds before a base that other landings keep moving escalates. */
 const LANDING_VERIFY_ATTEMPTS = 3;
@@ -352,7 +357,8 @@ export class Coordinator {
             for (const resolve of resolvers) resolve({ reason: 'exited' });
             this.idleResolvers.delete(task.id);
           }
-          if (this.closingTaskIds.has(task.id)) break;
+          // Closing and archiving stop the agent on purpose; neither is a result to report.
+          if (this.closingTaskIds.has(task.id) || task.archived) break;
           this.deliverExitToSignalWaiter(task);
           this.maybeQueueReviewNotification(task, 'exited', exitCode ?? null);
           break;
@@ -378,6 +384,12 @@ export class Coordinator {
         }
         if (task.agentId === agentId) {
           if (!reattached) {
+            // Only the user restoring the collapsed task respawns an archived child's agent;
+            // they want it back, so the parent's waits count it again.
+            if (task.archived) {
+              task.archived = undefined;
+              this.withdrawCloseSuggestion(task);
+            }
             // A fresh process has an empty input line.
             task.unsubmittedPrompt = false;
             // Its empty prompt says nothing about prompts the old process took.
@@ -1717,6 +1729,7 @@ export class Coordinator {
       integrationPolicy: t.integrationPolicy,
       signalDoneAt: t.signalDoneAt?.toISOString(),
       closeSuggestion: t.closeSuggestion,
+      archived: t.archived,
       completion: t.completion,
       reviewRevision: t.reviewRevision,
       verification: t.verification,
@@ -1748,6 +1761,7 @@ export class Coordinator {
       pendingPromptCount: task.pendingPrompts?.length,
       signalDoneAt: task.signalDoneAt?.toISOString(),
       closeSuggestion: task.closeSuggestion,
+      archived: task.archived,
       completion: task.completion,
       reviewRevision: task.reviewRevision,
       verification: task.verification,
@@ -1766,6 +1780,9 @@ export class Coordinator {
     this.assertOrchestrationEnabled();
     const task = this.tasks.get(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
+    // Its agent is stopped and only the user can restore it; a queued prompt would never land.
+    if (task.archived)
+      throw new Error('Task is archived. Ask the user to restore it, or create a new task.');
     if (Buffer.byteLength(prompt, 'utf8') > MAX_PROMPT_BYTES)
       throw new Error(`Prompt exceeds ${MAX_PROMPT_BYTES} byte limit`);
     const queueLen = task.pendingPrompts?.length ?? 0;
@@ -2174,6 +2191,24 @@ export class Coordinator {
     });
     const branch = execStdout(result).trim();
     return branch === 'HEAD' ? null : branch;
+  }
+
+  /** Uncommitted paths holding the child's own work, not just the app's injected instructions. */
+  private async ownDirtyPaths(worktreePath: string): Promise<string[]> {
+    const [paths, preambleFiles] = await Promise.all([
+      this.statusPaths(worktreePath),
+      detectPreambleFiles(worktreePath),
+    ]);
+    const own: string[] = [];
+    for (const pathName of paths) {
+      const injected = preambleFiles.has(pathName) && PREAMBLE_ARTIFACT_PATHS.has(pathName);
+      if (
+        !injected ||
+        (await buildNormalizedPreambleFileDiff(pathName, worktreePath, 'HEAD')).trim()
+      )
+        own.push(pathName);
+    }
+    return own;
   }
 
   private async statusPaths(worktreePath: string): Promise<string[]> {
@@ -2850,6 +2885,101 @@ export class Coordinator {
   }
 
   /**
+   * Archive a child the coordinator no longer needs: the app collapses it, which
+   * stops its agent but keeps the worktree, so the user can restore or close it.
+   * The reason is recorded as a close suggestion. Unless forced, a child with work
+   * at stake is left alone and the blockers are returned so the parent can decide.
+   */
+  async archiveTask(taskId: string, reason: string, force = false): Promise<ArchiveResult> {
+    const current = this.assertArchivable(taskId);
+    // Repeating the call must not report an archived child as left alone.
+    if (current.archived && current.closeSuggestion) {
+      // The app may have skipped the first collapse (e.g. mid-close); asking again lets it catch up.
+      this.notifyRenderer(IPC.MCP_TaskStateSync, { taskId, archived: true });
+      return { ...current.closeSuggestion, archived: true };
+    }
+    const blockers = force ? undefined : await this.archiveBlockers(taskId);
+    // Git status yields to other work; the child may have changed hands meanwhile.
+    const task = this.assertArchivable(taskId);
+    if (blockers && blockers.blockers.length > 0) return { archived: false, ...blockers };
+    const suggestion = this.suggestClose(taskId, reason);
+    task.archived = true;
+    // A restore must not replay instructions the parent has since given up on.
+    this.discardAutomatedPrompts(task);
+    // The parent just gave this child up; a staged "ready for review" would only nag it.
+    this.suppressPendingNotificationForTask(task, true);
+    this.notifyRenderer(IPC.MCP_TaskStateSync, { taskId, archived: true });
+    return { ...suggestion, archived: true };
+  }
+
+  private assertArchivable(taskId: string): CoordinatedTask {
+    const task = this.tasks.get(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+    if (this.closingTaskIds.has(taskId) || this.integratingTaskIds.has(taskId))
+      throw new Error('Task is closing or being integrated; it cannot be archived now.');
+    // The app may not show the task yet, so it could not collapse it.
+    if (task.status === 'creating')
+      throw new Error('Task is still being created; wait for it to start before archiving.');
+    // Forcing must never stop an agent out from under the user.
+    if (this.controlMap.get(taskId) === 'human')
+      throw new Error('The user has taken over this task; leave archiving it to them.');
+    return task;
+  }
+
+  /** What archiving would cut short: a working agent, the user's input, or unsaved work. */
+  private async archiveBlockers(
+    taskId: string,
+  ): Promise<{ blockers: ArchiveBlocker[]; changedFiles?: string[] }> {
+    const worktree = await this.worktreeArchiveBlocker(taskId);
+    // Read the agent only after git returns: a turn may have started meanwhile.
+    const task = this.tasks.get(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+    const blockers: ArchiveBlocker[] = [];
+    const input = task.agentId ? getAgentInputBlocker(task.agentId) : null;
+    // An idle child has a live terminal, so 'busy' means a peer prompt or handoff is under way;
+    // an exited child is 'busy' only because it has no terminal.
+    if (
+      task.status === 'running' ||
+      this.writingPromptTaskIds.has(taskId) ||
+      (input === 'busy' && task.status === 'idle')
+    )
+      blockers.push('agent-working');
+    if (input === 'unsent-input' || input === 'recent-input') blockers.push(input);
+    // Committed work the user has not reviewed yet; archiving would withdraw its notification.
+    // A merge the user made and kept the task after marks it reviewed.
+    if (
+      task.signalDoneAt &&
+      task.integrationPolicy !== 'automatic' &&
+      task.landingState !== 'reviewed'
+    )
+      blockers.push('unreviewed-result');
+    if (!worktree) return { blockers };
+    blockers.push(worktree.blocker);
+    return worktree.changedFiles ? { blockers, changedFiles: worktree.changedFiles } : { blockers };
+  }
+
+  private async worktreeArchiveBlocker(
+    taskId: string,
+  ): Promise<{ blocker: ArchiveBlocker; changedFiles?: string[] } | null> {
+    const task = this.tasks.get(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+    try {
+      const paths = await this.ownDirtyPaths(task.worktreePath);
+      if (paths.length === 0) return null;
+      return {
+        blocker: 'uncommitted-changes',
+        changedFiles: paths.slice(0, ARCHIVE_CHANGED_FILES_MAX),
+      };
+    } catch (err) {
+      logWarn('coordinator.archive', 'could not read worktree status', {
+        taskId,
+        err: String(err),
+      });
+      return { blocker: 'changes-unknown' };
+    }
+  }
+
+  /**
    * Remove a coordinated task's backend state when the UI closes it directly.
    * Unlike cleanupTask, this does NOT kill the agent or delete the worktree —
    * the UI has already done both. It only cleans up in-memory coordinator state.
@@ -2992,6 +3122,8 @@ export class Coordinator {
     signalDoneAt?: string;
     signalDoneConsumed?: boolean;
     closeSuggestion?: CloseSuggestion;
+    /** The app restored this child collapsed. */
+    archived?: boolean;
     completion?: CompletionRecord;
     reviewRevision?: number;
     verification?: SubtaskVerification;
@@ -3040,6 +3172,8 @@ export class Coordinator {
         signalDoneAt: existingTask.signalDoneAt?.toISOString() ?? null,
         signalDoneConsumed: existingTask.signalDoneConsumed ?? false,
         closeSuggestion: existingTask.closeSuggestion ?? null,
+        // Re-sends a collapse request a reloading renderer may have missed.
+        ...(existingTask.archived ? { archived: true } : {}),
       });
       return { mcpLaunchArgs };
     }
@@ -3065,6 +3199,7 @@ export class Coordinator {
       signalDoneAt: opts.signalDoneAt ? new Date(opts.signalDoneAt) : undefined,
       signalDoneConsumed: opts.signalDoneConsumed,
       closeSuggestion: parseCloseSuggestion(opts.closeSuggestion),
+      archived: opts.archived === true || undefined,
       completion,
       reviewRevision: Math.max(
         Number.isSafeInteger(opts.reviewRevision) && (opts.reviewRevision ?? -1) >= 0

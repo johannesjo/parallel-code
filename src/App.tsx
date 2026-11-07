@@ -591,7 +591,8 @@ function App() {
           coordinatorTaskId: task.coordinatedBy,
           integrationPolicy: task.integrationPolicy,
           controlledBy: task.controlledBy,
-          agentId: task.agentIds[0],
+          agentId: task.agentIds[0] ?? task.savedAgentIds?.[0],
+          archived: task.collapsed === true,
           completion: task.completion,
           reviewRevision: task.reviewRevision,
           signalDoneAt: task.signalDoneAt,
@@ -603,7 +604,10 @@ function App() {
           landingSummary: task.landingSummary,
           landedMetadata: task.landedMetadata,
           mcpConfigPath: task.mcpConfigPath,
-          agentCommand: store.agents[task.agentIds[0]]?.def.command ?? 'claude',
+          agentCommand:
+            store.agents[task.agentIds[0]]?.def.command ??
+            task.savedAgentDefs?.[0]?.command ??
+            'claude',
           preambleFileExistedBefore: task.preambleFileExistedBefore,
           initialPrompt: task.initialPrompt,
         })
