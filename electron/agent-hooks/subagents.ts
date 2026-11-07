@@ -1,4 +1,5 @@
-import { isSiblingResult, type AgentHookStatusUpdate } from './status.js';
+import { isServerCommand } from './server-command.js';
+import { describeShells, isSiblingResult, type AgentHookStatusUpdate } from './status.js';
 
 /** Hook update after the gate; null drops the event. */
 type SubagentGate = (
@@ -7,16 +8,17 @@ type SubagentGate = (
   update: AgentHookStatusUpdate | null,
 ) => AgentHookStatusUpdate | null;
 
-/** Background work the lead waits on. Shell commands are left out on purpose:
- *  a backgrounded dev server would hold a finished task busy (see
- *  `shell_busy` in src/store/taskStatus.ts); `Stop` reports them instead. */
-const HELD_TASK_TYPES: ReadonlySet<string> = new Set(['subagent', 'workflow']);
+/** Background work the lead waits on. Shell commands count too, unless they
+ *  look like servers: those never end, so `Stop` only names them. */
+const HELD_TASK_TYPES: ReadonlySet<string> = new Set(['subagent', 'workflow', 'shell']);
 const WORKFLOW_AGENT = 'workflow-subagent';
 
 interface LaunchWork {
   open: Set<string>;
   /** Names of the running workflows, as Claude last listed them. */
   workflows: string[];
+  /** The running shell commands, as Claude last listed them. */
+  shells: unknown[];
   /** Workflow agents running now, and how many have finished. */
   agents: Set<string>;
   agentsDone: number;
@@ -37,9 +39,11 @@ function runningTasks(payload: unknown): unknown[] | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined;
   const tasks = (payload as Record<string, unknown>).background_tasks;
   if (!Array.isArray(tasks)) return undefined;
-  return tasks.filter(
-    (task) => HELD_TASK_TYPES.has(field(task, 'type') ?? '') && field(task, 'status') === 'running',
-  );
+  return tasks.filter((task) => {
+    const type = field(task, 'type') ?? '';
+    if (!HELD_TASK_TYPES.has(type) || field(task, 'status') !== 'running') return false;
+    return type !== 'shell' || !isServerCommand(field(task, 'command') ?? '');
+  });
 }
 
 /** The launch's open background work after this event. */
@@ -56,6 +60,9 @@ function track(prev: LaunchWork | undefined, payload: unknown): LaunchWork {
         .filter((task) => field(task, 'type') === 'workflow')
         .map((task) => field(task, 'name') ?? 'workflow')
     : (prev?.workflows ?? []);
+  const shells = listed
+    ? listed.filter((task) => field(task, 'type') === 'shell')
+    : (prev?.shells ?? []);
   // A finished workflow's agent counts must not carry into the next one.
   const fresh = listed !== undefined && workflows.length === 0;
   const agents = new Set(fresh ? [] : prev?.agents);
@@ -72,7 +79,7 @@ function track(prev: LaunchWork | undefined, payload: unknown): LaunchWork {
   if (event === 'SessionStart' && field(payload, 'source') !== 'compact') open.clear();
   const leadIdle = prev?.leadIdle ?? false;
   const { leadMessage, prompt } = prev ?? {};
-  return { open, workflows, agents, agentsDone, leadIdle, leadMessage, prompt };
+  return { open, workflows, shells, agents, agentsDone, leadIdle, leadMessage, prompt };
 }
 
 /** The status shown while the lead idles at its prompt, waiting on background work. */
@@ -83,7 +90,11 @@ function held(work: LaunchWork): AgentHookStatusUpdate {
     lastAssistantMessage: work.leadMessage,
     background: true,
   } as const;
-  if (work.workflows.length === 0) return base;
+  // A workflow's progress says more than a shell beside it, so it wins the line.
+  if (work.workflows.length === 0) {
+    const detail = describeShells(work.shells);
+    return detail ? { ...base, toolName: 'Bash', detail } : base;
+  }
   const names = work.workflows.join(', ');
   const detail = `${names} · ${work.agents.size} running · ${work.agentsDone} done`;
   return { ...base, toolName: 'Workflow', detail };
@@ -101,8 +112,8 @@ function promptAfter(
 }
 
 /**
- * Keeps an agent `working` while a background sub-agent or workflow it started
- * still runs. Claude Code ends the lead turn (`Stop`, later `idle_prompt`) as
+ * Keeps an agent `working` while a background sub-agent, workflow, or shell
+ * command it started still runs. Claude Code ends the lead turn (`Stop`, later `idle_prompt`) as
  * soon as either is launched, which would report the task finished for its
  * whole run. So that end is held as `working`, and updates are flagged
  * `background` while the lead sits at its prompt. Unmatched `SubagentStop`s
@@ -118,8 +129,9 @@ export function createSubagentGate(): SubagentGate {
       launches.delete(launchId);
       return update;
     }
-    // The lead's turn end becomes a hold that keeps its reply for the card.
-    if (update?.state === 'done') {
+    // The lead's turn end becomes a hold that keeps its reply for the card. A
+    // failed turn is not held: its error needs you more than the work it left.
+    if (update?.state === 'done' && update.event !== 'StopFailure') {
       // The idle reminder that follows `Stop` carries no reply; keep the one we have.
       const leadMessage = update.lastAssistantMessage ?? work.leadMessage;
       launches.set(launchId, { ...work, leadIdle: true, leadMessage, prompt: undefined });

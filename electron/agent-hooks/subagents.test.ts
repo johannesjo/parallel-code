@@ -72,7 +72,8 @@ describe('createSubagentGate', () => {
     // sub-agent's own stop still lists itself.
     const running = (id: string) => [
       { id, type: 'subagent', status: 'running' },
-      { id: 'shell-1', type: 'shell', status: 'running' },
+      // A server never holds the turn, so only the sub-agents count here.
+      { id: 'shell-1', type: 'shell', status: 'running', command: 'npm run dev' },
     ];
     const lost = replay([start('a1'), { ...stop('helper'), background_tasks: [] }, turnEnd]);
     expect(lost[2]?.state).toBe('done');
@@ -249,8 +250,77 @@ describe('createSubagentGate', () => {
     expect(out[7]).toMatchObject({ toolName: 'Workflow', detail: 'tiny · 2 running · 1 done' });
   });
 
-  it('does not hold the turn open for a background shell command', () => {
-    const shell = [{ id: 'b1', type: 'shell', status: 'running', description: 'Run dev server' }];
+  it('holds the turn open while a background shell command runs', () => {
+    const shell = (status: string) => ({
+      id: 'b1',
+      type: 'shell',
+      status,
+      description: 'Run e2e tests',
+      command: 'npx playwright test --project=chromium',
+    });
+    const out = replay([
+      { ...turnEnd, background_tasks: [shell('running')] },
+      idle,
+      // Claude Code wakes the lead when the command exits.
+      { hook_event_name: 'UserPromptSubmit', prompt: '<task-notification>' },
+      { ...turnEnd, background_tasks: [shell('completed')] },
+    ]);
+    expect(out[0]).toMatchObject({
+      state: 'working',
+      toolName: 'Bash',
+      detail: 'background: Run e2e tests',
+      lastAssistantMessage: 'started',
+      background: true,
+    });
+    expect(out[1]).toMatchObject({ state: 'working', detail: 'background: Run e2e tests' });
+    expect(out[2]?.state).toBe('working');
+    expect(out[3]?.state).toBe('done');
+  });
+
+  it('keeps holding while a shell outlives a sub-agent, naming every shell', () => {
+    const shell = (id: string, description?: string) => ({
+      id,
+      type: 'shell',
+      status: 'running',
+      description,
+      command: 'npm test',
+    });
+    const out = replay([
+      start('a1'),
+      { ...turnEnd, background_tasks: [{ id: 'a1', type: 'subagent', status: 'running' }] },
+      { ...stop('a1'), background_tasks: [shell('b1', 'Unit tests'), shell('b2')] },
+      // A new prompt ends, and the shells still run.
+      { hook_event_name: 'UserPromptSubmit', prompt: 'next' },
+      { ...turnEnd, background_tasks: [shell('b2')] },
+    ]);
+    // The sub-agent's stop is silent: the shell keeps the turn held.
+    expect(out[2]).toBeNull();
+    expect(out[4]).toMatchObject({ state: 'working', detail: 'background: npm test' });
+    const both = replay([{ ...turnEnd, background_tasks: [shell('b1', 'Unit'), shell('b2')] }]);
+    expect(both[0]?.detail).toBe('background: Unit +1');
+    const long = { ...shell('b3'), command: `npx playwright test\n${'x'.repeat(300)}` };
+    const clipped = replay([{ ...turnEnd, background_tasks: [long] }])[0]?.detail ?? '';
+    expect(clipped).toMatch(/^background: npx playwright test x+…$/);
+    expect(clipped).toHaveLength(200);
+  });
+
+  it('reports a failed turn even while background work runs', () => {
+    const shell = { id: 'b1', type: 'shell', status: 'running', command: 'npm test' };
+    const failure = { hook_event_name: 'StopFailure', error: 'overloaded' };
+    const out = replay([{ ...failure, background_tasks: [shell] }]);
+    expect(out[0]).toMatchObject({ state: 'done', event: 'StopFailure', detail: 'overloaded' });
+  });
+
+  it('does not hold the turn open for a background server', () => {
+    const shell = [
+      {
+        id: 'b1',
+        type: 'shell',
+        status: 'running',
+        description: 'x',
+        command: 'npx vite --port 5199',
+      },
+    ];
     expect(replay([{ ...turnEnd, background_tasks: shell }])[0]?.state).toBe('done');
   });
 
