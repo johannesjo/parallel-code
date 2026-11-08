@@ -117,10 +117,28 @@ describe('askAboutCodeMinimax', () => {
       expect(body.messages[1].content).toBe(prompt);
       expect(body.messages[0].content).toBe(systemPrompt);
       // Derived from the card caps, so raising a cap cannot silently truncate a
-      // tour the validator would have accepted.
-      expect(body.max_tokens).toBe(Math.ceil(UNDERSTANDING_MAX_OUTPUT_CHARS / 3));
+      // tour the validator would have accepted. Flash also needs a separate
+      // allowance because its thinking tokens share this budget.
+      expect(body.max_tokens).toBe(Math.ceil(UNDERSTANDING_MAX_OUTPUT_CHARS / 3) + 16_384);
     },
   );
+
+  it('keeps the structured budget limited to the visible response for M3', async () => {
+    const { win, messages } = makeMockWin();
+    mockFetch.mockResolvedValueOnce(makeStreamResponse('data: [DONE]\n\n'));
+    askAboutCodeMinimax(win, {
+      requestId: 'm3-tour',
+      channelId: 'test',
+      prompt: 'Tour',
+      purpose: 'tour',
+      model: 'MiniMax-M3',
+    });
+    await waitForDone(messages);
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string) as {
+      max_tokens: number;
+    };
+    expect(body.max_tokens).toBe(Math.ceil(UNDERSTANDING_MAX_OUTPUT_CHARS / 3));
+  });
 
   it.each(STRUCTURED_PURPOSES)(
     'rejects a $purpose larger than its dedicated allowance before fetching',

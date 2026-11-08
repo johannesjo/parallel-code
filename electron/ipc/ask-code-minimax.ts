@@ -34,6 +34,8 @@ const MAX_TOKENS_INLINE = 2048;
  * conservative ~3 characters per token so a dense JSON response still fits.
  */
 const MAX_TOKENS_STRUCTURED = Math.ceil(UNDERSTANDING_MAX_OUTPUT_CHARS / 3);
+/** Flash reasoning shares max_tokens with the answer, so reserve room beyond the tour JSON. */
+const FLASH_THINKING_HEADROOM_TOKENS = 16_384;
 export const MINIMAX_MODEL = ASK_CODE_MODELS.minimax;
 
 interface ThinkingFilterState {
@@ -140,11 +142,11 @@ export function askAboutCodeMinimax(win: BrowserWindow, args: MinimaxAskCodeRequ
       ],
       // MiniMax temperature must be in (0.0, 1.0]
       temperature: 0.3,
-      // Thinking counts toward the budget. Flash needs room beyond a short answer.
+      // Thinking counts toward the budget. Flash needs room beyond the visible answer.
       max_tokens: isStructuredPurpose(args.purpose)
-        ? MAX_TOKENS_STRUCTURED
+        ? MAX_TOKENS_STRUCTURED + (isFlash ? FLASH_THINKING_HEADROOM_TOKENS : 0)
         : isFlash
-          ? 16_384
+          ? FLASH_THINKING_HEADROOM_TOKENS
           : MAX_TOKENS_INLINE,
       stream: true,
     }),
