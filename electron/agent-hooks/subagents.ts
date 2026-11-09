@@ -8,16 +8,19 @@ type SubagentGate = (
   update: AgentHookStatusUpdate | null,
 ) => AgentHookStatusUpdate | null;
 
+/** Claude Code's name for an MCP tool call it moved to the background. */
+const MCP_TASK = 'MCP task';
 /** Background work the lead waits on. Shell commands count too, unless they
- *  look like servers: those never end, so `Stop` only names them. */
-const HELD_TASK_TYPES: ReadonlySet<string> = new Set(['subagent', 'workflow', 'shell']);
+ *  look like servers: those never end, so `Stop` only names them. Monitors and
+ *  cloud sessions are left out: they run until stopped or outlive the turn. */
+const HELD_TASK_TYPES: ReadonlySet<string> = new Set(['subagent', 'workflow', 'shell', MCP_TASK]);
 const WORKFLOW_AGENT = 'workflow-subagent';
 
 interface LaunchWork {
   open: Set<string>;
   /** Names of the running workflows, as Claude last listed them. */
   workflows: string[];
-  /** The running shell commands, as Claude last listed them. */
+  /** The running shell commands and MCP tool calls, as Claude last listed them. */
   shells: unknown[];
   /** Workflow agents running now, and how many have finished. */
   agents: Set<string>;
@@ -61,7 +64,10 @@ function track(prev: LaunchWork | undefined, payload: unknown): LaunchWork {
         .map((task) => field(task, 'name') ?? 'workflow')
     : (prev?.workflows ?? []);
   const shells = listed
-    ? listed.filter((task) => field(task, 'type') === 'shell')
+    ? listed.filter((task) => {
+        const type = field(task, 'type');
+        return type === 'shell' || type === MCP_TASK;
+      })
     : (prev?.shells ?? []);
   // A finished workflow's agent counts must not carry into the next one.
   const fresh = listed !== undefined && workflows.length === 0;
@@ -93,7 +99,10 @@ function held(work: LaunchWork): AgentHookStatusUpdate {
   // A workflow's progress says more than a shell beside it, so it wins the line.
   if (work.workflows.length === 0) {
     const detail = describeShells(work.shells);
-    return detail ? { ...base, toolName: 'Bash', detail } : base;
+    if (!detail) return base;
+    const first = work.shells[0];
+    const toolName = field(first, 'type') === MCP_TASK ? (field(first, 'tool') ?? 'MCP') : 'Bash';
+    return { ...base, toolName, detail };
   }
   const names = work.workflows.join(', ');
   const detail = `${names} · ${work.agents.size} running · ${work.agentsDone} done`;
@@ -112,8 +121,8 @@ function promptAfter(
 }
 
 /**
- * Keeps an agent `working` while a background sub-agent, workflow, or shell
- * command it started still runs. Claude Code ends the lead turn (`Stop`, later `idle_prompt`) as
+ * Keeps an agent `working` while a background sub-agent, workflow, shell
+ * command, or MCP tool call it started still runs. Claude Code ends the lead turn (`Stop`, later `idle_prompt`) as
  * soon as either is launched, which would report the task finished for its
  * whole run. So that end is held as `working`, and updates are flagged
  * `background` while the lead sits at its prompt. Unmatched `SubagentStop`s
