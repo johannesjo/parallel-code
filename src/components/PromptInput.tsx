@@ -62,6 +62,7 @@ import {
 } from './prompt-autosend-readiness';
 import { hasUserPromptDraftText } from './prompt-draft';
 import { pollUntilPromptAppearsInOutput } from './prompt-verify';
+import { isAgentSuspended } from '../store/agent-suspend';
 import type { StagedNotification } from '../store/types';
 import { debug, errMessage, warn as logWarn } from '../lib/log';
 import { NOTIFICATION_ERROR_MS } from '../store/notification';
@@ -145,6 +146,9 @@ export function PromptInput(props: PromptInputProps) {
     setTaskPromptDraft(props.taskId, value);
   };
   const [sending, setSending] = createSignal(false);
+  // A suspended agent has no process to send to. Unlike a detected question,
+  // this cannot stick: Resume in the agent's pane always ends it.
+  const suspended = () => isAgentSuspended(store.agents[props.agentId]);
   const [autoSentInitialPrompt, setAutoSentInitialPrompt] = createSignal<string | null>(null);
   // Incremented when promptAppearedInOutput fails so the auto-send createEffect
   // restarts a fresh attempt rather than treating the prompt as delivered.
@@ -177,10 +181,10 @@ export function PromptInput(props: PromptInputProps) {
       setTimeout(() => {
         if (textareaRef) {
           const domDisabled = textareaRef.disabled;
-          // The textarea is intentionally never hard-disabled (see the textarea
-          // below): typing stays available even while a question is active so
-          // the box can't latch permanently uneditable.
-          const expected = false;
+          // The textarea is only hard-disabled for a suspended agent (see the
+          // textarea below): typing stays available even while a question is
+          // active so the box can't latch permanently uneditable.
+          const expected = suspended();
           if (domDisabled !== expected) {
             logWarn('ctrl', 'textarea disabled mismatch — DOM vs expected', {
               domDisabled,
@@ -222,6 +226,9 @@ export function PromptInput(props: PromptInputProps) {
     setTaskPromptDraftActive(props.taskId, false);
     const agent = store.agents[props.agentId];
     const task = store.tasks[props.taskId];
+    // Reading this here re-runs the effect on Resume, which is when a queued
+    // prompt can go out; a check inside the timers below would just give up.
+    if (isAgentSuspended(agent)) return;
     if (
       agent?.def &&
       task &&
@@ -711,6 +718,11 @@ export function PromptInput(props: PromptInputProps) {
   // When the agent shows a question/dialog, block automation so it does not
   // type into the TUI while leaving the user's current focus alone.
   const questionActive = () => isAgentAskingQuestion(props.agentId);
+  const promptPlaceholder = () => {
+    if (suspended()) return 'Resume the agent to send a message…';
+    if (questionActive()) return 'Agent is waiting for input in terminal…';
+    return `Message ${store.agents[props.agentId]?.def?.name ?? 'agent'}…`;
+  };
   const isRecentPromptEcho = (tail: string): boolean => {
     const task = store.tasks[props.taskId];
     const lastPrompt = task?.lastPrompt?.trim();
@@ -804,7 +816,7 @@ export function PromptInput(props: PromptInputProps) {
   let sendAbortController: AbortController | undefined;
 
   async function handleSend(mode: 'manual' | 'auto' = 'manual') {
-    if (sending()) return;
+    if (sending() || suspended()) return;
     if (isLandedTaskState(store.tasks[props.taskId]?.landingState)) return;
     // Block sends while the agent is showing a question/dialog.
     // For auto-sends, use a fresh tail-buffer check instead of the reactive
@@ -1033,6 +1045,7 @@ export function PromptInput(props: PromptInputProps) {
           }}
           rows={3}
           value={text()}
+          disabled={suspended()}
           // Intentionally NOT disabled while a question is active: typing is
           // harmless (nothing leaves the box until handleSend, which still
           // guards on questionActive()).  Hard-disabling here could latch the
@@ -1051,11 +1064,7 @@ export function PromptInput(props: PromptInputProps) {
               handleSend();
             }
           }}
-          placeholder={
-            questionActive()
-              ? 'Agent is waiting for input in terminal…'
-              : `Message ${store.agents[props.agentId]?.def?.name ?? 'agent'}…`
-          }
+          placeholder={promptPlaceholder()}
           style={{
             flex: '1',
             background: theme.bgInput,
@@ -1067,13 +1076,13 @@ export function PromptInput(props: PromptInputProps) {
             'font-family': "'JetBrains Mono', monospace",
             resize: 'none',
             outline: 'none',
-            opacity: questionActive() ? '0.5' : '1',
+            opacity: questionActive() || suspended() ? '0.5' : '1',
           }}
         />
         <button
           class="prompt-send-btn"
           type="button"
-          disabled={!text().trim() || questionActive()}
+          disabled={!text().trim() || questionActive() || suspended()}
           onClick={() => handleSend()}
           style={{
             position: 'absolute',

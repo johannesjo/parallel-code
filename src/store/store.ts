@@ -201,6 +201,7 @@ export {
   setDefaultSkipPermissions,
   setCanvasOwnershipBadges,
   setFinishReview,
+  setResumeAgentsOnLaunch,
   setReviewModel,
   setDefaultPropagateSkipPermissions,
 } from './ui';

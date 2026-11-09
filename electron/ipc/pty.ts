@@ -1190,8 +1190,13 @@ export function killAgent(agentId: string): void {
   }
 }
 
+/** Every agent with a live process: PTY sessions, plus chats that run without one. */
+export function listRunningAgentIds(): string[] {
+  return [...new Set([...sessions.keys(), ...runningAgentChatIds()])];
+}
+
 export function countRunningAgents(): number {
-  return new Set([...sessions.keys(), ...runningAgentChatIds()]).size;
+  return listRunningAgentIds().length;
 }
 
 export function killAllAgents(): void {

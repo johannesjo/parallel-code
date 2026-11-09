@@ -9,6 +9,7 @@
   "ResumeAgent": "resume_agent",
   "KillAgent": "kill_agent",
   "CountRunningAgents": "count_running_agents",
+  "ListRunningAgentIds": "list_running_agent_ids",
   "KillAllAgents": "kill_all_agents",
   "ListAgents": "list_agents",
   "CreateTask": "create_task",

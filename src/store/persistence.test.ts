@@ -1957,6 +1957,34 @@ describe('finish review setting', () => {
   });
 });
 
+describe('resume agents on launch setting', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const savedSetting = async (): Promise<unknown> => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const call = mockInvoke.mock.calls.findLast(([channel]) => channel === IPC.SaveAppState);
+    return JSON.parse(call?.[1].json).resumeAgentsOnLaunch;
+  };
+
+  it('stays on unless it was turned off, and stores only the opt-out', async () => {
+    // A state file written before the setting existed has no key.
+    mockInvoke.mockResolvedValueOnce(basePayload());
+    await loadState();
+    expect(store.resumeAgentsOnLaunch).toBe(true);
+    expect(await savedSetting()).toBeUndefined();
+
+    mockInvoke.mockResolvedValueOnce(basePayload({ resumeAgentsOnLaunch: false }));
+    await loadState();
+    expect(store.resumeAgentsOnLaunch).toBe(false);
+    expect(await savedSetting()).toBe(false);
+
+    mockInvoke.mockResolvedValueOnce(basePayload({ resumeAgentsOnLaunch: 'no' }));
+    await loadState();
+    expect(store.resumeAgentsOnLaunch).toBe(true);
+  });
+});
+
 describe('retired Steps settings', () => {
   beforeEach(() => vi.clearAllMocks());
 

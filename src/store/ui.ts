@@ -288,6 +288,10 @@ export function setFinishReview(enabled: boolean): void {
   setStore('finishReview', enabled);
 }
 
+export function setResumeAgentsOnLaunch(enabled: boolean): void {
+  setStore('resumeAgentsOnLaunch', enabled);
+}
+
 export function setReviewModel(model: ReviewModelSettings): void {
   // Replaced whole: a model left out of the new choice must not survive from the old one.
   setStore('reviewModel', reconcile(model));

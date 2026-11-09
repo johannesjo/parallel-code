@@ -43,6 +43,7 @@ function structuralSnapshot(): string {
     defaultPropagateSkipPermissions: store.defaultPropagateSkipPermissions,
     canvasOwnershipBadges: store.canvasOwnershipBadges,
     finishReview: store.finishReview,
+    resumeAgentsOnLaunch: store.resumeAgentsOnLaunch,
     reviewModel: store.reviewModel,
     modelTaskNames: store.modelTaskNames,
     taskNameModel: store.taskNameModel,

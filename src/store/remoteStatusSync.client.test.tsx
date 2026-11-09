@@ -139,6 +139,26 @@ it('syncs an existing terminal question in a collapsed review task when phone ac
   expectAttention('review');
 });
 
+it('tells the phone which tasks wait to be resumed', () => {
+  const suspended = () => {
+    const [, payload] = vi.mocked(fireAndForget).mock.lastCall ?? [];
+    return (payload as { contexts: Record<string, { suspended?: unknown }> }).contexts.task
+      .suspended;
+  };
+  stop = startRemoteStatusSync();
+  expect(suspended()).toBe(false);
+
+  for (const id of ['agent', 'other']) {
+    setStore('agents', id, { status: 'exited', signal: 'suspended' });
+  }
+  expect(suspended()).toBe(true);
+  expectAttention('idle');
+
+  // One resumed agent is enough for the task to have a process again.
+  setStore('agents', 'other', { status: 'running', signal: null });
+  expect(suspended()).toBe(false);
+});
+
 function lastCi(): unknown {
   const [, payload] = vi.mocked(fireAndForget).mock.lastCall ?? [];
   return (payload as { contexts: Record<string, { ci?: unknown }> }).contexts.task.ci;

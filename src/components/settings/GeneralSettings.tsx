@@ -5,6 +5,7 @@ import {
   setAutoTrustFolders,
   setDesktopNotificationsEnabled,
   setEditorCommand,
+  setResumeAgentsOnLaunch,
   setVerboseLogging,
   updateStatus,
   checkForUpdates,
@@ -69,6 +70,12 @@ export function GeneralSettings() {
           checked={store.desktopNotificationsEnabled}
           onChange={setDesktopNotificationsEnabled}
           description="Show native notifications when tasks finish or need attention"
+        />
+        <SettingsCheckboxRow
+          label="Resume agents on launch"
+          checked={store.resumeAgentsOnLaunch}
+          onChange={setResumeAgentsOnLaunch}
+          description="Start the agent of every open task when the app opens. When off, they wait, suspended, until you click Resume. The task you last had open and coordinator tasks with their sub-tasks still start"
         />
         <SettingsCheckboxRow
           label="Show feature tips"

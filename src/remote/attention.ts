@@ -34,7 +34,7 @@ const BY_ATTENTION: Partial<Record<RemoteAttentionState, StatusDisplay>> = {
   ready: { label: 'Ready', color: GREEN, glow: false },
 };
 
-type StatusInput = Pick<RemoteAgent, 'status' | 'attention' | 'collapsed' | 'ci'>;
+type StatusInput = Pick<RemoteAgent, 'status' | 'attention' | 'collapsed' | 'suspended' | 'ci'>;
 
 /** Failed PR checks need the user once the agent has stopped; a busier state still wins. */
 export function isCiFailed(agent: Omit<StatusInput, 'status'>): boolean {
@@ -60,6 +60,9 @@ const READY_BY_CI: Record<NonNullable<RemoteAgent['ci']>, string> = {
 export function agentStatusDisplay(agent: StatusInput): StatusDisplay {
   if (agent.collapsed) return { label: 'Minimized', color: GREY, glow: false };
   if (isCiFailed(agent)) return { label: 'CI failed', color: RED, glow: true };
+  // Before the attention states: none of them says that nothing runs until the
+  // agent is resumed on the desktop.
+  if (agent.suspended) return { label: 'Suspended', color: GREY, glow: false };
   if (agent.attention === 'ready' && agent.ci)
     return { label: READY_BY_CI[agent.ci], color: GREEN, glow: false };
   const known = BY_ATTENTION[agent.attention];

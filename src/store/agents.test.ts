@@ -95,6 +95,7 @@ import {
   updateCustomAgent,
 } from './agents';
 import { store } from './core';
+import { isAgentSuspended } from './agent-suspend';
 
 const codexDef: AgentDefLike = {
   id: 'codex',
@@ -174,6 +175,46 @@ describe('restartAgent', () => {
     });
     expect(mockAgents['agent-1'].spawnDelayMs).toBeUndefined();
     expect(mockMarkAgentSpawned).toHaveBeenCalledWith('agent-1');
+  });
+});
+
+describe('a suspended agent', () => {
+  // The state loadState gives an agent it restores without starting.
+  const suspended = () =>
+    exitedAgent({ exitCode: null, signal: 'suspended', lastOutput: [], generation: 0 });
+
+  it('is told apart from one that exited or failed to start', () => {
+    expect(isAgentSuspended(suspended())).toBe(true);
+    expect(isAgentSuspended(exitedAgent())).toBe(false);
+    expect(isAgentSuspended(exitedAgent({ signal: 'spawn_failed' }))).toBe(false);
+    expect(isAgentSuspended({ ...suspended(), status: 'running', signal: null })).toBe(false);
+    expect(isAgentSuspended(undefined)).toBe(false);
+  });
+
+  it('continues its conversation on Resume', () => {
+    mockAgents = { 'agent-1': suspended() };
+    restartAgent('agent-1', true);
+    expect(isAgentSuspended(mockAgents['agent-1'])).toBe(false);
+    expect(mockAgents['agent-1']).toMatchObject({ status: 'running', signal: null, resumed: true });
+    expect(mockMarkAgentSpawned).toHaveBeenCalledWith('agent-1');
+  });
+
+  it('starts over on Restart', () => {
+    mockAgents = { 'agent-1': suspended() };
+    restartAgent('agent-1', false);
+    expect(isAgentSuspended(mockAgents['agent-1'])).toBe(false);
+    expect(mockAgents['agent-1']).toMatchObject({
+      status: 'running',
+      signal: null,
+      resumed: false,
+    });
+  });
+
+  it('starts when switched to another agent', () => {
+    mockAgents = { 'agent-1': suspended() };
+    switchAgent('agent-1', { ...codexDef, id: 'claude', command: 'claude' });
+    expect(isAgentSuspended(mockAgents['agent-1'])).toBe(false);
+    expect(mockAgents['agent-1']).toMatchObject({ status: 'running', signal: null });
   });
 });
 

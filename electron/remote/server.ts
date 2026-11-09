@@ -387,6 +387,33 @@ function withChatAgents(
   ];
 }
 
+/**
+ * Add the tasks whose agent waits to be resumed. Such a task has no process, so
+ * neither the terminals nor the chats list it, and it would vanish from the phone.
+ */
+export function withSuspendedTasks(
+  agents: RemoteAgent[],
+  suspendedTaskIds: string[],
+  describe: (taskId: string) => Omit<RemoteAgent, 'agentId' | 'taskId' | 'status' | 'exitCode'>,
+): RemoteAgent[] {
+  // The desktop reports suspension a moment after the process list changes, so
+  // a task listed with a process has been resumed already.
+  const listed = new Set(agents.map((agent) => agent.taskId));
+  return [
+    ...agents,
+    ...suspendedTaskIds
+      .filter((taskId) => !listed.has(taskId))
+      .map((taskId) => ({
+        ...describe(taskId),
+        agentId: `suspended:${taskId}`,
+        taskId,
+        status: 'exited' as const,
+        exitCode: null,
+        suspended: true,
+      })),
+  ];
+}
+
 /** Read and JSON-parse a request body with a hard size cap. */
 type CanvasOps = Pick<
   Parameters<typeof startRemoteServer>[0],
@@ -1037,6 +1064,8 @@ export function startRemoteServer(opts: {
   getTaskAttention?: (taskId: string) => RemoteAttentionState;
   getTaskContext?: (taskId: string) => RemoteTaskContext | undefined;
   getCollapsedTaskIds?: () => string[];
+  /** Tasks whose agent was not started at launch and waits to be resumed. */
+  getSuspendedTaskIds?: () => string[];
   /** The desktop's built-in chats; without it phones only see terminals. */
   chats?: RemoteChatSource;
   /** Ping interval for dropping silent sockets; tests shorten it. */
@@ -1047,8 +1076,14 @@ export function startRemoteServer(opts: {
   // omits it.
   const getTaskAttention: (taskId: string) => RemoteAttentionState =
     opts.getTaskAttention ?? (() => 'idle');
-  const agentList = (): RemoteAgent[] =>
-    withChatAgents(
+  const describeTask = (taskId: string) => ({
+    taskName: opts.getTaskName(taskId),
+    lastLine: '',
+    attention: getTaskAttention(taskId),
+    ...opts.getTaskContext?.(taskId),
+  });
+  const agentList = (): RemoteAgent[] => {
+    const withProcess = withChatAgents(
       buildAgentList(
         opts.getTaskName,
         opts.getAgentStatus,
@@ -1057,13 +1092,10 @@ export function startRemoteServer(opts: {
         opts.getCollapsedTaskIds,
       ),
       opts.chats?.list() ?? [],
-      (taskId) => ({
-        taskName: opts.getTaskName(taskId),
-        lastLine: '',
-        attention: getTaskAttention(taskId),
-        ...opts.getTaskContext?.(taskId),
-      }),
+      describeTask,
     );
+    return withSuspendedTasks(withProcess, opts.getSuspendedTaskIds?.() ?? [], describeTask);
+  };
   const token = randomBytes(24).toString('base64url');
   const subtaskToken = randomBytes(24).toString('base64url');
   const mobileToken = randomBytes(24).toString('base64url');

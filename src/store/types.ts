@@ -658,6 +658,8 @@ export interface PersistedState {
   canvasOwnershipBadges?: boolean;
   /** Offer a review line in the Finish dialog. */
   finishReview?: boolean;
+  /** Start every restored agent when the app opens; `false` leaves them suspended. */
+  resumeAgentsOnLaunch?: boolean;
   /** Which model reviews a task's work. */
   reviewModel?: ReviewModelSettings;
   autoStartRemoteAccess?: boolean;
@@ -876,6 +878,7 @@ export interface AppStore {
   defaultPropagateSkipPermissions: boolean;
   canvasOwnershipBadges: boolean;
   finishReview: boolean;
+  resumeAgentsOnLaunch: boolean;
   reviewModel: ReviewModelSettings;
   mcpStatus: MCPStatus;
   usage: Record<UsageProvider, UsageState>;

@@ -34,6 +34,8 @@ export interface RemoteAgent {
   kind?: 'chat';
   /** True when the task is collapsed / minimized on the desktop. */
   collapsed?: boolean;
+  /** True when the task's agent has no process and waits to be resumed on the desktop. */
+  suspended?: boolean;
   /** Overall PR check status; absent without an open PR that reports checks. */
   ci?: RemoteCiStatus;
   /** The desktop board lane the task sits in, so the phone groups tasks the same way. */

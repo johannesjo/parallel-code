@@ -1,6 +1,7 @@
 import { createEffect, createRoot, createSignal, untrack } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { isAgentChat } from './agent-chat';
+import { isAgentSuspended } from './agent-suspend';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { store, setStore } from './core';
@@ -1105,6 +1106,8 @@ function hasTaskAgentError(taskId: string): boolean {
   if (task.closingStatus === 'closing' || task.closingStatus === 'removing') return false;
   return task.agentIds.some((id) => {
     const agent = store.agents[id];
+    // Waiting to be resumed is not a failure, though it shares `exited` with one.
+    if (isAgentSuspended(agent)) return false;
     if (agent && isAgentChat(task, id)) return !!agent.chatState?.error;
     if (agent?.status === 'running') return getAgentHookStatus(id)?.event === 'StopFailure';
     if (agent?.status !== 'exited') return false;

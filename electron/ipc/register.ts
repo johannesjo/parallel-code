@@ -36,6 +36,7 @@ import {
   resumeAgent,
   killAgent,
   countRunningAgents,
+  listRunningAgentIds,
   killAllAgents,
   getAgentMeta,
   notifyAgentListChanged,
@@ -705,6 +706,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // (it depends on reactive terminal/git/steps state), so main just caches it.
   const taskAttention = new Map<string, RemoteAttentionState>();
   const taskContext = new Map<string, RemoteTaskContext>();
+  // Not part of the context: a task that has a process again must not keep the flag.
+  const suspendedTasks = new Set<string>();
 
   // --- MCP coordinator (lazy — only loaded when coordinator mode is enabled) ---
   let coordinatorHandlersRegistered = false;
@@ -985,6 +988,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return killAgent(args.agentId);
   });
   ipcMain.handle(IPC.CountRunningAgents, () => countRunningAgents());
+  ipcMain.handle(IPC.ListRunningAgentIds, () => listRunningAgentIds());
   ipcMain.handle(IPC.KillAllAgents, () => {
     pendingSpawns.clear();
     return killAllAgents();
@@ -2018,6 +2022,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       }
       return result;
     },
+    getSuspendedTaskIds: (): string[] => [...suspendedTasks],
   };
 
   const remoteServerOptions = (): Omit<
@@ -2071,6 +2076,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
             lastLine?: unknown;
             taskName?: unknown;
             collapsed?: unknown;
+            suspended?: unknown;
             ci?: unknown;
             lane?: unknown;
             pr?: unknown;
@@ -2082,12 +2088,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
       if (!statuses || typeof statuses !== 'object') return;
       taskAttention.clear();
       taskContext.clear();
+      suspendedTasks.clear();
       if (args.contexts && typeof args.contexts === 'object') {
         for (const [taskId, context] of Object.entries(args.contexts)) {
           if (!context || typeof context !== 'object') continue;
           const taskName =
             typeof context.taskName === 'string' ? context.taskName.slice(0, 200) : undefined;
           if (taskName) taskNames.set(taskId, taskName);
+          if (context.suspended === true) suspendedTasks.add(taskId);
           taskContext.set(taskId, {
             taskName,
             collapsed: Boolean(context.collapsed),

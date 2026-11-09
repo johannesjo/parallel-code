@@ -105,6 +105,7 @@ import {
   isDockerAvailable,
   killAgent,
   killAllAgents,
+  listRunningAgentIds,
   onPtyEvent,
   projectImageTag,
   resizeAgent,
@@ -1122,6 +1123,19 @@ describe('spawnAgent session reattach', () => {
 
     expect(oldProc.kill).toHaveBeenCalled();
     expect(mockPtySpawn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('listRunningAgentIds', () => {
+  it('names the agents whose process is alive, and drops one once it exits', async () => {
+    const args = buildSpawnArgs({ agentId: 'agent-live', command: 'claude', args: [] });
+    await spawnAgent(createMockNotify(), args);
+    await spawnAgent(createMockNotify(), { ...args, agentId: 'agent-gone' });
+    expect(listRunningAgentIds().sort()).toEqual(['agent-gone', 'agent-live']);
+
+    const gone = mockPtySpawn.mock.results[1].value as ReturnType<typeof mockPtySpawn>;
+    gone.emitExit({ exitCode: 0, signal: undefined });
+    expect(listRunningAgentIds()).toEqual(['agent-live']);
   });
 });
 

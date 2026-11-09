@@ -17,6 +17,7 @@ import {
   stripAnsi,
 } from './taskStatus';
 import { taskUsesAgentChat } from './agent-chat';
+import { isAgentSuspended } from './agent-suspend';
 import { getPrChecks, isPrReadyToMerge, prBoardStatus } from './pr-checks-state';
 import { hasOpenTaskPr } from './pr-babysit';
 import { taskLeadPr, taskLinkedPrUrl } from './task-prs';
@@ -121,6 +122,7 @@ export function startRemoteStatusSync(): () => void {
           | 'lastLine'
           | 'taskName'
           | 'collapsed'
+          | 'suspended'
           | 'ci'
           | 'lane'
           | 'pr'
@@ -141,6 +143,7 @@ export function startRemoteStatusSync(): () => void {
         contexts[taskId] = {
           taskName: task.name,
           collapsed: Boolean(task.collapsed),
+          suspended: isAgentSuspended(agent),
           ci: remoteCiStatus(task),
           lane: boardLaneOf(task),
           projectName: project?.name ?? '',
