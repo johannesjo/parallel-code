@@ -14,6 +14,17 @@ const { terminals } = vi.hoisted(() => {
   return { terminals: [] as Terminal[] };
 });
 
+// happy-dom has no WebGL; the real addon would draw to the stub canvas from a timer.
+vi.mock('@xterm/addon-webgl', () => ({
+  WebglAddon: class {
+    activate(): void {}
+    dispose(): void {}
+    onContextLoss() {
+      return { dispose() {} };
+    }
+  },
+}));
+
 vi.mock('../lib/terminalFitManager', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/terminalFitManager')>();
   return {
@@ -111,7 +122,31 @@ it('Option+drag selects text under mouse tracking, and Cmd+C copies it', async (
   expect(writesToAgent()).toEqual([]);
 });
 
-it('Edit > Copy copies an Option+drag selection', async () => {
+it('Option+click under mouse tracking sends the agent nothing', async () => {
+  const { term, screen } = await mountClaudeFullscreen();
+  const sent: string[] = [];
+  term.onData((data) => sent.push(data));
+  const click = { altKey: true, detail: 1, clientX: 30, clientY: 8, bubbles: true };
+  screen.dispatchEvent(new MouseEvent('mousedown', { ...click, buttons: 1 }));
+  document.dispatchEvent(new MouseEvent('mouseup', { ...click, buttons: 0 }));
+  expect(term.options.altClickMovesCursor).toBe(false);
+  expect(sent).toEqual([]);
+});
+
+it('Option+click still moves the cursor in a plain shell', async () => {
+  const { term, screen } = await mountClaudeFullscreen();
+  await new Promise<void>((resolve) => term.write('\x1b[?1002l\x1b[?1006l\x1b[1;1H', resolve));
+  const sent: string[] = [];
+  term.onData((data) => sent.push(data));
+  const click = { altKey: true, detail: 1, clientX: 30, clientY: 8, bubbles: true };
+  screen.dispatchEvent(new MouseEvent('mousedown', { ...click, buttons: 1 }));
+  document.dispatchEvent(new MouseEvent('mouseup', { ...click, buttons: 0 }));
+  expect(term.options.altClickMovesCursor).toBe(true);
+  // xterm sent its cursor move (empty here: happy-dom has no layout to aim at).
+  expect(sent).toHaveLength(1);
+});
+
+it('Edit > Copy copies an xterm selection under mouse tracking', async () => {
   const { term } = await mountClaudeFullscreen();
   term.select(0, 0, 5);
   const clipboardData = new DataTransfer();
