@@ -42,6 +42,7 @@ import {
   unlinkMcpConfigFile,
   type SessionMcpProvider,
 } from './coordinator/mcp-config.js';
+import { CoordinatorNotifications } from './coordinator/notifications.js';
 import type { Notify } from '../ipc/notify.js';
 import { createTask as createBackendTask, deleteTask } from '../ipc/tasks.js';
 import { getSkipPermissionsArgs, stripPermissionBypassArgs } from '../shared/skip-permissions.js';
@@ -89,7 +90,6 @@ import { info as logInfo, warn as logWarn } from '../log.js';
 import type {
   CoordinatedTask,
   IntegrationPolicy,
-  PendingNotification,
   CoordinatorState,
   ApiTaskSummary,
   ApiTaskDetail,
@@ -294,11 +294,16 @@ export class Coordinator {
   };
   private coordinatorAgentEnvFile: string | undefined;
   private coordinators = new Map<string, CoordinatorState>();
-  private notificationDelayMs = 30_000;
-  private readonly COORDINATOR_RESTAMP_DELAY_MS = 5 * 60_000;
-  private readonly MAX_ACKED_BATCH_IDS = 64;
   // Serializes concurrent preamble writes to the same file path.
   private preambleWriteQueue = new Map<string, Promise<void>>();
+  private notifications = new CoordinatorNotifications({
+    coordinators: this.coordinators,
+    tasks: this.tasks,
+    activeSignalWaitCount: (coordinatorTaskId) =>
+      this.activeSignalWaitCounts.get(coordinatorTaskId) ?? 0,
+    suppressPromptEchoIdleIfNeeded: (task) => this.suppressPromptEchoIdleIfNeeded(task),
+    notifyRenderer: (channel, data) => this.notifyRenderer(channel, data),
+  });
   constructor() {
     // Listen for PTY exits to update task status when agents are killed externally
     // (e.g., user closes a child task from the UI).
@@ -321,7 +326,7 @@ export class Coordinator {
           // Closing and archiving stop the agent on purpose; neither is a result to report.
           if (this.closingTaskIds.has(task.id) || task.archived) break;
           this.deliverExitToSignalWaiter(task);
-          this.maybeQueueReviewNotification(task, 'exited', exitCode ?? null);
+          this.notifications.maybeQueueReviewNotification(task, 'exited', exitCode ?? null);
           break;
         }
       }
@@ -395,7 +400,7 @@ export class Coordinator {
     // Suppress the exit notification — the signal waiter receives the
     // exit info as its return value (mirrors the signalDone path).
     if (this.coordinators.get(coordinatorId)?.automaticNotifications !== false) {
-      this.suppressPendingNotificationForTask(task);
+      this.notifications.suppressPendingNotificationForTask(task);
       task.reviewNotificationQueued = true;
     }
     // The resolver IS `complete` from waitForSignalDone — it handles
@@ -455,7 +460,7 @@ export class Coordinator {
     this.promptReadySeenAt.delete(task.id);
     if (task.status === 'idle') {
       task.status = 'running';
-      this.suppressPendingNotificationForTask(task);
+      this.notifications.suppressPendingNotificationForTask(task);
     }
   }
 
@@ -567,7 +572,7 @@ export class Coordinator {
       // agents go idle on Stop only, and an undelivered assignment is not idle.
       if (!this.awaitingInitialPrompt(task) && !this.hookLiveAgentIds.has(task.agentId)) {
         task.status = 'idle';
-        this.maybeQueueReviewNotification(task, 'idle', null);
+        this.notifications.maybeQueueReviewNotification(task, 'idle', null);
       }
     }
     return hasAgentPrompt;
@@ -771,7 +776,7 @@ export class Coordinator {
       // Hook-live agents flip back to running only on hook evidence — TUI
       // repaints and status-line noise must not override a hook-reported idle.
       task.status = 'running';
-      this.suppressPendingNotificationForTask(task);
+      this.notifications.suppressPendingNotificationForTask(task);
     }
   }
 
@@ -813,7 +818,7 @@ export class Coordinator {
     }
     if (task.status === 'running') {
       task.status = 'idle';
-      this.maybeQueueReviewNotification(task, 'idle', null);
+      this.notifications.maybeQueueReviewNotification(task, 'idle', null);
     }
     const resolvers = this.idleResolvers.get(task.id);
     if (resolvers?.length) {
@@ -904,7 +909,7 @@ export class Coordinator {
   }
 
   setNotificationDelayMs(ms: number): void {
-    this.notificationDelayMs = Math.max(5_000, Math.min(300_000, ms));
+    this.notifications.setNotificationDelayMs(ms);
   }
 
   setDefaultProject(projectId: string, projectRoot: string, coordinatorTaskId?: string): void {
@@ -965,149 +970,6 @@ export class Coordinator {
     if (state) {
       state.dockerImage = image;
     }
-  }
-
-  private maybeQueueReviewNotification(
-    task: CoordinatedTask,
-    state: 'idle' | 'exited',
-    exitCode: number | null,
-    delayOverrideMs?: number,
-  ): void {
-    // Always notify for exits — a task killed before prompt delivery still needs to be
-    // reported so the coordinator doesn't think it's still running.
-    if (!task.assignedPromptDelivered && state !== 'exited') return;
-    if (state === 'idle' && task.suppressIdleUntil !== undefined) {
-      if (this.suppressPromptEchoIdleIfNeeded(task)) return;
-    }
-
-    const coordinator = this.coordinators.get(task.coordinatorTaskId);
-    if (!coordinator) {
-      if (task.reviewNotificationQueued) return;
-      task.reviewNotificationQueued = true;
-      this.notifyRenderer(IPC.MCP_CoordinatorOrphanedNotification, {
-        subTaskId: task.id,
-        notificationId: randomUUID(),
-        state,
-        text: `"${task.name}" ${state === 'exited' ? `terminated (exit ${exitCode})` : 'ready for review'} — branch: ${task.branchName}`,
-      });
-      return;
-    }
-
-    if (task.reviewNotificationQueued && state === 'exited') {
-      const existing = coordinator.pendingNotifications.find((n) => n.taskId === task.id);
-      if (existing && existing.state === 'idle') {
-        existing.state = 'exited';
-        existing.exitCode = exitCode;
-        this.stageBatch(coordinator);
-        return;
-      }
-      return;
-    }
-
-    if (task.reviewNotificationQueued) return;
-    task.reviewNotificationQueued = true;
-
-    const notification: PendingNotification = {
-      id: randomUUID(),
-      taskId: task.id,
-      taskName: task.name,
-      branchName: task.branchName,
-      state,
-      exitCode,
-      completedAt: new Date(),
-    };
-    coordinator.pendingNotifications.push(notification);
-    this.stageBatch(coordinator, delayOverrideMs);
-  }
-
-  private stageBatch(coordinator: CoordinatorState, delayOverrideMs?: number): void {
-    const pending = coordinator.pendingNotifications;
-    if (pending.length === 0) return;
-    if (
-      coordinator.automaticNotifications !== false &&
-      this.hasActiveSignalWaiter(coordinator.taskId)
-    ) {
-      logWarn('coordinator.notification', 'stageBatch skipped', {
-        coordinatorTaskId: coordinator.taskId,
-        reason: 'active_signal_wait',
-        activeWaitCount: this.activeSignalWaitCounts.get(coordinator.taskId) ?? 0,
-        pendingTaskIds: this.pendingNotificationTaskIds(coordinator),
-      });
-      if (coordinator.restageTimer) {
-        clearTimeout(coordinator.restageTimer);
-        coordinator.restageTimer = null;
-      }
-      return;
-    }
-
-    // Clear any previously staged batches — they are superseded by this new batch.
-    // Leaving old entries causes stagedBatches to grow unboundedly and makes
-    // deregisterCoordinator incorrectly believe notifications are still pending.
-    coordinator.stagedBatches.clear();
-    const batchId = randomUUID();
-    const notificationIds = pending.map((n) => n.id);
-    coordinator.stagedBatches.set(batchId, notificationIds);
-
-    const anyNonZero = pending.some((n) => n.exitCode !== null && n.exitCode !== 0);
-    const defaultDelay = anyNonZero
-      ? Math.max(10_000, this.notificationDelayMs / 4)
-      : this.notificationDelayMs;
-    const delay = delayOverrideMs ?? defaultDelay;
-    const autoFireAt = Date.now() + delay;
-
-    const text = this.formatNotificationText(pending, coordinator.automaticNotifications !== false);
-
-    logWarn('coordinator.notification', 'stageBatch emitted', {
-      coordinatorTaskId: coordinator.taskId,
-      batchId,
-      notificationIds,
-      pendingTaskIds: this.pendingNotificationTaskIds(coordinator),
-      delayMs: delay,
-      autoFireAt,
-    });
-
-    this.notifyRenderer(IPC.MCP_CoordinatorNotificationStaged, {
-      coordinatorTaskId: coordinator.taskId,
-      batchId,
-      notificationIds,
-      text,
-      autoFireAt,
-      automaticNotifications: coordinator.automaticNotifications !== false,
-    });
-
-    if (coordinator.automaticNotifications === false) return;
-    if (coordinator.restageTimer) clearTimeout(coordinator.restageTimer);
-    coordinator.restageTimer = setTimeout(() => {
-      coordinator.restageTimer = null;
-      if (coordinator.pendingNotifications.length > 0) {
-        this.stageBatch(coordinator);
-      }
-    }, this.COORDINATOR_RESTAMP_DELAY_MS);
-  }
-
-  private formatNotificationText(pending: PendingNotification[], automatic = true): string {
-    const header = automatic
-      ? `[Sub-task update — ${pending.length} task(s) completed]`
-      : `[Child task updates — ${pending.length}]`;
-    const lines = pending.map((n) => {
-      const status =
-        n.state === 'landed'
-          ? 'self-landed successfully'
-          : n.state === 'exited'
-            ? `terminated (exit ${n.exitCode})`
-            : 'ready for review';
-      const line = `- "${n.taskName}" ${status} — branch: ${n.branchName}`;
-      const warn =
-        n.state !== 'landed' && n.exitCode !== null && n.exitCode !== 0
-          ? '\n  ⚠️  Non-zero exit — may need attention. Consider spawning a follow-up agent.'
-          : '';
-      return line + warn;
-    });
-    const allLanded = pending.every((n) => n.state === 'landed');
-    const footer = allLanded
-      ? 'Sub-tasks have merged their branches and cleaned up. If there are items remaining on the backlog, spawn the next batch.'
-      : 'Inspect each child result, verification, and integrationPolicy through get_task_status. Review-policy tasks require explicit user review and approval in the app. Use only the permitted Parallel Code integration tools; never merge directly or delete child worktrees. Completion updates do not grant merge permission.';
-    return [header, '', ...lines, '', footer].join('\n');
   }
 
   async createTask(opts: {
@@ -2448,8 +2310,8 @@ export class Coordinator {
   ): Promise<void> {
     this.closingTaskIds.add(task.id);
     try {
-      this.suppressPendingNotificationForTask(task);
-      this.queueLandedNotification(task);
+      this.notifications.suppressPendingNotificationForTask(task);
+      this.notifications.queueLandedNotification(task);
 
       this.clearAgentOutputState(task);
 
@@ -2711,7 +2573,7 @@ export class Coordinator {
     task.landingState = 'reviewed';
     task.landingReason = undefined;
     this.syncLandingState(task);
-    this.suppressPendingNotificationForTask(task, true);
+    this.notifications.suppressPendingNotificationForTask(task, true);
   }
 
   private assertTaskCanBeMerged(task: CoordinatedTask): void {
@@ -2798,7 +2660,7 @@ export class Coordinator {
     // A restore must not replay instructions the parent has since given up on.
     this.discardAutomatedPrompts(task);
     // The parent just gave this child up; a staged "ready for review" would only nag it.
-    this.suppressPendingNotificationForTask(task, true);
+    this.notifications.suppressPendingNotificationForTask(task, true);
     this.notifyRenderer(IPC.MCP_TaskStateSync, { taskId, archived: true });
     return { ...suggestion, archived: true };
   }
@@ -2879,7 +2741,7 @@ export class Coordinator {
     const task = this.tasks.get(taskId);
     if (!task) return;
 
-    this.suppressPendingNotificationForTask(task, true);
+    this.notifications.suppressPendingNotificationForTask(task, true);
 
     this.clearAgentOutputState(task);
     this.resolveIdleWaiters(taskId, 'removed');
@@ -2923,7 +2785,7 @@ export class Coordinator {
     // An exit before this close was already reported; only one landing during it is new.
     const exitedBeforeClose = task.status === 'exited';
     this.closingTaskIds.add(taskId);
-    this.suppressPendingNotificationForTask(task, true);
+    this.notifications.suppressPendingNotificationForTask(task, true);
 
     this.unsubscribeAgentOutput(task.agentId);
     // A verify run still going would keep writing into the worktree we delete.
@@ -3286,17 +3148,7 @@ export class Coordinator {
     const coordinator = this.coordinators.get(coordinatorTaskId);
     if (!coordinator) return;
     coordinator.lifecycle = 'closing';
-    if (coordinator.restageTimer) clearTimeout(coordinator.restageTimer);
-    if (coordinator.pendingNotifications.length > 0 || coordinator.stagedBatches.size > 0) {
-      logWarn('coordinator.notification', 'staged notification cleared', {
-        coordinatorTaskId: coordinator.taskId,
-        reason: 'deregister',
-        pendingTaskIds: this.pendingNotificationTaskIds(coordinator),
-      });
-      this.notifyRenderer(IPC.MCP_CoordinatorNotificationCleared, {
-        coordinatorTaskId: coordinator.taskId,
-      });
-    }
+    this.notifications.clearForDeregister(coordinator);
 
     restoreCoordinatorMcpJson(coordinator);
 
@@ -3376,77 +3228,15 @@ export class Coordinator {
   }
 
   rescheduleRestageTimer(coordinatorTaskId: string): void {
-    const coordinator = this.coordinators.get(coordinatorTaskId);
-    if (
-      !coordinator ||
-      coordinator.automaticNotifications === false ||
-      coordinator.pendingNotifications.length === 0
-    )
-      return;
-    if (this.hasActiveSignalWaiter(coordinatorTaskId)) {
-      logWarn('coordinator.notification', 'restage skipped', {
-        coordinatorTaskId,
-        reason: 'active_signal_wait',
-        activeWaitCount: this.activeSignalWaitCounts.get(coordinatorTaskId) ?? 0,
-        pendingTaskIds: this.pendingNotificationTaskIds(coordinator),
-      });
-      return;
-    }
-    if (coordinator.restageTimer) clearTimeout(coordinator.restageTimer);
-    coordinator.restageTimer = setTimeout(() => {
-      coordinator.restageTimer = null;
-      if (coordinator.pendingNotifications.length > 0) {
-        this.stageBatch(coordinator);
-      }
-    }, this.COORDINATOR_RESTAMP_DELAY_MS);
+    this.notifications.rescheduleRestageTimer(coordinatorTaskId);
   }
 
   dropNotification(coordinatorTaskId: string, batchId: string): void {
-    const coordinator = this.coordinators.get(coordinatorTaskId);
-    const affectedTaskIds: string[] = [];
-    if (coordinator) {
-      const pendingIds = coordinator.stagedBatches.get(batchId);
-      if (pendingIds) {
-        for (const notifId of pendingIds) {
-          const notif = coordinator.pendingNotifications.find((n) => n.id === notifId);
-          if (notif) affectedTaskIds.push(notif.taskId);
-        }
-      }
-    }
-    this.ackNotification(coordinatorTaskId, batchId);
-    for (const taskId of affectedTaskIds) {
-      this.notifyRenderer(IPC.MCP_TaskStateSync, { taskId, needsReview: true });
-    }
+    this.notifications.dropNotification(coordinatorTaskId, batchId);
   }
 
   ackNotification(coordinatorTaskId: string, batchId: string): void {
-    const coordinator = this.coordinators.get(coordinatorTaskId);
-    if (!coordinator) return;
-
-    if (coordinator.ackedBatchIds.includes(batchId)) return;
-
-    const pendingIds = coordinator.stagedBatches.get(batchId);
-    if (pendingIds) {
-      coordinator.pendingNotifications = coordinator.pendingNotifications.filter((n) => {
-        if (pendingIds.includes(n.id)) {
-          const task = this.tasks.get(n.taskId);
-          if (task) task.reviewNotificationQueued = false;
-          return false;
-        }
-        return true;
-      });
-      coordinator.stagedBatches.delete(batchId);
-    }
-
-    coordinator.ackedBatchIds.push(batchId);
-    if (coordinator.ackedBatchIds.length > this.MAX_ACKED_BATCH_IDS) {
-      coordinator.ackedBatchIds.shift();
-    }
-
-    if (coordinator.pendingNotifications.length === 0 && coordinator.restageTimer) {
-      clearTimeout(coordinator.restageTimer);
-      coordinator.restageTimer = null;
-    }
+    this.notifications.ackNotification(coordinatorTaskId, batchId);
   }
 
   hasActiveCoordinator(): boolean {
@@ -3552,8 +3342,8 @@ export class Coordinator {
       task.signalDoneConsumed = true;
       // Ordinary parents keep a visible review queue even while their agent waits.
       if (this.coordinators.get(coordinatorId)?.automaticNotifications === false) {
-        this.maybeQueueReviewNotification(task, 'idle', task.exitCode ?? null, 5_000);
-      } else this.suppressPendingNotificationForTask(task);
+        this.notifications.maybeQueueReviewNotification(task, 'idle', task.exitCode ?? null, 5_000);
+      } else this.notifications.suppressPendingNotificationForTask(task);
       const remaining = this.countRemaining(coordinatorId);
       // Resolver `complete` from waitForSignalDone handles finishSignalWait.
       firstAnyResolver({
@@ -3596,69 +3386,9 @@ export class Coordinator {
     // For 'running' and 'idle', the worker explicitly signalled done so treat as idle.
     if (task.status !== 'creating') {
       const state: 'idle' | 'exited' = task.status === 'exited' ? 'exited' : 'idle';
-      this.maybeQueueReviewNotification(task, state, task.exitCode ?? null, 5_000);
+      this.notifications.maybeQueueReviewNotification(task, state, task.exitCode ?? null, 5_000);
     }
     return { ok: true, completion };
-  }
-
-  private queueLandedNotification(task: CoordinatedTask): void {
-    const coordinator = this.coordinators.get(task.coordinatorTaskId);
-    if (!coordinator) return;
-    if (coordinator.pendingNotifications.some((n) => n.taskId === task.id)) return;
-
-    const notification: PendingNotification = {
-      id: randomUUID(),
-      taskId: task.id,
-      taskName: task.name,
-      branchName: task.branchName,
-      state: 'landed',
-      exitCode: 0,
-      completedAt: new Date(),
-    };
-    coordinator.pendingNotifications.push(notification);
-    task.reviewNotificationQueued = true;
-    this.stageBatch(coordinator);
-  }
-
-  private suppressPendingNotificationForTask(task: CoordinatedTask, explicitAction = false): void {
-    const coordinator = this.coordinators.get(task.coordinatorTaskId);
-    if (!coordinator || (!explicitAction && coordinator.automaticNotifications === false)) return;
-
-    const toRemove = coordinator.pendingNotifications.filter((n) => n.taskId === task.id);
-    if (toRemove.length === 0) return;
-
-    const removeIds = new Set(toRemove.map((n) => n.id));
-    coordinator.pendingNotifications = coordinator.pendingNotifications.filter(
-      (n) => n.taskId !== task.id,
-    );
-    task.reviewNotificationQueued = false;
-
-    for (const [batchId, notifIds] of coordinator.stagedBatches) {
-      const remaining = notifIds.filter((id) => !removeIds.has(id));
-      if (remaining.length === 0) {
-        coordinator.stagedBatches.delete(batchId);
-      } else {
-        coordinator.stagedBatches.set(batchId, remaining);
-      }
-    }
-
-    if (coordinator.pendingNotifications.length === 0) {
-      if (coordinator.restageTimer) {
-        clearTimeout(coordinator.restageTimer);
-        coordinator.restageTimer = null;
-      }
-      logWarn('coordinator.notification', 'staged notification cleared', {
-        coordinatorTaskId: coordinator.taskId,
-        reason: 'all_suppressed',
-        taskId: task.id,
-      });
-      this.notifyRenderer(IPC.MCP_CoordinatorNotificationCleared, {
-        coordinatorTaskId: coordinator.taskId,
-      });
-    } else {
-      // Re-stage with remaining notifications so text is updated
-      this.stageBatch(coordinator);
-    }
   }
 
   /** `signal` aborts when the caller is gone (HTTP request closed, tool call cancelled): its
@@ -3771,7 +3501,7 @@ export class Coordinator {
         // Suppress the staged UI notification that was queued when signalDone ran
         // without an active waiter — otherwise it will auto-fire as a duplicate.
         if (this.coordinators.get(coordinatorTaskId)?.automaticNotifications !== false) {
-          this.suppressPendingNotificationForTask(task);
+          this.notifications.suppressPendingNotificationForTask(task);
         }
         this.notifyRenderer(IPC.MCP_TaskStateSync, {
           taskId: task.id,
@@ -3818,7 +3548,7 @@ export class Coordinator {
     );
     const coordinator = this.coordinators.get(coordinatorTaskId);
     if (coordinator && coordinator.automaticNotifications !== false) {
-      this.clearStagedNotificationForCoordinator(coordinator);
+      this.notifications.clearStagedNotificationForCoordinator(coordinator);
     }
   }
 
@@ -3833,33 +3563,8 @@ export class Coordinator {
 
     const coordinator = this.coordinators.get(coordinatorTaskId);
     if (coordinator && coordinator.pendingNotifications.length > 0) {
-      this.stageBatch(coordinator);
+      this.notifications.stageBatch(coordinator);
     }
-  }
-
-  private hasActiveSignalWaiter(coordinatorTaskId: string): boolean {
-    return (this.activeSignalWaitCounts.get(coordinatorTaskId) ?? 0) > 0;
-  }
-
-  private clearStagedNotificationForCoordinator(coordinator: CoordinatorState): void {
-    if (coordinator.restageTimer) {
-      clearTimeout(coordinator.restageTimer);
-      coordinator.restageTimer = null;
-    }
-    if (coordinator.stagedBatches.size === 0) return;
-    coordinator.stagedBatches.clear();
-    logWarn('coordinator.notification', 'staged notification cleared', {
-      coordinatorTaskId: coordinator.taskId,
-      reason: 'signal_wait_started',
-      pendingTaskIds: this.pendingNotificationTaskIds(coordinator),
-    });
-    this.notifyRenderer(IPC.MCP_CoordinatorNotificationCleared, {
-      coordinatorTaskId: coordinator.taskId,
-    });
-  }
-
-  private pendingNotificationTaskIds(coordinator: CoordinatorState): string[] {
-    return coordinator.pendingNotifications.map((n) => n.taskId);
   }
 
   private notifyRenderer(channel: string, data: unknown): void {
