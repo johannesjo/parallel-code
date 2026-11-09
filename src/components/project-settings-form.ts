@@ -1,7 +1,7 @@
 import { createSignal } from 'solid-js';
 import { sanitizeBranchPrefix } from '../lib/branch-name';
 import type { ProjectIconId } from '../lib/project-icon';
-import type { GitIsolationMode, Project, TerminalBookmark } from '../store/types';
+import type { GitIsolationMode, Project, TerminalBookmark, WorktreeInclude } from '../store/types';
 import { finalizeChecks, type CheckDraft } from './ProjectChecksFields';
 import {
   envDraftsFrom,
@@ -26,6 +26,11 @@ export function createProjectSettingsForm() {
   const [verifyAutoRun, setVerifyAutoRun] = createSignal(true);
   const [bookmarks, setBookmarks] = createSignal<TerminalBookmark[]>([]);
   const [agentEnv, setAgentEnv] = createSignal<EnvDraft[]>([]);
+  const [setupScript, setSetupScript] = createSignal('');
+  const [teardownScript, setTeardownScript] = createSignal('');
+  // Off keeps today's per-task defaults; the list is only saved while on.
+  const [includesEnabled, setIncludesEnabled] = createSignal(false);
+  const [includes, setIncludes] = createSignal<WorktreeInclude[]>([]);
 
   function load(p: Project) {
     setName(p.name);
@@ -42,6 +47,10 @@ export function createProjectSettingsForm() {
     setVerifyAutoRun(p.verifyAutoRun !== false);
     setBookmarks(p.terminalBookmarks ? [...p.terminalBookmarks] : []);
     setAgentEnv(envDraftsFrom(p.agentEnv));
+    setSetupScript(p.worktreeSetupScript ?? '');
+    setTeardownScript(p.worktreeTeardownScript ?? '');
+    setIncludesEnabled(p.worktreeIncludes !== undefined);
+    setIncludes(p.worktreeIncludes ? [...p.worktreeIncludes] : []);
   }
 
   /** The fields `updateProject` stores; peer access saves separately. */
@@ -60,6 +69,9 @@ export function createProjectSettingsForm() {
       verifyAutoRun: verifyAutoRun(),
       terminalBookmarks: bookmarks(),
       agentEnv: finalizeEnvDrafts(agentEnv()),
+      worktreeSetupScript: setupScript().trim() ? setupScript() : undefined,
+      worktreeTeardownScript: teardownScript().trim() ? teardownScript() : undefined,
+      worktreeIncludes: includesEnabled() ? includes() : undefined,
     };
   }
 
@@ -92,6 +104,14 @@ export function createProjectSettingsForm() {
     setBookmarks,
     agentEnv,
     setAgentEnv,
+    setupScript,
+    setSetupScript,
+    teardownScript,
+    setTeardownScript,
+    includesEnabled,
+    setIncludesEnabled,
+    includes,
+    setIncludes,
     /** Why the env rows can't be saved yet, or '' when they can. */
     agentEnvError: () => envDraftsError(agentEnv()),
     load,

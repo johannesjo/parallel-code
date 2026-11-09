@@ -1,6 +1,7 @@
 import { createSignal } from 'solid-js';
 import type { GitIgnoredEntry } from '../ipc/types';
-import type { GitIsolationMode } from '../store/types';
+import type { GitIsolationMode, WorktreeInclude } from '../store/types';
+import { resolveIncludeSelection } from './worktree-includes';
 
 export type SymlinkCandidatesFetcher = (projectRoot: string) => Promise<GitIgnoredEntry[]>;
 
@@ -35,6 +36,8 @@ export function symlinkProbeBlocksSubmit(isolation: GitIsolationMode, loading: b
 export function createSymlinkCandidateState(fetchCandidates: SymlinkCandidatesFetcher) {
   const [dirs, setDirs] = createSignal<string[]>([]);
   const [selected, setSelected] = createSignal<ReadonlySet<string>>(new Set());
+  // Names the project's saved include list copies instead of symlinking.
+  const [copyDirs, setCopyDirs] = createSignal<ReadonlySet<string>>(new Set());
   const [loading, setLoading] = createSignal(false);
   let requestId = 0;
 
@@ -44,12 +47,17 @@ export function createSymlinkCandidateState(fetchCandidates: SymlinkCandidatesFe
     setLoading(false);
   }
 
-  async function load(projectRoot: string | undefined, isGitRepo: boolean): Promise<void> {
+  async function load(
+    projectRoot: string | undefined,
+    isGitRepo: boolean,
+    saved?: readonly WorktreeInclude[],
+  ): Promise<void> {
     const id = ++requestId;
     // Clear before the async fetch — not just when skipping — so nothing
     // stale is visible (or submittable) while the new list is in flight.
     setDirs([]);
     setSelected(new Set<string>());
+    setCopyDirs(new Set<string>());
     if (!projectRoot || !isGitRepo) {
       setLoading(false);
       return;
@@ -58,8 +66,10 @@ export function createSymlinkCandidateState(fetchCandidates: SymlinkCandidatesFe
     try {
       const entries = await fetchCandidates(projectRoot);
       if (id !== requestId) return; // stale — a newer load owns the state
-      setDirs(entries.map((entry) => entry.name));
-      setSelected(new Set(entries.filter((entry) => entry.isDefault).map((entry) => entry.name)));
+      const initial = resolveIncludeSelection(entries, saved);
+      setDirs(initial.dirs);
+      setSelected(initial.selected);
+      setCopyDirs(initial.copy);
     } catch {
       // The backend already degrades to [] on git failures; a transport
       // failure here just leaves the cleared (empty) state in place.
@@ -75,5 +85,5 @@ export function createSymlinkCandidateState(fetchCandidates: SymlinkCandidatesFe
     setSelected(next);
   }
 
-  return { dirs, selected, loading, load, invalidate, toggle };
+  return { dirs, selected, copyDirs, loading, load, invalidate, toggle };
 }

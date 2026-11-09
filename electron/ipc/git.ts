@@ -1311,6 +1311,8 @@ export async function createWorktree(
   symlinkDirs: string[],
   baseBranch?: string,
   forceClean = false,
+  /** Root-level entries copied in instead of symlinked (per-project include list). */
+  copyDirs: string[] = [],
 ): Promise<{ path: string; branch: string }> {
   const worktreePath = worktreePathFor(repoRoot, branchName);
 
@@ -1375,8 +1377,15 @@ export async function createWorktree(
   // Comparisons fold case when the repo's core.ignorecase says the filesystem
   // is case-insensitive, so `.WORKTREES`/`.CLAUDE` variants can't slip through.
   const ignoreCase = await getCoreIgnoreCase(repoRoot);
+  // A name in both lists is copied: copying is the deliberate, isolating choice.
+  const copySet = new Set(copyDirs);
   const createdSymlinks: string[] = [];
+  for (const name of copyDirs) {
+    if (!isValidSymlinkName(name) || isReservedSymlinkName(name, ignoreCase)) continue;
+    await copyIntoWorktree(path.join(repoRoot, name), path.join(worktreePath, name), name);
+  }
   for (const name of symlinkDirs) {
+    if (copySet.has(name)) continue;
     // Reject names that could escape the worktree directory or inject rules
     // into .git/info/exclude
     if (!isValidSymlinkName(name)) continue;
@@ -1406,6 +1415,39 @@ export async function createWorktree(
   ensureSymlinkExcludes(worktreePath, createdSymlinks);
 
   return { path: worktreePath, branch: branchName };
+}
+
+/**
+ * Copy one root-level ignored entry from the main checkout into a new
+ * worktree. Symlinks inside are copied as links, never followed, so the copy
+ * cannot pull in (or later let cleanup reach) anything outside the source.
+ * Failures are logged and skipped like symlink failures: a missing copy must
+ * not fail task creation.
+ */
+async function copyIntoWorktree(source: string, target: string, name: string): Promise<void> {
+  try {
+    await fs.promises.lstat(source);
+  } catch {
+    return; // nothing to copy
+  }
+  try {
+    await fs.promises.lstat(target);
+    return; // tracked or already present: never overwrite the checkout
+  } catch {
+    // Target is free.
+  }
+  try {
+    await fs.promises.cp(source, target, {
+      recursive: true,
+      dereference: false,
+      verbatimSymlinks: true,
+      errorOnExist: false,
+      force: false,
+      preserveTimestamps: true,
+    });
+  } catch (err) {
+    console.warn(`Failed to copy '${name}' into worktree:`, err);
+  }
 }
 
 /**

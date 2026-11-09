@@ -79,6 +79,7 @@ import {
   shouldProbeSymlinkCandidates,
   symlinkProbeBlocksSubmit,
 } from '../lib/symlink-candidates';
+import { splitIncludeSelection } from '../lib/worktree-includes';
 import { theme, sectionLabelStyle, bannerStyle } from '../lib/theme';
 import { isMac } from '../lib/platform';
 import { AgentSelector } from './AgentSelector';
@@ -865,8 +866,10 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     const path = open && pid ? getProjectPath(pid) : undefined;
     const isGit = pid ? projectIsGitRepo(pid) : true;
     const shouldProbe = shouldProbeSymlinkCandidates(isGit, gitIsolation());
+    // A saved per-project include list replaces the built-in defaults.
+    const saved = pid ? getProject(pid)?.worktreeIncludes : undefined;
 
-    void symlinkCandidates.load(path, shouldProbe);
+    void symlinkCandidates.load(path, shouldProbe, saved);
 
     onCleanup(() => {
       symlinkCandidates.invalidate();
@@ -1343,7 +1346,9 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
         projectId,
         gitIsolation: gitIsolation(),
         baseBranch: baseBranch(),
-        symlinkDirs: gitIsolation() === 'worktree' ? [...symlinkCandidates.selected()] : undefined,
+        ...(gitIsolation() === 'worktree'
+          ? splitIncludeSelection(symlinkCandidates.selected(), symlinkCandidates.copyDirs())
+          : {}),
         branchPrefixOverride: gitIsolation() === 'worktree' ? prefix : undefined,
         initialPrompt: isFromDrop ? undefined : p,
         githubUrl: ghUrl,
@@ -2033,6 +2038,7 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
                 <SymlinkDirPicker
                   dirs={symlinkCandidates.dirs()}
                   selectedDirs={symlinkCandidates.selected()}
+                  copyDirs={symlinkCandidates.copyDirs()}
                   onToggle={symlinkCandidates.toggle}
                 />
               </Show>

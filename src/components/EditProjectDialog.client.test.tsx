@@ -1,5 +1,5 @@
 import { render } from 'solid-js/web';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IPC } from '../../electron/ipc/channels';
 import { invoke } from '../lib/ipc';
 import { setStore, store } from '../store/core';
@@ -88,7 +88,7 @@ it.each([
   [
     {},
     ['General', 'Tasks', 'Verification'],
-    ['Branches and worktrees', 'Agent collaboration', 'Environment', 'Terminal'],
+    ['Branches and worktrees', 'Worktree setup', 'Agent collaboration', 'Environment', 'Terminal'],
   ],
   [{ isGitRepo: false }, ['General', 'Tasks', 'Verification'], ['Environment', 'Terminal']],
   [{ kind: 'document', documentPath: 'doc.md' }, [], []],
@@ -204,5 +204,132 @@ it('saves project env vars and blocks save on an invalid name', async () => {
   expect(invoke).toHaveBeenCalledWith(IPC.SetProjectAgentEnv, {
     projectId: 'p',
     env: { CLAUDE_CONFIG_DIR: '~/.claude-work' },
+  });
+});
+
+describe('worktree setup settings', () => {
+  function open(extra: Partial<Project> = {}) {
+    const project: Project = {
+      id: 'p',
+      name: 'P',
+      path: '/repo',
+      color: 'hsl(0, 70%, 75%)',
+      ...extra,
+    };
+    setStore('projects', [project]);
+    const host = document.createElement('div');
+    document.body.append(host);
+    const onClose = vi.fn();
+    dispose = render(
+      () => <EditProjectDialog project={store.projects[0]} onClose={onClose} />,
+      host,
+    );
+    const save = () => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+        (b) => b.textContent?.trim() === 'Save',
+      );
+      if (!button) throw new Error('Missing Save button');
+      button.click();
+    };
+    return { onClose, save };
+  }
+  const field = (label: string) => {
+    const el = [...document.querySelectorAll('label')].find((l) =>
+      l.textContent?.startsWith(label),
+    );
+    const id = el?.getAttribute('for');
+    const input = id ? document.getElementById(id) : null;
+    if (!(input instanceof HTMLTextAreaElement)) throw new Error(`Missing ${label}`);
+    return input;
+  };
+  const includesToggle = () => {
+    const box = [...document.querySelectorAll('label')]
+      .find((l) => l.textContent?.includes('Save which ignored files new tasks bring in'))
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    if (!box) throw new Error('Missing include-list checkbox');
+    return box;
+  };
+
+  it('leaves an unconfigured project unconfigured and probes nothing', async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    const { onClose, save } = open();
+    save();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(store.projects[0].worktreeSetupScript).toBeUndefined();
+    expect(store.projects[0].worktreeTeardownScript).toBeUndefined();
+    expect(store.projects[0].worktreeIncludes).toBeUndefined();
+    expect(vi.mocked(invoke).mock.calls.some(([c]) => c === IPC.GetGitignoredDirs)).toBe(false);
+  });
+
+  it('saves setup and teardown scripts, and clears them when emptied', async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    const first = open();
+    const setup = field('Setup script');
+    setup.value = 'npm ci\ncp "$PARALLEL_CODE_ROOT_PATH/.env" .';
+    setup.dispatchEvent(new Event('input', { bubbles: true }));
+    const teardown = field('Teardown script');
+    teardown.value = 'docker compose down';
+    teardown.dispatchEvent(new Event('input', { bubbles: true }));
+    first.save();
+    await vi.waitFor(() => expect(first.onClose).toHaveBeenCalled());
+    expect(store.projects[0].worktreeSetupScript).toBe(
+      'npm ci\ncp "$PARALLEL_CODE_ROOT_PATH/.env" .',
+    );
+    expect(store.projects[0].worktreeTeardownScript).toBe('docker compose down');
+
+    dispose?.();
+    document.body.replaceChildren();
+    const second = open(store.projects[0]);
+    const again = field('Setup script');
+    expect(again.value).toContain('npm ci');
+    again.value = '   ';
+    again.dispatchEvent(new Event('input', { bubbles: true }));
+    second.save();
+    await vi.waitFor(() => expect(second.onClose).toHaveBeenCalled());
+    expect(store.projects[0].worktreeSetupScript).toBeUndefined();
+  });
+
+  it('seeds a saved include list from the defaults and stores per-entry modes', async () => {
+    vi.mocked(invoke).mockImplementation(async (channel) =>
+      channel === IPC.GetGitignoredDirs
+        ? [
+            { name: 'node_modules', isDefault: true },
+            { name: '.env', isDefault: true },
+            { name: 'docs-local', isDefault: false },
+          ]
+        : undefined,
+    );
+    const { onClose, save } = open();
+    includesToggle().click();
+    const envMode = await vi.waitFor(() => {
+      const select = document.querySelector<HTMLSelectElement>(
+        'select[aria-label="How new tasks get .env"]',
+      );
+      if (!select) throw new Error('rows not loaded');
+      expect(select.value).toBe('symlink');
+      return select;
+    });
+    envMode.value = 'copy';
+    envMode.dispatchEvent(new Event('change', { bubbles: true }));
+    const docs = document.querySelector<HTMLSelectElement>(
+      'select[aria-label="How new tasks get docs-local"]',
+    );
+    expect(docs?.value).toBe('');
+    save();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(store.projects[0].worktreeIncludes).toEqual([
+      { name: 'node_modules', mode: 'symlink' },
+      { name: '.env', mode: 'copy' },
+    ]);
+  });
+
+  it('turning the list off returns to the per-task defaults', async () => {
+    vi.mocked(invoke).mockResolvedValue([]);
+    const { onClose, save } = open({ worktreeIncludes: [{ name: '.env', mode: 'copy' }] });
+    expect(includesToggle().checked).toBe(true);
+    includesToggle().click();
+    save();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(store.projects[0].worktreeIncludes).toBeUndefined();
   });
 });

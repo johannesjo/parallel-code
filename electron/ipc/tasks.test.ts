@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   createWorktree: vi.fn(),
+  removeWorktree: vi.fn(),
   resolvePrCheckout: vi.fn(),
   localBranchExists: vi.fn(),
 }));
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./git.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./git.js')>()),
   createWorktree: mocks.createWorktree,
+  removeWorktree: mocks.removeWorktree,
 }));
 vi.mock('./pty.js', () => ({ killAgent: vi.fn(), notifyAgentListChanged: vi.fn() }));
 vi.mock('./plans.js', () => ({ stopPlanWatcher: vi.fn() }));
@@ -21,7 +23,7 @@ vi.mock('../github/pr-checkout.js', () => ({
   localBranchExists: mocks.localBranchExists,
 }));
 
-import { createPrTask, createTask } from './tasks.js';
+import { createPrTask, createTask, deleteTask } from './tasks.js';
 import { reconcileWorktreeIntents } from './worktree-intents.js';
 
 const tempDirs: string[] = [];
@@ -55,6 +57,101 @@ describe('createTask', () => {
         projectRoot,
       }),
     ]);
+  });
+});
+
+describe('createTask copy list', () => {
+  it('forwards the copied entries to worktree creation', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-tasks-'));
+    tempDirs.push(root);
+    reconcileWorktreeIntents(path.join(root, 'worktree-intents.json'), null);
+    mocks.createWorktree.mockImplementation(async (repoRoot: string, branch: string) => ({
+      path: `${repoRoot}/.worktrees/${branch}`,
+      branch,
+    }));
+
+    await createTask(
+      'Copy env',
+      path.join(root, 'repo'),
+      ['node_modules'],
+      'task',
+      'main',
+      undefined,
+      ['.env'],
+    );
+
+    expect(mocks.createWorktree).toHaveBeenLastCalledWith(
+      path.join(root, 'repo'),
+      expect.any(String),
+      ['node_modules'],
+      'main',
+      false,
+      ['.env'],
+    );
+  });
+});
+
+describe.skipIf(process.platform === 'win32')('deleteTask teardown', () => {
+  function setup(): { projectRoot: string; worktreePath: string } {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-teardown-'));
+    tempDirs.push(root);
+    const projectRoot = path.join(root, 'repo');
+    const worktreePath = path.join(projectRoot, '.worktrees', 'task', 'x');
+    fs.mkdirSync(worktreePath, { recursive: true });
+    mocks.removeWorktree.mockReset();
+    return { projectRoot, worktreePath };
+  }
+
+  it('runs the teardown script in the worktree before removing it', async () => {
+    const { projectRoot, worktreePath } = setup();
+    let sawMarkerAtRemoval = false;
+    mocks.removeWorktree.mockImplementation(async () => {
+      sawMarkerAtRemoval = fs.existsSync(path.join(worktreePath, 'torn-down'));
+    });
+
+    const result = await deleteTask({
+      agentIds: [],
+      branchName: 'task/x',
+      deleteBranch: true,
+      projectRoot,
+      worktreePath,
+      teardownScript: 'test "$PARALLEL_CODE_ROOT_PATH" = "' + projectRoot + '"\ntouch torn-down',
+    });
+
+    expect(sawMarkerAtRemoval).toBe(true);
+    expect(result).toEqual({});
+  });
+
+  it('still removes the worktree when teardown fails, and reports why', async () => {
+    const { projectRoot, worktreePath } = setup();
+
+    const result = await deleteTask({
+      agentIds: [],
+      branchName: 'task/x',
+      deleteBranch: true,
+      projectRoot,
+      worktreePath,
+      teardownScript: 'echo cannot reach docker\nexit 7',
+    });
+
+    expect(mocks.removeWorktree).toHaveBeenCalledWith(projectRoot, 'task/x', true, worktreePath);
+    expect(result.teardownWarning).toContain('exited with code 7');
+    expect(result.teardownWarning).toContain('cannot reach docker');
+  });
+
+  it('runs nothing extra without a teardown script', async () => {
+    const { projectRoot, worktreePath } = setup();
+
+    const result = await deleteTask({
+      agentIds: [],
+      branchName: 'task/x',
+      deleteBranch: true,
+      projectRoot,
+      worktreePath,
+    });
+
+    expect(result).toEqual({});
+    expect(mocks.removeWorktree).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -95,7 +192,14 @@ describe('createPrTask', () => {
   it('reuses the PR branch for same-repo PRs so a push updates the PR', async () => {
     const projectRoot = setup();
     const task = await createPrTask(projectRoot, 5, [], 'task');
-    expect(mocks.createWorktree).toHaveBeenCalledWith(projectRoot, 'feature/login', [], 'abc123');
+    expect(mocks.createWorktree).toHaveBeenCalledWith(
+      projectRoot,
+      'feature/login',
+      [],
+      'abc123',
+      false,
+      [],
+    );
     expect(task).toMatchObject({
       branch_name: 'feature/login',
       pr_url: pr.url,

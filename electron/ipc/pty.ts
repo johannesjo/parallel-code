@@ -352,9 +352,14 @@ export interface SpawnAgentArgs {
   onOutput: { __CHANNEL_ID__: string };
 }
 
+/** Flags after which a shell takes an inline script (setup scripts, `sh -c`). */
+const INLINE_SCRIPT_FLAGS = new Set(['-c', '/c', '-Command']);
+const SCRIPT_SHELL_NAMES = /^(sh|bash|zsh|dash|ksh|mksh|ash|cmd|powershell|pwsh)(\.exe)?$/i;
+
 function redactedSpawnArgs(command: string, args: string[]): string[] {
-  if ((command === '/bin/sh' || command.endsWith('/sh')) && args[0] === '-c') {
-    return ['-c', '<redacted>'];
+  if (SCRIPT_SHELL_NAMES.test(path.basename(command.replace(/\\/g, '/')))) {
+    const scriptAt = args.findIndex((arg) => INLINE_SCRIPT_FLAGS.has(arg));
+    if (scriptAt >= 0) return [...args.slice(0, scriptAt + 1), '<redacted>'];
   }
   if (command === 'docker') {
     return redactDockerArgs(args);

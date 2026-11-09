@@ -526,6 +526,101 @@ describe('createWorktree', () => {
   }
 });
 
+describe('createWorktree copy mode', () => {
+  function ignoredRepository(): string {
+    const root = initRepository();
+    fs.writeFileSync(path.join(root, '.gitignore'), '.env\nconfig/\n', 'utf8');
+    git(root, ['add', '.gitignore']);
+    git(root, [
+      '-c',
+      'user.name=Parallel Code Tests',
+      '-c',
+      'user.email=tests@parallel-code.local',
+      'commit',
+      '-m',
+      'ignore',
+    ]);
+    fs.writeFileSync(path.join(root, '.env'), 'SECRET=main\n', 'utf8');
+    fs.mkdirSync(path.join(root, 'config'));
+    fs.writeFileSync(path.join(root, 'config', 'local.json'), '{"a":1}\n', 'utf8');
+    return root;
+  }
+
+  it('copies a file and a directory instead of linking them', async () => {
+    const root = ignoredRepository();
+    const { path: worktreePath } = await createWorktree(root, 'task/copy', [], undefined, false, [
+      '.env',
+      'config',
+    ]);
+
+    const envCopy = path.join(worktreePath, '.env');
+    expect(fs.lstatSync(envCopy).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(envCopy, 'utf8')).toBe('SECRET=main\n');
+    expect(fs.lstatSync(path.join(worktreePath, 'config')).isDirectory()).toBe(true);
+
+    // Isolated: a write in the worktree never reaches the main checkout.
+    fs.writeFileSync(envCopy, 'SECRET=task\n', 'utf8');
+    expect(fs.readFileSync(path.join(root, '.env'), 'utf8')).toBe('SECRET=main\n');
+    // The branch's own .gitignore still hides the copies.
+    expect(git(worktreePath, ['status', '--porcelain', '--', '.env', 'config'])).toBe('');
+  });
+
+  it('copies rather than links a name sent in both lists', async () => {
+    const root = ignoredRepository();
+    const { path: worktreePath } = await createWorktree(
+      root,
+      'task/both',
+      ['.env'],
+      undefined,
+      false,
+      ['.env'],
+    );
+    expect(fs.lstatSync(path.join(worktreePath, '.env')).isSymbolicLink()).toBe(false);
+  });
+
+  it('rejects names that could escape the worktree or are reserved', async () => {
+    const root = ignoredRepository();
+    fs.mkdirSync(path.join(root, '.claude'));
+    const { path: worktreePath } = await createWorktree(root, 'task/escape', [], undefined, false, [
+      '../outside',
+      '.claude',
+      'config/local.json',
+    ]);
+    expect(fs.existsSync(path.join(path.dirname(root), 'outside'))).toBe(false);
+    expect(fs.existsSync(path.join(worktreePath, 'config'))).toBe(false);
+    // .claude is seeded by the sandbox setup as a real directory, never copied wholesale.
+    expect(fs.lstatSync(path.join(worktreePath, '.claude')).isSymbolicLink()).toBe(false);
+  });
+
+  it('keeps symlinks inside a copy as links, and removal never follows them', async () => {
+    const root = ignoredRepository();
+    const precious = path.join(root, 'tracked.txt');
+    fs.symlinkSync(precious, path.join(root, 'config', 'link-to-main'));
+    fs.mkdirSync(path.join(root, 'config', 'nested'));
+    fs.symlinkSync(root, path.join(root, 'config', 'nested', 'main-checkout'));
+
+    const { path: worktreePath } = await createWorktree(root, 'task/links', [], undefined, false, [
+      'config',
+    ]);
+    const copiedLink = path.join(worktreePath, 'config', 'link-to-main');
+    expect(fs.lstatSync(copiedLink).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(copiedLink)).toBe(precious);
+
+    await removeWorktree(root, 'task/links', true, worktreePath);
+
+    expect(fs.existsSync(worktreePath)).toBe(false);
+    expect(fs.readFileSync(precious, 'utf8')).toBe('initial\n');
+    expect(fs.existsSync(path.join(root, 'config', 'local.json'))).toBe(true);
+  });
+
+  it('leaves a project without copies exactly as before', async () => {
+    const root = ignoredRepository();
+    const { path: worktreePath } = await createWorktree(root, 'task/plain', ['.env']);
+    expect(fs.lstatSync(path.join(worktreePath, '.env')).isSymbolicLink()).toBe(true);
+    expect(fs.existsSync(path.join(worktreePath, 'config'))).toBe(false);
+  });
+});
+
 describe('sandbox setup lifecycle', () => {
   function pauseDirectoryCopy() {
     const copy = fs.promises.cp.bind(fs.promises);

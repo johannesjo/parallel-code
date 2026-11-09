@@ -76,6 +76,13 @@ import { detectTaskPrs } from './task-prs.js';
 import { readCoverageSummary } from './coverage.js';
 import { loadEslintQualityFindings } from './eslint-quality-findings.js';
 import { buildVerifyEnv, validateVerifyCommand, verificationRunner } from './verify.js';
+import {
+  buildScriptInvocation,
+  buildWorktreeScriptEnv,
+  describeTeardownFailure,
+  optionalWorktreeScript,
+  runTeardownScript,
+} from './worktree-scripts.js';
 import { scanChange } from './change-scan.js';
 import {
   startRemoteServer,
@@ -136,6 +143,7 @@ import {
   resetBaseToUpstream,
   mergeBaseIntoTask,
   createWorktree,
+  worktreePathFor,
   removeWorktree,
   isGitRepo,
   getBranches,
@@ -720,6 +728,17 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertOptionalString(args.envFile, 'envFile');
     assertOptionalString(args.projectId, 'projectId');
     if (args.cwd) validatePath(args.cwd, 'cwd');
+    // A project setup script runs in a task terminal of its own. The main
+    // process picks the shell and flags, so the renderer never builds a
+    // `-c` command line. A reattach to a running session ignores the command.
+    if (args.shellScript !== undefined) {
+      const script = optionalWorktreeScript(args.shellScript, 'shellScript');
+      if (script) {
+        if (!args.isShell) throw new Error('shellScript is only allowed for shell terminals');
+        const invocation = buildScriptInvocation(script, { docker: args.dockerMode === true });
+        args = { ...args, command: invocation.file, args: invocation.args };
+      }
+    }
     // Restarted Docker sub-tasks need the coordinator's MCP dir too; derive it
     // here so the renderer cannot choose host paths to mount.
     args = {
@@ -1005,6 +1024,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertString(args.name, 'name');
     validatePath(args.projectRoot, 'projectRoot');
     assertStringArray(args.symlinkDirs, 'symlinkDirs');
+    if (args.copyDirs !== undefined) assertStringArray(args.copyDirs, 'copyDirs');
     assertOptionalString(args.branchPrefix, 'branchPrefix');
     assertOptionalString(args.baseBranch, 'baseBranch');
     const baseBranch = args.baseBranch || undefined;
@@ -1015,6 +1035,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       args.symlinkDirs,
       args.branchPrefix ?? 'task',
       baseBranch,
+      undefined,
+      args.copyDirs ?? [],
     );
     result
       .then((r: { id: string }) => taskNames.set(r.id, args.name))
@@ -1027,6 +1049,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertString(args.name, 'name');
     validatePath(args.projectRoot, 'projectRoot');
     assertStringArray(args.symlinkDirs, 'symlinkDirs');
+    if (args.copyDirs !== undefined) assertStringArray(args.copyDirs, 'copyDirs');
     assertOptionalString(args.branchPrefix, 'branchPrefix');
     if (!Number.isInteger(args.prNumber) || args.prNumber <= 0) {
       throw new Error('prNumber must be a positive integer');
@@ -1036,6 +1059,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       args.prNumber,
       args.symlinkDirs,
       args.branchPrefix ?? 'task',
+      args.copyDirs ?? [],
     );
     result
       .then((r: { id: string }) => taskNames.set(r.id, args.name))
@@ -1050,6 +1074,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     validateBranchName(args.branchName, 'branchName');
     assertBoolean(args.deleteBranch, 'deleteBranch');
     assertOptionalString(args.taskId, 'taskId');
+    // Validated before anything is killed or removed.
+    const teardownScript = optionalWorktreeScript(args.teardownScript, 'teardownScript');
     // A verify run still going would keep writing into the worktree being deleted.
     if (args.taskId) {
       verificationRunner.cancel(args.taskId);
@@ -1065,6 +1091,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       deleteBranch: args.deleteBranch,
       projectRoot: args.projectRoot,
       worktreePath: optionalWorktreePath(args),
+      teardownScript,
     });
     if (args.taskId) delegation.unregister(args.taskId);
     return result;
@@ -1136,20 +1163,43 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertOptionalString(args.message, 'message');
     assertOptionalBoolean(args.cleanup, 'cleanup');
     assertOptionalBoolean(args.allowDirtyTarget, 'allowDirtyTarget');
+    const teardownScript = optionalWorktreeScript(args.teardownScript, 'teardownScript');
     await delegation.assertDirectMergeAllowed(projectRoot, branchName, args.cleanup ?? false);
     const baseBranch = optionalBaseBranch(args);
     const worktreePath = optionalWorktreePath(args);
-    const result = await mergeTask(
+    const cleanup = args.cleanup ?? false;
+    // With a teardown script the merge keeps the worktree, the script runs
+    // outside the repo lock, and the worktree is removed afterwards, so a
+    // failed merge never tears anything down.
+    const deferCleanup = cleanup && teardownScript !== undefined;
+    let result = await mergeTask(
       projectRoot,
       branchName,
       args.squash,
       args.message ?? null,
-      args.cleanup ?? false,
+      cleanup && !deferCleanup,
       baseBranch,
       worktreePath,
       undefined,
       args.allowDirtyTarget ?? false,
     );
+    if (deferCleanup && teardownScript) {
+      const target = worktreePath ?? worktreePathFor(projectRoot, branchName);
+      const teardown = await runTeardownScript({
+        worktreePath: target,
+        projectRoot,
+        script: teardownScript,
+        env: buildWorktreeScriptEnv({ projectRoot, worktreePath: target, branchName }),
+      });
+      await removeWorktree(projectRoot, branchName, true, worktreePath);
+      const teardownWarning = describeTeardownFailure(teardown);
+      if (teardownWarning) {
+        result = {
+          ...result,
+          warning: result.warning ? `${result.warning} ${teardownWarning}` : teardownWarning,
+        };
+      }
+    }
     // The merge already happened; failing to tell the parent must not report it as failed.
     await delegation
       .recordDirectMerge(projectRoot, branchName)
