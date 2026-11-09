@@ -22,8 +22,9 @@ const nestedRepoCache = new Map<string, { expiresAt: number; repos: Promise<Nest
 
 /**
  * Git repositories in top-level folders of a task's worktree that the task's
- * own repository does not track — typically sibling projects symlinked into
- * the worktree so one agent can edit several repos at once. Cached briefly.
+ * own repository does not track (beyond a committed symlink to them) —
+ * typically sibling projects symlinked into the worktree so one agent can
+ * edit several repos at once. Cached briefly.
  */
 export function findNestedRepos(worktreePath: string): Promise<NestedRepo[]> {
   const now = Date.now();
@@ -59,8 +60,12 @@ async function scanNestedRepos(worktreePath: string): Promise<NestedRepo[]> {
 async function describeNestedRepo(worktreePath: string, name: string): Promise<NestedRepo | null> {
   try {
     // Submodules and other tracked paths already appear in the task's own diff.
-    const { stdout: tracked } = await exec('git', ['ls-files', '--', name], { cwd: worktreePath });
-    if (tracked.trim()) return null;
+    // A committed symlink (mode 120000) tracks only the link, not the repo behind it.
+    const { stdout: tracked } = await exec('git', ['ls-files', '--stage', '--', name], {
+      cwd: worktreePath,
+    });
+    const trackedEntries = tracked.split('\n').filter(Boolean);
+    if (trackedEntries.some((entry) => !entry.startsWith('120000 '))) return null;
     const { stdout: branch } = await exec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
       cwd: path.join(worktreePath, name),
     });

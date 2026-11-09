@@ -88,6 +88,25 @@ describe('nested repositories', () => {
     expect((await findNestedRepos(parent)).map((repo) => repo.name)).toEqual(['api', 'web']);
   });
 
+  it('includes repos symlinked in by a link the parent commits', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'nested-repos-'));
+    directories.push(root);
+    const sibling = join(root, 'sibling');
+    initRepo(sibling);
+    commitFile(sibling, 'app.ts', 'app\n');
+    writeFileSync(join(sibling, 'app.ts'), 'app\nedited\n');
+    const parent = join(root, 'parent');
+    initRepo(parent);
+    symlinkSync(sibling, join(parent, 'sibling'));
+    git(parent, 'add', 'sibling');
+    git(parent, 'commit', '-m', 'link sibling');
+
+    expect(await findNestedRepos(parent)).toEqual([{ name: 'sibling', branch: 'main' }]);
+    expect((await getChangedFilesWithNested(parent)).map((file) => file.path)).toEqual([
+      'sibling/app.ts',
+    ]);
+  });
+
   it('lists nested committed and uncommitted changes under their folder', async () => {
     const { parent } = workspace();
     const files = await getChangedFilesWithNested(parent);
