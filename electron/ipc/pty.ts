@@ -349,12 +349,27 @@ export interface SpawnAgentArgs {
   /** Host dirs mounted read-only at the same path. Main-process only: the
    *  SpawnAgent handler derives them and never trusts a renderer value. */
   dockerReadOnlyMounts?: string[];
+  /** Main-process only: set by the SpawnAgent handler for a cmd.exe setup
+   *  script, never taken from the renderer. */
+  windowsVerbatimArgs?: boolean;
   onOutput: { __CHANNEL_ID__: string };
 }
 
+/** Flags after which a shell takes an inline script (setup scripts, `sh -c`). */
+const INLINE_SCRIPT_FLAGS = new Set(['-c', '/c', '-Command']);
+const SCRIPT_SHELL_NAMES = /^(sh|bash|zsh|dash|ksh|mksh|ash|cmd|powershell|pwsh)(\.exe)?$/i;
+
+function isInlineScriptShell(command: string, args: string[]): boolean {
+  return (
+    SCRIPT_SHELL_NAMES.test(path.basename(command.replace(/\\/g, '/'))) &&
+    args.some((arg) => INLINE_SCRIPT_FLAGS.has(arg))
+  );
+}
+
 function redactedSpawnArgs(command: string, args: string[]): string[] {
-  if ((command === '/bin/sh' || command.endsWith('/sh')) && args[0] === '-c') {
-    return ['-c', '<redacted>'];
+  if (isInlineScriptShell(command, args)) {
+    const scriptAt = args.findIndex((arg) => INLINE_SCRIPT_FLAGS.has(arg));
+    return [...args.slice(0, scriptAt + 1), '<redacted>'];
   }
   if (command === 'docker') {
     return redactDockerArgs(args);
@@ -368,7 +383,16 @@ function redactDockerArgs(args: string[]): string[] {
   const redacted: string[] = [];
   let redactNextEnv = false;
 
-  for (const arg of args) {
+  for (const [index, arg] of args.entries()) {
+    // After the entrypoint's `--` comes the inner command, whose flags are
+    // not docker's: `sh -e -c <script>` must not read `-e` as an env flag.
+    if (arg === '--' && !redactNextEnv) {
+      const [inner, ...innerArgs] = args.slice(index + 1);
+      if (inner !== undefined && isInlineScriptShell(inner, innerArgs)) {
+        redacted.push(arg, inner, ...redactedSpawnArgs(inner, innerArgs));
+        break;
+      }
+    }
     if (redactNextEnv) {
       redacted.push(redactEnvAssignment(arg));
       redactNextEnv = false;
@@ -870,7 +894,13 @@ export async function spawnAgent(
   registerAgentLaunch(args.agentId, args.taskId, launchId);
   let proc: pty.IPty;
   try {
-    proc = pty.spawn(spawnSpec.spawnCommand, spawnSpec.spawnArgs, {
+    // A cmd.exe setup script needs its command line passed through verbatim;
+    // node-pty would re-quote an argument array and break `/s /c "…"`.
+    const ptyArgs =
+      args.windowsVerbatimArgs && !args.dockerMode && process.platform === 'win32'
+        ? spawnSpec.spawnArgs.join(' ')
+        : spawnSpec.spawnArgs;
+    proc = pty.spawn(spawnSpec.spawnCommand, ptyArgs, {
       name: 'xterm-256color',
       cols: args.cols,
       rows: args.rows,

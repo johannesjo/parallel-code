@@ -500,6 +500,21 @@ describe('spawnAgent docker mode', () => {
     expect(ctx.args).toEqual(['-c', '<redacted>']);
   });
 
+  it('redacts a setup script run inside Docker, whose -e is not a docker flag', async () => {
+    await spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({
+        command: '/bin/sh',
+        args: ['-e', '-c', 'echo private-setup-token'],
+        isShell: true,
+      }),
+    );
+
+    const logged = getSpawnCommandLogCtx().args;
+    expect(logged.join(' ')).not.toContain('private-setup-token');
+    expect(logged.slice(-4)).toEqual(['/bin/sh', '-e', '-c', '<redacted>']);
+  });
+
   it('redirects credential mounts under per-agent /tmp/agent-<id> inside the container', async () => {
     const home = makeTempHome(['.ssh/', '.gitconfig', '.config/gh/']);
     vi.stubEnv('HOME', home);

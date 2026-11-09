@@ -197,6 +197,9 @@ interface TerminalViewProps {
   fontSize?: number;
   autoFocus?: boolean;
   initialCommand?: string;
+  /** Shells only: run this script instead of an interactive shell. The main
+   *  process picks the shell and flags; the PTY exits with the script. */
+  shellScript?: string;
   isFocused?: boolean;
 }
 
@@ -1353,6 +1356,7 @@ export function TerminalView(props: TerminalViewProps) {
         cols: term.cols,
         rows: term.rows,
         isShell: props.isShell,
+        ...(props.shellScript && { shellScript: props.shellScript }),
         dockerMode: props.dockerMode,
         dockerImage: props.dockerImage,
         dockerMountWorktreeParent: props.dockerMountWorktreeParent,
