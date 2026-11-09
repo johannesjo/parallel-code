@@ -198,9 +198,15 @@ export function TaskLine(props: {
 }
 
 /** What the task waits for, and the button that goes there. */
-export function AskRow(props: { label: string; action: string; onAct: () => void }) {
+export function AskRow(props: {
+  label: string;
+  action: string;
+  onAct: () => void;
+  /** A routine next step rather than something waiting on you: the label stays plain. */
+  quiet?: boolean;
+}) {
   return (
-    <div class="task-board-ask">
+    <div class="task-board-ask" classList={{ quiet: props.quiet }}>
       <span class="task-board-ask-label">{props.label}</span>
       <button type="button" class="task-board-act" onClick={() => props.onAct()}>
         {props.action}

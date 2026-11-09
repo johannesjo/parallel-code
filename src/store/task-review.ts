@@ -156,6 +156,7 @@ export async function startTaskReview(
           ...payload,
           publishedAt: startedAt,
           ...(fingerprint && { fingerprint }),
+          origin: 'review',
         };
         target.reviewStatus = undefined;
       }),

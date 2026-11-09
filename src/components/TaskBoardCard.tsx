@@ -2,6 +2,8 @@ import { Show, createMemo, onCleanup } from 'solid-js';
 import { formatRelativeAge } from '../lib/relativeAge';
 import { isTaskBackgrounded } from '../store/background-tasks';
 import { store } from '../store/core';
+import { setPendingAction } from '../store/focus';
+import { localMergeLabel } from '../store/local-merge';
 import { getPrChecks } from '../store/pr-checks-state';
 import { taskLeadPr, taskLeadWatchId, taskLinkedPrUrl } from '../store/task-prs';
 import { getProject } from '../store/projects';
@@ -128,6 +130,14 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
   const question = () => getTaskOpenQuestion(props.task.id);
   const ask = () =>
     props.lane === 'needs' && !props.task.closingStatus ? ASK_ACTION[state()] : undefined;
+  // Without a pull request, Ready to merge means the app's review vouches for the
+  // work; Merge opens Finish on it, where the merge itself is confirmed.
+  const localMerge = () =>
+    props.lane === 'ready' && !props.task.closingStatus && !taskLeadPr(props.task);
+  const openFinish = () => {
+    openBeside(props.task);
+    setPendingAction({ type: 'finish', taskId: props.task.id });
+  };
   const menu = createTaskContextMenu({
     task: () => props.task,
     open: () => openBeside(props.task),
@@ -197,6 +207,9 @@ export function TaskBoardCard(props: { task: Task; lane: BoardLaneId }) {
       </Show>
       <Show when={props.task.closingStatus === 'error'}>
         <CloseFailed task={props.task} />
+      </Show>
+      <Show when={localMerge()}>
+        <AskRow quiet label={localMergeLabel(props.task)} action="Merge" onAct={openFinish} />
       </Show>
       <Show when={ask()}>
         {(action) => (

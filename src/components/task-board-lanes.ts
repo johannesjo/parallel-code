@@ -4,6 +4,7 @@ import { isTaskBackgrounded } from '../store/background-tasks';
 import { isPrBabysat } from '../store/pr-babysit';
 import { getTaskExtraPrs, pullRequestsLane } from '../store/pr-checks-state';
 import { awaitsOpenPr, taskPrsChecks } from '../store/task-prs';
+import { isTaskReadyToMergeLocally } from '../store/local-merge';
 import { getProject } from '../store/projects';
 import { sortByProjectGroup } from '../store/sidebar-order';
 import { matchesTaskProjectFilter } from '../store/task-project-filter';
@@ -22,7 +23,8 @@ export interface BoardLane {
 
 // Left to right. Stopped sits next to Needs you so everything waiting on you
 // is together; Working and In pull request need nothing from you yet. Ready to
-// merge follows the pull requests it graduates from.
+// merge follows the pull requests it graduates from, and also holds tasks
+// without one whose review and checks passed on their current code.
 const LANE_TITLES: Record<BoardLaneId, string> = {
   needs: 'Needs you',
   stopped: 'Stopped',
@@ -71,6 +73,9 @@ export function boardLaneOf(task: Task): BoardLaneId {
   if (task.prUrl || getTaskExtraPrs(task.id).length > 0) {
     return pullRequestsLane(taskPrsChecks(task), babysat);
   }
+  // Finished work the app's review and checks vouch for can merge without a
+  // look; a new commit takes it back out, since the review no longer covers it.
+  if (isTaskReadyToMergeLocally(task)) return 'ready';
   // Ready vs idle hinges on whether the agent committed, not on what you do
   // next, so they share a lane and the card's label tells them apart.
   return 'stopped';

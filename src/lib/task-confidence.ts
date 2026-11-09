@@ -9,6 +9,8 @@ export interface TaskConfidence extends ConfidencePayload {
   publishedAt: number;
   /** Fingerprint of the diff at publish time; unset until it has been read. */
   fingerprint?: string;
+  /** `review`: the app's own reviewer wrote it, not the task's agent rating itself. */
+  origin?: 'review';
 }
 
 /** Restores a persisted rating; a malformed one is dropped rather than shown. */
@@ -21,7 +23,12 @@ export function restoreTaskConfidence(value: unknown): TaskConfidence | undefine
     if (typeof publishedAt !== 'number' || !Number.isFinite(publishedAt)) return undefined;
     const fingerprint =
       typeof record.fingerprint === 'string' ? record.fingerprint.slice(0, 64) : undefined;
-    return { ...payload, publishedAt, ...(fingerprint && { fingerprint }) };
+    return {
+      ...payload,
+      publishedAt,
+      ...(fingerprint && { fingerprint }),
+      ...(record.origin === 'review' && { origin: 'review' as const }),
+    };
   } catch {
     return undefined;
   }
