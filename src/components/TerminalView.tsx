@@ -10,7 +10,7 @@ import {
   Show,
 } from 'solid-js';
 import { Terminal, type IBufferRange, type ILink, type IMarker } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
+import type { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
@@ -19,6 +19,7 @@ import { TerminalBookmarkGutter } from './TerminalBookmarks';
 import { invoke, fireAndForget, Channel } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { getTerminalFontFamily } from '../lib/fonts';
+import { LayoutFitAddon } from '../lib/layoutFitAddon';
 import { TERMINAL_SCROLL_OPTIONS } from '../lib/terminalConstants';
 import { leaveCursorQueriesToMain } from '../lib/terminalQueries';
 import { handleOsc52Writes, trackRecentGesture } from '../lib/terminalClipboard';
@@ -550,7 +551,7 @@ export function TerminalView(props: TerminalViewProps) {
     });
     onCleanup(recentGesture.dispose);
 
-    fitAddon = new FitAddon();
+    fitAddon = new LayoutFitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon(openTerminalHttpLinkWithModifier));
 

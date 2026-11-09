@@ -181,6 +181,11 @@ export function markDirty(id: string): void {
  * glyphs render from stale/wrong atlas cells — the buffer is intact, only the
  * GPU glyph cache is bad, so a plain refresh() would just redraw the same
  * garbage. clearTextureAtlas() is a safe no-op under the DOM renderer.
+ *
+ * The cause of #121 itself was in @xterm/addon-webgl before 0.20.0-beta.330:
+ * after an atlas page merge a terminal could keep a stale GPU texture that
+ * this repaint did not always replace. scripts/xterm-webgl-atlas.test.mjs
+ * reproduces it. The repaint stays as a cheap recovery path.
  */
 function redraw(term: Terminal): void {
   try {
