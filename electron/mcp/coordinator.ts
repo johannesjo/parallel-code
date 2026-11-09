@@ -23,7 +23,7 @@ import {
   type InjectedSubTaskPreamble,
 } from './preamble.js';
 import { truncateDiffForTool } from './diff-format.js';
-import { execAsync, execStdout, currentBranch } from './coordinator/git.js';
+import { execAsync, execStdout, currentBranch } from './coordinator/child-git.js';
 import {
   buildTaskMcpLaunchArgs,
   refreshChildMcpConfigs,
@@ -188,8 +188,7 @@ export class Coordinator {
   private archiver = new ChildArchiver({
     tasks: this.tasks,
     notifications: this.notifications,
-    isClosingOrIntegrating: (taskId) =>
-      this.closingTaskIds.has(taskId) || this.integratingTaskIds.has(taskId),
+    isClosingOrIntegrating: (taskId) => this.isClosingOrIntegrating(taskId),
     isHumanControlled: (taskId) => this.controlMap.get(taskId) === 'human',
     isWritingPrompt: (taskId) => this.writingPromptTaskIds.has(taskId),
     suggestClose: (taskId, reason) => this.suggestClose(taskId, reason),
@@ -225,8 +224,7 @@ export class Coordinator {
     tasks: this.tasks,
     coordinators: this.coordinators,
     notifications: this.notifications,
-    isClosingOrIntegrating: (taskId) =>
-      this.closingTaskIds.has(taskId) || this.integratingTaskIds.has(taskId),
+    isClosingOrIntegrating: (taskId) => this.isClosingOrIntegrating(taskId),
     withdrawCloseSuggestion: (task) => this.withdrawCloseSuggestion(task),
     stalledChildren: (coordinatorTaskId) => this.prompts.stalledChildren(coordinatorTaskId),
     notifyRenderer: (channel, data) => this.notifyRenderer(channel, data),
@@ -1918,6 +1916,11 @@ export class Coordinator {
     options: { requestId?: string; signal?: AbortSignal } = {},
   ): Promise<WaitForSignalDoneResult> {
     return this.signalWaits.waitForSignalDone(coordinatorTaskId, rawTimeoutMs, options);
+  }
+
+  /** A close or integration under way supersedes archiving and completions. */
+  private isClosingOrIntegrating(taskId: string): boolean {
+    return this.closingTaskIds.has(taskId) || this.integratingTaskIds.has(taskId);
   }
 
   private notifyRenderer(channel: string, data: unknown): void {

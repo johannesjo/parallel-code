@@ -20,7 +20,7 @@ import {
   currentBranch,
   statusPaths,
   PREAMBLE_ARTIFACT_PATHS,
-} from './git.js';
+} from './child-git.js';
 import type { CoordinatorNotifications } from './notifications.js';
 import type {
   ApiLandSelfResult,

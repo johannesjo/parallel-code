@@ -216,34 +216,6 @@ describe('initial prompt Enter failure', () => {
 });
 
 describe('stranded prompt without a queue', () => {
-  it('retries the Enter instead of reporting the unstarted task idle', async () => {
-    vi.useFakeTimers();
-    const task = await coordinator.createTask({
-      name: 't',
-      prompt: 'do work',
-      coordinatorTaskId: 'coord-1',
-    });
-    let enterFailed = false;
-    mockWriteToAgent.mockImplementation((agentId: string, data: string) => {
-      if (data === '\r' && !enterFailed) {
-        enterFailed = true;
-        throw new Error('pty enter failed');
-      }
-      return { id: agentId, data };
-    });
-    getOutputCb()(encode('❯ '));
-    await vi.advanceTimersByTimeAsync(3_000);
-    mockWriteToAgent.mockClear();
-    mockNotifyRenderer.mockClear();
-
-    getOutputCb()(encode('do work ❯ '));
-    await vi.advanceTimersByTimeAsync(3_000);
-
-    expect(mockWriteToAgent).toHaveBeenCalledWith(task.agentId, '\r');
-    expect(task.status).toBe('running');
-    expect(task.unsubmittedPrompt).toBe(false);
-  });
-
   async function strandWithoutQueue() {
     vi.useFakeTimers();
     const task = await coordinator.createTask({
@@ -265,6 +237,18 @@ describe('stranded prompt without a queue', () => {
     mockWriteToAgent.mockClear();
     return task;
   }
+
+  it('retries the Enter instead of reporting the unstarted task idle', async () => {
+    const task = await strandWithoutQueue();
+    mockNotifyRenderer.mockClear();
+
+    getOutputCb()(encode('do work ❯ '));
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(mockWriteToAgent).toHaveBeenCalledWith(task.agentId, '\r');
+    expect(task.status).toBe('running');
+    expect(task.unsubmittedPrompt).toBe(false);
+  });
 
   it('submits the stranded body when control returns after a human hold', async () => {
     const task = await strandWithoutQueue();

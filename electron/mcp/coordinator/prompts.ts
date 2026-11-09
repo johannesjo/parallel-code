@@ -20,8 +20,9 @@ import type { CoordinatedTask, StalledChild } from '../types.js';
 type IdleWaitResult = { reason: 'idle' | 'human_control' | 'exited' | 'removed' };
 
 /**
- * Prompt state the Coordinator keeps, because its task teardown clears it as
- * well. CoordinatorPrompts reads and updates the same collections.
+ * Prompt state the Coordinator creates and passes in by reference: its task
+ * teardown clears the per-agent buffers, and its tests inspect the delivery
+ * timers and flags. CoordinatorPrompts reads and updates the same collections.
  */
 export interface PromptState {
   /** Recent output per agent; a send clears it, so a prompt in it was drawn since. */

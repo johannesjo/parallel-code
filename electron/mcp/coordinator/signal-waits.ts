@@ -13,7 +13,7 @@ import {
   type SignalDoneResult,
 } from '../../shared/completion-report.js';
 import { ReplayCache } from '../replay-cache.js';
-import { execAsync } from './git.js';
+import { execAsync } from './child-git.js';
 import type { CoordinatorNotifications } from './notifications.js';
 import type {
   CoordinatedTask,

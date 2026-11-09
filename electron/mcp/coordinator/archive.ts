@@ -6,7 +6,7 @@ import { warn as logWarn } from '../../log.js';
 import { IPC } from '../../ipc/channels.js';
 import { getAgentInputBlocker } from '../../ipc/pty.js';
 import type { CloseSuggestion } from '../../shared/close-suggestion.js';
-import { ownDirtyPaths } from './git.js';
+import { ownDirtyPaths } from './child-git.js';
 import type { CoordinatorNotifications } from './notifications.js';
 import type { ArchiveBlocker, ArchiveResult, CoordinatedTask } from '../types.js';
 
