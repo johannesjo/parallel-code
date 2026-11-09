@@ -342,6 +342,11 @@ describe('ratings', () => {
     publishTaskConfidence('t1', { scores: [{ label: 'Confidence', score: 70, why: 'x' }] });
     expect(task().confidence).toMatchObject({ scores: [{ score: 70 }], findings: [] });
     await vi.waitFor(() => expect(task().confidence?.fingerprint).toBe(task().brief?.fingerprint));
+    // The agent's own rating replaces a review whole, so it never inherits the reviewer's mark.
+    setStore('tasks', 't1', 'confidence', { origin: 'review', headSha: 'abc' });
+    publishTaskConfidence('t1', { scores: [{ label: 'Confidence', score: 90, why: 'x' }] });
+    expect(task().confidence).not.toHaveProperty('origin');
+    expect(task().confidence).not.toHaveProperty('headSha');
     expect(() => publishTaskConfidence('t1', { scores: [] })).toThrow('scores must be');
     expect(() =>
       publishTaskConfidence('missing', { scores: [{ label: 'C', score: 1, why: 'x' }] }),

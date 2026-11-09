@@ -34,7 +34,7 @@ export interface AgentHookStatusUpdate {
   todos?: PlanStep[];
   /** The shell command a failed tool call ran; event-only, like `todos`. */
   failedCommand?: string;
-  /** A background sub-agent, workflow, or shell command is still running, so the lead may sit at
+  /** A background sub-agent, workflow, shell command, or MCP tool call is still running, so the lead may sit at
    *  its prompt while `working`: Esc there interrupts nothing. */
   background?: boolean;
 }
@@ -164,11 +164,13 @@ function summarizeBackgroundShells(tasks: unknown): string | undefined {
   );
 }
 
-/** The card's line for running background shells, e.g. `background: Run tests +1`. */
+/** The card's line for running background shells or MCP tool calls, e.g.
+ *  `background: Run tests +1`. */
 export function describeShells(shells: readonly unknown[]): string | undefined {
   if (shells.length === 0) return undefined;
   const first = asRecord(shells[0]);
-  const name = asString(first?.description) ?? asString(first?.command) ?? 'command';
+  const name =
+    asString(first?.description) ?? asString(first?.command) ?? asString(first?.tool) ?? 'command';
   const more = shells.length > 1 ? ` +${shells.length - 1}` : '';
   return clip(`background: ${name}${more}`, DETAIL_MAX_CHARS);
 }

@@ -229,3 +229,20 @@ it('marks a subtask', () => {
   setStore('tasks', 'one', 'coordinatedBy', 'parent');
   expect(card()?.classList.contains('subtask')).toBe(true);
 });
+
+it('offers Merge, opening Finish, on a ready card without a pull request', () => {
+  dispose();
+  dispose = render(() => <TaskBoardCard task={store.tasks.one} lane="ready" />, container);
+  const row = container.querySelector('.task-board-ask.quiet');
+  expect(row?.textContent).toContain('Review passed');
+  row?.querySelector<HTMLButtonElement>('.task-board-act')?.click();
+  expect(store.pendingAction).toEqual({ type: 'finish', taskId: 'one' });
+  setStore('pendingAction', null);
+});
+
+it('leaves a ready card with a pull request to its PR row', () => {
+  dispose();
+  setStore('tasks', 'one', { prUrl: 'https://github.com/acme/app/pull/12' });
+  dispose = render(() => <TaskBoardCard task={store.tasks.one} lane="ready" />, container);
+  expect(container.querySelector('.task-board-ask.quiet')).toBeNull();
+});

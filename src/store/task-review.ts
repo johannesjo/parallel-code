@@ -2,6 +2,9 @@ import { createEffect, createRoot } from 'solid-js';
 import { produce } from 'solid-js/store';
 import { modelToRun } from '../lib/ask-code-model';
 import { startModelRequest } from '../lib/model-request';
+import { IPC } from '../../electron/ipc/channels';
+import type { WorktreeStatus } from '../ipc/types';
+import { invoke } from '../lib/ipc';
 import { errMessage, info as logInfo, warn as logWarn } from '../lib/log';
 import { diffFingerprint } from '../lib/task-brief';
 import {
@@ -80,6 +83,24 @@ export function reviewerName(taskId: string): string {
 }
 
 /**
+ * The commit a review is about to read, when the worktree has nothing
+ * uncommitted; otherwise the review covers code no commit holds. Undefined
+ * when git cannot be read, so the review vouches for no commit.
+ */
+async function cleanHeadSha(task: Task): Promise<string | undefined> {
+  try {
+    const status = await invoke<WorktreeStatus>(IPC.GetWorktreeStatus, {
+      worktreePath: task.worktreePath,
+      baseBranch: task.baseBranch,
+    });
+    return status.has_uncommitted_changes ? undefined : (status.head_sha ?? undefined);
+  } catch (error) {
+    logWarn('taskReview', 'Could not read the reviewed commit', { error: errMessage(error) });
+    return undefined;
+  }
+}
+
+/**
  * Rates a task's work with a model call of its own, apart from the task's
  * agent, which would otherwise grade itself. It reads every prompt the user
  * sent, the branch diff and, once they end, the results of the checks started
@@ -115,7 +136,7 @@ export async function startTaskReview(
     return dispose;
   });
   try {
-    const rawDiff = await readTaskDiff(task);
+    const [rawDiff, headSha] = await Promise.all([readTaskDiff(task), cleanHeadSha(task)]);
     if (cancelled) return;
     const fingerprint = rawDiff === undefined ? undefined : diffFingerprint(rawDiff);
     if (fingerprint !== undefined) noteCodeFingerprint(taskId, fingerprint, startedAt);
@@ -156,6 +177,8 @@ export async function startTaskReview(
           ...payload,
           publishedAt: startedAt,
           ...(fingerprint && { fingerprint }),
+          origin: 'review',
+          ...(headSha && { headSha }),
         };
         target.reviewStatus = undefined;
       }),

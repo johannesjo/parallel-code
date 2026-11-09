@@ -809,6 +809,10 @@ html[data-look^='islands-'] .task-board {
 .state-review .task-board-ask-label {
   color: var(--fg);
 }
+.task-board-ask.quiet .task-board-ask-label {
+  font-weight: 400;
+  color: var(--fg-muted);
+}
 /* Primary by full-strength text, not colour. */
 .task-board-act {
   margin-left: auto;

@@ -277,6 +277,38 @@ describe('createSubagentGate', () => {
     expect(out[3]?.state).toBe('done');
   });
 
+  it('holds the turn open while a background MCP tool call runs', () => {
+    // As Claude Code 2.1.321 lists an MCP tool call it moved to the background.
+    const call = (status: string) => ({
+      id: 'm1',
+      type: 'MCP task',
+      status,
+      description: 'Build the report',
+      server: 'reports',
+      tool: 'build_report',
+    });
+    const out = replay([
+      { ...turnEnd, background_tasks: [call('running')] },
+      idle,
+      { hook_event_name: 'UserPromptSubmit', prompt: '<task-notification>' },
+      { ...turnEnd, background_tasks: [call('completed')] },
+    ]);
+    expect(out[0]).toMatchObject({
+      state: 'working',
+      toolName: 'build_report',
+      detail: 'background: Build the report',
+      background: true,
+    });
+    expect(out[1]?.state).toBe('working');
+    expect(out[3]?.state).toBe('done');
+  });
+
+  it('does not hold the turn open for a monitor, which runs until stopped', () => {
+    const monitor = { id: 'w1', type: 'monitor', status: 'running', server: 'ci', tool: 'watch' };
+    const out = replay([{ ...turnEnd, background_tasks: [monitor] }]);
+    expect(out[0]?.state).toBe('done');
+  });
+
   it('keeps holding while a shell outlives a sub-agent, naming every shell', () => {
     const shell = (id: string, description?: string) => ({
       id,

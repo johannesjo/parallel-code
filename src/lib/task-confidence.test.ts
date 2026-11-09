@@ -89,6 +89,20 @@ describe('restoreTaskConfidence', () => {
     expect(restoreTaskConfidence({ ...saved, scores: [] })).toBeUndefined();
     expect(restoreTaskConfidence(null)).toBeUndefined();
   });
+
+  it("keeps the app reviewer's mark and drops an unknown one", () => {
+    const saved = { scores: [{ label: 'Confidence', score: 70, why: 'x' }], findings: [] };
+    const restored = restoreTaskConfidence({
+      ...saved,
+      publishedAt: 10,
+      origin: 'review',
+      headSha: 'a1',
+    });
+    expect(restored).toMatchObject({ origin: 'review', headSha: 'a1' });
+    expect(
+      restoreTaskConfidence({ ...saved, publishedAt: 10, origin: 'agent' }),
+    ).not.toHaveProperty('origin');
+  });
 });
 
 describe('isConfidenceStale', () => {
