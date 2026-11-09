@@ -1,6 +1,5 @@
-import { execFile, execFileSync as _execFileSync, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import { createHash } from 'crypto';
-import { promisify } from 'util';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -8,6 +7,7 @@ import type { Notify } from './notify.js';
 import { KANBAN_FILE } from './kanban.js';
 import { atomicWriteFileSync } from '../mcp/atomic.js';
 import { debug as logDebug } from '../log.js';
+import { exec, execFileSync, MAX_BUFFER } from './git-exec.js';
 import { baseUpstreamDivergence, conflictSourcesNote, upstreamOf } from './git-base-upstream.js';
 import {
   appendGitInfoExcludeBlock,
@@ -40,23 +40,6 @@ import type {
 
 export type { ChangedFile, CommitInfo, FileDiffResult, GitIgnoredEntry } from './shared-types.js';
 
-const _exec = promisify(execFile);
-
-/**
- * Trace + run a git command (or any execFile invocation).
- * Emits a `debug` entry under category `git` with the args before
- * execution so verbose logs can reconstruct the command stream.
- */
-const exec: typeof _exec = ((cmd: string, args: string[], options?: unknown) => {
-  if (cmd === 'git') logDebug('git', args.join(' '));
-  return (_exec as unknown as (...a: unknown[]) => unknown)(cmd, args, options);
-}) as typeof _exec;
-
-const execFileSync: typeof _execFileSync = ((cmd: string, args: string[], options?: unknown) => {
-  if (cmd === 'git') logDebug('git', args.join(' '));
-  return (_execFileSync as unknown as (...a: unknown[]) => unknown)(cmd, args, options);
-}) as typeof _execFileSync;
-
 // `git diff` against the working tree refreshes stat-only changes by rewriting
 // the index, which takes index.lock; an agent committing in the same worktree
 // then fails with "index.lock: File exists". --no-optional-locks doesn't cover it.
@@ -83,7 +66,6 @@ const mainBranchCache = new Map<string, CacheEntry>();
 const diffBaseCache = new Map<string, DiffBaseCacheEntry>();
 const MAIN_BRANCH_TTL = 60_000; // 60s
 const DIFF_BASE_TTL = 30_000; // 30s
-const MAX_BUFFER = 10 * 1024 * 1024; // 10MB
 const STDERR_CAP = 4096; // cap for stderr buffers in spawned git processes
 /** Git's well-known empty tree SHA — used to diff the initial commit against nothing. */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
