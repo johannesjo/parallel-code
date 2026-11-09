@@ -35,6 +35,7 @@ import {
 import { CoordinatorNotifications } from './coordinator/notifications.js';
 import { CoordinatorLanding, type MergedLines } from './coordinator/landing.js';
 import { ChildArchiver } from './coordinator/archive.js';
+import { CoordinatorPrompts, INITIAL_PROMPT_READY_DELAY_MS } from './coordinator/prompts.js';
 import {
   clampWaitTimeoutMs,
   DEFAULT_WAIT_TIMEOUT_MS,
@@ -45,7 +46,6 @@ import { createTask as createBackendTask, deleteTask } from '../ipc/tasks.js';
 import { getSkipPermissionsArgs, stripPermissionBypassArgs } from '../shared/skip-permissions.js';
 import {
   spawnAgent,
-  writeToAgent,
   killAgent,
   subscribeToAgent,
   unsubscribeFromAgent,
@@ -63,15 +63,8 @@ import {
   DEFAULT_COORDINATOR_CONCURRENT_TASKS,
 } from '../shared/coordinator-limits.js';
 import { getChangedFiles, getAllFileDiffs, getDiffBaseSha, getMainBranch } from '../ipc/git.js';
-import {
-  stripAnsi,
-  cursorRowsToLines,
-  chunkContainsAgentPrompt,
-  getAgentPromptReadiness,
-  AGENT_READY_TAIL_CHARS,
-} from '../shared/prompt-detect.js';
+import { stripAnsi } from '../shared/prompt-detect.js';
 import { buildSubTaskPreamble } from './sub-task-preamble.js';
-import { isStalled, promptDelivery, type PromptDelivery } from './prompt-delivery.js';
 import { verificationRunner } from '../ipc/verify.js';
 import { info as logInfo, warn as logWarn } from '../log.js';
 import type {
@@ -85,7 +78,6 @@ import type {
   ArchiveResult,
   LandSelfInput,
   LandingState,
-  StalledChild,
   SubtaskVerification,
   WaitForSignalDoneResult,
 } from './types.js';
@@ -97,17 +89,6 @@ import {
   type SignalDoneResult,
 } from '../shared/completion-report.js';
 
-const PROMPT_WRITE_DELAY_MS = 50;
-const INITIAL_PROMPT_READY_DELAY_MS = 1_500;
-const MAX_PENDING_PROMPTS = 32;
-const MAX_PROMPT_BYTES = 64 * 1024;
-const PROMPT_ECHO_IDLE_SUPPRESSION_MS = 2_000;
-// A full-screen TUI shows its input prompt mid-turn too: Codex clears it on
-// submit before it shows it is working, and keeps it while streaming a reply.
-// Its output only stops once the turn ends, so the prompt counts once output
-// has settled. Delegation waits as long but only for readiness to persist,
-// which a Codex reply streaming under its prompt would pass.
-const PROMPT_SETTLE_MS = 1_500;
 // Tool hooks of an interrupted turn can still land shortly after the Esc; no
 // Stop follows them, so they must not re-arm hook ownership (mirrors the
 // renderer's INTERRUPT_SUPPRESS_MS).
@@ -118,27 +99,7 @@ const HOOK_TOOL_EVENTS: ReadonlySet<string> = new Set([
   'PostToolUseFailure',
   'PermissionRequest',
 ]);
-const FOCUS_IN = '\x1b[I';
-const BRACKETED_PASTE_START = '\x1b[200~';
-const BRACKETED_PASTE_END = '\x1b[201~';
 const REST_COORDINATOR_SENTINEL = 'api';
-
-function pasteDelayMs(text: string): number {
-  const lines = text.split('\n').length;
-  return Math.min(500, Math.max(50, lines * 15));
-}
-
-class PromptWriteError extends Error {
-  constructor(
-    message: string,
-    readonly phase: 'body' | 'enter',
-    cause: unknown,
-  ) {
-    const suffix = cause instanceof Error ? `: ${cause.message}` : '';
-    super(`${message}${suffix}`);
-    this.name = 'PromptWriteError';
-  }
-}
 
 export class Coordinator {
   private tasks = new Map<string, CoordinatedTask>();
@@ -155,11 +116,6 @@ export class Coordinator {
   private initialPromptReadyTasks = new Set<string>();
   private promptReadySeenAt = new Map<string, number>();
   private queuedPromptFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  // Output whose prompt check waits for the screen mirror or for output to settle.
-  private deferredPromptChecks = new Map<
-    string,
-    { timer: ReturnType<typeof setTimeout>; echoOnly: boolean }
-  >();
   private bracketedPasteAgentIds = new Set<string>();
   private closingTaskIds = new Set<string>();
   private cleanupsInFlight = new Map<string, Promise<void>>();
@@ -174,21 +130,7 @@ export class Coordinator {
     this.orchestrationEpoch += 1;
     for (const parent of this.coordinators.values())
       parent.launchEpoch = (parent.launchEpoch ?? 0) + 1;
-    for (const task of this.tasks.values()) this.discardAutomatedPrompts(task);
-  }
-
-  private discardAutomatedPrompts(task: CoordinatedTask): void {
-    this.clearInitialPromptDeliveryState(task.id);
-    this.clearQueuedPromptFlushTimer(task.id);
-    task.initialPrompt = undefined;
-    task.pendingPrompts = undefined;
-    task.promptQueuedAt = undefined;
-    task.unsubmittedPrompt = false;
-    this.notifyRenderer(IPC.MCP_TaskStateSync, {
-      taskId: task.id,
-      initialPrompt: null,
-      pendingPromptCount: 0,
-    });
+    for (const task of this.tasks.values()) this.prompts.discardAutomatedPrompts(task);
   }
 
   private assertOrchestrationEnabled(epoch = this.orchestrationEpoch): void {
@@ -231,7 +173,7 @@ export class Coordinator {
     tasks: this.tasks,
     activeSignalWaitCount: (coordinatorTaskId) =>
       this.signalWaits.activeSignalWaitCount(coordinatorTaskId),
-    suppressPromptEchoIdleIfNeeded: (task) => this.suppressPromptEchoIdleIfNeeded(task),
+    suppressPromptEchoIdleIfNeeded: (task) => this.prompts.suppressPromptEchoIdleIfNeeded(task),
     notifyRenderer: (channel, data) => this.notifyRenderer(channel, data),
   });
   private landing = new CoordinatorLanding({
@@ -251,9 +193,34 @@ export class Coordinator {
     isHumanControlled: (taskId) => this.controlMap.get(taskId) === 'human',
     isWritingPrompt: (taskId) => this.writingPromptTaskIds.has(taskId),
     suggestClose: (taskId, reason) => this.suggestClose(taskId, reason),
-    discardAutomatedPrompts: (task) => this.discardAutomatedPrompts(task),
+    discardAutomatedPrompts: (task) => this.prompts.discardAutomatedPrompts(task),
     notifyRenderer: (channel, data) => this.notifyRenderer(channel, data),
   });
+  private prompts: CoordinatorPrompts = new CoordinatorPrompts(
+    {
+      tasks: this.tasks,
+      controlMap: this.controlMap,
+      hookLiveAgentIds: this.hookLiveAgentIds,
+      idleResolvers: this.idleResolvers,
+      notifications: this.notifications,
+      isOrchestrationEnabled: () => this.orchestrationEnabled,
+      orchestrationEpoch: () => this.orchestrationEpoch,
+      assertOrchestrationEnabled: (epoch) => this.assertOrchestrationEnabled(epoch),
+      advanceReviewRevision: (task) => this.advanceReviewRevision(task),
+      withdrawCloseSuggestion: (task) => this.withdrawCloseSuggestion(task),
+      notifyRenderer: (channel, data) => this.notifyRenderer(channel, data),
+    },
+    {
+      tailBuffers: this.tailBuffers,
+      decoders: this.decoders,
+      writingPromptTaskIds: this.writingPromptTaskIds,
+      initialPromptTimers: this.initialPromptTimers,
+      initialPromptReadyTasks: this.initialPromptReadyTasks,
+      promptReadySeenAt: this.promptReadySeenAt,
+      queuedPromptFlushTimers: this.queuedPromptFlushTimers,
+      bracketedPasteAgentIds: this.bracketedPasteAgentIds,
+    },
+  );
   private signalWaits: SignalWaits = new SignalWaits({
     tasks: this.tasks,
     coordinators: this.coordinators,
@@ -261,7 +228,7 @@ export class Coordinator {
     isClosingOrIntegrating: (taskId) =>
       this.closingTaskIds.has(taskId) || this.integratingTaskIds.has(taskId),
     withdrawCloseSuggestion: (task) => this.withdrawCloseSuggestion(task),
-    stalledChildren: (coordinatorTaskId) => this.stalledChildren(coordinatorTaskId),
+    stalledChildren: (coordinatorTaskId) => this.prompts.stalledChildren(coordinatorTaskId),
     notifyRenderer: (channel, data) => this.notifyRenderer(channel, data),
   });
   constructor() {
@@ -323,7 +290,7 @@ export class Coordinator {
             task.promptStartedAt = undefined;
             this.advanceReviewRevision(task);
           }
-          this.updateTailFromScrollback(task);
+          this.prompts.updateTailFromScrollback(task);
         }
       }
       subscribeToAgent(agentId, outputCb);
@@ -389,11 +356,11 @@ export class Coordinator {
         task.suppressIdleUntil = undefined;
         task.lastPromptEchoText = undefined;
       }
-      this.handlePromptDetected(task, false, 'hook');
+      this.prompts.handlePromptDetected(task, false, 'hook');
       return;
     }
     // 'working' and 'waiting' both mean the agent is mid-turn.
-    this.markPromptStarted(task);
+    this.prompts.markPromptStarted(task);
     this.promptReadySeenAt.delete(task.id);
     if (task.status === 'idle') {
       task.status = 'running';
@@ -432,412 +399,12 @@ export class Coordinator {
         this.idleResolvers.delete(taskId);
       }
       if (task?.initialPrompt) {
-        this.clearInitialPromptTimer(task.id);
-        this.scheduleInitialPromptDelivery(task, 0);
+        this.prompts.clearInitialPromptTimer(task.id);
+        this.prompts.scheduleInitialPromptDelivery(task, 0);
       } else if (task?.pendingPrompts?.length) {
         // Human use may have left the agent mid-turn; wait for a rendered prompt.
-        this.scheduleQueuedPromptFlush(task);
+        this.prompts.scheduleQueuedPromptFlush(task);
       }
-    }
-  }
-
-  private normalizedTail(agentId: string): string {
-    const tail = (this.tailBuffers.get(agentId) ?? '').slice(-AGENT_READY_TAIL_CHARS * 2);
-    return (
-      stripAnsi(cursorRowsToLines(tail))
-        // eslint-disable-next-line no-control-regex -- preserve line breaks for anchored prompt detection.
-        .replace(/[\x00-\x09\x0b-\x0c\x0e-\x1f\x7f]/g, ' ')
-        .replace(/[ \t]+/g, ' ')
-        .trim()
-    );
-  }
-
-  /**
-   * Whether the agent shows a ready input prompt drawn since the last send, or
-   * undefined while that is not known yet. A full-screen TUI such as Codex
-   * repaints only changed cells, so a prompt that stays on screen through a
-   * turn never reappears in the output stream: read its rendered screen once
-   * output has settled. Main-screen agents redraw their input line each turn,
-   * so their output tail shows it.
-   */
-  private freshAgentPrompt(task: CoordinatedTask): boolean | undefined {
-    // Sends clear the tail, so until new output arrives the prompt on screen
-    // is the one the agent just took.
-    if (!this.tailBuffers.get(task.agentId)) return false;
-    // The screen parsed so far tells which kind of TUI this is without
-    // waiting for the mirror; only its readiness needs the latest output.
-    if (getAgentPromptSnapshot(task.agentId, { parsedSoFar: true })?.alternateScreen) {
-      const screen = getAgentPromptSnapshot(task.agentId);
-      if (!screen) return undefined;
-      const readiness = getAgentPromptReadiness(screen.text);
-      if (readiness.reason === 'busy') this.markPromptStarted(task);
-      if (readiness.ready && Date.now() - (task.lastOutputAt ?? 0) < PROMPT_SETTLE_MS) {
-        return undefined;
-      }
-      return readiness.ready;
-    }
-    return chunkContainsAgentPrompt(this.normalizedTail(task.agentId));
-  }
-
-  private updateBracketedPasteMode(agentId: string, text: string): void {
-    // eslint-disable-next-line no-control-regex -- PTYs report bracketed paste mode with CSI ? 2004 h/l.
-    const re = /\x1b\[\?2004([hl])/g;
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(text)) !== null) {
-      if (match[1] === 'h') this.bracketedPasteAgentIds.add(agentId);
-      else this.bracketedPasteAgentIds.delete(agentId);
-    }
-  }
-
-  private updateTailFromScrollback(task: CoordinatedTask): boolean {
-    const scrollback = getAgentScrollback(task.agentId);
-    if (!scrollback) return false;
-    const decoded = Buffer.from(scrollback, 'base64').toString('utf8');
-    this.updateBracketedPasteMode(task.agentId, decoded);
-    this.tailBuffers.set(
-      task.agentId,
-      decoded.length > 4096 ? decoded.slice(decoded.length - 4096) : decoded,
-    );
-    const freshPrompt = this.freshAgentPrompt(task);
-    // A screen still settling is judged like new output once it has.
-    if (freshPrompt === undefined)
-      this.deferPromptCheck(task, this.takeDeferredPromptCheck(task.id));
-    const hasAgentPrompt = freshPrompt === true;
-    if (hasAgentPrompt) {
-      this.scheduleInitialPromptDelivery(task, INITIAL_PROMPT_READY_DELAY_MS, true);
-      // Replayed scrollback may hold a stale ❯ from a mid-turn frame: hook-live
-      // agents go idle on Stop only, and an undelivered assignment is not idle.
-      if (!this.awaitingInitialPrompt(task) && !this.hookLiveAgentIds.has(task.agentId)) {
-        task.status = 'idle';
-        this.notifications.maybeQueueReviewNotification(task, 'idle', null);
-      }
-    }
-    return hasAgentPrompt;
-  }
-
-  private markAgentPromptReady(task: CoordinatedTask, hasAgentPrompt: boolean): boolean {
-    if (!hasAgentPrompt) {
-      this.promptReadySeenAt.delete(task.id);
-      return false;
-    }
-    const now = Date.now();
-    const firstSeenAt = this.promptReadySeenAt.get(task.id);
-    if (firstSeenAt === undefined) {
-      this.promptReadySeenAt.set(task.id, now);
-      return false;
-    }
-    return now - firstSeenAt >= PROMPT_WRITE_DELAY_MS;
-  }
-
-  private scheduleQueuedPromptFlush(task: CoordinatedTask): void {
-    if (
-      !this.orchestrationEnabled ||
-      !this.hasQueuedWork(task) ||
-      this.queuedPromptFlushTimers.has(task.id)
-    )
-      return;
-    const timer = setTimeout(() => {
-      this.queuedPromptFlushTimers.delete(task.id);
-      if (!this.orchestrationEnabled || !this.tasks.has(task.id)) return;
-      if (this.controlMap.get(task.id) === 'human') return;
-      if (!this.hasQueuedWork(task)) return;
-      const ready = this.freshAgentPrompt(task);
-      if (!ready) {
-        if (ready === undefined) this.scheduleQueuedPromptFlush(task);
-        return;
-      }
-      if (this.writingPromptTaskIds.has(task.id)) {
-        this.scheduleQueuedPromptFlush(task);
-        return;
-      }
-      void this.flushNextQueuedPrompt(task);
-    }, PROMPT_WRITE_DELAY_MS);
-    if (typeof timer === 'object' && 'unref' in timer) timer.unref();
-    this.queuedPromptFlushTimers.set(task.id, timer);
-  }
-
-  private clearQueuedPromptFlushTimer(taskId: string): void {
-    const timer = this.queuedPromptFlushTimers.get(taskId);
-    if (!timer) return;
-    clearTimeout(timer);
-    this.queuedPromptFlushTimers.delete(taskId);
-  }
-
-  private suppressPromptEchoIdleNotification(task: CoordinatedTask): void {
-    task.suppressIdleUntil = Date.now() + PROMPT_ECHO_IDLE_SUPPRESSION_MS;
-  }
-
-  private isPromptEchoOutput(task: CoordinatedTask, text: string): boolean {
-    const prompt = task.lastPromptEchoText;
-    if (!prompt) return false;
-    const normalized = stripAnsi(text)
-      // eslint-disable-next-line no-control-regex -- compare printable prompt echo text only.
-      .replace(/[\x00-\x1f\x7f]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    return Boolean(
-      normalized &&
-      (prompt.includes(normalized) ||
-        (normalized.startsWith('[SUB-TASK MODE]') && prompt.startsWith('[SUB-TASK MODE]'))),
-    );
-  }
-
-  private suppressPromptEchoIdleIfNeeded(task: CoordinatedTask): boolean {
-    if (!task.assignedPromptDelivered || task.suppressIdleUntil === undefined) return false;
-    if (Date.now() < task.suppressIdleUntil) {
-      task.suppressIdleUntil = undefined;
-      task.lastPromptEchoText = undefined;
-      this.tailBuffers.set(task.agentId, '');
-      return true;
-    }
-    task.suppressIdleUntil = undefined;
-    task.lastPromptEchoText = undefined;
-    return false;
-  }
-
-  private clearInitialPromptTimer(taskId: string): void {
-    const timer = this.initialPromptTimers.get(taskId);
-    if (!timer) return;
-    clearTimeout(timer);
-    this.initialPromptTimers.delete(taskId);
-  }
-
-  private clearInitialPromptDeliveryState(taskId: string): void {
-    this.clearInitialPromptTimer(taskId);
-    this.initialPromptReadyTasks.delete(taskId);
-  }
-
-  private clearPromptDeliveryState(taskId: string): void {
-    this.clearInitialPromptDeliveryState(taskId);
-    this.clearQueuedPromptFlushTimer(taskId);
-    this.takeDeferredPromptCheck(taskId);
-    this.promptReadySeenAt.delete(taskId);
-    this.writingPromptTaskIds.delete(taskId);
-  }
-
-  private scheduleInitialPromptDelivery(
-    task: CoordinatedTask,
-    delayMs = INITIAL_PROMPT_READY_DELAY_MS,
-    promptReady = false,
-  ): void {
-    if (!this.orchestrationEnabled) return;
-    if (promptReady) this.initialPromptReadyTasks.add(task.id);
-    if (!task.initialPrompt || task.assignedPromptDelivered) return;
-    if (this.initialPromptTimers.has(task.id)) return;
-
-    const timer = setTimeout(() => {
-      this.initialPromptTimers.delete(task.id);
-      void this.tryDeliverInitialPrompt(task.id);
-    }, delayMs);
-    if (typeof timer === 'object' && 'unref' in timer) timer.unref();
-    this.initialPromptTimers.set(task.id, timer);
-    logInfo('coordinator.initial_prompt', 'scheduled', {
-      taskId: task.id,
-      agentId: task.agentId,
-      delayMs,
-    });
-  }
-
-  private createAgentOutputMonitor(task: CoordinatedTask): (encoded: string) => void {
-    return (encoded: string) => {
-      const bytes = Buffer.from(encoded, 'base64');
-      const text = (this.decoders.get(task.agentId) ?? new TextDecoder()).decode(bytes, {
-        stream: true,
-      });
-      this.updateBracketedPasteMode(task.agentId, text);
-      const prev = this.tailBuffers.get(task.agentId) ?? '';
-      const combined = prev + text;
-      this.tailBuffers.set(
-        task.agentId,
-        combined.length > 4096 ? combined.slice(combined.length - 4096) : combined,
-      );
-      task.lastOutputAt = Date.now();
-
-      const hasAgentPrompt = this.freshAgentPrompt(task);
-      if (
-        hasAgentPrompt !== true &&
-        task.promptSubmittedAt !== undefined &&
-        task.promptStartedAt === undefined &&
-        getAgentPromptReadiness(this.normalizedTail(task.agentId)).reason === 'busy'
-      ) {
-        this.markPromptStarted(task);
-      }
-      // Earlier output still waiting on the mirror is judged with this chunk.
-      const echoOnly = this.takeDeferredPromptCheck(task.id) && this.isPromptEchoOutput(task, text);
-      if (hasAgentPrompt === undefined) this.deferPromptCheck(task, echoOnly);
-      else this.applyPromptState(task, hasAgentPrompt, echoOnly);
-    };
-  }
-
-  /** Re-check output the mirror had not parsed yet, or whose prompt has not settled. */
-  private deferPromptCheck(task: CoordinatedTask, echoOnly: boolean): void {
-    const timer = setTimeout(() => {
-      this.deferredPromptChecks.delete(task.id);
-      // An empty tail means a send cleared it since: this output is stale.
-      if (!this.tasks.has(task.id) || !this.tailBuffers.get(task.agentId)) return;
-      const hasAgentPrompt = this.freshAgentPrompt(task);
-      if (hasAgentPrompt === undefined) this.deferPromptCheck(task, echoOnly);
-      else this.applyPromptState(task, hasAgentPrompt, echoOnly);
-    }, PROMPT_WRITE_DELAY_MS);
-    if (typeof timer === 'object' && 'unref' in timer) timer.unref();
-    this.deferredPromptChecks.set(task.id, { timer, echoOnly });
-  }
-
-  /** Cancel a deferred prompt check; true unless the output it held was more than echo. */
-  private takeDeferredPromptCheck(taskId: string): boolean {
-    const deferred = this.deferredPromptChecks.get(taskId);
-    if (!deferred) return true;
-    clearTimeout(deferred.timer);
-    this.deferredPromptChecks.delete(taskId);
-    return deferred.echoOnly;
-  }
-
-  private applyPromptState(
-    task: CoordinatedTask,
-    hasAgentPrompt: boolean,
-    echoOnly: boolean,
-  ): void {
-    const stableAgentPrompt = this.markAgentPromptReady(task, hasAgentPrompt);
-    // A rendered prompt only counts once output settled, so like a hook Stop
-    // it cannot be prompt echo: clear the echo window instead of consuming it.
-    const settledScreenPrompt =
-      hasAgentPrompt &&
-      getAgentPromptSnapshot(task.agentId, { parsedSoFar: true })?.alternateScreen === true;
-    if ((!hasAgentPrompt && task.assignedPromptDelivered && !echoOnly) || settledScreenPrompt) {
-      task.suppressIdleUntil = undefined;
-      task.lastPromptEchoText = undefined;
-    }
-    if (hasAgentPrompt) {
-      this.handlePromptDetected(task, stableAgentPrompt);
-    } else if (task.status === 'idle' && !this.hookLiveAgentIds.has(task.agentId)) {
-      // Hook-live agents flip back to running only on hook evidence — TUI
-      // repaints and status-line noise must not override a hook-reported idle.
-      task.status = 'running';
-      this.notifications.suppressPendingNotificationForTask(task);
-    }
-  }
-
-  private handlePromptDetected(
-    task: CoordinatedTask,
-    stableAgentPrompt: boolean,
-    source: 'regex' | 'hook' = 'regex',
-  ): void {
-    // Only a rendered ❯ proves the agent can take input: a hook `done` fires
-    // before the TUI repaints, and marking the initial prompt ready on it would
-    // skip the startup blockers (MCP boot, trust dialog) readiness checks for.
-    this.scheduleInitialPromptDelivery(task, INITIAL_PROMPT_READY_DELAY_MS, source === 'regex');
-    if (
-      !task.initialPrompt &&
-      !this.awaitingInitialPrompt(task) &&
-      this.controlMap.get(task.id) !== 'human' &&
-      this.hasQueuedWork(task)
-    ) {
-      if (stableAgentPrompt && !this.writingPromptTaskIds.has(task.id)) {
-        void this.flushNextQueuedPrompt(task);
-      } else {
-        this.scheduleQueuedPromptFlush(task);
-      }
-      return;
-    }
-    // Once hooks report state for this agent, only hook Stop events may drive
-    // the idle transition — the ❯-regex above still schedules prompt delivery
-    // but must not race a mid-turn TUI frame into a false idle.
-    if (source === 'regex' && this.hookLiveAgentIds.has(task.agentId)) {
-      return;
-    }
-    // Before the assignment is delivered this ❯ (or startup hook) is just the
-    // empty startup prompt; reporting idle would resolve wait_for_idle early.
-    if (this.awaitingInitialPrompt(task)) return;
-    // A typed but unsubmitted body is not a finished turn, even under human control.
-    if (task.unsubmittedPrompt) return;
-    if (task.suppressIdleUntil !== undefined && this.suppressPromptEchoIdleIfNeeded(task)) {
-      return;
-    }
-    if (task.status === 'running') {
-      task.status = 'idle';
-      this.notifications.maybeQueueReviewNotification(task, 'idle', null);
-    }
-    const resolvers = this.idleResolvers.get(task.id);
-    if (resolvers?.length) {
-      for (const resolve of resolvers) resolve({ reason: 'idle' });
-      this.idleResolvers.delete(task.id);
-    }
-  }
-
-  private async tryDeliverInitialPrompt(taskId: string): Promise<void> {
-    if (!this.orchestrationEnabled) return;
-    const epoch = this.orchestrationEpoch;
-    const task = this.tasks.get(taskId);
-    if (!task?.initialPrompt || task.assignedPromptDelivered) return;
-    if (task.status === 'exited' || task.status === 'error') return;
-
-    const readiness = getAgentPromptReadiness(this.normalizedTail(task.agentId));
-    // The sticky ready flag only covers a blank tail; a trust dialog, MCP boot or
-    // busy marker that appeared since must still block delivery.
-    const blocked = readiness.reason === 'startup_or_dialog' || readiness.reason === 'busy';
-    const promptReady = !blocked && (this.initialPromptReadyTasks.has(taskId) || readiness.ready);
-    if (!promptReady) {
-      logInfo('coordinator.initial_prompt', 'waiting_for_prompt', {
-        taskId: task.id,
-        agentId: task.agentId,
-        reason: readiness.reason,
-        pendingPromptCount: task.pendingPrompts?.length ?? 0,
-        tailSample: readiness.tail.slice(-300),
-      });
-      this.scheduleInitialPromptDelivery(task, INITIAL_PROMPT_READY_DELAY_MS);
-      return;
-    }
-
-    if (this.controlMap.get(task.id) === 'human') {
-      this.scheduleInitialPromptDelivery(task, INITIAL_PROMPT_READY_DELAY_MS, promptReady);
-      return;
-    }
-
-    if (this.writingPromptTaskIds.has(task.id)) return;
-    const prompt = task.initialPrompt;
-    task.initialPrompt = undefined;
-    this.writingPromptTaskIds.add(task.id);
-    try {
-      await this.writePromptToTask(task, prompt);
-      this.markPromptDelivered(task.id);
-      logInfo('coordinator.initial_prompt', 'delivered', {
-        taskId: task.id,
-        agentId: task.agentId,
-      });
-      this.notifyRenderer(IPC.MCP_TaskStateSync, {
-        taskId: task.id,
-        initialPrompt: null,
-      });
-    } catch (err) {
-      if (err instanceof PromptWriteError && err.phase === 'enter') {
-        logWarn(
-          'coordinator.initial_prompt',
-          'initial prompt body was written but Enter failed; not retrying body',
-          {
-            taskId: task.id,
-            err: err.message,
-          },
-        );
-        // The body is in the agent's input, so the assignment counts as handed over;
-        // leaving it undelivered would strand prompts queued behind it. Not
-        // markPromptDelivered: the agent has not started work.
-        task.assignedPromptDelivered = true;
-        this.notifyRenderer(IPC.MCP_TaskStateSync, {
-          taskId: task.id,
-          initialPrompt: null,
-        });
-        return;
-      }
-      if (
-        this.orchestrationEnabled &&
-        epoch === this.orchestrationEpoch &&
-        this.tasks.has(task.id)
-      ) {
-        task.initialPrompt = prompt;
-        this.scheduleInitialPromptDelivery(task, INITIAL_PROMPT_READY_DELAY_MS, promptReady);
-      }
-    } finally {
-      this.writingPromptTaskIds.delete(task.id);
     }
   }
 
@@ -1021,7 +588,7 @@ export class Coordinator {
     parent.launchEpoch = (parent.launchEpoch ?? 0) + 1;
     for (const task of this.tasks.values()) {
       if (task.coordinatorTaskId !== parentId) continue;
-      this.clearPromptDeliveryState(task.id);
+      this.prompts.clearPromptDeliveryState(task.id);
       task.pendingPrompts = undefined;
       task.promptQueuedAt = undefined;
       this.controlMap.set(task.id, 'human');
@@ -1234,7 +801,7 @@ export class Coordinator {
     };
 
     this.tasks.set(task.id, task);
-    if (!this.orchestrationEnabled) this.discardAutomatedPrompts(task);
+    if (!this.orchestrationEnabled) this.prompts.discardAutomatedPrompts(task);
     onInserted();
     this.tailBuffers.set(agentId, '');
 
@@ -1242,7 +809,7 @@ export class Coordinator {
     const decoder = new TextDecoder();
     this.decoders.set(agentId, decoder);
 
-    const outputCb = this.createAgentOutputMonitor(task);
+    const outputCb = this.prompts.createAgentOutputMonitor(task);
     this.subscribers.set(agentId, outputCb);
 
     // closeTask/removeCoordinatedTask can delete the task while we are awaiting;
@@ -1366,8 +933,8 @@ export class Coordinator {
       task.status = 'running';
 
       // Check scrollback in case the prompt was emitted before we subscribed.
-      this.updateTailFromScrollback(task);
-      this.scheduleInitialPromptDelivery(task, INITIAL_PROMPT_READY_DELAY_MS);
+      this.prompts.updateTailFromScrollback(task);
+      this.prompts.scheduleInitialPromptDelivery(task, INITIAL_PROMPT_READY_DELAY_MS);
 
       // Notify renderer after backend startup begins. The backend owns delivery
       // of coordinated initial assignments so background sub-tasks start even
@@ -1457,7 +1024,7 @@ export class Coordinator {
       branchName: t.branchName,
       status: t.status,
       activityEvidence: this.activityEvidence(t),
-      delivery: this.promptDelivery(t),
+      delivery: this.prompts.promptDelivery(t),
       coordinatorTaskId: t.coordinatorTaskId,
       integrationPolicy: t.integrationPolicy,
       signalDoneAt: t.signalDoneAt?.toISOString(),
@@ -1488,7 +1055,7 @@ export class Coordinator {
       integrationPolicy: task.integrationPolicy,
       exitCode: task.exitCode,
       activityEvidence: this.activityEvidence(task),
-      delivery: this.promptDelivery(task),
+      delivery: this.prompts.promptDelivery(task),
       pendingPrompt: task.pendingPrompts?.[0],
       pendingPrompts: task.pendingPrompts ? [...task.pendingPrompts] : undefined,
       pendingPromptCount: task.pendingPrompts?.length,
@@ -1509,241 +1076,8 @@ export class Coordinator {
     return this.tasks.get(taskId)?.doneToken ?? null;
   }
 
-  async sendPrompt(taskId: string, prompt: string): Promise<{ queued: boolean }> {
-    this.assertOrchestrationEnabled();
-    const task = this.tasks.get(taskId);
-    if (!task) throw new Error(`Task not found: ${taskId}`);
-    // Its agent is stopped and only the user can restore it; a queued prompt would never land.
-    if (task.archived)
-      throw new Error('Task is archived. Ask the user to restore it, or create a new task.');
-    if (Buffer.byteLength(prompt, 'utf8') > MAX_PROMPT_BYTES)
-      throw new Error(`Prompt exceeds ${MAX_PROMPT_BYTES} byte limit`);
-    const queueLen = task.pendingPrompts?.length ?? 0;
-    if (queueLen >= MAX_PENDING_PROMPTS)
-      throw new Error(`Prompt queue full (${MAX_PENDING_PROMPTS} pending)`);
-    this.advanceReviewRevision(task);
-    // New work means the coordinator wants this child after all, even while it queues.
-    this.withdrawCloseSuggestion(task);
-    if (task.initialPrompt && !task.assignedPromptDelivered) {
-      this.queuePrompt(task, prompt);
-      this.clearInitialPromptTimer(task.id);
-      this.scheduleInitialPromptDelivery(task, 0);
-      return { queued: true };
-    }
-    if (
-      task.pendingPrompts?.length ||
-      this.controlMap.get(taskId) === 'human' ||
-      this.writingPromptTaskIds.has(taskId)
-    ) {
-      this.queuePrompt(task, prompt);
-      return { queued: true };
-    }
-
-    // Acquire write lock synchronously before the first await so a concurrent
-    // sendPrompt call sees the lock and queues rather than writing through.
-    this.writingPromptTaskIds.add(task.id);
-    try {
-      await this.writePromptToTask(task, prompt);
-    } finally {
-      this.writingPromptTaskIds.delete(task.id);
-      // The write cleared the tail, so this waits for the next rendered prompt
-      // instead of typing a queued prompt into a busy agent.
-      this.scheduleQueuedPromptFlush(task);
-    }
-    return { queued: false };
-  }
-
-  private queuePrompt(task: CoordinatedTask, prompt: string): void {
-    task.pendingPrompts = [...(task.pendingPrompts ?? []), prompt];
-    task.promptQueuedAt ??= Date.now();
-  }
-
-  private markPromptSubmitted(task: CoordinatedTask): void {
-    task.promptSubmittedAt = Date.now();
-    task.promptStartedAt = undefined;
-    task.promptQueuedAt = task.pendingPrompts?.length ? Date.now() : undefined;
-  }
-
-  /** Only a prompt the coordinator submitted awaits confirmation. */
-  private markPromptStarted(task: CoordinatedTask): void {
-    if (task.promptSubmittedAt !== undefined) task.promptStartedAt ??= Date.now();
-  }
-
-  private promptDelivery(task: CoordinatedTask): PromptDelivery | undefined {
-    if (task.status === 'exited' || task.status === 'error') return undefined;
-    const now = Date.now();
-    const blockedBy =
-      this.controlMap.get(task.id) === 'human'
-        ? 'user_activity'
-        : this.awaitingInitialPrompt(task)
-          ? 'agent_startup'
-          : 'agent_busy';
-    return promptDelivery({
-      now,
-      queuedAt: this.hasUndeliveredPrompt(task) ? (task.promptQueuedAt ?? now) : undefined,
-      blockedBy,
-      submittedAt: task.promptSubmittedAt,
-      startedAt: task.promptStartedAt,
-      // No output at all since the submit is as telling as a repainted empty prompt.
-      awaitingInput:
-        this.normalizedTail(task.agentId) === '' || this.freshAgentPrompt(task) === true,
-    });
-  }
-
-  private stalledChildren(coordinatorTaskId: string): StalledChild[] {
-    const stalled: StalledChild[] = [];
-    for (const task of this.tasks.values()) {
-      // A child that signalled done took its prompt, whatever its screen shows.
-      if (task.coordinatorTaskId !== coordinatorTaskId || task.signalDoneAt) continue;
-      // The parent already gave this child up; reporting it again would only nag the user.
-      if (task.closeSuggestion) continue;
-      const delivery = this.promptDelivery(task);
-      if (delivery && isStalled(delivery, task.status === 'idle')) {
-        stalled.push({ taskId: task.id, name: task.name, delivery });
-      }
-    }
-    return stalled;
-  }
-
-  /** A body whose Enter failed is still in the agent's input. Submit it instead of
-   *  typing the next prompt onto it; the queue flushes on the following ready prompt. */
-  private submitStrandedPrompt(task: CoordinatedTask, epoch: number): void {
-    try {
-      this.assertOrchestrationEnabled(epoch);
-      writeToAgent(task.agentId, '\r');
-    } catch (err) {
-      logWarn('coordinator.prompt_queue', 'Enter retry for an unsubmitted prompt failed', {
-        taskId: task.id,
-        err: err instanceof Error ? err.message : String(err),
-      });
-      return;
-    }
-    task.unsubmittedPrompt = false;
-    this.markPromptSubmitted(task);
-    task.status = 'running';
-    // The ❯ that triggered this is stale; wait for a fresh one before the next prompt.
-    this.tailBuffers.set(task.agentId, '');
-    this.promptReadySeenAt.delete(task.id);
-    this.scheduleQueuedPromptFlush(task);
-  }
-
-  private async flushNextQueuedPrompt(task: CoordinatedTask): Promise<void> {
-    if (!this.orchestrationEnabled) return;
-    const epoch = this.orchestrationEpoch;
-    if (this.controlMap.get(task.id) === 'human') return;
-    if (task.initialPrompt && !task.assignedPromptDelivered) return;
-    if (this.writingPromptTaskIds.has(task.id)) return;
-    if (task.unsubmittedPrompt) {
-      this.submitStrandedPrompt(task, epoch);
-      return;
-    }
-    const prompt = task.pendingPrompts?.shift();
-    if (!prompt) {
-      task.pendingPrompts = undefined;
-      return;
-    }
-    this.writingPromptTaskIds.add(task.id);
-    try {
-      await this.writePromptToTask(task, prompt);
-    } catch (err) {
-      if (err instanceof PromptWriteError && err.phase === 'enter') {
-        logWarn(
-          'coordinator.prompt_queue',
-          'queued prompt body was written but Enter failed; not retrying body',
-          {
-            taskId: task.id,
-            err: err.message,
-          },
-        );
-      } else if (this.orchestrationEnabled && epoch === this.orchestrationEpoch) {
-        task.pendingPrompts ??= [];
-        task.pendingPrompts.unshift(prompt);
-        logWarn(
-          'coordinator.prompt_queue',
-          'queued prompt write failed; will retry on next ready prompt',
-          {
-            taskId: task.id,
-            err: err instanceof Error ? err.message : String(err),
-          },
-        );
-        this.scheduleQueuedPromptFlush(task);
-      }
-    } finally {
-      this.writingPromptTaskIds.delete(task.id);
-    }
-    if (task.pendingPrompts?.length === 0) {
-      task.pendingPrompts = undefined;
-    } else if (task.pendingPrompts?.length) {
-      this.scheduleQueuedPromptFlush(task);
-    }
-  }
-
-  private async writePromptToTask(task: CoordinatedTask, prompt: string): Promise<void> {
-    this.assertOrchestrationEnabled();
-    const epoch = this.orchestrationEpoch;
-    // Send text then Enter separately (like the frontend does)
-    this.setAutomationWriteInFlight(task, true);
-    try {
-      try {
-        writeToAgent(task.agentId, FOCUS_IN);
-      } catch (err) {
-        throw new PromptWriteError('Prompt focus write failed', 'body', err);
-      }
-      const promptBody = this.bracketedPasteAgentIds.has(task.agentId)
-        ? `${BRACKETED_PASTE_START}${prompt}${BRACKETED_PASTE_END}`
-        : prompt;
-      try {
-        writeToAgent(task.agentId, promptBody);
-      } catch (err) {
-        throw new PromptWriteError('Prompt body write failed', 'body', err);
-      }
-      logInfo('coordinator.prompt_write', 'body_written', {
-        taskId: task.id,
-        agentId: task.agentId,
-        bytes: Buffer.byteLength(prompt, 'utf8'),
-        bracketedPaste: this.bracketedPasteAgentIds.has(task.agentId),
-      });
-      const submitDelayMs = pasteDelayMs(prompt);
-      await new Promise((r) => setTimeout(r, submitDelayMs));
-      try {
-        this.assertOrchestrationEnabled(epoch);
-      } catch (err) {
-        // Cancelled, not stranded: disabling orchestration discarded this prompt.
-        throw new PromptWriteError('Prompt Enter write failed', 'enter', err);
-      }
-      try {
-        writeToAgent(task.agentId, '\r');
-      } catch (err) {
-        task.unsubmittedPrompt = true;
-        throw new PromptWriteError('Prompt Enter write failed', 'enter', err);
-      }
-      logInfo('coordinator.prompt_write', 'enter_written', {
-        taskId: task.id,
-        agentId: task.agentId,
-        delayMs: submitDelayMs,
-      });
-      // A direct write's Enter also submits any body stranded before it.
-      task.unsubmittedPrompt = false;
-      this.markPromptSubmitted(task);
-      task.status = 'running';
-      task.signalDoneAt = undefined;
-      task.lastPromptEchoText = stripAnsi(prompt)
-        // eslint-disable-next-line no-control-regex -- compare printable prompt echo text only.
-        .replace(/[\x00-\x1f\x7f]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      this.suppressPromptEchoIdleNotification(task);
-      this.tailBuffers.set(task.agentId, '');
-    } finally {
-      this.setAutomationWriteInFlight(task, false);
-    }
-    this.notifyRenderer(IPC.MCP_TaskStateSync, {
-      taskId: task.id,
-      signalDoneReceived: false,
-      signalDoneAt: null,
-      signalDoneConsumed: false,
-      needsReview: false,
-    });
+  sendPrompt(taskId: string, prompt: string): Promise<{ queued: boolean }> {
+    return this.prompts.sendPrompt(taskId, prompt);
   }
 
   isAutomationWriteInFlight(taskId: string): boolean {
@@ -1755,15 +1089,6 @@ export class Coordinator {
     return !!(task?.initialPrompt || task?.pendingPrompts?.length || task?.automationWriteInFlight);
   }
 
-  private setAutomationWriteInFlight(task: CoordinatedTask, value: boolean): void {
-    if (task.automationWriteInFlight === value) return;
-    task.automationWriteInFlight = value;
-    this.notifyRenderer(IPC.MCP_TaskStateSync, {
-      taskId: task.id,
-      automationWriteInFlight: value,
-    });
-  }
-
   waitForIdle(
     taskId: string,
     timeoutMs?: number,
@@ -1772,22 +1097,6 @@ export class Coordinator {
       taskId,
       clampWaitTimeoutMs(timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS),
     );
-  }
-
-  /** True while the initial assignment is queued or mid-write. Tasks created without a
-   *  prompt never have an assignment, though assignedPromptDelivered stays unset. */
-  private awaitingInitialPrompt(task: CoordinatedTask): boolean {
-    if (task.assignedPromptDelivered) return false;
-    return Boolean(task.initialPrompt) || this.writingPromptTaskIds.has(task.id);
-  }
-
-  private hasUndeliveredPrompt(task: CoordinatedTask): boolean {
-    return this.awaitingInitialPrompt(task) || this.hasQueuedWork(task);
-  }
-
-  /** Queued prompts, or a typed body still waiting for its Enter. */
-  private hasQueuedWork(task: CoordinatedTask): boolean {
-    return Boolean(task.pendingPrompts?.length) || task.unsubmittedPrompt === true;
   }
 
   private waitForIdleInternal(
@@ -1807,7 +1116,7 @@ export class Coordinator {
     if (task.status === 'error') return Promise.resolve({ reason: 'exited' });
     // Idle only counts once the assignment was delivered and nothing is queued;
     // otherwise the ❯ seen so far is the startup prompt, not finished work.
-    if (task.status === 'idle' && !this.hasUndeliveredPrompt(task)) {
+    if (task.status === 'idle' && !this.prompts.hasUndeliveredPrompt(task)) {
       return Promise.resolve({ reason: 'idle' });
     }
 
@@ -1951,7 +1260,7 @@ export class Coordinator {
   }
 
   private clearTaskControlState(taskId: string): void {
-    this.clearPromptDeliveryState(taskId);
+    this.prompts.clearPromptDeliveryState(taskId);
     this.controlMap.delete(taskId);
   }
 
@@ -2170,7 +1479,7 @@ export class Coordinator {
       });
     } catch (err) {
       console.warn('Failed to delete coordinated task worktree:', err);
-      this.clearPromptDeliveryState(taskId);
+      this.prompts.clearPromptDeliveryState(taskId);
       this.closingTaskIds.delete(taskId);
       // The exit handler skips signal waiters while a task is closing, so an
       // exit that landed during this attempt would otherwise leave them hanging.
@@ -2264,7 +1573,7 @@ export class Coordinator {
 
     const existingTask = this.tasks.get(opts.id);
     if (existingTask) {
-      if (!this.orchestrationEnabled) this.discardAutomatedPrompts(existingTask);
+      if (!this.orchestrationEnabled) this.prompts.discardAutomatedPrompts(existingTask);
       if (safeMcpConfigPath) existingTask.mcpConfigPath = safeMcpConfigPath;
       const mcpLaunchArgs = this.rewriteHydratedSubtaskMcpConfig(
         existingTask,
@@ -2325,7 +1634,7 @@ export class Coordinator {
       preambleFileExistedBefore: opts.preambleFileExistedBefore,
     };
     this.tasks.set(task.id, task);
-    if (!this.orchestrationEnabled) this.discardAutomatedPrompts(task);
+    if (!this.orchestrationEnabled) this.prompts.discardAutomatedPrompts(task);
     if (opts.landedMetadata) {
       this.landing.seedLandedOrder(opts.coordinatorTaskId, opts.landedMetadata.landedOrder);
     }
@@ -2352,7 +1661,7 @@ export class Coordinator {
 
       this.tailBuffers.set(agentId, '');
       this.decoders.set(agentId, new TextDecoder());
-      const outputCb = this.createAgentOutputMonitor(task);
+      const outputCb = this.prompts.createAgentOutputMonitor(task);
       this.subscribers.set(agentId, outputCb);
       // Subscribe immediately if the agent is already spawned (restart scenario where
       // PTY existed before hydration). The spawn handler covers the deferred case.
@@ -2366,7 +1675,7 @@ export class Coordinator {
       // Clean up partial map entries so the agentId doesn't linger in state.
       this.clearAgentBuffers(agentId);
       this.subscribers.delete(agentId);
-      this.clearPromptDeliveryState(task.id);
+      this.prompts.clearPromptDeliveryState(task.id);
       this.tasks.delete(task.id);
       throw err;
     }
@@ -2519,7 +1828,7 @@ export class Coordinator {
       if (task.coordinatorTaskId !== coordinatorTaskId) continue;
 
       this.clearAgentOutputState(task);
-      this.clearPromptDeliveryState(taskId);
+      this.prompts.clearPromptDeliveryState(taskId);
 
       // Resolve pending idle waiters so callers aren't left hanging
       this.resolveIdleWaiters(taskId, 'exited');
@@ -2554,14 +1863,7 @@ export class Coordinator {
   }
 
   markPromptDelivered(taskId: string): void {
-    const task = this.tasks.get(taskId);
-    if (!task) return;
-    this.clearPromptDeliveryState(taskId);
-    task.initialPrompt = undefined;
-    task.assignedPromptDelivered = true;
-    task.suppressIdleUntil ??= Date.now() + PROMPT_ECHO_IDLE_SUPPRESSION_MS;
-    this.tailBuffers.set(task.agentId, '');
-    if (task.status !== 'exited' && task.status !== 'error') task.status = 'running';
+    this.prompts.markPromptDelivered(taskId);
   }
 
   rescheduleRestageTimer(coordinatorTaskId: string): void {
