@@ -11,8 +11,8 @@ type SubagentGate = (
 /** Claude Code's name for an MCP tool call it moved to the background. */
 const MCP_TASK = 'MCP task';
 /** Background work the lead waits on. Shell commands count too, unless they
- *  look like servers: those never end, so `Stop` only names them. Monitors and
- *  cloud sessions are left out: they run until stopped or outlive the turn. */
+ *  look like servers or are Monitor watchers: `Stop` only names those. Monitor
+ *  and cloud-session tasks are left out: they run until stopped or outlive the turn. */
 const HELD_TASK_TYPES: ReadonlySet<string> = new Set(['subagent', 'workflow', 'shell', MCP_TASK]);
 const WORKFLOW_AGENT = 'workflow-subagent';
 
@@ -22,6 +22,8 @@ interface LaunchWork {
   workflows: string[];
   /** The running shell commands and MCP tool calls, as Claude last listed them. */
   shells: unknown[];
+  /** Commands started with the Monitor tool that may still run. */
+  monitors: readonly string[];
   /** Workflow agents running now, and how many have finished. */
   agents: Set<string>;
   agentsDone: number;
@@ -37,15 +39,52 @@ function field(payload: unknown, key: string): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-/** Held tasks Claude lists as running; undefined when the payload has no list. */
-function runningTasks(payload: unknown): unknown[] | undefined {
+/** Claude's list of background tasks; undefined when the payload has none. */
+function backgroundTasks(payload: unknown): unknown[] | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined;
   const tasks = (payload as Record<string, unknown>).background_tasks;
-  if (!Array.isArray(tasks)) return undefined;
-  return tasks.filter((task) => {
+  return Array.isArray(tasks) ? tasks : undefined;
+}
+
+/** Claude clips a listed command at 1000 characters and appends this. */
+const CLIP_MARK = /… \[\+\d+ chars\]$/;
+
+/** True when a listed shell task runs the command a Monitor call started. */
+function runsCommand(task: unknown, command: string): boolean {
+  const listed = field(task, 'command');
+  if (listed === undefined || field(task, 'status') !== 'running') return false;
+  const head = listed.replace(CLIP_MARK, '');
+  return head === listed ? command === listed : command.startsWith(head);
+}
+
+/**
+ * The Monitor commands that may still run after this event. Claude lists a
+ * Monitor as a plain `shell` task, so its command is the only way to tell it
+ * apart. A watcher waits for something to happen, often for as long as its
+ * timeout allows, so it must not hold the task `working` the way a test run does.
+ */
+function monitorsAfter(prev: readonly string[], payload: unknown): readonly string[] {
+  const event = field(payload, 'hook_event_name');
+  // Only a Monitor that started counts, so a denied call leaves nothing behind.
+  if (event === 'PostToolUse' && field(payload, 'tool_name') === 'Monitor') {
+    const input = (payload as Record<string, unknown>).tool_input;
+    const command = field(input, 'command');
+    return command && !prev.includes(command) ? [...prev, command] : prev;
+  }
+  // The lead's turn end lists every watcher still running, so the rest are over.
+  const tasks = event === 'Stop' ? backgroundTasks(payload) : undefined;
+  if (!tasks) return prev;
+  return prev.filter((command) => tasks.some((task) => runsCommand(task, command)));
+}
+
+/** Held tasks Claude lists as running; undefined when the payload has no list. */
+function runningTasks(payload: unknown, monitors: readonly string[]): unknown[] | undefined {
+  return backgroundTasks(payload)?.filter((task) => {
     const type = field(task, 'type') ?? '';
     if (!HELD_TASK_TYPES.has(type) || field(task, 'status') !== 'running') return false;
-    return type !== 'shell' || !isServerCommand(field(task, 'command') ?? '');
+    if (type !== 'shell') return true;
+    if (monitors.some((command) => runsCommand(task, command))) return false;
+    return !isServerCommand(field(task, 'command') ?? '');
   });
 }
 
@@ -53,7 +92,8 @@ function runningTasks(payload: unknown): unknown[] | undefined {
 function track(prev: LaunchWork | undefined, payload: unknown): LaunchWork {
   const event = field(payload, 'hook_event_name');
   const id = field(payload, 'agent_id');
-  const listed = runningTasks(payload);
+  const monitors = monitorsAfter(prev?.monitors ?? [], payload);
+  const listed = runningTasks(payload, monitors);
   // Claude's own list wins when present, healing a stop we never saw. A
   // sub-agent's stop still lists itself, so its own event applies after.
   const ids = listed?.map((task) => field(task, 'id')).filter((v) => v !== undefined);
@@ -85,7 +125,14 @@ function track(prev: LaunchWork | undefined, payload: unknown): LaunchWork {
   if (event === 'SessionStart' && field(payload, 'source') !== 'compact') open.clear();
   const leadIdle = prev?.leadIdle ?? false;
   const { leadMessage, prompt } = prev ?? {};
-  return { open, workflows, shells, agents, agentsDone, leadIdle, leadMessage, prompt };
+  const counts = { agents, agentsDone };
+  return { open, workflows, shells, monitors, ...counts, leadIdle, leadMessage, prompt };
+}
+
+/** What a launch with no open work still has to remember: its watchers. */
+function settled(monitors: readonly string[]): LaunchWork {
+  const none = { open: new Set<string>(), workflows: [], shells: [], agents: new Set<string>() };
+  return { ...none, monitors, agentsDone: 0, leadIdle: false };
 }
 
 /** The status shown while the lead idles at its prompt, waiting on background work. */
@@ -122,20 +169,23 @@ function promptAfter(
 
 /**
  * Keeps an agent `working` while a background sub-agent, workflow, shell
- * command, or MCP tool call it started still runs. Claude Code ends the lead turn (`Stop`, later `idle_prompt`) as
+ * command, or MCP tool call it started still runs; servers and Monitor
+ * watchers do not count. Claude Code ends the lead turn (`Stop`, later `idle_prompt`) as
  * soon as either is launched, which would report the task finished for its
  * whole run. So that end is held as `working`, and updates are flagged
  * `background` while the lead sits at its prompt. Unmatched `SubagentStop`s
  * occur (Claude's own helpers), so sub-agents are tracked by id.
  */
 export function createSubagentGate(): SubagentGate {
-  // shortcut: entries of a launch that dies mid-sub-agent are never removed —
-  // a few ids per crashed launch; hook retireAgentLaunch if that ever matters.
+  // shortcut: entries of a launch that dies mid-sub-agent or with a Monitor
+  // running are never removed — a few ids or commands per crashed launch; hook
+  // retireAgentLaunch if that ever matters.
   const launches = new Map<string, LaunchWork>();
   return (launchId, payload, update) => {
     const work = track(launches.get(launchId), payload);
     if (work.open.size === 0) {
-      launches.delete(launchId);
+      if (work.monitors.length === 0) launches.delete(launchId);
+      else launches.set(launchId, settled(work.monitors));
       return update;
     }
     // The lead's turn end becomes a hold that keeps its reply for the card. A

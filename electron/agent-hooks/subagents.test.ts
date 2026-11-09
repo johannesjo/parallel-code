@@ -356,6 +356,67 @@ describe('createSubagentGate', () => {
     expect(replay([{ ...turnEnd, background_tasks: shell }])[0]?.state).toBe('done');
   });
 
+  it('does not hold the turn open for a Monitor watcher', () => {
+    // Claude Code 2.1.322 lists a Monitor's command as a plain `shell` task.
+    const command = 'while true; do gh pr list; sleep 30; done';
+    const monitor = {
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Monitor',
+      tool_input: { command },
+    };
+    const watcher = { id: 'b1', type: 'shell', status: 'running', description: 'PRs', command };
+    const tests = { id: 'b2', type: 'shell', status: 'running', command: 'npm test' };
+    const out = replay([
+      monitor,
+      { ...turnEnd, background_tasks: [watcher] },
+      idle,
+      // A real command beside the watcher still holds the turn, under its own name.
+      { ...turnEnd, background_tasks: [watcher, tests] },
+      { ...turnEnd, background_tasks: [watcher] },
+    ]);
+    expect(out.map((update) => update?.state)).toEqual([
+      'working',
+      'done',
+      'done',
+      'working',
+      'done',
+    ]);
+    expect(out[3]?.detail).toBe('background: npm test');
+    // Claude clips a listed command at 1000 characters.
+    const long = `until grep -q done log; do sleep 5; done # ${'x'.repeat(1200)}`;
+    const clipped = {
+      ...watcher,
+      command: `${long.slice(0, 1000)}… [+${long.length - 1000} chars]`,
+    };
+    const longOut = replay([
+      { ...monitor, tool_input: { command: long } },
+      { ...turnEnd, background_tasks: [clipped] },
+    ]);
+    expect(longOut[1]?.state).toBe('done');
+  });
+
+  it('holds for the same command once its Monitor is gone', () => {
+    const command = 'npm test';
+    const monitor = {
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Monitor',
+      tool_input: { command },
+    };
+    const shell = { id: 'b1', type: 'shell', status: 'running', command };
+    const out = replay([
+      monitor,
+      { ...turnEnd, background_tasks: [] },
+      { ...turnEnd, background_tasks: [shell] },
+    ]);
+    expect(out[2]?.state).toBe('working');
+    // A Monitor call that was denied never ran, so it excuses nothing.
+    const denied = replay([
+      { ...monitor, hook_event_name: 'PreToolUse' },
+      { ...turnEnd, background_tasks: [shell] },
+    ]);
+    expect(denied[1]?.state).toBe('working');
+  });
+
   it('passes questions through while a sub-agent runs', () => {
     const ask = { hook_event_name: 'Notification', notification_type: 'permission_prompt' };
     expect(replay([start('a1'), ask])[1]?.state).toBe('waiting');
