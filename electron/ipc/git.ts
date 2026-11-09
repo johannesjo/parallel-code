@@ -37,6 +37,7 @@ export {
   isValidSymlinkName,
   refreshWorktreeNodeModules,
   removeWorktree,
+  removeWorktreeLocked,
   worktreePathFor,
 } from './git-worktree.js';
 

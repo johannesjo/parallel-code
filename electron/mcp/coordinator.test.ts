@@ -1573,7 +1573,7 @@ describe('Coordinator land_self', () => {
       lines_removed: 1,
     });
     const { deleteTask: mockDeleteTask } = await import('../ipc/tasks.js');
-    vi.mocked(mockDeleteTask).mockResolvedValue(undefined);
+    vi.mocked(mockDeleteTask).mockResolvedValue({});
     mockGit();
     coordinator = new Coordinator();
     coordinator.setNotify(mockNotify);
@@ -4736,7 +4736,7 @@ describe('Coordinator cleanupTask — Docker sub-task container stop', () => {
   it('deleteTask is called immediately after killAgent (no waiting for docker exec)', async () => {
     const { deleteTask: mockDeleteTask } =
       await vi.importMock<typeof import('../ipc/tasks.js')>('../ipc/tasks.js');
-    vi.mocked(mockDeleteTask).mockResolvedValue(undefined);
+    vi.mocked(mockDeleteTask).mockResolvedValue({});
 
     await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
     await coordinator.closeTask('task-1');

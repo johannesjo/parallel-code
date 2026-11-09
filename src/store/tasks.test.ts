@@ -191,7 +191,14 @@ import { recordMergedLines, recordTaskMerged } from './completion';
 import { markAgentSpawned, rescheduleTaskStatusPolling } from './taskStatus';
 import { saveState } from './persistence';
 import { MAX_PROMPT_HISTORY } from '../lib/prompt-history';
-import { getProjectBranchPrefix, getProjectPath, isProjectMissing } from './projects';
+import { getProject, getProjectBranchPrefix, getProjectPath, isProjectMissing } from './projects';
+import * as worktreeSetup from './worktree-setup';
+import {
+  consumePendingSetupScript,
+  forgetSetupShells,
+  noteSetupShellExit,
+  setupShellState,
+} from './worktree-setup';
 const mockSetStore = expectDefined(core.harness, 'mock store harness').setStore;
 
 // ─── Coordinator listener setup ───────────────────────────────────────────────
@@ -1232,6 +1239,121 @@ describe('createTask delegation options', () => {
   });
 });
 
+describe('createTask worktree setup', () => {
+  const agentDef = {
+    id: 'agent-def',
+    name: 'Claude',
+    command: 'claude',
+    args: [],
+    resume_args: [],
+    skip_permissions_args: [],
+    description: 'Claude',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const harness = expectDefined(core.harness, 'mock store harness');
+    harness.reset(harness.state());
+    mockTasks = {};
+    mockAgents = {};
+    mockTaskOrder = [];
+    mockProjects = [{ id: 'proj-1', path: '/repo' }];
+    vi.mocked(getProjectPath).mockReturnValue('/repo');
+    vi.mocked(getProjectBranchPrefix).mockReturnValue('task');
+    vi.mocked(isProjectMissing).mockReturnValue(false);
+    mockInvoke.mockImplementation((channel: string) =>
+      Promise.resolve(
+        channel === IPC.CreateTask
+          ? { id: 'task-s', branch_name: 'task/s', worktree_path: '/repo/.worktrees/task/s' }
+          : undefined,
+      ),
+    );
+  });
+
+  function create(gitIsolation: 'worktree' | 'direct' = 'worktree', extra = {}) {
+    return createTask({
+      name: 'Setup',
+      agentDef,
+      projectId: 'proj-1',
+      gitIsolation,
+      baseBranch: 'main',
+      ...extra,
+    });
+  }
+
+  it('adds nothing when the project has no setup script', async () => {
+    vi.mocked(getProject).mockReturnValue({ id: 'proj-1', path: '/repo' } as never);
+    await create();
+    expect(mockTasks['task-s'].shellAgentIds).toEqual([]);
+    const createCall = mockInvoke.mock.calls.find(([c]) => c === IPC.CreateTask);
+    expect(createCall?.[1]).not.toHaveProperty('copyDirs');
+  });
+
+  it('opens a setup terminal with the script when the task registers', async () => {
+    vi.mocked(getProject).mockReturnValue({
+      id: 'proj-1',
+      path: '/repo',
+      worktreeSetupScript: 'npm ci',
+    } as never);
+    await create();
+    const [shellId] = mockTasks['task-s'].shellAgentIds;
+    expect(shellId).toBeDefined();
+    expect(setupShellState(shellId)).toBe('running');
+    expect(consumePendingSetupScript(shellId)).toBe('npm ci');
+    // Consumed once: a remounted or restored terminal never re-runs it.
+    expect(consumePendingSetupScript(shellId)).toBeUndefined();
+    forgetSetupShells([shellId]);
+  });
+
+  it('never runs setup for a task on the current branch', async () => {
+    vi.mocked(getProject).mockReturnValue({
+      id: 'proj-1',
+      path: '/repo',
+      worktreeSetupScript: 'npm ci',
+    } as never);
+    mockInvoke.mockResolvedValue(undefined);
+    const id = await create('direct');
+    expect(mockTasks[id].shellAgentIds).toEqual([]);
+  });
+
+  it('sends copied entries separately from symlinks', async () => {
+    vi.mocked(getProject).mockReturnValue({ id: 'proj-1', path: '/repo' } as never);
+    await create('worktree', { symlinkDirs: ['node_modules'], copyDirs: ['.env'] });
+    const createCall = mockInvoke.mock.calls.find(([c]) => c === IPC.CreateTask);
+    expect(createCall?.[1]).toMatchObject({ symlinkDirs: ['node_modules'], copyDirs: ['.env'] });
+  });
+
+  it('reports a failed setup and records a passed one quietly', () => {
+    const { setPendingSetupScript } = worktreeSetup;
+    setPendingSetupScript('shell-fail', 'false');
+    noteSetupShellExit('shell-fail', 'Fix login', 2);
+    expect(setupShellState('shell-fail')).toBe('failed');
+    expect(showNotification).toHaveBeenCalledWith(
+      expect.stringContaining('Setup script failed in “Fix login” (exit 2)'),
+      expect.anything(),
+    );
+
+    // node-pty reports a killed process as exit 0 plus a signal.
+    vi.mocked(showNotification).mockClear();
+    setPendingSetupScript('shell-killed', 'sleep 60');
+    noteSetupShellExit('shell-killed', 'Fix login', 0, 'SIGINT');
+    expect(setupShellState('shell-killed')).toBe('failed');
+    expect(showNotification).toHaveBeenCalledWith(
+      expect.stringContaining('(SIGINT)'),
+      expect.anything(),
+    );
+    forgetSetupShells(['shell-killed']);
+
+    vi.mocked(showNotification).mockClear();
+    setPendingSetupScript('shell-ok', 'true');
+    noteSetupShellExit('shell-ok', 'Fix login', 0);
+    expect(setupShellState('shell-ok')).toBe('passed');
+    expect(showNotification).not.toHaveBeenCalled();
+    forgetSetupShells(['shell-fail', 'shell-ok']);
+    expect(setupShellState('shell-ok')).toBeUndefined();
+  });
+});
+
 // A task's own first pane is created by a different path from the panes added
 // to it later, and only the latter used to get a session id. Without one the
 // pane launches on the positional default, which means "the newest session in
@@ -1861,6 +1983,57 @@ describe('closeTask — IPC cleanup ordering', () => {
     },
   );
 
+  it('passes the teardown script to DeleteTask and shows its failure', async () => {
+    mockTasks['task-1'] = {
+      name: 'Fix login',
+      agentIds: [],
+      shellAgentIds: [],
+      gitIsolation: 'worktree',
+      branchName: 'task/x',
+      worktreePath: '/repo/.worktrees/task/x',
+      projectId: 'proj-1',
+    };
+    vi.mocked(getProject).mockReturnValue({
+      id: 'proj-1',
+      path: '/repo',
+      worktreeTeardownScript: 'docker compose down',
+    } as never);
+    mockInvoke.mockImplementation((channel: string) =>
+      Promise.resolve(
+        channel === IPC.DeleteTask
+          ? { teardownWarning: 'Teardown script exited with code 1.' }
+          : undefined,
+      ),
+    );
+
+    await closeTask('task-1');
+
+    const del = mockInvoke.mock.calls.find(([c]) => c === IPC.DeleteTask);
+    expect(del?.[1]).toMatchObject({ teardownScript: 'docker compose down', projectId: 'proj-1' });
+    expect(showNotification).toHaveBeenCalledWith(
+      'Closed “Fix login”. Teardown script exited with code 1.',
+      expect.anything(),
+    );
+    expect(mockTasks['task-1']?.closingStatus).toBe('removing');
+  });
+
+  it('sends no teardown script for a project without one', async () => {
+    mockTasks['task-1'] = {
+      agentIds: [],
+      shellAgentIds: [],
+      gitIsolation: 'worktree',
+      branchName: 'task/x',
+      worktreePath: '/repo/.worktrees/task/x',
+      projectId: 'proj-1',
+    };
+    vi.mocked(getProject).mockReturnValue({ id: 'proj-1', path: '/repo' } as never);
+
+    await closeTask('task-1');
+
+    const del = mockInvoke.mock.calls.find(([c]) => c === IPC.DeleteTask);
+    expect(del?.[1]).not.toHaveProperty('teardownScript');
+  });
+
   it('MCP_CoordinatedTaskClosed rejection is swallowed and task is still removed', async () => {
     mockTasks['task-1'] = {
       agentIds: ['agent-1'],
@@ -2040,6 +2213,64 @@ describe('Super Productivity completion wiring', () => {
     await mergeTask('task-1', { cleanup: true });
     // Otherwise the killed agents' signal exits show the card as failed.
     expect(statusAtKill).toEqual(['closing']);
+  });
+
+  it('with a teardown script, sends it with the agents and shows closing during the merge', async () => {
+    mockTasks['task-1'] = { ...worktreeTask(), agentIds: ['agent-1'], shellAgentIds: ['shell-1'] };
+    vi.mocked(getProject).mockReturnValue({
+      id: 'proj-1',
+      path: '/repo',
+      worktreeTeardownScript: 'docker compose down',
+    } as never);
+    let statusDuringMerge: unknown;
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel === IPC.MergeTask) statusDuringMerge = mockTasks['task-1']?.closingStatus;
+      return Promise.resolve(
+        channel === IPC.MergeTask ? { lines_added: 1, lines_removed: 0 } : undefined,
+      );
+    });
+    await mergeTask('task-1', { cleanup: true });
+    expect(statusDuringMerge).toBe('closing');
+    expect(mockInvoke).toHaveBeenCalledWith(
+      IPC.MergeTask,
+      expect.objectContaining({
+        teardownScript: 'docker compose down',
+        projectId: 'proj-1',
+        agentIds: ['agent-1', 'shell-1'],
+      }),
+    );
+  });
+
+  it('undoes the closing state when a merge with teardown fails', async () => {
+    mockTasks['task-1'] = worktreeTask();
+    vi.mocked(getProject).mockReturnValue({
+      id: 'proj-1',
+      path: '/repo',
+      worktreeTeardownScript: 'docker compose down',
+    } as never);
+    mockInvoke.mockImplementation((channel: string) =>
+      channel === IPC.MergeTask ? Promise.reject(new Error('conflict')) : Promise.resolve(),
+    );
+    await expect(mergeTask('task-1', { cleanup: true })).rejects.toThrow('conflict');
+    expect(mockTasks['task-1'].closingStatus).toBeUndefined();
+  });
+
+  it('sends no teardown fields without a teardown script, or without cleanup', async () => {
+    mockTasks['task-1'] = worktreeTask();
+    vi.mocked(getProject).mockReturnValue({ id: 'proj-1', path: '/repo' } as never);
+    await mergeTask('task-1', { cleanup: true });
+    mockTasks['task-1'] = worktreeTask();
+    vi.mocked(getProject).mockReturnValue({
+      id: 'proj-1',
+      path: '/repo',
+      worktreeTeardownScript: 'docker compose down',
+    } as never);
+    await mergeTask('task-1', { cleanup: false });
+    for (const [channel, args] of mockInvoke.mock.calls) {
+      if (channel !== IPC.MergeTask) continue;
+      expect(args).not.toHaveProperty('teardownScript');
+      expect(args).not.toHaveProperty('agentIds');
+    }
   });
 
   it('confirms a merge with its target branch and line counts', async () => {

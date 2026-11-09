@@ -1,3 +1,4 @@
+import { sanitizeWorktreeIncludes, sanitizeWorktreeScript } from '../lib/worktree-includes';
 import { parseCompletionRecord } from '../../electron/shared/completion-report';
 import { parseCloseSuggestion } from '../../electron/shared/close-suggestion';
 import { persistedCheckSuite, restoredCheckSuite } from '../lib/check-suite-storage';
@@ -834,6 +835,9 @@ export async function loadState(): Promise<void> {
     p.quickEditSource = typeof p.quickEditSource === 'string' ? p.quickEditSource : undefined;
     p.evidenceChecks = parseProjectChecks(p.evidenceChecks);
     p.agentEnv = sanitizeEnvVars(p.agentEnv);
+    p.worktreeSetupScript = sanitizeWorktreeScript(p.worktreeSetupScript);
+    p.worktreeTeardownScript = sanitizeWorktreeScript(p.worktreeTeardownScript);
+    p.worktreeIncludes = sanitizeWorktreeIncludes(p.worktreeIncludes);
     // Background evidence builds and the evidence review model are gone; drop
     // their old settings. Check suggestions use the review model instead.
     delete (p as unknown as Record<string, unknown>).evidenceAutoBuild;

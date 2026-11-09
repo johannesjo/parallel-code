@@ -170,6 +170,11 @@ export interface MergeTargetChanges {
 
 export type RemoteBranchState = 'unpushed' | 'differs' | 'pushed';
 
+export interface DeleteTaskResult {
+  /** Set when the project's teardown script did not pass; the worktree was removed anyway. */
+  teardownWarning?: string;
+}
+
 export interface MergeResult {
   main_branch: string;
   lines_added: number;

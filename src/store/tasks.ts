@@ -25,6 +25,12 @@ import { setTaskFocusedPanel, shellPanelId } from './focused-panel';
 import { getProject, getProjectPath, getProjectBranchPrefix, isProjectMissing } from './projects';
 import { setPendingShellCommand } from '../lib/bookmarks';
 import {
+  forgetSetupShells,
+  reportTeardownWarning,
+  setPendingSetupScript,
+  teardownScriptFor,
+} from './worktree-setup';
+import {
   markAgentSpawned,
   markAgentBusy,
   clearAgentActivity,
@@ -42,12 +48,13 @@ import type {
   AgentDef,
   CreatePrTaskResult,
   CreateTaskResult,
+  DeleteTaskResult,
   ImportableWorktree,
   MergeResult,
 } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
 import { linkTaskToIssueReference } from './github-issue-link';
-import type { Agent, Task, GitIsolationMode, AppStore } from './types';
+import type { Agent, Task, GitIsolationMode, AppStore, Project } from './types';
 import type { DockerSource } from '../lib/docker';
 import {
   clampCoordinatorConcurrentTasks,
@@ -264,6 +271,8 @@ export interface CreateTaskOptions {
   gitIsolation: GitIsolationMode;
   baseBranch: string;
   symlinkDirs?: string[];
+  /** Root-level ignored entries copied into the worktree instead of symlinked. */
+  copyDirs?: string[];
   branchPrefixOverride?: string;
   initialPrompt?: string;
   githubUrl?: string;
@@ -319,6 +328,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     gitIsolation,
     baseBranch,
     symlinkDirs = [],
+    copyDirs = [],
     initialPrompt,
     githubUrl,
     skipPermissions,
@@ -341,6 +351,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
       name,
       projectRoot,
       symlinkDirs,
+      ...(copyDirs.length > 0 && { copyDirs }),
       branchPrefix: opts.branchPrefixOverride ?? getProjectBranchPrefix(projectId),
       prNumber: opts.pullRequestNumber,
     });
@@ -355,6 +366,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
       name,
       projectRoot,
       symlinkDirs,
+      ...(copyDirs.length > 0 && { copyDirs }),
       branchPrefix,
       baseBranch: baseBranch || undefined,
     });
@@ -437,6 +449,9 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   await registerTaskAuthority(task, agentDef);
   const activate = typeof opts.activate === 'function' ? opts.activate() : opts.activate;
   initTaskInStore(task, agent, { agentDef, activate: activate ?? true });
+  // Same tick as the task appearing, so its setup terminal is there from the
+  // first frame and nothing waits on the script.
+  if (gitIsolation === 'worktree') startWorktreeSetup(taskId, getProject(projectId));
 
   saveState(); // fire-and-forget — errors handled internally
   return taskId;
@@ -568,7 +583,7 @@ export async function closeTask(taskId: string): Promise<void> {
         );
     } else {
       // Remove worktree + branch
-      await invoke(IPC.DeleteTask, {
+      const result = await invoke<DeleteTaskResult | undefined>(IPC.DeleteTask, {
         taskId,
         agentIds: [...agentIds, ...shellAgentIds],
         branchName,
@@ -577,7 +592,9 @@ export async function closeTask(taskId: string): Promise<void> {
         // The folder keeps its original branch-derived name even if the task
         // later adopted the branch the agent switched to — pass the real path.
         worktreePath: task.worktreePath,
+        ...teardownScriptFor(task.projectId),
       });
+      reportTeardownWarning(task.name, result?.teardownWarning);
     }
 
     // Notify backend to clean up this task from its coordinator's state map.
@@ -627,6 +644,7 @@ function removeTaskFromStore(taskId: string, agentIds: string[]): void {
   for (const agentId of agentIds) {
     clearAgentActivity(agentId);
   }
+  forgetSetupShells(agentIds);
 
   const activityTimer = activityReleaseTimers.get(taskId);
   if (activityTimer !== undefined) {
@@ -696,6 +714,14 @@ export async function mergeTask(
   // NOTE: agents are killed AFTER merge succeeds — killing them before would
   // destroy terminals with no way to recover if the merge fails (e.g. due to
   // uncommitted changes in the project root).
+  const teardown =
+    cleanup && getProject(task.projectId)?.worktreeTeardownScript
+      ? { ...teardownScriptFor(task.projectId), agentIds: [...agentIds, ...shellAgentIds] }
+      : undefined;
+  // With a teardown the main process stops the agents once the merge lands,
+  // before this call returns; marking the task closing first keeps those
+  // exits from reading as failures. A failed merge kills nothing, so undo it.
+  if (teardown) setStore('tasks', taskId, 'closingStatus', 'closing');
   const mergeResult = await invoke<MergeResult>(IPC.MergeTask, {
     projectRoot,
     branchName,
@@ -705,6 +731,12 @@ export async function mergeTask(
     message: options?.message,
     cleanup,
     allowDirtyTarget: options?.allowDirtyTarget ?? false,
+    // Only a cleanup removes the worktree, so only then does teardown run.
+    ...teardown,
+  }).catch((err: unknown) => {
+    if (teardown && store.tasks[taskId]?.closingStatus === 'closing')
+      setStore('tasks', taskId, 'closingStatus', undefined);
+    throw err;
   });
   const merged = `Merged “${task.name}” into ${mergeResult.main_branch} · +${mergeResult.lines_added} −${mergeResult.lines_removed}`;
   if (mergeResult.warning)
@@ -987,6 +1019,20 @@ export function spawnShellForTask(taskId: string, initialCommand?: string): stri
   return shellId;
 }
 
+/** Opens the task's setup terminal when its project has a setup script. */
+function startWorktreeSetup(taskId: string, project: Project | undefined): void {
+  const script = project?.worktreeSetupScript;
+  if (!script?.trim()) return;
+  const shellId = crypto.randomUUID();
+  setPendingSetupScript(shellId, script);
+  markAgentSpawned(shellId);
+  setStore(
+    produce((s) => {
+      s.tasks[taskId]?.shellAgentIds.push(shellId);
+    }),
+  );
+}
+
 /** Send a bookmark command to an existing idle shell, or spawn a new one. */
 export function runBookmarkInTask(taskId: string, command: string): void {
   const task = store.tasks[taskId];
@@ -1017,6 +1063,7 @@ export async function closeShell(taskId: string, shellId: string): Promise<void>
     logWarn('tasks.shell', 'KillAgent failed during closeShell', { err });
   });
   clearAgentActivity(shellId);
+  forgetSetupShells([shellId]);
   setStore(
     produce((s) => {
       const task = s.tasks[taskId];

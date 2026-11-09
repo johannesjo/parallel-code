@@ -38,6 +38,13 @@ import { theme } from '../lib/theme';
 import { sf } from '../lib/fontScale';
 import { mod } from '../lib/platform';
 import { extractLabel, consumePendingShellCommand } from '../lib/bookmarks';
+import {
+  consumePendingSetupScript,
+  noteSetupShellExit,
+  setupExitLabel,
+  setupShellState,
+  worktreeScriptEnv,
+} from '../store/worktree-setup';
 import { autoShellLayout, shellColumns } from '../lib/shellLayout';
 import { ShellLayoutMenu } from './ShellLayoutMenu';
 import type { Task } from '../store/types';
@@ -90,6 +97,12 @@ export function TaskShellSection(props: TaskShellSectionProps) {
   const [sectionWidth, setSectionWidth] = createSignal(0);
 
   const projectBookmarks = () => getProject(props.task.projectId)?.terminalBookmarks ?? [];
+  const setupEnv = () =>
+    worktreeScriptEnv({
+      projectRoot: getProject(props.task.projectId)?.path ?? '',
+      worktreePath: props.task.worktreePath,
+      branchName: props.task.branchName,
+    });
 
   // Reactively register shell-toolbar:N focus fns
   createEffect(() => {
@@ -283,6 +296,8 @@ export function TaskShellSection(props: TaskShellSectionProps) {
           <For each={props.task.shellAgentIds}>
             {(shellId, i) => {
               const initialCommand = consumePendingShellCommand(shellId);
+              const setupScript = consumePendingSetupScript(shellId);
+              const setupState = () => setupShellState(shellId);
               let shellFocusFn: (() => void) | undefined;
               let registeredKey: string | undefined;
 
@@ -333,6 +348,26 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                   >
                     <CloseIcon size={12} />
                   </button>
+                  {/* Same corner as the exit badge, which replaces it: no shift. */}
+                  <Show when={setupState() === 'running' && !shellExits[shellId]}>
+                    <div
+                      class="exit-badge"
+                      style={{
+                        position: 'absolute',
+                        top: '8px',
+                        right: '12px',
+                        'z-index': '10',
+                        'font-size': sf(12),
+                        color: theme.fgMuted,
+                        background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
+                        padding: '4px 12px',
+                        'border-radius': 'var(--radius-md)',
+                        border: `1px solid ${theme.border}`,
+                      }}
+                    >
+                      Setup script running…
+                    </div>
+                  </Show>
                   <Show when={shellExits[shellId]}>
                     <div
                       class="exit-badge"
@@ -342,14 +377,30 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                         right: '12px',
                         'z-index': '10',
                         'font-size': sf(12),
-                        color: shellExits[shellId]?.exitCode === 0 ? theme.success : theme.error,
+                        // A finished setup stays on screen, so it is quiet;
+                        // only a failure is tinted.
+                        color:
+                          setupState() === 'passed'
+                            ? theme.fgMuted
+                            : setupState() === 'failed'
+                              ? theme.error
+                              : shellExits[shellId]?.exitCode === 0
+                                ? theme.success
+                                : theme.error,
                         background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
                         padding: '4px 12px',
                         'border-radius': 'var(--radius-md)',
                         border: `1px solid ${theme.border}`,
                       }}
                     >
-                      Process exited ({shellExits[shellId]?.exitCode ?? '?'})
+                      {setupState() === 'passed'
+                        ? 'Setup script finished'
+                        : setupState() === 'failed'
+                          ? `Setup script failed (${setupExitLabel(
+                              shellExits[shellId]?.exitCode ?? null,
+                              shellExits[shellId]?.signal ?? null,
+                            )})`
+                          : `Process exited (${shellExits[shellId]?.exitCode ?? '?'})`}
                     </div>
                   </Show>
                   <TerminalView
@@ -374,8 +425,11 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                     dockerMode={props.task.dockerMode}
                     dockerImage={props.task.dockerImage}
                     initialCommand={initialCommand}
+                    shellScript={setupScript}
+                    env={setupScript ? setupEnv() : undefined}
                     onData={(data) => markAgentOutput(shellId, data, props.task.id)}
                     onExit={(info) => {
+                      noteSetupShellExit(shellId, props.task.name, info.exit_code, info.signal);
                       clearAgentActivity(shellId);
                       refreshTaskStatus(props.task.id);
                       setShellExits(shellId, {
@@ -388,7 +442,9 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                       if (registeredKey) registerFocusFn(registeredKey, focusFn);
                     }}
                     fontSize={12}
-                    autoFocus
+                    // The setup terminal opens on its own; it must not take
+                    // focus from the prompt the user is about to type.
+                    autoFocus={!setupScript}
                   />
                 </div>
               );

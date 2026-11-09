@@ -8,6 +8,7 @@ export type {
   CoverageSummary,
   CreatePrTaskResult,
   CreateTaskResult,
+  DeleteTaskResult,
   EslintQualityFinding,
   EslintQualityResult,
   FileDiffResult,

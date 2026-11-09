@@ -96,6 +96,15 @@ export interface TerminalBookmark {
   command: string;
 }
 
+/** How a saved include-list entry reaches a new worktree. */
+export type WorktreeIncludeMode = 'symlink' | 'copy';
+
+export interface WorktreeInclude {
+  /** Root-level name in the main checkout, e.g. `node_modules` or `.env`. */
+  name: string;
+  mode: WorktreeIncludeMode;
+}
+
 export interface Project {
   allowPeerAccess?: boolean;
   id: string;
@@ -132,6 +141,15 @@ export interface Project {
    *  user first picks; empty means the reviewer alone. */
   reviewChecks?: string[];
   terminalBookmarks?: TerminalBookmark[];
+  /** Commands run in a visible terminal of each new worktree task, right
+   *  after the worktree exists. App state, for the same reason as
+   *  `verifyCommand`. Unset means no setup step at all. */
+  worktreeSetupScript?: string;
+  /** Commands run in a task's worktree before the app removes it. */
+  worktreeTeardownScript?: string;
+  /** Saved choice of git-ignored root entries to bring into new worktrees.
+   *  Unset keeps the per-task picker with its built-in defaults. */
+  worktreeIncludes?: WorktreeInclude[];
   isGitRepo?: boolean; // undefined treated as true for backward compat
   tasksCollapsed?: boolean; // sidebar task group, defaults to expanded
   /** Document workspaces (experimental): a project whose surface is one
