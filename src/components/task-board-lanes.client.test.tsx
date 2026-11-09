@@ -75,7 +75,16 @@ it('routes a signalled-done subtask with a PR by its CI, not straight to Needs y
   expect(awaitsOpenPr(withPr, false)).toBe(false);
   // Babysit owns a CI failure while it can act.
   expect(awaitsOpenPr(withPr, true)).toBe(true);
-  setPrChecks('task-1', checks({ overall: 'success', pending: 0, passing: 1 }));
+  setPrChecks(
+    'task-1',
+    checks({
+      overall: 'success',
+      pending: 0,
+      passing: 1,
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'CLEAN',
+    }),
+  );
   expect(boardLaneOf(withPr)).toBe('ready');
 });
 

@@ -186,7 +186,15 @@ it('moves a pull request by what it waits for', () => {
   expect(at()).toBe('Needs you');
   setPrChecks('pr', checksFromUpdate({ overall: 'success', reviewDecision: 'REVIEW_REQUIRED' }));
   expect(at()).toBe('In pull request');
-  setPrChecks('pr', checksFromUpdate({ overall: 'success', reviewDecision: 'APPROVED' }));
+  setPrChecks(
+    'pr',
+    checksFromUpdate({
+      overall: 'success',
+      reviewDecision: 'APPROVED',
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'CLEAN',
+    }),
+  );
   expect(at()).toBe('Ready to merge');
   removePrChecks('pr');
 });

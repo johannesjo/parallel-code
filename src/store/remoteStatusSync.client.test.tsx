@@ -160,8 +160,18 @@ it('publishes the PR check status, and drops it once the PR merges or has no che
   setPrChecks('task', checks);
   expect(lastCi()).toBe('failure');
 
-  setPrChecks('task', { ...checks, overall: 'success', failing: 0 });
+  const green = {
+    ...checks,
+    overall: 'success' as const,
+    failing: 0,
+    mergeable: 'MERGEABLE' as const,
+  };
+  setPrChecks('task', { ...green, mergeStateStatus: 'CLEAN' });
   expect(lastCi()).toBe('success');
+
+  // The phone reads success as "Ready to merge", which a branch behind its base is not.
+  setPrChecks('task', { ...green, mergeStateStatus: 'BEHIND' });
+  expect(lastCi()).toBeUndefined();
 
   setPrChecks('task', { ...checks, overall: 'none' });
   expect(lastCi()).toBeUndefined();

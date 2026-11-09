@@ -17,7 +17,7 @@ import {
   stripAnsi,
 } from './taskStatus';
 import { taskUsesAgentChat } from './agent-chat';
-import { getPrChecks, prBoardStatus } from './pr-checks-state';
+import { getPrChecks, isPrReadyToMerge, prBoardStatus } from './pr-checks-state';
 import { hasOpenTaskPr } from './pr-babysit';
 import { taskLeadPr, taskLinkedPrUrl } from './task-prs';
 import { fireAndForget } from '../lib/ipc';
@@ -66,11 +66,14 @@ export function remoteChatPreview(state: AgentChatState | undefined): string {
   return (reply?.text.trim().split('\n').at(-1) ?? '').trim().slice(0, 300);
 }
 
-/** A merged PR no longer gates anything, and 'none' means GitHub reported no checks. */
+/** A merged PR no longer gates anything, and 'none' means GitHub reported no checks.
+ *  The phone reads success as "Ready to merge", so green CI that GitHub would not
+ *  merge yet is left out; the PR row names what holds it back. */
 function remoteCiStatus(task: Task): RemoteCiStatus | undefined {
   const lead = taskLeadPr(task);
   const checks = lead && getPrChecks(lead.watchId);
   if (!checks || checks.merged || checks.overall === 'none') return undefined;
+  if (checks.overall === 'success' && !isPrReadyToMerge(checks)) return undefined;
   return checks.overall;
 }
 

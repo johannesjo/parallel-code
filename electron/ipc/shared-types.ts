@@ -223,6 +223,8 @@ export interface PrChecksUpdatePayload {
   isDraft?: boolean;
   reviewDecision?: PrReviewDecision | null;
   mergeable?: PrMergeable;
+  /** GitHub's mergeStateStatus, as in PullRequestDetails. */
+  mergeStateStatus?: string;
   passing: number;
   pending: number;
   failing: number;

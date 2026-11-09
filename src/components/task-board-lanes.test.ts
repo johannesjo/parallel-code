@@ -45,6 +45,7 @@ describe('pullRequestsLane', () => {
   const checks = (overrides: Partial<PrChecksState> = {}): PrChecksState => ({
     overall: 'success',
     mergeable: 'MERGEABLE',
+    mergeStateStatus: 'CLEAN',
     reviewDecision: null,
     passing: 1,
     pending: 0,

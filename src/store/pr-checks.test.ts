@@ -753,7 +753,12 @@ describe('taskLeadPr', () => {
       ...more,
     }) as PrChecksState;
   // A fresh object each time: the store merges later writes into the one it was given.
-  const ready = () => checks('success', { mergeable: 'MERGEABLE', reviewDecision: 'APPROVED' });
+  const ready = () =>
+    checks('success', {
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'CLEAN',
+      reviewDecision: 'APPROVED',
+    });
 
   beforeEach(() => {
     removePrChecks('lead');

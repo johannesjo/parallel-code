@@ -12,6 +12,7 @@ const green = (): PrChecksState => ({
   isDraft: false,
   reviewDecision: null,
   mergeable: 'MERGEABLE',
+  mergeStateStatus: 'CLEAN',
   passing: 2,
   pending: 0,
   failing: 0,

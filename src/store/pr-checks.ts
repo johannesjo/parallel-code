@@ -369,6 +369,15 @@ export function startPrChecksSubscription(): () => void {
     scanForBranchPrs();
   });
 
+  // A turn may also have merged the task's PRs with `gh pr merge`, which moves
+  // no ref the main process could notice, so they are polled at once too.
+  const pollTaskPrs = (taskId: string): void => {
+    if (![...activeByWatchId.values()].some((w) => w.taskId === taskId)) return;
+    invoke(IPC.RefreshPrChecksWatcher, { taskId, pushed: false }).catch((err: unknown) => {
+      console.warn('[pr-checks] polling PRs after a turn failed:', err);
+    });
+  };
+
   // New PRs show up at once instead of after the retry window: agents usually
   // open them during a turn, and `gh pr create` prints the link, which also
   // covers `!` commands that run outside any agent hook.
@@ -380,6 +389,7 @@ export function startPrChecksSubscription(): () => void {
         workingTaskIds.add(taskId);
       } else if (workingTaskIds.delete(taskId)) {
         branchProbeByTaskId.delete(taskId);
+        untrack(() => pollTaskPrs(taskId));
         probeDue = true;
       }
     }

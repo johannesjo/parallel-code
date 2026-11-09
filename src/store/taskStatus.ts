@@ -23,7 +23,7 @@ import {
   getAgentHookStatus,
   noteAgentPromptSent,
 } from './agentHookStatus';
-import { getPrChecks } from './pr-checks-state';
+import { getPrChecks, isPrReadyToMerge } from './pr-checks-state';
 import { taskLeadWatchId } from './task-prs';
 import {
   AGENT_UPDATE_MENU_PATTERN,
@@ -1087,11 +1087,12 @@ function isTaskReady(taskId: string): boolean {
 }
 
 /** `ready` only knows nothing failed, so name what the PR checks actually say:
- *  pending CI is not ready to merge, and without a PR there is nothing to vouch for. */
+ *  pending CI is not ready to merge, green CI only once GitHub would take the
+ *  merge, and without a PR there is nothing to vouch for. */
 export function getReadyLabel(taskId: string): string {
-  const overall = getPrChecks(taskLeadWatchId(taskId))?.overall;
-  if (overall === 'success') return 'Ready to merge';
-  if (overall === 'pending') return 'CI running';
+  const checks = getPrChecks(taskLeadWatchId(taskId));
+  if (isPrReadyToMerge(checks)) return 'Ready to merge';
+  if (checks?.overall === 'pending') return 'CI running';
   return 'Ready';
 }
 

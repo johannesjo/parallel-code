@@ -1408,7 +1408,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
   ipcMain.handle(IPC.RefreshPrChecksWatcher, (_e, args) => {
     assertString(args.taskId, 'taskId');
-    refreshPrChecksWatcher(args.taskId);
+    assertBoolean(args.pushed, 'pushed');
+    refreshPrChecksWatcher(args.taskId, args.pushed);
   });
 
   // --- Local ESLint quality findings ---
