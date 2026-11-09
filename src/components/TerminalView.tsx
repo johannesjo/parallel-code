@@ -529,6 +529,12 @@ export function TerminalView(props: TerminalViewProps) {
       screenReaderMode: store.terminalScreenReaderMode,
       theme: activeTerminalTheme(),
       allowProposedApi: true,
+      // TUIs that capture the mouse (Claude Code's fullscreen mode) keep their
+      // own selection, so Cmd+C and Edit > Copy find nothing in xterm. Shift+drag
+      // forces a terminal selection elsewhere; on macOS the convention, and what
+      // Claude Code tells xterm.js users, is Option+drag, which xterm ignores
+      // unless this is on. Costs Option+drag column selection on macOS.
+      macOptionClickForcesSelection: true,
       ...TERMINAL_SCROLL_OPTIONS,
       disableStdin: taskPtyDetached(),
       linkHandler: {
