@@ -19,6 +19,8 @@ import {
   pinHead,
 } from './git-diff-base.js';
 import {
+  getBranchWorktreePath,
+  parseWorktreeList,
   removeWorktree,
   safeRealpath,
   splitContentLines,
@@ -40,6 +42,7 @@ export type { ChangedFile, CommitInfo, FileDiffResult, GitIgnoredEntry } from '.
 export {
   createWorktree,
   detectRepoRoot,
+  getBranchWorktreePath,
   ensureClaudeSandboxFiles,
   ensureSandboxExcludes,
   ensureSymlinkExcludes,
@@ -264,56 +267,6 @@ function parseConflictPath(line: string): string | null {
 
   const candidate = (cutoff === Infinity ? afterParen : afterParen.slice(0, cutoff)).trim();
   return candidate || null;
-}
-
-interface ListedWorktree {
-  path: string;
-  head: string | null;
-  branchName: string | null;
-  detached: boolean;
-}
-
-function parseWorktreeList(output: string): ListedWorktree[] {
-  const entries: ListedWorktree[] = [];
-  let current: ListedWorktree | null = null;
-
-  for (const rawLine of output.split('\n')) {
-    const line = rawLine.trimEnd();
-    if (!line) {
-      if (current?.path) entries.push(current);
-      current = null;
-      continue;
-    }
-
-    if (line.startsWith('worktree ')) {
-      if (current?.path) entries.push(current);
-      current = {
-        path: line.slice('worktree '.length).trim(),
-        head: null,
-        branchName: null,
-        detached: false,
-      };
-      continue;
-    }
-
-    if (!current) continue;
-    if (line.startsWith('HEAD ')) {
-      current.head = line.slice('HEAD '.length).trim() || null;
-      continue;
-    }
-    if (line.startsWith('branch ')) {
-      const ref = line.slice('branch '.length).trim();
-      const prefix = 'refs/heads/';
-      current.branchName = ref.startsWith(prefix) ? ref.slice(prefix.length) : ref;
-      continue;
-    }
-    if (line === 'detached') {
-      current.detached = true;
-    }
-  }
-
-  if (current?.path) entries.push(current);
-  return entries;
 }
 
 async function computeBranchDiffStats(
@@ -1195,34 +1148,6 @@ export async function listImportableWorktrees(projectRoot: string): Promise<
     (a, b) => a.branch_name.localeCompare(b.branch_name) || a.path.localeCompare(b.path),
   );
   return filtered;
-}
-
-/** Resolve an already checked-out local branch without creating or switching worktrees. */
-export async function getBranchWorktreePath(
-  projectRoot: string,
-  branchName: string,
-): Promise<{ path: string; head: string; headCommittedAt: string | null } | null> {
-  const { stdout } = await exec('git', ['worktree', 'list', '--porcelain'], {
-    cwd: projectRoot,
-    maxBuffer: MAX_BUFFER,
-  });
-  const match = parseWorktreeList(stdout).find(
-    (entry) => !entry.detached && entry.branchName === branchName,
-  );
-  if (!match?.path || !match.head) return null;
-  try {
-    const { stdout } = await exec('git', ['show', '-s', '--format=%cI', match.head], {
-      cwd: match.path,
-    });
-    const timestamp = new Date(stdout.trim());
-    return {
-      path: match.path,
-      head: match.head,
-      headCommittedAt: Number.isNaN(timestamp.getTime()) ? null : timestamp.toISOString(),
-    };
-  } catch {
-    return { path: match.path, head: match.head, headCommittedAt: null };
-  }
 }
 
 /** Stage all changes and commit in a worktree. */
