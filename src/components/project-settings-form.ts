@@ -31,6 +31,8 @@ export function createProjectSettingsForm() {
   // Off keeps today's per-task defaults; the list is only saved while on.
   const [includesEnabled, setIncludesEnabled] = createSignal(false);
   const [includes, setIncludes] = createSignal<WorktreeInclude[]>([]);
+  // True while a just-enabled list waits for its default seed.
+  const [includesSeeding, setIncludesSeeding] = createSignal(false);
 
   function load(p: Project) {
     setName(p.name);
@@ -51,6 +53,7 @@ export function createProjectSettingsForm() {
     setTeardownScript(p.worktreeTeardownScript ?? '');
     setIncludesEnabled(p.worktreeIncludes !== undefined);
     setIncludes(p.worktreeIncludes ? [...p.worktreeIncludes] : []);
+    setIncludesSeeding(false);
   }
 
   /** The fields `updateProject` stores; peer access saves separately. */
@@ -71,7 +74,7 @@ export function createProjectSettingsForm() {
       agentEnv: finalizeEnvDrafts(agentEnv()),
       worktreeSetupScript: setupScript().trim() ? setupScript() : undefined,
       worktreeTeardownScript: teardownScript().trim() ? teardownScript() : undefined,
-      worktreeIncludes: includesEnabled() ? includes() : undefined,
+      worktreeIncludes: includesEnabled() && !includesSeeding() ? includes() : undefined,
     };
   }
 
@@ -112,6 +115,8 @@ export function createProjectSettingsForm() {
     setIncludesEnabled,
     includes,
     setIncludes,
+    includesSeeding,
+    setIncludesSeeding,
     /** Why the env rows can't be saved yet, or '' when they can. */
     agentEnvError: () => envDraftsError(agentEnv()),
     load,

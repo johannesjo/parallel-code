@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -97,7 +98,13 @@ describe.skipIf(process.platform === 'win32')('deleteTask teardown', () => {
     tempDirs.push(root);
     const projectRoot = path.join(root, 'repo');
     const worktreePath = path.join(projectRoot, '.worktrees', 'task', 'x');
-    fs.mkdirSync(worktreePath, { recursive: true });
+    fs.mkdirSync(projectRoot);
+    // Teardown only runs in a worktree git lists for the repository.
+    const git = (args: string[]) =>
+      execFileSync('git', args, { cwd: projectRoot, stdio: 'ignore' });
+    git(['init', '--quiet', '--initial-branch=main']);
+    git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'init']);
+    git(['worktree', 'add', '-b', 'task/x', worktreePath]);
     mocks.removeWorktree.mockReset();
     return { projectRoot, worktreePath };
   }
@@ -115,7 +122,11 @@ describe.skipIf(process.platform === 'win32')('deleteTask teardown', () => {
       deleteBranch: true,
       projectRoot,
       worktreePath,
-      teardownScript: 'test "$PARALLEL_CODE_ROOT_PATH" = "' + projectRoot + '"\ntouch torn-down',
+      teardownScript:
+        'test "$PARALLEL_CODE_ROOT_PATH" = "' +
+        projectRoot +
+        '"\ntest "$PROJECT_VAR" = from-project\ntouch torn-down',
+      teardownEnv: { PROJECT_VAR: 'from-project' },
     });
 
     expect(sawMarkerAtRemoval).toBe(true);

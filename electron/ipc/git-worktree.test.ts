@@ -613,6 +613,27 @@ describe('createWorktree copy mode', () => {
     expect(fs.existsSync(path.join(root, 'config', 'local.json'))).toBe(true);
   });
 
+  it('copies what a top-level symlinked entry points at, so the copy never dangles', async () => {
+    const root = ignoredRepository();
+    const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-shared-'));
+    tempDirs.push(shared);
+    fs.writeFileSync(path.join(shared, 'env'), 'SHARED=1\n', 'utf8');
+    fs.rmSync(path.join(root, '.env'));
+    fs.symlinkSync(path.relative(root, path.join(shared, 'env')), path.join(root, '.env'));
+
+    const { path: worktreePath } = await createWorktree(
+      root,
+      'task/linked-env',
+      [],
+      undefined,
+      false,
+      ['.env'],
+    );
+    const copy = path.join(worktreePath, '.env');
+    expect(fs.lstatSync(copy).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(copy, 'utf8')).toBe('SHARED=1\n');
+  });
+
   it('leaves a project without copies exactly as before', async () => {
     const root = ignoredRepository();
     const { path: worktreePath } = await createWorktree(root, 'task/plain', ['.env']);

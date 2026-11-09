@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -7,6 +8,7 @@ import {
   WORKTREE_SCRIPT_MAX_LENGTH,
   buildScriptInvocation,
   describeTeardownFailure,
+  listLinkedWorktrees,
   optionalWorktreeScript,
   runTeardownScript,
   validateWorktreeScript,
@@ -91,11 +93,19 @@ describe('buildScriptInvocation', () => {
 });
 
 describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
-  const shell = '/bin/sh';
+  // Each test's worktree is listed as a linked worktree of its root.
+  let listed: string[] = [];
+  const listWorktrees = async () => listed;
+  const shellDeps = { shell: '/bin/sh', listWorktrees };
+  const worktreeDir = () => {
+    const dir = tempDir();
+    listed = [fs.realpathSync(dir)];
+    return dir;
+  };
 
   it('runs in the worktree with the script variables and passes on exit 0', async () => {
     const root = tempDir();
-    const worktree = tempDir();
+    const worktree = worktreeDir();
     const result = await runTeardownScript(
       {
         worktreePath: worktree,
@@ -103,7 +113,7 @@ describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
         script: 'pwd\necho "root=$PARALLEL_CODE_ROOT_PATH"',
         env: { PARALLEL_CODE_ROOT_PATH: root },
       },
-      { shell },
+      shellDeps,
     );
     expect(result.status).toBe('passed');
     expect(result.outputTail).toContain(fs.realpathSync(worktree));
@@ -113,14 +123,14 @@ describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
 
   it('stops at the first failing line and reports the exit code with the output', async () => {
     const root = tempDir();
-    const worktree = tempDir();
+    const worktree = worktreeDir();
     const result = await runTeardownScript(
       {
         worktreePath: worktree,
         projectRoot: root,
         script: 'echo stopping db\nexit 3\ntouch after',
       },
-      { shell },
+      shellDeps,
     );
     expect(result).toMatchObject({ status: 'failed', exitCode: 3 });
     expect(fs.existsSync(path.join(worktree, 'after'))).toBe(false);
@@ -131,20 +141,62 @@ describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
 
   it('kills a script that runs past its timeout', async () => {
     const root = tempDir();
-    const worktree = tempDir();
+    const worktree = worktreeDir();
     const result = await runTeardownScript(
       { worktreePath: worktree, projectRoot: root, script: 'sleep 30', timeoutMs: 200 },
-      { shell },
+      shellDeps,
     );
     expect(result.status).toBe('timed_out');
     expect(describeTeardownFailure(result)).toContain('timed out');
+  });
+
+  it('reports a script killed by a signal as failed', async () => {
+    const root = tempDir();
+    const worktree = worktreeDir();
+    const result = await runTeardownScript(
+      { worktreePath: worktree, projectRoot: root, script: 'kill -TERM $$' },
+      shellDeps,
+    );
+    expect(result.status).toBe('failed');
+    expect(describeTeardownFailure(result)).toContain('SIGTERM');
+  });
+
+  it('settles when the script exits even if a background child keeps its output open', async () => {
+    const root = tempDir();
+    const worktree = worktreeDir();
+    const started = Date.now();
+    const result = await runTeardownScript(
+      {
+        worktreePath: worktree,
+        projectRoot: root,
+        script: 'sleep 20 &\necho done',
+        timeoutMs: 10_000,
+      },
+      shellDeps,
+    );
+    expect(result.status).toBe('passed');
+    expect(result.outputTail).toContain('done');
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it('refuses a folder git does not list as a worktree of the repository', async () => {
+    const root = tempDir();
+    const elsewhere = tempDir();
+    listed = [];
+    const result = await runTeardownScript(
+      { worktreePath: elsewhere, projectRoot: root, script: 'touch ran' },
+      shellDeps,
+    );
+    expect(result.status).toBe('error');
+    expect(describeTeardownFailure(result)).toContain('is not a worktree of this repository');
+    expect(fs.existsSync(path.join(elsewhere, 'ran'))).toBe(false);
   });
 
   it('never runs in the main checkout', async () => {
     const root = tempDir();
     const result = await runTeardownScript(
       { worktreePath: root, projectRoot: root, script: 'touch ran' },
-      { shell },
+      shellDeps,
     );
     expect(result.status).toBe('skipped');
     expect(fs.existsSync(path.join(root, 'ran'))).toBe(false);
@@ -154,9 +206,22 @@ describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
     const root = tempDir();
     const result = await runTeardownScript(
       { worktreePath: path.join(root, 'missing'), projectRoot: root, script: 'true' },
-      { shell },
+      shellDeps,
     );
     expect(result.status).toBe('skipped');
     expect(describeTeardownFailure(result)).toBeUndefined();
+  });
+});
+
+describe('listLinkedWorktrees', () => {
+  it('lists linked worktrees as real paths, without the main checkout', async () => {
+    const root = tempDir();
+    const git = (args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore' });
+    git(['init', '--quiet', '--initial-branch=main']);
+    git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'init']);
+    git(['worktree', 'add', '-b', 'task/a', path.join(root, '.worktrees', 'a')]);
+    expect(await listLinkedWorktrees(root)).toEqual([
+      fs.realpathSync(path.join(root, '.worktrees', 'a')),
+    ]);
   });
 });

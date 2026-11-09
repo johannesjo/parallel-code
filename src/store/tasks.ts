@@ -714,6 +714,14 @@ export async function mergeTask(
   // NOTE: agents are killed AFTER merge succeeds — killing them before would
   // destroy terminals with no way to recover if the merge fails (e.g. due to
   // uncommitted changes in the project root).
+  const teardown =
+    cleanup && getProject(task.projectId)?.worktreeTeardownScript
+      ? { ...teardownScriptFor(task.projectId), agentIds: [...agentIds, ...shellAgentIds] }
+      : undefined;
+  // With a teardown the main process stops the agents once the merge lands,
+  // before this call returns; marking the task closing first keeps those
+  // exits from reading as failures. A failed merge kills nothing, so undo it.
+  if (teardown) setStore('tasks', taskId, 'closingStatus', 'closing');
   const mergeResult = await invoke<MergeResult>(IPC.MergeTask, {
     projectRoot,
     branchName,
@@ -724,7 +732,11 @@ export async function mergeTask(
     cleanup,
     allowDirtyTarget: options?.allowDirtyTarget ?? false,
     // Only a cleanup removes the worktree, so only then does teardown run.
-    ...(cleanup && teardownScriptFor(task.projectId)),
+    ...teardown,
+  }).catch((err: unknown) => {
+    if (teardown && store.tasks[taskId]?.closingStatus === 'closing')
+      setStore('tasks', taskId, 'closingStatus', undefined);
+    throw err;
   });
   const merged = `Merged “${task.name}” into ${mergeResult.main_branch} · +${mergeResult.lines_added} −${mergeResult.lines_removed}`;
   if (mergeResult.warning)

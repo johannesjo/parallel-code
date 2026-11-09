@@ -41,6 +41,7 @@ import { extractLabel, consumePendingShellCommand } from '../lib/bookmarks';
 import {
   consumePendingSetupScript,
   noteSetupShellExit,
+  setupExitLabel,
   setupShellState,
   worktreeScriptEnv,
 } from '../store/worktree-setup';
@@ -101,7 +102,6 @@ export function TaskShellSection(props: TaskShellSectionProps) {
       projectRoot: getProject(props.task.projectId)?.path ?? '',
       worktreePath: props.task.worktreePath,
       branchName: props.task.branchName,
-      taskId: props.task.id,
     });
 
   // Reactively register shell-toolbar:N focus fns
@@ -377,18 +377,30 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                         right: '12px',
                         'z-index': '10',
                         'font-size': sf(12),
-                        color: shellExits[shellId]?.exitCode === 0 ? theme.success : theme.error,
+                        // A finished setup stays on screen, so it is quiet;
+                        // only a failure is tinted.
+                        color:
+                          setupState() === 'passed'
+                            ? theme.fgMuted
+                            : setupState() === 'failed'
+                              ? theme.error
+                              : shellExits[shellId]?.exitCode === 0
+                                ? theme.success
+                                : theme.error,
                         background: 'color-mix(in srgb, var(--island-bg) 80%, transparent)',
                         padding: '4px 12px',
                         'border-radius': 'var(--radius-md)',
                         border: `1px solid ${theme.border}`,
                       }}
                     >
-                      {setupState()
-                        ? shellExits[shellId]?.exitCode === 0
-                          ? 'Setup script finished'
-                          : `Setup script failed (${shellExits[shellId]?.exitCode ?? '?'})`
-                        : `Process exited (${shellExits[shellId]?.exitCode ?? '?'})`}
+                      {setupState() === 'passed'
+                        ? 'Setup script finished'
+                        : setupState() === 'failed'
+                          ? `Setup script failed (${setupExitLabel(
+                              shellExits[shellId]?.exitCode ?? null,
+                              shellExits[shellId]?.signal ?? null,
+                            )})`
+                          : `Process exited (${shellExits[shellId]?.exitCode ?? '?'})`}
                     </div>
                   </Show>
                   <TerminalView
@@ -417,7 +429,7 @@ export function TaskShellSection(props: TaskShellSectionProps) {
                     env={setupScript ? setupEnv() : undefined}
                     onData={(data) => markAgentOutput(shellId, data, props.task.id)}
                     onExit={(info) => {
-                      noteSetupShellExit(shellId, props.task.name, info.exit_code);
+                      noteSetupShellExit(shellId, props.task.name, info.exit_code, info.signal);
                       clearAgentActivity(shellId);
                       refreshTaskStatus(props.task.id);
                       setShellExits(shellId, {

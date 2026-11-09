@@ -28,7 +28,9 @@ export function SymlinkDirPicker(props: SymlinkDirPickerProps) {
           : 'Symlink into worktree'}
       </label>
       <span style={{ 'font-size': '12px', color: theme.fgMuted }}>
-        Checked entries are written to .git/info/exclude and apply to all worktrees.
+        {props.copyDirs && props.copyDirs.size > 0
+          ? 'Checked symlinks are written to .git/info/exclude and apply to all worktrees.'
+          : 'Checked entries are written to .git/info/exclude and apply to all worktrees.'}
       </span>
       <div
         style={{

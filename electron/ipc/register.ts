@@ -145,6 +145,7 @@ import {
   createWorktree,
   worktreePathFor,
   removeWorktree,
+  removeWorktreeLocked,
   isGitRepo,
   getBranches,
   checkoutBranch,
@@ -731,12 +732,18 @@ export function registerAllHandlers(win: BrowserWindow): void {
     // A project setup script runs in a task terminal of its own. The main
     // process picks the shell and flags, so the renderer never builds a
     // `-c` command line. A reattach to a running session ignores the command.
+    args = { ...args, windowsVerbatimArgs: undefined };
     if (args.shellScript !== undefined) {
       const script = optionalWorktreeScript(args.shellScript, 'shellScript');
       if (script) {
         if (!args.isShell) throw new Error('shellScript is only allowed for shell terminals');
         const invocation = buildScriptInvocation(script, { docker: args.dockerMode === true });
-        args = { ...args, command: invocation.file, args: invocation.args };
+        args = {
+          ...args,
+          command: invocation.file,
+          args: invocation.args,
+          windowsVerbatimArgs: invocation.windowsVerbatimArguments === true,
+        };
       }
     }
     // Restarted Docker sub-tasks need the coordinator's MCP dir too; derive it
@@ -1092,6 +1099,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       projectRoot: args.projectRoot,
       worktreePath: optionalWorktreePath(args),
       teardownScript,
+      teardownEnv: teardownScript ? projectAgentEnv(args.projectId) : undefined,
     });
     if (args.taskId) delegation.unregister(args.taskId);
     return result;
@@ -1164,6 +1172,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     assertOptionalBoolean(args.cleanup, 'cleanup');
     assertOptionalBoolean(args.allowDirtyTarget, 'allowDirtyTarget');
     const teardownScript = optionalWorktreeScript(args.teardownScript, 'teardownScript');
+    if (args.agentIds !== undefined) assertStringArray(args.agentIds, 'agentIds');
+    assertOptionalString(args.projectId, 'projectId');
     await delegation.assertDirectMergeAllowed(projectRoot, branchName, args.cleanup ?? false);
     const baseBranch = optionalBaseBranch(args);
     const worktreePath = optionalWorktreePath(args);
@@ -1184,14 +1194,27 @@ export function registerAllHandlers(win: BrowserWindow): void {
       args.allowDirtyTarget ?? false,
     );
     if (deferCleanup && teardownScript) {
+      // The branch is merged and about to be deleted: stop the task's agents
+      // and shells first, so nothing commits work that `branch -D` would drop
+      // and teardown never races live processes.
+      for (const agentId of args.agentIds ?? []) {
+        try {
+          killAgent(agentId);
+        } catch {
+          /* already gone */
+        }
+      }
       const target = worktreePath ?? worktreePathFor(projectRoot, branchName);
       const teardown = await runTeardownScript({
         worktreePath: target,
         projectRoot,
         script: teardownScript,
-        env: buildWorktreeScriptEnv({ projectRoot, worktreePath: target, branchName }),
+        env: {
+          ...projectAgentEnv(args.projectId),
+          ...buildWorktreeScriptEnv({ projectRoot, worktreePath: target, branchName }),
+        },
       });
-      await removeWorktree(projectRoot, branchName, true, worktreePath);
+      await removeWorktreeLocked(projectRoot, branchName, true, worktreePath);
       const teardownWarning = describeTeardownFailure(teardown);
       if (teardownWarning) {
         result = {

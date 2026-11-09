@@ -866,8 +866,9 @@ export function NewTaskPanel(props: NewTaskPanelProps) {
     const path = open && pid ? getProjectPath(pid) : undefined;
     const isGit = pid ? projectIsGitRepo(pid) : true;
     const shouldProbe = shouldProbeSymlinkCandidates(isGit, gitIsolation());
-    // A saved per-project include list replaces the built-in defaults.
-    const saved = pid ? getProject(pid)?.worktreeIncludes : undefined;
+    // A saved per-project include list replaces the built-in defaults. Read
+    // untracked: saving project settings must not reset this task's ticks.
+    const saved = untrack(() => (pid ? getProject(pid)?.worktreeIncludes : undefined));
 
     void symlinkCandidates.load(path, shouldProbe, saved);
 

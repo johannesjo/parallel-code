@@ -126,6 +126,8 @@ interface DeleteTaskOpts {
   worktreePath?: string;
   /** The project's teardown script, run in the worktree before it is removed. */
   teardownScript?: string;
+  /** The project's environment variables, for the teardown script. */
+  teardownEnv?: Record<string, string>;
 }
 
 export async function deleteTask(opts: DeleteTaskOpts): Promise<DeleteTaskResult> {
@@ -147,12 +149,14 @@ export async function deleteTask(opts: DeleteTaskOpts): Promise<DeleteTaskResult
       worktreePath,
       projectRoot: opts.projectRoot,
       script: opts.teardownScript,
-      env: buildWorktreeScriptEnv({
-        projectRoot: opts.projectRoot,
-        worktreePath,
-        branchName: opts.branchName,
-        taskId: opts.taskId,
-      }),
+      env: {
+        ...opts.teardownEnv,
+        ...buildWorktreeScriptEnv({
+          projectRoot: opts.projectRoot,
+          worktreePath,
+          branchName: opts.branchName,
+        }),
+      },
     });
     teardownWarning = describeTeardownFailure(result);
   }

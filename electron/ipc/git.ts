@@ -1425,10 +1425,15 @@ export async function createWorktree(
  * not fail task creation.
  */
 async function copyIntoWorktree(source: string, target: string, name: string): Promise<void> {
+  let from = source;
   try {
-    await fs.promises.lstat(source);
+    // The entry itself may be a link (`.env -> ../shared/.env`); copied as a
+    // link it would dangle in the worktree, so copy what it points at. Links
+    // inside a copied directory stay links.
+    if ((await fs.promises.lstat(source)).isSymbolicLink())
+      from = await fs.promises.realpath(source);
   } catch {
-    return; // nothing to copy
+    return; // nothing to copy, or a dangling link
   }
   try {
     await fs.promises.lstat(target);
@@ -1437,7 +1442,7 @@ async function copyIntoWorktree(source: string, target: string, name: string): P
     // Target is free.
   }
   try {
-    await fs.promises.cp(source, target, {
+    await fs.promises.cp(from, target, {
       recursive: true,
       dereference: false,
       verbatimSymlinks: true,
@@ -1991,6 +1996,22 @@ export async function removeWorktree(
       if (!msg.toLowerCase().includes('not found')) throw e;
     }
   }
+}
+
+/**
+ * `removeWorktree` under the repository's worktree lock, for a removal that
+ * runs after a merge has released it (a merge whose teardown script ran first).
+ */
+export async function removeWorktreeLocked(
+  repoRoot: string,
+  branchName: string,
+  deleteBranch: boolean,
+  explicitWorktreePath?: string,
+): Promise<void> {
+  const lockKey = await detectRepoLockKey(repoRoot).catch(() => repoRoot);
+  await withWorktreeLock(lockKey, () =>
+    removeWorktree(repoRoot, branchName, deleteBranch, explicitWorktreePath),
+  );
 }
 
 // --- IPC command functions ---

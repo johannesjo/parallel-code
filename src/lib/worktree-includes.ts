@@ -3,7 +3,8 @@ import type { WorktreeInclude, WorktreeIncludeMode } from '../store/types';
 
 /** More than any real repo root has; bounds a corrupted state file. */
 const MAX_INCLUDES = 200;
-const MAX_SCRIPT_LENGTH = 16 * 1024;
+/** Matches `WORKTREE_SCRIPT_MAX_LENGTH` in electron/ipc/worktree-scripts.ts. */
+export const WORKTREE_SCRIPT_MAX_LENGTH = 16 * 1024;
 
 /** Mirrors `isValidSymlinkName` in electron/ipc/git.ts, which re-checks every name. */
 export function isValidIncludeName(name: string): boolean {
@@ -40,7 +41,7 @@ export function sanitizeWorktreeIncludes(raw: unknown): WorktreeInclude[] | unde
 /** A persisted script, or undefined when it is missing, blank or not a string. */
 export function sanitizeWorktreeScript(raw: unknown): string | undefined {
   if (typeof raw !== 'string' || !raw.trim()) return undefined;
-  return raw.length > MAX_SCRIPT_LENGTH ? undefined : raw;
+  return raw.length > WORKTREE_SCRIPT_MAX_LENGTH ? undefined : raw;
 }
 
 export interface IncludeSelection {

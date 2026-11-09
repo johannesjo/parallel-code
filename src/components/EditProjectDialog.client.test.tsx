@@ -323,6 +323,30 @@ describe('worktree setup settings', () => {
     ]);
   });
 
+  it('never saves an empty list when the defaults could not be loaded', async () => {
+    vi.mocked(invoke).mockImplementation(async (channel) => {
+      if (channel === IPC.GetGitignoredDirs) throw new Error('git missing');
+      return undefined;
+    });
+    const { onClose, save } = open();
+    includesToggle().click();
+    await vi.waitFor(() => expect(includesToggle().checked).toBe(false));
+    save();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(store.projects[0].worktreeIncludes).toBeUndefined();
+  });
+
+  it('saves the list as unset while the defaults are still loading', async () => {
+    vi.mocked(invoke).mockImplementation((channel) =>
+      channel === IPC.GetGitignoredDirs ? new Promise(() => {}) : Promise.resolve(undefined),
+    );
+    const { onClose, save } = open();
+    includesToggle().click();
+    save();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(store.projects[0].worktreeIncludes).toBeUndefined();
+  });
+
   it('turning the list off returns to the per-task defaults', async () => {
     vi.mocked(invoke).mockResolvedValue([]);
     const { onClose, save } = open({ worktreeIncludes: [{ name: '.env', mode: 'copy' }] });

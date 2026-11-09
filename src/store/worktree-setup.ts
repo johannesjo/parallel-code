@@ -41,16 +41,25 @@ export function noteSetupShellExit(
   shellId: string,
   taskName: string,
   exitCode: number | null,
+  signal: string | null = null,
 ): void {
   if (setupShells[shellId] !== 'running') return;
-  const passed = exitCode === 0;
+  // node-pty reports exit code 0 with a signal for a killed process.
+  const passed = exitCode === 0 && !signal;
   setSetupShells(shellId, passed ? 'passed' : 'failed');
   if (!passed) {
     showNotification(
-      `Setup script failed in “${taskName}” (exit ${exitCode ?? '?'}). Its terminal has the output.`,
+      `Setup script failed in “${taskName}” (${setupExitLabel(exitCode, signal)}). Its terminal has the output.`,
       { durationMs: NOTIFICATION_ERROR_MS },
     );
   }
+}
+
+/** "exit 2", "SIGINT" or "did not start", for badges and notices. */
+export function setupExitLabel(exitCode: number | null, signal: string | null): string {
+  if (signal === 'spawn_failed') return 'did not start';
+  if (signal) return signal;
+  return `exit ${exitCode ?? '?'}`;
 }
 
 export function forgetSetupShells(shellIds: readonly string[]): void {
@@ -65,20 +74,24 @@ export function worktreeScriptEnv(args: {
   projectRoot: string;
   worktreePath: string;
   branchName: string;
-  taskId: string;
 }): Record<string, string> {
+  // No task id: `PARALLEL_CODE_TASK_ID` is the agent-hook identity, which the
+  // main process strips from renderer env.
   return {
     PARALLEL_CODE_ROOT_PATH: args.projectRoot,
     PARALLEL_CODE_WORKTREE: args.worktreePath,
     PARALLEL_CODE_BRANCH: args.branchName,
-    PARALLEL_CODE_TASK_ID: args.taskId,
   };
 }
 
-/** `{ teardownScript }` for a merge or close request, or `{}` when the project has none. */
-export function teardownScriptFor(projectId: string): { teardownScript?: string } {
+/** The teardown fields of a merge or close request, or `{}` when the project has
+ *  no teardown script. The main process looks up the project's env vars by id. */
+export function teardownScriptFor(projectId: string): {
+  teardownScript?: string;
+  projectId?: string;
+} {
   const script = getProject(projectId)?.worktreeTeardownScript;
-  return script ? { teardownScript: script } : {};
+  return script ? { teardownScript: script, projectId } : {};
 }
 
 /** Teardown failures never block removal, so they must at least be seen. */

@@ -4206,7 +4206,8 @@ html:not([data-look^='islands-']) .task-column .shell-terminals-row {
   position: absolute;
   top: 6px;
   right: 8px;
-  z-index: 10;
+  /* Above the exit and setup badges in the same corner. */
+  z-index: 11;
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--motion-fast) var(--ease-out);

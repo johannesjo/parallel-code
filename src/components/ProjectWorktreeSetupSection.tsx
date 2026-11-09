@@ -1,8 +1,13 @@
-import { For, Show, createEffect, createSignal, on, onCleanup } from 'solid-js';
+import { Index, Show, createEffect, createSignal, on, onCleanup } from 'solid-js';
 import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { theme } from '../lib/theme';
-import { defaultIncludes, includeRows, withIncludeMode } from '../lib/worktree-includes';
+import {
+  WORKTREE_SCRIPT_MAX_LENGTH,
+  defaultIncludes,
+  includeRows,
+  withIncludeMode,
+} from '../lib/worktree-includes';
 import type { GitIgnoredEntry } from '../ipc/types';
 import type { WorktreeIncludeMode } from '../store/types';
 import {
@@ -40,38 +45,41 @@ export function ProjectWorktreeSetupSection(props: ProjectWorktreeSetupSectionPr
   // Probed only while the saved list is on: an unconfigured project costs nothing.
   createEffect(
     on(
-      () => [form().includesEnabled(), props.projectRoot] as const,
-      ([enabled, projectRoot]) => {
+      () => [form(), form().includesEnabled(), props.projectRoot] as const,
+      ([current, enabled, projectRoot]) => {
         if (!enabled) return;
         let cancelled = false;
         onCleanup(() => (cancelled = true));
         setCandidates(null);
         invoke<GitIgnoredEntry[]>(IPC.GetGitignoredDirs, { projectRoot })
           .then((entries) => {
-            if (!cancelled) setCandidates(entries);
+            if (cancelled) return;
+            setCandidates(entries);
+            // Seeded with today's defaults, so turning the list on changes
+            // nothing until the user edits it.
+            if (current.includesSeeding()) {
+              current.setIncludes(defaultIncludes(entries));
+              current.setIncludesSeeding(false);
+            }
           })
           .catch(() => {
-            if (!cancelled) setCandidates([]);
+            if (cancelled) return;
+            setCandidates([]);
+            // Without the defaults to seed from, an empty list would silently
+            // stop new tasks getting node_modules and .env: stay unset.
+            if (current.includesSeeding()) {
+              current.setIncludesSeeding(false);
+              current.setIncludesEnabled(false);
+            }
           });
       },
     ),
   );
 
   function setEnabled(enabled: boolean) {
+    // Until the seed lands the form saves the list as unset, never as empty.
+    form().setIncludesSeeding(enabled && form().includes().length === 0);
     form().setIncludesEnabled(enabled);
-    if (!enabled || form().includes().length > 0) return;
-    // Seed with today's defaults once the candidates are known, so turning the
-    // list on changes nothing until the user edits it.
-    const seed = (entries: GitIgnoredEntry[]) => {
-      if (form().includesEnabled() && form().includes().length === 0)
-        form().setIncludes(defaultIncludes(entries));
-    };
-    const known = candidates();
-    if (known) seed(known);
-    else
-      void invoke<GitIgnoredEntry[]>(IPC.GetGitignoredDirs, { projectRoot: props.projectRoot })
-        .then(seed)
-        .catch(() => undefined);
   }
 
   const rows = () => includeRows(candidates() ?? [], form().includes());
@@ -95,6 +103,7 @@ export function ProjectWorktreeSetupSection(props: ProjectWorktreeSetupSectionPr
             class="input-field"
             rows={3}
             spellcheck={false}
+            maxLength={WORKTREE_SCRIPT_MAX_LENGTH}
             value={form().setupScript()}
             onInput={(e) => form().setSetupScript(e.currentTarget.value)}
             placeholder={'npm ci\ncp "$PARALLEL_CODE_ROOT_PATH/.env" .'}
@@ -106,7 +115,7 @@ export function ProjectWorktreeSetupSection(props: ProjectWorktreeSetupSectionPr
       <ProjectField
         label="Teardown script"
         aside="optional"
-        hint="Runs in the worktree before the app removes it, when a task closes or merges with cleanup, for up to 2 minutes. If it fails, you are told and the worktree is still removed."
+        hint="Runs in the worktree, after its agents stop and before the app removes it, when a task closes or merges with cleanup, for up to 2 minutes. If it fails, you are told and the worktree is still removed."
       >
         {(id) => (
           <textarea
@@ -114,6 +123,7 @@ export function ProjectWorktreeSetupSection(props: ProjectWorktreeSetupSectionPr
             class="input-field"
             rows={2}
             spellcheck={false}
+            maxLength={WORKTREE_SCRIPT_MAX_LENGTH}
             value={form().teardownScript()}
             onInput={(e) => form().setTeardownScript(e.currentTarget.value)}
             placeholder="docker compose down"
@@ -155,7 +165,9 @@ export function ProjectWorktreeSetupSection(props: ProjectWorktreeSetupSectionPr
                 <span style={projectHintStyle}>This checkout has no ignored root entries.</span>
               }
             >
-              <For each={rows()}>
+              {/* Index, not For: rows are rebuilt on every change, and a keyed
+                  list would recreate the select being changed and drop focus. */}
+              <Index each={rows()}>
                 {(row) => (
                   <label
                     style={{
@@ -173,21 +185,21 @@ export function ProjectWorktreeSetupSection(props: ProjectWorktreeSetupSectionPr
                         'text-overflow': 'ellipsis',
                         'white-space': 'nowrap',
                         'font-family': "'JetBrains Mono', monospace",
-                        color: row.present ? theme.fg : theme.fgSubtle,
+                        color: row().present ? theme.fg : theme.fgSubtle,
                       }}
-                      title={row.present ? row.name : `${row.name} is not in the checkout`}
+                      title={row().present ? row().name : `${row().name} is not in the checkout`}
                     >
-                      {row.name}
-                      <Show when={!row.present}> (missing)</Show>
+                      {row().name}
+                      <Show when={!row().present}> (missing)</Show>
                     </span>
                     <select
                       class="project-select"
-                      aria-label={`How new tasks get ${row.name}`}
-                      value={row.mode ?? ''}
+                      aria-label={`How new tasks get ${row().name}`}
+                      value={row().mode ?? ''}
                       onChange={(e) => {
                         const value = e.currentTarget.value;
                         const mode = value === '' ? null : (value as WorktreeIncludeMode);
-                        form().setIncludes(withIncludeMode(form().includes(), row.name, mode));
+                        form().setIncludes(withIncludeMode(form().includes(), row().name, mode));
                       }}
                       style={{ 'font-size': '12px', padding: '2px 6px' }}
                     >
@@ -197,7 +209,7 @@ export function ProjectWorktreeSetupSection(props: ProjectWorktreeSetupSectionPr
                     </select>
                   </label>
                 )}
-              </For>
+              </Index>
             </Show>
           </Show>
         </div>

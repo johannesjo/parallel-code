@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,9 +10,10 @@ import * as git from './git.js';
 import * as tasks from './tasks.js';
 import { DelegationService } from '../mcp/delegation.js';
 
-const { handlers, spawnAgent } = vi.hoisted(() => ({
+const { handlers, spawnAgent, killAgent } = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, args: Record<string, unknown>) => unknown>(),
   spawnAgent: vi.fn(),
+  killAgent: vi.fn(),
 }));
 vi.mock('electron', () => ({
   ipcMain: {
@@ -30,6 +32,7 @@ vi.mock('electron', () => ({
 vi.mock('./pty.js', async (original) => ({
   ...(await original<typeof import('./pty.js')>()),
   spawnAgent,
+  killAgent,
   getAgentMeta: vi.fn(() => null),
   validateCommand: vi.fn(),
 }));
@@ -116,7 +119,11 @@ it.skipIf(process.platform === 'win32')(
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'parallel-code-merge-teardown-'));
     tempDirs.push(projectRoot);
     const worktreePath = path.join(projectRoot, '.worktrees', 'task', 'x');
-    fs.mkdirSync(worktreePath, { recursive: true });
+    const gitCmd = (args: string[]) =>
+      execFileSync('git', args, { cwd: projectRoot, stdio: 'ignore' });
+    gitCmd(['init', '--quiet', '--initial-branch=main']);
+    gitCmd(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'init']);
+    gitCmd(['worktree', 'add', '-b', 'task/x', worktreePath]);
     vi.spyOn(DelegationService.prototype, 'assertDirectMergeAllowed').mockResolvedValue();
     vi.spyOn(DelegationService.prototype, 'recordDirectMerge').mockResolvedValue();
     const order: string[] = [];
@@ -124,7 +131,10 @@ it.skipIf(process.platform === 'win32')(
       order.push('merge');
       return { main_branch: 'main', lines_added: 1, lines_removed: 0 };
     });
-    vi.spyOn(git, 'removeWorktree').mockImplementation(async () => {
+    killAgent.mockImplementation((id: string) => {
+      order.push(fs.existsSync(path.join(worktreePath, 'torn-down')) ? 'late-kill' : `kill:${id}`);
+    });
+    vi.spyOn(git, 'removeWorktreeLocked').mockImplementation(async () => {
       order.push(fs.existsSync(path.join(worktreePath, 'torn-down')) ? 'remove-after' : 'remove');
     });
 
@@ -135,11 +145,13 @@ it.skipIf(process.platform === 'win32')(
       squash: false,
       cleanup: true,
       teardownScript: 'touch torn-down\nexit 4',
+      agentIds: ['agent-1', 'shell-1'],
     });
 
     // The merge itself never removes the worktree when a teardown must run first.
     expect(merge.mock.calls[0]?.[4]).toBe(false);
-    expect(order).toEqual(['merge', 'remove-after']);
+    // Agents stop after the merge lands and before teardown touches anything.
+    expect(order).toEqual(['merge', 'kill:agent-1', 'kill:shell-1', 'remove-after']);
     expect(result).toMatchObject({ main_branch: 'main' });
     expect((result as { warning?: string }).warning).toContain('exited with code 4');
   },
@@ -162,4 +174,10 @@ it('keeps the merge-time cleanup path unchanged without a teardown script', asyn
 
   expect(merge.mock.calls[0]?.[4]).toBe(true);
   expect(remove).not.toHaveBeenCalled();
+});
+
+it('never takes the verbatim Windows command-line flag from the renderer', async () => {
+  await handlers.get(IPC.SpawnAgent)?.(undefined, shellSpawn({ windowsVerbatimArgs: true }));
+  const [, spawned] = spawnAgent.mock.lastCall as [unknown, { windowsVerbatimArgs?: boolean }];
+  expect(spawned.windowsVerbatimArgs).toBeUndefined();
 });

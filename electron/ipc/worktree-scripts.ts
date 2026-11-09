@@ -1,4 +1,5 @@
-import { spawn } from 'child_process';
+import { execFile, spawn } from 'child_process';
+import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import { resolveUserShell } from '../user-shell.js';
@@ -19,8 +20,12 @@ export const TEARDOWN_OUTPUT_TAIL_CHARS = 8 * 1024;
 /** Lines of output quoted in the failure notice; the rest is in the log tail. */
 const FAILURE_EXCERPT_LINES = 6;
 const KILL_GRACE_MS = 3_000;
+/** How long output may keep arriving after the script exits. */
+const EXIT_DRAIN_MS = 500;
 
 /** Shells that understand `-e -c <script>` with POSIX semantics. */
+const execFileAsync = promisify(execFile);
+
 const POSIX_SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'mksh', 'ash']);
 
 export function validateWorktreeScript(script: unknown, label: string): asserts script is string {
@@ -111,19 +116,35 @@ export function buildScriptInvocation(
   };
 }
 
-/** Variables setup and teardown scripts can use, e.g. to copy from the main checkout. */
+/**
+ * Variables setup and teardown scripts can use, e.g. to copy from the main
+ * checkout. No task id: `PARALLEL_CODE_TASK_ID` is the agent-hook identity,
+ * which the PTY layer strips and child processes must not inherit.
+ */
 export function buildWorktreeScriptEnv(args: {
   projectRoot: string;
   worktreePath: string;
   branchName?: string;
-  taskId?: string;
 }): Record<string, string> {
   return {
     PARALLEL_CODE_ROOT_PATH: args.projectRoot,
     PARALLEL_CODE_WORKTREE: args.worktreePath,
     PARALLEL_CODE_BRANCH: args.branchName ?? '',
-    PARALLEL_CODE_TASK_ID: args.taskId ?? '',
   };
+}
+
+/** Linked worktrees of a repository (the main checkout excluded), as real paths. */
+export async function listLinkedWorktrees(projectRoot: string): Promise<string[]> {
+  const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], {
+    cwd: projectRoot,
+    maxBuffer: 8 * 1024 * 1024,
+  });
+  const paths = String(stdout)
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => realpathOrResolve(line.slice('worktree '.length)));
+  // The first entry is always the main working tree.
+  return paths.slice(1);
 }
 
 export type TeardownStatus = 'passed' | 'failed' | 'timed_out' | 'error' | 'skipped';
@@ -148,6 +169,8 @@ export interface TeardownDeps {
   spawnImpl?: typeof spawn;
   platform?: NodeJS.Platform;
   shell?: string;
+  /** Defaults to `git worktree list`; teardown only runs in a listed worktree. */
+  listWorktrees?: (projectRoot: string) => Promise<string[]>;
 }
 
 function realpathOrResolve(p: string): string {
@@ -164,17 +187,47 @@ function appendTail(tail: string, chunk: string): string {
 }
 
 /** Runs the teardown script in the worktree and reports how it ended. Never throws. */
-export function runTeardownScript(
+export async function runTeardownScript(
   request: TeardownRequest,
   deps: TeardownDeps = {},
 ): Promise<TeardownResult> {
-  const skipped = (message: string): Promise<TeardownResult> =>
-    Promise.resolve({ status: 'skipped', exitCode: null, outputTail: '', message });
+  const skipped = (message: string): TeardownResult => ({
+    status: 'skipped',
+    exitCode: null,
+    outputTail: '',
+    message,
+  });
   if (!fs.existsSync(request.worktreePath)) return skipped('The worktree no longer exists.');
-  if (realpathOrResolve(request.worktreePath) === realpathOrResolve(request.projectRoot)) {
+  const target = realpathOrResolve(request.worktreePath);
+  if (target === realpathOrResolve(request.projectRoot)) {
     return skipped('Teardown never runs in the main checkout.');
   }
+  // A path the renderer sent is only trusted once git confirms it is one of
+  // this repository's linked worktrees, so a stale or mistaken path can never
+  // run the script in an unrelated folder.
+  let linked: string[];
+  try {
+    linked = await (deps.listWorktrees ?? listLinkedWorktrees)(request.projectRoot);
+  } catch (err) {
+    return {
+      status: 'error',
+      exitCode: null,
+      outputTail: '',
+      message: `could not list worktrees: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+  if (!linked.includes(target)) {
+    return {
+      status: 'error',
+      exitCode: null,
+      outputTail: '',
+      message: `${request.worktreePath} is not a worktree of this repository, so it was not run`,
+    };
+  }
+  return spawnTeardown(request, deps);
+}
 
+function spawnTeardown(request: TeardownRequest, deps: TeardownDeps): Promise<TeardownResult> {
   const platform = deps.platform ?? process.platform;
   const invocation = buildScriptInvocation(request.script, { platform, shell: deps.shell });
   const spawnImpl = deps.spawnImpl ?? spawn;
@@ -204,26 +257,58 @@ export function runTeardownScript(
     let outputTail = '';
     let settled = false;
     let timedOut = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const later = (ms: number, fn: () => void) => {
+      const t = setTimeout(fn, ms);
+      t.unref?.();
+      timers.push(t);
+    };
     const killTree = (signal: NodeJS.Signals) => {
       try {
-        if (child.pid && platform !== 'win32') process.kill(-child.pid, signal);
-        else child.kill(signal);
+        if (!child.pid) child.kill(signal);
+        else if (platform === 'win32')
+          // child.kill() would stop cmd.exe alone and leave e.g. docker running.
+          spawnImpl('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+            stdio: 'ignore',
+            windowsHide: true,
+          }).on('error', () => undefined);
+        else process.kill(-child.pid, signal);
       } catch {
         /* already gone */
       }
     };
-    const timer = setTimeout(() => {
-      timedOut = true;
-      killTree('SIGTERM');
-      const hardKill = setTimeout(() => killTree('SIGKILL'), KILL_GRACE_MS);
-      hardKill.unref?.();
-    }, timeoutMs);
     const finish = (result: TeardownResult) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      for (const t of timers) clearTimeout(t);
+      // A grandchild may still hold the pipes; never wait on it.
+      child.stdout?.destroy();
+      child.stderr?.destroy();
       resolve(result);
     };
+    const outcome = (code: number | null, signal: NodeJS.Signals | null): TeardownResult => {
+      if (timedOut)
+        return {
+          status: 'timed_out',
+          exitCode: code,
+          outputTail,
+          message: `timed out after ${Math.round(timeoutMs / 1000)} s`,
+        };
+      if (code === 0 && !signal) return { status: 'passed', exitCode: 0, outputTail };
+      return {
+        status: 'failed',
+        exitCode: code,
+        outputTail,
+        ...(signal ? { message: `killed by ${signal}` } : {}),
+      };
+    };
+    later(timeoutMs, () => {
+      timedOut = true;
+      killTree('SIGTERM');
+      later(KILL_GRACE_MS, () => killTree('SIGKILL'));
+      // Even if nothing ever reports an exit, the close or merge goes on.
+      later(KILL_GRACE_MS * 2, () => finish(outcome(null, null)));
+    });
     const onChunk = (buf: Buffer) => {
       outputTail = appendTail(outputTail, stripAnsi(buf.toString('utf8')));
     };
@@ -232,25 +317,11 @@ export function runTeardownScript(
     child.on('error', (err) =>
       finish({ status: 'error', exitCode: null, outputTail, message: err.message }),
     );
-    child.on('close', (code, signal) => {
-      if (timedOut) {
-        finish({
-          status: 'timed_out',
-          exitCode: code,
-          outputTail,
-          message: `timed out after ${Math.round(timeoutMs / 1000)} s`,
-        });
-      } else if (code === 0) {
-        finish({ status: 'passed', exitCode: 0, outputTail });
-      } else {
-        finish({
-          status: 'failed',
-          exitCode: code,
-          outputTail,
-          ...(signal ? { message: `Killed by ${signal}.` } : {}),
-        });
-      }
-    });
+    // 'close' waits for every holder of the pipes, including a backgrounded
+    // grandchild; 'exit' is the script itself. Give the output a moment to
+    // drain after 'exit', then settle without waiting for stragglers.
+    child.on('close', (code, signal) => finish(outcome(code, signal)));
+    child.on('exit', (code, signal) => later(EXIT_DRAIN_MS, () => finish(outcome(code, signal))));
   });
 }
 
@@ -265,7 +336,9 @@ export function describeTeardownFailure(result: TeardownResult): string | undefi
       ? (result.message ?? 'timed out')
       : result.status === 'error'
         ? `could not start: ${result.message ?? 'unknown error'}`
-        : `exited with code ${result.exitCode ?? '?'}${result.message ? ` (${result.message})` : ''}`;
+        : result.exitCode === null && result.message
+          ? `was ${result.message}`
+          : `exited with code ${result.exitCode ?? '?'}${result.message ? ` (${result.message})` : ''}`;
   const excerpt = result.outputTail
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
