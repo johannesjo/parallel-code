@@ -3,7 +3,6 @@
 // using existing backend primitives (pty, git, tasks).
 
 import { randomUUID, randomBytes } from 'crypto';
-import { unlinkSync, readFileSync, existsSync } from 'fs';
 import { unlink as fsUnlink } from 'fs/promises';
 import { dirname } from 'path';
 import {
@@ -11,17 +10,10 @@ import {
   getSubTaskMcpConfigPath,
   isAllowedSubTaskMcpConfigPath,
   writeSubTaskMcpConfig,
-  writeSubTaskMcpConfigSync,
 } from './config.js';
-import {
-  buildMcpLaunchArgs,
-  isAntigravityCommand,
-  isCodexCommand,
-  type ParallelCodeMcpConfig,
-} from './agent-args.js';
+import { buildMcpLaunchArgs, isAntigravityCommand } from './agent-args.js';
 import { writeAntigravityMcpConfig } from './antigravity-config.js';
 import { validateBranchName } from './validation.js';
-import { atomicWriteFileSync } from './atomic.js';
 import { ReplayCache } from './replay-cache.js';
 import {
   detectPreambleFiles,
@@ -42,6 +34,14 @@ import {
   ownDirtyPaths,
   PREAMBLE_ARTIFACT_PATHS,
 } from './coordinator/git.js';
+import {
+  buildTaskMcpLaunchArgs,
+  refreshChildMcpConfigs,
+  restoreCoordinatorMcpJson,
+  rewriteSubtaskMcpConfig,
+  unlinkMcpConfigFile,
+  type SessionMcpProvider,
+} from './coordinator/mcp-config.js';
 import type { Notify } from '../ipc/notify.js';
 import { createTask as createBackendTask, deleteTask } from '../ipc/tasks.js';
 import { getSkipPermissionsArgs, stripPermissionBypassArgs } from '../shared/skip-permissions.js';
@@ -104,7 +104,6 @@ import type {
   WaitForSignalDoneResult,
 } from './types.js';
 import { IPC } from '../ipc/channels.js';
-import type { SessionCapabilities } from '../shared/delegation-types.js';
 import { parseCloseSuggestion, type CloseSuggestion } from '../shared/close-suggestion.js';
 import {
   parseCompletionRecord,
@@ -267,15 +266,9 @@ export class Coordinator {
     }
   }
 
-  private sessionMcpProvider?: (
-    task: CoordinatedTask,
-  ) => { token: string; sessionCapabilities: SessionCapabilities } | undefined;
+  private sessionMcpProvider?: SessionMcpProvider;
 
-  setSessionMcpProvider(
-    provider: (
-      task: CoordinatedTask,
-    ) => { token: string; sessionCapabilities: SessionCapabilities } | undefined,
-  ): void {
+  setSessionMcpProvider(provider: SessionMcpProvider): void {
     this.sessionMcpProvider = provider;
   }
   private activeSignalWaitCounts = new Map<string, number>();
@@ -934,40 +927,13 @@ export class Coordinator {
     }
     // Rewrite config files only for sub-tasks owned by this coordinator so a
     // second coordinator starting up does not overwrite the first's task configs.
-    for (const task of this.tasks.values()) {
-      if (task.coordinatorTaskId !== coordinatorTaskId) continue;
-      const mcpConfigPath = task.mcpConfigPath;
-      const safeMcpConfigPath = isAllowedSubTaskMcpConfigPath(mcpConfigPath, {
-        taskId: task.id,
-        serverPath,
-        dockerContainerName: state?.dockerContainerName ?? null,
-      });
-      if (!safeMcpConfigPath) task.mcpConfigPath = undefined;
-      // An agy child may have only its worktree file, which needs the new token too.
-      if (!safeMcpConfigPath && !task.antigravityWorkspaceMcp) continue;
-      // Preserve existing doneToken; generate a fresh one if not yet set (e.g. older persisted task).
-      if (!task.doneToken) task.doneToken = randomBytes(24).toString('base64url');
-      const session = this.sessionMcpProvider?.(task);
-      const mcpConfig = buildSubTaskMcpConfig({
-        serverPath,
-        serverUrl,
-        subtaskToken: session?.token ?? subtaskToken,
-        sessionCapabilities: session?.sessionCapabilities,
-        taskId: task.id,
-        doneToken: task.doneToken,
-      });
-      if (safeMcpConfigPath && mcpConfigPath) writeSubTaskMcpConfigSync(mcpConfigPath, mcpConfig);
-      if (!task.antigravityWorkspaceMcp || !existsSync(task.worktreePath)) continue;
-      try {
-        writeAntigravityMcpConfig(task.worktreePath, mcpConfig);
-      } catch (err) {
-        // One child's broken worktree must not leave the others on a stale token.
-        logWarn('coordinator.antigravity_mcp', 'could not refresh Antigravity MCP config', {
-          taskId: task.id,
-          err: String(err),
-        });
-      }
-    }
+    refreshChildMcpConfigs(
+      this.tasks.values(),
+      coordinatorTaskId,
+      { serverUrl, subtaskToken, serverPath },
+      state?.dockerContainerName ?? null,
+      this.sessionMcpProvider,
+    );
   }
 
   setCoordinatorSpawnDefaults(coordinatorTaskId: string, command: string, args: string[]): void {
@@ -1547,7 +1513,7 @@ export class Coordinator {
       const bypassArgs = skipPermissions ? getSkipPermissionsArgs(agentCommand) : [];
       const baseArgs = [...agentArgs, ...bypassArgs.filter((arg) => !agentArgs.includes(arg))];
       const mcpArgs = subTaskMcpConfig
-        ? this.buildTaskMcpLaunchArgs(agentCommand, subTaskMcpConfigPath, subTaskMcpConfig)
+        ? buildTaskMcpLaunchArgs(agentCommand, subTaskMcpConfigPath, subTaskMcpConfig)
         : [];
       const agentFinalArgs = [...baseArgs, ...mcpArgs];
 
@@ -2445,18 +2411,8 @@ export class Coordinator {
     this.clearAgentBuffers(task.agentId);
   }
 
-  /** Best-effort removal of a task's per-sub-task MCP config file. */
-  private unlinkMcpConfigFile(path: string | undefined): void {
-    if (!path) return;
-    try {
-      unlinkSync(path);
-    } catch {
-      /* already gone */
-    }
-  }
-
   private clearTaskMcpConfig(task: CoordinatedTask): void {
-    this.unlinkMcpConfigFile(task.mcpConfigPath);
+    unlinkMcpConfigFile(task.mcpConfigPath);
     task.mcpConfigPath = undefined;
   }
 
@@ -3219,72 +3175,19 @@ export class Coordinator {
     };
   }
 
-  private buildTaskMcpLaunchArgs(
-    command: string,
-    configPath: string | undefined,
-    config: ParallelCodeMcpConfig,
-  ): string[] {
-    const server = config.mcpServers['parallel-code'];
-    if (isCodexCommand(command) && server.args.includes('--session-profile')) {
-      if (!configPath) throw new Error('A private MCP credential file is required for this child.');
-      return buildMcpLaunchArgs(command, configPath, {
-        mcpServers: {
-          'parallel-code': {
-            ...server,
-            args: [...server.args, '--token-file', configPath],
-            env: {},
-          },
-        },
-      });
-    }
-    return buildMcpLaunchArgs(command, configPath, config);
-  }
-
   private rewriteHydratedSubtaskMcpConfig(
     task: CoordinatedTask,
     coordinatorTaskId: string,
     mcpConfigPath: string | undefined,
     agentCommand: string | undefined,
   ): string[] | undefined {
-    // Set before the early return: a server that starts later must still refresh the file.
-    if (agentCommand) task.antigravityWorkspaceMcp = isAntigravityCommand(agentCommand);
-    const serverInfo = this.coordinators.get(coordinatorTaskId)?.mcpServerInfo;
-    if (!serverInfo) return undefined;
-    const { serverUrl, subtaskToken, serverPath } = serverInfo;
-    if (!task.doneToken) task.doneToken = randomBytes(24).toString('base64url');
-    const session = this.sessionMcpProvider?.(task);
-    const mcpConfig = buildSubTaskMcpConfig({
-      serverPath,
-      serverUrl,
-      subtaskToken: session?.token ?? subtaskToken,
-      sessionCapabilities: session?.sessionCapabilities,
-      taskId: task.id,
-      doneToken: task.doneToken,
-    });
-    if (session && !mcpConfigPath) {
-      mcpConfigPath = getSubTaskMcpConfigPath(
-        this.coordinators.get(coordinatorTaskId)?.dockerContainerName,
-        serverPath,
-        task.id,
-      );
-      task.mcpConfigPath = mcpConfigPath;
-    }
-    if (mcpConfigPath) {
-      writeSubTaskMcpConfigSync(mcpConfigPath, mcpConfig);
-    }
-    // A restored child whose worktree is gone has no session to configure.
-    if (task.antigravityWorkspaceMcp && existsSync(task.worktreePath)) {
-      try {
-        writeAntigravityMcpConfig(task.worktreePath, mcpConfig);
-      } catch (err) {
-        // Losing the restored task would be worse than one session without coordinator tools.
-        logWarn('coordinator.antigravity_mcp', 'could not write Antigravity MCP config', {
-          taskId: task.id,
-          err: String(err),
-        });
-      }
-    }
-    return this.buildTaskMcpLaunchArgs(agentCommand ?? 'claude', mcpConfigPath, mcpConfig);
+    return rewriteSubtaskMcpConfig(
+      task,
+      this.coordinators.get(coordinatorTaskId),
+      this.sessionMcpProvider,
+      mcpConfigPath,
+      agentCommand,
+    );
   }
 
   isRegisteredCoordinator(coordinatorTaskId: string): boolean {
@@ -3395,44 +3298,7 @@ export class Coordinator {
       });
     }
 
-    // Clean up coordinator .mcp.json — restore or remove only the parallel-code key.
-    // Always read current contents (user may have added keys while running).
-    // If there was a pre-existing parallel-code entry, restore it; otherwise delete the key.
-    if (coordinator.mcpJsonPath) {
-      try {
-        const raw = existsSync(coordinator.mcpJsonPath)
-          ? readFileSync(coordinator.mcpJsonPath, 'utf-8')
-          : null;
-        if (raw !== null) {
-          const content = JSON.parse(raw) as { mcpServers?: Record<string, unknown> };
-          if (content.mcpServers) {
-            const current = content.mcpServers['parallel-code'];
-            const weWrote = coordinator.writtenMcpParallelCode;
-            // Only restore/delete if the current value still matches what we wrote,
-            // or if we don't have a record of what we wrote (legacy path — always restore).
-            const safeToRestore =
-              weWrote === undefined || JSON.stringify(current) === JSON.stringify(weWrote);
-            if (safeToRestore) {
-              if (coordinator.previousMcpParallelCode !== undefined) {
-                content.mcpServers['parallel-code'] = coordinator.previousMcpParallelCode;
-              } else {
-                delete content.mcpServers['parallel-code'];
-              }
-            }
-          }
-          const hasServers = Object.keys(content.mcpServers ?? {}).length > 0;
-          const hasOtherKeys = Object.keys(content).filter((k) => k !== 'mcpServers').length > 0;
-          if (!hasServers && !hasOtherKeys) {
-            unlinkSync(coordinator.mcpJsonPath);
-          } else {
-            if (!hasServers) delete content.mcpServers;
-            atomicWriteFileSync(coordinator.mcpJsonPath, JSON.stringify(content, null, 2));
-          }
-        }
-      } catch {
-        /* ignore — file may already be gone or malformed */
-      }
-    }
+    restoreCoordinatorMcpJson(coordinator);
 
     this.coordinators.delete(coordinatorTaskId);
     this.landedOrderCounters.delete(coordinatorTaskId);
