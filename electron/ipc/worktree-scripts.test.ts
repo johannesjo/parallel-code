@@ -99,7 +99,7 @@ describe.skipIf(process.platform === 'win32')('runTeardownScript', () => {
   const shellDeps = { shell: '/bin/sh', listWorktrees };
   const worktreeDir = () => {
     const dir = tempDir();
-    listed = [fs.realpathSync(dir)];
+    listed = [fs.realpathSync.native(dir)];
     return dir;
   };
 
@@ -220,8 +220,11 @@ describe('listLinkedWorktrees', () => {
     git(['init', '--quiet', '--initial-branch=main']);
     git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'init']);
     git(['worktree', 'add', '-b', 'task/a', path.join(root, '.worktrees', 'a')]);
+    // The runner's temp dir may be an 8.3 short path (C:\\Users\\RUNNER~1);
+    // git prints the long one, and both must compare equal.
+    const expected = fs.realpathSync.native(path.join(root, '.worktrees', 'a'));
     expect(await listLinkedWorktrees(root)).toEqual([
-      fs.realpathSync(path.join(root, '.worktrees', 'a')),
+      process.platform === 'win32' ? expected.toLowerCase() : expected,
     ]);
   });
 });

@@ -173,12 +173,19 @@ export interface TeardownDeps {
   listWorktrees?: (projectRoot: string) => Promise<string[]>;
 }
 
+/**
+ * Canonical form for comparing paths. The native realpath expands Windows
+ * 8.3 short names (`RUNNER~1`), which git never prints and the JS realpath
+ * keeps; Windows paths also compare without regard to case.
+ */
 function realpathOrResolve(p: string): string {
+  let resolved: string;
   try {
-    return fs.realpathSync(p);
+    resolved = fs.realpathSync.native(p);
   } catch {
-    return path.resolve(p);
+    resolved = path.resolve(p);
   }
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
 function appendTail(tail: string, chunk: string): string {
