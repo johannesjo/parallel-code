@@ -3,8 +3,6 @@
 // using existing backend primitives (pty, git, tasks).
 
 import { randomUUID, randomBytes } from 'crypto';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { unlinkSync, readFileSync, existsSync } from 'fs';
 import { unlink as fsUnlink } from 'fs/promises';
 import { dirname } from 'path';
@@ -35,8 +33,15 @@ import {
   type InjectedSubTaskPreamble,
 } from './preamble.js';
 import { truncateDiffForTool } from './diff-format.js';
-
-const execAsync = promisify(execFile);
+import {
+  execAsync,
+  execStdout,
+  containsBranch,
+  currentBranch,
+  statusPaths,
+  ownDirtyPaths,
+  PREAMBLE_ARTIFACT_PATHS,
+} from './coordinator/git.js';
 import type { Notify } from '../ipc/notify.js';
 import { createTask as createBackendTask, deleteTask } from '../ipc/tasks.js';
 import { getSkipPermissionsArgs, stripPermissionBypassArgs } from '../shared/skip-permissions.js';
@@ -155,12 +160,6 @@ const FOCUS_IN = '\x1b[I';
 const BRACKETED_PASTE_START = '\x1b[200~';
 const BRACKETED_PASTE_END = '\x1b[201~';
 const REST_COORDINATOR_SENTINEL = 'api';
-const PREAMBLE_ARTIFACT_PATHS = new Set([
-  'AGENTS.md',
-  'GEMINI.md',
-  '.agent.md',
-  '.claude/settings.local.json',
-]);
 const UNRESOLVED_LANDED_COMMIT = 'unresolved';
 
 function pasteDelayMs(text: string): number {
@@ -203,37 +202,6 @@ function verificationFailureReason(verification: SubtaskVerification | undefined
   const failed = verification.checks.find((check) => check.result !== 'passed');
   if (!failed) return 'verification passed';
   return `verification ${failed.result}: ${failed.name}${failed.reason ? ` — ${failed.reason}` : ''}`;
-}
-
-function parsePorcelainPaths(statusOut: string): string[] {
-  return statusOut
-    .split('\n')
-    .map((line) => line.trimEnd())
-    .filter(Boolean)
-    .map((line) => {
-      const renameMarker = ' -> ';
-      const rawPath = line.slice(3);
-      if (!rawPath.includes(renameMarker)) return rawPath;
-      const parts = rawPath.split(renameMarker);
-      return parts[parts.length - 1] ?? rawPath;
-    });
-}
-
-function execStdout(result: Awaited<ReturnType<typeof execAsync>>): string {
-  const stdout = typeof result === 'string' ? result : result.stdout;
-  return typeof stdout === 'string' ? stdout : stdout.toString('utf8');
-}
-
-/** Whether `worktreePath`'s HEAD already contains every commit of `branch`. */
-async function containsBranch(worktreePath: string, branch: string): Promise<boolean> {
-  try {
-    await execAsync('git', ['merge-base', '--is-ancestor', branch, 'HEAD'], { cwd: worktreePath });
-    return true;
-  } catch (err) {
-    // Exit 1 is git's "no"; anything else is a real failure.
-    if ((err as { code?: unknown }).code === 1) return false;
-    throw err;
-  }
 }
 
 export class Coordinator {
@@ -1443,7 +1411,7 @@ export class Coordinator {
         throw new Error('The parent snapshot is unavailable.');
       const [head, branch] = await Promise.all([
         execAsync('git', ['rev-parse', 'HEAD'], { cwd: coordinatorState.worktreePath }),
-        this.currentBranch(coordinatorState.worktreePath),
+        currentBranch(coordinatorState.worktreePath),
       ]);
       if (execStdout(head).trim() !== opts.snapshotCommit || branch !== baseBranch) {
         throw new Error('The parent branch or commit changed. Refresh the assignment snapshot.');
@@ -2185,39 +2153,6 @@ export class Coordinator {
     return stripAnsi(this.tailBuffers.get(task.agentId) ?? '');
   }
 
-  private async currentBranch(worktreePath: string): Promise<string | null> {
-    const result = await execAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-      cwd: worktreePath,
-    });
-    const branch = execStdout(result).trim();
-    return branch === 'HEAD' ? null : branch;
-  }
-
-  /** Uncommitted paths holding the child's own work, not just the app's injected instructions. */
-  private async ownDirtyPaths(worktreePath: string): Promise<string[]> {
-    const [paths, preambleFiles] = await Promise.all([
-      this.statusPaths(worktreePath),
-      detectPreambleFiles(worktreePath),
-    ]);
-    const own: string[] = [];
-    for (const pathName of paths) {
-      const injected = preambleFiles.has(pathName) && PREAMBLE_ARTIFACT_PATHS.has(pathName);
-      if (
-        !injected ||
-        (await buildNormalizedPreambleFileDiff(pathName, worktreePath, 'HEAD')).trim()
-      )
-        own.push(pathName);
-    }
-    return own;
-  }
-
-  private async statusPaths(worktreePath: string): Promise<string[]> {
-    const result = await execAsync('git', ['--no-optional-locks', 'status', '--porcelain'], {
-      cwd: worktreePath,
-    });
-    return parsePorcelainPaths(execStdout(result));
-  }
-
   private nextLandedOrder(coordinatorTaskId: string): number {
     const next = (this.landedOrderCounters.get(coordinatorTaskId) ?? 0) + 1;
     this.landedOrderCounters.set(coordinatorTaskId, next);
@@ -2340,7 +2275,7 @@ export class Coordinator {
     task: CoordinatedTask,
     assertAllowed: () => void,
   ): Promise<void> {
-    const actualBranch = await this.currentBranch(task.worktreePath);
+    const actualBranch = await currentBranch(task.worktreePath);
     if (actualBranch === null) {
       throw new Error(
         `The worktree for '${task.branchName}' has a detached HEAD. Check out '${task.branchName}' before landing.`,
@@ -2353,7 +2288,7 @@ export class Coordinator {
     }
 
     const preambleFiles = await detectPreambleFiles(task.worktreePath);
-    const dirtyPathsBeforeStrip = await this.statusPaths(task.worktreePath);
+    const dirtyPathsBeforeStrip = await statusPaths(task.worktreePath);
     const dirtyPreamblePaths = dirtyPathsBeforeStrip.filter(
       (pathName) => preambleFiles.has(pathName) && PREAMBLE_ARTIFACT_PATHS.has(pathName),
     );
@@ -2374,7 +2309,7 @@ export class Coordinator {
 
     await stripPreambleFromBranch(task);
 
-    const dirtyPaths = await this.statusPaths(task.worktreePath);
+    const dirtyPaths = await statusPaths(task.worktreePath);
     const nonPreamblePaths = dirtyPaths.filter(
       (pathName) => !preambleFiles.has(pathName) || !PREAMBLE_ARTIFACT_PATHS.has(pathName),
     );
@@ -2406,7 +2341,7 @@ export class Coordinator {
       }
     }
 
-    const remainingDirtyPaths = await this.statusPaths(task.worktreePath);
+    const remainingDirtyPaths = await statusPaths(task.worktreePath);
     if (remainingDirtyPaths.length > 0) {
       throw new Error(
         `Task worktree is still dirty after injected artifacts were handled: ${remainingDirtyPaths.join(', ')}`,
@@ -2964,7 +2899,7 @@ export class Coordinator {
     const task = this.tasks.get(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
     try {
-      const paths = await this.ownDirtyPaths(task.worktreePath);
+      const paths = await ownDirtyPaths(task.worktreePath);
       if (paths.length === 0) return null;
       return {
         blocker: 'uncommitted-changes',
