@@ -1236,10 +1236,9 @@ export function TerminalView(props: TerminalViewProps) {
         term.loadAddon(addon);
         webglAddon = addon;
         // No manual repaint here: loadAddon → RenderService.setRenderer
-        // already forces a full refresh of this pane. redrawTerminal would
-        // additionally clear the glyph atlas xterm SHARES across panes
-        // without invalidating the other owners' render models, garbling
-        // glyphs in every healthy terminal.
+        // already forces a full refresh of this pane. A repaint would also
+        // clear the glyph atlas xterm shares across panes, making every
+        // healthy terminal re-rasterize its glyphs for nothing.
       } catch {
         // WebGL2 not supported — DOM renderer used automatically
       }
@@ -1272,11 +1271,13 @@ export function TerminalView(props: TerminalViewProps) {
 
     // Attach on the hidden→visible edge, detach a little after visible→hidden.
     // A pane that returns before the detach delay elapses keeps its context;
-    // on macOS it is repainted instead (issue #121): a WebGL surface throttled
-    // while backgrounded can come back with a corrupt glyph atlas, and a
-    // hidden pane never fires terminalFitManager's IntersectionObserver.
+    // on macOS it is repainted instead, as a recovery path for issue #121
+    // (garbled glyphs). The cause was a stale-texture bug in
+    // @xterm/addon-webgl 0.20.0-beta.194, fixed by 0.20.0-beta.330 (see
+    // scripts/xterm-webgl-atlas.test.mjs); it showed on macOS because Apple
+    // GPUs have half the texture units, so the atlas merges pages sooner.
     // The repaint covers every terminal because the atlas it rebuilds is
-    // shared. Linux never showed the corruption, so it skips that repaint.
+    // shared. Linux skips it.
     let prevOnScreen: boolean | undefined;
     createEffect(() => {
       const onScreen = paneOnScreen();

@@ -4,9 +4,9 @@
 // keeps its own GPU copy of every atlas page and re-uploads a page only when
 // its version number changes. When the atlas reaches the GPU's texture-unit
 // limit (16 on Apple GPUs, often 32 elsewhere) it merges pages and shifts the
-// rest down an index. @xterm/addon-webgl before 0.20.0-beta.330 counted
-// versions per page, so the page that moved into a slot could carry the same
-// number as the one that left it: that terminal kept the old texture and drew
+// rest down an index. @xterm/addon-webgl 0.20.0-beta.194 (fixed by
+// 0.20.0-beta.330) counted versions per page, so the page that moved into a
+// slot could carry the same number as the one that left it: that terminal kept the old texture and drew
 // its cells from the wrong page until something else bumped the version.
 // Neither refresh() nor clearTextureAtlas() reliably recovered it.
 //
@@ -108,21 +108,30 @@ async function driveTerminals(iterations) {
 
   // Cells drawn from a texture unit that does not hold the page they point into.
   const staleCells = { busy: 0, background: 0 };
+  // Frames that really inspected atlas pages and drawn cells. If an upgrade
+  // renames the internals read below, these stay at zero and the test fails
+  // instead of passing without having checked anything.
+  const inspected = { busy: 0, background: 0, backgroundAfterMerge: 0 };
   const check = (name, { addon }) => {
     const renderer = addon._renderer;
     const atlas = renderer?._charAtlas;
     const glyphs = renderer?._glyphRenderer?.value;
-    if (!atlas || !glyphs) return;
+    const attrs = glyphs?._vertices?.attributes;
+    if (!atlas?.pages?.length || !glyphs?._atlasTextures || !attrs) return;
     const { uploads } = window.__webglState(renderer._gl);
     const stale = new Set();
     const pages = Math.min(atlas.pages.length, glyphs._atlasTextures.length);
     for (let i = 0; i < pages; i++) if (uploads[i] !== atlas.pages[i].canvas) stale.add(i);
-    if (!stale.size) return;
-    const attrs = glyphs._vertices.attributes;
+    let drawn = 0;
     // 11 floats per cell: [2] is the glyph width (0 = empty cell), [4] its texture page.
     for (let k = 0; k < attrs.length; k += 11) {
-      if (attrs[k + 2] > 0 && stale.has(attrs[k + 4])) staleCells[name]++;
+      if (!(attrs[k + 2] > 0)) continue;
+      drawn++;
+      if (stale.has(attrs[k + 4])) staleCells[name]++;
     }
+    if (!drawn) return;
+    inspected[name]++;
+    if (name === 'background' && merges > 0) inspected.backgroundAfterMerge++;
   };
   busy.term.onRender(() => check('busy', busy));
   background.term.onRender(() => check('background', background));
@@ -161,6 +170,7 @@ async function driveTerminals(iterations) {
   return {
     merges,
     staleCells,
+    inspected,
     textureUnits,
     instrumented: typeof window.__webglState === 'function',
   };
@@ -182,7 +192,7 @@ describeWebgl('xterm WebGL atlas shared between terminals (#121)', () => {
         content: readFileSync(require.resolve('@xterm/xterm/css/xterm.css'), 'utf8'),
       });
       await page.addScriptTag({ content: script });
-      const { merges, staleCells, textureUnits, instrumented } = await page.evaluate(
+      const { merges, staleCells, inspected, textureUnits, instrumented } = await page.evaluate(
         driveTerminals,
         160,
       );
@@ -190,6 +200,11 @@ describeWebgl('xterm WebGL atlas shared between terminals (#121)', () => {
       expect(instrumented).toBe(true);
       expect(textureUnits).toBe(16);
       expect(merges, `addon-webgl ${version}`).toBeGreaterThan(0);
+      expect(inspected.busy, 'frames inspected in the busy pane').toBeGreaterThan(0);
+      expect(
+        inspected.backgroundAfterMerge,
+        'background frames inspected after a merge',
+      ).toBeGreaterThan(0);
       expect(staleCells, `addon-webgl ${version}`).toEqual({ busy: 0, background: 0 });
     } finally {
       await browser.close();
