@@ -529,6 +529,13 @@ export function TerminalView(props: TerminalViewProps) {
       screenReaderMode: store.terminalScreenReaderMode,
       theme: activeTerminalTheme(),
       allowProposedApi: true,
+      // TUIs that capture the mouse (Claude Code's fullscreen mode) keep their
+      // own selection, so Cmd+C and Edit > Copy find nothing in xterm. Shift+drag
+      // forces a terminal selection elsewhere; on macOS the convention, and what
+      // Claude Code tells xterm.js users, is Option+drag, which xterm ignores
+      // unless this is on. Costs Option+drag column selection on macOS; the
+      // Option+click cursor move is limited to panes without mouse tracking below.
+      macOptionClickForcesSelection: true,
       ...TERMINAL_SCROLL_OPTIONS,
       disableStdin: taskPtyDetached(),
       linkHandler: {
@@ -574,6 +581,17 @@ export function TerminalView(props: TerminalViewProps) {
     };
     linkScreen?.addEventListener('mousedown', handleLinkMouseDown);
     onCleanup(() => linkScreen?.removeEventListener('mousedown', handleLinkMouseDown));
+    // Option+click moves a shell's cursor by sending arrow keys. Under mouse
+    // tracking that click is a forced selection (see macOptionClickForcesSelection)
+    // and the arrows would scroll a TUI's history instead, so allow it only when
+    // no program owns the mouse. Set before xterm's own mouse-down handling.
+    const syncAltClickMovesCursor = () => {
+      if (!term) return;
+      const allow = term.modes.mouseTrackingMode === 'none';
+      if (term.options.altClickMovesCursor !== allow) term.options.altClickMovesCursor = allow;
+    };
+    containerRef.addEventListener('mousedown', syncAltClickMovesCursor, true);
+    onCleanup(() => containerRef.removeEventListener('mousedown', syncAltClickMovesCursor, true));
 
     // Block direct PTY keyboard input only after self-landing has removed the
     // backend PTY. Coordinator automation now waits for user activity instead of
