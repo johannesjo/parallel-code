@@ -7,7 +7,7 @@ import { applyAgentHookEvent } from '../store/agentHookStatus';
 import { nextTerminalInputPending } from '../lib/terminalInputPending';
 import { IPC } from '../../electron/ipc/channels';
 import { theme } from '../lib/theme';
-import { closeAgentInTask } from '../store/agents';
+import { closeAgentInTask, resumeAgentWithFlags } from '../store/agents';
 import { resumeAgentSession } from '../store/sessions';
 import { sendPrompt } from '../store/tasks';
 import { triggerAction } from '../store/focus';
@@ -870,4 +870,60 @@ it('says a queued prompt waits for Resume instead of reporting an exit', () => {
 
   expect(host.textContent).toContain('Resume the agent to send the queued prompt');
   expect(host.textContent).not.toContain('Agent exited before prompt was sent');
+});
+
+it('starts a second tab fresh, keeping its flags, when its session was never written', async () => {
+  const claude = {
+    id: 'claude',
+    name: 'Claude Code',
+    command: 'claude',
+    args: [],
+    resume_args: ['--continue'],
+    skip_permissions_args: [],
+    description: '',
+  };
+  setStore('agents', 'agent', 'def', claude);
+  setStore('agents', 'second', { ...store.agents.agent, id: 'second', def: claude });
+  setStore('tasks', 'task', 'agentIds', ['agent', 'second']);
+  setStore('tasks', 'task', 'agentSessionIds', {
+    agent: '11111111-1111-4111-8111-111111111111',
+    second: '22222222-2222-4222-8222-222222222222',
+  });
+  dispose = render(
+    () => (
+      <TaskAITerminal
+        task={store.tasks.task}
+        selectedAgentId="second"
+        isActive
+        promptHandle={undefined}
+      />
+    ),
+    host,
+  );
+  resumeAgentWithFlags('second', ['--chrome']);
+  type Mount = { agentId: string; args: string[]; onExit: (code: unknown) => void };
+  const lastMount = () =>
+    mocks.terminalMounts.mock.calls
+      .map(([props]) => props as Mount)
+      .filter((props) => props.agentId === 'second')
+      .at(-1);
+  await vi.waitFor(() =>
+    expect(lastMount()?.args).toEqual(expect.arrayContaining(['--resume', '--chrome'])),
+  );
+
+  // Claude saves a conversation only once it has a message, so a tab nobody typed
+  // into yet has nothing behind its id. Its exit output, captured at 39 columns:
+  // a narrow pane wraps the message, and Claude draws its spaces as cursor moves.
+  lastMount()?.onExit({
+    exit_code: 1,
+    signal: null,
+    last_output: [
+      '\x1b[38;2;255;107;128mNo\x1b[4Gconversation\x1b[17Gfound\x1b[23Gwith\x1b[28Gsession\x1b[36GID:\x1b[39m',
+      '\x1b[38;2;255;107;128m22222222-2222-4222-8222-222222222222\x1b[39m',
+    ],
+  });
+
+  await vi.waitFor(() => expect(lastMount()?.args).not.toContain('--resume'));
+  expect(lastMount()?.args).toEqual(expect.arrayContaining(['--session-id', '--chrome']));
+  expect(store.agents.second.status).toBe('running');
 });
