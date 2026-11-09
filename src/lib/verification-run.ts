@@ -1,6 +1,13 @@
 import type { VerificationRun } from '../ipc/types';
 import type { VerifyPassRecord } from '../store/types';
 
+const FAILED_STATUSES: ReadonlySet<string> = new Set(['failed', 'timed_out', 'error']);
+
+/** A run or check that ended without passing, other than by being cancelled. */
+export function isFailedRunStatus(status: string): boolean {
+  return FAILED_STATUSES.has(status);
+}
+
 export type VerificationSummaryKind =
   | 'none'
   | 'running'

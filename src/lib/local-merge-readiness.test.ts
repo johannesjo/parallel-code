@@ -12,6 +12,7 @@ const review = (overrides: Partial<TaskConfidence> = {}): TaskConfidence => ({
   findings: [],
   publishedAt: 1,
   origin: 'review',
+  headSha: HEAD,
   ...overrides,
 });
 
@@ -64,6 +65,16 @@ describe('isReadyToMergeLocally', () => {
     expect(isReadyToMergeLocally(input({ reviewOutdated: true }))).toBe(false);
   });
 
+  it('vouches only for the commit the review read, even before the diff is read again', () => {
+    const newCommit = { ...GIT, head_sha: 'c'.repeat(40) };
+    expect(isReadyToMergeLocally(input({ git: newCommit }))).toBe(false);
+    // A review of uncommitted code, or one whose commit is unknown, vouches for none.
+    expect(isReadyToMergeLocally(input({ confidence: review({ headSha: undefined }) }))).toBe(
+      false,
+    );
+    expect(isReadyToMergeLocally(input({ git: { ...GIT, head_sha: null } }))).toBe(false);
+  });
+
   it('holds back a low score', () => {
     const low = review({ scores: [{ label: 'Complete', score: 40, why: 'Half done.' }] });
     expect(isReadyToMergeLocally(input({ confidence: low }))).toBe(false);
@@ -101,6 +112,11 @@ describe('isReadyToMergeLocally', () => {
     expect(isReadyToMergeLocally(input({ ...configured, verificationRun: failed }))).toBe(false);
     const dirty = run({ dirty: true });
     expect(isReadyToMergeLocally(input({ ...configured, verificationRun: dirty }))).toBe(false);
+  });
+
+  it('ignores a run left behind once the verify command is removed', () => {
+    const old = run({ status: 'failed', exitCode: 1, headSha: 'c'.repeat(40) });
+    expect(isReadyToMergeLocally(input({ verificationRun: old }))).toBe(true);
   });
 
   it("falls back to the agent's report without a verify command", () => {

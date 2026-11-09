@@ -92,9 +92,13 @@ describe('restoreTaskConfidence', () => {
 
   it("keeps the app reviewer's mark and drops an unknown one", () => {
     const saved = { scores: [{ label: 'Confidence', score: 70, why: 'x' }], findings: [] };
-    expect(restoreTaskConfidence({ ...saved, publishedAt: 10, origin: 'review' })?.origin).toBe(
-      'review',
-    );
+    const restored = restoreTaskConfidence({
+      ...saved,
+      publishedAt: 10,
+      origin: 'review',
+      headSha: 'a1',
+    });
+    expect(restored).toMatchObject({ origin: 'review', headSha: 'a1' });
     expect(
       restoreTaskConfidence({ ...saved, publishedAt: 10, origin: 'agent' }),
     ).not.toHaveProperty('origin');

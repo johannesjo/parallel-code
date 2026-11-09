@@ -117,6 +117,7 @@ it('moves finished work the app review vouches for to Ready to merge, until the 
     publishedAt: 100,
     fingerprint: 'f1',
     origin: 'review',
+    headSha: 'a'.repeat(40),
   };
   const reviewed: Task = { ...task, confidence };
   setStore('tasks', reconcile({ 'task-1': reviewed }));
@@ -140,4 +141,17 @@ it('moves finished work the app review vouches for to Ready to merge, until the 
   };
   setStore('tasks', reconcile({ 'task-1': selfRated }));
   expect(boardLaneOf(selfRated)).toBe('stopped');
+  // A new commit leaves the review behind before anything reads the diff again.
+  setStore('tasks', reconcile({ 'task-1': reviewed }));
+  setStore('taskGitStatus', 'task-1', 'head_sha', 'b'.repeat(40));
+  expect(boardLaneOf(reviewed)).toBe('stopped');
+  setStore('taskGitStatus', 'task-1', 'head_sha', 'a'.repeat(40));
+  // A coordinator lands its subtasks, failed landings included.
+  for (const subtask of [
+    { ...reviewed, coordinatedBy: 'parent' },
+    { ...reviewed, landingState: 'landing_failed' as const },
+  ]) {
+    setStore('tasks', reconcile({ 'task-1': subtask }));
+    expect(boardLaneOf(subtask)).not.toBe('ready');
+  }
 });
