@@ -389,19 +389,18 @@ export class Coordinator {
       }
     }
     if (who === 'coordinator') {
-      const hasQueuedWork = Boolean(
-        task?.initialPrompt || (task?.pendingPrompts && task.pendingPrompts.length > 0),
-      );
+      // A body typed before its Enter failed is queued work too: it still needs submitting.
+      const hasQueuedWork = Boolean(task.initialPrompt) || this.prompts.hasQueuedWork(task);
       // Fire any idle resolvers queued while human had control
       const resolvers = this.idleResolvers.get(taskId);
       if (!hasQueuedWork && resolvers?.length) {
         for (const resolve of resolvers) resolve({ reason: 'idle' });
         this.idleResolvers.delete(taskId);
       }
-      if (task?.initialPrompt) {
+      if (task.initialPrompt) {
         this.prompts.clearInitialPromptTimer(task.id);
         this.prompts.scheduleInitialPromptDelivery(task, 0);
-      } else if (task?.pendingPrompts?.length) {
+      } else if (hasQueuedWork) {
         // Human use may have left the agent mid-turn; wait for a rendered prompt.
         this.prompts.scheduleQueuedPromptFlush(task);
       }
@@ -1106,7 +1105,7 @@ export class Coordinator {
     const task = this.tasks.get(taskId);
     if (!task) return Promise.reject(new Error(`Task not found: ${taskId}`));
     if (this.controlMap.get(taskId) === 'human') {
-      if (task.initialPrompt || task.pendingPrompts?.length) {
+      if (task.initialPrompt || this.prompts.hasQueuedWork(task)) {
         return this.waitForIdleResolver(taskId, timeoutMs);
       }
       return Promise.resolve({ reason: 'human_control' }); // resolve immediately — caller gets control-change event instead

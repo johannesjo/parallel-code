@@ -772,7 +772,7 @@ export class CoordinatorPrompts {
   }
 
   /** Queued prompts, or a typed body still waiting for its Enter. */
-  private hasQueuedWork(task: CoordinatedTask): boolean {
+  hasQueuedWork(task: CoordinatedTask): boolean {
     return Boolean(task.pendingPrompts?.length) || task.unsubmittedPrompt === true;
   }
 

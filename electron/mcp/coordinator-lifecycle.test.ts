@@ -244,6 +244,60 @@ describe('stranded prompt without a queue', () => {
     expect(task.unsubmittedPrompt).toBe(false);
   });
 
+  async function strandWithoutQueue() {
+    vi.useFakeTimers();
+    const task = await coordinator.createTask({
+      name: 't',
+      prompt: 'do work',
+      coordinatorTaskId: 'coord-1',
+    });
+    let enterFailed = false;
+    mockWriteToAgent.mockImplementation((agentId: string, data: string) => {
+      if (data === '\r' && !enterFailed) {
+        enterFailed = true;
+        throw new Error('pty enter failed');
+      }
+      return { id: agentId, data };
+    });
+    getOutputCb()(encode('❯ '));
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(task.unsubmittedPrompt).toBe(true);
+    mockWriteToAgent.mockClear();
+    return task;
+  }
+
+  it('submits the stranded body when control returns after a human hold', async () => {
+    const task = await strandWithoutQueue();
+    coordinator.setTaskControl(task.id, 'human');
+    getOutputCb()(encode('do work ❯ '));
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(mockWriteToAgent).not.toHaveBeenCalledWith(task.agentId, '\r');
+
+    coordinator.setTaskControl(task.id, 'coordinator');
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(mockWriteToAgent).toHaveBeenCalledWith(task.agentId, '\r');
+    expect(task.unsubmittedPrompt).toBe(false);
+  });
+
+  it('keeps wait_for_idle waiting through a human hold over a stranded body', async () => {
+    const task = await strandWithoutQueue();
+    coordinator.setTaskControl(task.id, 'human');
+    const wait = track(coordinator.waitForIdle(task.id, 60_000));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(wait.settled()).toBe(false);
+
+    getOutputCb()(encode('do work ❯ '));
+    coordinator.setTaskControl(task.id, 'coordinator');
+    await vi.advanceTimersByTimeAsync(10);
+    expect(wait.settled()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    getOutputCb()(encode('Worked\nDone ❯ '));
+    await vi.advanceTimersByTimeAsync(3_000);
+    await expect(wait.promise).resolves.toEqual({ reason: 'idle' });
+  });
+
   it('does not mark a cancelled prompt as stranded', async () => {
     vi.useFakeTimers();
     const task = await coordinator.createTask({ name: 't', coordinatorTaskId: 'coord-1' });
