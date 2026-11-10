@@ -82,7 +82,6 @@ const NOT_HANDLED_HERE: readonly string[] = [
   IPC.MCP_TaskCleanupFailed,
   IPC.MCP_TaskClosed,
   IPC.MCP_TaskCreated,
-  IPC.MCP_TaskHydrated,
   IPC.MCP_TaskStateSync,
   IPC.MCP_UpdateMindMapRequest,
   IPC.MCP_UpdateReasoningRequest,

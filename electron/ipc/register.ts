@@ -2365,10 +2365,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
           preambleFileExistedBefore: args.preambleFileExistedBefore,
           initialPrompt: args.initialPrompt,
         });
-        // Signal to renderer that MCP hydration is complete — gates TerminalView auto-spawn.
-        if (!win.isDestroyed()) {
-          win.webContents.send(IPC.MCP_TaskHydrated, { taskId: args.id });
-        }
+        // The renderer marks the child ready from this result, after storing its launch args.
         return result;
       },
     );

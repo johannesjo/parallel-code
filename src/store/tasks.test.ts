@@ -1090,6 +1090,40 @@ describe('MCP startup status transitions', () => {
     expect(mockTasks['child-b'].mcpLaunchArgs).toEqual(['--mcp-config', '/tmp/child-b.json']);
   });
 
+  it('keeps a hydrating child pending until its launch args arrive', async () => {
+    // A child that turns ready without launch args spawns with its stale saved
+    // --mcp-config, which spawn_agent rejects as custom MCP configuration.
+    mockTasks['coord-1'] = { agentIds: [], shellAgentIds: [], mcpStartupStatus: 'ready' };
+    mockTasks['child-1'] = {
+      agentIds: ['agent-child'],
+      shellAgentIds: [],
+      coordinatedBy: 'coord-1',
+      projectId: 'proj-1',
+      gitIsolation: 'worktree',
+      worktreePath: '/repo/.worktrees/child-1',
+      branchName: 'task/child-1',
+      mcpConfigPath: '/tmp/stale.json',
+    };
+    mockAgents['agent-child'] = { def: { command: 'claude', args: [] } };
+    let resolveHydrate: (value: { mcpLaunchArgs: string[] }) => void = () => {};
+    mockInvoke.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveHydrate = resolve;
+      }),
+    );
+
+    markTaskMcpPending('child-1');
+    const retry = retryTaskMcpStartup('child-1');
+    // Guard: an early "hydrated" signal (removed) used to mark the child ready here.
+    ipcHandlers.get('mcp_task_hydrated')?.({ taskId: 'child-1' });
+    expect(mockTasks['child-1'].mcpStartupStatus).toBe('pending');
+
+    resolveHydrate({ mcpLaunchArgs: ['--mcp-config', '/tmp/fresh.json'] });
+    await retry;
+    expect(mockTasks['child-1'].mcpStartupStatus).toBe('ready');
+    expect(mockTasks['child-1'].mcpLaunchArgs).toEqual(['--mcp-config', '/tmp/fresh.json']);
+  });
+
   it('passes the saved completion and revision when hydrating a coordinated child', async () => {
     const completion = {
       id: '11111111-1111-4111-8111-111111111111',

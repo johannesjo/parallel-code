@@ -205,7 +205,6 @@ const ALLOWED_CHANNELS = new Set([
   'mcp_coordinated_task_prompt_delivered',
   'mcp_coordinator_restage_after_user_send',
   'mcp_hydrate_coordinated_task',
-  'mcp_task_hydrated',
   'mcp_stale_url_warning',
   'mcp_coordinated_task_closed',
   'mcp_task_cleanup_failed',

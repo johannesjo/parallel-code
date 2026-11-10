@@ -1637,12 +1637,6 @@ export function initMCPListeners(): () => void {
         if (hasLandingStateUpdate) void saveState();
       }
     }),
-    window.electron.ipcRenderer.on(IPC.MCP_TaskHydrated, (data: unknown) => {
-      const evt = data as { taskId: string };
-      if (store.tasks[evt.taskId]) {
-        setStore('tasks', evt.taskId, 'mcpStartupStatus', 'ready');
-      }
-    }),
   );
 
   let cleanedUp = false;
