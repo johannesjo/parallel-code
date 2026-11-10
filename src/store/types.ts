@@ -117,6 +117,9 @@ export interface Project {
   deleteBranchOnClose?: boolean; // default true if unset
   defaultGitIsolation?: GitIsolationMode;
   defaultBaseBranch?: string;
+  /** New tasks branch from the local base as is. Unset: the app fetches the
+   *  base's upstream first and starts from it when the local base is behind. */
+  startFromLocalBase?: boolean;
   /** Coverage artifact path relative to the repo root. */
   coverageReportPath?: string;
   /** Shell command the app runs in a task worktree to verify it (exit 0 = pass).

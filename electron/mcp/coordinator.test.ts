@@ -51,6 +51,7 @@ import {
   encodeAgentOutput as encode,
   encodeAgentBytes as encodeBytes,
   emitWorkThenIdle,
+  FRESH_UPSTREAM_SHA,
 } from './coordinator-test-harness.js';
 
 const mockWriteAntigravityMcpConfig = vi.hoisted(() => vi.fn());
@@ -1101,6 +1102,7 @@ describe('Coordinator registerCoordinator — idempotency', () => {
       ['.claude', 'node_modules'],
       'task',
       'main',
+      FRESH_UPSTREAM_SHA,
     );
     expect(coordinator.getTask('task-1')?.baseBranch).toBe('main');
 

@@ -19,7 +19,12 @@ import {
   invalidateDiffBaseCache,
 } from './git-diff-base.js';
 import { getBranchWorktreePath, removeWorktree, withWorktreeLock } from './git-worktree.js';
-import { baseUpstreamDivergence, conflictSourcesNote, upstreamOf } from './git-base-upstream.js';
+import {
+  baseUpstreamDivergence,
+  conflictSourcesNote,
+  fastForwardBaseToTaskStart,
+  upstreamOf,
+} from './git-base-upstream.js';
 import type {
   MergeResult,
   MergeStatus,
@@ -612,6 +617,7 @@ export async function mergeTask(
 
       if (squash) {
         try {
+          await fastForwardBaseToTaskStart(mergeRoot, mainBranch, branchName);
           await exec('git', ['merge', '--squash', '--', branchName], { cwd: mergeRoot });
         } catch (e) {
           const conflicts = await conflictedFiles(mergeRoot);

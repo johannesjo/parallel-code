@@ -20,6 +20,7 @@ export function createProjectSettingsForm() {
   const [deleteBranchOnClose, setDeleteBranchOnClose] = createSignal(true);
   const [defaultGitIsolation, setDefaultGitIsolation] = createSignal<GitIsolationMode>('worktree');
   const [defaultBaseBranch, setDefaultBaseBranch] = createSignal('');
+  const [startFromLocalBase, setStartFromLocalBase] = createSignal(false);
   const [coverageReportPath, setCoverageReportPath] = createSignal('');
   const [verifyCommand, setVerifyCommand] = createSignal('');
   const [evidenceChecks, setEvidenceChecks] = createSignal<CheckDraft[]>([]);
@@ -43,6 +44,7 @@ export function createProjectSettingsForm() {
     setDeleteBranchOnClose(p.deleteBranchOnClose ?? true);
     setDefaultGitIsolation(p.defaultGitIsolation ?? 'worktree');
     setDefaultBaseBranch(p.defaultBaseBranch ?? '');
+    setStartFromLocalBase(p.startFromLocalBase === true);
     setCoverageReportPath(p.coverageReportPath ?? '');
     setVerifyCommand(p.verifyCommand ?? '');
     setEvidenceChecks(p.evidenceChecks ? [...p.evidenceChecks] : []);
@@ -66,6 +68,7 @@ export function createProjectSettingsForm() {
       deleteBranchOnClose: deleteBranchOnClose(),
       defaultGitIsolation: defaultGitIsolation(),
       defaultBaseBranch: defaultBaseBranch() || undefined,
+      startFromLocalBase: startFromLocalBase(),
       coverageReportPath: coverageReportPath().trim() || undefined,
       verifyCommand: verifyCommand().trim() || undefined,
       evidenceChecks: finalizeChecks(evidenceChecks()),
@@ -95,6 +98,8 @@ export function createProjectSettingsForm() {
     setDefaultGitIsolation,
     defaultBaseBranch,
     setDefaultBaseBranch,
+    startFromLocalBase,
+    setStartFromLocalBase,
     coverageReportPath,
     setCoverageReportPath,
     verifyCommand,

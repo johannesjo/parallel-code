@@ -23,6 +23,7 @@ import {
   getOutputCb,
   getSpawnHandler,
   getExitHandler,
+  FRESH_UPSTREAM_SHA,
 } from './coordinator-test-harness.js';
 
 const { Coordinator } = await setupCoordinatorHarness();
@@ -103,6 +104,7 @@ describe('ordinary delegation lifecycle', () => {
       expect.any(Array),
       'task',
       'main',
+      FRESH_UPSTREAM_SHA,
     );
     expect(mockSpawnAgent).toHaveBeenCalledWith(
       mockNotify,

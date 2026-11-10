@@ -369,6 +369,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
       ...(copyDirs.length > 0 && { copyDirs }),
       branchPrefix,
       baseBranch: baseBranch || undefined,
+      startFromLocalBase: getProject(projectId)?.startFromLocalBase === true,
     });
     taskId = result.id;
     branchName = result.branch_name;

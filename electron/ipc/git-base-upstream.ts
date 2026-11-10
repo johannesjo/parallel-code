@@ -112,3 +112,35 @@ export async function conflictSourcesNote(
     return '';
   }
 }
+
+/**
+ * Fast-forwards the base checked out in `mergeRoot` to where `branch` left
+ * origin/<base>, when the base is behind that point. Tasks may start from a
+ * fresher origin than the local base, and a squash merge would otherwise fold
+ * those upstream commits into the task's single commit.
+ */
+export async function fastForwardBaseToTaskStart(
+  mergeRoot: string,
+  mainBranch: string,
+  branch: string,
+): Promise<void> {
+  const upstream = `refs/remotes/origin/${mainBranch}`;
+  // Only origin/<base> is considered, matching where tasks start from.
+  const hasUpstream = await git(mergeRoot, ['rev-parse', '--verify', '--quiet', upstream]).then(
+    Boolean,
+    () => false,
+  );
+  if (!hasUpstream) return;
+  const [start, head] = await Promise.all([
+    git(mergeRoot, ['merge-base', branch, upstream]),
+    git(mergeRoot, ['rev-parse', 'HEAD']),
+  ]);
+  if (start === head) return;
+  const behind = await exec('git', ['merge-base', '--is-ancestor', head, start], {
+    cwd: mergeRoot,
+  }).then(
+    () => true,
+    () => false,
+  );
+  if (behind) await git(mergeRoot, ['merge', '--ff-only', start]);
+}

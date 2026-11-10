@@ -27,6 +27,7 @@ import {
   DEFAULT_COORDINATOR_CONCURRENT_TASKS,
 } from '../../shared/coordinator-limits.js';
 import { getMainBranch } from '../../ipc/git.js';
+import { resolveFreshStartPoint } from '../../ipc/git-start-point.js';
 import { buildSubTaskPreamble } from '../sub-task-preamble.js';
 import { warn as logWarn } from '../../log.js';
 import type { CoordinatedTask, IntegrationPolicy, CoordinatorState } from '../types.js';
@@ -182,6 +183,8 @@ async function createTaskUnchecked(
       throw new Error('The parent branch or commit changed. Refresh the assignment snapshot.');
     }
   }
+  // A snapshot pins the exact parent commit; otherwise start from fresh upstream.
+  const startPoint = opts.snapshotCommit ?? (await resolveFreshStartPoint(root, baseBranch));
   await assertLaunch();
   // Keep the integration branch separate from the immutable creation snapshot.
   // Create worktree + branch via existing backend
@@ -191,7 +194,7 @@ async function createTaskUnchecked(
     ['.claude', 'node_modules'],
     'task',
     baseBranch,
-    ...(opts.snapshotCommit ? [opts.snapshotCommit] : []),
+    startPoint,
   );
 
   // Re-check after async gap — deregisterCoordinator may have run while we awaited.

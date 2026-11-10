@@ -170,6 +170,7 @@ export function updateProject(
       | 'deleteBranchOnClose'
       | 'defaultGitIsolation'
       | 'defaultBaseBranch'
+      | 'startFromLocalBase'
       | 'coverageReportPath'
       | 'verifyCommand'
       | 'agentEnv'
@@ -211,6 +212,8 @@ export function updateProject(
         s.projects[idx].defaultGitIsolation = updates.defaultGitIsolation;
       if (Object.prototype.hasOwnProperty.call(updates, 'defaultBaseBranch'))
         s.projects[idx].defaultBaseBranch = updates.defaultBaseBranch;
+      if (updates.startFromLocalBase !== undefined)
+        s.projects[idx].startFromLocalBase = updates.startFromLocalBase || undefined;
       if (Object.prototype.hasOwnProperty.call(updates, 'coverageReportPath'))
         s.projects[idx].coverageReportPath = updates.coverageReportPath;
       if (Object.prototype.hasOwnProperty.call(updates, 'verifyCommand'))

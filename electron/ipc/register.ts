@@ -163,6 +163,7 @@ import {
   getUncommittedFileDiffsWithNested,
 } from './nested-repos.js';
 import { createPrTask, createTask, deleteTask } from './tasks.js';
+import { taskStartPoint } from './git-start-point.js';
 import { settleWorktreeIntents } from './worktree-intents.js';
 import { windowNotifier } from './window-notifier.js';
 import { createMcpRuntime } from './mcp-runtime.js';
@@ -1031,22 +1032,28 @@ export function registerAllHandlers(win: BrowserWindow): void {
   });
 
   // --- Task commands ---
-  ipcMain.handle(IPC.CreateTask, (_e, args) => {
+  ipcMain.handle(IPC.CreateTask, async (_e, args) => {
     assertString(args.name, 'name');
     validatePath(args.projectRoot, 'projectRoot');
     assertStringArray(args.symlinkDirs, 'symlinkDirs');
     if (args.copyDirs !== undefined) assertStringArray(args.copyDirs, 'copyDirs');
     assertOptionalString(args.branchPrefix, 'branchPrefix');
     assertOptionalString(args.baseBranch, 'baseBranch');
+    assertOptionalBoolean(args.startFromLocalBase, 'startFromLocalBase');
     const baseBranch = args.baseBranch || undefined;
     if (baseBranch) validateBranchName(baseBranch, 'baseBranch');
+    const startPoint = await taskStartPoint(
+      args.projectRoot,
+      baseBranch,
+      args.startFromLocalBase === true,
+    );
     const result = createTask(
       args.name,
       args.projectRoot,
       args.symlinkDirs,
       args.branchPrefix ?? 'task',
       baseBranch,
-      undefined,
+      startPoint,
       args.copyDirs ?? [],
     );
     result

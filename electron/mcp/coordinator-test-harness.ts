@@ -228,6 +228,13 @@ vi.mock('../ipc/git.js', () => ({
   rebaseTask: mocks.mockRebaseTask,
 }));
 
+// Stands in for "local main is behind origin/main" without real git.
+export const FRESH_UPSTREAM_SHA = 'f'.repeat(40);
+vi.mock('../ipc/git-start-point.js', () => ({
+  // Literal, not the constant: vi.mock factories are hoisted above it.
+  resolveFreshStartPoint: async () => 'f'.repeat(40),
+}));
+
 vi.mock('../ipc/tasks.js', () => ({
   createTask: mocks.mockCreateBackendTask,
   deleteTask: mocks.mockDeleteBackendTask,

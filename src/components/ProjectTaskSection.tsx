@@ -65,6 +65,13 @@ export function ProjectTaskSection(props: ProjectTaskSectionProps) {
         )}
       </ProjectField>
 
+      <ProjectCheckbox
+        label="Start new tasks from the local base branch"
+        description="Off: fetch the base branch first and start from the remote when the local branch is behind it."
+        checked={form().startFromLocalBase()}
+        onChange={(checked) => form().setStartFromLocalBase(checked)}
+      />
+
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
         <span style={sectionLabelStyle}>Default Git isolation</span>
         <SegmentedButtons
