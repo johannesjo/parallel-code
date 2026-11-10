@@ -37,13 +37,7 @@ import { DEFAULT_WAIT_TIMEOUT_MS, SignalWaits } from './coordinator/signal-waits
 import type { Notify } from '../ipc/notify.js';
 import { createTask as createBackendTask, deleteTask } from '../ipc/tasks.js';
 import { getSkipPermissionsArgs, stripPermissionBypassArgs } from '../shared/skip-permissions.js';
-import {
-  spawnAgent,
-  killAgent,
-  subscribeToAgent,
-  getActiveAgentIds,
-  getAgentMeta,
-} from '../ipc/pty.js';
+import { spawnAgent, killAgent, subscribeToAgent } from '../ipc/pty.js';
 import {
   clampCoordinatorConcurrentTasks,
   DEFAULT_COORDINATOR_CONCURRENT_TASKS,
@@ -95,6 +89,13 @@ import {
   getTaskDiff,
   getTaskOutput,
 } from './coordinator/task-queries.js';
+import {
+  assertParentAdmission,
+  stopChildren,
+  resumeChildren,
+  reserveChildRestart,
+  countInFlightSubTasks,
+} from './coordinator/admission.js';
 const REST_COORDINATOR_SENTINEL = 'api';
 
 export class Coordinator implements CoordinatorInternals {
@@ -371,15 +372,15 @@ export class Coordinator implements CoordinatorInternals {
     const epoch = coordinatorState.launchEpoch ?? 0;
     const assertNativeLaunch = () => {
       if (isAgentCreation) assertOrchestrationEnabled(this);
-      this.assertParentAdmission(coordinatorId, epoch);
+      assertParentAdmission(this, coordinatorId, epoch);
       opts.nativeLaunchGuard?.();
-      this.assertParentAdmission(coordinatorId, epoch);
+      assertParentAdmission(this, coordinatorId, epoch);
     };
     const assertLaunch = async () => {
       if (isAgentCreation) assertOrchestrationEnabled(this);
-      this.assertParentAdmission(coordinatorId, epoch);
+      assertParentAdmission(this, coordinatorId, epoch);
       await opts.launchGuard?.();
-      this.assertParentAdmission(coordinatorId, epoch);
+      assertParentAdmission(this, coordinatorId, epoch);
     };
     await assertLaunch();
 
@@ -389,7 +390,7 @@ export class Coordinator implements CoordinatorInternals {
       coordinatorState.maxConcurrentSubTasks ?? DEFAULT_COORDINATOR_CONCURRENT_TASKS,
     );
     const inFlight =
-      this.countInFlightSubTasks(coordinatorId) +
+      countInFlightSubTasks(this, coordinatorId) +
       (this.pendingCreateCounts.get(coordinatorId) ?? 0);
     if (inFlight >= maxConcurrent) {
       throw new Error(
@@ -425,80 +426,16 @@ export class Coordinator implements CoordinatorInternals {
     }
   }
 
-  private assertParentAdmission(parentId: string, epoch?: number): CoordinatorState {
-    const parent = this.coordinators.get(parentId);
-    if (!parent || parent.lifecycle === 'closing' || parent.lifecycle === 'closed') {
-      throw new Error('The parent task is closing or unavailable.');
-    }
-    if (parent.paused || (epoch !== undefined && epoch !== (parent.launchEpoch ?? 0))) {
-      throw new Error(
-        'Child launches are paused or this launch was canceled. Resume explicitly to launch again.',
-      );
-    }
-    return parent;
-  }
-
   stopChildren(parentId: string): void {
-    const parent = this.coordinators.get(parentId);
-    if (!parent) throw new Error('Parent task not registered.');
-    parent.paused = true;
-    parent.launchEpoch = (parent.launchEpoch ?? 0) + 1;
-    for (const task of this.tasks.values()) {
-      if (task.coordinatorTaskId !== parentId) continue;
-      this.prompts.clearPromptDeliveryState(task.id);
-      task.pendingPrompts = undefined;
-      task.promptQueuedAt = undefined;
-      this.controlMap.set(task.id, 'human');
-      for (const agentId of agentIdsForTask(task)) killAgent(agentId);
-    }
+    stopChildren(this, parentId);
   }
 
   resumeChildren(parentId: string): void {
-    const parent = this.coordinators.get(parentId);
-    if (!parent || parent.lifecycle === 'closing' || parent.lifecycle === 'closed') {
-      throw new Error('Parent task unavailable.');
-    }
-    parent.paused = false;
+    resumeChildren(this, parentId);
   }
 
-  /** Reserve before a restored/stopped child is spawned; release in the caller's finally. */
   reserveChildRestart(taskId: string): (() => void) & { assertAllowed: () => void } {
-    const task = this.tasks.get(taskId);
-    if (!task) return Object.assign(() => {}, { assertAllowed: () => {} });
-    const parent = this.assertParentAdmission(task.coordinatorTaskId);
-    const epoch = parent.launchEpoch ?? 0;
-    const assertAllowed = () => {
-      this.assertParentAdmission(task.coordinatorTaskId, epoch);
-      if (
-        this.tasks.get(taskId) !== task ||
-        this.integratingTaskIds.has(taskId) ||
-        this.closingTaskIds.has(taskId)
-      ) {
-        throw new Error('Child restart was canceled or integration is in progress.');
-      }
-    };
-    if (this.integratingTaskIds.has(taskId)) throw new Error('Task integration is in progress.');
-    // Replacing an existing PTY does not consume an additional task slot.
-    if (this.isChildInFlight(task)) return Object.assign(() => {}, { assertAllowed });
-    const parentId = task.coordinatorTaskId;
-    const pending = this.pendingCreateCounts.get(parentId) ?? 0;
-    const limit = clampCoordinatorConcurrentTasks(
-      parent.maxConcurrentSubTasks ?? DEFAULT_COORDINATOR_CONCURRENT_TASKS,
-    );
-    if (this.countInFlightSubTasks(parentId) + pending >= limit)
-      throw new Error('Child concurrency limit reached.');
-    this.pendingCreateCounts.set(parentId, pending + 1);
-    let released = false;
-    return Object.assign(
-      () => {
-        if (released) return;
-        released = true;
-        const remaining = (this.pendingCreateCounts.get(parentId) ?? 1) - 1;
-        if (remaining > 0) this.pendingCreateCounts.set(parentId, remaining);
-        else this.pendingCreateCounts.delete(parentId);
-      },
-      { assertAllowed },
-    );
+    return reserveChildRestart(this, taskId);
   }
 
   /** Detach first; the caller persists these IDs before removing the parent's worktree. */
@@ -538,23 +475,6 @@ export class Coordinator implements CoordinatorInternals {
       throw new Error('The child is being integrated. Wait for integration before detaching.');
     this.removeCoordinatedTask(childId);
     return task.coordinatorTaskId;
-  }
-
-  private isChildInFlight(task: CoordinatedTask): boolean {
-    return (
-      (task.status !== 'exited' && task.status !== 'error') ||
-      getActiveAgentIds().some((agentId) => getAgentMeta(agentId)?.taskId === task.id)
-    );
-  }
-
-  private countInFlightSubTasks(coordinatorId: string): number {
-    let count = 0;
-    for (const task of this.tasks.values()) {
-      if (task.coordinatorTaskId !== coordinatorId) continue;
-      if (!this.isChildInFlight(task)) continue;
-      count++;
-    }
-    return count;
   }
 
   private async createTaskUnchecked(
