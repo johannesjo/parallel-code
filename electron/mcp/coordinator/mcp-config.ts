@@ -8,6 +8,7 @@ import {
   getSubTaskMcpConfigPath,
   isAllowedSubTaskMcpConfigPath,
   writeSubTaskMcpConfigSync,
+  type SubTaskMcpConfig,
 } from '../config.js';
 import {
   buildMcpLaunchArgs,
@@ -68,15 +69,11 @@ export function refreshChildMcpConfigs(
     if (!safeMcpConfigPath && !task.antigravityWorkspaceMcp) continue;
     // Preserve existing doneToken; generate a fresh one if not yet set (e.g. older persisted task).
     if (!task.doneToken) task.doneToken = randomBytes(24).toString('base64url');
-    const session = sessionMcpProvider?.(task);
-    const mcpConfig = buildSubTaskMcpConfig({
-      serverPath,
-      serverUrl,
-      subtaskToken: session?.token ?? subtaskToken,
-      sessionCapabilities: session?.sessionCapabilities,
-      taskId: task.id,
-      doneToken: task.doneToken,
-    });
+    const { mcpConfig } = buildTaskMcpConfig(
+      task,
+      { serverPath, serverUrl, subtaskToken, doneToken: task.doneToken },
+      sessionMcpProvider,
+    );
     if (safeMcpConfigPath && mcpConfigPath) writeSubTaskMcpConfigSync(mcpConfigPath, mcpConfig);
     if (!task.antigravityWorkspaceMcp || !existsSync(task.worktreePath)) continue;
     try {
@@ -89,6 +86,27 @@ export function refreshChildMcpConfigs(
       });
     }
   }
+}
+
+/**
+ * Builds the MCP config a sub-task's agent starts with. A session of the
+ * task's own replaces the coordinator's shared sub-task token.
+ */
+export function buildTaskMcpConfig(
+  task: CoordinatedTask,
+  server: { serverPath: string; serverUrl: string; subtaskToken: string; doneToken: string },
+  sessionMcpProvider: SessionMcpProvider | undefined,
+): { mcpConfig: SubTaskMcpConfig; session: ReturnType<SessionMcpProvider> } {
+  const session = sessionMcpProvider?.(task);
+  const mcpConfig = buildSubTaskMcpConfig({
+    serverPath: server.serverPath,
+    serverUrl: server.serverUrl,
+    subtaskToken: session?.token ?? server.subtaskToken,
+    sessionCapabilities: session?.sessionCapabilities,
+    taskId: task.id,
+    doneToken: server.doneToken,
+  });
+  return { mcpConfig, session };
 }
 
 /** Write a restored or relaunched child's MCP config; returns its MCP launch args. */
@@ -105,15 +123,11 @@ export function rewriteSubtaskMcpConfig(
   if (!serverInfo) return undefined;
   const { serverUrl, subtaskToken, serverPath } = serverInfo;
   if (!task.doneToken) task.doneToken = randomBytes(24).toString('base64url');
-  const session = sessionMcpProvider?.(task);
-  const mcpConfig = buildSubTaskMcpConfig({
-    serverPath,
-    serverUrl,
-    subtaskToken: session?.token ?? subtaskToken,
-    sessionCapabilities: session?.sessionCapabilities,
-    taskId: task.id,
-    doneToken: task.doneToken,
-  });
+  const { mcpConfig, session } = buildTaskMcpConfig(
+    task,
+    { serverPath, serverUrl, subtaskToken, doneToken: task.doneToken },
+    sessionMcpProvider,
+  );
   if (session && !mcpConfigPath) {
     mcpConfigPath = getSubTaskMcpConfigPath(parent?.dockerContainerName, serverPath, task.id);
     task.mcpConfigPath = mcpConfigPath;

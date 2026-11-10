@@ -3,11 +3,7 @@
 import { randomUUID, randomBytes } from 'crypto';
 import { unlink as fsUnlink } from 'fs/promises';
 import { dirname } from 'path';
-import {
-  buildSubTaskMcpConfig,
-  getSubTaskMcpConfigPath,
-  writeSubTaskMcpConfig,
-} from '../config.js';
+import { getSubTaskMcpConfigPath, writeSubTaskMcpConfig } from '../config.js';
 import { buildMcpLaunchArgs, isAntigravityCommand } from '../agent-args.js';
 import { writeAntigravityMcpConfig } from '../antigravity-config.js';
 import { validateBranchName } from '../validation.js';
@@ -17,7 +13,7 @@ import {
   type InjectedSubTaskPreamble,
 } from '../preamble.js';
 import { execAsync, execStdout, currentBranch } from './child-git.js';
-import { buildTaskMcpLaunchArgs } from './mcp-config.js';
+import { buildTaskMcpConfig, buildTaskMcpLaunchArgs } from './mcp-config.js';
 import type { CoordinatorInternals } from './internals.js';
 import { INITIAL_PROMPT_READY_DELAY_MS } from './prompts.js';
 import { createTask as createBackendTask, deleteTask } from '../../ipc/tasks.js';
@@ -278,15 +274,11 @@ async function createTaskUnchecked(
       const { serverUrl, subtaskToken, serverPath } = mcpServerInfoForTask;
       const doneToken = randomBytes(24).toString('base64url');
       task.doneToken = doneToken;
-      const session = c.sessionMcpProvider?.(task);
-      const mcpConfig = buildSubTaskMcpConfig({
-        serverPath,
-        serverUrl,
-        subtaskToken: session?.token ?? subtaskToken,
-        sessionCapabilities: session?.sessionCapabilities,
-        taskId: task.id,
-        doneToken,
-      });
+      const { mcpConfig } = buildTaskMcpConfig(
+        task,
+        { serverPath, serverUrl, subtaskToken, doneToken },
+        c.sessionMcpProvider,
+      );
       subTaskMcpConfig = mcpConfig;
       const configPath = getSubTaskMcpConfigPath(dockerContainerName, serverPath, task.id);
       await writeSubTaskMcpConfig(configPath, mcpConfig);
