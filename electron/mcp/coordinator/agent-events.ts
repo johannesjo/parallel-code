@@ -22,10 +22,7 @@ const HOOK_TOOL_EVENTS: ReadonlySet<string> = new Set([
 
 /** True for a tool hook that belongs to a turn the user has already interrupted.
  *  Turn boundaries (UserPromptSubmit, SessionStart, Stop) end the window early. */
-export function isToolHookOfInterruptedTurn(
-  c: CoordinatorInternals,
-  evt: AgentHookEventPayload,
-): boolean {
+function isToolHookOfInterruptedTurn(c: CoordinatorInternals, evt: AgentHookEventPayload): boolean {
   const since = c.interruptedAt.get(evt.agentId);
   if (since === undefined) return false;
   if (!HOOK_TOOL_EVENTS.has(evt.event) || evt.at - since >= HOOK_INTERRUPT_SUPPRESS_MS) {
@@ -35,7 +32,7 @@ export function isToolHookOfInterruptedTurn(
   return true;
 }
 
-export function handleAgentHookEvent(c: CoordinatorInternals, evt: AgentHookEventPayload): void {
+function handleAgentHookEvent(c: CoordinatorInternals, evt: AgentHookEventPayload): void {
   const task = findTaskByAgentId(c, evt.agentId);
   if (!task) return;
   // A hook fired by a session that already exited must not revive its task.

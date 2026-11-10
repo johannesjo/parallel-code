@@ -14,7 +14,7 @@ import type { CoordinatorPrompts } from './prompts.js';
 import type { SignalWaits } from './signal-waits.js';
 
 /** Why a waitForIdle caller was released. */
-export type IdleWaitResult = { reason: 'idle' | 'human_control' | 'exited' | 'removed' };
+type IdleWaitResult = { reason: 'idle' | 'human_control' | 'exited' | 'removed' };
 
 /**
  * State the Coordinator owns, as the function modules in this directory see it.

@@ -37,11 +37,7 @@ import { CoordinatorNotifications } from './coordinator/notifications.js';
 import { CoordinatorLanding, type MergedLines } from './coordinator/landing.js';
 import { ChildArchiver } from './coordinator/archive.js';
 import { CoordinatorPrompts, INITIAL_PROMPT_READY_DELAY_MS } from './coordinator/prompts.js';
-import {
-  clampWaitTimeoutMs,
-  DEFAULT_WAIT_TIMEOUT_MS,
-  SignalWaits,
-} from './coordinator/signal-waits.js';
+import { DEFAULT_WAIT_TIMEOUT_MS, SignalWaits } from './coordinator/signal-waits.js';
 import type { Notify } from '../ipc/notify.js';
 import { createTask as createBackendTask, deleteTask } from '../ipc/tasks.js';
 import { getSkipPermissionsArgs, stripPermissionBypassArgs } from '../shared/skip-permissions.js';
@@ -101,6 +97,7 @@ import {
   clearAgentOutputState,
   listenToAgentEvents,
 } from './coordinator/agent-events.js';
+import { waitForIdle } from './coordinator/idle-waits.js';
 const REST_COORDINATOR_SENTINEL = 'api';
 
 export class Coordinator implements CoordinatorInternals {
@@ -956,66 +953,7 @@ export class Coordinator implements CoordinatorInternals {
     taskId: string,
     timeoutMs?: number,
   ): Promise<{ reason: 'idle' | 'human_control' | 'exited' | 'removed' }> {
-    return this.waitForIdleInternal(
-      taskId,
-      clampWaitTimeoutMs(timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS),
-    );
-  }
-
-  private waitForIdleInternal(
-    taskId: string,
-    timeoutMs: number,
-  ): Promise<{ reason: 'idle' | 'human_control' | 'exited' | 'removed' }> {
-    const task = this.tasks.get(taskId);
-    if (!task) return Promise.reject(new Error(`Task not found: ${taskId}`));
-    if (this.controlMap.get(taskId) === 'human') {
-      if (task.initialPrompt || this.prompts.hasQueuedWork(task)) {
-        return this.waitForIdleResolver(taskId, timeoutMs);
-      }
-      return Promise.resolve({ reason: 'human_control' }); // resolve immediately — caller gets control-change event instead
-    }
-    if (task.status === 'exited') return Promise.resolve({ reason: 'exited' });
-    // An errored task never reaches idle; 'exited' is the closest terminal reason.
-    if (task.status === 'error') return Promise.resolve({ reason: 'exited' });
-    // Idle only counts once the assignment was delivered and nothing is queued;
-    // otherwise the ❯ seen so far is the startup prompt, not finished work.
-    if (task.status === 'idle' && !this.prompts.hasUndeliveredPrompt(task)) {
-      return Promise.resolve({ reason: 'idle' });
-    }
-
-    return this.waitForIdleResolver(taskId, timeoutMs);
-  }
-
-  private waitForIdleResolver(
-    taskId: string,
-    timeoutMs: number,
-  ): Promise<{ reason: 'idle' | 'human_control' | 'exited' | 'removed' }> {
-    return new Promise((resolve, reject) => {
-      const timerRef = { value: undefined as ReturnType<typeof setTimeout> | undefined };
-
-      const wrappedResolve = (result: {
-        reason: 'idle' | 'human_control' | 'exited' | 'removed';
-      }) => {
-        if (timerRef.value !== undefined) clearTimeout(timerRef.value);
-        resolve(result);
-      };
-
-      timerRef.value = setTimeout(() => {
-        const resolvers = this.idleResolvers.get(taskId);
-        if (resolvers) {
-          const idx = resolvers.indexOf(wrappedResolve);
-          if (idx >= 0) resolvers.splice(idx, 1);
-        }
-        reject(new Error(`Timed out waiting for task ${taskId} to become idle`));
-      }, timeoutMs);
-
-      let resolvers = this.idleResolvers.get(taskId);
-      if (!resolvers) {
-        resolvers = [];
-        this.idleResolvers.set(taskId, resolvers);
-      }
-      resolvers.push(wrappedResolve);
-    });
+    return waitForIdle(this, taskId, timeoutMs);
   }
 
   async getTaskDiff(taskId: string): Promise<ApiDiffResult> {
