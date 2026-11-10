@@ -405,6 +405,8 @@ fun AgentsScreen(
     computers: List<SavedComputer> = emptyList(),
     onSwitchComputer: (String) -> Unit = {},
     onSwitchNetwork: () -> Unit = {},
+    /** Set while Android withholds local network access (see [LOCAL_NETWORK_PERMISSION]). */
+    onAllowLocalNetwork: (() -> Unit)? = null,
     search: String = "",
     onSearch: (String) -> Unit = {},
     filter: TaskFilter = TaskFilter.ALL,
@@ -618,6 +620,21 @@ fun AgentsScreen(
                                 if (state.status == ConnectionStatus.WAITING_FOR_VPN) "Waiting for VPN connection…" else "Reaching your computer…",
                                 color = AppTheme.extra.textMuted,
                             )
+                        }
+                    }
+                    // Without it every connection over Wi-Fi times out, which looks like an unreachable computer.
+                    if (onAllowLocalNetwork != null && state.status != ConnectionStatus.WAITING_FOR_VPN) {
+                        item {
+                            Column(Modifier.padding(horizontal = 24.dp)) {
+                                Text(
+                                    "Android blocks this app from your Wi-Fi network until you allow it to reach nearby devices.",
+                                    color = AppTheme.extra.textMuted,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                OutlinedButton(onClick = onAllowLocalNetwork, modifier = Modifier.padding(top = 8.dp)) {
+                                    Text("Allow access", color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
                         }
                     }
                     // Where a user away from home Wi-Fi is looking; the top-bar button is easy to miss.

@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -74,6 +75,16 @@ class PhoneViewModel internal constructor(application: Application, internal val
 
     /** An agent to open, from a tapped notification. */
     val openAgentRequest = MutableStateFlow<String?>(null)
+
+    private val _localNetworkBlocked = MutableStateFlow(false)
+
+    /** True while Android withholds local network access, so Wi-Fi connections time out. */
+    val localNetworkBlocked: StateFlow<Boolean> = _localNetworkBlocked.asStateFlow()
+
+    /** Reads the grant again: on returning to the app (e.g. from system settings) and after a prompt. */
+    fun refreshLocalNetworkAccess() {
+        _localNetworkBlocked.value = demo == null && lacksLocalNetworkAccess(getApplication())
+    }
 
     private val _notifications = MutableStateFlow(readNotificationPrefs())
     val notifications: StateFlow<NotificationPrefs> = _notifications.asStateFlow()
@@ -341,6 +352,7 @@ class MainActivity : ComponentActivity() {
         // Android hides the Wi-Fi name from apps in the background, so a name read while only the
         // notification service was running is blank. Read it again now that the app is visible.
         (application as PhoneApplication).networkMonitor.setForeground(true)
+        model.refreshLocalNetworkAccess()
         model.client.start(HOLDER)
         model.client.resumeViewSize()
         AgentWatchService.sync(this)
@@ -424,6 +436,37 @@ private fun PhoneApp(model: PhoneViewModel, onDemo: () -> Unit) {
         )
         return
     }
+    // Android 17 lets no connection through to the computer's Wi-Fi address until this is granted.
+    val localNetworkBlocked by model.localNetworkBlocked.collectAsState()
+    val activity = LocalContext.current as? Activity
+    var localNetworkAsked by rememberSaveable { mutableStateOf(false) }
+    // Whether Android would explain the request, read before asking (see the launcher below).
+    var localNetworkRationaleBefore by remember { mutableStateOf<Boolean?>(null) }
+    val localNetworkPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        model.refreshLocalNetworkAccess()
+        val rationaleBefore = localNetworkRationaleBefore
+        localNetworkRationaleBefore = null
+        if (granted) {
+            model.client.reconnect()
+        } else if (
+            rationaleBefore == false && activity?.shouldShowRequestPermissionRationale(LOCAL_NETWORK_PERMISSION) == false
+        ) {
+            // Android no longer shows its prompt after repeated refusals; only system settings can grant it.
+            activity?.let {
+                it.startActivity(
+                    Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", it.packageName, null),
+                    ),
+                )
+            }
+        }
+    }
+    LaunchedEffect(localNetworkBlocked) {
+        if (!localNetworkBlocked || localNetworkAsked) return@LaunchedEffect
+        localNetworkAsked = true
+        localNetworkPermission.launch(LOCAL_NETWORK_PERMISSION)
+    }
     // Predictive back: the screen shrinks and slides with the swipe, and only leaves on release.
     var backProgress by remember { mutableFloatStateOf(0f) }
     if (screen != Screen.Agents) {
@@ -477,6 +520,13 @@ private fun PhoneApp(model: PhoneViewModel, onDemo: () -> Unit) {
                     computers = computers,
                     onSwitchComputer = { model.client.switchTo(it) },
                     onSwitchNetwork = { model.client.switchNetwork() },
+                    onAllowLocalNetwork = if (localNetworkBlocked) {
+                        {
+                            localNetworkRationaleBefore =
+                                activity?.shouldShowRequestPermissionRationale(LOCAL_NETWORK_PERMISSION)
+                            localNetworkPermission.launch(LOCAL_NETWORK_PERMISSION)
+                        }
+                    } else null,
                     search = taskSearch,
                     onSearch = { taskSearch = it },
                     filter = TaskFilter.fromKey(taskFilterKey),
