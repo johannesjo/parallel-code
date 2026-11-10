@@ -7,7 +7,12 @@ import { onPtyEvent, subscribeToAgent, unsubscribeFromAgent } from '../../ipc/pt
 import { onAgentHookEvent } from '../../agent-hooks/events.js';
 import type { AgentHookEventPayload } from '../../agent-hooks/status.js';
 import type { CoordinatedTask } from '../types.js';
-import { findTaskByAgentId, advanceReviewRevision, withdrawCloseSuggestion } from './internals.js';
+import {
+  findTaskByAgentId,
+  advanceReviewRevision,
+  resolveIdleWaiters,
+  withdrawCloseSuggestion,
+} from './internals.js';
 
 // Tool hooks of an interrupted turn can still land shortly after the Esc; no
 // Stop follows them, so they must not re-arm hook ownership (mirrors the
@@ -106,11 +111,7 @@ export function listenToAgentEvents(c: CoordinatorInternals): void {
         task.status = 'exited';
         task.exitCode = exitCode ?? null;
         // Resolve any idle waiters so they don't hang
-        const resolvers = c.idleResolvers.get(task.id);
-        if (resolvers?.length) {
-          for (const resolve of resolvers) resolve({ reason: 'exited' });
-          c.idleResolvers.delete(task.id);
-        }
+        resolveIdleWaiters(c, task.id, 'exited');
         // Closing and archiving stop the agent on purpose; neither is a result to report.
         if (c.closingTaskIds.has(task.id) || task.archived) break;
         c.signalWaits.deliverExitToSignalWaiter(task);

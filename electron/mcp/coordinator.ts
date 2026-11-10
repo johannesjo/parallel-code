@@ -32,6 +32,7 @@ import {
   advanceReviewRevision,
   isClosingOrIntegrating,
   notifyRenderer,
+  resolveIdleWaiters,
 } from './coordinator/internals.js';
 import { listenToAgentEvents } from './coordinator/agent-events.js';
 import { waitForIdle } from './coordinator/idle-waits.js';
@@ -199,21 +200,13 @@ export class Coordinator implements CoordinatorInternals {
     this.controlMap.set(taskId, who);
     if (who === 'human') {
       // Resolve any pending idle waiters immediately — human has taken over
-      const resolvers = this.idleResolvers.get(taskId);
-      if (resolvers?.length) {
-        for (const resolve of resolvers) resolve({ reason: 'human_control' });
-        this.idleResolvers.delete(taskId);
-      }
+      resolveIdleWaiters(this, taskId, 'human_control');
     }
     if (who === 'coordinator') {
       // A body typed before its Enter failed is queued work too: it still needs submitting.
       const hasQueuedWork = Boolean(task.initialPrompt) || this.prompts.hasQueuedWork(task);
       // Fire any idle resolvers queued while human had control
-      const resolvers = this.idleResolvers.get(taskId);
-      if (!hasQueuedWork && resolvers?.length) {
-        for (const resolve of resolvers) resolve({ reason: 'idle' });
-        this.idleResolvers.delete(taskId);
-      }
+      if (!hasQueuedWork) resolveIdleWaiters(this, taskId, 'idle');
       if (task.initialPrompt) {
         this.prompts.clearInitialPromptTimer(task.id);
         this.prompts.scheduleInitialPromptDelivery(task, 0);
