@@ -11,9 +11,14 @@ const { invoke } = await import('../lib/ipc');
 
 let mockActiveTaskId: string | null = null;
 let mockTasks: Record<string, unknown> = {};
+let mockAgents: Record<string, unknown> = {};
 const core = vi.hoisted(() => ({
   harness: undefined as
-    | MockStoreHarness<{ activeTaskId: string | null; tasks: Record<string, unknown> }>
+    | MockStoreHarness<{
+        activeTaskId: string | null;
+        tasks: Record<string, unknown>;
+        agents: Record<string, unknown>;
+      }>
     | undefined,
 }));
 vi.mock('./core', async () => {
@@ -30,6 +35,12 @@ vi.mock('./core', async () => {
     },
     set tasks(next) {
       mockTasks = next;
+    },
+    get agents() {
+      return mockAgents;
+    },
+    set agents(next) {
+      mockAgents = next;
     },
   });
   return core.harness.moduleMock();
@@ -101,6 +112,7 @@ describe('agentHookStatus', () => {
     vi.setSystemTime(1_000_000);
     mockActiveTaskId = 't1';
     mockTasks = { t1: { agentIds: ['a1', 'a2'] } };
+    mockAgents = {};
   });
 
   afterEach(() => {
@@ -185,6 +197,41 @@ describe('agentHookStatus', () => {
       event({ state: 'waiting', event: 'PermissionRequest', prompt: 'permission' }),
     );
     noteAgentTerminalInput('a1', '2', noScreen);
+    expect(getAgentHookStatus('a1')?.state).toBe('working');
+  });
+
+  it('treats the letters a Codex approval dialog offers as an answer, for a Codex agent only', () => {
+    const ask = (toolName: string) =>
+      applyAgentHookEvent(
+        event({ state: 'waiting', event: 'PermissionRequest', prompt: 'permission', toolName }),
+      );
+    const stateAfter = (toolName: string, key: string) => {
+      ask(toolName);
+      noteAgentTerminalInput('a1', key, noScreen);
+      return getAgentHookStatus('a1')?.state;
+    };
+    // Claude's dialog has no letter shortcuts, so a typed letter answers nothing.
+    expect(stateAfter('Bash', 'y')).toBe('waiting');
+
+    mockAgents = { a1: { def: { command: '/usr/local/bin/codex' } } };
+    // As Codex CLI 0.167.0 lists them: (y) and (p) for a command, (y) and (a) for a file edit.
+    expect(stateAfter('Bash', 'y')).toBe('working');
+    expect(stateAfter('Bash', 'p')).toBe('working');
+    expect(stateAfter('apply_patch', 'y')).toBe('working');
+    expect(stateAfter('apply_patch', 'a')).toBe('working');
+    expect(getAgentHookStatus('a1')?.event).toBe('PermissionAnswered');
+    // Codex ignores a letter its dialog does not offer, and the dialog stays up.
+    expect(stateAfter('Bash', 'a')).toBe('waiting');
+    expect(stateAfter('apply_patch', 'p')).toBe('waiting');
+    // A decline is not inferred: Codex reports it as an interrupt.
+    expect(stateAfter('Bash', 'n')).toBe('waiting');
+  });
+
+  it('leaves Esc during a Codex turn to the interrupt Codex reports itself', () => {
+    mockAgents = { a1: { def: { command: 'codex' } } };
+    applyAgentHookEvent(event({ state: 'working' }));
+    noteAgentTerminalInput('a1', '\x1b', noScreen);
+    vi.advanceTimersByTime(5_000);
     expect(getAgentHookStatus('a1')?.state).toBe('working');
   });
 

@@ -37,6 +37,7 @@ import {
 } from '../agent-hooks/observations.js';
 import { HOOK_PTY_ENV_KEYS } from '../agent-hooks/hook-script.js';
 import { isClaudeCommand, withClaudeHookSettings } from '../agent-hooks/launch-args.js';
+import { hasCodexHookOverride, isCodexCommand } from '../agent-hooks/codex-hooks.js';
 import { debug as logDebug, warn as logWarn } from '../log.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -757,11 +758,14 @@ function attachPtyOutputHandlers(
   });
 }
 
-/** What a Claude launch needs to self-report status; null until the hook server is up. */
+/** What a launch needs to self-report status; null until the hook server is up. */
 export interface AgentHookRuntime {
   /** The `--settings` file for a launch in `cwd`: the hooks, plus the usage
    *  status line wrapped around whatever status line the user runs there. */
   claudeSettingsPath(cwd: string, env: Record<string, string>): string;
+  /** The flags that register the hooks for a Codex launch; none when this
+   *  Codex cannot take them. */
+  codexHookArgs(command: string, env: Record<string, string>): Promise<string[]>;
   buildPtyEnv(agentId: string, taskId: string, launchId: string): Record<string, string>;
 }
 
@@ -771,6 +775,11 @@ export function setAgentHookRuntime(runtime: AgentHookRuntime | null): void {
   agentHookRuntime = runtime;
 }
 
+type HookLaunchArgs = Pick<
+  SpawnAgentArgs,
+  'agentId' | 'taskId' | 'args' | 'isShell' | 'dockerMode'
+>;
+
 /**
  * Adds hook identity env and `--settings` so a Claude Code agent reports its
  * own status. Shells get nothing (the user runs whatever they like there),
@@ -778,7 +787,7 @@ export function setAgentHookRuntime(runtime: AgentHookRuntime | null): void {
  * and other agents get nothing because they could only ever forge with it.
  */
 export function applyAgentHookLaunch(
-  args: Pick<SpawnAgentArgs, 'agentId' | 'taskId' | 'args' | 'isShell' | 'dockerMode'>,
+  args: HookLaunchArgs,
   command: string,
   cwd: string,
   spawnEnv: Record<string, string>,
@@ -793,6 +802,40 @@ export function applyAgentHookLaunch(
     args.args,
     agentHookRuntime.claudeSettingsPath(cwd, spawnEnv),
   );
+}
+
+/** The hook runtime for a Codex launch that may report its own status, under
+ *  the same exclusions as a Claude launch; null for every other launch. */
+function codexHookRuntime(args: HookLaunchArgs, command: string): AgentHookRuntime | null {
+  if (args.isShell || args.dockerMode || !isCodexCommand(command)) return null;
+  return hasCodexHookOverride(args.args) ? null : agentHookRuntime;
+}
+
+/** Adds Codex's hook flags and the hook identity env, when this Codex can take them. */
+async function applyCodexHookLaunch(
+  runtime: AgentHookRuntime,
+  args: HookLaunchArgs,
+  launch: { command: string; spawnEnv: Record<string, string>; launchId: string },
+): Promise<string[]> {
+  const hookArgs = await runtime.codexHookArgs(launch.command, launch.spawnEnv);
+  if (hookArgs.length === 0) return args.args;
+  Object.assign(launch.spawnEnv, runtime.buildPtyEnv(args.agentId, args.taskId, launch.launchId));
+  // First, so they stay global options whatever subcommand the launch names.
+  return [...hookArgs, ...args.args];
+}
+
+/** Runs asynchronous startup work, and fails once the agent was stopped or
+ *  restarted in the meantime, so a cancelled launch never reaches its spawn. */
+async function whilePending<T>(agentId: string, work: () => Promise<T>): Promise<T> {
+  const pending = Symbol();
+  pendingSpawns.set(agentId, pending);
+  try {
+    const result = await work();
+    if (pendingSpawns.get(agentId) !== pending) throw new Error('Agent startup cancelled');
+    return result;
+  } finally {
+    if (pendingSpawns.get(agentId) === pending) pendingSpawns.delete(agentId);
+  }
 }
 
 export async function spawnAgent(
@@ -859,16 +902,7 @@ export async function spawnAgent(
     // Resolve the repo root once — each helper would otherwise spawn its own
     // `git rev-parse` subprocess.
     const repoRoot = detectRepoRoot(cwd);
-    const pending = Symbol();
-    pendingSpawns.set(args.agentId, pending);
-    try {
-      await ensureClaudeSandboxFiles(cwd, repoRoot);
-      if (pendingSpawns.get(args.agentId) !== pending) {
-        throw new Error('Agent startup cancelled');
-      }
-    } finally {
-      if (pendingSpawns.get(args.agentId) === pending) pendingSpawns.delete(args.agentId);
-    }
+    await whilePending(args.agentId, () => ensureClaudeSandboxFiles(cwd, repoRoot));
     ensureSandboxExcludes(cwd);
     ensureWorktreeContainerExclude(cwd);
     // Migrate legacy whole-dir node_modules symlinks and pick up packages
@@ -878,7 +912,13 @@ export async function spawnAgent(
 
   // After the seeding above: the user's status line can live in the worktree's
   // `.claude/` settings, which only exist once they are copied in.
-  const launchArgs = applyAgentHookLaunch(args, command, cwd, spawnEnv, launchId);
+  const codexHooks = codexHookRuntime(args, command);
+  // Codex is asked which hooks it accepts; every other launch has nothing to wait for.
+  const launchArgs = codexHooks
+    ? await whilePending(args.agentId, () =>
+        applyCodexHookLaunch(codexHooks, args, { command, spawnEnv, launchId }),
+      )
+    : applyAgentHookLaunch(args, command, cwd, spawnEnv, launchId);
   const spawnSpec = buildPtySpawnSpec({ ...args, args: launchArgs }, command, cwd, spawnEnv);
 
   logDebug('pty', `spawn command ${args.agentId}`, {

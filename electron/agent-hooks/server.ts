@@ -20,11 +20,14 @@ import {
   buildHookScript,
   buildStatusLineScript,
 } from './hook-script.js';
+import { mapCodexHookPayload } from './codex-status.js';
 import { isCurrentAgentLaunch } from './observations.js';
 import { mapClaudeHookPayload, type AgentHookEventPayload } from './status.js';
 import { createSubagentGate } from './subagents.js';
 import { readUserStatusLine } from './user-status-line.js';
 import { warn as logWarn, errMessage } from '../log.js';
+
+const ROUTES: ReadonlySet<string> = new Set(['/hook/claude', '/hook/codex', '/usage/claude']);
 
 /** Hook payloads are small; anything larger is not a hook. */
 const MAX_BODY_BYTES = 64 * 1024;
@@ -33,6 +36,8 @@ export interface AgentHookServerOptions {
   /** Directory for the endpoint file, hook script, and Claude settings. */
   dir: string;
   onEvent: (event: AgentHookEventPayload) => void;
+  /** Also given each event that came from Codex, after `onEvent`. */
+  onCodexEvent?: (event: AgentHookEventPayload) => void;
   /** A Claude Code status line payload, which carries the rate-limit windows. */
   onUsage?: (payload: unknown) => void;
   now?: () => number;
@@ -41,10 +46,12 @@ export interface AgentHookServerOptions {
 export interface AgentHookServer {
   port: number;
   hookScriptPath: string;
+  /** The script a Codex launch registers; it posts to Codex's own route. */
+  codexHookScriptPath: string;
   statusLineScriptPath: string;
   /** The `--settings` file for a Claude launch in `cwd` with `env`. */
   claudeSettingsPath(cwd: string, env: Record<string, string | undefined>): string;
-  /** Env the PTY layer merges into a Claude launch so the script can find us. */
+  /** Env the PTY layer merges into a hooked launch so the script can find us. */
   buildPtyEnv(agentId: string, taskId: string, launchId: string): Record<string, string>;
   close(): Promise<void>;
 }
@@ -91,6 +98,7 @@ function parseJson(body: string | null): unknown {
 
 interface HookFiles {
   hookScriptPath: string;
+  codexHookScriptPath: string;
   statusLineScriptPath: string;
   /** Hooks only: for a launch whose own status line could not be read. */
   hooksOnlySettingsPath: string;
@@ -100,10 +108,12 @@ function writeFiles(dir: string, port: number, token: string): HookFiles {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const endpointPath = path.join(dir, 'endpoint.env');
   const hookScriptPath = path.join(dir, 'hook.sh');
+  const codexHookScriptPath = path.join(dir, 'codex-hook.sh');
   const statusLineScriptPath = path.join(dir, 'statusline.sh');
   const hooksOnlySettingsPath = path.join(dir, 'claude-settings.json');
   fs.writeFileSync(endpointPath, buildEndpointFile(port, token), { mode: 0o600 });
-  fs.writeFileSync(hookScriptPath, buildHookScript(), { mode: 0o755 });
+  fs.writeFileSync(hookScriptPath, buildHookScript('claude'), { mode: 0o755 });
+  fs.writeFileSync(codexHookScriptPath, buildHookScript('codex'), { mode: 0o755 });
   fs.writeFileSync(statusLineScriptPath, buildStatusLineScript(), { mode: 0o755 });
   fs.writeFileSync(
     hooksOnlySettingsPath,
@@ -113,7 +123,7 @@ function writeFiles(dir: string, port: number, token: string): HookFiles {
   // an older build (or loosened by hand) must be tightened again every launch.
   fs.chmodSync(dir, 0o700);
   fs.chmodSync(endpointPath, 0o600);
-  return { hookScriptPath, statusLineScriptPath, hooksOnlySettingsPath };
+  return { hookScriptPath, codexHookScriptPath, statusLineScriptPath, hooksOnlySettingsPath };
 }
 
 /**
@@ -153,7 +163,7 @@ export function startAgentHookServer(options: AgentHookServerOptions): Promise<A
   const now = options.now ?? Date.now;
   const gateSubagents = createSubagentGate();
   const server = http.createServer(async (req, res) => {
-    if (req.method !== 'POST' || (req.url !== '/hook/claude' && req.url !== '/usage/claude')) {
+    if (req.method !== 'POST' || !ROUTES.has(req.url ?? '')) {
       res.writeHead(404).end();
       return;
     }
@@ -174,15 +184,15 @@ export function startAgentHookServer(options: AgentHookServerOptions): Promise<A
     const launchId = headerValue(req, HOOK_LAUNCH_ID_HEADER);
     if (!agentId || !isCurrentAgentLaunch(agentId, taskId, launchId)) return;
     const payload = parseJson(body);
-    const update = gateSubagents(launchId, payload, mapClaudeHookPayload(payload));
+    const fromCodex = req.url === '/hook/codex';
+    // The gate follows Claude Code's background work, which Codex does not report.
+    const update = fromCodex
+      ? mapCodexHookPayload(payload)
+      : gateSubagents(launchId, payload, mapClaudeHookPayload(payload));
     if (!update) return;
-    options.onEvent({
-      ...update,
-      agentId,
-      taskId,
-      launchId,
-      at: now(),
-    });
+    const event = { ...update, agentId, taskId, launchId, at: now() };
+    options.onEvent(event);
+    if (fromCodex) options.onCodexEvent?.(event);
   });
   // Hooks are one-shot curls; a lingering keep-alive would only delay shutdown.
   server.keepAliveTimeout = 1000;
@@ -211,6 +221,7 @@ export function startAgentHookServer(options: AgentHookServerOptions): Promise<A
       resolve({
         port,
         hookScriptPath: files.hookScriptPath,
+        codexHookScriptPath: files.codexHookScriptPath,
         statusLineScriptPath: files.statusLineScriptPath,
         claudeSettingsPath: (cwd, env) => {
           const user = readUserStatusLine(cwd, env);
