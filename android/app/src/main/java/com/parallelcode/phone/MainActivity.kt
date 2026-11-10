@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -76,14 +77,21 @@ class PhoneViewModel internal constructor(application: Application, internal val
     /** An agent to open, from a tapped notification. */
     val openAgentRequest = MutableStateFlow<String?>(null)
 
-    private val _localNetworkBlocked = MutableStateFlow(false)
+    private val _localNetworkPermissionMissing = MutableStateFlow(false)
 
-    /** True while Android withholds local network access, so Wi-Fi connections time out. */
-    val localNetworkBlocked: StateFlow<Boolean> = _localNetworkBlocked.asStateFlow()
+    /** True while Android withholds local network access, so connections over Wi-Fi time out. */
+    val localNetworkPermissionMissing: StateFlow<Boolean> = _localNetworkPermissionMissing.asStateFlow()
+
+    /** Android's prompt opens unasked once per app run; after that only Allow access asks. */
+    var localNetworkPromptShown = false
 
     /** Reads the grant again: on returning to the app (e.g. from system settings) and after a prompt. */
     fun refreshLocalNetworkAccess() {
-        _localNetworkBlocked.value = demo == null && lacksLocalNetworkAccess(getApplication())
+        val missing = demo == null && lacksLocalNetworkPermission(getApplication())
+        val granted = _localNetworkPermissionMissing.value && !missing
+        _localNetworkPermissionMissing.value = missing
+        // An attempt made while blocked only fails at its timeout; dial again now.
+        if (granted) client.reconnect()
     }
 
     private val _notifications = MutableStateFlow(readNotificationPrefs())
@@ -320,6 +328,7 @@ class MainActivity : ComponentActivity() {
                         onExit = {
                             model.demoSession.value = null
                             (application as PhoneApplication).setDemoActive(false)
+                            model.refreshLocalNetworkAccess()
                             model.client.start("app")
                             model.client.resumeViewSize()
                         },
@@ -373,6 +382,9 @@ class MainActivity : ComponentActivity() {
         private const val HOLDER = "app"
     }
 }
+
+/** A permission answer faster than this came from Android itself, without a prompt on screen. */
+private const val PROMPT_SKIPPED_MS = 400L
 
 private sealed interface Screen {
     data object Agents : Screen
@@ -437,34 +449,32 @@ private fun PhoneApp(model: PhoneViewModel, onDemo: () -> Unit) {
         return
     }
     // Android 17 lets no connection through to the computer's Wi-Fi address until this is granted.
-    val localNetworkBlocked by model.localNetworkBlocked.collectAsState()
+    val localNetworkPermissionMissing by model.localNetworkPermissionMissing.collectAsState()
+    val localNetworkBlocked = localNetworkPermissionMissing && isLocalNetworkAddress(link.baseUrl)
     val activity = LocalContext.current as? Activity
-    var localNetworkAsked by rememberSaveable { mutableStateOf(false) }
-    // Whether Android would explain the request, read before asking (see the launcher below).
-    var localNetworkRationaleBefore by remember { mutableStateOf<Boolean?>(null) }
+    // When Allow access was tapped; null for the prompt the app opens by itself.
+    var localNetworkAskedAt by remember { mutableStateOf<Long?>(null) }
     val localNetworkPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val askedAt = localNetworkAskedAt
+        localNetworkAskedAt = null
         model.refreshLocalNetworkAccess()
-        val rationaleBefore = localNetworkRationaleBefore
-        localNetworkRationaleBefore = null
-        if (granted) {
-            model.client.reconnect()
-        } else if (
-            rationaleBefore == false && activity?.shouldShowRequestPermissionRationale(LOCAL_NETWORK_PERMISSION) == false
-        ) {
-            // Android no longer shows its prompt after repeated refusals; only system settings can grant it.
-            activity?.let {
-                it.startActivity(
+        // After repeated refusals Android answers at once without showing its prompt; only system
+        // settings can grant it then. A prompt the user saw and closed takes longer than this.
+        val unanswered = askedAt != null && SystemClock.elapsedRealtime() - askedAt < PROMPT_SKIPPED_MS
+        if (!granted && unanswered && activity != null) {
+            runCatching {
+                activity.startActivity(
                     Intent(
                         android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.fromParts("package", it.packageName, null),
+                        Uri.fromParts("package", activity.packageName, null),
                     ),
                 )
             }
         }
     }
     LaunchedEffect(localNetworkBlocked) {
-        if (!localNetworkBlocked || localNetworkAsked) return@LaunchedEffect
-        localNetworkAsked = true
+        if (!localNetworkBlocked || model.localNetworkPromptShown) return@LaunchedEffect
+        model.localNetworkPromptShown = true
         localNetworkPermission.launch(LOCAL_NETWORK_PERMISSION)
     }
     // Predictive back: the screen shrinks and slides with the swipe, and only leaves on release.
@@ -522,8 +532,7 @@ private fun PhoneApp(model: PhoneViewModel, onDemo: () -> Unit) {
                     onSwitchNetwork = { model.client.switchNetwork() },
                     onAllowLocalNetwork = if (localNetworkBlocked) {
                         {
-                            localNetworkRationaleBefore =
-                                activity?.shouldShowRequestPermissionRationale(LOCAL_NETWORK_PERMISSION)
+                            localNetworkAskedAt = SystemClock.elapsedRealtime()
                             localNetworkPermission.launch(LOCAL_NETWORK_PERMISSION)
                         }
                     } else null,
