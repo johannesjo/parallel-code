@@ -219,7 +219,7 @@ describe('fetchPrStatus', () => {
     expect(calls[0][0]).toBe('pr');
     expect(calls[0][1]).toBe('view');
     expect(calls[0]).toContain(
-      'state,mergedAt,headRefOid,isDraft,reviewDecision,mergeable,statusCheckRollup',
+      'state,mergedAt,headRefOid,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup',
     );
     expect(out.state).toBe('OPEN');
     expect(out.headRefOid).toBe('abc123');
@@ -245,6 +245,7 @@ describe('fetchPrStatus', () => {
       isDraft: false,
       reviewDecision: null,
       mergeable: 'UNKNOWN',
+      mergeStateStatus: 'UNKNOWN',
       checks: [],
     });
   });
@@ -525,7 +526,7 @@ describe('refreshPrChecksWatcher', () => {
       babysit: false,
       branch: null,
     });
-    refreshPrChecksWatcher('t1');
+    refreshPrChecksWatcher('t1', true);
     await flushPromises();
 
     expect(send).toHaveBeenCalledTimes(2);
@@ -575,7 +576,7 @@ describe('refreshPrChecksWatcher', () => {
     await flushPromises();
     expect(send).toHaveBeenCalledTimes(1);
 
-    refreshPrChecksWatcher('t1');
+    refreshPrChecksWatcher('t1', true);
     expect(send).toHaveBeenCalledTimes(2);
     expect(send.mock.calls[1][1]).toMatchObject({ taskId: 't1', overall: 'pending' });
 
@@ -629,7 +630,7 @@ describe('refreshPrChecksWatcher', () => {
         branch: null,
       });
       await flushPromises();
-      refreshPrChecksWatcher('t1');
+      refreshPrChecksWatcher('t1', true);
 
       now.mockReturnValue(30_000);
       await __runTickForTests();
@@ -748,11 +749,64 @@ describe('refreshPrChecksWatcher', () => {
     await flushPromises();
     state = 'MERGED';
 
-    refreshPrChecksWatcher('t1');
+    refreshPrChecksWatcher('t1', false);
     await flushPromises();
 
     expect(calls).toHaveLength(2);
     expect(send.mock.calls[send.mock.calls.length - 1]?.[1]).toMatchObject({ merged: true });
+  });
+});
+
+describe('a merged PR', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetForTests();
+  });
+
+  it('re-checks the other open PRs of its repository at once', async () => {
+    initPrChecks(fakeWindow(vi.fn()));
+    const merged = new Set<string>();
+    const calls = stubGh((args, cb) => {
+      const url = args[2] ?? '';
+      const status = {
+        state: merged.has(url) ? 'MERGED' : 'OPEN',
+        headRefOid: 'sha',
+        mergeable: 'MERGEABLE',
+        mergeStateStatus: 'CLEAN',
+        statusCheckRollup: [{ name: 'build', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+      };
+      cb(null, JSON.stringify(status), '');
+    });
+    const prs = {
+      t1: 'https://github.com/a/b/pull/1',
+      t2: 'https://github.com/a/b/pull/2',
+      t3: 'https://github.com/a/c/pull/3',
+    };
+    for (const [taskId, prUrl] of Object.entries(prs)) {
+      startPrChecksWatcher({
+        taskId,
+        watchId: taskId,
+        prUrl,
+        taskName: taskId,
+        babysit: false,
+        branch: null,
+      });
+    }
+    await flushPromises();
+    calls.length = 0;
+
+    // Landing #1 moves a/b's base, which can put #2 in conflict; a/c's base stays.
+    merged.add(prs.t1);
+    refreshPrChecksWatcher('t1', false);
+    await flushPromises();
+    await flushPromises();
+
+    expect(calls.map((args) => args[2])).toEqual([prs.t1, prs.t2]);
+
+    // GitHub recomputes lazily, so a first answer of CLEAN may predate the new base.
+    calls.length = 0;
+    await __runTickForTests();
+    expect(calls.map((args) => args[2])).toEqual([prs.t2]);
   });
 });
 
@@ -765,9 +819,30 @@ describe('startPrChecksWatcher — pushes made outside the app', () => {
   const success = [{ name: 'build', status: 'COMPLETED', conclusion: 'SUCCESS' }];
   const pending = [{ name: 'build', status: 'IN_PROGRESS', conclusion: '' }];
 
-  async function watchSettledPr(send: ReturnType<typeof vi.fn>) {
+  /** A tick once the settled refresh interval has passed. */
+  async function settledTick(): Promise<void> {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 10 * 60_000);
+    try {
+      await __runTickForTests();
+    } finally {
+      now.mockRestore();
+    }
+  }
+
+  async function watchSettledPr(
+    send: ReturnType<typeof vi.fn>,
+    rollup: unknown[] = success,
+    mergeable = 'MERGEABLE',
+  ) {
     initPrChecks(fakeWindow(send));
-    const github = { head: 'old-sha', rollup: success };
+    // GitHub reports a merge state beside `mergeable`; CLEAN is an unprotected, mergeable PR.
+    const github = {
+      head: 'old-sha',
+      rollup,
+      mergeable,
+      mergeStateStatus: 'CLEAN',
+      isDraft: false,
+    };
     const local: { origin: string; error: (Error & { code?: unknown }) | null } = {
       origin: 'old-sha',
       error: null,
@@ -782,6 +857,9 @@ describe('startPrChecksWatcher — pushes made outside the app', () => {
         JSON.stringify({
           state: 'OPEN',
           headRefOid: github.head,
+          mergeable: github.mergeable,
+          mergeStateStatus: github.mergeStateStatus,
+          isDraft: github.isDraft,
           statusCheckRollup: github.rollup,
         }),
         '',
@@ -817,6 +895,74 @@ describe('startPrChecksWatcher — pushes made outside the app', () => {
     });
   });
 
+  it('re-polls without hiding the status when nothing was pushed', async () => {
+    const send = vi.fn();
+    const { github, ghCalls } = await watchSettledPr(send);
+    github.isDraft = true;
+    await settledTick();
+    expect(send.mock.calls[send.mock.calls.length - 1]?.[1]).toMatchObject({ isDraft: true });
+    send.mockClear();
+
+    // "Ready for review": the head stays, so CI must not read as running again.
+    github.isDraft = false;
+    refreshPrChecksWatcher('t1', false);
+    await flushPromises();
+
+    expect(ghCalls()).toHaveLength(3);
+    expect(send.mock.calls.map(([, p]) => (p as { overall: string }).overall)).toEqual(['success']);
+    expect(send.mock.calls[0]?.[1]).toMatchObject({ isDraft: false, passing: 1 });
+  });
+
+  it('keeps polling while GitHub has not settled whether the PR can merge', async () => {
+    const send = vi.fn();
+    const { ghCalls } = await watchSettledPr(send, success, 'UNKNOWN');
+    const before = ghCalls().length;
+
+    await __runTickForTests();
+
+    expect(ghCalls()).toHaveLength(before + 1);
+  });
+
+  it('falls back to the settled cadence when GitHub never settles the merge state', async () => {
+    const send = vi.fn();
+    const { ghCalls } = await watchSettledPr(send, success, 'UNKNOWN');
+    const before = ghCalls().length;
+
+    const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3 * 60_000);
+    try {
+      await __runTickForTests();
+    } finally {
+      now.mockRestore();
+    }
+
+    expect(ghCalls()).toHaveLength(before);
+  });
+
+  it('keeps polling while GitHub is still computing the merge state', async () => {
+    const send = vi.fn();
+    const { github, ghCalls } = await watchSettledPr(send);
+    github.mergeStateStatus = 'UNKNOWN';
+    await settledTick();
+    const before = ghCalls().length;
+
+    await __runTickForTests();
+
+    expect(ghCalls()).toHaveLength(before + 1);
+  });
+
+  it('reports the merge state GitHub gates the merge on', async () => {
+    const send = vi.fn();
+    const { github } = await watchSettledPr(send);
+    github.mergeStateStatus = 'BEHIND';
+    refreshPrChecksWatcher('t1', false);
+    await flushPromises();
+
+    expect(send.mock.calls[send.mock.calls.length - 1]?.[1]).toMatchObject({
+      overall: 'success',
+      mergeStateStatus: 'BEHIND',
+    });
+  });
+
   it('leaves a settled PR alone while its branch has not moved', async () => {
     const send = vi.fn();
     const { ghCalls } = await watchSettledPr(send);
@@ -826,11 +972,51 @@ describe('startPrChecksWatcher — pushes made outside the app', () => {
     expect(ghCalls()).toHaveLength(1);
   });
 
+  it('notices a failed run re-run on the same head on the next tick', async () => {
+    const send = vi.fn();
+    const failure = [{ name: 'build', status: 'COMPLETED', conclusion: 'FAILURE' }];
+    const { github, ghCalls } = await watchSettledPr(send, failure);
+    send.mockClear();
+    const before = ghCalls().length;
+
+    // "Re-run failed jobs" on GitHub: no push, same head, the job runs again.
+    github.rollup = pending;
+    await __runTickForTests();
+
+    expect(ghCalls().length).toBe(before + 1);
+    expect(send.mock.calls[send.mock.calls.length - 1]?.[1]).toMatchObject({
+      overall: 'pending',
+      headSha: 'old-sha',
+    });
+  });
+
+  // The conflict is the only failure, and only a push resolves it.
+  it('leaves a PR failing only on conflicts on the settled cadence', async () => {
+    const send = vi.fn();
+    const { ghCalls } = await watchSettledPr(send, success, 'CONFLICTING');
+    const before = ghCalls().length;
+
+    await __runTickForTests();
+
+    expect(ghCalls().length).toBe(before);
+  });
+
+  it('keeps polling a conflicted PR whose CI failed as well', async () => {
+    const send = vi.fn();
+    const failure = [{ name: 'build', status: 'COMPLETED', conclusion: 'FAILURE' }];
+    const { ghCalls } = await watchSettledPr(send, failure, 'CONFLICTING');
+    const before = ghCalls().length;
+
+    await __runTickForTests();
+
+    expect(ghCalls().length).toBe(before + 1);
+  });
+
   it('does not mark a push the app already reported a second time', async () => {
     const send = vi.fn();
     const { local } = await watchSettledPr(send);
     // The app pushed and refreshed; GitHub still reports the old head.
-    refreshPrChecksWatcher('t1');
+    refreshPrChecksWatcher('t1', true);
     await flushPromises();
     local.origin = 'new-sha';
     send.mockClear();
@@ -863,7 +1049,7 @@ describe('startPrChecksWatcher — pushes made outside the app', () => {
     const { github, ghCalls } = await watchSettledPr(send);
     github.head = 'new-sha';
     github.rollup = [];
-    refreshPrChecksWatcher('t1');
+    refreshPrChecksWatcher('t1', true);
     await flushPromises();
     expect(ghCalls()).toHaveLength(2);
 
@@ -884,7 +1070,7 @@ describe('startPrChecksWatcher — pushes made outside the app', () => {
     github.rollup = [];
     send.mockClear();
 
-    refreshPrChecksWatcher('t1');
+    refreshPrChecksWatcher('t1', true);
     await flushPromises();
     await __runTickForTests();
     expect(send.mock.calls.map(([, p]) => (p as { overall: string }).overall)).not.toContain(
@@ -953,7 +1139,7 @@ describe('refreshPrChecksWatcher — replies arriving out of order', () => {
     await flushPromises();
     expect(held).toHaveLength(1);
 
-    refreshPrChecksWatcher('t1');
+    refreshPrChecksWatcher('t1', true);
     await flushPromises();
 
     expect(held).toHaveLength(2);
@@ -979,7 +1165,7 @@ describe('refreshPrChecksWatcher — replies arriving out of order', () => {
     reply(held.shift(), 'old-sha', success);
     await flushPromises();
 
-    refreshPrChecksWatcher('t1');
+    refreshPrChecksWatcher('t1', true);
     const tick = __runTickForTests();
     await flushPromises();
     // Newest first: the last poll sees the pushed head, earlier ones the old head.
@@ -1086,7 +1272,7 @@ describe('startPrChecksWatcher — several PRs per task', () => {
     await flushPromises();
     send.mockClear();
 
-    refreshPrChecksWatcher('t1');
+    refreshPrChecksWatcher('t1', true);
 
     const refreshed = send.mock.calls.map(([, payload]) => payload as Record<string, unknown>);
     expect(refreshed.map((p) => [p.watchId, p.overall])).toEqual([
@@ -1155,6 +1341,9 @@ describe('startPrChecksWatcher — hidden window', () => {
         JSON.stringify({
           state: 'OPEN',
           headRefOid: head,
+          // Settled: an unknown merge state would keep it polling on its own.
+          mergeable: 'MERGEABLE',
+          mergeStateStatus: 'CLEAN',
           statusCheckRollup: [{ name: 'build', status: 'COMPLETED', conclusion: 'SUCCESS' }],
         }),
         '',

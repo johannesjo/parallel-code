@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockStartRequest, mockLoadTaskDiff, mockNotify } = vi.hoisted(() => ({
+const { mockStartRequest, mockLoadTaskDiff, mockNotify, mockInvoke } = vi.hoisted(() => ({
   mockStartRequest: vi.fn(),
   mockLoadTaskDiff: vi.fn(),
   mockNotify: vi.fn(),
+  mockInvoke: vi.fn(),
 }));
 
+vi.mock('../lib/ipc', () => ({ invoke: mockInvoke, fireAndForget: vi.fn() }));
 vi.mock('../lib/model-request', () => ({ startModelRequest: mockStartRequest }));
 vi.mock('../lib/load-task-diff', () => ({
   loadTaskDiff: mockLoadTaskDiff,
@@ -74,6 +76,7 @@ beforeEach(() => {
     } as unknown as Task,
   });
   mockLoadTaskDiff.mockResolvedValue({ rawDiff: DIFF, cwd: '/wt' });
+  mockInvoke.mockResolvedValue({ has_uncommitted_changes: false, head_sha: 'abc123' });
 });
 
 describe('startTaskReview', () => {
@@ -106,12 +109,25 @@ describe('startTaskReview', () => {
       source: 'Review by opus',
       publishedAt: expect.any(Number),
       fingerprint: expect.any(String),
+      origin: 'review',
+      headSha: 'abc123',
     });
     expect(task().reviewStatus).toBeUndefined();
     expect(mockNotify).toHaveBeenCalledWith(
       expect.stringContaining('“Fix login” is ready'),
       expect.objectContaining({ action: expect.objectContaining({ label: 'Open review' }) }),
     );
+  });
+
+  it('ties the review to no commit when it read uncommitted changes', async () => {
+    mockInvoke.mockResolvedValue({ has_uncommitted_changes: true, head_sha: 'abc123' });
+    mockStartRequest.mockReturnValue({
+      result: Promise.resolve(JSON.stringify(RATING)),
+      cancel: vi.fn(),
+    });
+    await startTaskReview('t1');
+    expect(task().confidence?.origin).toBe('review');
+    expect(task().confidence).not.toHaveProperty('headSha');
   });
 
   it('asks the reviewer only once the checks started with it have ended', async () => {

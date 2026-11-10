@@ -142,6 +142,8 @@ const taskSummary = object(
     coordinatorTaskId: string,
     integrationPolicy: { enum: ['review', 'automatic'] },
     signalDoneAt: string,
+    closeSuggestion: object({ reason: string, at: string }, ['reason', 'at']),
+    archived: { type: 'boolean' },
     reviewRevision: { type: 'integer', minimum: 0 },
     completion,
     verification,

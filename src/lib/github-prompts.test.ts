@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildFailedChecksPrompt,
+  buildMergeConflictPrompt,
   buildIssuePrompt,
   buildIssueTriagePrompt,
   buildReviewFeedbackPrompt,
@@ -84,6 +85,21 @@ describe('buildFailedChecksPrompt', () => {
       'The pull request is in the nested repository `api/`; fix and commit there.',
     );
     expect(buildFailedChecksPrompt(pr, checks)).not.toContain('nested repository');
+  });
+});
+
+describe('buildMergeConflictPrompt', () => {
+  it('asks to merge the base branch in rather than rewrite the pushed branch', () => {
+    const prompt = buildMergeConflictPrompt(pr);
+    expect(prompt).toContain(`Pull request #${pr.number} (${pr.url}) has merge conflicts`);
+    expect(prompt).toContain('merge it into this branch');
+    expect(prompt).toContain('push');
+  });
+
+  it('points the agent at the nested repository a PR belongs to', () => {
+    expect(buildMergeConflictPrompt({ ...pr, repo: 'api' })).toContain(
+      'The pull request is in the nested repository `api/`; resolve and commit there.',
+    );
   });
 });
 

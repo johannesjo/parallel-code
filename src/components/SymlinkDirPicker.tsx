@@ -1,9 +1,11 @@
-import { For } from 'solid-js';
+import { For, Show } from 'solid-js';
 import { theme } from '../lib/theme';
 
 interface SymlinkDirPickerProps {
   dirs: string[];
   selectedDirs: ReadonlySet<string>;
+  /** Entries the project's saved include list copies instead of symlinking. */
+  copyDirs?: ReadonlySet<string>;
   onToggle: (dir: string) => void;
 }
 
@@ -21,10 +23,14 @@ export function SymlinkDirPicker(props: SymlinkDirPickerProps) {
           'letter-spacing': '0.05em',
         }}
       >
-        Symlink into worktree
+        {props.copyDirs && props.copyDirs.size > 0
+          ? 'Bring into worktree'
+          : 'Symlink into worktree'}
       </label>
       <span style={{ 'font-size': '12px', color: theme.fgMuted }}>
-        Checked entries are written to .git/info/exclude and apply to all worktrees.
+        {props.copyDirs && props.copyDirs.size > 0
+          ? 'Checked symlinks are written to .git/info/exclude and apply to all worktrees.'
+          : 'Checked entries are written to .git/info/exclude and apply to all worktrees.'}
       </span>
       <div
         style={{
@@ -61,6 +67,10 @@ export function SymlinkDirPicker(props: SymlinkDirPickerProps) {
                   style={{ 'accent-color': theme.accent }}
                 />
                 {dir}
+                {/* Set in project settings; a label, not a per-task control. */}
+                <Show when={props.copyDirs?.has(dir)}>
+                  <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>copy</span>
+                </Show>
               </label>
             );
           }}

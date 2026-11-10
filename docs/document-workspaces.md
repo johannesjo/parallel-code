@@ -245,7 +245,7 @@ the document.
   one spawn), and an exited agent is reset for resuming. Removing the project
   kills the sessions. A scoped instruction, _your words, then Document, Scope and the
   passage verbatim_, goes to the selected agent as a prompt: typed straight in when the agent looks
-  idle (quiet output, no open question, and for Claude no hook turn in flight), else
+  idle (quiet output, no open question, and for Claude Code and Codex no hook turn in flight), else
   queued as the task's initial prompt, which the prompt box sends once the agent is
   ready; a second instruction is refused while one waits. Reopened sessions require an
   explicit send from the prompt box; further instructions cannot replace an existing draft.

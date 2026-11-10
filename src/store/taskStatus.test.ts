@@ -281,6 +281,23 @@ describe('normalizeCurrentFrame', () => {
 // looksLikeQuestion
 // ---------------------------------------------------------------------------
 describe('looksLikeQuestion', () => {
+  it("detects Codex's update menu, which has no question mark (#336)", () => {
+    const tail = [
+      '› Ask Codex to do anything',
+      '? for shortcuts',
+      'Update available · 0.166.0 → 99.0.0',
+      '› 1. Update now (runs `npm install -g @openai/codex`)',
+      '2. Skip',
+      '3. Skip until next version',
+      'enter continue · esc skip',
+    ].join('\n');
+    expect(looksLikeQuestion(tail)).toBe(true);
+  });
+
+  it('detects the update menu with spaces lost in a cursor-positioned redraw', () => {
+    expect(looksLikeQuestion('›1.Updatenow(runs`npm install -g @openai/codex`)2.Skip')).toBe(true);
+  });
+
   it('detects Y/n confirmation prompt', () => {
     expect(looksLikeQuestion('Install packages? [Y/n] ')).toBe(true);
   });

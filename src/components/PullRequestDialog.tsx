@@ -4,6 +4,7 @@ import { DialogFooter } from './DialogFooter';
 import { errMessage } from '../lib/log';
 import { bannerStyle, dialogButtonStyle, theme } from '../lib/theme';
 import { getPrChecks } from '../store/store';
+import { MERGE_STATUS_LABELS } from '../store/pr-checks-state';
 import { showNotification } from '../store/notification';
 import type { PrCheckBucket, PrMergeMethod } from '../ipc/types';
 import type { Task } from '../store/types';
@@ -31,16 +32,6 @@ const BUCKET_LABELS: Record<PrCheckBucket, string> = {
   pending: 'In progress',
   fail: 'Failed',
   cancel: 'Cancelled',
-};
-const MERGE_STATUS_LABELS: Record<string, string> = {
-  BEHIND: 'Branch needs updating',
-  BLOCKED: 'Merge requirements not met',
-  CLEAN: 'Ready to merge',
-  DIRTY: 'Conflicts to resolve',
-  DRAFT: 'Draft',
-  HAS_HOOKS: 'Repository checks required',
-  UNKNOWN: 'Checking merge status',
-  UNSTABLE: 'Some checks have not passed',
 };
 
 /** PR status for a task, plus actions that feed GitHub feedback to the agent or merge. */

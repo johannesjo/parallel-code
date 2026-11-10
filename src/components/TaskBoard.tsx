@@ -275,7 +275,7 @@ export function TaskBoard() {
             <Show
               when={lane().id === 'snoozed'}
               fallback={
-                // Ready to merge only matters to projects with pull requests, so it
+                // Ready to merge fills only once something has passed review or CI, so it
                 // appears with its first card instead of taking width from everyone.
                 <Show when={lane().id !== 'ready' || lane().tasks.length > 0}>
                   <Lane lane={lane()} />
@@ -304,8 +304,8 @@ export function TaskBoard() {
         A card moves on its own: to Needs you when its agent asks something, fails or is ready for
         review, to Working while it runs, to Stopped when it is idle, and to In pull request once it
         has one. A pull request with failing checks, conflicts or requested changes comes back to
-        Needs you; one that can merge moves to Ready to merge. Click a card to open the task beside
-        the board.
+        Needs you; one that can merge moves to Ready to merge, as does finished work whose review
+        and checks passed on its latest commit. Click a card to open the task beside the board.
       </FeatureHint>
     </section>
   );

@@ -329,6 +329,60 @@ describe('PromptInput initial prompt after an app restart', () => {
       vi.useRealTimers();
     }
   });
+
+  describe('while the agent is suspended', () => {
+    const suspendedAgent = {
+      resumed: true,
+      status: 'exited',
+      signal: 'suspended' as string | null,
+      generation: 0,
+    };
+    // What restartAgent(id, true) does when Resume is clicked.
+    const resumedAgent = { status: 'running', signal: null, generation: 1 };
+
+    function suspendedStore() {
+      // A copy, because the store writes through to the object it was given.
+      const [agents, setAgents] = createStore({ 'agent-1': { ...suspendedAgent } });
+      // eslint-disable-next-line solid/reactivity -- the component tracks reads through this store mock
+      storeMock.agents = agents;
+      storeMock.tasks = { 'task-1': { id: 'task-1', agentIds: ['agent-1'] } };
+      return () => setAgents('agent-1', resumedAgent);
+    }
+
+    it('keeps the prompt box disabled until Resume', () => {
+      const resume = suspendedStore();
+      const textarea = mount('task-1');
+      const send = document.querySelector<HTMLButtonElement>('.prompt-send-btn');
+
+      expect(textarea.disabled).toBe(true);
+      expect(send?.disabled).toBe(true);
+
+      resume();
+      expect(textarea.disabled).toBe(false);
+      textarea.value = 'hello';
+      textarea.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      expect(send?.disabled).toBe(false);
+    });
+
+    it('holds a queued prompt and sends it once the agent is resumed', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.mocked(sendPrompt).mockClear();
+        vi.mocked(getAgentOutputTail).mockReturnValue('Claude Code\n❯ ');
+        const resume = suspendedStore();
+        mountWithInitialPrompt();
+
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(sendPrompt).not.toHaveBeenCalled();
+
+        resume();
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(sendPrompt).toHaveBeenCalledWith('task-1', 'agent-1', 'do it');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });
 
 it('never auto-sends an ordinary parent completion summary or replaces its draft', async () => {

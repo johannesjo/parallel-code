@@ -94,11 +94,13 @@ export function TaskPr(props: { taskId: string; watchId: string; onMerge?: () =>
   const checks = () => getPrChecks(props.watchId);
   const status = () => prBoardStatus(checks());
   const kind = () => status()?.kind;
-  // A stalled Babysit is why a failed PR is back in Needs you, so say so.
-  const label = () =>
-    kind() === 'failed' && isPrBabysitStuck(props.taskId)
-      ? 'CI failed · Babysit stuck'
-      : (status()?.label ?? 'Pull request open');
+  // A stalled Babysit is why a failing PR, CI or conflict, is back in Needs you, so say so.
+  const label = () => {
+    const text = status()?.label ?? 'Pull request open';
+    return checks()?.overall === 'failure' && isPrBabysitStuck(props.taskId)
+      ? `${text} · Babysit stuck`
+      : text;
+  };
   return (
     <div class="task-board-ask">
       <span
@@ -196,9 +198,15 @@ export function TaskLine(props: {
 }
 
 /** What the task waits for, and the button that goes there. */
-export function AskRow(props: { label: string; action: string; onAct: () => void }) {
+export function AskRow(props: {
+  label: string;
+  action: string;
+  onAct: () => void;
+  /** A routine next step rather than something waiting on you: the label stays plain. */
+  quiet?: boolean;
+}) {
   return (
-    <div class="task-board-ask">
+    <div class="task-board-ask" classList={{ quiet: props.quiet }}>
       <span class="task-board-ask-label">{props.label}</span>
       <button type="button" class="task-board-act" onClick={() => props.onAct()}>
         {props.action}

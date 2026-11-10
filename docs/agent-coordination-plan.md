@@ -1,6 +1,6 @@
 # Agent coordination: actions, status evidence, and result handoffs
 
-Status: Steps A and B implemented and verified. Step C is implemented and passes the recorded checks, but a fresh review found two open P2 defects after the initial review reported no actionable findings. Resolve these before accepting C. Steps D–E remain planned as separate changes. Updated 2026-09-26.
+Status: Steps A and B implemented and verified. Step C is implemented and passes the recorded checks; the two P2 defects a later review found are fixed. Steps D–E remain planned as separate changes. Updated 2026-11-06.
 
 Step A extends the sidebar tray with independent questions, reviews, and coordination failures; shares child attention summaries; hydrates delegation state without panel mounts; and opens child reviews without resuming collapsed agents. Already-merged results retain an explicit review acknowledgment. Step B adds launch-bound hook observations shared by MCP and the renderer, ordered snapshot hydration, and activity provenance labels. Step C adds bounded completion reports, persistence and report display, plus schemas and structured results for the five selected MCP tools. Native Electron smoke testing has not been performed. Captured reviews and request changes remain separate work.
 
@@ -8,11 +8,10 @@ Step A extends the sidebar tray with independent questions, reviews, and coordin
 
 Implement and validate each step separately; the scope and acceptance gates below are the handoff for future changes.
 
-1. **C — Review corrections:** recognize prompt submissions inside coalesced terminal input, and validate session `land_self` input before landing so successful responses satisfy the declared schema. Add regression coverage for both findings recorded below.
-2. **D — Captured reviews:** pin the displayed diff/files to Git objects, include the completion packet and app verification evidence in that snapshot, and reject approval of superseded assignments through the shared review revision.
-3. **E — Request changes:** after D, submit feedback once to a verified, ready primary process with draft protection, revision invalidation, explicit outcomes, and no automatic retry.
+1. **D — Captured reviews:** pin the displayed diff/files to Git objects, include the completion packet and app verification evidence in that snapshot, and reject approval of superseded assignments through the shared review revision.
+2. **E — Request changes:** after D, submit feedback once to a verified, ready primary process with draft protection, revision invalidation, explicit outcomes, and no automatic retry.
 
-D depends on C; E depends on both B and D. Finish the C review corrections before starting D. No later step is included in the completed milestones or their test results.
+D depends on C; E depends on both B and D. No later step is included in the completed milestones or their test results.
 
 ## Decision and scope
 
@@ -216,10 +215,10 @@ Step C does **not** implement the Step D approval gate or frozen review packet. 
 
 Step C passed `npm run check`, `npm run check:static`, the full unit/client suites (5,104 passed; 33 opt-in or otherwise skipped), and all 9 real-PTY coordinator tests. Focused coverage includes schema validation through the installed MCP SDK, malformed legacy JSON, token/session expiry during capture, overlapping publications, changed HEAD, new assignments versus reattachment, early completion adoption, active/collapsed restoration, and actual Solid-store packet replacement. Native Electron smoke testing remains unperformed; no paid real-agent suite was run.
 
-A subsequent fresh review found two P2 defects, independently reproduced and still open:
+A subsequent fresh review found two P2 defects, independently reproduced. Both are now fixed:
 
-- **Coalesced terminal submission:** `TerminalView` batches input for 8 ms, but `writeSessionInput` emits `prompt-submitted` only for a separate Enter chunk with an existing draft. A chunk such as `follow-up\r` submits without advancing the revision, allowing an older report to remain current or an in-flight capture to publish after a hookless follow-up. Detect submission within the input stream while preserving bracketed-paste handling.
-- **Session landing output contract:** session `land_self` bypasses the legacy input parser. A check containing only `result: "passed"` can land successfully and be echoed without the `name` and `command` required by the new output schema. The loose session input validation predates C, but its schema-invalid success violates C's contract. Validate before landing side effects and test the actual coordinator result with the SDK validator.
+- **Coalesced terminal submission:** `TerminalView` batches input for 8 ms, but `writeSessionInput` emits `prompt-submitted` only for a separate Enter chunk with an existing draft. A chunk such as `follow-up\r` submits without advancing the revision, allowing an older report to remain current or an in-flight capture to publish after a hookless follow-up. Detect submission within the input stream while preserving bracketed-paste handling. Fixed: `writeSessionInput` scans the whole chunk, and newlines inside a bracketed paste still do not count.
+- **Session landing output contract:** session `land_self` bypasses the legacy input parser. A check containing only `result: "passed"` can land successfully and be echoed without the `name` and `command` required by the new output schema. The loose session input validation predates C, but its schema-invalid success violates C's contract. Validate before landing side effects and test the actual coordinator result with the SDK validator. Fixed: the session path uses the legacy parser and rejects malformed checks before landing. No test yet runs the coordinator result through the SDK validator.
 
 ## External references behind the selected patterns
 

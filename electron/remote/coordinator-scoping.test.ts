@@ -1051,10 +1051,55 @@ describe('legacy HTTP completion handoffs', () => {
     expect(coord.waitForIdle).not.toHaveBeenCalled();
   });
 
+  it('rejects a non-string or oversized wait requestId', async () => {
+    for (const requestId of [42, 'r'.repeat(129)]) {
+      const response = await post('/api/wait-signal', { requestId }, COORD_A);
+      expect(response.status).toBe(400);
+    }
+    expect(coord.waitForSignalDone).not.toHaveBeenCalled();
+    await post('/api/wait-signal', { requestId: 'r'.repeat(128) }, COORD_A);
+    expect(coord.waitForSignalDone).toHaveBeenCalledWith(COORD_A, undefined, {
+      requestId: 'r'.repeat(128),
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it('releases the coordinator wait when the agent disconnects mid-poll', async () => {
+    let waitSignal: AbortSignal | undefined;
+    vi.mocked(coord.waitForSignalDone).mockImplementation(
+      (_id, _timeoutMs, opts) =>
+        new Promise((resolve) => {
+          waitSignal = opts?.signal;
+          opts?.signal?.addEventListener('abort', () => resolve({ remaining: 0 }));
+        }),
+    );
+    const agent = new AbortController();
+    const poll = fetch(`http://127.0.0.1:${serverPort}/api/wait-signal`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${serverToken}`,
+        'Content-Type': 'application/json',
+        'X-Coordinator-Id': COORD_A,
+      },
+      body: '{}',
+      signal: agent.signal,
+    }).catch((err: unknown) => err);
+    await vi.waitFor(() => expect(waitSignal).toBeDefined());
+    expect(waitSignal?.aborted).toBe(false);
+
+    agent.abort();
+
+    await poll;
+    await vi.waitFor(() => expect(waitSignal?.aborted).toBe(true));
+  });
+
   it('caps oversized timeoutMs on wait routes', async () => {
     const response = await post('/api/wait-signal', { timeoutMs: 1e15 }, COORD_A);
     expect(response.status).toBe(200);
-    expect(coord.waitForSignalDone).toHaveBeenCalledWith(COORD_A, 2 ** 31 - 1, undefined);
+    expect(coord.waitForSignalDone).toHaveBeenCalledWith(COORD_A, 2 ** 31 - 1, {
+      requestId: undefined,
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it('rejects a coordinator agent token passed in the query string', async () => {

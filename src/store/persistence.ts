@@ -1,4 +1,6 @@
+import { sanitizeWorktreeIncludes, sanitizeWorktreeScript } from '../lib/worktree-includes';
 import { parseCompletionRecord } from '../../electron/shared/completion-report';
+import { parseCloseSuggestion } from '../../electron/shared/close-suggestion';
 import { persistedCheckSuite, restoredCheckSuite } from '../lib/check-suite-storage';
 import { restoreBriefBarFields, restoreTaskBriefRecord } from '../lib/task-brief';
 import { restoreTaskAgentPlan } from '../lib/task-plan';
@@ -29,6 +31,7 @@ import { effectiveAgentId } from './agent-select';
 import { randomPastelColor, sortProjects, syncProjectAgentEnv } from './projects';
 import { sanitizeEnvVars } from '../../electron/shared/env-vars';
 import { markAgentSpawned } from './taskStatus';
+import { isAgentSuspended, SUSPENDED_SIGNAL } from './agent-suspend';
 import {
   clampCoordinatorConcurrentTasks,
   clampIndependentTasksPerCreator,
@@ -78,6 +81,7 @@ function restoredMaxConcurrentTasks(value: unknown): number | undefined {
 }
 import { getLocalDateKey } from '../lib/date';
 import type {
+  AppStore,
   Agent,
   Task,
   PersistedState,
@@ -178,6 +182,65 @@ function enrichAgentDef(agentDef: AgentDef | null | undefined, availableAgents: 
   }
 }
 
+/** What decides which restored agents wait instead of starting. */
+interface LaunchSuspension {
+  liveAgentIds: Set<string>;
+  shownTaskIds: Set<string>;
+}
+
+/**
+ * With "Resume agents on launch" off, restored agents wait for the user. Null
+ * means every agent starts: the setting is on, or the main process could not
+ * say which agents still have a process. Suspending one of those would give it
+ * a second process on Resume, so not knowing falls back to starting them all.
+ */
+async function launchSuspension(raw: LegacyPersistedState): Promise<LaunchSuspension | null> {
+  if (raw.resumeAgentsOnLaunch !== false) return null;
+  try {
+    const live = await invoke<unknown>(IPC.ListRunningAgentIds);
+    if (!Array.isArray(live)) throw new Error('unexpected reply');
+    return {
+      liveAgentIds: new Set(live.filter((id): id is string => typeof id === 'string')),
+      shownTaskIds: new Set(raw.taskOrder),
+    };
+  } catch (error) {
+    logWarn('persistence', 'Could not list running agents; resuming all of them', {
+      error: errMessage(error),
+    });
+    return null;
+  }
+}
+
+function restoresSuspended(
+  pt: PersistedTask,
+  agentId: string,
+  suspension: LaunchSuspension | null,
+): boolean {
+  if (!suspension) return false;
+  // A child that never spawns stays `exited` for its coordinator, which then
+  // treats it as dead, so both sides of a delegation start as before.
+  if (pt.coordinatorMode || pt.coordinatedBy) return false;
+  // Hidden agent tasks (document workspaces) start when their pane first opens.
+  if (!suspension.shownTaskIds.has(pt.id)) return false;
+  // A process that outlived the renderer is reattached, which starts nothing.
+  return !suspension.liveAgentIds.has(agentId);
+}
+
+/**
+ * The task on screen is the one the user most likely came back for, so its
+ * agents start whatever the setting says. This runs once launch has settled
+ * which task that is: the saved one may be gone, and focus mode then opens another.
+ */
+function startActiveTaskAgents(s: AppStore): string[] {
+  const task = s.activeTaskId ? s.tasks[s.activeTaskId] : undefined;
+  const started = (task?.agentIds ?? []).filter((id) => isAgentSuspended(s.agents[id]));
+  for (const id of started) {
+    s.agents[id].status = 'running';
+    s.agents[id].signal = null;
+  }
+  return started;
+}
+
 function persistedAgentDefs(pt: PersistedTask, availableAgents: AgentDef[]): AgentDef[] {
   const defs =
     pt.agentDefs && pt.agentDefs.length > 0 ? pt.agentDefs : pt.agentDef ? [pt.agentDef] : [];
@@ -197,6 +260,13 @@ function restoredAgentIds(pt: PersistedTask, count: number, used: Set<string>): 
     used.add(id);
     return id;
   });
+}
+
+/** A collapsed coordinated child keeps its pane IDs; see Task.savedAgentIds. */
+function restoredSavedAgentIds(pt: PersistedTask, count: number): string[] | undefined {
+  const ids = pt.agentIds;
+  if (!pt.coordinatedBy || !Array.isArray(ids) || ids.length !== count) return undefined;
+  return ids.every((id) => typeof id === 'string' && id.length > 0) ? [...ids] : undefined;
 }
 
 function restoredPromptedAgentIds(pt: PersistedTask, agentIds: string[]): string[] | undefined {
@@ -368,7 +438,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     shellCount: task.shellAgentIds.length,
     agentDef: agentDefs[0] ?? null,
     agentDefs: agentDefs.length > 1 ? agentDefs : undefined,
-    agentIds: task.agentIds.length > 0 ? [...task.agentIds] : undefined,
+    agentIds: task.agentIds.length > 0 ? [...task.agentIds] : task.savedAgentIds,
     agentSessionIds: task.agentSessionIds,
     selectedAgentId: task.selectedAgentId,
     aiTerminalLayout: task.aiTerminalLayout,
@@ -423,6 +493,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     signalDoneReceived: task.signalDoneReceived,
     signalDoneAt: task.signalDoneAt,
     signalDoneConsumed: task.signalDoneConsumed,
+    closeSuggestion: task.closeSuggestion,
     needsReview: task.needsReview,
     verification: task.verification,
     verificationRun: task.verificationRun,
@@ -559,6 +630,7 @@ export async function saveState(): Promise<void> {
     // Default on: only an explicit opt-out is stored.
     canvasOwnershipBadges: store.canvasOwnershipBadges ? undefined : false,
     finishReview: store.finishReview ? undefined : false,
+    resumeAgentsOnLaunch: store.resumeAgentsOnLaunch ? undefined : false,
     reviewModel: store.reviewModel,
     autoStartRemoteAccess: store.autoStartRemoteAccess || undefined,
   };
@@ -772,6 +844,7 @@ interface LegacyPersistedState {
   defaultPropagateSkipPermissions?: unknown;
   canvasOwnershipBadges?: unknown;
   finishReview?: unknown;
+  resumeAgentsOnLaunch?: unknown;
   reviewModel?: unknown;
   autoStartRemoteAccess?: unknown;
 }
@@ -829,6 +902,9 @@ export async function loadState(): Promise<void> {
     p.quickEditSource = typeof p.quickEditSource === 'string' ? p.quickEditSource : undefined;
     p.evidenceChecks = parseProjectChecks(p.evidenceChecks);
     p.agentEnv = sanitizeEnvVars(p.agentEnv);
+    p.worktreeSetupScript = sanitizeWorktreeScript(p.worktreeSetupScript);
+    p.worktreeTeardownScript = sanitizeWorktreeScript(p.worktreeTeardownScript);
+    p.worktreeIncludes = sanitizeWorktreeIncludes(p.worktreeIncludes);
     // Background evidence builds and the evidence review model are gone; drop
     // their old settings. Check suggestions use the review model instead.
     delete (p as unknown as Record<string, unknown>).evidenceAutoBuild;
@@ -939,6 +1015,7 @@ export async function loadState(): Promise<void> {
     }
   }
 
+  const suspension = await launchSuspension(raw);
   const restoredRunningAgentIds: string[] = [];
   const unreadableMindMaps: string[] = [];
   const usedRestoredAgentIds = new Set<string>();
@@ -1121,6 +1198,7 @@ export async function loadState(): Promise<void> {
       s.defaultPropagateSkipPermissions = raw.defaultPropagateSkipPermissions === true;
       s.canvasOwnershipBadges = raw.canvasOwnershipBadges !== false;
       s.finishReview = raw.finishReview !== false;
+      s.resumeAgentsOnLaunch = raw.resumeAgentsOnLaunch !== false;
       s.reviewModel = restoreReviewModel(raw.reviewModel);
 
       s.autoStartRemoteAccess = raw.autoStartRemoteAccess === true;
@@ -1291,6 +1369,7 @@ export async function loadState(): Promise<void> {
           signalDoneReceived: pt.signalDoneReceived,
           signalDoneAt: pt.signalDoneAt,
           signalDoneConsumed: pt.signalDoneConsumed,
+          closeSuggestion: parseCloseSuggestion(pt.closeSuggestion),
           needsReview: pt.needsReview,
           verification: pt.verification,
           verificationRun: restoredVerificationRun(pt.verificationRun),
@@ -1314,14 +1393,15 @@ export async function loadState(): Promise<void> {
         for (let i = 0; i < agentDefs.length; i++) {
           const agentId = agentIds[i];
           const agentDef = agentDefs[i];
+          const suspended = restoresSuspended(pt, agentId, suspension);
           const agent: Agent = {
             id: agentId,
             taskId,
             def: agentDef,
             resumed: true,
-            status: 'running',
+            status: suspended ? 'exited' : 'running',
             exitCode: null,
-            signal: null,
+            signal: suspended ? SUSPENDED_SIGNAL : null,
             lastOutput: [],
             generation: 0,
             spawnDelayMs:
@@ -1329,7 +1409,7 @@ export async function loadState(): Promise<void> {
             attachExisting: true,
           };
           s.agents[agentId] = agent;
-          restoredRunningAgentIds.push(agentId);
+          if (!suspended) restoredRunningAgentIds.push(agentId);
         }
       }
 
@@ -1423,6 +1503,7 @@ export async function loadState(): Promise<void> {
                 return isSessionId(id) ? id : null;
               })
             : undefined,
+          savedAgentIds: restoredSavedAgentIds(pt, agentDefs.length),
           savedAgentDef: agentDefs[0],
           savedAgentDefs: agentDefs.length > 0 ? agentDefs : undefined,
           delegationParent: pt.delegationParent === true,
@@ -1452,6 +1533,7 @@ export async function loadState(): Promise<void> {
           signalDoneReceived: pt.signalDoneReceived,
           signalDoneAt: pt.signalDoneAt,
           signalDoneConsumed: pt.signalDoneConsumed,
+          closeSuggestion: parseCloseSuggestion(pt.closeSuggestion),
           needsReview: pt.needsReview,
           verification: pt.verification,
           verificationRun: restoredVerificationRun(pt.verificationRun),
@@ -1488,6 +1570,8 @@ export async function loadState(): Promise<void> {
         s.activeTaskId = s.taskOrder[0] ?? null;
         if (s.activeTaskId === null) s.focusMode = false;
       }
+
+      restoredRunningAgentIds.push(...startActiveTaskAgents(s));
 
       // Set activeAgentId from the active task
       if (s.activeTaskId && s.tasks[s.activeTaskId]) {

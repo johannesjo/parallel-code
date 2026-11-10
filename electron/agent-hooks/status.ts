@@ -34,7 +34,7 @@ export interface AgentHookStatusUpdate {
   todos?: PlanStep[];
   /** The shell command a failed tool call ran; event-only, like `todos`. */
   failedCommand?: string;
-  /** A background sub-agent or workflow is still running, so the lead may sit at
+  /** A background sub-agent, workflow, shell command, or MCP tool call is still running, so the lead may sit at
    *  its prompt while `working`: Esc there interrupts nothing. */
   background?: boolean;
 }
@@ -152,17 +152,27 @@ function toolResultContext(
   return todos ? { todos } : {};
 }
 
-/** Background shell commands still running as the turn ends; the lead is not
- *  held `working` for them (a dev server never ends), so the card names them. */
+/** Background shell commands still running as the turn ends. The subagent
+ *  gate holds the lead `working` for most of them; servers never end, so for
+ *  those the card only names them. */
 function summarizeBackgroundShells(tasks: unknown): string | undefined {
   if (!Array.isArray(tasks)) return undefined;
-  const running = tasks
-    .map(asRecord)
-    .filter((task) => task?.type === 'shell' && task.status === 'running');
-  if (running.length === 0) return undefined;
-  const first = asString(running[0]?.description) ?? asString(running[0]?.command) ?? 'command';
-  const more = running.length > 1 ? ` +${running.length - 1}` : '';
-  return clip(`background: ${first}${more}`, DETAIL_MAX_CHARS);
+  return describeShells(
+    tasks.filter(
+      (task) => asRecord(task)?.type === 'shell' && asRecord(task)?.status === 'running',
+    ),
+  );
+}
+
+/** The card's line for running background shells or MCP tool calls, e.g.
+ *  `background: Run tests +1`. */
+export function describeShells(shells: readonly unknown[]): string | undefined {
+  if (shells.length === 0) return undefined;
+  const first = asRecord(shells[0]);
+  const name =
+    asString(first?.description) ?? asString(first?.command) ?? asString(first?.tool) ?? 'command';
+  const more = shells.length > 1 ? ` +${shells.length - 1}` : '';
+  return clip(`background: ${name}${more}`, DETAIL_MAX_CHARS);
 }
 
 /** First question text of an AskUserQuestion input, if any. */

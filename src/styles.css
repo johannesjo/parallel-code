@@ -2987,7 +2987,7 @@ textarea::placeholder {
   grid-template-rows: 1fr;
   opacity: 1;
   transition:
-    grid-template-rows 0.18s ease,
+    grid-template-rows var(--motion-enter) var(--ease-out),
     opacity var(--motion-fast) var(--ease-out);
 }
 
@@ -4206,7 +4206,8 @@ html:not([data-look^='islands-']) .task-column .shell-terminals-row {
   position: absolute;
   top: 6px;
   right: 8px;
-  z-index: 10;
+  /* Above the exit and setup badges in the same corner. */
+  z-index: 11;
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--motion-fast) var(--ease-out);
@@ -4687,7 +4688,7 @@ html[data-look='islands-light'] .window-title-icon {
   text-align: center;
   pointer-events: none;
   opacity: 0;
-  animation: hold-to-quit-appear 120ms ease 100ms forwards;
+  animation: hold-to-quit-appear var(--motion-fast) var(--ease-out) 100ms forwards;
 }
 
 .hold-to-quit kbd {

@@ -39,12 +39,50 @@ describe('MCPClient transport', () => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it('stops a signal wait without retrying when the tool call is cancelled', async () => {
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const cancel = new AbortController();
+    const pending = client.waitForSignalDone('c', 60_000, cancel.signal).catch((e: unknown) => e);
+
+    cancel.abort();
+
+    expect(await pending).toHaveProperty('name', 'AbortError');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('names the app and the network cause when it cannot be reached', async () => {
+    const refused = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+    stubFetch(Object.assign(new TypeError('fetch failed'), { cause: refused }));
+
+    const err = await client.getTaskStatus('t').catch((e: unknown) => e);
+
+    expect((err as Error).message).toBe(
+      'Parallel Code app unreachable at http://x (ECONNREFUSED). If the app restarted, restart or resume this agent session.',
+    );
+  });
+
+  it('keeps a request that fails before reaching the network from reading as unreachable', async () => {
+    stubFetch(new TypeError('Headers.append: invalid header value'));
+
+    const err = await client.getTaskStatus('t').catch((e: unknown) => e);
+
+    expect((err as Error).message).toBe('Headers.append: invalid header value');
+  });
+
   it('reports the real cause when retries consume the whole wait budget', async () => {
     vi.useFakeTimers();
     stubFetch(new TypeError('fetch failed'), new TypeError('fetch failed'));
     const pending = client.waitForSignalDone('c', 1000).catch((e: unknown) => e);
     await vi.advanceTimersByTimeAsync(5000);
     const err = await pending;
-    expect((err as Error).message).toContain('1000ms timeout elapsed: fetch failed');
+    expect((err as Error).message).toContain(
+      '1000ms timeout elapsed: Parallel Code app unreachable at http://x',
+    );
   });
 });

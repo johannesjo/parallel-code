@@ -313,6 +313,38 @@ describe('landing state persistence', () => {
   });
 });
 
+describe('close suggestion persistence', () => {
+  it('restores a valid close suggestion and drops a malformed one', async () => {
+    const def = agentDef();
+    const closeSuggestion = { reason: 'Superseded by task B', at: '2026-11-06T10:00:00.000Z' };
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'hsl(0, 70%, 75%)' }],
+        lastProjectId: 'project-1',
+        lastAgentId: null,
+        taskOrder: ['task-1', 'task-2'],
+        collapsedTaskOrder: [],
+        tasks: {
+          'task-1': { ...persistedTask(def), coordinatedBy: 'coord-1', closeSuggestion },
+          'task-2': {
+            ...persistedTask(def),
+            id: 'task-2',
+            coordinatedBy: 'coord-1',
+            closeSuggestion: { reason: 42 },
+          },
+        },
+        activeTaskId: 'task-1',
+        sidebarVisible: true,
+      }),
+    );
+
+    await loadState();
+
+    expect(store.tasks['task-1'].closeSuggestion).toEqual(closeSuggestion);
+    expect(store.tasks['task-2'].closeSuggestion).toBeUndefined();
+  });
+});
+
 describe('background verify persistence', () => {
   function stateWith(project: Record<string, unknown>, tasks: Record<string, unknown>): string {
     return JSON.stringify({
@@ -724,6 +756,40 @@ describe('collapsed session ownership persistence', () => {
     const call = mockInvoke.mock.calls.find(([channel]) => channel === IPC.SaveAppState);
     const persisted = JSON.parse(call?.[1].json);
     expect(persisted.tasks['task-1'].savedAgentSessionIds).toEqual(expected);
+  });
+});
+
+describe('collapsed coordinated child agent IDs', () => {
+  it.each([
+    { saved: ['agent-1'], expected: ['agent-1'] },
+    { saved: ['agent-1', 'agent-2'], expected: undefined },
+    { saved: [42], expected: undefined },
+  ])('restores and saves pane IDs $saved', async ({ saved, expected }) => {
+    const def = agentDef();
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({
+        projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'blue' }],
+        taskOrder: ['coord-1'],
+        collapsedTaskOrder: ['task-1'],
+        tasks: {
+          'coord-1': { ...persistedTask(def), id: 'coord-1' },
+          'task-1': {
+            ...persistedTask(def),
+            coordinatedBy: 'coord-1',
+            collapsed: true,
+            agentIds: saved,
+          },
+        },
+      }),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].savedAgentIds).toEqual(expected);
+    mockInvoke.mockClear();
+    mockInvoke.mockResolvedValue(undefined);
+    await saveState();
+    const call = mockInvoke.mock.calls.find(([channel]) => channel === IPC.SaveAppState);
+    const persisted = JSON.parse(call?.[1].json);
+    expect(persisted.tasks['task-1'].agentIds).toEqual(expected);
   });
 });
 
@@ -1888,6 +1954,34 @@ describe('finish review setting', () => {
     await loadState();
     expect(store.reviewModel).toEqual({ provider: 'claude', model: 'opus' });
     expect(store.reviewGuidance).toBe('');
+  });
+});
+
+describe('resume agents on launch setting', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const savedSetting = async (): Promise<unknown> => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const call = mockInvoke.mock.calls.findLast(([channel]) => channel === IPC.SaveAppState);
+    return JSON.parse(call?.[1].json).resumeAgentsOnLaunch;
+  };
+
+  it('stays on unless it was turned off, and stores only the opt-out', async () => {
+    // A state file written before the setting existed has no key.
+    mockInvoke.mockResolvedValueOnce(basePayload());
+    await loadState();
+    expect(store.resumeAgentsOnLaunch).toBe(true);
+    expect(await savedSetting()).toBeUndefined();
+
+    mockInvoke.mockResolvedValueOnce(basePayload({ resumeAgentsOnLaunch: false }));
+    await loadState();
+    expect(store.resumeAgentsOnLaunch).toBe(false);
+    expect(await savedSetting()).toBe(false);
+
+    mockInvoke.mockResolvedValueOnce(basePayload({ resumeAgentsOnLaunch: 'no' }));
+    await loadState();
+    expect(store.resumeAgentsOnLaunch).toBe(true);
   });
 });
 

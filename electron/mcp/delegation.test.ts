@@ -70,6 +70,8 @@ let core: {
   getTaskStatus: ReturnType<typeof vi.fn>;
   getTaskDiff: ReturnType<typeof vi.fn>;
   getTaskOutput: ReturnType<typeof vi.fn>;
+  suggestClose: ReturnType<typeof vi.fn>;
+  archiveTask: ReturnType<typeof vi.fn>;
   isRegisteredCoordinator: ReturnType<typeof vi.fn>;
   waitForSignalDone: ReturnType<typeof vi.fn>;
   detachChildren: ReturnType<typeof vi.fn>;
@@ -80,6 +82,7 @@ let core: {
   setMaxConcurrentSubTasks: ReturnType<typeof vi.fn>;
   hasPendingPrompt: ReturnType<typeof vi.fn>;
   recordUserMerge: ReturnType<typeof vi.fn>;
+  landSelf: ReturnType<typeof vi.fn>;
 };
 let persist: () => void;
 let changed: Mock<(event: DelegationChanged) => void>;
@@ -197,6 +200,8 @@ beforeEach(() => {
     getTaskStatus: vi.fn(),
     getTaskDiff: vi.fn(),
     getTaskOutput: vi.fn(),
+    suggestClose: vi.fn(),
+    archiveTask: vi.fn(),
     isRegisteredCoordinator: vi.fn().mockReturnValue(true),
     waitForSignalDone: vi.fn().mockResolvedValue({ remaining: 0 }),
     detachChildren: vi.fn().mockReturnValue(['child']),
@@ -207,6 +212,7 @@ beforeEach(() => {
     setMaxConcurrentSubTasks: vi.fn(),
     hasPendingPrompt: vi.fn().mockReturnValue(false),
     recordUserMerge: vi.fn(),
+    landSelf: vi.fn().mockResolvedValue({ ok: true }),
   };
   persist = vi.fn();
   changed = vi.fn();
@@ -624,6 +630,31 @@ describe('delegation authority and creation', () => {
     );
   });
 
+  it('rejects a malformed land_self from an automatic child before landing anything', async () => {
+    await register('parent');
+    await register('child', { parentTaskId: 'parent', integrationPolicy: 'automatic' });
+    const child = session('child', 'child-launch', true);
+    child.capabilities = { ...child.capabilities, profile: 'child-automatic' };
+    await expect(
+      service.callTool(child, 'land_self', { verification: { checks: [{ result: 'passed' }] } }),
+    ).rejects.toThrow('verification check name must be a non-empty string');
+    expect(core.landSelf).not.toHaveBeenCalled();
+    const checks = [{ name: 'tests', command: 'npm test', result: 'passed' }];
+    await service.callTool(child, 'land_self', { verification: { checks }, summary: 'Done' });
+    expect(core.landSelf).toHaveBeenCalledWith('child', {
+      verification: { checks: [{ ...checks[0], reason: undefined }] },
+      summary: 'Done',
+    });
+  });
+
+  it('hands the cancellation of a session wait to the coordinator waiter', async () => {
+    await register('parent');
+    const cancel = new AbortController();
+    const caller = { ...session('parent'), signal: cancel.signal };
+    await service.callTool(caller, 'wait_for_signal_done', { timeoutMs: 1000 });
+    expect(core.waitForSignalDone).toHaveBeenCalledWith('parent', 1000, { signal: cancel.signal });
+  });
+
   it('stops every child pane without stopping the parent or unrelated tasks', async () => {
     await register('parent');
     await register('child', { parentTaskId: 'parent' });
@@ -853,6 +884,65 @@ describe('delegation authority and creation', () => {
     await expect(service.callTool(parent, 'merge_task', { taskId: 'child' })).rejects.toThrow(
       'unavailable',
     );
+  });
+
+  it('lets a parent suggest closing only its own children, with a reason', async () => {
+    await register('parent');
+    await register('child', { parentTaskId: 'parent', integrationPolicy: 'review' });
+    const parent = session('parent');
+    const suggestion = { reason: 'Superseded by the retry', at: '2026-11-06T10:00:00.000Z' };
+    core.suggestClose.mockReturnValue(suggestion);
+    core.getTaskStatus.mockReturnValue({ coordinatorTaskId: 'parent' });
+    await expect(
+      service.callTool(parent, 'suggest_close_task', {
+        taskId: 'child',
+        reason: 'Superseded by the retry',
+      }),
+    ).resolves.toEqual(suggestion);
+    expect(core.suggestClose).toHaveBeenCalledWith('child', 'Superseded by the retry');
+    await expect(
+      service.callTool(parent, 'suggest_close_task', { taskId: 'child', reason: '  ' }),
+    ).rejects.toThrow('reason');
+    core.getTaskStatus.mockReturnValue({ coordinatorTaskId: 'someone-else' });
+    await expect(
+      service.callTool(parent, 'suggest_close_task', { taskId: 'foreign', reason: 'Done' }),
+    ).rejects.toThrow('not your child');
+    const child = session('child', 'child-instance', true);
+    await expect(
+      service.callTool(child, 'suggest_close_task', { taskId: 'child', reason: 'Done' }),
+    ).rejects.toThrow('unavailable');
+    expect(core.suggestClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a parent archive only its own children, with a reason', async () => {
+    await register('parent');
+    await register('child', { parentTaskId: 'parent', integrationPolicy: 'review' });
+    const parent = session('parent');
+    const archived = { reason: 'Merged', at: '2026-11-07T10:00:00.000Z', archived: true };
+    core.archiveTask.mockReturnValue(archived);
+    core.getTaskStatus.mockReturnValue({ coordinatorTaskId: 'parent' });
+    await expect(
+      service.callTool(parent, 'archive_task', { taskId: 'child', reason: 'Merged' }),
+    ).resolves.toEqual(archived);
+    expect(core.archiveTask).toHaveBeenCalledWith('child', 'Merged', false);
+    await service.callTool(parent, 'archive_task', {
+      taskId: 'child',
+      reason: 'Merged',
+      force: true,
+    });
+    expect(core.archiveTask).toHaveBeenLastCalledWith('child', 'Merged', true);
+    await expect(
+      service.callTool(parent, 'archive_task', { taskId: 'child', reason: '' }),
+    ).rejects.toThrow('reason');
+    core.getTaskStatus.mockReturnValue({ coordinatorTaskId: 'someone-else' });
+    await expect(
+      service.callTool(parent, 'archive_task', { taskId: 'foreign', reason: 'Done' }),
+    ).rejects.toThrow('not your child');
+    const child = session('child', 'child-instance', true);
+    await expect(
+      service.callTool(child, 'archive_task', { taskId: 'child', reason: 'Done' }),
+    ).rejects.toThrow('unavailable');
+    expect(core.archiveTask).toHaveBeenCalledTimes(2);
   });
 
   it('says a closed child is gone instead of calling it foreign', async () => {

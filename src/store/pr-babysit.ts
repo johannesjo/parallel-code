@@ -1,7 +1,9 @@
-/** PR babysitting: sends a task's failing PR checks to its agent until CI passes.
+/** PR babysitting: sends a task's failing PR checks and merge conflicts to its
+ *  agent until CI passes.
  *  One toggle per task covers all its PRs, since they share the task's agent. */
 import { reconcile } from 'solid-js/store';
 import { errMessage, warn as logWarn } from '../lib/log';
+import { buildMergeConflictPrompt } from '../lib/github-prompts';
 import { parseGitHubUrl } from '../lib/github-url';
 import {
   MAX_BABYSIT_ATTEMPTS,
@@ -33,7 +35,7 @@ const START_CHECK_MS = 10_000;
 // the 5-minute settled refresh; idle past that with no push means it stopped,
 // often on a command it could not run.
 const STALL_MS = 6 * 60_000;
-const STALLED_STATUS = 'Stuck: CI still fails and no fix was pushed';
+const STALLED_STATUS = 'Stuck: checks still fail and no fix was pushed';
 
 export function getPrBabysit(taskId: string): PrBabysit | undefined {
   return store.tasks[taskId]?.prBabysit;
@@ -125,6 +127,11 @@ export function isPrBabysitStuck(taskId: string): boolean {
   return !task.closingStatus && !!agentId && store.agents[agentId]?.status === 'exited';
 }
 
+/** Babysit is on and can still act, so the task's failing PRs wait on it. */
+export function isPrBabysat(taskId: string): boolean {
+  return !!getPrBabysit(taskId) && !isPrBabysitStuck(taskId);
+}
+
 /** Why the task's first agent cannot take an automatic prompt now; null when it can. */
 export function babysitAgentBlocker(taskId: string): string | null {
   const task = store.tasks[taskId];
@@ -154,7 +161,9 @@ export function prBabysitStatus(taskId: string): string | null {
   const ciReason = babysitCiWaitReason(babysit, babysitChecks(taskId));
   if (ciReason) return ciReason;
   const blocker = babysitAgentBlocker(taskId);
-  return blocker ? `CI failed; waiting: ${blocker}` : 'Sending CI failures to the agent';
+  return blocker
+    ? `Checks failed; waiting: ${blocker}`
+    : 'Sending CI failures and conflicts to the agent';
 }
 
 /** The failure prompts of the task's failing PRs, or why they must not be sent;
@@ -179,11 +188,11 @@ async function loadFailurePrompts(
     // Confirmed already unless found after Babysit was turned on.
     const refusal = await babysitRefusal(taskId, pr.url);
     if (refusal) return { refusal };
-    const prompt = await loadFailedChecksPrompt({
-      number: Number(number),
-      url: pr.url,
-      ...(pr.repo ? { repo: pr.repo } : {}),
-    });
+    const ref = { number: Number(number), url: pr.url, ...(pr.repo ? { repo: pr.repo } : {}) };
+    // The conflict is the watcher's own check, so GitHub's failed checks never list it.
+    if (getPrChecks(pr.watchId)?.mergeable === 'CONFLICTING')
+      prompts.push(buildMergeConflictPrompt(ref));
+    const prompt = await loadFailedChecksPrompt(ref);
     if (prompt !== null) prompts.push(prompt);
   }
   return prompts;
@@ -207,10 +216,10 @@ async function deliverFailures(taskId: string, headSha: string): Promise<void> {
     return;
   }
   if (prompts.length === 0) {
-    // Nothing the agent can act on, such as only a merge conflict; skip this commit.
+    // Nothing the agent can act on, such as a check without logs; skip this commit.
     setPrBabysit(taskId, { ...babysit, lastSentSha: headSha, stalled: true });
     showNotification(
-      'Babysit could not load a failing check to send (a merge conflict alone has none). It is back with you until the next push.',
+      'Babysit could not load a failing check to send. It is back with you until the next push.',
     );
     return;
   }
@@ -221,14 +230,16 @@ async function deliverFailures(taskId: string, headSha: string): Promise<void> {
   // Recorded first so a slow send cannot overlap a second one for the same commit.
   setPrBabysit(taskId, { attempts, lastSentSha: headSha });
   await sendPrompt(taskId, agentId, prompt, { appPrompt: true });
-  showNotification(`Babysit sent CI failures to the agent (${attempts}/${MAX_BABYSIT_ATTEMPTS}).`);
+  showNotification(
+    `Babysit sent CI failures or conflicts to the agent (${attempts}/${MAX_BABYSIT_ATTEMPTS}).`,
+  );
   // A paste the agent holds instead of submitting would otherwise fail silently.
   // shortcut: one late look — a turn that ends inside the window is a false alarm.
   await new Promise((r) => setTimeout(r, START_CHECK_MS));
   if (store.agents[agentId]?.status === 'running' && isAgentIdle(agentId)) {
     const name = store.tasks[taskId]?.name ?? 'the task';
     showNotification(
-      `Babysit pasted CI failures into “${name}”, but the agent did not start. Check its terminal; it may need Enter.`,
+      `Babysit pasted CI failures or conflicts into “${name}”, but the agent did not start. Check its terminal; it may need Enter.`,
     );
   }
 }
@@ -292,7 +303,7 @@ export function startPrBabysitWatcher(): () => void {
       else if (step.kind === 'give-up') {
         stopPrBabysit(taskId);
         showNotification(
-          `Babysit stopped: CI still fails after ${MAX_BABYSIT_ATTEMPTS} fix attempts.`,
+          `Babysit stopped: checks still fail after ${MAX_BABYSIT_ATTEMPTS} fix attempts.`,
         );
       } else if (step.kind === 'send' && readyAgentId(taskId)) {
         inFlight.add(taskId);

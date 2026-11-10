@@ -11,6 +11,197 @@ beforeEach(() => {
   mockInvoke.mockResolvedValue(undefined);
 });
 
+const claudeDef = {
+  id: 'claude',
+  name: 'Claude Code',
+  command: 'claude',
+  args: [],
+  resume_args: ['--continue'],
+  skip_permissions_args: [],
+  description: '',
+};
+
+function savedTask(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id,
+    name: id,
+    projectId: 'project-1',
+    branchName: `task/${id}`,
+    worktreePath: `/repo/.worktrees/${id}`,
+    notes: '',
+    lastPrompt: '',
+    shellCount: 0,
+    gitIsolation: 'worktree',
+    agentDef: claudeDef,
+    agentIds: [`${id}-agent`],
+    ...extra,
+  };
+}
+
+/** Opens the app on a saved workspace of the given tasks. */
+async function launch(options: {
+  tasks: Record<string, unknown>[];
+  state?: Record<string, unknown>;
+  /** What the main process answers when asked which agents still have a process. */
+  liveAgentIds?: string[] | Error;
+}) {
+  const ids = options.tasks.map((task) => String(task.id));
+  const persisted = JSON.stringify({
+    projects: [{ id: 'project-1', name: 'Repo', path: '/repo', color: 'blue' }],
+    tasks: Object.fromEntries(options.tasks.map((task) => [task.id, task])),
+    taskOrder: ids,
+    collapsedTaskOrder: [],
+    activeTaskId: null,
+    ...options.state,
+  });
+  mockInvoke.mockImplementation(async (channel) => {
+    if (channel === IPC.LoadAppState) return persisted;
+    if (channel === IPC.ListRunningAgentIds) {
+      if (options.liveAgentIds instanceof Error) throw options.liveAgentIds;
+      return options.liveAgentIds ?? [];
+    }
+    return undefined;
+  });
+  const { loadState } = await import('./persistence');
+  await loadState();
+  const { store } = await import('./core');
+  const { getTaskAttentionState } = await import('./taskStatus');
+  const { isAgentSuspended } = await import('./agent-suspend');
+  return {
+    agent: (taskId: string) => store.agents[`${taskId}-agent`],
+    suspended: (taskId: string) => isAgentSuspended(store.agents[`${taskId}-agent`]),
+    attention: getTaskAttentionState,
+  };
+}
+
+describe('resuming agents on launch', () => {
+  it('leaves agents suspended when the setting is off', async () => {
+    const app = await launch({
+      tasks: [savedTask('one'), savedTask('two')],
+      state: { resumeAgentsOnLaunch: false },
+    });
+
+    for (const id of ['one', 'two']) {
+      expect(app.agent(id)).toMatchObject({
+        status: 'exited',
+        signal: 'suspended',
+        exitCode: null,
+      });
+      expect(app.suspended(id)).toBe(true);
+      // Resume continues the conversation, as launch would have.
+      expect(app.agent(id)?.resumed).toBe(true);
+      // Neither working, as a started agent is, nor failed.
+      expect(app.attention(id)).toBe('idle');
+    }
+  }, 20_000);
+
+  it('starts every agent when the setting is on, as it is for a state file without the key', async () => {
+    const app = await launch({ tasks: [savedTask('one'), savedTask('two')] });
+
+    for (const id of ['one', 'two']) {
+      expect(app.agent(id)).toMatchObject({ status: 'running', signal: null, resumed: true });
+      expect(app.attention(id)).toBe('active');
+    }
+  }, 20_000);
+
+  it('reattaches an agent whose process is still alive instead of suspending it', async () => {
+    const app = await launch({
+      tasks: [savedTask('alive'), savedTask('stopped')],
+      state: { resumeAgentsOnLaunch: false },
+      liveAgentIds: ['alive-agent'],
+    });
+
+    expect(app.agent('alive')).toMatchObject({ status: 'running', attachExisting: true });
+    expect(app.attention('alive')).toBe('active');
+    expect(app.suspended('stopped')).toBe(true);
+  }, 20_000);
+
+  it('starts every agent when it cannot tell which are still alive', async () => {
+    const app = await launch({
+      tasks: [savedTask('one'), savedTask('two')],
+      state: { resumeAgentsOnLaunch: false },
+      liveAgentIds: new Error('main process unavailable'),
+    });
+
+    for (const id of ['one', 'two']) {
+      expect(app.agent(id)).toMatchObject({ status: 'running', signal: null });
+    }
+  }, 20_000);
+
+  it('still starts a coordinator and its sub-tasks', async () => {
+    const app = await launch({
+      tasks: [
+        savedTask('lead', { coordinatorMode: true }),
+        savedTask('child', { coordinatedBy: 'lead' }),
+        savedTask('plain'),
+      ],
+      state: { resumeAgentsOnLaunch: false },
+    });
+
+    expect(app.agent('lead')?.status).toBe('running');
+    expect(app.agent('child')?.status).toBe('running');
+    expect(app.suspended('plain')).toBe(true);
+  }, 20_000);
+
+  it('still starts the task that was open when the app closed', async () => {
+    const app = await launch({
+      tasks: [savedTask('one'), savedTask('open'), savedTask('three')],
+      state: { resumeAgentsOnLaunch: false, activeTaskId: 'open' },
+    });
+
+    expect(app.agent('open')).toMatchObject({ status: 'running', signal: null });
+    expect(app.suspended('one')).toBe(true);
+    expect(app.suspended('three')).toBe(true);
+  }, 20_000);
+
+  // Focus mode shows one task; with nothing saved as open, launch opens the first.
+  it.each([null, 'closed-long-ago'])(
+    'starts the task that focus mode opens when the saved one is %s',
+    async (activeTaskId) => {
+      const app = await launch({
+        tasks: [savedTask('first'), savedTask('second')],
+        state: { resumeAgentsOnLaunch: false, focusMode: true, activeTaskId },
+      });
+
+      expect(app.agent('first')).toMatchObject({ status: 'running', signal: null });
+      expect(app.attention('first')).toBe('active');
+      expect(app.suspended('second')).toBe(true);
+    },
+    20_000,
+  );
+
+  it('starts every agent when the reply about live ones is not a list', async () => {
+    const app = await launch({
+      tasks: [savedTask('one')],
+      state: { resumeAgentsOnLaunch: false },
+      liveAgentIds: 'one-agent' as unknown as string[],
+    });
+
+    expect(app.agent('one')).toMatchObject({ status: 'running', signal: null });
+  }, 20_000);
+
+  it("leaves a document workspace's agent to start when its pane opens", async () => {
+    const { documentAgentTaskId } = await import('../documents/task-id');
+    const id = documentAgentTaskId('docs');
+    const app = await launch({
+      tasks: [],
+      state: {
+        resumeAgentsOnLaunch: false,
+        projects: [{ id: 'docs', name: 'Docs', path: '/docs', color: '', kind: 'document' }],
+        tasks: {
+          [id]: savedTask(id, {
+            projectId: 'docs',
+            gitIsolation: 'none',
+            agentIds: [`${id}-agent`],
+          }),
+        },
+      },
+    });
+
+    expect(app.agent(id)).toMatchObject({ status: 'running', signal: null });
+  }, 20_000);
+});
+
 describe('startup persistence', () => {
   // The first test imports the whole store graph cold after resetModules, which can take longer
   // than the default 5s on a loaded machine.

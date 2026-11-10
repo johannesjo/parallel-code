@@ -7,6 +7,7 @@ const green: PrChecksState = {
   isDraft: false,
   reviewDecision: null,
   mergeable: 'MERGEABLE',
+  mergeStateStatus: 'CLEAN',
   passing: 3,
   pending: 0,
   failing: 0,
@@ -23,6 +24,25 @@ describe('prBoardStatus', () => {
   it('calls a green, unblocked PR ready to merge', () => {
     expect(prBoardStatus(green)?.label).toBe('Ready to merge');
     expect(prBoardStatus({ ...green, reviewDecision: 'APPROVED' })?.kind).toBe('ready');
+    expect(prBoardStatus({ ...green, mergeStateStatus: 'HAS_HOOKS' })?.kind).toBe('ready');
+  });
+
+  it('waits until GitHub has settled whether a green PR can merge', () => {
+    const checking = { kind: 'blocked', label: 'CI passed · Checking merge status' };
+    expect(prBoardStatus({ ...green, mergeable: 'UNKNOWN' })).toEqual(checking);
+    expect(prBoardStatus({ ...green, mergeStateStatus: 'UNKNOWN' })).toEqual(checking);
+    expect(prBoardStatus({ ...green, mergeStateStatus: undefined })).toEqual(checking);
+  });
+
+  it('names the branch protection that holds back a green PR, as Finish does', () => {
+    expect(prBoardStatus({ ...green, mergeStateStatus: 'BEHIND' })).toEqual({
+      kind: 'blocked',
+      label: 'CI passed · Branch needs updating',
+    });
+    expect(prBoardStatus({ ...green, mergeStateStatus: 'BLOCKED' })).toEqual({
+      kind: 'blocked',
+      label: 'CI passed · Merge requirements not met',
+    });
   });
 
   it('says merged even though a merged PR reports no checks', () => {

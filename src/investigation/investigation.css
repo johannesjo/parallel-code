@@ -363,7 +363,7 @@
 /* An agent-opened graph stays strongly muted while the agent writes its first nodes.
    The waiting text, spinner and messages sit outside the workspace and keep full strength. */
 .reasoning-graph .investigation-workspace {
-  transition: opacity 240ms;
+  transition: opacity var(--motion-enter) var(--ease-out);
 }
 .reasoning-graph[data-drafting='true'] .investigation-workspace {
   opacity: 0.2;

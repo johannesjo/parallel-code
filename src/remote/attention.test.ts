@@ -64,6 +64,20 @@ describe('agentStatusDisplay', () => {
   });
 });
 
+describe('a suspended task', () => {
+  const suspended = { status: 'exited', attention: 'idle', suspended: true } as const;
+
+  it('reads as suspended and calm, not as exited or failed', () => {
+    expect(agentStatusDisplay(suspended)).toMatchObject({ label: 'Suspended', glow: false });
+    expect(agentStatusDisplay({ ...suspended, attention: 'ready' }).label).toBe('Suspended');
+    expect(needsYou(suspended)).toBe(false);
+  });
+
+  it('still reports failed CI, which needs the user either way', () => {
+    expect(agentStatusDisplay({ ...suspended, ci: 'failure' }).label).toBe('CI failed');
+  });
+});
+
 describe('needsYou', () => {
   it('counts questions, errors and failed CI on a settled task', () => {
     expect(needsYou({ attention: 'needs_input' })).toBe(true);

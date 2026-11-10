@@ -88,8 +88,15 @@ export function hasTerminalDraftActivity(data: string): boolean {
   return false;
 }
 
-export function nextTerminalInputPending(currentPending: boolean, data: string): boolean {
+// Plain Enter in the kitty keyboard protocol, unmodified or with modifier 1 (none).
+const KITTY_ENTER = new Set(['\x1b[13u', '\x1b[13;1u']);
+
+function scanTerminalInput(
+  currentPending: boolean,
+  data: string,
+): { pending: boolean; submitted: boolean } {
   let pending = currentPending;
+  let submitted = false;
   let inPaste = false;
   for (let i = 0; i < data.length; i++) {
     const ch = data[i];
@@ -98,11 +105,13 @@ export function nextTerminalInputPending(currentPending: boolean, data: string):
       const sequence = data.slice(i, end + 1);
       if (sequence === '\x1b[200~') inPaste = true;
       else if (sequence === '\x1b[201~') inPaste = false;
+      else if (!inPaste && pending && KITTY_ENTER.has(sequence)) submitted = true;
       i = end;
     } else if (inPaste) {
       // Newlines inside bracketed paste insert text; only a later Enter submits.
       pending = true;
     } else if (ch === '\r' || ch === '\n' || ch === '\x03' || ch === '\x15') {
+      if (pending && (ch === '\r' || ch === '\n')) submitted = true;
       pending = false;
     } else if (ch === '\x7f') {
       // Backspace: can't know if line is now empty without a char counter; leave pending unchanged.
@@ -110,5 +119,15 @@ export function nextTerminalInputPending(currentPending: boolean, data: string):
       pending = true;
     }
   }
-  return pending;
+  return { pending, submitted };
+}
+
+export function nextTerminalInputPending(currentPending: boolean, data: string): boolean {
+  return scanTerminalInput(currentPending, data).pending;
+}
+
+/** Whether input sends a draft to the agent. The draft may be typed in the same
+ *  chunk as its Enter: the phone and pasted text arrive that way. */
+export function submitsTerminalDraft(currentPending: boolean, data: string): boolean {
+  return scanTerminalInput(currentPending, data).submitted;
 }

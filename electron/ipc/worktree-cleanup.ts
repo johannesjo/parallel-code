@@ -16,7 +16,7 @@ const CHOWN_TIMEOUT_MS = 120_000;
  * Image used for the throwaway chown container. The agent image is already
  * present whenever the task ran in Docker mode; `alpine` is the fallback for
  * host-mode tasks whose agent shelled out to containers of its own.
- * Kept local (not imported from pty.ts) to avoid a git.ts <-> pty.ts cycle.
+ * Kept local (not imported from pty.ts) to avoid a git-worktree.ts <-> pty.ts cycle.
  */
 const AGENT_IMAGE = 'parallel-code-agent:latest';
 const FALLBACK_IMAGE = 'alpine';

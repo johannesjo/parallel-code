@@ -99,6 +99,7 @@ import { errMessage } from '../lib/log';
 import { withViewTransition } from '../lib/viewTransition';
 import { isMarkdownPath } from '../lib/canvas-tabs';
 import { showNotification } from '../store/notification';
+import { prefersMotion } from '../lib/reducedMotion';
 
 /** Space between the picked passage and the composer, and from the column's edges. */
 const COMPOSER_GAP = 8;
@@ -329,7 +330,10 @@ function DocumentPane(props: { project: Project; toolbarSlot: HTMLElement | unde
       const comment = documentStore.composerDraft?.mode === 'note';
       requestAnimationFrame(() => {
         if (composerOpen() && !comment && s && !s.wholeDocument)
-          blockElement(s.endBlock)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          blockElement(s.endBlock)?.scrollIntoView({
+            block: 'nearest',
+            behavior: prefersMotion() ? 'smooth' : 'instant',
+          });
         placeComposer();
       });
     }),

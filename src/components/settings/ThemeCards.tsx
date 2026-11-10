@@ -47,7 +47,7 @@ export function PresetThemeCard(props: {
           'font-size': '11px',
           padding: '2px 6px',
           opacity: '0',
-          transition: 'opacity 0.15s',
+          transition: 'opacity var(--motion-fast) var(--ease-out)',
         }}
         class="preset-clone-btn btn-with-icon"
       >
@@ -93,7 +93,7 @@ function CustomThemeCard(props: {
           'font-size': '11px',
           padding: '2px 6px',
           opacity: '0',
-          transition: 'opacity 0.15s',
+          transition: 'opacity var(--motion-fast) var(--ease-out)',
         }}
         class="preset-clone-btn btn-with-icon"
       >

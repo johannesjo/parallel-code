@@ -21,6 +21,7 @@ import { ProjectColorPicker } from './ProjectColorPicker';
 import { ProjectIconField } from './ProjectIconField';
 import { ProjectFolderField } from './ProjectFolderField';
 import { ProjectTaskSection } from './ProjectTaskSection';
+import { ProjectWorktreeSetupSection } from './ProjectWorktreeSetupSection';
 import { ProjectVerificationSection } from './ProjectVerificationSection';
 import { createProjectSettingsForm } from './project-settings-form';
 import { DialogTabs, dialogTabId, dialogTabPanelId, type DialogTab } from './DialogTabs';
@@ -251,6 +252,8 @@ export function EditProjectDialog(props: EditProjectDialogProps) {
                     onImportWorktrees={() => setShowImportDialog(true)}
                     onEnter={saveOnEnter}
                   />
+
+                  <ProjectWorktreeSetupSection form={form} projectRoot={project().path} />
 
                   <ProjectSection title="Agent collaboration">
                     <ProjectCheckbox

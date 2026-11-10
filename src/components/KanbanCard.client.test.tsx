@@ -47,6 +47,8 @@ const card: KanbanCard = {
 const green: PrChecksState = {
   overall: 'success',
   merged: false,
+  mergeable: 'MERGEABLE',
+  mergeStateStatus: 'CLEAN',
   passing: 1,
   pending: 0,
   failing: 0,

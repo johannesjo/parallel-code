@@ -103,7 +103,9 @@ export function computeSidebarTaskOrder(): string[] {
     const task = store.tasks[taskId];
     if (!task) return;
     const children = getCoordinatorChildren(taskId);
-    order.push(...children.active, ...children.collapsed);
+    order.push(...children.active);
+    // Archived children are folded away until the user opens the group.
+    if (task.archivedChildrenShown) order.push(...children.collapsed);
   };
   for (const project of store.projects) {
     if (project.tasksCollapsed) continue;

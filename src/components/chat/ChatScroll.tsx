@@ -44,8 +44,14 @@ export function ChatScroll(props: {
     });
     if (!scroll || !content) return;
     const observer = new ResizeObserver(() => {
-      if (following) bottom();
-      else if (scroll) setLatest(atBottom(scroll));
+      if (following) return bottom();
+      if (!scroll) return;
+      // Layout flips reparent the log (see TaskPanel), and Chromium resets a moved
+      // scroller to the top without a scroll event. A reader's own scroll there
+      // records 0 first, so a 0 with a stale offset can only be such a reset.
+      // shortcut: restores the old offset, which drifts if the width reflowed text.
+      if (scroll.scrollTop === 0 && lastTop > 0) scroll.scrollTop = lastTop;
+      setLatest(atBottom(scroll));
     });
     observer.observe(scroll);
     observer.observe(content);

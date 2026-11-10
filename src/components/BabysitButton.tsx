@@ -11,7 +11,7 @@ import {
 } from '../store/pr-babysit';
 import { EyeIcon } from './icons';
 
-/** Toggles automatic hand-off of the PR's CI failures to the task's agent.
+/** Toggles automatic hand-off of the PR's CI failures and conflicts to the task's agent.
  *  `class` sets the look, so board cards can show it as one of their chips. */
 export function BabysitButton(props: { taskId: string; class?: string }) {
   const [busy, setBusy] = createSignal(false);
@@ -19,8 +19,8 @@ export function BabysitButton(props: { taskId: string; class?: string }) {
   const title = () => {
     const attempts = getPrBabysit(props.taskId)?.attempts ?? 0;
     return on()
-      ? `Babysitting: CI failures go to the agent automatically (${attempts}/${MAX_BABYSIT_ATTEMPTS} fix attempts used). ${prBabysitStatus(props.taskId) ?? ''}. Click to stop.`
-      : 'Send CI failures to the agent automatically until the checks pass';
+      ? `Babysitting: CI failures and conflicts go to the agent automatically (${attempts}/${MAX_BABYSIT_ATTEMPTS} fix attempts used). ${prBabysitStatus(props.taskId) ?? ''}. Click to stop.`
+      : 'Send CI failures and conflicts to the agent automatically until the checks pass';
   };
   const toggle = async () => {
     if (on()) {
@@ -35,7 +35,7 @@ export function BabysitButton(props: { taskId: string; class?: string }) {
         showNotification(
           blocker && blocker !== 'The agent is busy'
             ? `Babysitting, but failures wait until this clears: ${blocker}.`
-            : 'Babysitting: CI failures will go to the agent automatically.',
+            : 'Babysitting: CI failures and conflicts will go to the agent automatically.',
         );
       }
     } catch (err) {

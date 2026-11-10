@@ -68,6 +68,20 @@ describe('TaskContextStrip', () => {
     expect(strip()?.textContent).toBe('GoalFix the login redirect▾');
   });
 
+  it('keeps the strip quiet and puts the hint in a tooltip until there is a goal or plan', () => {
+    mount({});
+    expect(strip()?.textContent).toBe('Goal▾');
+    expect(strip()?.title).toBe("The agent's plan shows here once it writes a to-do list");
+  });
+
+  it('drops the hint tooltip once there is a goal or plan', () => {
+    mount({ savedInitialPrompt: 'Fix the login redirect' });
+    expect(strip()?.hasAttribute('title')).toBe(false);
+    dispose?.();
+    mount({ agentPlan: plan });
+    expect(strip()?.hasAttribute('title')).toBe(false);
+  });
+
   it('opens the full context below and closes it on Escape', () => {
     mount({ agentPlan: plan });
     strip()?.click();

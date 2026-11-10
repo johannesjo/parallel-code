@@ -4,7 +4,12 @@ import { killAgent, notifyAgentListChanged } from './pty.js';
 import { stopPlanWatcher } from './plans.js';
 import { recordWorktreeIntent } from './worktree-intents.js';
 import { localBranchExists, resolvePrCheckout } from '../github/pr-checkout.js';
-import type { CreatePrTaskResult } from './shared-types.js';
+import {
+  buildWorktreeScriptEnv,
+  describeTeardownFailure,
+  runTeardownScript,
+} from './worktree-scripts.js';
+import type { CreatePrTaskResult, DeleteTaskResult } from './shared-types.js';
 
 const MAX_SLUG_LEN = 72;
 
@@ -39,6 +44,7 @@ export async function createTask(
   branchPrefix: string,
   baseBranch?: string,
   snapshotCommit?: string,
+  copyDirs: string[] = [],
 ): Promise<{ id: string; branch_name: string; worktree_path: string }> {
   const id = randomUUID();
   const prefix = sanitizeBranchPrefix(branchPrefix);
@@ -54,6 +60,8 @@ export async function createTask(
     branchName,
     symlinkDirs,
     snapshotCommit ?? baseBranch,
+    false,
+    copyDirs,
   );
   return {
     id,
@@ -68,6 +76,7 @@ export async function createPrTask(
   prNumber: number,
   symlinkDirs: string[],
   branchPrefix: string,
+  copyDirs: string[] = [],
 ): Promise<CreatePrTaskResult> {
   const pr = await resolvePrCheckout(projectRoot, prNumber);
   const id = randomUUID();
@@ -87,7 +96,14 @@ export async function createPrTask(
     branchName,
     projectRoot,
   });
-  const worktree = await createWorktree(projectRoot, branchName, symlinkDirs, pr.headSha);
+  const worktree = await createWorktree(
+    projectRoot,
+    branchName,
+    symlinkDirs,
+    pr.headSha,
+    false,
+    copyDirs,
+  );
   return {
     id,
     branch_name: worktree.branch,
@@ -108,9 +124,13 @@ interface DeleteTaskOpts {
   /** Real worktree location; the folder keeps its original branch-derived
    *  name even after the task adopts a branch the agent switched to. */
   worktreePath?: string;
+  /** The project's teardown script, run in the worktree before it is removed. */
+  teardownScript?: string;
+  /** The project's environment variables, for the teardown script. */
+  teardownEnv?: Record<string, string>;
 }
 
-export async function deleteTask(opts: DeleteTaskOpts): Promise<void> {
+export async function deleteTask(opts: DeleteTaskOpts): Promise<DeleteTaskResult> {
   if (opts.taskId) stopPlanWatcher(opts.taskId);
   for (const agentId of opts.agentIds) {
     try {
@@ -119,6 +139,28 @@ export async function deleteTask(opts: DeleteTaskOpts): Promise<void> {
       /* already dead */
     }
   }
+  // After the agents are gone (nothing writes into the worktree any more) and
+  // before removal. A failing teardown is reported, not fatal: blocking the
+  // close on it would trap the task behind a script the user may not control.
+  let teardownWarning: string | undefined;
+  if (opts.teardownScript) {
+    const worktreePath = opts.worktreePath ?? worktreePathFor(opts.projectRoot, opts.branchName);
+    const result = await runTeardownScript({
+      worktreePath,
+      projectRoot: opts.projectRoot,
+      script: opts.teardownScript,
+      env: {
+        ...opts.teardownEnv,
+        ...buildWorktreeScriptEnv({
+          projectRoot: opts.projectRoot,
+          worktreePath,
+          branchName: opts.branchName,
+        }),
+      },
+    });
+    teardownWarning = describeTeardownFailure(result);
+  }
   await removeWorktree(opts.projectRoot, opts.branchName, opts.deleteBranch, opts.worktreePath);
   notifyAgentListChanged();
+  return teardownWarning ? { teardownWarning } : {};
 }

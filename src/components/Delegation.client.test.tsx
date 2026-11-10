@@ -432,6 +432,24 @@ it.each([
   expect(childButton?.querySelector('svg')).toBeNull();
 });
 
+it('labels a child the coordinator suggested closing, quietly and with its reason', () => {
+  setStore('tasks', 'child', {
+    ...task,
+    id: 'child',
+    name: 'Child',
+    coordinatedBy: 'parent',
+    signalDoneReceived: true,
+    closeSuggestion: { reason: 'Superseded by the retry', at: '2026-11-06T10:00:00.000Z' },
+    agentIds: [],
+  });
+  setStore('taskOrder', ['parent', 'child']);
+  dispose = render(() => <SubTaskStrip coordinatorTaskId="parent" />, host);
+  const childButton = button('Child');
+  expect(childButton?.textContent).toContain('Close suggested');
+  expect(childButton?.title).toBe('Child — Close suggested: Superseded by the retry');
+  expect(childButton?.hasAttribute('data-urgent')).toBe(false);
+});
+
 it('lists every subtask under a collapsible header', () => {
   for (const id of ['a', 'b', 'c']) {
     setStore('tasks', id, {
@@ -454,6 +472,25 @@ it('lists every subtask under a collapsible header', () => {
   expect(list?.hidden).toBe(true);
   toggle?.click();
   expect(list?.hidden).toBe(false);
+});
+
+it('leaves archived children out of the subtask strip', () => {
+  for (const id of ['live', 'archived']) {
+    setStore('tasks', id, {
+      ...task,
+      id,
+      name: `Child ${id}`,
+      coordinatedBy: 'parent',
+      collapsed: id === 'archived',
+      agentIds: [],
+    });
+  }
+  setStore('taskOrder', ['parent', 'live']);
+  setStore('collapsedTaskOrder', ['archived']);
+  dispose = render(() => <SubTaskStrip coordinatorTaskId="parent" />, host);
+  expect(button('Subtasks (1)')).toBeDefined();
+  expect(button('Child live')).toBeDefined();
+  expect(button('Child archived')).toBeUndefined();
 });
 
 it('opens a queued handoff and says why it is still waiting', async () => {

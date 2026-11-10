@@ -3,6 +3,7 @@ import type { Task } from '../store/types';
 import { resolveSkipPermissionsArgs } from '../../electron/shared/skip-permissions';
 import { newSessionArgs, resumeSessionArgs } from '../../electron/shared/session-resume';
 import { isHiddenAgentTaskId } from '../documents/task-id';
+import { stripAnsi } from '../../electron/shared/prompt-detect';
 
 function isCodexCommand(command: string): boolean {
   return command.split('/').pop()?.includes('codex') === true;
@@ -39,7 +40,10 @@ export function isResumeArgsFailure(command: string, lastOutput: string[]): bool
   const base = command.split('/').pop() ?? command;
   const patterns = RESUME_FAILURE_PATTERNS[base];
   if (!patterns || lastOutput.length === 0) return false;
-  const text = lastOutput.join('\n');
+  // When the message is wider than the pane, Claude wraps it and draws its
+  // spaces as cursor-column moves (ESC [ n G), so compare words, not raw bytes.
+  // eslint-disable-next-line no-control-regex
+  const text = stripAnsi(lastOutput.join('\n').replace(/\x1b\[\d*G/g, ' ')).replace(/\s+/g, ' ');
   return patterns.some((pattern) => text.includes(pattern));
 }
 

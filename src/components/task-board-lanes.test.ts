@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { PrChecksState } from '../store/pr-checks-state';
 import type { Task } from '../store/types';
-import { groupSubtasks, headingParentAt, pullRequestsLane } from './task-board-lanes';
+import { pullRequestsLane } from '../store/pr-checks-state';
+import { groupSubtasks, headingParentAt } from './task-board-lanes';
 
 const task = (id: string, coordinatedBy?: string) => ({ id, coordinatedBy }) as Task;
 const ids = (tasks: Task[]) => tasks.map((t) => t.id);
@@ -44,6 +45,7 @@ describe('pullRequestsLane', () => {
   const checks = (overrides: Partial<PrChecksState> = {}): PrChecksState => ({
     overall: 'success',
     mergeable: 'MERGEABLE',
+    mergeStateStatus: 'CLEAN',
     reviewDecision: null,
     passing: 1,
     pending: 0,
@@ -76,8 +78,16 @@ describe('pullRequestsLane', () => {
     expect(pullRequestsLane([failed, merged], false)).toBe('needs');
   });
 
-  it('needs you when any open PR has conflicts or requested changes', () => {
-    expect(pullRequestsLane([running, checks({ mergeable: 'CONFLICTING' })], true)).toBe('needs');
+  it('needs you when any open PR has conflicts Babysit is not on, or requested changes', () => {
+    const conflicting = checks({ overall: 'failure', mergeable: 'CONFLICTING' });
+    expect(pullRequestsLane([running, conflicting], false)).toBe('needs');
+    // Babysit sends conflicts to the agent as it does CI failures.
+    expect(pullRequestsLane([running, conflicting], true)).toBe('pr');
+    expect(pullRequestsLane([checks({ mergeable: 'CONFLICTING' })], true)).toBe('needs');
+    // Babysit sends the conflict once the running checks finish, so it stays put meanwhile.
+    const conflictingRunning = checks({ overall: 'pending', mergeable: 'CONFLICTING' });
+    expect(pullRequestsLane([conflictingRunning], true)).toBe('pr');
+    expect(pullRequestsLane([conflictingRunning], false)).toBe('needs');
     expect(pullRequestsLane([checks({ reviewDecision: 'CHANGES_REQUESTED' })], true)).toBe('needs');
   });
 });

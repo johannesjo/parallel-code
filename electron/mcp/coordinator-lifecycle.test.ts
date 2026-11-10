@@ -216,7 +216,7 @@ describe('initial prompt Enter failure', () => {
 });
 
 describe('stranded prompt without a queue', () => {
-  it('retries the Enter instead of reporting the unstarted task idle', async () => {
+  async function strandWithoutQueue() {
     vi.useFakeTimers();
     const task = await coordinator.createTask({
       name: 't',
@@ -233,7 +233,13 @@ describe('stranded prompt without a queue', () => {
     });
     getOutputCb()(encode('❯ '));
     await vi.advanceTimersByTimeAsync(3_000);
+    expect(task.unsubmittedPrompt).toBe(true);
     mockWriteToAgent.mockClear();
+    return task;
+  }
+
+  it('retries the Enter instead of reporting the unstarted task idle', async () => {
+    const task = await strandWithoutQueue();
     mockNotifyRenderer.mockClear();
 
     getOutputCb()(encode('do work ❯ '));
@@ -242,6 +248,38 @@ describe('stranded prompt without a queue', () => {
     expect(mockWriteToAgent).toHaveBeenCalledWith(task.agentId, '\r');
     expect(task.status).toBe('running');
     expect(task.unsubmittedPrompt).toBe(false);
+  });
+
+  it('submits the stranded body when control returns after a human hold', async () => {
+    const task = await strandWithoutQueue();
+    coordinator.setTaskControl(task.id, 'human');
+    getOutputCb()(encode('do work ❯ '));
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(mockWriteToAgent).not.toHaveBeenCalledWith(task.agentId, '\r');
+
+    coordinator.setTaskControl(task.id, 'coordinator');
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(mockWriteToAgent).toHaveBeenCalledWith(task.agentId, '\r');
+    expect(task.unsubmittedPrompt).toBe(false);
+  });
+
+  it('keeps wait_for_idle waiting through a human hold over a stranded body', async () => {
+    const task = await strandWithoutQueue();
+    coordinator.setTaskControl(task.id, 'human');
+    const wait = track(coordinator.waitForIdle(task.id, 60_000));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(wait.settled()).toBe(false);
+
+    getOutputCb()(encode('do work ❯ '));
+    coordinator.setTaskControl(task.id, 'coordinator');
+    await vi.advanceTimersByTimeAsync(10);
+    expect(wait.settled()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    getOutputCb()(encode('Worked\nDone ❯ '));
+    await vi.advanceTimersByTimeAsync(3_000);
+    await expect(wait.promise).resolves.toEqual({ reason: 'idle' });
   });
 
   it('does not mark a cancelled prompt as stranded', async () => {
@@ -305,8 +343,8 @@ describe('initial prompt readiness is re-checked at delivery', () => {
 describe('wait_for_signal_done requestId retry', () => {
   it('hands the next signal to the retried request, not the orphaned one', async () => {
     await coordinator.createTask({ name: 't', coordinatorTaskId: 'coord-1' });
-    const first = track(coordinator.waitForSignalDone('coord-1', 60_000, 'req-1'));
-    const retry = coordinator.waitForSignalDone('coord-1', 60_000, 'req-1');
+    const first = track(coordinator.waitForSignalDone('coord-1', 60_000, { requestId: 'req-1' }));
+    const retry = coordinator.waitForSignalDone('coord-1', 60_000, { requestId: 'req-1' });
 
     await first.promise;
     await coordinator.signalDone('task-1');
@@ -319,10 +357,10 @@ describe('wait_for_signal_done requestId retry', () => {
     const exited = await coordinator.createTask({ name: 'exited', coordinatorTaskId: 'coord-1' });
     // A pending notification the retry must not flash as staged.
     getExitHandler()(exited.agentId, { exitCode: 0 });
-    void coordinator.waitForSignalDone('coord-1', 60_000, 'req-1');
+    void coordinator.waitForSignalDone('coord-1', 60_000, { requestId: 'req-1' });
     mockNotifyRenderer.mockClear();
 
-    void coordinator.waitForSignalDone('coord-1', 60_000, 'req-1');
+    void coordinator.waitForSignalDone('coord-1', 60_000, { requestId: 'req-1' });
 
     expect(mockNotifyRenderer).not.toHaveBeenCalledWith(
       'mcp_coordinator_notification_staged',
@@ -335,11 +373,13 @@ describe('wait_for_signal_done requestId retry', () => {
     const two = await coordinator.createTask({ name: 'b', coordinatorTaskId: 'coord-1' });
     const exited = await coordinator.createTask({ name: 'c', coordinatorTaskId: 'coord-1' });
     getExitHandler()(exited.agentId, { exitCode: 0 });
-    const orphan = track(coordinator.waitForSignalDone('coord-1', 60_000, 'req-1'));
+    const orphan = track(coordinator.waitForSignalDone('coord-1', 60_000, { requestId: 'req-1' }));
     one.signalDoneAt = new Date();
     mockNotifyRenderer.mockClear();
 
-    await expect(coordinator.waitForSignalDone('coord-1', 60_000, 'req-1')).resolves.toMatchObject({
+    await expect(
+      coordinator.waitForSignalDone('coord-1', 60_000, { requestId: 'req-1' }),
+    ).resolves.toMatchObject({
       taskId: one.id,
     });
     await orphan.promise;
@@ -350,8 +390,39 @@ describe('wait_for_signal_done requestId retry', () => {
     );
 
     await coordinator.signalDone(two.id);
-    const next = await coordinator.waitForSignalDone('coord-1', 60_000, 'req-2');
+    const next = await coordinator.waitForSignalDone('coord-1', 60_000, { requestId: 'req-2' });
     expect(next).toMatchObject({ taskId: two.id });
+  });
+});
+
+describe('wait_for_signal_done cancellation', () => {
+  it('hands the next signal to a fresh wait after the caller abandoned the first', async () => {
+    await coordinator.createTask({ name: 't', coordinatorTaskId: 'coord-1' });
+    const abandoned = new AbortController();
+    const first = track(
+      coordinator.waitForSignalDone('coord-1', 60_000, { signal: abandoned.signal }),
+    );
+    abandoned.abort();
+    await first.promise;
+    const fresh = coordinator.waitForSignalDone('coord-1', 60_000);
+
+    await coordinator.signalDone('task-1');
+
+    await expect(fresh).resolves.toMatchObject({ taskId: 'task-1' });
+  });
+
+  it('leaves a waiting signal unconsumed when the caller is already gone', async () => {
+    const task = await coordinator.createTask({ name: 't', coordinatorTaskId: 'coord-1' });
+    task.signalDoneAt = new Date();
+    const gone = new AbortController();
+    gone.abort();
+
+    await expect(
+      coordinator.waitForSignalDone('coord-1', 60_000, { signal: gone.signal }),
+    ).resolves.not.toHaveProperty('taskId');
+    await expect(coordinator.waitForSignalDone('coord-1', 60_000)).resolves.toMatchObject({
+      taskId: task.id,
+    });
   });
 });
 
@@ -436,7 +507,7 @@ describe('waiters do not hang', () => {
       getExitHandler()(task.agentId, { exitCode: 0 });
       throw new Error('delete failed');
     });
-    await coordinator.closeTask(task.id);
+    await expect(coordinator.closeTask(task.id)).rejects.toThrow('delete failed');
     await expect(wait).resolves.toMatchObject({ taskId: task.id, status: 'exited' });
   });
 
@@ -449,7 +520,7 @@ describe('waiters do not hang', () => {
     const wait = track(coordinator.waitForSignalDone('coord-1', 60_000));
     mockDeleteBackendTask.mockRejectedValueOnce(new Error('delete failed'));
 
-    await coordinator.closeTask(task.id);
+    await expect(coordinator.closeTask(task.id)).rejects.toThrow('delete failed');
     await vi.advanceTimersByTimeAsync(10);
 
     expect(wait.settled()).toBe(false);

@@ -4,6 +4,7 @@ import {
   hasTerminalDraftActivity,
   hasTerminalUserActivity,
   nextTerminalInputPending,
+  submitsTerminalDraft,
 } from '../shared/terminal-input.js';
 import { stopAgentChat, stopAllAgentChats, runningAgentChatIds } from '../chat/sessions.js';
 import { execFileSync, execFile, spawn as cpSpawn } from 'child_process';
@@ -36,6 +37,7 @@ import {
 } from '../agent-hooks/observations.js';
 import { HOOK_PTY_ENV_KEYS } from '../agent-hooks/hook-script.js';
 import { isClaudeCommand, withClaudeHookSettings } from '../agent-hooks/launch-args.js';
+import { hasCodexHookOverride, isCodexCommand } from '../agent-hooks/codex-hooks.js';
 import { debug as logDebug, warn as logWarn } from '../log.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -348,12 +350,27 @@ export interface SpawnAgentArgs {
   /** Host dirs mounted read-only at the same path. Main-process only: the
    *  SpawnAgent handler derives them and never trusts a renderer value. */
   dockerReadOnlyMounts?: string[];
+  /** Main-process only: set by the SpawnAgent handler for a cmd.exe setup
+   *  script, never taken from the renderer. */
+  windowsVerbatimArgs?: boolean;
   onOutput: { __CHANNEL_ID__: string };
 }
 
+/** Flags after which a shell takes an inline script (setup scripts, `sh -c`). */
+const INLINE_SCRIPT_FLAGS = new Set(['-c', '/c', '-Command']);
+const SCRIPT_SHELL_NAMES = /^(sh|bash|zsh|dash|ksh|mksh|ash|cmd|powershell|pwsh)(\.exe)?$/i;
+
+function isInlineScriptShell(command: string, args: string[]): boolean {
+  return (
+    SCRIPT_SHELL_NAMES.test(path.basename(command.replace(/\\/g, '/'))) &&
+    args.some((arg) => INLINE_SCRIPT_FLAGS.has(arg))
+  );
+}
+
 function redactedSpawnArgs(command: string, args: string[]): string[] {
-  if ((command === '/bin/sh' || command.endsWith('/sh')) && args[0] === '-c') {
-    return ['-c', '<redacted>'];
+  if (isInlineScriptShell(command, args)) {
+    const scriptAt = args.findIndex((arg) => INLINE_SCRIPT_FLAGS.has(arg));
+    return [...args.slice(0, scriptAt + 1), '<redacted>'];
   }
   if (command === 'docker') {
     return redactDockerArgs(args);
@@ -367,7 +384,16 @@ function redactDockerArgs(args: string[]): string[] {
   const redacted: string[] = [];
   let redactNextEnv = false;
 
-  for (const arg of args) {
+  for (const [index, arg] of args.entries()) {
+    // After the entrypoint's `--` comes the inner command, whose flags are
+    // not docker's: `sh -e -c <script>` must not read `-e` as an env flag.
+    if (arg === '--' && !redactNextEnv) {
+      const [inner, ...innerArgs] = args.slice(index + 1);
+      if (inner !== undefined && isInlineScriptShell(inner, innerArgs)) {
+        redacted.push(arg, inner, ...redactedSpawnArgs(inner, innerArgs));
+        break;
+      }
+    }
     if (redactNextEnv) {
       redacted.push(redactEnvAssignment(arg));
       redactNextEnv = false;
@@ -732,11 +758,14 @@ function attachPtyOutputHandlers(
   });
 }
 
-/** What a Claude launch needs to self-report status; null until the hook server is up. */
+/** What a launch needs to self-report status; null until the hook server is up. */
 export interface AgentHookRuntime {
   /** The `--settings` file for a launch in `cwd`: the hooks, plus the usage
    *  status line wrapped around whatever status line the user runs there. */
   claudeSettingsPath(cwd: string, env: Record<string, string>): string;
+  /** The flags that register the hooks for a Codex launch; none when this
+   *  Codex cannot take them. */
+  codexHookArgs(command: string, env: Record<string, string>): Promise<string[]>;
   buildPtyEnv(agentId: string, taskId: string, launchId: string): Record<string, string>;
 }
 
@@ -746,6 +775,11 @@ export function setAgentHookRuntime(runtime: AgentHookRuntime | null): void {
   agentHookRuntime = runtime;
 }
 
+type HookLaunchArgs = Pick<
+  SpawnAgentArgs,
+  'agentId' | 'taskId' | 'args' | 'isShell' | 'dockerMode'
+>;
+
 /**
  * Adds hook identity env and `--settings` so a Claude Code agent reports its
  * own status. Shells get nothing (the user runs whatever they like there),
@@ -753,7 +787,7 @@ export function setAgentHookRuntime(runtime: AgentHookRuntime | null): void {
  * and other agents get nothing because they could only ever forge with it.
  */
 export function applyAgentHookLaunch(
-  args: Pick<SpawnAgentArgs, 'agentId' | 'taskId' | 'args' | 'isShell' | 'dockerMode'>,
+  args: HookLaunchArgs,
   command: string,
   cwd: string,
   spawnEnv: Record<string, string>,
@@ -768,6 +802,40 @@ export function applyAgentHookLaunch(
     args.args,
     agentHookRuntime.claudeSettingsPath(cwd, spawnEnv),
   );
+}
+
+/** The hook runtime for a Codex launch that may report its own status, under
+ *  the same exclusions as a Claude launch; null for every other launch. */
+function codexHookRuntime(args: HookLaunchArgs, command: string): AgentHookRuntime | null {
+  if (args.isShell || args.dockerMode || !isCodexCommand(command)) return null;
+  return hasCodexHookOverride(args.args) ? null : agentHookRuntime;
+}
+
+/** Adds Codex's hook flags and the hook identity env, when this Codex can take them. */
+async function applyCodexHookLaunch(
+  runtime: AgentHookRuntime,
+  args: HookLaunchArgs,
+  launch: { command: string; spawnEnv: Record<string, string>; launchId: string },
+): Promise<string[]> {
+  const hookArgs = await runtime.codexHookArgs(launch.command, launch.spawnEnv);
+  if (hookArgs.length === 0) return args.args;
+  Object.assign(launch.spawnEnv, runtime.buildPtyEnv(args.agentId, args.taskId, launch.launchId));
+  // First, so they stay global options whatever subcommand the launch names.
+  return [...hookArgs, ...args.args];
+}
+
+/** Runs asynchronous startup work, and fails once the agent was stopped or
+ *  restarted in the meantime, so a cancelled launch never reaches its spawn. */
+async function whilePending<T>(agentId: string, work: () => Promise<T>): Promise<T> {
+  const pending = Symbol();
+  pendingSpawns.set(agentId, pending);
+  try {
+    const result = await work();
+    if (pendingSpawns.get(agentId) !== pending) throw new Error('Agent startup cancelled');
+    return result;
+  } finally {
+    if (pendingSpawns.get(agentId) === pending) pendingSpawns.delete(agentId);
+  }
 }
 
 export async function spawnAgent(
@@ -834,16 +902,7 @@ export async function spawnAgent(
     // Resolve the repo root once — each helper would otherwise spawn its own
     // `git rev-parse` subprocess.
     const repoRoot = detectRepoRoot(cwd);
-    const pending = Symbol();
-    pendingSpawns.set(args.agentId, pending);
-    try {
-      await ensureClaudeSandboxFiles(cwd, repoRoot);
-      if (pendingSpawns.get(args.agentId) !== pending) {
-        throw new Error('Agent startup cancelled');
-      }
-    } finally {
-      if (pendingSpawns.get(args.agentId) === pending) pendingSpawns.delete(args.agentId);
-    }
+    await whilePending(args.agentId, () => ensureClaudeSandboxFiles(cwd, repoRoot));
     ensureSandboxExcludes(cwd);
     ensureWorktreeContainerExclude(cwd);
     // Migrate legacy whole-dir node_modules symlinks and pick up packages
@@ -853,7 +912,13 @@ export async function spawnAgent(
 
   // After the seeding above: the user's status line can live in the worktree's
   // `.claude/` settings, which only exist once they are copied in.
-  const launchArgs = applyAgentHookLaunch(args, command, cwd, spawnEnv, launchId);
+  const codexHooks = codexHookRuntime(args, command);
+  // Codex is asked which hooks it accepts; every other launch has nothing to wait for.
+  const launchArgs = codexHooks
+    ? await whilePending(args.agentId, () =>
+        applyCodexHookLaunch(codexHooks, args, { command, spawnEnv, launchId }),
+      )
+    : applyAgentHookLaunch(args, command, cwd, spawnEnv, launchId);
   const spawnSpec = buildPtySpawnSpec({ ...args, args: launchArgs }, command, cwd, spawnEnv);
 
   logDebug('pty', `spawn command ${args.agentId}`, {
@@ -869,7 +934,13 @@ export async function spawnAgent(
   registerAgentLaunch(args.agentId, args.taskId, launchId);
   let proc: pty.IPty;
   try {
-    proc = pty.spawn(spawnSpec.spawnCommand, spawnSpec.spawnArgs, {
+    // A cmd.exe setup script needs its command line passed through verbatim;
+    // node-pty would re-quote an argument array and break `/s /c "…"`.
+    const ptyArgs =
+      args.windowsVerbatimArgs && !args.dockerMode && process.platform === 'win32'
+        ? spawnSpec.spawnArgs.join(' ')
+        : spawnSpec.spawnArgs;
+    proc = pty.spawn(spawnSpec.spawnCommand, ptyArgs, {
       name: 'xterm-256color',
       cols: args.cols,
       rows: args.rows,
@@ -946,14 +1017,7 @@ function writeSessionInput(session: PtySession, data: string): void {
   const userActivity = hasTerminalUserActivity(data);
   if (userActivity) session.lastInputAt = Date.now();
   session.proc.write(data);
-  if (
-    session.inputPending &&
-    (data === '\r' ||
-      data === '\n' ||
-      data === '\r\n' ||
-      data === '\x1b[13u' ||
-      data === '\x1b[13;1u')
-  ) {
+  if (submitsTerminalDraft(session.inputPending, data)) {
     invalidateAgentActivity(session.agentId, session.launchId);
     if (!session.isShell) emitPtyEvent('prompt-submitted', session.agentId);
   }
@@ -1166,8 +1230,13 @@ export function killAgent(agentId: string): void {
   }
 }
 
+/** Every agent with a live process: PTY sessions, plus chats that run without one. */
+export function listRunningAgentIds(): string[] {
+  return [...new Set([...sessions.keys(), ...runningAgentChatIds()])];
+}
+
 export function countRunningAgents(): number {
-  return new Set([...sessions.keys(), ...runningAgentChatIds()]).size;
+  return listRunningAgentIds().length;
 }
 
 export function killAllAgents(): void {

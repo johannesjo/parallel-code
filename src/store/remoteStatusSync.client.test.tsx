@@ -139,6 +139,26 @@ it('syncs an existing terminal question in a collapsed review task when phone ac
   expectAttention('review');
 });
 
+it('tells the phone which tasks wait to be resumed', () => {
+  const suspended = () => {
+    const [, payload] = vi.mocked(fireAndForget).mock.lastCall ?? [];
+    return (payload as { contexts: Record<string, { suspended?: unknown }> }).contexts.task
+      .suspended;
+  };
+  stop = startRemoteStatusSync();
+  expect(suspended()).toBe(false);
+
+  for (const id of ['agent', 'other']) {
+    setStore('agents', id, { status: 'exited', signal: 'suspended' });
+  }
+  expect(suspended()).toBe(true);
+  expectAttention('idle');
+
+  // One resumed agent is enough for the task to have a process again.
+  setStore('agents', 'other', { status: 'running', signal: null });
+  expect(suspended()).toBe(false);
+});
+
 function lastCi(): unknown {
   const [, payload] = vi.mocked(fireAndForget).mock.lastCall ?? [];
   return (payload as { contexts: Record<string, { ci?: unknown }> }).contexts.task.ci;
@@ -160,8 +180,18 @@ it('publishes the PR check status, and drops it once the PR merges or has no che
   setPrChecks('task', checks);
   expect(lastCi()).toBe('failure');
 
-  setPrChecks('task', { ...checks, overall: 'success', failing: 0 });
+  const green = {
+    ...checks,
+    overall: 'success' as const,
+    failing: 0,
+    mergeable: 'MERGEABLE' as const,
+  };
+  setPrChecks('task', { ...green, mergeStateStatus: 'CLEAN' });
   expect(lastCi()).toBe('success');
+
+  // The phone reads success as "Ready to merge", which a branch behind its base is not.
+  setPrChecks('task', { ...green, mergeStateStatus: 'BEHIND' });
+  expect(lastCi()).toBeUndefined();
 
   setPrChecks('task', { ...checks, overall: 'none' });
   expect(lastCi()).toBeUndefined();

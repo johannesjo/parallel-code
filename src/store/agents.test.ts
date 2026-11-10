@@ -92,7 +92,10 @@ import {
   restartAgent,
   resumeAgentWithFlags,
   switchAgent,
+  updateCustomAgent,
 } from './agents';
+import { store } from './core';
+import { isAgentSuspended } from './agent-suspend';
 
 const codexDef: AgentDefLike = {
   id: 'codex',
@@ -172,6 +175,46 @@ describe('restartAgent', () => {
     });
     expect(mockAgents['agent-1'].spawnDelayMs).toBeUndefined();
     expect(mockMarkAgentSpawned).toHaveBeenCalledWith('agent-1');
+  });
+});
+
+describe('a suspended agent', () => {
+  // The state loadState gives an agent it restores without starting.
+  const suspended = () =>
+    exitedAgent({ exitCode: null, signal: 'suspended', lastOutput: [], generation: 0 });
+
+  it('is told apart from one that exited or failed to start', () => {
+    expect(isAgentSuspended(suspended())).toBe(true);
+    expect(isAgentSuspended(exitedAgent())).toBe(false);
+    expect(isAgentSuspended(exitedAgent({ signal: 'spawn_failed' }))).toBe(false);
+    expect(isAgentSuspended({ ...suspended(), status: 'running', signal: null })).toBe(false);
+    expect(isAgentSuspended(undefined)).toBe(false);
+  });
+
+  it('continues its conversation on Resume', () => {
+    mockAgents = { 'agent-1': suspended() };
+    restartAgent('agent-1', true);
+    expect(isAgentSuspended(mockAgents['agent-1'])).toBe(false);
+    expect(mockAgents['agent-1']).toMatchObject({ status: 'running', signal: null, resumed: true });
+    expect(mockMarkAgentSpawned).toHaveBeenCalledWith('agent-1');
+  });
+
+  it('starts over on Restart', () => {
+    mockAgents = { 'agent-1': suspended() };
+    restartAgent('agent-1', false);
+    expect(isAgentSuspended(mockAgents['agent-1'])).toBe(false);
+    expect(mockAgents['agent-1']).toMatchObject({
+      status: 'running',
+      signal: null,
+      resumed: false,
+    });
+  });
+
+  it('starts when switched to another agent', () => {
+    mockAgents = { 'agent-1': suspended() };
+    switchAgent('agent-1', { ...codexDef, id: 'claude', command: 'claude' });
+    expect(isAgentSuspended(mockAgents['agent-1'])).toBe(false);
+    expect(mockAgents['agent-1']).toMatchObject({ status: 'running', signal: null });
   });
 });
 
@@ -349,5 +392,71 @@ describe('markAgentExited', () => {
 
     expect(mockAgents['agent-1'].status).toBe('exited');
     expect(mockRefreshUsage).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateCustomAgent', () => {
+  const kimi: AgentDefLike = {
+    id: 'custom-kimi',
+    name: 'Kimi',
+    command: 'kimi',
+    args: [],
+    resume_args: [],
+    skip_permissions_args: [],
+    description: 'Custom agent: Kimi',
+  };
+  const edited = {
+    name: 'Kimi K2',
+    command: '/opt/bin/kimi',
+    args: ['--model', 'k2'],
+    resume_args: ['--continue'],
+    skip_permissions_args: ['--yolo'],
+  };
+
+  beforeEach(() => {
+    vi.mocked(invoke).mockResolvedValue([]);
+    Object.assign(store, { customAgents: [kimi], availableAgents: [] });
+  });
+
+  it('keeps the id and updates the saved custom agent', () => {
+    updateCustomAgent('custom-kimi', edited);
+    expect(store.customAgents).toEqual([
+      { ...edited, id: 'custom-kimi', description: 'Custom agent: Kimi K2' },
+    ]);
+  });
+
+  it("updates every pane's copy but keeps the flags a pane added itself", () => {
+    mockAgents = {
+      'agent-1': exitedAgent({ def: { ...kimi, extra_args: ['--verbose'] } }),
+      'agent-2': exitedAgent({ id: 'agent-2' }),
+    };
+    updateCustomAgent('custom-kimi', edited);
+    expect(mockAgents['agent-1'].def).toMatchObject({ ...edited, extra_args: ['--verbose'] });
+    expect(mockAgents['agent-2'].def).toBe(codexDef);
+  });
+
+  it('updates the copies collapsed tasks saved', () => {
+    mockTasks = {
+      'task-1': {
+        id: 'task-1',
+        agentIds: [],
+        savedAgentDef: kimi,
+        savedAgentDefs: [kimi, codexDef],
+      } as TaskLike,
+    };
+    updateCustomAgent('custom-kimi', edited);
+    const task = mockTasks['task-1'] as TaskLike & {
+      savedAgentDef: AgentDefLike;
+      savedAgentDefs: AgentDefLike[];
+    };
+    expect(task.savedAgentDef).toMatchObject(edited);
+    expect(task.savedAgentDefs[0]).toMatchObject(edited);
+    expect(task.savedAgentDefs[1]).toBe(codexDef);
+  });
+
+  it('ignores an id that is not a custom agent', () => {
+    updateCustomAgent('codex', edited);
+    expect(store.customAgents).toEqual([kimi]);
+    expect(mockAgents['agent-1'].def).toBe(codexDef);
   });
 });

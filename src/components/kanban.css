@@ -794,15 +794,17 @@
   transform: translate(-50%, 8px);
   opacity: 0;
   visibility: hidden;
+  /* Base rule times the exit; .shown times the slightly longer entrance. */
   transition:
-    opacity 150ms ease,
-    transform 150ms ease,
-    visibility 150ms;
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    visibility var(--motion-fast);
 }
 .kanban-undo.shown {
   opacity: 1;
   visibility: visible;
   transform: translate(-50%, 0);
+  transition-duration: var(--motion-enter);
 }
 .kanban-undo-label {
   min-width: 0;

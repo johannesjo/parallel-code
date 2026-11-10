@@ -107,7 +107,13 @@ describe('TaskBranchInfoBar Fix CI', () => {
 });
 
 describe('TaskBranchInfoBar Merge', () => {
-  const greenChecks = { ...failingChecks, overall: 'success', failing: 0 };
+  const greenChecks = {
+    ...failingChecks,
+    overall: 'success',
+    failing: 0,
+    mergeable: 'MERGEABLE',
+    mergeStateStatus: 'CLEAN',
+  };
 
   function renderBar(checks: object, onFinish?: () => void): void {
     mockPrChecks.mockReturnValue(checks);

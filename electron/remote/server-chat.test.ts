@@ -33,11 +33,14 @@ const stopObserving = vi.fn();
 const chat = { state, observe: vi.fn(() => stopObserving), send: vi.fn(async () => {}) };
 // How the desktop lists the chat: running, ended on its own, or gone altogether.
 let listed: 'running' | 'exited' | undefined;
+// Tasks the desktop reports as waiting to be resumed.
+let suspendedTaskIds: string[] = [];
 let notifyChange = () => {};
 let srv: Awaited<ReturnType<typeof startRemoteServer>>;
 
 beforeEach(async () => {
   listed = 'running';
+  suspendedTaskIds = [];
   srv = await startRemoteServer({
     port: 0,
     host: '127.0.0.1',
@@ -45,6 +48,7 @@ beforeEach(async () => {
     getTaskName: (id) => `Task ${id}`,
     getAgentStatus: () => ({ status: 'running', exitCode: null, lastLine: '' }),
     getCoordinator: () => null,
+    getSuspendedTaskIds: () => suspendedTaskIds,
     getTaskContext: () => ({
       projectName: 'Project',
       projectColor: '#65d5ff',
@@ -207,4 +211,26 @@ describe('paired token', () => {
     });
     ws.close();
   });
+});
+
+it('lists a suspended task, which has neither a terminal nor a chat', async () => {
+  // t2 has a live terminal: the desktop's report is from before it was resumed.
+  suspendedTaskIds = ['t3', 't2'];
+  const { ws, messages } = await open(srv.mobileToken);
+  const list = agentsIn(messages)[0].list;
+
+  expect(list.filter((agent) => agent.taskId === 't3')).toEqual([
+    expect.objectContaining({
+      taskName: 'Task t3',
+      projectName: 'Project',
+      status: 'exited',
+      exitCode: null,
+      suspended: true,
+    }),
+  ]);
+  expect(list.filter((agent) => agent.taskId === 't2')).toEqual([
+    expect.objectContaining({ agentId: 'a2', status: 'running' }),
+  ]);
+  expect(list.find((agent) => agent.taskId === 't2')?.suspended).toBeUndefined();
+  ws.close();
 });

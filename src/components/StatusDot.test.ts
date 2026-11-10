@@ -49,7 +49,11 @@ describe('getDotTooltip', () => {
     expect(getDotTooltip('ready', 'ready', 't1')).toBe('Ready');
     setPrChecks('t1', prChecks('pending'));
     expect(getDotTooltip('ready', 'ready', 't1')).toBe('CI running');
-    setPrChecks('t1', prChecks('success'));
+    setPrChecks('t1', {
+      ...prChecks('success'),
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'CLEAN',
+    });
     expect(getDotTooltip('ready', 'ready', 't1')).toBe('Ready to merge');
   });
 });

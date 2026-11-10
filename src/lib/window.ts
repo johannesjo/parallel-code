@@ -24,34 +24,12 @@ class AppWindow {
     await window.electron.ipcRenderer.invoke(IPC.WindowToggleMaximize);
   }
 
-  async maximize(): Promise<void> {
-    await window.electron.ipcRenderer.invoke(IPC.WindowMaximize);
-  }
-
-  async unmaximize(): Promise<void> {
-    await window.electron.ipcRenderer.invoke(IPC.WindowUnmaximize);
-  }
-
   async close(): Promise<void> {
     await window.electron.ipcRenderer.invoke(IPC.WindowClose);
   }
 
   async hide(): Promise<void> {
     await window.electron.ipcRenderer.invoke(IPC.WindowHide);
-  }
-
-  async setSize(size: Size): Promise<void> {
-    await window.electron.ipcRenderer.invoke(IPC.WindowSetSize, {
-      width: size.width,
-      height: size.height,
-    });
-  }
-
-  async setPosition(pos: Position): Promise<void> {
-    await window.electron.ipcRenderer.invoke(IPC.WindowSetPosition, {
-      x: pos.x,
-      y: pos.y,
-    });
   }
 
   async outerPosition(): Promise<Position> {

@@ -317,3 +317,18 @@ describe('processAutoFireTick — controlledBy reverts to coordinator', () => {
     expect(result.outcome).toBe('fire');
   });
 });
+
+describe('processAutoFireTick — selection menu', () => {
+  it('holds while a numbered menu is up, even past the coordinator grace period', () => {
+    const result = processAutoFireTick({
+      staged,
+      now: staged.autoFireAt + 600_000,
+      controlledBy: 'coordinator',
+      questionActive: false,
+      menuBlocking: true,
+      tail: promptTail,
+      currentMissCount: 0,
+    });
+    expect(result.outcome).toBe('paused');
+  });
+});

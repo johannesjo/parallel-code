@@ -1,7 +1,8 @@
 import { registerBrowserHandlers } from './ipc/browser.js';
-import { app, autoUpdater, BrowserWindow, Menu, ipcMain, session, shell } from 'electron';
+import { app, autoUpdater, BrowserWindow, Menu, ipcMain, screen, session, shell } from 'electron';
 import { buildMenuTemplate } from './menu-template.js';
 import { restoreWindow } from './window-restore.js';
+import { initialWindowBounds } from './window-bounds.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -133,9 +134,12 @@ function reportOrphanedWorktrees(): void {
 }
 
 function createWindow() {
+  const initial = initialWindowBounds(
+    loadAppState(),
+    screen.getAllDisplays().map((d) => d.workArea),
+  );
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    ...initial.bounds,
     icon: getIconPath(),
     frame: process.platform === 'darwin',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : undefined,
@@ -172,6 +176,9 @@ function createWindow() {
   gateIpcHandlersOn(ipcMain, loginEnvReady);
   registerAllHandlers(mainWindow);
   registerBrowserHandlers(mainWindow);
+  // The renderer picks up the maximized state on mount (syncWindowMaximized);
+  // this resize event fires before it is listening.
+  if (initial.maximized) mainWindow.maximize();
 
   // Open links in external browser instead of inside Electron
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
