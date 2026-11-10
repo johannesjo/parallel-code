@@ -15,14 +15,10 @@ import { buildMcpLaunchArgs, isAntigravityCommand } from './agent-args.js';
 import { writeAntigravityMcpConfig } from './antigravity-config.js';
 import { validateBranchName } from './validation.js';
 import {
-  detectPreambleFiles,
-  filterDiffSections,
-  buildNormalizedPreambleFileDiff,
   injectSubTaskPreamble,
   restoreSubTaskPreambleInjection,
   type InjectedSubTaskPreamble,
 } from './preamble.js';
-import { truncateDiffForTool } from './diff-format.js';
 import { execAsync, execStdout, currentBranch } from './coordinator/child-git.js';
 import {
   buildTaskMcpLaunchArgs,
@@ -45,19 +41,14 @@ import {
   spawnAgent,
   killAgent,
   subscribeToAgent,
-  getAgentScrollback,
   getActiveAgentIds,
   getAgentMeta,
-  getAgentPromptSnapshot,
 } from '../ipc/pty.js';
-import { getAgentActivityEvidence } from '../agent-hooks/observations.js';
-import type { ActivityEvidence } from '../agent-hooks/status.js';
 import {
   clampCoordinatorConcurrentTasks,
   DEFAULT_COORDINATOR_CONCURRENT_TASKS,
 } from '../shared/coordinator-limits.js';
-import { getChangedFiles, getAllFileDiffs, getDiffBaseSha, getMainBranch } from '../ipc/git.js';
-import { stripAnsi } from '../shared/prompt-detect.js';
+import { getMainBranch } from '../ipc/git.js';
 import { buildSubTaskPreamble } from './sub-task-preamble.js';
 import { verificationRunner } from '../ipc/verify.js';
 import { info as logInfo, warn as logWarn } from '../log.js';
@@ -98,6 +89,12 @@ import {
   listenToAgentEvents,
 } from './coordinator/agent-events.js';
 import { waitForIdle } from './coordinator/idle-waits.js';
+import {
+  listTasks,
+  getTaskStatus,
+  getTaskDiff,
+  getTaskOutput,
+} from './coordinator/task-queries.js';
 const REST_COORDINATOR_SENTINEL = 'api';
 
 export class Coordinator implements CoordinatorInternals {
@@ -862,74 +859,12 @@ export class Coordinator implements CoordinatorInternals {
     }
   }
 
-  private activityEvidence(task: CoordinatedTask): ActivityEvidence {
-    return (
-      getAgentActivityEvidence(task.agentId) ?? {
-        agentId: task.agentId,
-        source: 'process',
-        activity: 'unknown',
-        event:
-          task.status === 'exited' || task.status === 'error'
-            ? 'ProcessUnavailable'
-            : 'NoObservation',
-        freshness: 'unknown',
-      }
-    );
-  }
-
   listTasks(): ApiTaskSummary[] {
-    return Array.from(this.tasks.values()).map((t) => ({
-      id: t.id,
-      name: t.name,
-      branchName: t.branchName,
-      status: t.status,
-      activityEvidence: this.activityEvidence(t),
-      delivery: this.prompts.promptDelivery(t),
-      coordinatorTaskId: t.coordinatorTaskId,
-      integrationPolicy: t.integrationPolicy,
-      signalDoneAt: t.signalDoneAt?.toISOString(),
-      closeSuggestion: t.closeSuggestion,
-      archived: t.archived,
-      completion: t.completion,
-      reviewRevision: t.reviewRevision,
-      verification: t.verification,
-      landingState: t.landingState,
-      landingReason: t.landingReason,
-      landingSummary: t.landingSummary,
-      landedMetadata: t.landedMetadata,
-    }));
+    return listTasks(this);
   }
 
   getTaskStatus(taskId: string): ApiTaskDetail | null {
-    const task = this.tasks.get(taskId);
-    if (!task) return null;
-    return {
-      id: task.id,
-      name: task.name,
-      branchName: task.branchName,
-      worktreePath: task.worktreePath,
-      projectId: task.projectId,
-      agentId: task.agentId,
-      status: task.status,
-      coordinatorTaskId: task.coordinatorTaskId,
-      integrationPolicy: task.integrationPolicy,
-      exitCode: task.exitCode,
-      activityEvidence: this.activityEvidence(task),
-      delivery: this.prompts.promptDelivery(task),
-      pendingPrompt: task.pendingPrompts?.[0],
-      pendingPrompts: task.pendingPrompts ? [...task.pendingPrompts] : undefined,
-      pendingPromptCount: task.pendingPrompts?.length,
-      signalDoneAt: task.signalDoneAt?.toISOString(),
-      closeSuggestion: task.closeSuggestion,
-      archived: task.archived,
-      completion: task.completion,
-      reviewRevision: task.reviewRevision,
-      verification: task.verification,
-      landingState: task.landingState,
-      landingReason: task.landingReason,
-      landingSummary: task.landingSummary,
-      landedMetadata: task.landedMetadata,
-    };
+    return getTaskStatus(this, taskId);
   }
 
   getTaskDoneToken(taskId: string): string | null {
@@ -956,76 +891,12 @@ export class Coordinator implements CoordinatorInternals {
     return waitForIdle(this, taskId, timeoutMs);
   }
 
-  async getTaskDiff(taskId: string): Promise<ApiDiffResult> {
-    const task = this.tasks.get(taskId);
-    if (!task) throw new Error(`Task not found: ${taskId}`);
-
-    // Compute baseSha first so detectDiffBase/pinHead results are cached.
-    // getChangedFiles and getAllFileDiffs internally call the same helpers;
-    // running all three concurrently causes three simultaneous cache misses.
-    const baseSha = await getDiffBaseSha(task.worktreePath, task.baseBranch);
-    const [files, diff] = await Promise.all([
-      getChangedFiles(task.worktreePath, task.baseBranch),
-      getAllFileDiffs(task.worktreePath, task.baseBranch),
-    ]);
-
-    // For preamble-bearing files: strip the injected block and show only real sub-task edits.
-    // Files with no real changes beyond the preamble are excluded entirely.
-    // Files with real changes (before or after the preamble block) include a normalized diff.
-    const preambleFiles = await detectPreambleFiles(task.worktreePath);
-
-    let filteredFiles = files;
-    let filteredDiff = diff;
-    if (preambleFiles.size > 0) {
-      // Drop preamble file sections from the raw diff; we'll add normalized sections below.
-      filteredDiff = filterDiffSections(diff, preambleFiles);
-      // For each preamble file, generate a diff that excludes the injected block.
-      const normalizedSections = await Promise.all(
-        [...preambleFiles].map((f) =>
-          buildNormalizedPreambleFileDiff(f, task.worktreePath, baseSha),
-        ),
-      );
-      const preambleFilesWithChanges = new Set<string>();
-      for (let i = 0; i < [...preambleFiles].length; i++) {
-        if (normalizedSections[i]) preambleFilesWithChanges.add([...preambleFiles][i]);
-      }
-      filteredDiff += normalizedSections.filter(Boolean).join('');
-      // Files list: exclude preamble-only files, keep files with real changes.
-      filteredFiles = files.filter(
-        (f) => !preambleFiles.has(f.path) || preambleFilesWithChanges.has(f.path),
-      );
-    }
-
-    const truncatedDiff = truncateDiffForTool(filteredDiff);
-    if (truncatedDiff.truncated) {
-      return {
-        files: filteredFiles,
-        diff: truncatedDiff.diff,
-        truncated: true,
-        originalSizeBytes: truncatedDiff.originalSizeBytes,
-      };
-    }
-    return { files: filteredFiles, diff: truncatedDiff.diff };
+  getTaskDiff(taskId: string): Promise<ApiDiffResult> {
+    return getTaskDiff(this, taskId);
   }
 
   getTaskOutput(taskId: string): string {
-    const task = this.tasks.get(taskId);
-    if (!task) throw new Error(`Task not found: ${taskId}`);
-
-    // A full-screen TUI such as Codex repaints cells in place, so its raw output
-    // strips to word fragments; the rendered screen is what the user reads.
-    // shortcut: visible rows only, so text scrolled out of the TUI is gone —
-    // read the mirror's scrollback too if callers need earlier turns.
-    // Output a few ms behind is fine, so don't wait for the mirror to catch up.
-    const screen = getAgentPromptSnapshot(task.agentId, { parsedSoFar: true });
-    if (screen?.alternateScreen) return screen.text;
-    // Try scrollback buffer first, fall back to tail buffer
-    const scrollback = getAgentScrollback(task.agentId);
-    if (scrollback) {
-      const decoded = Buffer.from(scrollback, 'base64').toString('utf8');
-      return stripAnsi(decoded);
-    }
-    return stripAnsi(this.tailBuffers.get(task.agentId) ?? '');
+    return getTaskOutput(this, taskId);
   }
 
   private clearTaskMcpConfig(task: CoordinatedTask): void {
@@ -1124,7 +995,7 @@ export class Coordinator implements CoordinatorInternals {
     diff: ApiDiffResult;
     merge: { mainBranch: string; linesAdded: number; linesRemoved: number };
   }> {
-    const diff = await this.getTaskDiff(taskId);
+    const diff = await getTaskDiff(this, taskId);
     const merge = await this.mergeTask(taskId, { ...opts, cleanup: true });
     return { diff, merge };
   }
