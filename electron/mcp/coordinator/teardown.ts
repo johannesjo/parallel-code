@@ -68,6 +68,27 @@ function clearTaskControlState(c: CoordinatorInternals, taskId: string): void {
   c.controlMap.delete(taskId);
 }
 
+/** Kills the task's agents, then deletes its worktree and branch. */
+function killAgentsAndDeleteWorktree(task: CoordinatedTask): ReturnType<typeof deleteTask> {
+  // Kill the agent. For Docker sub-tasks, killAgent also calls docker stop on the
+  // sub-task's own container (via stopDockerContainer in pty.ts), which cleanly
+  // terminates the entire container rather than just the PTY client process.
+  const agentIds = agentIdsForTask(task);
+  for (const agentId of agentIds) {
+    try {
+      killAgent(agentId);
+    } catch {
+      /* already dead */
+    }
+  }
+  return deleteTask({
+    agentIds,
+    branchName: task.branchName,
+    deleteBranch: true,
+    projectRoot: task.projectRoot,
+  });
+}
+
 export async function cleanupLandedTaskResources(
   c: CoordinatorInternals,
   task: CoordinatedTask,
@@ -80,21 +101,7 @@ export async function cleanupLandedTaskResources(
 
     clearAgentOutputState(c, task);
 
-    const agentIds = agentIdsForTask(task);
-    for (const agentId of agentIds) {
-      try {
-        killAgent(agentId);
-      } catch {
-        /* already dead */
-      }
-    }
-
-    await deleteTask({
-      agentIds,
-      branchName: task.branchName,
-      deleteBranch: true,
-      projectRoot: task.projectRoot,
-    });
+    await killAgentsAndDeleteWorktree(task);
 
     resolveIdleWaiters(c, task.id, 'exited');
     clearTaskMcpConfig(task);
@@ -173,27 +180,10 @@ async function cleanupTaskOnce(
   // A verify run still going would keep writing into the worktree we delete.
   verificationRunner.cancel(taskId);
 
-  // Kill the agent. For Docker sub-tasks, killAgent also calls docker stop on the
-  // sub-task's own container (via stopDockerContainer in pty.ts), which cleanly
-  // terminates the entire container rather than just the PTY client process.
-  const agentIds = agentIdsForTask(task);
-  for (const agentId of agentIds) {
-    try {
-      killAgent(agentId);
-    } catch {
-      /* already dead */
-    }
-  }
-
   // Remove worktree. If this fails, keep all coordinator state so the caller
   // can retry. Do NOT emit MCP_TaskClosed — the task still exists on disk.
   try {
-    await deleteTask({
-      agentIds,
-      branchName: task.branchName,
-      deleteBranch: true,
-      projectRoot: task.projectRoot,
-    });
+    await killAgentsAndDeleteWorktree(task);
   } catch (err) {
     console.warn('Failed to delete coordinated task worktree:', err);
     c.prompts.clearPromptDeliveryState(taskId);
