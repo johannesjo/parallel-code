@@ -9,7 +9,6 @@ import type { CoordinatorState } from '../types.js';
 import type { SessionMcpProvider } from './mcp-config.js';
 import type { CoordinatorNotifications } from './notifications.js';
 import type { CoordinatorLanding } from './landing.js';
-import type { ChildArchiver } from './archive.js';
 import type { CoordinatorPrompts } from './prompts.js';
 import type { SignalWaits } from './signal-waits.js';
 
@@ -28,11 +27,7 @@ export interface CoordinatorInternals {
   subscribers: Map<string, (encoded: string) => void>;
   decoders: Map<string, TextDecoder>;
   controlMap: Map<string, 'coordinator' | 'human'>;
-  writingPromptTaskIds: Set<string>;
-  initialPromptTimers: Map<string, ReturnType<typeof setTimeout>>;
-  initialPromptReadyTasks: Set<string>;
   promptReadySeenAt: Map<string, number>;
-  queuedPromptFlushTimers: Map<string, ReturnType<typeof setTimeout>>;
   bracketedPasteAgentIds: Set<string>;
   closingTaskIds: Set<string>;
   cleanupsInFlight: Map<string, Promise<void>>;
@@ -47,13 +42,10 @@ export interface CoordinatorInternals {
   projectRoot: string | null;
   projectId: string | null;
   defaultCoordinatorTaskId: string | null;
-  coordinatorSpawnDefaults: { command: string; args: string[] };
-  coordinatorAgentEnvFile: string | undefined;
   coordinators: Map<string, CoordinatorState>;
   preambleWriteQueue: Map<string, Promise<void>>;
   notifications: CoordinatorNotifications;
   landing: CoordinatorLanding;
-  archiver: ChildArchiver;
   prompts: CoordinatorPrompts;
   signalWaits: SignalWaits;
 }

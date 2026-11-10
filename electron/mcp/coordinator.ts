@@ -57,9 +57,9 @@ import { hydrateTask, refreshSessionMcp } from './coordinator/task-hydration.js'
 import type { HydrateTaskOptions } from './coordinator/task-hydration.js';
 
 export class Coordinator implements CoordinatorInternals {
-  // The fields are this class's own state. They are public only so the function
-  // modules in ./coordinator/ can work on them through CoordinatorInternals;
-  // nothing else should.
+  // The fields are this class's own state. Those without `private` are public
+  // only so the function modules in ./coordinator/ can work on them through
+  // CoordinatorInternals; nothing else should.
   tasks = new Map<string, CoordinatedTask>();
   tailBuffers = new Map<string, string>();
   idleResolvers = new Map<
@@ -69,11 +69,11 @@ export class Coordinator implements CoordinatorInternals {
   subscribers = new Map<string, (encoded: string) => void>();
   decoders = new Map<string, TextDecoder>();
   controlMap = new Map<string, 'coordinator' | 'human'>();
-  writingPromptTaskIds = new Set<string>();
-  initialPromptTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  initialPromptReadyTasks = new Set<string>();
+  private writingPromptTaskIds = new Set<string>();
+  private initialPromptTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private initialPromptReadyTasks = new Set<string>();
   promptReadySeenAt = new Map<string, number>();
-  queuedPromptFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private queuedPromptFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
   bracketedPasteAgentIds = new Set<string>();
   closingTaskIds = new Set<string>();
   cleanupsInFlight = new Map<string, Promise<void>>();
@@ -110,11 +110,11 @@ export class Coordinator implements CoordinatorInternals {
   projectRoot: string | null = null;
   projectId: string | null = null;
   defaultCoordinatorTaskId: string | null = null;
-  coordinatorSpawnDefaults: { command: string; args: string[] } = {
+  private coordinatorSpawnDefaults: { command: string; args: string[] } = {
     command: 'claude',
     args: [],
   };
-  coordinatorAgentEnvFile: string | undefined;
+  private coordinatorAgentEnvFile: string | undefined;
   coordinators = new Map<string, CoordinatorState>();
   // Serializes concurrent preamble writes to the same file path.
   preambleWriteQueue = new Map<string, Promise<void>>();
@@ -135,7 +135,7 @@ export class Coordinator implements CoordinatorInternals {
     cleanupTask: (taskId, merged) => cleanupTask(this, taskId, merged),
     notifyRenderer: (channel, data) => notifyRenderer(this, channel, data),
   });
-  archiver: ChildArchiver = new ChildArchiver({
+  private archiver = new ChildArchiver({
     tasks: this.tasks,
     notifications: this.notifications,
     isClosingOrIntegrating: (taskId) => isClosingOrIntegrating(this, taskId),

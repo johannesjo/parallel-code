@@ -14,7 +14,7 @@ import { getChangedFiles, getAllFileDiffs, getDiffBaseSha } from '../../ipc/git.
 import { stripAnsi } from '../../shared/prompt-detect.js';
 import type { CoordinatedTask, ApiTaskSummary, ApiTaskDetail, ApiDiffResult } from '../types.js';
 
-export function activityEvidence(task: CoordinatedTask): ActivityEvidence {
+function activityEvidence(task: CoordinatedTask): ActivityEvidence {
   return (
     getAgentActivityEvidence(task.agentId) ?? {
       agentId: task.agentId,
