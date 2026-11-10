@@ -23,14 +23,12 @@ import { execAsync, execStdout, currentBranch } from './coordinator/child-git.js
 import {
   buildTaskMcpLaunchArgs,
   refreshChildMcpConfigs,
-  restoreCoordinatorMcpJson,
   rewriteSubtaskMcpConfig,
-  unlinkMcpConfigFile,
   type SessionMcpProvider,
 } from './coordinator/mcp-config.js';
 import type { CoordinatorInternals } from './coordinator/internals.js';
 import { CoordinatorNotifications } from './coordinator/notifications.js';
-import { CoordinatorLanding, type MergedLines } from './coordinator/landing.js';
+import { CoordinatorLanding } from './coordinator/landing.js';
 import { ChildArchiver } from './coordinator/archive.js';
 import { CoordinatorPrompts, INITIAL_PROMPT_READY_DELAY_MS } from './coordinator/prompts.js';
 import { DEFAULT_WAIT_TIMEOUT_MS, SignalWaits } from './coordinator/signal-waits.js';
@@ -44,7 +42,6 @@ import {
 } from '../shared/coordinator-limits.js';
 import { getMainBranch } from '../ipc/git.js';
 import { buildSubTaskPreamble } from './sub-task-preamble.js';
-import { verificationRunner } from '../ipc/verify.js';
 import { info as logInfo, warn as logWarn } from '../log.js';
 import type {
   CoordinatedTask,
@@ -69,19 +66,12 @@ import {
 } from '../shared/completion-report.js';
 import {
   assertOrchestrationEnabled,
-  agentIdsForTask,
-  resolveIdleWaiters,
   withdrawCloseSuggestion,
   advanceReviewRevision,
   isClosingOrIntegrating,
   notifyRenderer,
 } from './coordinator/internals.js';
-import {
-  unsubscribeAgentOutput,
-  clearAgentBuffers,
-  clearAgentOutputState,
-  listenToAgentEvents,
-} from './coordinator/agent-events.js';
+import { clearAgentBuffers, listenToAgentEvents } from './coordinator/agent-events.js';
 import { waitForIdle } from './coordinator/idle-waits.js';
 import {
   listTasks,
@@ -96,6 +86,15 @@ import {
   reserveChildRestart,
   countInFlightSubTasks,
 } from './coordinator/admission.js';
+import {
+  cleanupLandedTaskResources,
+  closeTask,
+  removeCoordinatedTask,
+  cleanupTask,
+  detachChildren,
+  detachChild,
+  deregisterCoordinator,
+} from './coordinator/teardown.js';
 const REST_COORDINATOR_SENTINEL = 'api';
 
 export class Coordinator implements CoordinatorInternals {
@@ -173,8 +172,8 @@ export class Coordinator implements CoordinatorInternals {
     coordinators: this.coordinators,
     notifications: this.notifications,
     assertOrchestrationEnabled: (epoch) => assertOrchestrationEnabled(this, epoch),
-    cleanupLandedTaskResources: (task, merged) => this.cleanupLandedTaskResources(task, merged),
-    cleanupTask: (taskId, merged) => this.cleanupTask(taskId, merged),
+    cleanupLandedTaskResources: (task, merged) => cleanupLandedTaskResources(this, task, merged),
+    cleanupTask: (taskId, merged) => cleanupTask(this, taskId, merged),
     notifyRenderer: (channel, data) => notifyRenderer(this, channel, data),
   });
   archiver: ChildArchiver = new ChildArchiver({
@@ -438,43 +437,12 @@ export class Coordinator implements CoordinatorInternals {
     return reserveChildRestart(this, taskId);
   }
 
-  /** Detach first; the caller persists these IDs before removing the parent's worktree. */
   detachChildren(parentId: string): string[] {
-    const children = [...this.tasks.values()].filter((task) => task.coordinatorTaskId === parentId);
-    if (
-      (this.pendingCreateCounts.get(parentId) ?? 0) > 0 ||
-      children.some((task) => task.status === 'creating')
-    ) {
-      throw new Error(
-        'A child launch is still settling. Retry closing after it finishes or is canceled.',
-      );
-    }
-    if (children.some((task) => this.integratingTaskIds.has(task.id))) {
-      throw new Error(
-        'A child is being integrated. Wait for integration before closing the parent.',
-      );
-    }
-    const parent = this.coordinators.get(parentId);
-    if (parent) {
-      parent.lifecycle = 'closing';
-      parent.paused = true;
-      parent.launchEpoch = (parent.launchEpoch ?? 0) + 1;
-    }
-    this.deregisterCoordinator(parentId);
-    for (const task of children) this.removeCoordinatedTask(task.id);
-    return children.map((task) => task.id);
+    return detachChildren(this, parentId);
   }
 
-  /** Detach one child while its parent keeps running. Returns the former parent's id, if any. */
   detachChild(childId: string): string | undefined {
-    const task = this.tasks.get(childId);
-    if (!task) return undefined;
-    if (task.status === 'creating')
-      throw new Error('The child is still starting. Retry detaching after it finishes.');
-    if (this.integratingTaskIds.has(childId))
-      throw new Error('The child is being integrated. Wait for integration before detaching.');
-    this.removeCoordinatedTask(childId);
-    return task.coordinatorTaskId;
+    return detachChild(this, childId);
   }
 
   private async createTaskUnchecked(
@@ -758,7 +726,7 @@ export class Coordinator implements CoordinatorInternals {
       // If cleanup fails the task stays in this.tasks; as 'error' it no longer
       // occupies a concurrency slot and hook events cannot revive it.
       task.status = 'error';
-      this.cleanupTask(task.id).catch((cleanupErr) => {
+      cleanupTask(this, task.id).catch((cleanupErr) => {
         logWarn('coordinator.create_task', 'cleanup after failed creation failed', {
           taskId: task.id,
           err: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
@@ -819,55 +787,6 @@ export class Coordinator implements CoordinatorInternals {
     return getTaskOutput(this, taskId);
   }
 
-  private clearTaskMcpConfig(task: CoordinatedTask): void {
-    unlinkMcpConfigFile(task.mcpConfigPath);
-    task.mcpConfigPath = undefined;
-  }
-
-  private clearTaskControlState(taskId: string): void {
-    this.prompts.clearPromptDeliveryState(taskId);
-    this.controlMap.delete(taskId);
-  }
-
-  private async cleanupLandedTaskResources(
-    task: CoordinatedTask,
-    merged: MergedLines,
-  ): Promise<void> {
-    this.closingTaskIds.add(task.id);
-    try {
-      this.notifications.suppressPendingNotificationForTask(task);
-      this.notifications.queueLandedNotification(task);
-
-      clearAgentOutputState(this, task);
-
-      const agentIds = agentIdsForTask(task);
-      for (const agentId of agentIds) {
-        try {
-          killAgent(agentId);
-        } catch {
-          /* already dead */
-        }
-      }
-
-      await deleteTask({
-        agentIds,
-        branchName: task.branchName,
-        deleteBranch: true,
-        projectRoot: task.projectRoot,
-      });
-
-      resolveIdleWaiters(this, task.id, 'exited');
-      this.clearTaskMcpConfig(task);
-      task.status = 'exited';
-      task.exitCode = 0;
-      this.tasks.delete(task.id);
-      this.clearTaskControlState(task.id);
-      notifyRenderer(this, IPC.MCP_TaskClosed, { taskId: task.id, merged });
-    } finally {
-      this.closingTaskIds.delete(task.id);
-    }
-  }
-
   async landSelf(taskId: string, input: LandSelfInput): Promise<ApiLandSelfResult> {
     assertOrchestrationEnabled(this);
     const epoch = this.orchestrationEpoch;
@@ -920,12 +839,8 @@ export class Coordinator implements CoordinatorInternals {
     return { diff, merge };
   }
 
-  async closeTask(taskId: string): Promise<void> {
-    assertOrchestrationEnabled(this);
-    if (this.integratingTaskIds.has(taskId)) throw new Error('Task integration is in progress.');
-    const task = this.tasks.get(taskId);
-    if (!task) throw new Error(`Task not found: ${taskId}`);
-    await this.cleanupTask(taskId);
+  closeTask(taskId: string): Promise<void> {
+    return closeTask(this, taskId);
   }
 
   /**
@@ -951,107 +866,8 @@ export class Coordinator implements CoordinatorInternals {
     return this.archiver.archiveTask(taskId, reason, force);
   }
 
-  /**
-   * Remove a coordinated task's backend state when the UI closes it directly.
-   * Unlike cleanupTask, this does NOT kill the agent or delete the worktree —
-   * the UI has already done both. It only cleans up in-memory coordinator state.
-   */
   removeCoordinatedTask(taskId: string): void {
-    const task = this.tasks.get(taskId);
-    if (!task) return;
-
-    this.notifications.suppressPendingNotificationForTask(task, true);
-
-    clearAgentOutputState(this, task);
-    resolveIdleWaiters(this, taskId, 'removed');
-    this.clearTaskMcpConfig(task);
-
-    // For Docker sub-tasks, the UI calls killAgent before removeCoordinatedTask,
-    // which stops the sub-task's own container via stopDockerContainer in pty.ts.
-    // No additional docker cleanup needed here.
-
-    this.tasks.delete(taskId);
-    this.clearTaskControlState(taskId);
-    this.signalWaits.resolveSignalWaitersIfNoneRemain(task.coordinatorTaskId);
-  }
-
-  /** `merged` says the task leaves because it was merged (for the renderer's
-   *  Super Productivity note); a plain close or failed start passes nothing. */
-  private cleanupTask(taskId: string, merged?: MergedLines): Promise<void> {
-    // Concurrent closes share one run so deleteTask is not issued twice.
-    const inFlight = this.cleanupsInFlight.get(taskId);
-    if (inFlight) return inFlight;
-    const run = this.cleanupTaskOnce(taskId, merged).finally(() => {
-      this.cleanupsInFlight.delete(taskId);
-    });
-    this.cleanupsInFlight.set(taskId, run);
-    return run;
-  }
-
-  private async cleanupTaskOnce(taskId: string, merged?: MergedLines): Promise<void> {
-    const task = this.tasks.get(taskId);
-    if (!task) return;
-    // An exit before this close was already reported; only one landing during it is new.
-    const exitedBeforeClose = task.status === 'exited';
-    this.closingTaskIds.add(taskId);
-    this.notifications.suppressPendingNotificationForTask(task, true);
-
-    unsubscribeAgentOutput(this, task.agentId);
-    // A verify run still going would keep writing into the worktree we delete.
-    verificationRunner.cancel(taskId);
-
-    // Kill the agent. For Docker sub-tasks, killAgent also calls docker stop on the
-    // sub-task's own container (via stopDockerContainer in pty.ts), which cleanly
-    // terminates the entire container rather than just the PTY client process.
-    const agentIds = agentIdsForTask(task);
-    for (const agentId of agentIds) {
-      try {
-        killAgent(agentId);
-      } catch {
-        /* already dead */
-      }
-    }
-
-    // Remove worktree. If this fails, keep all coordinator state so the caller
-    // can retry. Do NOT emit MCP_TaskClosed — the task still exists on disk.
-    try {
-      await deleteTask({
-        agentIds,
-        branchName: task.branchName,
-        deleteBranch: true,
-        projectRoot: task.projectRoot,
-      });
-    } catch (err) {
-      console.warn('Failed to delete coordinated task worktree:', err);
-      this.prompts.clearPromptDeliveryState(taskId);
-      this.closingTaskIds.delete(taskId);
-      // The exit handler skips signal waiters while a task is closing, so an
-      // exit that landed during this attempt would otherwise leave them hanging.
-      if (!exitedBeforeClose && task.status === 'exited')
-        this.signalWaits.deliverExitToSignalWaiter(task);
-      notifyRenderer(this, IPC.MCP_TaskCleanupFailed, {
-        taskId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      // The agent that asked for the close must not be told the task is gone.
-      throw err;
-    }
-
-    // Clean up internal state — resolve idle and signal waiters before deleting
-    // so callers don't hang until their own timeout fires.
-    resolveIdleWaiters(this, taskId, 'exited');
-    // Guard against double-resolve: the PTY exit handler (onPtyEvent 'exit') may have
-    // already consumed a resolver if the process exited between killAgent and here.
-    // reviewNotificationQueued is set by whichever path runs first.
-    if (!task.reviewNotificationQueued) this.signalWaits.deliverExitToSignalWaiter(task);
-    clearAgentBuffers(this, task.agentId);
-    this.clearTaskMcpConfig(task);
-    this.tasks.delete(taskId);
-    this.clearTaskControlState(taskId);
-    this.closingTaskIds.delete(taskId);
-
-    // Notify renderer
-    notifyRenderer(this, IPC.MCP_TaskClosed, merged ? { taskId, merged } : { taskId });
+    removeCoordinatedTask(this, taskId);
   }
 
   getTask(taskId: string): CoordinatedTask | undefined {
@@ -1344,66 +1160,7 @@ export class Coordinator implements CoordinatorInternals {
   }
 
   deregisterCoordinator(coordinatorTaskId: string): void {
-    if (
-      [...this.tasks.values()].some(
-        (task) =>
-          task.coordinatorTaskId === coordinatorTaskId && this.integratingTaskIds.has(task.id),
-      )
-    )
-      throw new Error('Child integration is in progress.');
-    const coordinator = this.coordinators.get(coordinatorTaskId);
-    if (!coordinator) return;
-    coordinator.lifecycle = 'closing';
-    this.notifications.clearForDeregister(coordinator);
-
-    restoreCoordinatorMcpJson(coordinator);
-
-    this.coordinators.delete(coordinatorTaskId);
-    this.landing.forgetCoordinator(coordinatorTaskId);
-
-    // Resolve any pending wait_for_signal_done calls so they don't hang until
-    // the 5-minute timeout fires after the coordinator closes.
-    this.signalWaits.resolveForDeregister(coordinatorTaskId);
-
-    // Mark all child tasks belonging to this coordinator as orphaned so that
-    // signal_done calls from still-running sub-tasks can still resolve.
-    // Do NOT delete the task records — they must remain so signal_done can find them.
-    for (const [taskId, task] of this.tasks) {
-      if (task.coordinatorTaskId !== coordinatorTaskId) continue;
-
-      clearAgentOutputState(this, task);
-      this.prompts.clearPromptDeliveryState(taskId);
-
-      // Resolve pending idle waiters so callers aren't left hanging
-      resolveIdleWaiters(this, taskId, 'exited');
-
-      // If the prompt hadn't been delivered yet, silence future orphaned notifications:
-      // the task never started real work so there's nothing to review. If the prompt
-      // WAS already delivered, leave reviewNotificationQueued unset so the next idle
-      // or exit fires the expected orphaned notification for the user to act on.
-      if (!task.assignedPromptDelivered) {
-        task.reviewNotificationQueued = true;
-      } else {
-        task.suppressIdleUntil = undefined;
-      }
-
-      // Transfer control to human so the user can decide what to do with orphaned tasks
-      this.controlMap.set(taskId, 'human');
-
-      this.clearTaskMcpConfig(task);
-
-      // Notify the frontend so it can detach children consistently regardless
-      // of whether backend deregistration or renderer close cleanup wins the IPC race.
-      notifyRenderer(this, IPC.MCP_TaskStateSync, {
-        taskId,
-        coordinatedBy: null,
-        controlledBy: null,
-        mcpConfigPath: null,
-        mcpStartupStatus: null,
-        mcpStartupError: null,
-        needsReview: task.assignedPromptDelivered,
-      });
-    }
+    deregisterCoordinator(this, coordinatorTaskId);
   }
 
   markPromptDelivered(taskId: string): void {
