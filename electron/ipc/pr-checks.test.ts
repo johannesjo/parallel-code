@@ -808,6 +808,89 @@ describe('a merged PR', () => {
     await __runTickForTests();
     expect(calls.map((args) => args[2])).toEqual([prs.t2]);
   });
+
+  it('shows a settled PR merged on GitHub once the window regains focus', async () => {
+    const send = vi.fn();
+    const window = fakeWindow(send);
+    initPrChecks(window);
+    let state = 'OPEN';
+    const calls = stubGh((_args, cb) =>
+      cb(
+        null,
+        JSON.stringify({
+          state,
+          mergedAt: '2026-11-11T10:00:00Z',
+          headRefOid: 'sha',
+          mergeable: 'MERGEABLE',
+          mergeStateStatus: 'CLEAN',
+          statusCheckRollup: [{ name: 'build', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+        }),
+        '',
+      ),
+    );
+    startPrChecksWatcher({
+      taskId: 't1',
+      watchId: 't1',
+      prUrl: 'https://github.com/a/b/pull/1',
+      taskName: 'T',
+      babysit: false,
+      branch: null,
+    });
+    await flushPromises();
+    const on = window.on as unknown as ReturnType<typeof vi.fn>;
+    const focus = on.mock.calls.find(([event]) => event === 'focus')?.[1] as
+      | (() => void)
+      | undefined;
+    calls.length = 0;
+
+    // Checked moments ago: switching windows back and forth must not poll GitHub each time.
+    focus?.();
+    await flushPromises();
+    expect(calls).toHaveLength(0);
+
+    // Merged in the browser; a settled PR would otherwise wait for the 5-minute refresh.
+    state = 'MERGED';
+    const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
+    try {
+      focus?.();
+      await flushPromises();
+    } finally {
+      now.mockRestore();
+    }
+
+    expect(calls).toHaveLength(1);
+    expect(send.mock.calls[send.mock.calls.length - 1]?.[1]).toMatchObject({
+      cleared: true,
+      merged: true,
+    });
+  });
+
+  it('polls on focus at most once per window while GitHub keeps failing', async () => {
+    const window = fakeWindow(vi.fn());
+    initPrChecks(window);
+    const calls = stubGh((_args, cb) => cb(new Error('connect ETIMEDOUT'), '', ''));
+    startPrChecksWatcher({
+      taskId: 't1',
+      watchId: 't1',
+      prUrl: 'https://github.com/a/b/pull/1',
+      taskName: 'T',
+      babysit: false,
+      branch: null,
+    });
+    await flushPromises();
+    const on = window.on as unknown as ReturnType<typeof vi.fn>;
+    const focus = on.mock.calls.find(([event]) => event === 'focus')?.[1] as
+      | (() => void)
+      | undefined;
+    calls.length = 0;
+
+    // A failed poll leaves the PR unrefreshed, so only the focus throttle stops a stampede.
+    focus?.();
+    focus?.();
+    await flushPromises();
+
+    expect(calls).toHaveLength(1);
+  });
 });
 
 describe('startPrChecksWatcher — pushes made outside the app', () => {

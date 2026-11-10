@@ -11,6 +11,7 @@ import {
   getPullRequestDetails,
   markPullRequestReadyForTask,
   mergePullRequestForTask,
+  refreshPrChecks,
   stageFailedChecksPrompt,
 } from '../store/github';
 import { IPC } from '../../electron/ipc/channels';
@@ -118,6 +119,7 @@ vi.mock('../store/github', () => ({
   getPullRequestDetails: vi.fn(),
   markPullRequestReadyForTask: vi.fn(),
   mergePullRequestForTask: vi.fn(),
+  refreshPrChecks: vi.fn(),
   stageFailedChecksPrompt: vi.fn(),
   stageReviewFeedbackPrompt: vi.fn(),
 }));
@@ -892,6 +894,12 @@ describe('FinishDialog GitHub', () => {
     mount({ task: task({ githubUrl: 'https://github.com/o/r/issues/2' }) });
     expect(document.querySelector('section[aria-label="Pull request"]')).toBeNull();
     expect(button('PR #2 details…')).toBeUndefined();
+    expect(refreshPrChecks).not.toHaveBeenCalled();
+  });
+
+  it('re-checks the PR on GitHub when opened, so the board learns of a merge too', () => {
+    mount({ task: task({ id: 't-pr', prUrl: 'https://github.com/o/r/pull/42' }) });
+    expect(refreshPrChecks).toHaveBeenCalledWith('t-pr');
   });
 
   it.each(['prUrl', 'githubUrl'] as const)(

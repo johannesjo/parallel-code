@@ -31,6 +31,8 @@ const NEW_HEAD_CHECKS_WAIT_MS = 2 * 60_000;
 /** GitHub computes mergeability lazily, e.g. after the base moved, and usually
  *  settles within seconds; a PR it leaves unsettled longer drops to the settled cadence. */
 const MERGE_STATE_WAIT_MS = 2 * 60_000;
+/** Regaining focus re-checks PRs not polled for this long, so switching windows does not poll each time. */
+const FOCUS_REFRESH_MS = 30_000;
 const GH_TIMEOUT_MS = 15_000;
 const GH_MAX_BUFFER = 4 * 1024 * 1024;
 
@@ -86,8 +88,11 @@ let tickHandle: ReturnType<typeof setInterval> | null = null;
 let isRefreshing = false;
 let disabled = false;
 let disabledReason: 'missing' | 'auth' | null = null;
+/** A failed poll leaves `lastRefreshedAt` alone, so this throttles focus polls while gh keeps failing. */
+let lastFocusPollAt = 0;
 
 /** Public: wire window-lifecycle listeners. Call once from registerAllHandlers.
+ *  Regaining focus re-checks PRs, since the user may have just merged one in the browser.
  *  We do NOT pause polling on `blur` — the point of OS notifications is to tell
  *  the user something finished while they were doing something else. We only
  *  pause if the window is actually hidden (minimised / cmd-H), which is the
@@ -101,6 +106,7 @@ export function initPrChecks(mainWindow: BrowserWindow): void {
       runTick().catch((err) => console.warn('[pr-checks] show tick failed:', err));
     }
   });
+  mainWindow.on('focus', refreshOnFocus);
   mainWindow.on('hide', pauseUnlessBabysitting);
   mainWindow.on('minimize', pauseUnlessBabysitting);
   mainWindow.on('restore', () => {
@@ -201,6 +207,21 @@ export function refreshPrChecksWatcher(taskId: string, pushed: boolean): void {
   // Poll now instead of up to a tick later: a merge or ready-for-review shows
   // at once, and GitHub may already report a pushed head.
   for (const watchId of due) refreshOne(watchId).catch(handleGhError);
+}
+
+/** A PR merged or reviewed in the browser is usually settled, so it would wait
+ *  for the settled refresh; coming back to the app is when its new state matters. */
+function refreshOnFocus(): void {
+  if (disabled || tasks.size === 0) return;
+  ensureInterval();
+  const now = Date.now();
+  if (now - lastFocusPollAt < FOCUS_REFRESH_MS) return;
+  for (const entry of tasks.values()) {
+    if (now - entry.lastRefreshedAt >= FOCUS_REFRESH_MS) {
+      lastFocusPollAt = now;
+      refreshOne(entry.watchId).catch(handleGhError);
+    }
+  }
 }
 
 function taskWatchIds(taskId: string): string[] {
@@ -860,6 +881,7 @@ export function __resetForTests(): void {
   isRefreshing = false;
   disabled = false;
   disabledReason = null;
+  lastFocusPollAt = 0;
 }
 
 /** Read module state for assertions in tests. */

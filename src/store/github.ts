@@ -92,7 +92,7 @@ export function linkPullRequestToTask(taskId: string, url: string): void {
 }
 
 /** Polls the task's PRs now; nothing was pushed, so their checks stay shown. */
-function refreshPrChecks(taskId: string): void {
+export function refreshPrChecks(taskId: string): void {
   void invoke(IPC.RefreshPrChecksWatcher, { taskId, pushed: false }).catch((err: unknown) =>
     logWarn('github', 'Failed to refresh PR checks', { err: String(err) }),
   );

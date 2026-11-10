@@ -188,7 +188,8 @@ describe('registerAllHandlers wiring', () => {
         'minimize',
         'restore',
         'show',
-        // pr-checks.ts polls only while the window is visible
+        // pr-checks.ts polls only while the window is visible, and again on focus
+        'focus',
         'hide',
         'minimize',
         'restore',

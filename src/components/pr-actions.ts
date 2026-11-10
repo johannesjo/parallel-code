@@ -1,10 +1,11 @@
-import { createEffect, createResource, createSignal, on } from 'solid-js';
+import { createEffect, createResource, createSignal, on, untrack } from 'solid-js';
 import { parseGitHubUrl } from '../lib/github-url';
 import { errMessage } from '../lib/log';
 import {
   getPullRequestDetails,
   markPullRequestReadyForTask,
   mergePullRequestForTask,
+  refreshPrChecks,
   stageFailedChecksPrompt,
   stageReviewFeedbackPrompt,
 } from '../store/github';
@@ -224,6 +225,11 @@ export function createFinishPr(props: FinishPrProps) {
     setMergeLocally(false);
     setMergedHere(false);
     setBypassProtection(false);
+    // The dialog fetches its own details; this poll lets the board learn of a
+    // merge made in the browser too, instead of at the next settled refresh.
+    untrack(() => {
+      if (taskPrUrl(props.task)) refreshPrChecks(props.task.id);
+    });
   });
   // A new head is unseen code, and a block that lifts and returns may be a
   // different rule; either way the bypass must be confirmed again.
