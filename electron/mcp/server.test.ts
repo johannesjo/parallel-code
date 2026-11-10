@@ -452,9 +452,11 @@ describe('structured MCP completion contracts', () => {
           expect(output).toHaveProperty('structuredContent', { tasks: result });
         if (name === 'signal_done') {
           if (session)
-            expect(context.client.callSessionTool).toHaveBeenCalledWith('signal_done', {
-              result: report,
-            });
+            expect(context.client.callSessionTool).toHaveBeenCalledWith(
+              'signal_done',
+              { result: report },
+              undefined,
+            );
           else expect(context.client.signalDone).toHaveBeenCalledWith('child', { result: report });
         }
       },
@@ -510,7 +512,8 @@ describe('structured MCP completion contracts', () => {
         content: [{ text: 'Error: Completion signal was rejected.' }],
       });
       expect(output).not.toHaveProperty('structuredContent');
-      if (session) expect(context.client.callSessionTool).toHaveBeenCalledWith('signal_done', {});
+      if (session)
+        expect(context.client.callSessionTool).toHaveBeenCalledWith('signal_done', {}, undefined);
       else expect(context.client.signalDone).toHaveBeenCalledWith('child', {});
     },
   );
@@ -925,7 +928,7 @@ describe('capability-bound sessions', () => {
       params,
     );
     expect(result).not.toHaveProperty('isError');
-    expect(client.callSessionTool).toHaveBeenCalledWith('create_task', params);
+    expect(client.callSessionTool).toHaveBeenCalledWith('create_task', params, undefined);
     expect(client.createTask).not.toHaveBeenCalled();
   });
 
@@ -968,19 +971,27 @@ describe('capability-bound sessions', () => {
       sessionCapabilities: capabilities,
     };
     await handleMCPToolCall(context, 'wait_for_signal_done', {});
-    expect(client.callSessionTool).toHaveBeenLastCalledWith('wait_for_signal_done', {
-      timeoutMs: 30000,
-    });
+    expect(client.callSessionTool).toHaveBeenLastCalledWith(
+      'wait_for_signal_done',
+      {
+        timeoutMs: 30000,
+      },
+      undefined,
+    );
     await handleMCPToolCall(context, 'wait_for_agent_prompt', {
       deliveryId: 'delivery',
       lastObservedState: 'waiting',
       timeoutMs: 90000,
     });
-    expect(client.callSessionTool).toHaveBeenLastCalledWith('wait_for_agent_prompt', {
-      deliveryId: 'delivery',
-      lastObservedState: 'waiting',
-      timeoutMs: 60000,
-    });
+    expect(client.callSessionTool).toHaveBeenLastCalledWith(
+      'wait_for_agent_prompt',
+      {
+        deliveryId: 'delivery',
+        lastObservedState: 'waiting',
+        timeoutMs: 60000,
+      },
+      undefined,
+    );
     for (const timeoutMs of [0, -1, NaN, Infinity, '30000'])
       expect(await handleMCPToolCall(context, 'wait_for_signal_done', { timeoutMs })).toMatchObject(
         { isError: true },
@@ -1073,7 +1084,7 @@ describe('legacy dispatch hardening', () => {
     });
     expect(client.waitForIdle).toHaveBeenLastCalledWith('t', 240_000);
     await handleMCPToolCall({ client, ...coordinator }, 'wait_for_signal_done', {});
-    expect(client.waitForSignalDone).toHaveBeenLastCalledWith('coord-1', 240_000);
+    expect(client.waitForSignalDone).toHaveBeenLastCalledWith('coord-1', 240_000, undefined);
     for (const timeoutMs of [0, -5, NaN, Infinity, '10'])
       expect(
         await handleMCPToolCall({ client, ...coordinator }, 'wait_for_signal_done', { timeoutMs }),
@@ -1106,5 +1117,47 @@ describe('legacy dispatch hardening', () => {
     expect(
       await handleMCPToolCall({ client, ...coordinator }, 'get_task_output', { taskId: 't' }),
     ).toEqual({ content: [{ type: 'text', text: '' }] });
+  });
+});
+
+describe('tool call cancellation', () => {
+  it('forwards the cancel signal to a legacy signal wait', async () => {
+    const { signal } = new AbortController();
+    const client = {
+      waitForSignalDone: vi.fn().mockResolvedValue({ remaining: 0 }),
+    } as unknown as MCPClient;
+
+    await handleMCPToolCall(
+      { client, taskId: '', coordinatorId: 'coord-1', signal },
+      'wait_for_signal_done',
+      {},
+    );
+
+    expect(client.waitForSignalDone).toHaveBeenCalledWith('coord-1', expect.any(Number), signal);
+  });
+
+  it('forwards the cancel signal to session tool calls', async () => {
+    const { signal } = new AbortController();
+    const client = {
+      callSessionTool: vi.fn().mockResolvedValue({ remaining: 0 }),
+    } as unknown as MCPClient;
+
+    await handleMCPToolCall(
+      {
+        client,
+        taskId: 'parent',
+        coordinatorId: '',
+        sessionCapabilities: { profile: 'ordinary', canCreate: true, peers: false },
+        signal,
+      },
+      'wait_for_signal_done',
+      {},
+    );
+
+    expect(client.callSessionTool).toHaveBeenCalledWith(
+      'wait_for_signal_done',
+      { timeoutMs: 30_000 },
+      signal,
+    );
   });
 });

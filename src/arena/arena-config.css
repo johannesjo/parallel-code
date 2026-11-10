@@ -27,7 +27,7 @@
   gap: 10px;
   transition:
     border-color var(--motion-fast) var(--ease-out),
-    box-shadow 0.2s ease;
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
 .arena-competitor-card:hover {

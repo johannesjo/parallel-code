@@ -631,9 +631,9 @@ describe('Coordinator registerCoordinator — idempotency', () => {
       output(encode(frame));
       await (
         coordinator as unknown as {
-          tryDeliverInitialPrompt(taskId: string): Promise<void>;
+          prompts: { tryDeliverInitialPrompt(taskId: string): Promise<void> };
         }
-      ).tryDeliverInitialPrompt(task.id);
+      ).prompts.tryDeliverInitialPrompt(task.id);
 
       expect(mockWriteToAgent).not.toHaveBeenCalledWith(
         task.agentId,
@@ -799,9 +799,9 @@ describe('Coordinator registerCoordinator — idempotency', () => {
         output(encode(frame));
         await (
           coordinator as unknown as {
-            tryDeliverInitialPrompt(taskId: string): Promise<void>;
+            prompts: { tryDeliverInitialPrompt(taskId: string): Promise<void> };
           }
-        ).tryDeliverInitialPrompt(task.id);
+        ).prompts.tryDeliverInitialPrompt(task.id);
         expect(mockWriteToAgent).not.toHaveBeenCalledWith(
           task.agentId,
           expect.stringContaining('do one'),
@@ -1573,7 +1573,7 @@ describe('Coordinator land_self', () => {
       lines_removed: 1,
     });
     const { deleteTask: mockDeleteTask } = await import('../ipc/tasks.js');
-    vi.mocked(mockDeleteTask).mockResolvedValue(undefined);
+    vi.mocked(mockDeleteTask).mockResolvedValue({});
     mockGit();
     coordinator = new Coordinator();
     coordinator.setNotify(mockNotify);
@@ -1730,6 +1730,23 @@ describe('Coordinator land_self', () => {
       expect(mockVerifyStart).toHaveBeenCalledTimes(3);
       expect(vi.mocked(mergeTask)).not.toHaveBeenCalled();
       expect(coordinator.getTask('task-1')?.landingState).toBe('landing_escalated');
+    });
+
+    it('stops re-verifying once orchestration is disabled mid-run', async () => {
+      coordinator.registerCoordinator('coord-1', 'proj-1', { verifyCommand: 'npm test' });
+      mockVerifyStart.mockImplementation(async () => {
+        coordinator.setOrchestrationEnabled(false);
+        return passedRun;
+      });
+      mockBaseContained(false);
+
+      await expect(coordinator.landSelf('task-1', { verification })).rejects.toThrow(
+        'operation was canceled',
+      );
+
+      expect(mockRebaseTask).toHaveBeenCalledTimes(1);
+      expect(mockVerifyStart).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(mergeTask)).not.toHaveBeenCalled();
     });
 
     it('escalates without running the command when the rebase conflicts', async () => {
@@ -2571,6 +2588,43 @@ describe('Coordinator sendPrompt', () => {
     });
   });
 
+  it('withdraws a close suggestion when the child gets new work', async () => {
+    await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
+    coordinator.markPromptDelivered('task-1');
+    coordinator.suggestClose('task-1', 'Superseded');
+
+    await coordinator.sendPrompt('task-1', 'Actually, continue');
+
+    expect(coordinator.getTaskStatus('task-1')?.closeSuggestion).toBeUndefined();
+  });
+
+  it('withdraws a close suggestion even while the new prompt waits in the queue', async () => {
+    await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
+    coordinator.markPromptDelivered('task-1');
+    coordinator.suggestClose('task-1', 'Superseded');
+    coordinator.setTaskControl('task-1', 'human');
+    mockNotifyRenderer.mockClear();
+
+    await expect(coordinator.sendPrompt('task-1', 'Actually, continue')).resolves.toEqual({
+      queued: true,
+    });
+
+    expect(coordinator.getTaskStatus('task-1')?.closeSuggestion).toBeUndefined();
+    expect(mockNotifyRenderer).toHaveBeenCalledWith('mcp_task_state_sync', {
+      taskId: 'task-1',
+      closeSuggestion: null,
+    });
+  });
+
+  it('withdraws a close suggestion when the child reports a newer completion', async () => {
+    await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
+    coordinator.suggestClose('task-1', 'Superseded');
+
+    await coordinator.signalDone('task-1');
+
+    expect(coordinator.getTaskStatus('task-1')?.closeSuggestion).toBeUndefined();
+  });
+
   it('enforces the prompt size limit in UTF-8 bytes', async () => {
     await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
     coordinator.markPromptDelivered('task-1');
@@ -2962,6 +3016,18 @@ describe('Coordinator mergeTask active ownership guard', () => {
       taskId: 'task-1',
       merged: { linesAdded: 1, linesRemoved: 0 },
     });
+  });
+
+  it('reports a merge whose cleanup failed as merged, not closed', async () => {
+    const { deleteTask: mockDeleteTask } = await import('../ipc/tasks.js');
+    vi.mocked(mockDeleteTask).mockRejectedValueOnce(new Error('delete failed'));
+    await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
+    await coordinator.signalDone('task-1');
+
+    await expect(coordinator.mergeTask('task-1', { cleanup: true })).rejects.toThrow(
+      'Merged into main, but cleanup failed: delete failed. Call close_task to retry the cleanup.',
+    );
+    expect(coordinator.getTask('task-1')).toBeDefined();
   });
 
   it('runs the verify command before a coordinator-driven merge and escalates on failure', async () => {
@@ -4390,13 +4456,13 @@ describe('Coordinator cleanupTask — failure resilience', () => {
     coordinator.registerCoordinator('coord-1', 'proj-1');
   });
 
-  it('deleteTask failure retains task in map and emits MCP_TaskCleanupFailed, not MCP_TaskClosed', async () => {
+  it('deleteTask failure rejects, retains task in map and emits MCP_TaskCleanupFailed, not MCP_TaskClosed', async () => {
     const { deleteTask: mockDeleteTask } =
       await vi.importMock<typeof import('../ipc/tasks.js')>('../ipc/tasks.js');
     vi.mocked(mockDeleteTask).mockRejectedValueOnce(new Error('delete failed'));
 
     await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
-    await coordinator.closeTask('task-1');
+    await expect(coordinator.closeTask('task-1')).rejects.toThrow('delete failed');
 
     // Task must remain in backend map so retry is possible
     expect(coordinator.getTask('task-1')).toBeDefined();
@@ -4417,7 +4483,7 @@ describe('Coordinator cleanupTask — failure resilience', () => {
     await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
     // Simulate the task being under coordinator control
     coordinator.setTaskControl('task-1', 'coordinator');
-    await coordinator.closeTask('task-1');
+    await expect(coordinator.closeTask('task-1')).rejects.toThrow('delete failed');
 
     // Backend task still findable — retry via closeTask should work
     expect(coordinator.getTask('task-1')).toBeDefined();
@@ -4438,7 +4504,7 @@ describe('Coordinator cleanupTask — failure resilience', () => {
       };
       expect(c.initialPromptTimers.has('task-1')).toBe(true);
 
-      await coordinator.closeTask('task-1');
+      await expect(coordinator.closeTask('task-1')).rejects.toThrow('delete failed');
 
       expect(c.initialPromptTimers.has('task-1')).toBe(false);
       await vi.advanceTimersByTimeAsync(2_000);
@@ -4473,7 +4539,7 @@ describe('Coordinator cleanupTask — failure resilience', () => {
       };
       expect(c.queuedPromptFlushTimers.has(task.id)).toBe(true);
 
-      await coordinator.closeTask(task.id);
+      await expect(coordinator.closeTask(task.id)).rejects.toThrow('delete failed');
 
       expect(c.queuedPromptFlushTimers.has(task.id)).toBe(false);
       await vi.advanceTimersByTimeAsync(100);
@@ -4670,7 +4736,7 @@ describe('Coordinator cleanupTask — Docker sub-task container stop', () => {
   it('deleteTask is called immediately after killAgent (no waiting for docker exec)', async () => {
     const { deleteTask: mockDeleteTask } =
       await vi.importMock<typeof import('../ipc/tasks.js')>('../ipc/tasks.js');
-    vi.mocked(mockDeleteTask).mockResolvedValue(undefined);
+    vi.mocked(mockDeleteTask).mockResolvedValue({});
 
     await coordinator.createTask({ name: 'test', prompt: 'do', coordinatorTaskId: 'coord-1' });
     await coordinator.closeTask('task-1');
@@ -5846,12 +5912,12 @@ describe('Coordinator waitForSignalDone — requestId replay after transport fai
 
     const requestId = 'replay-test-id-1';
     // First call: consumes the signal
-    const result1 = await coordinator.waitForSignalDone('coord-1', 500, requestId);
+    const result1 = await coordinator.waitForSignalDone('coord-1', 500, { requestId });
     expect(result1.taskId).toBe('task-1');
     expect(task.signalDoneConsumed).toBe(true);
 
     // Second call with same requestId: signal consumed, but result is replayed from cache
-    const result2 = await coordinator.waitForSignalDone('coord-1', 100, requestId);
+    const result2 = await coordinator.waitForSignalDone('coord-1', 100, { requestId });
     expect(result2).toEqual(result1);
   });
 
@@ -5863,11 +5929,11 @@ describe('Coordinator waitForSignalDone — requestId replay after transport fai
     task.signalDoneConsumed = false;
 
     // First call with requestId A consumes the signal
-    await coordinator.waitForSignalDone('coord-1', 500, 'id-A');
+    await coordinator.waitForSignalDone('coord-1', 500, { requestId: 'id-A' });
     expect(task.signalDoneConsumed).toBe(true);
 
     // Second call with a new requestId: no unconsumed signal, no cache hit → times out
-    const result2 = await coordinator.waitForSignalDone('coord-1', 50, 'id-B');
+    const result2 = await coordinator.waitForSignalDone('coord-1', 50, { requestId: 'id-B' });
     expect(result2.timedOut).toBe(true);
   });
 
@@ -5888,14 +5954,14 @@ describe('Coordinator waitForSignalDone — requestId replay after transport fai
 
     const requestId = 'replay-timeout-id';
     // First call times out — no unconsumed signal, short timeout.
-    const result1 = await coordinator.waitForSignalDone('coord-1', 25, requestId);
+    const result1 = await coordinator.waitForSignalDone('coord-1', 25, { requestId });
     expect(result1.timedOut).toBe(true);
 
     // Retry with the same requestId must replay the cached timed-out result
     // instead of registering a fresh waiter — otherwise a stale HTTP retry
     // would inflate activeSignalWaitCounts and re-block the coordinator.
     const beforeRetry = Date.now();
-    const result2 = await coordinator.waitForSignalDone('coord-1', 10_000, requestId);
+    const result2 = await coordinator.waitForSignalDone('coord-1', 10_000, { requestId });
     const elapsed = Date.now() - beforeRetry;
     expect(result2).toEqual(result1);
     expect(elapsed).toBeLessThan(100);
@@ -5912,11 +5978,11 @@ describe('Coordinator waitForSignalDone — requestId replay after transport fai
 
     const requestId = 'shared-id';
     // coord-A consumes the signal and caches with key `coord-1:shared-id`
-    const result1 = await coordinator.waitForSignalDone('coord-1', 500, requestId);
+    const result1 = await coordinator.waitForSignalDone('coord-1', 500, { requestId });
     expect(result1.taskId).toBe('task-1');
 
     // coord-B with same requestId must not replay coord-A's cached result
-    const result2 = await coordinator.waitForSignalDone('coord-2', 50, requestId);
+    const result2 = await coordinator.waitForSignalDone('coord-2', 50, { requestId });
     expect(result2.timedOut).toBe(true);
   });
 });

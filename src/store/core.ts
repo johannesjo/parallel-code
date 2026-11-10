@@ -142,6 +142,7 @@ export const [store, setStore] = createStore<AppStore>({
   defaultPropagateSkipPermissions: false,
   canvasOwnershipBadges: true,
   finishReview: true,
+  resumeAgentsOnLaunch: true,
   reviewModel: DEFAULT_REVIEW_MODEL,
   customThemes: {},
   activeCustomThemeId: null,

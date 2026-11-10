@@ -4,6 +4,7 @@
 // and reply with the resulting task id. See electron/ipc/register.ts for the
 // main-side bridge.
 
+import { resolveIncludeSelection, splitIncludeSelection } from '../lib/worktree-includes';
 import { publishAgentTour } from './agent-tour';
 import { publishTaskConfidence } from './task-brief';
 import { publishAgentPrDraft } from './pr-draft';
@@ -197,7 +198,7 @@ export function remoteSkipPermissions(
 /** The Git settings the New Task dialog defaults to, for tasks created without it. */
 async function newTaskGitDefaults(
   project: Project,
-): Promise<Pick<CreateTaskOptions, 'gitIsolation' | 'baseBranch' | 'symlinkDirs'>> {
+): Promise<Pick<CreateTaskOptions, 'gitIsolation' | 'baseBranch' | 'symlinkDirs' | 'copyDirs'>> {
   // Non-git projects can't use worktree isolation; fall back to working
   // directly in the project folder.
   if (project.isGitRepo === false) return { gitIsolation: 'none', baseBranch: '', symlinkDirs: [] };
@@ -205,12 +206,14 @@ async function newTaskGitDefaults(
     project.defaultBaseBranch ??
     (await invoke<string>(IPC.GetMainBranch, { projectRoot: project.path }));
   // Match the desktop New Task default without opting remote users into
-  // newly discovered entries that have no confirmation UI.
+  // newly discovered entries that have no confirmation UI. A saved project
+  // include list is that confirmation, so it applies here too.
   const ignoredEntries = await invoke<GitIgnoredEntry[]>(IPC.GetGitignoredDirs, {
     projectRoot: project.path,
   });
-  const symlinkDirs = ignoredEntries.filter((entry) => entry.isDefault).map((entry) => entry.name);
-  return { gitIsolation: 'worktree', baseBranch, symlinkDirs };
+  const initial = resolveIncludeSelection(ignoredEntries, project.worktreeIncludes);
+  const { symlinkDirs, copyDirs } = splitIncludeSelection(initial.selected, initial.copy);
+  return { gitIsolation: 'worktree', baseBranch, symlinkDirs, copyDirs };
 }
 
 async function handleCreateTask(req: CreateTaskRequest): Promise<void> {

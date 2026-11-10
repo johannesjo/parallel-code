@@ -170,6 +170,11 @@ export interface MergeTargetChanges {
 
 export type RemoteBranchState = 'unpushed' | 'differs' | 'pushed';
 
+export interface DeleteTaskResult {
+  /** Set when the project's teardown script did not pass; the worktree was removed anyway. */
+  teardownWarning?: string;
+}
+
 export interface MergeResult {
   main_branch: string;
   lines_added: number;
@@ -223,6 +228,8 @@ export interface PrChecksUpdatePayload {
   isDraft?: boolean;
   reviewDecision?: PrReviewDecision | null;
   mergeable?: PrMergeable;
+  /** GitHub's mergeStateStatus, as in PullRequestDetails. */
+  mergeStateStatus?: string;
   passing: number;
   pending: number;
   failing: number;
@@ -498,3 +505,13 @@ export interface UpdateStatus {
   /** Human-readable message when `phase` is `error`. */
   error: string | null;
 }
+
+/** This computer's Tailscale state, as Connect Phone explains it. */
+export type TailscaleState =
+  | { state: 'running' }
+  | { state: 'needs-login'; loginUrl: string | null }
+  | { state: 'needs-approval' }
+  | { state: 'stopped' }
+  | { state: 'not-running' }
+  | { state: 'not-installed' }
+  | { state: 'unknown' };

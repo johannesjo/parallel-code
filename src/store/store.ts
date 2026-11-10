@@ -26,9 +26,11 @@ export {
   restartAgent,
   switchAgent,
   addCustomAgent,
+  updateCustomAgent,
   removeCustomAgent,
   setAgentEnvFile,
 } from './agents';
+export type { CustomAgentFields } from './agents';
 export { publishAgentTour, referenceTourCard } from './agent-tour';
 export {
   openCanvasDocument,
@@ -176,6 +178,7 @@ export {
   setShowSidebarTips,
   setShowSidebarProgress,
   setSidebarNeedsInputFirst,
+  setArchivedChildrenShown,
   setProjectTasksCollapsed,
   setProjectsCollapsed,
   setFontSmoothing,
@@ -198,6 +201,7 @@ export {
   setDefaultSkipPermissions,
   setCanvasOwnershipBadges,
   setFinishReview,
+  setResumeAgentsOnLaunch,
   setReviewModel,
   setDefaultPropagateSkipPermissions,
 } from './ui';

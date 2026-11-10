@@ -404,6 +404,9 @@ fun AgentsScreen(
     onSettings: () -> Unit,
     computers: List<SavedComputer> = emptyList(),
     onSwitchComputer: (String) -> Unit = {},
+    onSwitchNetwork: () -> Unit = {},
+    /** Set while Android keeps the app from this computer's address (see [LOCAL_NETWORK_PERMISSION]). */
+    onAllowLocalNetwork: (() -> Unit)? = null,
     search: String = "",
     onSearch: (String) -> Unit = {},
     filter: TaskFilter = TaskFilter.ALL,
@@ -421,8 +424,9 @@ fun AgentsScreen(
     val matchingSearch = remember(activeAgents, search) { activeAgents.filter { matchesSearch(it, search) } }
     val groups = remember(matchingSearch, filter) { groupTasks(matchingSearch.filter(filter::matches)) }
     val showHostSwitch = computers.size > 1
-    val hostLabel = computers.firstOrNull { it.baseUrl == host }?.label
-        ?: host.substringAfter("://")
+    val activeComputer = computers.firstOrNull { it.baseUrl == host }
+    val hostLabel = (activeComputer?.label ?: host.substringAfter("://")) +
+        if (activeComputer?.onTailscale == true) " · Tailscale" else ""
     val latencyMs by client.latencyMs.collectAsState()
     val latencySegment =
         if (state.status == ConnectionStatus.CONNECTED && latencyMs != null) " · $latencyMs ms" else ""
@@ -477,11 +481,24 @@ fun AgentsScreen(
                                     "${statusLabel(state)}$latencySegment · $hostLabel",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = AppTheme.extra.textMuted,
+                                    // A wrapped status line would make the bar jump in height.
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
                     },
                     actions = {
+                        // One tap to reach the desktop over Tailscale when leaving home Wi-Fi, and back.
+                        if (activeComputer?.otherNetworkUrl != null) {
+                            TextButton(onClick = onSwitchNetwork) {
+                                Text(
+                                    if (activeComputer.onTailscale) "Use Wi-Fi" else "Use Tailscale",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                        }
                         if (showHostSwitch) {
                             Box {
                                 TextButton(onClick = { showSwitchMenu = true }) {
@@ -603,6 +620,37 @@ fun AgentsScreen(
                                 if (state.status == ConnectionStatus.WAITING_FOR_VPN) "Waiting for VPN connection…" else "Reaching your computer…",
                                 color = AppTheme.extra.textMuted,
                             )
+                        }
+                    }
+                    // Where a user away from home Wi-Fi is looking; the top-bar button is easy to miss.
+                    if (activeComputer?.otherNetworkUrl != null && !activeComputer.onTailscale) {
+                        item {
+                            Column(Modifier.padding(horizontal = 24.dp)) {
+                                Text(
+                                    "Away from home Wi-Fi? Turn on Tailscale on this phone, then:",
+                                    color = AppTheme.extra.textMuted,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                OutlinedButton(onClick = onSwitchNetwork, modifier = Modifier.padding(top = 8.dp)) {
+                                    Text("Use Tailscale", color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+                    }
+                }
+                // Without it every connection over Wi-Fi times out, which looks like an unreachable computer.
+                // Shown above tasks kept from an earlier connection too.
+                if (onAllowLocalNetwork != null && state.status != ConnectionStatus.CONNECTED && state.status != ConnectionStatus.WAITING_FOR_VPN) {
+                    item {
+                        Column(Modifier.padding(horizontal = 24.dp)) {
+                            Text(
+                                "Android blocks this app from your Wi-Fi network until you allow it to reach nearby devices.",
+                                color = AppTheme.extra.textMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            OutlinedButton(onClick = onAllowLocalNetwork, modifier = Modifier.padding(top = 8.dp)) {
+                                Text("Allow access", color = MaterialTheme.colorScheme.onSurface)
+                            }
                         }
                     }
                 }

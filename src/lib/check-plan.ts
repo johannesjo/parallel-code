@@ -6,7 +6,7 @@ import {
   type ProjectCheck,
 } from '../../electron/shared/checks';
 import type { VerificationRun } from '../ipc/types';
-import { changedDuringRun } from './verification-run';
+import { changedDuringRun, isFailedRunStatus } from './verification-run';
 
 const EXECUTION_SURFACE_RULE = 'execution-surface-changed';
 
@@ -86,7 +86,7 @@ function tail(text: string): string {
  * The verify command has its own prompt, so callers pass the other checks.
  */
 export function compileCheckFailurePrompt(runs: readonly SuiteCheckRun[]): string | undefined {
-  const failed = runs.filter((run) => ['failed', 'timed_out', 'error'].includes(run.status));
+  const failed = runs.filter((run) => isFailedRunStatus(run.status));
   if (failed.length === 0) return undefined;
   const lines = ['These checks failed on this task:', ''];
   for (const run of failed) {

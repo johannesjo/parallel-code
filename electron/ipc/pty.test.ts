@@ -105,6 +105,7 @@ import {
   isDockerAvailable,
   killAgent,
   killAllAgents,
+  listRunningAgentIds,
   onPtyEvent,
   projectImageTag,
   resizeAgent,
@@ -498,6 +499,21 @@ describe('spawnAgent docker mode', () => {
 
     expect(ctx.command).toBe('/bin/sh');
     expect(ctx.args).toEqual(['-c', '<redacted>']);
+  });
+
+  it('redacts a setup script run inside Docker, whose -e is not a docker flag', async () => {
+    await spawnAgent(
+      createMockNotify(),
+      buildSpawnArgs({
+        command: '/bin/sh',
+        args: ['-e', '-c', 'echo private-setup-token'],
+        isShell: true,
+      }),
+    );
+
+    const logged = getSpawnCommandLogCtx().args;
+    expect(logged.join(' ')).not.toContain('private-setup-token');
+    expect(logged.slice(-4)).toEqual(['/bin/sh', '-e', '-c', '<redacted>']);
   });
 
   it('redirects credential mounts under per-agent /tmp/agent-<id> inside the container', async () => {
@@ -925,6 +941,7 @@ describe('PTY hook launch ownership', () => {
         PARALLEL_CODE_TASK_ID: task,
         PARALLEL_CODE_LAUNCH_ID: launchId,
       }),
+      codexHookArgs: () => Promise.resolve([]),
     });
     mockPtySpawn.mockImplementationOnce((_command, _args, options) => {
       const env = (options as unknown as { env: Record<string, string> }).env;
@@ -947,6 +964,58 @@ describe('PTY hook launch ownership', () => {
       ),
     ).rejects.toThrow('spawn failed');
     expect(getAgentActivityEvidence(agentId)).toBeUndefined();
+  });
+
+  function hookCodex(codexHookArgs: () => Promise<string[]>): void {
+    setAgentHookRuntime({
+      claudeSettingsPath: () => '/hook-settings.json',
+      buildPtyEnv: (id) => ({ PARALLEL_CODE_AGENT_ID: id }),
+      codexHookArgs,
+    });
+  }
+
+  function codexSpawnArgs(agentId: string, args: string[]): ReturnType<typeof buildSpawnArgs> {
+    return buildSpawnArgs({ agentId, command: 'codex', args, dockerMode: false });
+  }
+
+  function lastSpawn(): { args: string[]; env: Record<string, string> } {
+    const [, args, options] = mockPtySpawn.mock.lastCall ?? [];
+    return { args: args ?? [], env: (options as unknown as { env: Record<string, string> }).env };
+  }
+
+  it('launches Codex with the hook flags first and the hook identity in its env', async () => {
+    hookCodex(() => Promise.resolve(['-c', 'hooks.Stop=[]']));
+    await spawnAgent(createMockNotify(), codexSpawnArgs('agent-codex-hooks', ['resume', 'abc']));
+    expect(lastSpawn().args).toEqual(['-c', 'hooks.Stop=[]', 'resume', 'abc']);
+    expect(lastSpawn().env.PARALLEL_CODE_AGENT_ID).toBe('agent-codex-hooks');
+  });
+
+  it('launches Codex as before when it cannot take the hooks', async () => {
+    hookCodex(() => Promise.resolve([]));
+    await spawnAgent(createMockNotify(), codexSpawnArgs('agent-codex-plain', ['resume', 'abc']));
+    expect(lastSpawn().args).toEqual(['resume', 'abc']);
+    expect(lastSpawn().env.PARALLEL_CODE_AGENT_ID).toBeUndefined();
+  });
+
+  it('leaves a Codex launch alone when the user passes hook flags of their own', async () => {
+    const probe = vi.fn(() => Promise.resolve(['-c', 'hooks.Stop=[]']));
+    hookCodex(probe);
+    const own = ['-c', 'hooks.Stop=[{hooks=[]}]'];
+    await spawnAgent(createMockNotify(), codexSpawnArgs('agent-codex-own', own));
+    expect(lastSpawn().args).toEqual(own);
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it('does not launch Codex once it was stopped while its hooks were being checked', async () => {
+    let release: (args: string[]) => void = () => {};
+    const probe = vi.fn(() => new Promise<string[]>((resolve) => (release = resolve)));
+    hookCodex(probe);
+    const startup = spawnAgent(createMockNotify(), codexSpawnArgs('agent-codex-stopped', []));
+    await vi.waitFor(() => expect(probe).toHaveBeenCalled());
+    killAgent('agent-codex-stopped');
+    release(['-c', 'hooks.Stop=[]']);
+    await expect(startup).rejects.toThrow('Agent startup cancelled');
+    expect(mockPtySpawn).not.toHaveBeenCalled();
   });
 
   it('preserves launch evidence on reattach and rejects delayed hooks/exits after replacement', async () => {
@@ -1107,6 +1176,19 @@ describe('spawnAgent session reattach', () => {
 
     expect(oldProc.kill).toHaveBeenCalled();
     expect(mockPtySpawn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('listRunningAgentIds', () => {
+  it('names the agents whose process is alive, and drops one once it exits', async () => {
+    const args = buildSpawnArgs({ agentId: 'agent-live', command: 'claude', args: [] });
+    await spawnAgent(createMockNotify(), args);
+    await spawnAgent(createMockNotify(), { ...args, agentId: 'agent-gone' });
+    expect(listRunningAgentIds().sort()).toEqual(['agent-gone', 'agent-live']);
+
+    const gone = mockPtySpawn.mock.results[1].value as ReturnType<typeof mockPtySpawn>;
+    gone.emitExit({ exitCode: 0, signal: undefined });
+    expect(listRunningAgentIds()).toEqual(['agent-live']);
   });
 });
 
@@ -2098,6 +2180,27 @@ describe('writeToAgent — interrupt keystrokes', () => {
       writeToAgent(shell.agentId, '\r');
       expect(submitted).toEqual([]);
       writeToAgent(agent.agentId, '\r');
+      expect(submitted).toEqual([agent.agentId]);
+    } finally {
+      off();
+    }
+  });
+
+  it('reports a prompt typed and submitted in one chunk, but not newlines inside a paste', async () => {
+    const submitted: string[] = [];
+    const off = onPtyEvent('prompt-submitted', (agentId) => submitted.push(agentId));
+    try {
+      const agent = buildSpawnArgs({
+        agentId: 'agent-coalesced',
+        command: 'codex',
+        args: [],
+        dockerMode: false,
+      });
+      await spawnAgent(createMockNotify(), agent);
+      writeToAgent(agent.agentId, '\x1b[200~first line\rsecond line\x1b[201~');
+      expect(submitted).toEqual([]);
+      writeToAgent(agent.agentId, '\x15');
+      writeToAgent(agent.agentId, 'follow-up\r');
       expect(submitted).toEqual([agent.agentId]);
     } finally {
       off();

@@ -92,10 +92,12 @@ export interface MCPToolHandlerContext {
   coordinatorId: string;
   canvasOnly?: boolean;
   sessionCapabilities?: SessionCapabilities;
+  /** Aborted when the MCP client cancels this tool call. */
+  signal?: AbortSignal;
 }
 
 export async function handleMCPToolCall(
-  { client, taskId, coordinatorId, canvasOnly, sessionCapabilities }: MCPToolHandlerContext,
+  { client, taskId, coordinatorId, canvasOnly, sessionCapabilities, signal }: MCPToolHandlerContext,
   name: string,
   params: unknown,
 ) {
@@ -154,7 +156,7 @@ export async function handleMCPToolCall(
           throw new Error('timeoutMs must be a positive finite number.');
         scopedParams.timeoutMs = Math.min(typeof timeout === 'number' ? timeout : 30000, 60000);
       }
-      const result = await client.callSessionTool(name, scopedParams);
+      const result = await client.callSessionTool(name, scopedParams, signal);
       return formatToolResult(name, result);
     }
     // MCP tools/call may omit `arguments`; canvas parsers validate their own payloads.
@@ -315,7 +317,7 @@ export async function handleMCPToolCall(
             isError: true,
           };
         }
-        const result = await client.waitForSignalDone(coordinatorId, legacyWaitTimeout(p));
+        const result = await client.waitForSignalDone(coordinatorId, legacyWaitTimeout(p), signal);
         return formatToolResult(name, result);
       }
 
@@ -484,10 +486,10 @@ async function main(): Promise<void> {
     return { tools: selectTools(taskId, coordinatorId, canvasOnly, sessionCapabilities) };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: params } = request.params;
     return handleMCPToolCall(
-      { client, taskId, coordinatorId, canvasOnly, sessionCapabilities },
+      { client, taskId, coordinatorId, canvasOnly, sessionCapabilities, signal: extra.signal },
       name,
       params,
     );

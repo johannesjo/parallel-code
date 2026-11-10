@@ -8,6 +8,8 @@ export interface PrChecksState {
   /** The PR was merged on GitHub; the main process no longer watches it. */
   merged?: boolean;
   mergeable?: PrChecksUpdatePayload['mergeable'];
+  /** GitHub's mergeStateStatus; undefined until a watcher reports one. */
+  mergeStateStatus?: string;
   passing: number;
   pending: number;
   failing: number;
@@ -32,6 +34,7 @@ export function checksFromUpdate(msg: Partial<PrChecksUpdatePayload>): PrChecksS
         : null,
     mergeable:
       msg.mergeable === 'MERGEABLE' || msg.mergeable === 'CONFLICTING' ? msg.mergeable : 'UNKNOWN',
+    mergeStateStatus: typeof msg.mergeStateStatus === 'string' ? msg.mergeStateStatus : undefined,
     passing: typeof msg.passing === 'number' ? msg.passing : 0,
     pending: typeof msg.pending === 'number' ? msg.pending : 0,
     failing: typeof msg.failing === 'number' ? msg.failing : 0,
@@ -188,18 +191,69 @@ export function getCiGlyphState(taskId: string): CiGlyphState | undefined {
   };
 }
 
-/** CI is green and nothing the PR state knows of blocks a merge. Branch
- *  protection beyond review and conflicts is left to GitHub at merge time. */
+/** GitHub's mergeStateStatus values in words, as the PR dialogs and board show them. */
+export const MERGE_STATUS_LABELS: Record<string, string> = {
+  BEHIND: 'Branch needs updating',
+  BLOCKED: 'Merge requirements not met',
+  CLEAN: 'Ready to merge',
+  DIRTY: 'Conflicts to resolve',
+  DRAFT: 'Draft',
+  HAS_HOOKS: 'Repository checks required',
+  UNKNOWN: 'Checking merge status',
+  UNSTABLE: 'Some checks have not passed',
+};
+
+/** GitHub has not yet worked out whether the PR can merge, e.g. after its base moved. */
+function mergeStateUnknown(c: PrChecksState): boolean {
+  return (
+    c.mergeable === 'UNKNOWN' ||
+    c.mergeable === undefined ||
+    c.mergeStateStatus === 'UNKNOWN' ||
+    c.mergeStateStatus === undefined
+  );
+}
+
+/** CI is green and GitHub would take the merge as Finish offers it by default:
+ *  no draft, conflict, outstanding review, or branch protection (BEHIND,
+ *  BLOCKED) in the way, and GitHub has settled all of that. An admin can still
+ *  bypass BLOCKED in Finish, but that is no routine merge to invite. */
 export function isPrReadyToMerge(c: PrChecksState | undefined): boolean {
   return (
     !!c &&
     c.overall === 'success' &&
     !c.merged &&
     !c.isDraft &&
+    !mergeStateUnknown(c) &&
     c.mergeable !== 'CONFLICTING' &&
     c.reviewDecision !== 'CHANGES_REQUESTED' &&
-    c.reviewDecision !== 'REVIEW_REQUIRED'
+    c.reviewDecision !== 'REVIEW_REQUIRED' &&
+    c.mergeStateStatus !== 'BEHIND' &&
+    c.mergeStateStatus !== 'BLOCKED'
   );
+}
+
+/** The board lane a task's pull requests put it in. */
+export type PullRequestsLane = 'needs' | 'pr' | 'ready';
+
+/** A task's pull requests wait on you when GitHub says one of the open ones
+ *  cannot merge as it is, or when all of them can; otherwise on CI or reviewers.
+ *  Babysit sends CI failures and conflicts back to the agent, so `babysat`
+ *  ones wait on it. Merged PRs are done, and a PR not reported yet keeps the task waiting. */
+export function pullRequestsLane(
+  all: readonly (PrChecksState | undefined)[],
+  babysat: boolean,
+): PullRequestsLane {
+  const open = all.filter((c): c is PrChecksState => c !== undefined && !c.merged);
+  if (open.length === 0) return 'pr';
+  const blocked = (c: PrChecksState) =>
+    // Babysit sends a conflict once running checks finish; green CI beside a
+    // conflict is a stale run it does not act on.
+    (c.mergeable === 'CONFLICTING' && !(babysat && c.overall !== 'success')) ||
+    c.reviewDecision === 'CHANGES_REQUESTED';
+  if (open.some(blocked)) return 'needs';
+  if (!babysat && open.some((c) => c.overall === 'failure')) return 'needs';
+  if (!all.includes(undefined) && open.every(isPrReadyToMerge)) return 'ready';
+  return 'pr';
 }
 
 export type PrBoardStatusKind = 'merged' | 'ready' | 'blocked' | 'running' | 'failed';
@@ -223,7 +277,10 @@ export function prBoardStatus(
     if (c.isDraft) return { kind: 'blocked', label: 'CI passed · Draft' };
     if (c.reviewDecision === 'CHANGES_REQUESTED')
       return { kind: 'blocked', label: 'CI passed · Changes requested' };
-    return { kind: 'blocked', label: 'CI passed · Review needed' };
+    if (c.reviewDecision === 'REVIEW_REQUIRED')
+      return { kind: 'blocked', label: 'CI passed · Review needed' };
+    const state = mergeStateUnknown(c) ? 'UNKNOWN' : (c.mergeStateStatus ?? 'UNKNOWN');
+    return { kind: 'blocked', label: `CI passed · ${MERGE_STATUS_LABELS[state] ?? state}` };
   }
   return null;
 }

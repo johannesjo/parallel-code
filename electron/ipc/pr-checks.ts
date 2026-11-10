@@ -28,6 +28,9 @@ const SETTLED_REFRESH_MS = 5 * 60_000;
 const POST_PUSH_REFRESH_GRACE_MS = 2 * 60_000;
 /** GitHub can report a new head before it has created that head's checks. */
 const NEW_HEAD_CHECKS_WAIT_MS = 2 * 60_000;
+/** GitHub computes mergeability lazily, e.g. after the base moved, and usually
+ *  settles within seconds; a PR it leaves unsettled longer drops to the settled cadence. */
+const MERGE_STATE_WAIT_MS = 2 * 60_000;
 const GH_TIMEOUT_MS = 15_000;
 const GH_MAX_BUFFER = 4 * 1024 * 1024;
 
@@ -53,6 +56,8 @@ interface TaskEntry {
   isDraft: boolean;
   reviewDecision: PrReviewDecision | null;
   mergeable: PrMergeable;
+  /** GitHub's mergeStateStatus, e.g. BEHIND or BLOCKED by branch protection. */
+  mergeStateStatus: string;
   passing: number;
   pending: number;
   failing: number;
@@ -68,6 +73,9 @@ interface TaskEntry {
   postPushRefreshUntil: number | null;
   /** When GitHub last reported a new head; until its checks appear it shows as running. */
   headChangedAt: number | null;
+  /** Until then the merge state is polled every tick: GitHub may still compute
+   *  it, or answer for a base that has just moved. */
+  mergeStateCheckUntil: number | null;
   /** Number of the latest poll. Replies can arrive out of order, so only its reply applies. */
   pollSeq: number;
 }
@@ -147,6 +155,7 @@ export function startPrChecksWatcher(args: {
         isDraft: false,
         reviewDecision: null,
         mergeable: 'UNKNOWN',
+        mergeStateStatus: 'UNKNOWN',
         passing: 0,
         pending: 0,
         failing: 0,
@@ -158,6 +167,7 @@ export function startPrChecksWatcher(args: {
         lastNotifiedOutcome: null,
         postPushRefreshUntil: null,
         headChangedAt: null,
+        mergeStateCheckUntil: null,
         pollSeq: 0,
       }
     : {
@@ -179,15 +189,36 @@ export function stopPrChecksWatcher(watchId: string): void {
   if (tasks.size === 0) clearTickInterval();
 }
 
-/** Marks the PRs of a task's pushed branch as freshly pushed: its primary PR
- *  and further PRs sharing that head. Nested repositories' PRs keep their state. */
-export function refreshPrChecksWatcher(taskId: string): void {
+/** Polls a task's PRs now, e.g. after a merge or ready-for-review. With
+ *  `pushed`, the PRs of its pushed branch are marked as freshly pushed first:
+ *  its primary PR and further PRs sharing that head. Nested repositories' PRs
+ *  keep their state. Only a push may hide the current checks: without a new
+ *  head, the hiding would last the whole post-push grace period. */
+export function refreshPrChecksWatcher(taskId: string, pushed: boolean): void {
   if (disabled) return;
-  const marked = markTaskPushed(taskId);
+  const due = pushed ? markTaskPushed(taskId) : taskWatchIds(taskId);
   ensureInterval();
   // Poll now instead of up to a tick later: a merge or ready-for-review shows
   // at once, and GitHub may already report a pushed head.
-  for (const watchId of marked) refreshOne(watchId).catch(handleGhError);
+  for (const watchId of due) refreshOne(watchId).catch(handleGhError);
+}
+
+function taskWatchIds(taskId: string): string[] {
+  return [...tasks.values()].filter((e) => e.taskId === taskId).map((e) => e.watchId);
+}
+
+/** Landing a PR moves its base, which can put the repository's other open PRs
+ *  in conflict or behind; nothing else would show that before the settled refresh. */
+function refreshSameRepoPrs(prUrl: string): void {
+  const merged = parsePrRef(prUrl);
+  if (!merged) return;
+  for (const entry of tasks.values()) {
+    const ref = parsePrRef(entry.prUrl);
+    if (ref?.host === merged.host && ref.owner === merged.owner && ref.repo === merged.repo) {
+      entry.mergeStateCheckUntil = Date.now() + MERGE_STATE_WAIT_MS;
+      refreshOne(entry.watchId).catch(handleGhError);
+    }
+  }
 }
 
 /** Marks the task's primary PR and the PRs sharing its head; returns their watch IDs. */
@@ -269,7 +300,15 @@ async function runTick(babysatOnly = false): Promise<void> {
     const now = Date.now();
     const due: string[] = [];
     for (const entry of watched) {
-      if (entry.overall === 'pending') {
+      // A failed run is often re-run on GitHub on the same head; no push
+      // reveals that, so a failure keeps polling like a running one. A
+      // conflict alone is no run, so no re-run can resolve it.
+      const conflictOnly = entry.mergeable === 'CONFLICTING' && entry.failing === 1;
+      if (
+        entry.overall === 'pending' ||
+        (entry.overall === 'failure' && !conflictOnly) ||
+        (entry.mergeStateCheckUntil !== null && now < entry.mergeStateCheckUntil)
+      ) {
         due.push(entry.watchId);
       } else if (now - entry.lastRefreshedAt >= SETTLED_REFRESH_MS) {
         due.push(entry.watchId);
@@ -281,6 +320,16 @@ async function runTick(babysatOnly = false): Promise<void> {
   } finally {
     isRefreshing = false;
   }
+}
+
+/** Opens the merge-state polling window when GitHub answers UNKNOWN, and
+ *  closes an expired one once it answers. A PR still UNKNOWN past the window
+ *  keeps it closed, so it drops to the settled cadence instead of polling forever. */
+function trackMergeState(entry: TaskEntry, mergeable: PrMergeable, mergeStateStatus: string): void {
+  const unknown = mergeable === 'UNKNOWN' || mergeStateStatus === 'UNKNOWN';
+  const until = entry.mergeStateCheckUntil;
+  if (unknown && until === null) entry.mergeStateCheckUntil = Date.now() + MERGE_STATE_WAIT_MS;
+  else if (!unknown && until !== null && Date.now() >= until) entry.mergeStateCheckUntil = null;
 }
 
 /**
@@ -353,6 +402,7 @@ async function refreshOne(watchId: string): Promise<void> {
     });
     tasks.delete(watchId);
     if (tasks.size === 0) clearTickInterval();
+    if (status.state === 'MERGED') refreshSameRepoPrs(entry.prUrl);
     return;
   }
 
@@ -383,6 +433,7 @@ async function refreshOne(watchId: string): Promise<void> {
     entry.hasFetched &&
     !shaChanged &&
     Date.now() < entry.postPushRefreshUntil;
+  trackMergeState(entry, status.mergeable, status.mergeStateStatus);
   if (waitingForPostPushHead) {
     entry.lastRefreshedAt = Date.now();
     // Review metadata is PR-wide, so it can advance while old-head CI data
@@ -390,11 +441,13 @@ async function refreshOne(watchId: string): Promise<void> {
     if (
       entry.isDraft !== status.isDraft ||
       entry.reviewDecision !== status.reviewDecision ||
-      entry.mergeable !== status.mergeable
+      entry.mergeable !== status.mergeable ||
+      entry.mergeStateStatus !== status.mergeStateStatus
     ) {
       entry.isDraft = status.isDraft;
       entry.reviewDecision = status.reviewDecision;
       entry.mergeable = status.mergeable;
+      entry.mergeStateStatus = status.mergeStateStatus;
       sendUpdate(entry);
     }
     return;
@@ -405,6 +458,7 @@ async function refreshOne(watchId: string): Promise<void> {
     entry.isDraft === status.isDraft &&
     entry.reviewDecision === status.reviewDecision &&
     entry.mergeable === status.mergeable &&
+    entry.mergeStateStatus === status.mergeStateStatus &&
     entry.passing === counts.passing &&
     entry.pending === counts.pending &&
     entry.failing === counts.failing &&
@@ -424,6 +478,7 @@ async function refreshOne(watchId: string): Promise<void> {
   entry.isDraft = status.isDraft;
   entry.reviewDecision = status.reviewDecision;
   entry.mergeable = status.mergeable;
+  entry.mergeStateStatus = status.mergeStateStatus;
   entry.passing = counts.passing;
   entry.pending = counts.pending;
   entry.failing = counts.failing;
@@ -472,6 +527,7 @@ function sendUpdate(
     isDraft: entry.isDraft,
     reviewDecision: entry.reviewDecision,
     mergeable: entry.mergeable,
+    mergeStateStatus: entry.mergeStateStatus,
     passing: entry.passing,
     pending: entry.pending,
     failing: entry.failing,
@@ -641,6 +697,7 @@ export async function fetchPrStatus(prUrl: string): Promise<{
   isDraft: boolean;
   reviewDecision: PrReviewDecision | null;
   mergeable: PrMergeable;
+  mergeStateStatus: string;
   checks: PrCheckRun[];
 }> {
   const { stdout } = await exec(
@@ -650,7 +707,7 @@ export async function fetchPrStatus(prUrl: string): Promise<{
       'view',
       prUrl,
       '--json',
-      'state,mergedAt,headRefOid,isDraft,reviewDecision,mergeable,statusCheckRollup',
+      'state,mergedAt,headRefOid,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup',
     ],
     { timeout: GH_TIMEOUT_MS, maxBuffer: GH_MAX_BUFFER },
   );
@@ -662,6 +719,7 @@ export async function fetchPrStatus(prUrl: string): Promise<{
       isDraft: false,
       reviewDecision: null,
       mergeable: 'UNKNOWN',
+      mergeStateStatus: 'UNKNOWN',
       checks: [],
     };
   }
@@ -689,6 +747,7 @@ export async function fetchPrStatus(prUrl: string): Promise<{
     isDraft: r['isDraft'] === true,
     reviewDecision: parseReviewDecision(r['reviewDecision']),
     mergeable: parseMergeable(r['mergeable']),
+    mergeStateStatus: asString(r['mergeStateStatus']) ?? 'UNKNOWN',
     checks,
   };
 }

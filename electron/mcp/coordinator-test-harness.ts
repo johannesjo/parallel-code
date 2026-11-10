@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => {
   const mockGetAgentPromptSnapshot = vi.fn();
   const mockGetActiveAgentIds = vi.fn();
   const mockGetAgentMeta = vi.fn();
+  const mockGetAgentInputBlocker = vi.fn();
   const mockGetChangedFiles = vi.fn();
   const mockGetAllFileDiffs = vi.fn();
   const mockGetDiffBaseSha = vi.fn();
@@ -91,6 +92,7 @@ const mocks = vi.hoisted(() => {
     mockGetAgentPromptSnapshot,
     mockGetActiveAgentIds,
     mockGetAgentMeta,
+    mockGetAgentInputBlocker,
     mockGetChangedFiles,
     mockGetAllFileDiffs,
     mockGetDiffBaseSha,
@@ -129,67 +131,75 @@ vi.mock('./atomic.js', () => ({
   atomicWriteFile: mocks.mockAtomicWriteFile,
 }));
 
-vi.mock('../shared/prompt-detect.js', async (importOriginal) => ({
-  cursorRowsToLines: (await importOriginal<typeof import('../shared/prompt-detect.js')>())
-    .cursorRowsToLines,
-  stripAnsi: (s: string) =>
-    s.replace(
-      // eslint-disable-next-line no-control-regex
-      /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nq-uy=><~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g,
-      '',
-    ),
-  AGENT_READY_TAIL_CHARS: 1000,
-  getAgentPromptReadiness: (s: string) => {
-    const tail = s.slice(-1000);
-    if (
-      /\bDo\s+you\s+trust\b|\bPress\s+enter\s+to\s+continue\b|\bBooting\s+MCP\s+server\b|\bStarting\s+MCP\s+servers?\b/i.test(
-        tail,
-      )
-    ) {
-      return { ready: false, reason: 'startup_or_dialog', tail };
-    }
-    if (
-      /\bq*Working\s*\(|\bbackground\s+terminal\s+running\b|\besc\s+to\s+interrupt\b|\/stop\s+to\s+close\b/i.test(
-        tail,
-      )
-    ) {
-      return { ready: false, reason: 'busy', tail };
-    }
-    const ready = tail
-      .slice(-1000)
-      .split(/\r\n?|\n/)
-      .some((line) =>
-        /(?:^|\s)❯\s*$|^\s*❯\s+Try\s+"[^"]*(?:"|…)\s*$|^\s*--\s*INSERT\s*--\s*$|^\s*[›>]\s*(?:Type your message|Ask Codex to do anything|$)/i.test(
-          line.trim(),
-        ),
-      );
-    return { ready, reason: ready ? 'ready' : 'no_prompt', tail };
-  },
-  chunkContainsAgentPrompt: (s: string) => {
-    const tail = s.slice(-1000);
-    if (
-      /\bDo\s+you\s+trust\b|\bPress\s+enter\s+to\s+continue\b|\bBooting\s+MCP\s+server\b|\bStarting\s+MCP\s+servers?\b/i.test(
-        tail,
-      )
-    ) {
-      return false;
-    }
-    if (
-      /\bq*Working\s*\(|\bbackground\s+terminal\s+running\b|\besc\s+to\s+interrupt\b|\/stop\s+to\s+close\b/i.test(
-        tail,
-      )
-    ) {
-      return false;
-    }
-    return tail
-      .split(/\r\n?|\n/)
-      .some((line) =>
-        /(?:^|\s)❯\s*$|^\s*❯\s+Try\s+"[^"]*(?:"|…)\s*$|^\s*--\s*INSERT\s*--\s*$|^\s*[›>]\s*(?:Type your message|Ask Codex to do anything|$)/i.test(
-          line.trim(),
-        ),
-      );
-  },
-}));
+vi.mock('../shared/prompt-detect.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../shared/prompt-detect.js')>();
+  // A simplified detector the coordinator tests are written against (it
+  // accepts e.g. `Done ❯`), except for menus: those use the real check, so
+  // the tests see what the coordinator does when a menu covers the prompt.
+  const blockedByMenu = (tail: string): boolean => real.showsSelectionMenu(tail);
+  return {
+    cursorRowsToLines: real.cursorRowsToLines,
+    stripAnsi: (s: string) =>
+      s.replace(
+        // eslint-disable-next-line no-control-regex
+        /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nq-uy=><~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g,
+        '',
+      ),
+    AGENT_READY_TAIL_CHARS: 1000,
+    getAgentPromptReadiness: (s: string) => {
+      const tail = s.slice(-1000);
+      if (
+        blockedByMenu(tail.slice(-500)) ||
+        /\bDo\s+you\s+trust\b|\bPress\s+enter\s+to\s+continue\b|\bBooting\s+MCP\s+server\b|\bStarting\s+MCP\s+servers?\b/i.test(
+          tail,
+        )
+      ) {
+        return { ready: false, reason: 'startup_or_dialog', tail };
+      }
+      if (
+        /\bq*Working\s*\(|\bbackground\s+terminal\s+running\b|\besc\s+to\s+interrupt\b|\/stop\s+to\s+close\b/i.test(
+          tail,
+        )
+      ) {
+        return { ready: false, reason: 'busy', tail };
+      }
+      const ready = tail
+        .slice(-1000)
+        .split(/\r\n?|\n/)
+        .some((line) =>
+          /(?:^|\s)❯\s*$|^\s*❯\s+Try\s+"[^"]*(?:"|…)\s*$|^\s*--\s*INSERT\s*--\s*$|^\s*[›>]\s*(?:Type your message|Ask Codex to do anything|$)/i.test(
+            line.trim(),
+          ),
+        );
+      return { ready, reason: ready ? 'ready' : 'no_prompt', tail };
+    },
+    chunkContainsAgentPrompt: (s: string) => {
+      const tail = s.slice(-1000);
+      if (
+        blockedByMenu(tail.slice(-500)) ||
+        /\bDo\s+you\s+trust\b|\bPress\s+enter\s+to\s+continue\b|\bBooting\s+MCP\s+server\b|\bStarting\s+MCP\s+servers?\b/i.test(
+          tail,
+        )
+      ) {
+        return false;
+      }
+      if (
+        /\bq*Working\s*\(|\bbackground\s+terminal\s+running\b|\besc\s+to\s+interrupt\b|\/stop\s+to\s+close\b/i.test(
+          tail,
+        )
+      ) {
+        return false;
+      }
+      return tail
+        .split(/\r\n?|\n/)
+        .some((line) =>
+          /(?:^|\s)❯\s*$|^\s*❯\s+Try\s+"[^"]*(?:"|…)\s*$|^\s*--\s*INSERT\s*--\s*$|^\s*[›>]\s*(?:Type your message|Ask Codex to do anything|$)/i.test(
+            line.trim(),
+          ),
+        );
+    },
+  };
+});
 
 vi.mock('../ipc/pty.js', () => ({
   spawnAgent: mocks.mockSpawnAgent,
@@ -201,6 +211,7 @@ vi.mock('../ipc/pty.js', () => ({
   getAgentPromptSnapshot: mocks.mockGetAgentPromptSnapshot,
   getActiveAgentIds: mocks.mockGetActiveAgentIds,
   getAgentMeta: mocks.mockGetAgentMeta,
+  getAgentInputBlocker: mocks.mockGetAgentInputBlocker,
   onPtyEvent: mocks.mockOnPtyEvent,
 }));
 
@@ -283,6 +294,7 @@ export const {
   mockGetAgentPromptSnapshot,
   mockGetActiveAgentIds,
   mockGetAgentMeta,
+  mockGetAgentInputBlocker,
   mockGetChangedFiles,
   mockGetAllFileDiffs,
   mockGetDiffBaseSha,
@@ -363,6 +375,7 @@ export function resetCoordinatorMocks(): void {
   mockUnsubscribeFromAgent.mockReset();
   mockGetActiveAgentIds.mockReset().mockReturnValue([]);
   mockGetAgentMeta.mockReset().mockReturnValue(null);
+  mockGetAgentInputBlocker.mockReset().mockReturnValue(null);
   mockGetAgentScrollback.mockReset();
   mockGetAgentScrollback.mockReturnValue(null);
   mockGetAgentPromptSnapshot.mockReset().mockReturnValue(null);

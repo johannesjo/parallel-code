@@ -20,7 +20,11 @@ vi.mock('../ipc/pty.js', () => ({
 
 let server: Awaited<ReturnType<typeof startRemoteServer>>;
 let orchestrationEnabled = true;
-const dispatch = vi.fn(async () => ({ remaining: 0 }));
+const dispatch = vi.fn(
+  async (_caller: { signal?: AbortSignal }): Promise<unknown> => ({
+    remaining: 0,
+  }),
+);
 const capabilities: SessionCapabilities = { profile: 'ordinary', canCreate: true, peers: true };
 const session = (sessionInstanceId = 'launch-1') => ({ sessionInstanceId, capabilities });
 const request = (
@@ -65,7 +69,7 @@ it('uses the authenticated launch identity, never caller-supplied ownership or c
   );
   expect(response.status).toBe(200);
   expect(dispatch).toHaveBeenCalledWith(
-    { taskId: 'parent', agentId: 'agent', ...session() },
+    { taskId: 'parent', agentId: 'agent', ...session(), signal: expect.any(AbortSignal) },
     'get_task_status',
     params,
   );
@@ -228,10 +232,35 @@ it('revokes existing session orchestration immediately while allowing completion
   expect(dispatch).not.toHaveBeenCalled();
   expect((await request(token, { name: 'signal_done', params: {} })).status).toBe(200);
   expect(dispatch).toHaveBeenCalledExactlyOnceWith(
-    { taskId: 'parent', agentId: 'agent', ...session() },
+    { taskId: 'parent', agentId: 'agent', ...session(), signal: expect.any(AbortSignal) },
     'signal_done',
     {},
   );
   orchestrationEnabled = true;
   expect((await request(token)).status).toBe(200);
+});
+
+it('aborts the session call when the agent disconnects before the reply', async () => {
+  const token = server.registerCanvasAgent('parent', 'agent', undefined, session());
+  let seen: AbortSignal | undefined;
+  dispatch.mockImplementationOnce(
+    (caller: { signal?: AbortSignal }) =>
+      new Promise((resolve) => {
+        seen = caller.signal;
+        caller.signal?.addEventListener('abort', () => resolve({ remaining: 0 }));
+      }),
+  );
+  const disconnect = new AbortController();
+  const pending = fetch(`http://127.0.0.1:${server.port}/api/session/tools`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'wait_for_signal_done', params: {} }),
+    signal: disconnect.signal,
+  }).catch(() => undefined);
+  await vi.waitFor(() => expect(seen).toBeDefined());
+
+  disconnect.abort();
+  await pending;
+
+  await vi.waitFor(() => expect(seen?.aborted).toBe(true));
 });

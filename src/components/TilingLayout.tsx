@@ -274,9 +274,7 @@ export function TilingLayout() {
       // The draft is opened at the far end of the strip. Returning across a
       // long task list must not turn a synchronous Cancel into a long pan.
       const behavior: ScrollBehavior =
-        isFirstActiveTaskScroll || returningFromNewTask || filterChanged || !prefersMotion()
-          ? 'instant'
-          : 'smooth';
+        isFirstActiveTaskScroll || returningFromNewTask || filterChanged ? 'instant' : 'smooth';
       isFirstActiveTaskScroll = false;
       scrollTaskIntoView(activeId, behavior);
     }
@@ -808,7 +806,9 @@ export function TilingLayout() {
       <Show when={hasOverflowLeft()}>
         <div
           class={`tiling-layout-scroll-affordance tiling-layout-scroll-affordance-left${offscreenAttention().left ? ' tiling-layout-scroll-affordance-attention' : ''}`}
-          onClick={() => containerRef?.scrollTo({ left: 0, behavior: 'smooth' })}
+          onClick={() =>
+            containerRef?.scrollTo({ left: 0, behavior: prefersMotion() ? 'smooth' : 'instant' })
+          }
           title={
             offscreenAttention().left
               ? 'Tasks need attention off-screen to the left — click to scroll'
@@ -823,7 +823,7 @@ export function TilingLayout() {
           onClick={() =>
             containerRef?.scrollTo({
               left: containerRef.scrollWidth - containerRef.clientWidth,
-              behavior: 'smooth',
+              behavior: prefersMotion() ? 'smooth' : 'instant',
             })
           }
           title={

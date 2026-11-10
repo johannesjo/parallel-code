@@ -59,6 +59,14 @@ describe('autosave snapshot includes new-task-default fields', () => {
     setStore('finishReview', true);
   });
 
+  it('resumeAgentsOnLaunch changes the snapshot', () => {
+    setStore('resumeAgentsOnLaunch', true);
+    const before = persistedSnapshot();
+    setStore('resumeAgentsOnLaunch', false);
+    expect(persistedSnapshot()).not.toBe(before);
+    setStore('resumeAgentsOnLaunch', true);
+  });
+
   it('modelTaskNames changes the snapshot', () => {
     setStore('modelTaskNames', false);
     const before = persistedSnapshot();

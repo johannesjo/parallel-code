@@ -53,6 +53,8 @@ sealed interface ServerMessage {
     data class InputResult(val requestId: String, val ok: Boolean, val error: String?) :
         ServerMessage
     data class Chat(val agentId: String, val state: ChatState) : ServerMessage
+    /** The desktop's base URLs on Wi-Fi and Tailscale; null where it has no such address. */
+    data class Addresses(val wifi: String?, val tailscale: String?) : ServerMessage
 }
 
 private fun JSONObject.optStringOrNull(key: String): String? =
@@ -84,6 +86,7 @@ fun parseServerMessage(raw: String): ServerMessage? = try {
             msg.optIntOrNull("exitCode"),
         )
         "chat-state" -> ServerMessage.Chat(msg.getString("agentId"), parseChatState(msg.getJSONObject("state")))
+        "addresses" -> ServerMessage.Addresses(msg.optStringOrNull("wifi"), msg.optStringOrNull("tailscale"))
         "input-result" -> ServerMessage.InputResult(
             msg.getString("requestId"),
             msg.getBoolean("ok"),

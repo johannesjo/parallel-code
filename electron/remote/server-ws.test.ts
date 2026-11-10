@@ -34,6 +34,15 @@ vi.mock('../ipc/pty.js', () => ({
   }),
 }));
 
+// A desktop on home Wi-Fi with Tailscale up, so the phone learns both addresses.
+vi.mock('os', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('os')>()),
+  networkInterfaces: () => ({
+    wlan0: [{ family: 'IPv4', address: '192.168.1.20', internal: false }],
+    tailscale0: [{ family: 'IPv4', address: '100.101.102.103', internal: false }],
+  }),
+}));
+
 const pty = await import('../ipc/pty.js');
 const { startRemoteServer, isBrowserOriginAllowed, buildRemoteCsp } = await import('./server.js');
 
@@ -118,6 +127,21 @@ describe('coordinator agent token over WebSocket', () => {
 });
 
 describe('mobile token over WebSocket', () => {
+  it('tells the phone both network addresses so it can switch to Tailscale', async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const messages: unknown[] = [];
+    ws.on('message', (raw) => messages.push(JSON.parse(String(raw))));
+    ws.on('open', () => ws.send(JSON.stringify({ type: 'auth', token: mobileToken })));
+    await vi.waitFor(() => {
+      expect(messages).toContainEqual({
+        type: 'addresses',
+        wifi: `http://192.168.1.20:${port}`,
+        tailscale: `http://100.101.102.103:${port}`,
+      });
+    });
+    ws.close();
+  });
+
   it('authenticates and can subscribe to agent output', async () => {
     const ws = await connectAndAuth(mobileToken);
     ws.send(JSON.stringify({ type: 'subscribe', agentId: 'agent-1' }));

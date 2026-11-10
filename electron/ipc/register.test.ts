@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 import {
   branchNameArg,
   openExternalHttpUrl,
@@ -6,6 +10,7 @@ import {
   projectRootArg,
   selectMcpJsonDir,
   selectMcpJsonFile,
+  shouldWriteMcpJson,
   validateExternalHttpUrl,
   worktreePathArg,
 } from './register.js';
@@ -33,6 +38,48 @@ describe('selectMcpJsonFile', () => {
   it('keeps .mcp.json for other agents', () => {
     expect(selectMcpJsonFile('claude')).toBe('.mcp.json');
     expect(selectMcpJsonFile(undefined)).toBe('.mcp.json');
+  });
+});
+
+describe('shouldWriteMcpJson', () => {
+  function withRepo(tracked: boolean, run: (root: string) => void): void {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-json-tracked-'));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: root });
+      fs.writeFileSync(path.join(root, '.mcp.json'), '{}');
+      if (tracked) execFileSync('git', ['add', '.mcp.json'], { cwd: root });
+      run(root);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it('writes an untracked .mcp.json', () => {
+    withRepo(false, (root) => {
+      expect(shouldWriteMcpJson(root, false)).toBe(true);
+      expect(shouldWriteMcpJson(root, true)).toBe(true);
+    });
+  });
+
+  it('skips a tracked .mcp.json when a launch flag already carries the config', () => {
+    withRepo(true, (root) => expect(shouldWriteMcpJson(root, false)).toBe(false));
+  });
+
+  it('refuses a tracked .mcp.json the agent needs, whose token a commit would publish', () => {
+    withRepo(true, (root) => expect(() => shouldWriteMcpJson(root, true)).toThrow(/tracked/));
+  });
+
+  it('skips the file outside a repository unless the agent needs it, then refuses', () => {
+    const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-json-no-repo-'));
+    // A TMPDIR inside a checkout would otherwise make Git find that repository.
+    vi.stubEnv('GIT_CEILING_DIRECTORIES', path.dirname(plain));
+    try {
+      expect(shouldWriteMcpJson(plain, false)).toBe(false);
+      expect(() => shouldWriteMcpJson(plain, true)).toThrow(/tracked/);
+    } finally {
+      vi.unstubAllEnvs();
+      fs.rmSync(plain, { recursive: true, force: true });
+    }
   });
 });
 

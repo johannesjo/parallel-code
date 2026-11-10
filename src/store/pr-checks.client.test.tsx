@@ -117,6 +117,22 @@ it('probes the branch again as soon as an agent turn ends', async () => {
   });
 });
 
+it('polls the task’s PRs once an agent turn ends', async () => {
+  await startWithExtraPr();
+
+  // The turn may run `gh pr merge`, which moves no ref the watcher could notice.
+  setWorkingTasks(['task-1']);
+  await flushPromises();
+  expect(invoke).not.toHaveBeenCalledWith(IPC.RefreshPrChecksWatcher, expect.anything());
+  setWorkingTasks([]);
+  await flushPromises();
+
+  expect(invoke).toHaveBeenCalledWith(IPC.RefreshPrChecksWatcher, {
+    taskId: 'task-1',
+    pushed: false,
+  });
+});
+
 it('probes the branch again once its terminal prints a PR link', async () => {
   vi.mocked(invoke).mockResolvedValue({ url: null });
   setStore('tasks', reconcile({ 'task-1': task({ prUrl: undefined }) }));

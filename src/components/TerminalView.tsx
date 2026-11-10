@@ -10,7 +10,7 @@ import {
   Show,
 } from 'solid-js';
 import { Terminal, type IBufferRange, type ILink, type IMarker } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
+import type { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
@@ -19,6 +19,7 @@ import { TerminalBookmarkGutter } from './TerminalBookmarks';
 import { invoke, fireAndForget, Channel } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import { getTerminalFontFamily } from '../lib/fonts';
+import { LayoutFitAddon } from '../lib/layoutFitAddon';
 import { TERMINAL_SCROLL_OPTIONS } from '../lib/terminalConstants';
 import { leaveCursorQueriesToMain } from '../lib/terminalQueries';
 import { handleOsc52Writes, trackRecentGesture } from '../lib/terminalClipboard';
@@ -196,6 +197,9 @@ interface TerminalViewProps {
   fontSize?: number;
   autoFocus?: boolean;
   initialCommand?: string;
+  /** Shells only: run this script instead of an interactive shell. The main
+   *  process picks the shell and flags; the PTY exits with the script. */
+  shellScript?: string;
   isFocused?: boolean;
 }
 
@@ -532,6 +536,13 @@ export function TerminalView(props: TerminalViewProps) {
       // Right-click pastes (see handleContextMenu); selecting a word first
       // would also copy it over the clipboard contents about to be pasted.
       rightClickSelectsWord: false,
+      // TUIs that capture the mouse (Claude Code's fullscreen mode) keep their
+      // own selection, so Cmd+C and Edit > Copy find nothing in xterm. Shift+drag
+      // forces a terminal selection elsewhere; on macOS the convention, and what
+      // Claude Code tells xterm.js users, is Option+drag, which xterm ignores
+      // unless this is on. Costs Option+drag column selection on macOS; the
+      // Option+click cursor move is limited to panes without mouse tracking below.
+      macOptionClickForcesSelection: true,
       ...TERMINAL_SCROLL_OPTIONS,
       disableStdin: taskPtyDetached(),
       linkHandler: {
@@ -553,7 +564,7 @@ export function TerminalView(props: TerminalViewProps) {
     });
     onCleanup(recentGesture.dispose);
 
-    fitAddon = new FitAddon();
+    fitAddon = new LayoutFitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon(openTerminalHttpLinkWithModifier));
 
@@ -577,6 +588,17 @@ export function TerminalView(props: TerminalViewProps) {
     };
     linkScreen?.addEventListener('mousedown', handleLinkMouseDown);
     onCleanup(() => linkScreen?.removeEventListener('mousedown', handleLinkMouseDown));
+    // Option+click moves a shell's cursor by sending arrow keys. Under mouse
+    // tracking that click is a forced selection (see macOptionClickForcesSelection)
+    // and the arrows would scroll a TUI's history instead, so allow it only when
+    // no program owns the mouse. Set before xterm's own mouse-down handling.
+    const syncAltClickMovesCursor = () => {
+      if (!term) return;
+      const allow = term.modes.mouseTrackingMode === 'none';
+      if (term.options.altClickMovesCursor !== allow) term.options.altClickMovesCursor = allow;
+    };
+    containerRef.addEventListener('mousedown', syncAltClickMovesCursor, true);
+    onCleanup(() => containerRef.removeEventListener('mousedown', syncAltClickMovesCursor, true));
 
     // Block direct PTY keyboard input only after self-landing has removed the
     // backend PTY. Coordinator automation now waits for user activity instead of
@@ -1267,10 +1289,9 @@ export function TerminalView(props: TerminalViewProps) {
         term.loadAddon(addon);
         webglAddon = addon;
         // No manual repaint here: loadAddon → RenderService.setRenderer
-        // already forces a full refresh of this pane. redrawTerminal would
-        // additionally clear the glyph atlas xterm SHARES across panes
-        // without invalidating the other owners' render models, garbling
-        // glyphs in every healthy terminal.
+        // already forces a full refresh of this pane. A repaint would also
+        // clear the glyph atlas xterm shares across panes, making every
+        // healthy terminal re-rasterize its glyphs for nothing.
       } catch {
         // WebGL2 not supported — DOM renderer used automatically
       }
@@ -1303,11 +1324,13 @@ export function TerminalView(props: TerminalViewProps) {
 
     // Attach on the hidden→visible edge, detach a little after visible→hidden.
     // A pane that returns before the detach delay elapses keeps its context;
-    // on macOS it is repainted instead (issue #121): a WebGL surface throttled
-    // while backgrounded can come back with a corrupt glyph atlas, and a
-    // hidden pane never fires terminalFitManager's IntersectionObserver.
+    // on macOS it is repainted instead, as a recovery path for issue #121
+    // (garbled glyphs). The cause was a stale-texture bug in
+    // @xterm/addon-webgl 0.20.0-beta.194, fixed by 0.20.0-beta.330 (see
+    // scripts/xterm-webgl-atlas.test.mjs); it showed on macOS because Apple
+    // GPUs have half the texture units, so the atlas merges pages sooner.
     // The repaint covers every terminal because the atlas it rebuilds is
-    // shared. Linux never showed the corruption, so it skips that repaint.
+    // shared. Linux skips it.
     let prevOnScreen: boolean | undefined;
     createEffect(() => {
       const onScreen = paneOnScreen();
@@ -1365,6 +1388,7 @@ export function TerminalView(props: TerminalViewProps) {
         cols: term.cols,
         rows: term.rows,
         isShell: props.isShell,
+        ...(props.shellScript && { shellScript: props.shellScript }),
         dockerMode: props.dockerMode,
         dockerImage: props.dockerImage,
         dockerMountWorktreeParent: props.dockerMountWorktreeParent,

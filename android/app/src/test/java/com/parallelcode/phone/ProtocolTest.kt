@@ -7,6 +7,20 @@ import org.junit.Test
 
 class ProtocolTest {
     @Test
+    fun parsesTheDesktopAddresses() {
+        assertEquals(
+            ServerMessage.Addresses("http://192.168.1.20:7777", "http://100.101.102.103:7777"),
+            parseServerMessage(
+                """{"type":"addresses","wifi":"http://192.168.1.20:7777","tailscale":"http://100.101.102.103:7777"}""",
+            ),
+        )
+        assertEquals(
+            ServerMessage.Addresses(null, null),
+            parseServerMessage("""{"type":"addresses","wifi":null,"tailscale":null}"""),
+        )
+    }
+
+    @Test
     fun parsesTheAgentList() {
         val msg = parseServerMessage(
             """{"type":"agents","list":[{"agentId":"a1","taskId":"t1","taskName":"Fix login",

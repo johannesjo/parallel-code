@@ -5,6 +5,7 @@ import {
   getPrChecks,
   getTaskExtraPrs,
   prBoardStatus,
+  pullRequestsLane,
   type PrBoardStatusKind,
   type PrChecksState,
 } from './pr-checks-state';
@@ -44,6 +45,19 @@ export function taskPrs(task: Task): { url: string; watchId: string; repo?: stri
 /** The checks of each of a task's PRs; undefined for a PR not reported yet. */
 export function taskPrsChecks(task: Task): (PrChecksState | undefined)[] {
   return taskPrs(task).map((pr) => getPrChecks(pr.watchId));
+}
+
+/**
+ * Whether a finished task waits on its open PRs (CI, reviewers, Babysit) rather
+ * than on you: one is still open and none needs you by the board's PR rules. A
+ * PR not reported yet counts as open; once all have merged the result is yours
+ * to review again. A landing that needs review, or a landed result to review,
+ * needs you whatever its PRs do.
+ */
+export function awaitsOpenPr(task: Task, babysat: boolean): boolean {
+  if (task.needsReview || task.landingState === 'landed_pending_review') return false;
+  const checks = taskPrsChecks(task);
+  return checks.some((c) => !c?.merged) && pullRequestsLane(checks, babysat) !== 'needs';
 }
 
 // Lower is more urgent. A PR not reported yet ranks above ready ones: it keeps

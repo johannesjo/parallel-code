@@ -32,9 +32,18 @@ afterEach(() => {
 
 it('names the state of the PR that most needs attention, not just the task’s own', () => {
   setStore('tasks', { t: { id: 't', prUrl: 'https://github.com/o/r/pull/7' } as Task });
-  setPrChecks('t', checks('success'));
+  setPrChecks('t', { ...checks('success'), mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' });
   expect(getReadyLabel('t')).toBe('Ready to merge');
   setTaskExtraPrs('t', [{ url: extra, repo: 'lib' }]);
   setPrChecks(extraPrWatchId('t', extra), checks('pending'));
   expect(getReadyLabel('t')).toBe('CI running');
+});
+
+it('does not invite a merge GitHub would refuse or has not settled', () => {
+  setStore('tasks', { t: { id: 't', prUrl: 'https://github.com/o/r/pull/7' } as Task });
+  const green = { ...checks('success'), mergeable: 'MERGEABLE' as const };
+  setPrChecks('t', { ...green, mergeStateStatus: 'BEHIND' });
+  expect(getReadyLabel('t')).toBe('Ready');
+  setPrChecks('t', { ...green, mergeStateStatus: 'UNKNOWN' });
+  expect(getReadyLabel('t')).toBe('Ready');
 });

@@ -9,6 +9,7 @@ export type {
   CreatePrTaskResult,
   CreateTaskResult,
   CreditUsage,
+  DeleteTaskResult,
   EslintQualityFinding,
   EslintQualityResult,
   FileDiffResult,

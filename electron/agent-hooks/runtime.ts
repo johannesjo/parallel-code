@@ -2,20 +2,34 @@ import { type BrowserWindow } from 'electron';
 import path from 'path';
 import { IPC } from '../ipc/channels.js';
 import { getUserDataDir } from '../user-data-dir.js';
-import { setAgentHookRuntime } from '../ipc/pty.js';
+import { getAgentPromptSnapshot, setAgentHookRuntime } from '../ipc/pty.js';
 import { error as logError, info as logInfo } from '../log.js';
 import { recordClaudeStatusLine } from '../ipc/claude-usage.js';
 import { emitAgentHookEvent } from './events.js';
+import { createCodexHookArgs } from './codex-trust.js';
+import { createCodexTurnWatch, type CodexTurnWatch } from './codex-turn-watch.js';
 import { startAgentHookServer, type AgentHookServer } from './server.js';
-import { observeAgentHook, onAgentActivityObservation } from './observations.js';
+import {
+  isCurrentAgentLaunch,
+  observeAgentHook,
+  onAgentActivityObservation,
+} from './observations.js';
 import type { AgentHookEventPayload } from './status.js';
 
 let server: AgentHookServer | null = null;
 let stopObservations: (() => void) | undefined;
+let codexTurns: CodexTurnWatch | undefined;
+
+/** The screen of the launch an event came from; a restarted agent shows another turn's. */
+function launchScreenText(event: AgentHookEventPayload): string | null {
+  if (!isCurrentAgentLaunch(event.agentId, event.taskId, event.launchId ?? '')) return null;
+  // As parsed so far: the settled screen is not there to read while a turn redraws.
+  return getAgentPromptSnapshot(event.agentId, { parsedSoFar: true })?.text ?? null;
+}
 
 /**
  * Brings up the loopback hook receiver and hands its env/settings to the PTY
- * layer so every Claude Code launch from here on reports its own status.
+ * layer so every Claude Code and Codex launch from here on reports its own status.
  * Failure is logged and otherwise ignored: the PTY heuristics keep working.
  */
 export async function startAgentHookRuntime(getWindow: () => BrowserWindow | null): Promise<void> {
@@ -43,8 +57,16 @@ export async function startAgentHookRuntime(getWindow: () => BrowserWindow | nul
     const win = getWindow();
     if (win && !win.isDestroyed()) win.webContents.send(IPC.ClaudeUsageChanged);
   };
+  codexTurns?.stop();
+  const turns = createCodexTurnWatch({ screenText: launchScreenText, onFailed: forward });
+  codexTurns = turns;
   try {
-    server = await startAgentHookServer({ dir, onEvent: forward, onUsage });
+    server = await startAgentHookServer({
+      dir,
+      onEvent: forward,
+      onCodexEvent: turns.note,
+      onUsage,
+    });
   } catch (err) {
     logError('agent-hooks', 'failed to start hook server; using PTY heuristics only', err);
     return;
@@ -52,6 +74,7 @@ export async function startAgentHookRuntime(getWindow: () => BrowserWindow | nul
   setAgentHookRuntime({
     claudeSettingsPath: server.claudeSettingsPath,
     buildPtyEnv: server.buildPtyEnv,
+    codexHookArgs: createCodexHookArgs({ hookScriptPath: server.codexHookScriptPath }),
   });
   logInfo('agent-hooks', 'hook server listening', { port: server.port, dir });
 }
@@ -60,6 +83,8 @@ export function stopAgentHookRuntime(): void {
   setAgentHookRuntime(null);
   stopObservations?.();
   stopObservations = undefined;
+  codexTurns?.stop();
+  codexTurns = undefined;
   const current = server;
   server = null;
   current?.close().catch((err: unknown) => {

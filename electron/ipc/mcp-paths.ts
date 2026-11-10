@@ -7,9 +7,14 @@ import { fileURLToPath } from 'url';
  * Keep this file in `electron/ipc/`: the path is relative to its build output.
  */
 export function hostMcpServerPath(): string {
-  return path
-    .join(path.dirname(fileURLToPath(import.meta.url)), '..', 'mcp-server.cjs')
-    .replace('/app.asar/', '/app.asar.unpacked/');
+  return unpackedAsarPath(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'mcp-server.cjs'),
+  );
+}
+
+/** Either separator: Windows paths use backslashes. */
+export function unpackedAsarPath(file: string): string {
+  return file.replace(/([\\/])app\.asar([\\/])/, '$1app.asar.unpacked$2');
 }
 
 /** Path where `mcp-server.cjs` is copied inside the Docker-mounted worktree. */

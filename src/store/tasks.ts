@@ -25,6 +25,12 @@ import { setTaskFocusedPanel, shellPanelId } from './focused-panel';
 import { getProject, getProjectPath, getProjectBranchPrefix, isProjectMissing } from './projects';
 import { setPendingShellCommand } from '../lib/bookmarks';
 import {
+  forgetSetupShells,
+  reportTeardownWarning,
+  setPendingSetupScript,
+  teardownScriptFor,
+} from './worktree-setup';
+import {
   markAgentSpawned,
   markAgentBusy,
   clearAgentActivity,
@@ -42,12 +48,13 @@ import type {
   AgentDef,
   CreatePrTaskResult,
   CreateTaskResult,
+  DeleteTaskResult,
   ImportableWorktree,
   MergeResult,
 } from '../ipc/types';
 import { parseGitHubUrl, taskNameFromGitHubUrl } from '../lib/github-url';
 import { linkTaskToIssueReference } from './github-issue-link';
-import type { Agent, Task, GitIsolationMode, AppStore } from './types';
+import type { Agent, Task, GitIsolationMode, AppStore, Project } from './types';
 import type { DockerSource } from '../lib/docker';
 import {
   clampCoordinatorConcurrentTasks,
@@ -271,6 +278,8 @@ export interface CreateTaskOptions {
   gitIsolation: GitIsolationMode;
   baseBranch: string;
   symlinkDirs?: string[];
+  /** Root-level ignored entries copied into the worktree instead of symlinked. */
+  copyDirs?: string[];
   branchPrefixOverride?: string;
   initialPrompt?: string;
   githubUrl?: string;
@@ -326,6 +335,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
     gitIsolation,
     baseBranch,
     symlinkDirs = [],
+    copyDirs = [],
     initialPrompt,
     githubUrl,
     skipPermissions,
@@ -348,6 +358,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
       name,
       projectRoot,
       symlinkDirs,
+      ...(copyDirs.length > 0 && { copyDirs }),
       branchPrefix: opts.branchPrefixOverride ?? getProjectBranchPrefix(projectId),
       prNumber: opts.pullRequestNumber,
     });
@@ -362,6 +373,7 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
       name,
       projectRoot,
       symlinkDirs,
+      ...(copyDirs.length > 0 && { copyDirs }),
       branchPrefix,
       baseBranch: baseBranch || undefined,
     });
@@ -445,6 +457,9 @@ export async function createTask(opts: CreateTaskOptions): Promise<string> {
   await registerTaskAuthority(task, agentDef);
   const activate = typeof opts.activate === 'function' ? opts.activate() : opts.activate;
   initTaskInStore(task, agent, { agentDef, activate: activate ?? true });
+  // Same tick as the task appearing, so its setup terminal is there from the
+  // first frame and nothing waits on the script.
+  if (gitIsolation === 'worktree') startWorktreeSetup(taskId, getProject(projectId));
 
   saveState(); // fire-and-forget — errors handled internally
   return taskId;
@@ -576,7 +591,7 @@ export async function closeTask(taskId: string): Promise<void> {
         );
     } else {
       // Remove worktree + branch
-      await invoke(IPC.DeleteTask, {
+      const result = await invoke<DeleteTaskResult | undefined>(IPC.DeleteTask, {
         taskId,
         agentIds: [...agentIds, ...shellAgentIds],
         branchName,
@@ -585,7 +600,9 @@ export async function closeTask(taskId: string): Promise<void> {
         // The folder keeps its original branch-derived name even if the task
         // later adopted the branch the agent switched to — pass the real path.
         worktreePath: task.worktreePath,
+        ...teardownScriptFor(task.projectId),
       });
+      reportTeardownWarning(task.name, result?.teardownWarning);
     }
 
     // Notify backend to clean up this task from its coordinator's state map.
@@ -635,6 +652,7 @@ function removeTaskFromStore(taskId: string, agentIds: string[]): void {
   for (const agentId of agentIds) {
     clearAgentActivity(agentId);
   }
+  forgetSetupShells(agentIds);
 
   const activityTimer = activityReleaseTimers.get(taskId);
   if (activityTimer !== undefined) {
@@ -704,6 +722,14 @@ export async function mergeTask(
   // NOTE: agents are killed AFTER merge succeeds — killing them before would
   // destroy terminals with no way to recover if the merge fails (e.g. due to
   // uncommitted changes in the project root).
+  const teardown =
+    cleanup && getProject(task.projectId)?.worktreeTeardownScript
+      ? { ...teardownScriptFor(task.projectId), agentIds: [...agentIds, ...shellAgentIds] }
+      : undefined;
+  // With a teardown the main process stops the agents once the merge lands,
+  // before this call returns; marking the task closing first keeps those
+  // exits from reading as failures. A failed merge kills nothing, so undo it.
+  if (teardown) setStore('tasks', taskId, 'closingStatus', 'closing');
   const mergeResult = await invoke<MergeResult>(IPC.MergeTask, {
     projectRoot,
     branchName,
@@ -713,6 +739,12 @@ export async function mergeTask(
     message: options?.message,
     cleanup,
     allowDirtyTarget: options?.allowDirtyTarget ?? false,
+    // Only a cleanup removes the worktree, so only then does teardown run.
+    ...teardown,
+  }).catch((err: unknown) => {
+    if (teardown && store.tasks[taskId]?.closingStatus === 'closing')
+      setStore('tasks', taskId, 'closingStatus', undefined);
+    throw err;
   });
   const merged = `Merged “${task.name}” into ${mergeResult.main_branch} · +${mergeResult.lines_added} −${mergeResult.lines_removed}`;
   if (mergeResult.warning)
@@ -764,7 +796,7 @@ export async function pushTask(taskId: string, onOutput: Channel<string>): Promi
     branchName: task.branchName,
     onOutput,
   });
-  void invoke(IPC.RefreshPrChecksWatcher, { taskId }).catch((err: unknown) =>
+  void invoke(IPC.RefreshPrChecksWatcher, { taskId, pushed: true }).catch((err: unknown) =>
     logWarn('tasks', 'Failed to refresh PR checks after push', { err: String(err) }),
   );
 }
@@ -997,6 +1029,20 @@ export function spawnShellForTask(taskId: string, initialCommand?: string): stri
   return shellId;
 }
 
+/** Opens the task's setup terminal when its project has a setup script. */
+function startWorktreeSetup(taskId: string, project: Project | undefined): void {
+  const script = project?.worktreeSetupScript;
+  if (!script?.trim()) return;
+  const shellId = crypto.randomUUID();
+  setPendingSetupScript(shellId, script);
+  markAgentSpawned(shellId);
+  setStore(
+    produce((s) => {
+      s.tasks[taskId]?.shellAgentIds.push(shellId);
+    }),
+  );
+}
+
 /** Send a bookmark command to an existing idle shell, or spawn a new one. */
 export function runBookmarkInTask(taskId: string, command: string): void {
   const task = store.tasks[taskId];
@@ -1027,6 +1073,7 @@ export async function closeShell(taskId: string, shellId: string): Promise<void>
     logWarn('tasks.shell', 'KillAgent failed during closeShell', { err });
   });
   clearAgentActivity(shellId);
+  forgetSetupShells([shellId]);
   setStore(
     produce((s) => {
       const task = s.tasks[taskId];
@@ -1064,10 +1111,6 @@ export async function collapseTask(taskId: string): Promise<void> {
   const task = store.tasks[taskId];
   if (!task || task.collapsed || task.closingStatus) return;
   if (task.coordinatorMode || task.delegationParent) return;
-  // Coordinated children must not be collapsed — the backend coordinator registry
-  // still holds the old agentId, so clearing agentIds here breaks send_prompt and
-  // idle detection. Block collapse entirely for tasks managed by a coordinator.
-  if (task.coordinatedBy) return;
 
   // Stop file watchers to prevent FSWatcher leak
   invoke(IPC.StopPlanWatcher, { taskId }).catch(console.error);
@@ -1103,6 +1146,20 @@ export async function collapseTask(taskId: string): Promise<void> {
       s.tasks[taskId].savedAgentSessionIds = savedAgentIds.map(
         (id) => task.agentSessionIds?.[id] ?? null,
       );
+      // The backend coordinator registry still holds these IDs; fresh ones on restore
+      // would break send_prompt and idle detection for the child.
+      if (task.coordinatedBy) s.tasks[taskId].savedAgentIds = savedAgentIds;
+      // An archived child folds into its coordinator's closed archive group;
+      // keyboard focus must not stay on the hidden row.
+      const parent = task.coordinatedBy ? s.tasks[task.coordinatedBy] : undefined;
+      // The first child into an empty group starts it closed, even if the user
+      // left it open for children that have since been restored.
+      const groupWasEmpty = !s.collapsedTaskOrder.some(
+        (id) => s.tasks[id]?.collapsed && s.tasks[id]?.coordinatedBy === task.coordinatedBy,
+      );
+      if (parent && groupWasEmpty) parent.archivedChildrenShown = false;
+      if (parent && s.sidebarFocusedTaskId === taskId && !parent.archivedChildrenShown)
+        s.sidebarFocusedTaskId = parent.id;
       s.tasks[taskId].agentSessionIds = undefined;
       s.tasks[taskId].savedSelectedAgentIndex =
         selectedAgentIndex >= 0 ? selectedAgentIndex : undefined;
@@ -1149,7 +1206,11 @@ export function uncollapseTask(taskId: string, options: { activate?: boolean } =
       : task.savedAgentDef
         ? [task.savedAgentDef]
         : [];
-  const restoredAgents = savedDefs.map((def) => ({ id: crypto.randomUUID(), def }));
+  const savedIds = task.savedAgentIds?.length === savedDefs.length ? task.savedAgentIds : undefined;
+  const restoredAgents = savedDefs.map((def, i) => ({
+    id: savedIds?.[i] ?? crypto.randomUUID(),
+    def,
+  }));
   const selectedAgentIndex = task.savedSelectedAgentIndex ?? 0;
   const promptedAgentIndexes = task.savedPromptedAgentIndexes ?? [];
 
@@ -1172,6 +1233,8 @@ export function uncollapseTask(taskId: string, options: { activate?: boolean } =
           taskId,
           def,
           resumed: true,
+          // A reused ID's killed process may not have exited yet; replace it, never reattach.
+          attachExisting: savedIds ? false : undefined,
           spawnDelayMs:
             restoredAgents.length > 1 && i > 0 ? i * RESTORED_AGENT_SPAWN_STAGGER_MS : undefined,
         });
@@ -1194,6 +1257,7 @@ export function uncollapseTask(taskId: string, options: { activate?: boolean } =
       t.savedAgentDef = undefined;
       t.savedAgentDefs = undefined;
       t.savedAgentSessionIds = undefined;
+      t.savedAgentIds = undefined;
       t.savedSelectedAgentIndex = undefined;
       t.savedPromptedAgentIndexes = undefined;
       if (activate) s.activeAgentId = t.selectedAgentId ?? null;
@@ -1497,6 +1561,8 @@ export function initMCPListeners(): () => void {
         signalDoneReceived?: boolean;
         signalDoneAt?: string;
         signalDoneConsumed?: boolean;
+        closeSuggestion?: Task['closeSuggestion'] | null;
+        archived?: boolean;
         needsReview?: boolean;
         verification?: Task['verification'];
         verificationRun?: Task['verificationRun'] | null;
@@ -1542,6 +1608,9 @@ export function initMCPListeners(): () => void {
           setStore('tasks', evt.taskId, 'signalDoneAt', evt.signalDoneAt ?? undefined);
         if (evt.signalDoneConsumed !== undefined)
           setStore('tasks', evt.taskId, 'signalDoneConsumed', evt.signalDoneConsumed);
+        if (evt.closeSuggestion !== undefined)
+          setStore('tasks', evt.taskId, 'closeSuggestion', evt.closeSuggestion ?? undefined);
+        if (evt.archived) void collapseTask(evt.taskId);
         if (evt.needsReview !== undefined)
           setStore('tasks', evt.taskId, 'needsReview', evt.needsReview);
         if (evt.verification !== undefined)
@@ -1722,6 +1791,7 @@ export function retryTaskMcpStartup(taskId: string): Promise<void> {
       reviewRevision: task.reviewRevision,
       signalDoneAt: task.signalDoneAt,
       signalDoneConsumed: task.signalDoneConsumed,
+      closeSuggestion: task.closeSuggestion,
       verification: task.verification,
       landingState: task.landingState,
       landingReason: task.landingReason,

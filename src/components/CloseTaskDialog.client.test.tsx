@@ -86,6 +86,16 @@ it('leaves the side panel open when another task is closed', () => {
   expect(boardSidePanelOpen()).toBe(true);
 });
 
+it('shows why the coordinator suggested closing the task', () => {
+  openDialog({
+    ...task,
+    closeSuggestion: { reason: 'Superseded by the retry task', at: '2026-11-06T10:00:00.000Z' },
+  });
+  expect(document.body.textContent).toContain(
+    'The coordinator suggested closing this task: Superseded by the retry task',
+  );
+});
+
 it('offers no retro when the task has no running agent', () => {
   openDialog();
   expect(button('Retro')).toBeUndefined();

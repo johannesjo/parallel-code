@@ -1,9 +1,8 @@
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { atomicWriteFileSync } from './atomic.js';
 import type { ParallelCodeMcpConfig } from './agent-args.js';
-import { appendGitInfoExcludeBlock } from '../ipc/git-exclude.js';
+import { appendGitInfoExcludeBlock, isTrackedByGit } from '../ipc/git-exclude.js';
 
 /**
  * Antigravity has no MCP launch flag; it reads servers from this workspace file.
@@ -31,28 +30,12 @@ function excludeAntigravityConfig(workspace: string): void {
   if (result === 'failed') throw new Error(`Could not exclude ${ANTIGRAVITY_MCP_CONFIG} from Git.`);
 }
 
-function isTracked(workspace: string): boolean {
-  try {
-    execFileSync('git', ['ls-files', '--error-unmatch', '--', ANTIGRAVITY_MCP_CONFIG], {
-      cwd: workspace,
-      stdio: 'ignore',
-      timeout: 3000,
-    });
-    return true;
-  } catch (err) {
-    // Exit 1 means untracked. Anything else (no repo, no git, timeout) is no answer:
-    // fail closed rather than risk writing the token into a tracked file.
-    if ((err as { status?: unknown }).status === 1) return false;
-    throw new Error(`Could not check whether ${ANTIGRAVITY_MCP_CONFIG} is tracked: ${String(err)}`);
-  }
-}
-
 /**
  * Makes `workspace` safe to hold the token file: refuses a tracked file or a linked
  * `.agents`, creates the directory and excludes the file from Git.
  */
 export function prepareAntigravityConfigDir(workspace: string): void {
-  if (isTracked(workspace))
+  if (isTrackedByGit(workspace, ANTIGRAVITY_MCP_CONFIG))
     throw new Error(
       `${ANTIGRAVITY_MCP_CONFIG} is tracked by Git; a commit would publish its MCP token.`,
     );

@@ -290,6 +290,11 @@ class RemoteClient(
         useActiveComputer()
     }
 
+    /** Reconnect the computer in use through its address on the other network (Wi-Fi or Tailscale). */
+    override fun switchNetwork() {
+        if (credentials.switchNetwork()) useActiveComputer()
+    }
+
     /** Name a saved computer; a blank name clears the one it had. */
     override fun rename(baseUrl: String, alias: String?) {
         credentials.rename(baseUrl, alias)
@@ -386,7 +391,7 @@ class RemoteClient(
     }
 
     /** Create a new git project folder on the desktop and add it; returns the project. */
-    suspend fun createProject(name: String, parentDir: String): MobileProject {
+    override suspend fun createProject(name: String, parentDir: String): MobileProject {
         val body = JSONObject().put("name", name).put("parentDir", parentDir)
         val p = api("POST", "/api/mobile/projects", body, pairedTokenOrThrow())
         return MobileProject(p.getString("id"), p.getString("name"), null, path = p.optString("path").ifEmpty { null })
@@ -914,6 +919,10 @@ class RemoteClient(
                 terminalListeners[msg.agentId]?.toList()?.forEach { it.onOutput(msg.data) }
             }
             is ServerMessage.Chat -> chats[msg.agentId]?.value = msg.state
+            is ServerMessage.Addresses -> {
+                credentials.saveAddresses(msg.wifi, msg.tailscale)
+                _computers.value = credentials.computers
+            }
             is ServerMessage.InputResult -> {
                 val result = pending.remove(msg.requestId) ?: return
                 if (msg.ok) {

@@ -144,6 +144,32 @@ describe('prompt delivery status', () => {
     });
   });
 
+  it('does not report a stalled child the parent suggested closing', async () => {
+    const stuck = await coordinator.createTask({
+      name: 'stuck',
+      prompt: 'do work',
+      coordinatorTaskId: 'coord-1',
+    });
+    getOutputCb()(encode('Starting MCP servers (1/2)'));
+    coordinator.suggestClose(stuck.id, 'Stalled on startup; the retry covers it');
+    mockCreateBackendTask.mockResolvedValueOnce({
+      id: 'task-2',
+      branch_name: 'task/t2',
+      worktree_path: '/tmp/t2',
+    });
+    await coordinator.createTask({
+      name: 'retry',
+      prompt: 'do work',
+      coordinatorTaskId: 'coord-1',
+    });
+    const wait = coordinator.waitForSignalDone('coord-1', 61_000);
+    await vi.advanceTimersByTimeAsync(61_000);
+
+    const result = await wait;
+    expect(result).toMatchObject({ timedOut: true, remaining: 1 });
+    expect(result.stalled?.map((child) => child.taskId) ?? []).not.toContain(stuck.id);
+  });
+
   it('does not report a child that signalled done as stalled', async () => {
     const task = await createDeliveredTask();
     await coordinator.signalDone(task.id, {});

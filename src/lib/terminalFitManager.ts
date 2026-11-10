@@ -181,6 +181,12 @@ export function markDirty(id: string): void {
  * glyphs render from stale/wrong atlas cells — the buffer is intact, only the
  * GPU glyph cache is bad, so a plain refresh() would just redraw the same
  * garbage. clearTextureAtlas() is a safe no-op under the DOM renderer.
+ *
+ * The cause of #121 itself was a bug in @xterm/addon-webgl 0.20.0-beta.194,
+ * fixed by 0.20.0-beta.330: after an atlas page merge a terminal could keep a
+ * stale GPU texture that this repaint did not always replace.
+ * scripts/xterm-webgl-atlas.test.mjs reproduces it. The repaint stays as a
+ * recovery path.
  */
 function redraw(term: Terminal): void {
   try {
@@ -195,10 +201,9 @@ function redraw(term: Terminal): void {
 /**
  * Repaint every terminal. There is deliberately no single-terminal variant:
  * xterm shares one glyph atlas between all WebGL terminals with the same font
- * and theme, and clearing it only resets the calling terminal's render model.
- * The others keep pointing at atlas cells that are then refilled with other
- * glyphs, which garbles them (issue #121). The repaints are deferred to the
- * next frame, so every model is cleared before any glyph is drawn again.
+ * and theme, so clearing it for one pane forces every pane to re-rasterize
+ * anyway. The repaints run in one microtask, so every pane's atlas is cleared
+ * and refreshed together before the next frame draws.
  *
  * Requests made in the same tick share one repaint: every pane of a task that
  * returns on screen asks at once.

@@ -80,7 +80,8 @@ export function DialogTabs<T extends string>(props: DialogTabsProps<T>) {
                 padding: '6px 14px',
                 'margin-bottom': '-1px',
                 'border-radius': '0',
-                transition: 'color 0.15s, border-color 0.15s',
+                transition:
+                  'color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out)',
               }}
             >
               {tab.label}

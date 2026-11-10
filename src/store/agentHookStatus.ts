@@ -19,7 +19,7 @@ import { store } from './core';
 import { applyTaskPlanEvent } from './task-plan';
 
 /**
- * Status an agent reported about itself through Claude Code hooks. Unlike the
+ * Status an agent reported about itself through Claude Code or Codex hooks. Unlike the
  * PTY heuristics in `taskStatus.ts`, this is a hook report, except for explicitly
  * labeled local input inferences. `done` may mean ready or a finished turn.
  */
@@ -41,7 +41,7 @@ export interface AgentHookStatus {
   unread: boolean;
   launchId?: string;
   source?: 'hook' | 'terminal';
-  /** A background sub-agent or workflow runs while the lead sits at its prompt. */
+  /** A background sub-agent, workflow, shell command, or MCP tool call runs while the lead sits at its prompt. */
   background?: boolean;
 }
 
@@ -75,6 +75,13 @@ const ANSWER_INPUTS: ReadonlySet<string> = new Set([
   '\x1b[13;1u',
   ...'123456789',
 ]);
+/** The letters a Codex approval dialog also takes, by the tool it asks about: yes,
+ *  and that dialog's own "don't ask again". Codex ignores any other letter and keeps
+ *  asking. A decline needs no inference, since Codex reports it as an interrupt. */
+const CODEX_ANSWER_LETTERS: ReadonlyMap<string, string> = new Map([
+  ['Bash', 'yp'],
+  ['apply_patch', 'ya'],
+]);
 /** A left-button release as an SGR mouse report (`ESC [ < 0 ; col ; row m`, 1-based):
  *  Claude Code turns on mouse reporting, so clicking a dialog option answers it. */
 // eslint-disable-next-line no-control-regex -- matches the terminal's escape sequence
@@ -89,6 +96,17 @@ const CURSOR_OPTION_LINE = /^\s*[❯›]\s*\d+\.\s/;
 function isOptionClick(data: string, lineAt: (row: number) => string): boolean {
   const row = LEFT_CLICK_RELEASE.exec(data)?.[1];
   return row !== undefined && CURSOR_OPTION_LINE.test(lineAt(Number(row)));
+}
+
+function isCodexAgent(agentId: string): boolean {
+  return store.agents?.[agentId]?.def?.command?.split('/').pop() === 'codex';
+}
+
+/** Claude's dialog takes no letters, so one typed there must not end the wait. */
+function isCodexAnswer(agentId: string, data: string, toolName: string | undefined): boolean {
+  if (data.length !== 1 || !isCodexAgent(agentId)) return false;
+  // A dialog for any other tool is only known to take `y`.
+  return (CODEX_ANSWER_LETTERS.get(toolName ?? '') ?? 'y').includes(data);
 }
 
 const [statuses, setStatuses] = createSignal<ReadonlyMap<string, AgentHookStatus>>(new Map());
@@ -226,7 +244,8 @@ export function noteAgentTerminalInput(
   const current = statuses().get(agentId);
   if (!current) return;
   if (current.state === 'working' && !current.background && (data === ESC || data === CTRL_C)) {
-    scheduleInterrupt(agentId, current.updatedAt);
+    // Codex reports an interrupt itself, so there is nothing to guess from the key.
+    if (!isCodexAgent(agentId)) scheduleInterrupt(agentId, current.updatedAt);
     return;
   }
   // AskUserQuestion is left alone: a digit only advances a multi-question
@@ -234,7 +253,9 @@ export function noteAgentTerminalInput(
   if (
     current.state === 'waiting' &&
     current.prompt === 'permission' &&
-    (ANSWER_INPUTS.has(data) || isOptionClick(data, lineAt))
+    (ANSWER_INPUTS.has(data) ||
+      isCodexAnswer(agentId, data, current.toolName) ||
+      isOptionClick(data, lineAt))
   ) {
     const now = Date.now();
     setStatus(agentId, {

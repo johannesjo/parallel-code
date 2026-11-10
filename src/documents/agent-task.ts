@@ -139,7 +139,7 @@ export async function sendToDocumentAgent(project: Project, text: string): Promi
   setInitialPrompt(task.id, text);
 }
 
-/** Quiet output is the only sign for most agents; Claude's hooks say outright
+/** Quiet output is the only sign for most agents; Claude's and Codex's hooks say outright
  *  whether a turn is in flight or the agent waits on the user. */
 function looksIdle(agentId: string): boolean {
   const hook = getAgentHookStatus(agentId)?.state;

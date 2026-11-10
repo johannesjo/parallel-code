@@ -68,7 +68,8 @@ export function AppearanceSettings(props: { fonts: string[] }) {
                   cursor: 'pointer',
                   'font-size': '13px',
                   'font-weight': store.appearanceMode === mode ? '600' : '400',
-                  transition: 'background 0.15s, color 0.15s',
+                  transition:
+                    'background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out)',
                 }}
                 onClick={() => setAppearanceMode(mode)}
               >

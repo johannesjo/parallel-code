@@ -186,8 +186,24 @@ it('moves a pull request by what it waits for', () => {
   expect(at()).toBe('Needs you');
   setPrChecks('pr', checksFromUpdate({ overall: 'success', reviewDecision: 'REVIEW_REQUIRED' }));
   expect(at()).toBe('In pull request');
-  setPrChecks('pr', checksFromUpdate({ overall: 'success', reviewDecision: 'APPROVED' }));
+  setPrChecks(
+    'pr',
+    checksFromUpdate({
+      overall: 'success',
+      reviewDecision: 'APPROVED',
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'CLEAN',
+    }),
+  );
   expect(at()).toBe('Ready to merge');
+  removePrChecks('pr');
+});
+
+it('says Babysit is stuck on a conflict it could not resolve', () => {
+  setPrChecks('pr', checksFromUpdate({ overall: 'failure', mergeable: 'CONFLICTING', failing: 1 }));
+  setStore('tasks', 'pr', 'prBabysit', { attempts: 1, stalled: true });
+  expect(lane('Needs you')?.textContent).toContain('Conflicts · Babysit stuck');
+  setStore('tasks', 'pr', 'prBabysit', undefined);
   removePrChecks('pr');
 });
 

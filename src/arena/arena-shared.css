@@ -178,7 +178,7 @@
   transition:
     background var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-out),
-    box-shadow 0.3s ease;
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
 .arena-fight-btn:not(:disabled) {

@@ -24,6 +24,7 @@ import { invoke } from '../lib/ipc';
 import { IPC } from '../../electron/ipc/channels';
 import type { RemoteAccess } from '../store/types';
 import { CloseIcon, SyncIcon } from './icons';
+import { TailscaleHint } from './TailscaleHint';
 
 type NetworkMode = 'wifi' | 'tailscale';
 
@@ -361,7 +362,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               Tailscale
             </button>
             <Show when={!store.remoteAccess.tailscaleUrl}>
-              <span style={{ 'font-size': '11px', color: theme.fgSubtle }}>Not detected</span>
+              <TailscaleHint />
             </Show>
           </div>
         </div>
@@ -641,7 +642,7 @@ export function ConnectPhoneModal(props: ConnectPhoneModalProps) {
               style={{
                 display: 'inline-block',
                 transform: showRisks() ? 'rotate(90deg)' : 'none',
-                transition: 'transform 0.15s ease',
+                transition: 'transform var(--motion-fast) var(--ease-out)',
                 'font-size': '11px',
               }}
             >

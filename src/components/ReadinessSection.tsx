@@ -2,6 +2,7 @@ import { Show, createSignal, createUniqueId, onCleanup, onMount, type JSX } from
 import { VERIFY_CHECK_ID } from '../../electron/shared/checks';
 import { readinessLine, type ReadinessAction } from '../lib/readiness-line';
 import { theme } from '../lib/theme';
+import { isFailedRunStatus } from '../lib/verification-run';
 import {
   backgroundVerifyEnabled,
   cancelTaskVerification,
@@ -31,7 +32,6 @@ interface ReadinessSectionProps {
   children: JSX.Element;
 }
 
-const FAILED = new Set(['failed', 'timed_out', 'error']);
 // Ages read "4m ago"; a refresh this often keeps them honest without churn.
 const NOW_REFRESH_MS = 30_000;
 
@@ -125,7 +125,7 @@ export function ReadinessSection(props: ReadinessSectionProps) {
   };
   const otherFailures = () =>
     (props.task.evidence?.checks ?? []).filter(
-      (check) => check.checkId !== VERIFY_CHECK_ID && FAILED.has(check.status),
+      (check) => check.checkId !== VERIFY_CHECK_ID && isFailedRunStatus(check.status),
     );
   const run = (next: ReadinessAction) => {
     if (next === 'run' || next === 'rerun') void runTaskVerification(props.task.id);

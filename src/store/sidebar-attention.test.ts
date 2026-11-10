@@ -33,6 +33,12 @@ vi.mock('./core', async () => {
   return core.harness.moduleMock();
 });
 
+const prs = vi.hoisted(() => ({ awaiting: new Set<string>() }));
+vi.mock('./task-prs', () => ({
+  awaitsOpenPr: (task: Task) => prs.awaiting.has(task.id),
+}));
+vi.mock('./pr-babysit', () => ({ isPrBabysat: () => false }));
+
 vi.mock('./taskStatus', () => ({
   getTaskOpenQuestions: (taskId: string) => status.questions.get(taskId) ?? [],
   isTaskWorking: (taskId: string) => status.working.has(taskId),
@@ -249,6 +255,25 @@ describe('independent attention reasons', () => {
     expect(computeAttentionEntries().map((entry) => entry.kind)).toEqual(['review']);
   });
 
+  it('holds back a signalled-done review while its PR is open', () => {
+    mockStore.taskOrder = ['task-1'];
+    mockStore.tasks['task-1'] = {
+      id: 'task-1',
+      agentIds: [],
+      integrationPolicy: 'review',
+      signalDoneReceived: true,
+    };
+    status.questions.clear();
+    prs.awaiting.add('task-1');
+    try {
+      expect(computeAttentionEntries()).toEqual([]);
+      prs.awaiting.delete('task-1');
+      expect(computeAttentionEntries().map((entry) => entry.kind)).toEqual(['review']);
+    } finally {
+      prs.awaiting.clear();
+    }
+  });
+
   it('removes a superseded review and changes its identity on a fresh completion', () => {
     seedReview();
     const key = computeAttentionEntries().find((entry) => entry.kind === 'review')?.key;
@@ -365,6 +390,16 @@ describe('independent attention reasons', () => {
     );
     mockStore.tasks['task-1'].coordinatedBy = undefined;
     expect(getChildAttentionSummary('parent')).toBe('1 launch failed');
+  });
+
+  it('leaves archived children out of the summary; their rows are folded away', () => {
+    seedReview();
+    mockStore.tasks['task-1'].coordinatedBy = 'parent';
+    mockStore.tasks['task-1'].collapsed = true;
+    mockStore.taskOrder = [];
+    mockStore.collapsedTaskOrder = ['task-1'];
+    status.working.add('task-1');
+    expect(getChildAttentionSummary('parent')).toBe('');
   });
 });
 

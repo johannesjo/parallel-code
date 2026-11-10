@@ -376,22 +376,6 @@ function App() {
     setWindowState({ ...geometry, maximized });
   };
 
-  const restoreWindowState = async (): Promise<void> => {
-    const saved = store.windowState;
-    if (!saved) return;
-    if (saved.width < MIN_WINDOW_DIMENSION || saved.height < MIN_WINDOW_DIMENSION) return;
-
-    await appWindow.unmaximize().catch(() => {});
-    await appWindow.setSize({ width: saved.width, height: saved.height }).catch(() => {});
-    await appWindow.setPosition({ x: saved.x, y: saved.y }).catch(() => {});
-
-    if (saved.maximized) {
-      await appWindow.maximize().catch(() => {});
-    }
-
-    void syncWindowMaximized();
-  };
-
   // Re-derive effective theme whenever OS dark mode or appearance mode/slots change
   createEffect(() => {
     osIsDark(); // reactive dependency
@@ -607,18 +591,23 @@ function App() {
           coordinatorTaskId: task.coordinatedBy,
           integrationPolicy: task.integrationPolicy,
           controlledBy: task.controlledBy,
-          agentId: task.agentIds[0],
+          agentId: task.agentIds[0] ?? task.savedAgentIds?.[0],
+          archived: task.collapsed === true,
           completion: task.completion,
           reviewRevision: task.reviewRevision,
           signalDoneAt: task.signalDoneAt,
           signalDoneConsumed: task.signalDoneConsumed,
+          closeSuggestion: task.closeSuggestion,
           verification: task.verification,
           landingState: task.landingState,
           landingReason: task.landingReason,
           landingSummary: task.landingSummary,
           landedMetadata: task.landedMetadata,
           mcpConfigPath: task.mcpConfigPath,
-          agentCommand: store.agents[task.agentIds[0]]?.def.command ?? 'claude',
+          agentCommand:
+            store.agents[task.agentIds[0]]?.def.command ??
+            task.savedAgentDefs?.[0]?.command ??
+            'claude',
           preambleFileExistedBefore: task.preambleFileExistedBefore,
           initialPrompt: task.initialPrompt,
         })
@@ -650,7 +639,6 @@ function App() {
     }
 
     await validateProjectPaths();
-    await restoreWindowState();
     await captureWindowState();
     setupAutosave();
     startTaskStatusPolling();

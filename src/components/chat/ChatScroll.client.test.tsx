@@ -121,3 +121,20 @@ it('leaves a touch that turned into a scroll to its own scroll events', () => {
   grow(100);
   expect(top).toBe(1000);
 });
+
+it('keeps the reader in place when moving the log resets its scroll position', () => {
+  scroller().dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
+  scrolled(400);
+  // Chromium sends no scroll event when a moved scroller drops back to the top;
+  // the size change in its new layout is the only signal.
+  top = 0;
+  resized();
+  expect(top).toBe(400);
+});
+
+it('stays at the top when the reader scrolled there', () => {
+  scroller().dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
+  scrolled(0);
+  resized();
+  expect(top).toBe(0);
+});

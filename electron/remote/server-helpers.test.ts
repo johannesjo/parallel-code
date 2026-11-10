@@ -24,7 +24,8 @@ vi.mock('./protocol.js', () => ({
 }));
 
 const pty = await import('../ipc/pty.js');
-const { requireOwnedTask, readCoordinatorBody, buildAgentList } = await import('./server.js');
+const { requireOwnedTask, readCoordinatorBody, buildAgentList, withSuspendedTasks } =
+  await import('./server.js');
 
 type FakeRequest = EventEmitter & { destroy: ReturnType<typeof vi.fn> };
 
@@ -194,5 +195,44 @@ describe('buildAgentList', () => {
       taskId: 'task-1',
       collapsed: true,
     });
+  });
+});
+
+describe('withSuspendedTasks', () => {
+  const describeTask = (taskId: string) => ({
+    taskName: `Name of ${taskId}`,
+    lastLine: '',
+    attention: 'idle' as const,
+    projectName: 'Proj',
+  });
+  const running = {
+    agentId: 'agent-1',
+    taskId: 'task-1',
+    taskName: 'Task 1',
+    status: 'running' as const,
+    exitCode: null,
+    lastLine: '',
+    attention: 'active' as const,
+  };
+
+  it('lists a suspended task, which has no process to be listed by', () => {
+    const agents = withSuspendedTasks([running], ['task-2'], describeTask);
+
+    expect(agents).toHaveLength(2);
+    expect(agents[0]).toBe(running);
+    expect(agents[1]).toMatchObject({
+      taskId: 'task-2',
+      taskName: 'Name of task-2',
+      projectName: 'Proj',
+      status: 'exited',
+      exitCode: null,
+      suspended: true,
+    });
+    // The phone keys its list and its routes on the agent id.
+    expect(agents[1].agentId).not.toBe(running.agentId);
+  });
+
+  it('keeps the live entry of a task whose suspension is out of date', () => {
+    expect(withSuspendedTasks([running], ['task-1'], describeTask)).toEqual([running]);
   });
 });

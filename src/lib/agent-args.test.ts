@@ -497,6 +497,26 @@ describe('isResumeArgsFailure', () => {
       ).toBe(true);
     });
 
+    // Captured from claude in a 39-column PTY, as in a side-by-side agent tab:
+    // when the message wraps, Claude draws its spaces as cursor-column moves.
+    it('returns true when a narrow pane wraps the message with cursor moves', () => {
+      expect(
+        isResumeArgsFailure('claude', [
+          '\x1b7\x1b[r\x1b8\x1b[?25h\x1b[38;2;255;107;128mNo\x1b[4Gconversation\x1b[17Gfound\x1b[23Gwith\x1b[28Gsession\x1b[36GID:\x1b[39m',
+          '\x1b[38;2;255;107;128m5fb1b21d-5ddf-4195-a741-e52e1502ef24\x1b[39m',
+        ]),
+      ).toBe(true);
+    });
+
+    it('returns true when the message is split across wrapped lines', () => {
+      expect(
+        isResumeArgsFailure('claude', [
+          'No\x1b[4Gconversation\x1b[17Gfound',
+          'with\x1b[6Gsession ID:',
+        ]),
+      ).toBe(true);
+    });
+
     it('returns true for a Claude command with a full path', () => {
       expect(
         isResumeArgsFailure('/usr/local/bin/claude', ['No conversation found to continue']),

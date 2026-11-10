@@ -114,9 +114,14 @@ export function TaskContext(props: TaskContextProps) {
   const done = () => plan().steps.filter((step) => step.status === 'completed').length;
   const goal = () => taskGoal(props.task);
   const now = () => props.task.brief?.brief.now ?? '';
+  // The hint is only on hover: a visible sentence was noise in every fresh task.
+  const emptyHint = () =>
+    plan().steps.length === 0 && !now()
+      ? "The agent's plan shows here once it writes a to-do list"
+      : undefined;
 
   return (
-    <section class="ctx" aria-label="Task context">
+    <section class="ctx" aria-label="Task context" title={emptyHint()}>
       <Show when={goal()}>
         <div class="ctx-goalbar">
           <span class="ctx-label">Goal</span>
@@ -126,12 +131,7 @@ export function TaskContext(props: TaskContextProps) {
       <Show
         when={plan().steps.length > 0}
         fallback={
-          <Show
-            when={now()}
-            fallback={
-              <p class="ctx-empty">The agent's plan shows here once it writes a to-do list.</p>
-            }
-          >
+          <Show when={now()}>
             <h3 class="ctx-head">Now</h3>
             <p class="ctx-now">{now()}</p>
           </Show>

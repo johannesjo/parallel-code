@@ -716,6 +716,28 @@ it('keeps a manually started transport when the last canvas agent exits', async 
   expect(await handlers.get(IPC.GetRemoteStatus)?.(undefined, {})).toMatchObject({ enabled: true });
 });
 
+it('passes the tasks the desktop reports as suspended on to the phone server', async () => {
+  vi.spyOn(fs, 'accessSync').mockImplementationOnce(() => {});
+  registerAllHandlers(testWindow());
+  const start = vi.spyOn(remote, 'startRemoteServer');
+  start.mockResolvedValueOnce(asHandle(mockServer({ platform: 'darwin' })));
+  await handlers.get(IPC.StartRemoteServer)?.(undefined, {});
+  const suspended = () => start.mock.calls[0][0].getSuspendedTaskIds?.();
+  const report = (contexts: Record<string, { suspended: unknown }>) =>
+    handlers.get(IPC.Remote_UpdateTaskStatus)?.(undefined, { statuses: {}, contexts });
+
+  await report({
+    waiting: { suspended: true },
+    started: { suspended: false },
+    odd: { suspended: 1 },
+  });
+  expect(suspended()).toEqual(['waiting']);
+
+  // Each report replaces the last, so a resumed task drops out.
+  await report({ waiting: { suspended: false } });
+  expect(suspended()).toEqual([]);
+});
+
 const onDarwin = async (run: () => Promise<void>) => {
   const platform = Object.getOwnPropertyDescriptor(process, 'platform');
   Object.defineProperty(process, 'platform', { value: 'darwin' });

@@ -5,7 +5,7 @@
  */
 
 /** Hook wall-clock budget. The script answers in milliseconds; this only caps a wedged curl. */
-const HOOK_TIMEOUT_SECONDS = 10;
+export const HOOK_TIMEOUT_SECONDS = 10;
 
 /** Events that carry a `tool_name` and therefore need a matcher. */
 const TOOL_EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest'];
@@ -42,7 +42,7 @@ export interface ClaudeHookSettings {
 }
 
 /** Quote for `/bin/sh` so a userData path with spaces survives. */
-function shellQuote(value: string): string {
+export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 

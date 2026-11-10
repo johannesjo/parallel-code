@@ -69,10 +69,38 @@ export interface AgentPromptReadiness {
   tail: string;
 }
 
+/**
+ * Codex's "Update available" screen (#336). Enter picks "Update now", which
+ * runs the package manager and exits Codex. `\s*` tolerates the spaces lost in
+ * cursor-positioned redraws; "Update now (runs" covers the npm, bun and brew
+ * variants. Its text outlives the menu in a tail, so test it together with
+ * `showsSelectionMenu`, which sees when the menu was answered.
+ */
+export const AGENT_UPDATE_MENU_PATTERN = /\bUpdate\s*now\s*\(runs\b/i;
+
 const AGENT_STARTUP_OR_DIALOG_PATTERNS: RegExp[] = [
   /\bmodel:\s*loading\b/i,
   /\bBooting\s+MCP\s+server\b/i,
 ];
+
+/** A selection cursor on a numbered option, e.g. `❯ 1. Yes` or `› 2. Skip`. */
+export const SELECTION_CURSOR_LINE = /^\s*[❯›]\s*\d+\./m;
+/** The input box back below a menu, even holding typed text: it was answered. */
+export const PROMPT_AFTER_MENU = /^\s*[❯›]\s*\d+\.[^]*^\s*[❯›](?!\s*\d+\.)/m;
+
+/**
+ * True when line-structured, ANSI-stripped output shows a numbered selection
+ * menu with no input prompt drawn below it. Enter would pick the highlighted
+ * option, so a prompt must not be sent. Needs real line breaks: run
+ * `cursorRowsToLines` on cursor-positioned output before stripping it.
+ *
+ * It reads output in the order it was written, not screen order. A redraw that
+ * re-emits a history row like Codex's `› 1. fix it` after the composer looks
+ * like a menu until the next prompt line; that only delays a send.
+ */
+export function showsSelectionMenu(visible: string): boolean {
+  return SELECTION_CURSOR_LINE.test(visible) && !PROMPT_AFTER_MENU.test(visible);
+}
 
 const AGENT_TRUST_DIALOG_PATTERNS: RegExp[] = [
   /\bDo\s+you\s+trust\b/i,
@@ -108,6 +136,11 @@ export function getAgentPromptReadiness(stripped: string): AgentPromptReadiness 
     .filter(Boolean);
   const ready = lines.some((line) => AGENT_READY_TAIL_PATTERNS.some((re) => re.test(line)));
   if (AGENT_STARTUP_OR_DIALOG_PATTERNS.some((re) => re.test(blockerTail))) {
+    return { ready: false, reason: 'startup_or_dialog', tail };
+  }
+  // A menu drawn over the composer leaves the composer row earlier in the tail
+  // (#336), so a ready line alone does not mean the input box is on top.
+  if (showsSelectionMenu(blockerTail)) {
     return { ready: false, reason: 'startup_or_dialog', tail };
   }
   if (
