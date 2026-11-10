@@ -631,9 +631,9 @@ describe('Coordinator registerCoordinator — idempotency', () => {
       output(encode(frame));
       await (
         coordinator as unknown as {
-          tryDeliverInitialPrompt(taskId: string): Promise<void>;
+          prompts: { tryDeliverInitialPrompt(taskId: string): Promise<void> };
         }
-      ).tryDeliverInitialPrompt(task.id);
+      ).prompts.tryDeliverInitialPrompt(task.id);
 
       expect(mockWriteToAgent).not.toHaveBeenCalledWith(
         task.agentId,
@@ -799,9 +799,9 @@ describe('Coordinator registerCoordinator — idempotency', () => {
         output(encode(frame));
         await (
           coordinator as unknown as {
-            tryDeliverInitialPrompt(taskId: string): Promise<void>;
+            prompts: { tryDeliverInitialPrompt(taskId: string): Promise<void> };
           }
-        ).tryDeliverInitialPrompt(task.id);
+        ).prompts.tryDeliverInitialPrompt(task.id);
         expect(mockWriteToAgent).not.toHaveBeenCalledWith(
           task.agentId,
           expect.stringContaining('do one'),
