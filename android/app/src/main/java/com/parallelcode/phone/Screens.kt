@@ -405,6 +405,8 @@ fun AgentsScreen(
     computers: List<SavedComputer> = emptyList(),
     onSwitchComputer: (String) -> Unit = {},
     onSwitchNetwork: () -> Unit = {},
+    /** Set while Android keeps the app from this computer's address (see [LOCAL_NETWORK_PERMISSION]). */
+    onAllowLocalNetwork: (() -> Unit)? = null,
     search: String = "",
     onSearch: (String) -> Unit = {},
     filter: TaskFilter = TaskFilter.ALL,
@@ -632,6 +634,22 @@ fun AgentsScreen(
                                 OutlinedButton(onClick = onSwitchNetwork, modifier = Modifier.padding(top = 8.dp)) {
                                     Text("Use Tailscale", color = MaterialTheme.colorScheme.onSurface)
                                 }
+                            }
+                        }
+                    }
+                }
+                // Without it every connection over Wi-Fi times out, which looks like an unreachable computer.
+                // Shown above tasks kept from an earlier connection too.
+                if (onAllowLocalNetwork != null && state.status != ConnectionStatus.CONNECTED && state.status != ConnectionStatus.WAITING_FOR_VPN) {
+                    item {
+                        Column(Modifier.padding(horizontal = 24.dp)) {
+                            Text(
+                                "Android blocks this app from your Wi-Fi network until you allow it to reach nearby devices.",
+                                color = AppTheme.extra.textMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            OutlinedButton(onClick = onAllowLocalNetwork, modifier = Modifier.padding(top = 8.dp)) {
+                                Text("Allow access", color = MaterialTheme.colorScheme.onSurface)
                             }
                         }
                     }

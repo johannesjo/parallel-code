@@ -10,6 +10,8 @@ On Android, the native app adds agent notifications that need no HTTPS setup, a 
 2. Open the downloaded file. Android asks you to allow installs from your browser the first time.
 3. In the app, scan the QR code from **Connect Phone** or paste its link, then enter the desktop PIN to enable replies.
 
+On Android 17 and later, Android blocks apps from other devices on your Wi-Fi until you allow it. The app asks for that access once it is linked to your computer's Wi-Fi address; without it the app stays on **Reaching your computer…**. If you declined, tap **Allow access** on that screen. The app does not ask when it is linked through a Tailscale address.
+
 The app is not in the Play Store yet. It checks GitHub for a newer release once a day and offers the download; you can turn that off under **Settings → About**. [Obtainium](https://github.com/ImranR98/Obtainium) can also install and update it: add `https://github.com/johannesjo/parallel-code` and filter release titles by `Android`.
 
 Once connected, the app remembers both your computer's Wi-Fi and Tailscale addresses. When you leave home Wi-Fi, turn on Tailscale on the phone and tap **Use Tailscale** at the top of the task list to keep following your agents; **Use Wi-Fi** switches back. PIN pairing carries over. If **Connect Phone** shows the Tailscale option as unavailable, it says why, for example **Logged out** with a **Log in** link to Tailscale's login page.
