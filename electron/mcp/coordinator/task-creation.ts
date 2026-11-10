@@ -36,6 +36,7 @@ import { warn as logWarn } from '../../log.js';
 import type { CoordinatedTask, IntegrationPolicy, CoordinatorState } from '../types.js';
 import { IPC } from '../../ipc/channels.js';
 import { assertOrchestrationEnabled, notifyRenderer } from './internals.js';
+import { startAgentOutputMonitor } from './agent-events.js';
 import { assertParentAdmission, countInFlightSubTasks } from './admission.js';
 import { cleanupTask } from './teardown.js';
 
@@ -239,14 +240,9 @@ async function createTaskUnchecked(
   c.tasks.set(task.id, task);
   if (!c.orchestrationEnabled) c.prompts.discardAutomatedPrompts(task);
   onInserted();
-  c.tailBuffers.set(agentId, '');
 
   // Subscribe to PTY output for prompt detection
-  const decoder = new TextDecoder();
-  c.decoders.set(agentId, decoder);
-
-  const outputCb = c.prompts.createAgentOutputMonitor(task);
-  c.subscribers.set(agentId, outputCb);
+  const outputCb = startAgentOutputMonitor(c, task);
 
   // closeTask/removeCoordinatedTask can delete the task while we are awaiting;
   // continuing would spawn into a deleted worktree and announce a dead task.

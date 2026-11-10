@@ -68,6 +68,18 @@ function handleAgentHookEvent(c: CoordinatorInternals, evt: AgentHookEventPayloa
   }
 }
 
+/** Starts a fresh tail and decoder for the task's agent; returns the callback to subscribe to its output. */
+export function startAgentOutputMonitor(
+  c: CoordinatorInternals,
+  task: CoordinatedTask,
+): (encoded: string) => void {
+  c.tailBuffers.set(task.agentId, '');
+  c.decoders.set(task.agentId, new TextDecoder());
+  const outputCb = c.prompts.createAgentOutputMonitor(task);
+  c.subscribers.set(task.agentId, outputCb);
+  return outputCb;
+}
+
 // --- Per-task teardown helpers ---
 // Shared by cleanupLandedTaskResources, removeCoordinatedTask, cleanupTask,
 // and deregisterCoordinator so the four paths can't drift apart.

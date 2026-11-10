@@ -70,6 +70,12 @@ const PROMPT_SETTLE_MS = 1_500;
 const FOCUS_IN = '\x1b[I';
 const BRACKETED_PASTE_START = '\x1b[200~';
 const BRACKETED_PASTE_END = '\x1b[201~';
+const TAIL_MAX_CHARS = 4096;
+
+/** The end of the text that is kept as an agent's tail. */
+function keepTail(text: string): string {
+  return text.length > TAIL_MAX_CHARS ? text.slice(text.length - TAIL_MAX_CHARS) : text;
+}
 
 function pasteDelayMs(text: string): number {
   const lines = text.split('\n').length;
@@ -167,10 +173,7 @@ export class CoordinatorPrompts {
     if (!scrollback) return false;
     const decoded = Buffer.from(scrollback, 'base64').toString('utf8');
     this.updateBracketedPasteMode(task.agentId, decoded);
-    this.state.tailBuffers.set(
-      task.agentId,
-      decoded.length > 4096 ? decoded.slice(decoded.length - 4096) : decoded,
-    );
+    this.state.tailBuffers.set(task.agentId, keepTail(decoded));
     const freshPrompt = this.freshAgentPrompt(task);
     // A screen still settling is judged like new output once it has.
     if (freshPrompt === undefined)
@@ -320,10 +323,7 @@ export class CoordinatorPrompts {
       this.updateBracketedPasteMode(task.agentId, text);
       const prev = this.state.tailBuffers.get(task.agentId) ?? '';
       const combined = prev + text;
-      this.state.tailBuffers.set(
-        task.agentId,
-        combined.length > 4096 ? combined.slice(combined.length - 4096) : combined,
-      );
+      this.state.tailBuffers.set(task.agentId, keepTail(combined));
       task.lastOutputAt = Date.now();
 
       const hasAgentPrompt = this.freshAgentPrompt(task);

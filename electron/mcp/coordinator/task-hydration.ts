@@ -15,7 +15,7 @@ import { IPC } from '../../ipc/channels.js';
 import { parseCloseSuggestion, type CloseSuggestion } from '../../shared/close-suggestion.js';
 import { parseCompletionRecord, type CompletionRecord } from '../../shared/completion-report.js';
 import { notifyRenderer } from './internals.js';
-import { clearAgentBuffers } from './agent-events.js';
+import { clearAgentBuffers, startAgentOutputMonitor } from './agent-events.js';
 
 /** A persisted sub-task, as the app restores it after a restart. */
 export interface HydrateTaskOptions {
@@ -158,10 +158,7 @@ export function hydrateTask(
       opts.agentCommand,
     );
 
-    c.tailBuffers.set(agentId, '');
-    c.decoders.set(agentId, new TextDecoder());
-    const outputCb = c.prompts.createAgentOutputMonitor(task);
-    c.subscribers.set(agentId, outputCb);
+    const outputCb = startAgentOutputMonitor(c, task);
     // Subscribe immediately if the agent is already spawned (restart scenario where
     // PTY existed before hydration). The spawn handler covers the deferred case.
     try {
