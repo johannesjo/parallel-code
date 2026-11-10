@@ -1226,14 +1226,23 @@ export function startRemoteServer(opts: {
     return null;
   }
 
+  /** Parse the request URL; null when the request line or Host header is malformed
+   *  (new URL throws, and an uncaught throw in a request handler takes down the app). */
+  function parseRequestUrl(req: IncomingMessage): URL | null {
+    try {
+      return new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+    } catch {
+      return null;
+    }
+  }
+
   /** Query-string tokens leak into logs and history, so only the legacy WebSocket URL
    *  handshake may use them; every /api/* route requires the Authorization header. */
   function extractRawToken(req: IncomingMessage, allowQuery = false): string | null {
     const auth = req.headers.authorization;
     if (auth?.startsWith('Bearer ')) return auth.slice(7);
     if (!allowQuery) return null;
-    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-    return url.searchParams.get('token');
+    return parseRequestUrl(req)?.searchParams.get('token') ?? null;
   }
 
   function classifyToken(req: IncomingMessage): TokenClass | null {
@@ -1306,7 +1315,12 @@ export function startRemoteServer(opts: {
   };
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+    const url = parseRequestUrl(req);
+    if (!url) {
+      res.writeHead(400, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain' });
+      res.end('Bad request');
+      return;
+    }
 
     // --- API routes (require auth) ---
     if (url.pathname.startsWith('/api/')) {
