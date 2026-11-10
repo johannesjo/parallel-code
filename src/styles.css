@@ -3666,7 +3666,27 @@ html:is(
   opacity: 0.55;
 }
 
+/* Long agent names must compress (ellipsis) so a tab's close button stays
+   inside the strip's view instead of scrolling out of reach (#339). */
 .agent-header-tabs > * {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.agent-header-tabs button[aria-pressed] {
+  min-width: 44px;
+  overflow: hidden;
+}
+
+.agent-header-tabs button[aria-pressed] > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-header-tabs button > span + span,
+.agent-header-tabs button + button {
   flex-shrink: 0;
 }
 
