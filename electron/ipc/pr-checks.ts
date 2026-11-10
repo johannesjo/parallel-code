@@ -685,6 +685,24 @@ async function isDirectory(path: string): Promise<boolean> {
   }
 }
 
+/** A PR's state and head, without the checks `fetchPrStatus` also loads. */
+export async function fetchPrHead(
+  prUrl: string,
+): Promise<{ state: string; headRefOid: string; headRefName: string }> {
+  const { stdout } = await exec(
+    'gh',
+    ['pr', 'view', prUrl, '--json', 'state,headRefOid,headRefName'],
+    { timeout: GH_TIMEOUT_MS, maxBuffer: GH_MAX_BUFFER },
+  );
+  const parsed: unknown = JSON.parse(stdout);
+  const r = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  return {
+    state: asString(r['state']) ?? 'UNKNOWN',
+    headRefOid: asString(r['headRefOid']) ?? '',
+    headRefName: asString(r['headRefName']) ?? '',
+  };
+}
+
 /** Single gh call: combines PR state, review metadata, head SHA, and check runs in one fork.
  *  Uses `statusCheckRollup` which bundles check-run data with a normalised
  *  conclusion, so we map that to the same `bucket` taxonomy `gh pr checks`

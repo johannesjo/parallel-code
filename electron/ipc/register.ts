@@ -1470,7 +1470,13 @@ export function registerAllHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC.DetectPrForBranch, (_e, args) => {
     validatePath(args.worktreePath, 'worktreePath');
     validateBranchName(args.branchName, 'branchName');
-    return detectTaskPrs(args.worktreePath, args.branchName).catch((err: unknown) => {
+    assertOptionalString(args.printedPrUrl, 'printedPrUrl');
+    // Only compared to the PR's head name, never passed to git.
+    assertOptionalString(args.baseBranch, 'baseBranch');
+    const printed = args.printedPrUrl
+      ? { url: args.printedPrUrl, baseBranch: args.baseBranch }
+      : undefined;
+    return detectTaskPrs(args.worktreePath, args.branchName, printed).catch((err: unknown) => {
       const code = (err as NodeJS.ErrnoException)?.code;
       if (isGhMissingError(err)) {
         return { url: null, unavailable: 'missing' };

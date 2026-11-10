@@ -42,6 +42,8 @@ const BRANCH_PR_DETECT_RETRY_MS = 2 * 60_000;
 // Each probe spawns `git remote` + `gh pr list`; cap them so a startup scan
 // over many tasks doesn't burst dozens of processes and GitHub API calls.
 const MAX_CONCURRENT_BRANCH_PROBES = 4;
+// Lookups of a printed PR link that may fail before it is dropped.
+const MAX_PRINTED_PR_LOOKUPS = 3;
 
 /** Whether all of a task's PRs are known: tasks without a branch to probe have
  *  only their primary PR; others wait for the first probe after startup. */
@@ -130,6 +132,9 @@ export function startPrChecksSubscription(): () => void {
   const activeByWatchId = new Map<string, ActiveWatcher>();
   const branchProbeByTaskId = new Map<string, { key: string; attemptedAt: number }>();
   const pendingBranchProbes = new Set<string>();
+  // PR links a task's agent printed while the task had no PR, for its next probe
+  // to check: a PR pushed under another branch name has no other way in.
+  const printedPrByTaskId = new Map<string, { url: string; failedLookups: number }>();
   let branchPrDetectionDisabled = false;
   let disposed = false;
 
@@ -212,9 +217,26 @@ export function startPrChecksSubscription(): () => void {
   const detectBranchPr = (taskId: string, candidate: BranchPrCandidate): void => {
     if (disposed || branchPrDetectionDisabled || pendingBranchProbes.has(taskId)) return;
     pendingBranchProbes.add(taskId);
+    const printed = printedPrByTaskId.get(taskId);
+    const printedPrUrl = printed?.url;
+    printedPrByTaskId.delete(taskId);
+    const baseBranch = printedPrUrl ? store.tasks[taskId]?.baseBranch : undefined;
+    // A probe that could not check the link leaves it to the next one, unless a newer link came.
+    // Capped: until the link is checked the task's PRs count as unknown, holding up Babysit.
+    const keepPrintedPr = (): void => {
+      if (!printed || printedPrByTaskId.has(taskId)) return;
+      const failedLookups = printed.failedLookups + 1;
+      if (failedLookups < MAX_PRINTED_PR_LOOKUPS) {
+        printedPrByTaskId.set(taskId, { url: printed.url, failedLookups });
+      } else {
+        console.warn('[pr-checks] giving up on printed PR link:', printed.url);
+      }
+    };
     invoke<BranchPrDetectionResult>(IPC.DetectPrForBranch, {
       worktreePath: candidate.worktreePath,
       branchName: candidate.branchName,
+      ...(printedPrUrl ? { printedPrUrl } : {}),
+      ...(baseBranch ? { baseBranch } : {}),
     })
       .then((result) => {
         if (disposed || !result) return;
@@ -231,9 +253,11 @@ export function startPrChecksSubscription(): () => void {
         ) {
           return;
         }
+        if (result.failedRepos?.includes('.')) keepPrintedPr();
         applyDetectedPrs(taskId, result);
       })
       .catch((err: unknown) => {
+        keepPrintedPr();
         console.warn('[pr-checks] branch PR detection failed:', err);
       })
       .finally(() => {
@@ -267,8 +291,10 @@ export function startPrChecksSubscription(): () => void {
       branchProbeByTaskId.set(taskId, { key: candidate.key, attemptedAt: now });
       detectBranchPr(taskId, candidate);
     }
-    for (const taskId of [...branchProbeByTaskId.keys()]) {
-      if (!seen.has(taskId)) branchProbeByTaskId.delete(taskId);
+    for (const taskId of [...branchProbeByTaskId.keys(), ...printedPrByTaskId.keys()]) {
+      if (seen.has(taskId)) continue;
+      branchProbeByTaskId.delete(taskId);
+      printedPrByTaskId.delete(taskId);
     }
     for (const taskId of taskIdsWithExtraPrs()) {
       if (!seen.has(taskId)) setTaskExtraPrs(taskId, []);
@@ -398,6 +424,13 @@ export function startPrChecksSubscription(): () => void {
   createEffect(() => {
     const link = printedPrLink();
     if (!link) return;
+    untrack(() => {
+      const task = store.tasks[link.taskId];
+      const current = task && taskPrUrl(task);
+      if (task && (!current || closedPrimaryPrUrl(link.taskId) === current)) {
+        printedPrByTaskId.set(link.taskId, { url: link.url, failedLookups: 0 });
+      }
+    });
     branchProbeByTaskId.delete(link.taskId);
     untrack(scanForBranchPrs);
   });
