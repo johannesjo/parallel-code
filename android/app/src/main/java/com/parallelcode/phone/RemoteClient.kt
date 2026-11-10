@@ -386,7 +386,7 @@ class RemoteClient(
     }
 
     /** Create a new git project folder on the desktop and add it; returns the project. */
-    suspend fun createProject(name: String, parentDir: String): MobileProject {
+    override suspend fun createProject(name: String, parentDir: String): MobileProject {
         val body = JSONObject().put("name", name).put("parentDir", parentDir)
         val p = api("POST", "/api/mobile/projects", body, pairedTokenOrThrow())
         return MobileProject(p.getString("id"), p.getString("name"), null, path = p.optString("path").ifEmpty { null })
