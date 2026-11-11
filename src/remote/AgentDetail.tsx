@@ -840,10 +840,15 @@ export function AgentDetail(props: AgentDetailProps) {
                       { label: 'Enter', name: 'Enter', data: '\r' },
                       { label: '/', name: 'Slash', data: '/' },
                       { label: 'Tab', name: 'Tab', data: '\t' },
+                      // Phone keyboards have no Shift+Tab; agents use it to switch modes.
+                      { label: '⇧Tab', name: 'Shift Tab', data: '\x1b[Z' },
                       { label: '↑', name: 'Arrow up', data: '\x1b[A' },
                       { label: '↓', name: 'Arrow down', data: '\x1b[B' },
                       { label: 'Esc', name: 'Escape', data: '\x1b' },
                       { label: 'Ctrl+C', name: 'Interrupt agent (Control C)', data: '\x03' },
+                      // Last: on narrow phones the row scrolls, and these are needed least.
+                      { label: '←', name: 'Arrow left', data: '\x1b[D' },
+                      { label: '→', name: 'Arrow right', data: '\x1b[C' },
                     ]}
                   >
                     {(key) => (

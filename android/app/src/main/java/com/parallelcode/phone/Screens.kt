@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Settings
@@ -1290,6 +1291,10 @@ private val QUICK_KEYS = listOf(
     "Ctrl+C" to "\u0003",
     "Ctrl+D" to "\u0004",
     "Clear" to "\u000c",
+    // Last, so the keys users already know keep their place in the scrolling row.
+    // Claude Code switches modes on Shift+Tab; ← switches tabs in its dialogs.
+    "⇧Tab" to "\u001b[Z",
+    "←" to "\u001b[D",
 )
 
 @Composable
@@ -1732,6 +1737,7 @@ private fun QuickKeyButton(
 private fun arrowKeyFor(label: String): Pair<ImageVector, String>? = when (label) {
     "↑" -> Icons.Filled.KeyboardArrowUp to "Arrow up"
     "↓" -> Icons.Filled.KeyboardArrowDown to "Arrow down"
+    "←" -> Icons.Filled.KeyboardArrowLeft to "Arrow left"
     "→" -> Icons.Filled.KeyboardArrowRight to "Arrow right"
     else -> null
 }

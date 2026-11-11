@@ -582,12 +582,22 @@ describe('phone terminal viewport', () => {
     expect(host.querySelector('.mobile-tabs [aria-label="Larger terminal text"]')).not.toBeNull();
     expect(
       [...host.querySelectorAll('.mobile-keys button')].map((button) => button.textContent),
-    ).toEqual(['Enter', '/', 'Tab', '↑', '↓', 'Esc', 'Ctrl+C']);
+    ).toEqual(['Enter', '/', 'Tab', '⇧Tab', '↑', '↓', 'Esc', 'Ctrl+C', '←', '→']);
     click('Enter');
     expect(sendInput).toHaveBeenCalledWith('a1', '\r');
     await vi.waitFor(() => expect(composer().disabled).toBe(false));
     click('/');
     expect(sendInput).toHaveBeenCalledWith('a1', '/');
+    await vi.waitFor(() => expect(composer().disabled).toBe(false));
+    // Agents such as Claude Code switch modes on Shift+Tab, which xterm sends as CSI Z.
+    click('⇧Tab');
+    expect(sendInput).toHaveBeenCalledWith('a1', '\x1b[Z');
+    await vi.waitFor(() => expect(composer().disabled).toBe(false));
+    host.querySelector<HTMLButtonElement>('.mobile-keys [aria-label="Arrow left"]')?.click();
+    expect(sendInput).toHaveBeenCalledWith('a1', '\x1b[D');
+    await vi.waitFor(() => expect(composer().disabled).toBe(false));
+    host.querySelector<HTMLButtonElement>('.mobile-keys [aria-label="Arrow right"]')?.click();
+    expect(sendInput).toHaveBeenCalledWith('a1', '\x1b[C');
     await vi.waitFor(() => expect(composer().disabled).toBe(false));
     click('Notes');
     expect(host.querySelector('[aria-label="Smaller terminal text"]')).toBeNull();
