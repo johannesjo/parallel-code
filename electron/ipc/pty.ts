@@ -1356,12 +1356,22 @@ export function getPtyProcessRoots(): {
 }
 
 /** Return metadata for a specific agent, or null if not found. */
-export function getAgentMeta(
-  agentId: string,
-): { taskId: string; agentId: string; isShell: boolean; canvasTools?: boolean } | null {
+export function getAgentMeta(agentId: string): {
+  taskId: string;
+  agentId: string;
+  command: string;
+  isShell: boolean;
+  canvasTools?: boolean;
+} | null {
   const s = sessions.get(agentId);
   return s
-    ? { taskId: s.taskId, agentId: s.agentId, isShell: s.isShell, canvasTools: s.canvasTools }
+    ? {
+        taskId: s.taskId,
+        agentId: s.agentId,
+        command: s.command,
+        isShell: s.isShell,
+        canvasTools: s.canvasTools,
+      }
     : null;
 }
 

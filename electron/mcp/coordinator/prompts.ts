@@ -45,6 +45,8 @@ export interface PromptHost {
   readonly controlMap: ReadonlyMap<string, 'coordinator' | 'human'>;
   /** Agents whose hooks report state; only hooks move them to idle. */
   readonly hookLiveAgentIds: ReadonlySet<string>;
+  /** When a Claude agent's foreground hook turn began; see SILENT_PROMPT_IDLE_MS. */
+  readonly hookTurnStartedAt: ReadonlyMap<string, number>;
   readonly idleResolvers: Map<string, Array<(result: IdleWaitResult) => void>>;
   readonly notifications: CoordinatorNotifications;
   isOrchestrationEnabled(): boolean;
@@ -67,6 +69,16 @@ const PROMPT_ECHO_IDLE_SUPPRESSION_MS = 2_000;
 // has settled. Delegation waits as long but only for readiness to persist,
 // which a Codex reply streaming under its prompt would pass.
 const PROMPT_SETTLE_MS = 1_500;
+// Should a Claude turn's Stop hook never arrive, its ❯ prompt ends the turn once
+// output has been silent this long; ❯ stays on screen all turn, so only silence
+// tells. Claude 2.1.322 went quiet mid-turn for up to 1.09 s (Ctrl+O), and with
+// prefersReducedMotion 2.12 s in a tool call and 3.52 s awaiting the API, which
+// grows with context. 15 s matches the renderer's IDLE_TIMEOUT_MS: a late idle
+// after a lost Stop costs little, a false one resolves wait_for_idle early.
+// shortcut: a longer API wait, or a main-process stall that lets this timer run
+// before buffered output is read, still idles early; raise the window or
+// re-confirm on a setImmediate turn if false idles show up.
+const SILENT_PROMPT_IDLE_MS = 15_000;
 const FOCUS_IN = '\x1b[I';
 const BRACKETED_PASTE_START = '\x1b[200~';
 const BRACKETED_PASTE_END = '\x1b[201~';
@@ -95,10 +107,11 @@ class PromptWriteError extends Error {
 }
 
 export class CoordinatorPrompts {
-  // Output whose prompt check waits for the screen mirror or for output to settle.
+  // Output whose prompt check waits for the screen mirror, for output to settle,
+  // or (silent) for a hook-live prompt to stay quiet; see SILENT_PROMPT_IDLE_MS.
   private deferredPromptChecks = new Map<
     string,
-    { timer: ReturnType<typeof setTimeout>; echoOnly: boolean }
+    { timer: ReturnType<typeof setTimeout>; echoOnly: boolean; silent: boolean }
   >();
 
   constructor(
@@ -342,8 +355,11 @@ export class CoordinatorPrompts {
     };
   }
 
-  /** Re-check output the mirror had not parsed yet, or whose prompt has not settled. */
-  private deferPromptCheck(task: CoordinatedTask, echoOnly: boolean): void {
+  /**
+   * Re-check output the mirror had not parsed yet, or whose prompt has not
+   * settled; with `silentDelayMs`, whether a hook-live prompt stayed quiet.
+   */
+  private deferPromptCheck(task: CoordinatedTask, echoOnly: boolean, silentDelayMs?: number): void {
     const timer = setTimeout(() => {
       this.deferredPromptChecks.delete(task.id);
       // An empty tail means a send cleared it since: this output is stale.
@@ -351,9 +367,15 @@ export class CoordinatorPrompts {
       const hasAgentPrompt = this.freshAgentPrompt(task);
       if (hasAgentPrompt === undefined) this.deferPromptCheck(task, echoOnly);
       else this.applyPromptState(task, hasAgentPrompt, echoOnly);
-    }, PROMPT_WRITE_DELAY_MS);
+    }, silentDelayMs ?? PROMPT_WRITE_DELAY_MS);
     if (typeof timer === 'object' && 'unref' in timer) timer.unref();
-    this.deferredPromptChecks.set(task.id, { timer, echoOnly });
+    const silent = silentDelayMs !== undefined;
+    this.deferredPromptChecks.set(task.id, { timer, echoOnly, silent });
+  }
+
+  /** Cancel a pending silence check: the session or turn it would end is gone. */
+  cancelSilentPromptCheck(taskId: string): void {
+    if (this.deferredPromptChecks.get(taskId)?.silent) this.takeDeferredPromptCheck(taskId);
   }
 
   /** Cancel a deferred prompt check; true unless the output it held was more than echo. */
@@ -382,9 +404,14 @@ export class CoordinatorPrompts {
     }
     if (hasAgentPrompt) {
       this.handlePromptDetected(task, stableAgentPrompt);
-    } else if (task.status === 'idle' && !this.host.hookLiveAgentIds.has(task.agentId)) {
+    } else if (
+      task.status === 'idle' &&
+      (!this.host.hookLiveAgentIds.has(task.agentId) || this.turnMayEndOnSilence(task))
+    ) {
       // Hook-live agents flip back to running only on hook evidence — TUI
       // repaints and status-line noise must not override a hook-reported idle.
+      // An idle inferred from a silent prompt had no hook behind it, so busy
+      // output after it means the turn was still going.
       task.status = 'running';
       this.host.notifications.suppressPendingNotificationForTask(task);
     }
@@ -414,8 +441,13 @@ export class CoordinatorPrompts {
     }
     // Once hooks report state for this agent, only hook Stop events may drive
     // the idle transition — the ❯-regex above still schedules prompt delivery
-    // but must not race a mid-turn TUI frame into a false idle.
-    if (source === 'regex' && this.host.hookLiveAgentIds.has(task.agentId)) {
+    // but must not race a mid-turn TUI frame into a false idle. A prompt left
+    // silent long enough stands in for a lost Stop.
+    if (
+      source === 'regex' &&
+      this.host.hookLiveAgentIds.has(task.agentId) &&
+      !this.checkSilentTurnEnd(task)
+    ) {
       return;
     }
     // Before the assignment is delivered this ❯ (or startup hook) is just the
@@ -435,6 +467,26 @@ export class CoordinatorPrompts {
       for (const resolve of resolvers) resolve({ reason: 'idle' });
       this.host.idleResolvers.delete(task.id);
     }
+  }
+
+  /**
+   * True once a hook-live agent's prompt has been silent for
+   * SILENT_PROMPT_IDLE_MS, as if its Stop hook had arrived. Until then it arms
+   * a re-check for when the silence would be long enough; output cancels it.
+   */
+  private checkSilentTurnEnd(task: CoordinatedTask): boolean {
+    if (!this.turnMayEndOnSilence(task)) return false;
+    const quietMs = Date.now() - (task.lastOutputAt ?? 0);
+    if (quietMs >= SILENT_PROMPT_IDLE_MS) return true;
+    const echoOnly = this.takeDeferredPromptCheck(task.id);
+    this.deferPromptCheck(task, echoOnly, SILENT_PROMPT_IDLE_MS - quietMs);
+    return false;
+  }
+
+  /** A foreground Claude hook turn drew output since it began, so its ❯ is not left over. */
+  private turnMayEndOnSilence(task: CoordinatedTask): boolean {
+    const startedAt = this.host.hookTurnStartedAt.get(task.agentId);
+    return startedAt !== undefined && (task.lastOutputAt ?? 0) > startedAt;
   }
 
   async tryDeliverInitialPrompt(taskId: string): Promise<void> {

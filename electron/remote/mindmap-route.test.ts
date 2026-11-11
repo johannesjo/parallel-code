@@ -88,7 +88,12 @@ beforeEach(async () => {
   coordinator = null;
   vi.clearAllMocks();
   reportDirectory = mkdtempSync(join(tmpdir(), 'reasoning-route-'));
-  vi.mocked(getAgentMeta).mockReturnValue({ taskId: 'task-1', agentId: 'agent-1', isShell: false });
+  vi.mocked(getAgentMeta).mockReturnValue({
+    taskId: 'task-1',
+    agentId: 'agent-1',
+    command: 'claude',
+    isShell: false,
+  });
   server = await startRemoteServer({
     port: 0,
     host: '127.0.0.1',

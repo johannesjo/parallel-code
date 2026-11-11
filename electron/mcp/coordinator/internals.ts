@@ -36,6 +36,7 @@ export interface CoordinatorInternals {
   orchestrationEpoch: number;
   sessionMcpProvider?: SessionMcpProvider;
   hookLiveAgentIds: Set<string>;
+  hookTurnStartedAt: Map<string, number>;
   interruptedAt: Map<string, number>;
   pendingCreateCounts: Map<string, number>;
   notify: Notify | null;

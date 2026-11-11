@@ -3,8 +3,9 @@
 // per-agent output subscription and buffers those events reset.
 
 import type { CoordinatorInternals } from './internals.js';
-import { onPtyEvent, subscribeToAgent, unsubscribeFromAgent } from '../../ipc/pty.js';
+import { getAgentMeta, onPtyEvent, subscribeToAgent, unsubscribeFromAgent } from '../../ipc/pty.js';
 import { onAgentHookEvent } from '../../agent-hooks/events.js';
+import { isClaudeCommand } from '../../agent-hooks/launch-args.js';
 import type { AgentHookEventPayload } from '../../agent-hooks/status.js';
 import type { CoordinatedTask } from '../types.js';
 import {
@@ -37,6 +38,30 @@ function isToolHookOfInterruptedTurn(c: CoordinatorInternals, evt: AgentHookEven
   return true;
 }
 
+/**
+ * Track the hook turn a silent ❯ may end if its Stop never arrives (see
+ * SILENT_PROMPT_IDLE_MS in prompts.ts). Only a Claude turn working in the
+ * foreground qualifies: not one waiting on the user or holding for background
+ * work, and not Codex, whose hooks are not the ones checked here.
+ */
+function trackHookTurn(c: CoordinatorInternals, evt: AgentHookEventPayload): void {
+  const claude = isClaudeCommand(getAgentMeta(evt.agentId)?.command ?? '');
+  if (evt.state !== 'working' || evt.background || !claude) {
+    endHookTurn(c, evt.agentId);
+    return;
+  }
+  const startedAt =
+    evt.event === 'UserPromptSubmit' ? undefined : c.hookTurnStartedAt.get(evt.agentId);
+  c.hookTurnStartedAt.set(evt.agentId, startedAt ?? evt.at);
+}
+
+/** Forget the agent's hook turn and cancel the silence check it may have armed. */
+function endHookTurn(c: CoordinatorInternals, agentId: string): void {
+  c.hookTurnStartedAt.delete(agentId);
+  const task = findTaskByAgentId(c, agentId);
+  if (task) c.prompts.cancelSilentPromptCheck(task.id);
+}
+
 function handleAgentHookEvent(c: CoordinatorInternals, evt: AgentHookEventPayload): void {
   const task = findTaskByAgentId(c, evt.agentId);
   if (!task) return;
@@ -45,6 +70,7 @@ function handleAgentHookEvent(c: CoordinatorInternals, evt: AgentHookEventPayloa
   if (evt.event === 'UserPromptSubmit') advanceReviewRevision(c, task);
   if (isToolHookOfInterruptedTurn(c, evt)) return;
   c.hookLiveAgentIds.add(evt.agentId);
+  trackHookTurn(c, evt);
   if (evt.state === 'done') {
     // Stop/StopFailure/SessionStart cannot be prompt echo, so clear (not
     // consume) the echo-suppression window before the shared idle
@@ -99,6 +125,7 @@ export function clearAgentBuffers(c: CoordinatorInternals, agentId: string): voi
   c.bracketedPasteAgentIds.delete(agentId);
   c.decoders.delete(agentId);
   c.hookLiveAgentIds.delete(agentId);
+  c.hookTurnStartedAt.delete(agentId);
   c.interruptedAt.delete(agentId);
 }
 
@@ -116,6 +143,7 @@ export function listenToAgentEvents(c: CoordinatorInternals): void {
   // (e.g., user closes a child task from the UI).
   onPtyEvent('exit', (agentId, data) => {
     c.hookLiveAgentIds.delete(agentId);
+    endHookTurn(c, agentId);
     c.interruptedAt.delete(agentId);
     for (const task of c.tasks.values()) {
       if (task.agentId === agentId) {
@@ -142,6 +170,7 @@ export function listenToAgentEvents(c: CoordinatorInternals): void {
     const reattached = (data as { reattached?: boolean } | undefined)?.reattached === true;
     if (!reattached) {
       c.hookLiveAgentIds.delete(agentId);
+      endHookTurn(c, agentId);
       c.tailBuffers.set(agentId, '');
     }
     for (const task of c.tasks.values()) {
@@ -174,6 +203,7 @@ export function listenToAgentEvents(c: CoordinatorInternals): void {
   // detection back to the ❯-regex path until the next hook event.
   onPtyEvent('interrupt', (agentId) => {
     c.hookLiveAgentIds.delete(agentId);
+    endHookTurn(c, agentId);
     c.interruptedAt.set(agentId, Date.now());
   });
 

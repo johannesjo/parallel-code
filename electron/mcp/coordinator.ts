@@ -102,6 +102,10 @@ export class Coordinator implements CoordinatorInternals {
   // prompt-injection readiness. Cleared on PTY exit/respawn (fresh session)
   // and on a user interrupt (no Stop hook follows one).
   hookLiveAgentIds = new Set<string>();
+  // When each Claude agent's hook-reported turn began, kept only while its last
+  // hook says it works in the foreground: then a ❯ after enough silence may end
+  // the turn should its Stop hook never arrive. Cleared with hookLiveAgentIds.
+  hookTurnStartedAt = new Map<string, number>();
   // When each agent was last interrupted; see HOOK_INTERRUPT_SUPPRESS_MS.
   interruptedAt = new Map<string, number>();
   // Sub-task creations past the concurrency check but not yet in this.tasks,
@@ -151,6 +155,7 @@ export class Coordinator implements CoordinatorInternals {
       tasks: this.tasks,
       controlMap: this.controlMap,
       hookLiveAgentIds: this.hookLiveAgentIds,
+      hookTurnStartedAt: this.hookTurnStartedAt,
       idleResolvers: this.idleResolvers,
       notifications: this.notifications,
       isOrchestrationEnabled: () => this.orchestrationEnabled,

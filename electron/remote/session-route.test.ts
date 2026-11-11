@@ -43,7 +43,12 @@ beforeEach(async () => {
   vi.clearAllMocks();
   orchestrationEnabled = true;
   dispatch.mockResolvedValue({ remaining: 0 });
-  vi.mocked(getAgentMeta).mockReturnValue({ taskId: 'parent', agentId: 'agent', isShell: false });
+  vi.mocked(getAgentMeta).mockReturnValue({
+    taskId: 'parent',
+    agentId: 'agent',
+    command: 'claude',
+    isShell: false,
+  });
   server = await startRemoteServer({
     port: 0,
     host: '127.0.0.1',
@@ -141,6 +146,7 @@ it('rejects a task-mismatched PTY when there is no custom active check', async (
   vi.mocked(getAgentMeta).mockReturnValue({
     taskId: 'different',
     agentId: 'agent',
+    command: 'claude',
     isShell: false,
   });
   expect((await request(token)).status).toBe(403);
