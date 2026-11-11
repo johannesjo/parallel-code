@@ -125,7 +125,7 @@
   "TaskScreensProgress": "task_screens_progress",
   "SetMinimaxApiKey": "set_minimax_api_key",
   "SetProjectAgentEnv": "set_project_agent_env",
-  "SetProjectTeardownScript": "set_project_teardown_script",
+  "SetProjectWorktreeSettings": "set_project_worktree_settings",
   "ListCodexModels": "list_codex_models",
   "CheckDockerAvailable": "check_docker_available",
   "CheckDockerImageExists": "check_docker_image_exists",

@@ -24,7 +24,7 @@ import {
 } from './pty.js';
 import { loadEnvFile } from './env-file.js';
 import { projectAgentEnv, setProjectAgentEnv } from './project-env.js';
-import { setProjectTeardownScript } from './project-teardown.js';
+import { setProjectWorktreeSettings } from './project-worktree.js';
 import { getResourceSnapshot } from './resources.js';
 import { editorLineArgs, spawnDetached, validateEditorCommand } from './open-file.js';
 import { isExecutablePath } from '../shared/executable-path.js';
@@ -1585,9 +1585,9 @@ export function registerAllHandlers(win: BrowserWindow): void {
     setProjectAgentEnv(args.projectId, args.env);
   });
 
-  ipcMain.handle(IPC.SetProjectTeardownScript, (_e, args) => {
+  ipcMain.handle(IPC.SetProjectWorktreeSettings, (_e, args) => {
     assertString(args.projectId, 'projectId');
-    setProjectTeardownScript(args.projectId, args.script);
+    setProjectWorktreeSettings(args.projectId, args);
   });
 
   ipcMain.handle(IPC.SetMinimaxApiKey, (_e, args) => {

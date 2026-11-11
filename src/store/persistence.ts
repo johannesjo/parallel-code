@@ -33,7 +33,7 @@ import {
   randomPastelColor,
   sortProjects,
   syncProjectAgentEnv,
-  syncProjectTeardownScript,
+  syncProjectWorktreeSettings,
 } from './projects';
 import { sanitizeEnvVars } from '../../electron/shared/env-vars';
 import { markAgentSpawned } from './taskStatus';
@@ -980,7 +980,7 @@ export async function loadState(): Promise<void> {
     }).catch((error: unknown) => console.warn('Could not restore project permissions:', error));
     // Before store insertion too: terminals spawn as soon as their tasks mount.
     await syncProjectAgentEnv(project.id, project.agentEnv);
-    await syncProjectTeardownScript(project.id, project.worktreeTeardownScript);
+    await syncProjectWorktreeSettings(project.id, project);
   }
   const detachedRestores: string[] = [];
   for (const task of Object.values(raw.tasks)) {

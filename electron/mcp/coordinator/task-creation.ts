@@ -17,6 +17,7 @@ import { buildTaskMcpConfig, buildTaskMcpLaunchArgs } from './mcp-config.js';
 import type { CoordinatorInternals } from './internals.js';
 import { INITIAL_PROMPT_READY_DELAY_MS } from './prompts.js';
 import { createTask as createBackendTask, deleteTask } from '../../ipc/tasks.js';
+import { projectWorktreeDirs } from '../../ipc/project-worktree.js';
 import {
   getSkipPermissionsArgs,
   stripPermissionBypassArgs,
@@ -188,13 +189,15 @@ async function createTaskUnchecked(
   await assertLaunch();
   // Keep the integration branch separate from the immutable creation snapshot.
   // Create worktree + branch via existing backend
+  const { symlinkDirs, copyDirs } = projectWorktreeDirs(projId);
   const result = await createBackendTask(
     opts.name,
     root,
-    ['.claude', 'node_modules'],
+    symlinkDirs,
     'task',
     baseBranch,
     startPoint,
+    copyDirs,
   );
 
   // Re-check after async gap — deregisterCoordinator may have run while we awaited.

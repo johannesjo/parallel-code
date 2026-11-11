@@ -19,7 +19,7 @@ import {
   mockWriteToAgent,
 } from './coordinator-test-harness.js';
 import { setProjectAgentEnv } from '../ipc/project-env.js';
-import { setProjectTeardownScript } from '../ipc/project-teardown.js';
+import { setProjectWorktreeSettings } from '../ipc/project-worktree.js';
 
 const { Coordinator } = await setupCoordinatorHarness();
 type TestCoordinator = InstanceType<typeof Coordinator>;
@@ -538,11 +538,11 @@ describe('cleanup', () => {
 
   describe("with the project's teardown script", () => {
     beforeEach(() => {
-      setProjectTeardownScript('proj-1', 'docker compose down');
+      setProjectWorktreeSettings('proj-1', { teardownScript: 'docker compose down' });
       setProjectAgentEnv('proj-1', { COMPOSE_PROJECT_NAME: 'app' });
     });
     afterEach(() => {
-      setProjectTeardownScript('proj-1', undefined);
+      setProjectWorktreeSettings('proj-1', {});
       setProjectAgentEnv('proj-1', undefined);
     });
 

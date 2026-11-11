@@ -32,7 +32,7 @@ import {
   killAgent,
 } from '../ipc/pty.js';
 import { deleteTask } from '../ipc/tasks.js';
-import { projectTeardownOptions } from '../ipc/project-teardown.js';
+import { projectTeardownOptions } from '../ipc/project-worktree.js';
 import type {
   DelegateAssignment,
   DelegationAttempt,

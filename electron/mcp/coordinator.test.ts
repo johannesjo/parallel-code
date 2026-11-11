@@ -6,7 +6,7 @@ import {
   READY_AGENT_FRAME_FIXTURES,
 } from './agent-frame-fixtures.js';
 import { handleMCPToolCall } from './server.js';
-import { setProjectTeardownScript } from '../ipc/project-teardown.js';
+import { setProjectWorktreeSettings } from '../ipc/project-worktree.js';
 import type { MCPClient } from './client.js';
 import {
   getAgentActivitySnapshot,
@@ -1089,6 +1089,30 @@ describe('Coordinator registerCoordinator — idempotency', () => {
     );
   });
 
+  it("brings in the project's saved ignored entries, so a copied node_modules stays isolated", async () => {
+    setProjectWorktreeSettings('proj-1', {
+      includes: [
+        { name: 'node_modules', mode: 'copy' },
+        { name: '.env', mode: 'symlink' },
+      ],
+    });
+    try {
+      coordinator.registerCoordinator('coord-1', 'proj-1');
+      await coordinator.createTask({ name: 'child', prompt: 'do', coordinatorTaskId: 'coord-1' });
+      expect(mockCreateBackendTask).toHaveBeenCalledWith(
+        'child',
+        '/tmp/project',
+        ['.env'],
+        'task',
+        'main',
+        FRESH_UPSTREAM_SHA,
+        ['node_modules'],
+      );
+    } finally {
+      setProjectWorktreeSettings('proj-1', {});
+    }
+  });
+
   it('defaults sub-task baseBranch to the main branch, not the coordinator branch', async () => {
     coordinator.registerCoordinator('coord-1', 'proj-1', {
       branchName: 'task/coordinator-work',
@@ -1100,10 +1124,11 @@ describe('Coordinator registerCoordinator — idempotency', () => {
     expect(mockCreateBackendTask).toHaveBeenCalledWith(
       'child',
       '/tmp/project',
-      ['.claude', 'node_modules'],
+      ['node_modules'],
       'task',
       'main',
       FRESH_UPSTREAM_SHA,
+      [],
     );
     expect(coordinator.getTask('task-1')?.baseBranch).toBe('main');
 
@@ -1621,11 +1646,11 @@ describe('Coordinator land_self', () => {
     vi.mocked(mockDeleteTask).mockResolvedValueOnce({ teardownWarning: 'Teardown timed out.' });
     const projectId = coordinator.getTask('task-1')?.projectId ?? '';
     expect(projectId).not.toBe('');
-    setProjectTeardownScript(projectId, 'docker compose down');
+    setProjectWorktreeSettings(projectId, { teardownScript: 'docker compose down' });
     try {
       await coordinator.landSelf('task-1', { verification, summary: 'done' });
     } finally {
-      setProjectTeardownScript(projectId, undefined);
+      setProjectWorktreeSettings(projectId, {});
     }
     expect(vi.mocked(mockDeleteTask)).toHaveBeenCalledWith(
       expect.objectContaining({ teardownScript: 'docker compose down' }),

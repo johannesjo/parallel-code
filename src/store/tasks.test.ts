@@ -556,6 +556,22 @@ describe('MCP_TaskCreated IPC handler', () => {
     forgetSetupShells(shellIds);
   });
 
+  it("skips the setup terminal for a Docker coordinator's sub-task", () => {
+    // Shells of sub-tasks run on the host, so the setup would miss the container.
+    vi.mocked(getProject).mockReturnValueOnce({
+      id: 'proj-1',
+      path: '/repo',
+      worktreeSetupScript: 'npm ci',
+    } as never);
+    mockTasks['coordinator-1'] = { agentIds: [], shellAgentIds: [], dockerMode: true };
+    try {
+      taskCreatedHandler(baseEvent);
+      expect(mockTasks['sub-task-1'].shellAgentIds).toEqual([]);
+    } finally {
+      delete mockTasks['coordinator-1'];
+    }
+  });
+
   it("forgets the sub-task's setup terminal when the coordinator closes it", () => {
     vi.mocked(getProject).mockReturnValueOnce({
       id: 'proj-1',

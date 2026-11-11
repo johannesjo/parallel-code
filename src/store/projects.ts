@@ -155,7 +155,7 @@ export function removeProject(projectId: string): void {
   forgetGitHubLists(projectId);
   // The main process would otherwise keep a removed project's secrets until restart.
   void syncProjectAgentEnv(projectId, undefined);
-  void syncProjectTeardownScript(projectId, undefined);
+  void syncProjectWorktreeSettings(projectId, undefined);
 }
 
 export function updateProject(
@@ -266,8 +266,11 @@ export function updateProject(
   if (Object.prototype.hasOwnProperty.call(updates, 'agentEnv')) {
     void syncProjectAgentEnv(projectId, updates.agentEnv);
   }
-  if (Object.prototype.hasOwnProperty.call(updates, 'worktreeTeardownScript')) {
-    void syncProjectTeardownScript(projectId, getProject(projectId)?.worktreeTeardownScript);
+  if (
+    Object.prototype.hasOwnProperty.call(updates, 'worktreeTeardownScript') ||
+    Object.prototype.hasOwnProperty.call(updates, 'worktreeIncludes')
+  ) {
+    void syncProjectWorktreeSettings(projectId, getProject(projectId));
   }
 }
 
@@ -284,16 +287,21 @@ export async function syncProjectAgentEnv(
   }
 }
 
-/** Hands the project's teardown script to the main process, which runs it
- *  when a coordinator closes one of its sub-tasks. Never rejects. */
-export async function syncProjectTeardownScript(
+/** Hands the project's teardown script and saved worktree includes to the
+ *  main process, which creates and closes coordinator sub-tasks without asking
+ *  the renderer. A missing project clears them. Never rejects. */
+export async function syncProjectWorktreeSettings(
   projectId: string,
-  script: string | undefined,
+  project: Pick<Project, 'worktreeTeardownScript' | 'worktreeIncludes'> | undefined,
 ): Promise<void> {
   try {
-    await invoke(IPC.SetProjectTeardownScript, { projectId, script: script ?? '' });
+    await invoke(IPC.SetProjectWorktreeSettings, {
+      projectId,
+      teardownScript: project?.worktreeTeardownScript,
+      includes: project?.worktreeIncludes,
+    });
   } catch (error) {
-    console.warn('Could not apply project teardown script:', String(error));
+    console.warn('Could not apply project worktree settings:', String(error));
   }
 }
 

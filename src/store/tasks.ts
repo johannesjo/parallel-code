@@ -1411,7 +1411,10 @@ export function initMCPListeners(): () => void {
       if (created) {
         markAgentSpawned(evt.agentId);
         // Sub-tasks always get a worktree; set it up like a task the user created.
-        startWorktreeSetup(evt.taskId, getProject(evt.projectId));
+        // shortcut: not for a Docker coordinator's sub-tasks — their records carry no
+        // dockerMode, so the setup shell would run on the host instead of the container.
+        if (!store.tasks[evt.coordinatorTaskId]?.dockerMode)
+          startWorktreeSetup(evt.taskId, getProject(evt.projectId));
         rescheduleTaskStatusPolling();
         const projectRoot = getProjectPath(evt.projectId);
         if (projectRoot && evt.prompt)

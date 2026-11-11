@@ -3058,7 +3058,7 @@ describe('project agent env persistence', () => {
     });
   });
 
-  it('hands the teardown script to the main process before tasks restore', async () => {
+  it('hands the worktree settings to the main process before tasks restore', async () => {
     setStore(
       produce((s) => {
         s.tasks = {};
@@ -3067,14 +3067,18 @@ describe('project agent env persistence', () => {
     let tasksAtPush = -1;
     mockInvoke.mockImplementation(async (channel) => {
       if (channel === IPC.LoadAppState)
-        return stateWith({ worktreeTeardownScript: 'docker compose down' });
-      if (channel === IPC.SetProjectTeardownScript) tasksAtPush = Object.keys(store.tasks).length;
+        return stateWith({
+          worktreeTeardownScript: 'docker compose down',
+          worktreeIncludes: [{ name: 'node_modules', mode: 'copy' }],
+        });
+      if (channel === IPC.SetProjectWorktreeSettings) tasksAtPush = Object.keys(store.tasks).length;
     });
     await loadState();
     expect(tasksAtPush).toBe(0);
-    expect(mockInvoke).toHaveBeenCalledWith(IPC.SetProjectTeardownScript, {
+    expect(mockInvoke).toHaveBeenCalledWith(IPC.SetProjectWorktreeSettings, {
       projectId: 'project-1',
-      script: 'docker compose down',
+      teardownScript: 'docker compose down',
+      includes: [{ name: 'node_modules', mode: 'copy' }],
     });
   });
 });

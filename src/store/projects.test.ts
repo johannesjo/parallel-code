@@ -299,21 +299,30 @@ describe('updateProject', () => {
     expect(store.projects[0]?.icon).toBeUndefined();
   });
 
-  it('hands a saved or cleared teardown script to the main process', () => {
+  it('hands saved or cleared worktree settings to the main process', () => {
     setStore('projects', [{ id: 'p1', name: 'Project', path: '/repo', color: 'hsl(0, 70%, 75%)' }]);
     vi.mocked(invoke).mockResolvedValue(undefined);
 
     updateProject('p1', { worktreeTeardownScript: 'docker compose down' });
-    expect(invoke).toHaveBeenCalledWith(IPC.SetProjectTeardownScript, {
+    expect(invoke).toHaveBeenCalledWith(IPC.SetProjectWorktreeSettings, {
       projectId: 'p1',
-      script: 'docker compose down',
+      teardownScript: 'docker compose down',
+      includes: undefined,
+    });
+
+    updateProject('p1', { worktreeIncludes: [{ name: 'node_modules', mode: 'copy' }] });
+    expect(invoke).toHaveBeenLastCalledWith(IPC.SetProjectWorktreeSettings, {
+      projectId: 'p1',
+      teardownScript: 'docker compose down',
+      includes: [{ name: 'node_modules', mode: 'copy' }],
     });
 
     // Whitespace-only is stored as no script, and that is what is pushed.
     updateProject('p1', { worktreeTeardownScript: '   ' });
-    expect(invoke).toHaveBeenLastCalledWith(IPC.SetProjectTeardownScript, {
+    expect(invoke).toHaveBeenLastCalledWith(IPC.SetProjectWorktreeSettings, {
       projectId: 'p1',
-      script: '',
+      teardownScript: undefined,
+      includes: [{ name: 'node_modules', mode: 'copy' }],
     });
   });
 });

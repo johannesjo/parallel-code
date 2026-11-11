@@ -12,7 +12,7 @@ import type {
   TaskAuthorityInput,
 } from '../shared/delegation-types.js';
 import { DEFAULT_INDEPENDENT_TASKS_PER_CREATOR } from '../shared/coordinator-limits.js';
-import { setProjectTeardownScript } from '../ipc/project-teardown.js';
+import { setProjectWorktreeSettings } from '../ipc/project-worktree.js';
 
 const mocks = vi.hoisted(() => ({
   git: vi.fn(),
@@ -1669,7 +1669,7 @@ describe('backend detach normalization', () => {
   });
 
   it("runs the project's teardown script when it deletes the parent's worktree and returns its warning", async () => {
-    setProjectTeardownScript('project', 'docker compose down');
+    setProjectWorktreeSettings('project', { teardownScript: 'docker compose down' });
     try {
       await register('parent');
       mocks.remove.mockResolvedValueOnce({ teardownWarning: 'Teardown timed out.' });
@@ -1679,7 +1679,7 @@ describe('backend detach normalization', () => {
       );
       expect(result.teardownWarning).toBe('Teardown timed out.');
     } finally {
-      setProjectTeardownScript('project', undefined);
+      setProjectWorktreeSettings('project', {});
     }
   });
 

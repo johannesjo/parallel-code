@@ -105,6 +105,7 @@ describe('ordinary delegation lifecycle', () => {
       'task',
       'main',
       FRESH_UPSTREAM_SHA,
+      expect.any(Array),
     );
     expect(mockSpawnAgent).toHaveBeenCalledWith(
       mockNotify,
@@ -151,6 +152,7 @@ describe('ordinary delegation lifecycle', () => {
       'task',
       'parent',
       targetSha,
+      expect.any(Array),
     );
     await expect(create({ snapshotCommit: sha })).rejects.toThrow('concurrency');
   });

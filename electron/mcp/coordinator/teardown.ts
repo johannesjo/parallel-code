@@ -5,7 +5,7 @@ import { restoreCoordinatorMcpJson, unlinkMcpConfigFile } from './mcp-config.js'
 import type { CoordinatorInternals } from './internals.js';
 import { type MergedLines } from './landing.js';
 import { deleteTask } from '../../ipc/tasks.js';
-import { projectTeardownOptions } from '../../ipc/project-teardown.js';
+import { projectTeardownOptions } from '../../ipc/project-worktree.js';
 import { killAgent } from '../../ipc/pty.js';
 import { verificationRunner } from '../../ipc/verify.js';
 import type { CoordinatedTask } from '../types.js';
