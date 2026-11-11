@@ -702,6 +702,57 @@ describe('FinishDialog merge blocker', () => {
   });
 });
 
+describe('FinishDialog with the branch already on the base', () => {
+  it('says nothing is left to merge and offers to close the task', async () => {
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus)
+        return {
+          conflicting_files: [],
+          main_ahead_count: 0,
+          already_landed: true,
+          remote: 'unpushed',
+          target_uncommitted: { path: '/repo', files: ['a.ts'], overlap: ['a.ts'] },
+        };
+      return { current_branch: 'task/parent', has_committed_changes: true };
+    });
+    const handlers = mount();
+    await flush();
+    expect(document.body.textContent).toContain(
+      'Already in main: every commit on this branch is there, so nothing is left to merge.',
+    );
+    // No merge runs, so the base checkout's changes block nothing.
+    expect(document.querySelector('[data-testid="target-uncommitted"]')).toBeNull();
+    expect(document.body.textContent).not.toContain('Squash commits');
+    // Pushing or opening a PR for work already in the base achieves nothing.
+    expect(document.querySelector('section[aria-label="Pull request"]')).toBeNull();
+    expect(
+      [...document.querySelectorAll('button')].some((b) => b.textContent?.trim() === 'Push'),
+    ).toBe(false);
+    expect(confirmButton()?.textContent).toBe('Close task');
+    expect(confirmButton()?.disabled).toBe(false);
+    confirmButton()?.click();
+    expect(mergeTask).not.toHaveBeenCalled();
+    expect(handlers.onCloseTask).toHaveBeenCalled();
+  });
+});
+
+describe('FinishDialog with landed commits on another branch', () => {
+  it("does not call the task landed while the worktree is off the task's branch", async () => {
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus)
+        return { conflicting_files: [], main_ahead_count: 0, already_landed: true };
+      return { current_branch: 'task/other', has_committed_changes: true };
+    });
+    mount();
+    await flush();
+    expect(document.body.textContent).not.toContain('nothing is left to merge');
+    expect(confirmButton()?.textContent).not.toBe('Close task');
+    expect(confirmButton()?.disabled).toBe(true);
+  });
+});
+
 describe('FinishDialog readiness tip', () => {
   function mountWithTip(options: { task?: Task } = { task: reported() }) {
     vi.useFakeTimers();

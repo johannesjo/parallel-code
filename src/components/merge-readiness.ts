@@ -78,6 +78,15 @@ function mergeSafetyCheck(input: MergeReadinessInput): MergeReadinessCheck {
       detail: `${countLabel(merge.conflicting_files.length, 'conflicting file')} must be resolved.`,
     };
   }
+  // Blocked rather than passed: a merge would only replay work the base has, and
+  // could still conflict where the base changed those lines since.
+  if (merge?.already_landed) {
+    return {
+      label: 'Merge safety',
+      status: 'blocked',
+      detail: `Already in ${merge.base_branch}; nothing is left to merge.`,
+    };
+  }
   if (worktree && !worktree.has_committed_changes) {
     return {
       label: 'Merge safety',

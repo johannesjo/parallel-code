@@ -102,6 +102,22 @@ export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean
           </Show>
         </div>
       </Show>
+      <Show when={props.state.alreadyLanded()}>
+        <div
+          role="status"
+          style={{
+            // Nothing needs attention: the work is in, closing the task is all that is left.
+            padding: '8px 12px',
+            'border-radius': 'var(--radius-md)',
+            border: `1px solid ${theme.border}`,
+            'margin-bottom': '12px',
+            'font-size': '13px',
+          }}
+        >
+          Already in {props.state.baseBranchName()}: every commit on this branch is there, so
+          nothing is left to merge.
+        </div>
+      </Show>
       <Show when={props.state.worktreeStatus()?.has_uncommitted_changes}>
         <div
           style={{
@@ -113,7 +129,8 @@ export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean
           Uncommitted changes in the worktree are not part of this merge.
         </div>
       </Show>
-      <Show when={props.state.targetUncommitted()}>
+      {/* No merge runs once the branch has landed, so the base checkout's changes do not matter. */}
+      <Show when={!props.state.alreadyLanded() && props.state.targetUncommitted()}>
         {(target) => (
           <div
             data-testid="target-uncommitted"

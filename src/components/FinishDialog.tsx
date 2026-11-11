@@ -128,6 +128,9 @@ export function FinishDialog(props: FinishDialogProps) {
     headSha: () => (merge.worktreeStatus.error ? null : merge.worktreeStatus()?.head_sha),
   });
   const prMerging = () => pr.busy() === 'merge';
+  // Merged on GitHub, or the commits reached the base another way, such as a
+  // cherry-pick: either way closing the task is all that is left.
+  const landed = () => pr.mode() === 'merged' || (pr.mode() === 'local' && merge.alreadyLanded());
   // A PR merges on GitHub, so a base that moved on locally matters only where
   // it conflicts or GitHub asks for the branch to be updated.
   const showBaseSync = () => {
@@ -170,7 +173,9 @@ export function FinishDialog(props: FinishDialogProps) {
   const pushFirst = () => pr.mode() === 'pr' && pr.headDiffers();
   // A local merge uses local commits, so pushing is only on offer, never required.
   const offerPush = () =>
-    pr.mode() === 'local' && (remote() === 'unpushed' || remote() === 'differs');
+    pr.mode() === 'local' &&
+    !merge.alreadyLanded() &&
+    (remote() === 'unpushed' || remote() === 'differs');
   // Undefined while loading; a loaded status without a remote means there is no origin.
   const createPrRemote = () =>
     merge.mergeStatus.loading || merge.mergeStatus.error || !merge.mergeStatus()
@@ -192,7 +197,7 @@ export function FinishDialog(props: FinishDialogProps) {
 
   const confirmLabel = () => {
     if (pushFirst()) return push.pushing() ? 'Pushing…' : 'Push';
-    if (pr.mode() === 'merged') return 'Close task';
+    if (landed()) return 'Close task';
     if (merge.merging() || prMerging()) return 'Merging...';
     const method = pr.method();
     if (pr.mode() === 'pr') {
@@ -211,12 +216,12 @@ export function FinishDialog(props: FinishDialogProps) {
   const confirmDisabled = () => {
     if (push.pushing()) return true;
     if (pushFirst()) return pushDisabled() || !!pushBlocker();
-    if (pr.mode() === 'merged') return false;
+    if (landed()) return false;
     if (pr.mode() === 'pr') return !!pr.busy() || !!pr.blocker();
     return !!pr.busy() || !merge.canMerge();
   };
   const footerNote = () => {
-    if (merge.merging() || prMerging() || pr.mode() === 'merged') return undefined;
+    if (merge.merging() || prMerging() || landed()) return undefined;
     if (pushFirst()) return pushBlocker() ?? 'The PR is missing your latest commits.';
     if (pr.mode() !== 'pr') return merge.mergeBlocker();
     return (
@@ -269,7 +274,7 @@ export function FinishDialog(props: FinishDialogProps) {
   };
   const confirm = () => {
     if (pushFirst()) void push.start();
-    else if (pr.mode() === 'merged') {
+    else if (landed()) {
       props.onClose();
       props.onCloseTask();
     } else if (pr.mode() === 'pr') void mergePr();
@@ -432,11 +437,11 @@ export function FinishDialog(props: FinishDialogProps) {
               {retroBox()}
             </FollowUps>
             {/* Without a PR the section only offers one, where the PR shows once it exists;
-                without an origin, local merging needs no word on PRs. */}
+                without an origin, or with the work on the base already, it needs no word on PRs. */}
             <Show
               when={taskPrUrl(props.task)}
               fallback={
-                <Show when={remote()}>
+                <Show when={remote() && !merge.alreadyLanded()}>
                   <CreatePrEntry
                     disabled={push.pushing() || merge.merging()}
                     onCreate={() => setCreatePrOpen(true)}
@@ -461,6 +466,7 @@ export function FinishDialog(props: FinishDialogProps) {
             <Show
               when={
                 pr.mode() === 'local' &&
+                !merge.alreadyLanded() &&
                 !(merge.worktreeStatus() && !merge.hasCommittedChangesToMerge())
               }
             >
@@ -492,11 +498,7 @@ export function FinishDialog(props: FinishDialogProps) {
         confirmLoading={merge.merging() || prMerging() || (pushFirst() && push.pushing())}
         confirmLabel={confirmLabel()}
         confirmIcon={
-          pushFirst() ? (
-            <UploadIcon size={14} />
-          ) : pr.mode() === 'merged' ? undefined : (
-            <GitMergeIcon size={14} />
-          )
+          pushFirst() ? <UploadIcon size={14} /> : landed() ? undefined : <GitMergeIcon size={14} />
         }
         extraActions={
           <>

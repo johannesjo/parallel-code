@@ -125,9 +125,14 @@ export interface ImportableWorktree {
 }
 
 export interface MergeStatus {
+  /** 0 when `already_landed`: nothing the base gained needs bringing in. */
   main_ahead_count: number;
   conflicting_files: string[];
   base_branch: string;
+  /** Every commit of the branch is on the base already, e.g. cherry-picked
+   *  there, so there is nothing left to merge. Absent otherwise and from
+   *  older senders. */
+  already_landed?: boolean;
   /** Files both this branch and the base's newer commits changed, without a
    *  conflict. The branch's checks never ran against those base changes.
    *  Absent from older senders. */

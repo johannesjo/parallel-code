@@ -1576,8 +1576,10 @@ describe('checkMergeStatus (cherry-pick filtered ahead count)', () => {
 
     await checkMergeStatus(uniqueWorktreePath(), 'main');
 
-    const revListCall = calls.find((a) => a[0] === 'rev-list' && a.includes('--count'));
+    // The ahead count, not the landed check's count of merge commits.
+    const revListCall = calls.find((a) => a[0] === 'rev-list' && a.includes('HEAD...main'));
     expect(revListCall).toBeDefined();
+    expect(revListCall).toContain('--count');
     expect(revListCall).toContain('--cherry-pick');
     expect(revListCall).toContain('--right-only');
     expect(revListCall).toContain('HEAD...main');

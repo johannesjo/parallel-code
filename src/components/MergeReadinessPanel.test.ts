@@ -68,6 +68,13 @@ describe('buildMergeReadiness', () => {
       detail: '1 conflicting file must be resolved.',
     },
     {
+      name: 'a branch already on the base',
+      overrides: {
+        mergeStatus: { ...cleanMergeStatus, already_landed: true },
+      },
+      detail: 'Already in main; nothing is left to merge.',
+    },
+    {
       name: 'a mismatched branch',
       overrides: {
         worktreeStatus: { ...cleanWorktreeStatus, current_branch: 'task/other' },

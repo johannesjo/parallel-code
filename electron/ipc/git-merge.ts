@@ -410,8 +410,42 @@ async function mergeTargetChanges(
   }
 }
 
+/**
+ * Every commit of the branch has a patch-equivalent on the base, e.g. after a
+ * cherry-pick. Merging it then could only conflict where the base changed
+ * those lines since. A pick edited while resolving a conflict, or squashed,
+ * has another patch-id and does not count.
+ */
+async function isAlreadyLanded(worktreePath: string, mainBranch: string): Promise<boolean> {
+  const git = (args: string[]) => exec('git', args, { cwd: worktreePath });
+  try {
+    const [cherry, merges] = await Promise.all([
+      // Marks each commit found on the base with `-`; skips merge commits.
+      git(['cherry', mainBranch, 'HEAD']),
+      git(['rev-list', '--count', '--merges', `${mainBranch}..HEAD`]),
+    ]);
+    // A merge commit can carry work of its own, such as a conflict resolution,
+    // that no patch-id check sees; closing the task could then lose it.
+    if (parseInt(merges.stdout.trim(), 10) !== 0) return false;
+    const lines = cherry.stdout.split('\n').filter(Boolean);
+    return lines.length > 0 && lines.every((line) => line.startsWith('-'));
+  } catch (err) {
+    // Not landed is today's status: the dialog stays as it was.
+    logDebug('git', `isAlreadyLanded failed for ${worktreePath}: ${err}`);
+    return false;
+  }
+}
+
 async function checkBaseStatus(worktreePath: string, baseBranch?: string): Promise<MergeStatus> {
   const mainBranch = baseBranch ?? (await detectMainBranch(worktreePath));
+  if (await isAlreadyLanded(worktreePath, mainBranch)) {
+    return {
+      main_ahead_count: 0,
+      conflicting_files: [],
+      base_branch: mainBranch,
+      already_landed: true,
+    };
+  }
 
   // Count main commits not in HEAD, excluding patch-equivalents already
   // applied via rebase/cherry-pick. Mirrors the `--cherry-pick --right-only`

@@ -93,6 +93,10 @@ export function createMergeState(props: MergeStateProps) {
 
   const commitCount = () => (branchLog() ?? '').split('\n').filter((line) => line.trim()).length;
   const hasConflicts = () => (mergeStatus()?.conflicting_files.length ?? 0) > 0;
+  /** The branch's commits are on the base already, e.g. cherry-picked there.
+   *  The check ran on the worktree's HEAD, which says nothing about the task's
+   *  own branch while another one is checked out. */
+  const alreadyLanded = () => mergeStatus()?.already_landed === true && !hasBranchMismatch();
   /** Uncommitted changes in the base checkout; the merge sets them aside. */
   const targetUncommitted = () => mergeStatus()?.target_uncommitted;
   /** The task's uncommitted files the base changed too: they block bringing it in. */
@@ -266,6 +270,7 @@ export function createMergeState(props: MergeStateProps) {
     refetchAll,
     commitCount,
     hasConflicts,
+    alreadyLanded,
     targetUncommitted,
     uncommittedOverlap,
     hasCommittedChangesToMerge,
