@@ -204,10 +204,14 @@ export function createSubagentGate(): SubagentGate {
     const previous = launches.get(launchId);
     const update = mapped ?? ownerStopped(previous?.prompt, payload);
     const work = track(previous, payload);
+    // Only sub-agent events carry an agent id; anything else from the lead means
+    // it is working again, and Esc can interrupt it.
+    const leadIdle = work.leadIdle && (!update || field(payload, 'agent_id') !== undefined);
     if (work.open.size === 0) {
       if (work.monitors.length === 0) launches.delete(launchId);
       else launches.set(launchId, settled(work.monitors));
-      return update;
+      // The last sub-agent's stop can end its own dialog while the lead still idles.
+      return update && leadIdle ? { ...update, background: true } : update;
     }
     // The lead's turn end becomes a hold that keeps its reply for the card. A
     // failed turn is not held: its error needs you more than the work it left.
@@ -217,9 +221,6 @@ export function createSubagentGate(): SubagentGate {
       launches.set(launchId, { ...work, leadIdle: true, leadMessage, prompt: undefined });
       return held({ ...work, leadMessage });
     }
-    // Only sub-agent events carry an agent id; anything else from the lead means
-    // it is working again, and Esc can interrupt it.
-    const leadIdle = work.leadIdle && (!update || field(payload, 'agent_id') !== undefined);
     const prompt = promptAfter(work.prompt, update);
     launches.set(launchId, { ...work, leadIdle, prompt });
     if (!leadIdle) return update;

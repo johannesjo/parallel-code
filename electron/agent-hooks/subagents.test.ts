@@ -57,6 +57,25 @@ describe('createSubagentGate', () => {
     expect(out[2]).toMatchObject({ event: 'SubagentRunning', lastAssistantMessage: 'started' });
   });
 
+  it("ends a background sub-agent's dialog when it stops, still flagged while the lead idles", () => {
+    // A denied call sends no result, so the sub-agent's stop is all that ends its dialog.
+    const call = { ...bash('a1'), tool_use_id: 't1', tool_input: { command: 'curl x' } };
+    const ask = {
+      hook_event_name: 'PermissionRequest',
+      agent_id: 'a1',
+      tool_name: 'Bash',
+      tool_input: { command: 'curl x' },
+    };
+    const out = replay([start('a1'), turnEnd, call, ask, stop('a1')]);
+    expect(out[3]).toMatchObject({ state: 'waiting', toolUseId: 't1', background: true });
+    // Esc at the idle lead's prompt must not read as an interrupt here either.
+    expect(out[4]).toMatchObject({ state: 'working', event: 'SubagentStop', background: true });
+    // While the lead still works, Esc must still interrupt it.
+    const live = replay([start('a1'), call, ask, stop('a1')]);
+    expect(live[3]).toMatchObject({ state: 'working', event: 'SubagentStop' });
+    expect(live[3]?.background).toBeUndefined();
+  });
+
   it('keeps sub-agents of one launch from holding another open', () => {
     const gate = createSubagentGate();
     gate('launch-1', start('a1'), null);
