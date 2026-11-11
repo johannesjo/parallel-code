@@ -60,6 +60,8 @@ const LAST_MESSAGE_MAX_CHARS = 2000;
 /** Notification types that mean Claude is blocked on the human. */
 const WAITING_NOTIFICATION_TYPES = new Set([
   'permission_prompt',
+  // In a normal session this is the session's own dialog (auto mode, teammate
+  // setup); only Claude's agent view sends it about another session.
   'agent_needs_input',
   'elicitation_dialog',
   'elicitation_url_dialog',
