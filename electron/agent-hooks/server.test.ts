@@ -4,7 +4,11 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startAgentHookServer, type AgentHookServer } from './server.js';
 import { registerAgentLaunch, retireAgentLaunch } from './observations.js';
-import type { AgentHookEventPayload } from './status.js';
+import {
+  transitionAgentHookStatus,
+  type AgentHookEventPayload,
+  type ReducedAgentHookStatus,
+} from './status.js';
 
 function tokenFrom(dir: string): string {
   const match = fs.readFileSync(path.join(dir, 'endpoint.env'), 'utf8').match(/TOKEN=(.+)/);
@@ -175,6 +179,121 @@ describe('startAgentHookServer', () => {
       ['done', false],
     ]);
     expect(events[1]?.lastAssistantMessage).toBe('All done');
+  });
+
+  /** Posts each payload for agent-1 and returns the reduced status after it,
+   *  as `state` or, while waiting, `waiting prompt toolUseId`. */
+  async function statesAfter(payloads: Record<string, unknown>[]): Promise<string[]> {
+    const auth = {
+      'x-parallel-code-hook-token': tokenFrom(dir),
+      'x-parallel-code-agent-id': 'agent-1',
+      'x-parallel-code-task-id': 'task-1',
+      'x-parallel-code-launch-id': 'launch-1',
+    };
+    let status: ReducedAgentHookStatus | undefined;
+    const states: string[] = [];
+    for (const payload of payloads) {
+      const seen = events.length;
+      await post(JSON.stringify(payload), auth);
+      for (const event of events.slice(seen)) status = transitionAgentHookStatus(status, event);
+      states.push(
+        status?.state === 'waiting'
+          ? `waiting ${status.prompt} ${status.toolUseId}`
+          : (status?.state ?? 'none'),
+      );
+    }
+    return states;
+  }
+  const prompt = { hook_event_name: 'UserPromptSubmit', prompt: 'go' };
+  const sub = (agentId?: string) => (agentId ? { agent_id: agentId } : {});
+  const call = (id: string, tool: string, input: unknown, agentId?: string) => ({
+    hook_event_name: 'PreToolUse',
+    tool_name: tool,
+    tool_input: input,
+    tool_use_id: id,
+    ...sub(agentId),
+  });
+  const done = (id: string, tool: string, agentId?: string) => ({
+    hook_event_name: 'PostToolUse',
+    tool_name: tool,
+    tool_use_id: id,
+    ...sub(agentId),
+  });
+  // As Claude Code sends it: no tool_use_id.
+  const ask = (tool: string, input: unknown, agentId?: string) => ({
+    hook_event_name: 'PermissionRequest',
+    tool_name: tool,
+    tool_input: input,
+    ...sub(agentId),
+  });
+
+  it("keeps a permission dialog open through a parallel call's result", async () => {
+    expect(
+      await statesAfter([
+        prompt,
+        call('b1', 'Bash', { command: 'rm -rf dist' }),
+        call('b2', 'Bash', { command: 'npm test' }),
+        ask('Bash', { command: 'rm -rf dist' }),
+        done('b2', 'Bash'),
+        done('b1', 'Bash'),
+      ]),
+    ).toEqual([
+      'working',
+      'working',
+      'working',
+      'waiting permission b1',
+      'waiting permission b1',
+      'working',
+    ]);
+  });
+
+  it("keeps a sub-agent's permission dialog open through another sub-agent's tool calls", async () => {
+    const explore = (id: string) => ({
+      hook_event_name: 'SubagentStart',
+      agent_id: id,
+      agent_type: 'Explore',
+    });
+    expect(
+      await statesAfter([
+        prompt,
+        explore('a1'),
+        explore('a2'),
+        call('t1', 'Bash', { command: 'git status' }, 'a1'),
+        ask('Bash', { command: 'git status' }, 'a1'),
+        call('t2', 'Read', { file_path: '/w/a.ts' }, 'a2'),
+        { hook_event_name: 'Notification', notification_type: 'permission_prompt' },
+        done('t2', 'Read', 'a2'),
+        done('t1', 'Bash', 'a1'),
+      ]),
+    ).toEqual([
+      'working',
+      'working',
+      'working',
+      'working',
+      'waiting permission t1',
+      'waiting permission t1',
+      'waiting permission t1',
+      'waiting permission t1',
+      'working',
+    ]);
+  });
+
+  it("ends a sub-agent's permission dialog when that sub-agent stops, as a denied call has no result", async () => {
+    const lifecycle = (event: string) => ({
+      hook_event_name: event,
+      agent_id: 'a1',
+      agent_type: 'Explore',
+    });
+    expect(
+      await statesAfter([
+        prompt,
+        lifecycle('SubagentStart'),
+        call('t1', 'Bash', { command: 'rm -rf dist' }, 'a1'),
+        ask('Bash', { command: 'rm -rf dist' }, 'a1'),
+        lifecycle('SubagentStop'),
+        call('l1', 'Read', { file_path: '/w/a.ts' }),
+      ]),
+    ).toEqual(['working', 'working', 'working', 'waiting permission t1', 'working', 'working']);
   });
 
   it('rejects a missing or wrong token without leaking anything', async () => {

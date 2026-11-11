@@ -23,5 +23,8 @@ export function mapCodexHookPayload(payload: unknown): AgentHookStatusUpdate | n
   // sub-agents like `subagents.ts` does once their event order is recorded.
   if (typeof event === 'string' && SUBAGENT_TOOL_EVENTS.has(event) && body.agent_id !== undefined)
     return null;
-  return mapClaudeHookPayload(payload);
+  const update = mapClaudeHookPayload(payload);
+  // With those calls dropped, nothing could end a wait owned by the sub-agent,
+  // so its wait stays ownerless and any tool activity may end it.
+  return update?.subagentId ? { ...update, subagentId: undefined } : update;
 }

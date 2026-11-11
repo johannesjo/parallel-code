@@ -24,6 +24,7 @@ import { mapCodexHookPayload } from './codex-status.js';
 import { isCurrentAgentLaunch } from './observations.js';
 import { mapClaudeHookPayload, type AgentHookEventPayload } from './status.js';
 import { createSubagentGate } from './subagents.js';
+import { createToolCallMatcher } from './tool-calls.js';
 import { readUserStatusLine } from './user-status-line.js';
 import { warn as logWarn, errMessage } from '../log.js';
 
@@ -162,6 +163,7 @@ export function startAgentHookServer(options: AgentHookServerOptions): Promise<A
   const token = randomUUID();
   const now = options.now ?? Date.now;
   const gateSubagents = createSubagentGate();
+  const matchToolCalls = createToolCallMatcher();
   const server = http.createServer(async (req, res) => {
     if (req.method !== 'POST' || !ROUTES.has(req.url ?? '')) {
       res.writeHead(404).end();
@@ -188,7 +190,11 @@ export function startAgentHookServer(options: AgentHookServerOptions): Promise<A
     // The gate follows Claude Code's background work, which Codex does not report.
     const update = fromCodex
       ? mapCodexHookPayload(payload)
-      : gateSubagents(launchId, payload, mapClaudeHookPayload(payload));
+      : gateSubagents(
+          launchId,
+          payload,
+          matchToolCalls(launchId, payload, mapClaudeHookPayload(payload)),
+        );
     if (!update) return;
     const event = { ...update, agentId, taskId, launchId, at: now() };
     options.onEvent(event);

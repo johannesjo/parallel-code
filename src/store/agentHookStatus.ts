@@ -35,6 +35,8 @@ export interface AgentHookStatus {
   toolName?: string;
   /** The tool call a `waiting` dialog belongs to; kept across same-state events. */
   toolUseId?: string;
+  /** The sub-agent whose dialog this is, or whose event; absent for the lead. */
+  subagentId?: string;
   detail?: string;
   lastAssistantMessage?: string;
   /** The turn ended while the task was not on screen and nobody has looked since. */

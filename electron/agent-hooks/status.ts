@@ -26,6 +26,9 @@ export interface AgentHookStatusUpdate {
   toolName?: string;
   /** Claude's id for that tool call; lets a result be matched to the prompt it ends. */
   toolUseId?: string;
+  /** The sub-agent that sent the event (Claude's `agent_id`); absent for the lead.
+   *  Keeps one agent's tool activity from ending another agent's dialog. */
+  subagentId?: string;
   /** Short human summary — a command, a file path, or the question asked. */
   detail?: string;
   /** Claude's final text for the turn; only present on turn boundaries. */
@@ -101,9 +104,14 @@ export function isAgentHookEventPayload(value: unknown): value is AgentHookEvent
     (v.prompt === undefined || v.prompt === 'permission' || v.prompt === 'question') &&
     (v.background === undefined || typeof v.background === 'boolean') &&
     (v.todos === undefined || isPlanSteps(v.todos)) &&
-    ['toolName', 'toolUseId', 'detail', 'lastAssistantMessage', 'failedCommand'].every(
-      (key) => v[key] === undefined || typeof v[key] === 'string',
-    )
+    [
+      'toolName',
+      'toolUseId',
+      'subagentId',
+      'detail',
+      'lastAssistantMessage',
+      'failedCommand',
+    ].every((key) => v[key] === undefined || typeof v[key] === 'string')
   );
 }
 
@@ -184,24 +192,39 @@ function summarizeQuestions(toolInput: unknown): string | undefined {
   return clip(asString(first?.question), DETAIL_MAX_CHARS);
 }
 
-function mapPreToolUse(body: Record<string, unknown>, toolName: string | undefined) {
-  const event = 'PreToolUse';
+/** The wait a question or plan-approval tool means, whichever of its
+ *  PreToolUse and PermissionRequest reports it; undefined for other tools. */
+function mapToolWait(
+  event: string,
+  body: Record<string, unknown>,
+  toolName: string | undefined,
+): AgentHookStatusUpdate | undefined {
   const toolUseId = asString(body.tool_use_id);
   if (isAskUserQuestionTool(toolName)) {
     const detail = summarizeQuestions(body.tool_input);
-    return { state: 'waiting', event, toolName, toolUseId, detail, prompt: 'question' } as const;
+    return { state: 'waiting', event, toolName, toolUseId, detail, prompt: 'question' };
   }
   if (isPlanApprovalTool(toolName)) {
     const detail = 'Plan ready for approval';
-    return { state: 'waiting', event, toolName, toolUseId, detail, prompt: 'permission' } as const;
+    return { state: 'waiting', event, toolName, toolUseId, detail, prompt: 'permission' };
   }
-  return {
-    state: 'working',
-    event,
-    toolName,
-    toolUseId,
-    detail: summarizeToolInput(body.tool_input),
-  } as const;
+  return undefined;
+}
+
+function mapPreToolUse(
+  body: Record<string, unknown>,
+  toolName: string | undefined,
+): AgentHookStatusUpdate {
+  const event = 'PreToolUse';
+  return (
+    mapToolWait(event, body, toolName) ?? {
+      state: 'working',
+      event,
+      toolName,
+      toolUseId: asString(body.tool_use_id),
+      detail: summarizeToolInput(body.tool_input),
+    }
+  );
 }
 
 function mapNotification(body: Record<string, unknown>): AgentHookStatusUpdate | null {
@@ -224,7 +247,15 @@ export function mapClaudeHookPayload(payload: unknown): AgentHookStatusUpdate | 
   const body = asRecord(payload);
   const event = asString(body?.hook_event_name);
   if (!body || !event) return null;
+  const update = mapClaudeEvent(body, event);
+  const subagentId = asString(body.agent_id);
+  return update && subagentId ? { ...update, subagentId } : update;
+}
 
+function mapClaudeEvent(
+  body: Record<string, unknown>,
+  event: string,
+): AgentHookStatusUpdate | null {
   const toolName = asString(body.tool_name);
   const toolUseId = asString(body.tool_use_id);
 
@@ -240,6 +271,9 @@ export function mapClaudeHookPayload(payload: unknown): AgentHookStatusUpdate | 
     case 'PostToolUseFailure':
       return { state: 'working', event, toolUseId, ...toolResultContext(body, event, toolName) };
     case 'PermissionRequest': {
+      // Claude asks this for AskUserQuestion too; that must stay a question, not an approval.
+      const wait = mapToolWait(event, body, toolName);
+      if (wait) return wait;
       const detail = summarizeToolInput(body.tool_input);
       return { state: 'waiting', event, toolName, toolUseId, detail, prompt: 'permission' };
     }
@@ -287,26 +321,38 @@ export interface ReducedAgentHookStatus extends AgentHookStatusUpdate {
   updatedAt: number;
 }
 
-/** A parallel sibling's tool result, which must not dismiss another tool's human prompt. */
-export function isSiblingResult(
+const TOOL_ACTIVITY: ReadonlySet<string> = new Set([
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+]);
+
+/** Tool activity that must not dismiss a standing human prompt: another
+ *  agent's (lead or sub-agent), or a parallel sibling's result. */
+function isUnrelatedToolActivity(
   previous: AgentHookStatusUpdate,
   event: AgentHookStatusUpdate,
 ): boolean {
+  if (previous.state !== 'waiting' || event.state !== 'working' || !TOOL_ACTIVITY.has(event.event))
+    return false;
+  // A wait tied to neither a call nor a sub-agent (a bare notification, or a
+  // request no open call matched) has no known owner, so any agent may end it.
+  const owned = previous.toolUseId !== undefined || previous.subagentId !== undefined;
+  if (owned && event.subagentId !== previous.subagentId) return true;
   return (
-    previous.state === 'waiting' &&
-    (event.event === 'PostToolUse' || event.event === 'PostToolUseFailure') &&
+    event.event !== 'PreToolUse' &&
     previous.toolUseId !== undefined &&
     event.toolUseId !== undefined &&
     previous.toolUseId !== event.toolUseId
   );
 }
 
-/** Parallel sibling results do not dismiss another tool's human prompt. */
+/** Other agents' tool activity and parallel sibling results do not dismiss a tool's human prompt. */
 export function transitionAgentHookStatus(
   previous: ReducedAgentHookStatus | undefined,
   event: AgentHookStatusUpdate & { at: number },
 ): ReducedAgentHookStatus {
-  if (previous && isSiblingResult(previous, event)) return previous;
+  if (previous && isUnrelatedToolActivity(previous, event)) return previous;
   // Claude's idle reminder re-reports a finished turn. After a failed turn it
   // says nothing new, and the failure must stay visible until a new turn starts.
   if (previous?.event === 'StopFailure' && event.state === 'done' && event.event === 'Notification')
@@ -315,16 +361,33 @@ export function transitionAgentHookStatus(
   const finished = (name: string) => name === 'Stop' || name === 'StopFailure';
   const sameActivity =
     sameState && (event.state !== 'done' || finished(previous.event) === finished(event.event));
+  // A wait that names no call of its own is about the dialog already open if it
+  // comes from the same agent, or is a notification, which may name no agent.
+  // A request without `agent_id` is the lead's, so it never inherits a sub-agent's dialog.
+  const sameCall =
+    sameState &&
+    event.state === 'waiting' &&
+    event.toolUseId === undefined &&
+    (event.subagentId === previous.subagentId ||
+      (event.subagentId === undefined && event.event === 'Notification'));
+  // Claude's permission notification is generic. It must not turn an open
+  // question into an approval, which Enter or a digit would then answer.
+  const keepsQuestion =
+    sameCall && event.event === 'Notification' && previous.prompt === 'question';
   return {
     state: event.state,
     event: event.event,
     since: sameActivity ? previous.since : event.at,
     updatedAt: event.at,
     toolName: event.toolName,
-    toolUseId:
-      event.toolUseId ?? (sameState && event.state === 'waiting' ? previous.toolUseId : undefined),
-    prompt: event.prompt ?? (sameState && event.state === 'waiting' ? previous.prompt : undefined),
-    detail: event.detail ?? (sameState && event.state === 'done' ? previous.detail : undefined),
+    toolUseId: sameCall ? previous.toolUseId : event.toolUseId,
+    subagentId: sameCall ? previous.subagentId : event.subagentId,
+    prompt: keepsQuestion
+      ? previous.prompt
+      : (event.prompt ?? (sameState && event.state === 'waiting' ? previous.prompt : undefined)),
+    detail: keepsQuestion
+      ? previous.detail
+      : (event.detail ?? (sameState && event.state === 'done' ? previous.detail : undefined)),
     lastAssistantMessage:
       event.lastAssistantMessage ??
       (sameState && event.state === 'done' ? previous.lastAssistantMessage : undefined),

@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { mapClaudeHookPayload } from './status.js';
 import { createSubagentGate } from './subagents.js';
+import { createToolCallMatcher } from './tool-calls.js';
 
-/** Replays raw hook payloads for one launch; returns the updates that pass the gate. */
+/** Replays raw hook payloads for one launch as the hook server does; returns
+ *  the updates that pass the gate. */
 function replay(payloads: Record<string, unknown>[], launchId = 'launch-1') {
   const gate = createSubagentGate();
-  return payloads.map((payload) => gate(launchId, payload, mapClaudeHookPayload(payload)));
+  const match = createToolCallMatcher();
+  return payloads.map((payload) =>
+    gate(launchId, payload, match(launchId, payload, mapClaudeHookPayload(payload))),
+  );
 }
 
 const start = (id: string) => ({ hook_event_name: 'SubagentStart', agent_id: id });
@@ -230,24 +235,46 @@ describe('createSubagentGate', () => {
       { ...start('a1'), ...agent },
       { ...start('a2'), ...agent },
       { ...turnEnd, background_tasks: workflow },
+      { ...bash('a1'), tool_use_id: 't1', tool_input: { command: 'rm -rf dist' } },
+      // As Claude Code sends it: no tool_use_id.
       {
         hook_event_name: 'PermissionRequest',
         agent_id: 'a1',
         tool_name: 'Bash',
-        tool_use_id: 't1',
+        tool_input: { command: 'rm -rf dist' },
       },
       { ...stop('a2'), ...agent, background_tasks: workflow },
       result('a3', 't2'),
       { ...start('a3'), ...agent },
       result('a1', 't1'),
     ]);
-    expect(out[3]).toMatchObject({ state: 'waiting', background: true });
+    expect(out[4]).toMatchObject({ state: 'waiting', toolUseId: 't1', background: true });
     // Sibling progress says nothing; a sibling's result is left to the reducer to ignore.
-    expect(out[4]).toBeNull();
-    expect(out[5]).toMatchObject({ event: 'PostToolUse', toolUseId: 't2' });
-    expect(out[6]).toBeNull();
+    expect(out[5]).toBeNull();
+    expect(out[6]).toMatchObject({ event: 'PostToolUse', toolUseId: 't2' });
+    expect(out[7]).toBeNull();
     // The prompt's own result ends it, and progress resumes.
-    expect(out[7]).toMatchObject({ toolName: 'Workflow', detail: 'tiny · 2 running · 1 done' });
+    expect(out[8]).toMatchObject({ toolName: 'Workflow', detail: 'tiny · 2 running · 1 done' });
+  });
+
+  it("keeps one workflow agent's prompt through a sibling's tool call", () => {
+    const workflow = [{ id: 'w1', type: 'workflow', status: 'running', name: 'tiny' }];
+    const agent = { agent_type: 'workflow-subagent' };
+    const out = replay([
+      { ...start('a1'), ...agent },
+      { ...start('a2'), ...agent },
+      { ...turnEnd, background_tasks: workflow },
+      { ...bash('a1'), tool_use_id: 't1', tool_input: { command: 'rm -rf dist' } },
+      {
+        hook_event_name: 'PermissionRequest',
+        agent_id: 'a1',
+        tool_name: 'Bash',
+        tool_input: { command: 'rm -rf dist' },
+      },
+      { hook_event_name: 'PreToolUse', agent_id: 'a2', tool_name: 'Read', tool_use_id: 't2' },
+    ]);
+    // Passed on for the reducer to ignore, not replaced by progress that would end the prompt.
+    expect(out[5]).toMatchObject({ event: 'PreToolUse', subagentId: 'a2', background: true });
   });
 
   it('holds the turn open while a background shell command runs', () => {

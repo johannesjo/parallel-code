@@ -1,5 +1,10 @@
 import { isServerCommand } from './server-command.js';
-import { describeShells, isSiblingResult, type AgentHookStatusUpdate } from './status.js';
+import {
+  describeShells,
+  transitionAgentHookStatus,
+  type AgentHookStatusUpdate,
+  type ReducedAgentHookStatus,
+} from './status.js';
 
 /** Hook update after the gate; null drops the event. */
 type SubagentGate = (
@@ -30,7 +35,7 @@ interface LaunchWork {
   leadIdle: boolean;
   leadMessage?: string;
   /** The prompt last let through, while it still stands. */
-  prompt?: AgentHookStatusUpdate;
+  prompt?: ReducedAgentHookStatus;
 }
 
 function field(payload: unknown, key: string): string | undefined {
@@ -156,15 +161,29 @@ function held(work: LaunchWork): AgentHookStatusUpdate {
   return { ...base, toolName: 'Workflow', detail };
 }
 
-/** The prompt still standing after this update, by the reducer's own rule:
- *  silent events and sibling results leave it, anything else ends it. */
+/** The prompt still standing after this update, by the reducer itself: silent
+ *  events, other agents' tool activity and sibling results leave it, and a
+ *  follow-up notification keeps its call. Anything else ends it. */
 function promptAfter(
-  prompt: AgentHookStatusUpdate | undefined,
+  prompt: ReducedAgentHookStatus | undefined,
   update: AgentHookStatusUpdate | null,
-): AgentHookStatusUpdate | undefined {
-  if (update?.state === 'waiting') return update;
-  if (!update || (prompt && isSiblingResult(prompt, update))) return prompt;
-  return undefined;
+): ReducedAgentHookStatus | undefined {
+  if (!update) return prompt;
+  // The gate keeps no clock; only the state and the call it is about matter here.
+  const next = transitionAgentHookStatus(prompt, { ...update, at: 0 });
+  return next.state === 'waiting' ? next : undefined;
+}
+
+/** A denied call sends no result, so a sub-agent that stops after a denial
+ *  would leave its dialog standing until the lead's turn ends; its stop ends it. */
+function ownerStopped(
+  prompt: ReducedAgentHookStatus | undefined,
+  payload: unknown,
+): AgentHookStatusUpdate | null {
+  const id = field(payload, 'agent_id');
+  if (field(payload, 'hook_event_name') !== 'SubagentStop' || !id || prompt?.subagentId !== id)
+    return null;
+  return { state: 'working', event: 'SubagentStop', subagentId: id };
 }
 
 /**
@@ -181,8 +200,10 @@ export function createSubagentGate(): SubagentGate {
   // running are never removed — a few ids or commands per crashed launch; hook
   // retireAgentLaunch if that ever matters.
   const launches = new Map<string, LaunchWork>();
-  return (launchId, payload, update) => {
-    const work = track(launches.get(launchId), payload);
+  return (launchId, payload, mapped) => {
+    const previous = launches.get(launchId);
+    const update = mapped ?? ownerStopped(previous?.prompt, payload);
+    const work = track(previous, payload);
     if (work.open.size === 0) {
       if (work.monitors.length === 0) launches.delete(launchId);
       else launches.set(launchId, settled(work.monitors));

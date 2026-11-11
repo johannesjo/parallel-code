@@ -124,6 +124,25 @@ describe('mapCodexHookPayload', () => {
     });
   });
 
+  it("lets the lead's activity end a sub-agent's permission request, as its own calls are ignored", () => {
+    const ask = {
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'Bash',
+      tool_input: { command: 'ls' },
+      agent_id: 'sub-1',
+    };
+    const leadCall = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'pwd' },
+      tool_use_id: 'exec-2',
+    };
+    expect(replay([ask, leadCall]).timeline).toEqual([
+      'waiting PermissionRequest ls',
+      'working PreToolUse pwd',
+    ]);
+  });
+
   it('ignores payloads that are not hook events', () => {
     expect(mapCodexHookPayload(null)).toBeNull();
     expect(mapCodexHookPayload({ cwd: '/work' })).toBeNull();

@@ -4,6 +4,7 @@ import type {
   AgentActivityObservation,
   AgentHookEventPayload,
 } from '../../electron/agent-hooks/status';
+import { mapClaudeHookPayload } from '../../electron/agent-hooks/status';
 import { IPC } from '../../electron/ipc/channels';
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn() }));
@@ -101,6 +102,13 @@ function event(overrides: Partial<AgentHookEventPayload>): AgentHookEventPayload
     at: Date.now(),
     ...overrides,
   };
+}
+
+/** Applies a raw Claude Code hook payload for agent `a1`, mapped as the main process maps it. */
+function hook(payload: Record<string, unknown>): void {
+  const update = mapClaudeHookPayload(payload);
+  if (!update) throw new Error(`${String(payload.hook_event_name)} maps to no status`);
+  applyAgentHookEvent(event(update));
 }
 
 describe('agentHookStatus', () => {
@@ -297,6 +305,40 @@ describe('agentHookStatus', () => {
     );
     noteAgentTerminalInput('a1', '\r', noScreen);
     expect(getAgentHookStatus('a1')?.state).toBe('waiting');
+  });
+
+  it("does not read Enter or a digit as an answer to a question's permission request", () => {
+    const ask = {
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [{ question: 'Which DB?' }, { question: 'Which port?' }] },
+    };
+    hook({ hook_event_name: 'PreToolUse', tool_use_id: 'q1', ...ask });
+    // Claude Code's PermissionRequest carries no tool_use_id.
+    hook({ hook_event_name: 'PermissionRequest', ...ask });
+    const asking = { state: 'waiting', prompt: 'question', detail: 'Which DB?', toolUseId: 'q1' };
+    expect(getAgentHookStatus('a1')).toMatchObject(asking);
+    // Answering the first of two questions.
+    noteAgentTerminalInput('a1', '1', noScreen);
+    noteAgentTerminalInput('a1', '\r', noScreen);
+    expect(getAgentHookStatus('a1')).toMatchObject(asking);
+  });
+
+  it("keeps a question a question through Claude's later permission notification", () => {
+    const ask = {
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [{ question: 'Which DB?' }, { question: 'Which port?' }] },
+    };
+    hook({ hook_event_name: 'PreToolUse', tool_use_id: 'q1', ...ask });
+    hook({ hook_event_name: 'PermissionRequest', ...ask });
+    hook({
+      hook_event_name: 'Notification',
+      notification_type: 'permission_prompt',
+      message: 'Claude needs your permission to use AskUserQuestion',
+    });
+    const asking = { state: 'waiting', prompt: 'question', detail: 'Which DB?', toolUseId: 'q1' };
+    expect(getAgentHookStatus('a1')).toMatchObject(asking);
+    noteAgentTerminalInput('a1', '1', noScreen);
+    expect(getAgentHookStatus('a1')).toMatchObject(asking);
   });
 
   it('keeps a dialog open when a sibling tool call finishes first', () => {
