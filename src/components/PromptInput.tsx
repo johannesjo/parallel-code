@@ -85,6 +85,8 @@ interface PromptInputProps {
   stagedNotification?: StagedNotification;
   /** The task brief's question for the user, shown where the answer is typed. */
   needsYou?: string;
+  /** A question may arrive (briefs are on): keep its row while there is none. */
+  reserveNeedsYou?: boolean;
   nowMs?: () => number;
   initialPrompt?: string;
   prefillPrompt?: string;
@@ -962,6 +964,11 @@ export function PromptInput(props: PromptInputProps) {
     !props.stagedNotification.userEdited;
   // A question waiting in the terminal is answered there, and the staged label owns the same spot.
   const question = () => (questionActive() || staged() ? '' : (props.needsYou ?? ''));
+  // The labels get their own row above the textarea: laid over it, they hid the
+  // text scrolled beneath them. The row stays while a label may appear, so the
+  // text never moves when one comes or goes.
+  const labelRow = () =>
+    !!props.reserveNeedsYou || !!props.autoSendChildUpdates || staged() || !!question();
 
   return (
     <div
@@ -974,71 +981,85 @@ export function PromptInput(props: PromptInputProps) {
         'border-radius': 'var(--radius-lg)',
       }}
     >
-      <div style={{ position: 'relative', flex: '1', display: 'flex' }}>
-        <Show when={staged()}>
+      <div
+        style={{
+          position: 'relative',
+          flex: '1',
+          display: 'flex',
+          'flex-direction': 'column',
+          'min-width': '0',
+        }}
+      >
+        <Show when={labelRow()}>
           <div
+            class="prompt-label-row"
             style={{
-              position: 'absolute',
-              top: '4px',
-              left: '8px',
-              'font-size': '11px',
-              color: theme.accent,
-              background: `${theme.accent}22`,
-              padding: '1px 6px',
-              'border-radius': 'var(--radius-xs)',
-              'pointer-events': 'none',
-              'z-index': '1',
-            }}
-          >
-            {store.mcpOrchestrationEnabled ? 'Staged for auto-send' : 'Ready for review'}
-          </div>
-        </Show>
-        <Show when={question()}>
-          <div
-            class="prompt-needs-you"
-            style={{
-              position: 'absolute',
-              top: '4px',
-              right: '36px',
-              display: 'flex',
-              gap: '6px',
-              'align-items': 'baseline',
+              flex: 'none',
+              'box-sizing': 'content-box',
               'font-size': sf(14),
-              color: theme.fg,
-              overflow: 'hidden',
-              'white-space': 'nowrap',
-              'pointer-events': 'none',
-              'z-index': '1',
-              'padding-bottom': '3px',
-              'border-bottom': `1px solid color-mix(in srgb, ${theme.warning} 55%, transparent)`,
+              'line-height': '1.4',
+              // One line of the label plus its rule, whether a label shows or not.
+              height: 'calc(1.4em + 4px)',
             }}
           >
-            <span
-              style={{
-                color: theme.warning,
-                'font-weight': '700',
-                'letter-spacing': '0.06em',
-                'text-transform': 'uppercase',
-                'flex-shrink': '0',
-              }}
-            >
-              Needs you
-            </span>
-            <span
-              style={{
-                overflow: 'hidden',
-                'text-overflow': 'ellipsis',
-                'min-width': '0',
-                'font-weight': '600',
-              }}
-            >
-              {question()}
-            </span>
+            <Show when={staged()}>
+              <div
+                style={{
+                  display: 'inline-block',
+                  'font-size': '11px',
+                  color: theme.accent,
+                  background: `${theme.accent}22`,
+                  padding: '1px 6px',
+                  'margin-left': '-6px',
+                  'border-radius': 'var(--radius-xs)',
+                }}
+              >
+                {store.mcpOrchestrationEnabled ? 'Staged for auto-send' : 'Ready for review'}
+              </div>
+            </Show>
+            <Show when={question()}>
+              <div
+                class="prompt-needs-you"
+                title={question()}
+                style={{
+                  display: 'flex',
+                  gap: '6px',
+                  'align-items': 'baseline',
+                  color: theme.fg,
+                  overflow: 'hidden',
+                  'white-space': 'nowrap',
+                  'padding-bottom': '3px',
+                  'border-bottom': `1px solid color-mix(in srgb, ${theme.warning} 55%, transparent)`,
+                }}
+              >
+                <span
+                  style={{
+                    color: theme.warning,
+                    'font-weight': '700',
+                    'letter-spacing': '0.06em',
+                    'text-transform': 'uppercase',
+                    'flex-shrink': '0',
+                  }}
+                >
+                  Needs you
+                </span>
+                <span
+                  style={{
+                    overflow: 'hidden',
+                    'text-overflow': 'ellipsis',
+                    'min-width': '0',
+                    'font-weight': '600',
+                  }}
+                >
+                  {question()}
+                </span>
+              </div>
+            </Show>
           </div>
         </Show>
         <textarea
           class="prompt-textarea"
-          classList={{ 'prompt-textarea--labelled': !!staged() || !!question() }}
+          classList={{ 'prompt-textarea--labelled': labelRow() }}
           ref={(el) => {
             textareaRef = el;
             props.ref?.(el);
@@ -1067,6 +1088,7 @@ export function PromptInput(props: PromptInputProps) {
           placeholder={promptPlaceholder()}
           style={{
             flex: '1',
+            'min-height': '0',
             background: theme.bgInput,
             border: staged() ? `1px solid ${theme.accent}60` : `1px solid ${theme.border}`,
             'border-radius': 'var(--radius-lg)',
