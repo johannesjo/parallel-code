@@ -182,6 +182,9 @@ export interface Project {
   documentTerminalAgentId?: string;
   /** Super Productivity project that tasks of this project are tracked in. */
   superProductivityProjectId?: string;
+  /** Super Productivity task this project's tasks are created under while
+   *  grouping is on (see superProductivityGroupTasks). */
+  superProductivityGroupTaskId?: string;
 }
 
 /** The Kanban card a new task was started from; see src/store/kanban.ts. */
@@ -204,6 +207,8 @@ export interface SuperProductivityLink {
   taskId: string;
   /** Last title both apps agreed on — the base for the three-way title sync. */
   syncedTitle: string;
+  /** The project's group task the linked task was created under, if any. */
+  groupTaskId?: string;
 }
 
 export interface DocumentModelChoice {
@@ -634,6 +639,7 @@ export interface PersistedState {
   keybindingMigrationDismissed?: boolean;
   featureHintsEnabled?: boolean;
   seenFeatureHints?: FeatureHintId[];
+  superProductivityGroupTasks?: boolean;
   taskIdeas?: TaskIdea[];
   lastIdeaProjectId?: string | null;
   focusMode?: boolean;
@@ -838,6 +844,9 @@ export interface AppStore {
   /** One-time feature tips; on for new installs, off for installs that predate them. */
   featureHintsEnabled: boolean;
   seenFeatureHints: FeatureHintId[];
+  /** Create Super Productivity tasks under one task per project, so its Today
+   *  shows one row per project. Off by default. */
+  superProductivityGroupTasks: boolean;
   /** Ideas waiting in the board's Ideas lane, newest first. */
   taskIdeas: TaskIdea[];
   /** The project the last idea went to; the add-idea dialog starts there. */

@@ -248,6 +248,7 @@
   "SuperProductivityRenameTask": "super_productivity_rename_task",
   "SuperProductivityCompleteTask": "super_productivity_complete_task",
   "SuperProductivityRemoveFromToday": "super_productivity_remove_from_today",
+  "SuperProductivityPlanForToday": "super_productivity_plan_for_today",
   "SuperProductivityConsumePendingOpen": "super_productivity_consume_pending_open",
   "SuperProductivityOpenTaskRequested": "super_productivity_open_task_requested"
 }

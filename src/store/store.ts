@@ -298,6 +298,7 @@ export {
   disconnectSuperProductivity,
   listSpProjects,
   setProjectSpMapping,
+  setSpGroupTasks,
   trackTaskInSp,
   dismissSpBanner,
   armSpCompletion,

@@ -338,4 +338,21 @@ describe('createSpClient', () => {
     });
     expect(patches).toEqual([['today', { dueDay: null }]]);
   });
+
+  it('plans a task for today unless it already is', async () => {
+    const tasks: Record<string, Record<string, unknown>> = {
+      g: { id: 'g', title: 'G', dueDay: null },
+      planned: { id: 'planned', title: 'P', dueDay: '2026-11-11' },
+    };
+    const patches: [string, unknown][] = [];
+    const fetchImpl = fakeFetch((method, path, body) => {
+      const id = path.split('/')[2];
+      if (method === 'PATCH') patches.push([id, body]);
+      return ok(tasks[id]);
+    });
+    const client = createSpClient({ getToken: () => 'tok', fetchImpl });
+    expect(await client.planForToday('g', '2026-11-11')).toEqual({ ok: true, value: true });
+    expect(await client.planForToday('planned', '2026-11-11')).toEqual({ ok: true, value: false });
+    expect(patches).toEqual([['g', { dueDay: '2026-11-11' }]]);
+  });
 });

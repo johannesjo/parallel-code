@@ -19,6 +19,7 @@ import {
   appendSpNote,
   isValidSpId,
   shouldLeaveSpToday,
+  shouldPlanSpForToday,
   SP_MAX_BATCH_IDS,
 } from '../shared/super-productivity.js';
 
@@ -296,6 +297,20 @@ export function createSpClient(deps: SpClientDeps) {
       if (!isRecord(current.value)) return failure('error', 'Unexpected task shape');
       if (!shouldLeaveSpToday(current.value, todayStr)) return { ok: true, value: false };
       const res = await request('PATCH', path, { dueDay: null });
+      return res.ok ? { ok: true, value: true } : res;
+    },
+
+    /**
+     * Plan the task for today when shouldPlanSpForToday says so. Resolves to
+     * whether it was planned now.
+     */
+    async planForToday(taskId: string, todayStr: string): Promise<SpResult<boolean>> {
+      const path = `/tasks/${encodeURIComponent(taskId)}`;
+      const current = await request('GET', path);
+      if (!current.ok) return current;
+      if (!isRecord(current.value)) return failure('error', 'Unexpected task shape');
+      if (!shouldPlanSpForToday(current.value, todayStr)) return { ok: true, value: false };
+      const res = await request('PATCH', path, { dueDay: todayStr });
       return res.ok ? { ok: true, value: true } : res;
     },
 

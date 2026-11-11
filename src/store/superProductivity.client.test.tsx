@@ -51,6 +51,7 @@ const { mockInvoke } = vi.hoisted(() => ({ mockInvoke: vi.fn() }));
 vi.mock('../lib/ipc', () => ({ invoke: mockInvoke, Channel: vi.fn() }));
 
 const ok = (value: unknown) => ({ ok: true, value });
+const TODAY = '2026-11-11';
 const missing = { ok: false, reason: 'not_found' };
 
 function fakeSp(channel: string, args: Record<string, unknown> = {}): unknown {
@@ -73,6 +74,10 @@ function fakeSp(channel: string, args: Record<string, unknown> = {}): unknown {
     case IPC.SuperProductivityCreateTask: {
       sp.creates.push(args);
       if (args.parentId && !sp.tasks.has(args.parentId as string)) return missing;
+      // Super Productivity nests one level only.
+      if (args.parentId && sp.tasks.get(args.parentId as string)?.parentId) {
+        return { ok: false, reason: 'invalid_request' };
+      }
       const task: FakeSpTask = {
         id: `sp-${sp.nextId++}`,
         title: args.title as string,
@@ -100,6 +105,13 @@ function fakeSp(channel: string, args: Record<string, unknown> = {}): unknown {
       task.isDone = true;
       if (args.note !== undefined) task.notes = args.note as string;
       return ok(null);
+    }
+    case IPC.SuperProductivityPlanForToday: {
+      const task = sp.tasks.get(id);
+      if (!task) return missing;
+      if (task.isDone || task.dueDay === TODAY) return ok(false);
+      task.dueDay = TODAY;
+      return ok(true);
     }
     case IPC.SuperProductivityRemoveFromToday: {
       const task = sp.tasks.get(id);
@@ -183,6 +195,7 @@ describe('Super Productivity sync', () => {
         superProductivityProjectId: 'sp-proj',
       },
     ]);
+    setStore('superProductivityGroupTasks', false);
     await refreshSpConnection();
     stop = startSuperProductivitySync(windowFocused);
   });
@@ -791,6 +804,74 @@ describe('Super Productivity sync', () => {
       await refreshSpConnection();
       await settle();
       expect(sp.tasks.get('sp-a')?.dueDay).toBeNull();
+    });
+  });
+
+  describe('grouped by project', () => {
+    beforeEach(() => {
+      setStore('superProductivityGroupTasks', true);
+    });
+
+    it('creates tasks under one group task per project and plans the group for today', async () => {
+      addTask('a');
+      await focus('a');
+      addTask('b');
+      await focus('b');
+
+      const groupId = store.projects[0].superProductivityGroupTaskId ?? '';
+      const group = sp.tasks.get(groupId);
+      expect(group).toMatchObject({ title: 'Parallel Code · Proj', projectId: 'sp-proj' });
+      expect(group?.dueDay).toBe(TODAY);
+      const a = store.tasks.a.superProductivity;
+      const b = store.tasks.b.superProductivity;
+      expect(a?.groupTaskId).toBe(groupId);
+      expect(sp.tasks.get(a?.taskId ?? '')?.parentId).toBe(groupId);
+      expect(sp.tasks.get(b?.taskId ?? '')?.parentId).toBe(groupId);
+      expect(sp.current).toBe(b?.taskId);
+      // One group, two tasks.
+      expect(sp.creates).toHaveLength(3);
+    });
+
+    it('starts a new group once the old one is finished', async () => {
+      spTask('old-group', { isDone: true, projectId: 'sp-proj' });
+      setStore('projects', 0, 'superProductivityGroupTaskId', 'old-group');
+      addTask('a');
+      await focus('a');
+      const groupId = store.projects[0].superProductivityGroupTaskId;
+      expect(groupId).not.toBe('old-group');
+      expect(sp.tasks.get(store.tasks.a.superProductivity?.taskId ?? '')?.parentId).toBe(groupId);
+    });
+
+    it('files an agent-spawned subtask beside its parent in the group', async () => {
+      addTask('a');
+      await focus('a');
+      addTask('child', { coordinatedBy: 'a' });
+      await focus('child');
+      const groupId = store.projects[0].superProductivityGroupTaskId;
+      const child = store.tasks.child.superProductivity;
+      expect(child?.groupTaskId).toBe(groupId);
+      expect(sp.tasks.get(child?.taskId ?? '')?.parentId).toBe(groupId);
+    });
+
+    it('takes the group off Today once all of its tasks are set aside', async () => {
+      addTask('a');
+      await focus('a');
+      addTask('b');
+      await focus('b');
+      const groupId = store.projects[0].superProductivityGroupTaskId ?? '';
+
+      setStore('tasks', 'a', 'collapsed', true);
+      await settle();
+      expect(sp.tasks.get(groupId)?.dueDay).toBe(TODAY);
+
+      setStore('tasks', 'b', 'collapsed', true);
+      await settle();
+      expect(sp.tasks.get(groupId)?.dueDay).toBeNull();
+
+      setStore('tasks', 'b', 'collapsed', false);
+      await focus('a');
+      await focus('b');
+      expect(sp.tasks.get(groupId)?.dueDay).toBe(TODAY);
     });
   });
 });

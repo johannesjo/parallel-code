@@ -201,6 +201,24 @@ export function shouldLeaveSpToday(
   return typeof task.dueDay === 'string' && task.dueDay !== '' && task.dueDay <= todayStr;
 }
 
+/**
+ * Whether a project's group task should be planned for today before one of
+ * its subtasks is tracked: Super Productivity lists a tracked subtask in
+ * Today as a row of its own unless its parent is there. A task planned for a
+ * time of day keeps it.
+ */
+export function shouldPlanSpForToday(
+  task: { isDone?: unknown; dueDay?: unknown; dueWithTime?: unknown },
+  todayStr: string,
+): boolean {
+  return task.isDone !== true && typeof task.dueWithTime !== 'number' && task.dueDay !== todayStr;
+}
+
+/** Title of the task a project's tasks are grouped under. */
+export function toSpGroupTitle(projectName: string): string {
+  return toSpTitle(`Parallel Code · ${projectName.trim()}`);
+}
+
 // ---------------------------------------------------------------------------
 // parallelcode:// links
 

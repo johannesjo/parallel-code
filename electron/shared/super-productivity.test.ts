@@ -7,8 +7,10 @@ import {
   parseParallelCodeUrl,
   resolveSpTitleSync,
   shouldLeaveSpToday,
+  shouldPlanSpForToday,
   SP_MAX_TITLE_LENGTH,
   toLocalDayStr,
+  toSpGroupTitle,
   toSpTitle,
   type SpTaskSummary,
 } from './super-productivity.js';
@@ -302,5 +304,25 @@ describe('shouldLeaveSpToday', () => {
 describe('toLocalDayStr', () => {
   it('formats the local calendar day', () => {
     expect(toLocalDayStr(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
+  });
+});
+
+describe('shouldPlanSpForToday', () => {
+  const today = '2026-11-11';
+  it('plans an open task that is not planned for today', () => {
+    expect(shouldPlanSpForToday({ dueDay: null }, today)).toBe(true);
+    expect(shouldPlanSpForToday({ dueDay: '2026-11-10' }, today)).toBe(true);
+    expect(shouldPlanSpForToday({ dueDay: '2026-11-12' }, today)).toBe(true);
+  });
+  it('leaves tasks planned for today, for a time, or done', () => {
+    expect(shouldPlanSpForToday({ dueDay: today }, today)).toBe(false);
+    expect(shouldPlanSpForToday({ dueWithTime: 1 }, today)).toBe(false);
+    expect(shouldPlanSpForToday({ isDone: true }, today)).toBe(false);
+  });
+});
+
+describe('toSpGroupTitle', () => {
+  it('names the group after the project', () => {
+    expect(toSpGroupTitle(' web ')).toBe('Parallel Code · web');
   });
 });

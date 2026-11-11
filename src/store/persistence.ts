@@ -365,10 +365,9 @@ function restoredCanvas(pt: PersistedTask): Pick<Task, 'canvasTabs' | 'canvasAct
 
 function restoreSuperProductivityLink(value: unknown): SuperProductivityLink | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { taskId, syncedTitle } = value as Record<string, unknown>;
-  return isValidSpId(taskId) && typeof syncedTitle === 'string'
-    ? { taskId, syncedTitle }
-    : undefined;
+  const { taskId, syncedTitle, groupTaskId } = value as Record<string, unknown>;
+  if (!isValidSpId(taskId) || typeof syncedTitle !== 'string') return undefined;
+  return isValidSpId(groupTaskId) ? { taskId, syncedTitle, groupTaskId } : { taskId, syncedTitle };
 }
 
 function validBranch(value: unknown, exclude?: string): string | undefined {
@@ -592,6 +591,7 @@ export async function saveState(): Promise<void> {
     // Always stored: a missing value marks an install that predates the tips.
     featureHintsEnabled: store.featureHintsEnabled,
     seenFeatureHints: store.seenFeatureHints.length > 0 ? [...store.seenFeatureHints] : undefined,
+    superProductivityGroupTasks: store.superProductivityGroupTasks || undefined,
     taskIdeas:
       store.taskIdeas.length > 0 ? store.taskIdeas.map((idea) => ({ ...idea })) : undefined,
     lastIdeaProjectId: store.lastIdeaProjectId ?? undefined,
@@ -812,6 +812,7 @@ interface LegacyPersistedState {
   terminals?: unknown;
   keybindingMigrationDismissed?: unknown;
   featureHintsEnabled?: unknown;
+  superProductivityGroupTasks?: unknown;
   seenFeatureHints?: unknown;
   taskIdeas?: unknown;
   lastIdeaProjectId?: unknown;
@@ -909,6 +910,9 @@ export async function loadState(): Promise<void> {
     p.reviewChecks = restoreReviewChecks(p.reviewChecks);
     p.superProductivityProjectId = isValidSpId(p.superProductivityProjectId)
       ? p.superProductivityProjectId
+      : undefined;
+    p.superProductivityGroupTaskId = isValidSpId(p.superProductivityGroupTaskId)
+      ? p.superProductivityGroupTaskId
       : undefined;
     // Migrate defaultDirectMode -> defaultGitIsolation
     const legacy = p as Project & {
@@ -1245,6 +1249,7 @@ export async function loadState(): Promise<void> {
       s.seenFeatureHints = Array.isArray(raw.seenFeatureHints)
         ? raw.seenFeatureHints.filter(isFeatureHintId)
         : [];
+      s.superProductivityGroupTasks = raw.superProductivityGroupTasks === true;
       s.taskIdeas = restoreTaskIdeas(raw.taskIdeas);
       s.lastIdeaProjectId =
         typeof raw.lastIdeaProjectId === 'string' ? raw.lastIdeaProjectId : null;

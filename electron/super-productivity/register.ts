@@ -109,5 +109,9 @@ export function registerSuperProductivityHandlers(): void {
     client.removeFromToday(spId(args?.taskId, 'taskId'), toLocalDayStr(new Date())),
   );
 
+  ipcMain.handle(IPC.SuperProductivityPlanForToday, (_e, args: IpcArgs) =>
+    client.planForToday(spId(args?.taskId, 'taskId'), toLocalDayStr(new Date())),
+  );
+
   ipcMain.handle(IPC.SuperProductivityConsumePendingOpen, () => consumePendingSpOpen());
 }
