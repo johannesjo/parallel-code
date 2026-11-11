@@ -1,0 +1,123 @@
+name: Fork builds
+
+# Installable builds for the fork, each taken from its own branch:
+#   Windows installer -> `windows`
+#   Android APK       -> `android-native`
+#   Linux AppImage    -> `fork/extras`
+# A push to one of those branches builds that artifact. The manual run builds
+# any or all of them (from whichever branch this workflow is dispatched on, the
+# checkout ref is still the artifact's own branch). Results are workflow
+# artifacts on the run page; nothing is published and no secrets are used.
+on:
+  push:
+    branches: [windows, android-native, fork/extras]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'What to build'
+        type: choice
+        default: all
+        options: [all, windows, android, appimage]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-builds-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-installer:
+    if: >-
+      github.ref == 'refs/heads/windows' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.target == 'all' || inputs.target == 'windows'))
+    runs-on: windows-latest
+    env:
+      # The npm scripts use POSIX shell syntax (`umask`, inline env vars), which
+      # cmd.exe cannot run. Git Bash ships on the Windows runners.
+      npm_config_script_shell: C:\Program Files\Git\bin\bash.exe
+    steps:
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: windows
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build installer
+        run: npm run build -- --publish never
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: parallel-code-windows-installer
+          path: release/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  android-apk:
+    if: >-
+      github.ref == 'refs/heads/android-native' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.target == 'all' || inputs.target == 'android'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: android-native
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Test and build debug APK
+        working-directory: android
+        run: ./gradlew testDebugUnitTest assembleDebug
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: parallel-code-android-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  linux-appimage:
+    if: >-
+      github.ref == 'refs/heads/fork/extras' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.target == 'all' || inputs.target == 'appimage'))
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: fork/extras
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build AppImage
+        run: npm run build -- --linux AppImage --publish never
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: parallel-code-linux-appimage
+          path: release/*.AppImage
+          if-no-files-found: error
+          retention-days: 30

@@ -17,12 +17,12 @@ import type { CanvasView } from '../../electron/shared/canvas-view';
 import type { CanvasTaskLink, CanvasTaskSource } from '../lib/canvas-task-links';
 import type {
   AgentDef,
-  CreditUsage,
   UsageProvider,
-  UsageWindow,
+  UsageState,
   VerificationRun,
   WorktreeStatus,
 } from '../ipc/types';
+export type { UsageState } from '../ipc/types';
 import type { ChatPermissionMode, ChatSession } from '../../electron/shared/agent-chat-types';
 import type { AskCodeProvider } from '../../electron/shared/ask-code-models';
 import type { BriefModelId, TaskNameModelId } from '../../electron/shared/task-name-model';
@@ -204,6 +204,8 @@ export interface SuperProductivityLink {
   taskId: string;
   /** Last title both apps agreed on — the base for the three-way title sync. */
   syncedTitle: string;
+  /** Last notes pushed to or pulled from Super Productivity. */
+  syncedNotes?: string;
 }
 
 export interface DocumentModelChoice {
@@ -675,17 +677,6 @@ export interface MCPStatus {
   mcpConfigPath: string | null;
 }
 
-export interface UsageState {
-  fiveHour: UsageWindow | null;
-  sevenDay: UsageWindow | null;
-  creditUsage?: CreditUsage | null;
-  /** When the current windows were fetched; null until the first success. */
-  fetchedAt: number | null;
-  /** `unavailable` means no subscription login — the bar hides. `error` keeps the last snapshot. */
-  status: 'idle' | 'ok' | 'error' | 'unavailable';
-  error: string | null;
-}
-
 // Panel cell IDs. Shell terminals use "shell:0", "shell:1", etc.
 // Shell toolbar buttons use "shell-toolbar:0", "shell-toolbar:1", etc.
 export type PanelId = string;
@@ -800,6 +791,7 @@ export interface AppStore {
     prompt: string;
     projectId: string | null;
     name?: string;
+    notes?: string;
     /** URL that supplied an automatic dropped-link name; absent for a custom name. */
     droppedNameUrl?: string;
     baseBranch?: string;

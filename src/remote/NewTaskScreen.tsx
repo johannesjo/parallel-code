@@ -1,5 +1,12 @@
 import { createSignal, createEffect, onMount, onCleanup, For, Show } from 'solid-js';
-import { fetchProjects, createTask, ApiError, type MobileProject } from './api';
+import {
+  fetchProjects,
+  fetchAgents,
+  createTask,
+  ApiError,
+  type MobileProject,
+  type MobileAgent,
+} from './api';
 import { clearPairedToken } from './auth';
 import { readLocal, writeLocal } from './storage';
 import { status } from './ws';
@@ -19,7 +26,9 @@ export function NewTaskScreen(props: NewTaskScreenProps) {
     disposed = true;
   });
   const [projects, setProjects] = createSignal<MobileProject[]>([]);
+  const [agents, setAgents] = createSignal<MobileAgent[]>([]);
   const [projectId, setProjectId] = createSignal(readLocal('project'));
+  const [agentId, setAgentId] = createSignal(readLocal('new-agent'));
   const [name, setName] = createSignal(readLocal('new-name'));
   const [prompt, setPrompt] = createSignal(readLocal('new-prompt'));
   const [error, setError] = createSignal<string | null>(null);
@@ -29,6 +38,7 @@ export function NewTaskScreen(props: NewTaskScreenProps) {
   const selectedProject = () => projects().find((p) => p.id === projectId());
   const agentName = () => selectedProject()?.agentName;
   createEffect(() => writeLocal('project', projectId()));
+  createEffect(() => writeLocal('new-agent', agentId()));
   createEffect(() => writeLocal('new-name', name()));
   createEffect(() => writeLocal('new-prompt', prompt()));
 
@@ -45,13 +55,21 @@ export function NewTaskScreen(props: NewTaskScreenProps) {
     setLoading(true);
     setError(null);
     try {
-      const list = await fetchProjects();
+      const [list, agentList] = await Promise.all([
+        fetchProjects(),
+        fetchAgents().catch(() => [] as MobileAgent[]),
+      ]);
       if (disposed) return;
       setProjects(list);
+      setAgents(agentList);
       // An empty list keeps the remembered project for the next load. Without a
       // choice on this phone, start where the desktop last created a task.
       if (list.length && !list.some((p) => p.id === projectId()))
         setProjectId((list.find((p) => p.lastUsed) ?? list[0]).id);
+      if (!agentList.some((a) => a.id === agentId())) {
+        const defaultAgent = agentList.find((a) => a.isDefault) ?? agentList[0];
+        setAgentId(defaultAgent?.id ?? '');
+      }
     } catch (err) {
       if (disposed) return;
       if (!handleAuthError(err))
@@ -77,6 +95,7 @@ export function NewTaskScreen(props: NewTaskScreenProps) {
         projectId: projectId(),
         name: taskName,
         prompt: draftPrompt.trim(),
+        ...(agentId() ? { agentId: agentId() } : {}),
       });
       if (readLocal('new-prompt') === draftPrompt && readLocal('new-name') === draftName) {
         writeLocal('new-name', '');
@@ -150,7 +169,27 @@ export function NewTaskScreen(props: NewTaskScreenProps) {
               </select>
             </span>
           </label>
-          <Show when={selectedProject() && !loading()}>
+          <Show when={agents().length > 0}>
+            <label>
+              Agent
+              <select
+                class="mobile-input"
+                value={agentId()}
+                onChange={(e) => setAgentId(e.currentTarget.value)}
+                disabled={loading() || busy()}
+              >
+                <For each={agents()}>
+                  {(a) => (
+                    <option value={a.id} selected={a.id === agentId()}>
+                      {a.name}
+                      {a.available === false ? ' (not installed)' : ''}
+                    </option>
+                  )}
+                </For>
+              </select>
+            </label>
+          </Show>
+          <Show when={selectedProject() && !loading() && !agents().length}>
             <p class="mobile-project-hint muted">
               {agentName() ? `Runs with ${agentName()}` : 'Runs with your default agent'} · Desktop
               settings

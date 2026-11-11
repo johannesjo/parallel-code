@@ -124,6 +124,9 @@ internal class DemoSession : PhoneClient {
         MobileProject("demo-project", "Sample project", "Demo chat agent", color = "hsl(210, 70%, 60%)"),
         MobileProject("demo-docs", "Sample documentation", "Demo terminal agent", color = "hsl(150, 55%, 50%)"),
     )
+    override suspend fun createProject(name: String, parentDir: String): MobileProject =
+        throw ApiException("Not available in the demo.")
+
 
     override suspend fun fetchAgentChoices() = listOf(
         MobileAgentChoice("demo-chat", "Demo chat agent", true, listOf(AgentModel("demo-model", "Sample model (offline)"))),

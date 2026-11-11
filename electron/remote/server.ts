@@ -58,9 +58,11 @@ import type {
   SessionRequest,
 } from '../shared/delegation-types.js';
 import type { ReasoningDocument } from '../shared/reasoning.js';
+import type { UsageProvider, UsageState } from '../ipc/shared-types.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
 import type { Coordinator } from '../mcp/coordinator.js';
 import { validateBranchName } from '../mcp/validation.js';
+import { validateProjectFolderName } from './project-create.js';
 import type { ApiTaskDetail } from '../mcp/types.js';
 import { parseLandSelfInput } from '../mcp/land-self-input.js';
 import { parseSignalDoneInput } from '../shared/completion-report.js';
@@ -268,6 +270,8 @@ interface RemoteServer {
 export interface RemoteProject {
   id: string;
   name: string;
+  /** Desktop folder, so the phone can suggest where a new project goes. */
+  path?: string;
   color?: string;
   icon?: string;
   /** The project the desktop last created a task in. */
@@ -1026,6 +1030,8 @@ export function startRemoteServer(opts: {
   getAgentChoices?: () => Promise<RemoteAgentChoice[]>;
   /** Create a top-level task on behalf of a paired phone (renderer-backed). */
   createTaskFromMobile?: (req: MobileTaskRequest) => Promise<{ taskId: string }>;
+  /** Create a new git project folder and register it (renderer-backed). */
+  createProjectFromMobile?: (req: { parentDir: string; name: string }) => Promise<RemoteProject>;
   readMindMap?: (taskId: string) => Promise<MindMapDocument>;
   readReasoning?: (taskId: string) => Promise<ReasoningDocument>;
   updateReasoning?: (taskId: string, update: ReasoningUpdate) => Promise<ReasoningDocument>;
@@ -1056,6 +1062,8 @@ export function startRemoteServer(opts: {
   }) => Promise<void>;
   /** Persist a task's notes (renderer-backed). */
   setTaskNotes?: (taskId: string, notes: string) => Promise<void>;
+  /** The desktop's last agent-subscription usage snapshot (renderer-backed). */
+  getUsage?: () => Promise<Record<UsageProvider, UsageState>>;
   /** Close a task (renderer-backed); unless `force`, refuses when work would be lost. */
   closeTaskFromMobile?: (taskId: string, force: boolean) => Promise<RemoteCloseResult>;
   /** A task's diff against its base branch (renderer-backed). */
@@ -1232,14 +1240,23 @@ export function startRemoteServer(opts: {
     return null;
   }
 
+  /** Parse the request URL; null when the request line or Host header is malformed
+   *  (new URL throws, and an uncaught throw in a request handler takes down the app). */
+  function parseRequestUrl(req: IncomingMessage): URL | null {
+    try {
+      return new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+    } catch {
+      return null;
+    }
+  }
+
   /** Query-string tokens leak into logs and history, so only the legacy WebSocket URL
    *  handshake may use them; every /api/* route requires the Authorization header. */
   function extractRawToken(req: IncomingMessage, allowQuery = false): string | null {
     const auth = req.headers.authorization;
     if (auth?.startsWith('Bearer ')) return auth.slice(7);
     if (!allowQuery) return null;
-    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-    return url.searchParams.get('token');
+    return parseRequestUrl(req)?.searchParams.get('token') ?? null;
   }
 
   function classifyToken(req: IncomingMessage): TokenClass | null {
@@ -1312,7 +1329,12 @@ export function startRemoteServer(opts: {
   };
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+    const url = parseRequestUrl(req);
+    if (!url) {
+      res.writeHead(400, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain' });
+      res.end('Bad request');
+      return;
+    }
 
     // --- API routes (require auth) ---
     if (url.pathname.startsWith('/api/')) {
@@ -1528,6 +1550,30 @@ export function startRemoteServer(opts: {
           return;
         }
 
+        if (url.pathname === '/api/mobile/projects' && req.method === 'POST') {
+          const createProject = opts.createProjectFromMobile;
+          if (!createProject) return jsonEnd(503, { error: 'project creation unavailable' });
+          readJsonBody(req)
+            .then(async (body) => {
+              let name: string;
+              try {
+                name = validateProjectFolderName(body.name);
+              } catch (err) {
+                return jsonEnd(400, { error: err instanceof Error ? err.message : String(err) });
+              }
+              const parentDir = typeof body.parentDir === 'string' ? body.parentDir : '';
+              if (!parentDir)
+                return jsonEnd(400, { error: 'parentDir must be a non-empty string' });
+              try {
+                jsonEnd(201, await createProject({ parentDir, name }));
+              } catch (err) {
+                jsonEnd(400, { error: err instanceof Error ? err.message : String(err) });
+              }
+            })
+            .catch(() => jsonEnd(400, { error: 'bad request' }));
+          return;
+        }
+
         if (url.pathname === '/api/mobile/tasks' && req.method === 'POST') {
           const createTask = opts.createTaskFromMobile;
           if (!createTask) return jsonEnd(503, { error: 'task creation unavailable' });
@@ -1568,6 +1614,21 @@ export function startRemoteServer(opts: {
         }
 
         return jsonEnd(405, { error: 'method not allowed' });
+      }
+
+      // --- Subscription usage (read-only: mobile + paired) ---
+      // Serves the snapshot the desktop status bar already polls, so phones
+      // never add requests to the rate-limited usage endpoints.
+      if (url.pathname === '/api/mobile/usage') {
+        if (tokenClass !== 'mobile' && tokenClass !== 'paired')
+          return jsonEnd(403, { error: 'forbidden' });
+        if (req.method !== 'GET') return jsonEnd(405, { error: 'method not allowed' });
+        if (!opts.getUsage) return jsonEnd(503, { error: 'usage unavailable' });
+        opts
+          .getUsage()
+          .then((usage) => jsonEnd(200, usage))
+          .catch((err) => jsonEnd(500, { error: String(err) }));
+        return;
       }
 
       // --- Task diff (read: mobile + paired) ---

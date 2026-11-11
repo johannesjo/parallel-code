@@ -205,6 +205,36 @@ describe('TerminalView', () => {
 
     await vi.waitFor(() => expect(onData).toHaveBeenCalled());
   });
+
+  it('copies a finished mouse selection to the clipboard', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    const term = mountTerminal();
+    term.write('hello world');
+    await new Promise((resolve) => term.write('', () => resolve(undefined)));
+
+    term.element?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+    term.select(0, 0, 5);
+    window.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+
+    expect(writeText).toHaveBeenCalledWith('hello');
+  });
+
+  it('pastes the clipboard on right-click', async () => {
+    invoke.mockImplementation((cmd: string) =>
+      Promise.resolve(
+        cmd === IPC.ResolveClipboardPaste ? { kind: 'text', text: 'pasted' } : undefined,
+      ),
+    );
+    const term = mountTerminal();
+    const paste = vi.spyOn(term, 'paste');
+
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+    term.element?.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    await vi.waitFor(() => expect(paste).toHaveBeenCalledWith('pasted'));
+  });
 });
 
 it('opens a file link menu on a plain click and its open action on a modified one', async () => {

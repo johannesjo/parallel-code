@@ -533,6 +533,9 @@ export function TerminalView(props: TerminalViewProps) {
       screenReaderMode: store.terminalScreenReaderMode,
       theme: activeTerminalTheme(),
       allowProposedApi: true,
+      // Right-click pastes (see handleContextMenu); selecting a word first
+      // would also copy it over the clipboard contents about to be pasted.
+      rightClickSelectsWord: false,
       // TUIs that capture the mouse (Claude Code's fullscreen mode) keep their
       // own selection, so Cmd+C and Edit > Copy find nothing in xterm. Shift+drag
       // forces a terminal selection elsewhere; on macOS the convention, and what
@@ -784,6 +787,31 @@ export function TerminalView(props: TerminalViewProps) {
       return lines.join('\n');
     });
 
+    function pasteFromClipboard() {
+      (async () => {
+        // Single round-trip resolver — main process picks the most useful
+        // representation: a file path (Finder copy), then a saved image
+        // (screenshot), then plain text. Pasting an image-file copy as
+        // its bare basename was the bug we're avoiding here.
+        //
+        // We funnel the result through term.paste() rather than writing
+        // to the PTY directly so xterm wraps the payload in bracketed
+        // paste markers (\x1b[200~ … \x1b[201~) when the agent has
+        // bracketed-paste mode on. CLI agents like Claude Code use that
+        // wrapper to recognise "the user pasted a file path", which is
+        // what triggers automatic image attachment instead of treating
+        // the path as literal typed text.
+        const paste = await invoke<ClipboardPaste>(IPC.ResolveClipboardPaste);
+        if (paste.kind === 'file' || paste.kind === 'image') {
+          term?.paste(escapePath(paste.path));
+          return;
+        }
+        if (paste.kind === 'text') term?.paste(paste.text);
+      })().catch((err: unknown) => {
+        logWarn('terminal.paste', 'paste handler failed', { err });
+      });
+    }
+
     // eslint-disable-next-line solid/reactivity -- key handler reads current signal/binding values intentionally on each keypress
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== 'keydown') {
@@ -814,28 +842,7 @@ export function TerminalView(props: TerminalViewProps) {
         }
 
         if (binding.action === 'paste') {
-          (async () => {
-            // Single round-trip resolver — main process picks the most useful
-            // representation: a file path (Finder copy), then a saved image
-            // (screenshot), then plain text. Pasting an image-file copy as
-            // its bare basename was the bug we're avoiding here.
-            //
-            // We funnel the result through term.paste() rather than writing
-            // to the PTY directly so xterm wraps the payload in bracketed
-            // paste markers (\x1b[200~ … \x1b[201~) when the agent has
-            // bracketed-paste mode on. CLI agents like Claude Code use that
-            // wrapper to recognise "the user pasted a file path", which is
-            // what triggers automatic image attachment instead of treating
-            // the path as literal typed text.
-            const paste = await invoke<ClipboardPaste>(IPC.ResolveClipboardPaste);
-            if (paste.kind === 'file' || paste.kind === 'image') {
-              term?.paste(escapePath(paste.path));
-              return;
-            }
-            if (paste.kind === 'text') term?.paste(paste.text);
-          })().catch((err: unknown) => {
-            logWarn('terminal.paste', 'paste handler failed', { err });
-          });
+          pasteFromClipboard();
           return false;
         }
 
@@ -924,7 +931,32 @@ export function TerminalView(props: TerminalViewProps) {
     }
     containerRef.addEventListener('copy', handleCopy, true);
 
+    // Terminal-style mouse clipboard: finishing a selection copies it, and
+    // right-click pastes. The mouseup listener goes on the window because a
+    // selection drag often ends outside the pane.
+    function copySelectionOnMouseUp() {
+      const sel = term?.getSelection();
+      if (!sel) return;
+      navigator.clipboard.writeText(cleanCopiedTerminalText(sel)).catch((err: unknown) => {
+        logWarn('terminal.copy', 'copy on select failed', { err });
+      });
+    }
+    function handleMouseDown(event: MouseEvent) {
+      if (event.button !== 0) return;
+      window.addEventListener('mouseup', copySelectionOnMouseUp, { once: true });
+    }
+    function handleContextMenu(event: MouseEvent) {
+      event.preventDefault();
+      term?.focus();
+      pasteFromClipboard();
+    }
+    containerRef.addEventListener('mousedown', handleMouseDown, true);
+    containerRef.addEventListener('contextmenu', handleContextMenu, true);
+
     onCleanup(() => {
+      containerRef.removeEventListener('mousedown', handleMouseDown, true);
+      window.removeEventListener('mouseup', copySelectionOnMouseUp);
+      containerRef.removeEventListener('contextmenu', handleContextMenu, true);
       containerRef.removeEventListener('dragover', handleDragOver, true);
       containerRef.removeEventListener('drop', handleDrop, true);
       containerRef.removeEventListener('copy', handleCopy, true);

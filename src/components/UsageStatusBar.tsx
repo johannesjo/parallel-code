@@ -16,15 +16,19 @@ import {
   usageVisible,
 } from './usage-format';
 
-const PROVIDER_LABELS: Record<UsageProvider, string> = { claude: 'Claude', codex: 'Codex' };
-const POPOVER_WIDTH = 300;
+const PROVIDER_LABELS: Record<UsageProvider, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  antigravity: 'Antigravity',
+};
+const POPOVER_WIDTH = 320;
 
 function UsageMeter(props: { label: string; window: UsageWindow; width?: number }) {
   const warn = () => props.window.usedPercent >= USAGE_WARN_PERCENT;
   const color = () => (warn() ? theme.warning : theme.accent);
-  const reset = () => formatReset(props.window.resetsAt);
   // The bar drains: filled means budget still available, matching the "% left" readout.
   const left = () => remainingPercent(props.window);
+  const reset = () => (left() === 100 ? '' : formatReset(props.window.resetsAt));
 
   return (
     <span style={{ display: 'inline-flex', 'align-items': 'center', gap: '6px' }}>
@@ -120,6 +124,7 @@ function UsagePopover(props: {
   anchor: { left: number; bottom: number };
 }) {
   const footer = () => {
+    if (props.usage.refreshing) return 'Refreshing usage…';
     if (props.usage.status === 'error')
       return `Refresh failed: ${props.usage.error} · click to retry`;
     const at = props.usage.fetchedAt;
@@ -207,6 +212,7 @@ function ProviderUsage(props: { provider: UsageProvider }) {
     <Show when={usageVisible(usage())}>
       <span
         role="status"
+        aria-busy={usage().refreshing ? true : undefined}
         onClick={() => void refreshUsage(props.provider, { force: true })}
         onMouseEnter={(e) => setAnchor(popoverAnchor(e.currentTarget.getBoundingClientRect()))}
         onMouseLeave={() => setAnchor(null)}
@@ -214,7 +220,7 @@ function ProviderUsage(props: { provider: UsageProvider }) {
           display: 'inline-flex',
           'align-items': 'center',
           gap: '10px',
-          cursor: 'pointer',
+          cursor: usage().refreshing ? 'wait' : 'pointer',
           opacity: stale() ? '0.6' : '1',
         }}
       >
@@ -223,9 +229,19 @@ function ProviderUsage(props: { provider: UsageProvider }) {
             color: theme.fgSubtle,
             'text-transform': 'uppercase',
             'letter-spacing': '0.05em',
+            display: 'inline-flex',
+            'align-items': 'center',
+            gap: '6px',
           }}
         >
           {PROVIDER_LABELS[props.provider]}
+          <Show when={usage().refreshing}>
+            <span
+              class="inline-spinner"
+              aria-hidden="true"
+              style={{ width: '9px', height: '9px', 'border-width': '1.5px' }}
+            />
+          </Show>
         </span>
         <Show when={headline()}>{(h) => <UsageMeter label={h().label} window={h().window} />}</Show>
         {/* Pay-per-use logins have no rate-limit windows; their spend is the headline. */}
@@ -243,7 +259,7 @@ function ProviderUsage(props: { provider: UsageProvider }) {
 
 /**
  * Bottom bar with the rate-limit windows of every agent subscription the app
- * can read (Claude Code, Codex) and the resources panel on the right. A
+ * can read (Claude Code, Codex, Antigravity) and the resources panel on the right. A
  * provider's entry stays hidden until its first successful read, and
  * permanently when it has no subscription login (API-key users).
  */

@@ -20,6 +20,7 @@ interface PhoneClient {
     fun onVpnPolicyChanged()
     suspend fun pair(pin: String, remember: Boolean)
     suspend fun fetchProjects(): List<MobileProject>
+    suspend fun createProject(name: String, parentDir: String): MobileProject
     suspend fun fetchAgentChoices(): List<MobileAgentChoice>
     suspend fun createTask(projectId: String, name: String, prompt: String, agentId: String? = null, model: String? = null): String
     suspend fun fetchNotes(taskId: String): String

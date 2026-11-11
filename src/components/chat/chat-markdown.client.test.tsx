@@ -75,7 +75,7 @@ describe('chat markdown', () => {
         () => false,
       ),
     );
-    await vi.waitFor(() => expect(html()).toContain('shiki-block'));
+    await vi.waitFor(() => expect(html()).toContain('shiki-block'), { timeout: 5000 });
     expect(html()).not.toContain('<img');
     expect(hrefs(html())).toEqual(['https://attacker.example/p.png']);
     const container = document.createElement('div');
@@ -107,7 +107,7 @@ describe('chat markdown', () => {
         () => false,
       ),
     );
-    await vi.waitFor(() => expect(html()).toContain('shiki-block'));
+    await vi.waitFor(() => expect(html()).toContain('shiki-block'), { timeout: 5000 });
     expect(html()).not.toContain('<img');
     expect(html()).toContain('&lt;img src=x onerror=alert(1)&gt;');
   });

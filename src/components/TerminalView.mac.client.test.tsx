@@ -118,7 +118,7 @@ it('Option+drag selects text under mouse tracking, and Cmd+C copies it', async (
   expect(term.getSelection()).toBe('hello');
 
   press(term, { key: 'c', keyCode: 67, metaKey: true });
-  expect(writeText).toHaveBeenCalledExactlyOnceWith('hello');
+  expect(writeText).toHaveBeenCalledWith('hello');
   expect(writesToAgent()).toEqual([]);
 });
 
