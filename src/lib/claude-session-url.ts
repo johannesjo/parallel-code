@@ -8,12 +8,9 @@ const SESSION_ID_RE = /^session_[A-Za-z0-9_-]{1,128}$/;
 
 /** Teleport session id from a Claude web session URL, or null for any other text. */
 export function parseClaudeSessionUrl(text: string): string | null {
-  const trimmed = text.trim();
-  // Dragging selected address-bar text drops the link without its scheme.
-  const withScheme = trimmed.startsWith('claude.ai/') ? `https://${trimmed}` : trimmed;
   let url: URL;
   try {
-    url = new URL(withScheme);
+    url = new URL(text.trim());
   } catch {
     return null;
   }

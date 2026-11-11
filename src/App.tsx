@@ -112,6 +112,7 @@ import {
 import { toggleGitHubIssues } from './store/github-issues-target';
 import { isGitHubUrl } from './lib/github-url';
 import { isClaudeSessionUrl } from './lib/claude-session-url';
+import { withLinkScheme } from './lib/dropped-link';
 import { getDeepActiveElement } from './lib/dom-focus';
 import { HoldToQuit } from './components/HoldToQuit';
 import type { PersistedWindowState } from './store/types';
@@ -283,7 +284,7 @@ function App() {
         ?.trim();
       if (firstUrl && isTaskSourceUrl(firstUrl)) return firstUrl;
     }
-    const text = dt.getData('text/plain')?.trim();
+    const text = withLinkScheme(dt.getData('text/plain') ?? '');
     if (text && isTaskSourceUrl(text)) return text;
     return null;
   }
@@ -667,7 +668,7 @@ function App() {
       ) {
         return;
       }
-      const text = e.clipboardData?.getData('text/plain')?.trim();
+      const text = withLinkScheme(e.clipboardData?.getData('text/plain') ?? '');
       if (text && isTaskSourceUrl(text)) {
         e.preventDefault();
         setNewTaskDropUrl(text);
