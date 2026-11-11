@@ -6,6 +6,7 @@ import {
   READY_AGENT_FRAME_FIXTURES,
 } from './agent-frame-fixtures.js';
 import { handleMCPToolCall } from './server.js';
+import { setProjectTeardownScript } from '../ipc/project-teardown.js';
 import type { MCPClient } from './client.js';
 import {
   getAgentActivitySnapshot,
@@ -1612,6 +1613,27 @@ describe('Coordinator land_self', () => {
     expect(mockNotifyRenderer).toHaveBeenCalledWith('mcp_task_closed', {
       taskId: 'task-1',
       merged: { linesAdded: expect.any(Number), linesRemoved: expect.any(Number) },
+    });
+  });
+
+  it("runs the project's teardown script and passes its warning on with the landing", async () => {
+    const { deleteTask: mockDeleteTask } = await import('../ipc/tasks.js');
+    vi.mocked(mockDeleteTask).mockResolvedValueOnce({ teardownWarning: 'Teardown timed out.' });
+    const projectId = coordinator.getTask('task-1')?.projectId ?? '';
+    expect(projectId).not.toBe('');
+    setProjectTeardownScript(projectId, 'docker compose down');
+    try {
+      await coordinator.landSelf('task-1', { verification, summary: 'done' });
+    } finally {
+      setProjectTeardownScript(projectId, undefined);
+    }
+    expect(vi.mocked(mockDeleteTask)).toHaveBeenCalledWith(
+      expect.objectContaining({ teardownScript: 'docker compose down' }),
+    );
+    expect(mockNotifyRenderer).toHaveBeenCalledWith('mcp_task_closed', {
+      taskId: 'task-1',
+      merged: { linesAdded: expect.any(Number), linesRemoved: expect.any(Number) },
+      teardownWarning: 'Teardown timed out.',
     });
   });
 

@@ -557,12 +557,16 @@ export async function closeTask(taskId: string): Promise<void> {
 
   try {
     if (task.coordinatorMode || task.delegationParent || childIdsToDetach.length > 0) {
-      const result = await delegationRequest<{ detachedChildIds: string[] }>({
+      const result = await delegationRequest<{
+        detachedChildIds: string[];
+        teardownWarning?: string;
+      }>({
         action: 'closeParent',
         taskId,
         deleteBranch,
       });
       applyDelegationChange({ taskId, detachedChildIds: result.detachedChildIds });
+      reportTeardownWarning(task.name, result.teardownWarning);
       removeTaskFromStore(taskId, [...agentIds, ...shellAgentIds]);
       return;
     }
@@ -1406,6 +1410,8 @@ export function initMCPListeners(): () => void {
       );
       if (created) {
         markAgentSpawned(evt.agentId);
+        // Sub-tasks always get a worktree; set it up like a task the user created.
+        startWorktreeSetup(evt.taskId, getProject(evt.projectId));
         rescheduleTaskStatusPolling();
         const projectRoot = getProjectPath(evt.projectId);
         if (projectRoot && evt.prompt)
@@ -1416,12 +1422,14 @@ export function initMCPListeners(): () => void {
 
   cleanups.push(
     window.electron.ipcRenderer.on(IPC.MCP_TaskClosed, (data: unknown) => {
-      const { taskId, merged } = data as {
+      const { taskId, merged, teardownWarning } = data as {
         taskId: string;
         merged?: { linesAdded: number; linesRemoved: number };
+        teardownWarning?: string;
       };
       const task = store.tasks[taskId];
       if (!task) return;
+      reportTeardownWarning(task.name, teardownWarning);
       // The coordinator closed, merged or landed this subtask: it is finished.
       // A merge that was cleaned up separately (approve-and-merge, a land whose
       // cleanup failed) arrives as a plain close; its landing state says it merged.
@@ -1437,6 +1445,7 @@ export function initMCPListeners(): () => void {
       for (const agentId of agentIds) {
         clearAgentActivity(agentId);
       }
+      forgetSetupShells(task.shellAgentIds);
 
       setStore(
         produce((s) => {

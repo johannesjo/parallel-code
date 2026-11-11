@@ -104,6 +104,9 @@ vi.mock('./projects', () => ({
   isProjectMissing: vi.fn(),
 }));
 vi.mock('../lib/bookmarks', () => ({ setPendingShellCommand: vi.fn() }));
+// No close animation: a closed task leaves the store on a 0ms timer, which the
+// top-level afterEach drains, so it cannot delete the next test's same-id task.
+vi.mock('../lib/reducedMotion', () => ({ prefersMotion: () => false }));
 vi.mock('./taskStatus', () => ({
   markAgentSpawned: vi.fn(),
   markAgentBusy: vi.fn(),
@@ -264,6 +267,11 @@ describe('task record helpers', () => {
       expect(selectActiveNeighborAfterRemoval(order, removedTaskId)).toBe(expected);
     },
   );
+});
+
+afterEach(async () => {
+  // Timers of equal delay fire in order, so pending task removals run first.
+  await new Promise((resolve) => setTimeout(resolve, 0));
 });
 
 beforeEach(() => {
@@ -532,6 +540,35 @@ describe('MCP_TaskCreated IPC handler', () => {
     expect(mockTasks['sub-task-1'].signalDoneConsumed).toBe(true);
     taskCreatedHandler(baseEvent);
     expect(mockTasks['sub-task-1'].completion).toEqual(completion);
+  });
+
+  it("opens a setup terminal with the project's setup script, once per sub-task", () => {
+    vi.mocked(getProject).mockReturnValueOnce({
+      id: 'proj-1',
+      path: '/repo',
+      worktreeSetupScript: 'npm ci',
+    } as never);
+    taskCreatedHandler(baseEvent);
+    taskCreatedHandler(baseEvent);
+    const shellIds = mockTasks['sub-task-1'].shellAgentIds;
+    expect(shellIds).toHaveLength(1);
+    expect(consumePendingSetupScript(shellIds[0])).toBe('npm ci');
+    forgetSetupShells(shellIds);
+  });
+
+  it("forgets the sub-task's setup terminal when the coordinator closes it", () => {
+    vi.mocked(getProject).mockReturnValueOnce({
+      id: 'proj-1',
+      path: '/repo',
+      worktreeSetupScript: 'npm ci',
+    } as never);
+    Object.assign(expectDefined(core.harness, 'mock store harness').store, { taskGitStatus: {} });
+    taskCreatedHandler(baseEvent);
+    const [shellId] = mockTasks['sub-task-1'].shellAgentIds;
+    const closedHandler = expectDefined(ipcHandlers.get(IPC.MCP_TaskClosed), 'closed handler');
+    closedHandler({ taskId: 'sub-task-1' });
+    expect(setupShellState(shellId)).toBeUndefined();
+    expect(consumePendingSetupScript(shellId)).toBeUndefined();
   });
 
   it('regression: sub-tasks must not be created without controlledBy defined', () => {
@@ -2148,6 +2185,32 @@ describe('closeTask — IPC cleanup ordering', () => {
     expect(mockTasks['coord-1']?.closingStatus).toBe('removing');
   });
 
+  it("reports a failed teardown when a parent's worktree is removed", async () => {
+    vi.mocked(getCoordinatorChildren).mockReturnValue({ active: [], collapsed: [] });
+    mockTasks['coord-1'] = {
+      name: 'Fix login',
+      agentIds: ['agent-coord'],
+      shellAgentIds: [],
+      coordinatorMode: true,
+      gitIsolation: 'worktree',
+      projectId: 'proj-1',
+    };
+    mockInvoke.mockImplementation((channel: string) =>
+      Promise.resolve(
+        channel === IPC.DelegationRequest
+          ? { detachedChildIds: [], teardownWarning: 'Teardown script exited with code 1.' }
+          : undefined,
+      ),
+    );
+
+    await closeTask('coord-1');
+
+    expect(showNotification).toHaveBeenCalledWith(
+      'Closed “Fix login”. Teardown script exited with code 1.',
+      expect.anything(),
+    );
+  });
+
   it('detaches coordinator children without clearing backend review state', async () => {
     mockInvoke.mockImplementation(async (channel: string) =>
       channel === IPC.DelegationRequest ? { detachedChildIds: ['child-1'] } : undefined,
@@ -2373,6 +2436,17 @@ describe('Super Productivity completion wiring', () => {
     });
     expect(fireSpCompletion).toHaveBeenCalledWith('child-1');
     expect(fireSpCompletion).toHaveBeenCalledWith('child-2');
+  });
+
+  it('reports a failed teardown when the coordinator closes a subtask', () => {
+    const closedHandler = expectDefined(ipcHandlers.get(IPC.MCP_TaskClosed), 'closed handler');
+    Object.assign(expectDefined(core.harness, 'mock store harness').store, { taskGitStatus: {} });
+    mockTasks['child-4'] = { ...worktreeTask(), name: 'Fix login', coordinatedBy: 'coord-1' };
+    closedHandler({ taskId: 'child-4', teardownWarning: 'Teardown script exited with code 1.' });
+    expect(showNotification).toHaveBeenCalledWith(
+      'Closed “Fix login”. Teardown script exited with code 1.',
+      expect.anything(),
+    );
   });
 
   it('a subtask that merged earlier and is closed later still counts as merged', () => {

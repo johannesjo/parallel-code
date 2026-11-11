@@ -18,6 +18,8 @@ import {
   mockCreateBackendTask,
   mockWriteToAgent,
 } from './coordinator-test-harness.js';
+import { setProjectAgentEnv } from '../ipc/project-env.js';
+import { setProjectTeardownScript } from '../ipc/project-teardown.js';
 
 const { Coordinator } = await setupCoordinatorHarness();
 type TestCoordinator = InstanceType<typeof Coordinator>;
@@ -532,6 +534,45 @@ describe('cleanup', () => {
     const task = await coordinator.createTask({ name: 't', coordinatorTaskId: 'coord-1' });
     await Promise.all([coordinator.closeTask(task.id), coordinator.closeTask(task.id)]);
     expect(mockDeleteBackendTask).toHaveBeenCalledTimes(1);
+  });
+
+  describe("with the project's teardown script", () => {
+    beforeEach(() => {
+      setProjectTeardownScript('proj-1', 'docker compose down');
+      setProjectAgentEnv('proj-1', { COMPOSE_PROJECT_NAME: 'app' });
+    });
+    afterEach(() => {
+      setProjectTeardownScript('proj-1', undefined);
+      setProjectAgentEnv('proj-1', undefined);
+    });
+
+    it('runs it in the worktree before deleting it', async () => {
+      const task = await coordinator.createTask({ name: 't', coordinatorTaskId: 'coord-1' });
+      await coordinator.closeTask(task.id);
+      expect(mockDeleteBackendTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          worktreePath: '/tmp/t1',
+          teardownScript: 'docker compose down',
+          teardownEnv: { COMPOSE_PROJECT_NAME: 'app' },
+        }),
+      );
+    });
+
+    it("passes a failed teardown's warning on with the close", async () => {
+      mockDeleteBackendTask.mockResolvedValueOnce({ teardownWarning: 'Teardown script failed.' });
+      const task = await coordinator.createTask({ name: 't', coordinatorTaskId: 'coord-1' });
+      await coordinator.closeTask(task.id);
+      expect(mockNotifyRenderer).toHaveBeenCalledWith('mcp_task_closed', {
+        taskId: task.id,
+        teardownWarning: 'Teardown script failed.',
+      });
+    });
+  });
+
+  it('passes no teardown script when the project has none', async () => {
+    const task = await coordinator.createTask({ name: 't', coordinatorTaskId: 'coord-1' });
+    await coordinator.closeTask(task.id);
+    expect(mockDeleteBackendTask.mock.calls[0]?.[0]).not.toHaveProperty('teardownScript');
   });
 
   it.each(['close', 'remove'] as const)('clears hook and interrupt state on %s', async (how) => {

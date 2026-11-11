@@ -12,6 +12,7 @@ import type {
   TaskAuthorityInput,
 } from '../shared/delegation-types.js';
 import { DEFAULT_INDEPENDENT_TASKS_PER_CREATOR } from '../shared/coordinator-limits.js';
+import { setProjectTeardownScript } from '../ipc/project-teardown.js';
 
 const mocks = vi.hoisted(() => ({
   git: vi.fn(),
@@ -1665,6 +1666,21 @@ describe('backend detach normalization', () => {
       ),
     );
     expect(saved.tasks.retained).not.toHaveProperty('coordinatedBy');
+  });
+
+  it("runs the project's teardown script when it deletes the parent's worktree and returns its warning", async () => {
+    setProjectTeardownScript('project', 'docker compose down');
+    try {
+      await register('parent');
+      mocks.remove.mockResolvedValueOnce({ teardownWarning: 'Teardown timed out.' });
+      const result = await service.closeParent('parent', true);
+      expect(mocks.remove).toHaveBeenCalledWith(
+        expect.objectContaining({ teardownScript: 'docker compose down', teardownEnv: {} }),
+      );
+      expect(result.teardownWarning).toBe('Teardown timed out.');
+    } finally {
+      setProjectTeardownScript('project', undefined);
+    }
   });
 
   it('overrides stale renderer relationships before deleting the parent', async () => {

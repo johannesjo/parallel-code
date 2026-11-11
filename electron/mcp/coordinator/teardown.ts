@@ -5,6 +5,7 @@ import { restoreCoordinatorMcpJson, unlinkMcpConfigFile } from './mcp-config.js'
 import type { CoordinatorInternals } from './internals.js';
 import { type MergedLines } from './landing.js';
 import { deleteTask } from '../../ipc/tasks.js';
+import { projectTeardownOptions } from '../../ipc/project-teardown.js';
 import { killAgent } from '../../ipc/pty.js';
 import { verificationRunner } from '../../ipc/verify.js';
 import type { CoordinatedTask } from '../types.js';
@@ -68,8 +69,9 @@ function clearTaskControlState(c: CoordinatorInternals, taskId: string): void {
   c.controlMap.delete(taskId);
 }
 
-/** Kills the task's agents, then deletes its worktree and branch. */
-function killAgentsAndDeleteWorktree(task: CoordinatedTask): ReturnType<typeof deleteTask> {
+/** Kills the task's agents, runs the project's teardown script, then deletes
+ *  the worktree and branch. Resolves to the teardown's failure notice, if any. */
+async function killAgentsAndDeleteWorktree(task: CoordinatedTask): Promise<string | undefined> {
   // Kill the agent. For Docker sub-tasks, killAgent also calls docker stop on the
   // sub-task's own container (via stopDockerContainer in pty.ts), which cleanly
   // terminates the entire container rather than just the PTY client process.
@@ -81,12 +83,15 @@ function killAgentsAndDeleteWorktree(task: CoordinatedTask): ReturnType<typeof d
       /* already dead */
     }
   }
-  return deleteTask({
+  const result = await deleteTask({
     agentIds,
     branchName: task.branchName,
     deleteBranch: true,
     projectRoot: task.projectRoot,
+    worktreePath: task.worktreePath,
+    ...projectTeardownOptions(task.projectId),
   });
+  return result?.teardownWarning;
 }
 
 export async function cleanupLandedTaskResources(
@@ -101,7 +106,7 @@ export async function cleanupLandedTaskResources(
 
     clearAgentOutputState(c, task);
 
-    await killAgentsAndDeleteWorktree(task);
+    const teardownWarning = await killAgentsAndDeleteWorktree(task);
 
     resolveIdleWaiters(c, task.id, 'exited');
     clearTaskMcpConfig(task);
@@ -109,7 +114,11 @@ export async function cleanupLandedTaskResources(
     task.exitCode = 0;
     c.tasks.delete(task.id);
     clearTaskControlState(c, task.id);
-    notifyRenderer(c, IPC.MCP_TaskClosed, { taskId: task.id, merged });
+    notifyRenderer(c, IPC.MCP_TaskClosed, {
+      taskId: task.id,
+      merged,
+      ...(teardownWarning && { teardownWarning }),
+    });
   } finally {
     c.closingTaskIds.delete(task.id);
   }
@@ -182,8 +191,9 @@ async function cleanupTaskOnce(
 
   // Remove worktree. If this fails, keep all coordinator state so the caller
   // can retry. Do NOT emit MCP_TaskClosed — the task still exists on disk.
+  let teardownWarning: string | undefined;
   try {
-    await killAgentsAndDeleteWorktree(task);
+    teardownWarning = await killAgentsAndDeleteWorktree(task);
   } catch (err) {
     console.warn('Failed to delete coordinated task worktree:', err);
     c.prompts.clearPromptDeliveryState(taskId);
@@ -214,7 +224,11 @@ async function cleanupTaskOnce(
   c.closingTaskIds.delete(taskId);
 
   // Notify renderer
-  notifyRenderer(c, IPC.MCP_TaskClosed, merged ? { taskId, merged } : { taskId });
+  notifyRenderer(c, IPC.MCP_TaskClosed, {
+    taskId,
+    ...(merged && { merged }),
+    ...(teardownWarning && { teardownWarning }),
+  });
 }
 
 export function deregisterCoordinator(c: CoordinatorInternals, coordinatorTaskId: string): void {

@@ -254,6 +254,7 @@ describe('relinkProject session ids', () => {
 describe('updateProject', () => {
   afterEach(() => {
     setStore('projects', []);
+    vi.mocked(invoke).mockReset();
   });
 
   it('clears the configured coverage report path when undefined is provided', () => {
@@ -296,6 +297,24 @@ describe('updateProject', () => {
 
     updateProject('p1', { icon: undefined });
     expect(store.projects[0]?.icon).toBeUndefined();
+  });
+
+  it('hands a saved or cleared teardown script to the main process', () => {
+    setStore('projects', [{ id: 'p1', name: 'Project', path: '/repo', color: 'hsl(0, 70%, 75%)' }]);
+    vi.mocked(invoke).mockResolvedValue(undefined);
+
+    updateProject('p1', { worktreeTeardownScript: 'docker compose down' });
+    expect(invoke).toHaveBeenCalledWith(IPC.SetProjectTeardownScript, {
+      projectId: 'p1',
+      script: 'docker compose down',
+    });
+
+    // Whitespace-only is stored as no script, and that is what is pushed.
+    updateProject('p1', { worktreeTeardownScript: '   ' });
+    expect(invoke).toHaveBeenLastCalledWith(IPC.SetProjectTeardownScript, {
+      projectId: 'p1',
+      script: '',
+    });
   });
 });
 

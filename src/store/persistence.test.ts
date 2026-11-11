@@ -3057,4 +3057,24 @@ describe('project agent env persistence', () => {
       env: { A: '1' },
     });
   });
+
+  it('hands the teardown script to the main process before tasks restore', async () => {
+    setStore(
+      produce((s) => {
+        s.tasks = {};
+      }),
+    );
+    let tasksAtPush = -1;
+    mockInvoke.mockImplementation(async (channel) => {
+      if (channel === IPC.LoadAppState)
+        return stateWith({ worktreeTeardownScript: 'docker compose down' });
+      if (channel === IPC.SetProjectTeardownScript) tasksAtPush = Object.keys(store.tasks).length;
+    });
+    await loadState();
+    expect(tasksAtPush).toBe(0);
+    expect(mockInvoke).toHaveBeenCalledWith(IPC.SetProjectTeardownScript, {
+      projectId: 'project-1',
+      script: 'docker compose down',
+    });
+  });
 });

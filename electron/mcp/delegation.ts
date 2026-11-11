@@ -32,6 +32,7 @@ import {
   killAgent,
 } from '../ipc/pty.js';
 import { deleteTask } from '../ipc/tasks.js';
+import { projectTeardownOptions } from '../ipc/project-teardown.js';
 import type {
   DelegateAssignment,
   DelegationAttempt,
@@ -102,6 +103,11 @@ interface CreatedIndependentTask {
   relation: 'independent';
 }
 
+/** A failed or timed-out teardown script still removes the worktree; the warning says so. */
+interface CloseParentResult {
+  detachedChildIds: string[];
+  teardownWarning?: string;
+}
 type Authority = TaskAuthorityInput & { closing?: boolean; closed?: boolean };
 
 /** A project page's hidden agent, working in the checkout rather than a worktree of its own. */
@@ -1229,7 +1235,7 @@ export class DelegationService {
     }
   }
 
-  closeParent(taskId: string, deleteBranch: boolean): Promise<{ detachedChildIds: string[] }> {
+  closeParent(taskId: string, deleteBranch: boolean): Promise<CloseParentResult> {
     const existing = this.closes.get(taskId);
     if (existing) return existing;
     const promise = this.closeParentOnce(taskId, deleteBranch).finally(() =>
@@ -1238,10 +1244,7 @@ export class DelegationService {
     this.closes.set(taskId, promise);
     return promise;
   }
-  private async closeParentOnce(
-    taskId: string,
-    deleteBranch: boolean,
-  ): Promise<{ detachedChildIds: string[] }> {
+  private async closeParentOnce(taskId: string, deleteBranch: boolean): Promise<CloseParentResult> {
     const task = this.requireTask(taskId);
     if (
       [...this.attempts.values()].some(
@@ -1271,20 +1274,24 @@ export class DelegationService {
         (agentId) => getAgentMeta(agentId)?.taskId === taskId,
       );
       for (const agentId of agentIds) killAgent(agentId);
-      if (!task.externalWorktree && task.gitIsolation === 'worktree')
-        await deleteTask({
-          taskId,
-          agentIds: [],
-          branchName: task.branchName,
-          deleteBranch,
-          projectRoot: task.projectRoot,
-          worktreePath: task.worktreePath,
-        });
+      const deleted =
+        !task.externalWorktree && task.gitIsolation === 'worktree'
+          ? await deleteTask({
+              taskId,
+              agentIds: [],
+              branchName: task.branchName,
+              deleteBranch,
+              projectRoot: task.projectRoot,
+              worktreePath: task.worktreePath,
+              ...projectTeardownOptions(task.projectId),
+            })
+          : undefined;
       coordinator.deregisterCoordinator(taskId);
       task.closed = true;
       this.forgetLaunches(taskId);
       this.options.persist();
-      return { detachedChildIds };
+      const teardownWarning = deleted?.teardownWarning;
+      return { detachedChildIds, ...(teardownWarning && { teardownWarning }) };
     } finally {
       task.closing = false;
     }

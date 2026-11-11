@@ -155,6 +155,7 @@ export function removeProject(projectId: string): void {
   forgetGitHubLists(projectId);
   // The main process would otherwise keep a removed project's secrets until restart.
   void syncProjectAgentEnv(projectId, undefined);
+  void syncProjectTeardownScript(projectId, undefined);
 }
 
 export function updateProject(
@@ -265,6 +266,9 @@ export function updateProject(
   if (Object.prototype.hasOwnProperty.call(updates, 'agentEnv')) {
     void syncProjectAgentEnv(projectId, updates.agentEnv);
   }
+  if (Object.prototype.hasOwnProperty.call(updates, 'worktreeTeardownScript')) {
+    void syncProjectTeardownScript(projectId, getProject(projectId)?.worktreeTeardownScript);
+  }
 }
 
 /** Hands the project's agent env vars to the main process, which applies them
@@ -277,6 +281,19 @@ export async function syncProjectAgentEnv(
     await invoke(IPC.SetProjectAgentEnv, { projectId, env: env ?? {} });
   } catch (error) {
     console.warn('Could not apply project environment variables:', String(error));
+  }
+}
+
+/** Hands the project's teardown script to the main process, which runs it
+ *  when a coordinator closes one of its sub-tasks. Never rejects. */
+export async function syncProjectTeardownScript(
+  projectId: string,
+  script: string | undefined,
+): Promise<void> {
+  try {
+    await invoke(IPC.SetProjectTeardownScript, { projectId, script: script ?? '' });
+  } catch (error) {
+    console.warn('Could not apply project teardown script:', String(error));
   }
 }
 

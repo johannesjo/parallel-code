@@ -29,7 +29,12 @@ import {
 import { store, setStore } from './core';
 import { startRemoteAccess } from './remote';
 import { effectiveAgentId } from './agent-select';
-import { randomPastelColor, sortProjects, syncProjectAgentEnv } from './projects';
+import {
+  randomPastelColor,
+  sortProjects,
+  syncProjectAgentEnv,
+  syncProjectTeardownScript,
+} from './projects';
 import { sanitizeEnvVars } from '../../electron/shared/env-vars';
 import { markAgentSpawned } from './taskStatus';
 import { isAgentSuspended, SUSPENDED_SIGNAL } from './agent-suspend';
@@ -975,6 +980,7 @@ export async function loadState(): Promise<void> {
     }).catch((error: unknown) => console.warn('Could not restore project permissions:', error));
     // Before store insertion too: terminals spawn as soon as their tasks mount.
     await syncProjectAgentEnv(project.id, project.agentEnv);
+    await syncProjectTeardownScript(project.id, project.worktreeTeardownScript);
   }
   const detachedRestores: string[] = [];
   for (const task of Object.values(raw.tasks)) {

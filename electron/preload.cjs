@@ -132,6 +132,7 @@ const ALLOWED_CHANNELS = new Set([
   'task_screens_progress',
   'set_minimax_api_key',
   'set_project_agent_env',
+  'set_project_teardown_script',
   'list_codex_models',
   'check_docker_available',
   'check_docker_image_exists',
