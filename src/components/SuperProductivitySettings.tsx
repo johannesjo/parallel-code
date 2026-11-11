@@ -3,8 +3,11 @@ import {
   connectSuperProductivity,
   disconnectSuperProductivity,
   refreshSpConnection,
+  setSpGroupTasks,
   spConnection,
+  store,
 } from '../store/store';
+import { SettingsCheckboxRow } from './settings/settings-ui';
 import { theme } from '../lib/theme';
 import { errMessage } from '../lib/log';
 import type { SpConnectionState } from '../../electron/shared/super-productivity';
@@ -153,6 +156,12 @@ export function SuperProductivitySettings() {
             Disconnect
           </button>
         </div>
+        <SettingsCheckboxRow
+          label="Group tasks by project"
+          checked={store.superProductivityGroupTasks}
+          onChange={setSpGroupTasks}
+          description="Create new tasks as subtasks of one “Parallel Code · project” task, so Super Productivity's Today shows one row per project"
+        />
       </Show>
       <Show when={error()}>
         <div role="alert" style={{ 'font-size': '12px', color: theme.error }}>

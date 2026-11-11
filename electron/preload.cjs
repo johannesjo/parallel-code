@@ -251,6 +251,8 @@ const ALLOWED_CHANNELS = new Set([
   'super_productivity_get_tasks',
   'super_productivity_rename_task',
   'super_productivity_complete_task',
+  'super_productivity_remove_from_today',
+  'super_productivity_plan_for_today',
   'super_productivity_consume_pending_open',
   'super_productivity_open_task_requested',
 ]);

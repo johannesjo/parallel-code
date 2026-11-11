@@ -152,7 +152,7 @@ import { closeTopCompareForm, dismissPinnedBubbles, setFilesOpen } from './docum
 import { resetForNewMatch } from './arena/store';
 import { startDesktopNotificationWatcher } from './store/desktopNotifications';
 import { startSuperProductivitySync, startSpOpenListener } from './store/store';
-import { startBackgroundTaskWatcher } from './store/background-tasks';
+import { isTaskBackgrounded, startBackgroundTaskWatcher } from './store/background-tasks';
 import { startTaskBriefWatcher } from './store/task-brief';
 import { showPlanTasks, startKanbanAutomation } from './store/kanban';
 import { startPrChecksSubscription } from './store/pr-checks';
@@ -646,7 +646,10 @@ function App() {
     startUsagePolling();
 
     const stopNotificationWatcher = startDesktopNotificationWatcher(windowFocused);
-    const stopSuperProductivitySync = startSuperProductivitySync(windowFocused);
+    const stopSuperProductivitySync = startSuperProductivitySync(
+      windowFocused,
+      (taskId) => !!store.tasks[taskId]?.collapsed || isTaskBackgrounded(taskId),
+    );
     const stopSpOpenListener = startSpOpenListener();
     const stopBackgroundTaskWatcher = startBackgroundTaskWatcher();
     const stopTaskBriefWatcher = startTaskBriefWatcher();

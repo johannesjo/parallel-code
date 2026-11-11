@@ -104,5 +104,13 @@ export function registerSuperProductivityHandlers(): void {
     ),
   );
 
+  ipcMain.handle(IPC.SuperProductivityRemoveFromToday, (_e, args: IpcArgs) =>
+    client.removeFromToday(spId(args?.taskId, 'taskId')),
+  );
+
+  ipcMain.handle(IPC.SuperProductivityPlanForToday, (_e, args: IpcArgs) =>
+    client.planForToday(spId(args?.taskId, 'taskId'), args?.onlyIfUnplanned === true),
+  );
+
   ipcMain.handle(IPC.SuperProductivityConsumePendingOpen, () => consumePendingSpOpen());
 }

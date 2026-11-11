@@ -20,6 +20,7 @@ import {
   decideSpFocusAction,
   resolveSpTitleSync,
   SP_MAX_BATCH_IDS,
+  toSpGroupTitle,
   toSpTitle,
   type SpBannerReason,
   type SpConnectionState,
@@ -144,6 +145,55 @@ export function setProjectSpMapping(projectId: string, spProjectId: string | und
   if (idx >= 0) setStore('projects', idx, 'superProductivityProjectId', spProjectId);
 }
 
+/** Turn grouping on or off; it applies to tasks linked from then on. */
+export function setSpGroupTasks(enabled: boolean): void {
+  setStore('superProductivityGroupTasks', enabled);
+}
+
+const creatingGroups = new Map<string, Promise<string | null>>();
+
+/** The project's group task, created when there is none (or it was finished,
+ *  deleted, or belongs to another Super Productivity project by now). */
+function ensureSpGroupTask(
+  projectId: string,
+  spProjectId: string | undefined,
+): Promise<string | null> {
+  const pending = creatingGroups.get(projectId);
+  if (pending) return pending;
+  const found = findOrCreateSpGroupTask(projectId, spProjectId).finally(() =>
+    creatingGroups.delete(projectId),
+  );
+  creatingGroups.set(projectId, found);
+  return found;
+}
+
+async function findOrCreateSpGroupTask(
+  projectId: string,
+  spProjectId: string | undefined,
+): Promise<string | null> {
+  const project = store.projects.find((p) => p.id === projectId);
+  if (!project) return null;
+  const existing = project.superProductivityGroupTaskId;
+  if (existing) {
+    const res = await callSp<SpTaskDetail>(IPC.SuperProductivityGetTask, { taskId: existing });
+    if (res.ok) {
+      const group = res.value;
+      const sameProject = !spProjectId || group.projectId === spProjectId;
+      if (!group.isDone && !group.parentId && sameProject) return existing;
+    } else if (res.reason !== 'not_found') {
+      return null;
+    }
+  }
+  const res = await callSp<SpTaskSummary>(IPC.SuperProductivityCreateTask, {
+    title: toSpGroupTitle(project.name),
+    ...(spProjectId ? { projectId: spProjectId } : {}),
+  });
+  if (!res.ok) return null;
+  const idx = store.projects.findIndex((p) => p.id === projectId);
+  if (idx >= 0) setStore('projects', idx, 'superProductivityGroupTaskId', res.value.id);
+  return res.value.id;
+}
+
 /** Map still-unmapped projects to the Super Productivity project with the same name (unique, case-insensitive). */
 async function autoMapProjectsByName(): Promise<void> {
   const spProjects = await listSpProjects();
@@ -163,17 +213,34 @@ async function autoMapProjectsByName(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Links
 
+/** Super Productivity tasks that are Parallel Code work: linked ones and
+ *  their group tasks. */
 function linkedSpTaskIds(): Set<string> {
   const ids = new Set<string>();
   for (const task of Object.values(store.tasks)) {
-    if (task?.superProductivity) ids.add(task.superProductivity.taskId);
+    const link = task?.superProductivity;
+    if (!link) continue;
+    ids.add(link.taskId);
+    if (link.groupTaskId) ids.add(link.groupTaskId);
   }
   return ids;
 }
 
-export function setSpLink(taskId: string, spTaskId: string, syncedTitle: string): void {
+export function setSpLink(
+  taskId: string,
+  spTaskId: string,
+  syncedTitle: string,
+  groupTaskId?: string,
+): void {
   if (!store.tasks[taskId]) return;
-  setStore('tasks', taskId, 'superProductivity', { taskId: spTaskId, syncedTitle });
+  setStore(
+    'tasks',
+    taskId,
+    'superProductivity',
+    groupTaskId
+      ? { taskId: spTaskId, syncedTitle, groupTaskId }
+      : { taskId: spTaskId, syncedTitle },
+  );
 }
 
 function clearSpLink(taskId: string): void {
@@ -197,14 +264,14 @@ async function createSpTaskFor(taskId: string): Promise<string | null> {
   const task = store.tasks[taskId];
   if (!task) return null;
   const title = toSpTitle(task.name) || 'Parallel Code task';
-  const create = async (placement: Record<string, string>) => {
+  const create = async (placement: Record<string, string>, groupTaskId?: string) => {
     const res = await callSp<SpTaskSummary>(IPC.SuperProductivityCreateTask, {
       title,
       ...placement,
     });
     // Linked if the task is still here; the id is returned either way, so a
     // completion armed while this was in flight can still mark it done.
-    if (res.ok) setSpLink(taskId, res.value.id, res.value.title);
+    if (res.ok) setSpLink(taskId, res.value.id, res.value.title, groupTaskId);
     return res;
   };
   // Fall back when the parent or project no longer exists over there (or the
@@ -212,12 +279,14 @@ async function createSpTaskFor(taskId: string): Promise<string | null> {
   const canFallBack = (res: SpResult<SpTaskSummary>) =>
     !res.ok && (res.reason === 'not_found' || res.reason === 'invalid_request');
 
-  // An agent-spawned subtask becomes a subtask of its parent's task.
-  const parentSpTaskId = task.coordinatedBy
-    ? store.tasks[task.coordinatedBy]?.superProductivity?.taskId
+  // An agent-spawned subtask becomes a subtask of its parent's task — or,
+  // when that one is grouped, its sibling: Super Productivity nests one level.
+  const parentLink = task.coordinatedBy
+    ? store.tasks[task.coordinatedBy]?.superProductivity
     : undefined;
-  if (parentSpTaskId) {
-    const res = await create({ parentId: parentSpTaskId });
+  if (parentLink) {
+    const groupTaskId = parentLink.groupTaskId;
+    const res = await create({ parentId: groupTaskId ?? parentLink.taskId }, groupTaskId);
     if (res.ok) return res.value.id;
     if (!canFallBack(res)) return null;
   }
@@ -228,6 +297,14 @@ async function createSpTaskFor(taskId: string): Promise<string | null> {
   if (spProjectId) {
     const spProjects = await listSpProjects();
     if (spProjects && !spProjects.some((p) => p.id === spProjectId)) spProjectId = undefined;
+  }
+  if (store.superProductivityGroupTasks) {
+    const groupTaskId = await ensureSpGroupTask(task.projectId, spProjectId);
+    if (groupTaskId) {
+      const res = await create({ parentId: groupTaskId }, groupTaskId);
+      if (res.ok) return res.value.id;
+      if (!canFallBack(res)) return null;
+    }
   }
   if (spProjectId) {
     const res = await create({ projectId: spProjectId });
@@ -369,10 +446,20 @@ async function evaluateFocus(taskId: string): Promise<void> {
     return;
   }
   if (spBanner()?.taskId === taskId) setSpBanner(null);
+  // Already tracked, perhaps since before its group was taken off Today.
+  if (decision.kind === 'none') await planSpGroupForToday(taskId);
   if (decision.kind !== 'track') return;
   const started = await trackTaskInSp(taskId, { onlyWhileActive: true });
   // Lost the connection while creating or starting: retry when the window comes back.
   if (!started && spConnection() !== 'connected' && isEnabled()) retryTaskId = taskId;
+}
+
+/** Tracking a subtask lists it in Today on its own unless its parent is
+ *  there, so a grouped task's group is planned for today first. */
+async function planSpGroupForToday(taskId: string): Promise<void> {
+  const groupTaskId = store.tasks[taskId]?.superProductivity?.groupTaskId;
+  if (groupTaskId)
+    await callSp<boolean>(IPC.SuperProductivityPlanForToday, { taskId: groupTaskId });
 }
 
 /**
@@ -393,6 +480,7 @@ export async function trackTaskInSp(
     if (opts.onlyWhileActive && (store.activeTaskId !== taskId || !isTrackableTask(taskId))) {
       return false;
     }
+    await planSpGroupForToday(taskId);
     const res = await callSp<null>(IPC.SuperProductivityStartTracking, { taskId: spTaskId });
     if (res.ok) {
       // An evaluation of this task still in flight saw the state before this.
@@ -507,6 +595,116 @@ export function fireSpCompletion(taskId: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Today
+
+/** Super Productivity tasks with a Today change in flight. */
+const changingToday = new Set<string>();
+/** Group tasks with none of their tasks in use, as last seen, and those of
+ *  them already taken off Today this session. */
+let idleGroups: ReadonlySet<string> = new Set();
+const groupsOffToday = new Set<string>();
+
+interface TodayChanges {
+  /** Linked tasks just set aside: [task id, Super Productivity task id]. */
+  setAside: [string, string][];
+  /** Linked tasks back from being set aside, and whether they were taken off. */
+  restored: [string, string, boolean][];
+  idleGroups: ReadonlySet<string>;
+}
+
+function setOffToday(taskId: string, spTaskId: string, offToday: boolean | undefined): void {
+  if (store.tasks[taskId]?.superProductivity?.taskId !== spTaskId) return;
+  setStore('tasks', taskId, 'superProductivity', 'offToday', offToday);
+}
+
+/** Whether a failure is worth no retry; retryable ones run again when the connection comes back. */
+function settled(res: SpResult<boolean>): boolean {
+  if (res.ok) return true;
+  if (isRetryableFailure(res.reason)) return false;
+  if (res.reason !== 'not_found') {
+    logWarn('super-productivity', 'Could not update Today', { reason: res.reason });
+  }
+  return true;
+}
+
+function changeToday(spTaskId: string, channel: IPC, args: Record<string, unknown>) {
+  changingToday.add(spTaskId);
+  return callSp<boolean>(channel, { taskId: spTaskId, ...args }).finally(() =>
+    changingToday.delete(spTaskId),
+  );
+}
+
+/**
+ * Keep Super Productivity's Today to what the user plans to work on: a task
+ * set aside here (minimized or snoozed) leaves it, and comes back when
+ * restored if Parallel Code took it off and nobody planned it since. The
+ * outcome is stored on the link, so a restart doesn't undo the user's own
+ * planning, and a reply that arrives after a restore is reconciled by the
+ * next pass. A group task leaves Today once none of its tasks is in use; it
+ * comes back when one of them is tracked (planSpGroupForToday).
+ */
+function syncTodayChanges(changes: TodayChanges): void {
+  idleGroups = changes.idleGroups;
+  for (const id of groupsOffToday) if (!idleGroups.has(id)) groupsOffToday.delete(id);
+  if (spConnection() !== 'connected') return;
+  for (const [taskId, spTaskId] of changes.setAside) {
+    if (changingToday.has(spTaskId)) continue;
+    void changeToday(spTaskId, IPC.SuperProductivityRemoveFromToday, {}).then((res) => {
+      if (settled(res)) setOffToday(taskId, spTaskId, res.ok && res.value);
+    });
+  }
+  for (const [taskId, spTaskId, wasTakenOff] of changes.restored) {
+    if (changingToday.has(spTaskId)) continue;
+    if (!wasTakenOff) {
+      setOffToday(taskId, spTaskId, undefined);
+      continue;
+    }
+    void changeToday(spTaskId, IPC.SuperProductivityPlanForToday, { onlyIfUnplanned: true }).then(
+      (res) => {
+        if (settled(res)) setOffToday(taskId, spTaskId, undefined);
+      },
+    );
+  }
+  for (const groupId of idleGroups) {
+    if (groupsOffToday.has(groupId) || changingToday.has(groupId)) continue;
+    void changeToday(groupId, IPC.SuperProductivityRemoveFromToday, {}).then((res) => {
+      if (!settled(res)) return;
+      if (idleGroups.has(groupId)) groupsOffToday.add(groupId);
+      // One of its tasks came back meanwhile, maybe already tracked.
+      else if (res.ok && res.value)
+        void callSp<boolean>(IPC.SuperProductivityPlanForToday, { taskId: groupId });
+    });
+  }
+}
+
+/** What changed for Today, read reactively from the store. */
+function readTodayChanges(isSetAside: (taskId: string) => boolean): TodayChanges {
+  const setAside: [string, string][] = [];
+  const restored: [string, string, boolean][] = [];
+  const maybeIdle = new Set<string>();
+  const inUse = new Set<string>();
+  for (const project of store.projects) {
+    if (project.superProductivityGroupTaskId) maybeIdle.add(project.superProductivityGroupTaskId);
+  }
+  for (const task of Object.values(store.tasks)) {
+    const link = task?.superProductivity;
+    if (!link || isHiddenAgentTaskId(task.id)) continue;
+    // A closing task still counts for its group: it is being finished.
+    const aside = !task.closingStatus && isSetAside(task.id);
+    if (link.groupTaskId) {
+      // A grouped task has no day of its own; its group stands for it.
+      (aside ? maybeIdle : inUse).add(link.groupTaskId);
+    } else if (aside && link.offToday === undefined) {
+      setAside.push([task.id, link.taskId]);
+    } else if (!aside && !task.closingStatus && link.offToday !== undefined) {
+      restored.push([task.id, link.taskId, link.offToday]);
+    }
+  }
+  for (const id of inUse) maybeIdle.delete(id);
+  return { setAside, restored, idleGroups: maybeIdle };
+}
+
+// ---------------------------------------------------------------------------
 // Lifecycle
 
 /**
@@ -520,7 +718,12 @@ export function fireSpCompletion(taskId: string): void {
  */
 let stopActiveSync: (() => void) | null = null;
 
-export function startSuperProductivitySync(windowFocused: Accessor<boolean>): () => void {
+export function startSuperProductivitySync(
+  windowFocused: Accessor<boolean>,
+  /** Whether a task is set aside: minimized, or snoozed (which lives in
+   *  background-tasks.ts, which imports from here). */
+  isSetAside: (taskId: string) => boolean = (taskId) => !!store.tasks[taskId]?.collapsed,
+): () => void {
   // One watcher at a time (a dev reload can start another).
   stopActiveSync?.();
   void refreshSpConnection();
@@ -558,6 +761,11 @@ export function startSuperProductivitySync(windowFocused: Accessor<boolean>): ()
         { defer: true },
       ),
     );
+    createEffect(() => {
+      spConnection(); // re-run when the connection comes back
+      const changes = readTodayChanges(isSetAside);
+      untrack(() => syncTodayChanges(changes));
+    });
     createEffect(
       on(
         windowFocused,

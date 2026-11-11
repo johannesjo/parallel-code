@@ -72,6 +72,7 @@ function structuralSnapshot(): string {
     coordinatorControlHintDismissed: store.coordinatorControlHintDismissed,
     featureHintsEnabled: store.featureHintsEnabled,
     seenFeatureHints: store.seenFeatureHints,
+    superProductivityGroupTasks: store.superProductivityGroupTasks,
     taskIdeas: store.taskIdeas,
     lastIdeaProjectId: store.lastIdeaProjectId,
     autoStartRemoteAccess: store.autoStartRemoteAccess,

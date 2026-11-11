@@ -705,6 +705,48 @@ describe('Super Productivity link persistence', () => {
     expect(saved.projects[0].superProductivityProjectId).toBe('INBOX_PROJECT');
   });
 
+  it('round-trips grouping: the setting, the group task and the link to it', async () => {
+    const def = agentDef();
+    const state = JSON.parse(
+      stateWith(
+        {
+          'task-1': {
+            ...persistedTask(def),
+            superProductivity: {
+              taskId: 'sp-1',
+              syncedTitle: 'Fix',
+              groupTaskId: 'sp-group',
+              offToday: true,
+            },
+          },
+        },
+        { superProductivityGroupTaskId: 'sp-group' },
+      ),
+    ) as Record<string, unknown>;
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify({ ...state, superProductivityGroupTasks: true }),
+    );
+    await loadState();
+    expect(store.superProductivityGroupTasks).toBe(true);
+    expect(store.projects[0].superProductivityGroupTaskId).toBe('sp-group');
+    expect(store.tasks['task-1'].superProductivity?.groupTaskId).toBe('sp-group');
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    const saved = JSON.parse(lastCall[1].json);
+    expect(saved.superProductivityGroupTasks).toBe(true);
+    expect(saved.projects[0].superProductivityGroupTaskId).toBe('sp-group');
+    expect(saved.tasks['task-1'].superProductivity.groupTaskId).toBe('sp-group');
+    expect(saved.tasks['task-1'].superProductivity.offToday).toBe(true);
+
+    // Off by default, and a malformed group id is dropped.
+    mockInvoke.mockResolvedValueOnce(stateWith({}, { superProductivityGroupTaskId: '../x' }));
+    await loadState();
+    expect(store.superProductivityGroupTasks).toBe(false);
+    expect(store.projects[0].superProductivityGroupTaskId).toBeUndefined();
+  });
+
   it('drops malformed links from hand-edited state', async () => {
     const def = agentDef();
     mockInvoke.mockResolvedValueOnce(
