@@ -15,6 +15,14 @@ describe('parseClaudeSessionUrl', () => {
     );
   });
 
+  it('accepts a link without its scheme, as dragged from the address bar', () => {
+    expect(parseClaudeSessionUrl('claude.ai/code/session_01Rqkmg7Ud1rm7NQg3bP5xsf')).toBe(
+      'session_01Rqkmg7Ud1rm7NQg3bP5xsf',
+    );
+    expect(parseClaudeSessionUrl('evil.example/claude.ai/code/session_01Ab')).toBeNull();
+    expect(parseClaudeSessionUrl('//claude.ai/code/session_01Ab')).toBeNull();
+  });
+
   it('rejects other hosts, paths and schemes', () => {
     expect(parseClaudeSessionUrl('https://evil.example/code/session_01Ab')).toBeNull();
     expect(parseClaudeSessionUrl('http://claude.ai/code/session_01Ab')).toBeNull();
