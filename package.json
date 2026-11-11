@@ -26,7 +26,7 @@
     "test:security-rules": "node scripts/test-semgrep-filesystem-safety.mjs",
     "lint:secrets": "command -v gitleaks >/dev/null 2>&1 && gitleaks detect --config .gitleaks.toml || (echo 'gitleaks not installed (brew install gitleaks)' >&2; exit 1)",
     "format": "prettier --write .",
-    "format:check": "prettier --check . --cache",
+    "format:check": "prettier --check . --cache --cache-location node_modules/.cache/prettier/check-cache",
     "generate:android-looks": "node scripts/generate-android-looks.mjs",
     "check:android-looks": "node scripts/generate-android-looks.mjs --check",
     "test": "npm run test:unit && npm run test:client",
