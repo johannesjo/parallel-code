@@ -739,6 +739,29 @@ describe('mind map tools', () => {
     expect(client.publishPrDraft).toHaveBeenCalledTimes(1);
   });
 
+  it('publishes finish items only for a task session and rejects too many before transport', async () => {
+    const client = {
+      publishFinishItems: vi.fn().mockResolvedValue({ ok: true, items: 1 }),
+    } as unknown as MCPClient;
+    const context = { client, taskId: 'own-task', coordinatorId: '', canvasOnly: true };
+    expect(
+      await handleMCPToolCall(context, 'finish_items_publish', {
+        items: ['  Drop the\n flag ', 'drop the flag'],
+        taskId: 'other',
+      }),
+    ).not.toHaveProperty('isError');
+    expect(client.publishFinishItems).toHaveBeenCalledWith('own-task', ['Drop the flag']);
+    const nine = Array.from({ length: 9 }, (_, i) => `Item ${i}`);
+    expect(await handleMCPToolCall(context, 'finish_items_publish', { items: nine })).toMatchObject(
+      { isError: true, content: [{ text: expect.stringContaining('At most 8') }] },
+    );
+    const coordinator = { ...context, taskId: '', coordinatorId: 'coord-1', canvasOnly: false };
+    expect(
+      await handleMCPToolCall(coordinator, 'finish_items_publish', { items: [] }),
+    ).toMatchObject({ isError: true });
+    expect(client.publishFinishItems).toHaveBeenCalledTimes(1);
+  });
+
   it('publishes a GitHub list for the session task and rejects a malformed one before transport', async () => {
     const client = {
       publishGitHubList: vi.fn().mockResolvedValue({ ok: true, name: 'This week' }),

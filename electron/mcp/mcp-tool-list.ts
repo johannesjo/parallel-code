@@ -5,6 +5,7 @@ import { AGENT_TOUR_LIMITS } from '../shared/agent-tour.js';
 import { CONFIDENCE_LIMITS } from '../shared/task-confidence.js';
 import { GITHUB_LIST_LIMITS, isGitHubAgentTaskId } from '../shared/github-list.js';
 import { PR_DRAFT_LIMITS } from '../shared/pr-draft.js';
+import { FINISH_ITEMS_LIMITS } from '../shared/finish-items.js';
 import { TOUR_CARD_LIMITS, TOUR_FORMS, TOUR_TONES } from '../shared/understanding-limits.js';
 import { semanticNodeKinds, reasoningStatuses } from '../shared/graph.js';
 import type { ReasoningUpdate } from '../shared/reasoning-state.js';
@@ -263,6 +264,28 @@ export const CONFIDENCE_TOOLS: ToolDef[] = [
         source: { type: 'string', maxLength: confidenceCaps.source },
       },
       required: ['scores'],
+    },
+  },
+];
+
+export const FINISH_ITEMS_TOOLS: ToolDef[] = [
+  {
+    name: 'finish_items_publish',
+    description:
+      'Worktree tasks only. Record loose ends on your task that must be handled before it is merged, such as a temporary flag or debug logging to remove, a test you skipped, or docs to update once the code settles. The app lists them in its Finish dialog and, when the user finishes, sends the ones they keep back to you. ' +
+      'Call it when you leave such a loose end and again when you resolve one. Each call replaces the whole list: send every item still open, and an empty list once none are. ' +
+      'Do not list work you will do in this turn, general to-dos, or follow-up ideas. ' +
+      `At most ${FINISH_ITEMS_LIMITS.maxItems} items, each one line of at most ${FINISH_ITEMS_LIMITS.item} characters.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          maxItems: FINISH_ITEMS_LIMITS.maxItems,
+          items: { type: 'string', maxLength: FINISH_ITEMS_LIMITS.item },
+        },
+      },
+      required: ['items'],
     },
   },
 ];
@@ -727,6 +750,15 @@ export function selectTools(
     ...CONFIDENCE_TOOLS,
     // A branch PR needs a task; coordinators and the GitHub page's agent have none.
     ...(taskId && !isGitHubAgentTaskId(taskId) ? PR_DRAFT_TOOLS : []),
+    // Items wait for the Finish dialog; self-landing children and page agents never reach it.
+    // Without capabilities only a plain task's canvas session is known to; a legacy child may self-land.
+    ...(taskId &&
+    !isGitHubAgentTaskId(taskId) &&
+    (capabilities
+      ? capabilities.profile !== 'child-automatic' && capabilities.profile !== 'page'
+      : canvasOnly)
+      ? FINISH_ITEMS_TOOLS
+      : []),
     // Publishing opens the GitHub page's list picker; other tasks have no page to publish to.
     ...(isGitHubAgentTaskId(taskId) ? GITHUB_LIST_TOOLS : []),
   ];

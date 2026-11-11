@@ -452,6 +452,34 @@ describe('background verify persistence', () => {
     expect(JSON.parse(lastCall[1].json).tasks['task-1'].agentPlan).toEqual(plan);
   });
 
+  it("round-trips the agent's finish items and drops a malformed list", async () => {
+    const def = agentDef();
+    const finishItems = { items: ['Remove the DEBUG_SYNC flag'], publishedAt: 5, sentAt: 6 };
+    mockInvoke.mockResolvedValueOnce(
+      stateWith(
+        {},
+        {
+          'task-1': { ...persistedTask(def), finishItems },
+          'task-2': {
+            ...persistedTask(def),
+            id: 'task-2',
+            branchName: 'task/task-2',
+            worktreePath: '/repo/.worktrees/task-2',
+            finishItems: { items: [42], publishedAt: 1 },
+          },
+        },
+      ),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].finishItems).toEqual(finishItems);
+    expect(store.tasks['task-2'].finishItems).toBeUndefined();
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    expect(JSON.parse(lastCall[1].json).tasks['task-1'].finishItems).toEqual(finishItems);
+  });
+
   it.each([
     [false, false],
     [true, undefined],

@@ -6,6 +6,7 @@ import { restoreBriefBarFields, restoreTaskBriefRecord } from '../lib/task-brief
 import { restoreTaskAgentPlan } from '../lib/task-plan';
 import { restoreReviewChecks } from '../lib/review-checks';
 import { restoreTaskConfidence } from '../lib/task-confidence';
+import { restoreTaskFinishItems } from '../lib/finish-items';
 import { restoreReviewDismissed } from '../lib/review-summary';
 import type { PrBabysit } from '../lib/pr-babysit';
 import { parseProjectChecks } from '../../electron/shared/check-settings';
@@ -502,6 +503,7 @@ function toPersistedTask(task: Task, agentDefs: AgentDef[], collapsed?: boolean)
     brief: task.brief,
     agentPlan: task.agentPlan,
     confidence: task.confidence,
+    finishItems: task.finishItems,
     reviewDismissed: task.reviewDismissed,
     reviewModel: task.reviewModel,
     landingState: task.landingState,
@@ -1384,6 +1386,7 @@ export async function loadState(): Promise<void> {
           brief: restoreTaskBriefRecord(pt.brief),
           agentPlan: restoreTaskAgentPlan(pt.agentPlan),
           confidence: restoreTaskConfidence(pt.confidence),
+          finishItems: restoreTaskFinishItems(pt.finishItems),
           reviewDismissed: restoreReviewDismissed(pt.reviewDismissed),
           reviewModel:
             pt.reviewModel === undefined ? undefined : restoreReviewModel(pt.reviewModel),
@@ -1548,6 +1551,7 @@ export async function loadState(): Promise<void> {
           brief: restoreTaskBriefRecord(pt.brief),
           agentPlan: restoreTaskAgentPlan(pt.agentPlan),
           confidence: restoreTaskConfidence(pt.confidence),
+          finishItems: restoreTaskFinishItems(pt.finishItems),
           reviewDismissed: restoreReviewDismissed(pt.reviewDismissed),
           reviewModel:
             pt.reviewModel === undefined ? undefined : restoreReviewModel(pt.reviewModel),

@@ -30,6 +30,7 @@ import type { BriefBarFields, TaskBriefRecord } from '../lib/task-brief';
 import type { PlanStep } from '../../electron/shared/agent-plan';
 import type { CloseSuggestion } from '../../electron/shared/close-suggestion';
 import type { TaskConfidence } from '../lib/task-confidence';
+import type { TaskFinishItems } from '../lib/finish-items';
 import type { ReviewDismissal } from '../lib/review-summary';
 import type { ReviewModelSettings } from '../lib/task-review';
 import type { CheckSuite, ProjectCheck } from '../../electron/shared/checks';
@@ -433,6 +434,8 @@ export interface Task {
   codeFingerprint?: { fingerprint: string; at: number };
   /** Latest rating: from a review, or published by the agent through `confidence_publish`. */
   confidence?: TaskConfidence;
+  /** Loose ends the agent recorded through `finish_items_publish`, shown in the Finish dialog. */
+  finishItems?: TaskFinishItems;
   /** Runtime-only: a review is running, or the last one failed. */
   reviewStatus?: { state: 'running'; startedAt: number } | { state: 'failed'; message: string };
   /** Review risks the user set aside, keyed by review item id, with their reason. */
@@ -556,6 +559,8 @@ export interface PersistedTask {
   agentPlan?: unknown;
   /** Validated on load. */
   confidence?: unknown;
+  /** Validated on load. */
+  finishItems?: unknown;
   /** Validated on load. */
   reviewDismissed?: unknown;
   /** Validated on load. */

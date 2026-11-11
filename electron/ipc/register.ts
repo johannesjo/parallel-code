@@ -2000,6 +2000,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishConfidenceRequest, { taskId, payload }),
     publishPrDraft: (taskId: string, draft: PrDraft) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishPrDraftRequest, { taskId, draft }),
+    publishFinishItems: (taskId: string, items: string[]) =>
+      callRenderer<{ ok: boolean }>(IPC.MCP_PublishFinishItemsRequest, { taskId, items }),
     publishGitHubList: (taskId: string, list: GitHubCustomList) =>
       callRenderer<{ ok: boolean }>(IPC.MCP_PublishGitHubListRequest, { taskId, list }),
     getProjects: () => callRenderer<RemoteProject[]>(IPC.Remote_GetProjectsRequest, {}),

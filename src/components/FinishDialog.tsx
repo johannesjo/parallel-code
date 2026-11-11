@@ -17,6 +17,7 @@ import { CleanupOption, MergeBlockers, MergeChanges, MergeOptions } from './Merg
 import { closeTaskNow } from './CloseTaskDialog';
 import { PushSection } from './PushSection';
 import { ReadinessSection } from './ReadinessSection';
+import { FinishItems } from './FinishItems';
 import { FollowUps } from './FollowUps';
 import { ReviewSection } from './ReviewSection';
 import { RetroButton } from './RetroButton';
@@ -411,8 +412,11 @@ export function FinishDialog(props: FinishDialogProps) {
               <Show when={!hasChecks()}> Add a verify command to have your tests run.</Show>
             </FeatureHint>
             {/* The verify result leads; each optional step's result opens right below it. The
-                review comes first: with the verify result, it says whether the work is right. */}
+                review comes first: with the verify result, it says whether the work is right.
+                Open loose ends go before it, since handling them changes the code it reviews. */}
             <FollowUps lead={readiness()}>
+              {/* Handling them happens in the agent's session, so Finish steps aside. */}
+              <FinishItems task={props.task} onSent={() => props.onClose()} />
               <Show when={store.finishReview}>
                 <ReviewSection
                   task={props.task}

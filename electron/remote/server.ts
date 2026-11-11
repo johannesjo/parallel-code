@@ -52,6 +52,7 @@ import {
 } from '../shared/task-confidence.js';
 import { parseGitHubList, type GitHubCustomList } from '../shared/github-list.js';
 import { PR_DRAFT_LIMITS, parsePrDraft, type PrDraft } from '../shared/pr-draft.js';
+import { FINISH_ITEMS_LIMITS, parseFinishItems } from '../shared/finish-items.js';
 import type {
   SessionCaller,
   SessionCapabilities,
@@ -425,6 +426,7 @@ type CanvasOps = Pick<
   | 'publishTour'
   | 'publishConfidence'
   | 'publishPrDraft'
+  | 'publishFinishItems'
   | 'publishGitHubList'
 >;
 type CanvasRoute =
@@ -434,6 +436,7 @@ type CanvasRoute =
   | 'tours'
   | 'confidence'
   | 'pr-drafts'
+  | 'finish-items'
   | 'github-lists';
 /** A published tour inlines its own context; the shared parser caps it again. */
 const TOUR_MAX_BODY_BYTES = 256 * 1024;
@@ -494,6 +497,13 @@ async function canvasRequest(
     const draft = parsePrDraft(await readJsonBody(req, PR_DRAFT_LIMITS.payloadBytes));
     await ops.publishPrDraft(taskId, draft);
     return { ok: true, title: draft.title };
+  }
+  if (route === 'finish-items') {
+    if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
+    if (!ops.publishFinishItems) throw httpError(503, 'Finish items unavailable');
+    const items = parseFinishItems(await readJsonBody(req, FINISH_ITEMS_LIMITS.payloadBytes));
+    await ops.publishFinishItems(taskId, items);
+    return { ok: true, items: items.length };
   }
   if (route === 'github-lists') {
     if (req.method !== 'POST') throw httpError(405, 'Method not allowed');
@@ -1038,6 +1048,8 @@ export function startRemoteServer(opts: {
   publishConfidence?: (taskId: string, payload: ConfidencePayload) => Promise<unknown>;
   /** Fill the Create pull request dialog with a draft the agent wrote for its own task (renderer-backed). */
   publishPrDraft?: (taskId: string, draft: PrDraft) => Promise<unknown>;
+  /** Store the loose ends the agent recorded for its own task's Finish dialog (renderer-backed). */
+  publishFinishItems?: (taskId: string, items: string[]) => Promise<unknown>;
   /** Show an issue list the agent ordered and grouped on its project's GitHub page. */
   publishGitHubList?: (taskId: string, list: GitHubCustomList) => Promise<unknown>;
   /** Read a task's notes (renderer-backed). */
@@ -1341,7 +1353,7 @@ export function startRemoteServer(opts: {
       };
 
       const mapMatch = url.pathname.match(
-        /^\/api\/(mindmaps|reasoning|canvas|tours|confidence|pr-drafts|github-lists)\/([^/]+)$/,
+        /^\/api\/(mindmaps|reasoning|canvas|tours|confidence|pr-drafts|finish-items|github-lists)\/([^/]+)$/,
       );
       if (mapMatch) {
         const route = mapMatch[1] as CanvasRoute;

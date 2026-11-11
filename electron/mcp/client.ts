@@ -224,6 +224,12 @@ export class MCPClient {
     return this.taskOwnerRequest('POST', `/api/pr-drafts/${encodeURIComponent(taskId)}`, draft);
   }
 
+  async publishFinishItems(taskId: string, items: string[]): Promise<{ ok: true; items: number }> {
+    return this.taskOwnerRequest('POST', `/api/finish-items/${encodeURIComponent(taskId)}`, {
+      items,
+    });
+  }
+
   async publishGitHubList(
     taskId: string,
     list: GitHubCustomList,

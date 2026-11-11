@@ -8,6 +8,7 @@ import { resolveIncludeSelection, splitIncludeSelection } from '../lib/worktree-
 import { publishAgentTour } from './agent-tour';
 import { publishTaskConfidence } from './task-brief';
 import { publishAgentPrDraft } from './pr-draft';
+import { publishFinishItems } from './finish-items';
 import { publishGitHubList } from './github-lists';
 import { linkTaskToIssueReference } from './github-issue-link';
 import { getTaskMindMap, updateTaskMindMapFromAgent } from './canvas';
@@ -668,6 +669,19 @@ export function startRemoteTaskHandlers(): () => void {
       }
     },
   );
+  const offPublishFinishItems = window.electron.ipcRenderer.on(
+    IPC.MCP_PublishFinishItemsRequest,
+    (data: unknown) => {
+      if (!data || typeof data !== 'object') return;
+      const req = data as GetNotesRequest & { items: unknown };
+      try {
+        publishFinishItems(req.taskId, req.items);
+        reply(req.reqId, true, { ok: true });
+      } catch (error) {
+        reply(req.reqId, false, undefined, errMessage(error));
+      }
+    },
+  );
   const offPublishGitHubList = window.electron.ipcRenderer.on(
     IPC.MCP_PublishGitHubListRequest,
     (data: unknown) => {
@@ -689,6 +703,7 @@ export function startRemoteTaskHandlers(): () => void {
     offPublishTour();
     offPublishConfidence();
     offPublishPrDraft();
+    offPublishFinishItems();
     offPublishGitHubList();
     offProjects();
     offCreate();

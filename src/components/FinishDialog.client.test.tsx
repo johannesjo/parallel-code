@@ -550,6 +550,17 @@ describe('FinishDialog base sync', () => {
     expect(button('Merge')?.disabled).toBe(true);
   });
 
+  it("lists the agent's loose ends under Before you merge", async () => {
+    mount({
+      task: task({ finishItems: { items: ['Remove the DEBUG_SYNC flag'], publishedAt: 1 } }),
+    });
+    await flush();
+    const section = [...document.querySelectorAll('section')].find((el) =>
+      el.querySelector('h3')?.textContent?.includes('Before you merge'),
+    );
+    expect(section?.textContent).toContain('Remove the DEBUG_SYNC flag');
+  });
+
   it('asks the agent to resolve the conflicting files', async () => {
     mockInvoke((channel) => {
       if (channel === IPC.GetBranchLog) return '';

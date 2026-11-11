@@ -16,6 +16,7 @@ import {
   TOUR_TOOLS,
   CONFIDENCE_TOOLS,
   PR_DRAFT_TOOLS,
+  FINISH_ITEMS_TOOLS,
   GITHUB_LIST_TOOLS,
   hasCanvasTools,
   APP_TASK_INSTRUCTIONS,
@@ -159,6 +160,7 @@ it('ordinary canvas sessions advertise only map tools', () => {
     ...TOUR_TOOLS,
     ...CONFIDENCE_TOOLS,
     ...PR_DRAFT_TOOLS,
+    ...FINISH_ITEMS_TOOLS,
   ]);
 });
 
@@ -279,6 +281,8 @@ describe('session capability tool sets', () => {
     'confidence_publish',
     'pr_draft_publish',
   ];
+  // Only sessions that reach the Finish dialog record loose ends for it.
+  const finish = ['finish_items_publish'];
   const supervision = [
     'list_tasks',
     'get_task_status',
@@ -297,8 +301,8 @@ describe('session capability tool sets', () => {
   ) => selectTools('task', '', false, { profile, canCreate, peers }).map((tool) => tool.name);
 
   it('exposes exact ordinary rights separately from agent creation consent', () => {
-    expect(names('ordinary')).toEqual([...canvas, ...supervision]);
-    expect(names('ordinary', true)).toEqual([...canvas, 'create_task', ...supervision]);
+    expect(names('ordinary')).toEqual([...canvas, ...finish, ...supervision]);
+    expect(names('ordinary', true)).toEqual([...canvas, ...finish, 'create_task', ...supervision]);
   });
 
   it('makes ordinary sessions choose between a child and an independent task', () => {
@@ -315,13 +319,30 @@ describe('session capability tool sets', () => {
   });
 
   it('never grants children creation even if a malformed capability requests it', () => {
-    expect(names('child-review', true)).toEqual([...canvas, 'signal_done']);
+    expect(names('child-review', true)).toEqual([...canvas, ...finish, 'signal_done']);
     expect(names('child-automatic', true)).toEqual([...canvas, 'land_self', 'signal_done']);
+  });
+
+  it('keeps finish items from sessions that never reach the Finish dialog', () => {
+    // Self-landing children merge through land_self without the dialog.
+    expect(names('child-automatic')).not.toContain('finish_items_publish');
+    // A legacy child launch has no capabilities and may self-land too.
+    expect(selectTools('task-abc', '').map((tool) => tool.name)).not.toContain(
+      'finish_items_publish',
+    );
+    const page = { profile: 'page' as const, canCreate: true, peers: false };
+    expect(selectTools('project-page', '', false, page).map((tool) => tool.name)).not.toContain(
+      'finish_items_publish',
+    );
+    expect(selectTools('gh-agent-p1', '', true).map((tool) => tool.name)).not.toContain(
+      'finish_items_publish',
+    );
   });
 
   it('adds only exact-session held-message tools when enabled', () => {
     expect(names('child-review', false, true)).toEqual([
       ...canvas,
+      ...finish,
       'signal_done',
       'list_agent_sessions',
       'get_agent_output',

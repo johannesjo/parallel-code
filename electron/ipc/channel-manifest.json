@@ -98,6 +98,7 @@
   "MCP_PublishTourRequest": "mcp_publish_tour_request",
   "MCP_PublishConfidenceRequest": "mcp_publish_confidence_request",
   "MCP_PublishPrDraftRequest": "mcp_publish_pr_draft_request",
+  "MCP_PublishFinishItemsRequest": "mcp_publish_finish_items_request",
   "MCP_PublishGitHubListRequest": "mcp_publish_github_list_request",
   "MCP_CreateIndependentTaskRequest": "mcp_create_independent_task_request",
   "Remote_GetNotesRequest": "remote_get_notes_request",
