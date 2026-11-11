@@ -15,7 +15,12 @@ import type {
   SpTaskSummary,
   SpTrackingState,
 } from '../shared/super-productivity.js';
-import { appendSpNote, isValidSpId, SP_MAX_BATCH_IDS } from '../shared/super-productivity.js';
+import {
+  appendSpNote,
+  isValidSpId,
+  shouldLeaveSpToday,
+  SP_MAX_BATCH_IDS,
+} from '../shared/super-productivity.js';
 
 export const SP_API_BASE_URL = 'http://127.0.0.1:3876';
 const READ_TIMEOUT_MS = 5_000;
@@ -278,6 +283,20 @@ export function createSpClient(deps: SpClientDeps) {
         isIgnoreShortSyntax: true,
       });
       return res.ok ? { ok: true, value: null } : res;
+    },
+
+    /**
+     * Take the task off Today when shouldLeaveSpToday says so. Resolves to
+     * whether it was taken off; a task planned otherwise is left alone.
+     */
+    async removeFromToday(taskId: string, todayStr: string): Promise<SpResult<boolean>> {
+      const path = `/tasks/${encodeURIComponent(taskId)}`;
+      const current = await request('GET', path);
+      if (!current.ok) return current;
+      if (!isRecord(current.value)) return failure('error', 'Unexpected task shape');
+      if (!shouldLeaveSpToday(current.value, todayStr)) return { ok: true, value: false };
+      const res = await request('PATCH', path, { dueDay: null });
+      return res.ok ? { ok: true, value: true } : res;
     },
 
     /** Mark done and, given a note, append it to the task's notes. */

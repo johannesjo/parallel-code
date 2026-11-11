@@ -179,6 +179,29 @@ export function appendSpNote(existing: string, line: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Today
+
+/** The local calendar day as YYYY-MM-DD, the format of Super Productivity's `dueDay`. */
+export function toLocalDayStr(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * Whether a task set aside in Parallel Code (minimized or snoozed) should be
+ * taken off Super Productivity's Today: an open task planned for today or an
+ * earlier day (overdue ones are listed there too). A task planned for a later
+ * day, or for a time of day, was scheduled on purpose there and keeps it.
+ */
+export function shouldLeaveSpToday(
+  task: { isDone?: unknown; dueDay?: unknown; dueWithTime?: unknown },
+  todayStr: string,
+): boolean {
+  if (task.isDone === true || typeof task.dueWithTime === 'number') return false;
+  return typeof task.dueDay === 'string' && task.dueDay !== '' && task.dueDay <= todayStr;
+}
+
+// ---------------------------------------------------------------------------
 // parallelcode:// links
 
 export const PARALLEL_CODE_PROTOCOL = 'parallelcode';

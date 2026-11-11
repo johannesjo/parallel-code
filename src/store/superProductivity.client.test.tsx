@@ -31,6 +31,7 @@ interface FakeSpTask {
   projectId: string | null;
   parentId: string | null;
   notes: string;
+  dueDay?: string | null;
 }
 
 const sp = vi.hoisted(() => ({
@@ -99,6 +100,13 @@ function fakeSp(channel: string, args: Record<string, unknown> = {}): unknown {
       task.isDone = true;
       if (args.note !== undefined) task.notes = args.note as string;
       return ok(null);
+    }
+    case IPC.SuperProductivityRemoveFromToday: {
+      const task = sp.tasks.get(id);
+      if (!task) return missing;
+      if (!task.dueDay) return ok(false);
+      task.dueDay = null;
+      return ok(true);
     }
     default:
       throw new Error(`unexpected channel ${channel}`);
@@ -717,5 +725,72 @@ describe('Super Productivity sync', () => {
     fireSpCompletion('a');
     await vi.advanceTimersByTimeAsync(0);
     expect(sp.tasks.get('sp-a')?.isDone).toBe(false);
+  });
+
+  describe('tasks set aside', () => {
+    const removals = () =>
+      mockInvoke.mock.calls.filter(([channel]) => channel === IPC.SuperProductivityRemoveFromToday);
+
+    it('takes a minimized task off Today, and again after it was restored and minimized', async () => {
+      const remote = spTask('sp-a', { dueDay: '2026-11-11' });
+      addTask('a', { superProductivity: { taskId: 'sp-a', syncedTitle: 'Task a' } });
+      await settle();
+      expect(removals()).toHaveLength(0);
+
+      setStore('tasks', 'a', 'collapsed', true);
+      await settle();
+      expect(sp.tasks.get('sp-a')?.dueDay).toBeNull();
+      // Unrelated changes don't ask again.
+      setStore('tasks', 'a', 'name', 'Renamed');
+      await settle();
+      expect(removals()).toHaveLength(1);
+
+      setStore('tasks', 'a', 'collapsed', false);
+      remote.dueDay = '2026-11-11';
+      await settle();
+      setStore('tasks', 'a', 'collapsed', true);
+      await settle();
+      expect(removals()).toHaveLength(2);
+      expect(sp.tasks.get('sp-a')?.dueDay).toBeNull();
+    });
+
+    // eslint-disable-next-line solid/reactivity -- hands the accessor to the watcher, which tracks it
+    it('uses the given set-aside rule and leaves unlinked and closing tasks alone', async () => {
+      stop?.();
+      const [snoozed, setSnoozed] = createSignal<string[]>([]);
+      // eslint-disable-next-line solid/reactivity -- the watcher calls it inside its effect
+      stop = startSuperProductivitySync(windowFocused, (id) => snoozed().includes(id));
+      spTask('sp-a', { dueDay: '2026-11-11' });
+      spTask('sp-c', { dueDay: '2026-11-11' });
+      addTask('a', { superProductivity: { taskId: 'sp-a', syncedTitle: 'Task a' } });
+      addTask('b');
+      addTask('c', {
+        superProductivity: { taskId: 'sp-c', syncedTitle: 'Task c' },
+        closingStatus: 'closing',
+      });
+      setSnoozed(['a', 'b', 'c']);
+      await settle();
+      expect(removals().map(([, args]) => (args as { taskId: string }).taskId)).toEqual(['sp-a']);
+    });
+
+    it('retries once Super Productivity is reachable again', async () => {
+      spTask('sp-a', { dueDay: '2026-11-11' });
+      addTask('a', { superProductivity: { taskId: 'sp-a', syncedTitle: 'Task a' } });
+      mockInvoke.mockImplementation(async (channel: string, args?: Record<string, unknown>) =>
+        channel === IPC.SuperProductivityRemoveFromToday
+          ? { ok: false, reason: 'unreachable' }
+          : fakeSp(channel, args),
+      );
+      setStore('tasks', 'a', 'collapsed', true);
+      await settle();
+      expect(sp.tasks.get('sp-a')?.dueDay).toBe('2026-11-11');
+
+      mockInvoke.mockImplementation(async (channel: string, args?: Record<string, unknown>) =>
+        fakeSp(channel, args),
+      );
+      await refreshSpConnection();
+      await settle();
+      expect(sp.tasks.get('sp-a')?.dueDay).toBeNull();
+    });
   });
 });

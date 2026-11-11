@@ -507,6 +507,38 @@ export function fireSpCompletion(taskId: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Today
+
+/** Linked tasks set aside here whose Super Productivity task was already
+ *  handled; a task leaves this set when it comes back, so setting it aside
+ *  again takes it off Today again. */
+const leftToday = new Set<string>();
+const leavingToday = new Set<string>();
+
+/**
+ * Take tasks set aside here (minimized or snoozed) off Super Productivity's
+ * Today, so its list keeps to what the user plans to work on. Coming back
+ * needs nothing: tracking a task there plans it for today again.
+ */
+function syncSetAsideTasks(setAside: ReadonlySet<string>): void {
+  for (const id of leftToday) if (!setAside.has(id)) leftToday.delete(id);
+  // Retried when the connection comes back, which runs this again.
+  if (spConnection() !== 'connected') return;
+  for (const spTaskId of setAside) {
+    if (leftToday.has(spTaskId) || leavingToday.has(spTaskId)) continue;
+    leavingToday.add(spTaskId);
+    void callSp<boolean>(IPC.SuperProductivityRemoveFromToday, { taskId: spTaskId }).then((res) => {
+      leavingToday.delete(spTaskId);
+      if (!res.ok && isRetryableFailure(res.reason)) return;
+      if (!res.ok && res.reason !== 'not_found') {
+        logWarn('super-productivity', 'Could not take task off Today', { reason: res.reason });
+      }
+      leftToday.add(spTaskId);
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Lifecycle
 
 /**
@@ -520,7 +552,12 @@ export function fireSpCompletion(taskId: string): void {
  */
 let stopActiveSync: (() => void) | null = null;
 
-export function startSuperProductivitySync(windowFocused: Accessor<boolean>): () => void {
+export function startSuperProductivitySync(
+  windowFocused: Accessor<boolean>,
+  /** Whether a task is set aside: minimized, or snoozed (which lives in
+   *  background-tasks.ts, which imports from here). */
+  isSetAside: (taskId: string) => boolean = (taskId) => !!store.tasks[taskId]?.collapsed,
+): () => void {
   // One watcher at a time (a dev reload can start another).
   stopActiveSync?.();
   void refreshSpConnection();
@@ -558,6 +595,16 @@ export function startSuperProductivitySync(windowFocused: Accessor<boolean>): ()
         { defer: true },
       ),
     );
+    createEffect(() => {
+      spConnection(); // re-run when the connection comes back
+      const setAside = new Set<string>();
+      for (const task of Object.values(store.tasks)) {
+        const link = task?.superProductivity;
+        if (!link || task.closingStatus || isHiddenAgentTaskId(task.id)) continue;
+        if (isSetAside(task.id)) setAside.add(link.taskId);
+      }
+      untrack(() => syncSetAsideTasks(setAside));
+    });
     createEffect(
       on(
         windowFocused,

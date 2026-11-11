@@ -6,7 +6,9 @@ import {
   decideSpFocusAction,
   parseParallelCodeUrl,
   resolveSpTitleSync,
+  shouldLeaveSpToday,
   SP_MAX_TITLE_LENGTH,
+  toLocalDayStr,
   toSpTitle,
   type SpTaskSummary,
 } from './super-productivity.js';
@@ -279,5 +281,26 @@ describe('toSpTitle', () => {
     const title = toSpTitle('x'.repeat(SP_MAX_TITLE_LENGTH + 20));
     expect(title).toHaveLength(SP_MAX_TITLE_LENGTH);
     expect(title.endsWith('…')).toBe(true);
+  });
+});
+
+describe('shouldLeaveSpToday', () => {
+  const today = '2026-11-11';
+  it('takes tasks planned for today or an earlier day off Today', () => {
+    expect(shouldLeaveSpToday({ dueDay: today }, today)).toBe(true);
+    expect(shouldLeaveSpToday({ dueDay: '2026-11-09' }, today)).toBe(true);
+  });
+  it('keeps tasks planned for a later day, for a time, done, or not planned', () => {
+    expect(shouldLeaveSpToday({ dueDay: '2026-11-12' }, today)).toBe(false);
+    expect(shouldLeaveSpToday({ dueWithTime: 1, dueDay: null }, today)).toBe(false);
+    expect(shouldLeaveSpToday({ dueDay: today, isDone: true }, today)).toBe(false);
+    expect(shouldLeaveSpToday({ dueDay: null }, today)).toBe(false);
+    expect(shouldLeaveSpToday({}, today)).toBe(false);
+  });
+});
+
+describe('toLocalDayStr', () => {
+  it('formats the local calendar day', () => {
+    expect(toLocalDayStr(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
   });
 });

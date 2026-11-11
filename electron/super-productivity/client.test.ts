@@ -315,4 +315,27 @@ describe('createSpClient', () => {
     });
     expect(await client.getTracking()).toMatchObject({ ok: false, reason: 'error' });
   });
+
+  it('takes a task planned for today off Today, and leaves others alone', async () => {
+    const tasks: Record<string, Record<string, unknown>> = {
+      today: { id: 'today', title: 'A', dueDay: '2026-11-11' },
+      later: { id: 'later', title: 'B', dueDay: '2026-11-12' },
+    };
+    const patches: [string, unknown][] = [];
+    const fetchImpl = fakeFetch((method, path, body) => {
+      const id = path.split('/')[2];
+      if (method === 'PATCH') patches.push([id, body]);
+      return tasks[id]
+        ? ok(tasks[id])
+        : { status: 404, json: { ok: false, error: { code: 'TASK_NOT_FOUND' } } };
+    });
+    const client = createSpClient({ getToken: () => 'tok', fetchImpl });
+    expect(await client.removeFromToday('today', '2026-11-11')).toEqual({ ok: true, value: true });
+    expect(await client.removeFromToday('later', '2026-11-11')).toEqual({ ok: true, value: false });
+    expect(await client.removeFromToday('gone', '2026-11-11')).toMatchObject({
+      ok: false,
+      reason: 'not_found',
+    });
+    expect(patches).toEqual([['today', { dueDay: null }]]);
+  });
 });
