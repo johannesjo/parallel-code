@@ -20,6 +20,7 @@ import {
   isValidSpId,
   shouldLeaveSpToday,
   shouldPlanSpForToday,
+  spTodayStr,
   SP_MAX_BATCH_IDS,
 } from '../shared/super-productivity.js';
 
@@ -38,6 +39,7 @@ export interface SpClientDeps {
   baseUrl?: string;
   readTimeoutMs?: number;
   writeTimeoutMs?: number;
+  now?: () => Date;
 }
 
 type RawResult = SpResult<unknown>;
@@ -118,6 +120,7 @@ export function createSpClient(deps: SpClientDeps) {
   const baseUrl = deps.baseUrl ?? SP_API_BASE_URL;
   const readTimeoutMs = deps.readTimeoutMs ?? READ_TIMEOUT_MS;
   const writeTimeoutMs = deps.writeTimeoutMs ?? WRITE_TIMEOUT_MS;
+  const now = deps.now ?? (() => new Date());
 
   async function request(method: string, path: string, body?: unknown): Promise<RawResult> {
     const token = deps.getToken();
@@ -162,6 +165,22 @@ export function createSpClient(deps: SpClientDeps) {
     const code = typeof error?.code === 'string' ? error.code : undefined;
     const message = typeof error?.message === 'string' ? error.message.slice(0, 300) : undefined;
     return failure(reasonForStatus(res.status, code), message);
+  }
+
+  /** Set the task's `dueDay` to what `decide` returns for it and Super
+   *  Productivity's day (undefined: leave it). Resolves to whether it changed. */
+  async function changeDueDay(
+    taskId: string,
+    decide: (task: Record<string, unknown>, todayStr: string) => string | null | undefined,
+  ): Promise<SpResult<boolean>> {
+    const path = `/tasks/${encodeURIComponent(taskId)}`;
+    const [status, current] = await Promise.all([request('GET', '/status'), request('GET', path)]);
+    if (!current.ok) return current;
+    if (!isRecord(current.value)) return failure('error', 'Unexpected task shape');
+    const dueDay = decide(current.value, spTodayStr(status.ok ? status.value : null, now()));
+    if (dueDay === undefined) return { ok: true, value: false };
+    const res = await request('PATCH', path, { dueDay });
+    return res.ok ? { ok: true, value: true } : res;
   }
 
   /** `includeIssueUrl` is opt-in there: some providers fetch the issue to build it. */
@@ -290,28 +309,17 @@ export function createSpClient(deps: SpClientDeps) {
      * Take the task off Today when shouldLeaveSpToday says so. Resolves to
      * whether it was taken off; a task planned otherwise is left alone.
      */
-    async removeFromToday(taskId: string, todayStr: string): Promise<SpResult<boolean>> {
-      const path = `/tasks/${encodeURIComponent(taskId)}`;
-      const current = await request('GET', path);
-      if (!current.ok) return current;
-      if (!isRecord(current.value)) return failure('error', 'Unexpected task shape');
-      if (!shouldLeaveSpToday(current.value, todayStr)) return { ok: true, value: false };
-      const res = await request('PATCH', path, { dueDay: null });
-      return res.ok ? { ok: true, value: true } : res;
+    async removeFromToday(taskId: string): Promise<SpResult<boolean>> {
+      return changeDueDay(taskId, (task, today) =>
+        shouldLeaveSpToday(task, today) ? null : undefined,
+      );
     },
 
-    /**
-     * Plan the task for today when shouldPlanSpForToday says so. Resolves to
-     * whether it was planned now.
-     */
-    async planForToday(taskId: string, todayStr: string): Promise<SpResult<boolean>> {
-      const path = `/tasks/${encodeURIComponent(taskId)}`;
-      const current = await request('GET', path);
-      if (!current.ok) return current;
-      if (!isRecord(current.value)) return failure('error', 'Unexpected task shape');
-      if (!shouldPlanSpForToday(current.value, todayStr)) return { ok: true, value: false };
-      const res = await request('PATCH', path, { dueDay: todayStr });
-      return res.ok ? { ok: true, value: true } : res;
+    /** Plan the task for today when shouldPlanSpForToday says so. Resolves to whether it was planned now. */
+    async planForToday(taskId: string, onlyIfUnplanned = false): Promise<SpResult<boolean>> {
+      return changeDueDay(taskId, (task, today) =>
+        shouldPlanSpForToday(task, today, onlyIfUnplanned) ? today : undefined,
+      );
     },
 
     /** Mark done and, given a note, append it to the task's notes. */

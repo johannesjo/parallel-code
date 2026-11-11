@@ -323,16 +323,22 @@ describe('createSpClient', () => {
     };
     const patches: [string, unknown][] = [];
     const fetchImpl = fakeFetch((method, path, body) => {
+      if (path === '/status') return ok({ todayStr: '2026-11-11' });
       const id = path.split('/')[2];
       if (method === 'PATCH') patches.push([id, body]);
       return tasks[id]
         ? ok(tasks[id])
         : { status: 404, json: { ok: false, error: { code: 'TASK_NOT_FOUND' } } };
     });
-    const client = createSpClient({ getToken: () => 'tok', fetchImpl });
-    expect(await client.removeFromToday('today', '2026-11-11')).toEqual({ ok: true, value: true });
-    expect(await client.removeFromToday('later', '2026-11-11')).toEqual({ ok: true, value: false });
-    expect(await client.removeFromToday('gone', '2026-11-11')).toMatchObject({
+    // Super Productivity's logical day wins over the local date.
+    const client = createSpClient({
+      getToken: () => 'tok',
+      fetchImpl,
+      now: () => new Date(2026, 10, 12, 1),
+    });
+    expect(await client.removeFromToday('today')).toEqual({ ok: true, value: true });
+    expect(await client.removeFromToday('later')).toEqual({ ok: true, value: false });
+    expect(await client.removeFromToday('gone')).toMatchObject({
       ok: false,
       reason: 'not_found',
     });
@@ -346,13 +352,19 @@ describe('createSpClient', () => {
     };
     const patches: [string, unknown][] = [];
     const fetchImpl = fakeFetch((method, path, body) => {
+      // An older Super Productivity: no logical day, so the local date is used.
+      if (path === '/status') return ok({});
       const id = path.split('/')[2];
       if (method === 'PATCH') patches.push([id, body]);
       return ok(tasks[id]);
     });
-    const client = createSpClient({ getToken: () => 'tok', fetchImpl });
-    expect(await client.planForToday('g', '2026-11-11')).toEqual({ ok: true, value: true });
-    expect(await client.planForToday('planned', '2026-11-11')).toEqual({ ok: true, value: false });
+    const client = createSpClient({
+      getToken: () => 'tok',
+      fetchImpl,
+      now: () => new Date(2026, 10, 11, 12),
+    });
+    expect(await client.planForToday('g')).toEqual({ ok: true, value: true });
+    expect(await client.planForToday('planned')).toEqual({ ok: true, value: false });
     expect(patches).toEqual([['g', { dueDay: '2026-11-11' }]]);
   });
 });

@@ -209,6 +209,10 @@ export interface SuperProductivityLink {
   syncedTitle: string;
   /** The project's group task the linked task was created under, if any. */
   groupTaskId?: string;
+  /** Set while the task is set aside (minimized or snoozed) once that was
+   *  handled: true when Parallel Code took it off Super Productivity's Today
+   *  (and puts it back on restore), false when it wasn't there. */
+  offToday?: boolean;
 }
 
 export interface DocumentModelChoice {

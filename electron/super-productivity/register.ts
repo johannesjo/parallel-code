@@ -11,7 +11,6 @@ import {
   isValidSpId,
   SP_MAX_BATCH_IDS,
   SP_MAX_TITLE_LENGTH,
-  toLocalDayStr,
 } from '../shared/super-productivity.js';
 import { createSpClient } from './client.js';
 import { clearSpToken, isValidSpToken, readSpToken, writeSpToken } from './token-store.js';
@@ -106,11 +105,11 @@ export function registerSuperProductivityHandlers(): void {
   );
 
   ipcMain.handle(IPC.SuperProductivityRemoveFromToday, (_e, args: IpcArgs) =>
-    client.removeFromToday(spId(args?.taskId, 'taskId'), toLocalDayStr(new Date())),
+    client.removeFromToday(spId(args?.taskId, 'taskId')),
   );
 
   ipcMain.handle(IPC.SuperProductivityPlanForToday, (_e, args: IpcArgs) =>
-    client.planForToday(spId(args?.taskId, 'taskId'), toLocalDayStr(new Date())),
+    client.planForToday(spId(args?.taskId, 'taskId'), args?.onlyIfUnplanned === true),
   );
 
   ipcMain.handle(IPC.SuperProductivityConsumePendingOpen, () => consumePendingSpOpen());

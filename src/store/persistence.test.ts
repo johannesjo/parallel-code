@@ -712,7 +712,12 @@ describe('Super Productivity link persistence', () => {
         {
           'task-1': {
             ...persistedTask(def),
-            superProductivity: { taskId: 'sp-1', syncedTitle: 'Fix', groupTaskId: 'sp-group' },
+            superProductivity: {
+              taskId: 'sp-1',
+              syncedTitle: 'Fix',
+              groupTaskId: 'sp-group',
+              offToday: true,
+            },
           },
         },
         { superProductivityGroupTaskId: 'sp-group' },
@@ -733,6 +738,7 @@ describe('Super Productivity link persistence', () => {
     expect(saved.superProductivityGroupTasks).toBe(true);
     expect(saved.projects[0].superProductivityGroupTaskId).toBe('sp-group');
     expect(saved.tasks['task-1'].superProductivity.groupTaskId).toBe('sp-group');
+    expect(saved.tasks['task-1'].superProductivity.offToday).toBe(true);
 
     // Off by default, and a malformed group id is dropped.
     mockInvoke.mockResolvedValueOnce(stateWith({}, { superProductivityGroupTaskId: '../x' }));

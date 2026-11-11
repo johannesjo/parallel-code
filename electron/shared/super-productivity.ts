@@ -202,16 +202,32 @@ export function shouldLeaveSpToday(
 }
 
 /**
- * Whether a project's group task should be planned for today before one of
- * its subtasks is tracked: Super Productivity lists a tracked subtask in
- * Today as a row of its own unless its parent is there. A task planned for a
- * time of day keeps it.
+ * Whether to plan a task for today: an open task not planned for today, and
+ * not for a time of day. A project's group task goes first whatever its day,
+ * because Super Productivity lists a tracked subtask in Today as a row of its
+ * own unless its parent is there. A task put back after being set aside goes
+ * only when nobody planned it otherwise meanwhile (`onlyIfUnplanned`).
  */
 export function shouldPlanSpForToday(
   task: { isDone?: unknown; dueDay?: unknown; dueWithTime?: unknown },
   todayStr: string,
+  onlyIfUnplanned = false,
 ): boolean {
-  return task.isDone !== true && typeof task.dueWithTime !== 'number' && task.dueDay !== todayStr;
+  if (task.isDone === true || typeof task.dueWithTime === 'number') return false;
+  if (onlyIfUnplanned) return typeof task.dueDay !== 'string' || task.dueDay === '';
+  return task.dueDay !== todayStr;
+}
+
+/** `GET /status` reports Super Productivity's logical day (which follows its
+ *  start-of-next-day setting); older versions don't. */
+export function spTodayStr(status: unknown, now: Date): string {
+  const reported =
+    typeof status === 'object' && status !== null
+      ? (status as Record<string, unknown>).todayStr
+      : undefined;
+  return typeof reported === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(reported)
+    ? reported
+    : toLocalDayStr(now);
 }
 
 /** Title of the task a project's tasks are grouped under. */

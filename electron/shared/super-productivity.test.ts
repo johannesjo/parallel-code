@@ -8,6 +8,7 @@ import {
   resolveSpTitleSync,
   shouldLeaveSpToday,
   shouldPlanSpForToday,
+  spTodayStr,
   SP_MAX_TITLE_LENGTH,
   toLocalDayStr,
   toSpGroupTitle,
@@ -314,6 +315,10 @@ describe('shouldPlanSpForToday', () => {
     expect(shouldPlanSpForToday({ dueDay: '2026-11-10' }, today)).toBe(true);
     expect(shouldPlanSpForToday({ dueDay: '2026-11-12' }, today)).toBe(true);
   });
+  it('only plans an unplanned task when asked to', () => {
+    expect(shouldPlanSpForToday({ dueDay: null }, today, true)).toBe(true);
+    expect(shouldPlanSpForToday({ dueDay: '2026-11-20' }, today, true)).toBe(false);
+  });
   it('leaves tasks planned for today, for a time, or done', () => {
     expect(shouldPlanSpForToday({ dueDay: today }, today)).toBe(false);
     expect(shouldPlanSpForToday({ dueWithTime: 1 }, today)).toBe(false);
@@ -324,5 +329,17 @@ describe('shouldPlanSpForToday', () => {
 describe('toSpGroupTitle', () => {
   it('names the group after the project', () => {
     expect(toSpGroupTitle(' web ')).toBe('Parallel Code · web');
+  });
+});
+
+describe('spTodayStr', () => {
+  const now = new Date(2026, 10, 12, 1);
+  it("prefers Super Productivity's logical day", () => {
+    expect(spTodayStr({ todayStr: '2026-11-11' }, now)).toBe('2026-11-11');
+  });
+  it('falls back to the local date', () => {
+    expect(spTodayStr({}, now)).toBe('2026-11-12');
+    expect(spTodayStr({ todayStr: 'nope' }, now)).toBe('2026-11-12');
+    expect(spTodayStr(null, now)).toBe('2026-11-12');
   });
 });

@@ -365,9 +365,14 @@ function restoredCanvas(pt: PersistedTask): Pick<Task, 'canvasTabs' | 'canvasAct
 
 function restoreSuperProductivityLink(value: unknown): SuperProductivityLink | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { taskId, syncedTitle, groupTaskId } = value as Record<string, unknown>;
+  const { taskId, syncedTitle, groupTaskId, offToday } = value as Record<string, unknown>;
   if (!isValidSpId(taskId) || typeof syncedTitle !== 'string') return undefined;
-  return isValidSpId(groupTaskId) ? { taskId, syncedTitle, groupTaskId } : { taskId, syncedTitle };
+  return {
+    taskId,
+    syncedTitle,
+    ...(isValidSpId(groupTaskId) ? { groupTaskId } : {}),
+    ...(typeof offToday === 'boolean' ? { offToday } : {}),
+  };
 }
 
 function validBranch(value: unknown, exclude?: string): string | undefined {
