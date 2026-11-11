@@ -3,7 +3,25 @@ npx lint-staged
 npm run check
 
 # Verify package-lock.json is committed and in sync with package.json
-if git diff --cached --name-only | grep -q "package\.json$"; then
+# Only fields npm records in or resolves into the lockfile count; script-only
+# edits leave the lockfile unchanged, so there would be nothing to stage.
+lockfile_fields_changed() {
+  node -e '
+    const { execSync } = require("child_process");
+    const read = (rev) => {
+      try { return JSON.parse(execSync(`git show ${rev}:package.json`, { stdio: ["ignore", "pipe", "ignore"] })); }
+      catch { return {}; } // package.json is new in this commit
+    };
+    const fields = ["name", "version", "license", "bin", "engines", "os", "cpu", "workspaces",
+      "dependencies", "devDependencies", "optionalDependencies", "peerDependencies",
+      "peerDependenciesMeta", "bundleDependencies", "overrides"];
+    const installScripts = ["preinstall", "install", "postinstall"];
+    const pick = (p) => [...fields.map((f) => p[f]), ...installScripts.map((s) => p.scripts?.[s])];
+    process.exit(JSON.stringify(pick(read("HEAD"))) === JSON.stringify(pick(read(""))) ? 1 : 0);
+  '
+}
+
+if git diff --cached --name-only | grep -q "package\.json$" && lockfile_fields_changed; then
   if ! git diff --cached --name-only | grep -q "package-lock\.json$"; then
     echo "Error: package.json changed without updating package-lock.json"
     echo "Run 'npm install' to update the lockfile"
