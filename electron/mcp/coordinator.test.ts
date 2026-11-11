@@ -6814,6 +6814,17 @@ describe('Coordinator hook-driven task state', () => {
     expect(task.status).toBe('running');
   });
 
+  it('ignores tool hooks after a hook-reported interrupt', async () => {
+    const task = await coordinator.createTask({ name: 'a', coordinatorTaskId: 'coord-1' });
+    getHookEventHandler()(hookEvent(task.agentId, { event: 'PreToolUse', toolName: 'Bash' }));
+    getHookEventHandler()(hookEvent(task.agentId, { event: 'Interrupt', state: 'done' }));
+    expect(task.status).toBe('idle');
+
+    // A parallel sibling's result from the dead turn; no Stop will follow it.
+    getHookEventHandler()(hookEvent(task.agentId, { event: 'PostToolUse', toolName: 'Read' }));
+    expect(task.status).toBe('idle');
+  });
+
   it('does not treat a hook done as ❯-ready for the initial prompt', async () => {
     vi.useFakeTimers();
     try {

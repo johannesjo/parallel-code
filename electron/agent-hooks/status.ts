@@ -269,6 +269,10 @@ function mapClaudeEvent(
       return mapPreToolUse(body, toolName);
     case 'PostToolUse':
     case 'PostToolUseFailure':
+      // Esc kills the running tool and ends the turn without a `Stop`. This report
+      // is the only sign, and it lands so fast it cancels the guess made from the key.
+      if (body.is_interrupt === true && body.agent_id === undefined)
+        return { state: 'done', event: 'Interrupt', detail: 'Interrupted' };
       return { state: 'working', event, toolUseId, ...toolResultContext(body, event, toolName) };
     case 'PermissionRequest': {
       // Claude asks this for AskUserQuestion too; that must stay a question, not an approval.

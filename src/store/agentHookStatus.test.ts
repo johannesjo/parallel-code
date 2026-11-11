@@ -436,6 +436,37 @@ describe('agentHookStatus', () => {
     expect(getAgentHookStatus('a1')?.state).toBe('working');
   });
 
+  it('ends the turn when Esc interrupts a running shell command', () => {
+    const bash = { tool_name: 'Bash', tool_use_id: 'toolu_1', tool_input: { command: 'npm test' } };
+    hook({ hook_event_name: 'PreToolUse', ...bash });
+    noteAgentTerminalInput('a1', '\x1b', noScreen);
+    // Claude kills the command at once and reports it before the settle window ends.
+    vi.advanceTimersByTime(100);
+    hook({
+      hook_event_name: 'PostToolUseFailure',
+      ...bash,
+      error: 'Interrupted',
+      is_interrupt: true,
+    });
+    expect(getAgentHookStatus('a1')).toMatchObject({ state: 'done', event: 'Interrupt' });
+
+    // A parallel sibling's result from the dead turn must not revive it.
+    vi.advanceTimersByTime(100);
+    hook({ hook_event_name: 'PostToolUse', tool_name: 'Read', tool_use_id: 'toolu_2' });
+    vi.advanceTimersByTime(10_000);
+    expect(getAgentHookStatus('a1')).toMatchObject({ state: 'done', event: 'Interrupt' });
+  });
+
+  it('shows a new turn in full right after an interrupt', () => {
+    hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_use_id: 'toolu_1' });
+    hook({ hook_event_name: 'PostToolUseFailure', tool_name: 'Bash', is_interrupt: true });
+    vi.advanceTimersByTime(500);
+    hook({ hook_event_name: 'UserPromptSubmit' });
+    vi.advanceTimersByTime(500);
+    hook({ hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_use_id: 'toolu_2' });
+    expect(getAgentHookStatus('a1')).toMatchObject({ state: 'waiting', prompt: 'permission' });
+  });
+
   it('shows a sent prompt as working before its UserPromptSubmit lands', () => {
     applyAgentHookEvent(event({ state: 'done', event: 'Stop', lastAssistantMessage: 'Shipped' }));
     noteAgentPromptSent('a1');

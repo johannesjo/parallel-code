@@ -160,11 +160,12 @@ function setStatus(agentId: string, status: AgentHookStatus): void {
 function isSuppressedToolEvent(event: AgentHookEventPayload): boolean {
   const until = suppressToolEventsUntil.get(event.agentId);
   if (until === undefined) return false;
-  if (event.at >= until) {
+  // A turn boundary (a new prompt, Stop, SessionStart) ends the window early.
+  if (event.at >= until || !TOOL_EVENTS.has(event.event)) {
     suppressToolEventsUntil.delete(event.agentId);
     return false;
   }
-  return TOOL_EVENTS.has(event.event);
+  return true;
 }
 
 export function applyAgentHookEvent(event: AgentHookEventPayload): boolean {
@@ -183,6 +184,9 @@ function setHookStatus(event: AgentHookEventPayload, status: ReducedAgentHookSta
   const prev = statuses().get(event.agentId);
   const sameState = prev?.state === event.state;
   const finished = event.event === 'Stop' || event.event === 'StopFailure';
+  // A reported interrupt ends the turn like an inferred one, so its stragglers are dropped too.
+  if (event.event === 'Interrupt')
+    suppressToolEventsUntil.set(event.agentId, event.at + INTERRUPT_SUPPRESS_MS);
   setStatus(event.agentId, {
     ...status,
     launchId: event.launchId ?? prev?.launchId,

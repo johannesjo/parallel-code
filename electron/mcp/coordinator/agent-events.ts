@@ -82,6 +82,8 @@ function handleAgentHookEvent(c: CoordinatorInternals, evt: AgentHookEventPayloa
       task.suppressIdleUntil = undefined;
       task.lastPromptEchoText = undefined;
     }
+    // A reported interrupt ends the turn like a PTY one, so its stragglers are dropped too.
+    if (evt.event === 'Interrupt') c.interruptedAt.set(evt.agentId, evt.at);
     c.prompts.handlePromptDetected(task, false, 'hook');
     return;
   }

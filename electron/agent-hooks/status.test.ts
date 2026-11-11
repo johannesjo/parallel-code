@@ -329,6 +329,24 @@ describe('mapClaudeHookPayload', () => {
       ),
     ).toEqual({ state: 'working', event: 'PostToolUseFailure' });
   });
+
+  it("ends the turn on the lead's interrupted tool call, not on a sub-agent's", () => {
+    const interrupted = {
+      hook_event_name: 'PostToolUseFailure',
+      tool_name: 'Bash',
+      is_interrupt: true,
+    };
+    expect(mapClaudeHookPayload(payload(interrupted))).toEqual({
+      state: 'done',
+      event: 'Interrupt',
+      detail: 'Interrupted',
+    });
+    expect(mapClaudeHookPayload(payload({ ...interrupted, agent_id: 'sub-1' }))).toEqual({
+      state: 'working',
+      event: 'PostToolUseFailure',
+      subagentId: 'sub-1',
+    });
+  });
 });
 
 describe('isAskUserQuestionTool', () => {
