@@ -20,7 +20,12 @@ import {
   setInitialPrompt,
   setPrefillPrompt,
 } from '../store/tasks';
-import { isAgentAskingQuestion, isAgentIdle, markAgentSpawned } from '../store/taskStatus';
+import {
+  isAgentAskingQuestion,
+  isAgentHookWorking,
+  isAgentIdle,
+  markAgentSpawned,
+} from '../store/taskStatus';
 import type { AgentDef } from '../ipc/types';
 import type { Project, Task } from '../store/types';
 import { documentMainAgentId } from './store';
@@ -142,8 +147,7 @@ export async function sendToDocumentAgent(project: Project, text: string): Promi
 /** Quiet output is the only sign for most agents; Claude's and Codex's hooks say outright
  *  whether a turn is in flight or the agent waits on the user. */
 function looksIdle(agentId: string): boolean {
-  const hook = getAgentHookStatus(agentId)?.state;
-  if (hook === 'working' || hook === 'waiting') return false;
+  if (isAgentHookWorking(agentId) || getAgentHookStatus(agentId)?.state === 'waiting') return false;
   return isAgentIdle(agentId) && !isAgentAskingQuestion(agentId);
 }
 

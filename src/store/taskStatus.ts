@@ -23,6 +23,7 @@ import {
   getAgentActivitySubject,
   getAgentHookStatus,
   noteAgentPromptSent,
+  type AgentHookStatus,
 } from './agentHookStatus';
 import { getPrChecks, isPrReadyToMerge } from './pr-checks-state';
 import { taskLeadWatchId } from './task-prs';
@@ -632,7 +633,8 @@ function agentQuestionSince(agentId: string, asking: ReadonlySet<string>): numbe
     return agent.chatState?.requests.at(-1)?.since;
   const hook = getAgentHookStatus(agentId);
   if (hook?.state === 'waiting') return hook.since;
-  if (hook?.state === 'working' || !asking.has(agentId)) return undefined;
+  if ((hook && isHookWorking(agentId, hook, activeAgents())) || !asking.has(agentId))
+    return undefined;
   // The asking set and the onset map are separate structures kept in step by
   // `updateQuestionState`, their sole writer. This is the one place they meet,
   // so it is the one place that has to tolerate them drifting apart.
@@ -1056,6 +1058,13 @@ export function markAgentBusy(agentId: string): void {
   noteAgentPromptSent(agentId);
 }
 
+/** Its terminal unmounted while the session runs on, so output stops arriving here.
+ *  Past output must not make that silence read as Claude idling at its prompt (see
+ *  `isHookWorking`); the first output after a remount dates it again. */
+export function forgetAgentOutput(agentId: string): void {
+  setLastOutputAt(agentId, undefined);
+}
+
 /** Clean up timers when an agent exits. */
 export function clearAgentActivity(agentId: string): void {
   setLastOutputAt(agentId, undefined);
@@ -1124,8 +1133,39 @@ function isAgentBlockedOnInput(agentId: string): boolean {
     return !!agent.chatState?.requests.length;
   const hook = getAgentHookStatus(agentId);
   if (hook?.state === 'waiting') return true;
-  if (hook?.state === 'working') return false;
+  if (hook && isHookWorking(agentId, hook, activeAgents())) return false;
   return isAgentAskingQuestion(agentId);
+}
+
+/** Hooks run for Claude only when its command is `claude` (main's `isClaudeCommand`). */
+function isClaudeAgent(agentId: string): boolean {
+  return store.agents?.[agentId]?.def?.command?.split(/[\\/]/).pop() === 'claude';
+}
+
+/** Whether a hook's `working` claim still stands. A lost `Stop` would hold it
+ *  until the stale timer, so once Claude printed output in this turn and then
+ *  dropped out of the active set (its prompt plus 2 s of silence; it repaints
+ *  about every 0.1 s mid-turn), the turn is over. Background work leaves the
+ *  lead silent at its prompt on purpose; without output since the turn began
+ *  (no terminal mounted, just reattached) silence proves nothing; and only
+ *  Claude's repaint cadence was measured. Further output restores the claim.
+ *  `lastOutputAt` trails output by under a second, which Claude's turns outlast. */
+function isHookWorking(
+  agentId: string,
+  hook: AgentHookStatus,
+  active: ReadonlySet<string>,
+): boolean {
+  if (hook.state !== 'working') return false;
+  if (hook.background || active.has(agentId) || !isClaudeAgent(agentId)) return true;
+  // Read last: it changes once a second while output streams, and the agent is active then.
+  const outputAt = lastOutputAt[agentId];
+  return outputAt === undefined || outputAt <= hook.since;
+}
+
+/** For readers of a hook's `working` state: whether that claim still stands (see `isHookWorking`). */
+export function isAgentHookWorking(agentId: string): boolean {
+  const hook = getAgentHookStatus(agentId);
+  return !!hook && isHookWorking(agentId, hook, activeAgents());
 }
 
 /** Same precedence for activity: output still streaming after `Stop` is the
@@ -1135,7 +1175,7 @@ function isAgentWorking(agentId: string, active: ReadonlySet<string>): boolean {
   if (agent && isAgentChat(store.tasks[agent.taskId], agentId))
     return agent.chatState?.status === 'working' || agent.chatState?.status === 'starting';
   const hook = getAgentHookStatus(agentId);
-  return hook ? hook.state === 'working' : active.has(agentId);
+  return hook ? isHookWorking(agentId, hook, active) : active.has(agentId);
 }
 
 /** Between turns with nothing asked of the user, by the same hook-first
@@ -1175,6 +1215,7 @@ export function isTaskTerminalAsking(taskId: string): boolean {
 /** Working agents can coexist with a question or review in another pane. */
 export function isTaskWorking(taskId: string): boolean {
   const active = activeAgents();
+  // eslint-disable-next-line solid/reactivity -- runs synchronously here, so the caller tracks its reads
   return hasRunningAgentActivity(taskId, (id) => isAgentWorking(id, active));
 }
 
@@ -1214,8 +1255,13 @@ export function getTaskActivityTooltip(taskId: string): string {
     ids[0];
   if (!agentId) return 'Activity evidence unavailable';
   const hook = getAgentHookStatus(agentId);
-  // A terminal question after a finished hook turn belongs to terminal evidence.
-  if (hook && !(hook.state === 'done' && isAgentBlockedOnInput(agentId))) {
+  // A terminal question after a finished hook turn belongs to terminal evidence,
+  // and so does a working claim the terminal shows has gone quiet.
+  const terminalDecides =
+    hook?.state === 'done'
+      ? isAgentBlockedOnInput(agentId)
+      : hook?.state === 'working' && !isHookWorking(agentId, hook, active);
+  if (hook && !terminalDecides) {
     return formatAgentHookTooltip({ ...hook, agentId });
   }
   const outputAt = lastOutputAt[agentId];
@@ -1247,6 +1293,7 @@ export function getTaskDotStatus(taskId: string): TaskDotStatus {
   const active = activeAgents(); // reactive read
   // Shell panes are deliberately excluded: `busy` reads as "the agent is doing
   // something", which a terminal running a dev server is not.
+  // eslint-disable-next-line solid/reactivity -- runs synchronously here, so the caller tracks its reads
   if (hasRunningAgentActivity(taskId, (id) => isAgentWorking(id, active))) return 'busy';
 
   if (task.needsReview) return 'review';

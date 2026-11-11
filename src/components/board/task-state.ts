@@ -3,7 +3,7 @@ import { store } from '../../store/core';
 import { getAgentHookStatus } from '../../store/agentHookStatus';
 import { isCheckSuiteBusy } from '../../store/check-suite-state';
 import { computeAttentionEntries, jumpToWaitingTask } from '../../store/sidebar-attention';
-import { getReadyLabel, getTaskAttentionState } from '../../store/taskStatus';
+import { getReadyLabel, getTaskAttentionState, isAgentHookWorking } from '../../store/taskStatus';
 import type { Task } from '../../store/types';
 import { isUserVerifyRunning } from '../../store/verification';
 
@@ -78,8 +78,10 @@ function firstLine(text: string | undefined): string {
 
 /** One line about what the task's agent is doing or last said. */
 export function activityLine(task: Task): { text: string; since?: number } {
-  const hook = task.agentIds.map(getAgentHookStatus).find((status) => status !== null);
-  if (hook?.state === 'working' && hook.toolName) {
+  const hookAgentId = task.agentIds.find((id) => getAgentHookStatus(id) !== null);
+  const hook = hookAgentId === undefined ? null : getAgentHookStatus(hookAgentId);
+  // A stalled turn's last tool is not running, whatever the hook still claims.
+  if (hookAgentId !== undefined && hook?.toolName && isAgentHookWorking(hookAgentId)) {
     return {
       text: [hook.toolName, firstLine(hook.detail)].filter(Boolean).join(' · '),
       since: hook.since,

@@ -118,6 +118,7 @@ import {
   markAgentOutput,
   isAgentIdle,
   clearAgentActivity,
+  forgetAgentOutput,
 } from './taskStatus';
 import {
   AGENT_HOOK_STALE_MS,
@@ -126,6 +127,10 @@ import {
   getAgentHookStatus,
 } from './agentHookStatus';
 import { getTaskActivityTooltip, isTaskTerminalAsking } from './taskStatus';
+import { canvasActivationInput } from './canvas-activation';
+import { activationBlocker } from '../investigation/live-activation';
+import { activityLine } from '../components/board/task-state';
+import type { Task } from './types';
 
 const CLAUDE_DECLINE_FOCUSED_TRUST_DIALOG = [
   ' WebFetch(domain:registry.npmjs.org),',
@@ -1987,5 +1992,173 @@ describe('hook-reported agent status', () => {
     vi.setSystemTime(new Date('2026-05-10T10:00:01.600Z'));
     markAgentOutput('agent-1', new TextEncoder().encode('Building 3'), 'task-1');
     expect(getTaskActivityTooltip('task-1')).toContain(observedAt('2026-05-10T10:00:01Z'));
+  });
+
+  // A lost `Stop` leaves the hook at `working`. Recorded Claude Code 2.1 repaints
+  // about every 0.1 s mid-turn (0.34 s at most) with its input box on screen,
+  // and goes silent at that prompt once the turn ends.
+  describe('stalled Claude turn', () => {
+    const encode = (text: string) => new TextEncoder().encode(text);
+    const inputBox = [
+      '────────────────────────────────',
+      '❯ ',
+      '────────────────────────────────',
+      '⏵⏵ accept edits on (shift+tab to cycle)',
+    ].join('\r\n');
+    const workingFrame = (seconds: number) =>
+      `\x1b[H\x1b[2J✻ Running… (${seconds}s · esc to interrupt)\r\n${inputBox}`;
+    const doneFrame = `\x1b[H\x1b[2J✻ Worked for 7s\r\n${inputBox}`;
+    const permissionDialog = [
+      '\x1b[H\x1b[2J Bash command',
+      '   npm test',
+      ' Do you want to proceed?',
+      ' ❯ 1. Yes',
+      '   2. No, and tell Claude what to do differently (esc)',
+    ].join('\r\n');
+
+    function claudeWorks(durationMs: number, gapMs = 100): void {
+      for (let elapsed = gapMs; elapsed <= durationMs; elapsed += gapMs) {
+        vi.advanceTimersByTime(gapMs);
+        markAgentOutput('agent-1', encode(workingFrame(Math.floor(elapsed / 1000))), 'task-1');
+      }
+    }
+
+    function finishTurnWithoutStop(): void {
+      hook('agent-1', 'working');
+      claudeWorks(7_000);
+      markAgentOutput('agent-1', encode(doneFrame), 'task-1');
+    }
+
+    beforeEach(() => {
+      setMockAgent('agent-1', { status: 'running', def: { command: 'claude' } });
+    });
+
+    it('stops reporting working once Claude sits silent at its prompt', () => {
+      finishTurnWithoutStop();
+      expect(getTaskAttentionState('task-1')).toBe('active');
+
+      vi.advanceTimersByTime(2_000);
+
+      expect(getAgentHookStatus('agent-1')?.state).toBe('working');
+      expect(isAgentIdle('agent-1')).toBe(true);
+      expect(getTaskAttentionState('task-1')).toBe('idle');
+      expect(getTaskDotStatus('task-1')).toBe('waiting');
+      expect(getTaskActivityTooltip('task-1')).toContain('No ongoing activity detected');
+    });
+
+    it('lets the canvases take a request once the stalled turn has gone quiet', () => {
+      setMockAgent('agent-1', { status: 'running', def: { command: 'claude' }, canvasTools: true });
+      const blocker = () => activationBlocker(canvasActivationInput({}, 'agent-1'));
+      finishTurnWithoutStop();
+      expect(blocker()).toBe('The agent is still working.');
+
+      vi.advanceTimersByTime(2_000);
+
+      expect(blocker()).toBe('');
+    });
+
+    it('drops the tool line from the board card once the stalled turn has gone quiet', () => {
+      const card = () => activityLine(mockTasks['task-1'] as Task).text;
+      applyAgentHookEvent({
+        agentId: 'agent-1',
+        taskId: 'task-1',
+        state: 'working',
+        event: 'PreToolUse',
+        toolName: 'Bash',
+        detail: 'npm test',
+        at: Date.now(),
+      });
+      claudeWorks(7_000);
+      markAgentOutput('agent-1', encode(doneFrame), 'task-1');
+      expect(card()).toBe('Bash · npm test');
+
+      vi.advanceTimersByTime(2_000);
+
+      expect(card()).not.toContain('Bash');
+    });
+
+    it('reports working again as soon as Claude repaints', () => {
+      finishTurnWithoutStop();
+      vi.advanceTimersByTime(2_000);
+
+      claudeWorks(100);
+
+      expect(getTaskAttentionState('task-1')).toBe('active');
+    });
+
+    it('keeps reporting working while Claude repaints with its prompt visible', () => {
+      hook('agent-1', 'working');
+      claudeWorks(10_000, 340);
+
+      expect(isAgentIdle('agent-1')).toBe(false);
+      expect(getTaskAttentionState('task-1')).toBe('active');
+    });
+
+    it('keeps reporting working while background work runs behind the idle prompt', () => {
+      finishTurnWithoutStop();
+      applyAgentHookEvent({
+        agentId: 'agent-1',
+        taskId: 'task-1',
+        state: 'working',
+        event: 'SubagentRunning',
+        background: true,
+        at: Date.now(),
+      });
+
+      vi.advanceTimersByTime(60_000);
+
+      expect(getTaskAttentionState('task-1')).toBe('active');
+    });
+
+    it('keeps reporting working when the only output predates the turn', () => {
+      markAgentOutput('agent-1', encode(doneFrame), 'task-1');
+      vi.advanceTimersByTime(5_000);
+      hook('agent-1', 'working');
+
+      vi.advanceTimersByTime(60_000);
+
+      expect(getTaskAttentionState('task-1')).toBe('active');
+    });
+
+    it('keeps reporting working after reattaching before any output arrives', () => {
+      hook('agent-1', 'working');
+      markAgentSpawned('agent-1');
+
+      vi.advanceTimersByTime(20_000);
+
+      expect(getTaskAttentionState('task-1')).toBe('active');
+    });
+
+    it('keeps reporting working after its terminal unmounts mid-turn', () => {
+      hook('agent-1', 'working');
+      claudeWorks(3_000);
+      forgetAgentOutput('agent-1');
+
+      vi.advanceTimersByTime(20_000);
+
+      expect(getTaskAttentionState('task-1')).toBe('active');
+    });
+
+    it('leaves a non-Claude agent to its hook', () => {
+      setMockAgent('agent-1', { status: 'running', def: { command: 'codex' } });
+      finishTurnWithoutStop();
+
+      vi.advanceTimersByTime(2_000);
+
+      expect(isAgentIdle('agent-1')).toBe(false);
+      expect(getTaskAttentionState('task-1')).toBe('active');
+    });
+
+    it('shows a dialog left on screen once the stalled turn has gone quiet', () => {
+      hook('agent-1', 'working');
+      claudeWorks(1_000);
+      markAgentOutput('agent-1', encode(permissionDialog), 'task-1');
+
+      vi.advanceTimersByTime(15_000);
+
+      expect(getTaskAttentionState('task-1')).toBe('needs_input');
+      expect(getTaskOpenQuestion('task-1')?.agentId).toBe('agent-1');
+      expect(getTaskActivityTooltip('task-1')).toContain('Waiting for input');
+    });
   });
 });

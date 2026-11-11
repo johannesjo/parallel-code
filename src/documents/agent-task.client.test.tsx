@@ -4,7 +4,7 @@ import { ensureProjectAgentTask } from '../store/github-agent';
 import { IPC } from '../../electron/ipc/channels';
 import { setStore, store } from '../store/core';
 import { applyAgentHookEvent, clearAgentHookStatus } from '../store/agentHookStatus';
-import { clearAgentActivity } from '../store/taskStatus';
+import { clearAgentActivity, markAgentOutput } from '../store/taskStatus';
 import type { AgentDef } from '../ipc/types';
 import type { Project, Task } from '../store/types';
 import {
@@ -202,6 +202,33 @@ describe('sendToDocumentAgent', () => {
 
     expect(sendPrompt).not.toHaveBeenCalled();
     expect(store.tasks[id]?.initialPrompt).toBe('Tighten the intro.');
+  });
+
+  it('sends once Claude sits silent at its prompt after a turn whose Stop was lost', async () => {
+    vi.useFakeTimers();
+    try {
+      const claudeProject = { ...project, documentTerminalAgentId: 'claude' };
+      install('claude');
+      setStore({ projects: [claudeProject] });
+      const id = ensureDocumentAgentTask(claudeProject)?.id ?? '';
+      clearAgentActivity(id);
+      applyAgentHookEvent({
+        agentId: id,
+        taskId: id,
+        at: Date.now(),
+        state: 'working',
+        event: 'PreToolUse',
+      });
+      vi.advanceTimersByTime(1_000);
+      markAgentOutput(id, new TextEncoder().encode('✻ Worked for 1s\r\n❯ '), id);
+      vi.advanceTimersByTime(15_000);
+
+      await sendToDocumentAgent(claudeProject, 'Tighten the intro.');
+
+      expect(sendPrompt).toHaveBeenCalledWith(id, id, 'Tighten the intro.');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('refuses a second instruction while the first still waits', async () => {

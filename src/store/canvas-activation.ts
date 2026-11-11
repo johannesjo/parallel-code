@@ -1,5 +1,5 @@
 import { store } from './core';
-import { isAgentAskingQuestion, isAgentIdle } from './taskStatus';
+import { isAgentAskingQuestion, isAgentHookWorking, isAgentIdle } from './taskStatus';
 import { getAgentHookStatus } from './agentHookStatus';
 import type { ActivationInput } from '../investigation/live-activation';
 import type { Task } from './types';
@@ -11,13 +11,15 @@ export function canvasActivationInput(
 ): ActivationInput {
   const agent = agentId ? store.agents[agentId] : undefined;
   const hook = agentId ? getAgentHookStatus(agentId) : null;
+  // A working claim Claude's quiet prompt shows has stalled must not block the canvas.
+  const stalled = !!agentId && hook?.state === 'working' && !isAgentHookWorking(agentId);
   return {
     hasSource: !!task && !!agentId,
     agentStatus: agent?.status,
     canvasTools: agent?.canvasTools,
     closing: !!task?.closingStatus,
     awaitingInitialPrompt: !!task?.initialPrompt,
-    hookState: hook?.state,
+    hookState: stalled ? undefined : hook?.state,
     askingQuestion: !!agentId && isAgentAskingQuestion(agentId),
     terminalInputPending: !!task?.terminalInputPending,
     idle: !!agentId && isAgentIdle(agentId),

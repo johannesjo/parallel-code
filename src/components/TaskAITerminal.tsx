@@ -23,7 +23,7 @@ import {
   toggleAITerminalLayout,
 } from '../store/store';
 import { markDirty } from '../lib/terminalFitManager';
-import { isAgentAskingQuestion, isAgentSettled } from '../store/taskStatus';
+import { forgetAgentOutput, isAgentAskingQuestion, isAgentSettled } from '../store/taskStatus';
 import { isAgentSuspended } from '../store/agent-suspend';
 import { warn as logWarn } from '../lib/log';
 import { AgentHandoffComposer } from './AgentHandoffComposer';
@@ -738,6 +738,7 @@ function AgentTerminalPane(props: {
   onTranscriptMarksReady?: (api: TranscriptMarks | undefined) => void;
 }) {
   onCleanup(() => props.onUnmount(props.agentId));
+  onCleanup(() => forgetAgentOutput(props.agentId));
 
   const dockerOverlayLabel = () => getTaskDockerOverlayLabel(props.task.dockerSource);
   const agent = () => store.agents[props.agentId];
