@@ -463,9 +463,16 @@ export interface ResourceGroup {
   kind: 'agent' | 'shell' | 'app' | 'other';
   agentId: string | null;
   taskId: string | null;
+  /** Includes `exitedCpuPercent`. */
   cpuPercent: number;
   memoryBytes: number;
   processes: ResourceProcess[];
+  /**
+   * Percent of one core used by commands in this group that exited since the
+   * previous sample (hooks, short shell and test runs). Absent where the
+   * platform cannot measure it (macOS).
+   */
+  exitedCpuPercent?: number;
 }
 
 export interface ResourceSnapshot {
