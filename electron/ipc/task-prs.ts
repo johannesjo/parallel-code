@@ -173,7 +173,7 @@ async function printedPrOfTask(
 /**
  * Why `pr` is not the task's own, or null when its head commit is: the task
  * branch holds it and no branch but copies of the task branch or the PR head
- * does, apart from those that got it by merging the PR.
+ * does, apart from those that got it by the PR's merge when the task branch did not.
  */
 async function notOwnReason(
   worktreePath: string,
@@ -196,8 +196,7 @@ async function notOwnReason(
   const others = refs.filter((ref) => !isCopy(ref));
   if (refs.includes(`refs/heads/${branchName}`)) {
     if (others.length === 0) return null;
-    const merged = await refsHoldingMergeOf(worktreePath, pr);
-    if (others.every((ref) => merged.has(ref))) return null;
+    if (await heldByMergeOnly(worktreePath, branchName, pr, others)) return null;
   }
   return {
     why: 'other branches hold its head',
@@ -206,15 +205,49 @@ async function notOwnReason(
 }
 
 /**
- * Refs holding a merged PR's merge commit. A merge commit brings the PR head
- * into the base branch, so those refs hold the head only by that merge. None
- * when the head was on the base branch already, as when it was pushed there.
+ * Whether `others` hold a merged PR's head only through its merge commit,
+ * which brings the head into the base branch, while the task branch holds it
+ * by its own commits. Not when the task branch got it from the base branch
+ * too, as one created after the merge did, nor when the base branch got it by
+ * a push.
  */
-async function refsHoldingMergeOf(worktreePath: string, pr: PrHead): Promise<Set<string>> {
+async function heldByMergeOnly(
+  worktreePath: string,
+  branchName: string,
+  pr: PrHead,
+  others: string[],
+): Promise<boolean> {
   const merge = pr.mergeCommitOid;
-  if (pr.state !== 'MERGED' || !merge || merge === pr.headRefOid) return new Set();
-  if (await isAncestor(worktreePath, pr.headRefOid, `${merge}^1`)) return new Set();
-  return new Set(await refsContaining(worktreePath, merge));
+  if (pr.state !== 'MERGED' || !merge || merge === pr.headRefOid) return false;
+  if (!(await isOnOwnLine(worktreePath, branchName, pr.headRefOid, `${merge}^1`))) return false;
+  const merged = new Set(await refsContaining(worktreePath, merge));
+  return others.every((ref) => merged.has(ref));
+}
+
+/**
+ * Whether `sha` is on the branch's first-parent line and not on `base`: a
+ * commit the branch itself pointed at, which stays on that line when the
+ * branch merges another one in. What a merge brought in is off it, so a branch
+ * created from the base branch after `sha` was merged there, or fast-forwarded
+ * to it, lacks it. False when `base` is missing, as for a merge commit that
+ * was not fetched.
+ */
+async function isOnOwnLine(
+  worktreePath: string,
+  branchName: string,
+  sha: string,
+  base: string,
+): Promise<boolean> {
+  try {
+    const { stdout } = await exec(
+      'git',
+      ['rev-list', '--first-parent', `refs/heads/${branchName}`, `^${base}`],
+      { cwd: worktreePath, maxBuffer: MAX_BUFFER },
+    );
+    return stdout.split('\n').includes(sha);
+  } catch {
+    return false;
+  }
 }
 
 /** Logs why a PR is not the task's, so a PR that still goes undetected shows why. */
@@ -223,16 +256,22 @@ function notOwn(
   reason: string,
   details: Record<string, unknown>,
 ): false {
-  const key = `${source} ${String(details['prUrl'])} ${reason}`;
-  // The tracked branch's PRs are checked on every probe; their verdict rarely changes.
-  if (!loggedVerdicts.has(key)) {
-    loggedVerdicts.add(key);
-    const what = source === 'printed' ? 'printed PR' : 'PR of the pushed branch';
-    console.warn(`[pr-checks] ${what} is not the task’s own (${reason}):`, details);
-  }
+  const what = source === 'printed' ? 'printed PR' : 'PR of the pushed branch';
+  warnOnce(
+    `${source} ${String(details['prUrl'])} ${reason}`,
+    `[pr-checks] ${what} is not the task’s own (${reason}):`,
+    details,
+  );
   return false;
 }
-const loggedVerdicts = new Set<string>();
+
+/** Warns once per `key`: the tracked branch's PRs are checked on every probe, with the same outcome. */
+function warnOnce(key: string, ...message: unknown[]): void {
+  if (warned.has(key)) return;
+  warned.add(key);
+  console.warn(...message);
+}
+const warned = new Set<string>();
 
 function isGhNotFoundError(err: unknown): boolean {
   const stderr = (err as { stderr?: unknown })?.stderr;
@@ -250,21 +289,13 @@ async function refsContaining(worktreePath: string, sha: string): Promise<string
     return stdout.split('\n').filter(Boolean);
   } catch (err) {
     // Expected for a fork's or another repository's PR, whose commits were never fetched.
-    console.warn('[pr-checks] could not list branches holding a PR commit:', sha, err);
+    warnOnce(
+      `refs ${worktreePath} ${sha}`,
+      '[pr-checks] could not list branches holding a PR commit:',
+      sha,
+      err,
+    );
     return [];
-  }
-}
-
-/** Whether `ancestor` is reachable from `rev`; false when either is missing. */
-async function isAncestor(worktreePath: string, ancestor: string, rev: string): Promise<boolean> {
-  try {
-    await exec('git', ['merge-base', '--is-ancestor', ancestor, rev], {
-      cwd: worktreePath,
-      maxBuffer: MAX_BUFFER,
-    });
-    return true;
-  } catch {
-    return false;
   }
 }
 
