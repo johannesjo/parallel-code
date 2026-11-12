@@ -338,6 +338,7 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                       >
                         <button
                           type="button"
+                          class="agent-tab"
                           title={agent()?.def.description ?? agent()?.def.name}
                           aria-pressed={selected()}
                           onClick={(e) => {
