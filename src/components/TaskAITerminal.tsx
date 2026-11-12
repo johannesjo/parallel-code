@@ -136,8 +136,12 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
   /** Whether leaving the terminal hands its conversation over, rather than
    *  leaving a running CLI behind and opening a separate chat. */
   const terminalHandoff = () => agentViewHandsOff(props.task, firstAgentId(), 'chat');
+  /** Why Chat cannot open in this task at all (Settings, Docker, coordination).
+   *  The button's tooltip says so, and is its description for screen readers;
+   *  an alert would stand until Settings change, or for good, so none shows. */
+  const chatUnavailable = () => agentChatUnavailableReason(props.task);
   const switchBlockedReason = () => {
-    const unavailable = agentChatUnavailableReason(props.task);
+    const unavailable = chatUnavailable();
     if (unavailable) return unavailable;
     if (currentView() === 'chat') {
       const state = store.agents[firstAgentId()]?.chatState;
@@ -157,7 +161,8 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
   // transient: report whichever one holds *now*, so the alert can neither keep
   // asking for something already done nor resurface a reason that has since
   // been replaced by a different one.
-  const viewNotice = () => viewError() || (noticeRequested() ? switchBlockedReason() : '');
+  const viewNotice = () =>
+    viewError() || (noticeRequested() && !chatUnavailable() ? switchBlockedReason() : '');
   // Drop a question whose cost has gone, so a later restart cannot make the
   // dialog reappear for a switch the user asked about minutes ago.
   createEffect(() => {
@@ -170,9 +175,10 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
     if (confirmed) setPendingSwitch(null);
     if (currentView() === mode || switchingView()) return;
     // A disabled button's tooltip is unreachable by keyboard and screen readers,
-    // so the precondition is reported where the handoff errors already appear.
+    // so a precondition is reported where the handoff errors already appear;
+    // Chat being unavailable in this task is not one (see `chatUnavailable`).
     const blocked = switchBlockedReason();
-    setNoticeRequested(!!blocked);
+    setNoticeRequested(!!blocked && !chatUnavailable());
     setViewError('');
     if (blocked) return;
     // Quitting a live CLI is the user's call, and the answer is asked for again
@@ -460,6 +466,7 @@ export function TaskAITerminal(props: TaskAITerminalProps) {
                           // Never `disabled`: it would move focus to <body> mid
                           // handoff, and `switchView` already guards re-entry.
                           aria-disabled={blocked() || switchingView()}
+                          classList={{ unavailable: blocked() && !!chatUnavailable() }}
                           title={
                             // Without this the button announces itself disabled
                             // mid-handoff while promising that it works.
