@@ -139,6 +139,23 @@ it('polls the task’s PRs once an agent turn ends', async () => {
   });
 });
 
+// A task created from `origin/main` tracks it, and its PRs must not pass for the task's.
+it('names the branch the task is based on without a printed PR link', async () => {
+  vi.mocked(invoke).mockResolvedValue({ url: null });
+  setStore('tasks', reconcile({ 'task-1': task({ prUrl: undefined, baseBranch: 'origin/main' }) }));
+  createRoot((d) => {
+    dispose = d;
+    startPrChecksSubscription();
+  });
+  await flushPromises();
+
+  expect(invoke).toHaveBeenLastCalledWith(IPC.DetectPrForBranch, {
+    worktreePath: '/repo/.worktrees/task-1',
+    branchName: 'task/task-1',
+    baseBranch: 'origin/main',
+  });
+});
+
 it('probes the branch again once its terminal prints a PR link', async () => {
   vi.mocked(invoke).mockResolvedValue({ url: null });
   setStore('tasks', reconcile({ 'task-1': task({ prUrl: undefined }) }));
