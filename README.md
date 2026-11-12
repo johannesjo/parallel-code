@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  Dispatch AI coding agents in parallel, each in its own worktree.<br>
-  Review the diffs, merge the wins, toss the rest.
+  Run coding agents from any vendor in their own worktrees.<br>
+  See what each one changed and what was checked, then choose what ships.
 </p>
 
 <p align="center">
