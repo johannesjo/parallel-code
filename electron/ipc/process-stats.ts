@@ -16,6 +16,12 @@ export interface ProcRow {
   memoryBytes: number;
   /** Cumulative CPU seconds (Linux), turned into a percentage by the sampler. */
   cpuSeconds?: number;
+  /**
+   * Cumulative CPU seconds of the children this process has reaped, each with
+   * everything they reaped in turn (Linux cutime + cstime). Commands that exit
+   * between two samples leave their CPU only here.
+   */
+  childCpuSeconds?: number;
   /** Start time since boot (Linux) — tells a reused pid apart from the old process. */
   startTicks?: number;
   /** Ready-made CPU percentage (macOS `ps`, a recent decaying average). */
@@ -29,21 +35,23 @@ export function parseProcStat(text: string): ProcRow | null {
   if (open < 0 || close < open) return null;
   const pid = Number(text.slice(0, open).trim());
   // Fields after the name, starting with field 3 (state):
-  // ppid=1, utime=11, stime=12, starttime=19, rss=21.
+  // ppid=1, utime=11, stime=12, cutime=13, cstime=14, starttime=19, rss=21.
   const rest = text
     .slice(close + 2)
     .trim()
     .split(/\s+/);
   const ppid = Number(rest[1]);
   const ticks = Number(rest[11]) + Number(rest[12]);
+  const childTicks = Number(rest[13]) + Number(rest[14]);
   const startTicks = Number(rest[19]);
   const rssPages = Number(rest[21]);
-  if (![pid, ppid, ticks, startTicks, rssPages].every(Number.isFinite)) return null;
+  if (![pid, ppid, ticks, childTicks, startTicks, rssPages].every(Number.isFinite)) return null;
   return {
     pid,
     ppid,
     name: text.slice(open + 1, close),
     cpuSeconds: ticks / CLOCK_TICKS_PER_SECOND,
+    childCpuSeconds: childTicks / CLOCK_TICKS_PER_SECOND,
     startTicks,
     memoryBytes: rssPages * PAGE_SIZE_BYTES,
   };
@@ -97,38 +105,104 @@ export function readProcessTable(): Promise<ProcRow[]> {
 }
 
 interface CpuReading {
+  ppid: number;
   cpuSeconds: number;
+  childCpuSeconds: number;
   startTicks?: number;
+}
+
+/** One sample's CPU, in percent of one core over the interval since the previous sample. */
+export interface CpuSample {
+  /** What each live process used itself. */
+  cpu: Map<number, number>;
+  /**
+   * What the children a process reaped during the interval used and had not
+   * yet been counted, keyed by the reaping parent. Absent where the process
+   * table does not report reaped children's CPU (macOS `ps`).
+   */
+  exitedCpu?: Map<number, number>;
 }
 
 /**
  * Turns cumulative CPU seconds into a percentage of one core over the interval
- * since the previous sample. The first sample of a process — or of a new
- * process that reused an old pid — reports 0%. `at` is when the table was read.
+ * since the previous sample. `at` is when the table was read.
+ *
+ * The first sample has no baseline and reports 0% everywhere. After that, a pid
+ * that was not in the previous sample (or that now belongs to a new process
+ * with a reused pid) started during the interval, so all of its CPU counts.
+ *
+ * Commands that exit between two samples are never seen. Their CPU reaches the
+ * parent's reaped-children counter when the parent waits for them, so the
+ * counter's growth is credited to the parent. A child that was seen alive had
+ * its CPU up to that sample counted already: when it disappears, its last-seen
+ * total — its own CPU, what it had reaped, and the same for each seen
+ * descendant that disappeared with it — is subtracted from that growth.
  */
 export function createCpuSampler() {
-  let previous = new Map<number, CpuReading>();
+  let previous: Map<number, CpuReading> | null = null;
   let previousAt = 0;
-  return (rows: ProcRow[], at: number): Map<number, number> => {
+  return (rows: ProcRow[], at: number): CpuSample => {
+    const before = previous;
     const elapsed = (at - previousAt) / 1000;
-    const percents = new Map<number, number>();
+    const percent = (seconds: number) =>
+      before === null || elapsed <= 0 ? 0 : Math.max(0, (seconds / elapsed) * 100);
+    const cpu = new Map<number, number>();
+    const exitedCpu = new Map<number, number>();
+    let measuresChildren = false;
     const next = new Map<number, CpuReading>();
     for (const row of rows) {
-      if (row.cpuPercent !== undefined) {
-        percents.set(row.pid, row.cpuPercent);
-        continue;
+      if (row.cpuPercent !== undefined) cpu.set(row.pid, row.cpuPercent);
+      else if (row.cpuSeconds !== undefined) {
+        measuresChildren ||= row.childCpuSeconds !== undefined;
+        next.set(row.pid, {
+          ppid: row.ppid,
+          cpuSeconds: row.cpuSeconds,
+          childCpuSeconds: row.childCpuSeconds ?? 0,
+          startTicks: row.startTicks,
+        });
       }
-      if (row.cpuSeconds === undefined) continue;
-      next.set(row.pid, { cpuSeconds: row.cpuSeconds, startTicks: row.startTicks });
-      const before = previous.get(row.pid);
-      const same = before !== undefined && before.startTicks === row.startTicks;
-      const percent =
-        !same || elapsed <= 0 ? 0 : ((row.cpuSeconds - before.cpuSeconds) / elapsed) * 100;
-      percents.set(row.pid, Math.max(0, percent));
+    }
+
+    const previousChildren = new Map<number, number[]>();
+    for (const [pid, reading] of before ?? []) {
+      const list = previousChildren.get(reading.ppid) ?? [];
+      list.push(pid);
+      previousChildren.set(reading.ppid, list);
+    }
+    const isGone = (pid: number, reading: CpuReading) => {
+      const now = next.get(pid);
+      return now === undefined || now.startTicks !== reading.startTicks;
+    };
+    // CPU already counted for processes under `parentPid` that have exited
+    // since the previous sample, and so may now sit in its reaped counter.
+    const countedForGoneChildren = (parentPid: number): number => {
+      let total = 0;
+      const visited = new Set<number>([parentPid]);
+      const stack = [...(previousChildren.get(parentPid) ?? [])];
+      while (stack.length > 0) {
+        const pid = stack.pop() as number;
+        const reading = before?.get(pid);
+        if (visited.has(pid) || !reading || !isGone(pid, reading)) continue;
+        visited.add(pid);
+        total += reading.cpuSeconds + reading.childCpuSeconds;
+        stack.push(...(previousChildren.get(pid) ?? []));
+      }
+      return total;
+    };
+
+    for (const [pid, reading] of next) {
+      const last = before?.get(pid);
+      const same = last !== undefined && last.startTicks === reading.startTicks;
+      cpu.set(pid, percent(same ? reading.cpuSeconds - last.cpuSeconds : reading.cpuSeconds));
+      if (!measuresChildren) continue;
+      const reaped = same
+        ? reading.childCpuSeconds - last.childCpuSeconds - countedForGoneChildren(pid)
+        : reading.childCpuSeconds;
+      exitedCpu.set(pid, percent(reaped));
     }
     previous = next;
     previousAt = at;
-    return percents;
+    return measuresChildren ? { cpu, exitedCpu } : { cpu };
   };
 }
 
@@ -143,6 +217,8 @@ export interface PtyRoot {
 export interface GroupInput {
   rows: ProcRow[];
   cpu: Map<number, number>;
+  /** Reaped children's CPU by reaping parent; see `CpuSample.exitedCpu`. */
+  exitedCpu?: Map<number, number>;
   ptys: PtyRoot[];
   /** Electron's own processes (main, renderers, GPU, …) keyed by pid with a label. */
   appProcesses: Map<number, string>;
@@ -162,16 +238,24 @@ function descendants(rootPid: number, children: Map<number, number[]>): number[]
   return [...seen];
 }
 
+/** What identifies a group; the sums are computed from its processes. */
+type GroupBase = Omit<
+  ResourceGroup,
+  'cpuPercent' | 'memoryBytes' | 'processes' | 'exitedCpuPercent'
+>;
+
 function buildGroup(
-  base: Omit<ResourceGroup, 'cpuPercent' | 'memoryBytes' | 'processes'>,
+  base: GroupBase,
   processes: ResourceProcess[],
+  exitedCpuPercent: number | undefined,
 ): ResourceGroup {
   processes.sort((a, b) => b.cpuPercent - a.cpuPercent || b.memoryBytes - a.memoryBytes);
   return {
     ...base,
-    cpuPercent: processes.reduce((sum, p) => sum + p.cpuPercent, 0),
+    cpuPercent: processes.reduce((sum, p) => sum + p.cpuPercent, exitedCpuPercent ?? 0),
     memoryBytes: processes.reduce((sum, p) => sum + p.memoryBytes, 0),
     processes,
+    ...(exitedCpuPercent === undefined ? {} : { exitedCpuPercent }),
   };
 }
 
@@ -198,24 +282,38 @@ export function groupProcesses(input: GroupInput): ResourceGroup[] {
       return [{ pid, name, cpuPercent: input.cpu.get(pid) ?? 0, memoryBytes: row.memoryBytes }];
     });
 
+  // Finished commands count where their parent is. The main process reaps
+  // what the app spawned (git, gh, …), which belongs with the other subprocesses.
+  const exitedOf = (processes: ResourceProcess[], extra = 0): number | undefined => {
+    const exited = input.exitedCpu;
+    if (exited === undefined) return undefined;
+    return processes.reduce(
+      (sum, p) => sum + (p.pid === input.mainPid ? 0 : (exited.get(p.pid) ?? 0)),
+      extra,
+    );
+  };
+  const group = (base: GroupBase, processes: ResourceProcess[], extra?: number) =>
+    buildGroup(base, processes, exitedOf(processes, extra));
+
   const groups = input.ptys.map((pty) =>
-    buildGroup(
+    group(
       { kind: pty.isShell ? 'shell' : 'agent', agentId: pty.agentId, taskId: pty.taskId },
       toProcesses(descendants(pty.pid, children)),
     ),
   );
   const appPids = [...input.appProcesses.keys()];
   groups.push(
-    buildGroup(
+    group(
       { kind: 'app', agentId: null, taskId: null },
       toProcesses(appPids, (pid) => input.appProcesses.get(pid)),
     ),
   );
   groups.push(
-    buildGroup(
+    group(
       { kind: 'other', agentId: null, taskId: null },
       toProcesses(descendants(input.mainPid, children)),
+      input.exitedCpu?.get(input.mainPid),
     ),
   );
-  return groups.filter((group) => group.processes.length > 0);
+  return groups.filter((g) => g.processes.length > 0 || (g.exitedCpuPercent ?? 0) > 0);
 }
