@@ -231,10 +231,9 @@ export function startDesktopNotificationWatcher(windowFocused: Accessor<boolean>
   );
 
   // Surface notification failures to the UI.
-  // NOTE: The `failed` event only fires on macOS from Electron 42+ (UNNotification
-  // migration). On the current Electron 40, this path is macOS-inert — it fires
-  // on Windows only. After an Electron 42 upgrade, unsigned macOS builds will
-  // trigger this handler, letting the user know notifications need code-signing.
+  // The `failed` event fires on Windows, and on macOS since Electron 42's
+  // UNNotification migration: unsigned macOS builds land here, letting the
+  // user know notifications need code-signing.
   const offNotificationFailed = window.electron.ipcRenderer.on(
     IPC.NotificationFailed,
     (data: unknown) => {

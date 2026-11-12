@@ -1,9 +1,19 @@
-import { ipcMain, dialog, shell, app, clipboard, BrowserWindow, Notification } from 'electron';
+import {
+  ipcMain,
+  dialog,
+  shell,
+  app,
+  clipboard,
+  nativeImage,
+  BrowserWindow,
+  Notification,
+} from 'electron';
 import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { IPC } from './channels.js';
+import { resolveClipboardPaste } from './clipboard-paste.js';
 import { getAgentActivitySnapshot } from '../agent-hooks/observations.js';
 import {
   startAgentChat,
@@ -460,49 +470,6 @@ function getOptionalImageTag(value: unknown): string | undefined {
   return imageTag;
 }
 
-/** First file URL on the clipboard, or null if none.
- *  macOS uses `public.file-url` (one URL per call).
- *  Linux file managers vary:
- *    - Files (Nautilus), Nemo, etc. publish `x-special/gnome-copied-files`
- *      as `<verb>\nfile:///path1\nfile:///path2`, where <verb> is `copy`
- *      or `cut`. This is the dominant Linux desktop format and MUST be
- *      checked before `text/uri-list` because some apps publish both
- *      flavours and the GNOME flavour is the authoritative one.
- *    - Falls back to `text/uri-list` (newline-separated) for KDE, Xfce,
- *      and any cross-desktop publisher that follows RFC 2483. */
-function readClipboardFileUrl(formats: string[]): string | null {
-  if (formats.includes('public.file-url')) {
-    const url = clipboard.read('public.file-url').trim();
-    if (url) return url;
-  }
-  if (formats.includes('x-special/gnome-copied-files')) {
-    const payload = clipboard.read('x-special/gnome-copied-files');
-    // First line is the verb (copy/cut); subsequent lines are file URLs.
-    const lines = payload.split('\n');
-    for (let i = 1; i < lines.length; i++) {
-      const trimmed = lines[i].trim();
-      if (trimmed.startsWith('file://')) return trimmed;
-    }
-  }
-  if (formats.includes('text/uri-list')) {
-    const list = clipboard.read('text/uri-list');
-    for (const line of list.split('\n')) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith('#') && trimmed.startsWith('file://')) return trimmed;
-    }
-  }
-  return null;
-}
-
-/** Convert a file:// URL to an absolute path, returning '' on failure. */
-function fileUrlToPath(url: string): string {
-  try {
-    return fileURLToPath(url);
-  } catch {
-    return '';
-  }
-}
-
 /** Strip path separators and clamp to a sane length so a renderer-supplied
  *  filename can't escape the temp dir. Falls back to a generic name when empty.
  *  Always appends a 6-char random suffix so two same-name drops landing in the
@@ -555,6 +522,9 @@ function createThrottledForwarder(
  * creates `info/` if missing. Best-effort: never throws, since failing to
  * git-exclude a generated file must not block coordinator startup.
  */
+/** Folder the last open dialog's pick sat in; where the next one starts. */
+let lastOpenDialogPath: string | undefined;
+
 export function registerAllHandlers(win: BrowserWindow): void {
   const notify = windowNotifier(win);
   ipcMain.handle(IPC.AgentHookSnapshot, () => getAgentActivitySnapshot());
@@ -1715,33 +1685,21 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // --- Clipboard ---
   const clipboardImagePath = path.join(os.tmpdir(), 'parallel-code-clipboard.png');
 
-  // Resolve the most useful representation of the current clipboard contents
-  // for pasting into a terminal. Order of preference:
-  //   1. file references (Finder copy, Nautilus copy, etc.) → return absolute path
-  //   2. raster image (screenshot, image-app copy)         → save PNG to tmp + return path
-  //   3. plain text                                        → return as-is
-  //
-  // Without (1), copying an image file from Finder gives only the basename via
-  // navigator.clipboard.readText(), which is useless to a CLI agent that needs a
-  // path it can stat. macOS exposes file copies via the 'public.file-url' format,
-  // Linux via 'text/uri-list'. Windows is not a published target.
   ipcMain.handle(IPC.ResolveClipboardPaste, async () => {
     try {
-      const formats = clipboard.availableFormats();
-      const fileUrl = readClipboardFileUrl(formats);
-      if (fileUrl) {
-        const filePath = fileUrlToPath(fileUrl);
-        if (filePath) return { kind: 'file', path: filePath };
-      }
-      const img = clipboard.readImage();
-      if (!img.isEmpty()) {
-        const buf = img.toPNG();
-        await fs.promises.writeFile(clipboardImagePath, buf);
-        return { kind: 'image', path: clipboardImagePath };
-      }
-      const text = clipboard.readText();
-      if (text) return { kind: 'text', text };
-      return { kind: 'empty' };
+      return await resolveClipboardPaste({
+        clipboard,
+        saveImage: async (bytes, mime) => {
+          let png: Uint8Array = bytes;
+          if (mime !== 'image/png') {
+            const img = nativeImage.createFromBuffer(Buffer.from(bytes));
+            if (img.isEmpty()) return null;
+            png = img.toPNG();
+          }
+          await fs.promises.writeFile(clipboardImagePath, png);
+          return clipboardImagePath;
+        },
+      });
     } catch (e) {
       console.error('[clipboard] resolveClipboardPaste failed:', e);
       return { kind: 'empty' };
@@ -1811,10 +1769,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
         release();
         logWarn('notification', 'show failed', { ...warnCtx, err: error });
         // Surface the failure to the renderer so the UI can inform the user.
-        // NOTE: The `failed` event only fires on macOS starting in Electron 42
-        // (UNNotification migration). On Electron 40 (current), this code path
-        // is macOS-inert — it still fires on Windows. Once the project upgrades
-        // past Electron 42, this will activate for unsigned macOS builds too.
+        // Fires on Windows, and on macOS since Electron 42's UNNotification
+        // migration — notably for unsigned builds, which macOS refuses.
         if (!win.isDestroyed()) {
           win.webContents.send(IPC.NotificationFailed, {
             error: typeof error === 'string' ? error : String(error),
@@ -1898,8 +1854,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
     if (args?.directory) properties.push('openDirectory');
     else properties.push('openFile');
     if (args?.multiple) properties.push('multiSelections');
-    const result = await dialog.showOpenDialog(win, { properties });
+    // Since Electron 43 a dialog without `defaultPath` opens in Downloads and
+    // the OS no longer restores the last folder, so remember it ourselves.
+    const result = await dialog.showOpenDialog(win, {
+      properties,
+      defaultPath: lastOpenDialogPath ?? os.homedir(),
+    });
     if (result.canceled) return null;
+    if (result.filePaths[0]) lastOpenDialogPath = path.dirname(result.filePaths[0]);
     return args?.multiple ? result.filePaths : (result.filePaths[0] ?? null);
   });
 
