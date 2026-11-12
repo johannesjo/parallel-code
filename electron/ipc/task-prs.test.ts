@@ -31,10 +31,11 @@ import { detectTaskPrs } from './task-prs.js';
 
 const prsByRepo = new Map<string, string[] | Error>();
 // What the task worktree's git answers: the task branch's upstream as
-// `<remote> <remote ref>`, the refs holding each commit, and `<a> <b>` ancestry pairs.
+// `<remote> <remote ref>`, the refs holding each commit, and the task branch's
+// first-parent line down to each commit it is cut off at.
 let upstream: string;
 let refsByCommit: Map<string, string[]>;
-let ancestry: Set<string>;
+let ownLineAbove: Map<string, string[]>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -49,7 +50,7 @@ beforeEach(() => {
   mockListPrsForHead.mockResolvedValue([]);
   upstream = '';
   refsByCommit = new Map();
-  ancestry = new Set();
+  ownLineAbove = new Map();
   mockExec.mockImplementation((_cmd: string, args: string[]) => {
     if (args[0] === 'for-each-ref' && args[1]?.startsWith('--format=%(upstream')) {
       return Promise.resolve({ stdout: `${upstream}\n` });
@@ -60,10 +61,11 @@ beforeEach(() => {
         ? Promise.resolve({ stdout: refs.map((r) => `${r}\n`).join('') })
         : Promise.reject(new Error(`error: no such commit ${args[2]}`));
     }
-    if (args[0] === 'merge-base') {
-      return ancestry.has(`${args[2]} ${args[3]}`)
-        ? Promise.resolve({ stdout: '' })
-        : Promise.reject(Object.assign(new Error('not an ancestor'), { code: 1 }));
+    if (args[0] === 'rev-list' && args[1] === '--first-parent') {
+      const line = ownLineAbove.get(args[3]?.slice(1) ?? '');
+      return line
+        ? Promise.resolve({ stdout: line.map((sha) => `${sha}\n`).join('') })
+        : Promise.reject(new Error(`fatal: bad revision '${args[3]}'`));
     }
     return Promise.reject(new Error(`unexpected git ${args.join(' ')}`));
   });
@@ -294,27 +296,29 @@ describe('detectTaskPrs', () => {
         mockFetchPrHead.mockResolvedValue(prHead({ state: 'MERGED', mergeCommitOid: merge }));
         refsByCommit.set(head, ['refs/heads/task/x', 'refs/remotes/origin/main']);
         refsByCommit.set(merge, ['refs/remotes/origin/main']);
+        ownLineAbove.set(`${merge}^1`, ['later', head]);
 
         await expect(detectTaskPrs('/wt', 'task/x', hints)).resolves.toMatchObject({
           url: printed,
         });
         expect(mockExec).toHaveBeenCalledWith(
           'git',
-          ['merge-base', '--is-ancestor', head, `${merge}^1`],
+          ['rev-list', '--first-parent', 'refs/heads/task/x', `^${merge}^1`],
           expect.objectContaining({ cwd: '/wt' }),
         );
       });
 
       it.each([
-        // The task branch started from main after that PR merged; the commit is not its own.
-        ['its head was on main before', `${head} ${merge}^1`, merge],
-        ['main got its head by a push', '', head],
-        ['its merge commit was not fetched', '', 'unfetched'],
-      ])('ignores it when its head is on main and %s', async (_, ancestor, mergeCommitOid) => {
+        // The task branch was created from main after that PR merged, or the
+        // head was on main before: the commit is not the task's own.
+        ['the task branch got it from main too', ['later', merge], merge],
+        ['main got its head by a push', [head], head],
+        ['its merge commit was not fetched', undefined, 'unfetched'],
+      ])('ignores it when its head is on main and %s', async (_, ownLine, mergeCommitOid) => {
         mockFetchPrHead.mockResolvedValue(prHead({ state: 'MERGED', mergeCommitOid }));
         refsByCommit.set(head, ['refs/heads/task/x', 'refs/remotes/origin/main']);
-        refsByCommit.set(merge, ['refs/remotes/origin/main']);
-        if (ancestor) ancestry.add(ancestor);
+        refsByCommit.set(merge, ['refs/heads/task/x', 'refs/remotes/origin/main']);
+        if (ownLine) ownLineAbove.set(`${mergeCommitOid}^1`, ownLine);
 
         await expect(detectTaskPrs('/wt', 'task/x', hints)).resolves.toEqual({
           url: null,
@@ -330,6 +334,7 @@ describe('detectTaskPrs', () => {
           'refs/heads/task/parent',
         ]);
         refsByCommit.set(merge, ['refs/remotes/origin/main']);
+        ownLineAbove.set(`${merge}^1`, [head]);
 
         await expect(detectTaskPrs('/wt', 'task/x', hints)).resolves.toMatchObject({ url: null });
       });
@@ -434,6 +439,21 @@ describe('detectTaskPrs', () => {
       mockListPrsForHead.mockResolvedValue([prHead({ url: mergedPr, ...fields })]);
 
       await expect(detectTaskPrs('/wt', 'task/x')).resolves.toEqual({ url: null, extras: [] });
+    });
+
+    // Older PRs under a reused name stay listed, and are checked on every probe.
+    it('warns once about a PR whose commits the worktree lacks', async () => {
+      const warn = vi.mocked(console.warn);
+      mockListPrsForHead.mockResolvedValue([
+        prHead({ url: mergedPr, state: 'MERGED', headRefOid: 'never-fetched' }),
+      ]);
+
+      await detectTaskPrs('/wt', 'task/x');
+      const logged = warn.mock.calls.length;
+      await detectTaskPrs('/wt', 'task/x');
+
+      expect(logged).toBeGreaterThan(0);
+      expect(warn).toHaveBeenCalledTimes(logged);
     });
 
     it('adopts the newest merged PR that is the task’s own', async () => {
