@@ -7,6 +7,7 @@ import {
   resolveBindings,
   resolveAllBindings,
   findConflict,
+  formatKeyCombo,
 } from '../lib/keybindings';
 import type { KeyBinding, Modifiers, KeybindingConfig } from '../lib/keybindings';
 import type { KeybindingOverride } from './types';
@@ -33,6 +34,12 @@ function activeConfig(): KeybindingConfig {
  */
 export function resolvedBindings(): KeyBinding[] {
   return resolveBindings(DEFAULT_BINDINGS, activeConfig());
+}
+
+/** " (⌘⇧R)" for a bound action, to append to a tooltip; empty when unbound. */
+export function shortcutHint(bindingId: string): string {
+  const binding = resolvedBindings().find((b) => b.id === bindingId);
+  return binding ? ` (${formatKeyCombo(binding)})` : '';
 }
 
 /**

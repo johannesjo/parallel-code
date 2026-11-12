@@ -175,6 +175,8 @@ body.font-smoothing {
    branch share the branch bar below, so the header is two rows in all. */
 .task-title-bar {
   position: relative;
+  container-name: task-title;
+  container-type: inline-size;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
@@ -262,6 +264,16 @@ body.font-smoothing {
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
+}
+
+/* Narrow columns keep Create PR as an icon, so the title stays readable. */
+@container task-title (max-width: 480px) {
+  .task-create-pr-label {
+    display: none;
+  }
+  .task-create-pr-btn {
+    padding: 0 6px;
+  }
 }
 
 .task-finish-btn:hover {

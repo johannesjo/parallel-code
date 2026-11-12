@@ -10,6 +10,7 @@ import {
   isTaskBackgrounded,
 } from '../store/background-tasks';
 import { invoke } from '../lib/ipc';
+import { setTaskExtraPrs } from '../store/pr-checks-state';
 import type { Task } from '../store/types';
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn(), fireAndForget: vi.fn() }));
@@ -106,18 +107,46 @@ it('offers Create PR once the branch has commits and no pull request', () => {
   expect(button('Create PR')).toBeUndefined();
   gitStatus(true);
   const create = button('Create PR');
-  expect(create?.title).toContain('Create a pull request into main');
+  expect(create?.title).toMatch(/^Create a pull request into main \(.+R\)$/);
+  // Next to Finish, before it.
+  expect(create?.nextElementSibling?.textContent).toContain('Finish');
   create?.click();
   expect(onCreatePr).toHaveBeenCalledOnce();
   expect(onFinish).not.toHaveBeenCalled();
+});
 
-  // A push owns the header while it runs.
+it('keeps Create PR in place while a push runs, so the header does not jump', () => {
+  gitStatus(true);
+  const create = button('Create PR');
   setPushing(true);
-  expect(button('Create PR')).toBeUndefined();
+  expect(button('Create PR')).toBe(create);
   setPushing(false);
+  setPushSuccess(true);
+  expect(button('Create PR')).toBe(create);
+});
 
-  // Once the task has a PR, the branch bar links it instead.
+it('leaves Create PR out once the task has a pull request anywhere', () => {
+  gitStatus(true);
   setStore('tasks', 'one', 'prUrl', 'https://github.com/o/r/pull/7');
+  expect(button('Create PR')).toBeUndefined();
+  setStore('tasks', 'one', 'prUrl', undefined);
+  // A task started from a PR already has one.
+  setStore('tasks', 'one', 'githubUrl', 'https://github.com/o/r/pull/8');
+  expect(button('Create PR')).toBeUndefined();
+  setStore('tasks', 'one', 'githubUrl', undefined);
+  expect(button('Create PR')).toBeDefined();
+  // So does one whose PR lives in a nested repository.
+  setTaskExtraPrs('one', [{ url: 'https://github.com/o/nested/pull/3', repo: 'nested' }]);
+  expect(button('Create PR')).toBeUndefined();
+  setTaskExtraPrs('one', []);
+});
+
+it('leaves Create PR out where Finish is not offered', () => {
+  gitStatus(true);
+  setStore('tasks', 'one', 'landingState', 'reviewed');
+  expect(button('Create PR')).toBeUndefined();
+  setStore('tasks', 'one', 'landingState', undefined);
+  setStore('tasks', 'one', 'gitIsolation', 'direct');
   expect(button('Create PR')).toBeUndefined();
 });
 

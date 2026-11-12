@@ -22,8 +22,8 @@ import {
   CheckCircleIcon,
   ClockIcon,
   CloseIcon,
-  GitPullRequestIcon,
   CollapseAltIcon,
+  GitPullRequestIcon,
   ImageIcon,
   PanelRightIcon,
   ReviewIcon,
@@ -43,9 +43,8 @@ import { displayTaskNameFromPrompt, shouldUsePromptDerivedTaskName } from '../li
 import type { Task } from '../store/types';
 import { isLandedTaskState } from '../store/landing';
 import { laterMenuItems } from './task-later-menu';
-import { taskPrUrl } from './pr-actions';
-import { formatKeyCombo } from '../lib/keybindings';
-import { resolvedBindings } from '../store/keybindings';
+import { taskPrs } from '../store/task-prs';
+import { shortcutHint } from '../store/keybindings';
 
 interface TaskTitleBarProps {
   task: Task;
@@ -67,19 +66,16 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
   const focusShown = () => store.focusMode && !store.boardView;
   const isLandedTask = () => isLandedTaskState(props.task.landingState);
   const canFinish = () => props.task.gitIsolation === 'worktree' && !isLandedTask();
-  // Offered once the branch has commits of its own and no PR yet; a push in
-  // progress owns the header, and the PR link takes over after creation.
+  // Only in the header once there are commits to propose: uncommitted work
+  // alone would open an empty PR, though the menu and shortcut still offer it.
+  // Any open PR, including one in a nested repository, takes its place; the
+  // branch bar links it. It stays put during a push so the header never jumps.
   const canCreatePr = () =>
     canFinish() &&
-    !props.pushing &&
-    !props.pushSuccess &&
-    !taskPrUrl(props.task) &&
+    taskPrs(props.task).length === 0 &&
     !!store.taskGitStatus[props.task.id]?.has_committed_changes;
-  const createPrTitle = () => {
-    const binding = resolvedBindings().find((b) => b.id === 'app.task.createPr');
-    const shortcut = binding ? ` (${formatKeyCombo(binding)})` : '';
-    return `Create a pull request into ${props.task.baseBranch ?? 'base'}: write or draft a title and description, push, then open it on GitHub${shortcut}`;
-  };
+  const createPrTitle = () =>
+    `Create a pull request into ${props.task.baseBranch ?? 'base'}${shortcutHint('app.task.createPr')}`;
   const titleLabel = () => {
     const initialPrompt = props.task.savedInitialPrompt?.trim();
     if (
@@ -189,15 +185,17 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
           <Show when={canCreatePr()}>
             <button
               type="button"
-              class="task-finish-btn"
+              class="task-finish-btn task-create-pr-btn"
               title={createPrTitle()}
+              // Narrow columns drop the visible label; the name stays.
+              aria-label="Create PR"
               onClick={(e) => {
                 e.stopPropagation();
                 props.onCreatePr();
               }}
             >
               <GitPullRequestIcon size={14} />
-              Create PR
+              <span class="task-create-pr-label">Create PR</span>
             </button>
           </Show>
           <Show when={canFinish()}>
