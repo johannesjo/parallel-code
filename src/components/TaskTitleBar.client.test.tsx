@@ -34,6 +34,7 @@ const [pushing, setPushing] = createSignal(false);
 const [pushSuccess, setPushSuccess] = createSignal(false);
 const [tour, setTour] = createSignal<{ generatedAt: number; fingerprint: string; stops: number }>();
 const onFinish = vi.fn();
+const onCreatePr = vi.fn();
 
 beforeEach(() => {
   vi.mocked(invoke).mockResolvedValue(undefined);
@@ -46,6 +47,8 @@ beforeEach(() => {
   setPushSuccess(false);
   setTour(undefined);
   onFinish.mockClear();
+  onCreatePr.mockClear();
+  setStore('taskGitStatus', reconcile({}));
   container = document.createElement('div');
   document.body.append(container);
   dispose = render(
@@ -55,6 +58,7 @@ beforeEach(() => {
         isActive
         onClose={() => undefined}
         onFinish={onFinish}
+        onCreatePr={onCreatePr}
         pushing={pushing()}
         pushSuccess={pushSuccess()}
         tour={tour()}
@@ -87,6 +91,34 @@ it('offers Finish as a labelled action that reflects push progress', () => {
   setPushSuccess(true);
   expect(finish?.textContent).toBe('Pushed');
   expect(finish?.dataset.state).toBe('pushed');
+});
+
+const gitStatus = (hasCommits: boolean) =>
+  setStore('taskGitStatus', 'one', {
+    has_committed_changes: hasCommits,
+    has_uncommitted_changes: false,
+    refreshedAt: 1,
+  });
+
+it('offers Create PR once the branch has commits and no pull request', () => {
+  expect(button('Create PR')).toBeUndefined();
+  gitStatus(false);
+  expect(button('Create PR')).toBeUndefined();
+  gitStatus(true);
+  const create = button('Create PR');
+  expect(create?.title).toContain('Create a pull request into main');
+  create?.click();
+  expect(onCreatePr).toHaveBeenCalledOnce();
+  expect(onFinish).not.toHaveBeenCalled();
+
+  // A push owns the header while it runs.
+  setPushing(true);
+  expect(button('Create PR')).toBeUndefined();
+  setPushing(false);
+
+  // Once the task has a PR, the branch bar links it instead.
+  setStore('tasks', 'one', 'prUrl', 'https://github.com/o/r/pull/7');
+  expect(button('Create PR')).toBeUndefined();
 });
 
 it('marks Finish with its reports, fading those of older code', () => {

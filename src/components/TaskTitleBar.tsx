@@ -22,6 +22,7 @@ import {
   CheckCircleIcon,
   ClockIcon,
   CloseIcon,
+  GitPullRequestIcon,
   CollapseAltIcon,
   ImageIcon,
   PanelRightIcon,
@@ -42,6 +43,9 @@ import { displayTaskNameFromPrompt, shouldUsePromptDerivedTaskName } from '../li
 import type { Task } from '../store/types';
 import { isLandedTaskState } from '../store/landing';
 import { laterMenuItems } from './task-later-menu';
+import { taskPrUrl } from './pr-actions';
+import { formatKeyCombo } from '../lib/keybindings';
+import { resolvedBindings } from '../store/keybindings';
 
 interface TaskTitleBarProps {
   task: Task;
@@ -49,6 +53,8 @@ interface TaskTitleBarProps {
   onClose: () => void;
   /** Opens the finish dialog: evidence, tour, then merge or push. */
   onFinish: () => void;
+  /** Opens Finish with Create pull request on top. */
+  onCreatePr: () => void;
   pushing: boolean;
   pushSuccess: boolean;
   /** The ready change tour, if one was generated for the whole task. */
@@ -61,6 +67,19 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
   const focusShown = () => store.focusMode && !store.boardView;
   const isLandedTask = () => isLandedTaskState(props.task.landingState);
   const canFinish = () => props.task.gitIsolation === 'worktree' && !isLandedTask();
+  // Offered once the branch has commits of its own and no PR yet; a push in
+  // progress owns the header, and the PR link takes over after creation.
+  const canCreatePr = () =>
+    canFinish() &&
+    !props.pushing &&
+    !props.pushSuccess &&
+    !taskPrUrl(props.task) &&
+    !!store.taskGitStatus[props.task.id]?.has_committed_changes;
+  const createPrTitle = () => {
+    const binding = resolvedBindings().find((b) => b.id === 'app.task.createPr');
+    const shortcut = binding ? ` (${formatKeyCombo(binding)})` : '';
+    return `Create a pull request into ${props.task.baseBranch ?? 'base'}: write or draft a title and description, push, then open it on GitHub${shortcut}`;
+  };
   const titleLabel = () => {
     const initialPrompt = props.task.savedInitialPrompt?.trim();
     if (
@@ -167,6 +186,20 @@ export function TaskTitleBar(props: TaskTitleBarProps) {
       />
       <div ref={actionsRef} class="task-title-actions">
         <div class="task-action-group" role="group" aria-label="Task actions">
+          <Show when={canCreatePr()}>
+            <button
+              type="button"
+              class="task-finish-btn"
+              title={createPrTitle()}
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onCreatePr();
+              }}
+            >
+              <GitPullRequestIcon size={14} />
+              Create PR
+            </button>
+          </Show>
           <Show when={canFinish()}>
             <button
               type="button"

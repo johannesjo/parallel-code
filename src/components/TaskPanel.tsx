@@ -1027,6 +1027,7 @@ export function TaskPanel(props: TaskPanelProps) {
             isActive={isTaskColumnHighlighted(props.task.id)}
             onClose={() => setShowCloseConfirm(true)}
             onFinish={() => openFinish('merge')}
+            onCreatePr={() => openFinish('create-pr')}
             pushing={pushing()}
             pushSuccess={pushSuccess()}
             tour={finishTour()}
