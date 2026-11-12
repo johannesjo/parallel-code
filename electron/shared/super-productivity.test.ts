@@ -328,7 +328,7 @@ describe('shouldPlanSpForToday', () => {
 
 describe('toSpGroupTitle', () => {
   it('names the group after the project', () => {
-    expect(toSpGroupTitle(' web ')).toBe('Parallel Code · web');
+    expect(toSpGroupTitle(' web ')).toBe('web');
   });
 });
 
