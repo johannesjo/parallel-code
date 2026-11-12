@@ -43,6 +43,7 @@ import {
   isPrUrl,
   fetchPrStatus,
   listOpenPrUrlsForBranch,
+  listPrsForHead,
   __resetForTests,
   __getStateForTests,
   __runTickForTests,
@@ -445,6 +446,76 @@ describe('listOpenPrUrlsForBranch', () => {
     await expect(listOpenPrUrlsForBranch('/repo/worktree', 'develop')).resolves.toEqual([
       'https://github.com/acme/api/pull/1',
       'https://github.com/acme/api/pull/2',
+    ]);
+  });
+});
+
+describe('listPrsForHead', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetForTests();
+  });
+
+  it('lists the branch’s PRs in every state with their head and merge commits', async () => {
+    const calls = stubGh((_args, cb) =>
+      cb(
+        null,
+        JSON.stringify([
+          {
+            url: 'https://github.com/a/b/pull/12',
+            state: 'MERGED',
+            headRefName: 'fix/x',
+            headRefOid: 'head-sha',
+            mergeCommit: { oid: 'merge-sha' },
+          },
+          {
+            url: 'https://github.com/a/b/pull/11',
+            state: 'CLOSED',
+            headRefName: 'fix/x',
+            headRefOid: 'old-sha',
+            mergeCommit: null,
+          },
+          {
+            url: 'https://github.com/a/b/pull/10',
+            state: 'OPEN',
+            headRefName: 'fix/x',
+            isCrossRepository: true,
+            headRepositoryOwner: { login: 'stranger' },
+          },
+        ]),
+        '',
+      ),
+    );
+
+    await expect(listPrsForHead('/repo/worktree', 'fix/x')).resolves.toEqual([
+      {
+        url: 'https://github.com/a/b/pull/12',
+        state: 'MERGED',
+        headRefName: 'fix/x',
+        headRefOid: 'head-sha',
+        mergeCommitOid: 'merge-sha',
+      },
+      {
+        url: 'https://github.com/a/b/pull/11',
+        state: 'CLOSED',
+        headRefName: 'fix/x',
+        headRefOid: 'old-sha',
+        mergeCommitOid: '',
+      },
+    ]);
+    expect(calls).toEqual([
+      [
+        'pr',
+        'list',
+        '--state',
+        'all',
+        '--head',
+        'fix/x',
+        '--json',
+        'url,state,headRefOid,mergeCommit,headRefName,isCrossRepository,headRepositoryOwner',
+        '--limit',
+        '20',
+      ],
     ]);
   });
 });
