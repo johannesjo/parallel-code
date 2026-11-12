@@ -874,7 +874,7 @@ describe('Super Productivity sync', () => {
 
       const groupId = store.projects[0].superProductivityGroupTaskId ?? '';
       const group = sp.tasks.get(groupId);
-      expect(group).toMatchObject({ title: 'Parallel Code · Proj', projectId: 'sp-proj' });
+      expect(group).toMatchObject({ title: 'Proj', projectId: 'sp-proj' });
       expect(group?.dueDay).toBe(TODAY);
       const a = store.tasks.a.superProductivity;
       const b = store.tasks.b.superProductivity;

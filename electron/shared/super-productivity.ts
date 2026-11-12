@@ -232,7 +232,7 @@ export function spTodayStr(status: unknown, now: Date): string {
 
 /** Title of the task a project's tasks are grouped under. */
 export function toSpGroupTitle(projectName: string): string {
-  return toSpTitle(`Parallel Code · ${projectName.trim()}`);
+  return toSpTitle(projectName.trim());
 }
 
 // ---------------------------------------------------------------------------

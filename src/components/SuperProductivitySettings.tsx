@@ -160,7 +160,7 @@ export function SuperProductivitySettings() {
           label="Group tasks by project"
           checked={store.superProductivityGroupTasks}
           onChange={setSpGroupTasks}
-          description="Create new tasks as subtasks of one “Parallel Code · project” task, so Super Productivity's Today shows one row per project"
+          description="Create new tasks as subtasks of one task named after the project, so Super Productivity's Today shows one row per project"
         />
       </Show>
       <Show when={error()}>
