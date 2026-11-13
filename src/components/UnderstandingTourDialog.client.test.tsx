@@ -126,7 +126,10 @@ const PLAN_INPUT = {
   subject: 'output buffering',
 } as const;
 
-function mount() {
+function mount(changes?: {
+  has: (path: string) => boolean;
+  open: (path: string, line?: number) => void;
+}) {
   const host = document.createElement('div');
   document.body.append(host);
   const onClose = vi.fn();
@@ -144,6 +147,7 @@ function mount() {
           worktreePath="/repo"
           onReference={onReference}
           onOpenFile={onOpenFile}
+          changes={changes}
         />
       );
     }, host),
@@ -153,8 +157,8 @@ function mount() {
 }
 
 /** Mounts the dialog with a generated tour, on its first card: the gist. */
-async function mountWithTour(response = TOUR_JSON) {
-  const mounted = mount();
+async function mountWithTour(response = TOUR_JSON, changes?: Parameters<typeof mount>[0]) {
+  const mounted = mount(changes);
   void mounted.tour.generate(PLAN_INPUT);
   await flush();
   channels[0].onmessage?.({ type: 'chunk', text: response });
@@ -262,6 +266,27 @@ describe('UnderstandingTourDialog', () => {
     await mountWithTour();
     clickIcon('Next card');
     clickButton('electron/ipc/pty.ts:189');
+    expect(openFileInEditor).toHaveBeenCalledWith('/repo', 'electron/ipc/pty.ts', {
+      line: 189,
+      editorCommand: 'code',
+    });
+  });
+
+  it('opens a reference to a changed file in the task diff at its line', async () => {
+    const open = vi.fn();
+    await mountWithTour(TOUR_JSON, { has: (path) => path === 'electron/ipc/pty.ts', open });
+    clickIcon('Next card');
+    clickButton('electron/ipc/pty.ts:189');
+    expect(open).toHaveBeenCalledWith('electron/ipc/pty.ts', 189);
+    expect(openFileInEditor).not.toHaveBeenCalled();
+  });
+
+  it('opens a reference outside the changes in the editor even when a diff is available', async () => {
+    const open = vi.fn();
+    await mountWithTour(TOUR_JSON, { has: () => false, open });
+    clickIcon('Next card');
+    clickButton('electron/ipc/pty.ts:189');
+    expect(open).not.toHaveBeenCalled();
     expect(openFileInEditor).toHaveBeenCalledWith('/repo', 'electron/ipc/pty.ts', {
       line: 189,
       editorCommand: 'code',

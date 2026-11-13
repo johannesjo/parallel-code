@@ -182,6 +182,7 @@ vi.mock('./DiffViewerDialog', () => ({
       class="test-diff"
       data-open={props.scrollToFile !== null}
       data-file={props.scrollToFile}
+      data-line={props.scrollToLine ?? ''}
       data-commit={props.selectedCommit ?? 'all'}
     >
       <button class="test-diff-select" onClick={() => props.onCommitNavigate?.('old-commit')}>
@@ -238,6 +239,13 @@ vi.mock('./UnderstandingTourDialog', () => ({
     >
       <button class="test-understanding-close" onClick={() => props.onClose()}>
         Close
+      </button>
+      <button
+        class="test-understanding-ref"
+        data-in-diff={String(props.changes?.has('file-0.ts') ?? false)}
+        onClick={() => props.changes?.open('file-0.ts', 12)}
+      >
+        file-0.ts:12
       </button>
     </div>
   ),
@@ -710,6 +718,27 @@ it('opens a tour the agent published and keeps it reachable after closing', () =
   click('.test-agent-tour');
   expect(tourState().open).toBe('true');
   expect(tourState().gist).toBe('Retries hide the failure');
+});
+
+it('opens a published tour reference to a changed file in the task diff at its line', () => {
+  const card = { label: 'KEY DECISION', title: 'One idea', body: 'Body text.' };
+  const { setTask, click, tourState, container } = mountPlanTask();
+  setTask('agentTour', { revision: 1, payload: { subject: 'the bug', gist: card, cards: [card] } });
+  const ref = () => expectDefined(container.querySelector<HTMLElement>('.test-understanding-ref'));
+  expect(ref().dataset.inDiff).toBe('false');
+  fileInventory.report(1);
+  expect(ref().dataset.inDiff).toBe('true');
+
+  click('.test-understanding-ref');
+  // The diff opens behind the tour, so the tour steps aside for it.
+  expect(tourState().open).toBe('false');
+  const diff = expectDefined(container.querySelector<HTMLElement>('.test-diff')).dataset;
+  expect(diff.open).toBe('true');
+  expect(diff.file).toBe('file-0.ts');
+  expect(diff.line).toBe('12');
+  // A later plain file click must not inherit the tour's line.
+  click('.test-diff-close');
+  expect(diff.line).toBe('');
 });
 
 it('does not reopen a dismissed agent tour when the panel remounts', () => {

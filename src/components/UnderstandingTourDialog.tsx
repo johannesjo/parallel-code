@@ -35,6 +35,7 @@ import type { UnderstandingTourController } from '../lib/create-understanding-to
 import type { TourRef } from '../lib/understanding-tour';
 import { errMessage, warn as logWarn } from '../lib/log';
 import { openFileInEditor } from '../lib/shell';
+import type { ChangesLink } from './file-link-menu';
 import { isTypingTarget } from '../lib/tour-keys';
 import { prefersMotion } from '../lib/reducedMotion';
 import { store } from '../store/store';
@@ -85,6 +86,8 @@ export function UnderstandingTourDialog(props: {
   onReference?: (reference: string) => void;
   /** Shows a saved tour's file on the canvas; absent where there is no canvas. */
   onOpenFile?: (path: string) => void;
+  /** Sends refs to changed files to the task's diff; absent where there is no diff. */
+  changes?: ChangesLink;
 }) {
   const headingId = createUniqueId();
   /** The action the reader is most likely to press next; see the focus effect. */
@@ -235,7 +238,12 @@ export function UnderstandingTourDialog(props: {
     if (!active || active === document.body) primaryRef?.focus();
   }
 
+  /** Refs to changed code open its raw diff, so the reader can check the claim; others open the editor. */
   function openRef(ref: TourRef): void {
+    if (props.changes?.has(ref.filePath)) {
+      props.changes.open(ref.filePath, ref.line);
+      return;
+    }
     const at = { line: ref.line, editorCommand: store.editorCommand.trim() };
     void openFileInEditor(props.worktreePath, ref.filePath, at).catch((error) =>
       logWarn('understandingTour', 'Could not open reference', { error: errMessage(error) }),

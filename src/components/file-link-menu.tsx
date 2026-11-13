@@ -30,7 +30,8 @@ export interface FileLinkMenu {
 /** The task's changed files; worktree-relative paths, as the changes list shows them. */
 export interface ChangesLink {
   has: (relativePath: string) => boolean;
-  open: (relativePath: string) => void;
+  /** Opens the file's diff, scrolled to `line` when given. */
+  open: (relativePath: string, line?: number) => void;
 }
 
 export interface FileLinkContext {
