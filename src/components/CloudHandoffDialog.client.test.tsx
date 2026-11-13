@@ -66,6 +66,11 @@ it('names the task, since the cloud session has no conversation', () => {
   );
 });
 
+it('marks the title with the Claude icon', () => {
+  openDialog();
+  expect(document.querySelector('h2 svg')).not.toBeNull();
+});
+
 it('pushes the branch, then starts the cloud session and shows the task', async () => {
   const { onDone, showTask } = openDialog();
   button('Start cloud session')?.click();

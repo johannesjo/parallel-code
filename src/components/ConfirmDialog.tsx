@@ -6,6 +6,8 @@ import { theme } from '../lib/theme';
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
+  /** Shown before the title, e.g. the mark of the service the dialog hands work to. */
+  titleIcon?: JSX.Element;
   message: string | JSX.Element;
   confirmLabel?: string;
   /** Shown before the confirm label; the loading spinner takes its place. */
@@ -63,8 +65,12 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           'font-size': '17px',
           color: theme.fg,
           'font-weight': '600',
+          display: 'flex',
+          'align-items': 'center',
+          gap: '8px',
         }}
       >
+        {props.titleIcon}
         {props.title}
       </h2>
 

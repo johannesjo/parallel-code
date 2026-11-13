@@ -8,7 +8,7 @@ import {
   runRemoteControl,
 } from '../store/store';
 import type { Task } from '../store/types';
-import { PhoneIcon, UploadIcon } from './icons';
+import { ClaudeIcon } from './icons';
 
 export interface ClaudeAiAction {
   label: string;
@@ -32,7 +32,7 @@ export function claudeAiActions(
   const blocker = agent ? remoteControlBlocker(task, agent) : null;
   const remoteControl: ClaudeAiAction = {
     label: started ? 'Remote Control status…' : 'Enable Remote Control',
-    icon: () => <PhoneIcon size={14} />,
+    icon: () => <ClaudeIcon size={14} />,
     title:
       blocker ??
       (started
@@ -49,7 +49,7 @@ export function claudeAiActions(
   };
   const cloud: ClaudeAiAction = {
     label: 'Continue in cloud…',
-    icon: () => <UploadIcon size={14} />,
+    icon: () => <ClaudeIcon size={14} />,
     title: 'Starts a Claude Code session on claude.ai from this branch.',
     run: actions.confirmCloudHandoff,
   };

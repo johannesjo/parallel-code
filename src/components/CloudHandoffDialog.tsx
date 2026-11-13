@@ -3,6 +3,7 @@ import { startCloudSession } from '../store/store';
 import { theme } from '../lib/theme';
 import type { Task } from '../store/types';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ClaudeIcon } from './icons';
 import { messageFieldStyle } from './MergeSection';
 import { createPushRun } from './push-run';
 
@@ -68,6 +69,7 @@ export function CloudHandoffDialog(props: CloudHandoffDialogProps) {
     <ConfirmDialog
       open={props.open}
       title="Continue in cloud"
+      titleIcon={<ClaudeIcon size={16} />}
       width="520px"
       confirmLabel="Start cloud session"
       confirmLoading={pushRun.pushing()}
