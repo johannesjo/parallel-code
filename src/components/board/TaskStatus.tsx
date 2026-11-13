@@ -117,7 +117,17 @@ export function TaskPr(props: { taskId: string; watchId: string; onMerge?: () =>
             <GitMergeIcon size={12} />
           </Match>
         </Switch>
-        <span class="task-board-status-text">{label()}</span>
+        <span class="task-board-status-text">
+          {label()}
+          {/* The title glyph is easy to miss; stepping dots make the label itself read as in progress. */}
+          <Show when={kind() === 'running'}>
+            <span class="task-board-dots" aria-hidden="true">
+              <span>.</span>
+              <span>.</span>
+              <span>.</span>
+            </span>
+          </Show>
+        </span>
       </span>
       <span class="task-board-actions">
         <Show when={hasOpenTaskPr(props.taskId)}>
