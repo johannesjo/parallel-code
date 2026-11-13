@@ -759,6 +759,8 @@ describe('FinishDialog with no work on the branch', () => {
       'Nothing on this branch: it has no commits and no uncommitted changes, so nothing is left to merge.',
     );
     expect(document.querySelector('[data-testid="target-uncommitted"]')).toBeNull();
+    // The quiet notice says it all; no warning that the merge has nothing to bring in.
+    expect(document.body.textContent).not.toContain('Nothing to merge:');
     // An empty branch has nothing to push or to open a PR with.
     expect(document.querySelector('section[aria-label="Pull request"]')).toBeNull();
     expect(

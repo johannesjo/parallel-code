@@ -178,7 +178,14 @@ export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean
           </div>
         )}
       </Show>
-      <Show when={!props.state.worktreeStatus.loading && !props.state.hasCommittedChangesToMerge()}>
+      {/* A branch with no work at all has the quiet notice above: closing is the way out, nothing needs attention. */}
+      <Show
+        when={
+          !props.state.worktreeStatus.loading &&
+          !props.state.hasCommittedChangesToMerge() &&
+          !props.state.nothingToMerge()
+        }
+      >
         <div
           style={{
             ...bannerStyle(theme.warning),
