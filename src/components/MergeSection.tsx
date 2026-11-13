@@ -171,7 +171,15 @@ export function MergeBlockers(props: MergeSectionProps & { showBaseSync: boolean
       </Show>
       {/* Before the conflict banner: it explains conflicts that banner lists. */}
       <BaseUpstreamNotice task={props.task} state={props.state} />
-      <Show when={props.showBaseSync}>
+      {/* Bringing the base in does nothing for finishing when no merge will run. */}
+      <Show
+        when={
+          props.showBaseSync &&
+          !props.state.alreadyLanded() &&
+          // Shown while the worktree status loads, so it does not pop in afterwards.
+          (props.state.worktreeStatus.loading || props.state.hasCommittedChangesToMerge())
+        }
+      >
         <MergeConflictBanner task={props.task} state={props.state} onDone={props.onDone} />
       </Show>
       {/* Outside the conflict banner: that one hides once the base is in. */}

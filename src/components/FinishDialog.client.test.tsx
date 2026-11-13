@@ -197,6 +197,13 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const confirmButton = () => document.querySelector<HTMLButtonElement>('[data-testid="confirm"]');
 const button = (text: string) =>
   [...document.querySelectorAll('button')].find((candidate) => candidate.textContent === text);
+/** Picks how "Update branch" brings the base in, from its chevron menu. */
+const pickUpdateRoute = (label: string) => {
+  document.querySelector<HTMLButtonElement>('[aria-label="Update branch by"]')?.click();
+  [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')]
+    .find((row) => row.textContent === label)
+    ?.click();
+};
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -468,9 +475,10 @@ describe('FinishDialog base sync', () => {
     expect(document.body.textContent).toContain(
       "They also change 1 of this branch's files: src/a.ts. Test again afterwards.",
     );
-    expect(button('Rebase')).toBeDefined();
+    expect(button('Update branch')).toBeDefined();
     expect(confirmButton()?.textContent).toBe('Merge into local main');
-    button('Merge')?.click();
+    pickUpdateRoute('Merge commit');
+    button('Update branch')?.click();
     expect(invoke).toHaveBeenCalledWith(IPC.MergeBaseIntoTask, {
       worktreePath: '/repo/.worktrees/parent',
       baseBranch: 'main',
@@ -493,9 +501,7 @@ describe('FinishDialog base sync', () => {
     });
     mount({ task: task({ baseBranch: 'main' }) });
     await flush();
-    expect(document.body.textContent).toContain(
-      "main has 1 new commit. No overlap with this branch's files.",
-    );
+    expect(document.body.textContent).toContain('main has 1 new commit · no overlap');
   });
 
   it('claims no overlap when the merge check could not tell', async () => {
@@ -506,8 +512,34 @@ describe('FinishDialog base sync', () => {
     });
     mount({ task: task({ baseBranch: 'main' }) });
     await flush();
-    expect(document.body.textContent).toContain('main has 1 new commit.');
-    expect(document.body.textContent).not.toContain('No overlap');
+    expect(document.body.textContent).toContain('main has 1 new commit');
+    expect(document.body.textContent).not.toContain('no overlap');
+  });
+
+  it('offers no base sync when the branch has nothing to merge', async () => {
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus) return { conflicting_files: [], main_ahead_count: 4 };
+      return { current_branch: 'task/parent', has_committed_changes: false };
+    });
+    mount({ task: task({ baseBranch: 'main' }) });
+    await flush();
+    expect(document.body.textContent).toContain('Nothing to merge');
+    expect(document.body.textContent).not.toContain('new commits');
+    expect(button('Update branch')).toBeUndefined();
+  });
+
+  it('offers no base sync once the branch already landed in the base', async () => {
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus)
+        return { conflicting_files: [], main_ahead_count: 2, already_landed: true };
+      return { current_branch: 'task/parent', has_committed_changes: true };
+    });
+    mount({ task: task({ baseBranch: 'main' }) });
+    await flush();
+    expect(document.body.textContent).toContain('nothing is left to merge');
+    expect(document.body.textContent).not.toContain('new commits');
   });
 
   it('brings the base in over uncommitted changes the base does not touch', async () => {
@@ -522,8 +554,7 @@ describe('FinishDialog base sync', () => {
     });
     mount({ task: task({ baseBranch: 'main' }) });
     await flush();
-    expect(button('Rebase')?.disabled).toBe(false);
-    expect(button('Merge')?.disabled).toBe(false);
+    expect(button('Update branch')?.disabled).toBe(false);
   });
 
   it('asks to commit uncommitted changes the base changed too', async () => {
@@ -584,6 +615,26 @@ describe('FinishDialog base sync', () => {
     );
   });
 
+  it('updates the branch through the agent once picked from the menu', async () => {
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus) return { conflicting_files: [], main_ahead_count: 1 };
+      return { current_branch: 'task/parent', has_committed_changes: true };
+    });
+    vi.mocked(sendPrompt).mockResolvedValue(undefined);
+    store.agents = { agent: { status: 'running' } } as unknown as typeof store.agents;
+    onTestFinished(() => {
+      store.agents = {};
+    });
+    const handlers = mount({ task: task({ baseBranch: 'main', agentIds: ['agent'] }) });
+    await flush();
+    pickUpdateRoute('Rebase with AI');
+    button('Update branch')?.click();
+    expect(handlers.onClose).toHaveBeenCalled();
+    expect(sendPrompt).toHaveBeenCalledWith('parent', 'agent', 'rebase on main branch');
+    expect(invoke).not.toHaveBeenCalledWith(IPC.RebaseTask, expect.anything());
+  });
+
   it('offers a way out when a rebase stops on conflicts the merge check did not predict', async () => {
     mockInvoke((channel) => {
       if (channel === IPC.GetBranchLog) return '';
@@ -601,7 +652,7 @@ describe('FinishDialog base sync', () => {
     });
     mount({ task: task({ baseBranch: 'main', agentIds: ['agent'] }) });
     await flush();
-    button('Rebase')?.click();
+    button('Update branch')?.click();
     await flush();
     const text = document.body.textContent ?? '';
     expect(text).toContain(
@@ -627,7 +678,7 @@ describe('FinishDialog base sync', () => {
     });
     mount({ task: task({ baseBranch: 'main' }) });
     await flush();
-    button('Rebase')?.click();
+    button('Update branch')?.click();
     await flush();
     expect(document.body.textContent).toContain('Rebase failed: index.lock exists');
     expect(document.body.textContent).not.toContain('instead');
@@ -1073,7 +1124,10 @@ describe('FinishDialog base sync with an open PR', () => {
     mount({ task: task({ baseBranch: 'main', prUrl: PR_URL }) });
     await flush();
     expect(document.body.textContent).toContain('main has 3 new commits');
-    expect(button('Merge')).toBeDefined();
+    // Rebasing a branch behind a PR would need a force-push.
+    button('Update branch')?.click();
+    expect(invoke).toHaveBeenCalledWith(IPC.MergeBaseIntoTask, expect.anything());
+    expect(invoke).not.toHaveBeenCalledWith(IPC.RebaseTask, expect.anything());
   });
 
   it('leaves a moved base alone once the PR merged', async () => {
@@ -1667,6 +1721,10 @@ describe('FinishDialog base upstream', () => {
         'That is the likely cause of the conflicts in guide.md.',
     );
     expect(text()).toContain('e1ff6d7 docs: add guide');
+    // It explains the conflict, so it opens on its own.
+    expect(document.querySelector<HTMLDetailsElement>('[data-testid="base-upstream"]')?.open).toBe(
+      true,
+    );
 
     button('Reset main to origin/main…')?.click();
     await flush();
@@ -1683,5 +1741,33 @@ describe('FinishDialog base upstream', () => {
     });
     expect(document.querySelector('[data-testid="base-upstream"]')).toBeNull();
     expect(text()).toContain('Reset main to its upstream. It was at bbbbbbbbbb.');
+  });
+
+  it('keeps a diverged base folded when it explains no conflict, even with nothing to merge', async () => {
+    mockInvoke((channel) => {
+      if (channel === IPC.GetBranchLog) return '';
+      if (channel === IPC.CheckMergeStatus)
+        return {
+          conflicting_files: [],
+          main_ahead_count: 0,
+          base_upstream: {
+            upstream: 'origin/main',
+            head: 'b'.repeat(40),
+            behind: 3,
+            local_count: 4,
+            local_commits: [{ hash: 'e1ff6d7', subject: 'docs: add guide' }],
+            differing_files: [],
+          },
+        };
+      return { current_branch: 'task/parent', has_committed_changes: false };
+    });
+    mount({ task: task({ baseBranch: 'main' }) });
+    await flush();
+    const notice = document.querySelector<HTMLDetailsElement>('[data-testid="base-upstream"]');
+    expect(notice?.open).toBe(false);
+    expect(notice?.querySelector('summary')?.textContent).toBe(
+      'Local main has 4 commits not on origin/main and is 3 behind it.',
+    );
+    expect(button('Reset main to origin/main…')).toBeDefined();
   });
 });

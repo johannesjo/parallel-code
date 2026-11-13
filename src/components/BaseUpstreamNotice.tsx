@@ -60,25 +60,33 @@ export function BaseUpstreamNotice(props: { task: Task; state: MergeState }) {
               differing.has(f),
             );
           };
+          // Open and boxed only when it explains a conflict; otherwise a fact about the
+          // base checkout, not this task, so it stays folded and quiet.
+          const explains = () => conflictCause().length > 0;
           return (
-            <div
+            <details
               data-testid="base-upstream"
+              open={explains()}
               style={{
-                padding: '8px 12px',
-                'border-radius': 'var(--radius-md)',
-                border: `1px solid ${theme.border}`,
                 'margin-bottom': '12px',
-                'font-size': '13px',
+                ...(explains()
+                  ? {
+                      padding: '8px 12px',
+                      'border-radius': 'var(--radius-md)',
+                      border: `1px solid ${theme.border}`,
+                      'font-size': '13px',
+                    }
+                  : { 'font-size': '12px', color: theme.fgMuted }),
               }}
             >
-              <div>
+              <summary style={{ cursor: 'pointer' }}>
                 Local {base()} has {plural(d().local_count, 'commit')} not on {d().upstream} and is{' '}
                 {d().behind} behind it.
-                <Show when={conflictCause().length}>
+                <Show when={explains()}>
                   {' '}
                   That is the likely cause of the conflicts in {conflictCause().join(', ')}.
                 </Show>
-              </div>
+              </summary>
               <ul
                 style={{
                   margin: '4px 0 0',
@@ -114,7 +122,7 @@ export function BaseUpstreamNotice(props: { task: Task; state: MergeState }) {
                   </div>
                 }
               >
-                <div style={{ 'margin-top': '8px' }}>
+                <div style={{ 'margin-top': '8px', color: theme.fg }}>
                   {/* The one thing a reset loses, so it is spelled out before it runs. */}
                   <Show
                     when={d().differing_files.length}
@@ -150,7 +158,7 @@ export function BaseUpstreamNotice(props: { task: Task; state: MergeState }) {
                   {error()}
                 </div>
               </Show>
-            </div>
+            </details>
           );
         }}
       </Show>
