@@ -1255,6 +1255,21 @@ describe('spawnAgent output batching', () => {
     expect(expected[expected.length - 1]).toBe(lines[99]);
   });
 
+  it.each([
+    { name: 'a clean exit (signal 0)', exitCode: 0, signal: 0, expected: null },
+    { name: 'no signal', exitCode: 1, signal: undefined, expected: null },
+    { name: 'a kill', exitCode: 0, signal: 15, expected: '15' },
+  ])('reports $name as signal $expected', async ({ exitCode, signal, expected }) => {
+    const { notify, proc } = await launch(`agent-exit-signal-${String(signal)}`);
+    proc.emitExit({ exitCode, signal });
+
+    const exit = vi
+      .mocked(notify)
+      .mock.calls.map(([, message]) => message as { type: string; data?: unknown })
+      .find((payload) => payload.type === 'Exit');
+    expect(exit?.data).toMatchObject({ exit_code: exitCode, signal: expected });
+  });
+
   it('sends raw bytes to the window and base64 to subscribers', async () => {
     const { notify, proc } = await launch('agent-batch-subscriber');
     const sub = vi.fn();
