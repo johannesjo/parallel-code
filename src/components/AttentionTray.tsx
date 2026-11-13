@@ -31,8 +31,9 @@ function AttentionRow(props: { entry: AttentionEntry; nowMs: number; onOpen: () 
   const task = () => store.tasks[props.entry.taskId];
   const project = () => store.projects.find((p) => p.id === task()?.projectId);
   const resume = () => task()?.collapsed && !opensReview(props.entry);
-  const changesLine = () =>
-    props.entry.changes.length ? 'Since you looked: ' + props.entry.changes.join(' · ') : '';
+  // The row already frames these as news; the prefix lives in the tooltip so
+  // two changes still fit a narrow sidebar.
+  const changesLine = () => props.entry.changes.join(' · ');
   // Finish needs the task's panel, so it opens the task the way a click on this row does.
   const menu = createTaskContextMenu({ task: () => task(), open: () => props.onOpen() });
   return (
@@ -44,7 +45,12 @@ function AttentionRow(props: { entry: AttentionEntry; nowMs: number; onOpen: () 
             class="task-item sidebar-attention-row"
             aria-current={store.activeTaskId === props.entry.taskId ? 'true' : undefined}
             data-attention={getTaskAttentionState(props.entry.taskId)}
-            title={[t().name, props.entry.label, props.entry.detail, changesLine()]
+            title={[
+              t().name,
+              props.entry.label,
+              props.entry.detail,
+              changesLine() && 'Since you looked: ' + changesLine(),
+            ]
               .filter(Boolean)
               .join(' — ')}
             onClick={() => props.onOpen()}

@@ -206,7 +206,7 @@ it('shows app-attested changes since the last visit, but not agent self-reports'
     verification: { checks: [{ name: 'tests', command: 'npm test', result: 'passed' }] },
   });
   setHead('new');
-  expect(changesText()).toBe('Since you looked: new commits · verify failed');
+  expect(changesText()).toBe('new commits · verify failed');
   expect(rows()[0].title).toContain('Since you looked: new commits · verify failed');
 });
 
@@ -215,7 +215,7 @@ it("keeps the line's space while empty and while the task is open", () => {
   setHead('old');
   expect(changesText()).toBe('\u00a0');
   setHead('new');
-  expect(changesText()).toBe('Since you looked: new commits');
+  expect(changesText()).toBe('new commits');
   setStore('activeTaskId', 'child');
   expect(changesText()).toBe('\u00a0');
 });
