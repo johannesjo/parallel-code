@@ -67,6 +67,16 @@ export interface IndependentTaskRequest {
   launchId: string;
 }
 
+/** An agent's request to bring an existing worktree of its project back as a top-level
+ *  task; the renderer imports it like the Import Worktrees dialog does. */
+export interface ImportWorktreeRequest {
+  creatorTaskId: string;
+  path: string;
+  /** Resume this recorded session; without it the newest one in the worktree. */
+  sessionId?: string;
+  cleanupOnClose: boolean;
+}
+
 export interface DelegateAssignment {
   parentTaskId: string;
   requestId: string;

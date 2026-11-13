@@ -1,4 +1,12 @@
-import { For, Show, createEffect, createMemo, createSignal, createUniqueId } from 'solid-js';
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  createUniqueId,
+} from 'solid-js';
 import { Dialog } from './Dialog';
 import { DialogFooter } from './DialogFooter';
 import { AgentSelector } from './AgentSelector';
@@ -9,6 +17,9 @@ import { dialogButtonStyle, theme } from '../lib/theme';
 import type { Project } from '../store/types';
 import type { AgentDef, ImportableWorktree } from '../ipc/types';
 import { DownloadIcon } from './icons';
+import { ImportWorktreeOptions, type ImportChoice } from './ImportWorktreeOptions';
+import { listWorktreeSessions } from '../store/sessions';
+import type { SessionRecord } from '../../electron/shared/session-record';
 
 interface ImportWorktreesDialogProps {
   open: boolean;
@@ -28,6 +39,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
   const [loading, setLoading] = createSignal(false);
   const [importing, setImporting] = createSignal(false);
   const [error, setError] = createSignal('');
+  const [choices, setChoices] = createSignal<Record<string, ImportChoice>>({});
   const titleId = createUniqueId();
 
   const trackedWorktreePaths = createMemo(() => {
@@ -47,6 +59,34 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
     candidates().filter((candidate) => !trackedWorktreePaths().has(candidate.path)),
   );
 
+  // Rescanned when the agent changes: a Claude session cannot resume in Codex.
+  const [sessions] = createResource(
+    () => {
+      const agent = selectedAgent();
+      const paths = visibleCandidates().map((candidate) => candidate.path);
+      return agent && paths.length > 0 ? { command: agent.command, paths } : false;
+    },
+    async ({ command, paths }) => {
+      const lists = await Promise.all(paths.map((p) => listWorktreeSessions(p, command)));
+      return Object.fromEntries(paths.map((p, i) => [p, lists[i]])) as Record<
+        string,
+        SessionRecord[]
+      >;
+    },
+  );
+  const sessionsFor = (path: string) => (sessions.loading ? undefined : sessions()?.[path]);
+
+  // Defaults: resume the newest session; clean up only what the app itself created.
+  const choiceFor = (candidate: ImportableWorktree): ImportChoice => {
+    const sessionId = sessionsFor(candidate.path)?.[0]?.id ?? '';
+    const chosen = choices()[candidate.path];
+    const known = chosen && sessionsFor(candidate.path)?.some((s) => s.id === chosen.sessionId);
+    return {
+      cleanupOnClose: chosen?.cleanupOnClose ?? candidate.app_created,
+      sessionId: chosen && (known || chosen.sessionId === '') ? chosen.sessionId : sessionId,
+    };
+  };
+
   createEffect(() => {
     if (!props.open || !props.project) return;
 
@@ -55,6 +95,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
     setError('');
     setCandidates([]);
     setSelectedPaths(new Set<string>());
+    setChoices({});
 
     void (async () => {
       const project = props.project;
@@ -106,6 +147,7 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
   const canImport = () =>
     !loading() &&
     !importing() &&
+    !sessions.loading &&
     !!props.project &&
     !!selectedAgent() &&
     visibleCandidates().some((candidate) => selectedPaths().has(candidate.path));
@@ -134,14 +176,19 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
     const selected = visibleCandidates().filter((candidate) => selectedPaths().has(candidate.path));
     if (selected.length === 0) return;
 
+    // Read every choice now: each import tracks a worktree, which rescans the
+    // sessions, and choiceFor would fall back to a new conversation meanwhile.
+    const plan = selected.map((candidate) => ({ candidate, choice: choiceFor(candidate) }));
     setImporting(true);
     setError('');
     try {
-      for (const candidate of selected) {
+      for (const { candidate, choice } of plan) {
         await createImportedTask({
           projectId: project.id,
           worktree: candidate,
           agentDef: agent,
+          resumeSessionId: choice.sessionId || undefined,
+          cleanupOnClose: choice.cleanupOnClose,
         });
       }
       props.onClose();
@@ -176,9 +223,8 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
           <p
             style={{ margin: '0', 'font-size': '12px', color: theme.fgMuted, 'line-height': '1.5' }}
           >
-            Import existing git worktrees for this project as Parallel Code tasks. Imported tasks
-            keep their existing branch and worktree, and closing them will only detach them from the
-            app.
+            Bring existing git worktrees for this project back as Parallel Code tasks. Each task
+            keeps its branch and worktree and can resume the conversation recorded there.
           </p>
         </div>
 
@@ -271,75 +317,89 @@ export function ImportWorktreesDialog(props: ImportWorktreesDialogProps) {
                 {(candidate) => {
                   const selected = () => selectedPaths().has(candidate.path);
                   return (
-                    <label
+                    <div
                       style={{
                         display: 'flex',
-                        gap: '10px',
+                        'flex-direction': 'column',
+                        gap: '8px',
                         padding: '12px 14px',
                         background: selected() ? theme.bgSelected : theme.bgInput,
                         border: selected()
                           ? `1px solid ${theme.accent}`
                           : `1px solid ${theme.border}`,
                         'border-radius': 'var(--radius-md)',
-                        cursor: 'pointer',
                       }}
                     >
-                      <input
-                        type="checkbox"
-                        disabled={importing()}
-                        checked={selected()}
-                        onChange={() => togglePath(candidate.path)}
-                        style={{ 'margin-top': '2px', cursor: 'pointer' }}
-                      />
-                      <div
-                        style={{
-                          flex: '1',
-                          'min-width': '0',
-                          display: 'flex',
-                          'flex-direction': 'column',
-                          gap: '6px',
-                        }}
-                      >
+                      <label style={{ display: 'flex', gap: '10px', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          disabled={importing()}
+                          checked={selected()}
+                          onChange={() => togglePath(candidate.path)}
+                          style={{ 'margin-top': '2px', cursor: 'pointer' }}
+                        />
                         <div
                           style={{
+                            flex: '1',
+                            'min-width': '0',
                             display: 'flex',
-                            'align-items': 'center',
-                            gap: '8px',
-                            'flex-wrap': 'wrap',
+                            'flex-direction': 'column',
+                            gap: '6px',
                           }}
                         >
-                          <span
+                          <div
                             style={{
-                              'font-size': '13px',
-                              color: theme.fg,
-                              'font-weight': '600',
-                              'font-family': "'JetBrains Mono', monospace",
+                              display: 'flex',
+                              'align-items': 'center',
+                              gap: '8px',
+                              'flex-wrap': 'wrap',
                             }}
                           >
-                            {candidate.branch_name}
-                          </span>
-                          <StatusBadge
-                            label={
-                              candidate.has_uncommitted_changes ? 'Uncommitted changes' : 'Clean'
+                            <span
+                              style={{
+                                'font-size': '13px',
+                                color: theme.fg,
+                                'font-weight': '600',
+                                'font-family': "'JetBrains Mono', monospace",
+                              }}
+                            >
+                              {candidate.branch_name}
+                            </span>
+                            <StatusBadge
+                              label={
+                                candidate.has_uncommitted_changes ? 'Uncommitted changes' : 'Clean'
+                              }
+                              tone={candidate.has_uncommitted_changes ? 'warning' : 'muted'}
+                            />
+                            <Show when={candidate.has_committed_changes}>
+                              <StatusBadge label="Has commits" tone="accent" />
+                            </Show>
+                          </div>
+                          <div
+                            style={{
+                              'font-size': '11px',
+                              color: theme.fgSubtle,
+                              'font-family': "'JetBrains Mono', monospace",
+                              'word-break': 'break-all',
+                            }}
+                          >
+                            {candidate.path}
+                          </div>
+                        </div>
+                      </label>
+                      <Show when={selected()}>
+                        <div style={{ 'padding-left': '24px' }}>
+                          <ImportWorktreeOptions
+                            sessions={sessionsFor(candidate.path)}
+                            choice={choiceFor(candidate)}
+                            disabled={importing()}
+                            onChange={(choice) =>
+                              setChoices({ ...choices(), [candidate.path]: choice })
                             }
-                            tone={candidate.has_uncommitted_changes ? 'warning' : 'muted'}
                           />
-                          <Show when={candidate.has_committed_changes}>
-                            <StatusBadge label="Has commits" tone="accent" />
-                          </Show>
                         </div>
-                        <div
-                          style={{
-                            'font-size': '11px',
-                            color: theme.fgSubtle,
-                            'font-family': "'JetBrains Mono', monospace",
-                            'word-break': 'break-all',
-                          }}
-                        >
-                          {candidate.path}
-                        </div>
-                      </div>
-                    </label>
+                      </Show>
+                    </div>
                   );
                 }}
               </For>

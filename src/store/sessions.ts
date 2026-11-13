@@ -23,14 +23,24 @@ export async function listResumableSessions(
   command: string,
 ): Promise<SessionRecord[]> {
   const task = store.tasks[taskId];
-  if (!task || !canResumeSessionId(command)) return [];
+  if (!task) return [];
+  return listWorktreeSessions(task.worktreePath, command);
+}
+
+/** Sessions this CLI recorded in a worktree, newest first — also for worktrees
+ *  no task tracks yet, such as one being imported. */
+export async function listWorktreeSessions(
+  worktreePath: string,
+  command: string,
+): Promise<SessionRecord[]> {
+  if (!canResumeSessionId(command)) return [];
   const agent = sessionAgentForCommand(command);
   if (!agent) return [];
   try {
-    const sessions = await invoke<SessionRecord[]>(IPC.ListSessions, { cwd: task.worktreePath });
+    const sessions = await invoke<SessionRecord[]>(IPC.ListSessions, { cwd: worktreePath });
     return sessions.filter((session) => session.agent === agent);
   } catch (err) {
-    logWarn('sessions', 'failed to list sessions', { taskId, error: errMessage(err) });
+    logWarn('sessions', 'failed to list sessions', { worktreePath, error: errMessage(err) });
     return [];
   }
 }

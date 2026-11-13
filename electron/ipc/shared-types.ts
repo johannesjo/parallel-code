@@ -122,6 +122,9 @@ export interface ImportableWorktree {
   branch_name: string;
   has_committed_changes: boolean;
   has_uncommitted_changes: boolean;
+  /** Sits where Parallel Code puts the worktrees it creates, so it is likely a
+   *  lost task's; the import dialog then offers cleanup on close by default. */
+  app_created: boolean;
 }
 
 export interface MergeStatus {

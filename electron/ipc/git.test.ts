@@ -58,6 +58,8 @@ vi.mock('fs', async () => {
 });
 
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { execFile } from 'child_process';
 import {
   getAllFileDiffsFromBranch,
@@ -1507,6 +1509,48 @@ describe('listImportableWorktrees', () => {
 
     await expect(listImportableWorktrees('/home/me/.codex')).resolves.toEqual([]);
     expect(calls).toEqual([['rev-parse', '--show-toplevel']]);
+  });
+
+  // Only a worktree at the exact path the app would have created counts as a
+  // lost task's; the dialog pre-ticks cleanup for those and no others.
+  it('flags worktrees at the path the app creates', async () => {
+    // isGitRepo resolves the project root on disk, so it has to exist.
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pc-import-')));
+    setupMock([], (args, cb) => {
+      if (args[0] === 'rev-parse' && args[1] === '--show-toplevel')
+        return cb(null, `${repo}\n`, '');
+      if (args[0] === 'worktree' && args[1] === 'list') {
+        return cb(
+          null,
+          [
+            `worktree ${repo}`,
+            'HEAD aaa111',
+            'branch refs/heads/main',
+            '',
+            `worktree ${repo}/.worktrees/task/lost-123456`,
+            'HEAD bbb222',
+            'branch refs/heads/task/lost-123456',
+            '',
+            'worktree /elsewhere/manual',
+            'HEAD ccc333',
+            'branch refs/heads/manual',
+            '',
+          ].join('\n'),
+          '',
+        );
+      }
+      return cb(null, '', '');
+    });
+
+    try {
+      const result = await listImportableWorktrees(repo);
+      expect(result.map((w) => [w.branch_name, w.app_created])).toEqual([
+        ['manual', false],
+        ['task/lost-123456', true],
+      ]);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
   });
 });
 

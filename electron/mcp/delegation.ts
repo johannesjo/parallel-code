@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { realpath } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Coordinator } from './coordinator.js';
 import type { CoordinatedTask } from './types.js';
@@ -16,6 +16,7 @@ import {
 } from './prompt-detect.js';
 import { canConfigureCanvasMcp } from './canvas-config.js';
 import { validateBranchName } from './validation.js';
+import { isSessionId } from '../shared/session-record.js';
 import {
   clampIndependentTasksPerCreator,
   DEFAULT_INDEPENDENT_TASKS_PER_CREATOR,
@@ -40,6 +41,7 @@ import type {
   DelegationRequest,
   DelegationSnapshot,
   DelegationState,
+  ImportWorktreeRequest,
   IndependentTaskRequest,
   IntegrationPolicy,
   PeerMessage,
@@ -207,6 +209,9 @@ export class DelegationService {
       persist: () => void;
       parentCreated?: (taskId: string) => void;
       createIndependent: (request: IndependentTaskRequest) => Promise<{ taskId: string }>;
+      importWorktree: (
+        request: ImportWorktreeRequest,
+      ) => Promise<{ taskId: string; resumedSessionId: string | null }>;
     },
   ) {
     this.orchestrationEnabled = options.orchestrationEnabled ?? true;
@@ -575,6 +580,31 @@ export class DelegationService {
     return promise;
   }
 
+  /** Brings a worktree back as a top-level task the user reviews, open to the same sessions
+   *  as independent tasks. The renderer checks the path is one of the creator's project's
+   *  worktrees, since only it knows which ones are already tracked. */
+  // shortcut: no per-creator cap or launch guard like createIndependent — the project's
+  // untracked worktrees bound the count and no slow worktree build is in flight; add
+  // maxIndependentPerCreator accounting if agents start importing in bulk.
+  private importWorktree(
+    creatorTaskId: string,
+    params: Record<string, unknown>,
+    caller: SessionCaller,
+  ): Promise<{ taskId: string; resumedSessionId: string | null }> {
+    this.creationGuard(creatorTaskId, caller, true);
+    const path = text(params.path, 'path', 4096);
+    if (!isAbsolute(path)) throw new DelegationError('path must be an absolute worktree path');
+    const sessionId = params.sessionId;
+    if (sessionId !== undefined && !isSessionId(sessionId))
+      throw new DelegationError('sessionId must be a session id recorded in the worktree');
+    return this.options.importWorktree({
+      creatorTaskId,
+      path,
+      ...(sessionId !== undefined && { sessionId }),
+      cleanupOnClose: params.cleanupOnClose === true,
+    });
+  }
+
   private requireCaller(caller: SessionCaller): Authority {
     if (
       !this.options
@@ -627,6 +657,8 @@ export class DelegationService {
       }
       throw new DelegationError('Tool unavailable to this child session', 403);
     }
+    if (name === 'import_worktree' && ['page', 'ordinary'].includes(caller.capabilities.profile))
+      return this.importWorktree(task.taskId, params, caller);
     if (caller.capabilities.profile === 'page') {
       if (name === 'create_task' && params.relation === 'independent')
         return this.createIndependent(task.taskId, params, caller);
