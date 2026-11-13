@@ -109,7 +109,7 @@ it('offers Create PR once the branch has commits and no pull request', () => {
   gitStatus(true);
   const create = button('Create PR');
   expect(create?.title).toMatch(
-    /^Push, draft a description and open a draft pull request into main \(.+R\)$/,
+    /^Push, draft a description and open a draft pull request into main \(.+H\)$/,
   );
   // Next to Finish, before it.
   expect(create?.nextElementSibling?.textContent).toContain('Finish');

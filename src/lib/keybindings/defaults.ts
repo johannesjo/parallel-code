@@ -281,13 +281,15 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
     global: true,
   },
   {
-    // Shift+P is taken by switchDocument; the app registers no reload role for R.
+    // H for GitHub. Not R: Ctrl/Cmd+Shift+R is reload in every browser and Electron's
+    // stock menu, so muscle memory would fire a PR. Not S (save), P (switchDocument),
+    // B (sidebar in a preset) or U (IBus unicode input on Linux).
     id: 'app.task.createPr',
     layer: 'app',
     category: 'Tasks',
     description: 'Create pull request',
     platform: 'both',
-    key: 'R',
+    key: 'H',
     modifiers: { cmdOrCtrl: true, shift: true },
     action: 'createPullRequest',
     global: true,

@@ -17,6 +17,7 @@ import { uncollapseTask } from './tasks';
 import { awaitsOpenPr } from './task-prs';
 import { isPrBabysat } from './pr-babysit';
 import { getTaskOpenQuestions, isTaskWorking } from './taskStatus';
+import { getTaskChangesSinceVisit } from './task-visits';
 
 export interface AttentionEntry {
   key: string;
@@ -27,6 +28,9 @@ export interface AttentionEntry {
   /** Only a timestamp recorded by the source, never a derived first-seen time. */
   since?: number;
   panel: string | null;
+  /** App-attested changes since the user last had the task open, on reviews only;
+   *  never agent claims. */
+  changes: string[];
 }
 
 /** Which panel hosts the asking agent. AI agents are addressed by id; shells by
@@ -57,10 +61,12 @@ function askingAgentLabel(
   return task.shellAgentIds.length > 1 ? `Shell ${shellIndex + 1}` : 'Shell';
 }
 
-function taskAttentionEntries(taskId: string): AttentionEntry[] {
+type TaskReason = Omit<AttentionEntry, 'changes'>;
+
+function taskAttentionEntries(taskId: string): TaskReason[] {
   const task = store.tasks[taskId];
   if (!task || task.closingStatus === 'closing' || task.closingStatus === 'removing') return [];
-  const entries: AttentionEntry[] = getTaskOpenQuestions(taskId).map((question) => ({
+  const entries: TaskReason[] = getTaskOpenQuestions(taskId).map((question) => ({
     key: JSON.stringify([taskId, 'question', question.agentId, question.since]),
     kind: 'question',
     taskId,
@@ -139,7 +145,17 @@ function taskAttentionEntries(taskId: string): AttentionEntry[] {
 /** Independent unresolved reasons, including tasks in hidden projects or the background. */
 export function computeAttentionEntries(): AttentionEntry[] {
   const entries = [...new Set([...store.taskOrder, ...store.collapsedTaskOrder])].flatMap(
-    taskAttentionEntries,
+    (taskId) => {
+      const reasons = taskAttentionEntries(taskId);
+      // Only a review is judged on evidence; a question is answered either way.
+      const changes = reasons.some((reason) => reason.kind === 'review')
+        ? getTaskChangesSinceVisit(taskId)
+        : [];
+      return reasons.map((reason) => ({
+        ...reason,
+        changes: reason.kind === 'review' ? changes : [],
+      }));
+    },
   );
   const rank = (entry: AttentionEntry) =>
     entry.kind === 'question' ? 0 : entry.kind === 'review' ? 2 : 1;

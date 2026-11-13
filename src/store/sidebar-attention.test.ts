@@ -38,6 +38,8 @@ vi.mock('./task-prs', () => ({
   awaitsOpenPr: (task: Task) => prs.awaiting.has(task.id),
 }));
 vi.mock('./pr-babysit', () => ({ isPrBabysat: () => false }));
+// Its own behaviour is covered in AttentionTray.client.test.tsx.
+vi.mock('./task-visits', () => ({ getTaskChangesSinceVisit: () => [] }));
 
 vi.mock('./taskStatus', () => ({
   getTaskOpenQuestions: (taskId: string) => status.questions.get(taskId) ?? [],

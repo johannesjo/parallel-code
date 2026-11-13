@@ -389,6 +389,34 @@ describe('background verify persistence', () => {
     expect(JSON.parse(lastCall[1].json).tasks['task-1'].lastVerifyPass).toEqual(pass);
   });
 
+  it('round-trips the last visit and drops a malformed one', async () => {
+    const def = agentDef();
+    const visit = { at: 1_700_000_000_000, headSha: 'abc123', codeFingerprint: 'fp1' };
+    mockInvoke.mockResolvedValueOnce(
+      stateWith(
+        {},
+        {
+          'task-1': { ...persistedTask(def), lastVisit: visit },
+          'task-2': {
+            ...persistedTask(def),
+            id: 'task-2',
+            branchName: 'task/task-2',
+            worktreePath: '/repo/.worktrees/task-2',
+            lastVisit: { at: 'yesterday' },
+          },
+        },
+      ),
+    );
+    await loadState();
+    expect(store.tasks['task-1'].lastVisit).toEqual(visit);
+    expect(store.tasks['task-2'].lastVisit).toBeUndefined();
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await saveState();
+    const lastCall = mockInvoke.mock.calls[mockInvoke.mock.calls.length - 1];
+    expect(JSON.parse(lastCall[1].json).tasks['task-1'].lastVisit).toEqual(visit);
+  });
+
   it('round-trips review dismissals and drops malformed ones', async () => {
     const def = agentDef();
     const dismissed = { 'risk:no real provider.': { text: 'No real provider.', reason: 'CI' } };

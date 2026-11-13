@@ -741,6 +741,54 @@ html[data-look^='islands-'] .task-board {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Running CI: the dots build up ("", ".", "..", "...") and restart. Each dot
+   keeps its width while hidden, so the label never shifts. */
+.task-board-dots > span {
+  animation: 1.6s steps(1, end) infinite;
+}
+.task-board-dots > span:nth-child(1) {
+  animation-name: board-dot-1;
+}
+.task-board-dots > span:nth-child(2) {
+  animation-name: board-dot-2;
+}
+.task-board-dots > span:nth-child(3) {
+  animation-name: board-dot-3;
+}
+@keyframes board-dot-1 {
+  0% {
+    opacity: 0;
+  }
+  25%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes board-dot-2 {
+  0% {
+    opacity: 0;
+  }
+  50%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes board-dot-3 {
+  0% {
+    opacity: 0;
+  }
+  75%,
+  100% {
+    opacity: 1;
+  }
+}
+/* Matches the per-dot rules' specificity and follows them, so it wins: all
+   three dots stay visible, a plain "CI running...". */
+@media (prefers-reduced-motion: reduce) {
+  .task-board-dots > span:nth-child(n) {
+    animation: none;
+  }
+}
 .task-board-status.warning {
   color: var(--warning);
   font-weight: 500;

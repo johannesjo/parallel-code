@@ -67,6 +67,19 @@ it('says failed CI once, in the label', () => {
   expect(status()?.classList).toContain('error');
 });
 
+it('marks running CI with ellipsis dots that screen readers skip, and drops them when CI ends', () => {
+  setPrChecks('t', { ...green(), overall: 'pending', pending: 1 });
+  dispose = render7();
+  expect(status()?.getAttribute('title')).toBe('CI running');
+  expect(status()?.classList).toContain('muted');
+  const dots = status()?.querySelector('[aria-hidden="true"]');
+  expect(dots?.textContent).toBe('...');
+  expect(status()?.textContent).toBe('CI running...');
+
+  setPrChecks('t', green());
+  expect(status()?.textContent).toBe('Ready to merge');
+});
+
 it('warns about conflicts but not about a routine wait for review', () => {
   setPrChecks('t', { ...green(), mergeable: 'CONFLICTING' });
   dispose = render7();

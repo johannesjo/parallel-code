@@ -8,6 +8,7 @@ import { clearAgentActivity } from '../store/taskStatus';
 import { clearTaskLandingReview, uncollapseTask } from '../store/tasks';
 import { setDelegationStates } from '../store/delegation';
 import type { Task } from '../store/types';
+import { startTaskVisitTracker } from '../store/task-visits';
 import { AttentionTray } from './AttentionTray';
 
 vi.mock('../lib/ipc', () => ({ invoke: vi.fn(async () => ({})) }));
@@ -36,6 +37,7 @@ const rows = () => [...host.querySelectorAll<HTMLButtonElement>('.sidebar-attent
 beforeEach(() => {
   vi.clearAllMocks();
   setStore('tasks', reconcile({ child: { ...task } }));
+  setStore('taskGitStatus', reconcile({}));
   setStore('agents', reconcile({}));
   for (const id of task.agentIds) {
     setStore('agents', id, {
@@ -172,4 +174,83 @@ it('offers the shared task menu on a row, whose Open acts like a click on it', (
   expect(labels).toEqual(expect.arrayContaining(['Open', 'Finish and close', 'Close']));
   items.find((item) => item.textContent?.trim() === 'Open')?.click();
   expect(store.activeTaskId).toBe('child');
+});
+
+function setHead(headSha: string): void {
+  setStore('taskGitStatus', 'child', {
+    has_committed_changes: true,
+    has_uncommitted_changes: false,
+    current_branch: 'child',
+    base_branch: 'main',
+    head_sha: headSha,
+    refreshedAt: Date.now(),
+  });
+}
+const changesText = () => rows()[0].querySelector('[data-testid="attention-changes"]')?.textContent;
+
+it('shows app-attested changes since the last visit, but not agent self-reports', () => {
+  setStore('tasks', 'child', {
+    needsReview: true,
+    lastVisit: { at: 1_000, headSha: 'old' },
+    verificationRun: {
+      command: 'npm test',
+      status: 'failed',
+      exitCode: 1,
+      headSha: 'new',
+      dirty: false,
+      startedAt: new Date(2_000).toISOString(),
+      finishedAt: new Date(3_000).toISOString(),
+      outputTail: '',
+    },
+    // The agent's own claim must not appear in the line.
+    verification: { checks: [{ name: 'tests', command: 'npm test', result: 'passed' }] },
+  });
+  setHead('new');
+  expect(changesText()).toBe('new commits · verify failed');
+  expect(rows()[0].title).toContain('Since you looked: new commits · verify failed');
+});
+
+it("keeps the line's space while empty and while the task is open", () => {
+  setStore('tasks', 'child', { needsReview: true, lastVisit: { at: 1_000, headSha: 'old' } });
+  setHead('old');
+  expect(changesText()).toBe('\u00a0');
+  setHead('new');
+  expect(changesText()).toBe('new commits');
+  setStore('activeTaskId', 'child');
+  expect(changesText()).toBe('\u00a0');
+});
+
+it('adds the line to review rows only; a question is answered either way', () => {
+  setStore('tasks', 'child', { needsReview: true, lastVisit: { at: 1_000, headSha: 'old' } });
+  setHead('new');
+  applyAgentHookEvent({
+    agentId: 'two',
+    taskId: 'child',
+    state: 'waiting',
+    event: 'PermissionRequest',
+    at: Date.now(),
+  });
+  const [question, review] = rows();
+  expect(question.querySelector('[data-testid="attention-changes"]')).toBeNull();
+  expect(review.querySelector('[data-testid="attention-changes"]')?.textContent).toBe(
+    'new commits',
+  );
+});
+
+it('stamps the visit with the current HEAD when the user leaves a task', () => {
+  const stop = startTaskVisitTracker();
+  try {
+    setHead('first');
+    setStore('activeTaskId', 'child');
+    expect(store.tasks.child.lastVisit?.headSha).toBe('first');
+    setHead('second');
+    setStore('activeTaskId', null);
+    expect(store.tasks.child.lastVisit?.headSha).toBe('second');
+    // A HEAD that can no longer be read must not leave the old one behind.
+    setStore('taskGitStatus', 'child', 'error', 'unreadable');
+    setStore('activeTaskId', 'child');
+    expect(store.tasks.child.lastVisit?.headSha).toBeUndefined();
+  } finally {
+    stop();
+  }
 });
