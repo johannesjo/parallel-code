@@ -56,8 +56,8 @@ export function openBesideBoard(id: string | null, open: () => void, otherSide =
 }
 
 /** Opens the task in the board's side panel, moving the panel across first when asked. */
-export function openBeside(task: Task, otherSide = false, panel?: string | null): void {
-  openBesideBoard(task.id, () => openTask(task, panel), otherSide);
+export function openBeside(task: Task, otherSide = false): void {
+  openBesideBoard(task.id, () => openTask(task), otherSide);
 }
 
 /** The task's status dot, the same glyph as the title-bar pills, which the board hides. */

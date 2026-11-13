@@ -1059,6 +1059,23 @@ describe('next task that needs you', () => {
     expect(getTaskFocusedPanel('review')).toBe('shell:0');
   });
 
+  it('scrolls the card it lands on into view, leaving the keyboard in the pane', async () => {
+    // happy-dom lays nothing out, so record the scroll request instead.
+    const scrolled: Element[] = [];
+    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (
+      this: Element,
+    ) {
+      scrolled.push(this);
+    });
+    setStore('activeTaskId', 'pr');
+    (document.activeElement as HTMLElement | null)?.blur();
+    openNextAttentionTask();
+    await Promise.resolve();
+    spy.mockRestore();
+    expect(scrolled).toEqual([document.querySelector('[data-board-task-id="review"]')]);
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it('stays put when nothing else is waiting', () => {
     setStore('tasks', 'idle', 'prUrl', 'https://github.com/o/r/pull/7');
     setStore('activeTaskId', 'review');

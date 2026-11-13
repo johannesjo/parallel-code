@@ -4,7 +4,7 @@ import { boardShown } from '../store/project-pages';
 import { samePanelKindIn } from '../store/store';
 import type { Task } from '../store/types';
 import { askingPanel, openTask } from './board/task-state';
-import { openBeside } from './board/TaskStatus';
+import { openBesideBoard } from './board/TaskStatus';
 import { forgetWorkingHolds } from './task-board-hold';
 import { boardLanes, boardTasks } from './task-board-lanes';
 
@@ -51,8 +51,27 @@ function openAttentionTask(step: 1 | -1): void {
   const task = stepInQueue(attentionQueue(), store.activeTaskId, step);
   if (!task) return;
   const panel = landingPanel(task.id);
-  if (boardShown()) openBeside(task, false, panel);
-  else openTask(task, panel);
+  if (!boardShown()) {
+    // The layout scrolls the active task into view itself.
+    openTask(task, panel);
+    return;
+  }
+  openBesideBoard(task.id, () => {
+    openTask(task, panel);
+    // After the batch has opened the side panel, which narrows the board, and
+    // inside a view transition's update so the new snapshot shows the card.
+    queueMicrotask(() => revealBoardCard(task.id));
+  });
+}
+
+/**
+ * Scrolls the board so the task's card is on screen; the board does not follow
+ * the side panel on its own. Not `focus()`: the keyboard stays in the pane.
+ */
+function revealBoardCard(taskId: string): void {
+  document
+    .querySelector(`[data-board-task-id="${CSS.escape(taskId)}"]`)
+    ?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
 }
 
 /** Opens the next waiting task, beside the board while it is shown. */
